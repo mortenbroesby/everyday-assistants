@@ -1,1 +1,5 @@
 pnpm verify
+
+if [ "$(git branch --show-current)" = "main" ]; then
+  pnpm nemlig:tunnel:restart
+fi

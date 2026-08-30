@@ -126,12 +126,14 @@ pnpm nemlig:tunnel:stop
 `restart` rebuilds the Nemlig MCP bundle, replaces the running tunnel process,
 and requires a successful control-plane health check before returning.
 
-**Current alpha rule:** after every update to `main`—whether from a pull, merge,
-dependency update, or local push—run `pnpm nemlig:tunnel:restart` before using
-the ChatGPT app. Treat the update as inactive until
-`pnpm nemlig:tunnel:status` reports health, readiness, and a successful
-control-plane poll. A later deployment setup can automate this trigger; the
-explicit restart remains the supported rule for now.
+**Current alpha rule:** the Husky `pre-push` hook runs verification and then
+`pnpm nemlig:tunnel:restart` whenever `main` is checked out. A failed restart or
+health check blocks the push. Git has no standard client-side `post-push` hook,
+so activation happens immediately before the remote update. After a pull,
+merge, or dependency update that is not followed by a push, run the restart
+manually. Treat an update as inactive until `pnpm nemlig:tunnel:status` reports
+health, readiness, and a successful control-plane poll. A later deployment
+setup can replace this local trigger.
 
 ## 4. Start, connect, and stop
 
