@@ -7,7 +7,7 @@ import { realpathSync } from "node:fs";
 import { basename } from "node:path";
 import { z } from "zod";
 import type { Basket, Product } from "./client.js";
-import { NemligError } from "./client.js";
+import { FAVORITES_SEARCH_POOL, matchFavorites, NemligError } from "./client.js";
 import { ensureLoggedIn, getClient, NEMLIG_VERSION, type ShoppingClient } from "./cli.js";
 import { getCredentials, type Credentials } from "./config.js";
 import { BasketProposalService, type ProposalOperation } from "./proposals.js";
@@ -223,16 +223,24 @@ export function createMcpServer(
   server.registerTool(
     "list_favorites",
     {
-      title: "List Nemlig favorites",
-      description: "List current authenticated Nemlig favorites without changing favorites or the basket.",
-      inputSchema: { limit: z.number().int().positive().default(8) },
+      title: "List or search Nemlig favorites",
+      description:
+        "List or search current authenticated Nemlig favorites without changing favorites or the basket.",
+      inputSchema: {
+        query: z.string().trim().min(1).optional(),
+        limit: z.number().int().positive().default(8),
+      },
       outputSchema: z.object({ result: z.array(candidateSchema) }),
       annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true },
     },
-    async ({ limit }) => {
+    async ({ query, limit }) => {
       try {
         await ensureLoggedIn(client, loadCredentials);
-        return success(rankProducts(await client.listFavorites(limit), ""));
+        const favorites = await client.listFavorites(
+          query === undefined ? limit : FAVORITES_SEARCH_POOL,
+        );
+        const products = query === undefined ? favorites : matchFavorites(favorites, query, limit);
+        return success(rankProducts(products, query ?? ""));
       } catch (error) {
         return failure("list_favorites", error);
       }

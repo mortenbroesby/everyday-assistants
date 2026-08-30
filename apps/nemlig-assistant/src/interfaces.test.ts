@@ -58,11 +58,56 @@ test("CLI exposes only non-recipe commands and never accepts a password option",
 
 test("CLI favorites authenticates and prints the existing product format", async () => {
   const output: string[] = [];
-  await createProgram({ client: fakeClient(), out: (message) => output.push(message) }).parseAsync(
+  let requestedLimit: number | undefined;
+  const client = fakeClient({
+    listFavorites: async (limit) => {
+      requestedLimit = limit;
+      return [product];
+    },
+    getCart: async () => {
+      throw new Error("basket operation called");
+    },
+  });
+  await createProgram({ client, out: (message) => output.push(message) }).parseAsync(
     ["node", "nemlig", "favorites", "--limit", "1"],
   );
+  assert.equal(requestedLimit, 1);
   assert.match(output.join("\n"), /Økologisk mælk/);
   assert.match(output.join("\n"), /7/);
+});
+
+test("CLI favorites searches Danish names without touching the basket", async () => {
+  const output: string[] = [];
+  let requestedLimit: number | undefined;
+  const client = fakeClient({
+    listFavorites: async (limit) => {
+      requestedLimit = limit;
+      return [product, { ...product, id: 8, name: "Økologiske bananer" }];
+    },
+    getCart: async () => {
+      throw new Error("basket operation called");
+    },
+    addToCart: async () => {
+      throw new Error("basket operation called");
+    },
+    removeFromCart: async () => {
+      throw new Error("basket operation called");
+    },
+    clearCart: async () => {
+      throw new Error("basket operation called");
+    },
+  });
+  await createProgram({ client, out: (message) => output.push(message) }).parseAsync([
+    "node",
+    "nemlig",
+    "favorites",
+    "BANAN",
+    "--limit",
+    "1",
+  ]);
+  assert.equal(requestedLimit, 100);
+  assert.match(output.join("\n"), /Økologiske bananer/);
+  assert.doesNotMatch(output.join("\n"), /Økologisk mælk/);
 });
 
 test("CLI add uses exact arguments and prints basket readback", async () => {
@@ -177,8 +222,36 @@ test("MCP exposes exact non-recipe tools and clean missing-credential errors", a
   });
 });
 
-test("MCP favorites is read-only and returns normalized candidates", async () => {
-  await withMcpClient(createMcpServer(fakeClient()), async (mcp) => {
+test("MCP favorites is read-only and returns listed, matched, or empty candidates", async () => {
+  const requestedLimits: number[] = [];
+  const favoriteProducts = [
+    { ...product, id: 8, name: "Banan mini", price: 15, isOrganic: false },
+    { ...product, id: 9, name: "Økologisk mælk", price: 12 },
+    { ...product, id: 10, name: "Økologiske bananer", price: 10 },
+  ];
+  const client = fakeClient({
+    listFavorites: async (limit) => {
+      const resolvedLimit = limit ?? 10;
+      requestedLimits.push(resolvedLimit);
+      return favoriteProducts.slice(0, resolvedLimit);
+    },
+    searchProducts: async () => {
+      throw new Error("catalog search called");
+    },
+    getCart: async () => {
+      throw new Error("basket operation called");
+    },
+    addToCart: async () => {
+      throw new Error("basket operation called");
+    },
+    removeFromCart: async () => {
+      throw new Error("basket operation called");
+    },
+    clearCart: async () => {
+      throw new Error("basket operation called");
+    },
+  });
+  await withMcpClient(createMcpServer(client), async (mcp) => {
     const tools = await mcp.listTools();
     const favorites = tools.tools.find((tool) => tool.name === "list_favorites");
     assert.deepEqual(favorites?.annotations, {
@@ -186,8 +259,24 @@ test("MCP favorites is read-only and returns normalized candidates", async () =>
       destructiveHint: false,
       openWorldHint: true,
     });
-    const result = await mcp.callTool({ name: "list_favorites", arguments: { limit: 1 } });
-    assert.equal((result.structuredContent as { result: Array<{ id: number }> }).result[0]?.id, 7);
+    const listed = await mcp.callTool({ name: "list_favorites", arguments: { limit: 1 } });
+    assert.deepEqual((listed.structuredContent as { result: Array<{ id: number }> }).result.map(({ id }) => id), [8]);
+
+    const matched = await mcp.callTool({
+      name: "list_favorites",
+      arguments: { query: "BANAN", limit: 2 },
+    });
+    const candidates = (matched.structuredContent as { result: Array<{ id: number; tags: string[] }> }).result;
+    assert.deepEqual(candidates.map(({ id }) => id), [8, 10]);
+    assert.deepEqual(candidates[0]?.tags, ["recommended"]);
+    assert.deepEqual(candidates[1]?.tags, ["cheapest", "organic"]);
+
+    const empty = await mcp.callTool({
+      name: "list_favorites",
+      arguments: { query: "pære", limit: 2 },
+    });
+    assert.deepEqual((empty.structuredContent as { result: unknown[] }).result, []);
+    assert.deepEqual(requestedLimits, [1, 100, 100]);
   });
 });
 

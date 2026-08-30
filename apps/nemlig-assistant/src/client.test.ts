@@ -1,6 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { NemligClient, NemligError, SEARCH_GATEWAY_URL, normalizeProducts } from "./client.js";
+import {
+  matchFavorites,
+  NemligClient,
+  NemligError,
+  SEARCH_GATEWAY_URL,
+  normalizeProducts,
+} from "./client.js";
 
 interface ExpectedRequest {
   match: string;
@@ -355,6 +361,25 @@ test("favorites follows authenticated show-all groups, deduplicates, and never m
     ],
   );
   assert.equal(requests.length, 0);
+});
+
+test("favorites matching is Danish-aware, ordered, limited, and empty when unmatched", () => {
+  const favorites = normalizeProducts(
+    [
+      { Id: 1, Name: "Økologiske bananer" },
+      { Id: 2, Name: "Bananer i klase" },
+      { Id: 3, Name: "Banan smoothie" },
+      { Id: 4, Name: "Danske pærer" },
+    ],
+    4,
+  );
+  assert.deepEqual(
+    matchFavorites(favorites, " BANAN ", 2).map((favorite) => favorite.id),
+    [1, 2],
+  );
+  assert.deepEqual(matchFavorites(favorites, "mælk", 2), []);
+  assert.throws(() => matchFavorites(favorites, " ", 2), /Favorites query is required/);
+  assert.throws(() => matchFavorites(favorites, "banan", 0), /Favorites limit must be positive/);
 });
 
 test("basket add sends the exact payload and returns normalized readback", async () => {

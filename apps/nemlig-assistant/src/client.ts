@@ -37,6 +37,18 @@ export interface Product {
   isOnDiscount: boolean;
 }
 
+// ponytail: bounded scan; paginate favorites if real accounts exceed this ceiling.
+export const FAVORITES_SEARCH_POOL = 100;
+
+export function matchFavorites(products: Product[], query: string, limit: number): Product[] {
+  const needle = query.trim().toLocaleLowerCase("da-DK");
+  if (!needle) throw new NemligError("Favorites query is required.");
+  if (!Number.isInteger(limit) || limit < 1) throw new NemligError("Favorites limit must be positive.");
+  return products
+    .filter((product) => product.name?.toLocaleLowerCase("da-DK").includes(needle))
+    .slice(0, limit);
+}
+
 export interface Basket {
   items: Array<{
     id?: number;

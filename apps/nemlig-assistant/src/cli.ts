@@ -4,7 +4,7 @@ import { Command, InvalidArgumentError } from "commander";
 import { realpathSync } from "node:fs";
 import { basename } from "node:path";
 import type { Basket, Product } from "./client.js";
-import { NemligClient, NemligError } from "./client.js";
+import { FAVORITES_SEARCH_POOL, matchFavorites, NemligClient, NemligError } from "./client.js";
 import {
   clearCredentials,
   getCredentials,
@@ -159,11 +159,15 @@ export function createProgram(overrides: Partial<CliDependencies> = {}): Command
 
   program
     .command("favorites")
-    .description("List current Nemlig favorites without changing favorites or the basket.")
+    .description("List or search current Nemlig favorites without changing favorites or the basket.")
+    .argument("[query]", "Danish product name")
     .option("-l, --limit <number>", "Maximum results", positiveInteger, 10)
-    .action(async (options: { limit: number }) => {
+    .action(async (query: string | undefined, options: { limit: number }) => {
       await ensureLoggedIn(dependencies.client, dependencies.credentials);
-      const products = await dependencies.client.listFavorites(options.limit);
+      const favorites = await dependencies.client.listFavorites(
+        query === undefined ? options.limit : FAVORITES_SEARCH_POOL,
+      );
+      const products = query === undefined ? favorites : matchFavorites(favorites, query, options.limit);
       dependencies.out(
         products.length
           ? ["ID       Name                          Price    Size       Status", ...products.map(formatProduct)].join("\n")
