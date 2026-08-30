@@ -94,7 +94,7 @@ The system's operating instructions SHALL classify search and basket viewing as 
 - **THEN** the system requires new approval before mutation
 
 ### Requirement: CLI surface
-The system SHALL expose `login`, `logout`, `search`, `add`, and `cart` commands with upstream-compatible non-recipe arguments and defaults, SHALL offer the `nemlig` and `nemlig-shopper` entry names, and SHALL omit the `parse` command.
+The system SHALL expose `login`, `logout`, `search`, `add`, and `cart` commands with upstream-compatible non-recipe arguments and defaults, SHALL offer the `nemlig` and `nemlig-assistant` entry names, and SHALL omit the `parse` command.
 
 #### Scenario: Inspect help
 - **WHEN** a user requests CLI help
@@ -106,4 +106,3 @@ The system SHALL NOT expose checkout, purchase, payment, order-placement, or del
 #### Scenario: Inspect executable surface
 - **WHEN** CLI commands and exported shopping operations are enumerated
 - **THEN** none can place or pay for an order
-

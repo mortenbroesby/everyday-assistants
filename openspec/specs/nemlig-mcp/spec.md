@@ -5,7 +5,7 @@ Defines a local MCP server and optional picker that expose the TypeScript shoppe
 ## Requirements
 
 ### Requirement: MCP stdio server
-The system SHALL expose a `nemlig-shopper` MCP server over stdio through the local `nemlig-mcp` entry point and SHALL sanitize expected and unexpected tool failures.
+The system SHALL expose a `nemlig-assistant` MCP server over stdio through the local `nemlig-mcp` entry point and SHALL sanitize expected and unexpected tool failures.
 
 #### Scenario: Start MCP server
 - **WHEN** a client launches `nemlig-mcp`
@@ -80,4 +80,3 @@ The picker SHALL display each candidate's name, identifying metadata, price, ava
 #### Scenario: Client cannot render MCP Apps
 - **WHEN** a client does not support the interactive resource
 - **THEN** `pick_products` still returns the same structured candidate list for conversational review
-

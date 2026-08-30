@@ -14,7 +14,7 @@ function git(repo: string, ...args: string[]): string {
 async function manifest(repo: string, version: string): Promise<void> {
   await writeFile(
     path.join(repo, packagePath),
-    `${JSON.stringify({ name: "nemlig-shopper", version }, null, 2)}\n`,
+    `${JSON.stringify({ name: "nemlig-assistant", version }, null, 2)}\n`,
   );
 }
 

@@ -1,11 +1,11 @@
 ## Purpose
 
-Defines how the repository builds, versions, verifies, packs, and locally installs the private Nemlig Shopper package without weakening its local safety contract or enabling external publication.
+Defines how the repository builds, versions, verifies, packs, and locally installs the private Nemlig Assistant package without weakening its local safety contract or enabling external publication.
 
 ## Requirements
 
-### Requirement: Private installable Nemlig Shopper package
-The system SHALL produce a private ESM npm-format package named `nemlig-shopper` whose declared files contain the Nemlig runtime and documentation, whose version follows `major.minor.patch-alpha.increment`, and whose `nemlig`, `nemlig-shopper`, and `nemlig-mcp` binaries preserve the specified non-recipe CLI and MCP surfaces. The package SHALL be installable from its generated tarball but SHALL NOT be publishable until a separate explicitly approved change removes the private guard.
+### Requirement: Private installable Nemlig Assistant package
+The system SHALL produce a private ESM npm-format package named `nemlig-assistant` whose declared files contain the Nemlig runtime and documentation, whose version follows `major.minor.patch-alpha.increment`, and whose `nemlig`, `nemlig-assistant`, and `nemlig-mcp` binaries preserve the specified non-recipe CLI and MCP surfaces. The package SHALL be installable from its generated tarball but SHALL NOT be publishable until a separate explicitly approved change removes the private guard.
 
 #### Scenario: Inspect packed package
 - **WHEN** the package is packed without credentials or Nemlig network access
@@ -53,7 +53,7 @@ The system SHALL provide a read-only release plan and an explicit apply operatio
 - **THEN** the command reports the baseline, decision kind, candidate version and tag, main state, tag state, and npm registry state without modifying files or refs
 
 #### Scenario: Registry package is unpublished
-- **WHEN** npm authoritatively reports that `nemlig-shopper` has no published versions
+- **WHEN** npm authoritatively reports that `nemlig-assistant` has no published versions
 - **THEN** the first otherwise-valid candidate may proceed while network, authorization, malformed-response, and other registry failures remain fail-closed
 
 #### Scenario: Candidate conflicts

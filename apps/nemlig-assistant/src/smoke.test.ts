@@ -15,6 +15,7 @@ test("local CLI help and MCP surface need no credentials or network", async () =
     ["--import=tsx", `${import.meta.dirname}/cli.ts`, "--help"],
     { env: { PATH: process.env.PATH } },
   );
+  assert.match(stdout, /^Usage: nemlig-assistant/m);
   assert.match(stdout, /login/);
   assert.match(stdout, /search/);
   assert.match(stdout, /favorites/);
@@ -44,6 +45,7 @@ test("local CLI help and MCP surface need no credentials or network", async () =
   const client = new Client({ name: "smoke", version: "1.0.0" });
   await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
   try {
+    assert.equal(client.getServerVersion()?.name, "nemlig-assistant");
     assert.deepEqual(
       (await client.listTools()).tools.map((tool) => tool.name).sort(),
       [

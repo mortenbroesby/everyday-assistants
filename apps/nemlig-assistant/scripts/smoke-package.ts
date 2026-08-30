@@ -10,7 +10,10 @@ import { fileURLToPath } from "node:url";
 
 const execute = promisify(execFile);
 const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const tempRoot = await mkdtemp(path.join(tmpdir(), "nemlig-shopper-package-"));
+const tempRoot = await mkdtemp(path.join(tmpdir(), "nemlig-assistant-package-"));
+const sourceManifest = JSON.parse(
+  await readFile(path.join(packageRoot, "package.json"), "utf8"),
+) as { version?: string };
 
 try {
   const { stdout } = await execute(
@@ -47,11 +50,11 @@ try {
   );
 
   const manifest = JSON.parse(
-    await readFile(path.join(tempRoot, "node_modules", "nemlig-shopper", "package.json"), "utf8"),
+    await readFile(path.join(tempRoot, "node_modules", "nemlig-assistant", "package.json"), "utf8"),
   ) as { name?: string; version?: string; bin?: Record<string, string> };
-  assert.equal(manifest.name, "nemlig-shopper");
-  assert.equal(manifest.version, "0.2.0-alpha.1");
-  assert.deepEqual(Object.keys(manifest.bin ?? {}).sort(), ["nemlig", "nemlig-mcp", "nemlig-shopper"]);
+  assert.equal(manifest.name, "nemlig-assistant");
+  assert.equal(manifest.version, sourceManifest.version);
+  assert.deepEqual(Object.keys(manifest.bin ?? {}).sort(), ["nemlig", "nemlig-assistant", "nemlig-mcp"]);
 
   const bin = (name: string): string => path.join(tempRoot, "node_modules", ".bin", name);
   const help = await execute(bin("nemlig"), ["--help"], { env: { PATH: process.env.PATH ?? "" } });
@@ -70,6 +73,7 @@ try {
   const client = new Client({ name: "package-smoke", version: "1.0.0" });
   await client.connect(transport);
   try {
+    assert.equal(client.getServerVersion()?.name, "nemlig-assistant");
     assert.equal(client.getServerVersion()?.version, "0.2.0-alpha.1");
     const tools = (await client.listTools()).tools.map((tool) => tool.name).sort();
     assert.deepEqual(tools, [
@@ -89,7 +93,7 @@ try {
     await client.close();
   }
 
-  console.log("Packed Nemlig Shopper interfaces verified.");
+  console.log("Packed Nemlig Assistant interfaces verified.");
 } finally {
   await rm(tempRoot, { recursive: true, force: true });
 }

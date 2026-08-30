@@ -191,7 +191,7 @@ export function createMcpServer(
   proposals: BasketProposalService = new BasketProposalService(client),
 ): McpServer {
   const server = new McpServer(
-    { name: "nemlig-shopper", version: NEMLIG_VERSION },
+    { name: "nemlig-assistant", version: NEMLIG_VERSION },
     {
       instructions:
         "Search, favorites, basket view, and prepare tools do not change the Nemlig basket. Preparation is not approval. Show the exact proposal and invoke its matching apply tool only after the user explicitly approves that unchanged proposal. Every apply revalidates and reads back the basket. Never check out, pay, place an order, or change a delivery slot.",

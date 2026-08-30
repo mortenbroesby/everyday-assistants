@@ -107,7 +107,7 @@ export function createProgram(overrides: Partial<CliDependencies> = {}): Command
     ...overrides,
   };
   const program = new Command()
-    .name("nemlig-shopper")
+    .name("nemlig-assistant")
     .description("Search Nemlig products and manage an explicitly approved basket.")
     .version(NEMLIG_VERSION);
 

@@ -58,7 +58,7 @@ function parts(match: RegExpMatchArray, increment: number): VersionParts {
 export function parseVersion(version: string): VersionParts {
   const match = version.match(strictPattern);
   if (!match) {
-    throw new Error(`Invalid Nemlig Shopper version "${version}". Expected major.minor.patch-alpha.increment`);
+    throw new Error(`Invalid Nemlig Assistant version "${version}". Expected major.minor.patch-alpha.increment`);
   }
   return parts(match, Number(match.groups?.increment));
 }
@@ -98,7 +98,7 @@ export function assessVersionBump(previous: VersionParts, next: VersionParts): {
   reason: string;
 } {
   if (compareParts(next, previous) <= 0) {
-    return { ok: false, kind: null, reason: "Nemlig Shopper version must move forward." };
+    return { ok: false, kind: null, reason: "Nemlig Assistant version must move forward." };
   }
   if (next.increment <= previous.increment) {
     return { ok: false, kind: null, reason: "Alpha increment must keep increasing across every bump." };
@@ -261,8 +261,8 @@ export function validateRetry(input: {
   tagExists: boolean;
   registry: RegistryState;
 }): RetryValidation {
-  const match = input.tag.match(/^nemlig-shopper-v(?<version>.+)$/u);
-  if (!match?.groups?.version) throw new Error("Retry tag must use nemlig-shopper-v<version>.");
+  const match = input.tag.match(/^nemlig-assistant-v(?<version>.+)$/u);
+  if (!match?.groups?.version) throw new Error("Retry tag must use nemlig-assistant-v<version>.");
   const version = match.groups.version;
   parseVersion(version);
   if (!input.tagExists) throw new Error(`Retry tag ${input.tag} does not exist.`);

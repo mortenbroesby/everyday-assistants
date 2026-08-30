@@ -1,8 +1,8 @@
 {
-  "name": "nemlig-shopper",
-  "version": "0.3.0-alpha.2",
+  "name": "nemlig-assistant",
+  "version": "1.0.0-alpha.3",
   "private": true,
-  "description": "Safe local Nemlig shopping CLI and MCP server",
+  "description": "Safe local Nemlig Assistant CLI and MCP server",
   "type": "module",
   "license": "MIT",
   "homepage": "https://github.com/mortenbroesby/everyday-assistants#readme",
@@ -23,7 +23,7 @@
   },
   "bin": {
     "nemlig": "dist/cli.js",
-    "nemlig-shopper": "dist/cli.js",
+    "nemlig-assistant": "dist/cli.js",
     "nemlig-mcp": "dist/mcp.js"
   },
   "scripts": {

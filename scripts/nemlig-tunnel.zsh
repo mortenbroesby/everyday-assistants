@@ -107,7 +107,7 @@ restart() {
   check_key
   require_file "$agent_file"
   cd "$repo_root"
-  pnpm --filter nemlig-shopper build
+  pnpm --filter nemlig-assistant build
   launchctl kickstart -k "$launch_domain/$service_label"
 
   local attempt

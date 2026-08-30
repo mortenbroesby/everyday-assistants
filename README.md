@@ -25,7 +25,7 @@ state must remain outside Git.
 
 ## Distribution
 
-The `nemlig-shopper` npm-format package remains private and unpublished. npm
+The `nemlig-assistant` npm-format package remains private and unpublished. npm
 publication, package-name ownership, trusted-publisher configuration, tags, and
 release automation are deferred external decisions.
 

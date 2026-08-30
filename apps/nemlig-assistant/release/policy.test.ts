@@ -57,7 +57,7 @@ test("package paths and conventional commits produce scoped release decisions", 
 
 test("publication retry accepts only an existing matching unpublished tag", () => {
   const accepted = validateRetry({
-    tag: "nemlig-shopper-v0.1.0-alpha.0",
+    tag: "nemlig-assistant-v0.1.0-alpha.0",
     manifestVersion: "0.1.0-alpha.0",
     tagExists: true,
     registry: { status: "unpublished" },
@@ -65,9 +65,9 @@ test("publication retry accepts only an existing matching unpublished tag", () =
   assert.equal(accepted.version, "0.1.0-alpha.0");
   for (const input of [
     { tag: "v0.1.0-alpha.0", manifestVersion: "0.1.0-alpha.0", tagExists: true, registry: { status: "unpublished" } as const },
-    { tag: "nemlig-shopper-v0.1.0-alpha.0", manifestVersion: "0.1.0-alpha.0", tagExists: false, registry: { status: "unpublished" } as const },
-    { tag: "nemlig-shopper-v0.1.0-alpha.1", manifestVersion: "0.1.0-alpha.0", tagExists: true, registry: { status: "unpublished" } as const },
-    { tag: "nemlig-shopper-v0.1.0-alpha.0", manifestVersion: "0.1.0-alpha.0", tagExists: true, registry: { status: "published", version: "0.1.0-alpha.0" } as const },
+    { tag: "nemlig-assistant-v0.1.0-alpha.0", manifestVersion: "0.1.0-alpha.0", tagExists: false, registry: { status: "unpublished" } as const },
+    { tag: "nemlig-assistant-v0.1.0-alpha.1", manifestVersion: "0.1.0-alpha.0", tagExists: true, registry: { status: "unpublished" } as const },
+    { tag: "nemlig-assistant-v0.1.0-alpha.0", manifestVersion: "0.1.0-alpha.0", tagExists: true, registry: { status: "published", version: "0.1.0-alpha.0" } as const },
   ]) {
     assert.throws(() => validateRetry(input));
   }

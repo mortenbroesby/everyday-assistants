@@ -20,7 +20,8 @@ pnpm nemlig remove 701015
 
 Run login yourself in a terminal. The CLI prompts for the password with masked
 input and deliberately has no password command-line option. Saved credentials
-live in `~/.nemlig-shopper/credentials.json` with owner-only permissions;
+remain in the legacy `~/.nemlig-shopper/credentials.json` location with
+owner-only permissions so this rename does not log out existing installations;
 environment variables take precedence when both `NEMLIG_USERNAME` and
 `NEMLIG_PASSWORD` are present.
 
@@ -29,8 +30,8 @@ environment variables take precedence when both `NEMLIG_USERNAME` and
 Build and run the stdio server locally:
 
 ```sh
-pnpm --filter nemlig-shopper build
-pnpm --filter nemlig-shopper mcp
+pnpm --filter nemlig-assistant build
+pnpm --filter nemlig-assistant mcp
 ```
 
 It exposes read-only `search_products`, `list_favorites`, and `view_cart`, plus
@@ -76,22 +77,22 @@ or ChatGPT app remains an explicit owner action.
 ## Development
 
 ```sh
-pnpm --filter nemlig-shopper lint
-pnpm --filter nemlig-shopper build
-pnpm --filter nemlig-shopper check
-pnpm --filter nemlig-shopper test
-pnpm --filter nemlig-shopper smoke
-pnpm --filter nemlig-shopper smoke:package
+pnpm --filter nemlig-assistant lint
+pnpm --filter nemlig-assistant build
+pnpm --filter nemlig-assistant check
+pnpm --filter nemlig-assistant test
+pnpm --filter nemlig-assistant smoke
+pnpm --filter nemlig-assistant smoke:package
 ```
 
 Tests use synthetic HTTP responses and never access a real account.
 
 ## Private package and release policy
 
-The private npm-format package is named `nemlig-shopper`. It is installable from
-the tarball produced by `pnpm --filter nemlig-shopper smoke:package`, but it is
+The private npm-format package is named `nemlig-assistant`. It is installable from
+the tarball produced by `pnpm --filter nemlig-assistant smoke:package`, but it is
 not claimed or published on npm. Its three binaries are `nemlig`,
-`nemlig-shopper`, and `nemlig-mcp`. Versions use
+`nemlig-assistant`, and `nemlig-mcp`. Versions use
 `major.minor.patch-alpha.increment`; the alpha increment never resets, including
 across semantic-version changes. Nemlig runtime fixes require a patch, features
 require a minor, and `!` or `BREAKING CHANGE:` requires a major. Tests and
@@ -108,7 +109,7 @@ Apply the reported version to only the Nemlig manifest after the same checks:
 
 ```sh
 pnpm nemlig:release:apply
-pnpm --filter nemlig-shopper check:version-bump --base origin/main
+pnpm --filter nemlig-assistant check:version-bump --base origin/main
 ```
 
 `Nemlig-Release: none` is the exact commit-body trailer for a reviewed runtime

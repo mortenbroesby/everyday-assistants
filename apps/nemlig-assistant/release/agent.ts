@@ -106,7 +106,7 @@ export function readCommits(repoRoot: string, baseRef: string): ReleaseCommit[] 
 
 export async function fetchRegistryState(): Promise<RegistryState> {
   try {
-    const response = await fetch("https://registry.npmjs.org/nemlig-shopper", {
+    const response = await fetch("https://registry.npmjs.org/nemlig-assistant", {
       headers: { accept: "application/vnd.npm.install-v1+json" },
       signal: AbortSignal.timeout(15_000),
     });
@@ -143,7 +143,7 @@ export async function createReleasePlan(options: PlanOptions): Promise<ReleasePl
     : options.mergedCandidate
       ? currentVersion
       : nextVersion(baseVersion, currentVersion, release.kind);
-  const targetTag = `nemlig-shopper-v${targetVersion}`;
+  const targetTag = `nemlig-assistant-v${targetVersion}`;
   const tagState = readTagState(options.repoRoot, targetTag);
   const registry = release.kind === "patch" || release.kind === "minor" || release.kind === "major"
     ? options.registry ?? await fetchRegistryState()

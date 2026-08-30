@@ -39,7 +39,7 @@ Official references:
 From the repository root:
 
 ```sh
-pnpm --filter nemlig-shopper build
+pnpm --filter nemlig-assistant build
 pnpm dlx @modelcontextprotocol/inspector --cli \
   node apps/nemlig-assistant/dist/mcp.js \
   --method tools/list --strict
@@ -198,7 +198,7 @@ The following foreground procedure remains the manual fallback:
 4. Build and inspect the MCP tool metadata without logging in:
 
    ```sh
-   pnpm --filter nemlig-shopper build
+   pnpm --filter nemlig-assistant build
    pnpm dlx @modelcontextprotocol/inspector --cli \
      node apps/nemlig-assistant/dist/mcp.js \
      --method tools/list --strict
