@@ -26,6 +26,18 @@ check_key() {
     fail "$key_file must have mode 600"
 }
 
+configure_profile_key_ref() {
+  require_file "$profile_file"
+  local file_ref="  api_key: \"file:${key_file}\""
+
+  if grep -Eq '^  api_key: "?env:CONTROL_PLANE_API_KEY"?$' "$profile_file"; then
+    sed -i '' "s|^  api_key: \"\{0,1\}env:CONTROL_PLANE_API_KEY\"\{0,1\}$|${file_ref}|" "$profile_file"
+  fi
+  grep -Fqx "$file_ref" "$profile_file" ||
+    fail "$profile_file has an unexpected control_plane.api_key reference"
+  chmod 600 "$profile_file"
+}
+
 run_tunnel() {
   check_key
   require_file "$profile_file"
@@ -36,7 +48,7 @@ run_tunnel() {
 
 write_agent() {
   check_key
-  require_file "$profile_file"
+  configure_profile_key_ref
 
   local tunnel_bin node_bin runtime_path temp_file plist_buddy
   tunnel_bin="$(command -v tunnel-client)" || fail "tunnel-client is not on PATH"
@@ -70,6 +82,11 @@ write_agent() {
   launchctl kickstart -k "$launch_domain/$service_label"
 }
 
+install_service() {
+  write_agent
+  print -- "Nemlig tunnel installed and managed by launchd."
+}
+
 enroll() {
   [[ -t 0 ]] || fail "enroll must run in an interactive terminal"
   local runtime_key
@@ -83,8 +100,7 @@ enroll() {
   print -rn -- "$runtime_key" > "$key_file"
   unset runtime_key
   chmod 600 "$key_file"
-  write_agent
-  print -- "Nemlig tunnel enrolled and managed by launchd."
+  install_service
 }
 
 restart() {
@@ -95,7 +111,7 @@ restart() {
   launchctl kickstart -k "$launch_domain/$service_label"
 
   local attempt
-  for attempt in {1..15}; do
+  for attempt in {1..45}; do
     if tunnel-client health --port 8080 --require-control-plane-poll >/dev/null 2>&1; then
       tunnel-client health --port 8080 --require-control-plane-poll
       return
@@ -103,7 +119,7 @@ restart() {
     sleep 1
   done
   tunnel-client health --port 8080 --require-control-plane-poll ||
-    fail "tunnel did not become ready within 15 seconds"
+    fail "tunnel did not become ready within 45 seconds"
 }
 
 status() {
@@ -118,9 +134,10 @@ stop() {
 
 case "${1:-}" in
   enroll) enroll ;;
+  install) install_service ;;
   restart) restart ;;
   status) status ;;
   stop) stop ;;
   run) run_tunnel ;;
-  *) fail "usage: $0 {enroll|restart|status|stop|run}" ;;
+  *) fail "usage: $0 {enroll|install|restart|status|stop|run}" ;;
 esac

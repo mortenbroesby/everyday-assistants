@@ -110,6 +110,10 @@ reference to the secret. It starts at login and `launchd` restarts it after a
 crash. The key is never printed, passed as a command argument, added to a shell
 profile, or committed.
 
+If an approved local secret mechanism has already provisioned that owner-only
+file, `pnpm nemlig:tunnel:install` installs the LaunchAgent without prompting or
+printing the key.
+
 After that one-time enrollment, Codex or the owner can operate the tunnel
 without entering the key again:
 
@@ -121,6 +125,13 @@ pnpm nemlig:tunnel:stop
 
 `restart` rebuilds the Nemlig MCP bundle, replaces the running tunnel process,
 and requires a successful control-plane health check before returning.
+
+**Current alpha rule:** after every update to `main`—whether from a pull, merge,
+dependency update, or local push—run `pnpm nemlig:tunnel:restart` before using
+the ChatGPT app. Treat the update as inactive until
+`pnpm nemlig:tunnel:status` reports health, readiness, and a successful
+control-plane poll. A later deployment setup can automate this trigger; the
+explicit restart remains the supported rule for now.
 
 ## 4. Start, connect, and stop
 

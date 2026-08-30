@@ -17,6 +17,7 @@
     "nemlig:release:apply": "pnpm --filter nemlig-shopper release:apply",
     "nemlig:release:plan": "pnpm --filter nemlig-shopper release:plan",
     "nemlig:tunnel:enroll": "scripts/nemlig-tunnel.zsh enroll",
+    "nemlig:tunnel:install": "scripts/nemlig-tunnel.zsh install",
     "nemlig:tunnel:restart": "scripts/nemlig-tunnel.zsh restart",
     "nemlig:tunnel:status": "scripts/nemlig-tunnel.zsh status",
     "nemlig:tunnel:stop": "scripts/nemlig-tunnel.zsh stop",
