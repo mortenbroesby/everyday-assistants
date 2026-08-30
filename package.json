@@ -3,6 +3,7 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
+  "license": "MIT",
   "packageManager": "pnpm@9.15.9",
   "engines": {
     "node": ">=22.23.1 <23",
@@ -17,6 +18,7 @@
     "nemlig:release:plan": "pnpm --filter nemlig-shopper release:plan",
     "lint": "turbo lint",
     "prepare": "husky",
+    "privacy:check": "node --test scripts/check-public-tree.test.mjs && node scripts/check-public-tree.mjs",
     "smoke": "turbo smoke",
     "spec:validate": "DO_NOT_TRACK=1 openspec validate --all --strict --no-interactive",
     "test": "turbo test",

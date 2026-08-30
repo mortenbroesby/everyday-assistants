@@ -1,7 +1,8 @@
-# Nemlig Shopper
+# Nemlig Assistant
 
-Local Node.js 22/TypeScript shopper for product discovery and explicitly approved
-Nemlig basket changes. It contains no recipe or checkout capability.
+Unofficial local Node.js 22/TypeScript assistant for product discovery and
+explicitly approved Nemlig basket changes. It is not affiliated with or
+endorsed by nemlig.com. It contains no recipe or checkout capability.
 
 ## Commands
 

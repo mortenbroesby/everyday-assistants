@@ -4,7 +4,7 @@
   "private": true,
   "description": "Safe local Nemlig shopping CLI and MCP server",
   "type": "module",
-  "license": "UNLICENSED",
+  "license": "MIT",
   "homepage": "https://github.com/mortenbroesby/everyday-assistants#readme",
   "repository": {
     "type": "git",
