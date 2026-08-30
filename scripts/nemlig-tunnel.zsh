@@ -68,6 +68,7 @@ write_agent() {
   "$plist_buddy" -c "Add :ProgramArguments:1 string run" "$temp_file"
   "$plist_buddy" -c "Add :WorkingDirectory string $repo_root" "$temp_file"
   "$plist_buddy" -c "Add :EnvironmentVariables dict" "$temp_file"
+  "$plist_buddy" -c "Add :EnvironmentVariables:HOME string ${HOME}" "$temp_file"
   "$plist_buddy" -c "Add :EnvironmentVariables:PATH string $runtime_path" "$temp_file"
   "$plist_buddy" -c "Add :RunAtLoad bool true" "$temp_file"
   "$plist_buddy" -c "Add :KeepAlive bool true" "$temp_file"
