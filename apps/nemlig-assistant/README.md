@@ -14,6 +14,7 @@ pnpm nemlig login --save
 pnpm nemlig search "mælk" --limit 5
 pnpm nemlig favorites --limit 5
 pnpm nemlig cart
+pnpm nemlig feature-request "Prefer discounted favorites" --summary "Choose discounted favorites first" --acceptance "Search favorites first" "Prefer discounted matches"
 pnpm nemlig add 701015 --quantity 1
 pnpm nemlig remove 701015
 ```
@@ -25,6 +26,10 @@ owner-only permissions so this rename does not log out existing installations;
 environment variables take precedence when both `NEMLIG_USERNAME` and
 `NEMLIG_PASSWORD` are present.
 
+`feature-request` creates a concise issue in this repository through the
+Keychain-backed GitHub CLI. Check access with `gh auth status -h github.com`;
+no GitHub token belongs in this repository or its environment files.
+
 ## MCP server
 
 Build and run the stdio server locally:
@@ -34,7 +39,8 @@ pnpm --filter nemlig-assistant build
 pnpm --filter nemlig-assistant mcp
 ```
 
-It exposes read-only `search_products`, `list_favorites`, and `view_cart`, plus
+It exposes read-only `search_products`, `list_favorites`, and `view_cart`, the
+explicitly invoked `create_feature_request` GitHub issue tool, plus
 proposal pairs for `cart_additions`, one-line `cart_removal`, and `cart_clear`.
 Each pair is named `prepare_*` and `apply_*`; direct `add_to_cart`,
 `remove_from_cart`, and `clear_cart` tools are intentionally unavailable.

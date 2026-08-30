@@ -4,7 +4,9 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { Basket, Product } from "./client.js";
 import { createProgram, type ShoppingClient } from "./cli.js";
+import type { FeatureRequest } from "./feature-request.js";
 import { createMcpServer, PICKER_HTML, PICKER_URI, rankProducts } from "./mcp.js";
+import { BasketProposalService } from "./proposals.js";
 
 const basket: Basket = {
   items: [{ name: "Milk", quantity: 1, total: 12.5 }],
@@ -52,7 +54,7 @@ const fakeClient = (overrides: Partial<ShoppingClient> = {}): ShoppingClient => 
 
 test("CLI exposes only non-recipe commands and never accepts a password option", () => {
   const help = createProgram({ client: fakeClient() }).helpInformation();
-  for (const command of ["login", "logout", "search", "favorites", "add", "remove", "cart"]) assert.match(help, new RegExp(command));
+  for (const command of ["login", "logout", "search", "favorites", "feature-request", "add", "remove", "cart"]) assert.match(help, new RegExp(command));
   for (const forbidden of ["parse", "checkout", "--password"]) assert.doesNotMatch(help, new RegExp(forbidden));
 });
 
@@ -166,6 +168,36 @@ test("CLI login saves only when requested and uses the masked prompt seam", asyn
   assert.deepEqual(saved, ["person@example.test"]);
 });
 
+test("CLI feature-request forwards ChatGPT-ready fields and prints the issue URL", async () => {
+  const output: string[] = [];
+  let received: unknown;
+  await createProgram({
+    client: fakeClient(),
+    featureRequest: async (request) => {
+      received = request;
+      return { number: 42, title: request.title, url: "https://github.com/mortenbroesby/everyday-assistants/issues/42" };
+    },
+    out: (message) => output.push(message),
+  }).parseAsync([
+    "node",
+    "nemlig",
+    "feature-request",
+    "Prefer discounted favorites",
+    "--summary",
+    "Choose discounted favorites first.",
+    "--acceptance",
+    "Search favorites first",
+    "Prefer discounted matches",
+  ]);
+  assert.deepEqual(received, {
+    title: "Prefer discounted favorites",
+    summary: "Choose discounted favorites first.",
+    acceptance_criteria: ["Search favorites first", "Prefer discounted matches"],
+    context: undefined,
+  });
+  assert.match(output.join("\n"), /feature request #42.*issues\/42/);
+});
+
 const withMcpClient = async <T>(
   server: ReturnType<typeof createMcpServer>,
   action: (client: Client) => Promise<T>,
@@ -206,6 +238,7 @@ test("MCP exposes exact non-recipe tools and clean missing-credential errors", a
         "apply_cart_additions",
         "apply_cart_clear",
         "apply_cart_removal",
+        "create_feature_request",
         "list_favorites",
         "prepare_cart_additions",
         "prepare_cart_clear",
@@ -304,6 +337,8 @@ test("every MCP tool has complete schemas, accurate annotations, and safe server
       assert.equal(byName.get(name)?.annotations?.destructiveHint, false, name);
     }
     assert.equal(byName.get("apply_cart_additions")?.annotations?.destructiveHint, false);
+    assert.equal(byName.get("create_feature_request")?.annotations?.readOnlyHint, false);
+    assert.equal(byName.get("create_feature_request")?.annotations?.destructiveHint, false);
     assert.equal(byName.get("apply_cart_removal")?.annotations?.destructiveHint, true);
     assert.equal(byName.get("apply_cart_clear")?.annotations?.destructiveHint, true);
     assert.match(mcp.getInstructions() ?? "", /Preparation is not approval/);
@@ -313,6 +348,39 @@ test("every MCP tool has complete schemas, accurate annotations, and safe server
       /password|cookie|bearer|access[_-]?token|api[_-]?key|authorization|session[_-]?id/iu,
     );
   });
+});
+
+test("MCP creates one structured feature request without touching Nemlig", async () => {
+  const client = fakeClient();
+  let received: unknown;
+  const requestFeature = async (request: FeatureRequest) => {
+    received = request;
+    return { number: 42, title: request.title, url: "https://github.com/mortenbroesby/everyday-assistants/issues/42" };
+  };
+  await withMcpClient(
+    createMcpServer(client, async () => undefined, { NEMLIG_MCP_APPS: "0" }, new BasketProposalService(client), requestFeature),
+    async (mcp) => {
+      const result = await mcp.callTool({
+        name: "create_feature_request",
+        arguments: {
+          title: "Prefer discounted favorites",
+          summary: "Choose discounted favorites first.",
+          acceptance_criteria: ["Search favorites first"],
+        },
+      });
+      assert.equal(result.isError, undefined);
+      assert.deepEqual(received, {
+        title: "Prefer discounted favorites",
+        summary: "Choose discounted favorites first.",
+        acceptance_criteria: ["Search favorites first"],
+      });
+      assert.deepEqual(result.structuredContent, {
+        number: 42,
+        title: "Prefer discounted favorites",
+        url: "https://github.com/mortenbroesby/everyday-assistants/issues/42",
+      });
+    },
+  );
 });
 
 test("MCP search and picker return identical ranked structured data", async () => {

@@ -10,6 +10,11 @@ import type { Basket, Product } from "./client.js";
 import { FAVORITES_SEARCH_POOL, matchFavorites, NemligError } from "./client.js";
 import { ensureLoggedIn, getClient, NEMLIG_VERSION, type ShoppingClient } from "./cli.js";
 import { getCredentials, type Credentials } from "./config.js";
+import {
+  createFeatureRequest,
+  type FeatureRequest,
+  type FeatureRequestResult,
+} from "./feature-request.js";
 import { BasketProposalService, type ProposalOperation } from "./proposals.js";
 
 export const PICKER_URI = "ui://nemlig/picker.html";
@@ -126,6 +131,12 @@ const applyResultSchema = z.object({
   basket: basketSchema,
 });
 
+const featureRequestResultSchema = z.object({
+  number: z.number().int().positive(),
+  title: z.string(),
+  url: z.string().url(),
+});
+
 export function rankProducts(products: Product[], query: string): Candidate[] {
   const candidates = products.map((product) => ({
     id: product.id,
@@ -189,12 +200,13 @@ export function createMcpServer(
   loadCredentials: () => Promise<Credentials | undefined> = getCredentials,
   env: NodeJS.ProcessEnv = process.env,
   proposals: BasketProposalService = new BasketProposalService(client),
+  requestFeature: (request: FeatureRequest) => Promise<FeatureRequestResult> = createFeatureRequest,
 ): McpServer {
   const server = new McpServer(
     { name: "nemlig-assistant", version: NEMLIG_VERSION },
     {
       instructions:
-        "Search, favorites, basket view, and prepare tools do not change the Nemlig basket. Preparation is not approval. Show the exact proposal and invoke its matching apply tool only after the user explicitly approves that unchanged proposal. Every apply revalidates and reads back the basket. Never check out, pay, place an order, or change a delivery slot.",
+        "Search, favorites, basket view, and prepare tools do not change the Nemlig basket. Preparation is not approval. Show the exact proposal and invoke its matching apply tool only after the user explicitly approves that unchanged proposal. Every apply revalidates and reads back the basket. Create a feature request only when the user explicitly asks to request a feature. Never check out, pay, place an order, or change a delivery slot.",
     },
   );
   const localConnectionId = randomUUID();
@@ -243,6 +255,30 @@ export function createMcpServer(
         return success(rankProducts(products, query ?? ""));
       } catch (error) {
         return failure("list_favorites", error);
+      }
+    },
+  );
+
+  server.registerTool(
+    "create_feature_request",
+    {
+      title: "Create a feature request",
+      description:
+        "Create a concise GitHub issue when the user explicitly requests a Nemlig Assistant feature. Supply a short title, summary, and simple acceptance criteria. Never include credentials or private account data.",
+      inputSchema: {
+        title: z.string().trim().min(3).max(120),
+        summary: z.string().trim().min(1).max(2_000),
+        acceptance_criteria: z.array(z.string().trim().min(1).max(300)).max(10).default([]),
+        context: z.string().trim().min(1).max(1_000).optional(),
+      },
+      outputSchema: featureRequestResultSchema,
+      annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true },
+    },
+    async (request) => {
+      try {
+        return success({ ...await requestFeature(request) });
+      } catch (error) {
+        return failure("create_feature_request", error);
       }
     },
   );

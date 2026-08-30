@@ -61,6 +61,7 @@ try {
   assert.match(help.stdout, /login/);
   assert.match(help.stdout, /search/);
   assert.match(help.stdout, /favorites/);
+  assert.match(help.stdout, /feature-request/);
   assert.match(help.stdout, /cart/);
   assert.match(help.stdout, /add/);
   assert.match(help.stdout, /remove/);
@@ -80,6 +81,7 @@ try {
       "apply_cart_additions",
       "apply_cart_clear",
       "apply_cart_removal",
+      "create_feature_request",
       "list_favorites",
       "prepare_cart_additions",
       "prepare_cart_clear",

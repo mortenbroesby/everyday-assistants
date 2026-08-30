@@ -50,10 +50,11 @@ write_agent() {
   check_key
   configure_profile_key_ref
 
-  local tunnel_bin node_bin runtime_path temp_file plist_buddy
+  local tunnel_bin node_bin gh_bin runtime_path temp_file plist_buddy
   tunnel_bin="$(command -v tunnel-client)" || fail "tunnel-client is not on PATH"
   node_bin="$(command -v node)" || fail "node is not on PATH"
-  runtime_path="${tunnel_bin:h}:${node_bin:h}:/usr/bin:/bin:/usr/sbin:/sbin"
+  gh_bin="$(command -v gh)" || fail "gh is not on PATH"
+  runtime_path="${tunnel_bin:h}:${node_bin:h}:${gh_bin:h}:/usr/bin:/bin:/usr/sbin:/sbin"
   plist_buddy="/usr/libexec/PlistBuddy"
 
   mkdir -p "${agent_file:h}" "$log_dir"
@@ -78,6 +79,13 @@ write_agent() {
 
   install -m 600 "$temp_file" "$agent_file"
   launchctl bootout "$launch_domain/$service_label" 2>/dev/null || true
+  local attempt
+  for attempt in {1..10}; do
+    launchctl print "$launch_domain/$service_label" >/dev/null 2>&1 || break
+    sleep 1
+  done
+  launchctl print "$launch_domain/$service_label" >/dev/null 2>&1 &&
+    fail "tunnel service did not stop within 10 seconds"
   launchctl bootstrap "$launch_domain" "$agent_file"
   launchctl kickstart -k "$launch_domain/$service_label"
 }
@@ -108,7 +116,7 @@ restart() {
   require_file "$agent_file"
   cd "$repo_root"
   pnpm --filter nemlig-assistant build
-  launchctl kickstart -k "$launch_domain/$service_label"
+  write_agent
 
   local attempt
   for attempt in {1..45}; do
