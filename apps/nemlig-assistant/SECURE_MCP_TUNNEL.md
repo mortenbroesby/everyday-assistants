@@ -4,6 +4,29 @@ This runbook connects the local stdio server to one private ChatGPT developer
 app through OpenAI Secure MCP Tunnel. It creates no public listener and does not
 publish the app or npm package.
 
+## Early-alpha operating model
+
+The private ChatGPT app does not follow Git, `main`, an npm version, or a
+deployment automatically. Its current chain is:
+
+```text
+ChatGPT developer app
+  -> associated OpenAI Secure MCP Tunnel
+  -> local tunnel-client profile: nemlig-local
+  -> node <REPO>/apps/nemlig-assistant/dist/mcp.js
+  -> owner-only local Nemlig credentials and account
+```
+
+The app is therefore bound to one ChatGPT workspace, one tunnel, the local
+computer, and the built JavaScript at the absolute path configured in the
+tunnel profile. Pushing a commit or rebuilding `dist/mcp.js` does not replace
+code already loaded by a running Node process. The integration is available
+only while the local computer and tunnel client are running.
+
+This is the intended early-alpha trade-off: it avoids hosting account
+credentials or exposing a public MCP endpoint while the product and safety
+workflow are still changing.
+
 Official references:
 
 - [Secure MCP Tunnel](https://developers.openai.com/api/docs/guides/secure-mcp-tunnels)
@@ -102,6 +125,72 @@ there is no public or unauthenticated fallback. The verified ChatGPT web path
 can remain on the calling state for about five minutes before reporting the
 timeout and unavailable result. Restart the client, run `doctor`, and retry
 discovery if reconnect does not recover automatically.
+
+## Update and restart the early-alpha app
+
+Repository changes become active only after a clean rebuild and process
+restart. From the repository root:
+
+1. Stop `tunnel-client` with Ctrl-C. This also stops its local MCP child.
+2. Confirm the intended source revision is checked out and current:
+
+   ```sh
+   git status --short --branch
+   git fetch origin main
+   git rev-parse HEAD
+   git rev-parse origin/main
+   ```
+
+   For the normal `main` workflow, the two revisions must match and the worktree
+   must be clean. Preserve unrelated work instead of discarding it.
+3. If dependencies changed, run `pnpm install --frozen-lockfile`.
+4. Build and inspect the MCP tool metadata without logging in:
+
+   ```sh
+   pnpm --filter nemlig-shopper build
+   pnpm dlx @modelcontextprotocol/inspector --cli \
+     node apps/nemlig-assistant/dist/mcp.js \
+     --method tools/list --strict
+   ```
+
+5. Enter the tunnel runtime key through the masked, session-only prompt from
+   section 3, then restart:
+
+   ```sh
+   tunnel-client doctor --profile nemlig-local --explain
+   tunnel-client run --profile nemlig-local
+   ```
+
+6. In ChatGPT, refresh or rescan the draft app when tool definitions changed,
+   then test in a new normal conversation. Approved workspace apps keep a
+   frozen tool snapshot until an administrator reviews the update.
+
+Verify all three layers rather than trusting a version label alone:
+
+- **Source:** `HEAD` equals the intended remote revision.
+- **Runtime:** the MCP process was started after the latest build completed.
+- **Behavior:** a read-only canary demonstrates the new behavior. For favorites
+  text search, call `list_favorites` with `query: "banan"` and confirm the result
+  is filtered. Do not use a basket mutation as an update check.
+
+The package manifest and the server's embedded `NEMLIG_VERSION` can drift in
+this early alpha, so neither is sufficient proof that the running process uses
+the latest build.
+
+## Later hosted direction
+
+If local-machine availability becomes the limiting factor, a separate approved
+change can replace the tunnel-bound process with a hosted Streamable HTTP MCP
+endpoint. Auth0 or another standards-based OAuth/OIDC provider could then
+authenticate each ChatGPT user. The hosted service would need to authorize and
+map that identity to an explicitly linked Nemlig account, isolate sessions and
+proposals per user, store credentials in a server-side secret manager, and add
+revocation, audit, rate limiting, and deployment/version evidence.
+
+That is not an automatic upgrade of the current tunnel. It changes the trust,
+hosting, identity, privacy, and operational boundaries and therefore requires a
+new OpenSpec proposal and explicit approval before implementation. Until then,
+the one-account private tunnel described here remains the supported setup.
 
 ## Troubleshooting
 
