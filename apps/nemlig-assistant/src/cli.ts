@@ -196,7 +196,7 @@ export function createProgram(overrides: Partial<CliDependencies> = {}): Command
         acceptance_criteria: options.acceptance,
         context: options.context,
       });
-      dependencies.out(`✓ Created feature request #${issue.number}: ${issue.url}`);
+      dependencies.out(`✓ Feature request #${issue.number}: ${issue.url}`);
     });
 
   program

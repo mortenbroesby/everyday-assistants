@@ -195,7 +195,7 @@ test("CLI feature-request forwards ChatGPT-ready fields and prints the issue URL
     acceptance_criteria: ["Search favorites first", "Prefer discounted matches"],
     context: undefined,
   });
-  assert.match(output.join("\n"), /feature request #42.*issues\/42/);
+  assert.match(output.join("\n"), /Feature request #42.*issues\/42/);
 });
 
 const withMcpClient = async <T>(

@@ -1,9 +1,11 @@
 import { execFile } from "node:child_process";
+import { createHash } from "node:crypto";
 import { promisify } from "node:util";
 import { NemligError } from "./client.js";
 
 const execute = promisify(execFile);
 const repository = "mortenbroesby/everyday-assistants";
+const githubTimeoutMs = 30_000;
 
 export interface FeatureRequest {
   title: string;
@@ -21,8 +23,15 @@ export interface FeatureRequestResult {
 type GhRunner = (args: string[]) => Promise<string>;
 
 const runGh: GhRunner = async (args) => {
-  const { stdout } = await execute("gh", args, { encoding: "utf8" });
-  return stdout;
+  try {
+    const { stdout } = await execute("gh", args, { encoding: "utf8", timeout: githubTimeoutMs });
+    return stdout;
+  } catch (error) {
+    if (error instanceof Error && "killed" in error && error.killed) {
+      throw new NemligError("GitHub timed out. Retry the same feature request; matching retries are safe.");
+    }
+    throw error;
+  }
 };
 
 const clean = (value: string, name: string, maximum: number): string => {
@@ -53,12 +62,81 @@ export const featureRequestBody = (request: FeatureRequest): string => {
   ].join("\n");
 };
 
+const issueUrl = (output: string): string | undefined =>
+  output.trim().split(/\s+/u).find((value) => /^https:\/\/github\.com\/mortenbroesby\/everyday-assistants\/issues\/\d+$/u.test(value));
+
+const resultFromUrl = (title: string, url: string): FeatureRequestResult => ({
+  number: Number(url.slice(url.lastIndexOf("/") + 1)),
+  title,
+  url,
+});
+
+export const featureRequestMarker = (request: FeatureRequest): string => {
+  const title = clean(request.title, "Title", 120);
+  return `<!-- nemlig-feature-request:${createHash("sha256").update(`${title}\n${featureRequestBody(request)}`).digest("hex")} -->`;
+};
+
+const findExisting = async (
+  runner: GhRunner,
+  marker: string,
+  title: string,
+  baseBody: string,
+): Promise<FeatureRequestResult | undefined> => {
+  const output = await runner([
+    "issue",
+    "list",
+    "--repo",
+    repository,
+    "--state",
+    "all",
+    "--limit",
+    "100",
+    "--json",
+    "body,title,url",
+  ]);
+  let issues: unknown;
+  try {
+    issues = JSON.parse(output) as unknown;
+  } catch {
+    throw new NemligError("GitHub returned an invalid feature-request lookup response.");
+  }
+  if (!Array.isArray(issues)) {
+    throw new NemligError("GitHub returned an invalid feature-request lookup response.");
+  }
+  // ponytail: scan the newest 100 issues; move to a server-side idempotency store if this repository outgrows that window.
+  const match = issues.find(
+    (issue): issue is { body: string; title: string; url: string } =>
+      typeof issue === "object" &&
+      issue !== null &&
+      "body" in issue &&
+      typeof issue.body === "string" &&
+      "title" in issue &&
+      typeof issue.title === "string" &&
+      (issue.body.includes(marker) || (issue.title === title && issue.body === baseBody)) &&
+      "url" in issue &&
+      typeof issue.url === "string",
+  );
+  const url = match?.url;
+  return url && issueUrl(url) ? resultFromUrl(title, url) : undefined;
+};
+
 export async function createFeatureRequest(
   request: FeatureRequest,
   runner: GhRunner = runGh,
 ): Promise<FeatureRequestResult> {
   const title = clean(request.title, "Title", 120);
-  const body = featureRequestBody(request);
+  const baseBody = featureRequestBody(request);
+  const marker = featureRequestMarker(request);
+  const body = `${baseBody}\n\n${marker}`;
+  let existing: FeatureRequestResult | undefined;
+  try {
+    existing = await findExisting(runner, marker, title, baseBody);
+  } catch (error) {
+    if (error instanceof NemligError) throw error;
+    throw new NemligError("Could not check existing GitHub issues. Retry the same feature request; matching retries are safe.");
+  }
+  if (existing) return existing;
+
   let output: string;
   try {
     output = await runner([
@@ -71,10 +149,17 @@ export async function createFeatureRequest(
       "--body",
       body,
     ]);
-  } catch {
-    throw new NemligError("Could not create the GitHub issue. Verify `gh auth status -h github.com`.");
+  } catch (error) {
+    try {
+      existing = await findExisting(runner, marker, title, baseBody);
+    } catch {
+      // Preserve the original failure; retrying the same request remains safe.
+    }
+    if (existing) return existing;
+    if (error instanceof NemligError) throw error;
+    throw new NemligError("Could not create the GitHub issue. Retry the same feature request; matching retries are safe.");
   }
-  const url = output.trim().split(/\s+/u).find((value) => /^https:\/\/github\.com\/mortenbroesby\/everyday-assistants\/issues\/\d+$/u.test(value));
+  const url = issueUrl(output);
   if (!url) throw new NemligError("GitHub issue creation returned no issue URL.");
-  return { number: Number(url.slice(url.lastIndexOf("/") + 1)), title, url };
+  return resultFromUrl(title, url);
 }
