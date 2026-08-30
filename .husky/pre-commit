@@ -1,0 +1,2 @@
+pnpm spec:validate
+pnpm lint

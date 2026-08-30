@@ -1,0 +1,7 @@
+/node_modules/
+.turbo/
+/apps/*/node_modules/
+/apps/*/dist/
+/.env
+/.env.*
+!.env.example

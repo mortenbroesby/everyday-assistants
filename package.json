@@ -1,0 +1,27 @@
+{
+  "name": "everyday-assistants",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "packageManager": "pnpm@9.15.9",
+  "engines": {
+    "node": ">=22.23.1 <23",
+    "pnpm": "9.15.9"
+  },
+  "scripts": {
+    "build": "turbo build",
+    "check": "turbo check",
+    "coverage": "turbo coverage",
+    "lint": "turbo lint",
+    "prepare": "husky",
+    "smoke": "turbo smoke",
+    "spec:validate": "DO_NOT_TRACK=1 openspec validate --all --strict --no-interactive",
+    "test": "turbo test",
+    "verify": "pnpm lint && pnpm build && pnpm check && pnpm test && pnpm coverage && pnpm smoke"
+  },
+  "devDependencies": {
+    "@fission-ai/openspec": "1.11.0",
+    "husky": "9.1.7",
+    "turbo": "^2.8.0"
+  }
+}

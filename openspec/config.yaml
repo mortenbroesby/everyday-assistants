@@ -1,0 +1,12 @@
+schema: spec-driven
+
+context: |
+  Public pnpm/Turborepo monorepo of independent local-first assistants under apps/.
+  Preserve each app's safety contract and keep credentials and local artifacts ignored.
+  A spec or implementation plan never authorizes external state mutations.
+
+rules:
+  proposal:
+    - State the goal, non-goals, and acceptance criteria.
+  tasks:
+    - Include the smallest relevant verification step.
