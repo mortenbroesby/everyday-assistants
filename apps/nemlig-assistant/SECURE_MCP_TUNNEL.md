@@ -25,7 +25,8 @@ only while the local computer and tunnel client are running.
 
 This is the intended early-alpha trade-off: it avoids hosting account
 credentials or exposing a public MCP endpoint while the product and safety
-workflow are still changing.
+workflow are still changing. For unattended operation, a macOS user LaunchAgent
+can keep this same private chain alive; it does not change the trust boundary.
 
 Official references:
 
@@ -92,6 +93,35 @@ tunnel-client doctor --profile nemlig-local --explain
 Do not print the environment, enable shell tracing, or save the key in `.env`,
 shell startup files, tunnel profiles, support output, or repository files.
 
+### Recommended unattended setup
+
+The foreground, session-only setup above is useful for first proof. For routine
+alpha use, enroll the existing `nemlig-local` profile once from an interactive
+terminal:
+
+```sh
+pnpm nemlig:tunnel:enroll
+```
+
+The command reads the runtime key through a masked prompt, stores it outside the
+repository at `~/.config/tunnel-client/nemlig-runtime-key` with mode `0600`, and
+installs a per-user macOS LaunchAgent. The LaunchAgent contains only a `file:`
+reference to the secret. It starts at login and `launchd` restarts it after a
+crash. The key is never printed, passed as a command argument, added to a shell
+profile, or committed.
+
+After that one-time enrollment, Codex or the owner can operate the tunnel
+without entering the key again:
+
+```sh
+pnpm nemlig:tunnel:status
+pnpm nemlig:tunnel:restart
+pnpm nemlig:tunnel:stop
+```
+
+`restart` rebuilds the Nemlig MCP bundle, replaces the running tunnel process,
+and requires a successful control-plane health check before returning.
+
 ## 4. Start, connect, and stop
 
 Start the tunnel and keep the terminal open:
@@ -130,6 +160,14 @@ discovery if reconnect does not recover automatically.
 
 Repository changes become active only after a clean rebuild and process
 restart. From the repository root:
+
+With the recommended unattended setup, run:
+
+```sh
+pnpm nemlig:tunnel:restart
+```
+
+The following foreground procedure remains the manual fallback:
 
 1. Stop `tunnel-client` with Ctrl-C. This also stops its local MCP child.
 2. Confirm the intended source revision is checked out and current:
@@ -208,6 +246,7 @@ the one-account private tunnel described here remains the supported setup.
 ## Rollback and revocation
 
 1. Stop `tunnel-client` and unset `CONTROL_PLANE_API_KEY`.
+   For the managed setup, run `pnpm nemlig:tunnel:stop` instead.
 2. Disconnect or delete the private ChatGPT developer app.
 3. Delete the tunnel in Platform tunnel settings if it is no longer needed.
 4. Revoke the tunnel runtime API key in the owning Platform organization.
