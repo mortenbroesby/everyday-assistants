@@ -13,8 +13,9 @@ import { createAuth0Verifier, fetchAuth0Metadata, loadAuth0Config, type Auth0Con
 import { createMcpServer } from "./mcp.js";
 import type { OAuthMetadata } from "@modelcontextprotocol/sdk/shared/auth.js";
 import type { OAuthTokenVerifier } from "@modelcontextprotocol/sdk/server/auth/provider.js";
+import type { AuthInfo } from "@modelcontextprotocol/sdk/server/auth/types.js";
 
-type Request = IncomingMessage & { body?: unknown; get(name: string): string | undefined };
+type Request = IncomingMessage & { auth?: AuthInfo; body?: unknown; get(name: string): string | undefined };
 type Response = ServerResponse & {
   headersSent: boolean;
   json(body: unknown): Response;
@@ -29,7 +30,7 @@ const configAddress = (server: Server): string => {
 
 export function createHttpApp(config: Auth0Config, oauth: OAuthMetadata, verifier: OAuthTokenVerifier) {
   const app = createMcpExpressApp({ host: config.host });
-  const sessions = new Map<string, StreamableHTTPServerTransport>();
+  const sessions = new Map<string, { ownerSubject: string; transport: StreamableHTTPServerTransport }>();
   app.use(mcpAuthMetadataRouter({
     oauthMetadata: oauth,
     resourceServerUrl: config.publicUrl,
@@ -53,18 +54,23 @@ export function createHttpApp(config: Auth0Config, oauth: OAuthMetadata, verifie
 
   app.all("/mcp", async (req: Request, res: Response) => {
     try {
+      const ownerSubject = req.auth?.extra?.subject;
+      if (ownerSubject !== config.ownerSubject) return res.status(403).json({ error: "owner_not_allowed" });
       const sessionId = req.get("mcp-session-id");
-      let transport = sessionId ? sessions.get(sessionId) : undefined;
+      const session = sessionId ? sessions.get(sessionId) : undefined;
+      if (session && session.ownerSubject !== ownerSubject) return res.status(403).json({ error: "owner_not_allowed" });
+      let transport = session?.transport;
       if (!transport && req.method === "POST" && isInitializeRequest(req.body)) {
-        transport = new StreamableHTTPServerTransport({
+        const createdTransport = new StreamableHTTPServerTransport({
           sessionIdGenerator: randomUUID,
-          onsessioninitialized: (id) => { sessions.set(id, transport!); },
+          onsessioninitialized: (id) => { sessions.set(id, { ownerSubject, transport: createdTransport }); },
           onsessionclosed: (id) => { sessions.delete(id); },
         });
+        transport = createdTransport;
         transport.onclose = () => {
           if (transport?.sessionId) sessions.delete(transport.sessionId);
         };
-        await createMcpServer().connect(transport);
+        await createMcpServer(undefined, undefined, undefined, undefined, undefined, { ownerSubject }).connect(transport);
       }
       if (!transport) return res.status(400).json({ jsonrpc: "2.0", error: { code: -32_000, message: "Invalid or missing session." }, id: null });
       await transport.handleRequest(req, res, req.body);

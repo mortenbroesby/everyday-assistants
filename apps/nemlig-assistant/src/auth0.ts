@@ -27,7 +27,10 @@ export function loadAuth0Config(env: NodeJS.ProcessEnv = process.env): Auth0Conf
   const port = Number(env.NEMLIG_MCP_HTTP_PORT ?? "3333");
   if (issuer.protocol !== "https:" || issuer.search || issuer.hash) throw new Error("Auth0 issuer must be an HTTPS URL without query or fragment.");
   if (!issuer.pathname.endsWith("/")) issuer.pathname += "/";
-  if (publicUrl.protocol !== "https:" || publicUrl.pathname !== "/mcp") throw new Error("Public MCP URL must be HTTPS and end at /mcp.");
+  const loopbackUrl = publicUrl.protocol === "http:" && publicUrl.hostname === "127.0.0.1" && Number(publicUrl.port) === port;
+  if ((publicUrl.protocol !== "https:" && !loopbackUrl) || publicUrl.pathname !== "/mcp" || publicUrl.search || publicUrl.hash) {
+    throw new Error("MCP resource URL must be HTTPS or the configured loopback /mcp URL.");
+  }
   if (!Number.isInteger(port) || port < 1 || port > 65_535) throw new Error("NEMLIG_MCP_HTTP_PORT must be a valid port.");
   return {
     issuer,

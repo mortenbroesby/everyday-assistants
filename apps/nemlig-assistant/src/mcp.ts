@@ -21,6 +21,10 @@ import { loadShoppingPlan, resolveShoppingPlan, saveShoppingPlan, shoppingPlanIn
 export const PICKER_URI = "ui://nemlig/picker.html";
 export const PICKER_MIME_TYPE = "text/html;profile=mcp-app";
 
+export interface McpRequestContext {
+  ownerSubject: string;
+}
+
 const falseValues = new Set(["0", "false", "no", "off"]);
 
 export const appsEnabled = (env: NodeJS.ProcessEnv = process.env): boolean =>
@@ -246,6 +250,7 @@ export function createMcpServer(
   env: NodeJS.ProcessEnv = process.env,
   proposals: BasketProposalService = new BasketProposalService(client),
   requestFeature: (request: FeatureRequest) => Promise<FeatureRequestResult> = createFeatureRequest,
+  requestContext?: McpRequestContext,
 ): McpServer {
   const server = new McpServer(
     { name: "nemlig-assistant", version: NEMLIG_VERSION },
@@ -255,7 +260,8 @@ export function createMcpServer(
     },
   );
   const localConnectionId = randomUUID();
-  const connectionId = (sessionId: string | undefined): string => sessionId ?? localConnectionId;
+  const connectionId = (sessionId: string | undefined): string =>
+    requestContext ? `${requestContext.ownerSubject}\0${sessionId ?? localConnectionId}` : sessionId ?? localConnectionId;
   const search = async (query: string, limit: number) =>
     rankProducts(await client.searchProducts(query, limit), query);
 

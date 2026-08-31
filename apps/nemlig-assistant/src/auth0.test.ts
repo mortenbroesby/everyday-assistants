@@ -17,6 +17,7 @@ const config: Auth0Config = {
 
 test("Auth0 verifier accepts only the configured owner, audience, issuer, signature, expiry, and scope", async () => {
   const { privateKey, publicKey } = await generateKeyPair("RS256");
+  const { privateKey: revokedPrivateKey } = await generateKeyPair("RS256");
   const jwk = { ...await exportJWK(publicKey), kid: "test", alg: "RS256" };
   const verifier = createAuth0Verifier(config, new URL("https://tenant.example.test/.well-known/jwks.json"), createLocalJWKSet({ keys: [jwk] }));
   const sign = (claims: Record<string, unknown> = {}, subject = config.ownerSubject) => new SignJWT({ scope: config.requiredScope, ...claims })
@@ -30,8 +31,12 @@ test("Auth0 verifier accepts only the configured owner, audience, issuer, signat
   const accepted = await verifier.verifyAccessToken(await sign({ azp: "chatgpt" }));
   assert.equal(accepted.extra?.subject, config.ownerSubject);
   assert.deepEqual(accepted.scopes, [config.requiredScope]);
+  assert.deepEqual((await verifier.verifyAccessToken(await sign({ scope: "" }))).scopes, []);
   await assert.rejects(async () => verifier.verifyAccessToken(await sign({}, "auth0|other")), /Invalid access token/u);
   await assert.rejects(async () => verifier.verifyAccessToken(`${await sign()}broken`), /Invalid access token/u);
+  const revokedKey = await new SignJWT({ scope: config.requiredScope }).setProtectedHeader({ alg: "RS256", kid: "revoked" })
+    .setIssuer(config.issuer.href).setAudience(config.audience).setSubject(config.ownerSubject).setExpirationTime("5m").sign(revokedPrivateKey);
+  await assert.rejects(() => verifier.verifyAccessToken(revokedKey), /Invalid access token/u);
   const wrongAudience = await new SignJWT({ scope: config.requiredScope }).setProtectedHeader({ alg: "RS256", kid: "test" })
     .setIssuer(config.issuer.href).setAudience("https://wrong.example").setSubject(config.ownerSubject).setExpirationTime("5m").sign(privateKey);
   await assert.rejects(() => verifier.verifyAccessToken(wrongAudience), /Invalid access token/u);
@@ -51,6 +56,18 @@ test("HTTP auth configuration is explicit and loopback-only", () => {
   assert.equal(loaded.issuer.href, config.issuer.href);
   assert.equal(loaded.host, "127.0.0.1");
   assert.deepEqual(loaded.allowedOrigins, ["https://chatgpt.com", "https://chat.openai.com"]);
+  assert.equal(loadAuth0Config({
+    NEMLIG_MCP_AUTH0_ISSUER: config.issuer.href,
+    NEMLIG_MCP_AUTH0_AUDIENCE: config.audience,
+    NEMLIG_MCP_AUTH0_OWNER_SUBJECT: config.ownerSubject,
+    NEMLIG_MCP_PUBLIC_URL: "http://127.0.0.1:3333/mcp",
+  }).host, "127.0.0.1");
+  assert.throws(() => loadAuth0Config({
+    NEMLIG_MCP_AUTH0_ISSUER: config.issuer.href,
+    NEMLIG_MCP_AUTH0_AUDIENCE: config.audience,
+    NEMLIG_MCP_AUTH0_OWNER_SUBJECT: config.ownerSubject,
+    NEMLIG_MCP_PUBLIC_URL: "http://example.test:3333/mcp",
+  }), /loopback/u);
   assert.throws(() => loadAuth0Config({
     NEMLIG_MCP_AUTH0_ISSUER: "http://tenant.example.test",
     NEMLIG_MCP_AUTH0_AUDIENCE: config.audience,

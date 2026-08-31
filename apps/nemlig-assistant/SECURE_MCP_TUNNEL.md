@@ -67,9 +67,13 @@ Create `~/.config/nemlig-assistant/http-auth.env` locally with this shape:
 export NEMLIG_MCP_AUTH0_ISSUER='https://<AUTH0_TENANT>/'
 export NEMLIG_MCP_AUTH0_AUDIENCE='<PUBLIC_TUNNEL_MCP_URL>'
 export NEMLIG_MCP_AUTH0_OWNER_SUBJECT='<AUTH0_USER_ID>'
-export NEMLIG_MCP_PUBLIC_URL='<PUBLIC_TUNNEL_MCP_URL>'
+export NEMLIG_MCP_PUBLIC_URL='http://127.0.0.1:3333/mcp'
 export NEMLIG_MCP_REQUIRED_SCOPE='use:nemlig-assistant'
 ```
+
+The audience remains the public tunnel resource. The local protected-resource
+metadata advertises loopback; Secure MCP Tunnel rewrites that resource to the
+public tunnel URL before returning it to ChatGPT.
 
 Then protect it and create a second tunnel profile. Reuse the existing tunnel ID
 and runtime-key file; never paste either into the environment file or repository.

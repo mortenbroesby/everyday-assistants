@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import type { Basket, Product } from "./client.js";
-import { eligibleCandidates, loadShoppingPlan, resolveShoppingPlan, saveShoppingPlan, shoppingPlanInputSchema } from "./plans.js";
+import { eligibleCandidates, loadShoppingPlan, resolveShoppingPlan, saveShoppingPlan, shoppingPlanInputSchema, type PlanSnapshotStorage } from "./plans.js";
 
 const product = (id: number, name: string, overrides: Partial<Product> = {}): Product => ({
   id, name, price: 10, unit: "10 kr/kg", unitPrice: 10, unitSize: "1 kg", brand: "Test",
@@ -82,4 +82,18 @@ test("plan snapshots are owner-only, immutable, schema-validated, and contain on
   const malformed = "11111111-1111-4111-8111-111111111111";
   await writeFile(join(directory, `${malformed}.json`), "{}\n");
   await assert.rejects(loadShoppingPlan(malformed, directory), /could not be loaded/);
+});
+
+test("plan snapshot schema and identity checks are shared by storage implementations", async () => {
+  const snapshots = new Map<string, string>();
+  const storage: PlanSnapshotStorage = {
+    create: async (id, snapshot) => { if (snapshots.has(id)) throw new Error("collision"); snapshots.set(id, snapshot); },
+    read: async (id) => { const snapshot = snapshots.get(id); if (!snapshot) throw new Error("missing"); return snapshot; },
+  };
+  const id = "11111111-1111-4111-8111-111111111111";
+  const input = shoppingPlanInputSchema.parse({ lines: [{ id: "milk", name: "mælk", quantity: 1 }] });
+  await saveShoppingPlan(input, storage, id);
+  assert.deepEqual(await loadShoppingPlan(id, storage), input);
+  snapshots.set(id, "{}\n");
+  await assert.rejects(loadShoppingPlan(id, storage), /could not be loaded/);
 });

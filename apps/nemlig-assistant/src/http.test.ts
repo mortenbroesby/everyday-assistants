@@ -33,6 +33,7 @@ test("HTTP MCP advertises Auth0, rejects anonymous and foreign origins, and pres
       clientId: "chatgpt",
       scopes: token === "no-scope" ? [] : [config.requiredScope],
       expiresAt: Date.now() / 1000 + 300,
+      extra: { subject: token === "wrong-owner" ? "auth0|other" : config.ownerSubject },
     }),
   });
   const server = app.listen(0, config.host);
@@ -49,6 +50,13 @@ test("HTTP MCP advertises Auth0, rejects anonymous and foreign origins, and pres
       scopes_supported: [config.requiredScope],
       resource_name: "Nemlig Assistant",
     });
+    const health = await (await fetch(`${base}/healthz`)).json();
+    const readiness = await (await fetch(`${base}/readyz`)).json();
+    const revision = await (await fetch(`${base}/revision`)).json();
+    assert.deepEqual(health, { status: "ok" });
+    assert.deepEqual(readiness, { status: "ready" });
+    assert.deepEqual(revision, { revision: config.revision });
+    assert.doesNotMatch(JSON.stringify({ health, readiness, revision }), /auth0\||credential|token|basket|proposal|session|path/iu);
     const anonymous = await fetch(`${base}/mcp`, { method: "POST", body: "{}", headers: { "content-type": "application/json" } });
     assert.equal(anonymous.status, 401);
     assert.match(anonymous.headers.get("www-authenticate") ?? "", /oauth-protected-resource\/mcp/u);
@@ -58,12 +66,38 @@ test("HTTP MCP advertises Auth0, rejects anonymous and foreign origins, and pres
     assert.equal(foreign.status, 403);
 
     const client = new Client({ name: "http-test", version: "1.0.0" });
-    await client.connect(new StreamableHTTPClientTransport(new URL(`${base}/mcp`), {
+    const transport = new StreamableHTTPClientTransport(new URL(`${base}/mcp`), {
       requestInit: { headers: { authorization: "Bearer test" } },
-    }));
+    });
+    await client.connect(transport);
     assert.equal(client.getServerVersion()?.name, "nemlig-assistant");
-    assert.ok((await client.listTools()).tools.some((tool) => tool.name === "view_cart"));
-    assert.deepEqual(await (await fetch(`${base}/revision`)).json(), { revision: config.revision });
+    const httpTools = await client.listTools();
+    assert.ok(httpTools.tools.some((tool) => tool.name === "view_cart"));
+    assert.ok(transport.sessionId);
+    const toolCall = JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "view_cart", arguments: {} } });
+    const wrongOwner = await fetch(`${base}/mcp`, {
+      method: "POST",
+      body: toolCall,
+      headers: { authorization: "Bearer wrong-owner", "content-type": "application/json", "mcp-session-id": transport.sessionId },
+    });
+    assert.equal(wrongOwner.status, 403);
+    const wrongSession = await fetch(`${base}/mcp`, {
+      method: "POST",
+      body: toolCall,
+      headers: { authorization: "Bearer test", "content-type": "application/json", "mcp-session-id": "wrong-session" },
+    });
+    assert.equal(wrongSession.status, 400);
+    const malformed = await fetch(`${base}/mcp`, {
+      method: "POST",
+      body: "{}",
+      headers: { authorization: "Bearer test", "content-type": "application/json" },
+    });
+    assert.equal(malformed.status, 400);
+    const invalidGet = await fetch(`${base}/mcp`, {
+      headers: { accept: "text/event-stream", authorization: "Bearer test", "mcp-session-id": "wrong-session" },
+    });
+    assert.equal(invalidGet.status, 400);
+
     await client.close();
   } finally {
     await new Promise<void>((resolve, reject) => server.close((error?: Error) => error ? reject(error) : resolve()));

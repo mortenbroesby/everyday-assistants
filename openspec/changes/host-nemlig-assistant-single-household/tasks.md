@@ -27,28 +27,28 @@
 - [x] 2.1 Refactor the current MCP construction into a transport-neutral factory
   while retaining the stdio entry point; verify existing MCP, interface, smoke,
   picker, and proposal tests pass without changed tool contracts.
-- [ ] 2.2 Add an authenticated-owner and MCP-session request context that cannot be
+- [x] 2.2 Add an authenticated-owner and MCP-session request context that cannot be
   supplied through tool arguments; verify focused tests reject a mismatched owner
   or session before proposals or Nemlig calls are reached.
-- [ ] 2.3 Add the reusable Streamable HTTP entry point using the installed MCP SDK,
+- [x] 2.3 Add the reusable Streamable HTTP entry point using the installed MCP SDK,
   minimal Node HTTP support, loopback-only binding for tunnel use, permitted-origin
   validation, and sanitized errors;
   verify protocol tests cover initialize, tool enumeration, POST/GET lifecycle,
   invalid origin, malformed requests, and unauthenticated rejection.
-- [ ] 2.4 Add HTTP-only health, readiness, revision, and OAuth protected-resource
+- [x] 2.4 Add HTTP-only health, readiness, revision, and OAuth protected-resource
   metadata endpoints; verify responses contain the exact build revision and no
   credential, token, storage path, account identity, plan, proposal, or basket.
-- [ ] 2.5 Compare stdio and authenticated HTTP tool/resource metadata from the same build and
+- [x] 2.5 Compare stdio and authenticated HTTP tool/resource metadata from the same build and
   verify names, schemas, annotations, resource URIs, and instructions match except
   for documented transport-only endpoints.
-- [ ] 2.6 Point a separate local tunnel profile at the loopback HTTP endpoint,
+- [x] 2.6 Point a separate local tunnel profile at the loopback HTTP endpoint,
   update supervision and the operating guide without storing Auth0 or tunnel
   secrets, and verify the current stdio-target profile remains a recoverable
   fallback until the owner approves the switch.
 
 ## 3. Hosted Identity, Secrets, and Safety State
 
-- [ ] 3.1 Implement issuer, audience, signature, expiry, scope, and configured-owner
+- [x] 3.1 Implement issuer, audience, signature, expiry, scope, and configured-owner
   token validation for every HTTP deployment using Auth0's supported path; verify synthetic
   authorization tests cover valid owner, wrong owner, revoked/expired token,
   missing scope, invalid signature, and unavailable metadata without contacting
@@ -57,7 +57,7 @@
   secret reference while preserving local credential resolution; verify synthetic
   tests cover secret absence, malformed values, rotation, sanitized failures, and
   zero secret material in outputs or logs.
-- [ ] 3.3 Bind hosted basket proposals to the validated owner and originating MCP
+- [x] 3.3 Bind hosted basket proposals to the validated owner and originating MCP
   session while retaining local connection binding; verify proposal tests reject
   cross-session use, preserve serialization and exact revalidation, and fail a
   post-restart apply closed without mutation or retry.
@@ -68,7 +68,7 @@
 
 ## 4. Durable Hosted Plan Snapshots
 
-- [ ] 4.1 Extract the existing plan snapshot operations behind the smallest storage
+- [x] 4.1 Extract the existing plan snapshot operations behind the smallest storage
   contract needed by the local filesystem and hosted storage implementations;
   verify all current local permission, immutability, validation, and traversal
   tests remain unchanged and pass.

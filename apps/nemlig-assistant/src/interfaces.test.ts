@@ -392,6 +392,19 @@ test("every MCP tool has complete schemas, accurate annotations, and safe server
   });
 });
 
+test("authenticated HTTP request context preserves stdio tool and resource metadata", async () => {
+  await withMcpClient(createMcpServer(fakeClient()), async (stdio) => {
+    await withMcpClient(
+      createMcpServer(fakeClient(), undefined, undefined, undefined, undefined, { ownerSubject: "auth0|owner" }),
+      async (http) => {
+        assert.deepEqual(await http.listTools(), await stdio.listTools());
+        assert.deepEqual(await http.listResources(), await stdio.listResources());
+        assert.equal(http.getInstructions(), stdio.getInstructions());
+      },
+    );
+  });
+});
+
 test("MCP routes ordinary product intent through favorites-first planning", async () => {
   await withMcpClient(createMcpServer(fakeClient()), async (mcp) => {
     const tools = new Map((await mcp.listTools()).tools.map((tool) => [tool.name, tool.description ?? ""]));

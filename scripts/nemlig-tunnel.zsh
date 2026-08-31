@@ -65,6 +65,16 @@ run_auth0_tunnel() {
 
   node "$repo_root/apps/nemlig-assistant/dist/http.js" &
   local http_pid=$!
+  trap "kill $http_pid 2>/dev/null || true" EXIT INT TERM
+  local attempt
+  for attempt in {1..50}; do
+    curl -fsS http://127.0.0.1:3333/readyz >/dev/null 2>&1 && break
+    kill -0 "$http_pid" 2>/dev/null || return 1
+    sleep 0.2
+  done
+  curl -fsS http://127.0.0.1:3333/readyz >/dev/null ||
+    fail "Auth0-backed MCP server did not become ready within 10 seconds"
+
   tunnel-client run --profile nemlig-auth0-local \
     --control-plane.api-key "file:${key_file}" &
   local tunnel_pid=$!
