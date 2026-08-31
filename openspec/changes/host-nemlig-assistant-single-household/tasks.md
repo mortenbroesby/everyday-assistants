@@ -1,10 +1,10 @@
 ## 1. Feasibility and External-Resource Gate
 
-- [ ] 1.1 Document the current authoritative Nemlig technical/policy constraints
+- [x] 1.1 Document the current authoritative Nemlig technical/policy constraints
   relevant to one-household hosted credential use, record unresolved risk without
   presenting legal certainty, and verify `design.md` names a stop condition for
   every incompatible or unknown constraint.
-- [ ] 1.2 Compare the smallest qualifying EU container hosts and OAuth/OIDC
+- [x] 1.2 Compare the smallest qualifying EU container hosts and OAuth/OIDC
   providers against always-on Node 22, single-replica enforcement, ChatGPT MCP
   compatibility, managed secrets, durable snapshots, health, rollback, alerts,
   and recurring cost; record one recommended pair and verify no provider

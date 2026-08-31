@@ -53,6 +53,64 @@ Do not introduce a provider interface. Once the host is selected, use its direct
 deployment and operations primitives and keep provider-specific configuration at
 the repository boundary.
 
+#### Feasibility record (2026-08-31)
+
+The maintained client signs in with the household email and password, retains
+Nemlig session cookies, and calls the same web endpoints used by the existing
+local assistant (`apps/nemlig-assistant/src/config.ts` and `client.ts`). A review
+of Nemlig's public site did not locate a supported developer API, an automation
+policy, or current terms that expressly permit an unattended third-party host to
+store account credentials and automate those endpoints. Nemlig's [published
+privacy notice](https://spil.nemlig.com/aarhus/About) confirms that account and
+purchase activity is personal data, but the page identifies itself as a 2020
+version and is not sufficient permission for this deployment.
+
+This is an unresolved policy and contract risk, not a legal conclusion. The
+credential-free transport and OAuth staging proof may proceed after provider
+approval, but production Nemlig credentials remain blocked until the owner has
+reviewed the then-current customer terms and either obtained acceptable written
+clarification from Nemlig or explicitly accepted the remaining risk.
+
+Stop and retain the tunnel if any of the following occurs:
+
+- current Nemlig terms or written guidance prohibit hosted credential use or
+  automated access;
+- login requires bypassing MFA, CAPTCHA, anti-bot controls, or another technical
+  safeguard, or the web interface stops supporting the existing client safely;
+- the credential-free OAuth proof fails ChatGPT discovery, PKCE, refresh,
+  audience, subject, scope, or revocation checks;
+- the selected services cannot keep execution and identity data in their
+  approved EU regions, enforce one active replica, protect secrets and snapshots,
+  or remain within the approved recurring-cost ceiling;
+- implementation would expose credentials, cookies, authorization tokens,
+  shopping content, or owner identity in source, images, logs, or model output.
+
+#### Provider decision record (2026-08-31)
+
+The smallest qualifying pair is **Render in Frankfurt plus an Auth0 Europe
+tenant**. No provider account, endpoint, secret, or billable resource was created
+while making this recommendation.
+
+| Candidate | Fit | Decision |
+| --- | --- | --- |
+| [Render](https://render.com/docs/web-services) Frankfurt | A paid Docker web service is always on; managed TLS/secrets, health checks, alerts, rollbacks, and an encrypted persistent disk cover the required operations. A disk constrains the service to one instance and has daily snapshots, at the accepted cost of brief deploy downtime. The 512 MB service is [$7/month](https://render.com/articles/render-vs-railway) and 1 GB of disk is [$0.25/month](https://render.com/articles/how-much-does-cloud-application-hosting-cost-for-small-businesses). | Recommend. Pin one instance and one 1 GB disk; use direct Render configuration. |
+| [Fly.io](https://fly.io/docs/reference/regions/) Frankfurt or Amsterdam | Machines, volumes, secrets, health checks, and EU regions qualify, but volume locality and machine/deployment controls create more operator work and usage-based cost variability for no single-household benefit. | Feasible fallback if the Render staging proof fails. |
+| [Auth0](https://auth0.com/docs/get-started/applications/dynamic-client-registration) Europe | Open DCR supports authorization code, PKCE, refresh tokens, explicit API grants, and access controls. The [Europe locality](https://auth0.com/docs/get-started/auth0-overview/create-tenants) controls where tenant data is hosted. The Free plan is [$0/month](https://auth0.com/pricing?pm=true) for this one-owner use. | Recommend. Use one EU tenant, one owner subject, one audience, and one least-privilege scope. |
+| [ZITADEL](https://zitadel.com/docs/guides/integrate/dynamic-client-registration) | DCR explicitly supports MCP, PKCE, and refresh tokens, but its documented audience semantics require extra `client_id` or `azp` validation and it does not yet expose OAuth authorization-server metadata separately from OIDC discovery. | Feasible fallback; additional validation is unnecessary while Auth0 qualifies. |
+
+The recommended staging ceiling is **USD 10/month before tax**, covering the
+$7.25 documented base with limited headroom for small usage overages. Auth0 must
+remain on its Free plan. Crossing the ceiling pauses deployment for a new owner
+decision; no automatic upgrade or scaling is allowed.
+
+The approved security boundary will be one Render service and disk in Frankfurt,
+one Auth0 tenant in Europe, one immutable Auth0 subject, one MCP audience and
+scope, one managed Nemlig secret, and one active service replica. Render may see
+encrypted secret values at runtime and encrypted snapshots at rest; Auth0 sees
+only authentication identity and authorization metadata. Neither provider may
+receive prompt text, basket contents, full plans, proposal reviews, Nemlig
+cookies, or Nemlig credentials outside the Render secret boundary.
+
 ### Reuse the official SDK over two transports
 
 Extract the current MCP construction into a transport-neutral server factory.
@@ -176,7 +234,8 @@ basket, and never retry an uncertain proposal.
 
 ## Open Questions
 
-- Which qualifying host and OAuth/OIDC provider offer the smallest accepted
-  recurring cost at implementation time?
+- Will the owner approve Render Frankfurt, Auth0 Europe, the USD 10/month ceiling,
+  the recorded security boundary, and creation of credential-free staging
+  resources?
 - What bounded dual-run duration gives the owner enough confidence before
   cutover?
