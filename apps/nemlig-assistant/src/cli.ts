@@ -44,7 +44,7 @@ interface CliDependencies {
 }
 
 let sharedClient: NemligClient | undefined;
-export const NEMLIG_VERSION = "1.2.0-alpha.6";
+export const NEMLIG_VERSION = "1.3.0-alpha.7";
 
 export const getClient = (): NemligClient => (sharedClient ??= new NemligClient());
 

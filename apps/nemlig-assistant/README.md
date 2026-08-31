@@ -46,11 +46,17 @@ It exposes read-only `search_products`, `list_favorites`, `list_departments`,
 `browse_department`, `plan_shopping_list`, `load_shopping_plan`, and `view_cart`, the
 explicitly invoked `create_feature_request` GitHub issue tool, plus
 proposal pairs for `cart_additions`, one-line `cart_removal`, and `cart_clear`.
+The `cart_replacement` pair reviews one exact current line against one exact
+replacement and its final quantity, including package details, current and
+expected basket totals, and the signed price difference. A positive difference
+is potential savings for those reviewed quantities, not a claim that the
+products are equivalent.
 `save_shopping_plan` creates an immutable owner-only local snapshot containing
 only structured list inputs and selections. Loading re-resolves current products,
 prices, availability, and basket coverage instead of trusting saved candidates.
 Each pair is named `prepare_*` and `apply_*`; direct `add_to_cart`,
-`remove_from_cart`, and `clear_cart` tools are intentionally unavailable.
+`remove_from_cart`, `replace_cart_line`, and `clear_cart` tools are intentionally
+unavailable.
 `pick_products` and `ui://nemlig/picker.html` are enabled by default; set
 `NEMLIG_MCP_APPS=0` to keep only conversational tools. There is no order,
 payment, purchase, or checkout tool.
@@ -83,6 +89,11 @@ preparing are never approval to change the basket.
    exact proposal; if so, use the host approval prompt and verify the basket
    readback. Record provider discrepancies as follow-up work rather than
    bypassing validation or the proposal boundary.
+5. Conversationally prepare one cheaper and one non-cheaper replacement. Check
+   both exact IDs, package and unit-price metadata, final replacement quantity,
+   signed price difference, and expected basket total. Stop unless you
+   separately approve one unchanged proposal. If you apply it, verify the new
+   line is present and the old line is absent before continuing.
 
 ## Safety contract
 
@@ -97,12 +108,18 @@ preparing are never approval to change the basket.
 - Before removing one line, show its exact current product ID, name, quantity,
   and total and wait for explicit approval. The command removes only that line
   and verifies its product ID is absent; it does not clear the basket.
+- Before replacing one line, show both exact product IDs and names, package and
+  unit-price metadata, final replacement quantity, current and expected basket
+  totals, signed price difference, and expiry. The apply step adds and verifies
+  the replacement before removing the old line. If either readback is uncertain,
+  inspect the basket and never retry the consumed proposal; both products may
+  remain after a partial result.
 - Before clearing, show the exact current basket and wait for explicit approval.
 - Approval expires when any product, quantity, price, or total changes.
 - Proposals are short-lived and single-use. Apply revalidates the connection,
   expiry, basket fingerprint, product identity, availability, quantity, price,
   and totals inside a process-local mutation lock.
-- Every add, remove, or clear call immediately reads back and displays or returns the
+- Every add, remove, replace, or clear call immediately reads back and displays or returns the
   basket. Stop after partial success, failed readback, or mismatch.
 - Known completed replays return the stored sanitized result without another
   write. Indeterminate outcomes are never retried automatically.

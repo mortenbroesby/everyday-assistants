@@ -135,9 +135,43 @@ const clearProposalSchema = z.object({
   reason: z.string().optional(),
 });
 
+const replacementLineSchema = z.object({
+  product_id: z.number().int().positive(),
+  name: z.string(),
+  unit: z.string(),
+  unit_size: z.string(),
+  quantity: z.number().int().positive(),
+  available: z.boolean(),
+  item_price: z.number(),
+  unit_price: z.number().optional(),
+  line_total: z.number(),
+  labels: z.array(z.string()),
+});
+
+const replacementProposalSchema = z.object({
+  applicable: z.boolean(),
+  operation: z.literal("replacement"),
+  proposal_id: z.string().uuid().optional(),
+  connection_bound: z.literal(true).optional(),
+  issued_at: z.string().datetime().optional(),
+  expires_at: z.string().datetime().optional(),
+  basket_fingerprint: z.string().regex(/^[a-f0-9]{64}$/u).optional(),
+  review: z.object({
+    current_line: replacementLineSchema,
+    replacement_line: replacementLineSchema,
+    existing_replacement_line: basketItemSchema.nullable(),
+    current_products_price: z.number(),
+    expected_products_price: z.number(),
+    expected_number_of_products: z.number(),
+    price_difference: z.number(),
+    potential_savings: z.number().positive().optional(),
+  }).optional(),
+  reason: z.string().optional(),
+});
+
 const applyResultSchema = z.object({
   status: z.literal("completed"),
-  operation: z.enum(["additions", "removal", "clear"]),
+  operation: z.enum(["additions", "removal", "replacement", "clear"]),
   replayed: z.boolean(),
   basket: basketSchema,
 });
@@ -402,7 +436,7 @@ export function createMcpServer(
   );
 
   const registerApply = (
-    name: "apply_cart_additions" | "apply_cart_removal" | "apply_cart_clear",
+    name: "apply_cart_additions" | "apply_cart_removal" | "apply_cart_replacement" | "apply_cart_clear",
     operation: ProposalOperation,
     destructiveHint: boolean,
   ): void => {
@@ -448,6 +482,37 @@ export function createMcpServer(
   );
 
   registerApply("apply_cart_removal", "removal", true);
+
+  server.registerTool(
+    "prepare_cart_replacement",
+    {
+      title: "Prepare one-line replacement",
+      description:
+        "Prepare replacement of one exact basket line with a distinct exact product. Reports factual basket-price change without claiming product equivalence or changing the basket.",
+      inputSchema: {
+        current_product_id: z.number().int().positive(),
+        replacement_product_id: z.number().int().positive(),
+        replacement_quantity: z.number().int().positive(),
+      },
+      outputSchema: replacementProposalSchema,
+      annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true },
+    },
+    async ({ current_product_id, replacement_product_id, replacement_quantity }, extra) => {
+      try {
+        await ensureLoggedIn(client, loadCredentials);
+        return success(await proposals.prepareReplacement(
+          connectionId(extra.sessionId),
+          current_product_id,
+          replacement_product_id,
+          replacement_quantity,
+        ));
+      } catch (error) {
+        return failure("prepare_cart_replacement", error);
+      }
+    },
+  );
+
+  registerApply("apply_cart_replacement", "replacement", true);
 
   server.registerTool(
     "prepare_cart_clear",

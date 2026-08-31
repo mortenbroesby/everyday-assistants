@@ -243,6 +243,7 @@ test("MCP exposes exact non-recipe tools and clean missing-credential errors", a
         "apply_cart_additions",
         "apply_cart_clear",
         "apply_cart_removal",
+        "apply_cart_replacement",
         "browse_department",
         "create_feature_request",
         "list_departments",
@@ -252,6 +253,7 @@ test("MCP exposes exact non-recipe tools and clean missing-credential errors", a
         "prepare_cart_additions",
         "prepare_cart_clear",
         "prepare_cart_removal",
+        "prepare_cart_replacement",
         "save_shopping_plan",
         "search_products",
         "view_cart",
@@ -368,6 +370,7 @@ test("every MCP tool has complete schemas, accurate annotations, and safe server
       "view_cart",
       "prepare_cart_additions",
       "prepare_cart_removal",
+      "prepare_cart_replacement",
       "prepare_cart_clear",
       "pick_products",
     ]) {
@@ -378,6 +381,7 @@ test("every MCP tool has complete schemas, accurate annotations, and safe server
     assert.equal(byName.get("create_feature_request")?.annotations?.readOnlyHint, false);
     assert.equal(byName.get("create_feature_request")?.annotations?.destructiveHint, false);
     assert.equal(byName.get("apply_cart_removal")?.annotations?.destructiveHint, true);
+    assert.equal(byName.get("apply_cart_replacement")?.annotations?.destructiveHint, true);
     assert.equal(byName.get("apply_cart_clear")?.annotations?.destructiveHint, true);
     assert.match(mcp.getInstructions() ?? "", /Preparation is not approval/);
     assert.match(mcp.getInstructions() ?? "", /Never check out, pay, place an order/);
@@ -481,6 +485,114 @@ test("MCP additions require prepare then apply and direct mutation tools are una
       arguments: { product_id: 7, quantity: 2 },
     });
     assert.equal(direct.isError, true);
+  });
+});
+
+test("MCP replacement prepares factual savings and applies only the approved staged change", async () => {
+  const current = { ...product, id: 7, name: "Mælk", price: 12.5 };
+  const replacement = {
+    ...product,
+    id: 8,
+    name: "Billigere mælk",
+    price: 10,
+    unit: "10,00 kr/l",
+    unitPrice: 10,
+    labels: ["Tilbud"],
+    isOnDiscount: true,
+  };
+  let cart: Basket = {
+    items: [{ id: 7, name: current.name, quantity: 1, total: 12.5 }],
+    productsPrice: 12.5,
+    deliveryPrice: 5,
+    numberOfProducts: 1,
+    deliveryTime: "Tomorrow",
+  };
+  const writes: string[] = [];
+  const client = fakeClient({
+    getProduct: async (id) => id === 8 ? replacement : current,
+    getCart: async () => cart,
+    addToCart: async (id, quantity) => {
+      writes.push(`add:${id}:${quantity}`);
+      cart = {
+        ...cart,
+        items: [...cart.items, { id, name: replacement.name, quantity, total: 10 * (quantity ?? 1) }],
+        productsPrice: 22.5,
+        numberOfProducts: 2,
+      };
+      return cart;
+    },
+    removeFromCart: async (id) => {
+      writes.push(`remove:${id}`);
+      cart = { ...cart, items: cart.items.filter((item) => item.id !== id), productsPrice: 10, numberOfProducts: 1 };
+      return cart;
+    },
+  });
+  await withMcpClient(createMcpServer(client), async (mcp) => {
+    const invalid = await mcp.callTool({
+      name: "prepare_cart_replacement",
+      arguments: { current_product_id: 7, replacement_product_id: 7, replacement_quantity: 1 },
+    });
+    assert.equal(invalid.isError, true);
+    assert.equal(writes.length, 0);
+
+    const prepared = await mcp.callTool({
+      name: "prepare_cart_replacement",
+      arguments: { current_product_id: 7, replacement_product_id: 8, replacement_quantity: 1 },
+    });
+    const review = (prepared.structuredContent as {
+      proposal_id: string;
+      review: { price_difference: number; potential_savings: number; current_line: { unit_size: string }; replacement_line: { unit_price: number } };
+    });
+    assert.equal(review.review.price_difference, 2.5);
+    assert.equal(review.review.potential_savings, 2.5);
+    assert.equal(review.review.current_line.unit_size, "1 liter");
+    assert.equal(review.review.replacement_line.unit_price, 10);
+    assert.equal(writes.length, 0);
+
+    const applied = await mcp.callTool({
+      name: "apply_cart_replacement",
+      arguments: { proposal_id: review.proposal_id },
+    });
+    assert.equal((applied.structuredContent as { operation: string }).operation, "replacement");
+    assert.deepEqual(writes, ["add:8:1", "remove:7"]);
+    const replayed = await mcp.callTool({
+      name: "apply_cart_replacement",
+      arguments: { proposal_id: review.proposal_id },
+    });
+    assert.equal((replayed.structuredContent as { replayed: boolean }).replayed, true);
+    assert.deepEqual(writes, ["add:8:1", "remove:7"]);
+
+    const direct = await mcp.callTool({
+      name: "replace_cart_line",
+      arguments: { current_product_id: 7, replacement_product_id: 8, replacement_quantity: 1 },
+    });
+    assert.equal(direct.isError, true);
+  });
+
+  const uncertainClient = fakeClient({
+    getProduct: async (id) => id === 8 ? replacement : current,
+    getCart: async () => ({
+      items: [{ id: 7, name: current.name, quantity: 1, total: 12.5 }],
+      productsPrice: 12.5, deliveryPrice: 0, numberOfProducts: 1, deliveryTime: undefined,
+    }),
+    addToCart: async () => ({
+      items: [{ id: 7, name: current.name, quantity: 1, total: 12.5 }],
+      productsPrice: 12.5, deliveryPrice: 0, numberOfProducts: 1, deliveryTime: undefined,
+    }),
+  });
+  await withMcpClient(createMcpServer(uncertainClient), async (mcp) => {
+    const prepared = await mcp.callTool({
+      name: "prepare_cart_replacement",
+      arguments: { current_product_id: 7, replacement_product_id: 8, replacement_quantity: 1 },
+    });
+    const result = await mcp.callTool({
+      name: "apply_cart_replacement",
+      arguments: { proposal_id: (prepared.structuredContent as { proposal_id: string }).proposal_id },
+    });
+    assert.equal(result.isError, true);
+    const text = (result.content as Array<{ text?: string }>)[0]?.text ?? "";
+    assert.match(text, /inspect the basket and do not retry/);
+    assert.doesNotMatch(text, /upstream|stack|Error:/);
   });
 });
 
