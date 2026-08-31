@@ -1,6 +1,7 @@
 # Cloudflare hosting assessment for Nemlig MCP
 
-Status: production enabled for controlled read-only acceptance; authenticated acceptance pending
+Status: production enabled for controlled read-only acceptance; Auth0 sign-in
+and hosted action discovery verified; first authenticated read-only tool call pending
 
 Evidence checked: 2026-09-01
 
@@ -195,6 +196,11 @@ instance-hours/month** at that size. With a 10-minute idle sleep, that is roughl
 Normal family use should therefore remain at the **USD 5 baseline** if the lite
 image fits and sleeps normally.
 
+Auth0's current Free plan is **USD 0/month** for up to 25,000 external active
+users. This single-owner deployment should remain inside that plan. Auth0 cost
+can change only through future pricing changes or an explicit tenant upgrade or
+paid-feature choice; it is not part of the Cloudflare bill.
+
 For scale, a lite instance accidentally awake for all 730 hours of a month would
 add about USD 1.42 memory plus USD 0.32 disk overage. CPU is billed by actual CPU
 use; full saturation for the entire month would add about USD 2.84 after the
@@ -269,8 +275,8 @@ deployment was verified first. A later live kill-switch exercise verified
 disabled version `fd5696b7-d2ea-4f3c-9a1a-88cf22d29caa` before enabling version
 `ad2b3a21-b31a-419c-9daa-cab62b151c27` for controlled acceptance. Health, OAuth
 metadata, anonymous rejection, and no unauthorized Container wake are verified.
-Live Auth0 sign-in and a read-only Nemlig acceptance call remain pending; no
-basket mutation is authorized.
+Live Auth0 sign-in and hosted-app action discovery are verified. A read-only
+Nemlig acceptance call remains pending; no basket mutation is authorized.
 
 ## Official Cloudflare sources
 
@@ -288,3 +294,4 @@ basket mutation is authorized.
 - [Workers Node.js compatibility](https://developers.cloudflare.com/workers/runtime-apis/nodejs/)
 - [Workers virtual filesystem](https://developers.cloudflare.com/workers/runtime-apis/nodejs/fs/)
 - [Budget alerts](https://developers.cloudflare.com/billing/manage/budget-alerts/)
+- [Auth0 pricing](https://auth0.com/pricing)
