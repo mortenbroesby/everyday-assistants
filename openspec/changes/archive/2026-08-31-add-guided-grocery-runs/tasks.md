@@ -35,5 +35,5 @@
 
 - [x] 6.1 Run `pnpm exec openspec validate add-guided-grocery-runs --strict --no-interactive` and all focused Nemlig tests, confirming fixtures never contact a live account or mutate a real basket.
 - [x] 6.2 Run `pnpm verify` from the repository root and resolve every failure without weakening the guided-shopping or proposal requirements.
-- [ ] 6.3 Review the final diff requirement-by-requirement, commit the completed scoped change to `main`, push it, and verify `origin/main` resolves to the delivered commit.
-- [ ] 6.4 Hand off a concise owner alpha exercise covering login, whole-list planning, ambiguity, departments, save/resume, picker batch review, and an optional separately approved exact basket addition; record any live discrepancy as follow-up work rather than bypassing safety checks.
+- [x] 6.3 Review the final diff requirement-by-requirement, commit the completed scoped change to `main`, push it, and verify `origin/main` resolves to the delivered commit.
+- [x] 6.4 Hand off a concise owner alpha exercise covering login, whole-list planning, ambiguity, departments, save/resume, picker batch review, and an optional separately approved exact basket addition; record any live discrepancy as follow-up work rather than bypassing safety checks.

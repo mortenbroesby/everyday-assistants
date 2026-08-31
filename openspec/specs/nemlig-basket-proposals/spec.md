@@ -139,12 +139,17 @@ The system SHALL advertise annotations that match each tool's actual behavior an
 
 ### Requirement: Picker proposal interaction
 
-The picker SHALL display exact product details and SHALL prepare, display, and separately apply proposals rather than mutating on the first product-selection action.
+The picker SHALL display exact product details for one or more selected lines and SHALL prepare, display, and separately apply one batch additions proposal rather than mutating on candidate selection or the first review action.
 
 #### Scenario: User chooses a product card
 
-- **WHEN** the user activates the initial action for an available product
-- **THEN** the picker prepares a quantity-one proposal and displays its exact item, price, total, and expiry without mutation
+- **WHEN** the user selects available product IDs and positive quantities from one or more product cards
+- **THEN** the picker records only local review state and performs no basket mutation
+
+#### Scenario: User prepares a batch
+
+- **WHEN** the user activates prepare for selected lines with positive remaining quantities
+- **THEN** the picker prepares one additions proposal and displays every exact item, quantity, price, line total, expected basket effect, and expiry without mutation
 
 #### Scenario: User applies the displayed proposal
 
