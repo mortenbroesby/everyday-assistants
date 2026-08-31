@@ -45,7 +45,7 @@ Authenticated MCP tools SHALL reuse a logged-in session or load configured crede
 - **THEN** the tool instructs the user to configure credentials or run interactive login and performs no mutation
 
 ### Requirement: MCP basket tools
-The view tool SHALL return normalized basket data, and every model-visible add, remove, or clear operation SHALL use the matching read-only prepare tool followed by its apply tool only after explicit approval of the unchanged proposal.
+The view tool SHALL return normalized basket data, and every model-visible add, remove, replace, or clear operation SHALL use the matching read-only prepare tool followed by its apply tool only after explicit approval of the unchanged proposal.
 
 #### Scenario: Prepare additions
 - **WHEN** `prepare_cart_additions` receives one or more exact positive product quantities
@@ -59,6 +59,16 @@ The view tool SHALL return normalized basket data, and every model-visible add, 
 - **WHEN** `apply_cart_additions` receives the still-valid proposal ID after explicit approval
 - **THEN** it applies only those unchanged lines and returns verified basket readback
 
+#### Scenario: Prepare a replacement
+
+- **WHEN** `prepare_cart_replacement` receives an exact current basket product ID, distinct replacement product ID, and positive final replacement quantity
+- **THEN** it returns both exact lines, price and package metadata, signed basket-price difference, expected basket totals, and expiry without changing the basket
+
+#### Scenario: Apply an approved replacement
+
+- **WHEN** `apply_cart_replacement` receives the still-valid proposal ID after explicit approval
+- **THEN** it applies only the unchanged staged replacement and returns verified basket readback or sanitized inspection guidance for a consumed partial or uncertain result
+
 #### Scenario: Successful add
 - **WHEN** an unchanged addition proposal is explicitly approved and applied
 - **THEN** the server adds only its exact lines and returns verified basket readback
@@ -68,8 +78,22 @@ The view tool SHALL return normalized basket data, and every model-visible add, 
 - **THEN** the server clears only that reviewed basket and returns verified empty-basket readback
 
 #### Scenario: Direct mutation is requested
-- **WHEN** a model-visible client requests `add_to_cart`, `remove_from_cart`, or `clear_cart`
+- **WHEN** a model-visible client requests `add_to_cart`, `remove_from_cart`, `replace_cart_line`, or `clear_cart`
 - **THEN** the server reports that the tool is unavailable and performs no mutation
+
+### Requirement: Factual replacement savings
+
+The replacement preparation tool SHALL report the exact current line total, proposed replacement line total, expected product total, and signed price difference using current normalized basket and product data. It SHALL describe a positive difference as potential savings only for the reviewed quantities and SHALL expose package, item-price, and unit-price metadata needed for the user to judge comparability.
+
+#### Scenario: Replacement costs less
+
+- **WHEN** the proposed replacement line total is lower than the current basket line total
+- **THEN** the review reports the exact positive potential savings and does not claim product equivalence or apply the replacement
+
+#### Scenario: Replacement costs the same or more
+
+- **WHEN** the proposed replacement line total is equal to or greater than the current line total
+- **THEN** the review reports the signed price difference without labeling it as savings or suppressing the candidate
 
 ### Requirement: Optional interactive picker
 The server SHALL enable `pick_products` and the shared `ui://nemlig/picker.html` resource for single-query and guided-plan results by default, SHALL disable the picker tool and resource when `NEMLIG_MCP_APPS` is `0`, `false`, `no`, or `off` ignoring case and surrounding whitespace, and SHALL leave every conversational tool enabled.

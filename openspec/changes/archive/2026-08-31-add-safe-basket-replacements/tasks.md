@@ -13,11 +13,11 @@
 ## 3. Documentation and Release
 
 - [x] 3.1 Document exact replacement review, potential-savings wording, add-first partial-state behavior, and the unchanged explicit approval boundary; verify public-tree checks expose no credentials, local paths, basket contents, or private proposal data.
-- [ ] 3.2 Run the read-only Nemlig release plan, apply the required additive alpha version bump, and verify `pnpm --filter nemlig-assistant check:version-bump --base origin/main` accepts the runtime diff.
+- [x] 3.2 Run the read-only Nemlig release plan, apply the required additive alpha version bump, and verify `pnpm --filter nemlig-assistant check:version-bump --base origin/main` accepts the runtime diff.
 
 ## 4. Verification and Delivery
 
 - [x] 4.1 Run `pnpm exec openspec validate add-safe-basket-replacements --strict --no-interactive` and focused Nemlig tests, confirming all fixtures are synthetic and no live basket is contacted or changed.
 - [x] 4.2 Run `pnpm verify` from the repository root and resolve every failure without weakening proposal validation, explicit approval, or readback requirements.
-- [ ] 4.3 Review the final diff against every delta-spec scenario, commit the completed scoped change to `main`, push it, and verify `origin/main` resolves to the delivered commit.
+- [x] 4.3 Review the final diff against every delta-spec scenario, commit the completed scoped change to `main`, push it, and verify `origin/main` resolves to the delivered commit.
 - [x] 4.4 Hand off a concise owner alpha exercise for preparing one cheaper and one non-cheaper replacement, reviewing quantities and package metadata, and optionally applying one separately approved exact proposal; record live discrepancies as follow-up work rather than bypassing safety checks.
