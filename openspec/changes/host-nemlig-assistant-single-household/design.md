@@ -91,6 +91,11 @@ The smallest qualifying pair is **Render in Frankfurt plus an Auth0 Europe
 tenant**. No provider account, endpoint, secret, or billable resource was created
 while making this recommendation.
 
+The owner approved this pair, the Frankfurt and Europe regions, the USD 10/month
+before-tax ceiling, the recorded security boundary, and creation of
+credential-free staging resources on 2026-08-31. Production identity binding,
+Nemlig credential provisioning, and cutover remain separately gated.
+
 | Candidate | Fit | Decision |
 | --- | --- | --- |
 | [Render](https://render.com/docs/web-services) Frankfurt | A paid Docker web service is always on; managed TLS/secrets, health checks, alerts, rollbacks, and an encrypted persistent disk cover the required operations. A disk constrains the service to one instance and has daily snapshots, at the accepted cost of brief deploy downtime. The 512 MB service is [$7/month](https://render.com/articles/render-vs-railway) and 1 GB of disk is [$0.25/month](https://render.com/articles/how-much-does-cloud-application-hosting-cost-for-small-businesses). | Recommend. Pin one instance and one 1 GB disk; use direct Render configuration. |
@@ -234,8 +239,5 @@ basket, and never retry an uncertain proposal.
 
 ## Open Questions
 
-- Will the owner approve Render Frankfurt, Auth0 Europe, the USD 10/month ceiling,
-  the recorded security boundary, and creation of credential-free staging
-  resources?
 - What bounded dual-run duration gives the owner enough confidence before
   cutover?

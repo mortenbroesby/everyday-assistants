@@ -9,7 +9,7 @@
   compatibility, managed secrets, durable snapshots, health, rollback, alerts,
   and recurring cost; record one recommended pair and verify no provider
   abstraction or resource has been added.
-- [ ] 1.3 **[OPERATOR]** Review and explicitly approve the selected host, identity
+- [x] 1.3 **[OPERATOR]** Review and explicitly approve the selected host, identity
   provider, region, recurring cost ceiling, security boundary, and creation of
   external staging resources before any account, endpoint, secret, or billable
   resource is created.
