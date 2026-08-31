@@ -2,6 +2,12 @@
 
 This repository contains independent assistants under `apps/`.
 
+- A user-selected repository task is standing authority for ordinary,
+  non-destructive work in that scope: inspect, plan, update OpenSpec, edit, run
+  checks, commit, push, and verify without asking for repeated approval.
+- Ask only when an action is destructive or hard to reverse, changes external
+  user data, incurs cost, handles secrets, materially expands scope, or depends
+  on a missing choice that cannot be resolved safely from repository context.
 - Before Nemlig work, read `apps/nemlig-assistant/AGENTS.md` and the matching
   skill under `apps/nemlig-assistant/.codex/skills/`.
 - Never treat repository work, a refactor, review, inventory, recommendation,
