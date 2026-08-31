@@ -122,6 +122,11 @@ It then deployed enabled version `ad2b3a21-b31a-419c-9daa-cab62b151c27`, observe
 HTTP 200 health and OAuth metadata plus HTTP 401 for anonymous MCP initialization,
 and again found no running Container instance.
 
+A subsequent `wrangler rollback` rehearsal moved 100% of traffic back to the
+same disabled version, reverified HTTP 503 and no running Container, then restored
+100% of traffic to the enabled version. The restored deployment returned HTTP
+200 health and still had no running Container instance.
+
 ## Inspect usage and reset the breaker
 
 Use a current owner access token without placing it in command history:
