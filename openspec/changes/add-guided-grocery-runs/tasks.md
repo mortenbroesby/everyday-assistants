@@ -29,11 +29,11 @@
 
 - [x] 5.1 Update tool lists, output schemas, CLI help, package smoke checks, and MCP Apps-disabled behavior for the additive interfaces; verify existing single-product CLI/MCP/proposal tests still pass unchanged.
 - [x] 5.2 Update the Nemlig README and operating guidance with ChatGPT-first planning, departments, snapshots, the multi-line picker, alpha-test steps, and the unchanged exact approval boundary; verify public-tree checks find no local path, credential, prompt, plan, or basket data.
-- [ ] 5.3 Run the read-only Nemlig release plan, apply the required feature version bump, and verify `pnpm --filter nemlig-assistant check:version-bump --base origin/main` accepts the final runtime diff.
+- [x] 5.3 Run the read-only Nemlig release plan, apply the required feature version bump, and verify `pnpm --filter nemlig-assistant check:version-bump --base origin/main` accepts the final runtime diff.
 
 ## 6. Verification and Delivery
 
 - [x] 6.1 Run `pnpm exec openspec validate add-guided-grocery-runs --strict --no-interactive` and all focused Nemlig tests, confirming fixtures never contact a live account or mutate a real basket.
-- [ ] 6.2 Run `pnpm verify` from the repository root and resolve every failure without weakening the guided-shopping or proposal requirements.
+- [x] 6.2 Run `pnpm verify` from the repository root and resolve every failure without weakening the guided-shopping or proposal requirements.
 - [ ] 6.3 Review the final diff requirement-by-requirement, commit the completed scoped change to `main`, push it, and verify `origin/main` resolves to the delivered commit.
 - [ ] 6.4 Hand off a concise owner alpha exercise covering login, whole-list planning, ambiguity, departments, save/resume, picker batch review, and an optional separately approved exact basket addition; record any live discrepancy as follow-up work rather than bypassing safety checks.

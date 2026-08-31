@@ -61,6 +61,8 @@ try {
   assert.match(help.stdout, /login/);
   assert.match(help.stdout, /search/);
   assert.match(help.stdout, /favorites/);
+  assert.match(help.stdout, /departments/);
+  assert.match(help.stdout, /browse/);
   assert.match(help.stdout, /feature-request/);
   assert.match(help.stdout, /cart/);
   assert.match(help.stdout, /add/);
@@ -75,17 +77,22 @@ try {
   await client.connect(transport);
   try {
     assert.equal(client.getServerVersion()?.name, "nemlig-assistant");
-    assert.equal(client.getServerVersion()?.version, "0.2.0-alpha.1");
+    assert.equal(client.getServerVersion()?.version, "1.2.0-alpha.6");
     const tools = (await client.listTools()).tools.map((tool) => tool.name).sort();
     assert.deepEqual(tools, [
       "apply_cart_additions",
       "apply_cart_clear",
       "apply_cart_removal",
+      "browse_department",
       "create_feature_request",
+      "list_departments",
       "list_favorites",
+      "load_shopping_plan",
+      "plan_shopping_list",
       "prepare_cart_additions",
       "prepare_cart_clear",
       "prepare_cart_removal",
+      "save_shopping_plan",
       "search_products",
       "view_cart",
     ]);
