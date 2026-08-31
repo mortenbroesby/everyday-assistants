@@ -216,14 +216,15 @@ pnpm nemlig:tunnel:stop
 `restart` rebuilds the Nemlig MCP bundle, replaces the running tunnel process,
 and requires a successful control-plane health check before returning.
 
-**Current alpha rule:** the Husky `pre-push` hook runs verification and then
-`pnpm nemlig:tunnel:restart` whenever `main` is checked out. A failed restart or
-health check blocks the push. Git has no standard client-side `post-push` hook,
-so activation happens immediately before the remote update. After a pull,
-merge, or dependency update that is not followed by a push, run the restart
-manually. Treat an update as inactive until `pnpm nemlig:tunnel:status` reports
-health, readiness, and a successful control-plane poll. A later deployment
-setup can replace this local trigger.
+**Current alpha rule:** the Husky `pre-push` hook runs verification whenever
+`main` is checked out. It restarts the Auth0 profile when that LaunchAgent is
+installed; otherwise it restarts the retained stdio fallback. A failed restart
+or health check blocks the push. Git has no standard client-side `post-push`
+hook, so activation happens immediately before the remote update. After a pull,
+merge, or dependency update that is not followed by a push, restart the selected
+profile manually. Treat an update as inactive until that profile's `status`
+command reports health, readiness, and a successful control-plane poll. A later
+deployment setup can replace this local trigger.
 
 ## 4. Start, connect, and stop
 
