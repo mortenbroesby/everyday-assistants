@@ -113,12 +113,11 @@ test("addition preparation stores exact review data without mutation or connecti
     {
       now: () => new Date("2026-08-30T12:00:00Z"),
       id: () => "00000000-0000-4000-8000-000000000007",
-      ttlMs: 60_000,
       audit: (event) => audits.push(event),
     },
   );
   const proposal = await service.prepareAdditions("private-connection", [{ product_id: 7, quantity: 2 }]);
-  assert.equal(proposal.expires_at, "2026-08-30T12:01:00.000Z");
+  assert.equal(proposal.expires_at, "2026-08-30T12:15:00.000Z");
   assert.equal(proposal.connection_bound, true);
   assert.doesNotMatch(JSON.stringify(proposal), /private-connection/);
   assert.deepEqual(proposal.review, {

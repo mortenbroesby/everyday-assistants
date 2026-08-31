@@ -90,10 +90,10 @@ validated locally where the existing Auth0 token design permits it; invalid
 Internet traffic never reaches the Container or usage state.
 
 Only an authorized, structurally valid request reaches the rate and quota
-control. The assessment must classify protocol-only chatter, normal useful
-operations, and expensive operations from the actual MCP transport and tools.
-Unknown useful operations fail into the more conservative class rather than an
-unmetered class.
+control. Valid MCP messages other than `tools/call` are protocol traffic so
+client discovery and future protocol extensions do not consume useful-operation
+quota. Known read and prepare tools are normal; apply tools and unknown tool
+calls fail into the conservative expensive class.
 
 ### Keep the breaker and exact per-owner counters in the smallest native state
 

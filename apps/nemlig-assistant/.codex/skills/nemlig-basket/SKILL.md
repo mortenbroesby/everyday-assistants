@@ -42,6 +42,8 @@ pnpm nemlig --help
 
 4. Wait for explicit approval of the exact proposal. Any changed product,
    quantity, price, or total requires a new proposal and approval.
+   Do not ask twice when the user already explicitly approved every exact detail
+   in the unchanged proposal, even if that approval came before preparation.
 
 5. Add only approved lines:
 
@@ -69,7 +71,9 @@ explicit approval. Never replace a basket, check out, pay, or place an order.
 
 Model-visible basket writes never call a direct mutation tool. Call the matching
 `prepare_cart_*` tool, show its exact review, and wait for explicit approval of
-that unchanged proposal. Only then call the matching `apply_cart_*` tool with
+that unchanged proposal unless the user already explicitly approved every exact
+detail it contains. Never ask twice for the same unchanged proposal. Only then
+call the matching `apply_cart_*` tool with
 its opaque proposal ID. Preparation is not approval. Never retry an
 indeterminate apply result; inspect the basket and prepare a new proposal.
 

@@ -12,19 +12,6 @@ export interface GatewayDependencies {
   event?(name: string, fields?: Record<string, string | number | boolean>): void;
 }
 
-const protocolMethods = new Set([
-  "initialize",
-  "ping",
-  "tools/list",
-  "resources/list",
-  "resources/read",
-  "resources/templates/list",
-  "prompts/list",
-  "prompts/get",
-  "completion/complete",
-  "logging/setLevel",
-]);
-
 const normalTools = new Set([
   "search_products",
   "list_favorites",
@@ -43,8 +30,7 @@ export function classifyMcpMessage(value: unknown): OperationClass {
   if (!value || typeof value !== "object" || Array.isArray(value)) return "expensive";
   const message = value as { method?: unknown; params?: unknown };
   if (typeof message.method !== "string") return "expensive";
-  if (message.method.startsWith("notifications/") || protocolMethods.has(message.method)) return "protocol";
-  if (message.method !== "tools/call") return "expensive";
+  if (message.method !== "tools/call") return "protocol";
   const params = message.params;
   const name = params && typeof params === "object" && "name" in params ? (params as { name?: unknown }).name : undefined;
   return typeof name === "string" && normalTools.has(name) ? "normal" : "expensive";

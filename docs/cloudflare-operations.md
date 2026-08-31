@@ -1,9 +1,9 @@
 # Cloudflare operations for Nemlig MCP
 
-Status: production version `ad2b3a21-b31a-419c-9daa-cab62b151c27` is enabled
+Status: production version `36261629-4ffe-4178-8e8c-3f826ee8167d` is enabled
 for controlled read-only acceptance. Health, OAuth metadata, anonymous rejection,
-and no unauthorized Container wake are verified; Auth0 sign-in and the first
-authenticated read-only tool call remain pending.
+Auth0 sign-in, hosted-app action discovery, and no unauthorized Container wake
+are verified; the first authenticated read-only tool call remains pending.
 
 Current production endpoints:
 
@@ -25,8 +25,9 @@ The repository deploys one Worker, one fixed EU Container-controller Durable
 Object named `nemlig-production`, one fixed EU storage-only Durable Object for
 immutable plan snapshots, and at most one sleeping `lite` Container. The Worker
 is disabled by default. Useful operations default to 5,000/day, expensive operations
-to 500/day, and per-minute owner limits to 60 normal and 10 expensive. Protocol
-handshake traffic does not consume useful-operation quota, but an open breaker
+to 500/day, and per-minute owner limits to 60 normal and 10 expensive. Valid MCP
+messages other than `tools/call` are protocol traffic and do not consume
+useful-operation quota, but an open breaker
 still prevents it from waking the Container.
 
 The Worker CPU and subrequest limits are 100 ms and 8. The Auth0 and backend
@@ -126,6 +127,14 @@ A subsequent `wrangler rollback` rehearsal moved 100% of traffic back to the
 same disabled version, reverified HTTP 503 and no running Container, then restored
 100% of traffic to the enabled version. The restored deployment returned HTTP
 200 health and still had no running Container instance.
+
+The 2026-09-01 hosted-app acceptance deployed disabled version
+`3e24b2b8-596c-4494-b338-593ba9478fa0`, observed HTTP 503 on both routes and an
+inactive fixed Container, then deployed enabled version
+`36261629-4ffe-4178-8e8c-3f826ee8167d`. Both health routes returned HTTP 200.
+Refreshing the connected ChatGPT app rediscovered its actions, and live logs
+classified every discovery request as `protocol` with no normal or expensive
+usage admission.
 
 ## Inspect usage and reset the breaker
 

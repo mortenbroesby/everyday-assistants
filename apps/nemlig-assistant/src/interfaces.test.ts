@@ -384,6 +384,7 @@ test("every MCP tool has complete schemas, accurate annotations, and safe server
     assert.equal(byName.get("apply_cart_replacement")?.annotations?.destructiveHint, true);
     assert.equal(byName.get("apply_cart_clear")?.annotations?.destructiveHint, true);
     assert.match(mcp.getInstructions() ?? "", /Preparation is not approval/);
+    assert.match(mcp.getInstructions() ?? "", /Do not ask for approval twice/);
     assert.match(mcp.getInstructions() ?? "", /Never check out, pay, place an order/);
     assert.doesNotMatch(
       JSON.stringify({ tools, instructions: mcp.getInstructions() }),

@@ -1,176 +1,254 @@
 # Nemlig Assistant
 
-Unofficial local Node.js 22/TypeScript assistant for product discovery and
-explicitly approved Nemlig basket changes. It is not affiliated with or
-endorsed by nemlig.com. It contains no recipe or checkout capability.
+<p align="center">
+  Turn a grocery list into a safer, smarter Nemlig shopping plan.
+</p>
 
-## Feature sets
+<p align="center">
+  Search, compare, plan, and review in conversation. Nothing changes your basket without explicit approval.
+</p>
 
-This is the maintained inventory of shipped, user-facing feature sets:
+<p align="center">
+  <a href="#start-here">Start here</a>
+  <span> | </span>
+  <a href="#what-you-can-do">What you can do</a>
+  <span> | </span>
+  <a href="#how-basket-changes-work">Safety</a>
+  <span> | </span>
+  <a href="#run-it">Run it</a>
+  <span> | </span>
+  <a href="#development">Development</a>
+</p>
 
-- **Account access:** interactive masked login, owner-only local credential
-  storage, session reuse, and logout.
-- **Product discovery:** Danish catalog search, authenticated favorite listing
-  and search, deterministic candidate metadata, department listing, and
-  paginated department browsing.
-- **Favorites-first guided shopping:** structured multi-item plans, hard dietary
-  and price constraints, preferences, catalog fallback, ambiguity-preserving
-  candidate review, current basket coverage, remaining quantities, and selected
-  total estimates.
-- **Safe basket operations:** basket inspection plus exact prepare/approve/apply
-  flows for additions, one-line removals, replacements, and clearing, with
-  expiry, revalidation, single-use proposals, and automatic readback.
-- **Replacement comparisons:** package, item-price, and unit-price review with
-  factual signed basket-price differences and potential-savings wording.
-- **Plan snapshots:** immutable owner-only saves containing structured inputs
-  and selections, persisted locally or in the hosted EU storage object, with
-  fresh product and basket resolution when loaded.
-- **CLI and ChatGPT interfaces:** local CLI, conversational MCP tools, an
-  optional MCP Apps picker, a private local tunnel runbook, and a disabled-by-
-  default single-Container Cloudflare deployment profile with Auth0, quotas,
-  rate limits, and manual/automatic circuit breakers.
-- **Feature-request capture:** concise retry-safe GitHub issues created only when
-  explicitly requested.
-- **Private package delivery:** self-contained Node.js binaries, synthetic
-  contract tests, smoke-tested tarballs, and guarded alpha release policy.
+---
 
-Keep this section current in the same change whenever a shipped feature set is
-added, removed, or materially changed. List only implemented behavior here;
-planned work belongs in [`BACKLOG.md`](BACKLOG.md) or an active OpenSpec change.
+## Your grocery copilot, with you still in charge
 
-## Commands
+Nemlig Assistant is an unofficial Node.js and TypeScript assistant for
+nemlig.com. It helps you move from “we need groceries” to a reviewed plan with
+current products, prices, favorites, basket coverage, and exact quantities.
 
-Run from the Everyday Assistants repository root:
+Use it from a terminal or connect its MCP server to an AI client such as
+ChatGPT. The assistant can do useful read-only work immediately. Basket writes
+are deliberately split into prepare, approve, and apply steps.
+
+It has no recipe, order, payment, or checkout capability. It is not affiliated
+with or endorsed by nemlig.com or OpenAI.
+
+<a id="start-here"></a>
+## 🚀 Start here
+
+Once connected, try prompts like:
+
+- “Show five of my favorite products.”
+- “Find organic milk and compare the best options by unit price.”
+- “Plan bread, milk, apples, and pasta. Prefer favorites and discounted products.”
+- “What is already in my basket, and what is still missing from this list?”
+- “Save this shopping plan so I can continue later.”
+- “Compare the cheese in my basket with this cheaper alternative.”
+- “Prepare adding these selected products, but do not change the basket.”
+
+The first six examples are read-only or preparatory. The final example creates
+a review proposal; it still does not change the basket.
+
+<a id="what-you-can-do"></a>
+## ✨ What you can do
+
+### Discover products
+
+- Search the Danish Nemlig catalog.
+- List or search authenticated favorites.
+- Browse departments with pagination.
+- Compare product name, ID, package, price, unit price, discount, organic
+  status, availability, and other known classifications.
+
+### Plan a whole shopping list
+
+- Turn 1–20 grocery lines into one structured plan.
+- Check favorites before falling back to the wider catalog.
+- Apply hard constraints such as dietary, price, or frozen/non-frozen rules.
+- Prefer discounted, organic, favorite, or lowest-unit-price candidates.
+- Preserve ambiguity when several products could be right instead of guessing.
+- Account for current basket quantities and show what remains to buy.
+- Estimate the selected total from current product data.
+- Use the optional visual picker to choose products and quantities.
+
+### Save and continue later
+
+- Save immutable, owner-only plan snapshots.
+- Store only structured inputs and selections, never credentials or stale
+  product responses.
+- Re-resolve current prices, availability, products, and basket coverage when a
+  plan is loaded.
+- Persist locally or through the hosted EU plan-storage object.
+
+### Review the basket safely
+
+- Inspect the current basket without changing it.
+- Prepare an exact batch of additions.
+- Prepare removal of one exact basket line.
+- Compare and prepare replacement of one exact line with one exact product.
+- Prepare clearing the basket.
+- Review signed basket-price differences and potential savings for the exact
+  quantities under consideration.
+
+### Use the interface that fits
+
+- Run a local CLI for direct terminal workflows.
+- Use the stdio MCP server with a local MCP client.
+- Use the HTTP MCP server behind Auth0.
+- Connect ChatGPT to the private hosted Cloudflare deployment.
+- Optionally expose the MCP Apps product picker.
+- Capture a concise, retry-safe GitHub feature request when explicitly asked.
+
+### Hosted family alpha
+
+The production profile is designed for private, low-volume family use:
+
+- Auth0 authenticates before useful requests reach the backend.
+- One fixed Cloudflare Container can sleep when idle and cannot horizontally autoscale.
+- Per-user rate limits and daily normal/expensive quotas bound usage.
+- An automatic circuit breaker fails closed when a quota is exceeded.
+- `MCP_ENABLED` provides an immediate manual kill switch.
+- Explicit timeouts and bounded retries prevent failed work from running forever.
+
+See [Cloudflare hosting assessment](../../docs/cloudflare-hosting-assessment.md)
+and [Cloudflare operations](../../docs/cloudflare-operations.md) for the
+architecture, cost controls, deployment, rollback, and emergency procedures.
+
+## 🧭 How guided shopping works
+
+ChatGPT turns a grocery request into structured lines with quantities, hard
+constraints, and optional preferences. `plan_shopping_list` searches favorites
+first, uses the catalog only where necessary, and leaves uncertain matches for
+you to decide.
+
+The plan reports source, discount and dietary metadata, constraint outcomes,
+exact basket coverage, remaining quantities, and the estimated total. The
+visual picker can collect all selected remaining quantities into one exact
+`prepare_cart_additions` review. Selection and preparation are not approval to
+apply it.
+
+<a id="how-basket-changes-work"></a>
+## 🛡️ How basket changes work
+
+```text
+Read or plan → prepare an exact proposal → show the full change → user approves → apply once → read back the basket
+```
+
+- Search, favorites, browsing, planning, picker selection, snapshots, and
+  basket inspection are read-only.
+- Every basket change starts with the matching `prepare_*` tool.
+- Approval is requested once. A prior approval counts when it explicitly covers
+  every exact detail in the unchanged proposal; otherwise the full proposal is
+  shown before asking.
+- A proposal is connection-bound, short-lived, single-use, and tied to exact
+  products, quantities, prices, totals, and the current basket fingerprint.
+- The default 15-minute proposal window accommodates a normal ChatGPT approval
+  round-trip without weakening apply-time revalidation.
+- Any changed fact invalidates the approval.
+- Apply revalidates the proposal and current state before writing.
+- Add, remove, replace, and clear immediately read the basket back.
+- Writes are never automatically retried after an uncertain result.
+- Replacement adds and verifies the new line before removing the old one. If
+  verification becomes uncertain, the workflow stops because both may remain.
+- Completed replays return the stored sanitized result without writing again.
+- The assistant never orders, checks out, or pays.
+
+Repository work, a specification, a plan, product selection, or proposal
+preparation never authorizes a basket mutation. Operators must read
+[`AGENTS.md`](AGENTS.md) and the
+[`nemlig-basket` skill](.codex/skills/nemlig-basket/SKILL.md).
+
+<a id="run-it"></a>
+## ⚙️ Run it
+
+Run commands from the Everyday Assistants repository root.
+
+### Local CLI
 
 ```sh
 pnpm nemlig --help
 pnpm nemlig login --save
 pnpm nemlig search "mælk" --limit 5
 pnpm nemlig favorites --limit 5
-pnpm nemlig favorites --page 2 --limit 5
 pnpm nemlig departments
 pnpm nemlig browse /frugt-og-groent --page 1 --limit 20
 pnpm nemlig cart
-pnpm nemlig feature-request "Prefer discounted favorites" --summary "Choose discounted favorites first" --acceptance "Search favorites first" "Prefer discounted matches"
+```
+
+Run login yourself in a terminal. Password input is masked and there is no
+password command-line option. Saved credentials remain in the legacy
+`~/.nemlig-shopper/credentials.json` path with owner-only permissions;
+`NEMLIG_USERNAME` and `NEMLIG_PASSWORD` take precedence when both are present.
+
+Basket CLI commands exist for deliberate local use:
+
+```sh
 pnpm nemlig add 701015 --quantity 1
 pnpm nemlig remove 701015
 ```
 
-Run login yourself in a terminal. The CLI prompts for the password with masked
-input and deliberately has no password command-line option. Saved credentials
-remain in the legacy `~/.nemlig-shopper/credentials.json` location with
-owner-only permissions so this rename does not log out existing installations;
-environment variables take precedence when both `NEMLIG_USERNAME` and
-`NEMLIG_PASSWORD` are present.
+They remain subject to the exact-product approval and readback contract above.
 
-`feature-request` creates a concise issue in this repository through the
-Keychain-backed GitHub CLI. Check access with `gh auth status -h github.com`;
-no GitHub token belongs in this repository or its environment files.
-
-## MCP server
-
-Build and run the stdio server locally:
+### Local MCP server
 
 ```sh
 pnpm --filter nemlig-assistant build
 pnpm --filter nemlig-assistant mcp
 ```
 
-It exposes read-only `search_products`, `list_favorites`, `list_departments`,
-`browse_department`, `plan_shopping_list`, `load_shopping_plan`, and `view_cart`, the
-explicitly invoked `create_feature_request` GitHub issue tool, plus
-proposal pairs for `cart_additions`, one-line `cart_removal`, and `cart_clear`.
-The `cart_replacement` pair reviews one exact current line against one exact
-replacement and its final quantity, including package details, current and
-expected basket totals, and the signed price difference. A positive difference
-is potential savings for those reviewed quantities, not a claim that the
-products are equivalent.
-`save_shopping_plan` creates an immutable owner-only local snapshot containing
-only structured list inputs and selections. Loading re-resolves current products,
-prices, availability, and basket coverage instead of trusting saved candidates.
-Each pair is named `prepare_*` and `apply_*`; direct `add_to_cart`,
-`remove_from_cart`, `replace_cart_line`, and `clear_cart` tools are intentionally
-unavailable.
-`pick_products` and `ui://nemlig/picker.html` are enabled by default; set
-`NEMLIG_MCP_APPS=0` to keep only conversational tools. There is no order,
-payment, purchase, or checkout tool.
+The MCP surface includes:
 
-### ChatGPT-first guided planning
+- discovery: `search_products`, `list_favorites`, `list_departments`, `browse_department`
+- planning: `plan_shopping_list`, `save_shopping_plan`, `load_shopping_plan`
+- basket read: `view_cart`
+- review/apply pairs: `prepare_*` and `apply_*` for additions, one-line removal, replacement, and clear
+- UI: `pick_products` and `ui://nemlig/picker.html`
+- project feedback: `create_feature_request`
 
-Ask ChatGPT to turn a grocery list into 1–20 structured lines with quantities,
-hard constraints, and optional preferences such as discounted, organic,
-lowest unit price, or non-frozen. `plan_shopping_list` checks favorites first,
-falls back to the catalog only for unmatched lines, and keeps multiple matches
-unresolved for your choice. Results show source, dietary and discount metadata,
-constraint outcomes, exact basket coverage, remaining quantities, and the
-estimated total of selected remaining items.
+Direct `add_to_cart`, `remove_from_cart`, `replace_cart_line`, and
+`clear_cart` MCP tools intentionally do not exist. Set `NEMLIG_MCP_APPS=0` to
+disable only the visual picker while keeping conversational tools.
 
-The shared picker supports the whole plan with native selection and quantity
-controls. It sends all selected positive remaining quantities to one exact
-`prepare_cart_additions` review. The separate apply action still requires host
-approval of that unchanged proposal; planning, selecting, saving, loading, and
-preparing are never approval to change the basket.
+### Auth0 and hosted MCP
 
-### Owner alpha exercise
+The maintained hosted path is the single-Container Cloudflare profile described
+in [Cloudflare operations](../../docs/cloudflare-operations.md). For the older
+local-tunnel option and stdio rollback path, see
+[`SECURE_MCP_TUNNEL.md`](SECURE_MCP_TUNNEL.md).
 
-1. Log in locally, then plan a short list containing one favorite, one ambiguous
-   item, and one constrained item. Confirm the ambiguous line stays unresolved.
-2. List departments, browse a second page, and confirm deal/unit-price metadata.
-3. Save the structured plan, load it again, and confirm it reflects current
-   availability and basket quantities rather than stale saved prices.
-4. Open the multi-line picker, adjust a choice and quantity, and inspect the one
-   exact batch review. Stop there unless you separately want to approve that
-   exact proposal; if so, use the host approval prompt and verify the basket
-   readback. Record provider discrepancies as follow-up work rather than
-   bypassing validation or the proposal boundary.
-5. Conversationally prepare one cheaper and one non-cheaper replacement. Check
-   both exact IDs, package and unit-price metadata, final replacement quantity,
-   signed price difference, and expected basket total. Stop unless you
-   separately approve one unchanged proposal. If you apply it, verify the new
-   line is present and the old line is absent before continuing.
+Creating or changing identity, hosting, DNS, runtime secrets, or paid resources
+is an owner-controlled infrastructure action. Nemlig credentials must stay out
+of the repository.
 
-## Safety contract
+### Feature requests
 
-- Search, favorites lookup, and basket inspection are read-only.
-- Planning, department browsing, selection, snapshot save/load, and proposal
-  preparation do not authorize a basket change.
-- MCP clients first call the matching `prepare_*` tool. Preparation returns an
-  exact, connection-bound proposal and never authorizes or performs a write.
-- Before adding, show the exact product name and ID, package or size, quantity,
-  price, and expected line total. Wait for explicit approval of that unchanged
-  proposal, then call only its matching `apply_*` tool.
-- Before removing one line, show its exact current product ID, name, quantity,
-  and total and wait for explicit approval. The command removes only that line
-  and verifies its product ID is absent; it does not clear the basket.
-- Before replacing one line, show both exact product IDs and names, package and
-  unit-price metadata, final replacement quantity, current and expected basket
-  totals, signed price difference, and expiry. The apply step adds and verifies
-  the replacement before removing the old line. If either readback is uncertain,
-  inspect the basket and never retry the consumed proposal; both products may
-  remain after a partial result.
-- Before clearing, show the exact current basket and wait for explicit approval.
-- Approval expires when any product, quantity, price, or total changes.
-- Proposals are short-lived and single-use. Apply revalidates the connection,
-  expiry, basket fingerprint, product identity, availability, quantity, price,
-  and totals inside a process-local mutation lock.
-- Every add, remove, replace, or clear call immediately reads back and displays or returns the
-  basket. Stop after partial success, failed readback, or mismatch.
-- Known completed replays return the stored sanitized result without another
-  write. Indeterminate outcomes are never retried automatically.
-- Never place an order, check out, or pay through this assistant.
+```sh
+pnpm nemlig feature-request "Prefer discounted favorites" \
+  --summary "Choose discounted favorites first" \
+  --acceptance "Search favorites first" "Prefer discounted matches"
+```
 
-Read [`AGENTS.md`](AGENTS.md) and the
-[`nemlig-basket` skill](.codex/skills/nemlig-basket/SKILL.md) before operating
-the app. Repository changes and specs never authorize a basket mutation.
+This uses the Keychain-backed GitHub CLI and creates an issue only when
+explicitly requested. Verify access with `gh auth status -h github.com`; never
+put a GitHub token in the repository or an environment file.
 
-For the private ChatGPT connection, follow
-[`SECURE_MCP_TUNNEL.md`](SECURE_MCP_TUNNEL.md). The recommended alpha profile
-uses Auth0 in front of a loopback-only HTTP MCP server while keeping Nemlig
-credentials local. The existing stdio profile remains the rollback path.
-Creating or changing Auth0 resources, the tunnel, runtime key, or ChatGPT app
-remains an explicit owner action.
+## 🧪 Owner alpha exercise
 
-## Development
+1. Ask for a short plan containing one favorite, one ambiguous item, and one
+   constrained item. Confirm the ambiguous line stays unresolved.
+2. Browse a department's second page and inspect deal and unit-price metadata.
+3. Save and reload the plan. Confirm it resolves current availability, prices,
+   and basket quantities rather than replaying stale data.
+4. Use the picker, adjust a selection, and inspect the exact batch proposal.
+   Stop unless you separately approve that unchanged proposal.
+5. Prepare one cheaper and one non-cheaper replacement. Verify both product
+   IDs, packages, unit prices, final quantity, signed price difference, and
+   expected basket total before considering approval.
+
+<a id="development"></a>
+## 🛠️ Development
 
 ```sh
 pnpm --filter nemlig-assistant lint
@@ -181,64 +259,48 @@ pnpm --filter nemlig-assistant smoke
 pnpm --filter nemlig-assistant smoke:package
 ```
 
-Tests use synthetic HTTP responses and never access a real account.
+Tests use synthetic HTTP responses and never access a real Nemlig account.
 
-## Private package and release policy
+The private npm-format package is named `nemlig-assistant`; it is installable
+from the smoke-tested tarball but remains `private: true` and unpublished. Its
+binaries are `nemlig`, `nemlig-assistant`, `nemlig-mcp`, and
+`nemlig-mcp-http`. Publication requires a separate approved change and is not a
+deployment shortcut.
 
-The private npm-format package is named `nemlig-assistant`. It is installable from
-the tarball produced by `pnpm --filter nemlig-assistant smoke:package`, but it is
-not claimed or published on npm. Its four binaries are `nemlig`,
-`nemlig-assistant`, `nemlig-mcp`, and `nemlig-mcp-http`. Versions use
-`major.minor.patch-alpha.increment`; the alpha increment never resets, including
-across semantic-version changes. Nemlig runtime fixes require a patch, features
-require a minor, and `!` or `BREAKING CHANGE:` requires a major. Tests and
-release internals require only an increment. Other assistants, documentation,
-OpenSpec, agent-rule, and workflow-only changes require no Nemlig release.
-
-Inspect the current Git, tag, main, and npm decision without changing files:
+Inspect or apply the repository's alpha version decision with:
 
 ```sh
 pnpm nemlig:release:plan
-```
-
-Apply the reported version to only the Nemlig manifest after the same checks:
-
-```sh
 pnpm nemlig:release:apply
 pnpm --filter nemlig-assistant check:version-bump --base origin/main
 ```
 
-`Nemlig-Release: none` is the exact commit-body trailer for a reviewed runtime
-change that must not publish. Ordinary documentation and unrelated changes are
-already automatic no-ops and do not need the trailer.
+Nemlig runtime fixes require a patch, features a minor, and breaking changes a
+major; the monotonic `-alpha.N` counter never resets. `Nemlig-Release: none` is
+the exact commit-body trailer for a reviewed runtime change that must not
+publish. Documentation and unrelated changes are already release no-ops.
 
-### Publication is deferred
+## 📋 Maintained feature inventory
 
-Publication is intentionally outside PR #8. The package manifest remains
-`private: true`, the `NEMLIG_PUBLISH_ENABLED` repository variable must remain
-absent or false, and the guarded main/retry jobs therefore skip without creating
-a tag or contacting npm. No npm package claim, token, trusted publisher, GitHub
-`npm` environment, provenance setup, repository-visibility change, or external
-cost is part of this delivery.
+This README is the user-facing inventory of shipped feature sets:
 
-Enabling publication requires a separate explicitly approved change that removes
-the private package guard and verifies package naming, repository visibility,
-workflow permissions, trusted-publisher binding, deployment protection, and the
-exact packed artifact. The dormant retry path is not an activation shortcut.
+- account access
+- product and department discovery
+- favorites-first guided shopping
+- constrained product comparison and selection
+- basket-aware whole-list planning
+- immutable plan snapshots
+- exact prepare/approve/apply basket operations
+- replacement and savings review
+- CLI, MCP, MCP Apps, Auth0, and bounded Cloudflare hosting
+- explicit feature-request capture
+- private package and guarded alpha release policy
 
-Release work never authorizes Nemlig login, search, basket mutation, checkout,
-order, or payment.
+Update this inventory and the relevant section above whenever a shipped feature
+set is added, removed, or materially changed. Planned work belongs in
+[`BACKLOG.md`](BACKLOG.md) or an active OpenSpec change.
 
-## Upstream parity baseline
-
-The rewrite targets `mhattingpete/nemlig-shopper` commit
-`65a681c1c5510ce03886ed16305b0a2d652c5be1`. Included: login/logout,
-session setup, search and category fallback, product classification,
-add/view/clear basket operations, CLI, MCP tools, candidate ranking, and the
-optional picker. Recipe parsing and checkout/order/payment capabilities are
-intentionally excluded.
-
-## Layout
+## 🗂️ Project map
 
 ```text
 .codex/skills/nemlig-basket/  Safe shopping workflow
@@ -246,9 +308,18 @@ src/client.ts                 Nemlig HTTP, search, and basket client
 src/config.ts                 Local credential management
 src/cli.ts                    CLI entry point
 src/mcp.ts                    MCP server and picker resource
-src/plans.ts                  Guided resolution and immutable local snapshots
+src/http.ts                   Authenticated HTTP MCP transport
+src/cloudflare-worker.ts      Gateway, Container, and Durable Objects
+src/plans.ts                  Guided resolution and plan snapshots
 src/proposals.ts              Proposal store, revalidation, and mutation lock
-release/                      Version, transaction, and publication policy
-scripts/smoke-package.ts      Installed-tarball interface proof
-tsdown.config.ts              Two self-contained executable bundles
+release/                      Version and publication policy
+scripts/smoke-package.ts      Installed-package interface proof
 ```
+
+## Upstream baseline
+
+The rewrite targets `mhattingpete/nemlig-shopper` commit
+`65a681c1c5510ce03886ed16305b0a2d652c5be1`. Login/logout, session setup,
+search, category fallback, product classification, basket operations, CLI, MCP,
+ranking, and the optional picker are included. Recipe parsing and all
+checkout/order/payment capabilities are intentionally excluded.

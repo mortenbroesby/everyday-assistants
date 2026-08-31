@@ -67,6 +67,7 @@ test("authenticated normal requests forward once and unknown tools fail into the
   assert.equal(authenticated, 2);
   assert.deepEqual(forwarded, ["normal", "expensive"]);
   assert.equal(classifyMcpMessage({ method: "notifications/initialized" }), "protocol");
+  assert.equal(classifyMcpMessage({ method: "future/protocol-method" }), "protocol");
   assert.equal(classifyMcpMessage({ method: "tools/call", params: { name: "apply_cart_additions" } }), "expensive");
 });
 

@@ -11,6 +11,9 @@ before Nemlig work.
 - Before adding, show the exact product name and ID, package or size, quantity,
   price, and expected line total. Wait for explicit approval; changed details
   require a new proposal and approval.
+- Do not ask for approval twice. An earlier approval counts only when it
+  explicitly covers every exact detail in the later unchanged proposal;
+  otherwise show the proposal and ask once.
 - Before removing one line, show its exact product ID, name, quantity, and total
   and wait for separate explicit approval. Never substitute a basket clear.
 - Before clearing, show the exact current basket and wait for explicit approval.

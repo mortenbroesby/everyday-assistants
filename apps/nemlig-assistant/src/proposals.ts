@@ -211,7 +211,7 @@ export class BasketProposalService {
   ) {
     this.now = options.now ?? (() => new Date());
     this.createId = options.id ?? randomUUID;
-    this.ttlMs = options.ttlMs ?? 2 * 60 * 1000;
+    this.ttlMs = options.ttlMs ?? 15 * 60 * 1000;
     this.audit = options.audit ?? (() => {});
     if (!Number.isFinite(this.ttlMs) || this.ttlMs < 1) throw new NemligError("Proposal TTL must be positive.");
   }
