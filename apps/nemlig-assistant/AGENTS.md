@@ -23,5 +23,9 @@ before Nemlig work.
   tool only after approval. Direct MCP mutation tools are prohibited.
 - Follow `SECURE_MCP_TUNNEL.md` for private ChatGPT setup. Never commit tunnel
   profiles, runtime keys, tunnel IDs, or support output.
+- Keep the `Feature sets` section in `README.md` current in the same change when
+  shipped user-facing functionality is added, removed, or materially changed.
+  List only implemented behavior there; keep planned work in `BACKLOG.md` or an
+  active OpenSpec change.
 - After repository changes, run root verification, commit the scoped work, push,
   and verify the remote ref.

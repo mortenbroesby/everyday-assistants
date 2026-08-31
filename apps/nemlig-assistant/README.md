@@ -4,6 +4,37 @@ Unofficial local Node.js 22/TypeScript assistant for product discovery and
 explicitly approved Nemlig basket changes. It is not affiliated with or
 endorsed by nemlig.com. It contains no recipe or checkout capability.
 
+## Feature sets
+
+This is the maintained inventory of shipped, user-facing feature sets:
+
+- **Account access:** interactive masked login, owner-only local credential
+  storage, session reuse, and logout.
+- **Product discovery:** Danish catalog search, authenticated favorite listing
+  and search, deterministic candidate metadata, department listing, and
+  paginated department browsing.
+- **Favorites-first guided shopping:** structured multi-item plans, hard dietary
+  and price constraints, preferences, catalog fallback, ambiguity-preserving
+  candidate review, current basket coverage, remaining quantities, and selected
+  total estimates.
+- **Safe basket operations:** basket inspection plus exact prepare/approve/apply
+  flows for additions, one-line removals, replacements, and clearing, with
+  expiry, revalidation, single-use proposals, and automatic readback.
+- **Replacement comparisons:** package, item-price, and unit-price review with
+  factual signed basket-price differences and potential-savings wording.
+- **Plan snapshots:** immutable owner-only local saves containing structured
+  inputs and selections, with fresh product and basket resolution when loaded.
+- **CLI and ChatGPT interfaces:** local CLI, conversational MCP tools, an
+  optional MCP Apps picker, and a private local tunnel runbook.
+- **Feature-request capture:** concise retry-safe GitHub issues created only when
+  explicitly requested.
+- **Private package delivery:** self-contained Node.js binaries, synthetic
+  contract tests, smoke-tested tarballs, and guarded alpha release policy.
+
+Keep this section current in the same change whenever a shipped feature set is
+added, removed, or materially changed. List only implemented behavior here;
+planned work belongs in [`BACKLOG.md`](BACKLOG.md) or an active OpenSpec change.
+
 ## Commands
 
 Run from the Everyday Assistants repository root:
