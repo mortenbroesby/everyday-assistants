@@ -251,7 +251,7 @@ export function createMcpServer(
     { name: "nemlig-assistant", version: NEMLIG_VERSION },
     {
       instructions:
-        "Search, favorites, departments, planning, plan snapshots, basket view, and prepare tools do not change the Nemlig basket. Preparation is not approval. Planning, selection, saving, and loading are not approval either. Show the exact proposal and invoke its matching apply tool only after the user explicitly approves that unchanged proposal. Every apply revalidates and reads back the basket. Create a feature request only when the user explicitly asks to request a feature. Never check out, pay, place an order, or change a delivery slot.",
+        "For ordinary requests to find or add products, use plan_shopping_list so favorites are searched first. Use search_products only for an explicit general-catalog search and list_favorites only for explicit favorite browsing. Search, favorites, departments, planning, plan snapshots, basket view, and prepare tools do not change the Nemlig basket. Preparation is not approval. Planning, selection, saving, and loading are not approval either. Show the exact proposal and invoke its matching apply tool only after the user explicitly approves that unchanged proposal. Every apply revalidates and reads back the basket. Create a feature request only when the user explicitly asks to request a feature. Never check out, pay, place an order, or change a delivery slot.",
     },
   );
   const localConnectionId = randomUUID();
@@ -263,7 +263,7 @@ export function createMcpServer(
     "search_products",
     {
       title: "Search Nemlig products",
-      description: "Search Nemlig products using Danish terms and return ranked candidates.",
+      description: "Search the general Nemlig catalog using Danish terms when the user explicitly requests a catalog search.",
       inputSchema: { query: z.string().min(1), limit: z.number().int().positive().default(8) },
       outputSchema: z.object({ result: z.array(candidateSchema) }),
       annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true },
@@ -282,7 +282,7 @@ export function createMcpServer(
     {
       title: "List or search Nemlig favorites",
       description:
-        "List or search current authenticated Nemlig favorites without changing favorites or the basket.",
+        "List or search current authenticated Nemlig favorites when the user explicitly requests favorite browsing.",
       inputSchema: {
         query: z.string().trim().min(1).optional(),
         limit: z.number().int().positive().max(50).default(8),
@@ -310,7 +310,7 @@ export function createMcpServer(
     "plan_shopping_list",
     {
       title: "Plan a grocery list",
-      description: "Resolve 1-20 structured grocery lines favorites-first without changing the basket. Ambiguous lines stay unresolved.",
+      description: "Use for ordinary find-or-add requests: resolve 1-20 structured grocery lines favorites-first without changing the basket. Ambiguous lines stay unresolved.",
       inputSchema: shoppingPlanInputSchema.shape,
       outputSchema: z.object({ lines: z.array(z.any()), selected_estimated_total: z.number() }),
       annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true },

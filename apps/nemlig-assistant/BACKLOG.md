@@ -2,19 +2,19 @@
 
 ## Favorites-first product selection
 
-Treat requests to find or add an item as product-search intent.
+**Status:** Core routing implemented. Ordinary find-or-add intent uses the
+favorites-first planner, explicit catalog searches retain `search_products`,
+and explicit favorite browsing retains `list_favorites`.
 
-- Search the authenticated user's favorites first. If one or more suitable
-  favorites exist, select from them even when external search might find other
-  candidates. Search outside favorites only when no favorite is suitable.
+- The planner searches the authenticated user's favorites first and searches
+  outside favorites only when no eligible favorite exists.
 - Apply the same ranking within either candidate pool: aim for the lowest
   comparable effective price, prefer discounted products, and compare price per
   kilogram or other matching unit when available. A discounted product should
   not win when it is still substantially more expensive than a comparable
   alternative.
-- When the price difference is not substantial, use the best plausible match
-  for the user's request. Ask the user to choose when the remaining candidates
-  represent meaningfully different products or the guess would be unsafe.
+- When candidates remain ambiguous, ask the user to choose rather than silently
+  approving one.
 - Product selection remains discovery. Adding to the basket still requires the
   existing exact proposal and explicit approval flow.
 

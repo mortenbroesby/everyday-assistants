@@ -392,6 +392,19 @@ test("every MCP tool has complete schemas, accurate annotations, and safe server
   });
 });
 
+test("MCP routes ordinary product intent through favorites-first planning", async () => {
+  await withMcpClient(createMcpServer(fakeClient()), async (mcp) => {
+    const tools = new Map((await mcp.listTools()).tools.map((tool) => [tool.name, tool.description ?? ""]));
+    const instructions = mcp.getInstructions() ?? "";
+    assert.match(instructions, /ordinary requests to find or add products, use plan_shopping_list/);
+    assert.match(instructions, /search_products only for an explicit general-catalog search/);
+    assert.match(instructions, /list_favorites only for explicit favorite browsing/);
+    assert.match(tools.get("plan_shopping_list") ?? "", /ordinary find-or-add requests/);
+    assert.match(tools.get("search_products") ?? "", /explicitly requests a catalog search/);
+    assert.match(tools.get("list_favorites") ?? "", /explicitly requests favorite browsing/);
+  });
+});
+
 test("MCP creates one structured feature request without touching Nemlig", async () => {
   const client = fakeClient();
   let received: unknown;
