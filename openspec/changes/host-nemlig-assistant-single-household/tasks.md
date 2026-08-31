@@ -97,7 +97,7 @@
   same verified image, post-deployment checks, recorded commit/image digest, and
   last-healthy rollback; verify a deliberately failed staging health check never
   promotes or replaces the healthy release.
-- [ ] 5.5 Apply the Nemlig runtime feature version bump required by repository
+- [x] 5.5 Apply the Nemlig runtime feature version bump required by repository
   policy and verify the release plan and `check:version-bump` accept the hosted
   runtime diff while npm publication remains disabled.
 
