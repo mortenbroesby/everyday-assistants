@@ -26,7 +26,9 @@ Workers Paid baseline cost.
 1. Activate Workers Paid and configure account-wide budget notifications at USD
    10 (warning) and USD 20 (urgent). These are delayed informational alerts, not
    an instantaneous hard cap. Recurring plan charges may be excluded from the
-   alert amount.
+   alert amount. The stable account entry point is **Workers & Pages > Workers
+   plans** (`https://dash.cloudflare.com/<account-id>/workers/plans`); checkout
+   URLs are session-specific and should not be shared between devices.
 2. Authenticate the current Cloudflare account:
 
    ```sh
@@ -34,17 +36,23 @@ Workers Paid baseline cost.
    pnpm --filter nemlig-assistant exec wrangler whoami
    ```
 
-3. In the production Worker's Variables and Secrets settings, add these plain
-   variables. Production uses `keep_vars` so repository deploys retain them:
+3. In Auth0, create a Custom API whose immutable **Identifier** exactly equals
+   the production MCP resource URL, including `/mcp` (for example,
+   `https://nemlig-mcp.example.com/mcp`). Enable tenant **Dynamic Client
+   Registration (DCR)** and **Resource Parameter Compatibility Profile**, add
+   the `use:nemlig-assistant` permission, and authorize that permission as the
+   default user-delegated grant for third-party applications. ChatGPT registers
+   as a third-party client; without the default grant, login can succeed but the
+   client cannot receive a token for this API. Do not reuse a tunnel-specific
+   Auth0 API identifier for a different hosted resource URL.
 
-   - `NEMLIG_MCP_AUTH0_ISSUER`
-   - `NEMLIG_MCP_AUTH0_AUDIENCE`
-   - `NEMLIG_MCP_AUTH0_OWNER_SUBJECT`
-   - `NEMLIG_MCP_PUBLIC_URL` (the exact HTTPS URL ending in `/mcp`)
-   - optionally `NEMLIG_MCP_ALLOWED_ORIGINS`, `NEMLIG_MCP_REQUIRED_SCOPE`, and
-     `NEMLIG_MCP_REVISION`
+4. Keep the production issuer, audience, public URL, custom domain, and safety
+   thresholds in `wrangler.jsonc`. Store `NEMLIG_MCP_AUTH0_OWNER_SUBJECT` as an
+   encrypted Worker secret. Production uses `keep_vars`, so repository deploys
+   retain separately managed secrets. `NEMLIG_MCP_ALLOWED_ORIGINS`,
+   `NEMLIG_MCP_REQUIRED_SCOPE`, and `NEMLIG_MCP_REVISION` remain optional.
 
-4. Add actual credentials as encrypted secrets. `GH_TOKEN` is optional; omit it
+5. Add actual credentials as encrypted secrets. `GH_TOKEN` is optional; omit it
    if hosted feature-request creation is not wanted.
 
    ```sh
@@ -53,17 +61,18 @@ Workers Paid baseline cost.
    pnpm --filter nemlig-assistant exec wrangler secret put GH_TOKEN --env production
    ```
 
-5. Keep `MCP_ENABLED=false`, validate, then deploy:
+6. Keep `MCP_ENABLED=false`, validate, then deploy:
 
    ```sh
    pnpm --filter nemlig-assistant cloudflare:check
    pnpm --filter nemlig-assistant exec wrangler deploy --env production
    ```
 
-6. Configure the custom hostname/route and DNS only after the disabled endpoint
-   returns `MCP temporarily disabled`. Set the plain `MCP_ENABLED` production
-   variable to `true`, save and deploy, then test health, Auth0 rejection, one
-   authenticated MCP handshake, usage inspection, and one read-only tool call.
+7. The repository configures `nemlig-mcp.broesby.dk` as a Worker custom domain.
+   Confirm both that URL and the workers.dev fallback return `MCP temporarily
+   disabled` before changing `MCP_ENABLED`. Then set it to `true`, deploy, and
+   test health, Auth0 rejection, one authenticated MCP handshake, usage
+   inspection, and one read-only tool call.
 
 ## Emergency disable and re-enable
 

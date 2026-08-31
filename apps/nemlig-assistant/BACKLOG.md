@@ -35,23 +35,32 @@ collect credentials, basket contents, or other unnecessary account data.
 
 ## Epic: replace the local tunnel with a hosted service
 
-**Status:** Backlog; feasibility and implementation are not yet approved.
+**Status:** Hosted implementation complete; disabled production validation in
+progress. Keep the local tunnel until the hosted authentication and read-only
+acceptance checks pass.
 
 **Goal:** let the ChatGPT app remain available without depending on the owner's
 laptop, local MCP process, or long-lived tunnel, while preserving the current
 shopping safety contract.
 
+**Future family access:** keep the first hosted release to one owner and one
+Nemlig account. A later release may allow explicitly invited family members
+(for example, a sibling) to sign in with their own identity and link their own
+Nemlig account. Do not share the owner's credentials, basket, sessions,
+proposals, or approvals, and do not build multi-user infrastructure until a
+second real user is ready to onboard.
+
 ### Decision gate
 
 - [ ] Confirm that Nemlig's technical and policy constraints permit the intended
   hosted use. Stop if a compliant design is not possible.
-- [ ] Decide whether the service is for one household or multiple users; do not
+- [x] Decide whether the service is for one household or multiple users; do not
   build multi-user infrastructure without a real need.
-- [ ] Compare the smallest viable hosting options, expected cost, availability,
+- [x] Compare the smallest viable hosting options, expected cost, availability,
   regional/data-residency needs, and operational burden.
-- [ ] Choose Auth0 or another standards-based OAuth/OIDC provider only after the
+- [x] Choose Auth0 or another standards-based OAuth/OIDC provider only after the
   identity, ChatGPT MCP, and hosting requirements are known.
-- [ ] Approve the architecture, security boundary, ongoing cost, and migration
+- [x] Approve the architecture, security boundary, ongoing cost, and migration
   plan before implementation begins.
 
 ### Workstreams

@@ -54,6 +54,12 @@
     "production": {
       "name": "nemlig-mcp-cloudflare-production",
       "workers_dev": true,
+      "routes": [
+        {
+          "pattern": "nemlig-mcp.broesby.dk",
+          "custom_domain": true
+        }
+      ],
       "vars": {
         "MCP_ENABLED": "false",
         "MCP_DAILY_LIMIT": "5000",
@@ -63,7 +69,10 @@
         "MCP_AUTH_TIMEOUT_MS": "5000",
         "MCP_BACKEND_TIMEOUT_MS": "35000",
         "NEMLIG_MCP_HTTP_HOST": "0.0.0.0",
-        "NEMLIG_MCP_HTTP_PORT": "8080"
+        "NEMLIG_MCP_HTTP_PORT": "8080",
+        "NEMLIG_MCP_AUTH0_ISSUER": "https://everyday-assistants.eu.auth0.com/",
+        "NEMLIG_MCP_AUTH0_AUDIENCE": "https://nemlig-mcp.broesby.dk/mcp",
+        "NEMLIG_MCP_PUBLIC_URL": "https://nemlig-mcp.broesby.dk/mcp"
       },
       "containers": [
         {
