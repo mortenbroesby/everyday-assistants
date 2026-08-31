@@ -37,8 +37,21 @@ export interface Product {
   isOnDiscount: boolean;
 }
 
-// ponytail: bounded scan; paginate favorites if real accounts exceed this ceiling.
-export const FAVORITES_SEARCH_POOL = 100;
+export interface Department { id: string; name: string }
+export interface ProductPage { products: Product[]; page: number; hasNext: boolean }
+
+export function normalizeDepartments(value: unknown): Department[] {
+  const seen = new Set<string>();
+  return asRecords(asRecord(value).content).flatMap((entry) => {
+    const id = asString(entry.Url) ?? asString(entry.url);
+    const name = asString(entry.Name) ?? asString(entry.Title) ?? asString(entry.name);
+    if (!id || !name || !id.startsWith("/") || id.startsWith("//") || seen.has(id)) return [];
+    seen.add(id); return [{ id, name }];
+  });
+}
+
+// ponytail: bounded prefix; add upstream cursors if real accounts exceed this ceiling.
+export const FAVORITES_SEARCH_POOL = 1000;
 
 export function matchFavorites(products: Product[], query: string, limit: number): Product[] {
   const needle = query.trim().toLocaleLowerCase("da-DK");
@@ -238,33 +251,65 @@ export class NemligClient {
     return product;
   }
 
-  async listFavorites(limit = 10): Promise<Product[]> {
+  async listFavorites(limit = 10, page = 1): Promise<Product[]> {
     this.requireLogin("view favorites");
     if (!Number.isInteger(limit) || limit < 1) throw new NemligError("Favorites limit must be positive.");
+    if (!Number.isInteger(page) || page < 1) throw new NemligError("Favorites page must be positive.");
+    if (limit > 1000) throw new NemligError("Favorites result limit cannot exceed 1000.");
+    const offset = (page - 1) * limit;
+    if (offset >= 1000) throw new NemligError("Favorites paging is limited to the first 1000 products.");
     if (!this.productTimestamp) await this.refreshSession();
 
     const pageUrl = new URL("/favoritter", "https://www.nemlig.com");
     pageUrl.searchParams.set("GetAsJson", "1");
     pageUrl.searchParams.set("t", this.timeslot);
     pageUrl.searchParams.set("d", "1");
-    const page = asRecord(await this.json(pageUrl.toString(), {}, "Get favorites page"));
-    const groups = asRecords(page.content)
+    const favoritesPage = asRecord(await this.json(pageUrl.toString(), {}, "Get favorites page"));
+    const groups = asRecords(favoritesPage.content)
       .filter((entry) => entry.TemplateName === "productlistshowallspot")
       .map((entry) => entry.ProductGroupId)
       .filter((id): id is string | number => typeof id === "string" || typeof id === "number");
     const products: Product[] = [];
     const seen = new Set<number | string>();
+    const target = Math.min(1000, offset + limit);
     for (const group of groups) {
-      const remaining = limit - products.length;
-      if (!remaining) break;
-      for (const product of await this.productsByGroup(group, remaining, "Get favorite products")) {
-        if (product.id === undefined || seen.has(product.id)) continue;
-        seen.add(product.id);
-        products.push(product);
-        if (products.length === limit) break;
+      let groupPage = 1;
+      while (products.length < target && groupPage <= 20) {
+        const pageSize = Math.min(50, target - products.length);
+        const batch = await this.productsByGroup(group, pageSize, "Get favorite products", groupPage);
+        for (const product of batch) {
+          if (product.id === undefined || seen.has(product.id)) continue;
+          seen.add(product.id); products.push(product);
+        }
+        if (batch.length < pageSize) break;
+        groupPage += 1;
       }
+      if (products.length === target) break;
     }
-    return this.rememberProducts(products);
+    // ponytail: bounded 1,000-product prefix; add upstream cursors if a real account exceeds it.
+    return this.rememberProducts(products.slice(offset, target));
+  }
+
+  async listDepartments(): Promise<Department[]> {
+    const page = await this.optionalJson("https://www.nemlig.com/?GetAsJson=1", "Get departments");
+    return normalizeDepartments(page);
+  }
+
+  async browseDepartment(departmentId: string, limit = 20, page = 1): Promise<ProductPage> {
+    if (!Number.isInteger(limit) || limit < 1 || limit > 50) throw new NemligError("Department page size must be between 1 and 50.");
+    if (!Number.isInteger(page) || page < 1) throw new NemligError("Department page must be positive.");
+    const offset = (page - 1) * limit;
+    if (offset >= 1000) throw new NemligError("Department paging is limited to the first 1000 products.");
+    const department = (await this.listDepartments()).find((item) => item.id === departmentId);
+    if (!department) throw new NemligError("Unknown department ID; list departments again.");
+    const products = this.rememberProducts(await this.productsByCategory(department.id, limit, page));
+    const seen = new Set<number>();
+    const unique = products.filter((product) => {
+      if (product.id === undefined) return true;
+      if (seen.has(product.id)) return false;
+      seen.add(product.id); return true;
+    });
+    return { products: unique, page, hasNext: products.length === limit && offset + products.length < 1000 };
   }
 
   async getCart(): Promise<Basket> {
@@ -392,26 +437,27 @@ export class NemligClient {
     return products;
   }
 
-  private async productsByCategory(path: string, limit: number): Promise<Product[]> {
+  private async productsByCategory(path: string, limit: number, page = 1): Promise<Product[]> {
     const pageUrl = new URL(path, "https://www.nemlig.com");
     if (pageUrl.origin !== "https://www.nemlig.com") return [];
     pageUrl.searchParams.set("GetAsJson", "1");
-    const page = asRecord(await this.optionalJson(pageUrl.toString(), "Get category"));
-    const group = asRecords(page.content).find((entry) => entry.ProductGroupId)?.ProductGroupId;
+    const categoryPage = asRecord(await this.optionalJson(pageUrl.toString(), "Get category"));
+    const group = asRecords(categoryPage.content).find((entry) => entry.ProductGroupId)?.ProductGroupId;
     if (typeof group !== "string" && typeof group !== "number") return [];
 
-    return this.productsByGroup(group, limit, "Get category products");
+    return this.productsByGroup(group, limit, "Get category products", page);
   }
 
   private async productsByGroup(
     group: string | number,
     limit: number,
     operation: string,
+    page = 1,
   ): Promise<Product[]> {
-    const endpoint = `${API_BASE_URL}/${this.productTimestamp}/${this.timeslot}/1/${this.userId ?? "0"}/Products/GetByProductGroupId`;
+    const endpoint = `${API_BASE_URL}/${this.productTimestamp ?? DEFAULT_PRODUCT_TIMESTAMP}/${this.timeslot}/1/${this.userId ?? "0"}/Products/GetByProductGroupId`;
     const params = new URLSearchParams({
       productGroupId: String(group),
-      pageIndex: "0",
+      pageIndex: String(page - 1),
       pagesize: String(limit),
       sortorder: "default",
     });

@@ -5,6 +5,7 @@ import {
   NemligClient,
   NemligError,
   SEARCH_GATEWAY_URL,
+  normalizeDepartments,
   normalizeProducts,
 } from "./client.js";
 
@@ -382,6 +383,21 @@ test("favorites matching is Danish-aware, ordered, limited, and empty when unmat
   assert.throws(() => matchFavorites(favorites, "banan", 0), /Favorites limit must be positive/);
 });
 
+test("favorites paging applies one global offset across groups", async () => {
+  const requests: ExpectedRequest[] = [
+    { match: "/login$", response: json({ MergeSuccessful: true }) }, ...sessionRequests(),
+    { match: "https://www.nemlig.com/favoritter\\?", response: json({ content: [
+      { TemplateName: "productlistshowallspot", ProductGroupId: "first" },
+      { TemplateName: "productlistshowallspot", ProductGroupId: "second" },
+    ] }) },
+    { match: "/Products/GetByProductGroupId\\?", inspect: (url) => assert.equal(new URL(url).searchParams.get("productGroupId"), "first"), response: json({ Products: [{ Id: 1, Name: "First" }] }) },
+    { match: "/Products/GetByProductGroupId\\?", inspect: (url) => assert.equal(new URL(url).searchParams.get("productGroupId"), "second"), response: json({ Products: [{ Id: 2, Name: "Second" }] }) },
+  ];
+  const client = new NemligClient(mockFetch(requests)); await client.login("person@example.test", "secret");
+  assert.deepEqual((await client.listFavorites(1, 2)).map(({ id }) => id), [2]);
+  assert.equal(requests.length, 0);
+});
+
 test("basket add sends the exact payload and returns normalized readback", async () => {
   const requests: ExpectedRequest[] = [
     { match: "/login$", response: json({ RedirectUrl: "/" }) },
@@ -520,4 +536,34 @@ test("favorites validates its boundary before network access", async () => {
   const client = new NemligClient(mockFetch([]));
   Object.assign(client, { loggedIn: true });
   await assert.rejects(client.listFavorites(0), /Favorites limit must be positive/);
+});
+
+test("departments normalize opaque same-origin paths and browsing revalidates paging", async () => {
+  assert.deepEqual(normalizeDepartments({ content: [
+    { Url: "/frugt-og-groent", Name: "Frugt & grønt" },
+    { Url: "/frugt-og-groent", Name: "Duplicate" },
+    { Url: "https://evil.test/no", Name: "No" },
+    { Url: "//evil.test/no", Name: "Also no" },
+  ] }), [{ id: "/frugt-og-groent", name: "Frugt & grønt" }]);
+  const requests: ExpectedRequest[] = [
+    { match: "https://www.nemlig.com/\\?GetAsJson=1", response: json({ content: [{ Url: "/frugt-og-groent", Name: "Frugt & grønt" }] }) },
+    { match: "https://www.nemlig.com/frugt-og-groent\\?GetAsJson=1", response: json({ content: [{ ProductGroupId: "produce" }] }) },
+    { match: "/Products/GetByProductGroupId\\?", inspect: (url) => {
+      const parsed = new URL(url); assert.equal(parsed.searchParams.get("pageIndex"), "1"); assert.equal(parsed.searchParams.get("pagesize"), "2");
+    }, response: json({ Products: [{ Id: 5, Name: "Æbler" }] }) },
+  ];
+  const client = new NemligClient(mockFetch(requests));
+  const result = await client.browseDepartment("/frugt-og-groent", 2, 2);
+  assert.equal(result.products[0]?.name, "Æbler");
+  assert.equal(result.hasNext, false);
+  assert.equal(requests.length, 0);
+});
+
+test("unknown departments and invalid pages fail before product browsing", async () => {
+  const requests: ExpectedRequest[] = [
+    { match: "https://www.nemlig.com/\\?GetAsJson=1", response: json({ content: [] }) },
+  ];
+  const client = new NemligClient(mockFetch(requests));
+  await assert.rejects(client.browseDepartment("/missing", 20, 1), /Unknown department/);
+  await assert.rejects(client.browseDepartment("/missing", 51, 1), /between 1 and 50/);
 });

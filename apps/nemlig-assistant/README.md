@@ -13,6 +13,9 @@ pnpm nemlig --help
 pnpm nemlig login --save
 pnpm nemlig search "mælk" --limit 5
 pnpm nemlig favorites --limit 5
+pnpm nemlig favorites --page 2 --limit 5
+pnpm nemlig departments
+pnpm nemlig browse /frugt-og-groent --page 1 --limit 20
 pnpm nemlig cart
 pnpm nemlig feature-request "Prefer discounted favorites" --summary "Choose discounted favorites first" --acceptance "Search favorites first" "Prefer discounted matches"
 pnpm nemlig add 701015 --quantity 1
@@ -39,18 +42,53 @@ pnpm --filter nemlig-assistant build
 pnpm --filter nemlig-assistant mcp
 ```
 
-It exposes read-only `search_products`, `list_favorites`, and `view_cart`, the
+It exposes read-only `search_products`, `list_favorites`, `list_departments`,
+`browse_department`, `plan_shopping_list`, `load_shopping_plan`, and `view_cart`, the
 explicitly invoked `create_feature_request` GitHub issue tool, plus
 proposal pairs for `cart_additions`, one-line `cart_removal`, and `cart_clear`.
+`save_shopping_plan` creates an immutable owner-only local snapshot containing
+only structured list inputs and selections. Loading re-resolves current products,
+prices, availability, and basket coverage instead of trusting saved candidates.
 Each pair is named `prepare_*` and `apply_*`; direct `add_to_cart`,
 `remove_from_cart`, and `clear_cart` tools are intentionally unavailable.
 `pick_products` and `ui://nemlig/picker.html` are enabled by default; set
 `NEMLIG_MCP_APPS=0` to keep only conversational tools. There is no order,
 payment, purchase, or checkout tool.
 
+### ChatGPT-first guided planning
+
+Ask ChatGPT to turn a grocery list into 1–20 structured lines with quantities,
+hard constraints, and optional preferences such as discounted, organic,
+lowest unit price, or non-frozen. `plan_shopping_list` checks favorites first,
+falls back to the catalog only for unmatched lines, and keeps multiple matches
+unresolved for your choice. Results show source, dietary and discount metadata,
+constraint outcomes, exact basket coverage, remaining quantities, and the
+estimated total of selected remaining items.
+
+The shared picker supports the whole plan with native selection and quantity
+controls. It sends all selected positive remaining quantities to one exact
+`prepare_cart_additions` review. The separate apply action still requires host
+approval of that unchanged proposal; planning, selecting, saving, loading, and
+preparing are never approval to change the basket.
+
+### Owner alpha exercise
+
+1. Log in locally, then plan a short list containing one favorite, one ambiguous
+   item, and one constrained item. Confirm the ambiguous line stays unresolved.
+2. List departments, browse a second page, and confirm deal/unit-price metadata.
+3. Save the structured plan, load it again, and confirm it reflects current
+   availability and basket quantities rather than stale saved prices.
+4. Open the multi-line picker, adjust a choice and quantity, and inspect the one
+   exact batch review. Stop there unless you separately want to approve that
+   exact proposal; if so, use the host approval prompt and verify the basket
+   readback. Record provider discrepancies as follow-up work rather than
+   bypassing validation or the proposal boundary.
+
 ## Safety contract
 
 - Search, favorites lookup, and basket inspection are read-only.
+- Planning, department browsing, selection, snapshot save/load, and proposal
+  preparation do not authorize a basket change.
 - MCP clients first call the matching `prepare_*` tool. Preparation returns an
   exact, connection-bound proposal and never authorizes or performs a write.
 - Before adding, show the exact product name and ID, package or size, quantity,
@@ -156,6 +194,7 @@ src/client.ts                 Nemlig HTTP, search, and basket client
 src/config.ts                 Local credential management
 src/cli.ts                    CLI entry point
 src/mcp.ts                    MCP server and picker resource
+src/plans.ts                  Guided resolution and immutable local snapshots
 src/proposals.ts              Proposal store, revalidation, and mutation lock
 release/                      Version, transaction, and publication policy
 scripts/smoke-package.ts      Installed-tarball interface proof

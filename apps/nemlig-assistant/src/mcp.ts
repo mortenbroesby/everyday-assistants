@@ -16,6 +16,7 @@ import {
   type FeatureRequestResult,
 } from "./feature-request.js";
 import { BasketProposalService, type ProposalOperation } from "./proposals.js";
+import { loadShoppingPlan, resolveShoppingPlan, saveShoppingPlan, shoppingPlanInputSchema } from "./plans.js";
 
 export const PICKER_URI = "ui://nemlig/picker.html";
 export const PICKER_MIME_TYPE = "text/html;profile=mcp-app";
@@ -38,6 +39,11 @@ export interface Candidate {
   is_on_discount: boolean;
   image_url: string | undefined;
   tags: string[];
+  source?: "favorite" | "catalog";
+  dietary?: { organic: boolean; vegan: boolean; gluten_free: boolean; lactose_free: boolean };
+  constraint_outcomes?: Record<string, boolean>;
+  basket_quantity?: number;
+  remaining_quantity?: number;
 }
 
 const candidateSchema = z.object({
@@ -53,6 +59,11 @@ const candidateSchema = z.object({
   is_on_discount: z.boolean(),
   image_url: z.string().optional(),
   tags: z.array(z.string()),
+  source: z.enum(["favorite", "catalog"]).optional(),
+  dietary: z.object({ organic: z.boolean(), vegan: z.boolean(), gluten_free: z.boolean(), lactose_free: z.boolean() }).optional(),
+  constraint_outcomes: z.record(z.string(), z.boolean()).optional(),
+  basket_quantity: z.number().nonnegative().optional(),
+  remaining_quantity: z.number().int().nonnegative().optional(),
 });
 
 const basketItemSchema = z.object({
@@ -180,9 +191,9 @@ const basketPayload = (basket: Basket): Record<string, unknown> => ({
   delivery_time: basket.deliveryTime,
 });
 
-const success = (value: Record<string, unknown> | Candidate[]) => ({
+const success = (value: unknown) => ({
   content: [{ type: "text" as const, text: JSON.stringify(value) }],
-  structuredContent: Array.isArray(value) ? { result: value } : value,
+  structuredContent: (Array.isArray(value) ? { result: value } : value) as Record<string, unknown>,
 });
 
 const failure = (operation: string, error: unknown) => ({
@@ -206,7 +217,7 @@ export function createMcpServer(
     { name: "nemlig-assistant", version: NEMLIG_VERSION },
     {
       instructions:
-        "Search, favorites, basket view, and prepare tools do not change the Nemlig basket. Preparation is not approval. Show the exact proposal and invoke its matching apply tool only after the user explicitly approves that unchanged proposal. Every apply revalidates and reads back the basket. Create a feature request only when the user explicitly asks to request a feature. Never check out, pay, place an order, or change a delivery slot.",
+        "Search, favorites, departments, planning, plan snapshots, basket view, and prepare tools do not change the Nemlig basket. Preparation is not approval. Planning, selection, saving, and loading are not approval either. Show the exact proposal and invoke its matching apply tool only after the user explicitly approves that unchanged proposal. Every apply revalidates and reads back the basket. Create a feature request only when the user explicitly asks to request a feature. Never check out, pay, place an order, or change a delivery slot.",
     },
   );
   const localConnectionId = randomUUID();
@@ -240,23 +251,83 @@ export function createMcpServer(
         "List or search current authenticated Nemlig favorites without changing favorites or the basket.",
       inputSchema: {
         query: z.string().trim().min(1).optional(),
-        limit: z.number().int().positive().default(8),
+        limit: z.number().int().positive().max(50).default(8),
+        page: z.number().int().positive().default(1),
       },
       outputSchema: z.object({ result: z.array(candidateSchema) }),
       annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true },
     },
-    async ({ query, limit }) => {
+    async ({ query, limit, page }) => {
       try {
         await ensureLoggedIn(client, loadCredentials);
         const favorites = await client.listFavorites(
           query === undefined ? limit : FAVORITES_SEARCH_POOL,
+          query === undefined ? page : 1,
         );
-        const products = query === undefined ? favorites : matchFavorites(favorites, query, limit);
+        const products = query === undefined ? favorites : matchFavorites(favorites, query, page * limit).slice((page - 1) * limit);
         return success(rankProducts(products, query ?? ""));
       } catch (error) {
         return failure("list_favorites", error);
       }
     },
+  );
+
+  server.registerTool(
+    "plan_shopping_list",
+    {
+      title: "Plan a grocery list",
+      description: "Resolve 1-20 structured grocery lines favorites-first without changing the basket. Ambiguous lines stay unresolved.",
+      inputSchema: shoppingPlanInputSchema.shape,
+      outputSchema: z.object({ lines: z.array(z.any()), selected_estimated_total: z.number() }),
+      annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true },
+      ...(appsEnabled(env) ? { _meta: { ui: { resourceUri: PICKER_URI } } } : {}),
+    },
+    async (input) => {
+      try { await ensureLoggedIn(client, loadCredentials); return success(await resolveShoppingPlan(client, input)); }
+      catch (error) { return failure("plan_shopping_list", error); }
+    },
+  );
+
+  server.registerTool(
+    "list_departments",
+    {
+      title: "List Nemlig departments", description: "Discover current department IDs without changing account data.",
+      outputSchema: z.object({ departments: z.array(z.object({ id: z.string(), name: z.string() })) }),
+      annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true },
+    },
+    async () => { try { return success({ departments: await client.listDepartments() }); } catch (error) { return failure("list_departments", error); } },
+  );
+
+  server.registerTool(
+    "browse_department",
+    {
+      title: "Browse a Nemlig department", description: "Browse a freshly validated department page.",
+      inputSchema: { department_id: z.string().min(1), limit: z.number().int().positive().max(50).default(20), page: z.number().int().positive().default(1) },
+      outputSchema: z.object({ result: z.array(candidateSchema), page: z.number().int().positive(), has_next: z.boolean() }),
+      annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true },
+    },
+    async ({ department_id, limit, page }) => { try { const result = await client.browseDepartment(department_id, limit, page); return success({ result: rankProducts(result.products, ""), page: result.page, has_next: result.hasNext }); } catch (error) { return failure("browse_department", error); } },
+  );
+
+  server.registerTool(
+    "save_shopping_plan",
+    {
+      title: "Save a shopping plan", description: "Create an immutable owner-only local snapshot. This never changes the basket.",
+      inputSchema: shoppingPlanInputSchema.shape,
+      outputSchema: z.object({ id: z.string().uuid(), created_at: z.string().datetime() }),
+      annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
+    },
+    async (input) => { try { return success(await saveShoppingPlan(input)); } catch (error) { return failure("save_shopping_plan", error); } },
+  );
+
+  server.registerTool(
+    "load_shopping_plan",
+    {
+      title: "Load a shopping plan", description: "Load an immutable local snapshot and re-resolve it against current products and basket state.",
+      inputSchema: { id: z.string().uuid() }, outputSchema: z.object({ lines: z.array(z.any()), selected_estimated_total: z.number() }),
+      annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true },
+    },
+    async ({ id }) => { try { await ensureLoggedIn(client, loadCredentials); return success(await resolveShoppingPlan(client, await loadShoppingPlan(id))); } catch (error) { return failure("load_shopping_plan", error); } },
   );
 
   server.registerTool(
@@ -466,6 +537,8 @@ const root=document.getElementById("root");const app=new App({name:"Nemlig Picke
 const kr=v=>typeof v==="number"?v.toFixed(2).replace(".",",")+" kr.":"";
 const read=content=>{const text=(content||[]).find(item=>item.type==="text");if(!text)return null;try{return JSON.parse(text.text)}catch{return null}};
 const parse=content=>{const value=read(content);return Array.isArray(value)?value:value?.result||[]};
-const render=products=>{if(!products.length){root.innerHTML='<div class="empty">Ingen varer fundet.</div>';return}const grid=document.createElement("div");grid.className="grid";for(const product of products){const card=document.createElement("article");card.className="card";const info=document.createElement("div");const name=document.createElement("div");name.className="name";name.textContent=product.name??"Ukendt vare";const meta=document.createElement("div");meta.className="meta";meta.textContent=[product.id!=null?"ID: "+product.id:"",product.brand,product.unit_size].filter(Boolean).join(" · ");const badges=document.createElement("div");badges.className="badges";for(const tag of product.tags||[]){const badge=document.createElement("span");badge.className="badge";badge.textContent=tag;badges.append(badge)}info.append(name,meta,badges);const actions=document.createElement("div");const price=document.createElement("div");price.className="price";price.textContent=kr(product.price);const prepare=document.createElement("button");prepare.textContent="Forbered";prepare.disabled=!product.available||product.id==null;prepare.onclick=async()=>{prepare.disabled=true;prepare.textContent="Forbereder…";try{const response=await app.callServerTool({name:"prepare_cart_additions",arguments:{items:[{product_id:product.id,quantity:1}]}});const proposal=read(response.content);const line=proposal?.review?.lines?.[0];if(!proposal?.applicable||!line)throw new Error("invalid proposal");const review=document.createElement("div");review.className="meta";review.textContent=["ID: "+line.product_id,line.name,line.unit_size,"Antal: "+line.quantity,"Pris: "+kr(line.unit_price),"Total: "+kr(line.line_total),"Udløber: "+proposal.expires_at].filter(Boolean).join(" · ");const apply=document.createElement("button");apply.textContent="Godkend og tilføj";apply.onclick=async()=>{apply.disabled=true;apply.textContent="Tilføjer…";try{const response=await app.callServerTool({name:"apply_cart_additions",arguments:{proposal_id:proposal.proposal_id}});const applied=read(response.content);if(applied?.status!=="completed"||!applied.basket)throw new Error("unverified result");const verified=document.createElement("div");verified.className="meta";verified.textContent="Verificeret kurv: "+(applied.basket.items||[]).map(item=>(item.quantity??0)+" × "+(item.name??"Ukendt")+" ("+kr(item.total)+")").join(" · ");apply.textContent="Tilføjet ✓";actions.append(verified)}catch{apply.textContent="Afvist";apply.disabled=false}};actions.replaceChildren(price,review,apply)}catch{prepare.textContent="Fejl";prepare.disabled=false}};actions.append(price,prepare);card.append(info,actions);grid.append(card)}root.replaceChildren(grid)};
-app.ontoolresult=({content})=>render(parse(content));await app.connect();
+const render=products=>{if(!products.length){root.innerHTML='<div class="empty">Ingen varer fundet.</div>';return}const grid=document.createElement("div");grid.className="grid";for(const product of products){const card=document.createElement("article");card.className="card";const info=document.createElement("div");const name=document.createElement("div");name.className="name";name.textContent=product.name??"Ukendt vare";const meta=document.createElement("div");meta.className="meta";meta.textContent=[product.id!=null?"ID: "+product.id:"",product.brand,product.unit_size].filter(Boolean).join(" · ");const badges=document.createElement("div");badges.className="badges";for(const tag of product.tags||[]){const badge=document.createElement("span");badge.className="badge";badge.textContent=tag;badges.append(badge)}info.append(name,meta,badges);const actions=document.createElement("div");const price=document.createElement("div");price.className="price";price.textContent=kr(product.price);const prepare=document.createElement("button");prepare.textContent="Forbered";prepare.disabled=!product.available||product.id==null;prepare.onclick=async()=>prepareBatch([{product_id:product.id,quantity:1}],prepare);actions.append(price,prepare);card.append(info,actions);grid.append(card)}root.replaceChildren(grid)};
+const prepareBatch=async(items,button)=>{button.disabled=true;button.textContent="Forbereder…";try{const response=await app.callServerTool({name:"prepare_cart_additions",arguments:{items}});const proposal=read(response.content);if(!proposal?.applicable||!proposal.review?.lines?.length)throw new Error("invalid proposal");const review=document.createElement("section");review.setAttribute("aria-label","Præcis kurvegennemgang");const lines=document.createElement("div");lines.className="meta";lines.textContent=proposal.review.lines.map(line=>[line.quantity+" × "+line.name,"ID "+line.product_id,kr(line.line_total)].join(" · ")).join(" | ")+" · Forventet kurvtotal: "+kr(proposal.review.expected_products_price)+" · Udløber: "+proposal.expires_at;const apply=document.createElement("button");apply.textContent="Godkend og tilføj";apply.onclick=async()=>{apply.disabled=true;apply.textContent="Afventer værtsgodkendelse…";try{const response=await app.callServerTool({name:"apply_cart_additions",arguments:{proposal_id:proposal.proposal_id}});const applied=read(response.content);if(applied?.status!=="completed"||!applied.basket)throw new Error("unverified result");apply.textContent="Tilføjet ✓";const verified=document.createElement("div");verified.className="meta";verified.textContent="Verificeret kurv: "+(applied.basket.items||[]).map(item=>(item.quantity??0)+" × "+(item.name??"Ukendt")+" ("+kr(item.total)+")").join(" · ");review.append(verified)}catch{apply.textContent="Afvist";apply.disabled=false}};review.append(lines,apply);root.replaceChildren(review)}catch{button.textContent="Fejl";button.disabled=false}};
+const renderPlan=plan=>{const form=document.createElement("form");form.className="grid";const controls=[];for(const line of plan.lines){const field=document.createElement("fieldset");const legend=document.createElement("legend");legend.textContent=line.name+" · ønsket "+line.quantity;field.append(legend);if(line.resolution==="covered"){const covered=document.createElement("div");covered.textContent="Allerede dækket i kurven";field.append(covered);form.append(field);continue}const label=document.createElement("label");label.textContent="Vare ";const select=document.createElement("select");select.name=line.id;const empty=document.createElement("option");empty.value="";empty.textContent=line.candidates.length?"Vælg en vare":"Ingen egnet vare";select.append(empty);for(const candidate of line.candidates){const option=document.createElement("option");option.value=String(candidate.id);option.textContent=candidate.name+" · "+kr(candidate.price)+(candidate.source==="favorite"?" · favorit":"");option.selected=candidate.id===line.selected_product_id;select.append(option)}label.append(select);const quantity=document.createElement("input");quantity.type="number";quantity.min="1";quantity.max="99";quantity.value=String(line.remaining_quantity);quantity.setAttribute("aria-label","Antal for "+line.name);controls.push({select,quantity});field.append(label,quantity);form.append(field)}const prepare=document.createElement("button");prepare.type="submit";prepare.textContent="Forbered valgte varer";form.onsubmit=event=>{event.preventDefault();const items=controls.flatMap(({select,quantity})=>select.value?[{product_id:Number(select.value),quantity:Number(quantity.value)}]:[]);if(items.length)prepareBatch(items,prepare)};form.append(prepare);root.replaceChildren(form)};
+app.ontoolresult=({content})=>{const value=read(content);if(value?.lines)renderPlan(value);else render(parse(content))};await app.connect();
 </script></body></html>`;

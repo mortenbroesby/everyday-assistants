@@ -1,6 +1,9 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import assert from "node:assert/strict";
+import { mkdtemp, readFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
 import type { Basket, Product } from "./client.js";
 import { createProgram, type ShoppingClient } from "./cli.js";
@@ -45,6 +48,8 @@ const fakeClient = (overrides: Partial<ShoppingClient> = {}): ShoppingClient => 
   searchProducts: async () => [product],
   getProduct: async () => product,
   listFavorites: async () => [product],
+  listDepartments: async () => [{ id: "/mejeri", name: "Mejeri" }],
+  browseDepartment: async () => ({ products: [product], page: 1, hasNext: false }),
   getCart: async () => basket,
   addToCart: async () => basket,
   removeFromCart: async () => ({ ...basket, items: [] }),
@@ -107,7 +112,7 @@ test("CLI favorites searches Danish names without touching the basket", async ()
     "--limit",
     "1",
   ]);
-  assert.equal(requestedLimit, 100);
+  assert.equal(requestedLimit, 1000);
   assert.match(output.join("\n"), /Økologiske bananer/);
   assert.doesNotMatch(output.join("\n"), /Økologisk mælk/);
 });
@@ -238,11 +243,16 @@ test("MCP exposes exact non-recipe tools and clean missing-credential errors", a
         "apply_cart_additions",
         "apply_cart_clear",
         "apply_cart_removal",
+        "browse_department",
         "create_feature_request",
+        "list_departments",
         "list_favorites",
+        "load_shopping_plan",
+        "plan_shopping_list",
         "prepare_cart_additions",
         "prepare_cart_clear",
         "prepare_cart_removal",
+        "save_shopping_plan",
         "search_products",
         "view_cart",
       ],
@@ -309,8 +319,36 @@ test("MCP favorites is read-only and returns listed, matched, or empty candidate
       arguments: { query: "pære", limit: 2 },
     });
     assert.deepEqual((empty.structuredContent as { result: unknown[] }).result, []);
-    assert.deepEqual(requestedLimits, [1, 100, 100]);
+    assert.deepEqual(requestedLimits, [1, 1000, 1000]);
   });
+});
+
+test("MCP plans whole lists and save/load re-resolves immutable structured snapshots", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "nemlig-mcp-plans-"));
+  const previous = process.env.NEMLIG_CONFIG_DIR; process.env.NEMLIG_CONFIG_DIR = directory;
+  let current = product; let reads = 0;
+  const client = fakeClient({
+    listFavorites: async () => { reads += 1; return [current]; }, getCart: async () => { reads += 1; return { ...basket, items: [{ ...basket.items[0]!, id: 7 }] }; },
+    addToCart: async () => { throw new Error("mutation called"); }, removeFromCart: async () => { throw new Error("mutation called"); }, clearCart: async () => { throw new Error("mutation called"); },
+  });
+  try {
+    await withMcpClient(createMcpServer(client, async () => undefined, { NEMLIG_MCP_APPS: "0" }), async (mcp) => {
+      const input = { lines: [{ id: "milk", name: "mælk", quantity: 2 }] };
+      const planned = await mcp.callTool({ name: "plan_shopping_list", arguments: input });
+      const plan = planned.structuredContent as { lines: Array<{ candidates: Array<{ source: string; dietary: object }>; remaining_quantity: number }> };
+      assert.equal(plan.lines[0]?.candidates[0]?.source, "favorite"); assert.equal(plan.lines[0]?.remaining_quantity, 1);
+      const saved = await mcp.callTool({ name: "save_shopping_plan", arguments: input });
+      const id = (saved.structuredContent as { id: string }).id;
+      const file = join(directory, "plans", `${id}.json`); const before = await readFile(file, "utf8");
+      current = { ...product, price: 99 };
+      const loaded = await mcp.callTool({ name: "load_shopping_plan", arguments: { id } });
+      const resumed = loaded.structuredContent as { lines: Array<{ candidates: Array<{ price: number }> }> };
+      assert.equal(resumed.lines[0]?.candidates[0]?.price, 99); assert.equal(await readFile(file, "utf8"), before);
+      const invalid = await mcp.callTool({ name: "plan_shopping_list", arguments: { lines: [] } });
+      assert.equal(invalid.isError, true);
+    });
+    assert.equal(reads, 4);
+  } finally { if (previous === undefined) delete process.env.NEMLIG_CONFIG_DIR; else process.env.NEMLIG_CONFIG_DIR = previous; }
 });
 
 test("every MCP tool has complete schemas, accurate annotations, and safe server instructions", async () => {
@@ -459,7 +497,9 @@ test("picker resource prepares an exact quantity-one review before a distinct ap
   assert.match(PICKER_HTML, /aria-live/);
   assert.match(PICKER_HTML, /prepare_cart_additions/);
   assert.match(PICKER_HTML, /apply_cart_additions/);
-  assert.match(PICKER_HTML, /items:\[\{product_id:product\.id,quantity:1\}\]/);
+  assert.match(PICKER_HTML, /prepareBatch\(\[\{product_id:product\.id,quantity:1\}\]/);
+  assert.match(PICKER_HTML, /renderPlan/);
+  assert.match(PICKER_HTML, /type="number"/);
   assert.match(PICKER_HTML, /Godkend og tilføj/);
   assert.match(PICKER_HTML, /Verificeret kurv/);
   assert.match(PICKER_HTML, /applied\.basket\.items/);

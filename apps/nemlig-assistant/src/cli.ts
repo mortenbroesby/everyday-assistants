@@ -25,6 +25,8 @@ export type ShoppingClient = Pick<
   | "searchProducts"
   | "getProduct"
   | "listFavorites"
+  | "listDepartments"
+  | "browseDepartment"
   | "getCart"
   | "addToCart"
   | "removeFromCart"
@@ -169,17 +171,33 @@ export function createProgram(overrides: Partial<CliDependencies> = {}): Command
     .description("List or search current Nemlig favorites without changing favorites or the basket.")
     .argument("[query]", "Danish product name")
     .option("-l, --limit <number>", "Maximum results", positiveInteger, 10)
-    .action(async (query: string | undefined, options: { limit: number }) => {
+    .option("-p, --page <number>", "Results page", positiveInteger, 1)
+    .action(async (query: string | undefined, options: { limit: number; page: number }) => {
+      if (options.limit > 50) throw new NemligError("Favorites page size cannot exceed 50.");
       await ensureLoggedIn(dependencies.client, dependencies.credentials);
       const favorites = await dependencies.client.listFavorites(
         query === undefined ? options.limit : FAVORITES_SEARCH_POOL,
+        query === undefined ? options.page : 1,
       );
-      const products = query === undefined ? favorites : matchFavorites(favorites, query, options.limit);
+      const products = query === undefined ? favorites : matchFavorites(favorites, query, options.page * options.limit).slice((options.page - 1) * options.limit);
       dependencies.out(
         products.length
           ? ["ID       Name                          Price    Size       Status", ...products.map(formatProduct)].join("\n")
           : "No favorites found.",
       );
+    });
+
+  program.command("departments").description("List current Nemlig department IDs.").action(async () => {
+    const departments = await dependencies.client.listDepartments();
+    dependencies.out(departments.length ? departments.map((item) => `${item.id}\t${item.name}`).join("\n") : "No departments found.");
+  });
+
+  program.command("browse").description("Browse one freshly validated Nemlig department.")
+    .argument("<department-id>").option("-l, --limit <number>", "Page size (max 50)", positiveInteger, 20)
+    .option("-p, --page <number>", "Results page", positiveInteger, 1)
+    .action(async (departmentId: string, options: { limit: number; page: number }) => {
+      const result = await dependencies.client.browseDepartment(departmentId, options.limit, options.page);
+      dependencies.out(result.products.length ? ["ID Name Price Size Status", ...result.products.map(formatProduct), ...(result.hasNext ? [`Next page: ${result.page + 1}`] : [])].join("\n") : "No products found.");
     });
 
   program
