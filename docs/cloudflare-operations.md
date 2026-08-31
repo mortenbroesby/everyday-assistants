@@ -1,7 +1,23 @@
 # Cloudflare operations for Nemlig MCP
 
-Status: repository implementation only; no production resource or DNS change has
-been made.
+Status: production version `ad2b3a21-b31a-419c-9daa-cab62b151c27` is enabled
+for controlled read-only acceptance. Health, OAuth metadata, anonymous rejection,
+and no unauthorized Container wake are verified; Auth0 sign-in and the first
+authenticated read-only tool call remain pending.
+
+Current production endpoints:
+
+- `https://nemlig-mcp.broesby.dk/mcp`
+- `https://nemlig-mcp-cloudflare-production.mortenbroesby.workers.dev/mcp`
+
+Both returned HTTP 503 with `MCP temporarily disabled` during the initial gate
+and again on live kill-switch version `fd5696b7-d2ea-4f3c-9a1a-88cf22d29caa`.
+The current enabled endpoint returns healthy OAuth metadata and rejects anonymous
+MCP initialization with HTTP 401 without starting the Container. The Worker is
+`nemlig-mcp-cloudflare-production`; the configured Container is `lite`, EU
+placed, sleeps after 10 minutes, and is capped at one instance. Required Auth0
+owner and Nemlig credentials are stored as encrypted Worker secrets; this
+document records names only, never values.
 
 ## Production shape and defaults
 
@@ -18,10 +34,12 @@ deadlines are 5 and 35 seconds. Nemlig reads make at most four bounded attempts;
 basket mutations make one attempt and retain the existing no-retry-on-uncertainty
 contract.
 
-## First deployment
+## First deployment and current setup
 
-Do these only after separately approving production creation and the expected
-Workers Paid baseline cost.
+The account plan, Auth0 API, encrypted secrets, disabled first deployment, and
+custom hostname steps below are complete. Keep the procedure for reproduction
+and disaster recovery. The current enabled version was deployed only after the
+disabled endpoint and no-running-Container state were verified.
 
 1. Activate Workers Paid and configure account-wide budget notifications at USD
    10 (warning) and USD 20 (urgent). These are delayed informational alerts, not
@@ -74,6 +92,12 @@ Workers Paid baseline cost.
    test health, Auth0 rejection, one authenticated MCP handshake, usage
    inspection, and one read-only tool call.
 
+   A tunnel-era ChatGPT app cannot be repointed in place and may show
+   `Authorization used: None`. Create a separate hosted app using the production
+   `/mcp` URL, OAuth with Dynamic Client Registration, and the default
+   `use:nemlig-assistant` scope. Confirm its connection reports OAuth before
+   removing any tunnel fallback.
+
 ## Emergency disable and re-enable
 
 In Cloudflare, open the production Worker, edit the plain production variable
@@ -90,6 +114,13 @@ curl -i https://YOUR_MCP_HOST/mcp
 The response must be HTTP 503 with `MCP temporarily disabled`. Cloudflare logs
 should show `disabled` and no later `container_invoked` or `container_started`
 event for that request.
+
+The live 2026-09-01 exercise deployed disabled version
+`fd5696b7-d2ea-4f3c-9a1a-88cf22d29caa`, observed HTTP 503 on the custom domain
+and workers.dev route, and found no running Container instance after the probes.
+It then deployed enabled version `ad2b3a21-b31a-419c-9daa-cab62b151c27`, observed
+HTTP 200 health and OAuth metadata plus HTTP 401 for anonymous MCP initialization,
+and again found no running Container instance.
 
 ## Inspect usage and reset the breaker
 

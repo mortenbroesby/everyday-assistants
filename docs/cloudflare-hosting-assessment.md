@@ -1,8 +1,12 @@
 # Cloudflare hosting assessment for Nemlig MCP
 
-Status: architecture and cost gate  
-Evidence checked: 2026-08-31  
-Production resources created by this spike: none
+Status: production enabled for controlled read-only acceptance; authenticated acceptance pending
+
+Evidence checked: 2026-09-01
+
+Production resources: one Worker, two fixed Durable Object classes, one `lite`
+Container application capped at one instance, and the custom hostname
+`nemlig-mcp.broesby.dk`
 
 ## Recommendation
 
@@ -113,22 +117,24 @@ internal binding, and the existing snapshot-storage seam. Cloudflare Containers
 can call Worker bindings through outbound handlers, including their own Durable
 Object state, so plan persistence does not require another storage product.
 
-## Required production resources
+## Production resources
 
-Create these only after owner review:
+The owner reviewed and separately approved creation of:
 
-1. One Workers Paid account/plan if the account is not already paid.
-2. One Worker script and route/custom hostname for the MCP endpoint.
+1. One active Workers Paid account/plan.
+2. One Worker script, `nemlig-mcp-cloudflare-production`, with the custom
+   hostname `nemlig-mcp.broesby.dk` and a workers.dev fallback.
 3. One EU-jurisdiction SQLite Durable Object namespace whose class is also the
    Container controller; application code always uses one fixed production ID.
 4. One EU-jurisdiction SQLite Durable Object namespace with one fixed ID for
    immutable plan snapshots. It has no Container or public route.
-5. One Container application/image with `instance_type = "lite"` if the memory
-   measurement passes, `max_instances = 1`, and an idle sleep timeout starting at
-   10 minutes.
+5. One Container application/image with `instance_type = "lite"`,
+   `max_instances = 1`, EU placement, and a 10-minute idle sleep timeout.
 6. Worker secrets for actual credentials only: Nemlig credentials and any
    required Auth0/GitHub secret. Thresholds and `MCP_ENABLED` are plain config.
-7. Two informational account budget alerts: USD 10 warning and USD 20 urgent.
+7. Two recommended informational account budget alerts: USD 10 warning and USD
+   20 urgent. These remain an account-dashboard step and are not application
+   enforcement.
 
 Do not add R2, D1, KV, Queues, Workflows, load balancing, generic autoscaling, or
 staging infrastructure for this family-only service.
@@ -257,8 +263,14 @@ After this gate is approved, the first implementation work should be local only:
 4. implement and test the Worker/fixed-object safety boundary before creating any
    production resource.
 
-This checkpoint passed locally with `lite`. Production deployment, secrets, DNS,
-and live Nemlig access remain separate owner actions.
+This checkpoint passed locally with `lite`. The separately approved production
+deployment, required secrets, and custom hostname now exist. The disabled
+deployment was verified first. A later live kill-switch exercise verified
+disabled version `fd5696b7-d2ea-4f3c-9a1a-88cf22d29caa` before enabling version
+`ad2b3a21-b31a-419c-9daa-cab62b151c27` for controlled acceptance. Health, OAuth
+metadata, anonymous rejection, and no unauthorized Container wake are verified.
+Live Auth0 sign-in and a read-only Nemlig acceptance call remain pending; no
+basket mutation is authorized.
 
 ## Official Cloudflare sources
 
