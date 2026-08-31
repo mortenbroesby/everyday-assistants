@@ -24,7 +24,8 @@
   "bin": {
     "nemlig": "dist/cli.js",
     "nemlig-assistant": "dist/cli.js",
-    "nemlig-mcp": "dist/mcp.js"
+    "nemlig-mcp": "dist/mcp.js",
+    "nemlig-mcp-http": "dist/http.js"
   },
   "scripts": {
     "build": "tsdown",
@@ -45,6 +46,7 @@
     "@inquirer/password": "^5.2.0",
     "@modelcontextprotocol/sdk": "^1.30.0",
     "commander": "^15.0.0",
+    "jose": "^6.2.10",
     "zod": "^4.5.4"
   },
   "devDependencies": {

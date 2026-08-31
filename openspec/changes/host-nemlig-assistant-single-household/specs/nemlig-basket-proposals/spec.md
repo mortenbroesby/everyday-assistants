@@ -4,12 +4,12 @@
 
 The system SHALL generate cryptographically random opaque proposal IDs, store
 proposals only for a short configurable lifetime, and bind each proposal to its
-operation, current basket fingerprint, selected runtime, authenticated owner when
-hosted, and originating MCP session or local connection.
+operation, current basket fingerprint, selected runtime, authenticated owner for
+HTTP execution, and originating MCP session or local connection.
 
 #### Scenario: Another connection presents a proposal
 
-- **WHEN** a caller other than the authenticated owner and originating hosted
+- **WHEN** a caller other than the authenticated owner and originating HTTP
   session or local connection attempts to apply a proposal
 - **THEN** the server rejects the request and performs no mutation
 

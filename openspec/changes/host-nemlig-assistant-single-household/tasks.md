@@ -9,38 +9,47 @@
   compatibility, managed secrets, durable snapshots, health, rollback, alerts,
   and recurring cost; record one recommended pair and verify no provider
   abstraction or resource has been added.
-- [x] 1.3 **[OPERATOR]** Review and explicitly approve the selected host, identity
-  provider, region, recurring cost ceiling, security boundary, and creation of
-  external staging resources before any account, endpoint, secret, or billable
+- [x] 1.3 **[OPERATOR]** Review and explicitly approve the Auth0 Europe tenant,
+  Free-plan boundary, one-owner identity model, and credential-free OAuth staging.
+  Verify no payment method or paid Auth0 plan is active.
+- [ ] 1.4 Prove Auth0's credential-free OAuth flow through the existing Secure MCP
+  Tunnel supports ChatGPT discovery, authorization code with PKCE, owner
+  identification, required scope, protected-resource metadata, and refresh/offline
+  access; verify revoked, expired, wrong-audience, and wrong-subject tokens fail
+  before tool dispatch.
+- [ ] 1.5 **[OPERATOR]** After the authenticated tunnel milestone, compare and
+  explicitly approve a host, region, recurring cost ceiling, managed-secret and
+  durable-storage boundary before any hosting endpoint, secret, or billable
   resource is created.
-- [ ] 1.4 Prove the approved provider's credential-free staging OAuth flow supports
-  ChatGPT discovery, authorization code with PKCE, owner identification, required
-  scope, protected-resource metadata, and refresh/offline access; verify revoked,
-  expired, wrong-audience, and wrong-subject tokens fail before tool dispatch.
 
 ## 2. Transport-Neutral Runtime
 
-- [ ] 2.1 Refactor the current MCP construction into a transport-neutral factory
+- [x] 2.1 Refactor the current MCP construction into a transport-neutral factory
   while retaining the stdio entry point; verify existing MCP, interface, smoke,
   picker, and proposal tests pass without changed tool contracts.
 - [ ] 2.2 Add an authenticated-owner and MCP-session request context that cannot be
   supplied through tool arguments; verify focused tests reject a mismatched owner
   or session before proposals or Nemlig calls are reached.
-- [ ] 2.3 Add the hosted Streamable HTTP entry point using the installed MCP SDK,
-  minimal Node HTTP support, permitted-origin validation, and sanitized errors;
+- [ ] 2.3 Add the reusable Streamable HTTP entry point using the installed MCP SDK,
+  minimal Node HTTP support, loopback-only binding for tunnel use, permitted-origin
+  validation, and sanitized errors;
   verify protocol tests cover initialize, tool enumeration, POST/GET lifecycle,
   invalid origin, malformed requests, and unauthenticated rejection.
 - [ ] 2.4 Add HTTP-only health, readiness, revision, and OAuth protected-resource
   metadata endpoints; verify responses contain the exact build revision and no
   credential, token, storage path, account identity, plan, proposal, or basket.
-- [ ] 2.5 Compare stdio and HTTP tool/resource metadata from the same build and
+- [ ] 2.5 Compare stdio and authenticated HTTP tool/resource metadata from the same build and
   verify names, schemas, annotations, resource URIs, and instructions match except
   for documented transport-only endpoints.
+- [ ] 2.6 Point a separate local tunnel profile at the loopback HTTP endpoint,
+  update supervision and the operating guide without storing Auth0 or tunnel
+  secrets, and verify the current stdio-target profile remains a recoverable
+  fallback until the owner approves the switch.
 
 ## 3. Hosted Identity, Secrets, and Safety State
 
 - [ ] 3.1 Implement issuer, audience, signature, expiry, scope, and configured-owner
-  token validation using the approved provider's supported path; verify synthetic
+  token validation for every HTTP deployment using Auth0's supported path; verify synthetic
   authorization tests cover valid owner, wrong owner, revoked/expired token,
   missing scope, invalid signature, and unavailable metadata without contacting
   Nemlig.

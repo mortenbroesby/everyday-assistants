@@ -1,8 +1,9 @@
-# Private ChatGPT connection
+# Auth0-secured private ChatGPT connection
 
-This runbook connects the local stdio server to one private ChatGPT developer
-app through OpenAI Secure MCP Tunnel. It creates no public listener and does not
-publish the app or npm package.
+The recommended alpha path runs a loopback-only HTTP MCP server on the Mac,
+validates Auth0 access tokens, and reaches it through OpenAI Secure MCP Tunnel.
+It creates no hosting resource, public listener, or npm publication. The older
+stdio profile remains the rollback path.
 
 ## Early-alpha operating model
 
@@ -10,10 +11,11 @@ The private ChatGPT app does not follow Git, `main`, an npm version, or a
 deployment automatically. Its current chain is:
 
 ```text
-ChatGPT developer app
+ChatGPT developer app and Auth0 sign-in
   -> associated OpenAI Secure MCP Tunnel
-  -> local tunnel-client profile: nemlig-local
-  -> node <REPO>/apps/nemlig-assistant/dist/mcp.js
+  -> local tunnel-client profile: nemlig-auth0-local
+  -> http://127.0.0.1:3333/mcp
+  -> issuer, audience, signature, expiry, scope, and owner-subject validation
   -> owner-only local Nemlig credentials and account
 ```
 
@@ -23,10 +25,94 @@ tunnel profile. Pushing a commit or rebuilding `dist/mcp.js` does not replace
 code already loaded by a running Node process. The integration is available
 only while the local computer and tunnel client are running.
 
-This is the intended early-alpha trade-off: it avoids hosting account
-credentials or exposing a public MCP endpoint while the product and safety
-workflow are still changing. For unattended operation, a macOS user LaunchAgent
-can keep this same private chain alive; it does not change the trust boundary.
+Auth0 authenticates the person opening the ChatGPT connection. It does not
+receive or replace the Nemlig username and password; those remain only on the
+Mac. The OpenAI tunnel runtime key authenticates the local tunnel process to
+OpenAI. These are three separate credentials with separate jobs.
+
+## Auth0 milestone: what changes and what does not
+
+This milestone adds an identity gate to the existing tunnel. It reuses the same
+HTTP/OAuth core a hosted deployment can use later, so token validation and MCP
+transport work are not throwaway. Hosting will still require a separate decision
+about provider, EU region, storage, secrets, recurring cost, and shutdown.
+
+There is no new hosting bill in this step. Stay on the Auth0 Free plan without a
+payment method. Before changing that plan or creating any hosted service, stop
+and review its exact monthly ceiling and deletion path.
+
+Auth0 access tokens are self-contained JWTs: revoking a browser session or
+refresh token prevents future tokens but cannot recall an already issued access
+token immediately. Configure a short access-token lifetime (15 minutes for the
+alpha) so that window is bounded. The local server also rejects wrong issuer,
+audience, signature, expiry, scope, or owner subject before MCP tool dispatch.
+
+## Configure the Auth0-backed local profile
+
+These are the remaining owner-visible Auth0 changes. Before applying them,
+review each value in the Auth0 dashboard; none contains a Nemlig credential.
+
+1. Create an Auth0 API whose identifier is the exact public tunnel MCP URL,
+   `<PUBLIC_TUNNEL_MCP_URL>` ending in `/mcp`.
+2. Add the API permission `use:nemlig-assistant` and set the access-token lifetime
+   to 900 seconds.
+3. Enable Dynamic Client Registration for the tenant so ChatGPT can register its
+   OAuth client. Keep the tenant in the EU region and on Free.
+4. Copy the created owner's Auth0 `user_id` from the user details page. This is
+   the allow-listed subject, not an email or password.
+
+Create `~/.config/nemlig-assistant/http-auth.env` locally with this shape:
+
+```sh
+export NEMLIG_MCP_AUTH0_ISSUER='https://<AUTH0_TENANT>/'
+export NEMLIG_MCP_AUTH0_AUDIENCE='<PUBLIC_TUNNEL_MCP_URL>'
+export NEMLIG_MCP_AUTH0_OWNER_SUBJECT='<AUTH0_USER_ID>'
+export NEMLIG_MCP_PUBLIC_URL='<PUBLIC_TUNNEL_MCP_URL>'
+export NEMLIG_MCP_REQUIRED_SCOPE='use:nemlig-assistant'
+```
+
+Then protect it and create a second tunnel profile. Reuse the existing tunnel ID
+and runtime-key file; never paste either into the environment file or repository.
+
+```sh
+chmod 700 ~/.config/nemlig-assistant
+chmod 600 ~/.config/nemlig-assistant/http-auth.env
+
+tunnel-client init \
+  --sample sample_mcp_with_dcr \
+  --profile nemlig-auth0-local \
+  --tunnel-id <TUNNEL_ID> \
+  --mcp-server-url http://127.0.0.1:3333/mcp \
+  --health-listen-addr 127.0.0.1:8081
+
+tunnel-client doctor --profile nemlig-auth0-local --explain
+```
+
+The managed Auth0 path supervises both the local HTTP server and tunnel client;
+if either exits, `launchd` restarts the pair:
+
+```sh
+pnpm nemlig:tunnel:stop
+pnpm nemlig:tunnel:auth0:install
+pnpm nemlig:tunnel:auth0:status
+```
+
+In ChatGPT, refresh the private developer app and follow the discovered Auth0
+authorization-code/PKCE flow. Sign in with the Auth0 owner user. Do not enter the
+Nemlig username or password in that screen. Prove discovery, sign-in, tool
+enumeration, refresh, and read-only tool use before treating this profile as the
+active alpha path.
+
+Rollback is local and immediate:
+
+```sh
+pnpm nemlig:tunnel:auth0:stop
+pnpm nemlig:tunnel:restart
+```
+
+That restores the retained `nemlig-local` stdio profile. It does not delete the
+Auth0 API, DCR client, user, or tenant; remove those separately in Auth0 only if
+the owner decides to retire the identity setup.
 
 Official references:
 
@@ -45,7 +131,7 @@ pnpm dlx @modelcontextprotocol/inspector --cli \
   --method tools/list --strict
 ```
 
-Expect ten tools and no schema errors or warnings. This command only discovers
+Expect seventeen tools and no schema errors or warnings. This command only discovers
 metadata; it does not log in or call a Nemlig tool.
 
 ## 2. Create the private tunnel
@@ -150,8 +236,8 @@ confirm the client is healthy, ready, and polling. Then in ChatGPT web:
    enabled.
 2. Open Apps, create a developer-mode app, choose **Tunnel** as the connection,
    and select the tunnel (or paste its `tunnel_id`).
-3. Use no separate app-level OAuth for this single-account private boundary.
-4. Scan tools and confirm the ten tools, their read/write annotations, and the
+3. For the legacy `nemlig-local` fallback only, use no separate app-level OAuth.
+4. Scan tools and confirm the seventeen tools, their read/write annotations, and the
    warning for state-changing tools before creating the draft app.
 5. Test from a new normal ChatGPT conversation. Preparation is not approval;
    approve each unchanged exact apply proposal separately.
@@ -232,11 +318,10 @@ the latest build.
 
 If local-machine availability becomes the limiting factor, a separate approved
 change can replace the tunnel-bound process with a hosted Streamable HTTP MCP
-endpoint. Auth0 or another standards-based OAuth/OIDC provider could then
-authenticate each ChatGPT user. The hosted service would need to authorize and
-map that identity to an explicitly linked Nemlig account, isolate sessions and
-proposals per user, store credentials in a server-side secret manager, and add
-revocation, audit, rate limiting, and deployment/version evidence.
+endpoint. The Auth0 validation and HTTP transport above can be reused. The
+hosted service would additionally need to isolate sessions and proposals, store
+credentials in a server-side secret manager, and add durable storage, audit,
+rate limiting, and deployment/version evidence.
 
 That is not an automatic upgrade of the current tunnel. It changes the trust,
 hosting, identity, privacy, and operational boundaries and therefore requires a

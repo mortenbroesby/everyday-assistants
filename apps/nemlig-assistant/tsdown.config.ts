@@ -13,4 +13,5 @@ const executable = {
 export default defineConfig([
   { ...executable, clean: true, entry: { cli: "src/cli.ts" } },
   { ...executable, clean: false, entry: { mcp: "src/mcp.ts" } },
+  { ...executable, clean: false, entry: { http: "src/http.ts" } },
 ]);

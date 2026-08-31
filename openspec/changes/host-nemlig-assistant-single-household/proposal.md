@@ -1,14 +1,18 @@
 ## Why
 
 The private ChatGPT app currently depends on the owner's Mac, login session,
-local MCP process, and Secure MCP Tunnel. The product feature set is ready for
-alpha testing, so availability and verifiable deployment are now the largest
-remaining constraints.
+local MCP process, and Secure MCP Tunnel. Before choosing a permanent host, the
+same tunnel can carry a loopback HTTP MCP endpoint whose callers authenticate
+through Auth0. This provides an immediate owner-authentication improvement and
+proves the reusable HTTP/OAuth boundary without moving Nemlig credentials off
+the Mac or creating billable hosting.
 
 ## What Changes
 
-- Add one privately operated, single-household hosted Nemlig Assistant service
-  with an authenticated Streamable HTTP MCP endpoint in an EU region.
+- Add an Auth0-authenticated Streamable HTTP MCP endpoint on loopback and carry
+  it through the existing Secure MCP Tunnel as the first delivery milestone.
+- Reuse that HTTP/OAuth core later in one privately operated, single-household
+  hosted Nemlig Assistant service in an approved EU region.
 - Authenticate only the owner through standards-based OAuth/OIDC and bind that
   identity to exactly one configured Nemlig account; no account selector is
   accepted from tool input.
@@ -18,9 +22,10 @@ remaining constraints.
 - Preserve the existing tool contracts, exact prepare/approve/apply boundary,
   mutation serialization, revalidation, single-use behavior, readback, and the
   absence of checkout, payment, order, and delivery-slot tools.
-- Retain the local CLI and stdio MCP server. Run the hosted and tunnel paths in
-  parallel for a bounded validation period, then retire the tunnel only after
-  an explicit cutover decision.
+- Retain the local CLI and stdio MCP server. Replace the current tunnel target
+  with the authenticated loopback HTTP endpoint after a bounded comparison,
+  then discuss hosting separately and retire the tunnel only after a later
+  explicit hosted cutover decision.
 - Add automated verified deployment, health and readiness checks, privacy-safe
   audit events, alerting, rollback, credential rotation, and service shutdown
   procedures.
@@ -30,9 +35,9 @@ remaining constraints.
 
 ### Goal
 
-Keep the private Nemlig ChatGPT app available without the owner's Mac while
-preserving the current single-account safety contract and producing auditable
-evidence for every deployment and basket mutation boundary.
+First move ChatGPT caller authentication to Auth0 without hosting Nemlig
+credentials, then make the private app independent of the owner's Mac through a
+separately approved host while preserving the single-account safety contract.
 
 ### Non-goals
 
@@ -44,11 +49,18 @@ evidence for every deployment and basket mutation boundary.
   autonomous basket changes.
 - Public npm publication or removal of the local CLI and stdio interfaces.
 - Retiring the tunnel before the hosted path passes the cutover criteria.
+- Creating or selecting a billable host during the Auth0-secured tunnel
+  milestone.
 
 ### Acceptance Criteria
 
-- The owner can connect ChatGPT to the hosted MCP endpoint through OAuth/OIDC
-  and use read-only tools while the Mac and local tunnel are off.
+- The owner can connect ChatGPT through the existing tunnel and complete the
+  Auth0 OAuth/OIDC flow before any MCP tool is dispatched.
+- The authenticated tunnel uses the same HTTP/OAuth core intended for later
+  hosting while Nemlig credentials, sessions, snapshots, and safety state remain
+  local.
+- After a separate hosting decision, the owner can connect ChatGPT to the hosted
+  MCP endpoint and use read-only tools while the Mac and local tunnel are off.
 - An unapproved identity, expired or revoked authorization, and any tool-supplied
   identity or account selector are rejected without contacting Nemlig.
 - Nemlig credentials and service secrets are held only in approved hosted secret
@@ -84,11 +96,13 @@ evidence for every deployment and basket mutation boundary.
 - Affected app areas include MCP server construction and transport, credential
   loading, session ownership, proposal binding, snapshot storage, configuration,
   tests, and operator documentation under `apps/nemlig-assistant/`.
-- New deployment and verification configuration will be required for the chosen
-  host, OAuth/OIDC provider, managed secret storage, persistent snapshot storage,
-  monitoring, and alerts.
-- The ChatGPT developer app will gain a hosted OAuth connection during validation;
-  the existing Secure MCP Tunnel remains available until explicit cutover.
+- The tunnel profile and local supervision will change from a stdio child process
+  to a loopback HTTP MCP target. Auth0 configuration and synthetic authorization
+  verification are required now; hosting resources are not.
+- New deployment configuration will be required later for the chosen host,
+  managed secret storage, persistent snapshot storage, monitoring, and alerts.
+- The ChatGPT developer app will first gain OAuth through its existing tunnel;
+  a separate hosted connection remains a later validation and cutover step.
 - Hosting and identity services may incur ongoing cost and create external
   resources; their exact provider, region, cost ceiling, and creation remain
   implementation gates rather than being authorized by this proposal.

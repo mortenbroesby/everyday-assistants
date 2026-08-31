@@ -3,9 +3,9 @@
 ### Requirement: Immutable local plan snapshots
 
 The system SHALL save a valid guided plan only on explicit request as a new
-immutable opaque-ID snapshot, using owner-only ignored storage for local execution
-or durable owner-bound storage for hosted execution, and SHALL load a snapshot by
-ID without changing Nemlig state.
+immutable opaque-ID snapshot, using owner-only ignored storage for local stdio or
+authenticated tunnel execution or durable owner-bound storage for hosted
+execution, and SHALL load a snapshot by ID without changing Nemlig state.
 
 #### Scenario: Save a plan
 

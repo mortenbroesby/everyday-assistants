@@ -161,10 +161,11 @@ Read [`AGENTS.md`](AGENTS.md) and the
 the app. Repository changes and specs never authorize a basket mutation.
 
 For the private ChatGPT connection, follow
-[`SECURE_MCP_TUNNEL.md`](SECURE_MCP_TUNNEL.md). The runbook keeps the stdio
-server private, uses session-only tunnel credentials, and includes shutdown,
-reconnect, troubleshooting, and revocation. Creating the tunnel, runtime key,
-or ChatGPT app remains an explicit owner action.
+[`SECURE_MCP_TUNNEL.md`](SECURE_MCP_TUNNEL.md). The recommended alpha profile
+uses Auth0 in front of a loopback-only HTTP MCP server while keeping Nemlig
+credentials local. The existing stdio profile remains the rollback path.
+Creating or changing Auth0 resources, the tunnel, runtime key, or ChatGPT app
+remains an explicit owner action.
 
 ## Development
 
@@ -183,8 +184,8 @@ Tests use synthetic HTTP responses and never access a real account.
 
 The private npm-format package is named `nemlig-assistant`. It is installable from
 the tarball produced by `pnpm --filter nemlig-assistant smoke:package`, but it is
-not claimed or published on npm. Its three binaries are `nemlig`,
-`nemlig-assistant`, and `nemlig-mcp`. Versions use
+not claimed or published on npm. Its four binaries are `nemlig`,
+`nemlig-assistant`, `nemlig-mcp`, and `nemlig-mcp-http`. Versions use
 `major.minor.patch-alpha.increment`; the alpha increment never resets, including
 across semantic-version changes. Nemlig runtime fixes require a patch, features
 require a minor, and `!` or `BREAKING CHANGE:` requires a major. Tests and

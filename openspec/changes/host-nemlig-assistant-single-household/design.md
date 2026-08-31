@@ -6,18 +6,20 @@ credential, keeps sessions and basket proposals in memory, serializes mutations
 with one process-local mutex, and writes immutable plan snapshots to owner-only
 local files.
 
-The hosted design must preserve those useful single-household properties while
-adding HTTPS transport, owner authentication, managed secrets, durable snapshots,
-and deployment operations. The current provider client has no supported public
-Nemlig OAuth flow; the service must continue to protect one server-side household
-credential. External hosting, identity, and secret resources may incur cost and
-are not created until their gates are accepted.
+The first milestone preserves those properties on the Mac while adding a
+loopback Streamable HTTP transport and Auth0 owner authentication through Secure
+MCP Tunnel. The later hosted design reuses that HTTP/OAuth core and adds managed
+secrets, durable snapshots, and deployment operations. The current provider
+client has no supported public Nemlig OAuth flow; both runtimes must continue to
+protect one server-side household credential. Hosting and hosted-secret resources
+are not created until their later gates are accepted.
 
 ## Goals / Non-Goals
 
 **Goals:**
 
-- Reuse one tool-registration core across local stdio and hosted Streamable HTTP.
+- Reuse one tool-registration core across local stdio and authenticated
+  Streamable HTTP, first on loopback through the tunnel and later in hosting.
 - Keep one authenticated owner, one Nemlig account, one active service instance,
   and one mutation lock for the initial hosted release.
 - Make restarts and failed deployments safe: sessions recover, pending proposals
@@ -35,6 +37,29 @@ are not created until their gates are accepted.
   basket operations except where transport context and storage are required.
 
 ## Decisions
+
+### Prove Auth0 through the existing tunnel before hosting
+
+Run the reusable Streamable HTTP entry point on loopback and configure
+`tunnel-client` with its local MCP URL. ChatGPT reaches the OpenAI-hosted tunnel
+endpoint, OAuth discovery and MCP traffic traverse the tunnel, and the local
+server validates Auth0 access tokens before dispatch. The Auth0 authorization
+server remains publicly reachable; no inbound listener or public proxy is added
+to the Mac.
+
+The tunnel runtime API key and Auth0 authorization are complementary rather than
+duplicates. The runtime key authenticates `tunnel-client` to OpenAI's control
+plane; Auth0 authenticates and authorizes the human caller to this MCP resource.
+Nemlig credentials, cookies, proposals, snapshots, and mutation state remain in
+the existing local boundary for this milestone.
+
+Do not add a tunnel-specific authentication proxy or a second tool server. The
+same HTTP adapter, protected-resource metadata, token validation, owner context,
+and contract tests must be deployable later behind a hosting provider's TLS
+endpoint. Only the loopback address, process supervision, and tunnel profile are
+temporary. OpenAI's [Secure MCP Tunnel OAuth
+documentation](https://developers.openai.com/api/docs/guides/secure-mcp-tunnels#oauth)
+confirms that OAuth discovery metadata can traverse the tunnel path.
 
 ### Use one always-on EU Node container
 
@@ -87,14 +112,16 @@ Stop and retain the tunnel if any of the following occurs:
 
 #### Provider decision record (2026-08-31)
 
-The smallest qualifying pair is **Render in Frankfurt plus an Auth0 Europe
-tenant**. No provider account, endpoint, secret, or billable resource was created
-while making this recommendation.
+The identity decision remains **Auth0 Europe**. Render in Frankfurt remains the
+costed hosting baseline, but the host decision is reopened for comparison after
+the authenticated tunnel milestone. No hosting endpoint, secret, or billable
+resource has been created.
 
-The owner approved this pair, the Frankfurt and Europe regions, the USD 10/month
-before-tax ceiling, the recorded security boundary, and creation of
-credential-free staging resources on 2026-08-31. Production identity binding,
-Nemlig credential provisioning, and cutover remain separately gated.
+The owner approved the Auth0 Europe tenant and its USD 0 Free-plan boundary on
+2026-08-31. The earlier Render baseline and USD 10/month ceiling are retained as
+comparison evidence, not as current authorization to create hosting. Host choice,
+production identity binding, Nemlig credential provisioning, and cutover remain
+separately gated.
 
 | Candidate | Fit | Decision |
 | --- | --- | --- |
@@ -116,25 +143,27 @@ only authentication identity and authorization metadata. Neither provider may
 receive prompt text, basket contents, full plans, proposal reviews, Nemlig
 cookies, or Nemlig credentials outside the Render secret boundary.
 
-### Reuse the official SDK over two transports
+### Reuse the official SDK over two transports and two deployments
 
 Extract the current MCP construction into a transport-neutral server factory.
-Keep the existing stdio entry point and add a separate hosted entry point using
-the installed MCP SDK's Streamable HTTP transport behind a minimal Node HTTP
-adapter. The host terminates TLS; the service validates permitted origins and
-accepts MCP traffic only on the configured endpoint.
+Keep the existing stdio entry point and add a separate HTTP entry point using the
+installed MCP SDK's Streamable HTTP transport behind a minimal Node HTTP adapter.
+During the tunnel milestone it binds only to loopback and the tunnel supplies the
+remote path. Later the host terminates TLS. In either deployment the service
+validates permitted origins and accepts MCP traffic only on the configured
+endpoint.
 
 Contract tests enumerate both transports from the same revision and compare tool
 names, resource URIs, schemas, annotations, and server instructions. Health and
 OAuth metadata endpoints are HTTP-only and excluded from that equality check.
 
-### Delegate OAuth/OIDC and validate one owner
+### Delegate OAuth/OIDC and validate one owner in both HTTP deployments
 
 Use a standards-based hosted authorization provider rather than implementing an
 authorization server. The provider must interoperate with ChatGPT's remote MCP
 flow, authorization code plus PKCE, protected-resource discovery, and refresh or
-offline access. Complete a staging compatibility proof before provisioning the
-Nemlig credential.
+offline access. Complete that compatibility proof through the credential-free
+tunnel before provisioning any hosted Nemlig credential.
 
 The MCP service validates issuer, audience, signature, expiry, and required scope,
 then compares the immutable subject to one configured owner identifier. Tool
@@ -184,14 +213,14 @@ records the commit and image digest, runs post-deployment health checks, and kee
 the prior healthy image available for rollback. No deployment test calls a live
 basket mutation.
 
-### Cut over after a bounded dual run
+### Cut over each boundary after a bounded comparison
 
-Keep the tunnel unchanged while the hosted app is connected separately. Compare
-source revision, tool contract, read-only behavior, authentication, revocation,
-restart behavior, and one optional separately approved exact proposal flow. The
-owner explicitly decides whether to switch the ChatGPT app and retire the tunnel.
-Rollback before retirement points ChatGPT back to the tunnel; rollback afterward
-restores the last healthy hosted image or executes service shutdown.
+Keep the current stdio-target tunnel available while the authenticated HTTP-target
+tunnel is proven, then switch the private app only after OAuth discovery,
+authorization, revocation, contract parity, and read-only behavior pass. Later,
+keep that authenticated tunnel available while a hosted app is evaluated. The
+owner explicitly decides each switch and whether to retire the tunnel. Hosted
+rollback restores the authenticated tunnel or the last healthy hosted image.
 
 ## Risks / Trade-offs
 
@@ -217,20 +246,19 @@ restores the last healthy hosted image or executes service shutdown.
 
 ## Migration Plan
 
-1. Complete the policy, provider, region, identity, and cost decision record.
-2. Refactor the MCP factory and snapshot store behind local compatibility tests;
-   local stdio and the tunnel remain the active production path.
-3. Add the authenticated HTTP entry point and prove OAuth plus contract parity
-   locally and in a credential-free staging deployment.
-4. Provision production identity, secret, snapshot, monitoring, and deployment
-   resources only after the owner approves the selected external resources and
-   recurring cost.
-5. Deploy the exact verified image, configure the private hosted ChatGPT app, and
-   run read-only acceptance with the Mac and tunnel off.
-6. Exercise restart, revocation, rotation, failed deployment, rollback, and
-   shutdown. Optionally exercise one separately approved exact basket proposal.
-7. Run both paths for a bounded alpha period. Retire and revoke the tunnel only
-   after a separate explicit cutover decision.
+1. Keep Auth0 on its verified Free plan and leave hosting selection deferred.
+2. Refactor the MCP factory and add the loopback authenticated HTTP entry point
+   behind local compatibility and synthetic authorization tests.
+3. Point the existing tunnel at the loopback HTTP endpoint and prove ChatGPT
+   discovery, PKCE, refresh, owner authorization, revocation, and read-only use.
+4. Make the explicit switch from the stdio-target tunnel only after that proof;
+   preserve the stdio entry point and local Nemlig credential boundary.
+5. Compare and approve a host, region, recurring cost, secret store, and storage
+   boundary separately.
+6. Deploy the same verified HTTP/OAuth core, configure a separate hosted ChatGPT
+   app, and run read-only acceptance with the Mac and tunnel off.
+7. Exercise hosted restart, rotation, failed deployment, rollback, and shutdown.
+   Retire the tunnel only after a separate explicit hosted cutover decision.
 
 Rollback before cutover leaves or restores the tunnel as the ChatGPT connection.
 Rollback after cutover restores the recorded healthy hosted image; if safety is

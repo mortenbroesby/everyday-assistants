@@ -2,17 +2,17 @@
 
 ### Requirement: Private Secure MCP Tunnel deployment
 
-The system SHALL retain the local stdio MCP server and private Secure MCP Tunnel
-as the supported fallback during hosted validation, SHALL permit the accepted
-single-household hosted MCP endpoint as its successor, and SHALL NOT expose an
-unauthenticated internet endpoint.
+The system SHALL retain the local stdio MCP server, SHALL carry an
+Auth0-authenticated loopback HTTP MCP endpoint through the private Secure MCP
+Tunnel as the first successor path, SHALL permit a later approved hosted endpoint
+to reuse that boundary, and SHALL NOT expose an unauthenticated internet endpoint.
 
 #### Scenario: ChatGPT connects through the tunnel
 
-- **WHEN** the local server and tunnel client are running and the private app
-  invokes a tool through the tunnel
-- **THEN** ChatGPT can discover and invoke the safe tool surface while the Nemlig
-  password remains outside ChatGPT
+- **WHEN** the authenticated local HTTP server and tunnel client are running and
+  the configured owner completes OAuth/OIDC
+- **THEN** ChatGPT can discover and invoke the safe tool surface through the
+  tunnel while the Nemlig password and session remain local and outside ChatGPT
 
 #### Scenario: ChatGPT connects through the hosted service
 
@@ -30,16 +30,17 @@ unauthenticated internet endpoint.
 
 ### Requirement: Single-account access boundary
 
-The service SHALL use either the private tunnel association or an approved
-OAuth/OIDC owner identity as its access boundary, SHALL bind either path to the
-same one configured household account, and SHALL NOT accept identity, credential,
-or account selection through model-visible tool input.
+The service SHALL require the approved OAuth/OIDC owner identity for every HTTP
+MCP deployment, including the private tunnel, SHALL retain local stdio as an
+operator-only boundary, SHALL bind either transport to the same one configured
+household account, and SHALL NOT accept identity, credential, or account selection
+through model-visible tool input.
 
 #### Scenario: Private app is configured
 
-- **WHEN** the owner uses the existing tunnel path during validation or fallback
-- **THEN** the app remains limited to the current private account context without
-  requesting a separate OAuth sign-in
+- **WHEN** the owner uses the HTTP tunnel path
+- **THEN** the app requires the configured OAuth/OIDC identity in addition to the
+  tunnel's OpenAI workspace and control-plane boundary
 
 #### Scenario: Hosted app is configured
 
