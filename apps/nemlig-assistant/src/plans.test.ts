@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import type { Basket, Product } from "./client.js";
-import { eligibleCandidates, loadShoppingPlan, resolveShoppingPlan, saveShoppingPlan, shoppingPlanInputSchema, type PlanSnapshotStorage } from "./plans.js";
+import { eligibleCandidates, httpPlanSnapshotStorage, loadShoppingPlan, resolveShoppingPlan, saveShoppingPlan, shoppingPlanInputSchema, type PlanSnapshotStorage } from "./plans.js";
 
 const product = (id: number, name: string, overrides: Partial<Product> = {}): Product => ({
   id, name, price: 10, unit: "10 kr/kg", unitPrice: 10, unitSize: "1 kg", brand: "Test",
@@ -96,4 +96,21 @@ test("plan snapshot schema and identity checks are shared by storage implementat
   assert.deepEqual(await loadShoppingPlan(id, storage), input);
   snapshots.set(id, "{}\n");
   await assert.rejects(loadShoppingPlan(id, storage), /could not be loaded/);
+});
+
+test("Cloudflare plan storage uses one bounded internal request per immutable read or write", async () => {
+  const calls: Array<{ url: string; method: string }> = [];
+  const fetcher: typeof fetch = async (input, init) => {
+    calls.push({ url: String(input), method: init?.method ?? "GET" });
+    return new Response(init?.body ? "Created" : "{\"stored\":true}\n", { status: init?.body ? 201 : 200 });
+  };
+  const storage = httpPlanSnapshotStorage("http://nemlig-plan-storage.internal/", fetcher);
+  const id = "2ee94544-5f0a-4c89-95f0-f6af88f45ba1";
+  await storage.create(id, "{}\n");
+  assert.equal(await storage.read(id), "{\"stored\":true}\n");
+  assert.deepEqual(calls, [
+    { url: `http://nemlig-plan-storage.internal/${id}`, method: "PUT" },
+    { url: `http://nemlig-plan-storage.internal/${id}`, method: "GET" },
+  ]);
+  assert.throws(() => httpPlanSnapshotStorage("https://example.test/", fetcher), /storage is invalid/u);
 });

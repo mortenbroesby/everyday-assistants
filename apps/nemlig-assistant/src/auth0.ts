@@ -11,7 +11,7 @@ export interface Auth0Config {
   publicUrl: URL;
   allowedOrigins: string[];
   revision: string;
-  host: "127.0.0.1";
+  host: "127.0.0.1" | "0.0.0.0";
   port: number;
 }
 
@@ -24,6 +24,7 @@ const required = (env: NodeJS.ProcessEnv, name: string): string => {
 export function loadAuth0Config(env: NodeJS.ProcessEnv = process.env): Auth0Config {
   const issuer = new URL(required(env, "NEMLIG_MCP_AUTH0_ISSUER"));
   const publicUrl = new URL(required(env, "NEMLIG_MCP_PUBLIC_URL"));
+  const host = env.NEMLIG_MCP_HTTP_HOST?.trim() || "127.0.0.1";
   const port = Number(env.NEMLIG_MCP_HTTP_PORT ?? "3333");
   if (issuer.protocol !== "https:" || issuer.search || issuer.hash) throw new Error("Auth0 issuer must be an HTTPS URL without query or fragment.");
   if (!issuer.pathname.endsWith("/")) issuer.pathname += "/";
@@ -32,6 +33,7 @@ export function loadAuth0Config(env: NodeJS.ProcessEnv = process.env): Auth0Conf
     throw new Error("MCP resource URL must be HTTPS or the configured loopback /mcp URL.");
   }
   if (!Number.isInteger(port) || port < 1 || port > 65_535) throw new Error("NEMLIG_MCP_HTTP_PORT must be a valid port.");
+  if (host !== "127.0.0.1" && host !== "0.0.0.0") throw new Error("NEMLIG_MCP_HTTP_HOST must be 127.0.0.1 or 0.0.0.0.");
   return {
     issuer,
     audience: required(env, "NEMLIG_MCP_AUTH0_AUDIENCE"),
@@ -41,7 +43,7 @@ export function loadAuth0Config(env: NodeJS.ProcessEnv = process.env): Auth0Conf
     allowedOrigins: (env.NEMLIG_MCP_ALLOWED_ORIGINS ?? "https://chatgpt.com,https://chat.openai.com")
       .split(",").map((value) => value.trim()).filter(Boolean),
     revision: env.NEMLIG_MCP_REVISION?.trim() || "development",
-    host: "127.0.0.1",
+    host,
     port,
   };
 }
@@ -49,8 +51,11 @@ export function loadAuth0Config(env: NodeJS.ProcessEnv = process.env): Auth0Conf
 export async function fetchAuth0Metadata(
   config: Auth0Config,
   fetcher: typeof fetch = fetch,
+  timeoutMs = 5_000,
 ): Promise<{ oauth: OAuthMetadata; jwksUrl: URL }> {
-  const response = await fetcher(new URL(".well-known/openid-configuration", config.issuer));
+  const response = await fetcher(new URL(".well-known/openid-configuration", config.issuer), {
+    signal: AbortSignal.timeout(timeoutMs),
+  });
   if (!response.ok) throw new Error("Auth0 discovery failed.");
   const metadata = OpenIdProviderDiscoveryMetadataSchema.parse(await response.json());
   if (metadata.issuer !== config.issuer.href) throw new Error("Auth0 discovery issuer mismatch.");
@@ -60,12 +65,14 @@ export async function fetchAuth0Metadata(
 export function createAuth0Verifier(
   config: Auth0Config,
   jwksUrl: URL,
-  key: JWTVerifyGetKey = createRemoteJWKSet(jwksUrl),
+  key?: JWTVerifyGetKey,
+  timeoutMs = 5_000,
 ): OAuthTokenVerifier {
+  const verificationKey = key ?? createRemoteJWKSet(jwksUrl, { timeoutDuration: timeoutMs });
   return {
     async verifyAccessToken(token) {
       try {
-        const { payload } = await jwtVerify(token, key, {
+        const { payload } = await jwtVerify(token, verificationKey, {
           issuer: config.issuer.href,
           audience: config.audience,
           algorithms: ["RS256"],

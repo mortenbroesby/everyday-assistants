@@ -22,10 +22,13 @@ This is the maintained inventory of shipped, user-facing feature sets:
   expiry, revalidation, single-use proposals, and automatic readback.
 - **Replacement comparisons:** package, item-price, and unit-price review with
   factual signed basket-price differences and potential-savings wording.
-- **Plan snapshots:** immutable owner-only local saves containing structured
-  inputs and selections, with fresh product and basket resolution when loaded.
+- **Plan snapshots:** immutable owner-only saves containing structured inputs
+  and selections, persisted locally or in the hosted EU storage object, with
+  fresh product and basket resolution when loaded.
 - **CLI and ChatGPT interfaces:** local CLI, conversational MCP tools, an
-  optional MCP Apps picker, and a private local tunnel runbook.
+  optional MCP Apps picker, a private local tunnel runbook, and a disabled-by-
+  default single-Container Cloudflare deployment profile with Auth0, quotas,
+  rate limits, and manual/automatic circuit breakers.
 - **Feature-request capture:** concise retry-safe GitHub issues created only when
   explicitly requested.
 - **Private package delivery:** self-contained Node.js binaries, synthetic

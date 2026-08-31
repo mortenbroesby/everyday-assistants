@@ -128,6 +128,25 @@ export const filePlanSnapshotStorage = (directory = plansDirectory()): PlanSnaps
   },
   read: async (id) => readFile(join(directory, `${id}.json`), "utf8"),
 });
+export const httpPlanSnapshotStorage = (
+  baseUrl: string,
+  fetcher: typeof fetch = fetch,
+  timeoutMs = 5_000,
+): PlanSnapshotStorage => {
+  const base = new URL(baseUrl);
+  if (base.origin !== "http://nemlig-plan-storage.internal") throw new NemligError("Shopping plan storage is invalid.");
+  const request = async (id: string, init?: RequestInit): Promise<Response> => {
+    const response = await fetcher(new URL(id, base), { ...init, signal: AbortSignal.timeout(timeoutMs) });
+    if (!response.ok) throw new NemligError(`Shopping plan ${id} could not be ${init ? "saved" : "loaded"}.`);
+    return response;
+  };
+  return {
+    create: async (id, snapshot) => { await request(id, { method: "PUT", body: snapshot, headers: { "content-type": "application/json" } }); },
+    read: async (id) => request(id).then((response) => response.text()),
+  };
+};
+export const configuredPlanSnapshotStorage = (env: NodeJS.ProcessEnv = process.env): PlanSnapshotStorage =>
+  env.NEMLIG_PLAN_STORAGE_URL ? httpPlanSnapshotStorage(env.NEMLIG_PLAN_STORAGE_URL) : filePlanSnapshotStorage();
 const snapshotStorage = (storage: string | PlanSnapshotStorage): PlanSnapshotStorage =>
   typeof storage === "string" ? filePlanSnapshotStorage(storage) : storage;
 export async function saveShoppingPlan(input: ShoppingPlanInput, storage: string | PlanSnapshotStorage = plansDirectory(), id: string = randomUUID()): Promise<{ id: string; created_at: string }> {

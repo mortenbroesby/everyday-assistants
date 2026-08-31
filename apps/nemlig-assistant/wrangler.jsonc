@@ -1,0 +1,100 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "nemlig-mcp-cloudflare-local",
+  "main": "src/cloudflare-worker.ts",
+  "compatibility_date": "2026-08-31",
+  "workers_dev": true,
+  "keep_vars": true,
+  "limits": {
+    "cpu_ms": 100,
+    "subrequests": 8
+  },
+  "vars": {
+    "MCP_ENABLED": "false",
+    "MCP_DAILY_LIMIT": "5000",
+    "MCP_EXPENSIVE_DAILY_LIMIT": "500",
+    "MCP_RATE_LIMIT": "60",
+    "MCP_EXPENSIVE_RATE_LIMIT": "10",
+    "MCP_AUTH_TIMEOUT_MS": "5000",
+    "MCP_BACKEND_TIMEOUT_MS": "35000",
+    "NEMLIG_MCP_HTTP_HOST": "0.0.0.0",
+    "NEMLIG_MCP_HTTP_PORT": "8080"
+  },
+  "containers": [
+    {
+      "class_name": "NemligMcpContainer",
+      "image": "./Dockerfile",
+      "image_build_context": "../../",
+      "instance_type": "lite",
+      "max_instances": 1,
+      "constraints": {
+        "jurisdiction": "eu"
+      }
+    }
+  ],
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "NEMLIG_MCP_CONTAINER",
+        "class_name": "NemligMcpContainer"
+      },
+      {
+        "name": "NEMLIG_PLAN_STORAGE",
+        "class_name": "PlanStorage"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["NemligMcpContainer", "PlanStorage"]
+    }
+  ],
+  "env": {
+    "production": {
+      "name": "nemlig-mcp-cloudflare-production",
+      "workers_dev": true,
+      "vars": {
+        "MCP_ENABLED": "false",
+        "MCP_DAILY_LIMIT": "5000",
+        "MCP_EXPENSIVE_DAILY_LIMIT": "500",
+        "MCP_RATE_LIMIT": "60",
+        "MCP_EXPENSIVE_RATE_LIMIT": "10",
+        "MCP_AUTH_TIMEOUT_MS": "5000",
+        "MCP_BACKEND_TIMEOUT_MS": "35000",
+        "NEMLIG_MCP_HTTP_HOST": "0.0.0.0",
+        "NEMLIG_MCP_HTTP_PORT": "8080"
+      },
+      "containers": [
+        {
+          "class_name": "NemligMcpContainer",
+          "image": "./Dockerfile",
+          "image_build_context": "../../",
+          "instance_type": "lite",
+          "max_instances": 1,
+          "constraints": {
+            "jurisdiction": "eu"
+          }
+        }
+      ],
+      "durable_objects": {
+        "bindings": [
+          {
+            "name": "NEMLIG_MCP_CONTAINER",
+            "class_name": "NemligMcpContainer"
+          },
+          {
+            "name": "NEMLIG_PLAN_STORAGE",
+            "class_name": "PlanStorage"
+          }
+        ]
+      },
+      "migrations": [
+        {
+          "tag": "v1",
+          "new_sqlite_classes": ["NemligMcpContainer", "PlanStorage"]
+        }
+      ]
+    }
+  }
+}

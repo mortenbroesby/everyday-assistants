@@ -1,6 +1,6 @@
 {
   "name": "nemlig-assistant",
-  "version": "1.4.1-alpha.10",
+  "version": "1.5.0-alpha.11",
   "private": true,
   "description": "Safe local Nemlig Assistant CLI and MCP server",
   "type": "module",
@@ -30,6 +30,8 @@
   "scripts": {
     "build": "tsdown",
     "check": "tsc -p tsconfig.json --noEmit",
+    "cloudflare:check": "wrangler deploy --dry-run --env production",
+    "cloudflare:dev": "wrangler dev",
     "cli": "pnpm build && node dist/cli.js",
     "check:version-bump": "tsx release/check-version-bump.ts",
     "lint": "eslint src scripts release tsdown.config.ts --max-warnings=0",
@@ -43,6 +45,7 @@
     "test": "tsx --test src/*.test.ts release/*.test.ts"
   },
   "dependencies": {
+    "@cloudflare/containers": "0.3.7",
     "@inquirer/password": "^5.2.0",
     "@modelcontextprotocol/sdk": "^1.30.0",
     "commander": "^15.0.0",
@@ -50,6 +53,7 @@
     "zod": "^4.5.4"
   },
   "devDependencies": {
+    "@cloudflare/workers-types": "5.20260831.1",
     "@eslint/js": "^10.0.1",
     "@types/node": "22.20.1",
     "@types/semver": "7.8.0",
@@ -58,6 +62,7 @@
     "tsdown": "0.22.14",
     "tsx": "4.23.13",
     "typescript": "5.9.3",
-    "typescript-eslint": "^8.68.0"
+    "typescript-eslint": "^8.68.0",
+    "wrangler": "4.127.1"
   }
 }

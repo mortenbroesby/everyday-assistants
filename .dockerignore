@@ -1,0 +1,11 @@
+/.git/
+/.codex/
+/.agents/
+/node_modules/
+/.turbo/
+/apps/*/node_modules/
+/apps/*/dist/
+**/.DS_Store
+/.env
+/.env.*
+!.env.example

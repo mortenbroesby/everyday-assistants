@@ -16,7 +16,7 @@ import {
   type FeatureRequestResult,
 } from "./feature-request.js";
 import { BasketProposalService, type ProposalOperation } from "./proposals.js";
-import { loadShoppingPlan, resolveShoppingPlan, saveShoppingPlan, shoppingPlanInputSchema } from "./plans.js";
+import { configuredPlanSnapshotStorage, loadShoppingPlan, resolveShoppingPlan, saveShoppingPlan, shoppingPlanInputSchema } from "./plans.js";
 
 export const PICKER_URI = "ui://nemlig/picker.html";
 export const PICKER_MIME_TYPE = "text/html;profile=mcp-app";
@@ -264,6 +264,7 @@ export function createMcpServer(
     requestContext ? `${requestContext.ownerSubject}\0${sessionId ?? localConnectionId}` : sessionId ?? localConnectionId;
   const search = async (query: string, limit: number) =>
     rankProducts(await client.searchProducts(query, limit), query);
+  const planStorage = configuredPlanSnapshotStorage(env);
 
   server.registerTool(
     "search_products",
@@ -357,7 +358,7 @@ export function createMcpServer(
       outputSchema: z.object({ id: z.string().uuid(), created_at: z.string().datetime() }),
       annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
     },
-    async (input) => { try { return success(await saveShoppingPlan(input)); } catch (error) { return failure("save_shopping_plan", error); } },
+    async (input) => { try { return success(await saveShoppingPlan(input, planStorage)); } catch (error) { return failure("save_shopping_plan", error); } },
   );
 
   server.registerTool(
@@ -367,7 +368,7 @@ export function createMcpServer(
       inputSchema: { id: z.string().uuid() }, outputSchema: z.object({ lines: z.array(z.any()), selected_estimated_total: z.number() }),
       annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true },
     },
-    async ({ id }) => { try { await ensureLoggedIn(client, loadCredentials); return success(await resolveShoppingPlan(client, await loadShoppingPlan(id))); } catch (error) { return failure("load_shopping_plan", error); } },
+    async ({ id }) => { try { await ensureLoggedIn(client, loadCredentials); return success(await resolveShoppingPlan(client, await loadShoppingPlan(id, planStorage))); } catch (error) { return failure("load_shopping_plan", error); } },
   );
 
   server.registerTool(

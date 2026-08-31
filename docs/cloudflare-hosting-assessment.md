@@ -7,10 +7,12 @@ Production resources created by this spike: none
 ## Recommendation
 
 Use one Cloudflare Worker in front of one deterministic, EU-jurisdiction,
-container-enabled SQLite Durable Object. That object owns both the safety state
-and one sleeping Nemlig MCP Container. Configure `max_instances = 1`, route every
-backend request to one fixed object ID, and do not use `getRandom` or any dynamic
-instance-ID path.
+container-enabled SQLite Durable Object. That object owns the safety state and
+one sleeping Nemlig MCP Container. A second fixed EU SQLite Durable Object stores
+only immutable plan snapshots because calling back into the in-flight Container
+controller would create a fragile re-entrancy dependency. Configure
+`max_instances = 1`, route to fixed object IDs, and do not use `getRandom` or any
+dynamic instance-ID path.
 
 ```text
 ChatGPT / MCP client
@@ -23,13 +25,14 @@ one fixed EU container-enabled Durable Object
   - exact per-owner rate windows
   - daily normal/expensive counters
   - circuit-breaker state
-  - saved shopping-plan snapshots
         |
         v
 one EU lite Container, asleep when idle
         |
         v
 Nemlig and, only for the feature-request tool, GitHub
+
+Container -- internal egress --> one fixed EU plan-storage Durable Object
 ```
 
 This is the smallest safe migration. A Container preserves the existing Node 22
@@ -37,12 +40,15 @@ HTTP process, Streamable HTTP/SSE session state, filesystem-capable runtime, and
 GitHub CLI child process. A direct Worker would require transport, process, and
 persistence changes before it could preserve all current tools.
 
-The repository does **not** currently contain a Dockerfile, Compose file, or
-`.dockerignore`; “existing Dockerized MCP” is therefore not the current state.
-The implementation phase must first add and locally measure a minimal image. Use
-the `lite` type only if the built server stays safely below its 256 MiB memory
-limit. Do not provision Cloudflare resources until that measurement and this
-gate have been reviewed.
+The implementation checkpoint added and locally measured the minimal image. It
+is about **97 MB**, starts in about **4–5 seconds** without an artificial CPU
+cap, and used about **34–43 MiB** steady memory in the synthetic Auth0 HTTP MCP
+smoke test. It passed health and anonymous-auth rejection at a 256 MiB memory
+limit without OOM. A local hard 1/16-vCPU emulation made startup take about two
+minutes, so Cloudflare cold-start behavior remains an availability risk to test
+before cutover; it does not threaten the memory/cost bound. Wrangler's production
+dry run built the same `lite` image and confirmed the fixed EU bindings without
+uploading or creating resources.
 
 ## Current application assessment
 
@@ -52,7 +58,7 @@ gate have been reviewed.
 | Entry points | The package exposes CLI, stdio MCP, and HTTP MCP entry points. [`http.ts`](../apps/nemlig-assistant/src/http.ts) calls `app.listen`. | Host only the existing HTTP MCP entry point. It needs a configurable internal bind address instead of its current fixed `127.0.0.1`. |
 | Process state | [`http.ts`](../apps/nemlig-assistant/src/http.ts) stores MCP transports by session ID in a `Map`. [`client.ts`](../apps/nemlig-assistant/src/client.ts) stores cookies, token, user ID, product metadata, and timeslot in memory. | One fixed Container preserves state while awake. Sleep/restart drops sessions and login cache; the client must reinitialize and the app can log in again. |
 | Proposal safety | [`proposals.ts`](../apps/nemlig-assistant/src/proposals.ts) stores short-lived proposals and completed/invalid/indeterminate results in memory. Mutation application is mutex-protected per MCP server, and indeterminate outcomes explicitly say not to retry. | Proposal state is intentionally restart-discardable. A restart fails closed because an approval ID is no longer found. Preserve the no-retry behavior. Serialize expensive/mutation admission globally in the fixed object to avoid concurrent sessions bypassing the per-server mutex. |
-| Durable files | [`plans.ts`](../apps/nemlig-assistant/src/plans.ts) atomically creates and later reads immutable shopping-plan JSON files under `NEMLIG_CONFIG_DIR/plans` or `~/.nemlig-shopper/plans`. It already accepts a `PlanSnapshotStorage` implementation. | Saved plans genuinely need restart persistence. Container disks and Worker `/tmp` are ephemeral. Reuse the existing storage seam and store snapshots in the fixed object's SQLite storage through a Container outbound handler; no R2 bucket is needed. |
+| Durable files | [`plans.ts`](../apps/nemlig-assistant/src/plans.ts) atomically creates and later reads immutable shopping-plan JSON files under `NEMLIG_CONFIG_DIR/plans` or `~/.nemlig-shopper/plans`. It already accepts a `PlanSnapshotStorage` implementation. | Saved plans genuinely need restart persistence. Container disks and Worker `/tmp` are ephemeral. The hosted profile reuses the storage seam and routes snapshots through an internal Container outbound handler to one fixed storage-only SQLite Durable Object; no R2 bucket is needed. |
 | Credentials | [`config.ts`](../apps/nemlig-assistant/src/config.ts) accepts `NEMLIG_USERNAME` and `NEMLIG_PASSWORD` before its local-file fallback. | Inject production credentials as secrets; do not copy the local credentials file. Development must have no real mutation credentials by default. |
 | Child processes | [`feature-request.ts`](../apps/nemlig-assistant/src/feature-request.ts) executes `gh` with a 30-second timeout and bounded lookup/create/reconciliation. | Containers can preserve this tool by including `gh` and a narrowly scoped GitHub credential. Workers expose only a non-functional `node:child_process` stub, so Workers-native would need a GitHub API rewrite. |
 | Browser automation | There is no runtime browser-automation dependency. | No browser runtime is needed in the image. |
@@ -115,20 +121,23 @@ Create these only after owner review:
 2. One Worker script and route/custom hostname for the MCP endpoint.
 3. One EU-jurisdiction SQLite Durable Object namespace whose class is also the
    Container controller; application code always uses one fixed production ID.
-4. One Container application/image with `instance_type = "lite"` if the memory
+4. One EU-jurisdiction SQLite Durable Object namespace with one fixed ID for
+   immutable plan snapshots. It has no Container or public route.
+5. One Container application/image with `instance_type = "lite"` if the memory
    measurement passes, `max_instances = 1`, and an idle sleep timeout starting at
    10 minutes.
-5. Worker secrets for actual credentials only: Nemlig credentials and any
+6. Worker secrets for actual credentials only: Nemlig credentials and any
    required Auth0/GitHub secret. Thresholds and `MCP_ENABLED` are plain config.
-6. Two informational account budget alerts: USD 10 warning and USD 20 urgent.
+7. Two informational account budget alerts: USD 10 warning and USD 20 urgent.
 
 Do not add R2, D1, KV, Queues, Workflows, load balancing, generic autoscaling, or
 staging infrastructure for this family-only service.
 
 ### Data held by Cloudflare
 
-- The Durable Object stores daily/rate counters, breaker status, trip metadata,
-  and saved shopping-plan input snapshots. Place it in EU jurisdiction.
+- The Container-controller Durable Object stores daily/rate counters, breaker
+  status, and trip metadata. The separate storage-only Durable Object stores
+  saved shopping-plan input snapshots. Place both in EU jurisdiction.
 - Worker secrets store Nemlig credentials and any narrowly scoped provider
   credential required by the deployed tools.
 - The Container holds only ephemeral MCP sessions, Nemlig cookies/tokens, and
@@ -157,11 +166,12 @@ staging infrastructure for this family-only service.
   reason. Reset on the next UTC usage period or through an authenticated manual
   reset.
 - Configure a thin Worker CPU limit and the lowest measured subrequest limit that
-  supports Auth0 plus one fixed-object call. Configure an overall backend timeout.
+  supports Auth0 plus the fixed admission and backend calls. Configure an overall
+  backend timeout.
 - Only the constant production object ID may start the Container. Set
   `max_instances = 1`; do not call `getRandom`, derive IDs from users/requests, or
   expose infrastructure-provisioning operations.
-- Use EU jurisdiction for both the fixed object and Container placement.
+- Use EU jurisdiction for both fixed objects and Container placement.
 
 ## Expected cost
 
@@ -227,7 +237,7 @@ Full removal is:
 3. Export nothing unless saved plans are deliberately retained; otherwise invoke
    the authenticated purge path to delete fixed-object storage.
 4. Delete the Worker/Container deployment, Container instances/application and
-   image, Durable Object data/namespace, and Worker secrets.
+   image, both Durable Object data/namespaces, and Worker secrets.
 5. Remove related DNS only if it was created for this deployment, then cancel the
    Workers Paid plan if no other account workload needs it.
 
@@ -246,6 +256,9 @@ After this gate is approved, the first implementation work should be local only:
 3. confirm `lite` is safe or return to the cost gate if `basic` is required; then
 4. implement and test the Worker/fixed-object safety boundary before creating any
    production resource.
+
+This checkpoint passed locally with `lite`. Production deployment, secrets, DNS,
+and live Nemlig access remain separate owner actions.
 
 ## Official Cloudflare sources
 

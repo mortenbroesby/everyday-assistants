@@ -45,7 +45,7 @@ test("Auth0 verifier accepts only the configured owner, audience, issuer, signat
   await assert.rejects(() => verifier.verifyAccessToken(expired), /Invalid access token/u);
 });
 
-test("HTTP auth configuration is explicit and loopback-only", () => {
+test("HTTP auth configuration defaults to loopback and allows only the Container bind address", () => {
   assert.throws(() => loadAuth0Config({}), /NEMLIG_MCP_AUTH0_ISSUER/u);
   const loaded = loadAuth0Config({
     NEMLIG_MCP_AUTH0_ISSUER: "https://tenant.example.test",
@@ -62,6 +62,20 @@ test("HTTP auth configuration is explicit and loopback-only", () => {
     NEMLIG_MCP_AUTH0_OWNER_SUBJECT: config.ownerSubject,
     NEMLIG_MCP_PUBLIC_URL: "http://127.0.0.1:3333/mcp",
   }).host, "127.0.0.1");
+  assert.equal(loadAuth0Config({
+    NEMLIG_MCP_AUTH0_ISSUER: config.issuer.href,
+    NEMLIG_MCP_AUTH0_AUDIENCE: config.audience,
+    NEMLIG_MCP_AUTH0_OWNER_SUBJECT: config.ownerSubject,
+    NEMLIG_MCP_PUBLIC_URL: config.publicUrl.href,
+    NEMLIG_MCP_HTTP_HOST: "0.0.0.0",
+  }).host, "0.0.0.0");
+  assert.throws(() => loadAuth0Config({
+    NEMLIG_MCP_AUTH0_ISSUER: config.issuer.href,
+    NEMLIG_MCP_AUTH0_AUDIENCE: config.audience,
+    NEMLIG_MCP_AUTH0_OWNER_SUBJECT: config.ownerSubject,
+    NEMLIG_MCP_PUBLIC_URL: config.publicUrl.href,
+    NEMLIG_MCP_HTTP_HOST: "example.test",
+  }), /NEMLIG_MCP_HTTP_HOST/u);
   assert.throws(() => loadAuth0Config({
     NEMLIG_MCP_AUTH0_ISSUER: config.issuer.href,
     NEMLIG_MCP_AUTH0_AUDIENCE: config.audience,
