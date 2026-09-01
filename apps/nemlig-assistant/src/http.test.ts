@@ -101,6 +101,7 @@ test("HTTP MCP advertises Auth0, rejects anonymous and foreign origins, and pres
 
     await client.close();
   } finally {
+    server.closeAllConnections();
     await new Promise<void>((resolve, reject) => server.close((error?: Error) => error ? reject(error) : resolve()));
   }
 });
@@ -164,6 +165,7 @@ test("HTTP MCP preserves an owner proposal across authenticated transport reconn
     assert.equal((result.structuredContent as { basket: { items: unknown[] } }).basket.items.length, 1);
     await second.close();
   } finally {
+    server.closeAllConnections();
     await new Promise<void>((resolve, reject) => server.close((error?: Error) => error ? reject(error) : resolve()));
   }
 });
