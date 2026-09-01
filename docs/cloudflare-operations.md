@@ -148,7 +148,9 @@ expiry, immutable details, and owner binding. Disabled version
 enabled version `7eb3ff2e-759d-4e3b-b2b7-49cf59193384` passed the safe edge
 probes. The hosted app then prepared and applied exactly one `Banan` at 2.50 DKK;
 a fresh readback showed one product totaling 2.50 DKK and no other basket change.
-The item was intentionally not removed.
+The item was not removed by the addition test. A later, separately approved
+removal used the hosted prepare/apply flow and a fresh readback confirmed an
+empty basket with zero products and a 0.00 DKK product total.
 
 ## Verify production, including one approved addition
 
