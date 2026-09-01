@@ -1,9 +1,9 @@
 # Cloudflare operations for Nemlig MCP
 
 Status: production version `36261629-4ffe-4178-8e8c-3f826ee8167d` is enabled
-for controlled read-only acceptance. Health, OAuth metadata, anonymous rejection,
-Auth0 sign-in, hosted-app action discovery, and no unauthorized Container wake
-are verified; the first authenticated read-only tool call remains pending.
+for private family use. Health, OAuth metadata, anonymous rejection, Auth0
+sign-in, hosted-app action discovery, one authenticated read-only favorites
+lookup, and no unauthorized Container wake are verified.
 
 Current production endpoints:
 
@@ -134,7 +134,9 @@ inactive fixed Container, then deployed enabled version
 `36261629-4ffe-4178-8e8c-3f826ee8167d`. Both health routes returned HTTP 200.
 Refreshing the connected ChatGPT app rediscovered its actions, and live logs
 classified every discovery request as `protocol` with no normal or expensive
-usage admission.
+usage admission. The subsequent authenticated acceptance lookup returned one
+favorite without changing the basket; logs admitted exactly one `normal`
+operation with `expensive: 0` and no apply-class operation.
 
 ## Inspect usage and reset the breaker
 

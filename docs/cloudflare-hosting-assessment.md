@@ -1,7 +1,7 @@
 # Cloudflare hosting assessment for Nemlig MCP
 
-Status: production enabled for controlled read-only acceptance; Auth0 sign-in
-and hosted action discovery verified; first authenticated read-only tool call pending
+Status: production enabled; Auth0 sign-in, hosted action discovery, and the
+first authenticated read-only tool call verified
 
 Evidence checked: 2026-09-01
 
@@ -275,8 +275,9 @@ deployment was verified first. A later live kill-switch exercise verified
 disabled version `fd5696b7-d2ea-4f3c-9a1a-88cf22d29caa` before enabling version
 `ad2b3a21-b31a-419c-9daa-cab62b151c27` for controlled acceptance. Health, OAuth
 metadata, anonymous rejection, and no unauthorized Container wake are verified.
-Live Auth0 sign-in and hosted-app action discovery are verified. A read-only
-Nemlig acceptance call remains pending; no basket mutation is authorized.
+Live Auth0 sign-in, hosted-app action discovery, and one favorites lookup are
+verified. The lookup admitted exactly one normal operation and no expensive
+operation; the basket was not changed.
 
 ## Official Cloudflare sources
 
