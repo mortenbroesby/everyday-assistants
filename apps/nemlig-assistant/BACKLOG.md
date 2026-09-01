@@ -1,5 +1,20 @@
 # Nemlig Assistant backlog
 
+## Named and reusable shopping lists
+
+**Status:** Implemented for the private owner alpha.
+
+- Named reusable and occasion lists are private, bounded, revision-checked,
+  copyable, and recoverable through archive/restore.
+- Opening a list is storage-only. Current Nemlig resolution is an explicit,
+  favorites-first action for at most twenty selected lines.
+- Reusable means easy to invoke again; it does not mean scheduled or automatic.
+- The picker uses direct allowlisted Nemlig images with a complete text fallback
+  and no image proxy or cache.
+
+Invited-family collaboration remains future work until a second real user is
+ready and owner isolation can be designed from that concrete need.
+
 ## Favorites-first product selection
 
 **Status:** Core routing implemented. Ordinary find-or-add intent uses the

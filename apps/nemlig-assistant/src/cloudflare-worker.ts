@@ -7,6 +7,7 @@ import { createAuth0Verifier, fetchAuth0Metadata, type Auth0Config } from "./aut
 import { FIXED_CONTAINER_NAME, type CloudflareEnv, type GatewayConfig } from "./cloudflare-config.js";
 import { handleGatewayRequest, type GatewayDependencies } from "./cloudflare-gateway.js";
 import { admitUsage, resetUsage, type AdmissionLimits, type AdmissionResult, type UsageState } from "./cloudflare-usage.js";
+import { handleShoppingListStorageRequest } from "./shopping-list-worker-storage.js";
 
 interface Env extends CloudflareEnv {
   NEMLIG_MCP_CONTAINER: DurableObjectNamespace<NemligMcpContainer>;
@@ -110,7 +111,9 @@ export class NemligMcpContainer extends Container<Env> {
 
 export class PlanStorage extends DurableObject<Env> {
   async fetch(request: Request): Promise<Response> {
-    const id = new URL(request.url).pathname.slice(1);
+    const path = new URL(request.url).pathname.slice(1);
+    if (path.startsWith("lists/")) return this.handleShoppingLists(request, path.slice("lists/".length));
+    const id = path;
     if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(id)) {
       return new Response("Invalid plan ID", { status: 400 });
     }
@@ -130,6 +133,10 @@ export class PlanStorage extends DurableObject<Env> {
       return true;
     });
     return new Response(created ? "Created" : "Already exists", { status: created ? 201 : 409 });
+  }
+
+  private async handleShoppingLists(request: Request, ownerScope: string): Promise<Response> {
+    return handleShoppingListStorageRequest(request, ownerScope, this.ctx.storage);
   }
 }
 

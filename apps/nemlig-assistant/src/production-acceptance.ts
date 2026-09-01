@@ -10,12 +10,17 @@ export const productionToolInventory = {
   readOnly: [
     "find_groceries", "show_my_favorites", "plan_my_shopping", "show_grocery_sections",
     "browse_grocery_section", "continue_my_shopping_plan", "show_my_basket", "choose_products_visually",
+    "show_my_shopping_lists", "shop_from_my_list",
   ],
   prepareOnly: [
     "review_items_to_add", "review_item_to_remove", "review_item_swap", "review_emptying_basket",
   ],
+  privateState: [
+    "save_my_shopping_plan", "save_my_shopping_list", "copy_my_shopping_list",
+    "set_my_shopping_list_status", "migrate_my_saved_plan",
+  ],
   externalState: [
-    "save_my_shopping_plan", "suggest_an_improvement", "add_approved_items",
+    "suggest_an_improvement", "add_approved_items",
     "remove_approved_item", "make_approved_item_swap", "empty_approved_basket",
   ],
 } as const;
@@ -114,6 +119,34 @@ export async function verifyReadOnlyProductionFeatures(client: AcceptanceClient)
   assert.equal(missingPlan.isError, true, "Missing production plan unexpectedly loaded");
   exercised.push("continue_my_shopping_plan");
   unavailable.push("continue_my_shopping_plan:no_safe_fixture");
+
+  const acceptanceName = "Nemlig Assistant acceptance";
+  type AcceptanceList = { name: string; type: "reusable" | "occasion"; status: "active" | "archived"; revision: number; lines: unknown[] };
+  const stored = await call<{ lists: AcceptanceList[] }>("show_my_shopping_lists", { include_archived: true });
+  const original = stored.lists.find(({ name }) => name === acceptanceName);
+  let listCurrent = original;
+  if (!listCurrent) {
+    listCurrent = (await call<{ list: AcceptanceList }>("save_my_shopping_list", {
+      name: acceptanceName, type: "occasion", lines: [{ id: "acceptance-banan", name: "banan", quantity: 1 }],
+    })).list;
+  } else {
+    if (listCurrent.status === "archived") listCurrent = (await call<{ list: AcceptanceList }>("set_my_shopping_list_status", { list: acceptanceName, status: "active", expected_revision: listCurrent.revision })).list;
+    listCurrent = (await call<{ list: AcceptanceList }>("save_my_shopping_list", {
+      list: acceptanceName, expected_revision: listCurrent.revision, name: acceptanceName, type: "occasion",
+      lines: [{ id: "acceptance-banan", name: "banan", quantity: 1 }],
+    })).list;
+  }
+  assert.ok(listCurrent, "Production acceptance list was not created");
+  await call("shop_from_my_list", { list: acceptanceName, line_ids: ["acceptance-banan"] });
+  if (original) {
+    listCurrent = (await call<{ list: AcceptanceList }>("save_my_shopping_list", {
+      list: acceptanceName, expected_revision: listCurrent.revision, name: original.name, type: original.type, lines: original.lines,
+    })).list;
+    if (original.status === "archived") await call("set_my_shopping_list_status", { list: acceptanceName, status: "archived", expected_revision: listCurrent.revision });
+  } else {
+    await call("set_my_shopping_list_status", { list: acceptanceName, status: "archived", expected_revision: listCurrent.revision });
+  }
+  unavailable.push("copy_my_shopping_list:no_extra_acceptance_record", "migrate_my_saved_plan:no_safe_fixture");
 
   await call("review_items_to_add", { items: [{ product: productIds[0], quantity: 1 }] });
   const currentId = current.items.find(({ id }) => Number.isInteger(id))?.id;

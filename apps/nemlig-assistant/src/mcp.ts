@@ -23,9 +23,28 @@ import {
   type ProposalView,
 } from "./proposals.js";
 import { configuredPlanSnapshotStorage, loadShoppingPlan, resolveShoppingPlan, saveShoppingPlan, shoppingPlanLineSchema } from "./plans.js";
+import {
+  configuredShoppingListStorage,
+  copyShoppingList,
+  migrateShoppingPlan,
+  saveShoppingList,
+  setShoppingListStatus,
+  shoppingListLineSchema,
+  showShoppingLists,
+  type ShoppingList,
+} from "./shopping-lists.js";
 
 export const PICKER_URI = "ui://nemlig/picker.html";
 export const PICKER_MIME_TYPE = "text/html;profile=mcp-app";
+export const NEMLIG_IMAGE_ORIGINS = ["https://www.nemlig.com"] as const;
+
+export const safeNemligImageUrl = (value: unknown): string | undefined => {
+  if (typeof value !== "string") return undefined;
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" && NEMLIG_IMAGE_ORIGINS.includes(url.origin as typeof NEMLIG_IMAGE_ORIGINS[number]) ? url.href : undefined;
+  } catch { return undefined; }
+};
 
 export interface McpRequestContext {
   ownerSubject: string;
@@ -290,6 +309,20 @@ const success = (value: unknown, text = JSON.stringify(value)) => ({
   structuredContent: (Array.isArray(value) ? { result: value } : value) as Record<string, unknown>,
 });
 
+const listPayload = (list: ShoppingList) => ({
+  schema_version: list.schema_version,
+  id: list.id,
+  name: list.name,
+  type: list.type,
+  status: list.status,
+  revision: list.revision,
+  created_at: list.created_at,
+  updated_at: list.updated_at,
+  ...(list.archived_at ? { archived_at: list.archived_at } : {}),
+  lines: list.lines,
+});
+const listText = (list: ShoppingList): string => `${list.name} · ${list.lines.length} ${list.lines.length === 1 ? "vare" : "varer"}`;
+
 const failure = (operation: string, error: unknown) => ({
   isError: true,
   content: [
@@ -320,7 +353,7 @@ export function createMcpServer(
     },
     {
       instructions:
-        "For ordinary requests to find or add products, use plan_my_shopping so favourites are checked first. Use find_groceries only for an explicit full-catalog search and show_my_favorites only for explicit favourite browsing. Finding, browsing, planning, viewing, and review tools do not change the Nemlig basket. A review is not approval. Planning, selection, saving, and continuing are not approval either. Present basket reviews and results as concise shopping language; omit internal references, expiry times, and statuses unless the user requests technical detail or troubleshooting requires it. Invoke a matching approved-action tool only after the user explicitly approves every exact detail in the unchanged review. Do not ask for approval twice when the user's earlier approval already covers every exact detail. Every basket-changing action revalidates and reads back the basket. Suggest an improvement only when the user explicitly asks. Never check out, pay, place an order, or change a delivery slot.",
+        "Use Nemlig Assistant for requests about current Nemlig products, prices, availability, favourites, basket contents, saved shopping lists, or choosing and adding groceries. For ordinary requests to find or add products, use plan_my_shopping so favourites are checked first. Use find_groceries only for an explicit full-catalog search and show_my_favorites only for explicit favourite browsing. Recipes and general food research do not require Nemlig tools. Opening a named list reads only private saved state; shop_from_my_list explicitly refreshes at most twenty selected lines from current Nemlig data. Reusable lists never run automatically. Finding, browsing, planning, viewing, list management, and review tools do not change the Nemlig basket. A review is not approval. Planning, selection, saving, resolving, and continuing are not approval either. Present basket reviews and results as concise shopping language; omit internal references, expiry times, revisions, and statuses unless the user requests technical detail or troubleshooting requires it. Invoke a matching approved-action tool only after the user explicitly approves every exact detail in the unchanged review. Do not ask for approval twice when the user's earlier approval already covers every exact detail. Every basket-changing action revalidates and reads back the basket. Suggest an improvement only when the user explicitly asks. Never check out, pay, place an order, or change a delivery slot.",
     },
   );
   const localConnectionId = randomUUID();
@@ -329,6 +362,8 @@ export function createMcpServer(
   const search = async (query: string, limit: number) =>
     rankProducts(await client.searchProducts(query, limit), query);
   const planStorage = configuredPlanSnapshotStorage(env);
+  const listStorage = configuredShoppingListStorage(env);
+  const ownerSubject = requestContext?.ownerSubject ?? env.NEMLIG_MCP_AUTH0_OWNER_SUBJECT ?? "local-owner";
 
   server.registerTool(
     "find_groceries",
@@ -439,6 +474,141 @@ export function createMcpServer(
       annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true },
     },
     async ({ saved_plan }) => { try { await ensureLoggedIn(client, loadCredentials); return success(await resolveShoppingPlan(client, await loadShoppingPlan(saved_plan, planStorage))); } catch (error) { return failure("continue_my_shopping_plan", error); } },
+  );
+
+  server.registerTool(
+    "show_my_shopping_lists",
+    {
+      title: "Show my shopping lists",
+      description: "Show your active named shopping lists, or open one list by name. This only reads private saved lists and does not contact Nemlig or change your basket.",
+      inputSchema: {
+        list: z.string().trim().min(1).max(120).optional().describe("Optional list name to open."),
+        include_archived: z.boolean().default(false).describe("Also show archived lists."),
+      },
+      outputSchema: z.object({ lists: z.array(z.any()) }),
+      annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
+    },
+    async ({ list, include_archived }) => {
+      try {
+        const lists = await showShoppingLists(ownerSubject, listStorage, list, include_archived);
+        return success({ lists: lists.map(listPayload) }, lists.length ? lists.map(listText).join("\n") : "Du har ingen aktive indkøbslister endnu.");
+      } catch (error) { return failure("show_my_shopping_lists", error); }
+    },
+  );
+
+  server.registerTool(
+    "save_my_shopping_list",
+    {
+      title: "Save my shopping list",
+      description: "Create a named shopping list or replace the current version of one. This saves private list state only and does not contact Nemlig or change your basket.",
+      inputSchema: {
+        list: z.string().trim().min(1).max(120).optional().describe("For an edit, the existing list name or exact reference. Omit when creating a list."),
+        expected_revision: z.number().int().positive().optional().describe("For an edit, the current revision returned when the list was opened."),
+        name: z.string().trim().min(1).max(120).describe("The human-readable list name."),
+        type: z.enum(["reusable", "occasion"]).describe("Reusable for regular shopping, or occasion for an event. Neither runs automatically."),
+        lines: z.array(shoppingListLineSchema).max(50).describe("The ordered groceries to keep on the list, up to fifty."),
+      },
+      outputSchema: z.object({ list: z.any() }),
+      annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
+    },
+    async (input) => {
+      try {
+        const saved = await saveShoppingList(ownerSubject, listStorage, input);
+        return success({ list: listPayload(saved) }, `${saved.name} er gemt med ${saved.lines.length} ${saved.lines.length === 1 ? "vare" : "varer"}.`);
+      } catch (error) { return failure("save_my_shopping_list", error); }
+    },
+  );
+
+  server.registerTool(
+    "copy_my_shopping_list",
+    {
+      title: "Copy my shopping list",
+      description: "Copy an existing named list under a new name. This only saves private list state and does not contact Nemlig or change your basket.",
+      inputSchema: {
+        source_list: z.string().trim().min(1).max(120).describe("The name or exact reference of the list to copy."),
+        new_name: z.string().trim().min(1).max(120).describe("The name for the copy."),
+        type: z.enum(["reusable", "occasion"]).optional().describe("Optional list kind for the copy; otherwise it keeps the source kind."),
+      },
+      outputSchema: z.object({ list: z.any() }),
+      annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
+    },
+    async ({ source_list, new_name, type }) => {
+      try {
+        const copied = await copyShoppingList(ownerSubject, listStorage, source_list, new_name, type);
+        return success({ list: listPayload(copied) }, `${copied.name} er gemt som en ny liste.`);
+      } catch (error) { return failure("copy_my_shopping_list", error); }
+    },
+  );
+
+  server.registerTool(
+    "set_my_shopping_list_status",
+    {
+      title: "Archive or restore my shopping list",
+      description: "Archive a named shopping list or restore it later. This is reversible and does not contact Nemlig or change your basket.",
+      inputSchema: {
+        list: z.string().trim().min(1).max(120).describe("The list name or exact reference."),
+        status: z.enum(["active", "archived"]).describe("Active restores the list; archived hides it from the normal list view."),
+        expected_revision: z.number().int().positive().describe("The current revision returned when the list was opened."),
+      },
+      outputSchema: z.object({ list: z.any() }),
+      annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
+    },
+    async ({ list, status, expected_revision }) => {
+      try {
+        const updated = await setShoppingListStatus(ownerSubject, listStorage, list, status, expected_revision);
+        return success({ list: listPayload(updated) }, status === "archived" ? `${updated.name} er arkiveret.` : `${updated.name} er aktiv igen.`);
+      } catch (error) { return failure("set_my_shopping_list_status", error); }
+    },
+  );
+
+  server.registerTool(
+    "shop_from_my_list",
+    {
+      title: "Shop from my list",
+      description: "Refresh selected groceries from a named list using current Nemlig favourites, products, prices, availability, and basket coverage. This does not save live results or change your basket.",
+      inputSchema: {
+        list: z.string().trim().min(1).max(120).describe("The list name or exact reference."),
+        line_ids: z.array(z.string().trim().min(1).max(80)).min(1).max(20).describe("One to twenty exact grocery-line references from the opened list."),
+      },
+      outputSchema: z.object({ lines: z.array(z.any()), selected_estimated_total: z.number() }),
+      annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true },
+      ...(appsEnabled(env) ? { _meta: { ui: { resourceUri: PICKER_URI } } } : {}),
+    },
+    async ({ list, line_ids }) => {
+      try {
+        const [saved] = await showShoppingLists(ownerSubject, listStorage, list, true);
+        const requested = new Set(line_ids);
+        if (requested.size !== line_ids.length) throw new NemligError("Choose each grocery line only once.");
+        const selected = saved!.lines.filter(({ id }) => requested.has(id));
+        if (selected.length !== requested.size) throw new NemligError(`One or more selected groceries are not in “${saved!.name}”. Open the list again.`);
+        await ensureLoggedIn(client, loadCredentials);
+        return success(await resolveShoppingPlan(client, { lines: selected.map((line) => ({
+          id: line.id, name: line.name, quantity: line.quantity, constraints: line.constraints,
+          preferences: line.preferences, selected_product_id: line.preferred_product_id,
+        })) }));
+      } catch (error) { return failure("shop_from_my_list", error); }
+    },
+  );
+
+  server.registerTool(
+    "migrate_my_saved_plan",
+    {
+      title: "Turn a saved plan into a shopping list",
+      description: "Copy an older saved shopping plan into a new named list while keeping the original plan unchanged. This does not contact Nemlig or change your basket.",
+      inputSchema: {
+        saved_plan: z.string().uuid().describe("The older saved-plan reference."),
+        name: z.string().trim().min(1).max(120).describe("The name for the new shopping list."),
+        type: z.enum(["reusable", "occasion"]).describe("Reusable for regular shopping, or occasion for an event. Neither runs automatically."),
+      },
+      outputSchema: z.object({ list: z.any() }),
+      annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
+    },
+    async ({ saved_plan, name, type }) => {
+      try {
+        const migrated = await migrateShoppingPlan(ownerSubject, listStorage, planStorage, saved_plan, name, type);
+        return success({ list: listPayload(migrated) }, `${migrated.name} er oprettet fra den gemte plan.`);
+      } catch (error) { return failure("migrate_my_saved_plan", error); }
+    },
   );
 
   server.registerTool(
@@ -645,7 +815,7 @@ export function createMcpServer(
       PICKER_URI,
       {
         mimeType: PICKER_MIME_TYPE,
-        _meta: { ui: { csp: { resourceDomains: ["https://unpkg.com"] } } },
+        _meta: { ui: { csp: { resourceDomains: ["https://unpkg.com", ...NEMLIG_IMAGE_ORIGINS] } } },
       },
       async () => ({
         contents: [
@@ -653,7 +823,7 @@ export function createMcpServer(
             uri: PICKER_URI,
             mimeType: PICKER_MIME_TYPE,
             text: PICKER_HTML,
-            _meta: { ui: { csp: { resourceDomains: ["https://unpkg.com"] } } },
+            _meta: { ui: { csp: { resourceDomains: ["https://unpkg.com", ...NEMLIG_IMAGE_ORIGINS] } } },
           },
         ],
       }),
@@ -679,7 +849,7 @@ export const PICKER_HTML = `<!DOCTYPE html>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <style>
-body{font-family:system-ui,sans-serif;margin:0;padding:12px;color:#1a1a1a}.grid{display:grid;gap:10px}.card{border:1px solid #ddd;border-radius:10px;padding:12px;display:flex;justify-content:space-between;gap:12px}.name{font-weight:650}.meta{color:#555;font-size:13px}.badges{display:flex;gap:4px;margin-top:6px}.badge{font-size:11px;padding:2px 7px;border-radius:999px;background:#eef}.price{font-weight:700}button{padding:8px 14px;border:0;border-radius:8px;background:#087d33;color:white;font-weight:650}button:disabled{background:#9bbfa6}.empty{color:#666;padding:16px}
+body{font-family:system-ui,sans-serif;margin:0;padding:12px;color:#1a1a1a}.grid{display:grid;gap:10px}.card{border:1px solid #ddd;border-radius:10px;padding:12px;display:flex;align-items:center;justify-content:space-between;gap:12px}.product{display:flex;align-items:center;gap:12px;min-width:0}.product-image{width:72px;height:72px;object-fit:contain;border-radius:8px;background:#f7f7f7;flex:none}.name{font-weight:650}.meta{color:#555;font-size:13px}.badges{display:flex;gap:4px;margin-top:6px}.badge{font-size:11px;padding:2px 7px;border-radius:999px;background:#eef}.price{font-weight:700}button{padding:8px 14px;border:0;border-radius:8px;background:#087d33;color:white;font-weight:650}button:disabled{background:#9bbfa6}.empty{color:#666;padding:16px}.choices{display:grid;gap:8px;margin:8px 0}.choice{display:flex;align-items:center;gap:8px;border:1px solid #ddd;border-radius:8px;padding:8px}.choice input{flex:none}
 </style>
 </head>
 <body><main id="root" aria-live="polite"><div class="empty">Henter varer…</div></main>
@@ -687,10 +857,12 @@ body{font-family:system-ui,sans-serif;margin:0;padding:12px;color:#1a1a1a}.grid{
 import { App } from "https://unpkg.com/@modelcontextprotocol/ext-apps@0.4.0/app-with-deps";
 const root=document.getElementById("root");const app=new App({name:"Nemlig Picker",version:"1.0.0"});
 const kr=v=>typeof v==="number"?v.toFixed(2).replace(".",",")+" kr.":"";
+const imageOrigins=new Set(["https://www.nemlig.com"]);const safeImage=value=>{try{const url=new URL(value);return url.protocol==="https:"&&imageOrigins.has(url.origin)?url.href:null}catch{return null}};
+const imageFor=product=>{const src=safeImage(product.image_url);if(!src)return null;const image=document.createElement("img");image.className="product-image";image.src=src;image.alt=product.name?"Billede af "+product.name:"Varebillede";image.loading="lazy";image.referrerPolicy="no-referrer";image.onerror=()=>image.remove();return image};
 const read=result=>{if(result?.structuredContent)return result.structuredContent;const text=(result?.content||result||[]).find(item=>item.type==="text");if(!text)return null;try{return JSON.parse(text.text)}catch{return null}};
 const parse=result=>{const value=read(result);return Array.isArray(value)?value:value?.result||[]};
-const render=products=>{if(!products.length){root.innerHTML='<div class="empty">Ingen varer fundet.</div>';return}const grid=document.createElement("div");grid.className="grid";for(const product of products){const card=document.createElement("article");card.className="card";const info=document.createElement("div");const name=document.createElement("div");name.className="name";name.textContent=product.name??"Ukendt vare";const meta=document.createElement("div");meta.className="meta";meta.textContent=[product.brand,product.unit_size].filter(Boolean).join(" · ");const badges=document.createElement("div");badges.className="badges";for(const tag of product.tags||[]){const badge=document.createElement("span");badge.className="badge";badge.textContent=tag;badges.append(badge)}info.append(name,meta,badges);const actions=document.createElement("div");const price=document.createElement("div");price.className="price";price.textContent=kr(product.price);const prepare=document.createElement("button");prepare.textContent="Forbered";prepare.disabled=!product.available||product.id==null;prepare.onclick=async()=>prepareBatch([{product:product.id,quantity:1}],prepare);actions.append(price,prepare);card.append(info,actions);grid.append(card)}root.replaceChildren(grid)};
+const render=products=>{if(!products.length){root.innerHTML='<div class="empty">Ingen varer fundet.</div>';return}const grid=document.createElement("div");grid.className="grid";for(const product of products){const card=document.createElement("article");card.className="card";const productArea=document.createElement("div");productArea.className="product";const image=imageFor(product);if(image)productArea.append(image);const info=document.createElement("div");const name=document.createElement("div");name.className="name";name.textContent=product.name??"Ukendt vare";const meta=document.createElement("div");meta.className="meta";meta.textContent=[product.brand,product.unit_size].filter(Boolean).join(" · ");const badges=document.createElement("div");badges.className="badges";for(const tag of product.tags||[]){const badge=document.createElement("span");badge.className="badge";badge.textContent=tag;badges.append(badge)}info.append(name,meta,badges);productArea.append(info);const actions=document.createElement("div");const price=document.createElement("div");price.className="price";price.textContent=kr(product.price);const prepare=document.createElement("button");prepare.textContent="Forbered";prepare.disabled=!product.available||product.id==null;prepare.onclick=async()=>prepareBatch([{product:product.id,quantity:1}],prepare);actions.append(price,prepare);card.append(productArea,actions);grid.append(card)}root.replaceChildren(grid)};
 const prepareBatch=async(items,button)=>{button.disabled=true;button.textContent="Forbereder…";try{const response=await app.callServerTool({name:"review_items_to_add",arguments:{items}});const proposal=read(response);if(!proposal?.applicable||!proposal.review?.lines?.length)throw new Error("invalid proposal");const review=document.createElement("section");review.setAttribute("aria-label","Præcis kurvegennemgang");const lines=document.createElement("div");lines.className="meta";lines.textContent=proposal.review.lines.map(line=>[line.quantity+" × "+line.name,line.unit_size,kr(line.line_total)].filter(Boolean).join(" · ")).join(" | ")+" · Forventet varetotal: "+kr(proposal.review.expected_products_price);const apply=document.createElement("button");apply.textContent="Godkend og tilføj";apply.onclick=async()=>{apply.disabled=true;apply.textContent="Afventer værtsgodkendelse…";try{const response=await app.callServerTool({name:"add_approved_items",arguments:{approved_review:proposal.proposal_id}});const applied=read(response);if(applied?.status!=="completed"||!applied.basket)throw new Error("unverified result");apply.textContent="Tilføjet ✓";const verified=document.createElement("div");verified.className="meta";verified.textContent="Kurven indeholder nu: "+(applied.basket.items||[]).map(item=>(item.quantity??0)+" × "+(item.name??"Ukendt")+" ("+kr(item.total)+")").join(" · ");review.append(verified)}catch{apply.textContent="Afvist";apply.disabled=false}};review.append(lines,apply);root.replaceChildren(review)}catch{button.textContent="Fejl";button.disabled=false}};
-const renderPlan=plan=>{const form=document.createElement("form");form.className="grid";const controls=[];for(const line of plan.lines){const field=document.createElement("fieldset");const legend=document.createElement("legend");legend.textContent=line.name+" · ønsket "+line.quantity;field.append(legend);if(line.resolution==="covered"){const covered=document.createElement("div");covered.textContent="Allerede dækket i kurven";field.append(covered);form.append(field);continue}const label=document.createElement("label");label.textContent="Vare ";const select=document.createElement("select");select.name=line.id;const empty=document.createElement("option");empty.value="";empty.textContent=line.candidates.length?"Vælg en vare":"Ingen egnet vare";select.append(empty);for(const candidate of line.candidates){const option=document.createElement("option");option.value=String(candidate.id);option.textContent=candidate.name+" · "+kr(candidate.price)+(candidate.source==="favorite"?" · favorit":"");option.selected=candidate.id===line.selected_product_id;select.append(option)}label.append(select);const quantity=document.createElement("input");quantity.type="number";quantity.min="1";quantity.max="99";quantity.value=String(line.remaining_quantity);quantity.setAttribute("aria-label","Antal for "+line.name);controls.push({select,quantity});field.append(label,quantity);form.append(field)}const prepare=document.createElement("button");prepare.type="submit";prepare.textContent="Forbered valgte varer";form.onsubmit=event=>{event.preventDefault();const items=controls.flatMap(({select,quantity})=>select.value?[{product:Number(select.value),quantity:Number(quantity.value)}]:[]);if(items.length)prepareBatch(items,prepare)};form.append(prepare);root.replaceChildren(form)};
+const renderPlan=plan=>{const form=document.createElement("form");form.className="grid";const controls=[];for(const line of plan.lines){const field=document.createElement("fieldset");const legend=document.createElement("legend");legend.textContent=line.name+" · ønsket "+line.quantity;field.append(legend);if(line.resolution==="covered"){const covered=document.createElement("div");covered.textContent="Allerede dækket i kurven";field.append(covered);form.append(field);continue}const choices=document.createElement("div");choices.className="choices";let selected=null;for(const candidate of line.candidates){const label=document.createElement("label");label.className="choice";const radio=document.createElement("input");radio.type="radio";radio.name=line.id;radio.value=String(candidate.id);radio.checked=candidate.id===line.selected_product_id;if(radio.checked)selected=radio;const image=imageFor(candidate);if(image)label.append(radio,image);else label.append(radio);const text=document.createElement("span");text.textContent=candidate.name+" · "+kr(candidate.price)+(candidate.source==="favorite"?" · favorit":"");label.append(text);choices.append(label)}if(!line.candidates.length){const empty=document.createElement("div");empty.className="meta";empty.textContent="Ingen egnet vare";choices.append(empty)}const quantity=document.createElement("input");quantity.type="number";quantity.min="1";quantity.max="99";quantity.value=String(line.remaining_quantity);quantity.setAttribute("aria-label","Antal for "+line.name);controls.push({field,quantity});field.append(choices,quantity);form.append(field)}const prepare=document.createElement("button");prepare.type="submit";prepare.textContent="Forbered valgte varer";form.onsubmit=event=>{event.preventDefault();const items=controls.flatMap(({field,quantity})=>{const selected=field.querySelector('input[type="radio"]:checked');return selected?[{product:Number(selected.value),quantity:Number(quantity.value)}]:[]});if(items.length)prepareBatch(items,prepare)};form.append(prepare);root.replaceChildren(form)};
 app.ontoolresult=result=>{const value=read(result);if(value?.lines)renderPlan(value);else render(parse(result))};await app.connect();
 </script></body></html>`;

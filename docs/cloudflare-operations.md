@@ -24,7 +24,7 @@ document records names only, never values.
 
 The repository deploys one Worker, one fixed EU Container-controller Durable
 Object named `nemlig-production`, one fixed EU storage-only Durable Object for
-immutable plan snapshots, and at most one sleeping `lite` Container. The Worker
+immutable plan snapshots and owner-scoped named lists, and at most one sleeping `lite` Container. The Worker
 is disabled by default. Useful operations default to 5,000/day, expensive operations
 to 500/day, and per-minute owner limits to 60 normal and 10 expensive. Valid MCP
 messages other than `tools/call` are protocol traffic and do not consume
@@ -94,9 +94,11 @@ disabled endpoint and no-running-Container state were verified.
    test health, Auth0 rejection, one authenticated MCP handshake, usage
    inspection, and one read-only tool call.
 
-   Configure the private ChatGPT app named `Nemlig Assistant` with the production
+   Configure the private ChatGPT app named exactly `Nemlig Assistant` with the production
    `/mcp` URL, OAuth with Dynamic Client Registration, and the default
-   `use:nemlig-assistant` scope. Confirm its connection reports OAuth.
+   `use:nemlig-assistant` scope. Confirm its connection reports OAuth. Ordinary
+   releases update this app in place with **Refresh**; never create a `(new)`,
+   bracketed, numbered, or parallel Nemlig app.
 
 ## Emergency disable and re-enable
 
@@ -170,9 +172,11 @@ pnpm --filter nemlig-assistant production:probe
 They verify enabled health, OAuth resource metadata, anonymous rejection, and
 foreign-origin rejection. With a current owner access token, the default full
 acceptance command verifies the closed tool/resource inventory, discovery,
-favorites, guided planning, departments, basket view, picker metadata, missing
-plan handling, and all four proposal preparation paths. It does not save a plan,
-create a GitHub issue, or call any apply tool:
+favorites, guided planning, departments, basket view, picker metadata, one
+reserved named-list lifecycle with current resolution, missing plan handling,
+and all four proposal preparation paths. It restores an existing reserved list
+to its prior state; if none existed, it leaves at most one archived acceptance
+list. It does not create a GitHub issue or call any basket apply tool:
 
 ```sh
 read -rs NEMLIG_MCP_ACCESS_TOKEN

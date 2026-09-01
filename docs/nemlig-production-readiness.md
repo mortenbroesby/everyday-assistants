@@ -26,8 +26,11 @@ Live checks remain separate from the automatic gate:
 - `pnpm --filter nemlig-assistant production:probe` checks the deployed edge,
   OAuth metadata, and cheap rejection paths without a token.
 - `pnpm --filter nemlig-assistant production:test:features` requires a current
-  owner token and exercises authenticated reads and proposal preparation without
-  applying a basket change.
+  owner token and exercises authenticated reads, the reserved named-list
+  lifecycle, current list resolution, picker metadata, and proposal preparation
+  without applying a basket change.
+- After deployment, refresh the one existing app named exactly `Nemlig Assistant`
+  in place. Do not create a suffixed, bracketed, numbered, or parallel app.
 - `pnpm --filter nemlig-assistant production:test:mutation` requires separate
   exact approvals for a mutation and its inverse restoration.
 

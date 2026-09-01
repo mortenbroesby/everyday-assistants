@@ -8,7 +8,7 @@ import test from "node:test";
 import type { Basket, Product } from "./client.js";
 import { createProgram, type ShoppingClient } from "./cli.js";
 import type { FeatureRequest } from "./feature-request.js";
-import { createMcpServer, PICKER_HTML, PICKER_URI, rankProducts } from "./mcp.js";
+import { createMcpServer, PICKER_HTML, PICKER_URI, rankProducts, safeNemligImageUrl } from "./mcp.js";
 import { BasketProposalService } from "./proposals.js";
 
 const basket: Basket = {
@@ -237,19 +237,25 @@ const friendlyCatalog = [
   ["browse_grocery_section", "Browse a grocery section", true, false, ["section", "result_count", "page"]],
   ["choose_products_visually", "Choose products visually", true, false, ["search_term", "result_count"]],
   ["continue_my_shopping_plan", "Continue my shopping plan", true, false, ["saved_plan"]],
+  ["copy_my_shopping_list", "Copy my shopping list", false, false, ["source_list", "new_name", "type"]],
   ["empty_approved_basket", "Empty my approved basket", false, true, ["approved_review"]],
   ["find_groceries", "Find groceries", true, false, ["search_term", "result_count"]],
   ["make_approved_item_swap", "Make the approved swap", false, true, ["approved_review"]],
+  ["migrate_my_saved_plan", "Turn a saved plan into a shopping list", false, false, ["saved_plan", "name", "type"]],
   ["plan_my_shopping", "Plan my shopping", true, false, ["lines"]],
   ["remove_approved_item", "Remove the approved item", false, true, ["approved_review"]],
   ["review_emptying_basket", "Review emptying my basket", true, false, []],
   ["review_item_swap", "Review swapping an item", true, false, ["current_item", "replacement_item", "quantity"]],
   ["review_item_to_remove", "Review an item to remove", true, false, ["basket_item"]],
   ["review_items_to_add", "Review items to add", true, false, ["items"]],
+  ["save_my_shopping_list", "Save my shopping list", false, false, ["list", "expected_revision", "name", "type", "lines"]],
   ["save_my_shopping_plan", "Save my shopping plan", false, false, ["lines"]],
+  ["set_my_shopping_list_status", "Archive or restore my shopping list", false, false, ["list", "status", "expected_revision"]],
+  ["shop_from_my_list", "Shop from my list", true, false, ["list", "line_ids"]],
   ["show_grocery_sections", "Show grocery sections", true, false, []],
   ["show_my_basket", "Show my basket", true, false, []],
   ["show_my_favorites", "Show my favourites", true, false, ["search_term", "result_count", "page"]],
+  ["show_my_shopping_lists", "Show my shopping lists", true, false, ["list", "include_archived"]],
   ["suggest_an_improvement", "Suggest an improvement", false, false, ["title", "summary", "acceptance_criteria", "context"]],
 ] as const;
 
@@ -284,7 +290,8 @@ test("MCP exposes the complete friendly catalog and clean missing-credential err
       const tool = tools.find((candidate) => candidate.name === name);
       assert.equal(tool?.title, title, name);
       assert.ok(tool?.description, `${name} needs a description`);
-      assert.deepEqual(tool?.annotations, { readOnlyHint, destructiveHint, openWorldHint: name === "save_my_shopping_plan" ? false : true }, name);
+      const privateStorageTool = ["save_my_shopping_plan", "show_my_shopping_lists", "save_my_shopping_list", "copy_my_shopping_list", "set_my_shopping_list_status", "migrate_my_saved_plan"].includes(name);
+      assert.deepEqual(tool?.annotations, { readOnlyHint, destructiveHint, openWorldHint: !privateStorageTool }, name);
       const properties = (tool?.inputSchema as { properties?: Record<string, { description?: string }> }).properties ?? {};
       assert.deepEqual(Object.keys(properties).sort(), [...inputs].sort(), `${name} inputs drifted`);
       for (const input of inputs) assert.ok(properties[input]?.description, `${name}.${input} needs plain-language guidance`);
@@ -389,6 +396,40 @@ test("MCP plans whole lists and continuing a saved plan refreshes current produc
   } finally { if (previous === undefined) delete process.env.NEMLIG_CONFIG_DIR; else process.env.NEMLIG_CONFIG_DIR = previous; }
 });
 
+test("MCP named lists stay storage-only until a bounded explicit Nemlig refresh", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "nemlig-mcp-lists-"));
+  let reads = 0; let mutations = 0;
+  const client = fakeClient({
+    listFavorites: async () => { reads += 1; return [product]; },
+    getCart: async () => { reads += 1; return basket; },
+    searchProducts: async () => { reads += 1; return [product]; },
+    addToCart: async () => { mutations += 1; return basket; },
+    removeFromCart: async () => { mutations += 1; return basket; },
+    clearCart: async () => { mutations += 1; return basket; },
+  });
+  await withMcpClient(createMcpServer(client, async () => undefined, { NEMLIG_MCP_APPS: "0", NEMLIG_CONFIG_DIR: directory }, undefined, undefined, { ownerSubject: "auth0|owner" }), async (mcp) => {
+    const created = await mcp.callTool({ name: "save_my_shopping_list", arguments: { name: "Ugens basis", type: "reusable", lines: [{ id: "milk", name: "mælk", quantity: 2 }] } });
+    assert.match(toolText(created), /Ugens basis er gemt/iu);
+    assert.doesNotMatch(toolText(created), /[0-9a-f]{8}-[0-9a-f-]{27}|revision|status/iu);
+    const opened = await mcp.callTool({ name: "show_my_shopping_lists", arguments: { list: "Ugens basis" } });
+    const saved = (opened.structuredContent as { lists: Array<{ id: string; revision: number }> }).lists[0]!;
+    assert.equal(reads, 0);
+    const stale = await mcp.callTool({ name: "save_my_shopping_list", arguments: { list: "Ugens basis", expected_revision: 99, name: "Ugens basis", type: "reusable", lines: [] } });
+    assert.equal(stale.isError, true);
+    assert.match(toolText(stale), /Ugens basis.*changed/iu);
+    assert.doesNotMatch(toolText(stale), new RegExp(saved.id, "iu"));
+    const refreshed = await mcp.callTool({ name: "shop_from_my_list", arguments: { list: "Ugens basis", line_ids: ["milk"] } });
+    assert.equal((refreshed.structuredContent as { lines: unknown[] }).lines.length, 1);
+    assert.equal(reads, 2);
+    const duplicate = await mcp.callTool({ name: "shop_from_my_list", arguments: { list: "Ugens basis", line_ids: ["milk", "milk"] } });
+    assert.equal(duplicate.isError, true);
+    assert.equal(reads, 2);
+    const archived = await mcp.callTool({ name: "set_my_shopping_list_status", arguments: { list: "Ugens basis", status: "archived", expected_revision: saved.revision } });
+    assert.match(toolText(archived), /Ugens basis er arkiveret/iu);
+    assert.equal(mutations, 0);
+  });
+});
+
 test("every MCP tool has complete schemas, accurate annotations, and safe server instructions", async () => {
   await withMcpClient(createMcpServer(fakeClient()), async (mcp) => {
     const tools = (await mcp.listTools()).tools;
@@ -449,10 +490,26 @@ test("MCP routes ordinary product intent through favorites-first planning", asyn
     assert.match(instructions, /ordinary requests to find or add products, use plan_my_shopping/);
     assert.match(instructions, /find_groceries only for an explicit full-catalog search/);
     assert.match(instructions, /show_my_favorites only for explicit favourite browsing/);
+    assert.match(instructions, /current Nemlig products, prices, availability/);
+    assert.match(instructions, /Recipes and general food research do not require Nemlig tools/);
     assert.match(tools.get("plan_my_shopping") ?? "", /checking your favourites first/);
     assert.match(tools.get("find_groceries") ?? "", /explicitly want the full catalog/);
     assert.match(tools.get("show_my_favorites") ?? "", /saved Nemlig favourites/);
   });
+});
+
+test("picker images use only the observed Nemlig HTTPS origin and keep a text-only fallback", () => {
+  assert.equal(safeNemligImageUrl("https://www.nemlig.com/scommerce/images/milk.jpg?i=1"), "https://www.nemlig.com/scommerce/images/milk.jpg?i=1");
+  for (const value of ["http://www.nemlig.com/image.jpg", "https://nemlig.com.evil.test/image.jpg", "https://images.test/image.jpg", "not a url", undefined]) {
+    assert.equal(safeNemligImageUrl(value), undefined);
+  }
+  assert.match(PICKER_HTML, /loading="lazy"/);
+  assert.match(PICKER_HTML, /referrerPolicy="no-referrer"/);
+  assert.match(PICKER_HTML, /onerror=\(\)=>image\.remove\(\)/);
+  assert.match(PICKER_HTML, /alt=product\.name/);
+  assert.match(PICKER_HTML, /imageOrigins\.has\(url\.origin\)/);
+  assert.match(PICKER_HTML, /if\(image\).*else label\.append\(radio\)/);
+  assert.doesNotMatch(PICKER_HTML, /image[_-]proxy|fetch\(.*image/iu);
 });
 
 test("MCP creates one structured feature request without touching Nemlig", async () => {

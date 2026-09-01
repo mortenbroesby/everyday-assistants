@@ -29,6 +29,7 @@ export type PlanSource = "favorite" | "catalog";
 export interface PlanCandidate {
   id: number; name: string; price: number | undefined; unit_price: number | undefined;
   unit_size: string; brand: string; available: boolean; source: PlanSource;
+  image_url: string | undefined;
   dietary: { organic: boolean; vegan: boolean; gluten_free: boolean; lactose_free: boolean };
   is_frozen: boolean; is_on_discount: boolean; constraint_outcomes: Record<string, boolean>; tags: string[];
 }
@@ -69,6 +70,7 @@ export function eligibleCandidates(
     const candidate: PlanCandidate = {
       id: product.id, name: product.name, price: product.price, unit_price: product.unitPrice,
       unit_size: product.unitSize, brand: product.brand, available: product.available, source,
+      image_url: product.imageUrl || undefined,
       dietary: { organic: product.isOrganic, vegan: product.isVegan, gluten_free: product.isGlutenFree, lactose_free: product.isLactoseFree },
       is_frozen: product.isFrozen, is_on_discount: product.isOnDiscount,
       constraint_outcomes: constraintOutcomes, tags: [source, ...(product.isOnDiscount ? ["discount"] : []), ...(product.isOrganic ? ["organic"] : [])],

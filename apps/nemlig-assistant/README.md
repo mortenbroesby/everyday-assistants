@@ -45,6 +45,8 @@ Once connected, try prompts like:
 - “Plan bread, milk, apples, and pasta. Prefer favorites and discounted products.”
 - “What is already in my basket, and what is still missing from this list?”
 - “Save this shopping plan so I can continue later.”
+- “Save this as a reusable list called Ugens basis.”
+- “Make a separate birthday list, then show me both lists.”
 - “Compare the cheese in my basket with this cheaper alternative.”
 - “Add these selected products after showing me a clear summary.”
 
@@ -72,9 +74,17 @@ plain shopping summary and waits for approval before changing the basket.
 - Account for current basket quantities and show what remains to buy.
 - Estimate the selected total from current product data.
 - Use the optional visual picker to choose products and quantities.
+- See direct Nemlig product images when the verified image host is available;
+  every choice remains usable as text when an image is absent or fails.
 
 ### Save and continue later
 
+- Create up to 25 private named lists, each with up to 50 ordered grocery lines.
+- Keep regular household lists as `reusable` and event lists as `occasion`.
+- Rename, replace, copy, archive, and restore lists with stale-edit protection.
+- Open a list without contacting Nemlig, then explicitly refresh up to 20
+  selected lines against current favourites, prices, availability, and basket coverage.
+- Migrate an older saved-plan reference without deleting its source.
 - Save immutable, owner-only plan snapshots.
 - Store only structured inputs and selections, never credentials or stale
   product responses.
@@ -139,7 +149,8 @@ Read or plan → review the exact change → show a clear shopping summary → u
 ```
 
 - Search, favourites, browsing, planning, picker selection, saved plans, and
-  basket inspection are read-only.
+  basket inspection are read-only. Named-list edits change only private
+  assistant state; they never authorize or change the Nemlig basket.
 - Every basket change starts with the matching `review_*` tool.
 - Approval is requested once. A prior approval counts when it explicitly covers
   every exact detail in the unchanged review; otherwise the full review is
@@ -209,6 +220,9 @@ The MCP surface is organized around household actions:
   `show_grocery_sections`, and `browse_grocery_section`.
 - Plan and continue shopping: `plan_my_shopping`, `save_my_shopping_plan`, and
   `continue_my_shopping_plan`.
+- Keep named lists: `show_my_shopping_lists`, `save_my_shopping_list`,
+  `copy_my_shopping_list`, `set_my_shopping_list_status`, `shop_from_my_list`,
+  and `migrate_my_saved_plan`.
 - See the basket: `show_my_basket`.
 - Review basket changes: `review_items_to_add`, `review_item_to_remove`,
   `review_item_swap`, and `review_emptying_basket`.
@@ -217,9 +231,10 @@ The MCP surface is organized around household actions:
 - Choose visually: `choose_products_visually` and `ui://nemlig/picker.html`.
 - Suggest an improvement: `suggest_an_improvement`.
 
-After the friendly tool-name update is deployed, refresh or reconnect the
-ChatGPT app once so it replaces any cached copy of the former catalog. The
-server advertises only the current names; it does not duplicate old aliases.
+After an ordinary release, open the existing app named exactly `Nemlig Assistant`
+and use **Refresh** so ChatGPT rediscovers tools, schemas, instructions,
+resources, and picker changes. Never create `Nemlig Assistant (new)`, a
+bracketed or numbered variant, or a parallel copy for a normal release.
 
 Direct `add_to_cart`, `remove_from_cart`, `replace_cart_line`, and
 `clear_cart` MCP tools intentionally do not exist. Set `NEMLIG_MCP_APPS=0` to
@@ -258,9 +273,11 @@ put a GitHub token in the repository or an environment file.
 2. Browse a department's second page and inspect deal and unit-price metadata.
 3. Save and reload the plan. Confirm it resolves current availability, prices,
    and basket quantities rather than replaying stale data.
-4. Use the picker, adjust a selection, and inspect the exact batch review.
+4. Create `Ugens basis`, reopen it without a Nemlig lookup, refresh selected
+   lines, then archive and restore it. Confirm reusable does not mean automatic.
+5. Use the picker, adjust a selection, and inspect the exact batch review.
    Stop unless you separately approve that unchanged review.
-5. Prepare one cheaper and one non-cheaper replacement. Verify both product
+6. Prepare one cheaper and one non-cheaper replacement. Verify both product
    IDs, packages, unit prices, final quantity, signed price difference, and
    expected basket total before considering approval.
 

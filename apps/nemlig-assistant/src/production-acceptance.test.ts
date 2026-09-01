@@ -30,11 +30,12 @@ test("production inventory fails closed for missing and unknown entries", () => 
 
 test("default production feature acceptance covers safe paths and never calls external-state tools", async () => {
   const calls: string[] = [];
+  let acceptanceList: { name: string; type: "occasion"; status: "active" | "archived"; revision: number; lines: unknown[] } | undefined;
   const client: AcceptanceClient = {
     listTools: async () => ({ tools: allTools }),
     listResources: async () => ({ resources: productionResourceInventory.map((uri) => ({ uri })) }),
     readResource: async () => ({ contents: [{ text: "picker" }] }),
-    callTool: async ({ name }) => {
+    callTool: async ({ name, arguments: args }) => {
       calls.push(name);
       if (name === "find_groceries" || name === "choose_products_visually") {
         return { structuredContent: { result: [{ id: 7 }, { id: 8 }] } };
@@ -44,6 +45,16 @@ test("default production feature acceptance covers safe paths and never calls ex
       if (name === "show_grocery_sections") return { structuredContent: { departments: [{ id: "fruit" }] } };
       if (name === "show_my_basket") return { structuredContent: { items: [] } };
       if (name === "continue_my_shopping_plan") return { isError: true };
+      if (name === "show_my_shopping_lists") return { structuredContent: { lists: acceptanceList ? [acceptanceList] : [] } };
+      if (name === "save_my_shopping_list") {
+        acceptanceList = { name: String(args.name), type: "occasion", status: "active", revision: (acceptanceList?.revision ?? 0) + 1, lines: args.lines as unknown[] };
+        return { structuredContent: { list: acceptanceList } };
+      }
+      if (name === "shop_from_my_list") return { structuredContent: { lines: [], selected_estimated_total: 0 } };
+      if (name === "set_my_shopping_list_status") {
+        acceptanceList = { ...acceptanceList!, status: args.status as "active" | "archived", revision: acceptanceList!.revision + 1 };
+        return { structuredContent: { list: acceptanceList } };
+      }
       return { structuredContent: { applicable: false } };
     },
   };
@@ -52,10 +63,11 @@ test("default production feature acceptance covers safe paths and never calls ex
   assert.deepEqual(calls, [
     "find_groceries", "show_my_favorites", "plan_my_shopping", "show_grocery_sections",
     "browse_grocery_section", "show_my_basket", "choose_products_visually", "continue_my_shopping_plan",
+    "show_my_shopping_lists", "save_my_shopping_list", "shop_from_my_list", "set_my_shopping_list_status",
     "review_items_to_add", "review_item_to_remove", "review_item_swap", "review_emptying_basket",
   ]);
   assert.equal(calls.some((name) => (productionToolInventory.externalState as readonly string[]).includes(name)), false);
-  assert.deepEqual(report.unavailable, ["continue_my_shopping_plan:no_safe_fixture"]);
+  assert.deepEqual(report.unavailable, ["continue_my_shopping_plan:no_safe_fixture", "copy_my_shopping_list:no_extra_acceptance_record", "migrate_my_saved_plan:no_safe_fixture"]);
 });
 
 const approved: ApprovedProductionMutation = {
