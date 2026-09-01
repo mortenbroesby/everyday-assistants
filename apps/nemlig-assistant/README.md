@@ -223,6 +223,9 @@ in [Cloudflare operations](../../docs/cloudflare-operations.md). It is the only
 supported ChatGPT deployment. The CLI and stdio MCP server remain available for
 direct local development and use; they are not a ChatGPT hosting fallback.
 
+The MCP server advertises the original orange bitten-dot icon and the display
+name `Nemlig Assistant` to clients that render standard MCP app metadata.
+
 Creating or changing identity, hosting, DNS, runtime secrets, or paid resources
 is an owner-controlled infrastructure action. Nemlig credentials must stay out
 of the repository.

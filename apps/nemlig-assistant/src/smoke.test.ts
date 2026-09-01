@@ -48,7 +48,16 @@ test("local CLI help and MCP surface need no credentials or network", async () =
   const client = new Client({ name: "smoke", version: "1.0.0" });
   await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
   try {
-    assert.equal(client.getServerVersion()?.name, "nemlig-assistant");
+    const serverInfo = client.getServerVersion();
+    assert.ok(serverInfo);
+    assert.equal(serverInfo?.name, "nemlig-assistant");
+    assert.equal(serverInfo.title, "Nemlig Assistant");
+    assert.deepEqual(serverInfo.icons, [{
+      src: serverInfo.icons?.[0]?.src,
+      mimeType: "image/png",
+      sizes: ["1024x1024"],
+    }]);
+    assert.match(serverInfo.icons?.[0]?.src ?? "", /^data:image\/png;base64,iVBOR/);
     assert.deepEqual(
       (await client.listTools()).tools.map((tool) => tool.name).sort(),
       [
