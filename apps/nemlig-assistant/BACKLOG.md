@@ -22,17 +22,6 @@ The meaning of "substantial" and handling for incomparable package units need
 real examples before implementation; avoid inventing a complex scoring model
 until then.
 
-## User-submitted feature requests
-
-Recognize explicit phrases such as "feature request" or "request feature" and
-offer to record the user's request for later development.
-
-The first implementation should store the request text, creation time, and an
-open/done status in a simple inspectable backlog, confirm what was recorded, and
-never treat logging as authorization to implement it or mutate a Nemlig basket.
-Choose the durable storage location when this feature is implemented; do not
-collect credentials, basket contents, or other unnecessary account data.
-
 ## Future family access
 
 The hosted alpha remains one owner and one Nemlig account. A later release may

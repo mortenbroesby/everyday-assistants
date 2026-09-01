@@ -224,6 +224,11 @@ GitHub issue, proposal apply, or basket mutation was sent. Run
 `production:test:mutation` only after both exact change and restoration envelopes
 receive their separate approvals.
 
+This boundary was retained when the tunnel-retirement change was formally
+closed: the automated contracts and credential-free production probe passed,
+while the optional token-backed feature sweep and reversible live mutation
+exercise remain operator-run checks rather than claimed completion evidence.
+
 ## Inspect usage and reset the breaker
 
 Use a current owner access token without placing it in command history:

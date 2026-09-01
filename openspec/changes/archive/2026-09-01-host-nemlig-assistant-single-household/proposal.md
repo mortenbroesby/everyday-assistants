@@ -106,3 +106,12 @@ separately approved host while preserving the single-account safety contract.
 - Hosting and identity services may incur ongoing cost and create external
   resources; their exact provider, region, cost ceiling, and creation remain
   implementation gates rather than being authorized by this proposal.
+
+## Closure
+
+Superseded on 2026-09-01 by the implemented Cloudflare hosting and
+production-only tunnel-retirement changes. This change is archived without
+syncing its deltas because its tunnel-first migration, generic host staging,
+durable snapshot, and fallback requirements no longer describe the accepted
+production architecture. Unchecked tasks remain as historical evidence of work
+that was replaced rather than completed.

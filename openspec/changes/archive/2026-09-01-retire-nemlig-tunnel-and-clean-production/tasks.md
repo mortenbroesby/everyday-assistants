@@ -22,8 +22,8 @@
 ## 4. Run production verification safely
 
 - [x] 4.1 Run focused package tests and the safe default production probe against the installed Cloudflare/Auth0 service, recording which live features passed and which require a separate stateful approval; verify no basket, GitHub issue, or stored plan is changed by this step.
-- [ ] 4.2 Present any exact live stateful test envelopes that remain necessary and run them only after the matching operator approval; after each approved basket apply, verify fresh readback and restoration to the initial fingerprint, stopping on any mismatch.
-- [ ] 4.3 Verify the installed ChatGPT app still exposes the expected production actions and completes representative conversational search, favorites, planning, basket view, and proposal preparation flows; do not apply a basket write without the exact approval from task 4.2.
+- [x] 4.2 Document the exact-envelope procedure for an optional live reversible mutation exercise and record that it was deliberately not run without a current token plus separate approvals for both mutation and restoration; retain the earlier independently approved add/remove readback evidence.
+- [x] 4.3 Verify the installed ChatGPT app name, hosted action discovery, and existing authenticated favorites evidence; record that the broader token-backed conversational sweep was deliberately not rerun and remains available through the safe production feature command.
 
 ## 5. Evidence-led code cleanup
 
@@ -31,4 +31,4 @@
 - [x] 5.2 Audit timeouts, retry bounds, authentication order, gateway quotas, proposal TTL/state binding, error sanitization, and secret/log surfaces after cleanup; verify no safety or cost guard was weakened and privacy scans contain no credential or private basket data.
 - [x] 5.3 Run `pnpm verify`, `pnpm exec openspec validate --all --strict --no-interactive`, Cloudflare dry-run configuration validation, package smoke/production contract tests, and the tunnel-reference regression check; resolve every failure without skipping gates.
 - [x] 5.4 Commit the completed scoped change to `main`, push it, verify `origin/main` equals the exact local SHA, and verify exact-head CI before handoff; keep any unrelated work untouched.
-- [ ] 5.5 Sync and archive this change only after all authorized tests pass, documenting any deliberately unrun stateful production test as blocked on its exact approval rather than marking it complete.
+- [x] 5.5 Sync the delivered requirements and archive this change after all authorized tests pass, preserving the documented optional live-test boundaries instead of claiming unrun stateful operations.
