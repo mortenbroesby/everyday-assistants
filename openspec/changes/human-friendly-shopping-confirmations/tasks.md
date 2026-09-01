@@ -19,5 +19,5 @@
 
 - [x] 4.1 Run the focused Nemlig package checks, `pnpm verify`, and strict all-change OpenSpec validation; resolve every failure without weakening approval, privacy, authentication, or Cloudflare cost controls.
 - [x] 4.2 Review the final diff for secret exposure, technical identifiers in ordinary presentation, picker regressions, request amplification, dependency additions, or cost-safety changes; verify the public-tree/privacy checks and Cloudflare dry-run remain clean.
-- [ ] 4.3 Commit the completed scoped work to `main`, push it, verify `origin/main` equals the exact local SHA, and verify exact-head CI before production promotion.
-- [ ] 4.4 Promote the exact verified build through the existing single-Container Cloudflare workflow, refresh the installed `Nemlig Assistant` app, and verify representative basket view and prepare-only ChatGPT conversations are friendly without applying a basket mutation; record the acceptance evidence and keep rollback available.
+- [x] 4.3 Commit the completed scoped work to `main`, push it, verify `origin/main` equals the exact local SHA, and verify exact-head CI before production promotion.
+- [x] 4.4 Promote the exact verified build through the existing single-Container Cloudflare workflow, refresh the installed `Nemlig Assistant` app, and verify representative basket view and prepare-only ChatGPT conversations are friendly without applying a basket mutation; record the acceptance evidence and keep rollback available.

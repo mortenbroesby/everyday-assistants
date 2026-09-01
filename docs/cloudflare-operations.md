@@ -1,10 +1,10 @@
 # Cloudflare operations for Nemlig MCP
 
-Status: production version `7eb3ff2e-759d-4e3b-b2b7-49cf59193384` is enabled
+Status: production version `72941409-a809-40a9-adf2-d7e4b1aa9ddc` is enabled
 for private family use. Health, OAuth metadata, anonymous rejection, Auth0
 sign-in, hosted-app action discovery, authenticated read and basket-add flows,
 and no unauthorized Container wake are verified. The deployed application
-revision is `bad8290ef29ecea081eeb2e46e2aec0da0c223c5`.
+revision is `9e321f2910c8e9bd357215c3efab9e46bb77741c`.
 
 Current production endpoints:
 
@@ -149,6 +149,15 @@ a fresh readback showed one product totaling 2.50 DKK and no other basket change
 The item was not removed by the addition test. A later, separately approved
 removal used the hosted prepare/apply flow and a fresh readback confirmed an
 empty basket with zero products and a 0.00 DKK product total.
+
+The human-friendly confirmation promotion first deployed disabled version
+`2eba6882-e363-4653-a239-b2b02edffa3b`. Both production routes returned HTTP
+503 and the fixed Container remained inactive. Enabled version
+`72941409-a809-40a9-adf2-d7e4b1aa9ddc` then passed the credential-free edge
+probe. Refreshing the app showed the canonical `Nemlig Assistant` name. A live
+ChatGPT basket read and one prepare-only low-value addition used concise
+shopping copy with no internal IDs, proposal metadata, expiry data, raw field
+names, or apply call; the basket remained unchanged.
 
 ## Verify production features and approved reversible mutations
 
