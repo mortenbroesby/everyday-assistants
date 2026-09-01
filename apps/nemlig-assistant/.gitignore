@@ -2,3 +2,4 @@
 credentials.json
 dist/
 node_modules/
+/.wrangler/

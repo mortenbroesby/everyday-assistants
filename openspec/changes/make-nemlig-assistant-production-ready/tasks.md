@@ -16,5 +16,5 @@
 
 ## 4. Delivery
 
-- [ ] 4.1 Commit only the production-readiness scope to `main`, push it, and verify `origin/main` resolves to the delivered commit on top of the completed OpenSpec archive baseline.
-- [ ] 4.2 Report the branch, commit SHA, remote-ref verification, CI status if available, and the exact next owner-run acceptance command without executing any provider or Nemlig mutation.
+- [x] 4.1 Commit only the production-readiness scope to `main`, push it, and verify `origin/main` resolves to the delivered commit on top of the completed OpenSpec archive baseline.
+- [x] 4.2 Report the branch, commit SHA, remote-ref verification, CI status if available, and the exact next owner-run acceptance command without executing any provider or Nemlig mutation.

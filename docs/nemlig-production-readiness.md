@@ -51,7 +51,8 @@ runbook for [deployment](cloudflare-operations.md#first-deployment-and-current-s
 Nemlig Assistant production-readiness evidence
 
 - Automated repository gate: PASS (`pnpm nemlig:production:ready`, 2026-09-01)
-- Commit and exact-head CI: <SHA and CI link>
+- Implementation commit and exact-head CI: `63d060b0388aa15cd2549147e63264456a7cf9db`
+  ([CI passed](https://github.com/mortenbroesby/everyday-assistants/actions/runs/33528527398))
 - Live edge probe: NOT RUN unless explicitly recorded
 - Authenticated live feature acceptance: NOT RUN unless explicitly recorded
 - Reversible basket acceptance: NOT RUN unless separately approved and recorded
