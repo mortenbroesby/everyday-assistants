@@ -122,19 +122,26 @@ test("HTTP MCP preserves an owner proposal across authenticated transport reconn
     numberOfProducts: 1,
   };
   let changed = false;
-  const proposals = new BasketProposalService({
+  const client = {
+    isLoggedIn: () => true,
+    login: async () => undefined,
+    searchProducts: async () => [],
     getProduct: async () => product,
+    listFavorites: async () => [],
+    listDepartments: async () => [],
+    browseDepartment: async () => ({ products: [], page: 1, hasNext: false }),
     getCart: async () => changed ? applied : empty,
     addToCart: async () => { changed = true; return applied; },
     removeFromCart: async () => empty,
     clearCart: async () => empty,
-  });
+  };
+  const proposals = new BasketProposalService(client);
   const app = createHttpApp(config, oauth, {
     verifyAccessToken: async () => ({
       token: "test", clientId: "chatgpt", scopes: [config.requiredScope],
       expiresAt: Date.now() / 1000 + 300, extra: { subject: config.ownerSubject },
     }),
-  }, proposals);
+  }, client, proposals);
   const server = app.listen(0, config.host);
   await new Promise<void>((resolve, reject) => {
     server.once("listening", resolve);

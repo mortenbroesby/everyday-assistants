@@ -11,6 +11,7 @@ import { basename } from "node:path";
 import type { IncomingMessage, Server, ServerResponse } from "node:http";
 import { createAuth0Verifier, fetchAuth0Metadata, loadAuth0Config, type Auth0Config } from "./auth0.js";
 import { getClient } from "./cli.js";
+import type { ShoppingClient } from "./cli.js";
 import { createMcpServer } from "./mcp.js";
 import { BasketProposalService } from "./proposals.js";
 import type { OAuthMetadata } from "@modelcontextprotocol/sdk/shared/auth.js";
@@ -34,7 +35,8 @@ export function createHttpApp(
   config: Auth0Config,
   oauth: OAuthMetadata,
   verifier: OAuthTokenVerifier,
-  proposals = new BasketProposalService(getClient()),
+  client: ShoppingClient = getClient(),
+  proposals = new BasketProposalService(client),
 ) {
   const app = createMcpExpressApp({ host: config.host });
   const sessions = new Map<string, { ownerSubject: string; transport: StreamableHTTPServerTransport }>();
@@ -77,7 +79,7 @@ export function createHttpApp(
         transport.onclose = () => {
           if (transport?.sessionId) sessions.delete(transport.sessionId);
         };
-        await createMcpServer(undefined, undefined, undefined, proposals, undefined, { ownerSubject }).connect(transport);
+        await createMcpServer(client, undefined, undefined, proposals, undefined, { ownerSubject }).connect(transport);
       }
       if (!transport) return res.status(400).json({ jsonrpc: "2.0", error: { code: -32_000, message: "Invalid or missing session." }, id: null });
       await transport.handleRequest(req, res, req.body);
