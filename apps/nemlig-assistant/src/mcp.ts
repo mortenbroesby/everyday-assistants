@@ -261,7 +261,7 @@ export function createMcpServer(
   );
   const localConnectionId = randomUUID();
   const connectionId = (sessionId: string | undefined): string =>
-    requestContext ? `${requestContext.ownerSubject}\0${sessionId ?? localConnectionId}` : sessionId ?? localConnectionId;
+    requestContext?.ownerSubject ?? sessionId ?? localConnectionId;
   const search = async (query: string, limit: number) =>
     rankProducts(await client.searchProducts(query, limit), query);
   const planStorage = configuredPlanSnapshotStorage(env);

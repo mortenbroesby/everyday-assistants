@@ -515,6 +515,55 @@ test("MCP additions require prepare then apply and direct mutation tools are una
   });
 });
 
+test("hosted proposals survive an owner reconnect but remain isolated from another owner", async () => {
+  let added: [number, number] | undefined;
+  const empty = { ...basket, items: [], productsPrice: 0, numberOfProducts: 0 };
+  const applied = {
+    ...basket,
+    items: [{ id: 7, name: product.name, quantity: 1, total: 12.5 }],
+    productsPrice: 12.5,
+    numberOfProducts: 1,
+  };
+  const client = fakeClient({
+    getCart: async () => added ? applied : empty,
+    addToCart: async (id, quantity) => {
+      added = [id, quantity ?? 1];
+      return applied;
+    },
+  });
+  const proposals = new BasketProposalService(client);
+  let proposalId = "";
+
+  await withMcpClient(
+    createMcpServer(client, undefined, undefined, proposals, undefined, { ownerSubject: "auth0|owner" }),
+    async (mcp) => {
+      const prepared = await mcp.callTool({
+        name: "prepare_cart_additions",
+        arguments: { items: [{ product_id: 7, quantity: 1 }] },
+      });
+      proposalId = (prepared.structuredContent as { proposal_id: string }).proposal_id;
+    },
+  );
+
+  await withMcpClient(
+    createMcpServer(client, undefined, undefined, proposals, undefined, { ownerSubject: "auth0|other" }),
+    async (mcp) => {
+      const rejected = await mcp.callTool({ name: "apply_cart_additions", arguments: { proposal_id: proposalId } });
+      assert.equal(rejected.isError, true);
+      assert.equal(added, undefined);
+    },
+  );
+
+  await withMcpClient(
+    createMcpServer(client, undefined, undefined, proposals, undefined, { ownerSubject: "auth0|owner" }),
+    async (mcp) => {
+      const result = await mcp.callTool({ name: "apply_cart_additions", arguments: { proposal_id: proposalId } });
+      assert.equal(result.isError, undefined);
+      assert.deepEqual(added, [7, 1]);
+    },
+  );
+});
+
 test("MCP replacement prepares factual savings and applies only the approved staged change", async () => {
   const current = { ...product, id: 7, name: "Mælk", price: 12.5 };
   const replacement = {

@@ -6,6 +6,7 @@ import type { AddressInfo } from "node:net";
 import test from "node:test";
 import { createHttpApp } from "./http.js";
 import type { Auth0Config } from "./auth0.js";
+import { BasketProposalService } from "./proposals.js";
 
 const config: Auth0Config = {
   issuer: new URL("https://tenant.example.test/"),
@@ -99,6 +100,69 @@ test("HTTP MCP advertises Auth0, rejects anonymous and foreign origins, and pres
     assert.equal(invalidGet.status, 400);
 
     await client.close();
+  } finally {
+    await new Promise<void>((resolve, reject) => server.close((error?: Error) => error ? reject(error) : resolve()));
+  }
+});
+
+test("HTTP MCP preserves an owner proposal across authenticated transport reconnects", async () => {
+  const product = {
+    id: 7, name: "Banan", price: 2.5, unit: "2,50 kr/stk.", unitPrice: 2.5,
+    unitSize: "1 stk.", brand: "Test", category: "Frugt", subcategory: "Bananer",
+    imageUrl: "", available: true, labels: [], isOrganic: false, isFrozen: false,
+    isRefrigerated: false, isDairy: false, isLactoseFree: false, isGlutenFree: true,
+    isVegan: true, isOnDiscount: false,
+  };
+  const empty = { items: [], productsPrice: 0, deliveryPrice: 39, numberOfProducts: 0, deliveryTime: "Tomorrow" };
+  const applied = {
+    ...empty,
+    items: [{ id: 7, name: product.name, quantity: 1, total: 2.5 }],
+    productsPrice: 2.5,
+    numberOfProducts: 1,
+  };
+  let changed = false;
+  const proposals = new BasketProposalService({
+    getProduct: async () => product,
+    getCart: async () => changed ? applied : empty,
+    addToCart: async () => { changed = true; return applied; },
+    removeFromCart: async () => empty,
+    clearCart: async () => empty,
+  });
+  const app = createHttpApp(config, oauth, {
+    verifyAccessToken: async () => ({
+      token: "test", clientId: "chatgpt", scopes: [config.requiredScope],
+      expiresAt: Date.now() / 1000 + 300, extra: { subject: config.ownerSubject },
+    }),
+  }, proposals);
+  const server = app.listen(0, config.host);
+  await new Promise<void>((resolve, reject) => {
+    server.once("listening", resolve);
+    server.once("error", reject);
+  });
+  const endpoint = new URL(`http://${config.host}:${(server.address() as AddressInfo).port}/mcp`);
+  const connect = async () => {
+    const client = new Client({ name: "reconnect-test", version: "1.0.0" });
+    const transport = new StreamableHTTPClientTransport(endpoint, {
+      requestInit: { headers: { authorization: "Bearer test" } },
+    });
+    await client.connect(transport);
+    return client;
+  };
+  try {
+    const first = await connect();
+    const prepared = await first.callTool({
+      name: "prepare_cart_additions",
+      arguments: { items: [{ product_id: 7, quantity: 1 }] },
+    });
+    const proposalId = (prepared.structuredContent as { proposal_id: string }).proposal_id;
+    await first.close();
+
+    const second = await connect();
+    const result = await second.callTool({ name: "apply_cart_additions", arguments: { proposal_id: proposalId } });
+    assert.equal(result.isError, undefined);
+    assert.equal(changed, true);
+    assert.equal((result.structuredContent as { basket: { items: unknown[] } }).basket.items.length, 1);
+    await second.close();
   } finally {
     await new Promise<void>((resolve, reject) => server.close((error?: Error) => error ? reject(error) : resolve()));
   }

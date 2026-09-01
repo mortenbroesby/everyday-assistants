@@ -10,7 +10,9 @@ import { realpathSync } from "node:fs";
 import { basename } from "node:path";
 import type { IncomingMessage, Server, ServerResponse } from "node:http";
 import { createAuth0Verifier, fetchAuth0Metadata, loadAuth0Config, type Auth0Config } from "./auth0.js";
+import { getClient } from "./cli.js";
 import { createMcpServer } from "./mcp.js";
+import { BasketProposalService } from "./proposals.js";
 import type { OAuthMetadata } from "@modelcontextprotocol/sdk/shared/auth.js";
 import type { OAuthTokenVerifier } from "@modelcontextprotocol/sdk/server/auth/provider.js";
 import type { AuthInfo } from "@modelcontextprotocol/sdk/server/auth/types.js";
@@ -28,7 +30,12 @@ const configAddress = (server: Server): string => {
   return typeof address === "object" && address ? `${address.address}:${address.port}` : String(address);
 };
 
-export function createHttpApp(config: Auth0Config, oauth: OAuthMetadata, verifier: OAuthTokenVerifier) {
+export function createHttpApp(
+  config: Auth0Config,
+  oauth: OAuthMetadata,
+  verifier: OAuthTokenVerifier,
+  proposals = new BasketProposalService(getClient()),
+) {
   const app = createMcpExpressApp({ host: config.host });
   const sessions = new Map<string, { ownerSubject: string; transport: StreamableHTTPServerTransport }>();
   app.use(mcpAuthMetadataRouter({
@@ -70,7 +77,7 @@ export function createHttpApp(config: Auth0Config, oauth: OAuthMetadata, verifie
         transport.onclose = () => {
           if (transport?.sessionId) sessions.delete(transport.sessionId);
         };
-        await createMcpServer(undefined, undefined, undefined, undefined, undefined, { ownerSubject }).connect(transport);
+        await createMcpServer(undefined, undefined, undefined, proposals, undefined, { ownerSubject }).connect(transport);
       }
       if (!transport) return res.status(400).json({ jsonrpc: "2.0", error: { code: -32_000, message: "Invalid or missing session." }, id: null });
       await transport.handleRequest(req, res, req.body);
