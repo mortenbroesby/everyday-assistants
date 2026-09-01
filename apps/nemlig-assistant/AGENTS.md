@@ -27,6 +27,11 @@ before Nemlig work.
 - Follow `../../docs/cloudflare-operations.md` for private ChatGPT production
   setup. Never commit infrastructure credentials, runtime secrets, or support
   output.
+- Treat the hosted service's one-Container maximum, authentication-before-wake,
+  quotas, rate limits, circuit breaker, bounded retries, and manual kill switch
+  as cost-safety requirements. Any change that could weaken them or materially
+  increase family/user operating cost requires a cost-impact summary and human
+  direction before implementation or Cloudflare mutation.
 - Keep the `Feature sets` section in `README.md` current in the same change when
   shipped user-facing functionality is added, removed, or materially changed.
   List only implemented behavior there; keep planned work in `BACKLOG.md` or an
