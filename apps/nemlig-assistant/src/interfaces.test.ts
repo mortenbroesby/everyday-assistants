@@ -218,6 +218,20 @@ const withMcpClient = async <T>(
   }
 };
 
+const toolText = (result: unknown): string =>
+  ((((result as { content?: unknown })?.content) as Array<{ type?: string; text?: string }> | undefined)
+    ?.find(({ type }) => type === "text")?.text ?? "");
+
+const assertFriendlyBasketText = (result: unknown): string => {
+  const text = toolText(result);
+  assert.ok(text);
+  assert.doesNotMatch(
+    text,
+    /\b(?:proposal|applicable|completed|replayed|expires?|fingerprint|product[_ ]?id|status)\b|\bID\b|[0-9a-f]{8}-[0-9a-f-]{27}/iu,
+  );
+  return text;
+};
+
 test("ranking tags cheapest, recommended, and organic deterministically", () => {
   const ranked = rankProducts(
     [
@@ -479,6 +493,7 @@ test("MCP additions require prepare then apply and direct mutation tools are una
     numberOfProducts: 2,
   };
   const client = fakeClient({
+    getProduct: async (id) => ({ ...product, id, unitSize: id === 8 ? "2 liter" : "1 liter" }),
     getCart: async () => empty,
     addToCart: async (id, quantity) => {
       added = [id, quantity ?? 1];
@@ -486,6 +501,11 @@ test("MCP additions require prepare then apply and direct mutation tools are una
     },
   });
   await withMcpClient(createMcpServer(client), async (mcp) => {
+    const viewed = await mcp.callTool({ name: "view_cart", arguments: {} });
+    assert.match(assertFriendlyBasketText(viewed), /Kurven er tom/u);
+    assert.deepEqual(viewed.structuredContent, {
+      items: [], products_price: 0, delivery_price: 5, number_of_products: 0, delivery_time: "Tomorrow",
+    });
     const invalid = await mcp.callTool({
       name: "prepare_cart_additions",
       arguments: { items: [{ product_id: 7, quantity: 0 }] },
@@ -497,12 +517,24 @@ test("MCP additions require prepare then apply and direct mutation tools are una
       arguments: { items: [{ product_id: 7, quantity: 2 }] },
     });
     assert.equal(added, undefined);
+    assert.match(assertFriendlyBasketText(prepared), /2 × Økologisk mælk/u);
+    assert.match(toolText(prepared), /25,00 kr\./u);
+    assert.deepEqual(Object.keys(prepared.structuredContent ?? {}).sort(), [
+      "applicable", "basket_fingerprint", "connection_bound", "expires_at", "issued_at", "operation", "proposal_id", "review",
+    ]);
+    const sameName = await mcp.callTool({
+      name: "prepare_cart_additions",
+      arguments: { items: [{ product_id: 7, quantity: 1 }, { product_id: 8, quantity: 1 }] },
+    });
+    assert.match(toolText(sameName), /Økologisk mælk \(1 liter\).*Økologisk mælk \(2 liter\)/su);
     const proposalId = (prepared.structuredContent as { proposal_id: string }).proposal_id;
     const result = await mcp.callTool({
       name: "apply_cart_additions",
       arguments: { proposal_id: proposalId },
     });
     assert.deepEqual(added, [7, 2]);
+    assert.match(assertFriendlyBasketText(result), /Kurven indeholder nu/u);
+    assert.deepEqual(Object.keys(result.structuredContent ?? {}).sort(), ["basket", "operation", "replayed", "status"]);
     assert.equal(
       ((result.structuredContent as { basket: { number_of_products: number } }).basket).number_of_products,
       2,
@@ -624,12 +656,15 @@ test("MCP replacement prepares factual savings and applies only the approved sta
     assert.equal(review.review.current_line.unit_size, "1 liter");
     assert.equal(review.review.replacement_line.unit_price, 10);
     assert.equal(writes.length, 0);
+    assert.match(assertFriendlyBasketText(prepared), /Mælk.*1 liter.*Billigere mælk.*1 liter/su);
+    assert.match(toolText(prepared), /2,50 kr\./u);
 
     const applied = await mcp.callTool({
       name: "apply_cart_replacement",
       arguments: { proposal_id: review.proposal_id },
     });
     assert.equal((applied.structuredContent as { operation: string }).operation, "replacement");
+    assert.match(assertFriendlyBasketText(applied), /Kurven indeholder nu/u);
     assert.deepEqual(writes, ["add:8:1", "remove:7"]);
     const replayed = await mcp.callTool({
       name: "apply_cart_replacement",
@@ -672,6 +707,55 @@ test("MCP replacement prepares factual savings and applies only the approved sta
   });
 });
 
+test("MCP removal and clear keep exact structured data behind friendly shopping text", async () => {
+  let cart: Basket = {
+    ...basket,
+    items: [
+      { id: 7, name: "Mælk", quantity: 1, total: 12.5 },
+      { id: 8, name: "Banan", quantity: 2, total: 5 },
+    ],
+    productsPrice: 17.5,
+    numberOfProducts: 3,
+  };
+  const client = fakeClient({
+    getCart: async () => cart,
+    removeFromCart: async (id) => {
+      cart = { ...cart, items: cart.items.filter((item) => item.id !== id), productsPrice: 5, numberOfProducts: 2 };
+      return cart;
+    },
+    clearCart: async () => {
+      cart = { ...cart, items: [], productsPrice: 0, numberOfProducts: 0 };
+      return cart;
+    },
+  });
+
+  await withMcpClient(createMcpServer(client), async (mcp) => {
+    const removal = await mcp.callTool({ name: "prepare_cart_removal", arguments: { product_id: 7 } });
+    assert.match(assertFriendlyBasketText(removal), /Fjern 1 × Mælk · 12,50 kr\./u);
+    assert.deepEqual(Object.keys(removal.structuredContent ?? {}).sort(), [
+      "applicable", "basket_fingerprint", "connection_bound", "expires_at", "issued_at", "operation", "proposal_id", "review",
+    ]);
+    const removed = await mcp.callTool({
+      name: "apply_cart_removal",
+      arguments: { proposal_id: (removal.structuredContent as { proposal_id: string }).proposal_id },
+    });
+    assert.match(assertFriendlyBasketText(removed), /2 × Banan/u);
+
+    const clear = await mcp.callTool({ name: "prepare_cart_clear", arguments: {} });
+    assert.match(assertFriendlyBasketText(clear), /Tøm kurven/u);
+    assert.match(toolText(clear), /2 × Banan · 5,00 kr\./u);
+    assert.deepEqual(Object.keys(clear.structuredContent ?? {}).sort(), [
+      "applicable", "basket_fingerprint", "connection_bound", "expires_at", "issued_at", "operation", "proposal_id", "review",
+    ]);
+    const cleared = await mcp.callTool({
+      name: "apply_cart_clear",
+      arguments: { proposal_id: (clear.structuredContent as { proposal_id: string }).proposal_id },
+    });
+    assert.match(assertFriendlyBasketText(cleared), /Kurven er nu tom/u);
+    assert.deepEqual((cleared.structuredContent as { basket: { items: unknown[] } }).basket.items, []);
+  });
+});
+
 test("picker gate hides only picker tool/resource for every false spelling", async () => {
   for (const value of ["0", "false", "FALSE", " no ", "off"]) {
     await withMcpClient(createMcpServer(fakeClient(), async () => undefined, { NEMLIG_MCP_APPS: value }), async (mcp) => {
@@ -689,10 +773,12 @@ test("picker resource prepares an exact quantity-one review before a distinct ap
   assert.match(PICKER_HTML, /renderPlan/);
   assert.match(PICKER_HTML, /type="number"/);
   assert.match(PICKER_HTML, /Godkend og tilføj/);
-  assert.match(PICKER_HTML, /Verificeret kurv/);
+  assert.match(PICKER_HTML, /Kurven indeholder nu/);
   assert.match(PICKER_HTML, /applied\.basket\.items/);
   assert.doesNotMatch(PICKER_HTML, /add_to_cart/);
-  assert.match(PICKER_HTML, /ID:/);
+  assert.match(PICKER_HTML, /structuredContent/);
+  assert.match(PICKER_HTML, /proposal\.proposal_id/);
+  assert.doesNotMatch(PICKER_HTML, /ID:|"ID "|Udløber|expires_at/);
   assert.match(PICKER_HTML, /line\.line_total/);
   await withMcpClient(createMcpServer(fakeClient()), async (mcp) => {
     const resources = await mcp.listResources();

@@ -46,10 +46,10 @@ Once connected, try prompts like:
 - “What is already in my basket, and what is still missing from this list?”
 - “Save this shopping plan so I can continue later.”
 - “Compare the cheese in my basket with this cheaper alternative.”
-- “Prepare adding these selected products, but do not change the basket.”
+- “Add these selected products after showing me a clear summary.”
 
-The first six examples are read-only or preparatory. The final example creates
-a review proposal; it still does not change the basket.
+The first six examples are read-only or preparatory. The final example shows a
+plain shopping summary and waits for approval before changing the basket.
 
 <a id="what-you-can-do"></a>
 ## ✨ What you can do
@@ -133,7 +133,7 @@ apply it.
 ## 🛡️ How basket changes work
 
 ```text
-Read or plan → prepare an exact proposal → show the full change → user approves → apply once → read back the basket
+Read or plan → prepare the exact change → show a clear shopping summary → user approves → apply once → read back the basket
 ```
 
 - Search, favorites, browsing, planning, picker selection, snapshots, and
@@ -142,6 +142,9 @@ Read or plan → prepare an exact proposal → show the full change → user app
 - Approval is requested once. A prior approval counts when it explicitly covers
   every exact detail in the unchanged proposal; otherwise the full proposal is
   shown before asking.
+- Ordinary summaries show names, quantities, useful package distinctions, and
+  prices without internal IDs, expiry times, or protocol status fields. Ask for
+  “technical details” when those internals are useful for troubleshooting.
 - A proposal is connection-bound, short-lived, single-use, and tied to exact
   products, quantities, prices, totals, and the current basket fingerprint.
 - The default 15-minute proposal window accommodates a normal ChatGPT approval
@@ -291,6 +294,7 @@ This README is the user-facing inventory of shipped feature sets:
 - basket-aware whole-list planning
 - immutable plan snapshots
 - exact prepare/approve/apply basket operations
+- human-friendly basket reviews and verified results
 - replacement and savings review
 - CLI, MCP, MCP Apps, Auth0, and bounded Cloudflare hosting
 - explicit feature-request capture

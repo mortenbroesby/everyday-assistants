@@ -1,20 +1,5 @@
 # Nemlig Assistant backlog
 
-## Human-friendly shopping confirmations
-
-Show basket proposals and results like a normal shopping assistant, not a
-technical transaction log. Prefer a clean line such as “1 banana · 2.50 kr.”
-and a simple confirmation question.
-
-- Keep product IDs, proposal UUIDs, expiry timestamps, protocol terms, and
-  internal status fields out of ordinary user-facing messages.
-- Show package size or price detail only when it helps distinguish products or
-  make the choice clear.
-- Keep exact product binding, expiry, revalidation, single use, and basket
-  readback internally; simpler wording must not weaken mutation safety.
-- Make technical details available only for troubleshooting or an explicit user
-  request.
-
 ## Favorites-first product selection
 
 **Status:** Core routing implemented. Ordinary find-or-add intent uses the

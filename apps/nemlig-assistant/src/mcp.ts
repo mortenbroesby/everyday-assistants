@@ -15,7 +15,13 @@ import {
   type FeatureRequest,
   type FeatureRequestResult,
 } from "./feature-request.js";
-import { BasketProposalService, type ProposalOperation } from "./proposals.js";
+import {
+  BasketProposalService,
+  type ApplyResult,
+  type NoopProposalView,
+  type ProposalOperation,
+  type ProposalView,
+} from "./proposals.js";
 import { configuredPlanSnapshotStorage, loadShoppingPlan, resolveShoppingPlan, saveShoppingPlan, shoppingPlanInputSchema } from "./plans.js";
 
 export const PICKER_URI = "ui://nemlig/picker.html";
@@ -221,7 +227,15 @@ export function rankProducts(products: Product[], query: string): Candidate[] {
   return candidates;
 }
 
-const basketPayload = (basket: Basket): Record<string, unknown> => ({
+interface BasketPayload extends Record<string, unknown> {
+  items: Basket["items"];
+  products_price: number | undefined;
+  delivery_price: number | undefined;
+  number_of_products: number | undefined;
+  delivery_time: string | undefined;
+}
+
+const basketPayload = (basket: Basket): BasketPayload => ({
   items: basket.items,
   products_price: basket.productsPrice,
   delivery_price: basket.deliveryPrice,
@@ -229,8 +243,40 @@ const basketPayload = (basket: Basket): Record<string, unknown> => ({
   delivery_time: basket.deliveryTime,
 });
 
-const success = (value: unknown) => ({
-  content: [{ type: "text" as const, text: JSON.stringify(value) }],
+const currency = new Intl.NumberFormat("da-DK", { style: "currency", currency: "DKK" });
+const kr = (value: unknown): string =>
+  typeof value === "number" ? currency.format(value).replaceAll("\u00a0", " ") : "ukendt pris";
+const record = (value: unknown): Record<string, unknown> =>
+  value !== null && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
+const lineText = (value: unknown, showSize = false): string => {
+  const line = record(value);
+  const size = showSize && typeof line.unit_size === "string" && line.unit_size ? ` (${line.unit_size})` : "";
+  return `${typeof line.quantity === "number" ? line.quantity : 0} × ${typeof line.name === "string" ? line.name : "Ukendt vare"}${size} · ${kr(line.line_total ?? line.total)}`;
+};
+const basketText = (value: unknown, applied = false): string => {
+  const basket = record(value);
+  const items = Array.isArray(basket.items) ? basket.items : [];
+  if (!items.length) return applied ? "Kurven er nu tom." : "Kurven er tom.";
+  return `Kurven indeholder nu:\n${items.map((item) => lineText(item)).join("\n")}\nVarer i alt: ${kr(basket.products_price)}`;
+};
+const proposalText = (proposal: ProposalView | NoopProposalView): string => {
+  if (!proposal.applicable) return "Der er ikke noget at ændre i kurven.";
+  const review = record(proposal.review);
+  if (proposal.operation === "additions") {
+    const lines = Array.isArray(review.lines) ? review.lines : [];
+    return `Tilføj til kurven:\n${lines.map((line) => lineText(line, true)).join("\n")}\nForventet varetotal: ${kr(review.expected_products_price)}\nSkal jeg tilføje det?`;
+  }
+  if (proposal.operation === "removal") return `Fjern ${lineText(review.line)} fra kurven?`;
+  if (proposal.operation === "replacement") {
+    return `Erstat ${lineText(review.current_line, true)}\nmed ${lineText(review.replacement_line, true)}\nPrisforskel: ${kr(Math.abs(Number(review.price_difference ?? 0)))}\nSkal jeg erstatte varen?`;
+  }
+  const basket = record(review.basket);
+  const items = Array.isArray(basket.items) ? basket.items : [];
+  return `Tøm kurven:\n${items.map((item) => lineText(item)).join("\n")}\nSkal jeg tømme kurven?`;
+};
+
+const success = (value: unknown, text = JSON.stringify(value)) => ({
+  content: [{ type: "text" as const, text }],
   structuredContent: (Array.isArray(value) ? { result: value } : value) as Record<string, unknown>,
 });
 
@@ -256,7 +302,7 @@ export function createMcpServer(
     { name: "nemlig-assistant", version: NEMLIG_VERSION },
     {
       instructions:
-        "For ordinary requests to find or add products, use plan_shopping_list so favorites are searched first. Use search_products only for an explicit general-catalog search and list_favorites only for explicit favorite browsing. Search, favorites, departments, planning, plan snapshots, basket view, and prepare tools do not change the Nemlig basket. Preparation is not approval. Planning, selection, saving, and loading are not approval either. Show the exact proposal and invoke its matching apply tool only after the user explicitly approves that unchanged proposal. Do not ask for approval twice: an earlier approval counts only if it explicitly covers every exact detail in the unchanged proposal. Every apply revalidates and reads back the basket. Create a feature request only when the user explicitly asks to request a feature. Never check out, pay, place an order, or change a delivery slot.",
+        "For ordinary requests to find or add products, use plan_shopping_list so favorites are searched first. Use search_products only for an explicit general-catalog search and list_favorites only for explicit favorite browsing. Search, favorites, departments, planning, plan snapshots, basket view, and prepare tools do not change the Nemlig basket. Preparation is not approval. Planning, selection, saving, and loading are not approval either. Present basket reviews and results as concise shopping language; omit internal IDs, expiry times, and statuses unless the user requests technical detail or troubleshooting requires it. Invoke a matching apply tool only after the user explicitly approves every exact detail in the unchanged review. Do not ask for approval twice when the user's earlier approval already covers every exact detail. Every apply revalidates and reads back the basket. Create a feature request only when the user explicitly asks to request a feature. Never check out, pay, place an order, or change a delivery slot.",
     },
   );
   const localConnectionId = randomUUID();
@@ -406,7 +452,8 @@ export function createMcpServer(
     async () => {
       try {
         await ensureLoggedIn(client, loadCredentials);
-        return success(basketPayload(await client.getCart()));
+        const basket = basketPayload(await client.getCart());
+        return success(basket, basketText(basket));
       } catch (error) {
         return failure("view_cart", error);
       }
@@ -417,7 +464,7 @@ export function createMcpServer(
     "prepare_cart_additions",
     {
       title: "Prepare basket additions",
-      description: "Prepare exact basket additions for review without changing the basket.",
+      description: "Prepare exact basket additions for a concise shopping review without changing the basket.",
       inputSchema: {
         items: z
           .array(
@@ -435,7 +482,8 @@ export function createMcpServer(
     async ({ items }, extra) => {
       try {
         await ensureLoggedIn(client, loadCredentials);
-        return success(await proposals.prepareAdditions(connectionId(extra.sessionId), items));
+        const proposal = await proposals.prepareAdditions(connectionId(extra.sessionId), items);
+        return success(proposal, proposalText(proposal));
       } catch (error) {
         return failure("prepare_cart_additions", error);
       }
@@ -451,7 +499,7 @@ export function createMcpServer(
       name,
       {
         title: `Apply basket ${operation}`,
-        description: `Apply one unchanged, unexpired ${operation} proposal after explicit approval.`,
+        description: `Apply one unchanged ${operation} review after explicit approval and return a concise verified basket summary.`,
         inputSchema: { proposal_id: z.string().uuid() },
         outputSchema: applyResultSchema,
         annotations: { readOnlyHint: false, destructiveHint, openWorldHint: true },
@@ -459,7 +507,8 @@ export function createMcpServer(
       async ({ proposal_id }, extra) => {
         try {
           await ensureLoggedIn(client, loadCredentials);
-          return success(await proposals.apply(connectionId(extra.sessionId), proposal_id, operation));
+          const result: ApplyResult = await proposals.apply(connectionId(extra.sessionId), proposal_id, operation);
+          return success(result, basketText(result.basket, true));
         } catch (error) {
           return failure(name, error);
         }
@@ -481,7 +530,8 @@ export function createMcpServer(
     async ({ product_id }, extra) => {
       try {
         await ensureLoggedIn(client, loadCredentials);
-        return success(await proposals.prepareRemoval(connectionId(extra.sessionId), product_id));
+        const proposal = await proposals.prepareRemoval(connectionId(extra.sessionId), product_id);
+        return success(proposal, proposalText(proposal));
       } catch (error) {
         return failure("prepare_cart_removal", error);
       }
@@ -507,12 +557,13 @@ export function createMcpServer(
     async ({ current_product_id, replacement_product_id, replacement_quantity }, extra) => {
       try {
         await ensureLoggedIn(client, loadCredentials);
-        return success(await proposals.prepareReplacement(
+        const proposal = await proposals.prepareReplacement(
           connectionId(extra.sessionId),
           current_product_id,
           replacement_product_id,
           replacement_quantity,
-        ));
+        );
+        return success(proposal, proposalText(proposal));
       } catch (error) {
         return failure("prepare_cart_replacement", error);
       }
@@ -532,7 +583,8 @@ export function createMcpServer(
     async (extra) => {
       try {
         await ensureLoggedIn(client, loadCredentials);
-        return success(await proposals.prepareClear(connectionId(extra.sessionId)));
+        const proposal = await proposals.prepareClear(connectionId(extra.sessionId));
+        return success(proposal, proposalText(proposal));
       } catch (error) {
         return failure("prepare_cart_clear", error);
       }
@@ -607,10 +659,10 @@ body{font-family:system-ui,sans-serif;margin:0;padding:12px;color:#1a1a1a}.grid{
 import { App } from "https://unpkg.com/@modelcontextprotocol/ext-apps@0.4.0/app-with-deps";
 const root=document.getElementById("root");const app=new App({name:"Nemlig Picker",version:"1.0.0"});
 const kr=v=>typeof v==="number"?v.toFixed(2).replace(".",",")+" kr.":"";
-const read=content=>{const text=(content||[]).find(item=>item.type==="text");if(!text)return null;try{return JSON.parse(text.text)}catch{return null}};
-const parse=content=>{const value=read(content);return Array.isArray(value)?value:value?.result||[]};
-const render=products=>{if(!products.length){root.innerHTML='<div class="empty">Ingen varer fundet.</div>';return}const grid=document.createElement("div");grid.className="grid";for(const product of products){const card=document.createElement("article");card.className="card";const info=document.createElement("div");const name=document.createElement("div");name.className="name";name.textContent=product.name??"Ukendt vare";const meta=document.createElement("div");meta.className="meta";meta.textContent=[product.id!=null?"ID: "+product.id:"",product.brand,product.unit_size].filter(Boolean).join(" · ");const badges=document.createElement("div");badges.className="badges";for(const tag of product.tags||[]){const badge=document.createElement("span");badge.className="badge";badge.textContent=tag;badges.append(badge)}info.append(name,meta,badges);const actions=document.createElement("div");const price=document.createElement("div");price.className="price";price.textContent=kr(product.price);const prepare=document.createElement("button");prepare.textContent="Forbered";prepare.disabled=!product.available||product.id==null;prepare.onclick=async()=>prepareBatch([{product_id:product.id,quantity:1}],prepare);actions.append(price,prepare);card.append(info,actions);grid.append(card)}root.replaceChildren(grid)};
-const prepareBatch=async(items,button)=>{button.disabled=true;button.textContent="Forbereder…";try{const response=await app.callServerTool({name:"prepare_cart_additions",arguments:{items}});const proposal=read(response.content);if(!proposal?.applicable||!proposal.review?.lines?.length)throw new Error("invalid proposal");const review=document.createElement("section");review.setAttribute("aria-label","Præcis kurvegennemgang");const lines=document.createElement("div");lines.className="meta";lines.textContent=proposal.review.lines.map(line=>[line.quantity+" × "+line.name,"ID "+line.product_id,kr(line.line_total)].join(" · ")).join(" | ")+" · Forventet kurvtotal: "+kr(proposal.review.expected_products_price)+" · Udløber: "+proposal.expires_at;const apply=document.createElement("button");apply.textContent="Godkend og tilføj";apply.onclick=async()=>{apply.disabled=true;apply.textContent="Afventer værtsgodkendelse…";try{const response=await app.callServerTool({name:"apply_cart_additions",arguments:{proposal_id:proposal.proposal_id}});const applied=read(response.content);if(applied?.status!=="completed"||!applied.basket)throw new Error("unverified result");apply.textContent="Tilføjet ✓";const verified=document.createElement("div");verified.className="meta";verified.textContent="Verificeret kurv: "+(applied.basket.items||[]).map(item=>(item.quantity??0)+" × "+(item.name??"Ukendt")+" ("+kr(item.total)+")").join(" · ");review.append(verified)}catch{apply.textContent="Afvist";apply.disabled=false}};review.append(lines,apply);root.replaceChildren(review)}catch{button.textContent="Fejl";button.disabled=false}};
+const read=result=>{if(result?.structuredContent)return result.structuredContent;const text=(result?.content||result||[]).find(item=>item.type==="text");if(!text)return null;try{return JSON.parse(text.text)}catch{return null}};
+const parse=result=>{const value=read(result);return Array.isArray(value)?value:value?.result||[]};
+const render=products=>{if(!products.length){root.innerHTML='<div class="empty">Ingen varer fundet.</div>';return}const grid=document.createElement("div");grid.className="grid";for(const product of products){const card=document.createElement("article");card.className="card";const info=document.createElement("div");const name=document.createElement("div");name.className="name";name.textContent=product.name??"Ukendt vare";const meta=document.createElement("div");meta.className="meta";meta.textContent=[product.brand,product.unit_size].filter(Boolean).join(" · ");const badges=document.createElement("div");badges.className="badges";for(const tag of product.tags||[]){const badge=document.createElement("span");badge.className="badge";badge.textContent=tag;badges.append(badge)}info.append(name,meta,badges);const actions=document.createElement("div");const price=document.createElement("div");price.className="price";price.textContent=kr(product.price);const prepare=document.createElement("button");prepare.textContent="Forbered";prepare.disabled=!product.available||product.id==null;prepare.onclick=async()=>prepareBatch([{product_id:product.id,quantity:1}],prepare);actions.append(price,prepare);card.append(info,actions);grid.append(card)}root.replaceChildren(grid)};
+const prepareBatch=async(items,button)=>{button.disabled=true;button.textContent="Forbereder…";try{const response=await app.callServerTool({name:"prepare_cart_additions",arguments:{items}});const proposal=read(response);if(!proposal?.applicable||!proposal.review?.lines?.length)throw new Error("invalid proposal");const review=document.createElement("section");review.setAttribute("aria-label","Præcis kurvegennemgang");const lines=document.createElement("div");lines.className="meta";lines.textContent=proposal.review.lines.map(line=>[line.quantity+" × "+line.name,line.unit_size,kr(line.line_total)].filter(Boolean).join(" · ")).join(" | ")+" · Forventet varetotal: "+kr(proposal.review.expected_products_price);const apply=document.createElement("button");apply.textContent="Godkend og tilføj";apply.onclick=async()=>{apply.disabled=true;apply.textContent="Afventer værtsgodkendelse…";try{const response=await app.callServerTool({name:"apply_cart_additions",arguments:{proposal_id:proposal.proposal_id}});const applied=read(response);if(applied?.status!=="completed"||!applied.basket)throw new Error("unverified result");apply.textContent="Tilføjet ✓";const verified=document.createElement("div");verified.className="meta";verified.textContent="Kurven indeholder nu: "+(applied.basket.items||[]).map(item=>(item.quantity??0)+" × "+(item.name??"Ukendt")+" ("+kr(item.total)+")").join(" · ");review.append(verified)}catch{apply.textContent="Afvist";apply.disabled=false}};review.append(lines,apply);root.replaceChildren(review)}catch{button.textContent="Fejl";button.disabled=false}};
 const renderPlan=plan=>{const form=document.createElement("form");form.className="grid";const controls=[];for(const line of plan.lines){const field=document.createElement("fieldset");const legend=document.createElement("legend");legend.textContent=line.name+" · ønsket "+line.quantity;field.append(legend);if(line.resolution==="covered"){const covered=document.createElement("div");covered.textContent="Allerede dækket i kurven";field.append(covered);form.append(field);continue}const label=document.createElement("label");label.textContent="Vare ";const select=document.createElement("select");select.name=line.id;const empty=document.createElement("option");empty.value="";empty.textContent=line.candidates.length?"Vælg en vare":"Ingen egnet vare";select.append(empty);for(const candidate of line.candidates){const option=document.createElement("option");option.value=String(candidate.id);option.textContent=candidate.name+" · "+kr(candidate.price)+(candidate.source==="favorite"?" · favorit":"");option.selected=candidate.id===line.selected_product_id;select.append(option)}label.append(select);const quantity=document.createElement("input");quantity.type="number";quantity.min="1";quantity.max="99";quantity.value=String(line.remaining_quantity);quantity.setAttribute("aria-label","Antal for "+line.name);controls.push({select,quantity});field.append(label,quantity);form.append(field)}const prepare=document.createElement("button");prepare.type="submit";prepare.textContent="Forbered valgte varer";form.onsubmit=event=>{event.preventDefault();const items=controls.flatMap(({select,quantity})=>select.value?[{product_id:Number(select.value),quantity:Number(quantity.value)}]:[]);if(items.length)prepareBatch(items,prepare)};form.append(prepare);root.replaceChildren(form)};
-app.ontoolresult=({content})=>{const value=read(content);if(value?.lines)renderPlan(value);else render(parse(content))};await app.connect();
+app.ontoolresult=result=>{const value=read(result);if(value?.lines)renderPlan(value);else render(parse(result))};await app.connect();
 </script></body></html>`;
