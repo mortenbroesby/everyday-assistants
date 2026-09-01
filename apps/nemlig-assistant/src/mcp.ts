@@ -22,7 +22,7 @@ import {
   type ProposalOperation,
   type ProposalView,
 } from "./proposals.js";
-import { configuredPlanSnapshotStorage, loadShoppingPlan, resolveShoppingPlan, saveShoppingPlan, shoppingPlanInputSchema } from "./plans.js";
+import { configuredPlanSnapshotStorage, loadShoppingPlan, resolveShoppingPlan, saveShoppingPlan, shoppingPlanLineSchema } from "./plans.js";
 
 export const PICKER_URI = "ui://nemlig/picker.html";
 export const PICKER_MIME_TYPE = "text/html;profile=mcp-app";
@@ -192,6 +192,16 @@ const featureRequestResultSchema = z.object({
   url: z.string().url(),
 });
 
+const shoppingPlanToolInputSchema = z.object({
+  lines: z.array(shoppingPlanLineSchema.omit({ selected_product_id: true }).extend({
+    selected_product: z.number().int().positive().optional().describe("The exact product selected from an earlier result."),
+  })).min(1).max(20).describe("The groceries to plan, with quantities and any requirements or preferences."),
+}).strict();
+
+const internalShoppingPlan = (input: z.infer<typeof shoppingPlanToolInputSchema>) => ({
+  lines: input.lines.map(({ selected_product, ...line }) => ({ ...line, selected_product_id: selected_product })),
+});
+
 export function rankProducts(products: Product[], query: string): Candidate[] {
   const candidates = products.map((product) => ({
     id: product.id,
@@ -310,7 +320,7 @@ export function createMcpServer(
     },
     {
       instructions:
-        "For ordinary requests to find or add products, use plan_shopping_list so favorites are searched first. Use search_products only for an explicit general-catalog search and list_favorites only for explicit favorite browsing. Search, favorites, departments, planning, plan snapshots, basket view, and prepare tools do not change the Nemlig basket. Preparation is not approval. Planning, selection, saving, and loading are not approval either. Present basket reviews and results as concise shopping language; omit internal IDs, expiry times, and statuses unless the user requests technical detail or troubleshooting requires it. Invoke a matching apply tool only after the user explicitly approves every exact detail in the unchanged review. Do not ask for approval twice when the user's earlier approval already covers every exact detail. Every apply revalidates and reads back the basket. Create a feature request only when the user explicitly asks to request a feature. Never check out, pay, place an order, or change a delivery slot.",
+        "For ordinary requests to find or add products, use plan_my_shopping so favourites are checked first. Use find_groceries only for an explicit full-catalog search and show_my_favorites only for explicit favourite browsing. Finding, browsing, planning, viewing, and review tools do not change the Nemlig basket. A review is not approval. Planning, selection, saving, and continuing are not approval either. Present basket reviews and results as concise shopping language; omit internal references, expiry times, and statuses unless the user requests technical detail or troubleshooting requires it. Invoke a matching approved-action tool only after the user explicitly approves every exact detail in the unchanged review. Do not ask for approval twice when the user's earlier approval already covers every exact detail. Every basket-changing action revalidates and reads back the basket. Suggest an improvement only when the user explicitly asks. Never check out, pay, place an order, or change a delivery slot.",
     },
   );
   const localConnectionId = randomUUID();
@@ -321,121 +331,126 @@ export function createMcpServer(
   const planStorage = configuredPlanSnapshotStorage(env);
 
   server.registerTool(
-    "search_products",
+    "find_groceries",
     {
-      title: "Search Nemlig products",
-      description: "Search the general Nemlig catalog using Danish terms when the user explicitly requests a catalog search.",
-      inputSchema: { query: z.string().min(1), limit: z.number().int().positive().default(8) },
-      outputSchema: z.object({ result: z.array(candidateSchema) }),
-      annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true },
-    },
-    async ({ query, limit }) => {
-      try {
-        return success(await search(query, limit));
-      } catch (error) {
-        return failure("search_products", error);
-      }
-    },
-  );
-
-  server.registerTool(
-    "list_favorites",
-    {
-      title: "List or search Nemlig favorites",
-      description:
-        "List or search current authenticated Nemlig favorites when the user explicitly requests favorite browsing.",
+      title: "Find groceries",
+      description: "Find products across Nemlig when you explicitly want the full catalog. This does not change your basket.",
       inputSchema: {
-        query: z.string().trim().min(1).optional(),
-        limit: z.number().int().positive().max(50).default(8),
-        page: z.number().int().positive().default(1),
+        search_term: z.string().min(1).describe("What to search for, preferably using Danish grocery terms."),
+        result_count: z.number().int().positive().default(8).describe("The maximum number of products to show."),
       },
       outputSchema: z.object({ result: z.array(candidateSchema) }),
       annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true },
     },
-    async ({ query, limit, page }) => {
+    async ({ search_term, result_count }) => {
       try {
-        await ensureLoggedIn(client, loadCredentials);
-        const favorites = await client.listFavorites(
-          query === undefined ? limit : FAVORITES_SEARCH_POOL,
-          query === undefined ? page : 1,
-        );
-        const products = query === undefined ? favorites : matchFavorites(favorites, query, page * limit).slice((page - 1) * limit);
-        return success(rankProducts(products, query ?? ""));
+        return success(await search(search_term, result_count));
       } catch (error) {
-        return failure("list_favorites", error);
+        return failure("find_groceries", error);
       }
     },
   );
 
   server.registerTool(
-    "plan_shopping_list",
+    "show_my_favorites",
     {
-      title: "Plan a grocery list",
-      description: "Use for ordinary find-or-add requests: resolve 1-20 structured grocery lines favorites-first without changing the basket. Ambiguous lines stay unresolved.",
-      inputSchema: shoppingPlanInputSchema.shape,
+      title: "Show my favourites",
+      description: "Show or search your saved Nemlig favourites. This does not change your favourites or basket.",
+      inputSchema: {
+        search_term: z.string().trim().min(1).optional().describe("Optional text for narrowing your saved favourites."),
+        result_count: z.number().int().positive().max(50).default(8).describe("The maximum number of favourites to show."),
+        page: z.number().int().positive().default(1).describe("Which page of favourites to show, starting at 1."),
+      },
+      outputSchema: z.object({ result: z.array(candidateSchema) }),
+      annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true },
+    },
+    async ({ search_term, result_count, page }) => {
+      try {
+        await ensureLoggedIn(client, loadCredentials);
+        const favorites = await client.listFavorites(
+          search_term === undefined ? result_count : FAVORITES_SEARCH_POOL,
+          search_term === undefined ? page : 1,
+        );
+        const products = search_term === undefined ? favorites : matchFavorites(favorites, search_term, page * result_count).slice((page - 1) * result_count);
+        return success(rankProducts(products, search_term ?? ""));
+      } catch (error) {
+        return failure("show_my_favorites", error);
+      }
+    },
+  );
+
+  server.registerTool(
+    "plan_my_shopping",
+    {
+      title: "Plan my shopping",
+      description: "Build a plan for 1–20 groceries, checking your favourites first. This does not change your basket, and uncertain choices remain open.",
+      inputSchema: shoppingPlanToolInputSchema.shape,
       outputSchema: z.object({ lines: z.array(z.any()), selected_estimated_total: z.number() }),
       annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true },
       ...(appsEnabled(env) ? { _meta: { ui: { resourceUri: PICKER_URI } } } : {}),
     },
     async (input) => {
-      try { await ensureLoggedIn(client, loadCredentials); return success(await resolveShoppingPlan(client, input)); }
-      catch (error) { return failure("plan_shopping_list", error); }
+      try { await ensureLoggedIn(client, loadCredentials); return success(await resolveShoppingPlan(client, internalShoppingPlan(input))); }
+      catch (error) { return failure("plan_my_shopping", error); }
     },
   );
 
   server.registerTool(
-    "list_departments",
+    "show_grocery_sections",
     {
-      title: "List Nemlig departments", description: "Discover current department IDs without changing account data.",
+      title: "Show grocery sections", description: "Show the grocery sections currently available at Nemlig. This does not change your account or basket.",
       outputSchema: z.object({ departments: z.array(z.object({ id: z.string(), name: z.string() })) }),
       annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true },
     },
-    async () => { try { return success({ departments: await client.listDepartments() }); } catch (error) { return failure("list_departments", error); } },
+    async () => { try { return success({ departments: await client.listDepartments() }); } catch (error) { return failure("show_grocery_sections", error); } },
   );
 
   server.registerTool(
-    "browse_department",
+    "browse_grocery_section",
     {
-      title: "Browse a Nemlig department", description: "Browse a freshly validated department page.",
-      inputSchema: { department_id: z.string().min(1), limit: z.number().int().positive().max(50).default(20), page: z.number().int().positive().default(1) },
+      title: "Browse a grocery section", description: "Browse current products in one Nemlig grocery section. This does not change your basket.",
+      inputSchema: {
+        section: z.string().min(1).describe("The exact section reference returned by Show grocery sections."),
+        result_count: z.number().int().positive().max(50).default(20).describe("The maximum number of products to show."),
+        page: z.number().int().positive().default(1).describe("Which page of products to show, starting at 1."),
+      },
       outputSchema: z.object({ result: z.array(candidateSchema), page: z.number().int().positive(), has_next: z.boolean() }),
       annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true },
     },
-    async ({ department_id, limit, page }) => { try { const result = await client.browseDepartment(department_id, limit, page); return success({ result: rankProducts(result.products, ""), page: result.page, has_next: result.hasNext }); } catch (error) { return failure("browse_department", error); } },
+    async ({ section, result_count, page }) => { try { const result = await client.browseDepartment(section, result_count, page); return success({ result: rankProducts(result.products, ""), page: result.page, has_next: result.hasNext }); } catch (error) { return failure("browse_grocery_section", error); } },
   );
 
   server.registerTool(
-    "save_shopping_plan",
+    "save_my_shopping_plan",
     {
-      title: "Save a shopping plan", description: "Create an immutable owner-only local snapshot. This never changes the basket.",
-      inputSchema: shoppingPlanInputSchema.shape,
+      title: "Save my shopping plan", description: "Save this private shopping plan so you can continue later. This creates saved state but does not change your basket.",
+      inputSchema: shoppingPlanToolInputSchema.shape,
       outputSchema: z.object({ id: z.string().uuid(), created_at: z.string().datetime() }),
       annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
     },
-    async (input) => { try { return success(await saveShoppingPlan(input, planStorage)); } catch (error) { return failure("save_shopping_plan", error); } },
+    async (input) => { try { return success(await saveShoppingPlan(internalShoppingPlan(input), planStorage)); } catch (error) { return failure("save_my_shopping_plan", error); } },
   );
 
   server.registerTool(
-    "load_shopping_plan",
+    "continue_my_shopping_plan",
     {
-      title: "Load a shopping plan", description: "Load an immutable local snapshot and re-resolve it against current products and basket state.",
-      inputSchema: { id: z.string().uuid() }, outputSchema: z.object({ lines: z.array(z.any()), selected_estimated_total: z.number() }),
+      title: "Continue my shopping plan", description: "Continue a saved shopping plan using current products, prices, and basket contents. This does not change your basket.",
+      inputSchema: { saved_plan: z.string().uuid().describe("The saved-plan reference returned when the plan was saved.") }, outputSchema: z.object({ lines: z.array(z.any()), selected_estimated_total: z.number() }),
       annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true },
     },
-    async ({ id }) => { try { await ensureLoggedIn(client, loadCredentials); return success(await resolveShoppingPlan(client, await loadShoppingPlan(id, planStorage))); } catch (error) { return failure("load_shopping_plan", error); } },
+    async ({ saved_plan }) => { try { await ensureLoggedIn(client, loadCredentials); return success(await resolveShoppingPlan(client, await loadShoppingPlan(saved_plan, planStorage))); } catch (error) { return failure("continue_my_shopping_plan", error); } },
   );
 
   server.registerTool(
-    "create_feature_request",
+    "suggest_an_improvement",
     {
-      title: "Create a feature request",
-      description:
-        "Create a concise GitHub issue when the user explicitly requests a Nemlig Assistant feature. Supply a short title, summary, and simple acceptance criteria. Never include credentials or private account data.",
+      title: "Suggest an improvement",
+      description: "Send a Nemlig Assistant suggestion by creating a GitHub issue. This changes an external system but never your Nemlig basket.",
       inputSchema: {
-        title: z.string().trim().min(3).max(120),
-        summary: z.string().trim().min(1).max(2_000),
-        acceptance_criteria: z.array(z.string().trim().min(1).max(300)).max(10).default([]),
-        context: z.string().trim().min(1).max(1_000).optional(),
+        title: z.string().trim().min(3).max(120).describe("A short title for the suggestion."),
+        summary: z.string().trim().min(1).max(2_000).describe("What should improve and why it would help."),
+        acceptance_criteria: z.array(z.string().trim().min(1).max(300)).max(10).default([]).describe("Simple observable outcomes that would make the improvement complete."),
+        context: z.string().trim().min(1).max(1_000).optional().describe("Optional non-sensitive context that helps explain the suggestion."),
       },
       outputSchema: featureRequestResultSchema,
       annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true },
@@ -444,16 +459,16 @@ export function createMcpServer(
       try {
         return success({ ...await requestFeature(request) });
       } catch (error) {
-        return failure("create_feature_request", error);
+        return failure("suggest_an_improvement", error);
       }
     },
   );
 
   server.registerTool(
-    "view_cart",
+    "show_my_basket",
     {
-      title: "View Nemlig basket",
-      description: "View the current Nemlig basket and totals.",
+      title: "Show my basket",
+      description: "Show the current items and totals in your Nemlig basket. This does not change your basket.",
       outputSchema: basketSchema,
       annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true },
     },
@@ -463,26 +478,27 @@ export function createMcpServer(
         const basket = basketPayload(await client.getCart());
         return success(basket, basketText(basket));
       } catch (error) {
-        return failure("view_cart", error);
+        return failure("show_my_basket", error);
       }
     },
   );
 
   server.registerTool(
-    "prepare_cart_additions",
+    "review_items_to_add",
     {
-      title: "Prepare basket additions",
-      description: "Prepare exact basket additions for a concise shopping review without changing the basket.",
+      title: "Review items to add",
+      description: "Review exact products and quantities before adding them. This does not change your basket.",
       inputSchema: {
         items: z
           .array(
             z.object({
-              product_id: z.number().int().positive(),
-              quantity: z.number().int().positive(),
+              product: z.number().int().positive().describe("The exact product reference returned by a grocery search or plan."),
+              quantity: z.number().int().positive().describe("How many of this product to add."),
             }),
           )
           .min(1)
-          .max(20),
+          .max(20)
+          .describe("The exact products and quantities to review together."),
       },
       outputSchema: additionsProposalSchema,
       annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true },
@@ -490,32 +506,34 @@ export function createMcpServer(
     async ({ items }, extra) => {
       try {
         await ensureLoggedIn(client, loadCredentials);
-        const proposal = await proposals.prepareAdditions(connectionId(extra.sessionId), items);
+        const proposal = await proposals.prepareAdditions(connectionId(extra.sessionId), items.map(({ product, quantity }) => ({ product_id: product, quantity })));
         return success(proposal, proposalText(proposal));
       } catch (error) {
-        return failure("prepare_cart_additions", error);
+        return failure("review_items_to_add", error);
       }
     },
   );
 
-  const registerApply = (
-    name: "apply_cart_additions" | "apply_cart_removal" | "apply_cart_replacement" | "apply_cart_clear",
+  const registerAction = (
+    name: "add_approved_items" | "remove_approved_item" | "make_approved_item_swap" | "empty_approved_basket",
     operation: ProposalOperation,
+    title: string,
+    description: string,
     destructiveHint: boolean,
   ): void => {
     server.registerTool(
       name,
       {
-        title: `Apply basket ${operation}`,
-        description: `Apply one unchanged ${operation} review after explicit approval and return a concise verified basket summary.`,
-        inputSchema: { proposal_id: z.string().uuid() },
+        title,
+        description,
+        inputSchema: { approved_review: z.string().uuid().describe("The private reference returned by the matching unchanged review.") },
         outputSchema: applyResultSchema,
         annotations: { readOnlyHint: false, destructiveHint, openWorldHint: true },
       },
-      async ({ proposal_id }, extra) => {
+      async ({ approved_review }, extra) => {
         try {
           await ensureLoggedIn(client, loadCredentials);
-          const result: ApplyResult = await proposals.apply(connectionId(extra.sessionId), proposal_id, operation);
+          const result: ApplyResult = await proposals.apply(connectionId(extra.sessionId), approved_review, operation);
           return success(result, basketText(result.basket, true));
         } catch (error) {
           return failure(name, error);
@@ -524,67 +542,66 @@ export function createMcpServer(
     );
   };
 
-  registerApply("apply_cart_additions", "additions", false);
+  registerAction("add_approved_items", "additions", "Add the approved items", "Add exactly the items from the approved unchanged review, then show the verified basket. This changes your basket.", false);
 
   server.registerTool(
-    "prepare_cart_removal",
+    "review_item_to_remove",
     {
-      title: "Prepare one-line removal",
-      description: "Prepare removal of one exact basket product line without changing the basket.",
-      inputSchema: { product_id: z.number().int().positive() },
+      title: "Review an item to remove",
+      description: "Review one exact basket item before removing it. This does not change your basket.",
+      inputSchema: { basket_item: z.number().int().positive().describe("The exact item reference shown in your current basket.") },
       outputSchema: removalProposalSchema,
       annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true },
     },
-    async ({ product_id }, extra) => {
+    async ({ basket_item }, extra) => {
       try {
         await ensureLoggedIn(client, loadCredentials);
-        const proposal = await proposals.prepareRemoval(connectionId(extra.sessionId), product_id);
+        const proposal = await proposals.prepareRemoval(connectionId(extra.sessionId), basket_item);
         return success(proposal, proposalText(proposal));
       } catch (error) {
-        return failure("prepare_cart_removal", error);
+        return failure("review_item_to_remove", error);
       }
     },
   );
 
-  registerApply("apply_cart_removal", "removal", true);
+  registerAction("remove_approved_item", "removal", "Remove the approved item", "Remove exactly the item from the approved unchanged review, then show the verified basket. This changes your basket.", true);
 
   server.registerTool(
-    "prepare_cart_replacement",
+    "review_item_swap",
     {
-      title: "Prepare one-line replacement",
-      description:
-        "Prepare replacement of one exact basket line with a distinct exact product. Reports factual basket-price change without claiming product equivalence or changing the basket.",
+      title: "Review swapping an item",
+      description: "Compare swapping one basket item for one exact product, including the basket-price difference. This does not change your basket or claim the products are equivalent.",
       inputSchema: {
-        current_product_id: z.number().int().positive(),
-        replacement_product_id: z.number().int().positive(),
-        replacement_quantity: z.number().int().positive(),
+        current_item: z.number().int().positive().describe("The exact item reference shown in your current basket."),
+        replacement_item: z.number().int().positive().describe("The exact replacement product reference returned by a search or plan."),
+        quantity: z.number().int().positive().describe("The final quantity of the replacement product."),
       },
       outputSchema: replacementProposalSchema,
       annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true },
     },
-    async ({ current_product_id, replacement_product_id, replacement_quantity }, extra) => {
+    async ({ current_item, replacement_item, quantity }, extra) => {
       try {
         await ensureLoggedIn(client, loadCredentials);
         const proposal = await proposals.prepareReplacement(
           connectionId(extra.sessionId),
-          current_product_id,
-          replacement_product_id,
-          replacement_quantity,
+          current_item,
+          replacement_item,
+          quantity,
         );
         return success(proposal, proposalText(proposal));
       } catch (error) {
-        return failure("prepare_cart_replacement", error);
+        return failure("review_item_swap", error);
       }
     },
   );
 
-  registerApply("apply_cart_replacement", "replacement", true);
+  registerAction("make_approved_item_swap", "replacement", "Make the approved swap", "Make exactly the swap from the approved unchanged review, then show the verified basket. This changes your basket.", true);
 
   server.registerTool(
-    "prepare_cart_clear",
+    "review_emptying_basket",
     {
-      title: "Prepare basket clear",
-      description: "Prepare the exact current basket for destructive clearing without changing it.",
+      title: "Review emptying my basket",
+      description: "Review every current basket item before emptying the basket. This does not change your basket.",
       outputSchema: clearProposalSchema,
       annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true },
     },
@@ -594,29 +611,32 @@ export function createMcpServer(
         const proposal = await proposals.prepareClear(connectionId(extra.sessionId));
         return success(proposal, proposalText(proposal));
       } catch (error) {
-        return failure("prepare_cart_clear", error);
+        return failure("review_emptying_basket", error);
       }
     },
   );
 
-  registerApply("apply_cart_clear", "clear", true);
+  registerAction("empty_approved_basket", "clear", "Empty my approved basket", "Empty exactly the approved unchanged basket, then verify that it is empty. This changes your basket.", true);
 
   if (appsEnabled(env)) {
     server.registerTool(
-      "pick_products",
+      "choose_products_visually",
       {
-        title: "Open Nemlig product picker",
-        description: "Show an interactive product picker; text-only clients receive the same candidates.",
-        inputSchema: { query: z.string().min(1), limit: z.number().int().positive().default(8) },
+        title: "Choose products visually",
+        description: "Show an interactive product chooser. This does not change your basket, and text-only clients receive the same products.",
+        inputSchema: {
+          search_term: z.string().min(1).describe("What to search for, preferably using Danish grocery terms."),
+          result_count: z.number().int().positive().default(8).describe("The maximum number of products to show."),
+        },
         outputSchema: z.object({ result: z.array(candidateSchema) }),
         annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true },
         _meta: { ui: { resourceUri: PICKER_URI } },
       },
-      async ({ query, limit }) => {
+      async ({ search_term, result_count }) => {
         try {
-          return success(await search(query, limit));
+          return success(await search(search_term, result_count));
         } catch (error) {
-          return failure("pick_products", error);
+          return failure("choose_products_visually", error);
         }
       },
     );
@@ -669,8 +689,8 @@ const root=document.getElementById("root");const app=new App({name:"Nemlig Picke
 const kr=v=>typeof v==="number"?v.toFixed(2).replace(".",",")+" kr.":"";
 const read=result=>{if(result?.structuredContent)return result.structuredContent;const text=(result?.content||result||[]).find(item=>item.type==="text");if(!text)return null;try{return JSON.parse(text.text)}catch{return null}};
 const parse=result=>{const value=read(result);return Array.isArray(value)?value:value?.result||[]};
-const render=products=>{if(!products.length){root.innerHTML='<div class="empty">Ingen varer fundet.</div>';return}const grid=document.createElement("div");grid.className="grid";for(const product of products){const card=document.createElement("article");card.className="card";const info=document.createElement("div");const name=document.createElement("div");name.className="name";name.textContent=product.name??"Ukendt vare";const meta=document.createElement("div");meta.className="meta";meta.textContent=[product.brand,product.unit_size].filter(Boolean).join(" · ");const badges=document.createElement("div");badges.className="badges";for(const tag of product.tags||[]){const badge=document.createElement("span");badge.className="badge";badge.textContent=tag;badges.append(badge)}info.append(name,meta,badges);const actions=document.createElement("div");const price=document.createElement("div");price.className="price";price.textContent=kr(product.price);const prepare=document.createElement("button");prepare.textContent="Forbered";prepare.disabled=!product.available||product.id==null;prepare.onclick=async()=>prepareBatch([{product_id:product.id,quantity:1}],prepare);actions.append(price,prepare);card.append(info,actions);grid.append(card)}root.replaceChildren(grid)};
-const prepareBatch=async(items,button)=>{button.disabled=true;button.textContent="Forbereder…";try{const response=await app.callServerTool({name:"prepare_cart_additions",arguments:{items}});const proposal=read(response);if(!proposal?.applicable||!proposal.review?.lines?.length)throw new Error("invalid proposal");const review=document.createElement("section");review.setAttribute("aria-label","Præcis kurvegennemgang");const lines=document.createElement("div");lines.className="meta";lines.textContent=proposal.review.lines.map(line=>[line.quantity+" × "+line.name,line.unit_size,kr(line.line_total)].filter(Boolean).join(" · ")).join(" | ")+" · Forventet varetotal: "+kr(proposal.review.expected_products_price);const apply=document.createElement("button");apply.textContent="Godkend og tilføj";apply.onclick=async()=>{apply.disabled=true;apply.textContent="Afventer værtsgodkendelse…";try{const response=await app.callServerTool({name:"apply_cart_additions",arguments:{proposal_id:proposal.proposal_id}});const applied=read(response);if(applied?.status!=="completed"||!applied.basket)throw new Error("unverified result");apply.textContent="Tilføjet ✓";const verified=document.createElement("div");verified.className="meta";verified.textContent="Kurven indeholder nu: "+(applied.basket.items||[]).map(item=>(item.quantity??0)+" × "+(item.name??"Ukendt")+" ("+kr(item.total)+")").join(" · ");review.append(verified)}catch{apply.textContent="Afvist";apply.disabled=false}};review.append(lines,apply);root.replaceChildren(review)}catch{button.textContent="Fejl";button.disabled=false}};
-const renderPlan=plan=>{const form=document.createElement("form");form.className="grid";const controls=[];for(const line of plan.lines){const field=document.createElement("fieldset");const legend=document.createElement("legend");legend.textContent=line.name+" · ønsket "+line.quantity;field.append(legend);if(line.resolution==="covered"){const covered=document.createElement("div");covered.textContent="Allerede dækket i kurven";field.append(covered);form.append(field);continue}const label=document.createElement("label");label.textContent="Vare ";const select=document.createElement("select");select.name=line.id;const empty=document.createElement("option");empty.value="";empty.textContent=line.candidates.length?"Vælg en vare":"Ingen egnet vare";select.append(empty);for(const candidate of line.candidates){const option=document.createElement("option");option.value=String(candidate.id);option.textContent=candidate.name+" · "+kr(candidate.price)+(candidate.source==="favorite"?" · favorit":"");option.selected=candidate.id===line.selected_product_id;select.append(option)}label.append(select);const quantity=document.createElement("input");quantity.type="number";quantity.min="1";quantity.max="99";quantity.value=String(line.remaining_quantity);quantity.setAttribute("aria-label","Antal for "+line.name);controls.push({select,quantity});field.append(label,quantity);form.append(field)}const prepare=document.createElement("button");prepare.type="submit";prepare.textContent="Forbered valgte varer";form.onsubmit=event=>{event.preventDefault();const items=controls.flatMap(({select,quantity})=>select.value?[{product_id:Number(select.value),quantity:Number(quantity.value)}]:[]);if(items.length)prepareBatch(items,prepare)};form.append(prepare);root.replaceChildren(form)};
+const render=products=>{if(!products.length){root.innerHTML='<div class="empty">Ingen varer fundet.</div>';return}const grid=document.createElement("div");grid.className="grid";for(const product of products){const card=document.createElement("article");card.className="card";const info=document.createElement("div");const name=document.createElement("div");name.className="name";name.textContent=product.name??"Ukendt vare";const meta=document.createElement("div");meta.className="meta";meta.textContent=[product.brand,product.unit_size].filter(Boolean).join(" · ");const badges=document.createElement("div");badges.className="badges";for(const tag of product.tags||[]){const badge=document.createElement("span");badge.className="badge";badge.textContent=tag;badges.append(badge)}info.append(name,meta,badges);const actions=document.createElement("div");const price=document.createElement("div");price.className="price";price.textContent=kr(product.price);const prepare=document.createElement("button");prepare.textContent="Forbered";prepare.disabled=!product.available||product.id==null;prepare.onclick=async()=>prepareBatch([{product:product.id,quantity:1}],prepare);actions.append(price,prepare);card.append(info,actions);grid.append(card)}root.replaceChildren(grid)};
+const prepareBatch=async(items,button)=>{button.disabled=true;button.textContent="Forbereder…";try{const response=await app.callServerTool({name:"review_items_to_add",arguments:{items}});const proposal=read(response);if(!proposal?.applicable||!proposal.review?.lines?.length)throw new Error("invalid proposal");const review=document.createElement("section");review.setAttribute("aria-label","Præcis kurvegennemgang");const lines=document.createElement("div");lines.className="meta";lines.textContent=proposal.review.lines.map(line=>[line.quantity+" × "+line.name,line.unit_size,kr(line.line_total)].filter(Boolean).join(" · ")).join(" | ")+" · Forventet varetotal: "+kr(proposal.review.expected_products_price);const apply=document.createElement("button");apply.textContent="Godkend og tilføj";apply.onclick=async()=>{apply.disabled=true;apply.textContent="Afventer værtsgodkendelse…";try{const response=await app.callServerTool({name:"add_approved_items",arguments:{approved_review:proposal.proposal_id}});const applied=read(response);if(applied?.status!=="completed"||!applied.basket)throw new Error("unverified result");apply.textContent="Tilføjet ✓";const verified=document.createElement("div");verified.className="meta";verified.textContent="Kurven indeholder nu: "+(applied.basket.items||[]).map(item=>(item.quantity??0)+" × "+(item.name??"Ukendt")+" ("+kr(item.total)+")").join(" · ");review.append(verified)}catch{apply.textContent="Afvist";apply.disabled=false}};review.append(lines,apply);root.replaceChildren(review)}catch{button.textContent="Fejl";button.disabled=false}};
+const renderPlan=plan=>{const form=document.createElement("form");form.className="grid";const controls=[];for(const line of plan.lines){const field=document.createElement("fieldset");const legend=document.createElement("legend");legend.textContent=line.name+" · ønsket "+line.quantity;field.append(legend);if(line.resolution==="covered"){const covered=document.createElement("div");covered.textContent="Allerede dækket i kurven";field.append(covered);form.append(field);continue}const label=document.createElement("label");label.textContent="Vare ";const select=document.createElement("select");select.name=line.id;const empty=document.createElement("option");empty.value="";empty.textContent=line.candidates.length?"Vælg en vare":"Ingen egnet vare";select.append(empty);for(const candidate of line.candidates){const option=document.createElement("option");option.value=String(candidate.id);option.textContent=candidate.name+" · "+kr(candidate.price)+(candidate.source==="favorite"?" · favorit":"");option.selected=candidate.id===line.selected_product_id;select.append(option)}label.append(select);const quantity=document.createElement("input");quantity.type="number";quantity.min="1";quantity.max="99";quantity.value=String(line.remaining_quantity);quantity.setAttribute("aria-label","Antal for "+line.name);controls.push({select,quantity});field.append(label,quantity);form.append(field)}const prepare=document.createElement("button");prepare.type="submit";prepare.textContent="Forbered valgte varer";form.onsubmit=event=>{event.preventDefault();const items=controls.flatMap(({select,quantity})=>select.value?[{product:Number(select.value),quantity:Number(quantity.value)}]:[]);if(items.length)prepareBatch(items,prepare)};form.append(prepare);root.replaceChildren(form)};
 app.ontoolresult=result=>{const value=read(result);if(value?.lines)renderPlan(value);else render(parse(result))};await app.connect();
 </script></body></html>`;

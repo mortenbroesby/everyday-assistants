@@ -121,46 +121,46 @@ for one repeatable credential-free repository and CI check.
 ## 🧭 How guided shopping works
 
 ChatGPT turns a grocery request into structured lines with quantities, hard
-constraints, and optional preferences. `plan_shopping_list` searches favorites
+constraints, and optional preferences. `plan_my_shopping` searches favorites
 first, uses the catalog only where necessary, and leaves uncertain matches for
 you to decide.
 
 The plan reports source, discount and dietary metadata, constraint outcomes,
 exact basket coverage, remaining quantities, and the estimated total. The
 visual picker can collect all selected remaining quantities into one exact
-`prepare_cart_additions` review. Selection and preparation are not approval to
-apply it.
+`review_items_to_add` review. Selection and review are not approval to add the
+items.
 
 <a id="how-basket-changes-work"></a>
 ## 🛡️ How basket changes work
 
 ```text
-Read or plan → prepare the exact change → show a clear shopping summary → user approves → apply once → read back the basket
+Read or plan → review the exact change → show a clear shopping summary → user approves → complete the action once → read back the basket
 ```
 
-- Search, favorites, browsing, planning, picker selection, snapshots, and
+- Search, favourites, browsing, planning, picker selection, saved plans, and
   basket inspection are read-only.
-- Every basket change starts with the matching `prepare_*` tool.
+- Every basket change starts with the matching `review_*` tool.
 - Approval is requested once. A prior approval counts when it explicitly covers
-  every exact detail in the unchanged proposal; otherwise the full proposal is
+  every exact detail in the unchanged review; otherwise the full review is
   shown before asking.
 - Ordinary summaries show names, quantities, useful package distinctions, and
   prices without internal IDs, expiry times, or protocol status fields. Ask for
   “technical details” when those internals are useful for troubleshooting.
-- A proposal is connection-bound, short-lived, single-use, and tied to exact
+- A review is connection-bound, short-lived, single-use, and tied to exact
   products, quantities, prices, totals, and the current basket fingerprint.
-- The default 15-minute proposal window accommodates a normal ChatGPT approval
-  round-trip without weakening apply-time revalidation.
+- The default 15-minute review window accommodates a normal ChatGPT approval
+  round-trip without weakening final revalidation.
 - Any changed fact invalidates the approval.
-- Apply revalidates the proposal and current state before writing.
+- The approved action revalidates the review and current state before writing.
 - Add, remove, replace, and clear immediately read the basket back.
 - Writes are never automatically retried after an uncertain result.
 - Replacement adds and verifies the new line before removing the old one. If
   verification becomes uncertain, the workflow stops because both may remain.
-- Completed replays return the stored sanitized result without writing again.
+- Repeated completed actions return the stored sanitized result without writing again.
 - The assistant never orders, checks out, or pays.
 
-Repository work, a specification, a plan, product selection, or proposal
+Repository work, a specification, a plan, product selection, or review
 preparation never authorizes a basket mutation. Operators must read
 [`AGENTS.md`](AGENTS.md) and the
 [`nemlig-basket` skill](.codex/skills/nemlig-basket/SKILL.md).
@@ -203,14 +203,23 @@ pnpm --filter nemlig-assistant build
 pnpm --filter nemlig-assistant mcp
 ```
 
-The MCP surface includes:
+The MCP surface is organized around household actions:
 
-- discovery: `search_products`, `list_favorites`, `list_departments`, `browse_department`
-- planning: `plan_shopping_list`, `save_shopping_plan`, `load_shopping_plan`
-- basket read: `view_cart`
-- review/apply pairs: `prepare_*` and `apply_*` for additions, one-line removal, replacement, and clear
-- UI: `pick_products` and `ui://nemlig/picker.html`
-- project feedback: `create_feature_request`
+- Find groceries and favourites: `find_groceries`, `show_my_favorites`,
+  `show_grocery_sections`, and `browse_grocery_section`.
+- Plan and continue shopping: `plan_my_shopping`, `save_my_shopping_plan`, and
+  `continue_my_shopping_plan`.
+- See the basket: `show_my_basket`.
+- Review basket changes: `review_items_to_add`, `review_item_to_remove`,
+  `review_item_swap`, and `review_emptying_basket`.
+- Complete an approved change: `add_approved_items`, `remove_approved_item`,
+  `make_approved_item_swap`, and `empty_approved_basket`.
+- Choose visually: `choose_products_visually` and `ui://nemlig/picker.html`.
+- Suggest an improvement: `suggest_an_improvement`.
+
+After the friendly tool-name update is deployed, refresh or reconnect the
+ChatGPT app once so it replaces any cached copy of the former catalog. The
+server advertises only the current names; it does not duplicate old aliases.
 
 Direct `add_to_cart`, `remove_from_cart`, `replace_cart_line`, and
 `clear_cart` MCP tools intentionally do not exist. Set `NEMLIG_MCP_APPS=0` to
@@ -249,8 +258,8 @@ put a GitHub token in the repository or an environment file.
 2. Browse a department's second page and inspect deal and unit-price metadata.
 3. Save and reload the plan. Confirm it resolves current availability, prices,
    and basket quantities rather than replaying stale data.
-4. Use the picker, adjust a selection, and inspect the exact batch proposal.
-   Stop unless you separately approve that unchanged proposal.
+4. Use the picker, adjust a selection, and inspect the exact batch review.
+   Stop unless you separately approve that unchanged review.
 5. Prepare one cheaper and one non-cheaper replacement. Verify both product
    IDs, packages, unit prices, final quantity, signed price difference, and
    expected basket total before considering approval.
@@ -297,13 +306,14 @@ This README is the user-facing inventory of shipped feature sets:
 - favorites-first guided shopping
 - constrained product comparison and selection
 - basket-aware whole-list planning
-- immutable plan snapshots
-- exact prepare/approve/apply basket operations
+- private saved shopping plans that refresh current product data
+- exact review/approve/complete basket operations
+- easy-to-understand ChatGPT tool names and descriptions
 - human-friendly basket reviews and verified results
 - replacement and savings review
 - CLI, MCP, MCP Apps, Auth0, and bounded Cloudflare hosting
 - credential-free production-readiness gate
-- explicit feature-request capture
+- explicit improvement suggestions
 - private package and guarded alpha release policy
 
 Update this inventory and the relevant section above whenever a shipped feature

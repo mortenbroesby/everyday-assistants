@@ -53,7 +53,16 @@ Alternative considered: rename internal proposal concepts throughout the codebas
 
 ### Update direct consumers without adding a registry abstraction
 
-Update the Worker expensive-operation classification, picker tool calls, production acceptance inventory, server instructions, and tests at their existing call sites. Add one table-driven catalog assertion through `listTools()` for the complete expected name/title/description/annotation surface. A new runtime registry or compatibility layer is unnecessary for a fixed set of 18 tools.
+Update the Worker expensive-operation classification, picker tool calls, production acceptance inventory, server instructions, maintained OpenSpec contracts, and tests at their existing call sites. Add one table-driven catalog assertion through `listTools()` for the complete expected name/title/description/annotation surface. A new runtime registry or compatibility layer is unnecessary for a fixed set of 18 tools.
+
+### Implementation evidence
+
+The final diff changes only tool presentation, input adapters, direct consumers,
+tests, documentation, and release metadata. Authentication, approval,
+rate limits, daily quotas, circuit breakers, timeouts, bounded retries, the
+single-Container binding, and the `MCP_ENABLED` kill switch are unchanged. No
+service, dependency, request amplification, storage, scaling path, or expected
+operating cost is added.
 
 ### Use outcome-first descriptions
 

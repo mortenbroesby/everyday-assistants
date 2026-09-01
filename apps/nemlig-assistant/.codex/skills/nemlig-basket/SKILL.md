@@ -70,12 +70,12 @@ explicit approval. Never replace a basket, check out, pay, or place an order.
 ## MCP workflow
 
 Model-visible basket writes never call a direct mutation tool. Call the matching
-`prepare_cart_*` tool, show its exact review, and wait for explicit approval of
-that unchanged proposal unless the user already explicitly approved every exact
-detail it contains. Never ask twice for the same unchanged proposal. Only then
-call the matching `apply_cart_*` tool with
-its opaque proposal ID. Preparation is not approval. Never retry an
-indeterminate apply result; inspect the basket and prepare a new proposal.
+`review_*` tool, show its exact review, and wait for explicit approval of that
+unchanged review unless the user already explicitly approved every exact detail
+it contains. Never ask twice for the same unchanged review. Only then call the
+matching approved-action tool with its private `approved_review` reference. A
+review is not approval. Never retry an indeterminate action result; inspect the
+basket and create a new review.
 
 For private ChatGPT use, follow `../../../../docs/cloudflare-operations.md`.
 Identity, infrastructure, and app changes remain owner actions and never

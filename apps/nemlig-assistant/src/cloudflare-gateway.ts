@@ -13,17 +13,17 @@ export interface GatewayDependencies {
 }
 
 const normalTools = new Set([
-  "search_products",
-  "list_favorites",
-  "list_departments",
-  "browse_department",
-  "save_shopping_plan",
-  "view_cart",
-  "prepare_cart_additions",
-  "prepare_cart_removal",
-  "prepare_cart_replacement",
-  "prepare_cart_clear",
-  "pick_products",
+  "find_groceries",
+  "show_my_favorites",
+  "show_grocery_sections",
+  "browse_grocery_section",
+  "save_my_shopping_plan",
+  "show_my_basket",
+  "review_items_to_add",
+  "review_item_to_remove",
+  "review_item_swap",
+  "review_emptying_basket",
+  "choose_products_visually",
 ]);
 
 export function classifyMcpMessage(value: unknown): OperationClass {

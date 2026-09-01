@@ -59,12 +59,13 @@ shopping. It can:
 - turn a grocery list into a structured shopping plan
 - compare candidates by price, unit price, discount, package, and preferences
 - show what is already covered by your basket
-- save and reload plans without trusting stale prices
-- inspect the basket and prepare exact additions, removals, replacements, or a clear
+- save and continue plans without trusting stale prices
+- inspect the basket and review exact additions, removals, replacements, or emptying it
+- expose household-language tools in ChatGPT instead of protocol-oriented names
 - work locally from a terminal or conversationally through an MCP client such as ChatGPT
 
 It cannot place an order, check out, or pay. Basket changes use a separate
-prepare/approve/apply flow and are verified afterward.
+review/approve/complete flow and are verified afterward.
 
 <a id="design-principles"></a>
 ## 🛡️ Design principles

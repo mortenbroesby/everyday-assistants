@@ -73,9 +73,9 @@ test("HTTP MCP advertises Auth0, rejects anonymous and foreign origins, and pres
     await client.connect(transport);
     assert.equal(client.getServerVersion()?.name, "nemlig-assistant");
     const httpTools = await client.listTools();
-    assert.ok(httpTools.tools.some((tool) => tool.name === "view_cart"));
+    assert.ok(httpTools.tools.some((tool) => tool.name === "show_my_basket"));
     assert.ok(transport.sessionId);
-    const toolCall = JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "view_cart", arguments: {} } });
+    const toolCall = JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "show_my_basket", arguments: {} } });
     const wrongOwner = await fetch(`${base}/mcp`, {
       method: "POST",
       body: toolCall,
@@ -159,14 +159,14 @@ test("HTTP MCP preserves an owner proposal across authenticated transport reconn
   try {
     const first = await connect();
     const prepared = await first.callTool({
-      name: "prepare_cart_additions",
-      arguments: { items: [{ product_id: 7, quantity: 1 }] },
+      name: "review_items_to_add",
+      arguments: { items: [{ product: 7, quantity: 1 }] },
     });
     const proposalId = (prepared.structuredContent as { proposal_id: string }).proposal_id;
     await first.close();
 
     const second = await connect();
-    const result = await second.callTool({ name: "apply_cart_additions", arguments: { proposal_id: proposalId } });
+    const result = await second.callTool({ name: "add_approved_items", arguments: { approved_review: proposalId } });
     assert.equal(result.isError, undefined);
     assert.equal(changed, true);
     assert.equal((result.structuredContent as { basket: { items: unknown[] } }).basket.items.length, 1);

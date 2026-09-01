@@ -8,15 +8,15 @@ interface ToolResult {
 
 export const productionToolInventory = {
   readOnly: [
-    "search_products", "list_favorites", "plan_shopping_list", "list_departments",
-    "browse_department", "load_shopping_plan", "view_cart", "pick_products",
+    "find_groceries", "show_my_favorites", "plan_my_shopping", "show_grocery_sections",
+    "browse_grocery_section", "continue_my_shopping_plan", "show_my_basket", "choose_products_visually",
   ],
   prepareOnly: [
-    "prepare_cart_additions", "prepare_cart_removal", "prepare_cart_replacement", "prepare_cart_clear",
+    "review_items_to_add", "review_item_to_remove", "review_item_swap", "review_emptying_basket",
   ],
   externalState: [
-    "save_shopping_plan", "create_feature_request", "apply_cart_additions",
-    "apply_cart_removal", "apply_cart_replacement", "apply_cart_clear",
+    "save_my_shopping_plan", "suggest_an_improvement", "add_approved_items",
+    "remove_approved_item", "make_approved_item_swap", "empty_approved_basket",
   ],
 } as const;
 
@@ -89,42 +89,42 @@ export async function verifyReadOnlyProductionFeatures(client: AcceptanceClient)
     return content<T>(result, name);
   };
 
-  const searched = await call<{ result?: Array<{ id?: number }> }>("search_products", { query: "banan", limit: 3 });
+  const searched = await call<{ result?: Array<{ id?: number }> }>("find_groceries", { search_term: "banan", result_count: 3 });
   const productIds = (searched.result ?? []).flatMap(({ id }) => typeof id === "number" && Number.isInteger(id) && id > 0 ? [id] : []);
   assert.ok(productIds.length, "Production product search returned no usable product");
-  await call("list_favorites", { query: "banan", limit: 3, page: 1 });
-  await call("plan_shopping_list", { lines: [{ id: "acceptance-banan", name: "banan", quantity: 1, constraints: {}, preferences: [] }] });
+  await call("show_my_favorites", { search_term: "banan", result_count: 3, page: 1 });
+  await call("plan_my_shopping", { lines: [{ id: "acceptance-banan", name: "banan", quantity: 1, constraints: {}, preferences: [] }] });
 
-  const departments = await call<{ departments?: Array<{ id?: string }> }>("list_departments");
+  const departments = await call<{ departments?: Array<{ id?: string }> }>("show_grocery_sections");
   const departmentId = departments.departments?.find(({ id }) => id)?.id;
-  if (departmentId) await call("browse_department", { department_id: departmentId, limit: 3, page: 1 });
-  else unavailable.push("browse_department:no_department");
+  if (departmentId) await call("browse_grocery_section", { section: departmentId, result_count: 3, page: 1 });
+  else unavailable.push("browse_grocery_section:no_section");
 
-  const current = await call<Basket>("view_cart");
-  assert.ok(Array.isArray(current.items), "view_cart returned no basket items");
-  await call("pick_products", { query: "banan", limit: 3 });
+  const current = await call<Basket>("show_my_basket");
+  assert.ok(Array.isArray(current.items), "show_my_basket returned no basket items");
+  await call("choose_products_visually", { search_term: "banan", result_count: 3 });
   const resource = await client.readResource({ uri: productionResourceInventory[0] });
   assert.ok(resource.contents.length, "Production picker resource is empty");
   exercised.push(productionResourceInventory[0]);
 
   const missingPlan = await client.callTool({
-    name: "load_shopping_plan",
-    arguments: { id: "00000000-0000-4000-8000-000000000000" },
+    name: "continue_my_shopping_plan",
+    arguments: { saved_plan: "00000000-0000-4000-8000-000000000000" },
   });
   assert.equal(missingPlan.isError, true, "Missing production plan unexpectedly loaded");
-  exercised.push("load_shopping_plan");
-  unavailable.push("load_shopping_plan:no_safe_fixture");
+  exercised.push("continue_my_shopping_plan");
+  unavailable.push("continue_my_shopping_plan:no_safe_fixture");
 
-  await call("prepare_cart_additions", { items: [{ product_id: productIds[0], quantity: 1 }] });
+  await call("review_items_to_add", { items: [{ product: productIds[0], quantity: 1 }] });
   const currentId = current.items.find(({ id }) => Number.isInteger(id))?.id;
-  await call("prepare_cart_removal", { product_id: currentId ?? productIds[0] });
+  await call("review_item_to_remove", { basket_item: currentId ?? productIds[0] });
   const replacementId = productIds.find((id) => id !== currentId) ?? productIds[0] + 1;
-  await call("prepare_cart_replacement", {
-    current_product_id: currentId ?? productIds[0],
-    replacement_product_id: replacementId,
-    replacement_quantity: 1,
+  await call("review_item_swap", {
+    current_item: currentId ?? productIds[0],
+    replacement_item: replacementId,
+    quantity: 1,
   });
-  await call("prepare_cart_clear");
+  await call("review_emptying_basket");
 
   return { exercised, unavailable };
 }
@@ -141,10 +141,10 @@ const mutationTools: Record<ProductionMutationOperation, {
   prepare: ToolName;
   apply: ToolName;
 }> = {
-  additions: { prepare: "prepare_cart_additions", apply: "apply_cart_additions" },
-  removal: { prepare: "prepare_cart_removal", apply: "apply_cart_removal" },
-  replacement: { prepare: "prepare_cart_replacement", apply: "apply_cart_replacement" },
-  clear: { prepare: "prepare_cart_clear", apply: "apply_cart_clear" },
+  additions: { prepare: "review_items_to_add", apply: "add_approved_items" },
+  removal: { prepare: "review_item_to_remove", apply: "remove_approved_item" },
+  replacement: { prepare: "review_item_swap", apply: "make_approved_item_swap" },
+  clear: { prepare: "review_emptying_basket", apply: "empty_approved_basket" },
 };
 
 export const productionBasketFingerprint = (value: Basket): string => createHash("sha256").update(JSON.stringify({
@@ -168,9 +168,9 @@ export async function verifyApprovedProductionMutation(
   const names = mutationTools[approved.operation];
   assert.ok(names, "Approved mutation operation is invalid");
   const tools = new Set((await client.listTools()).tools.map(({ name }) => name));
-  for (const name of ["view_cart", names.prepare, names.apply]) assert.ok(tools.has(name), `Production MCP is missing ${name}`);
+  for (const name of ["show_my_basket", names.prepare, names.apply]) assert.ok(tools.has(name), `Production MCP is missing ${name}`);
 
-  const initial = basket(await client.callTool({ name: "view_cart", arguments: {} }), "initial view_cart");
+  const initial = basket(await client.callTool({ name: "show_my_basket", arguments: {} }), "initial show_my_basket");
   const prepared = content<{
     applicable?: boolean;
     operation?: string;
@@ -183,7 +183,7 @@ export async function verifyApprovedProductionMutation(
   assert.deepEqual(prepared.review, approved.expectedReview, "Prepared proposal differs from the exact approval");
 
   const applied = content<{ status?: string; operation?: string; replayed?: boolean; basket?: Basket }>(
-    await client.callTool({ name: names.apply, arguments: { proposal_id: prepared.proposal_id } }),
+    await client.callTool({ name: names.apply, arguments: { approved_review: prepared.proposal_id } }),
     names.apply,
   );
   assert.equal(applied.status, "completed", `${approved.operation} was not completed`);
@@ -191,7 +191,7 @@ export async function verifyApprovedProductionMutation(
   assert.equal(applied.replayed, false, "Acceptance proposal was unexpectedly replayed");
   assert.ok(applied.basket && Array.isArray(applied.basket.items), "Apply returned no basket readback");
 
-  const final = basket(await client.callTool({ name: "view_cart", arguments: {} }), "final view_cart");
+  const final = basket(await client.callTool({ name: "show_my_basket", arguments: {} }), "final show_my_basket");
   assert.deepEqual(final, applied.basket, "Apply and fresh basket readbacks differ");
   return { initial, final };
 }

@@ -60,7 +60,7 @@ test("authenticated normal requests forward once and unknown tools fail into the
     } }),
     forward: async (_request, operation) => { forwarded.push(operation); return new Response("ok"); },
   };
-  const normal = await handleGatewayRequest(mcpRequest({ method: "tools/call", params: { name: "view_cart" } }), env, dependencies);
+  const normal = await handleGatewayRequest(mcpRequest({ method: "tools/call", params: { name: "show_my_basket" } }), env, dependencies);
   const unknown = await handleGatewayRequest(mcpRequest({ method: "tools/call", params: { name: "future_tool" } }), env, dependencies);
   assert.equal(await normal.text(), "ok");
   assert.equal(await unknown.text(), "ok");
@@ -68,7 +68,7 @@ test("authenticated normal requests forward once and unknown tools fail into the
   assert.deepEqual(forwarded, ["normal", "expensive"]);
   assert.equal(classifyMcpMessage({ method: "notifications/initialized" }), "protocol");
   assert.equal(classifyMcpMessage({ method: "future/protocol-method" }), "protocol");
-  assert.equal(classifyMcpMessage({ method: "tools/call", params: { name: "apply_cart_additions" } }), "expensive");
+  assert.equal(classifyMcpMessage({ method: "tools/call", params: { name: "add_approved_items" } }), "expensive");
 });
 
 test("unauthorized, rate-limited, and open-breaker requests never reach the Container", async () => {
@@ -81,7 +81,7 @@ test("unauthorized, rate-limited, and open-breaker requests never reach the Cont
     authenticate: async () => { throw new Error("invalid"); },
     admit: async () => { throw new Error("unexpected"); },
   });
-  const rateLimited = await handleGatewayRequest(mcpRequest({ method: "tools/call", params: { name: "view_cart" } }), env, {
+  const rateLimited = await handleGatewayRequest(mcpRequest({ method: "tools/call", params: { name: "show_my_basket" } }), env, {
     ...base,
     authenticate: async () => {},
     admit: async () => ({ admitted: false, status: 429, reason: "rate_limit", state: emptyUsageState(new Date()) }),

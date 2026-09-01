@@ -3,8 +3,8 @@
 ## Favorites-first product selection
 
 **Status:** Core routing implemented. Ordinary find-or-add intent uses the
-favorites-first planner, explicit catalog searches retain `search_products`,
-and explicit favorite browsing retains `list_favorites`.
+favorites-first planner, explicit catalog searches retain `find_groceries`,
+and explicit favorite browsing retains `show_my_favorites`.
 
 - The planner searches the authenticated user's favorites first and searches
   outside favorites only when no eligible favorite exists.

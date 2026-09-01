@@ -36,31 +36,31 @@ test("default production feature acceptance covers safe paths and never calls ex
     readResource: async () => ({ contents: [{ text: "picker" }] }),
     callTool: async ({ name }) => {
       calls.push(name);
-      if (name === "search_products" || name === "pick_products") {
+      if (name === "find_groceries" || name === "choose_products_visually") {
         return { structuredContent: { result: [{ id: 7 }, { id: 8 }] } };
       }
-      if (name === "list_favorites" || name === "browse_department") return { structuredContent: { result: [] } };
-      if (name === "plan_shopping_list") return { structuredContent: { lines: [], selected_estimated_total: 0 } };
-      if (name === "list_departments") return { structuredContent: { departments: [{ id: "fruit" }] } };
-      if (name === "view_cart") return { structuredContent: { items: [] } };
-      if (name === "load_shopping_plan") return { isError: true };
+      if (name === "show_my_favorites" || name === "browse_grocery_section") return { structuredContent: { result: [] } };
+      if (name === "plan_my_shopping") return { structuredContent: { lines: [], selected_estimated_total: 0 } };
+      if (name === "show_grocery_sections") return { structuredContent: { departments: [{ id: "fruit" }] } };
+      if (name === "show_my_basket") return { structuredContent: { items: [] } };
+      if (name === "continue_my_shopping_plan") return { isError: true };
       return { structuredContent: { applicable: false } };
     },
   };
 
   const report = await verifyReadOnlyProductionFeatures(client);
   assert.deepEqual(calls, [
-    "search_products", "list_favorites", "plan_shopping_list", "list_departments",
-    "browse_department", "view_cart", "pick_products", "load_shopping_plan",
-    "prepare_cart_additions", "prepare_cart_removal", "prepare_cart_replacement", "prepare_cart_clear",
+    "find_groceries", "show_my_favorites", "plan_my_shopping", "show_grocery_sections",
+    "browse_grocery_section", "show_my_basket", "choose_products_visually", "continue_my_shopping_plan",
+    "review_items_to_add", "review_item_to_remove", "review_item_swap", "review_emptying_basket",
   ]);
   assert.equal(calls.some((name) => (productionToolInventory.externalState as readonly string[]).includes(name)), false);
-  assert.deepEqual(report.unavailable, ["load_shopping_plan:no_safe_fixture"]);
+  assert.deepEqual(report.unavailable, ["continue_my_shopping_plan:no_safe_fixture"]);
 });
 
 const approved: ApprovedProductionMutation = {
   operation: "additions",
-  prepareArguments: { items: [{ product_id: 7, quantity: 2 }] },
+  prepareArguments: { items: [{ product: 7, quantity: 2 }] },
   expectedReview: { lines: [{ product_id: 7, name: "Økologisk mælk", quantity: 2, line_total: 25 }] },
 };
 const emptyBasket: { items: Array<{ id: number; name: string; quantity: number; total: number }>; products_price: number } = { items: [], products_price: 0 };
@@ -76,16 +76,16 @@ const proposal = (operation: ApprovedProductionMutation["operation"], review: Re
 
 test("generic production mutation uses the matching prepare/apply pair for every operation", async () => {
   const pairs = {
-    additions: ["prepare_cart_additions", "apply_cart_additions"],
-    removal: ["prepare_cart_removal", "apply_cart_removal"],
-    replacement: ["prepare_cart_replacement", "apply_cart_replacement"],
-    clear: ["prepare_cart_clear", "apply_cart_clear"],
+    additions: ["review_items_to_add", "add_approved_items"],
+    removal: ["review_item_to_remove", "remove_approved_item"],
+    replacement: ["review_item_swap", "make_approved_item_swap"],
+    clear: ["review_emptying_basket", "empty_approved_basket"],
   } as const;
   for (const [operation, [prepare, apply]] of Object.entries(pairs)) {
     const calls: string[] = [];
     const envelope: ApprovedProductionMutation = { operation: operation as ApprovedProductionMutation["operation"], prepareArguments: {}, expectedReview: { exact: operation } };
     const client: AcceptanceClient = {
-      listTools: async () => ({ tools: ["view_cart", prepare, apply].map((name) => ({ name })) }),
+      listTools: async () => ({ tools: ["show_my_basket", prepare, apply].map((name) => ({ name })) }),
       callTool: async ({ name }) => {
         calls.push(name);
         if (name === prepare) return { structuredContent: proposal(envelope.operation, envelope.expectedReview) };
@@ -94,17 +94,17 @@ test("generic production mutation uses the matching prepare/apply pair for every
       },
     };
     assert.deepEqual((await verifyApprovedProductionMutation(client, envelope)).final, addedBasket);
-    assert.deepEqual(calls, ["view_cart", prepare, apply, "view_cart"]);
+    assert.deepEqual(calls, ["show_my_basket", prepare, apply, "show_my_basket"]);
   }
 });
 
 test("generic production mutation rejects price or proposal drift before apply", async () => {
   const calls: string[] = [];
   const client: AcceptanceClient = {
-    listTools: async () => ({ tools: ["view_cart", "prepare_cart_additions", "apply_cart_additions"].map((name) => ({ name })) }),
+    listTools: async () => ({ tools: ["show_my_basket", "review_items_to_add", "add_approved_items"].map((name) => ({ name })) }),
     callTool: async ({ name }) => {
       calls.push(name);
-      if (name === "prepare_cart_additions") {
+      if (name === "review_items_to_add") {
         return { structuredContent: proposal("additions", { lines: [{ product_id: 7, line_total: 26 }] }) };
       }
       return { structuredContent: emptyBasket };
@@ -112,41 +112,41 @@ test("generic production mutation rejects price or proposal drift before apply",
   };
 
   await assert.rejects(verifyApprovedProductionMutation(client, approved), /differs from the exact approval/u);
-  assert.deepEqual(calls, ["view_cart", "prepare_cart_additions"]);
+  assert.deepEqual(calls, ["show_my_basket", "review_items_to_add"]);
 });
 
 test("indeterminate apply is not retried and does not call a sibling mutation", async () => {
   const calls: string[] = [];
   const client: AcceptanceClient = {
-    listTools: async () => ({ tools: ["view_cart", "prepare_cart_additions", "apply_cart_additions", "apply_cart_clear"].map((name) => ({ name })) }),
+    listTools: async () => ({ tools: ["show_my_basket", "review_items_to_add", "add_approved_items", "empty_approved_basket"].map((name) => ({ name })) }),
     callTool: async ({ name }) => {
       calls.push(name);
-      if (name === "prepare_cart_additions") return { structuredContent: proposal("additions", approved.expectedReview) };
-      if (name === "apply_cart_additions") return { isError: true };
+      if (name === "review_items_to_add") return { structuredContent: proposal("additions", approved.expectedReview) };
+      if (name === "add_approved_items") return { isError: true };
       return { structuredContent: emptyBasket };
     },
   };
 
   await assert.rejects(verifyApprovedProductionMutation(client, approved), /returned an MCP error/u);
-  assert.deepEqual(calls, ["view_cart", "prepare_cart_additions", "apply_cart_additions"]);
+  assert.deepEqual(calls, ["show_my_basket", "review_items_to_add", "add_approved_items"]);
 });
 
 test("reversible acceptance restores the exact initial basket fingerprint", async () => {
   const restoration: ApprovedProductionMutation = {
     operation: "removal",
-    prepareArguments: { product_id: 7 },
+    prepareArguments: { basket_item: 7 },
     expectedReview: { line: addedBasket.items[0] },
   };
   let state = emptyBasket;
   const client: AcceptanceClient = {
     listTools: async () => ({ tools: allTools }),
     callTool: async ({ name }) => {
-      if (name === "view_cart") return { structuredContent: state };
-      if (name === "prepare_cart_additions") return { structuredContent: proposal("additions", approved.expectedReview) };
-      if (name === "apply_cart_additions") state = addedBasket;
-      if (name === "prepare_cart_removal") return { structuredContent: proposal("removal", restoration.expectedReview) };
-      if (name === "apply_cart_removal") state = emptyBasket;
-      return { structuredContent: { status: "completed", operation: name.includes("removal") ? "removal" : "additions", replayed: false, basket: state } };
+      if (name === "show_my_basket") return { structuredContent: state };
+      if (name === "review_items_to_add") return { structuredContent: proposal("additions", approved.expectedReview) };
+      if (name === "add_approved_items") state = addedBasket;
+      if (name === "review_item_to_remove") return { structuredContent: proposal("removal", restoration.expectedReview) };
+      if (name === "remove_approved_item") state = emptyBasket;
+      return { structuredContent: { status: "completed", operation: name === "remove_approved_item" ? "removal" : "additions", replayed: false, basket: state } };
     },
   };
   assert.deepEqual(await verifyApprovedReversibleProductionMutation(client, approved, restoration), emptyBasket);
@@ -157,14 +157,14 @@ test("unavailable inverse stops with the last verified basket fingerprint", asyn
   const client: AcceptanceClient = {
     listTools: async () => ({ tools: allTools }),
     callTool: async ({ name }) => {
-      if (name === "view_cart") return { structuredContent: state };
-      if (name === "prepare_cart_additions") return { structuredContent: proposal("additions", approved.expectedReview) };
-      if (name === "apply_cart_additions") { state = addedBasket; return { structuredContent: { status: "completed", operation: "additions", replayed: false, basket: state } }; }
-      if (name === "prepare_cart_removal") return { structuredContent: { applicable: false, operation: "removal", reason: "unavailable" } };
+      if (name === "show_my_basket") return { structuredContent: state };
+      if (name === "review_items_to_add") return { structuredContent: proposal("additions", approved.expectedReview) };
+      if (name === "add_approved_items") { state = addedBasket; return { structuredContent: { status: "completed", operation: "additions", replayed: false, basket: state } }; }
+      if (name === "review_item_to_remove") return { structuredContent: { applicable: false, operation: "removal", reason: "unavailable" } };
       throw new Error(`Unexpected ${name}`);
     },
   };
-  const restoration: ApprovedProductionMutation = { operation: "removal", prepareArguments: { product_id: 7 }, expectedReview: { line: addedBasket.items[0] } };
+  const restoration: ApprovedProductionMutation = { operation: "removal", prepareArguments: { basket_item: 7 }, expectedReview: { line: addedBasket.items[0] } };
   await assert.rejects(verifyApprovedReversibleProductionMutation(client, approved, restoration), /Restoration stopped at basket fingerprint/u);
 });
 

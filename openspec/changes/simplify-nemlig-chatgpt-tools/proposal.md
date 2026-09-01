@@ -20,6 +20,7 @@ None.
 ### Modified Capabilities
 
 - `nemlig-mcp`: Require a plain-language ChatGPT tool catalog, friendly input guidance, stable safety annotations, and a deliberate one-time migration from the old protocol-oriented identifiers.
+- `nemlig-basket-proposals`: Rename the proposal-backed review/action surface and its annotation contract without changing enforcement.
 
 ## Impact
 
