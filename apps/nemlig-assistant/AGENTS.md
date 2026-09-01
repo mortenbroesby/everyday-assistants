@@ -24,8 +24,9 @@ before Nemlig work.
   a Nemlig mutation.
 - Model-visible writes must use the matching prepare tool followed by its apply
   tool only after approval. Direct MCP mutation tools are prohibited.
-- Follow `SECURE_MCP_TUNNEL.md` for private ChatGPT setup. Never commit tunnel
-  profiles, runtime keys, tunnel IDs, or support output.
+- Follow `../../docs/cloudflare-operations.md` for private ChatGPT production
+  setup. Never commit infrastructure credentials, runtime secrets, or support
+  output.
 - Keep the `Feature sets` section in `README.md` current in the same change when
   shipped user-facing functionality is added, removed, or materially changed.
   List only implemented behavior there; keep planned work in `BACKLOG.md` or an

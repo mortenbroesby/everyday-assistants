@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Defines a private single-account ChatGPT integration that reaches the household Nemlig shopper through Secure MCP Tunnel, keeps credentials local, works without Codex, and does not enable checkout.
+Defines the private single-owner ChatGPT integration that reaches the household Nemlig shopper through the hosted Cloudflare/Auth0 service, works without Codex or the owner's Mac, and does not enable checkout.
 
 ## Requirements
 
@@ -14,34 +14,6 @@ The system SHALL apply this capability only after PR #8 is merged, the TypeScrip
 
 - **WHEN** implementation begins and the expected rewrite baseline is absent, unmerged, unarchived, or materially different
 - **THEN** application stops and reports the unmet prerequisite without copying implementation from the old feature branch
-
-### Requirement: Private Secure MCP Tunnel deployment
-
-The system SHALL connect the local stdio MCP server to one private ChatGPT Developer mode app through Secure MCP Tunnel and SHALL NOT expose a public network listener or unauthenticated internet endpoint.
-
-#### Scenario: ChatGPT connects through the tunnel
-
-- **WHEN** the local server and tunnel client are running and the private app invokes a tool
-- **THEN** ChatGPT can discover and invoke the safe tool surface while the Nemlig password remains local
-
-#### Scenario: Local tunnel is unavailable
-
-- **WHEN** the local machine, MCP server, or tunnel client is offline
-- **THEN** the app fails clearly without falling back to a public endpoint
-
-### Requirement: Single-account access boundary
-
-The first version SHALL use the tunnel association, its authenticated tunnel client, and the one associated ChatGPT account as its access boundary and SHALL NOT require separate app-level OAuth, user allowlists, OAuth subjects, or subject-to-account mappings.
-
-#### Scenario: Private app is configured
-
-- **WHEN** the owner creates the Developer mode app from the tunnel
-- **THEN** the app is limited to the current private account context and does not request an additional Auth0 or OAuth sign-in
-
-#### Scenario: Tool input supplies identity or account data
-
-- **WHEN** a caller supplies an actor, subject, credential, or account selector as a tool argument
-- **THEN** the server rejects or ignores it and continues to use only its local configured Nemlig account
 
 ### Requirement: Direct normal ChatGPT use
 
@@ -76,34 +48,6 @@ The system SHALL let an authenticated user list a positive bounded number of cur
 - **WHEN** a returned favorite is proposed for basket addition
 - **THEN** its exact product data enters the existing proposal and basket-add workflow without a separate add-from-favorites mutation
 
-### Requirement: Local credential boundary
-
-The system SHALL load Nemlig credentials only from the post-PR #8 owner-only local credential mechanism and SHALL keep credentials, session state, tunnel runtime keys, cookies, and tokens out of Git and model-visible content.
-
-#### Scenario: Nemlig authentication is needed
-
-- **WHEN** the local client must sign in or refresh its session
-- **THEN** it obtains credentials locally without requesting them through ChatGPT tool arguments or conversation
-
-#### Scenario: Authentication or upstream failure occurs
-
-- **WHEN** login, session refresh, tunnel access, or a Nemlig request fails
-- **THEN** the user receives concise sanitized remediation without a credential, token, cookie, header, local path, stack trace, or raw upstream payload
-
-### Requirement: Local session and mutation serialization
-
-The system SHALL operate one local Nemlig session for the one configured household account and SHALL serialize every basket mutation with a process-local mutex.
-
-#### Scenario: Concurrent writes arrive
-
-- **WHEN** two apply calls target the shared basket concurrently
-- **THEN** they execute one at a time and each revalidates current state inside the mutation lock
-
-#### Scenario: Local process restarts
-
-- **WHEN** in-memory session or proposal state is lost
-- **THEN** the server reauthenticates through the local credential mechanism and never automatically retries an uncertain mutation
-
 ### Requirement: Accurate MCP metadata
 
 The system SHALL advertise titles, descriptions, input schemas, output schemas, server instructions, and accurate readOnlyHint, openWorldHint, and destructiveHint annotations for every tool.
@@ -113,27 +57,9 @@ The system SHALL advertise titles, descriptions, input schemas, output schemas, 
 - **WHEN** MCP Inspector or ChatGPT scans the server
 - **THEN** discovered metadata matches each tool's actual side effects and contains no secret-bearing values
 
-### Requirement: Private developer-mode distribution
-
-The first version SHALL remain a private Developer mode app and SHALL NOT require a packaged plugin or public Plugins Directory submission.
-
-#### Scenario: First version is accepted
-
-- **WHEN** the private tunnel workflow passes acceptance tests
-- **THEN** it may remain privately connected without plugin packaging, public listing, public verification, review credentials, or public legal and support pages
-
-### Requirement: Expansion requires a new security design
-
-The system SHALL NOT extend this single-account tunnel trust boundary to hosting, public ingress, another ChatGPT account, or hosted Nemlig credentials without a separate approved specification.
-
-#### Scenario: Broader access is requested
-
-- **WHEN** always-on hosting, another account, public reachability, or revocable per-user access is requested
-- **THEN** implementation stops until a new design covers OAuth 2.1, account binding, session isolation, hosted secrets, operations, and revocation
-
 ### Requirement: No secret disclosure
 
-The system SHALL NOT return, render, log, persist in Git, or place in model-visible content any Nemlig password, cookie, access token, tunnel runtime API key, authorization header, local credential, or internal session identifier.
+The system SHALL NOT return, render, log, persist in Git, or place in model-visible content any Nemlig password, cookie, access token, provider runtime key, authorization header, local credential, hosted secret, or internal session identifier.
 
 #### Scenario: Complete output surface is inspected
 
@@ -148,3 +74,49 @@ The direct integration SHALL NOT expose checkout, payment, purchase, order place
 
 - **WHEN** executable tools, resources, server instructions, skills, and app metadata are enumerated
 - **THEN** none can place or pay for an order or change a delivery slot
+
+### Requirement: Single hosted production deployment
+
+The system SHALL expose one supported private ChatGPT integration named `Nemlig Assistant` through the production Cloudflare endpoint and SHALL authenticate the configured owner with Auth0 before forwarding useful MCP requests. The repository SHALL NOT expose a supported Secure MCP Tunnel command, setup path, or fallback deployment.
+
+#### Scenario: Owner uses Nemlig Assistant
+
+- **WHEN** the configured owner invokes a tool through the installed production app
+- **THEN** the request is authenticated at the hosted gateway and can reach the fixed backend without the owner's Mac or a tunnel client running
+
+#### Scenario: Retired tunnel path is requested
+
+- **WHEN** an operator searches supported commands, instructions, and deployment documentation for a tunnel setup or fallback
+- **THEN** no runnable tunnel entry point or supported tunnel deployment procedure is present
+
+### Requirement: Hosted owner and credential boundary
+
+The production integration SHALL accept only the configured Auth0 owner, SHALL obtain Nemlig credentials only from hosted secrets, and SHALL keep credentials, cookies, access tokens, authorization headers, internal session identifiers, and provider secret values out of tool results, logs, fixtures, committed files, and model-visible content.
+
+#### Scenario: Unauthenticated or wrong-owner request
+
+- **WHEN** a request has no valid token or belongs to another Auth0 subject
+- **THEN** the gateway rejects it before the fixed backend performs a Nemlig operation
+
+#### Scenario: Production login is required
+
+- **WHEN** the hosted Nemlig client needs to establish or refresh its session
+- **THEN** it uses the configured hosted credential pair without requesting a password through ChatGPT
+
+### Requirement: Private hosted distribution
+
+The supported integration SHALL remain private and single-household and SHALL NOT require public directory submission, public review credentials, or public multi-user account mapping.
+
+#### Scenario: Hosted alpha is accepted
+
+- **WHEN** the production acceptance suite passes and the owner keeps the app private
+- **THEN** the hosted app remains the supported distribution without a tunnel registration or public listing
+
+### Requirement: Hosted expansion requires a new security design
+
+The system SHALL NOT extend the configured-owner hosted boundary to arbitrary family members, public users, multiple Nemlig accounts, checkout, payment, ordering, or delivery-slot mutation without a separate approved specification and identity-to-account design.
+
+#### Scenario: Another household member is requested
+
+- **WHEN** support for another Auth0 identity or Nemlig account is requested
+- **THEN** the current single-owner implementation remains unchanged until a separate approved design defines identity mapping, isolation, revocation, quotas, and credential ownership

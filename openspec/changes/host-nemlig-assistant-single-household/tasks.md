@@ -12,15 +12,14 @@
 - [x] 1.3 **[OPERATOR]** Review and explicitly approve the Auth0 Europe tenant,
   Free-plan boundary, one-owner identity model, and credential-free OAuth staging.
   Verify no payment method or paid Auth0 plan is active.
-- [ ] 1.4 Prove Auth0's credential-free OAuth flow through the existing Secure MCP
-  Tunnel supports ChatGPT discovery, authorization code with PKCE, owner
+- [x] 1.4 Prove Auth0's credential-free OAuth flow through the hosted production
+  endpoint supports ChatGPT discovery, authorization code with PKCE, owner
   identification, required scope, protected-resource metadata, and refresh/offline
   access; verify revoked, expired, wrong-audience, and wrong-subject tokens fail
   before tool dispatch.
-- [ ] 1.5 **[OPERATOR]** After the authenticated tunnel milestone, compare and
-  explicitly approve a host, region, recurring cost ceiling, managed-secret and
-  durable-storage boundary before any hosting endpoint, secret, or billable
-  resource is created.
+- [x] 1.5 **[OPERATOR]** Approve Cloudflare, EU placement, the Workers Paid
+  baseline, managed secrets, fixed single Container, and durable storage before
+  production resources are created.
 
 ## 2. Transport-Neutral Runtime
 
@@ -112,8 +111,8 @@
   shutdown; verify every procedure has a readback step and none prints or embeds
   credentials.
 - [ ] 6.3 Update the Nemlig README feature-set inventory, hosted operating guide,
-  app instructions, and backlog to distinguish shipped hosting from the retained
-  tunnel fallback; verify planned behavior is not listed as shipped before its
+  app instructions, and backlog to document the shipped production-only hosted
+  path; verify planned behavior is not listed as shipped before its
   acceptance checks pass.
 - [ ] 6.4 Review all hosted outputs, fixtures, container layers, CI artifacts,
   deployment configuration, and logs for secrets or personal data and verify the
@@ -128,21 +127,21 @@
   production resource creation, owner identity binding, managed Nemlig credential
   provisioning, and the accepted recurring cost before production secrets or
   endpoints are created.
-- [ ] 7.3 Deploy the approved immutable image to production, connect a separate
-  private hosted ChatGPT app, turn off the Mac tunnel, and verify read-only search,
+- [ ] 7.3 Deploy the approved immutable image to production, connect the private
+  hosted ChatGPT app, and verify read-only search,
   favorites, guided planning, snapshots, and basket inspection work against the
   configured owner account without exposing secrets.
 - [ ] 7.4 Demonstrate wrong-owner rejection, authorization revocation and restore,
   Nemlig credential rotation, process restart with pending-proposal refusal,
   failed-release rollback, last-healthy restore, and service shutdown; verify no
   demonstration performs or retries an unapproved basket mutation.
-- [ ] 7.5 Hand off a bounded owner alpha exercise comparing tunnel and hosted tool
-  contracts and read-only behavior, with an optional separately reviewed and
+- [ ] 7.5 Hand off a bounded owner alpha exercise covering hosted tool contracts
+  and read-only behavior, with an optional separately reviewed and
   explicitly approved exact basket proposal; record discrepancies as follow-up
   work without weakening validation or approval rules.
-- [ ] 7.6 **[OPERATOR]** Make the explicit cutover or rollback decision after the
-  bounded dual run; retire and revoke the tunnel only if cutover is approved, then
-  verify the selected ChatGPT path works and the retired path no longer connects.
+- [x] 7.6 **[OPERATOR]** Approve the production-only cutover after hosted read and
+  write acceptance, remove obsolete app registrations, and verify the selected
+  ChatGPT path works.
 
 ## 8. Final Verification and Delivery
 

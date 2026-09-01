@@ -63,8 +63,8 @@ disabled endpoint and no-running-Container state were verified.
    the `use:nemlig-assistant` permission, and authorize that permission as the
    default user-delegated grant for third-party applications. ChatGPT registers
    as a third-party client; without the default grant, login can succeed but the
-   client cannot receive a token for this API. Do not reuse a tunnel-specific
-   Auth0 API identifier for a different hosted resource URL.
+   client cannot receive a token for this API. Use a distinct Auth0 API
+   identifier for each hosted resource URL.
 
 4. Keep the production issuer, audience, public URL, custom domain, and safety
    thresholds in `wrangler.jsonc`. Store `NEMLIG_MCP_AUTH0_OWNER_SUBJECT` as an
@@ -94,11 +94,9 @@ disabled endpoint and no-running-Container state were verified.
    test health, Auth0 rejection, one authenticated MCP handshake, usage
    inspection, and one read-only tool call.
 
-   A tunnel-era ChatGPT app cannot be repointed in place and may show
-   `Authorization used: None`. Create a separate hosted app using the production
+   Configure the private ChatGPT app named `Nemlig Assistant` with the production
    `/mcp` URL, OAuth with Dynamic Client Registration, and the default
-   `use:nemlig-assistant` scope. Confirm its connection reports OAuth before
-   removing any tunnel fallback.
+   `use:nemlig-assistant` scope. Confirm its connection reports OAuth.
 
 ## Emergency disable and re-enable
 
@@ -152,7 +150,7 @@ The item was not removed by the addition test. A later, separately approved
 removal used the hosted prepare/apply flow and a fresh readback confirmed an
 empty basket with zero products and a 0.00 DKK product total.
 
-## Verify production, including one approved addition
+## Verify production features and approved reversible mutations
 
 Run the credential-free edge probes at any time:
 
@@ -161,32 +159,61 @@ pnpm --filter nemlig-assistant production:probe
 ```
 
 They verify enabled health, OAuth resource metadata, anonymous rejection, and
-foreign-origin rejection. The full acceptance command is intentionally limited
-to `view_cart`, `prepare_cart_additions`, and `apply_cart_additions`. First obtain
-a current owner access token and an exact prepared product review. The owner must
-approve its product ID, name, package or size, quantity, unit price, and line
-total. Then supply those exact values through the process environment:
+foreign-origin rejection. With a current owner access token, the default full
+acceptance command verifies the closed tool/resource inventory, discovery,
+favorites, guided planning, departments, basket view, picker metadata, missing
+plan handling, and all four proposal preparation paths. It does not save a plan,
+create a GitHub issue, or call any apply tool:
 
 ```sh
 read -rs NEMLIG_MCP_ACCESS_TOKEN
 export NEMLIG_MCP_ACCESS_TOKEN
-export NEMLIG_PRODUCTION_TEST_PRODUCT_ID=PRODUCT_ID
-export NEMLIG_PRODUCTION_TEST_PRODUCT_NAME='EXACT PRODUCT NAME'
-export NEMLIG_PRODUCTION_TEST_UNIT_SIZE='EXACT PACKAGE OR SIZE'
-export NEMLIG_PRODUCTION_TEST_QUANTITY=QUANTITY
-export NEMLIG_PRODUCTION_TEST_UNIT_PRICE=UNIT_PRICE
-export NEMLIG_PRODUCTION_TEST_LINE_TOTAL=LINE_TOTAL
-export NEMLIG_PRODUCTION_TEST_APPROVAL='{"productId":PRODUCT_ID,"productName":"EXACT PRODUCT NAME","unitSize":"EXACT PACKAGE OR SIZE","quantity":QUANTITY,"unitPrice":UNIT_PRICE,"lineTotal":LINE_TOTAL}'
-pnpm --filter nemlig-assistant production:test:add
-unset NEMLIG_MCP_ACCESS_TOKEN NEMLIG_PRODUCTION_TEST_PRODUCT_ID \
-  NEMLIG_PRODUCTION_TEST_PRODUCT_NAME NEMLIG_PRODUCTION_TEST_UNIT_SIZE \
-  NEMLIG_PRODUCTION_TEST_QUANTITY NEMLIG_PRODUCTION_TEST_UNIT_PRICE \
-  NEMLIG_PRODUCTION_TEST_LINE_TOTAL NEMLIG_PRODUCTION_TEST_APPROVAL
+pnpm --filter nemlig-assistant production:test:features
+unset NEMLIG_MCP_ACCESS_TOKEN
 ```
 
-The command refuses to apply if the prepared proposal differs from the approved
-values. It verifies the apply response against a fresh basket readback and never
-removes the test item. Removal requires its own exact proposal and approval.
+Stateful acceptance is separate. Prepare both the intended mutation and its
+inverse restoration, show both complete reviews to the owner, and obtain exact
+approval for each. Encode each as an object containing `operation`,
+`prepareArguments`, and the complete `expectedReview`. Supply each serialized
+object twice so an accidental partial environment cannot apply it:
+
+```sh
+read -rs NEMLIG_MCP_ACCESS_TOKEN
+export NEMLIG_MCP_ACCESS_TOKEN
+read -r "NEMLIG_PRODUCTION_MUTATION?Approved mutation JSON: "
+export NEMLIG_PRODUCTION_MUTATION
+export NEMLIG_PRODUCTION_MUTATION_CONFIRMATION="$NEMLIG_PRODUCTION_MUTATION"
+read -r "NEMLIG_PRODUCTION_RESTORATION?Approved restoration JSON: "
+export NEMLIG_PRODUCTION_RESTORATION
+export NEMLIG_PRODUCTION_RESTORATION_CONFIRMATION="$NEMLIG_PRODUCTION_RESTORATION"
+pnpm --filter nemlig-assistant production:test:mutation
+unset NEMLIG_MCP_ACCESS_TOKEN NEMLIG_PRODUCTION_MUTATION \
+  NEMLIG_PRODUCTION_MUTATION_CONFIRMATION NEMLIG_PRODUCTION_RESTORATION \
+  NEMLIG_PRODUCTION_RESTORATION_CONFIRMATION
+```
+
+The command accepts additions, removal, replacement, or clear envelopes, applies
+only the unchanged approved proposal, reads the basket back, applies only the
+separately approved inverse, and requires the final basket fingerprint to equal
+the initial fingerprint. It never retries an indeterminate apply.
+
+### 2026-09-01 production-only cleanup verification
+
+The credential-free production probe passed enabled health, OAuth resource
+metadata, anonymous rejection, and foreign-origin rejection after the repository
+tunnel path was removed. The installed ChatGPT app detail showed the current name
+`Nemlig Assistant`, version `1.0.0`, and the hosted description. An existing
+authenticated conversation still showed a successful favorites lookup with an
+explicit no-basket-change result; its older source pill retained the former name
+as conversation history only.
+
+The full authenticated feature command was not run because no owner access token
+was available to the repository process. No new ChatGPT prompt, saved plan,
+GitHub issue, proposal apply, or basket mutation was sent. Run
+`production:test:features` when a current owner token is available. Run
+`production:test:mutation` only after both exact change and restoration envelopes
+receive their separate approvals.
 
 ## Inspect usage and reset the breaker
 
@@ -244,6 +271,21 @@ deployment, both fixed Durable Object data sets, and Worker secrets in Cloudflar
 cancel Workers Paid only if the account has no other workload. Durable Object
 data deletion is intentionally a manual destructive operation so saved state is
 not erased by an ordinary rollback.
+
+## Retire a legacy local service manually
+
+The repository no longer installs or controls a local ChatGPT forwarding
+service. If an older macOS LaunchAgent remains on a machine, retire it manually
+only after the hosted app is verified:
+
+1. Inspect `launchctl list` and running processes for the exact legacy service.
+2. Use `launchctl bootout` with that exact service path or label.
+3. Verify the process is gone and no related listener remains.
+4. Remove only the confirmed legacy LaunchAgent and its local support files.
+
+This cleanup is machine-local and intentionally is not performed by repository
+scripts. Revoking or deleting any external provider resource remains a separate
+owner action.
 
 ## Residual cost signals
 

@@ -8,7 +8,7 @@ const config: Auth0Config = {
   audience: "https://nemlig.example.test/mcp",
   ownerSubject: "auth0|owner",
   requiredScope: "use:nemlig-assistant",
-  publicUrl: new URL("https://tunnel.example.test/mcp"),
+  publicUrl: new URL("https://mcp.example.test/mcp"),
   allowedOrigins: ["https://chatgpt.com"],
   revision: "test-revision",
   host: "127.0.0.1",

@@ -1,9 +1,1 @@
 pnpm verify
-
-if [ "$(git branch --show-current)" = "main" ]; then
-  if launchctl print "gui/$(id -u)/com.mortenbroesby.nemlig-auth0-tunnel" >/dev/null 2>&1; then
-    pnpm nemlig:tunnel:auth0:restart
-  else
-    pnpm nemlig:tunnel:restart
-  fi
-fi

@@ -1,11 +1,12 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import test from "node:test";
 
 const check = resolve(import.meta.dirname, "check-public-tree.mjs");
+const root = resolve(import.meta.dirname, "..");
 
 test("public-tree check rejects and then clears a synthetic private fixture", () => {
   const directory = mkdtempSync(resolve(tmpdir(), "public-tree-check-"));
@@ -18,4 +19,11 @@ test("public-tree check rejects and then clears a synthetic private fixture", ()
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }
+});
+
+test("retired Nemlig tunnel cannot return as a supported repository path", () => {
+  assert.equal(existsSync(resolve(root, "scripts/nemlig-tunnel.zsh")), false);
+  assert.equal(existsSync(resolve(root, "apps/nemlig-assistant/SECURE_MCP_TUNNEL.md")), false);
+  assert.doesNotMatch(readFileSync(resolve(root, "package.json"), "utf8"), /nemlig:tunnel/);
+  assert.doesNotMatch(readFileSync(resolve(root, ".husky/pre-push"), "utf8"), /tunnel|launchctl/);
 });

@@ -1,7 +1,7 @@
 # Security policy
 
-Do not put credentials, tokens, cookies, tunnel identifiers, account data, or
-real shopping state in an issue, pull request, log, or fixture.
+Do not put credentials, tokens, cookies, infrastructure identifiers, account
+data, or real shopping state in an issue, pull request, log, or fixture.
 
 Report vulnerabilities through GitHub private vulnerability reporting when it
 is available. If it is unavailable, open a minimal issue requesting a private

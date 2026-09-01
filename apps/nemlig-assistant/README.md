@@ -214,9 +214,9 @@ disable only the visual picker while keeping conversational tools.
 ### Auth0 and hosted MCP
 
 The maintained hosted path is the single-Container Cloudflare profile described
-in [Cloudflare operations](../../docs/cloudflare-operations.md). For the older
-local-tunnel option and stdio rollback path, see
-[`SECURE_MCP_TUNNEL.md`](SECURE_MCP_TUNNEL.md).
+in [Cloudflare operations](../../docs/cloudflare-operations.md). It is the only
+supported ChatGPT deployment. The CLI and stdio MCP server remain available for
+direct local development and use; they are not a ChatGPT hosting fallback.
 
 Creating or changing identity, hosting, DNS, runtime secrets, or paid resources
 is an owner-controlled infrastructure action. Nemlig credentials must stay out

@@ -77,6 +77,6 @@ call the matching `apply_cart_*` tool with
 its opaque proposal ID. Preparation is not approval. Never retry an
 indeterminate apply result; inspect the basket and prepare a new proposal.
 
-For private ChatGPT use, follow `SECURE_MCP_TUNNEL.md`. Tunnel creation, runtime
-keys, and app creation remain owner actions and never authorize a basket
-mutation.
+For private ChatGPT use, follow `../../../../docs/cloudflare-operations.md`.
+Identity, infrastructure, and app changes remain owner actions and never
+authorize a basket mutation.

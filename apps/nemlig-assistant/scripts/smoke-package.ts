@@ -33,6 +33,8 @@ try {
     "README.md",
     "dist/cli.js",
     "dist/cli.js.map",
+    "dist/http.js",
+    "dist/http.js.map",
     "dist/mcp.js",
     "dist/mcp.js.map",
     "package.json",
@@ -54,7 +56,7 @@ try {
   ) as { name?: string; version?: string; bin?: Record<string, string> };
   assert.equal(manifest.name, "nemlig-assistant");
   assert.equal(manifest.version, sourceManifest.version);
-  assert.deepEqual(Object.keys(manifest.bin ?? {}).sort(), ["nemlig", "nemlig-assistant", "nemlig-mcp"]);
+  assert.deepEqual(Object.keys(manifest.bin ?? {}).sort(), ["nemlig", "nemlig-assistant", "nemlig-mcp", "nemlig-mcp-http"]);
 
   const bin = (name: string): string => path.join(tempRoot, "node_modules", ".bin", name);
   const help = await execute(bin("nemlig"), ["--help"], { env: { PATH: process.env.PATH ?? "" } });
@@ -77,7 +79,7 @@ try {
   await client.connect(transport);
   try {
     assert.equal(client.getServerVersion()?.name, "nemlig-assistant");
-    assert.equal(client.getServerVersion()?.version, "1.3.0-alpha.7");
+    assert.equal(client.getServerVersion()?.version, sourceManifest.version);
     const tools = (await client.listTools()).tools.map((tool) => tool.name).sort();
     assert.deepEqual(tools, [
       "apply_cart_additions",

@@ -1,25 +1,38 @@
 import assert from "node:assert/strict";
-
-export interface ApprovedAddition {
-  productId: number;
-  productName: string;
-  unitSize: string;
-  quantity: number;
-  unitPrice: number;
-  lineTotal: number;
-}
+import { createHash } from "node:crypto";
 
 interface ToolResult {
   isError?: boolean;
   structuredContent?: unknown;
 }
 
+export const productionToolInventory = {
+  readOnly: [
+    "search_products", "list_favorites", "plan_shopping_list", "list_departments",
+    "browse_department", "load_shopping_plan", "view_cart", "pick_products",
+  ],
+  prepareOnly: [
+    "prepare_cart_additions", "prepare_cart_removal", "prepare_cart_replacement", "prepare_cart_clear",
+  ],
+  externalState: [
+    "save_shopping_plan", "create_feature_request", "apply_cart_additions",
+    "apply_cart_removal", "apply_cart_replacement", "apply_cart_clear",
+  ],
+} as const;
+
+export const productionResourceInventory = ["ui://nemlig/picker.html"] as const;
+export const prohibitedProductionTools = ["checkout", "place_order", "pay", "change_delivery_slot"] as const;
+
+type ToolName = typeof productionToolInventory[keyof typeof productionToolInventory][number];
+
 export interface AcceptanceClient {
   listTools(): Promise<{ tools: Array<{ name: string }> }>;
   callTool(request: {
-    name: "view_cart" | "prepare_cart_additions" | "apply_cart_additions";
+    name: ToolName;
     arguments: Record<string, unknown>;
   }): Promise<ToolResult>;
+  listResources?(): Promise<{ resources: Array<{ uri: string }> }>;
+  readResource?(request: { uri: string }): Promise<{ contents: unknown[] }>;
 }
 
 interface BasketItem {
@@ -49,77 +62,160 @@ const basket = (result: ToolResult, operation: string): Basket => {
   return value;
 };
 
-const hasApprovedQuantity = (value: Basket, approved: ApprovedAddition): boolean =>
-  value.items.some((item) => item.id === approved.productId && item.name === approved.productName && item.quantity === approved.quantity);
+const expectedTools = Object.values(productionToolInventory).flat();
 
-export async function verifyApprovedProductionAddition(
+export function assertProductionInventory(
+  tools: Array<{ name: string }>,
+  resources: Array<{ uri: string }>,
+): void {
+  assert.deepEqual(tools.map(({ name }) => name).sort(), [...expectedTools].sort(), "Production MCP tool inventory drifted");
+  assert.deepEqual(resources.map(({ uri }) => uri).sort(), [...productionResourceInventory].sort(), "Production MCP resource inventory drifted");
+  for (const name of prohibitedProductionTools) assert.equal(tools.some((tool) => tool.name === name), false, `Prohibited production capability advertised: ${name}`);
+}
+
+export interface ProductionFeatureReport {
+  exercised: string[];
+  unavailable: string[];
+}
+
+export async function verifyReadOnlyProductionFeatures(client: AcceptanceClient): Promise<ProductionFeatureReport> {
+  assert.ok(client.listResources && client.readResource, "Production resource client is required");
+  assertProductionInventory((await client.listTools()).tools, (await client.listResources()).resources);
+  const exercised: string[] = [];
+  const unavailable: string[] = [];
+  const call = async <T>(name: ToolName, args: Record<string, unknown> = {}): Promise<T> => {
+    const result = await client.callTool({ name, arguments: args });
+    exercised.push(name);
+    return content<T>(result, name);
+  };
+
+  const searched = await call<{ result?: Array<{ id?: number }> }>("search_products", { query: "banan", limit: 3 });
+  const productIds = (searched.result ?? []).flatMap(({ id }) => typeof id === "number" && Number.isInteger(id) && id > 0 ? [id] : []);
+  assert.ok(productIds.length, "Production product search returned no usable product");
+  await call("list_favorites", { query: "banan", limit: 3, page: 1 });
+  await call("plan_shopping_list", { lines: [{ id: "acceptance-banan", name: "banan", quantity: 1, constraints: {}, preferences: [] }] });
+
+  const departments = await call<{ departments?: Array<{ id?: string }> }>("list_departments");
+  const departmentId = departments.departments?.find(({ id }) => id)?.id;
+  if (departmentId) await call("browse_department", { department_id: departmentId, limit: 3, page: 1 });
+  else unavailable.push("browse_department:no_department");
+
+  const current = await call<Basket>("view_cart");
+  assert.ok(Array.isArray(current.items), "view_cart returned no basket items");
+  await call("pick_products", { query: "banan", limit: 3 });
+  const resource = await client.readResource({ uri: productionResourceInventory[0] });
+  assert.ok(resource.contents.length, "Production picker resource is empty");
+  exercised.push(productionResourceInventory[0]);
+
+  const missingPlan = await client.callTool({
+    name: "load_shopping_plan",
+    arguments: { id: "00000000-0000-4000-8000-000000000000" },
+  });
+  assert.equal(missingPlan.isError, true, "Missing production plan unexpectedly loaded");
+  exercised.push("load_shopping_plan");
+  unavailable.push("load_shopping_plan:no_safe_fixture");
+
+  await call("prepare_cart_additions", { items: [{ product_id: productIds[0], quantity: 1 }] });
+  const currentId = current.items.find(({ id }) => Number.isInteger(id))?.id;
+  await call("prepare_cart_removal", { product_id: currentId ?? productIds[0] });
+  const replacementId = productIds.find((id) => id !== currentId) ?? productIds[0] + 1;
+  await call("prepare_cart_replacement", {
+    current_product_id: currentId ?? productIds[0],
+    replacement_product_id: replacementId,
+    replacement_quantity: 1,
+  });
+  await call("prepare_cart_clear");
+
+  return { exercised, unavailable };
+}
+
+export type ProductionMutationOperation = "additions" | "removal" | "replacement" | "clear";
+
+export interface ApprovedProductionMutation {
+  operation: ProductionMutationOperation;
+  prepareArguments: Record<string, unknown>;
+  expectedReview: Record<string, unknown>;
+}
+
+const mutationTools: Record<ProductionMutationOperation, {
+  prepare: ToolName;
+  apply: ToolName;
+}> = {
+  additions: { prepare: "prepare_cart_additions", apply: "apply_cart_additions" },
+  removal: { prepare: "prepare_cart_removal", apply: "apply_cart_removal" },
+  replacement: { prepare: "prepare_cart_replacement", apply: "apply_cart_replacement" },
+  clear: { prepare: "prepare_cart_clear", apply: "apply_cart_clear" },
+};
+
+export const productionBasketFingerprint = (value: Basket): string => createHash("sha256").update(JSON.stringify({
+  items: value.items.map((item) => ({
+    id: item.id ?? null,
+    name: item.name ?? null,
+    quantity: item.quantity ?? null,
+    total: item.total ?? null,
+  })).sort((left, right) => String(left.id).localeCompare(String(right.id))),
+  products_price: value.products_price ?? null,
+  delivery_price: value.delivery_price ?? null,
+  number_of_products: value.number_of_products ?? null,
+  delivery_time: value.delivery_time ?? null,
+})).digest("hex");
+
+export async function verifyApprovedProductionMutation(
   client: AcceptanceClient,
-  approved: ApprovedAddition,
-): Promise<Basket> {
-  assert.ok(Number.isInteger(approved.productId) && approved.productId > 0, "Approved product ID must be a positive integer");
-  assert.ok(approved.productName.trim(), "Approved product name is required");
-  assert.ok(approved.unitSize.trim(), "Approved unit size is required");
-  assert.ok(Number.isInteger(approved.quantity) && approved.quantity > 0, "Approved quantity must be a positive integer");
-  assert.ok(Number.isFinite(approved.unitPrice) && approved.unitPrice >= 0, "Approved unit price must be non-negative");
-  assert.ok(Number.isFinite(approved.lineTotal) && approved.lineTotal >= 0, "Approved line total must be non-negative");
+  approved: ApprovedProductionMutation,
+): Promise<{ initial: Basket; final: Basket }> {
+  assert.ok(approved.expectedReview && typeof approved.expectedReview === "object", "Exact approved review is required");
+  const names = mutationTools[approved.operation];
+  assert.ok(names, "Approved mutation operation is invalid");
+  const tools = new Set((await client.listTools()).tools.map(({ name }) => name));
+  for (const name of ["view_cart", names.prepare, names.apply]) assert.ok(tools.has(name), `Production MCP is missing ${name}`);
 
-  const tools = new Set((await client.listTools()).tools.map((tool) => tool.name));
-  for (const name of ["view_cart", "prepare_cart_additions", "apply_cart_additions"]) {
-    assert.ok(tools.has(name), `Production MCP is missing ${name}`);
-  }
-
-  await client.callTool({ name: "view_cart", arguments: {} }).then((result) => basket(result, "initial view_cart"));
+  const initial = basket(await client.callTool({ name: "view_cart", arguments: {} }), "initial view_cart");
   const prepared = content<{
     applicable?: boolean;
     operation?: string;
     proposal_id?: string;
-    review?: { lines?: Array<{
-      product_id?: number;
-      name?: string;
-      unit_size?: string;
-      quantity?: number;
-      unit_price?: number;
-      line_total?: number;
-    }> };
-  }>(await client.callTool({
-    name: "prepare_cart_additions",
-    arguments: { items: [{ product_id: approved.productId, quantity: approved.quantity }] },
-  }), "prepare_cart_additions");
-
-  assert.equal(prepared.applicable, true, "Prepared addition is not applicable");
-  assert.equal(prepared.operation, "additions", "Prepared operation changed");
+    review?: Record<string, unknown>;
+  }>(await client.callTool({ name: names.prepare, arguments: approved.prepareArguments }), names.prepare);
+  assert.equal(prepared.applicable, true, `Prepared ${approved.operation} is not applicable`);
+  assert.equal(prepared.operation, approved.operation, "Prepared operation changed");
   assert.match(prepared.proposal_id ?? "", /^[0-9a-f-]{36}$/iu, "Prepared proposal ID is invalid");
-  assert.equal(prepared.review?.lines?.length, 1, "Prepared proposal must contain exactly one line");
-  const line = prepared.review?.lines?.[0];
-  assert.deepEqual(line && {
-    product_id: line.product_id,
-    name: line.name,
-    unit_size: line.unit_size,
-    quantity: line.quantity,
-    unit_price: line.unit_price,
-    line_total: line.line_total,
-  }, {
-    product_id: approved.productId,
-    name: approved.productName,
-    unit_size: approved.unitSize,
-    quantity: approved.quantity,
-    unit_price: approved.unitPrice,
-    line_total: approved.lineTotal,
-  }, "Prepared proposal differs from the exact approval");
+  assert.deepEqual(prepared.review, approved.expectedReview, "Prepared proposal differs from the exact approval");
 
   const applied = content<{ status?: string; operation?: string; replayed?: boolean; basket?: Basket }>(
-    await client.callTool({ name: "apply_cart_additions", arguments: { proposal_id: prepared.proposal_id } }),
-    "apply_cart_additions",
+    await client.callTool({ name: names.apply, arguments: { proposal_id: prepared.proposal_id } }),
+    names.apply,
   );
-  assert.equal(applied.status, "completed", "Addition was not completed");
-  assert.equal(applied.operation, "additions", "Applied operation changed");
+  assert.equal(applied.status, "completed", `${approved.operation} was not completed`);
+  assert.equal(applied.operation, approved.operation, "Applied operation changed");
   assert.equal(applied.replayed, false, "Acceptance proposal was unexpectedly replayed");
-  assert.ok(applied.basket && hasApprovedQuantity(applied.basket, approved), "Apply readback does not contain the approved line");
+  assert.ok(applied.basket && Array.isArray(applied.basket.items), "Apply returned no basket readback");
 
-  const fresh = basket(await client.callTool({ name: "view_cart", arguments: {} }), "final view_cart");
-  assert.ok(hasApprovedQuantity(fresh, approved), "Fresh basket readback does not contain the approved line");
-  assert.deepEqual(fresh, applied.basket, "Apply and fresh basket readbacks differ");
-  return fresh;
+  const final = basket(await client.callTool({ name: "view_cart", arguments: {} }), "final view_cart");
+  assert.deepEqual(final, applied.basket, "Apply and fresh basket readbacks differ");
+  return { initial, final };
+}
+
+export async function verifyApprovedReversibleProductionMutation(
+  client: AcceptanceClient,
+  change: ApprovedProductionMutation,
+  restoration: ApprovedProductionMutation,
+): Promise<Basket> {
+  const changed = await verifyApprovedProductionMutation(client, change);
+  try {
+    const restored = await verifyApprovedProductionMutation(client, restoration);
+    assert.equal(
+      productionBasketFingerprint(restored.final),
+      productionBasketFingerprint(changed.initial),
+      "Restored basket differs from the exact initial basket",
+    );
+    return restored.final;
+  } catch (error) {
+    throw new Error(
+      `Restoration stopped at basket fingerprint ${productionBasketFingerprint(changed.final)}: ${error instanceof Error ? error.message : "unknown failure"}`,
+      { cause: error },
+    );
+  }
 }
 
 export async function verifyProductionEdge(

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { Command, InvalidArgumentError } from "commander";
-import { realpathSync } from "node:fs";
+import { readFileSync, realpathSync } from "node:fs";
 import { basename } from "node:path";
 import type { Basket, Product } from "./client.js";
 import { FAVORITES_SEARCH_POOL, matchFavorites, NemligClient, NemligError } from "./client.js";
@@ -44,7 +44,9 @@ interface CliDependencies {
 }
 
 let sharedClient: NemligClient | undefined;
-export const NEMLIG_VERSION = "1.3.0-alpha.7";
+const packageVersion = (JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")) as { version?: unknown }).version;
+if (typeof packageVersion !== "string") throw new Error("Nemlig package version is missing.");
+export const NEMLIG_VERSION = packageVersion;
 
 export const getClient = (): NemligClient => (sharedClient ??= new NemligClient());
 

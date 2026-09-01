@@ -1,9 +1,11 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import {
-  verifyApprovedProductionAddition,
+  verifyApprovedReversibleProductionMutation,
   verifyProductionEdge,
-  type ApprovedAddition,
+  verifyReadOnlyProductionFeatures,
+  type AcceptanceClient,
+  type ApprovedProductionMutation,
 } from "../src/production-acceptance.js";
 
 const required = (name: string): string => {
@@ -12,9 +14,11 @@ const required = (name: string): string => {
   return value;
 };
 
-const positive = (name: string): number => {
-  const value = Number(required(name));
-  if (!Number.isFinite(value) || value <= 0) throw new Error(`${name} must be positive`);
+const approvedMutation = (name: string): ApprovedProductionMutation => {
+  const serialized = required(name);
+  if (required(`${name}_CONFIRMATION`) !== serialized) throw new Error(`${name}_CONFIRMATION must exactly repeat the approved envelope`);
+  const value = JSON.parse(serialized) as ApprovedProductionMutation;
+  if (!value || typeof value !== "object") throw new Error(`${name} must be a JSON object`);
   return value;
 };
 
@@ -25,33 +29,30 @@ if (process.argv.includes("--edge-only")) {
   process.exit(0);
 }
 
-const approved: ApprovedAddition = {
-  productId: positive("NEMLIG_PRODUCTION_TEST_PRODUCT_ID"),
-  productName: required("NEMLIG_PRODUCTION_TEST_PRODUCT_NAME"),
-  unitSize: required("NEMLIG_PRODUCTION_TEST_UNIT_SIZE"),
-  quantity: positive("NEMLIG_PRODUCTION_TEST_QUANTITY"),
-  unitPrice: positive("NEMLIG_PRODUCTION_TEST_UNIT_PRICE"),
-  lineTotal: positive("NEMLIG_PRODUCTION_TEST_LINE_TOTAL"),
-};
-const expectedApproval = JSON.stringify(approved);
-if (required("NEMLIG_PRODUCTION_TEST_APPROVAL") !== expectedApproval) {
-  throw new Error(`Exact approval missing. After owner approval, set NEMLIG_PRODUCTION_TEST_APPROVAL to: ${expectedApproval}`);
-}
-
 const client = new Client({ name: "nemlig-production-acceptance", version: "1.0.0" });
 const transport = new StreamableHTTPClientTransport(origin, {
   requestInit: { headers: { authorization: `Bearer ${required("NEMLIG_MCP_ACCESS_TOKEN")}` } },
 });
 try {
   await client.connect(transport);
-  await verifyApprovedProductionAddition({
+  const acceptanceClient: AcceptanceClient = {
     listTools: () => client.listTools(),
+    listResources: () => client.listResources(),
+    readResource: (request: { uri: string }) => client.readResource(request),
     callTool: async (request) => await client.callTool(request) as {
       isError?: boolean;
       structuredContent?: unknown;
     },
-  }, approved);
-  console.log(`Verified production addition: ${approved.quantity} × ${approved.productName} (ID ${approved.productId}).`);
+  };
+  if (!process.argv.includes("--mutation")) {
+    const report = await verifyReadOnlyProductionFeatures(acceptanceClient);
+    console.log(`Verified ${report.exercised.length} production feature paths without external-state writes.`);
+  } else {
+    const change = approvedMutation("NEMLIG_PRODUCTION_MUTATION");
+    const restoration = approvedMutation("NEMLIG_PRODUCTION_RESTORATION");
+    await verifyApprovedReversibleProductionMutation(acceptanceClient, change, restoration);
+    console.log(`Verified and restored one production ${change.operation} mutation.`);
+  }
 } finally {
   await client.close();
 }
