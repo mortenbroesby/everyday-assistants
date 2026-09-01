@@ -24,6 +24,4 @@ jobs:
           node-version: 22.23.1
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm spec:validate
-      - run: pnpm privacy:check
-      - run: pnpm verify
+      - run: pnpm nemlig:production:ready

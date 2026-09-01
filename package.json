@@ -14,6 +14,7 @@
     "check": "turbo check",
     "coverage": "turbo coverage",
     "nemlig": "pnpm --filter nemlig-assistant cli",
+    "nemlig:production:ready": "pnpm spec:validate && pnpm privacy:check && pnpm verify && pnpm --filter nemlig-assistant smoke:package && pnpm --filter nemlig-assistant cloudflare:check",
     "nemlig:release:apply": "pnpm --filter nemlig-assistant release:apply",
     "nemlig:release:plan": "pnpm --filter nemlig-assistant release:plan",
     "lint": "turbo lint",

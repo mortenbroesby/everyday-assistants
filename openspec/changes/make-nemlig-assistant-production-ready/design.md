@@ -2,7 +2,9 @@
 
 See `proposal.md` for motivation. The app already implements the production runtime and safety design: a private Auth0-owner boundary, one fixed Cloudflare Container, quotas, rate limits, a circuit breaker, a kill switch, bounded retries, approval-bound basket writes, production acceptance code, package smoke tests, release policy, and an operations runbook. The missing layer is a single repository-owned path that assembles evidence and tells maintainers and agents where repository authority ends.
 
-The current working tree also contains unrelated OpenSpec archive changes. Implementation must preserve them and commit only this change's scoped files.
+The prerequisite OpenSpec archive cleanup was delivered in commit `bf6f925`.
+Implementation starts from that clean baseline and commits only this change's
+scoped files.
 
 ## Goals / Non-Goals
 

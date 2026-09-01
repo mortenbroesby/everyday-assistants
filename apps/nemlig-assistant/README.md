@@ -115,6 +115,8 @@ The production profile is designed for private, low-volume family use:
 See [Cloudflare hosting assessment](../../docs/cloudflare-hosting-assessment.md)
 and [Cloudflare operations](../../docs/cloudflare-operations.md) for the
 architecture, cost controls, deployment, rollback, and emergency procedures.
+Use the [production-readiness gate](../../docs/nemlig-production-readiness.md)
+for one repeatable credential-free repository and CI check.
 
 ## 🧭 How guided shopping works
 
@@ -297,6 +299,7 @@ This README is the user-facing inventory of shipped feature sets:
 - human-friendly basket reviews and verified results
 - replacement and savings review
 - CLI, MCP, MCP Apps, Auth0, and bounded Cloudflare hosting
+- credential-free production-readiness gate
 - explicit feature-request capture
 - private package and guarded alpha release policy
 
@@ -308,6 +311,7 @@ set is added, removed, or materially changed. Planned work belongs in
 
 ```text
 .codex/skills/nemlig-basket/  Safe shopping workflow
+.codex/skills/nemlig-production/  Production-readiness workflow
 src/client.ts                 Nemlig HTTP, search, and basket client
 src/config.ts                 Local credential management
 src/cli.ts                    CLI entry point
