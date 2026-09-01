@@ -1,9 +1,10 @@
 # Cloudflare operations for Nemlig MCP
 
-Status: production version `36261629-4ffe-4178-8e8c-3f826ee8167d` is enabled
+Status: production version `7eb3ff2e-759d-4e3b-b2b7-49cf59193384` is enabled
 for private family use. Health, OAuth metadata, anonymous rejection, Auth0
-sign-in, hosted-app action discovery, one authenticated read-only favorites
-lookup, and no unauthorized Container wake are verified.
+sign-in, hosted-app action discovery, authenticated read and basket-add flows,
+and no unauthorized Container wake are verified. The deployed application
+revision is `bad8290ef29ecea081eeb2e46e2aec0da0c223c5`.
 
 Current production endpoints:
 
@@ -137,6 +138,17 @@ classified every discovery request as `protocol` with no normal or expensive
 usage admission. The subsequent authenticated acceptance lookup returned one
 favorite without changing the basket; logs admitted exactly one `normal`
 operation with `expensive: 0` and no apply-class operation.
+
+The approved write acceptance initially exposed that proposals were scoped to
+one transient MCP transport, so a normal ChatGPT approval round trip could not
+apply them. Revision `bad8290ef29ecea081eeb2e46e2aec0da0c223c5` shares proposal
+state across the single authenticated owner's hosted transports while retaining
+expiry, immutable details, and owner binding. Disabled version
+`92a524b5-8395-432f-8ea6-ad37b9a49fc4` returned HTTP 503 on both routes before
+enabled version `7eb3ff2e-759d-4e3b-b2b7-49cf59193384` passed the safe edge
+probes. The hosted app then prepared and applied exactly one `Banan` at 2.50 DKK;
+a fresh readback showed one product totaling 2.50 DKK and no other basket change.
+The item was intentionally not removed.
 
 ## Verify production, including one approved addition
 

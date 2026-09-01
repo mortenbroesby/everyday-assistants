@@ -103,6 +103,6 @@
   exact addition preparation, approval mismatch rejection, one apply call, and
   fresh basket readback; verify it cannot select another mutation tool or persist
   the owner access token.
-- [ ] 6.8 Run the safe edge probes and one separately approved production
+- [x] 6.8 Run the safe edge probes and one separately approved production
   addition through the hosted MCP; verify the exact basket result and operational
   evidence, without automatically removing the item.
