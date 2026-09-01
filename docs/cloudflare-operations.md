@@ -138,6 +138,42 @@ usage admission. The subsequent authenticated acceptance lookup returned one
 favorite without changing the basket; logs admitted exactly one `normal`
 operation with `expensive: 0` and no apply-class operation.
 
+## Verify production, including one approved addition
+
+Run the credential-free edge probes at any time:
+
+```sh
+pnpm --filter nemlig-assistant production:probe
+```
+
+They verify enabled health, OAuth resource metadata, anonymous rejection, and
+foreign-origin rejection. The full acceptance command is intentionally limited
+to `view_cart`, `prepare_cart_additions`, and `apply_cart_additions`. First obtain
+a current owner access token and an exact prepared product review. The owner must
+approve its product ID, name, package or size, quantity, unit price, and line
+total. Then supply those exact values through the process environment:
+
+```sh
+read -rs NEMLIG_MCP_ACCESS_TOKEN
+export NEMLIG_MCP_ACCESS_TOKEN
+export NEMLIG_PRODUCTION_TEST_PRODUCT_ID=PRODUCT_ID
+export NEMLIG_PRODUCTION_TEST_PRODUCT_NAME='EXACT PRODUCT NAME'
+export NEMLIG_PRODUCTION_TEST_UNIT_SIZE='EXACT PACKAGE OR SIZE'
+export NEMLIG_PRODUCTION_TEST_QUANTITY=QUANTITY
+export NEMLIG_PRODUCTION_TEST_UNIT_PRICE=UNIT_PRICE
+export NEMLIG_PRODUCTION_TEST_LINE_TOTAL=LINE_TOTAL
+export NEMLIG_PRODUCTION_TEST_APPROVAL='{"productId":PRODUCT_ID,"productName":"EXACT PRODUCT NAME","unitSize":"EXACT PACKAGE OR SIZE","quantity":QUANTITY,"unitPrice":UNIT_PRICE,"lineTotal":LINE_TOTAL}'
+pnpm --filter nemlig-assistant production:test:add
+unset NEMLIG_MCP_ACCESS_TOKEN NEMLIG_PRODUCTION_TEST_PRODUCT_ID \
+  NEMLIG_PRODUCTION_TEST_PRODUCT_NAME NEMLIG_PRODUCTION_TEST_UNIT_SIZE \
+  NEMLIG_PRODUCTION_TEST_QUANTITY NEMLIG_PRODUCTION_TEST_UNIT_PRICE \
+  NEMLIG_PRODUCTION_TEST_LINE_TOTAL NEMLIG_PRODUCTION_TEST_APPROVAL
+```
+
+The command refuses to apply if the prepared proposal differs from the approved
+values. It verifies the apply response against a fresh basket readback and never
+removes the test item. Removal requires its own exact proposal and approval.
+
 ## Inspect usage and reset the breaker
 
 Use a current owner access token without placing it in command history:

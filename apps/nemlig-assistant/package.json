@@ -37,6 +37,8 @@
     "lint": "eslint src scripts release tsdown.config.ts --max-warnings=0",
     "mcp": "pnpm build && node dist/mcp.js",
     "prepack": "pnpm build",
+    "production:probe": "tsx scripts/production-acceptance.ts --edge-only",
+    "production:test:add": "tsx scripts/production-acceptance.ts",
     "release:apply": "tsx release/agent.ts --apply",
     "release:plan": "tsx release/agent.ts",
     "release:retry:check": "tsx release/retry.ts",

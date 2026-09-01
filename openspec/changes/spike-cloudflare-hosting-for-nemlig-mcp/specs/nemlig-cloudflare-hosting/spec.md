@@ -234,3 +234,25 @@ provisioning, or Nemlig basket mutation.
 - **WHEN** all repository deliverables and local tests pass without a separate
   production instruction
 - **THEN** no production resource or DNS record is created or changed
+
+### Requirement: Production acceptance verifies an approved basket write
+
+The production deployment SHALL have a repeatable acceptance check that proves
+an authenticated owner can prepare one exact basket addition, apply only that
+unchanged proposal after explicit approval, and observe the resulting basket
+readback. The check SHALL NOT expose a generic mutation interface, persist an
+access token, or remove the test item without a separate exact approval.
+
+#### Scenario: Exact addition is approved
+
+- **WHEN** the owner has reviewed and explicitly approved the proposal's exact
+  product name and ID, package or size, quantity, price, and line total
+- **THEN** the acceptance check applies that proposal once and verifies both the
+  apply response and a fresh basket readback contain the approved quantity
+
+#### Scenario: Approval or proposal details do not match
+
+- **WHEN** the approval is absent or any product, quantity, name, or proposal
+  detail differs from the reviewed addition
+- **THEN** the acceptance check fails before `apply_cart_additions` and leaves
+  the basket unchanged

@@ -159,6 +159,13 @@ Cloudflare account and secret steps, emergency override, first production deploy
 and DNS. Production commands are returned for review but not executed without a
 new explicit instruction.
 
+After activation, use one narrow production acceptance path rather than a
+general mutation harness. Establish an authenticated MCP session, capture the
+current basket, prepare one exact addition, and compare the returned review with
+the owner's explicit approval before applying. Require the apply response and a
+fresh `view_cart` call to agree. Never auto-remove the added line: cleanup is a
+separate basket mutation and requires its own review and approval.
+
 ## Risks / Trade-offs
 
 - **Cloudflare Containers or fixed-instance behavior differs from this brief** →
