@@ -30,6 +30,94 @@ before further demo-dependent feature work.
 
 This item does not authorize any Nemlig basket mutation.
 
+## P1 — predictable automated production deployment
+
+**Status:** Not started.
+
+- Provide one repository-owned command or manually dispatched workflow that,
+  after explicit production approval, accepts an exact pushed `main` commit and
+  refuses a non-CI-green or mismatched revision.
+- Build once, deploy that exact artifact disabled, verify both routes fail
+  closed and the fixed Container is inactive, then enable or promote the same
+  artifact without rebuilding it.
+- Run revision, health, OAuth metadata, cheap rejection, and authenticated
+  read-only acceptance automatically with explicit deadlines.
+- Serialize deployments so two releases cannot overlap. On failure, leave the
+  service disabled or restore the recorded last-known-good version and report
+  the exact resulting state.
+- Publish a redacted deployment summary containing commit, version IDs,
+  timings, checks, and rollback state. Never treat green CI as deployment
+  authority or retry a Nemlig mutation.
+- Before implementation, document incremental CI minutes, probes, logs, and
+  provider calls; retain one `lite` Container and the existing cost ceilings.
+
+## P1 — prove the kill switch and cost-containment safety net
+
+**Status:** Not started.
+
+- Add an owner-authorized repeatable drill that disables production, proves
+  both routes reject before authentication, Durable Object dispatch, or
+  Container wake, restores the exact prior state, and verifies health.
+- Make interruption recoverable and report the last verified state instead of
+  guessing whether production is enabled.
+- Compare live configuration with the repository contract: one `lite`
+  Container, sleep policy, useful and expensive quotas, per-minute limits,
+  circuit-breaker threshold, CPU/subrequest limits, retry bounds, deadlines,
+  and bounded log sampling/retention.
+- Add regression tests that fail if authentication no longer precedes wake, the
+  kill switch permits backend dispatch, retries amplify, capacity increases,
+  quotas disappear, or terminal safety evidence is absent.
+- Produce a conservative daily and monthly cost envelope from configured
+  maximums and current provider pricing, clearly separating hard technical
+  ceilings from delayed alerts and recurring charges.
+- Add a low-traffic scheduled read-only drift audit and define which breaches
+  only alert, open the breaker, or require owner-approved kill-switch action.
+
+Done means a recorded drill proves disable, no wake, exact restoration, and
+post-restore health, and the owner accepts the documented worst credible cost.
+
+## P1 — make product wording reliably reach Danish catalogue search
+
+**Source:** [GitHub issue #7](https://github.com/mortenbroesby/everyday-assistants/issues/7)
+
+**Status:** Catalogue-first routing and loose Danish guidance are implemented;
+the reported Prince-cookie case remains unproven.
+
+- Reproduce the reported miss while confirming the Nemlig app can find the
+  product at the same time.
+- Cover English, mixed-language, misspelled, and over-specific requests with
+  prompt and contract tests, including the reported case.
+- Convert ordinary wording to a short Danish catalogue query, preserve
+  ambiguous candidates for user choice, and never fall back to favourites.
+- Distinguish unavailable discovery from a successful empty result and verify
+  the fix through the existing ChatGPT app without changing the basket.
+
+## P1 — verify delivered department browsing and close the loop
+
+**Source:** [GitHub issue #4](https://github.com/mortenbroesby/everyday-assistants/issues/4)
+
+**Status:** Implemented; production evidence and issue disposition remain.
+
+- Verify bounded top-level department listing and pagination through the
+  deployed MCP surface.
+- Confirm candidate fields and ranking match direct catalogue search and that
+  no favourite or basket mutation occurs.
+- Record implementation, test, deployment, and read-only acceptance evidence in
+  the repository backlog history.
+
+## P1 — decide and execute the public repository rename
+
+**Source:** [GitHub issue #5](https://github.com/mortenbroesby/everyday-assistants/issues/5)
+
+**Status:** Blocked on the owner's final choice between `personal-assistant` and
+`everyday-assistant`.
+
+- Inventory affected checkout, remote, documentation, badge, metadata,
+  deployment, and automation references before changing anything.
+- Perform one reversible rename and verify the local checkout, GitHub redirect,
+  `main`, references, and exact-head CI.
+- Do not rename or expose the private `personal-assistant-private` repository.
+
 ## Named and reusable shopping lists
 
 **Status:** Implemented for the private owner alpha.
