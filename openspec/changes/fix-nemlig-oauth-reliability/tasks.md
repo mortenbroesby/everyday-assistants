@@ -30,7 +30,7 @@
 
 ## 6. Perform separately authorized production acceptance
 
-- [ ] 6.1 With explicit production approval, deploy the exact verified version disabled, prove both public routes fail closed and the Container remains inactive, then enable that same version and rerun edge plus authenticated read-only acceptance without any mutation.
+- [x] 6.1 With explicit production approval, deploy the exact verified version disabled, prove both public routes fail closed and the Container remains inactive, then enable that same version and rerun edge plus authenticated read-only acceptance without any mutation.
 - [ ] 6.2 Inspect privacy-safe Worker and Auth0 boundary evidence during one bounded reconnect attempt, determine the last completed boundary, and document the incident root cause or external blocker in P0 #6.
 - [ ] 6.3 Refresh the one existing ChatGPT app, have the owner complete Auth0 login, and verify two fresh normal ChatGPT conversations each read shopping lists and at most one favorite without creating, editing, preparing, approving, applying, or submitting anything.
 - [ ] 6.4 Remove the inactive legacy Mac tunnel services only after cloud-only acceptance passes, verify the Worker and Auth0 path remains healthy, and record the recoverable cleanup outcome.

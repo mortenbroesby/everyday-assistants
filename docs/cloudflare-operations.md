@@ -1,10 +1,10 @@
 # Cloudflare operations for Nemlig MCP
 
-Status: production version `72941409-a809-40a9-adf2-d7e4b1aa9ddc` is enabled
+Status: production version `fc8cfb96-53c6-4d38-8ea1-cbca04727b25` is enabled
 for private family use. Health, OAuth metadata, anonymous rejection, Auth0
-sign-in, hosted-app action discovery, authenticated read and basket-add flows,
-and no unauthorized Container wake are verified. The deployed application
-revision is `9e321f2910c8e9bd357215c3efab9e46bb77741c`.
+authorization through the existing hosted app, authenticated shopping-list and
+favorite reads, and no unauthorized Container wake are verified. The deployed
+application revision is `366f1db37752502c67a109a731dd6840b464cdab`.
 
 Current production endpoints:
 
@@ -163,6 +163,22 @@ probe. Refreshing the app showed the canonical `Nemlig Assistant` name. A live
 ChatGPT basket read and one prepare-only low-value addition used concise
 shopping copy with no internal IDs, proposal metadata, expiry data, raw field
 names, or apply call; the basket remained unchanged.
+
+The 2026-09-04 P0 reliability rollout deployed exact revision
+`366f1db37752502c67a109a731dd6840b464cdab` as disabled version
+`04c3312d-c139-4d08-87aa-cc8ba8d33396`. Both production routes returned HTTP
+503 with correlation IDs and the fixed Container became inactive. Enabled
+version `fc8cfb96-53c6-4d38-8ea1-cbca04727b25` reused the same Container image
+and passed the custom-domain edge probe: health 194 ms, revision 47 ms, OAuth
+metadata 18 ms, anonymous rejection 47 ms, and foreign-origin rejection 12 ms.
+The existing authenticated hosted-app connection then returned the active
+shopping-list inventory in 4.6 seconds and one favorite in 5.2 seconds. These
+calls were read-only and made no basket or saved-list change. A diagnostic
+request also produced one privacy-safe `gateway_request_terminal` event with
+the expected revision, correlation ID, route class, status, outcome, and elapsed
+time only. The workers.dev alias remains a valid fallback route, but its OAuth
+metadata intentionally declares the canonical custom-domain resource URL, so
+the generic probe's exact-resource assertion applies only to the custom domain.
 
 ## Verify production features and approved reversible mutations
 
