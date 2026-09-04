@@ -2,12 +2,12 @@
 
 ### Requirement: Intent-directed product discovery
 
-The MCP server SHALL guide clients to use `plan_shopping_list` for ordinary requests to find or add products, SHALL make ordinary planning use current general-catalogue candidates, and SHALL reserve `list_favorites` for explicit favourite browsing or favourite-based selection. Discovery and planning SHALL remain separate from basket preparation and application.
+The MCP server SHALL guide clients to use `plan_shopping_list` for ordinary requests to find or add products, SHALL tell clients to use short loose Danish search phrases against current general-catalogue search, and SHALL reserve `list_favorites` for explicit favourite browsing or favourite-based selection. Discovery and planning SHALL remain separate from basket preparation and application.
 
 #### Scenario: Ordinary product request
 
 - **WHEN** the user ordinarily asks to find or add one or more products without requesting a specific search source
-- **THEN** the server guidance directs the client to catalogue-backed `plan_shopping_list`, which returns bounded current candidates without fetching or preferring favourites
+- **THEN** the server guidance directs the client to catalogue-backed `plan_shopping_list` with short loose Danish search wording, which returns bounded current candidates without fetching or preferring favourites
 
 #### Scenario: Explicit catalog request
 

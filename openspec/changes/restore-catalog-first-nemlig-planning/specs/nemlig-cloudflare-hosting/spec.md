@@ -2,11 +2,11 @@
 
 ### Requirement: Execution and retry work is bounded
 
-The Worker SHALL enforce one generous caller-visible total deadline for every hosted MCP request. Downstream work that cannot reliably inherit cancellation SHALL retain a timeout long enough for normal catalogue operations while remaining inside that outer ceiling. Every retry count SHALL remain finite, and mutation attempts SHALL NOT be retried automatically.
+The Worker SHALL enforce one generous caller-visible total deadline for every hosted MCP request. Each Nemlig API interaction SHALL be allowed to wait for its own response for up to roughly one minute rather than using an aggressive short deadline. Every retry count SHALL remain finite, and mutation attempts SHALL NOT be retried automatically.
 
 #### Scenario: Normal catalogue work is slow
 
-- **WHEN** a catalogue read is slower than the normal case but remains within the generous hosted deadline
+- **WHEN** a catalogue read is slower than the normal case but returns within its approximately one-minute API window
 - **THEN** the request is allowed to complete rather than being converted into a missing-product result by an aggressive nested deadline
 
 #### Scenario: Hosted request reaches the outer ceiling
@@ -16,7 +16,7 @@ The Worker SHALL enforce one generous caller-visible total deadline for every ho
 
 #### Scenario: Nemlig or backend call times out
 
-- **WHEN** downstream work remains stalled until its generous configured bound
+- **WHEN** one Nemlig API interaction remains stalled for approximately one minute
 - **THEN** the request fails with sanitized error information inside the hosted outer ceiling and is not retried indefinitely
 
 #### Scenario: Retriable downstream failure persists

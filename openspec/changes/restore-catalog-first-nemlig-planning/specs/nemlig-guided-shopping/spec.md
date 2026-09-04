@@ -8,11 +8,15 @@
 ## ADDED Requirements
 
 ### Requirement: Catalog-first candidate resolution
-The system SHALL search the current general catalogue for each ordinary grocery line, SHALL return bounded candidates without selecting a product automatically, and SHALL NOT fetch or prefer authenticated favourites unless the user explicitly requests a favourite operation.
+The system SHALL search the current general catalogue for each ordinary grocery line using concise, loose product wording, SHALL return bounded candidates without selecting a product automatically, and SHALL NOT fetch or prefer authenticated favourites unless the user explicitly requests a favourite operation.
 
 #### Scenario: Ordinary grocery line
 - **WHEN** a user plans a grocery line without requesting favourites
 - **THEN** the system searches current catalogue inventory, returns suitable catalogue candidates, and does not fetch favourites
+
+#### Scenario: Conversational wording contains extra detail
+- **WHEN** a grocery request contains a brand guess, household context, or a reconstructed product title that could overconstrain catalogue search
+- **THEN** the client uses a short loose Danish product phrase for discovery and keeps the original intent as selection context
 
 #### Scenario: Explicit favourite request
 - **WHEN** a user explicitly requests browsing or selecting from saved favourites

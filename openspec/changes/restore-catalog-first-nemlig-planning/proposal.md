@@ -8,12 +8,13 @@ The live `Family Food System` workflow reproduced a false `no_eligible_candidate
 - Reserve favourite browsing and favourite-based selection for explicit user requests such as “show my favourites” or “add this favourite.”
 - Reuse exact products already returned to the user and resolve an explicit selected product by ID without requiring the same text search to succeed again.
 - Distinguish unavailable or timed-out discovery from a genuine zero-result search instead of reporting both as `no_eligible_candidate`.
-- Remove aggressive nested Nemlig read deadlines and keep one generous end-to-end hosted ceiling whose sole purpose is preventing an indefinite or multi-minute hang.
+- Let each Nemlig API interaction run for up to roughly one minute, with one final generous end-to-end escape hatch whose sole purpose is preventing an indefinite or multi-minute hang.
+- Instruct the calling agent to send short, loose Danish product wording to the Nemlig catalogue search API instead of reconstructed exact titles.
 - Preserve authentication, mutation non-retry, basket review and approval, quotas, circuit breaker, dynamic kill switch, one-Container ceiling, and privacy-safe logging.
 
 Non-goals: automatically preferring favourites, silently selecting among multiple catalogue candidates, changing a basket, weakening owner authentication or approval, adding autoscaling, or introducing a paid service.
 
-Acceptance requires reproducing the observed favourite/planner mismatch before the change, proving ordinary planning searches the catalogue without fetching favourites, proving explicit favourite selection remains available, proving search failures remain distinguishable, and showing a stalled hosted call terminates at the single outer ceiling without retrying mutations.
+Acceptance requires reproducing the observed favourite/planner mismatch before the change, proving ordinary planning searches the catalogue with loose wording and without fetching favourites, proving explicit favourite selection remains available, proving search failures remain distinguishable, and showing a stalled hosted call terminates at the final outer ceiling without retrying mutations.
 
 ## Capabilities
 

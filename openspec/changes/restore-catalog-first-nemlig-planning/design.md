@@ -12,7 +12,7 @@ The service must remain bounded, but the user's requirement is only to prevent a
 - Preserve explicit favourite browsing and selection as a separate user-directed path.
 - Reuse exact products already discovered by the current process and honour explicit product IDs.
 - Keep failed discovery distinct from a genuine empty catalogue result.
-- Bound the complete hosted interaction generously without aggressive nested read failures.
+- Allow each Nemlig API interaction roughly one minute while retaining only a final caller-visible escape hatch.
 
 **Non-Goals:**
 
@@ -22,7 +22,7 @@ The service must remain bounded, but the user's requirement is only to prevent a
 
 ### 1. Ordinary planning is catalogue-first and favourites are explicit
 
-`plan_my_shopping` will call current catalogue search for every line and will not load the favourites pool. `show_my_favorites` remains the explicit favourites surface. If a user selects a favourite returned by that tool, its exact product ID is passed into planning or review like any other explicit candidate.
+`plan_my_shopping` will call current catalogue search for every line and will not load the favourites pool. Its description and server instructions will tell the calling agent to use short, loose Danish search terms such as `kakao crunchers`, `hokkaido`, or `friske lasagneplader`, keeping brand guesses and household context outside the search phrase. `show_my_favorites` remains the explicit favourites surface. If a user selects a favourite returned by that tool, its exact product ID is passed into planning or review like any other explicit candidate.
 
 This replaces automatic favourites fallback rather than merely changing ranking: avoiding the large authenticated favourites scan is both the requested behavior and the most direct latency reduction.
 
@@ -36,18 +36,18 @@ This avoids the observed failure where a valid returned favourite cannot later b
 
 Primary catalogue failures will not be swallowed into an empty response. The planner will catch per-line failures so other lines can still resolve, but it will label the affected line `discovery_unavailable`; only a successful empty result becomes `no_eligible_candidate`.
 
-### 4. Use a generous outer deadline and non-aggressive upstream bound
+### 4. Let the API answer within a one-minute interaction window
 
-Production will use a 90-second total request ceiling and an 85-second backend ceiling. Auth0 and short control-plane boundaries remain independently bounded because they are not implicated in product discovery and otherwise can consume the entire request before work begins. Nemlig reads return to a 30-second per-attempt ceiling with at most one retry; this bound exists because Container-side upstream fetches do not reliably inherit the Worker's cancellation after the caller-visible response ends.
+Production will use a 90-second total request ceiling and an 85-second backend ceiling. Auth0 and short control-plane boundaries remain independently bounded because they are not implicated in product discovery and otherwise can consume the entire request before work begins. Each Nemlig API interaction receives a 60-second window. A read retry is permitted only after an early transport failure; a live first response is never cut short to reserve retry time. This bound exists because Container-side upstream fetches do not reliably inherit the Worker's cancellation after the caller-visible response ends.
 
-The maximum caller-visible wait remains 90 seconds—well below several minutes—while a normal slow read has almost four times the current attempt budget. Mutation calls remain one attempt and retain uncertainty handling. The one-Container maximum, daily quotas, rate limits, breaker, sleep policy, and kill switch are unchanged, so the longer exceptional request window does not create parallel capacity or a material cost increase.
+The maximum caller-visible wait remains 90 seconds—well below several minutes—while each API call has seven and a half times the current attempt budget and normally returns on its own schedule. Mutation calls remain one attempt and retain uncertainty handling. The one-Container maximum, daily quotas, rate limits, breaker, sleep policy, and kill switch are unchanged, so the longer exceptional request window does not create parallel capacity or a material cost increase.
 
 ## Risks / Trade-offs
 
 - [A genuinely stalled call can now take up to 90 seconds] → Keep the privacy-safe terminal event and correlation ID so the boundary is visible, and retain immediate dynamic disable.
 - [Catalogue-first results may differ from saved household favourites] → Use favourites only when the user asks, and preserve explicit exact selection.
 - [A cached product may become stale during one Container lifetime] → Proposal application still revalidates basket state; a Container restart clears the cache, and discovery remains bounded.
-- [Two slow read attempts can consume most of the backend window] → Permit only one retry for reads and never retry mutations.
+- [A retry after a nearly complete one-minute attempt cannot fit safely] → Retry reads only after an early transport failure and never retry mutations.
 
 ## Migration Plan
 
