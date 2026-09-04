@@ -1,5 +1,35 @@
 # Nemlig Assistant backlog
 
+## P0 — restore reliable ChatGPT reconnect and add bounded observability
+
+**Status:** Active incident. Track and complete
+[GitHub issue #6](https://github.com/mortenbroesby/everyday-assistants/issues/6)
+before further demo-dependent feature work.
+
+- Reproduce and identify the exact failing boundary in the expired ChatGPT OAuth
+  reconnect flow. The Worker, Auth0 discovery, OAuth resource metadata, and
+  authenticated read-only tools are currently responsive, so the remaining
+  root cause must not be attributed to the backend without evidence.
+- Restore and prove a fresh connection through the one existing Nemlig Assistant
+  app, including two successful read-only ChatGPT acceptance runs.
+- Add redacted structured Worker logs with correlation IDs and clear boundary
+  outcomes for the kill switch, authorization, Durable Object dispatch, upstream
+  calls, circuit-breaker changes, and deployment identity.
+- Add explicit cancellation and bounded timeout budgets for every external
+  request, Durable Object/container boundary, and complete MCP request so the
+  client receives an actionable error instead of appearing to hang indefinitely.
+- Keep retries bounded and mutation-safe. Preserve the kill switch, circuit
+  breaker, quotas, approval envelopes, and fail-closed behavior.
+- Bound observability cost with sampling, short retention, field-size limits,
+  and no payload duplication. Review the cost model and sensitive-field
+  redaction before production enablement.
+- Deploy disabled first, verify fail-closed behavior, enable the same version,
+  and rerun anonymous-edge plus authenticated read-only production acceptance.
+- Remove the inactive legacy Mac tunnel services only after the cloud-only path
+  is verified.
+
+This item does not authorize any Nemlig basket mutation.
+
 ## Named and reusable shopping lists
 
 **Status:** Implemented for the private owner alpha.
