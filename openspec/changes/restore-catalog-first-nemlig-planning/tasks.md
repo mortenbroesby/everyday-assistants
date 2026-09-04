@@ -13,4 +13,4 @@
 
 - [x] 3.1 Run focused planner, client, MCP, Cloudflare configuration, gateway, privacy, and acceptance tests, then run `pnpm verify`, privacy checking, and the production-readiness gate without any live basket mutation.
 - [x] 3.2 Review the diff for accidental favourites fallback, false missing-product classification, unbounded work, retry amplification, weakened approval or owner controls, extra capacity, secret exposure, and material cost increase; commit and push the scoped change and verify exact-head CI.
-- [ ] 3.3 With explicit production approval, deploy the exact verified revision disabled first, prove both routes fail closed and the Container is inactive, enable the same revision, and verify edge plus read-only catalogue planning and exact selected-product reuse through the existing ChatGPT app.
+- [x] 3.3 With explicit production approval, deploy the exact verified revision disabled first, prove both routes fail closed and the Container is inactive, enable the same revision, and verify edge plus read-only catalogue planning and exact selected-product reuse through the existing ChatGPT app.
