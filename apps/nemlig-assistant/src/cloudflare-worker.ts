@@ -5,7 +5,8 @@ import { DurableObject } from "cloudflare:workers";
 import type { OAuthTokenVerifier } from "@modelcontextprotocol/sdk/server/auth/provider.js";
 import { createAuth0Verifier, fetchAuth0Metadata, type Auth0Config } from "./auth0.js";
 import { FIXED_CONTAINER_NAME, type CloudflareEnv, type GatewayConfig } from "./cloudflare-config.js";
-import { handleGatewayRequest, type GatewayDependencies } from "./cloudflare-gateway.js";
+import { handleGatewayRequest, type GatewayDeadline } from "./cloudflare-gateway.js";
+import { parseGatewayRequestEvent, type GatewayRequestEvent } from "./cloudflare-observability.js";
 import { admitUsage, resetUsage, type AdmissionLimits, type AdmissionResult, type UsageState } from "./cloudflare-usage.js";
 import { handleShoppingListStorageRequest } from "./shopping-list-worker-storage.js";
 
@@ -28,19 +29,30 @@ const auth0Config = (config: GatewayConfig): Auth0Config => ({
   port: 8080,
 });
 
-const authenticate = async (token: string, config: GatewayConfig): Promise<void> => {
+const authenticate = async (token: string, config: GatewayConfig, deadline: GatewayDeadline): Promise<void> => {
   const key = `${config.issuer.href}\0${config.audience}\0${config.ownerSubject}\0${config.requiredScope}`;
   if (cachedVerifier?.key !== key) {
     const auth = auth0Config(config);
-    const { jwksUrl } = await fetchAuth0Metadata(auth, fetch, config.authTimeoutMs);
+    const boundedFetch: typeof fetch = (input, init) => fetch(input, {
+      ...init,
+      signal: init?.signal ? AbortSignal.any([deadline.signal, init.signal]) : deadline.signal,
+    });
+    const { jwksUrl } = await fetchAuth0Metadata(auth, boundedFetch, config.authTimeoutMs);
     cachedVerifier = { key, verifier: createAuth0Verifier(auth, jwksUrl, undefined, config.authTimeoutMs) };
   }
   const verified = await cachedVerifier.verifier.verifyAccessToken(token);
   if (!verified.scopes.includes(config.requiredScope)) throw new Error("required scope missing");
 };
 
-const structuredEvent: NonNullable<GatewayDependencies["event"]> = (name, fields = {}) => {
-  console.log(JSON.stringify({ event: name, ...fields }));
+const requestEvent = (event: GatewayRequestEvent): void => {
+  console.log(JSON.stringify(parseGatewayRequestEvent(event)));
+};
+
+const lifecycleEvent = (
+  event: "container_started" | "container_stopped" | "container_error" | "breaker_tripped" | "breaker_reset",
+  reason?: "daily_limit" | "expensive_daily_limit",
+): void => {
+  console.log(JSON.stringify({ schema_version: 1, event, ...(reason ? { reason } : {}) }));
 };
 
 export class NemligMcpContainer extends Container<Env> {
@@ -63,15 +75,15 @@ export class NemligMcpContainer extends Container<Env> {
   };
 
   override onStart(): void {
-    structuredEvent("container_started");
+    lifecycleEvent("container_started");
   }
 
   override onStop(): void {
-    structuredEvent("container_stopped");
+    lifecycleEvent("container_stopped");
   }
 
   override onError(): void {
-    structuredEvent("container_error");
+    lifecycleEvent("container_error");
   }
 
   async admit(operation: "protocol" | "normal" | "expensive", limits: AdmissionLimits): Promise<AdmissionResult> {
@@ -79,15 +91,8 @@ export class NemligMcpContainer extends Container<Env> {
       const stored = await this.ctx.storage.get<UsageState>("usage");
       const result = admitUsage(stored, operation, limits);
       await this.ctx.storage.put("usage", result.state);
-      if (result.admitted && operation !== "protocol") {
-        structuredEvent("usage_admitted", {
-          operation,
-          normal: result.state.normalCount,
-          expensive: result.state.expensiveCount,
-        });
-      }
       if (!result.admitted && (result.reason === "daily_limit" || result.reason === "expensive_daily_limit")) {
-        structuredEvent("breaker_tripped", { reason: result.reason });
+        lifecycleEvent("breaker_tripped", result.reason);
       }
       return result;
     });
@@ -100,7 +105,7 @@ export class NemligMcpContainer extends Container<Env> {
   async resetUsage(): Promise<UsageState> {
     const state = resetUsage();
     await this.ctx.storage.put("usage", state);
-    structuredEvent("breaker_reset");
+    lifecycleEvent("breaker_reset");
     return state;
   }
 }
@@ -112,7 +117,6 @@ NemligMcpContainer.outboundByHost = {
       ? "nemlig-lists-v2"
       : "nemlig-plans";
     const response = await env.NEMLIG_PLAN_STORAGE.jurisdiction("eu").getByName(objectName).fetch(request);
-    structuredEvent("plan_storage_response", { method: request.method, status: response.status });
     return response;
   }) satisfies OutboundHandler<Env>,
 };
@@ -155,7 +159,7 @@ export default {
   fetch(request: Request, env: Env): Promise<Response> {
     return handleGatewayRequest(request, env, {
       authenticate,
-      event: structuredEvent,
+      event: requestEvent,
       async admit(operation, config) {
         const container = getContainer(env.NEMLIG_MCP_CONTAINER.jurisdiction("eu"), FIXED_CONTAINER_NAME);
         return container.admit(operation, {
@@ -171,11 +175,10 @@ export default {
       async resetUsage() {
         return getContainer(env.NEMLIG_MCP_CONTAINER.jurisdiction("eu"), FIXED_CONTAINER_NAME).resetUsage();
       },
-      async forward(original, operation, config) {
-        structuredEvent("container_invoked", { operation });
+      async forward(original, _operation, _config, deadline) {
         const namespace = env.NEMLIG_MCP_CONTAINER.jurisdiction("eu");
         const container = getContainer(namespace, FIXED_CONTAINER_NAME);
-        const request = new Request(original, { signal: AbortSignal.timeout(config.backendTimeoutMs) });
+        const request = new Request(original, { signal: deadline.signal });
         return container.fetch(request);
       },
     });

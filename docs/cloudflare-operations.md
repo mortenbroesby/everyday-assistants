@@ -31,9 +31,11 @@ messages other than `tools/call` are protocol traffic and do not consume
 useful-operation quota, but an open breaker
 still prevents it from waking the Container.
 
-The Worker CPU and subrequest limits are 100 ms and 8. The Auth0 and backend
-deadlines are 5 and 35 seconds. Nemlig reads make at most four bounded attempts;
-basket mutations make one attempt and retain the existing no-retry-on-uncertainty
+The Worker CPU and subrequest limits are 100 ms and 8. Every request has a
+30-second total deadline. Auth0 is capped at 5 seconds, Durable Object control
+calls at 3 seconds, and Container work at 25 seconds or the remaining total
+budget, whichever is smaller. Nemlig reads make at most two 8-second attempts;
+mutations make one attempt and retain the existing no-retry-on-uncertainty
 contract.
 
 ## First deployment and current setup
@@ -113,9 +115,10 @@ Verify disablement before doing anything else:
 curl -i https://YOUR_MCP_HOST/mcp
 ```
 
-The response must be HTTP 503 with `MCP temporarily disabled`. Cloudflare logs
-should show `disabled` and no later `container_invoked` or `container_started`
-event for that request.
+The response must be HTTP 503 with `MCP temporarily disabled`. Its
+`x-nemlig-request-id` identifies the single `gateway_request_terminal` event,
+whose outcome is `disabled`; there must be no later `container_started` event
+for that request window.
 
 The live 2026-09-01 exercise deployed disabled version
 `fd5696b7-d2ea-4f3c-9a1a-88cf22d29caa`, observed HTTP 503 on the custom domain
@@ -169,14 +172,13 @@ Run the credential-free edge probes at any time:
 pnpm --filter nemlig-assistant production:probe
 ```
 
-They verify enabled health, OAuth resource metadata, anonymous rejection, and
-foreign-origin rejection. With a current owner access token, the default full
-acceptance command verifies the closed tool/resource inventory, discovery,
-favorites, guided planning, departments, basket view, picker metadata, one
-reserved named-list lifecycle with current resolution, missing plan handling,
-and all four proposal preparation paths. It restores an existing reserved list
-to its prior state; if none existed, it leaves at most one archived acceptance
-list. It does not create a GitHub issue or call any basket apply tool:
+They verify enabled health, deployment revision, OAuth resource metadata,
+anonymous rejection, and foreign-origin rejection with per-step deadlines,
+latencies, and last-completed-boundary output. With a current owner access
+token, the default full acceptance command verifies the closed tool/resource
+inventory and read-only discovery, including shopping-list retrieval and at
+most one favorite result, under one 30-second deadline. It does not write a
+list, prepare or apply a proposal, create a GitHub issue, or mutate the basket:
 
 ```sh
 read -rs NEMLIG_MCP_ACCESS_TOKEN
@@ -250,13 +252,48 @@ owner, subject, audience, and scope checks as MCP use. The next UTC day also
 resets lazily. If state cannot be inspected, leave the MCP disabled rather than
 bypassing admission.
 
-Cloudflare structured logs use only these bounded event classes: `disabled`,
-`configuration_rejected`, `authentication_rejected`, `usage_admitted`,
-`rate_limited`, `breaker_tripped`, `breaker_rejected`, `breaker_reset`,
-`container_invoked`, `container_started`, `container_stopped`,
-`container_error`, `backend_timeout`, and `backend_failed`. They contain no
-tokens, credentials, prompts, plan contents, basket contents, or Nemlig product
-data.
+Each request can emit at most one allowlisted `gateway_request_terminal` event.
+It contains only schema version, server-generated request ID, revision, route,
+method, coarse operation class, terminal outcome, HTTP status, and elapsed
+milliseconds. Authenticated useful operations, timeouts, failures, breaker
+rejections, and disabled/configuration outcomes are always retained. Ordinary
+public protocol successes and authentication rejections are deterministically
+sampled at one percent. Sparse lifecycle events are limited to Container
+start/stop/error and breaker trip/reset. Logs contain no raw errors, headers,
+bodies, query strings, tokens, credentials, cookies, OAuth artifacts, prompts,
+tool arguments, shopping data, provider responses, or stacks.
+
+This adds no log drain or paid service. Mandatory request events are bounded by
+one per admitted useful operation under the existing 5,000-per-day breaker;
+public discovery and invalid-auth noise is sampled. The one `lite` Container,
+one-instance ceiling, quotas, rate limits, ten-minute sleep, and dynamic
+`MCP_ENABLED` kill switch remain unchanged.
+
+## Diagnose a ChatGPT reconnect without collecting secrets
+
+Use the three evidence planes separately; the Worker cannot observe ChatGPT's
+authorization UI or Auth0's browser redirect before a request reaches it.
+
+1. Record the UTC start time, the existing ChatGPT app identity (exactly
+   `Nemlig Assistant`), and its configured production `/mcp` URL. Do not create
+   a duplicate app.
+2. Refresh the existing app's metadata in place. Record only completion time and
+   whether `/healthz`, `/revision`, and OAuth protected-resource metadata passed,
+   including revision and per-step latency from `production:probe`.
+3. Start one bounded OAuth reconnect. In Auth0, record only timestamp and a
+   non-secret event category such as login success, consent failure, token
+   exchange failure, or no event observed. Never copy credentials, access or
+   refresh tokens, authorization codes, OAuth state, callback URLs with query
+   values, or raw event payloads.
+4. Search Worker logs in that same time window. Record only terminal outcome,
+   correlation ID, revision, route, status, and elapsed time. If there is no
+   Worker event, the last completed boundary is before the Worker—ChatGPT app
+   state, browser authorization, or Auth0—not the Container or Nemlig.
+5. After reconnect succeeds, open two fresh normal ChatGPT conversations. In
+   each, read shopping lists and request at most one favorite. Record only pass
+   or fail, timestamps, and Worker correlation IDs; do not record returned
+   private data. Do not create/edit lists, prepare/apply proposals, submit a
+   feature request, or mutate the basket.
 
 ## Rotate secrets
 
@@ -307,8 +344,8 @@ owner action.
 
 ## Residual cost signals
 
-Investigate unexpected `container_started` events, sustained `usage_admitted`
-counts, repeated rate limits, a breaker trip, large Worker log volume, or a
+Investigate unexpected `container_started` events, sustained admitted useful
+request counts, repeated rate limits, a breaker trip, large Worker log volume, or a
 Container that does not sleep after 10 minutes. The architectural ceiling is one
 `lite` Container; authenticated activity, Worker requests, logs, egress, other
 Cloudflare account workloads, Auth0, GitHub, domain, and Nemlig costs can still

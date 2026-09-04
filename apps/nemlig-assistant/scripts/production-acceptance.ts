@@ -22,10 +22,26 @@ const approvedMutation = (name: string): ApprovedProductionMutation => {
   return value;
 };
 
+const withinDeadline = async <T>(label: string, work: Promise<T>, timeoutMs = 30_000): Promise<T> => {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      work,
+      new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(() => reject(new Error(`${label} timed out after ${timeoutMs} ms`)), timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+};
+
 const origin = new URL(process.env.NEMLIG_PRODUCTION_MCP_URL ?? "https://nemlig-mcp.broesby.dk/mcp");
-await verifyProductionEdge(origin);
+const edge = await verifyProductionEdge(origin, fetch, {
+  expectedRevision: process.env.NEMLIG_EXPECTED_REVISION?.trim() || undefined,
+});
 if (process.argv.includes("--edge-only")) {
-  console.log(`Verified production edge: ${origin.origin}.`);
+  console.log(`Verified production edge ${origin.origin} at revision ${edge.revision}; last boundary ${edge.lastCompletedBoundary}; ${edge.steps.map(({ boundary, latencyMs }) => `${boundary}=${latencyMs}ms`).join(", ")}.`);
   process.exit(0);
 }
 
@@ -34,7 +50,7 @@ const transport = new StreamableHTTPClientTransport(origin, {
   requestInit: { headers: { authorization: `Bearer ${required("NEMLIG_MCP_ACCESS_TOKEN")}` } },
 });
 try {
-  await client.connect(transport);
+  await withinDeadline("Authenticated MCP connect", client.connect(transport));
   const acceptanceClient: AcceptanceClient = {
     listTools: () => client.listTools(),
     listResources: () => client.listResources(),

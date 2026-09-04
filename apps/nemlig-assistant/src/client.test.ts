@@ -109,7 +109,7 @@ test("network reads retry, while basket mutations do not", async () => {
     }) as typeof fetch,
   );
   assert.deepEqual(await readClient.searchProducts("mælk"), []);
-  assert.equal(reads, 16); // four session reads, each with one initial attempt plus three retries
+  assert.equal(reads, 8); // four session reads, each with one initial attempt plus one retry
 
   const requests: ExpectedRequest[] = [
     { match: "/login$", response: json({ RedirectUrl: "/" }) },
@@ -120,6 +120,34 @@ test("network reads retry, while basket mutations do not", async () => {
   await writeClient.login("person@example.test", "secret");
   await assert.rejects(writeClient.addToCart(123, 1), /HTTP 503/);
   assert.equal(requests.length, 0);
+});
+
+test("caller cancellation stops read retries and network mutation failures remain single-attempt", async () => {
+  const controller = new AbortController();
+  controller.abort();
+  let cancelledReads = 0;
+  const cancelledClient = new NemligClient((async (_url, init) => {
+    cancelledReads += 1;
+    assert.equal(init?.signal?.aborted, true);
+    throw new DOMException("cancelled", "AbortError");
+  }) as typeof fetch);
+  await assert.rejects(
+    // Exercise the private transport contract without exposing upstream details in its public error.
+    Reflect.get(cancelledClient, "json").call(cancelledClient, "https://example.test/read", { signal: controller.signal }, "Read"),
+    /^NemligError: Read failed: network unavailable\.$/u,
+  );
+  assert.equal(cancelledReads, 1);
+
+  let mutationAttempts = 0;
+  const mutationClient = new NemligClient((async () => {
+    mutationAttempts += 1;
+    throw new TypeError("offline-private-detail");
+  }) as typeof fetch);
+  await assert.rejects(
+    Reflect.get(mutationClient, "json").call(mutationClient, "https://example.test/write", { method: "POST" }, "Write", false),
+    /^NemligError: Write failed: network unavailable\.$/u,
+  );
+  assert.equal(mutationAttempts, 1);
 });
 
 test("product normalization covers upstream fields and classifications", () => {

@@ -23,12 +23,14 @@ basket. CI runs this same command with read-only repository permissions.
 
 Live checks remain separate from the automatic gate:
 
-- `pnpm --filter nemlig-assistant production:probe` checks the deployed edge,
-  OAuth metadata, and cheap rejection paths without a token.
+- `pnpm --filter nemlig-assistant production:probe` checks health, revision,
+  OAuth metadata, and cheap rejection paths with per-step deadlines and latency
+  plus last-completed-boundary output, without a token.
 - `pnpm --filter nemlig-assistant production:test:features` requires a current
-  owner token and exercises authenticated reads, the reserved named-list
-  lifecycle, current list resolution, picker metadata, and proposal preparation
-  without applying a basket change.
+  owner token and a 30-second total budget. It exercises read-only paths,
+  including shopping-list retrieval and at most one favorite result, without
+  list writes, proposal preparation/application, feature requests, or basket
+  mutation.
 - After deployment, refresh the one existing app named exactly `Nemlig Assistant`
   in place. Do not create a suffixed, bracketed, numbered, or parallel app.
 - `pnpm --filter nemlig-assistant production:test:mutation` requires separate

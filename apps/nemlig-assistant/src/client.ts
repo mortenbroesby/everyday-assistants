@@ -3,6 +3,8 @@ import { z } from "zod";
 
 export const API_BASE_URL = "https://www.nemlig.com/webapi";
 export const SEARCH_GATEWAY_URL = "https://webapi.prod.knl.nemlig.it/searchgateway/api";
+export const NEMLIG_READ_ATTEMPT_TIMEOUT_MS = 8_000;
+export const NEMLIG_READ_MAX_RETRIES = 1;
 
 const recordSchema = z.record(z.string(), z.unknown());
 const recordsSchema = z.array(recordSchema);
@@ -481,7 +483,7 @@ export class NemligClient {
     gateway = false,
   ): Promise<unknown> {
     let lastFailure: unknown;
-    for (let attempt = 0; attempt <= (retry ? 3 : 0); attempt += 1) {
+    for (let attempt = 0; attempt <= (retry ? NEMLIG_READ_MAX_RETRIES : 0); attempt += 1) {
       try {
         const headers = new Headers(init.headers);
         headers.set("Accept", "application/json, text/plain, */*");
@@ -507,10 +509,12 @@ export class NemligClient {
           headers.set("Cookie", [...cookies].map(([name, value]) => `${name}=${value}`).join("; "));
         }
 
+        const attemptSignal = AbortSignal.timeout(NEMLIG_READ_ATTEMPT_TIMEOUT_MS);
+        const signal = init.signal ? AbortSignal.any([init.signal, attemptSignal]) : attemptSignal;
         const response = await this.fetcher(url, {
           ...init,
           headers,
-          signal: init.signal ?? AbortSignal.timeout(30_000),
+          signal,
         });
         this.captureCookies(host, response.headers);
         if (!response.ok) throw new NemligError(`${operation} failed (HTTP ${response.status}).`);
@@ -522,6 +526,7 @@ export class NemligClient {
       } catch (error) {
         if (error instanceof NemligError) throw error;
         lastFailure = error;
+        if (init.signal?.aborted) break;
       }
     }
     void lastFailure;

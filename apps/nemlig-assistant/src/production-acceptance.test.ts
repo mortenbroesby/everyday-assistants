@@ -30,7 +30,6 @@ test("production inventory fails closed for missing and unknown entries", () => 
 
 test("default production feature acceptance covers safe paths and never calls external-state tools", async () => {
   const calls: string[] = [];
-  let acceptanceList: { name: string; type: "occasion"; status: "active" | "archived"; revision: number; lines: unknown[] } | undefined;
   const client: AcceptanceClient = {
     listTools: async () => ({ tools: allTools }),
     listResources: async () => ({ resources: productionResourceInventory.map((uri) => ({ uri })) }),
@@ -40,21 +39,16 @@ test("default production feature acceptance covers safe paths and never calls ex
       if (name === "find_groceries" || name === "choose_products_visually") {
         return { structuredContent: { result: [{ id: 7 }, { id: 8 }] } };
       }
-      if (name === "show_my_favorites" || name === "browse_grocery_section") return { structuredContent: { result: [] } };
+      if (name === "show_my_favorites") {
+        assert.equal(args.result_count, 1);
+        return { structuredContent: { result: [] } };
+      }
+      if (name === "browse_grocery_section") return { structuredContent: { result: [] } };
       if (name === "plan_my_shopping") return { structuredContent: { lines: [], selected_estimated_total: 0 } };
       if (name === "show_grocery_sections") return { structuredContent: { departments: [{ id: "fruit" }] } };
       if (name === "show_my_basket") return { structuredContent: { items: [] } };
       if (name === "continue_my_shopping_plan") return { isError: true };
-      if (name === "show_my_shopping_lists") return { structuredContent: { lists: acceptanceList ? [acceptanceList] : [] } };
-      if (name === "save_my_shopping_list") {
-        acceptanceList = { name: String(args.name), type: "occasion", status: "active", revision: (acceptanceList?.revision ?? 0) + 1, lines: args.lines as unknown[] };
-        return { structuredContent: { list: acceptanceList } };
-      }
-      if (name === "shop_from_my_list") return { structuredContent: { lines: [], selected_estimated_total: 0 } };
-      if (name === "set_my_shopping_list_status") {
-        acceptanceList = { ...acceptanceList!, status: args.status as "active" | "archived", revision: acceptanceList!.revision + 1 };
-        return { structuredContent: { list: acceptanceList } };
-      }
+      if (name === "show_my_shopping_lists") return { structuredContent: { lists: [] } };
       return { structuredContent: { applicable: false } };
     },
   };
@@ -63,11 +57,24 @@ test("default production feature acceptance covers safe paths and never calls ex
   assert.deepEqual(calls, [
     "find_groceries", "show_my_favorites", "plan_my_shopping", "show_grocery_sections",
     "browse_grocery_section", "show_my_basket", "choose_products_visually", "continue_my_shopping_plan",
-    "show_my_shopping_lists", "save_my_shopping_list", "shop_from_my_list", "set_my_shopping_list_status",
-    "review_items_to_add", "review_item_to_remove", "review_item_swap", "review_emptying_basket",
+    "show_my_shopping_lists",
   ]);
-  assert.equal(calls.some((name) => (productionToolInventory.externalState as readonly string[]).includes(name)), false);
-  assert.deepEqual(report.unavailable, ["continue_my_shopping_plan:no_safe_fixture", "copy_my_shopping_list:no_extra_acceptance_record", "migrate_my_saved_plan:no_safe_fixture"]);
+  for (const forbidden of [
+    ...productionToolInventory.prepareOnly,
+    ...productionToolInventory.privateState,
+    ...productionToolInventory.externalState,
+  ]) assert.equal(calls.includes(forbidden), false, `Read-only acceptance called ${forbidden}`);
+  assert.deepEqual(report.unavailable, ["continue_my_shopping_plan:no_safe_fixture", "shop_from_my_list:no_safe_fixture"]);
+});
+
+test("read-only acceptance has one total deadline", async () => {
+  const client: AcceptanceClient = {
+    listTools: async () => new Promise(() => {}),
+    listResources: async () => ({ resources: [] }),
+    readResource: async () => ({ contents: [] }),
+    callTool: async () => ({ structuredContent: {} }),
+  };
+  await assert.rejects(verifyReadOnlyProductionFeatures(client, { totalTimeoutMs: 5 }), /timed out during tool inventory/u);
 });
 
 const approved: ApprovedProductionMutation = {
@@ -186,6 +193,7 @@ test("production edge probe verifies enablement, OAuth metadata, and cheap rejec
     const request = new Request(input, init);
     requests.push(request);
     if (request.url.endsWith("/healthz")) return Response.json({ status: "ok", enabled: true });
+    if (request.url.endsWith("/revision")) return Response.json({ revision: "expected-revision" });
     if (request.url.includes("oauth-protected-resource")) return Response.json({
       resource: "https://nemlig-mcp.broesby.dk/mcp",
       scopes_supported: ["use:nemlig-assistant"],
@@ -194,11 +202,38 @@ test("production edge probe verifies enablement, OAuth metadata, and cheap rejec
     return new Response(null, { status: request.headers.has("origin") ? 403 : 401 });
   };
 
-  await verifyProductionEdge(new URL("https://nemlig-mcp.broesby.dk"), fetcher);
+  const report = await verifyProductionEdge(new URL("https://nemlig-mcp.broesby.dk"), fetcher, { expectedRevision: "expected-revision" });
+  assert.equal(report.revision, "expected-revision");
+  assert.equal(report.lastCompletedBoundary, "foreign_origin_rejection");
   assert.deepEqual(requests.map((request) => [new URL(request.url).pathname, request.method]), [
     ["/healthz", "GET"],
+    ["/revision", "GET"],
     ["/.well-known/oauth-protected-resource/mcp", "GET"],
     ["/mcp", "POST"],
     ["/mcp", "POST"],
   ]);
+});
+
+test("production edge probe reports wrong revision and the last completed boundary", async () => {
+  const fetcher: typeof fetch = async (input) => {
+    const path = new URL(input instanceof Request ? input.url : input).pathname;
+    if (path === "/healthz") return Response.json({ status: "ok", enabled: true });
+    return Response.json({ revision: "wrong" });
+  };
+  await assert.rejects(
+    verifyProductionEdge(new URL("https://nemlig-mcp.broesby.dk"), fetcher, { expectedRevision: "expected" }),
+    /does not match/u,
+  );
+});
+
+test("production edge probe times out a stalled step with boundary evidence", async () => {
+  const fetcher: typeof fetch = async (input, init) => {
+    const path = new URL(input instanceof Request ? input.url : input).pathname;
+    if (path === "/healthz") return Response.json({ status: "ok", enabled: true });
+    return new Promise((_resolve, reject) => init?.signal?.addEventListener("abort", () => reject(init.signal?.reason), { once: true }));
+  };
+  await assert.rejects(
+    verifyProductionEdge(new URL("https://nemlig-mcp.broesby.dk"), fetcher, { stepTimeoutMs: 5 }),
+    /stopped after health; revision failed or timed out/u,
+  );
 });

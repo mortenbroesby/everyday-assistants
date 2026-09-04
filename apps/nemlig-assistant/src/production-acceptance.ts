@@ -83,13 +83,41 @@ export interface ProductionFeatureReport {
   unavailable: string[];
 }
 
-export async function verifyReadOnlyProductionFeatures(client: AcceptanceClient): Promise<ProductionFeatureReport> {
+export interface AcceptanceDeadlineOptions {
+  totalTimeoutMs?: number;
+}
+
+export async function verifyReadOnlyProductionFeatures(
+  client: AcceptanceClient,
+  options: AcceptanceDeadlineOptions = {},
+): Promise<ProductionFeatureReport> {
+  const totalTimeoutMs = options.totalTimeoutMs ?? 30_000;
+  const deadline = Date.now() + totalTimeoutMs;
+  const bounded = async <T>(label: string, work: () => Promise<T>): Promise<T> => {
+    const remaining = deadline - Date.now();
+    assert.ok(remaining > 0, `Production read-only acceptance timed out before ${label}`);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      return await Promise.race([
+        work(),
+        new Promise<never>((_resolve, reject) => {
+          timer = setTimeout(() => reject(new Error(`Production read-only acceptance timed out during ${label}`)), remaining);
+        }),
+      ]);
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+  };
   assert.ok(client.listResources && client.readResource, "Production resource client is required");
-  assertProductionInventory((await client.listTools()).tools, (await client.listResources()).resources);
+  assertProductionInventory(
+    (await bounded("tool inventory", () => client.listTools())).tools,
+    (await bounded("resource inventory", () => client.listResources!())).resources,
+  );
   const exercised: string[] = [];
   const unavailable: string[] = [];
   const call = async <T>(name: ToolName, args: Record<string, unknown> = {}): Promise<T> => {
-    const result = await client.callTool({ name, arguments: args });
+    assert.ok((productionToolInventory.readOnly as readonly string[]).includes(name), `Read-only acceptance prohibited ${name}`);
+    const result = await bounded(name, () => client.callTool({ name, arguments: args }));
     exercised.push(name);
     return content<T>(result, name);
   };
@@ -97,7 +125,8 @@ export async function verifyReadOnlyProductionFeatures(client: AcceptanceClient)
   const searched = await call<{ result?: Array<{ id?: number }> }>("find_groceries", { search_term: "banan", result_count: 3 });
   const productIds = (searched.result ?? []).flatMap(({ id }) => typeof id === "number" && Number.isInteger(id) && id > 0 ? [id] : []);
   assert.ok(productIds.length, "Production product search returned no usable product");
-  await call("show_my_favorites", { search_term: "banan", result_count: 3, page: 1 });
+  const favorites = await call<{ result?: unknown[] }>("show_my_favorites", { search_term: "banan", result_count: 1, page: 1 });
+  assert.ok(Array.isArray(favorites.result) && favorites.result.length <= 1, "Favorites acceptance exceeded one result");
   await call("plan_my_shopping", { lines: [{ id: "acceptance-banan", name: "banan", quantity: 1, constraints: {}, preferences: [] }] });
 
   const departments = await call<{ departments?: Array<{ id?: string }> }>("show_grocery_sections");
@@ -108,56 +137,21 @@ export async function verifyReadOnlyProductionFeatures(client: AcceptanceClient)
   const current = await call<Basket>("show_my_basket");
   assert.ok(Array.isArray(current.items), "show_my_basket returned no basket items");
   await call("choose_products_visually", { search_term: "banan", result_count: 3 });
-  const resource = await client.readResource({ uri: productionResourceInventory[0] });
+  const resource = await bounded("picker resource", () => client.readResource!({ uri: productionResourceInventory[0] }));
   assert.ok(resource.contents.length, "Production picker resource is empty");
   exercised.push(productionResourceInventory[0]);
 
-  const missingPlan = await client.callTool({
+  const missingPlan = await bounded("continue_my_shopping_plan", () => client.callTool({
     name: "continue_my_shopping_plan",
     arguments: { saved_plan: "00000000-0000-4000-8000-000000000000" },
-  });
+  }));
   assert.equal(missingPlan.isError, true, "Missing production plan unexpectedly loaded");
   exercised.push("continue_my_shopping_plan");
   unavailable.push("continue_my_shopping_plan:no_safe_fixture");
 
-  const acceptanceName = "Nemlig Assistant acceptance";
-  type AcceptanceList = { name: string; type: "reusable" | "occasion"; status: "active" | "archived"; revision: number; lines: unknown[] };
-  const stored = await call<{ lists: AcceptanceList[] }>("show_my_shopping_lists", { include_archived: true });
-  const original = stored.lists.find(({ name }) => name === acceptanceName);
-  let listCurrent = original;
-  if (!listCurrent) {
-    listCurrent = (await call<{ list: AcceptanceList }>("save_my_shopping_list", {
-      name: acceptanceName, type: "occasion", lines: [{ id: "acceptance-banan", name: "banan", quantity: 1 }],
-    })).list;
-  } else {
-    if (listCurrent.status === "archived") listCurrent = (await call<{ list: AcceptanceList }>("set_my_shopping_list_status", { list: acceptanceName, status: "active", expected_revision: listCurrent.revision })).list;
-    listCurrent = (await call<{ list: AcceptanceList }>("save_my_shopping_list", {
-      list: acceptanceName, expected_revision: listCurrent.revision, name: acceptanceName, type: "occasion",
-      lines: [{ id: "acceptance-banan", name: "banan", quantity: 1 }],
-    })).list;
-  }
-  assert.ok(listCurrent, "Production acceptance list was not created");
-  await call("shop_from_my_list", { list: acceptanceName, line_ids: ["acceptance-banan"] });
-  if (original) {
-    listCurrent = (await call<{ list: AcceptanceList }>("save_my_shopping_list", {
-      list: acceptanceName, expected_revision: listCurrent.revision, name: original.name, type: original.type, lines: original.lines,
-    })).list;
-    if (original.status === "archived") await call("set_my_shopping_list_status", { list: acceptanceName, status: "archived", expected_revision: listCurrent.revision });
-  } else {
-    await call("set_my_shopping_list_status", { list: acceptanceName, status: "archived", expected_revision: listCurrent.revision });
-  }
-  unavailable.push("copy_my_shopping_list:no_extra_acceptance_record", "migrate_my_saved_plan:no_safe_fixture");
-
-  await call("review_items_to_add", { items: [{ product: productIds[0], quantity: 1 }] });
-  const currentId = current.items.find(({ id }) => Number.isInteger(id))?.id;
-  await call("review_item_to_remove", { basket_item: currentId ?? productIds[0] });
-  const replacementId = productIds.find((id) => id !== currentId) ?? productIds[0] + 1;
-  await call("review_item_swap", {
-    current_item: currentId ?? productIds[0],
-    replacement_item: replacementId,
-    quantity: 1,
-  });
-  await call("review_emptying_basket");
+  const lists = await call<{ lists?: unknown[] }>("show_my_shopping_lists", { include_archived: true });
+  assert.ok(Array.isArray(lists.lists), "Shopping-list acceptance returned no list collection");
+  unavailable.push("shop_from_my_list:no_safe_fixture");
 
   return { exercised, unavailable };
 }
@@ -254,29 +248,52 @@ export async function verifyApprovedReversibleProductionMutation(
 export async function verifyProductionEdge(
   origin: URL,
   fetcher: typeof fetch = fetch,
-): Promise<void> {
-  const health = await fetcher(new URL("/healthz", origin));
+  options: { stepTimeoutMs?: number; expectedRevision?: string } = {},
+): Promise<{ revision: string; lastCompletedBoundary: string; steps: Array<{ boundary: string; latencyMs: number }> }> {
+  const stepTimeoutMs = options.stepTimeoutMs ?? 3_000;
+  const steps: Array<{ boundary: string; latencyMs: number }> = [];
+  let lastCompletedBoundary = "none";
+  const step = async (boundary: string, input: URL, init?: RequestInit): Promise<Response> => {
+    const started = Date.now();
+    try {
+      const response = await fetcher(input, { ...init, signal: AbortSignal.timeout(stepTimeoutMs) });
+      steps.push({ boundary, latencyMs: Date.now() - started });
+      lastCompletedBoundary = boundary;
+      return response;
+    } catch (error) {
+      throw new Error(`Production edge probe stopped after ${lastCompletedBoundary}; ${boundary} failed or timed out.`, { cause: error });
+    }
+  };
+  const health = await step("health", new URL("/healthz", origin));
   assert.equal(health.status, 200, "Production health check failed");
   assert.deepEqual(await health.json(), { status: "ok", enabled: true });
 
-  const metadata = await fetcher(new URL("/.well-known/oauth-protected-resource/mcp", origin));
+  const revisionResponse = await step("revision", new URL("/revision", origin));
+  assert.equal(revisionResponse.status, 200, "Production revision check failed");
+  const revisionBody = await revisionResponse.json() as { revision?: unknown };
+  assert.equal(typeof revisionBody.revision, "string", "Production revision metadata is missing");
+  const revision = revisionBody.revision as string;
+  if (options.expectedRevision) assert.equal(revision, options.expectedRevision, "Production revision metadata does not match the expected deployment");
+
+  const metadata = await step("oauth_metadata", new URL("/.well-known/oauth-protected-resource/mcp", origin));
   assert.equal(metadata.status, 200, "OAuth resource metadata failed");
   const resource = await metadata.json() as Record<string, unknown>;
   assert.equal(resource.resource, new URL("/mcp", origin).href);
   assert.deepEqual(resource.scopes_supported, ["use:nemlig-assistant"]);
   assert.deepEqual(resource.bearer_methods_supported, ["header"]);
 
-  const anonymous = await fetcher(new URL("/mcp", origin), {
+  const anonymous = await step("anonymous_rejection", new URL("/mcp", origin), {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize", params: {} }),
   });
   assert.equal(anonymous.status, 401, "Anonymous MCP request was not rejected");
 
-  const foreignOrigin = await fetcher(new URL("/mcp", origin), {
+  const foreignOrigin = await step("foreign_origin_rejection", new URL("/mcp", origin), {
     method: "POST",
     headers: { "content-type": "application/json", origin: "https://example.invalid" },
     body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize", params: {} }),
   });
   assert.equal(foreignOrigin.status, 403, "Foreign Origin was not rejected");
+  return { revision, lastCompletedBoundary, steps };
 }

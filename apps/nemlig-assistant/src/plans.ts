@@ -137,7 +137,7 @@ export const filePlanSnapshotStorage = (directory = plansDirectory()): PlanSnaps
 export const httpPlanSnapshotStorage = (
   baseUrl: string,
   fetcher: typeof fetch = fetch,
-  timeoutMs = 5_000,
+  timeoutMs = 3_000,
 ): PlanSnapshotStorage => {
   const base = new URL(baseUrl);
   if (base.origin !== "http://nemlig-plan-storage.internal") throw new NemligError("Shopping plan storage is invalid.");

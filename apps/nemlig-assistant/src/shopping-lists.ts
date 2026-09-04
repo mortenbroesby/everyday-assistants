@@ -96,7 +96,7 @@ export const fileShoppingListStorage = (directory = shoppingListsDirectory()): S
 export const httpShoppingListStorage = (
   baseUrl: string,
   fetcher: typeof fetch = fetch,
-  timeoutMs = 5_000,
+  timeoutMs = 3_000,
 ): ShoppingListStorage => {
   const base = new URL(baseUrl);
   if (base.origin !== "http://nemlig-plan-storage.internal") throw new NemligError("Shopping list storage is invalid.");

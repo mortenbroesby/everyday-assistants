@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { CloudflareEnv } from "./cloudflare-config.js";
 import { classifyMcpMessage, handleGatewayRequest, type GatewayDependencies, type OperationClass } from "./cloudflare-gateway.js";
+import type { GatewayRequestEvent } from "./cloudflare-observability.js";
 import { emptyUsageState } from "./cloudflare-usage.js";
 
 const env: CloudflareEnv = {
@@ -11,7 +12,9 @@ const env: CloudflareEnv = {
   MCP_RATE_LIMIT: "60",
   MCP_EXPENSIVE_RATE_LIMIT: "10",
   MCP_AUTH_TIMEOUT_MS: "5000",
-  MCP_BACKEND_TIMEOUT_MS: "35000",
+  MCP_CONTROL_TIMEOUT_MS: "3000",
+  MCP_TOTAL_TIMEOUT_MS: "30000",
+  MCP_BACKEND_TIMEOUT_MS: "25000",
   NEMLIG_MCP_AUTH0_ISSUER: "https://tenant.example.test",
   NEMLIG_MCP_AUTH0_AUDIENCE: "https://mcp.example.test/mcp",
   NEMLIG_MCP_AUTH0_OWNER_SUBJECT: "auth0|owner",
@@ -50,6 +53,7 @@ test("unauthenticated requests never reach authentication backends or the Contai
 
 test("authenticated normal requests forward once and unknown tools fail into the expensive class", async () => {
   const forwarded: OperationClass[] = [];
+  const events: GatewayRequestEvent[] = [];
   let authenticated = 0;
   const dependencies: GatewayDependencies = {
     authenticate: async (token) => { assert.equal(token, "owner-token"); authenticated += 1; },
@@ -59,6 +63,8 @@ test("authenticated normal requests forward once and unknown tools fail into the
       expensiveMinute: "2026-08-31T12:00", expensiveMinuteCount: 0,
     } }),
     forward: async (_request, operation) => { forwarded.push(operation); return new Response("ok"); },
+    event: (event) => events.push(event),
+    requestId: () => "10000000-0000-4000-8000-000000000000",
   };
   const normal = await handleGatewayRequest(mcpRequest({ method: "tools/call", params: { name: "show_my_basket" } }), env, dependencies);
   const unknown = await handleGatewayRequest(mcpRequest({ method: "tools/call", params: { name: "future_tool" } }), env, dependencies);
@@ -66,6 +72,9 @@ test("authenticated normal requests forward once and unknown tools fail into the
   assert.equal(await unknown.text(), "ok");
   assert.equal(authenticated, 2);
   assert.deepEqual(forwarded, ["normal", "expensive"]);
+  assert.equal(events.length, 2);
+  assert.deepEqual(events.map((event) => event.outcome), ["completed", "completed"]);
+  assert.equal(normal.headers.get("x-nemlig-request-id"), "10000000-0000-4000-8000-000000000000");
   assert.equal(classifyMcpMessage({ method: "notifications/initialized" }), "protocol");
   assert.equal(classifyMcpMessage({ method: "future/protocol-method" }), "protocol");
   assert.equal(classifyMcpMessage({ method: "tools/call", params: { name: "add_approved_items" } }), "expensive");
@@ -119,6 +128,64 @@ test("manual reset requires owner authentication and backend timeout is returned
   assert.equal(attempts, 1);
 });
 
+test("stalled authentication, control, and backend boundaries fail with one sanitized terminal event", async () => {
+  const shortEnv = {
+    ...env,
+    MCP_AUTH_TIMEOUT_MS: "5",
+    MCP_CONTROL_TIMEOUT_MS: "5",
+    MCP_TOTAL_TIMEOUT_MS: "100",
+    MCP_BACKEND_TIMEOUT_MS: "10",
+  };
+  const never = () => new Promise<never>(() => {});
+  for (const [boundary, expected] of [
+    ["authentication", "authentication_timeout"],
+    ["control", "control_timeout"],
+    ["backend", "backend_timeout"],
+  ] as const) {
+    const events: GatewayRequestEvent[] = [];
+    const response = await handleGatewayRequest(mcpRequest({ method: "tools/call", params: { name: "show_my_basket" } }), shortEnv, {
+      authenticate: boundary === "authentication" ? never : async () => {},
+      admit: boundary === "control" ? never : async () => ({ admitted: true, state: emptyUsageState(new Date()) }),
+      forward: boundary === "backend" ? never : async () => new Response("ok"),
+      event: (event) => events.push(event),
+      requestId: () => "10000000-0000-4000-8000-000000000000",
+    });
+    assert.equal(response.status, 504);
+    assert.deepEqual(await response.json(), { error: expected });
+    assert.equal(events.length, 1);
+    assert.equal(events[0]?.outcome, expected);
+    assert.deepEqual(Object.keys(events[0] ?? {}).sort(), [
+      "elapsed_ms", "event", "method", "operation", "outcome", "request_id", "revision", "route", "schema_version", "status",
+    ]);
+  }
+});
+
+test("a shorter remaining total budget reports request timeout and aborts Container dispatch", async () => {
+  const events: GatewayRequestEvent[] = [];
+  let observedSignal: AbortSignal | undefined;
+  let clock = 0;
+  const response = await handleGatewayRequest(mcpRequest({ method: "tools/call", params: { name: "show_my_basket" } }), {
+    ...env,
+    MCP_AUTH_TIMEOUT_MS: "50",
+    MCP_CONTROL_TIMEOUT_MS: "20",
+    MCP_TOTAL_TIMEOUT_MS: "100",
+    MCP_BACKEND_TIMEOUT_MS: "80",
+  }, {
+    authenticate: async () => { clock = 30; },
+    admit: async () => ({ admitted: true, state: emptyUsageState(new Date()) }),
+    forward: async (_request, _operation, _config, deadline) => {
+      observedSignal = deadline.signal;
+      return new Promise<never>(() => {});
+    },
+    event: (event) => events.push(event),
+    requestId: () => "10000000-0000-4000-8000-000000000000",
+    now: () => clock,
+  });
+  assert.equal(response.status, 504);
+  assert.equal(events[0]?.outcome, "request_timeout");
+  assert.equal(observedSignal?.aborted, true);
+});
+
 test("requests without content length are still capped at one MiB", async () => {
   let calls = 0;
   const response = await handleGatewayRequest(new Request("https://mcp.example.test/mcp", {
@@ -132,4 +199,35 @@ test("requests without content length are still capped at one MiB", async () => 
   });
   assert.equal(response.status, 413);
   assert.equal(calls, 0);
+});
+
+test("a stalled request body is cancelled at the total deadline", async () => {
+  let cancelled = false;
+  const body = new ReadableStream<Uint8Array>({
+    pull: () => new Promise(() => {}),
+    cancel: () => { cancelled = true; },
+  });
+  const request = new Request("https://mcp.example.test/mcp", {
+    method: "POST",
+    headers: { authorization: "Bearer owner-token", "content-type": "application/json" },
+    body,
+    duplex: "half",
+  } as RequestInit & { duplex: "half" });
+  const events: GatewayRequestEvent[] = [];
+  const response = await handleGatewayRequest(request, {
+    ...env,
+    MCP_AUTH_TIMEOUT_MS: "2",
+    MCP_CONTROL_TIMEOUT_MS: "2",
+    MCP_TOTAL_TIMEOUT_MS: "10",
+    MCP_BACKEND_TIMEOUT_MS: "5",
+  }, {
+    authenticate: async () => { throw new Error("unexpected"); },
+    admit: async () => { throw new Error("unexpected"); },
+    forward: async () => { throw new Error("unexpected"); },
+    event: (event) => events.push(event),
+    requestId: () => "10000000-0000-4000-8000-000000000000",
+  });
+  assert.equal(response.status, 504);
+  assert.equal(events[0]?.outcome, "request_timeout");
+  assert.equal(cancelled, true);
 });

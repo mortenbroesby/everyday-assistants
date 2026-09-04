@@ -7,6 +7,8 @@ export interface CloudflareEnv {
   MCP_RATE_LIMIT?: string;
   MCP_EXPENSIVE_RATE_LIMIT?: string;
   MCP_AUTH_TIMEOUT_MS?: string;
+  MCP_CONTROL_TIMEOUT_MS?: string;
+  MCP_TOTAL_TIMEOUT_MS?: string;
   MCP_BACKEND_TIMEOUT_MS?: string;
   NEMLIG_MCP_AUTH0_ISSUER?: string;
   NEMLIG_MCP_AUTH0_AUDIENCE?: string;
@@ -26,6 +28,8 @@ export interface GatewayConfig {
   rateLimit: number;
   expensiveRateLimit: number;
   authTimeoutMs: number;
+  controlTimeoutMs: number;
+  totalTimeoutMs: number;
   backendTimeoutMs: number;
   issuer: URL;
   audience: string;
@@ -56,7 +60,12 @@ export function loadGatewayConfig(env: CloudflareEnv): GatewayConfig {
   const rateLimit = boundedInteger(env, "MCP_RATE_LIMIT", 600);
   const expensiveRateLimit = boundedInteger(env, "MCP_EXPENSIVE_RATE_LIMIT", rateLimit);
   const authTimeoutMs = boundedInteger(env, "MCP_AUTH_TIMEOUT_MS", 10_000);
-  const backendTimeoutMs = boundedInteger(env, "MCP_BACKEND_TIMEOUT_MS", 60_000);
+  const controlTimeoutMs = boundedInteger(env, "MCP_CONTROL_TIMEOUT_MS", 10_000);
+  const totalTimeoutMs = boundedInteger(env, "MCP_TOTAL_TIMEOUT_MS", 60_000);
+  const backendTimeoutMs = boundedInteger(env, "MCP_BACKEND_TIMEOUT_MS", 25_000);
+  if (authTimeoutMs >= totalTimeoutMs) throw new Error("MCP_AUTH_TIMEOUT_MS must be less than MCP_TOTAL_TIMEOUT_MS.");
+  if (controlTimeoutMs >= totalTimeoutMs) throw new Error("MCP_CONTROL_TIMEOUT_MS must be less than MCP_TOTAL_TIMEOUT_MS.");
+  if (backendTimeoutMs >= totalTimeoutMs) throw new Error("MCP_BACKEND_TIMEOUT_MS must be less than MCP_TOTAL_TIMEOUT_MS.");
   const issuer = new URL(required(env, "NEMLIG_MCP_AUTH0_ISSUER"));
   const publicUrl = new URL(required(env, "NEMLIG_MCP_PUBLIC_URL"));
   if (issuer.protocol !== "https:" || issuer.search || issuer.hash) throw new Error("NEMLIG_MCP_AUTH0_ISSUER must be an HTTPS URL without query or fragment.");
@@ -70,6 +79,8 @@ export function loadGatewayConfig(env: CloudflareEnv): GatewayConfig {
     rateLimit,
     expensiveRateLimit,
     authTimeoutMs,
+    controlTimeoutMs,
+    totalTimeoutMs,
     backendTimeoutMs,
     issuer,
     audience: required(env, "NEMLIG_MCP_AUTH0_AUDIENCE"),

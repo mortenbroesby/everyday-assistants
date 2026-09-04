@@ -70,7 +70,7 @@ uploading or creating resources.
 | Transport | [`http.ts`](../apps/nemlig-assistant/src/http.ts) uses MCP Streamable HTTP and supports its event-stream response path. It has no WebSocket endpoint. | Proxy HTTP streaming unchanged through the fixed object and Container. Test reconnect after sleep. |
 | Connections | Runtime code uses HTTPS `fetch`; it does not manage raw persistent TCP connections. | No special TCP service is required. |
 | Authentication | [`auth0.ts`](../apps/nemlig-assistant/src/auth0.ts) verifies Auth0 RS256 JWT issuer, audience, owner subject, and scope. JWKS and metadata are cached only in process memory. Discovery currently has no explicit timeout. | Reuse the verifier in the Worker before the fixed object/Container. Bound discovery/JWKS requests. Keeping defense-in-depth verification in the Container is acceptable, but unauthenticated traffic must never wake it. |
-| External calls | [`client.ts`](../apps/nemlig-assistant/src/client.ts) calls Nemlig with a 30-second timeout. Reads make at most four total attempts and do not retry HTTP/parse failures; mutations disable retry and perform readback. Planning/search loops and concurrency are bounded. | Preserve these bounds. Add an overall gateway/backend deadline and an explicit timeout for Auth0 discovery/JWKS. There is no queue, recursive retry, scheduled keep-alive, or regenerating work. |
+| External calls | [`client.ts`](../apps/nemlig-assistant/src/client.ts) calls Nemlig with an 8-second per-attempt timeout. Reads make at most two total attempts and do not retry HTTP/parse failures; mutations disable retry and perform readback. Planning/search loops and concurrency are bounded. | Preserve the 30-second total gateway deadline, 5-second Auth0 budget, 3-second control budget, and 25-second-or-remaining Container budget. There is no queue, recursive retry, scheduled keep-alive, or regenerating work. |
 
 ### State classification
 
@@ -149,9 +149,11 @@ staging infrastructure for this family-only service.
   credential required by the deployed tools.
 - The Container holds only ephemeral MCP sessions, Nemlig cookies/tokens, and
   working data while awake. Its disk is not a persistence boundary.
-- Cloudflare logs receive only structured event names, counts, status, revision,
-  and non-sensitive error classes. Never log tokens, credentials, cookies,
-  prompts, plan contents, basket contents, or Nemlig product data.
+- Cloudflare logs receive at most one closed-schema terminal event per request,
+  plus sparse Container/breaker lifecycle events. Public protocol/auth noise is
+  sampled at one percent. Never log raw errors, headers, bodies, query strings,
+  tokens, credentials, cookies, OAuth artifacts, prompts, arguments, shopping
+  data, provider responses, or stacks.
 - The Worker executes at Cloudflare's edge and sees request/token data in transit,
   but it should not persist those values.
 
