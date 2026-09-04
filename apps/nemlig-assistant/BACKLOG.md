@@ -76,6 +76,56 @@ This item does not authorize any Nemlig basket mutation.
 Done means a recorded drill proves disable, no wake, exact restoration, and
 post-restore health, and the owner accepts the documented worst credible cost.
 
+## P1 — add tiered access with family-reserved capacity
+
+**Status:** Not started. Multi-user access remains disabled until identity,
+Nemlig-account, session, basket, proposal, and stored-list isolation are proven.
+
+Use ascending tier numbers for descending protection. Higher-numbered tiers are
+shed first as monthly usage approaches the owner-set cost envelope:
+
+- **Tier 0 — family:** most protected and always receives reserved capacity.
+  Other tiers can never consume its allocation or cause it to be shed. Tier 0
+  remains subject to authentication, provider availability, the global
+  emergency kill switch, and the owner-set hard safety ceiling.
+- **Tier 1 — trusted invitees:** receives access while Tier 1 headroom remains.
+  It is shed before Tier 0 but after Tier 2.
+- **Tier 2 — experimental access:** lowest priority and first to be shed as
+  forecast usage or cost approaches a configured threshold.
+
+**Acceptance criteria:**
+
+- Keep the identity-to-tier assignment private, owner-controlled, auditable,
+  and changeable without a code deployment. Never commit names, email
+  addresses, Auth0 subjects, credentials, or tokens.
+- Enforce tier admission, per-principal rate limits, and tier budgets at the
+  Worker before Durable Object dispatch or Container wake. A denied tier must
+  incur only the cheapest edge path.
+- Reserve explicit monthly and short-window capacity for Tier 0. Define Tier 1
+  and Tier 2 ceilings so their combined use cannot consume that reserve.
+- Calculate current usage plus a conservative month-end forecast, then shed
+  Tier 2 and Tier 1 at separately configurable warning thresholds. Restore
+  access predictably when the owner changes a threshold or the accounting
+  period resets.
+- Give denied users a stable, non-sensitive explanation that access is
+  temporarily limited by capacity policy; do not reveal household usage,
+  spending, identities, or another tier's limits.
+- Add tests for tier ordering, reserved-capacity isolation, threshold changes,
+  monthly reset, concurrent admission, fail-closed unknown identities, and no
+  Container wake after denial.
+- Extend cost and safety evidence with per-tier admitted/rejected counts and
+  remaining headroom, using bounded aggregate logs without prompts, shopping
+  data, identity values, or unbounded cardinality.
+- Before inviting anyone, require their own authenticated principal and
+  separately linked Nemlig account. Never expose or reuse the family's Nemlig
+  credentials, sessions, basket, proposals, approvals, lists, or favorites.
+
+**Safety boundary:** Tiering is progressive load shedding, not a replacement
+for the circuit breaker or kill switch. The global hard ceiling must still stop
+all tiers when continuing would violate the accepted cost envelope. Tier 0 is
+the last tier shed and is protected from guest consumption, but no software can
+guarantee access during a provider outage or global emergency shutdown.
+
 ## P1 — make product wording reliably reach Danish catalogue search
 
 **Source:** [GitHub issue #7](https://github.com/mortenbroesby/everyday-assistants/issues/7)
