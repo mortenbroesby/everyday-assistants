@@ -1,10 +1,10 @@
 # Cloudflare operations for Nemlig MCP
 
-Status: production version `fc8cfb96-53c6-4d38-8ea1-cbca04727b25` is enabled
+Status: production version `4a74ac1a-4198-486b-9c2d-89c9aaa411f4` is enabled
 for private family use. Health, OAuth metadata, anonymous rejection, Auth0
 authorization through the existing hosted app, authenticated shopping-list and
 favorite reads, and no unauthorized Container wake are verified. The deployed
-application revision is `366f1db37752502c67a109a731dd6840b464cdab`.
+application revision is `f17d7c75352a7cd5dbceb91767e65fa68afd9c0b`.
 
 Current production endpoints:
 
@@ -180,6 +180,17 @@ the expected revision, correlation ID, route class, status, outcome, and elapsed
 time only. The workers.dev alias remains a valid fallback route, but its OAuth
 metadata intentionally declares the canonical custom-domain resource URL, so
 the generic probe's exact-resource assertion applies only to the custom domain.
+
+The 2026-09-04 catalogue-first recovery deployed exact revision
+`f17d7c75352a7cd5dbceb91767e65fa68afd9c0b` as disabled version
+`b28646e5-c2b5-428f-966a-fd6cf6ca11bd`. Both production routes returned HTTP
+503 with `MCP temporarily disabled`, and the fixed instance reported
+`inactive`. Enabled version `4a74ac1a-4198-486b-9c2d-89c9aaa411f4` then passed
+the custom-domain edge probe at the same revision; the workers.dev health route
+also returned HTTP 200. Authenticated ChatGPT catalogue and exact-product
+acceptance remains pending because no owner access token was available to the
+deployment shell and a background handoff to the existing chat did not start a
+new turn. No basket mutation was attempted.
 
 ## Verify production features and approved reversible mutations
 
