@@ -91,7 +91,7 @@ export async function verifyReadOnlyProductionFeatures(
   client: AcceptanceClient,
   options: AcceptanceDeadlineOptions = {},
 ): Promise<ProductionFeatureReport> {
-  const totalTimeoutMs = options.totalTimeoutMs ?? 30_000;
+  const totalTimeoutMs = options.totalTimeoutMs ?? 90_000;
   const deadline = Date.now() + totalTimeoutMs;
   const bounded = async <T>(label: string, work: () => Promise<T>): Promise<T> => {
     const remaining = deadline - Date.now();
@@ -128,6 +128,8 @@ export async function verifyReadOnlyProductionFeatures(
   const favorites = await call<{ result?: unknown[] }>("show_my_favorites", { search_term: "banan", result_count: 1, page: 1 });
   assert.ok(Array.isArray(favorites.result) && favorites.result.length <= 1, "Favorites acceptance exceeded one result");
   await call("plan_my_shopping", { lines: [{ id: "acceptance-banan", name: "banan", quantity: 1, constraints: {}, preferences: [] }] });
+  const exact = await call<{ lines?: Array<{ selected_product_id?: number }> }>("plan_my_shopping", { lines: [{ id: "acceptance-exact", name: "selected catalogue product", quantity: 1, selected_product: productIds[0], constraints: {}, preferences: [] }] });
+  assert.equal(exact.lines?.[0]?.selected_product_id, productIds[0], "Previously discovered product was not reused exactly");
 
   const departments = await call<{ departments?: Array<{ id?: string }> }>("show_grocery_sections");
   const departmentId = departments.departments?.find(({ id }) => id)?.id;

@@ -15,9 +15,9 @@ before further demo-dependent feature work.
 - Add redacted structured Worker logs with correlation IDs and clear boundary
   outcomes for the kill switch, authorization, Durable Object dispatch, upstream
   calls, circuit-breaker changes, and deployment identity.
-- Add explicit cancellation and bounded timeout budgets for every external
-  request, Durable Object/container boundary, and complete MCP request so the
-  client receives an actionable error instead of appearing to hang indefinitely.
+- Keep the generous final 90-second request ceiling, 85-second Container
+  ceiling, and 60-second Nemlig interaction window so slow catalogue work can
+  finish while a genuinely stalled request still terminates clearly.
 - Keep retries bounded and mutation-safe. Preserve the kill switch, circuit
   breaker, quotas, approval envelopes, and fail-closed behavior.
 - Bound observability cost with sampling, short retention, field-size limits,
@@ -37,7 +37,7 @@ This item does not authorize any Nemlig basket mutation.
 - Named reusable and occasion lists are private, bounded, revision-checked,
   copyable, and recoverable through archive/restore.
 - Opening a list is storage-only. Current Nemlig resolution is an explicit,
-  favorites-first action for at most twenty selected lines.
+  catalogue-backed action for at most twenty selected lines.
 - Reusable means easy to invoke again; it does not mean scheduled or automatic.
 - The picker uses direct allowlisted Nemlig images with a complete text fallback
   and no image proxy or cache.
@@ -45,14 +45,15 @@ This item does not authorize any Nemlig basket mutation.
 Invited-family collaboration remains future work until a second real user is
 ready and owner isolation can be designed from that concrete need.
 
-## Favorites-first product selection
+## Catalogue-first product selection
 
 **Status:** Core routing implemented. Ordinary find-or-add intent uses the
-favorites-first planner, explicit catalog searches retain `find_groceries`,
-and explicit favorite browsing retains `show_my_favorites`.
+catalogue-backed planner with short, loose Danish wording. Direct catalogue
+search retains `find_groceries`, and favourite browsing remains explicit via
+`show_my_favorites`.
 
-- The planner searches the authenticated user's favorites first and searches
-  outside favorites only when no eligible favorite exists.
+- The planner searches current catalogue inventory for every ordinary line and
+  never loads favourites implicitly.
 - Apply the same ranking within either candidate pool: aim for the lowest
   comparable effective price, prefer discounted products, and compare price per
   kilogram or other matching unit when available. A discounted product should

@@ -154,12 +154,12 @@ The `show_my_favorites` tool SHALL accept optional non-empty `search_term` text,
 
 ### Requirement: Intent-directed product discovery
 
-The MCP server SHALL guide clients to use `plan_my_shopping` for ordinary requests to find or add products, SHALL reserve `find_groceries` for explicit full-catalog searches, and SHALL reserve `show_my_favorites` for explicit favourite browsing. Discovery and planning SHALL remain separate from basket review and approved actions.
+The MCP server SHALL guide clients to use `plan_my_shopping` with short, loose Danish catalogue wording for ordinary requests to find or add products, SHALL expose `find_groceries` for direct catalogue searches, and SHALL reserve `show_my_favorites` for explicit favourite browsing. Discovery and planning SHALL remain separate from basket review and approved actions.
 
 #### Scenario: Ordinary product request
 
 - **WHEN** the user ordinarily asks to find or add one or more products without requesting a specific search source
-- **THEN** the server guidance directs the client to `plan_my_shopping`, which returns favourites-first candidates and uses catalog fallback only when no eligible favourite exists
+- **THEN** the server guidance directs the client to `plan_my_shopping`, which searches current catalogue inventory without loading or preferring favourites
 
 #### Scenario: Explicit catalog request
 

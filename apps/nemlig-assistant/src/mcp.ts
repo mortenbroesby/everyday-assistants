@@ -353,7 +353,7 @@ export function createMcpServer(
     },
     {
       instructions:
-        "Use Nemlig Assistant for requests about current Nemlig products, prices, availability, favourites, basket contents, saved shopping lists, or choosing and adding groceries. For ordinary requests to find or add products, use plan_my_shopping so favourites are checked first. Use find_groceries only for an explicit full-catalog search and show_my_favorites only for explicit favourite browsing. Recipes and general food research do not require Nemlig tools. Opening a named list reads only private saved state; shop_from_my_list explicitly refreshes at most twenty selected lines from current Nemlig data. Reusable lists never run automatically. Finding, browsing, planning, viewing, list management, and review tools do not change the Nemlig basket. A review is not approval. Planning, selection, saving, resolving, and continuing are not approval either. Present basket reviews and results as concise shopping language; omit internal references, expiry times, revisions, and statuses unless the user requests technical detail or troubleshooting requires it. Invoke a matching approved-action tool only after the user explicitly approves every exact detail in the unchanged review. Do not ask for approval twice when the user's earlier approval already covers every exact detail. Every basket-changing action revalidates and reads back the basket. Suggest an improvement only when the user explicitly asks. Never check out, pay, place an order, or change a delivery slot.",
+        "Use Nemlig Assistant for requests about current Nemlig products, prices, availability, favourites, basket contents, saved shopping lists, or choosing and adding groceries. For ordinary requests to find or add products, use plan_my_shopping and give each line a short, loose Danish catalogue search phrase such as 'kakao crunchers', 'hokkaido', or 'friske lasagneplader'; do not reconstruct a full product title. Ordinary planning searches the current Nemlig catalogue, never favourites. Use find_groceries for a direct catalogue search and show_my_favorites only when the user explicitly asks to browse or search saved favourites. An exact product chosen from any earlier result may be passed back as selected_product. Recipes and general food research do not require Nemlig tools. Opening a named list reads only private saved state; shop_from_my_list explicitly refreshes at most twenty selected lines from current Nemlig data. Reusable lists never run automatically. Finding, browsing, planning, viewing, list management, and review tools do not change the Nemlig basket. A review is not approval. Planning, selection, saving, resolving, and continuing are not approval either. Present basket reviews and results as concise shopping language; omit internal references, expiry times, revisions, and statuses unless the user requests technical detail or troubleshooting requires it. Invoke a matching approved-action tool only after the user explicitly approves every exact detail in the unchanged review. Do not ask for approval twice when the user's earlier approval already covers every exact detail. Every basket-changing action revalidates and reads back the basket. Suggest an improvement only when the user explicitly asks. Never check out, pay, place an order, or change a delivery slot.",
     },
   );
   const localConnectionId = randomUUID();
@@ -369,7 +369,7 @@ export function createMcpServer(
     "find_groceries",
     {
       title: "Find groceries",
-      description: "Find products across Nemlig when you explicitly want the full catalog. This does not change your basket.",
+      description: "Search the current Nemlig catalogue directly. Use a short, loose Danish grocery phrase. This does not change your basket.",
       inputSchema: {
         search_term: z.string().min(1).describe("What to search for, preferably using Danish grocery terms."),
         result_count: z.number().int().positive().default(8).describe("The maximum number of products to show."),
@@ -418,7 +418,7 @@ export function createMcpServer(
     "plan_my_shopping",
     {
       title: "Plan my shopping",
-      description: "Build a plan for 1–20 groceries, checking your favourites first. This does not change your basket, and uncertain choices remain open.",
+      description: "Build a plan for 1–20 groceries by searching the current Nemlig catalogue with short, loose Danish phrases. This does not search favourites or change your basket, and uncertain choices remain open.",
       inputSchema: shoppingPlanToolInputSchema.shape,
       outputSchema: z.object({ lines: z.array(z.any()), selected_estimated_total: z.number() }),
       annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true },

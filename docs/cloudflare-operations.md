@@ -32,10 +32,11 @@ useful-operation quota, but an open breaker
 still prevents it from waking the Container.
 
 The Worker CPU and subrequest limits are 100 ms and 8. Every request has a
-30-second total deadline. Auth0 is capped at 5 seconds, Durable Object control
-calls at 3 seconds, and Container work at 25 seconds or the remaining total
-budget, whichever is smaller. Nemlig reads make at most two 8-second attempts;
-mutations make one attempt and retain the existing no-retry-on-uncertainty
+90-second total deadline. Auth0 is capped at 5 seconds, Durable Object control
+calls at 3 seconds, and Container work at 85 seconds or the remaining total
+budget, whichever is smaller. Each Nemlig read attempt may use up to 60 seconds;
+only an early transport failure can trigger the one bounded retry. Mutations
+make one attempt and retain the existing no-retry-on-uncertainty
 contract.
 
 ## First deployment and current setup
@@ -192,8 +193,9 @@ They verify enabled health, deployment revision, OAuth resource metadata,
 anonymous rejection, and foreign-origin rejection with per-step deadlines,
 latencies, and last-completed-boundary output. With a current owner access
 token, the default full acceptance command verifies the closed tool/resource
-inventory and read-only discovery, including shopping-list retrieval and at
-most one favorite result, under one 30-second deadline. It does not write a
+inventory and read-only catalogue discovery, exact selected-product reuse,
+shopping-list retrieval, and at most one explicitly requested favourite result
+under one 90-second deadline. It does not write a
 list, prepare or apply a proposal, create a GitHub issue, or mutate the basket:
 
 ```sh

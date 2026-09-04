@@ -9,7 +9,7 @@ The worktree also contains an uncommitted named-list storage repair from the int
 **Goals:**
 
 - Make every request that reaches the Worker produce a privacy-safe terminal boundary outcome with one server-generated correlation reference.
-- Ensure the caller receives a sanitized response within a 30-second total budget even if authentication, Durable Object RPC, Container startup, internal storage, or Nemlig stalls.
+- Ensure the caller receives a sanitized response within a 90-second total budget even if authentication, Durable Object RPC, Container startup, internal storage, or Nemlig stalls.
 - Reduce read-only Nemlig retry duration to fit inside the hosted budget while preserving zero automatic mutation retries.
 - Make a reconnect attempt diagnosable across ChatGPT, Auth0 tenant events, and Worker events without copying credentials or OAuth artifacts.
 - Keep observability volume proportional and low under both household use and unauthenticated Internet noise.
@@ -40,9 +40,9 @@ For cost control, every authenticated admitted useful operation produces at most
 
 ### 3. Enforce one absolute request deadline plus shorter boundary budgets
 
-Add fail-closed configuration for a 30,000 ms total MCP request timeout, 5,000 ms authentication timeout, 3,000 ms control-plane timeout for admission and internal storage, and a backend timeout no greater than 25,000 ms or the remaining total budget. Each timeout uses an abort signal when supported and a response-bounding race for RPC surfaces that do not accept a signal. The gateway checks remaining time before starting another boundary.
+Add fail-closed configuration for a 90,000 ms total MCP request timeout, 5,000 ms authentication timeout, 3,000 ms control-plane timeout for admission and internal storage, and a backend timeout no greater than 85,000 ms or the remaining total budget. Each timeout uses an abort signal when supported and a response-bounding race for RPC surfaces that do not accept a signal. The gateway checks remaining time before starting another boundary.
 
-The Container-side Nemlig client will use an 8,000 ms per-attempt timeout and at most one retry for explicitly read-only network operations. Mutations remain single-attempt. Four 30-second attempts were technically finite but incompatible with a healthy interactive deadline; the new maximum read attempt time is 16 seconds before parsing overhead and stays inside the backend budget.
+The Container-side Nemlig client will allow up to 60,000 ms for one read-only network interaction and at most one retry after an early transport failure. A timed-out first attempt is not retried. Mutations remain single-attempt. The 90-second outer deadline prevents a several-minute hang while allowing normal slow catalogue work to return.
 
 The total deadline response is HTTP 504 with `{ "error": "request_timeout", "request_id": "..." }`. Boundary failures retain narrower allowlisted categories such as `authentication_timeout`, `control_timeout`, `backend_timeout`, `storage_timeout`, or `upstream_timeout` where the caller can safely receive them. The request ID is diagnostic but carries no identity or session meaning.
 
@@ -60,7 +60,7 @@ The ChatGPT acceptance remains a documented manual step because credentials must
 
 ## Risks / Trade-offs
 
-- [A 30-second deadline may reject a very slow cold Container start] → Measure the canary, retain the last known-good version, and adjust only within the specified bounded total after evidence; never remove the total deadline.
+- [A 90-second deadline makes a genuinely stalled call slower to fail] → Retain the last known-good version, terminal observability, and dynamic kill switch; never remove the total deadline.
 - [One-percent public sampling can miss an individual rejected request] → Always retain failures during an explicitly bounded diagnostic window only if the operator deliberately enables it; use Auth0 and ChatGPT timestamps to determine whether the Worker was reached.
 - [A response-bounding race cannot forcibly stop every Durable Object RPC] → Pass abort signals and remaining deadlines wherever supported, avoid starting work without enough budget, and keep quotas and the fixed one-Container limit as secondary bounds.
 - [Auth0 reconnect can fail entirely outside repository code] → The runbook must say so plainly and collect Auth0 tenant evidence; repository changes are successful only if they make that boundary provable, not if they relabel it as a Worker fault.

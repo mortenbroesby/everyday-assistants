@@ -11,8 +11,8 @@ const validEnv: CloudflareEnv = {
   MCP_EXPENSIVE_RATE_LIMIT: "10",
   MCP_AUTH_TIMEOUT_MS: "5000",
   MCP_CONTROL_TIMEOUT_MS: "3000",
-  MCP_TOTAL_TIMEOUT_MS: "30000",
-  MCP_BACKEND_TIMEOUT_MS: "25000",
+  MCP_TOTAL_TIMEOUT_MS: "90000",
+  MCP_BACKEND_TIMEOUT_MS: "85000",
   NEMLIG_MCP_AUTH0_ISSUER: "https://tenant.example.test",
   NEMLIG_MCP_AUTH0_AUDIENCE: "https://mcp.example.test/mcp",
   NEMLIG_MCP_AUTH0_OWNER_SUBJECT: "auth0|owner",
@@ -30,10 +30,10 @@ test("Cloudflare safety configuration is explicit, bounded, and internally consi
   const config = loadGatewayConfig(validEnv);
   assert.equal(config.dailyLimit, 5000);
   assert.equal(config.expensiveDailyLimit, 500);
-  assert.equal(config.totalTimeoutMs, 30_000);
+  assert.equal(config.totalTimeoutMs, 90_000);
   assert.equal(config.controlTimeoutMs, 3_000);
   assert.equal(config.authTimeoutMs, 5_000);
-  assert.equal(config.backendTimeoutMs, 25_000);
+  assert.equal(config.backendTimeoutMs, 85_000);
   assert.equal(config.issuer.href, "https://tenant.example.test/");
   assert.equal(FIXED_CONTAINER_NAME, "nemlig-production");
   assert.throws(() => loadGatewayConfig({ ...validEnv, MCP_DAILY_LIMIT: undefined }), /MCP_DAILY_LIMIT is required/u);
@@ -43,7 +43,7 @@ test("Cloudflare safety configuration is explicit, bounded, and internally consi
   assert.throws(() => loadGatewayConfig({ ...validEnv, MCP_DAILY_LIMIT: "100001" }), /MCP_DAILY_LIMIT/u);
   assert.throws(() => loadGatewayConfig({ ...validEnv, MCP_EXPENSIVE_DAILY_LIMIT: "5001" }), /MCP_EXPENSIVE_DAILY_LIMIT/u);
   assert.throws(() => loadGatewayConfig({ ...validEnv, MCP_RATE_LIMIT: "20", MCP_EXPENSIVE_RATE_LIMIT: "21" }), /MCP_EXPENSIVE_RATE_LIMIT/u);
-  assert.throws(() => loadGatewayConfig({ ...validEnv, MCP_BACKEND_TIMEOUT_MS: "25001" }), /MCP_BACKEND_TIMEOUT_MS/u);
+  assert.throws(() => loadGatewayConfig({ ...validEnv, MCP_BACKEND_TIMEOUT_MS: "120001" }), /MCP_BACKEND_TIMEOUT_MS/u);
   assert.throws(() => loadGatewayConfig({ ...validEnv, MCP_TOTAL_TIMEOUT_MS: "5000" }), /MCP_AUTH_TIMEOUT_MS/u);
   assert.throws(() => loadGatewayConfig({ ...validEnv, MCP_CONTROL_TIMEOUT_MS: "30000" }), /MCP_CONTROL_TIMEOUT_MS/u);
   assert.throws(() => loadGatewayConfig({ ...validEnv, NEMLIG_MCP_PUBLIC_URL: "http://mcp.example.test/mcp" }), /HTTPS/u);
@@ -57,10 +57,10 @@ test("Wrangler configuration fixes both environments to one disabled EU lite Con
   };
   for (const deployment of [wrangler, wrangler.env.production]) {
     assert.equal(deployment.vars.MCP_ENABLED, "false");
-    assert.equal(deployment.vars.MCP_TOTAL_TIMEOUT_MS, "30000");
+    assert.equal(deployment.vars.MCP_TOTAL_TIMEOUT_MS, "90000");
     assert.equal(deployment.vars.MCP_CONTROL_TIMEOUT_MS, "3000");
     assert.equal(deployment.vars.MCP_AUTH_TIMEOUT_MS, "5000");
-    assert.equal(deployment.vars.MCP_BACKEND_TIMEOUT_MS, "25000");
+    assert.equal(deployment.vars.MCP_BACKEND_TIMEOUT_MS, "85000");
     assert.equal(deployment.containers.length, 1);
     assert.equal(deployment.containers[0].max_instances, 1);
     assert.equal(deployment.containers[0].instance_type, "lite");

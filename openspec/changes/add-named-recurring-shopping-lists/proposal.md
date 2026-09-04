@@ -42,7 +42,7 @@ The goal is to make Nemlig Assistant useful as a small family food system: keep 
 
 ### Modified Capabilities
 
-- `nemlig-guided-shopping`: Replace opaque snapshot-only reuse with named-list resolution while preserving favorites-first planning, basket gap analysis, and legacy snapshot compatibility.
+- `nemlig-guided-shopping`: Replace opaque snapshot-only reuse with named-list resolution while preserving catalogue-backed planning, basket gap analysis, and legacy snapshot compatibility.
 - `nemlig-mcp`: Add list-management tools, Nemlig-first current-product routing guidance, visual product images, and corresponding production acceptance coverage.
 - `nemlig-chatgpt-integration`: Require in-place refresh of the one canonical `Nemlig Assistant` app and tightly constrain exceptional replacement when an immutable app property must change.
 

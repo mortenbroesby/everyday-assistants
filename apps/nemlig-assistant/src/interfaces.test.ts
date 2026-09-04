@@ -373,7 +373,7 @@ test("MCP plans whole lists and continuing a saved plan refreshes current produc
   const previous = process.env.NEMLIG_CONFIG_DIR; process.env.NEMLIG_CONFIG_DIR = directory;
   let current = product; let reads = 0;
   const client = fakeClient({
-    listFavorites: async () => { reads += 1; return [current]; }, getCart: async () => { reads += 1; return { ...basket, items: [{ ...basket.items[0]!, id: 7 }] }; },
+    searchProducts: async () => { reads += 1; return [current]; }, getCart: async () => { reads += 1; return { ...basket, items: [{ ...basket.items[0]!, id: 7 }] }; },
     addToCart: async () => { throw new Error("mutation called"); }, removeFromCart: async () => { throw new Error("mutation called"); }, clearCart: async () => { throw new Error("mutation called"); },
   });
   try {
@@ -381,7 +381,7 @@ test("MCP plans whole lists and continuing a saved plan refreshes current produc
       const input = { lines: [{ id: "milk", name: "mælk", quantity: 2 }] };
       const planned = await mcp.callTool({ name: "plan_my_shopping", arguments: input });
       const plan = planned.structuredContent as { lines: Array<{ candidates: Array<{ source: string; dietary: object }>; remaining_quantity: number }> };
-      assert.equal(plan.lines[0]?.candidates[0]?.source, "favorite"); assert.equal(plan.lines[0]?.remaining_quantity, 1);
+      assert.equal(plan.lines[0]?.candidates[0]?.source, "catalog"); assert.equal(plan.lines[0]?.remaining_quantity, 1);
       const saved = await mcp.callTool({ name: "save_my_shopping_plan", arguments: input });
       const id = (saved.structuredContent as { id: string }).id;
       const file = join(directory, "plans", `${id}.json`); const before = await readFile(file, "utf8");
@@ -483,17 +483,18 @@ test("authenticated HTTP request context preserves stdio tool and resource metad
   });
 });
 
-test("MCP routes ordinary product intent through favorites-first planning", async () => {
+test("MCP routes ordinary product intent through loose catalogue-first planning", async () => {
   await withMcpClient(createMcpServer(fakeClient()), async (mcp) => {
     const tools = new Map((await mcp.listTools()).tools.map((tool) => [tool.name, tool.description ?? ""]));
     const instructions = mcp.getInstructions() ?? "";
     assert.match(instructions, /ordinary requests to find or add products, use plan_my_shopping/);
-    assert.match(instructions, /find_groceries only for an explicit full-catalog search/);
-    assert.match(instructions, /show_my_favorites only for explicit favourite browsing/);
+    assert.match(instructions, /short, loose Danish catalogue search phrase/);
+    assert.match(instructions, /Ordinary planning searches the current Nemlig catalogue, never favourites/);
+    assert.match(instructions, /show_my_favorites only when the user explicitly asks/);
     assert.match(instructions, /current Nemlig products, prices, availability/);
     assert.match(instructions, /Recipes and general food research do not require Nemlig tools/);
-    assert.match(tools.get("plan_my_shopping") ?? "", /checking your favourites first/);
-    assert.match(tools.get("find_groceries") ?? "", /explicitly want the full catalog/);
+    assert.match(tools.get("plan_my_shopping") ?? "", /searching the current Nemlig catalogue with short, loose Danish phrases/);
+    assert.match(tools.get("find_groceries") ?? "", /current Nemlig catalogue directly/);
     assert.match(tools.get("show_my_favorites") ?? "", /saved Nemlig favourites/);
   });
 });

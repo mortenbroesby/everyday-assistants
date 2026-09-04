@@ -44,7 +44,10 @@ test("default production feature acceptance covers safe paths and never calls ex
         return { structuredContent: { result: [] } };
       }
       if (name === "browse_grocery_section") return { structuredContent: { result: [] } };
-      if (name === "plan_my_shopping") return { structuredContent: { lines: [], selected_estimated_total: 0 } };
+      if (name === "plan_my_shopping") {
+        const lines = args.lines as Array<{ selected_product?: number }>;
+        return { structuredContent: { lines: [{ selected_product_id: lines[0]?.selected_product }], selected_estimated_total: 0 } };
+      }
       if (name === "show_grocery_sections") return { structuredContent: { departments: [{ id: "fruit" }] } };
       if (name === "show_my_basket") return { structuredContent: { items: [] } };
       if (name === "continue_my_shopping_plan") return { isError: true };
@@ -55,7 +58,7 @@ test("default production feature acceptance covers safe paths and never calls ex
 
   const report = await verifyReadOnlyProductionFeatures(client);
   assert.deepEqual(calls, [
-    "find_groceries", "show_my_favorites", "plan_my_shopping", "show_grocery_sections",
+    "find_groceries", "show_my_favorites", "plan_my_shopping", "plan_my_shopping", "show_grocery_sections",
     "browse_grocery_section", "show_my_basket", "choose_products_visually", "continue_my_shopping_plan",
     "show_my_shopping_lists",
   ]);

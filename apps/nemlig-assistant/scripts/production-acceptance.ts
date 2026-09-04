@@ -22,7 +22,7 @@ const approvedMutation = (name: string): ApprovedProductionMutation => {
   return value;
 };
 
-const withinDeadline = async <T>(label: string, work: Promise<T>, timeoutMs = 30_000): Promise<T> => {
+const withinDeadline = async <T>(label: string, work: Promise<T>, timeoutMs = 90_000): Promise<T> => {
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
     return await Promise.race([

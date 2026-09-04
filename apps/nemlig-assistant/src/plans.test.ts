@@ -24,12 +24,12 @@ test("constraints exclude unknown or failing data and preferences rank determini
   assert.equal(candidates[0]?.constraint_outcomes.organic, true);
 });
 
-test("whole-list resolution is favorites-first, bounded to three searches, ambiguity-safe, and basket-aware", async () => {
+test("whole-list resolution searches the catalogue for every line, is bounded to three searches, ambiguity-safe, and basket-aware", async () => {
   let active = 0; let maximum = 0; const searched: string[] = [];
   const plan = await resolveShoppingPlan({
-    listFavorites: async () => [product(1, "Mælk favorit")],
-    searchProducts: async (query) => { active += 1; maximum = Math.max(maximum, active); searched.push(query); await new Promise((resolve) => setTimeout(resolve, 2)); active -= 1; return query === "brød" ? [product(2, "Brød A"), product(3, "Brød B")] : [product(query.length + 10, query)]; },
-    getCart: async () => basket([{ id: 1, name: "Mælk favorit", quantity: 1, total: 10 }]),
+    searchProducts: async (query) => { active += 1; maximum = Math.max(maximum, active); searched.push(query); await new Promise((resolve) => setTimeout(resolve, 2)); active -= 1; return query === "brød" ? [product(2, "Brød A"), product(3, "Brød B")] : [product(query === "mælk" ? 1 : query.length + 10, query)]; },
+    getProduct: async (id) => product(id, `product ${id}`),
+    getCart: async () => basket([{ id: 1, name: "Mælk", quantity: 1, total: 10 }]),
   }, { lines: [
     { id: "milk", name: "mælk", quantity: 2, constraints: {}, preferences: [] },
     { id: "bread", name: "brød", quantity: 1, constraints: {}, preferences: [] },
@@ -37,20 +37,22 @@ test("whole-list resolution is favorites-first, bounded to three searches, ambig
     { id: "cheese", name: "ost", quantity: 1, constraints: {}, preferences: [] },
     { id: "coffee", name: "kaffe", quantity: 1, constraints: {}, preferences: [] },
   ] });
-  assert.equal(searched.includes("mælk"), false);
+  assert.deepEqual(searched.sort(), ["brød", "kaffe", "mælk", "ost", "æbler"].sort());
   assert.ok(maximum <= 3);
   assert.deepEqual(plan.lines[0], { ...plan.lines[0], resolution: "selected", selected_product_id: 1, basket_quantity: 1, remaining_quantity: 1 });
   assert.equal(plan.lines[1]?.reason, "multiple_candidates");
   assert.equal(plan.selected_estimated_total, 40);
 });
 
-test("invalid plans make no calls and failed fallback lines remain unresolved", async () => {
+test("invalid plans make no calls and discovery failures remain distinguishable from empty results", async () => {
   let calls = 0;
-  const client = { listFavorites: async () => { calls += 1; return []; }, searchProducts: async () => { throw new Error("provider detail"); }, getCart: async () => { calls += 1; return basket(); } };
+  const client = { searchProducts: async () => { throw new Error("provider detail"); }, getProduct: async () => { throw new Error("provider detail"); }, getCart: async () => { calls += 1; return basket(); } };
   await assert.rejects(resolveShoppingPlan(client, { lines: [] }), /Too small|too_small/iu);
   assert.equal(calls, 0);
   const plan = await resolveShoppingPlan(client, { lines: [{ id: "milk", name: "mælk", quantity: 1, constraints: {}, preferences: [] }] });
-  assert.equal(plan.lines[0]?.reason, "no_eligible_candidate");
+  assert.equal(plan.lines[0]?.reason, "discovery_unavailable");
+  const empty = await resolveShoppingPlan({ ...client, searchProducts: async () => [] }, { lines: [{ id: "milk", name: "mælk", quantity: 1, constraints: {}, preferences: [] }] });
+  assert.equal(empty.lines[0]?.reason, "no_eligible_candidate");
 });
 
 test("basket gaps cover absent, partial, complete, over-complete, and unresolved lines", async () => {
@@ -60,12 +62,25 @@ test("basket gaps cover absent, partial, complete, over-complete, and unresolved
     { id: "ambiguous", name: "ambiguous", quantity: 1 },
   ].map((line) => ({ ...line, constraints: {}, preferences: [] }));
   const products = [product(1, "absent"), product(2, "partial"), product(3, "complete"), product(4, "over"), product(5, "ambiguous"), product(6, "ambiguous")];
-  const plan = await resolveShoppingPlan({ listFavorites: async () => products, searchProducts: async () => [], getCart: async () => basket([
+  const plan = await resolveShoppingPlan({ searchProducts: async (query) => products.filter((candidate) => candidate.name === query), getProduct: async (id) => products.find((candidate) => candidate.id === id)!, getCart: async () => basket([
     { id: 2, name: "partial", quantity: 1, total: 10 }, { id: 3, name: "complete", quantity: 2, total: 20 }, { id: 4, name: "over", quantity: 3, total: 30 },
   ]) }, { lines: inputs });
   assert.deepEqual(plan.lines.map((line) => [line.id, line.remaining_quantity, line.resolution]), [
     ["absent", 2, "selected"], ["partial", 2, "selected"], ["complete", 0, "covered"], ["over", 0, "covered"], ["ambiguous", 1, "unresolved"],
   ]);
+});
+
+test("an explicitly selected product is resolved by id without reconstructing its catalogue wording", async () => {
+  let searches = 0;
+  const exact = product(38424, "7-Morgen Kakao Crunchers");
+  const plan = await resolveShoppingPlan({
+    searchProducts: async () => { searches += 1; return []; },
+    getProduct: async (id) => { assert.equal(id, exact.id); return exact; },
+    getCart: async () => basket(),
+  }, { lines: [{ id: "cereal", name: "kakao crunchers", quantity: 1, selected_product_id: 38424, constraints: {}, preferences: [] }] });
+  assert.equal(searches, 0);
+  assert.equal(plan.lines[0]?.selected_product_id, 38424);
+  assert.equal(plan.lines[0]?.resolution, "selected");
 });
 
 test("plan snapshots are owner-only, immutable, schema-validated, and contain only structured input", async () => {

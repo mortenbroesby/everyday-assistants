@@ -4,6 +4,7 @@ import {
   matchFavorites,
   NemligClient,
   NemligError,
+  NEMLIG_READ_ATTEMPT_TIMEOUT_MS,
   SEARCH_GATEWAY_URL,
   normalizeDepartments,
   normalizeProducts,
@@ -108,8 +109,9 @@ test("network reads retry, while basket mutations do not", async () => {
       throw new TypeError("offline");
     }) as typeof fetch,
   );
-  assert.deepEqual(await readClient.searchProducts("mælk"), []);
-  assert.equal(reads, 8); // four session reads, each with one initial attempt plus one retry
+  await assert.rejects(readClient.searchProducts("mælk"), /Get token failed: network unavailable/u);
+  assert.equal(reads, 2);
+  assert.equal(NEMLIG_READ_ATTEMPT_TIMEOUT_MS, 60_000);
 
   const requests: ExpectedRequest[] = [
     { match: "/login$", response: json({ RedirectUrl: "/" }) },
@@ -119,6 +121,15 @@ test("network reads retry, while basket mutations do not", async () => {
   const writeClient = new NemligClient(mockFetch(requests));
   await writeClient.login("person@example.test", "secret");
   await assert.rejects(writeClient.addToCart(123, 1), /HTTP 503/);
+  assert.equal(requests.length, 0);
+});
+
+test("primary catalogue failures are not converted into empty results", async () => {
+  const requests: ExpectedRequest[] = [
+    ...sessionRequests(),
+    { match: `${SEARCH_GATEWAY_URL}/search`, response: json({}, { status: 503 }) },
+  ];
+  await assert.rejects(new NemligClient(mockFetch(requests)).searchProducts("mælk"), /Search products failed \(HTTP 503\)/u);
   assert.equal(requests.length, 0);
 });
 
@@ -246,38 +257,14 @@ test("exact product lookup returns only the matching numeric ID", async () => {
   assert.equal(requests.length, 0);
 });
 
-test("exact product lookup retries with a previously observed product name", async () => {
+test("exact product lookup reuses the full previously observed product without another request", async () => {
   const product = { Id: 424242, Name: "Test Product", Price: 12.34 };
   const requests: ExpectedRequest[] = [
     ...sessionRequests(),
     { match: "/search\\?", response: json({ Products: [product] }) },
-    { match: "/search\\?", response: json({ Products: [] }) },
-    { match: "/quick\\?", response: json({ Categories: [] }) },
-    { match: "/search\\?", response: json({ Products: [product] }) },
   ];
   const client = new NemligClient(mockFetch(requests));
   await client.searchProducts("Test Product", 1);
-  assert.equal((await client.getProduct(424242)).name, "Test Product");
-  assert.equal(requests.length, 0);
-});
-
-test("authenticated exact product lookup falls back to current favorites", async () => {
-  const requests: ExpectedRequest[] = [
-    { match: "/login$", response: json({ MergeSuccessful: true }) },
-    ...sessionRequests(),
-    { match: "/search\\?", response: json({ Products: [] }) },
-    { match: "/quick\\?", response: json({ Categories: [] }) },
-    {
-      match: "https://www.nemlig.com/favoritter\\?",
-      response: json({ content: [{ TemplateName: "productlistshowallspot", ProductGroupId: "favorites" }] }),
-    },
-    {
-      match: "/Products/GetByProductGroupId\\?",
-      response: json({ Products: [{ Id: 424242, Name: "Test Product", Price: 12.34 }] }),
-    },
-  ];
-  const client = new NemligClient(mockFetch(requests));
-  await client.login("person@example.test", "secret");
   assert.equal((await client.getProduct(424242)).name, "Test Product");
   assert.equal(requests.length, 0);
 });

@@ -9,7 +9,7 @@
 ## 2. MCP list experience
 
 - [x] 2.1 Register the compact `show_my_shopping_lists`, `save_my_shopping_list`, `copy_my_shopping_list`, `set_my_shopping_list_status`, `shop_from_my_list`, and `migrate_my_saved_plan` tools with accurate titles, descriptions, schemas, annotations, and human-friendly text; verify interface tests enumerate the exact surface and side-effect metadata.
-- [x] 2.2 Keep list enumeration/opening storage-only and implement explicit resolution for at most twenty selected line IDs through existing favorites-first planning and basket-gap analysis; verify MCP tests prove opening makes no Nemlig call and resolution makes bounded read-only calls without persisting live results.
+- [x] 2.2 Keep list enumeration/opening storage-only and implement explicit resolution for at most twenty selected line IDs through catalogue-backed planning and basket-gap analysis; verify MCP tests prove opening makes no Nemlig call and resolution makes bounded read-only calls without persisting live results.
 - [x] 2.3 Route list-selected products only into the existing additions review tool and never directly into apply; verify integration tests prove list create/edit/open/resolve/migrate operations cannot call any basket mutation and an approved later apply still requires an unchanged review reference.
 - [x] 2.4 Add stale-revision and ambiguous-name conversation responses that lead with list names while retaining opaque IDs/revisions only in structured data; verify snapshot tests contain no routine UUID or internal-storage narration.
 

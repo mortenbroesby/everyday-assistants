@@ -3,8 +3,9 @@ import { z } from "zod";
 
 export const API_BASE_URL = "https://www.nemlig.com/webapi";
 export const SEARCH_GATEWAY_URL = "https://webapi.prod.knl.nemlig.it/searchgateway/api";
-export const NEMLIG_READ_ATTEMPT_TIMEOUT_MS = 8_000;
+export const NEMLIG_READ_ATTEMPT_TIMEOUT_MS = 60_000;
 export const NEMLIG_READ_MAX_RETRIES = 1;
+const KNOWN_PRODUCT_LIMIT = 1_000;
 
 const recordSchema = z.record(z.string(), z.unknown());
 const recordsSchema = z.array(recordSchema);
@@ -160,7 +161,7 @@ export class NemligClient {
   private userId?: string;
   private productTimestamp?: string;
   private correlationId?: string;
-  private readonly knownProductNames = new Map<number, string>();
+  private readonly knownProducts = new Map<number, Product>();
   private timeslot: string;
   private timeslotId = 0;
 
@@ -235,20 +236,11 @@ export class NemligClient {
 
   async getProduct(productId: number): Promise<Product> {
     if (!Number.isInteger(productId) || productId < 1) throw new NemligError("Product ID must be positive.");
-    let product = (await this.searchProducts(String(productId), 10)).find(
+    const known = this.knownProducts.get(productId);
+    if (known) return known;
+    const product = (await this.searchProducts(String(productId), 10)).find(
       (candidate) => String(candidate.id) === String(productId),
     );
-    const knownName = this.knownProductNames.get(productId);
-    if (!product && knownName) {
-      product = (await this.searchProducts(knownName, 10)).find(
-        (candidate) => String(candidate.id) === String(productId),
-      );
-    }
-    if (!product && this.loggedIn) {
-      product = (await this.listFavorites(100)).find(
-        (candidate) => String(candidate.id) === String(productId),
-      );
-    }
     if (!product) throw new NemligError(`Product ${productId} could not be resolved exactly.`);
     return product;
   }
@@ -392,8 +384,9 @@ export class NemligClient {
   }
 
   private async refreshSession(): Promise<void> {
-    const token = asRecord(await this.optionalJson(`${API_BASE_URL}/Token`, "Get token"));
+    const token = asRecord(await this.json(`${API_BASE_URL}/Token`, {}, "Get token", true));
     this.accessToken = asString(token.access_token);
+    if (!this.accessToken) throw new NemligError("Get token failed: invalid response data.");
     const settings = asRecord(
       await this.optionalJson(`${API_BASE_URL}/v2/AppSettings/Website`, "Get app settings"),
     );
@@ -426,7 +419,7 @@ export class NemligClient {
       TimeSlotId: String(this.timeslotId),
     });
     const response = asRecord(
-      await this.optionalJson(`${SEARCH_GATEWAY_URL}/search?${params}`, "Search products", true),
+      await this.json(`${SEARCH_GATEWAY_URL}/search?${params}`, {}, "Search products", true, true),
     );
     const products = response.Products;
     return normalizeProducts(Array.isArray(products) ? products : asRecord(products).Products, limit);
@@ -434,7 +427,14 @@ export class NemligClient {
 
   private rememberProducts(products: Product[]): Product[] {
     for (const product of products) {
-      if (product.id !== undefined && product.name) this.knownProductNames.set(product.id, product.name);
+      if (product.id === undefined) continue;
+      this.knownProducts.delete(product.id);
+      this.knownProducts.set(product.id, product);
+      while (this.knownProducts.size > KNOWN_PRODUCT_LIMIT) {
+        const oldest = this.knownProducts.keys().next().value as number | undefined;
+        if (oldest === undefined) break;
+        this.knownProducts.delete(oldest);
+      }
     }
     return products;
   }
@@ -484,6 +484,7 @@ export class NemligClient {
   ): Promise<unknown> {
     let lastFailure: unknown;
     for (let attempt = 0; attempt <= (retry ? NEMLIG_READ_MAX_RETRIES : 0); attempt += 1) {
+      const attemptSignal = AbortSignal.timeout(NEMLIG_READ_ATTEMPT_TIMEOUT_MS);
       try {
         const headers = new Headers(init.headers);
         headers.set("Accept", "application/json, text/plain, */*");
@@ -509,7 +510,6 @@ export class NemligClient {
           headers.set("Cookie", [...cookies].map(([name, value]) => `${name}=${value}`).join("; "));
         }
 
-        const attemptSignal = AbortSignal.timeout(NEMLIG_READ_ATTEMPT_TIMEOUT_MS);
         const signal = init.signal ? AbortSignal.any([init.signal, attemptSignal]) : attemptSignal;
         const response = await this.fetcher(url, {
           ...init,
@@ -526,7 +526,7 @@ export class NemligClient {
       } catch (error) {
         if (error instanceof NemligError) throw error;
         lastFailure = error;
-        if (init.signal?.aborted) break;
+        if (init.signal?.aborted || attemptSignal.aborted) break;
       }
     }
     void lastFailure;

@@ -50,11 +50,11 @@ The MCP server SHALL guide clients to use Nemlig tools first for current Nemlig 
 
 #### Scenario: Current Nemlig product question
 - **WHEN** the user asks for a current Nemlig price, availability, favorite, or suitable product without naming another source
-- **THEN** server guidance directs the client to current Nemlig discovery or favorites-first planning rather than treating public web results as current Nemlig evidence
+- **THEN** server guidance directs the client to current Nemlig catalogue discovery or catalogue-backed planning rather than treating public web results as current Nemlig evidence
 
 #### Scenario: Ordinary product request
 - **WHEN** the user ordinarily asks to find or add one or more products without requesting a specific search source
-- **THEN** server guidance directs the client to favorites-first planning, with catalog fallback only when no eligible favorite exists
+- **THEN** server guidance directs the client to catalogue-backed planning with short, loose Danish search wording and no implicit favourites lookup
 
 #### Scenario: Explicit catalog request
 - **WHEN** the user explicitly asks to search the general Nemlig catalog

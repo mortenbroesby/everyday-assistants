@@ -27,7 +27,7 @@ Live checks remain separate from the automatic gate:
   OAuth metadata, and cheap rejection paths with per-step deadlines and latency
   plus last-completed-boundary output, without a token.
 - `pnpm --filter nemlig-assistant production:test:features` requires a current
-  owner token and a 30-second total budget. It exercises read-only paths,
+  owner token and a 90-second total budget. It exercises read-only paths,
   including shopping-list retrieval and at most one favorite result, without
   list writes, proposal preparation/application, feature requests, or basket
   mutation.

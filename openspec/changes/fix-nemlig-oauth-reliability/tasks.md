@@ -11,9 +11,9 @@
 
 ## 3. Enforce healthy layered deadlines
 
-- [x] 3.1 Add fail-closed total-request and control-plane timeout configuration with production values of 30,000 ms and 3,000 ms, retain the 5,000 ms Auth0 budget, cap backend work at 25,000 ms or remaining time, and verify invalid or inconsistent budgets are rejected.
+- [x] 3.1 Add fail-closed total-request and control-plane timeout configuration; the current production values are 90,000 ms total and 3,000 ms control, retain the 5,000 ms Auth0 budget, cap backend work at 85,000 ms or remaining time, and verify invalid or inconsistent budgets are rejected.
 - [x] 3.2 Add a request deadline context and cancellation composition across body reading, authentication, admission, usage/reset RPC, Container dispatch, and internal storage; verify each stalled boundary returns a stable sanitized timeout category and correlation reference within the total budget.
-- [x] 3.3 Reduce Nemlig read-only network work to an 8,000 ms per-attempt timeout with at most one retry, preserve single-attempt mutations and indeterminate-result handling, and verify deterministic retry, cancellation, and no-mutation-retry tests.
+- [x] 3.3 Bound Nemlig read-only network work to a 60,000 ms interaction window with at most one retry after an early transport failure, preserve single-attempt mutations and indeterminate-result handling, and verify deterministic retry, cancellation, and no-mutation-retry tests.
 - [x] 3.4 Verify all timeout and error paths emit allowlisted terminal evidence without tokens, credentials, cookies, OAuth artifacts, MCP arguments, shopping data, provider responses, or stacks.
 
 ## 4. Make the cloud-only path diagnosable

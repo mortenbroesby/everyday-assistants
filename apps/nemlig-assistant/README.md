@@ -67,9 +67,9 @@ plain shopping summary and waits for approval before changing the basket.
 ### Plan a whole shopping list
 
 - Turn 1–20 grocery lines into one structured plan.
-- Check favorites before falling back to the wider catalog.
+- Search the current catalogue for every ordinary line using short, loose Danish wording.
 - Apply hard constraints such as dietary, price, or frozen/non-frozen rules.
-- Prefer discounted, organic, favorite, or lowest-unit-price candidates.
+- Prefer discounted, organic, non-frozen, or lowest-unit-price candidates.
 - Preserve ambiguity when several products could be right instead of guessing.
 - Account for current basket quantities and show what remains to buy.
 - Estimate the selected total from current product data.
@@ -83,7 +83,7 @@ plain shopping summary and waits for approval before changing the basket.
 - Keep regular household lists as `reusable` and event lists as `occasion`.
 - Rename, replace, copy, archive, and restore lists with stale-edit protection.
 - Open a list without contacting Nemlig, then explicitly refresh up to 20
-  selected lines against current favourites, prices, availability, and basket coverage.
+  selected lines against the current catalogue, prices, availability, and basket coverage.
 - Migrate an older saved-plan reference without deleting its source.
 - Save immutable, owner-only plan snapshots.
 - Store only structured inputs and selections, never credentials or stale
@@ -131,9 +131,9 @@ for one repeatable credential-free repository and CI check.
 ## 🧭 How guided shopping works
 
 ChatGPT turns a grocery request into structured lines with quantities, hard
-constraints, and optional preferences. `plan_my_shopping` searches favorites
-first, uses the catalog only where necessary, and leaves uncertain matches for
-you to decide.
+constraints, and optional preferences. `plan_my_shopping` searches the current
+catalogue for each line using short, loose Danish phrases and leaves uncertain
+matches for you to decide. Favourites are searched only when you explicitly ask.
 
 The plan reports source, discount and dietary metadata, constraint outcomes,
 exact basket coverage, remaining quantities, and the estimated total. The
@@ -320,7 +320,7 @@ This README is the user-facing inventory of shipped feature sets:
 
 - account access
 - product and department discovery
-- favorites-first guided shopping
+- catalogue-first guided shopping with explicit favourite browsing
 - constrained product comparison and selection
 - basket-aware whole-list planning
 - private saved shopping plans that refresh current product data

@@ -4,7 +4,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { z } from "zod";
 import type { Basket, Product } from "./client.js";
-import { NemligError, matchFavorites } from "./client.js";
+import { NemligError } from "./client.js";
 
 const constraintsSchema = z.object({
   organic: z.boolean().optional(), vegan: z.boolean().optional(), gluten_free: z.boolean().optional(),
@@ -44,8 +44,8 @@ export interface ShoppingPlan {
 }
 
 export interface PlanClient {
-  listFavorites(limit?: number, page?: number): Promise<Product[]>;
   searchProducts(query: string, limit?: number): Promise<Product[]>;
+  getProduct(productId: number): Promise<Product>;
   getCart(): Promise<Basket>;
 }
 
@@ -96,18 +96,21 @@ const mapLimit = async <T, R>(values: T[], limit: number, work: (value: T) => Pr
 
 export async function resolveShoppingPlan(client: PlanClient, raw: ShoppingPlanInput): Promise<ShoppingPlan> {
   const input = shoppingPlanInputSchema.parse(raw);
-  const [favorites, basket] = await Promise.all([client.listFavorites(1000, 1), client.getCart()]);
-  const favoriteMatches = input.lines.map((line) => eligibleCandidates(matchFavorites(favorites, line.name, 1000), "favorite", line.constraints, line.preferences));
-  const fallbackIndexes = input.lines.flatMap((_, index) => favoriteMatches[index]!.length ? [] : [index]);
-  const fallback = new Map<number, PlanCandidate[]>();
-  const searched = await mapLimit(fallbackIndexes, 3, async (index) => {
-    try { return eligibleCandidates(await client.searchProducts(input.lines[index]!.name, 20), "catalog", input.lines[index]!.constraints, input.lines[index]!.preferences); }
-    catch { return []; }
+  const basketPromise = client.getCart();
+  const discovered = await mapLimit(input.lines, 3, async (line) => {
+    try {
+      const products = line.selected_product_id === undefined
+        ? await client.searchProducts(line.name, 20)
+        : [await client.getProduct(line.selected_product_id)];
+      return { candidates: eligibleCandidates(products, "catalog", line.constraints, line.preferences), unavailable: false };
+    } catch {
+      return { candidates: [], unavailable: true };
+    }
   });
-  fallbackIndexes.forEach((index, position) => fallback.set(index, searched[position]!));
+  const basket = await basketPromise;
   let selectedEstimatedTotal = 0;
   const lines = input.lines.map((line, index) => {
-    const candidates = favoriteMatches[index]!.length ? favoriteMatches[index]! : fallback.get(index) ?? [];
+    const { candidates, unavailable } = discovered[index]!;
     const selected = line.selected_product_id === undefined
       ? (candidates.length === 1 ? candidates[0] : undefined)
       : candidates.find((candidate) => candidate.id === line.selected_product_id);
@@ -115,7 +118,7 @@ export async function resolveShoppingPlan(client: PlanClient, raw: ShoppingPlanI
     const remainingQuantity = selected ? Math.max(0, line.quantity - basketQuantity) : line.quantity;
     if (selected?.price !== undefined) selectedEstimatedTotal += selected.price * remainingQuantity;
     const resolution: "selected" | "covered" | "unresolved" = selected ? (remainingQuantity === 0 ? "covered" : "selected") : "unresolved";
-    return { id: line.id, name: line.name, quantity: line.quantity, candidates, resolution, reason: selected ? undefined : candidates.length ? "multiple_candidates" : "no_eligible_candidate", selected_product_id: selected?.id, basket_quantity: basketQuantity, remaining_quantity: remainingQuantity };
+    return { id: line.id, name: line.name, quantity: line.quantity, candidates, resolution, reason: selected ? undefined : unavailable ? "discovery_unavailable" : candidates.length ? "multiple_candidates" : "no_eligible_candidate", selected_product_id: selected?.id, basket_quantity: basketQuantity, remaining_quantity: remainingQuantity };
   });
   return { lines, selected_estimated_total: Math.round(selectedEstimatedTotal * 100) / 100 };
 }

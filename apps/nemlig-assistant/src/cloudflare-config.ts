@@ -61,8 +61,8 @@ export function loadGatewayConfig(env: CloudflareEnv): GatewayConfig {
   const expensiveRateLimit = boundedInteger(env, "MCP_EXPENSIVE_RATE_LIMIT", rateLimit);
   const authTimeoutMs = boundedInteger(env, "MCP_AUTH_TIMEOUT_MS", 10_000);
   const controlTimeoutMs = boundedInteger(env, "MCP_CONTROL_TIMEOUT_MS", 10_000);
-  const totalTimeoutMs = boundedInteger(env, "MCP_TOTAL_TIMEOUT_MS", 60_000);
-  const backendTimeoutMs = boundedInteger(env, "MCP_BACKEND_TIMEOUT_MS", 25_000);
+  const totalTimeoutMs = boundedInteger(env, "MCP_TOTAL_TIMEOUT_MS", 120_000);
+  const backendTimeoutMs = boundedInteger(env, "MCP_BACKEND_TIMEOUT_MS", 120_000);
   if (authTimeoutMs >= totalTimeoutMs) throw new Error("MCP_AUTH_TIMEOUT_MS must be less than MCP_TOTAL_TIMEOUT_MS.");
   if (controlTimeoutMs >= totalTimeoutMs) throw new Error("MCP_CONTROL_TIMEOUT_MS must be less than MCP_TOTAL_TIMEOUT_MS.");
   if (backendTimeoutMs >= totalTimeoutMs) throw new Error("MCP_BACKEND_TIMEOUT_MS must be less than MCP_TOTAL_TIMEOUT_MS.");

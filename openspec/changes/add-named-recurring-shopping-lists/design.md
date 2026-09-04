@@ -50,7 +50,7 @@ Full-record replacement is simpler and safer than a patch language at this scale
 
 ### Keep list storage separate from live Nemlig resolution
 
-Opening or enumerating a list reads only private list storage. A separate explicit resolution tool accepts a list plus at most twenty selected line IDs, loads the current record revision, and sends those lines through the existing favorites-first planner and basket-gap logic. It does not persist current prices, availability, basket quantities, or newly inferred product choices.
+Opening or enumerating a list reads only private list storage. A separate explicit resolution tool accepts a list plus at most twenty selected line IDs, loads the current record revision, and sends those lines through the catalogue-backed planner and basket-gap logic. It does not persist current prices, availability, basket quantities, or newly inferred product choices.
 
 This separation prevents merely viewing a list from waking the Nemlig client or creating request amplification. Fifty stored lines support realistic household and event lists, while the twenty-line live-resolution limit preserves existing upstream concurrency and timeout bounds.
 

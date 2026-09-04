@@ -42,7 +42,7 @@ The owner SHALL be able to create, enumerate, open, rename, replace the ordered 
 - **THEN** it disappears from the default active listing and then returns with its lines and history intact
 
 ### Requirement: Explicit reusable-list refresh
-Opening list metadata SHALL require no Nemlig call. On a separate explicit resolve request, the system SHALL resolve no more than twenty selected list lines at once using current favorites-first product matching, price, availability, and basket coverage, and SHALL leave both the stored list and basket unchanged.
+Opening list metadata SHALL require no Nemlig call. On a separate explicit resolve request, the system SHALL resolve no more than twenty selected list lines at once using current catalogue product matching, price, availability, and basket coverage, and SHALL leave both the stored list and basket unchanged.
 
 #### Scenario: Reuse weekly essentials
 - **WHEN** the owner explicitly resolves selected lines from `Weekly essentials`
@@ -76,4 +76,3 @@ Reusable lists SHALL run only when explicitly invoked and SHALL create no cron j
 #### Scenario: Reusable list is idle
 - **WHEN** no owner request opens, resolves, or edits a reusable list
 - **THEN** the system performs no background list work and incurs no list-driven Container wake
-
