@@ -101,10 +101,10 @@ export const httpShoppingListStorage = (
   const base = new URL(baseUrl);
   if (base.origin !== "http://nemlig-plan-storage.internal") throw new NemligError("Shopping list storage is invalid.");
   const request = async (ownerScope: string, init?: RequestInit): Promise<Response> => {
-    const response = await fetcher(new URL(`lists/${ownerScope}`, base), {
+    const response = await fetcher(new URL(`named-lists-v2/${ownerScope}`, base), {
       ...init,
       signal: AbortSignal.timeout(timeoutMs),
-      headers: { "content-type": "application/json", "x-nemlig-storage-protocol": "named-lists-v2", ...init?.headers },
+      headers: { "content-type": "application/json", ...init?.headers },
     });
     if (!response.ok) {
       if (response.status === 409) throw new NemligError("This shopping list changed. Open it again before saving.");

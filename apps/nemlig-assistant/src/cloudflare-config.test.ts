@@ -58,3 +58,9 @@ test("Wrangler configuration fixes both environments to one disabled EU lite Con
   assert.equal(wrangler.limits.subrequests, 8);
   assert.doesNotMatch(raw, /getRandom|autoscal|NEMLIG_(?:USERNAME|PASSWORD)|GH_TOKEN/u);
 });
+
+test("Container outbound handlers register through the SDK static setter", async () => {
+  const worker = await readFile(new URL("./cloudflare-worker.ts", import.meta.url), "utf8");
+  assert.match(worker, /NemligMcpContainer\.outboundByHost\s*=/u);
+  assert.doesNotMatch(worker, /static\s+outboundByHost/u);
+});

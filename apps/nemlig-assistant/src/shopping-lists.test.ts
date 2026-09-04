@@ -91,7 +91,7 @@ test("list collection and owner bounds fail before changing state", async () => 
   assert.equal((await showShoppingLists("auth0|other", storage)).length, 0);
 });
 
-test("HTTP list storage is owner-scoped, bounded, and uses one authenticated request per operation", async () => {
+test("HTTP list storage is owner-scoped, bounded, and uses one versioned internal request per operation", async () => {
   const calls: Array<{ url: string; method: string; protocol: string | null; match: string | null }> = [];
   const ownerScope = ownerScopeFor("auth0|owner");
   const collection: ShoppingListCollection = { schema_version: 2, owner_scope: ownerScope, generation: 0, lists: [] };
@@ -104,13 +104,13 @@ test("HTTP list storage is owner-scoped, bounded, and uses one authenticated req
   assert.deepEqual(await storage.read(ownerScope), collection);
   await storage.replace(ownerScope, 0, { ...collection, generation: 1 });
   assert.deepEqual(calls, [
-    { url: `http://nemlig-plan-storage.internal/lists/${ownerScope}`, method: "GET", protocol: "named-lists-v2", match: null },
-    { url: `http://nemlig-plan-storage.internal/lists/${ownerScope}`, method: "PUT", protocol: "named-lists-v2", match: "0" },
+    { url: `http://nemlig-plan-storage.internal/named-lists-v2/${ownerScope}`, method: "GET", protocol: null, match: null },
+    { url: `http://nemlig-plan-storage.internal/named-lists-v2/${ownerScope}`, method: "PUT", protocol: null, match: "0" },
   ]);
   assert.throws(() => httpShoppingListStorage("https://lookalike.invalid/", fetcher), /storage is invalid/iu);
 });
 
-test("fixed storage object authenticates list routes and atomically isolates owners and revisions", async () => {
+test("fixed storage object atomically isolates version-routed owners and revisions", async () => {
   const values = new Map<string, unknown>();
   const storage: ShoppingListObjectStorage = {
     get: async <T>(key: string) => values.get(key) as T | undefined,
@@ -119,20 +119,19 @@ test("fixed storage object authenticates list routes and atomically isolates own
   };
   const owner = ownerScopeFor("auth0|owner");
   const other = ownerScopeFor("auth0|other");
-  const url = (scope: string) => `http://nemlig-plan-storage.internal/lists/${scope}`;
-  assert.equal((await handleShoppingListStorageRequest(new Request(url(owner)), owner, storage)).status, 401);
-  const get = (scope: string) => handleShoppingListStorageRequest(new Request(url(scope), { headers: { "x-nemlig-storage-protocol": "named-lists-v2" } }), scope, storage);
+  const url = (scope: string) => `http://nemlig-plan-storage.internal/named-lists-v2/${scope}`;
+  const get = (scope: string) => handleShoppingListStorageRequest(new Request(url(scope)), scope, storage);
   assert.equal(((await (await get(owner)).json()) as ShoppingListCollection).lists.length, 0);
   const base: ShoppingListCollection = { schema_version: 2, owner_scope: owner, generation: 1, lists: [] };
   const put = (scope: string, expected: number, body: unknown) => handleShoppingListStorageRequest(new Request(url(scope), {
-    method: "PUT", headers: { "x-nemlig-storage-protocol": "named-lists-v2", "if-match": String(expected), "content-type": "application/json" }, body: JSON.stringify(body),
+    method: "PUT", headers: { "if-match": String(expected), "content-type": "application/json" }, body: JSON.stringify(body),
   }), scope, storage);
   assert.equal((await put(owner, 0, base)).status, 200);
   assert.equal((await put(owner, 0, base)).status, 409);
   assert.equal((await put(other, 0, base)).status, 400);
   assert.equal(((await (await get(other)).json()) as ShoppingListCollection).lists.length, 0);
   assert.equal((await put(owner, 1, { ...base, generation: 2, lists: Array.from({ length: MAX_SHOPPING_LISTS + 1 }, () => ({})) })).status, 400);
-  const malformed = await handleShoppingListStorageRequest(new Request(url(owner), { method: "PUT", headers: { "x-nemlig-storage-protocol": "named-lists-v2", "if-match": "1" }, body: "{" }), owner, storage);
+  const malformed = await handleShoppingListStorageRequest(new Request(url(owner), { method: "PUT", headers: { "if-match": "1" }, body: "{" }), owner, storage);
   assert.equal(malformed.status, 400);
   assert.doesNotMatch(await malformed.text(), /Zod|owner_scope|stack/iu);
 });

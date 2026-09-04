@@ -44,10 +44,6 @@ const structuredEvent: NonNullable<GatewayDependencies["event"]> = (name, fields
 };
 
 export class NemligMcpContainer extends Container<Env> {
-  static outboundByHost: Record<string, OutboundHandler<Env>> = {
-    "nemlig-plan-storage.internal": (request, env) =>
-      env.NEMLIG_PLAN_STORAGE.jurisdiction("eu").getByName("nemlig-plans").fetch(request),
-  };
   defaultPort = 8080;
   sleepAfter = "10m";
   envVars = {
@@ -109,9 +105,22 @@ export class NemligMcpContainer extends Container<Env> {
   }
 }
 
+NemligMcpContainer.outboundByHost = {
+  "nemlig-plan-storage.internal": (async (request, env) => {
+    const path = new URL(request.url).pathname;
+    const objectName = path.startsWith("/named-lists-v2/") || path.startsWith("/lists/")
+      ? "nemlig-lists-v2"
+      : "nemlig-plans";
+    const response = await env.NEMLIG_PLAN_STORAGE.jurisdiction("eu").getByName(objectName).fetch(request);
+    structuredEvent("plan_storage_response", { method: request.method, status: response.status });
+    return response;
+  }) satisfies OutboundHandler<Env>,
+};
+
 export class PlanStorage extends DurableObject<Env> {
   async fetch(request: Request): Promise<Response> {
     const path = new URL(request.url).pathname.slice(1);
+    if (path.startsWith("named-lists-v2/")) return this.handleShoppingLists(request, path.slice("named-lists-v2/".length));
     if (path.startsWith("lists/")) return this.handleShoppingLists(request, path.slice("lists/".length));
     const id = path;
     if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(id)) {
