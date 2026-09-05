@@ -47,6 +47,7 @@ const fakeClient = (overrides: Partial<ShoppingClient> = {}): ShoppingClient => 
   login: async () => {},
   searchProducts: async () => [product],
   getProduct: async () => product,
+  getFreshProduct: async () => product,
   listFavorites: async () => [product],
   listDepartments: async () => [{ id: "/mejeri", name: "Mejeri" }],
   browseDepartment: async () => ({ products: [product], page: 1, hasNext: false }),

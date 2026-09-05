@@ -33,6 +33,7 @@ test("local CLI help and MCP surface need no credentials or network", async () =
     login: unavailable,
     searchProducts: unavailable,
     getProduct: unavailable,
+    getFreshProduct: unavailable,
     listFavorites: unavailable,
     listDepartments: unavailable,
     browseDepartment: unavailable,

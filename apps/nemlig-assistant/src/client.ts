@@ -235,9 +235,22 @@ export class NemligClient {
   }
 
   async getProduct(productId: number): Promise<Product> {
-    if (!Number.isInteger(productId) || productId < 1) throw new NemligError("Product ID must be positive.");
+    this.validateProductId(productId);
     const known = this.knownProducts.get(productId);
     if (known) return known;
+    return this.fetchExactProduct(productId);
+  }
+
+  async getFreshProduct(productId: number): Promise<Product> {
+    this.validateProductId(productId);
+    return this.fetchExactProduct(productId);
+  }
+
+  private validateProductId(productId: number): void {
+    if (!Number.isInteger(productId) || productId < 1) throw new NemligError("Product ID must be positive.");
+  }
+
+  private async fetchExactProduct(productId: number): Promise<Product> {
     const product = (await this.searchProducts(String(productId), 10)).find(
       (candidate) => String(candidate.id) === String(productId),
     );

@@ -83,11 +83,12 @@ const replacementBasket = (oldQuantity = 1, replacementQuantity = 0): Basket => 
 
 type ProposalClient = Pick<
   ShoppingClient,
-  "getProduct" | "getCart" | "addToCart" | "removeFromCart" | "clearCart"
+  "getProduct" | "getFreshProduct" | "getCart" | "addToCart" | "removeFromCart" | "clearCart"
 >;
 
 const fakeClient = (overrides: Partial<ProposalClient> = {}): ProposalClient => ({
   getProduct: async (id) => id === 8 ? replacementProduct : product,
+  getFreshProduct: async (id) => id === 8 ? replacementProduct : product,
   getCart: async () => emptyBasket(),
   addToCart: async (_id, quantity = 1) => bananaBasket(quantity),
   removeFromCart: async () => emptyBasket(),
@@ -145,7 +146,7 @@ test("application revalidates basket and product details before any mutation", a
   let mutations = 0;
   const service = new BasketProposalService(fakeClient({
     getCart: async () => basket,
-    getProduct: async () => currentProduct,
+    getFreshProduct: async () => currentProduct,
     addToCart: async () => { mutations += 1; return bananaBasket(); },
   }), { id: () => "00000000-0000-4000-8000-000000000008" });
   const changedBasketProposal = await service.prepareAdditions("connection", [{ product_id: 7, quantity: 1 }]);
@@ -164,6 +165,43 @@ test("application revalidates basket and product details before any mutation", a
     /Product details changed after review/,
   );
   assert.equal(mutations, 0);
+});
+
+test("application uses reusable lookup for review and authoritative lookup for apply", async () => {
+  let reusableReads = 0;
+  let authoritativeReads = 0;
+  const service = new BasketProposalService(fakeClient({
+    getProduct: async () => { reusableReads += 1; return product; },
+    getFreshProduct: async () => { authoritativeReads += 1; return product; },
+  }), { id: () => "00000000-0000-4000-8000-000000000027" });
+  const proposal = await service.prepareAdditions("connection", [{ product_id: 7, quantity: 1 }]);
+  assert.deepEqual({ reusableReads, authoritativeReads }, { reusableReads: 1, authoritativeReads: 0 });
+  await service.apply("connection", proposal.proposal_id, "additions");
+  assert.deepEqual({ reusableReads, authoritativeReads }, { reusableReads: 1, authoritativeReads: 1 });
+});
+
+test("application checks every addition freshly before the first mutation", async () => {
+  let mutations = 0;
+  const freshIds: number[] = [];
+  const service = new BasketProposalService(fakeClient({
+    getFreshProduct: async (id) => {
+      freshIds.push(id);
+      if (id === 8) throw new Error("fresh lookup unavailable");
+      return product;
+    },
+    addToCart: async () => { mutations += 1; return bananaBasket(); },
+  }), { id: () => "00000000-0000-4000-8000-000000000028" });
+  const proposal = await service.prepareAdditions("connection", [
+    { product_id: 7, quantity: 1 },
+    { product_id: 8, quantity: 1 },
+  ]);
+  await assert.rejects(
+    service.apply("connection", proposal.proposal_id, "additions"),
+    /could not be revalidated/,
+  );
+  assert.deepEqual(freshIds, [7, 8]);
+  assert.equal(mutations, 0);
+  await assert.rejects(service.apply("connection", proposal.proposal_id, "additions"), /no longer applicable/);
 });
 
 test("replacement preparation reviews exact net basket savings without mutation", async () => {
@@ -319,10 +357,21 @@ test("replacement failures stop, consume the proposal, and never compensate or r
   assert.deepEqual(drift.counts(), { adds: 0, removes: 0 });
 
   let replacement = replacementProduct;
-  const productDrift = await prepare({ getProduct: async (id) => id === 8 ? replacement : product });
+  const productDrift = await prepare({ getFreshProduct: async (id) => id === 8 ? replacement : product });
   replacement = { ...replacementProduct, price: 3 };
   await assert.rejects(productDrift.service.apply("connection", productDrift.proposal.proposal_id, "replacement"), /details changed/);
   assert.deepEqual(productDrift.counts(), { adds: 0, removes: 0 });
+
+  const lookupFailure = await prepare({ getFreshProduct: async () => { throw new Error("lookup unavailable"); } });
+  await assert.rejects(
+    lookupFailure.service.apply("connection", lookupFailure.proposal.proposal_id, "replacement"),
+    /could not be revalidated/,
+  );
+  assert.deepEqual(lookupFailure.counts(), { adds: 0, removes: 0 });
+  await assert.rejects(
+    lookupFailure.service.apply("connection", lookupFailure.proposal.proposal_id, "replacement"),
+    /no longer applicable/,
+  );
 
   let now = new Date("2026-08-31T10:00:00Z");
   const expired = await prepare({}, { now: () => now, ttlMs: 1 });

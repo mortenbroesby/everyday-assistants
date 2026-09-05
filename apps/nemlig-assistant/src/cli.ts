@@ -24,6 +24,7 @@ export type ShoppingClient = Pick<
   | "login"
   | "searchProducts"
   | "getProduct"
+  | "getFreshProduct"
   | "listFavorites"
   | "listDepartments"
   | "browseDepartment"

@@ -205,7 +205,7 @@ export class BasketProposalService {
   constructor(
     private readonly client: Pick<
       ShoppingClient,
-      "getProduct" | "getCart" | "addToCart" | "removeFromCart" | "clearCart"
+      "getProduct" | "getFreshProduct" | "getCart" | "addToCart" | "removeFromCart" | "clearCart"
     >,
     options: ProposalServiceOptions = {},
   ) {
@@ -368,13 +368,20 @@ export class BasketProposalService {
         throw new NemligError("Basket changed after review; prepare and review a new proposal.");
       }
       if (proposal.operation.kind === "additions") {
-        for (const reviewed of proposal.operation.lines) {
-          const current = productLine(await this.client.getProduct(reviewed.product_id), reviewed.quantity);
-          if (!sameLine(current, reviewed)) {
-            proposal.state = "invalid";
-            this.record("invalidated", proposal.operation.kind, "rejected");
-            throw new NemligError("Product details changed after review; prepare and review a new proposal.");
+        try {
+          for (const reviewed of proposal.operation.lines) {
+            const current = productLine(await this.client.getFreshProduct(reviewed.product_id), reviewed.quantity);
+            if (!sameLine(current, reviewed)) {
+              proposal.state = "invalid";
+              this.record("invalidated", proposal.operation.kind, "rejected");
+              throw new NemligError("Product details changed after review; prepare and review a new proposal.");
+            }
           }
+        } catch (error) {
+          if (proposal.state === "invalid") throw error;
+          proposal.state = "invalid";
+          this.record("invalidated", proposal.operation.kind, "rejected");
+          throw new NemligError("Current product details could not be revalidated; prepare and review a new proposal.");
         }
       } else if (proposal.operation.kind === "replacement") {
         const operation = proposal.operation;
@@ -384,10 +391,18 @@ export class BasketProposalService {
           this.record("invalidated", proposal.operation.kind, "rejected");
           throw new NemligError("Current basket line changed after review; prepare and review a new proposal.");
         }
-        const [current, replacement] = await Promise.all([
-          this.client.getProduct(operation.current.product_id),
-          this.client.getProduct(operation.replacement.product_id),
-        ]);
+        let current: Product;
+        let replacement: Product;
+        try {
+          [current, replacement] = await Promise.all([
+            this.client.getFreshProduct(operation.current.product_id),
+            this.client.getFreshProduct(operation.replacement.product_id),
+          ]);
+        } catch {
+          proposal.state = "invalid";
+          this.record("invalidated", proposal.operation.kind, "rejected");
+          throw new NemligError("Current product details could not be revalidated; prepare and review a new proposal.");
+        }
         if (
           !sameReplacementLine(
             replacementLine(current, currentBasketLine.quantity, currentBasketLine.total),

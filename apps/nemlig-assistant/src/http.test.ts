@@ -127,6 +127,7 @@ test("HTTP MCP preserves an owner proposal across authenticated transport reconn
     login: async () => undefined,
     searchProducts: async () => [],
     getProduct: async () => product,
+    getFreshProduct: async () => product,
     listFavorites: async () => [],
     listDepartments: async () => [],
     browseDepartment: async () => ({ products: [], page: 1, hasNext: false }),

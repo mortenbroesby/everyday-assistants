@@ -1,13 +1,13 @@
 ## 1. Authoritative product lookup
 
-- [ ] 1.1 Add an explicit exact-product client operation that bypasses retained product observations while preserving existing read timeouts and retry bounds; verify a focused client test starts a second upstream request after the product map is populated.
-- [ ] 1.2 Preserve the existing reusable lookup for discovery and preparation; verify its focused regression test still performs no additional request for an already observed product.
+- [x] 1.1 Add an explicit exact-product client operation that bypasses retained product observations while preserving existing read timeouts and retry bounds; verify a focused client test starts a second upstream request after the product map is populated.
+- [x] 1.2 Preserve the existing reusable lookup for discovery and preparation; verify its focused regression test still performs no additional request for an already observed product.
 
 ## 2. Fail-closed proposal application
 
-- [ ] 2.1 Wire additions and replacement application to the authoritative product operation inside the mutation lock; verify focused proposal tests observe authoritative rather than reusable lookup calls.
-- [ ] 2.2 Cover changed details, unavailable exact lookup, and multi-line additions; verify each case attempts no basket mutation before every fresh product check succeeds.
-- [ ] 2.3 Confirm mutation sequencing, no-retry handling, and final basket readback remain unchanged by running the complete proposal test suite.
+- [x] 2.1 Wire additions and replacement application to the authoritative product operation inside the mutation lock; verify focused proposal tests observe authoritative rather than reusable lookup calls.
+- [x] 2.2 Cover changed details, unavailable exact lookup, and multi-line additions; verify each case attempts no basket mutation before every fresh product check succeeds.
+- [x] 2.3 Confirm mutation sequencing, no-retry handling, and final basket readback remain unchanged by running the complete proposal test suite.
 
 ## 3. Contract and repository verification
 

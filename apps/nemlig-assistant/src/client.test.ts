@@ -269,6 +269,20 @@ test("exact product lookup reuses the full previously observed product without a
   assert.equal(requests.length, 0);
 });
 
+test("fresh exact product lookup bypasses a previously observed product", async () => {
+  const requests: ExpectedRequest[] = [
+    ...sessionRequests(),
+    { match: "/search\\?", response: json({ Products: [{ Id: 424242, Name: "Observed", Price: 12.34 }] }) },
+    { match: "/search\\?", response: json({ Products: [{ Id: 424242, Name: "Current", Price: 13.45 }] }) },
+  ];
+  const client = new NemligClient(mockFetch(requests));
+  await client.searchProducts("Observed", 1);
+  const current = await client.getFreshProduct(424242);
+  assert.equal(current.name, "Current");
+  assert.equal(current.price, 13.45);
+  assert.equal(requests.length, 0);
+});
+
 test("exact product lookup rejects invalid and unresolved IDs", async () => {
   const client = new NemligClient(
     mockFetch([
@@ -279,6 +293,7 @@ test("exact product lookup rejects invalid and unresolved IDs", async () => {
   );
   await assert.rejects(client.getProduct(0), /Product ID must be positive/);
   await assert.rejects(client.getProduct(7), /could not be resolved exactly/);
+  await assert.rejects(client.getFreshProduct(0), /Product ID must be positive/);
 });
 
 test("empty gateway search tries no more than three safe fallback categories", async () => {
