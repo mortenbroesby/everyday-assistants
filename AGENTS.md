@@ -2,6 +2,14 @@
 
 This repository contains independent assistants under `apps/`.
 
+- Before starting a task, apply
+  [`.agents/instructions/definition-of-ready.md`](.agents/instructions/definition-of-ready.md).
+  Before reporting a task complete, apply
+  [`.agents/instructions/definition-of-done.md`](.agents/instructions/definition-of-done.md).
+  These are repository requirements, not optional checklists. If a criterion is
+  inapplicable, record why; if it is unmet, keep the task active or report it as
+  blocked rather than calling it done.
+
 - Perform repository changes in a dedicated non-primary Git worktree and branch
   by default. Before editing, inspect the primary checkout and existing
   worktrees, create the dedicated worktree from the latest `origin/main`, and
