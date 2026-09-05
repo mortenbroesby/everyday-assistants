@@ -1,6 +1,6 @@
 {
   "name": "nemlig-assistant",
-  "version": "2.1.1-alpha.4",
+  "version": "2.2.0-alpha.6",
   "private": true,
   "description": "Safe local Nemlig Assistant CLI and MCP server",
   "type": "module",
@@ -38,6 +38,7 @@
     "mcp": "pnpm build && node dist/mcp.js",
     "prepack": "pnpm build",
     "production:probe": "tsx scripts/production-acceptance.ts --edge-only",
+    "production:deploy": "tsx scripts/production-deploy.ts",
     "production:test:features": "tsx scripts/production-acceptance.ts",
     "production:test:mutation": "tsx scripts/production-acceptance.ts --mutation",
     "release:apply": "tsx release/agent.ts --apply",

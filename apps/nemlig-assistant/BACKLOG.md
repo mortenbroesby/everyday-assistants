@@ -106,7 +106,7 @@ This item does not authorize a live proposal apply or any basket mutation.
 
 ## P1 — predictable automated production deployment
 
-**Status:** Planned; implementation not started.
+**Status:** Implementation in progress; production proof pending.
 
 **Epic outcome:** Replace the error-prone manual release sequence with one
 explicit, serialized repository command that deploys an exact CI-green `main`
@@ -117,20 +117,20 @@ reports the last verified production state.
 
 - [x] Choose an owner-run command instead of a hosted workflow so the current
   Keychain-backed GitHub and Cloudflare sessions remain the credential boundary.
-- [ ] Require one full commit equal to local HEAD and refreshed remote `main`,
+- [x] Require one full commit equal to local HEAD and refreshed remote `main`,
   plus successful exact-head CI, before any Cloudflare mutation.
-- [ ] Serialize local worktrees and other machines with exclusive local and
+- [x] Serialize local worktrees and other machines with exclusive local and
   atomic remote leases; never steal an interrupted lease automatically.
 
 ### Story P1.D2 — automate the proven fail-closed sequence
 
-- [ ] Record and re-check current Cloudflare state, build and upload once with
+- [x] Record and re-check current Cloudflare state, build and upload once with
   `MCP_ENABLED=false`, and prove both routes reject while the Container is
   inactive.
-- [ ] Enable the same source and image with no Container rollout, preserve one
+- [x] Enable the same source and image with no Container rollout, preserve one
   `lite` instance and every existing quota, timeout, breaker, route, and binding,
   then run bounded edge and authenticated read-only acceptance.
-- [ ] On failure, leave the candidate disabled or restore and verify the exact
+- [x] On failure, leave the candidate disabled or restore and verify the exact
   starting version; never run a proposal or Nemlig mutation command.
 
 ### Story P1.D3 — make evidence recoverable and cost-bounded
@@ -139,7 +139,7 @@ reports the last verified production state.
   hosted secret, scheduled run, CI job, storage, or capacity; each approved
   release uses one image build/upload, one no-rollout enable upload, two disabled
   route probes, bounded acceptance, and small GitHub/Cloudflare state reads.
-- [ ] Journal only redacted commit, version, timing, check, rollback, and
+- [x] Journal only redacted commit, version, timing, check, rollback, and
   last-state evidence beneath the shared Git directory.
 - [ ] Pass focused failure-path tests, strict specs, privacy, `pnpm verify`,
   package smoke, and production readiness; integrate exact-head green `main`,

@@ -103,6 +103,59 @@ disabled endpoint and no-running-Container state were verified.
    releases update this app in place with **Refresh**; never create a `(new)`,
    bracketed, numbered, or parallel Nemlig app.
 
+## Automated production release
+
+After the implementation commit is on `main`, exact-head CI is green, and the
+owner has explicitly approved that production release, use the repository-owned
+command from a clean checkout of the exact 40-character commit:
+
+```sh
+read -rs NEMLIG_MCP_ACCESS_TOKEN
+export NEMLIG_MCP_ACCESS_TOKEN
+pnpm --filter nemlig-assistant production:deploy -- EXACT_MAIN_COMMIT
+unset NEMLIG_MCP_ACCESS_TOKEN
+```
+
+The command verifies local HEAD, refreshed remote `main`, exact-head CI, GitHub
+and Wrangler authentication, and owner-token presence before Cloudflare changes.
+It takes an exclusive lock shared by linked worktrees and an atomic temporary
+GitHub ref at `refs/heads/codex-lock/nemlig-production`. It then records the
+starting version, builds and deploys once with `MCP_ENABLED=false`, verifies both
+routes and an inactive Container, enables the same revision with no Container
+rollout, and runs the existing bounded edge and authenticated read-only checks.
+It never prepares or applies a proposal and never mutates a basket, favorite, or
+saved list.
+
+The latest redacted journal is stored below the common Git directory at
+`nemlig-production-deploy/latest.json`. It contains only commits, version IDs,
+timestamps, completed checks, rollback status, a fixed failure category, and the
+last verified production state. A successful or safely reconciled run removes
+both leases. An interrupted or indeterminate run deliberately leaves them in
+place.
+
+For a stale lease, first inspect the journal and current Wrangler deployment,
+version, Container application, and instances. Restore the journal's exact
+starting version or prove the recorded candidate is safely disabled; never infer
+state from a terminated shell. Only after that reconciliation, delete the fixed
+GitHub lock ref if it still points to the journal's commit and remove the local
+`nemlig-production-deploy.lock` file. Then rerun the command from the exact
+CI-green `main` commit rather than continuing individual deployment steps.
+
+```sh
+git rev-parse --git-common-dir
+gh api repos/mortenbroesby/everyday-assistants/git/ref/heads/codex-lock/nemlig-production --jq .object.sha
+pnpm --filter nemlig-assistant exec wrangler deployments list --env production --json
+# After reconciling that exact commit and Cloudflare state:
+gh api --method DELETE repos/mortenbroesby/everyday-assistants/git/refs/heads/codex-lock/nemlig-production
+unlink "$(git rev-parse --git-common-dir)/nemlig-production-deploy.lock"
+```
+
+This automation adds no workflow, CI job, hosted secret, service, dependency,
+storage, schedule, or capacity. Each approved release retains the existing one
+`lite` Container and cost ceilings and performs one image build/upload, one
+no-rollout enable upload, two disabled-route probes, bounded acceptance, and
+small GitHub and Cloudflare state reads.
+
 ## Emergency disable and re-enable
 
 In Cloudflare, open the production Worker, edit the plain production variable
