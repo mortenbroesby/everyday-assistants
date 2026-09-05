@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { ADMISSION_REASONS } from "./cloudflare-usage.js";
 
 const routeSchema = z.enum([
   "health",
@@ -11,6 +12,12 @@ const routeSchema = z.enum([
 ]);
 const methodSchema = z.enum(["GET", "POST", "DELETE", "OTHER"]);
 const operationSchema = z.enum(["protocol", "normal", "expensive", "none"]);
+const tierSchema = z.enum(["0", "1", "2", "none"]);
+const denialReasonSchema = z.enum([
+  "none", "mcp_disabled", "configuration_invalid", "request_invalid",
+  "origin_not_allowed", "authentication_required", "authentication_failed",
+  "principal_not_allowed", ...ADMISSION_REASONS,
+]);
 const outcomeSchema = z.enum([
   "completed",
   "protocol_completed",
@@ -21,6 +28,7 @@ const outcomeSchema = z.enum([
   "authentication_timeout",
   "control_timeout",
   "rate_limited",
+  "capacity_rejected",
   "breaker_rejected",
   "backend_timeout",
   "request_timeout",
@@ -35,6 +43,8 @@ export const gatewayRequestEventSchema = z.object({
   route: routeSchema,
   method: methodSchema,
   operation: operationSchema,
+  tier: tierSchema,
+  denial_reason: denialReasonSchema,
   outcome: outcomeSchema,
   status: z.number().int().min(100).max(599),
   elapsed_ms: z.number().int().min(0).max(120_000),

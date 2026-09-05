@@ -172,8 +172,9 @@ post-restore health, and the owner accepts the documented worst credible cost.
 
 ## P1 — add tiered access with family-reserved capacity
 
-**Status:** Not started. Multi-user access remains disabled until identity,
-Nemlig-account, session, basket, proposal, and stored-list isolation are proven.
+**Status:** Implementation in progress. The repository default remains one
+enabled Tier 0 owner; Tier 1 and Tier 2 activation remain disabled until a
+separately approved real-user isolation exercise proves every boundary below.
 
 Use ascending tier numbers for descending protection. Higher-numbered tiers are
 shed first as monthly usage approaches the owner-set cost envelope:

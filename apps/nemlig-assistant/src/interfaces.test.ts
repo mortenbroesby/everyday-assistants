@@ -408,7 +408,7 @@ test("MCP named lists stay storage-only until a bounded explicit Nemlig refresh"
     removeFromCart: async () => { mutations += 1; return basket; },
     clearCart: async () => { mutations += 1; return basket; },
   });
-  await withMcpClient(createMcpServer(client, async () => undefined, { NEMLIG_MCP_APPS: "0", NEMLIG_CONFIG_DIR: directory }, undefined, undefined, { ownerSubject: "auth0|owner" }), async (mcp) => {
+  await withMcpClient(createMcpServer(client, async () => undefined, { NEMLIG_MCP_APPS: "0", NEMLIG_CONFIG_DIR: directory }, undefined, undefined, { principalKey: "auth0|owner", policyRevision: "test-v1", tier: 0 }), async (mcp) => {
     const created = await mcp.callTool({ name: "save_my_shopping_list", arguments: { name: "Ugens basis", type: "reusable", lines: [{ id: "milk", name: "mælk", quantity: 2 }] } });
     assert.match(toolText(created), /Ugens basis er gemt/iu);
     assert.doesNotMatch(toolText(created), /[0-9a-f]{8}-[0-9a-f-]{27}|revision|status/iu);
@@ -474,7 +474,7 @@ test("every MCP tool has complete schemas, accurate annotations, and safe server
 test("authenticated HTTP request context preserves stdio tool and resource metadata", async () => {
   await withMcpClient(createMcpServer(fakeClient()), async (stdio) => {
     await withMcpClient(
-      createMcpServer(fakeClient(), undefined, undefined, undefined, undefined, { ownerSubject: "auth0|owner" }),
+      createMcpServer(fakeClient(), undefined, undefined, undefined, undefined, { principalKey: "auth0|owner", policyRevision: "test-v1", tier: 0 }),
       async (http) => {
         assert.deepEqual(await http.listTools(), await stdio.listTools());
         assert.deepEqual(await http.listResources(), await stdio.listResources());
@@ -640,7 +640,7 @@ test("MCP additions require prepare then apply and direct mutation tools are una
   });
 });
 
-test("hosted proposals survive an owner reconnect but remain isolated from another owner", async () => {
+test("hosted proposals survive a principal reconnect but remain isolated by principal and policy revision", async () => {
   let added: [number, number] | undefined;
   const empty = { ...basket, items: [], productsPrice: 0, numberOfProducts: 0 };
   const applied = {
@@ -660,7 +660,7 @@ test("hosted proposals survive an owner reconnect but remain isolated from anoth
   let proposalId = "";
 
   await withMcpClient(
-    createMcpServer(client, undefined, undefined, proposals, undefined, { ownerSubject: "auth0|owner" }),
+    createMcpServer(client, undefined, undefined, proposals, undefined, { principalKey: "auth0|owner", policyRevision: "test-v1", tier: 0 }),
     async (mcp) => {
       const prepared = await mcp.callTool({
         name: "review_items_to_add",
@@ -671,7 +671,7 @@ test("hosted proposals survive an owner reconnect but remain isolated from anoth
   );
 
   await withMcpClient(
-    createMcpServer(client, undefined, undefined, proposals, undefined, { ownerSubject: "auth0|other" }),
+    createMcpServer(client, undefined, undefined, proposals, undefined, { principalKey: "auth0|other", policyRevision: "test-v1", tier: 1 }),
     async (mcp) => {
       const rejected = await mcp.callTool({ name: "add_approved_items", arguments: { approved_review: proposalId } });
       assert.equal(rejected.isError, true);
@@ -680,7 +680,16 @@ test("hosted proposals survive an owner reconnect but remain isolated from anoth
   );
 
   await withMcpClient(
-    createMcpServer(client, undefined, undefined, proposals, undefined, { ownerSubject: "auth0|owner" }),
+    createMcpServer(client, undefined, undefined, proposals, undefined, { principalKey: "auth0|owner", policyRevision: "test-v2", tier: 0 }),
+    async (mcp) => {
+      const rejected = await mcp.callTool({ name: "add_approved_items", arguments: { approved_review: proposalId } });
+      assert.equal(rejected.isError, true);
+      assert.equal(added, undefined);
+    },
+  );
+
+  await withMcpClient(
+    createMcpServer(client, undefined, undefined, proposals, undefined, { principalKey: "auth0|owner", policyRevision: "test-v1", tier: 0 }),
     async (mcp) => {
       const result = await mcp.callTool({ name: "add_approved_items", arguments: { approved_review: proposalId } });
       assert.equal(result.isError, undefined);

@@ -91,6 +91,16 @@ test("list collection and owner bounds fail before changing state", async () => 
   assert.equal((await showShoppingLists("auth0|other", storage)).length, 0);
 });
 
+test("principal list scopes prevent cross-account read, overwrite, archive, and restore", async () => {
+  const storage = memoryStorage();
+  const owner = await saveShoppingList("owner-key", storage, { name: "Private", type: "reusable", lines: [line()] }, instant);
+  assert.deepEqual(await showShoppingLists("invitee-key", storage), []);
+  await assert.rejects(saveShoppingList("invitee-key", storage, { list: owner.id, expected_revision: 1, name: "Changed", type: "reusable", lines: [] }), /not found/iu);
+  await assert.rejects(setShoppingListStatus("invitee-key", storage, owner.id, "archived", 1), /not found/iu);
+  await assert.rejects(setShoppingListStatus("invitee-key", storage, owner.id, "active", 1), /not found/iu);
+  assert.equal((await showShoppingLists("owner-key", storage, owner.id))[0]?.name, "Private");
+});
+
 test("HTTP list storage is owner-scoped, bounded, and uses one versioned internal request per operation", async () => {
   const calls: Array<{ url: string; method: string; protocol: string | null; match: string | null }> = [];
   const ownerScope = ownerScopeFor("auth0|owner");

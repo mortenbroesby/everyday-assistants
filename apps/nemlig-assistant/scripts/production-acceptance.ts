@@ -2,6 +2,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import {
   verifyApprovedReversibleProductionMutation,
+  verifyAggregateTierUsage,
   verifyProductionEdge,
   verifyReadOnlyProductionFeatures,
   type AcceptanceClient,
@@ -45,9 +46,10 @@ if (process.argv.includes("--edge-only")) {
   process.exit(0);
 }
 
+const accessToken = required("NEMLIG_MCP_ACCESS_TOKEN");
 const client = new Client({ name: "nemlig-production-acceptance", version: "1.0.0" });
 const transport = new StreamableHTTPClientTransport(origin, {
-  requestInit: { headers: { authorization: `Bearer ${required("NEMLIG_MCP_ACCESS_TOKEN")}` } },
+  requestInit: { headers: { authorization: `Bearer ${accessToken}` } },
 });
 try {
   await withinDeadline("Authenticated MCP connect", client.connect(transport));
@@ -62,6 +64,7 @@ try {
   };
   if (!process.argv.includes("--mutation")) {
     const report = await verifyReadOnlyProductionFeatures(acceptanceClient);
+    await verifyAggregateTierUsage(origin, accessToken);
     console.log(`Verified ${report.exercised.length} production feature paths without external-state writes.`);
   } else {
     const change = approvedMutation("NEMLIG_PRODUCTION_MUTATION");

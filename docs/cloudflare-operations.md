@@ -16,9 +16,10 @@ and again on live kill-switch version `fd5696b7-d2ea-4f3c-9a1a-88cf22d29caa`.
 The current enabled endpoint returns healthy OAuth metadata and rejects anonymous
 MCP initialization with HTTP 401 without starting the Container. The Worker is
 `nemlig-mcp-cloudflare-production`; the configured Container is `lite`, EU
-placed, sleeps after 10 minutes, and is capped at one instance. Required Auth0
-owner and Nemlig credentials are stored as encrypted Worker secrets; this
-document records names only, never values.
+placed, sleeps after 10 minutes, and is capped at one instance. The owner-only
+principal policy, including its Auth0 subject and Nemlig credentials, is stored
+as the encrypted Worker secret `NEMLIG_MCP_PRINCIPALS`; this document records
+field names only, never values.
 
 ## Production shape and defaults
 
@@ -70,17 +71,17 @@ disabled endpoint and no-running-Container state were verified.
    identifier for each hosted resource URL.
 
 4. Keep the production issuer, audience, public URL, custom domain, and safety
-   thresholds in `wrangler.jsonc`. Store `NEMLIG_MCP_AUTH0_OWNER_SUBJECT` as an
-   encrypted Worker secret. Production uses `keep_vars`, so repository deploys
-   retain separately managed secrets. `NEMLIG_MCP_ALLOWED_ORIGINS`,
+   thresholds in `wrangler.jsonc`. Store `NEMLIG_MCP_PRINCIPALS` as one
+   encrypted Worker secret using the owner-only procedure below. Production
+   uses `keep_vars`, so repository deploys retain separately managed secrets. `NEMLIG_MCP_ALLOWED_ORIGINS`,
    `NEMLIG_MCP_REQUIRED_SCOPE`, and `NEMLIG_MCP_REVISION` remain optional.
 
-5. Add actual credentials as encrypted secrets. `GH_TOKEN` is optional; omit it
-   if hosted feature-request creation is not wanted.
+5. `GH_TOKEN` is optional; omit it if hosted feature-request creation is not
+   wanted. The three legacy owner secrets are accepted only as exact migration
+   checks against the policy; they are not runtime fallbacks and must never be
+   reused for an invitee.
 
    ```sh
-   pnpm --filter nemlig-assistant exec wrangler secret put NEMLIG_USERNAME --env production
-   pnpm --filter nemlig-assistant exec wrangler secret put NEMLIG_PASSWORD --env production
    pnpm --filter nemlig-assistant exec wrangler secret put GH_TOKEN --env production
    ```
 
@@ -392,11 +393,61 @@ authorization UI or Auth0's browser redirect before a request reaches it.
 
 ## Rotate secrets
 
-Leave the MCP disabled, run the relevant `wrangler secret put ... --env
-production` command above, deploy if Cloudflare does not create a deployment
-automatically, verify anonymous rejection and one read-only owner call, then
-re-enable. Rotate the upstream credential too; changing only Cloudflare's copy
-does not revoke the old credential.
+### Create or rotate the private principal policy
+
+The policy is bounded to sixteen entries and contains a schema version, a
+non-secret revision label, tier budgets, and one entry per principal. Each entry
+contains an exact Auth0 subject, a unique random 32–64 character opaque key, a
+tier, an enabled flag, and that principal's own Nemlig username and password.
+Exactly one enabled Tier 0 owner is required. Do not put a real policy in a
+command argument, environment file, repository file, issue, chat, log, or test.
+
+1. Keep the current policy recoverable in the owner's password manager, prepare
+   the complete replacement there, and validate only an equivalent synthetic
+   document in repository tests. Never assemble the real JSON in shell history
+   or a temporary file.
+2. Set `MCP_ENABLED=false`, deploy that state, and prove both routes reject
+   before authentication, Durable Object access, or Container wake.
+3. Run the hidden interactive prompt below and paste the complete policy value
+   directly when Wrangler asks for it. Do not print or echo it.
+
+   ```sh
+   pnpm --filter nemlig-assistant exec wrangler secret put NEMLIG_MCP_PRINCIPALS --env production
+   ```
+
+4. Keep production disabled while validating the new revision, one enabled
+   Tier 0 entry, configured limits, anonymous rejection, and unknown-principal
+   denial. Enable the same application revision only after those checks pass,
+   then run the bounded Tier 0 read-only acceptance.
+5. If validation or acceptance fails, restore the recorded prior policy through
+   the same hidden prompt and restore the exact prior Worker version. If either
+   state is uncertain, leave the MCP disabled.
+
+Changing Cloudflare's copy does not revoke an old Nemlig password. Rotate the
+upstream credential when revocation is intended. After an owner-only migration
+is accepted, remove the three legacy owner secrets in a separate disabled-first
+rotation; they are not needed for runtime lookup.
+
+### Stage and later enable an invitee
+
+An invitee is a separate principal and Nemlig account, never an alias for the
+family account. Add the new entry with `enabled: false`, its own opaque key and
+credentials, and the intended Tier 1 or Tier 2 assignment. Rotate the complete
+policy disabled-first as above. A disabled entry must still be denied before
+usage-state access or Container wake.
+
+Before changing that entry to `enabled: true`, perform a separately approved
+two-account read-only isolation exercise: each identity must see only its own
+favorites, basket, plans, and named lists; guessed session, proposal, plan, and
+list references from the other account must return the same non-sensitive
+denial; Tier 2 must shed before Tier 1; and neither guest may consume the Tier 0
+reserve. Record only pass/fail, policy revision, tier labels, denial reasons,
+correlation IDs, and aggregate headroom. Do not record subjects, opaque keys,
+credentials, returned shopping data, or per-principal counts.
+
+If any identity, credential, state, or accounting boundary is uncertain, keep
+the invitee disabled and restore the last verified policy. Invitee activation
+does not authorize a basket mutation.
 
 ## Roll back
 

@@ -7,7 +7,8 @@ import { createAuth0Verifier, fetchAuth0Metadata, type Auth0Config } from "./aut
 import { FIXED_CONTAINER_NAME, type CloudflareEnv, type GatewayConfig } from "./cloudflare-config.js";
 import { handleGatewayRequest, type GatewayDeadline } from "./cloudflare-gateway.js";
 import { parseGatewayRequestEvent, type GatewayRequestEvent } from "./cloudflare-observability.js";
-import { admitUsage, resetUsage, type AdmissionLimits, type AdmissionResult, type UsageState } from "./cloudflare-usage.js";
+import { admitUsageAtomically, resetUsage, type AdmissionLimits, type AdmissionPrincipal, type AdmissionResult, type TierAdmissionPolicy, type UsageState } from "./cloudflare-usage.js";
+import { findEnabledPrincipal, type Principal } from "./principal-policy.js";
 import { handleShoppingListStorageRequest } from "./shopping-list-worker-storage.js";
 
 interface Env extends CloudflareEnv {
@@ -20,7 +21,7 @@ let cachedVerifier: { key: string; verifier: OAuthTokenVerifier } | undefined;
 const auth0Config = (config: GatewayConfig): Auth0Config => ({
   issuer: config.issuer,
   audience: config.audience,
-  ownerSubject: config.ownerSubject,
+  principalPolicy: config.principalPolicy,
   requiredScope: config.requiredScope,
   publicUrl: config.publicUrl,
   allowedOrigins: config.allowedOrigins,
@@ -29,8 +30,8 @@ const auth0Config = (config: GatewayConfig): Auth0Config => ({
   port: 8080,
 });
 
-const authenticate = async (token: string, config: GatewayConfig, deadline: GatewayDeadline): Promise<void> => {
-  const key = `${config.issuer.href}\0${config.audience}\0${config.ownerSubject}\0${config.requiredScope}`;
+const authenticate = async (token: string, config: GatewayConfig, deadline: GatewayDeadline): Promise<Principal | undefined> => {
+  const key = `${config.issuer.href}\0${config.audience}\0${config.requiredScope}`;
   if (cachedVerifier?.key !== key) {
     const auth = auth0Config(config);
     const boundedFetch: typeof fetch = (input, init) => fetch(input, {
@@ -41,7 +42,8 @@ const authenticate = async (token: string, config: GatewayConfig, deadline: Gate
     cachedVerifier = { key, verifier: createAuth0Verifier(auth, jwksUrl, undefined, config.authTimeoutMs) };
   }
   const verified = await cachedVerifier.verifier.verifyAccessToken(token);
-  if (!verified.scopes.includes(config.requiredScope)) throw new Error("required scope missing");
+  const subject = verified.extra?.subject;
+  return typeof subject === "string" ? findEnabledPrincipal(config.principalPolicy, subject) : undefined;
 };
 
 const requestEvent = (event: GatewayRequestEvent): void => {
@@ -61,7 +63,7 @@ export class NemligMcpContainer extends Container<Env> {
   envVars = {
     NEMLIG_MCP_AUTH0_ISSUER: this.env.NEMLIG_MCP_AUTH0_ISSUER ?? "",
     NEMLIG_MCP_AUTH0_AUDIENCE: this.env.NEMLIG_MCP_AUTH0_AUDIENCE ?? "",
-    NEMLIG_MCP_AUTH0_OWNER_SUBJECT: this.env.NEMLIG_MCP_AUTH0_OWNER_SUBJECT ?? "",
+    NEMLIG_MCP_PRINCIPALS: this.env.NEMLIG_MCP_PRINCIPALS ?? "",
     NEMLIG_MCP_REQUIRED_SCOPE: this.env.NEMLIG_MCP_REQUIRED_SCOPE ?? "use:nemlig-assistant",
     NEMLIG_MCP_PUBLIC_URL: this.env.NEMLIG_MCP_PUBLIC_URL ?? "",
     NEMLIG_MCP_ALLOWED_ORIGINS: this.env.NEMLIG_MCP_ALLOWED_ORIGINS ?? "https://chatgpt.com,https://chat.openai.com",
@@ -69,8 +71,6 @@ export class NemligMcpContainer extends Container<Env> {
     NEMLIG_MCP_HTTP_HOST: "0.0.0.0",
     NEMLIG_MCP_HTTP_PORT: "8080",
     NEMLIG_PLAN_STORAGE_URL: "http://nemlig-plan-storage.internal/",
-    NEMLIG_USERNAME: this.env.NEMLIG_USERNAME ?? "",
-    NEMLIG_PASSWORD: this.env.NEMLIG_PASSWORD ?? "",
     GH_TOKEN: this.env.GH_TOKEN ?? "",
   };
 
@@ -86,24 +86,25 @@ export class NemligMcpContainer extends Container<Env> {
     lifecycleEvent("container_error");
   }
 
-  async admit(operation: "protocol" | "normal" | "expensive", limits: AdmissionLimits): Promise<AdmissionResult> {
-    return this.ctx.storage.transaction(async () => {
-      const stored = await this.ctx.storage.get<UsageState>("usage");
-      const result = admitUsage(stored, operation, limits);
-      await this.ctx.storage.put("usage", result.state);
-      if (!result.admitted && (result.reason === "daily_limit" || result.reason === "expensive_daily_limit")) {
-        lifecycleEvent("breaker_tripped", result.reason);
-      }
-      return result;
-    });
+  async admit(
+    operation: "protocol" | "normal" | "expensive",
+    limits: AdmissionLimits,
+    principal: AdmissionPrincipal,
+    policy: TierAdmissionPolicy,
+  ): Promise<AdmissionResult> {
+    const result = await admitUsageAtomically(this.ctx.storage, operation, limits, principal, policy);
+    if (!result.admitted && (result.reason === "daily_limit" || result.reason === "expensive_daily_limit")) {
+      lifecycleEvent("breaker_tripped", result.reason);
+    }
+    return result;
   }
 
   async usage(): Promise<UsageState | undefined> {
     return this.ctx.storage.get<UsageState>("usage");
   }
 
-  async resetUsage(): Promise<UsageState> {
-    const state = resetUsage();
+  async resetUsage(policyRevision: string): Promise<UsageState> {
+    const state = resetUsage(new Date(), policyRevision);
     await this.ctx.storage.put("usage", state);
     lifecycleEvent("breaker_reset");
     return state;
@@ -126,11 +127,12 @@ export class PlanStorage extends DurableObject<Env> {
     const path = new URL(request.url).pathname.slice(1);
     if (path.startsWith("named-lists-v2/")) return this.handleShoppingLists(request, path.slice("named-lists-v2/".length));
     if (path.startsWith("lists/")) return this.handleShoppingLists(request, path.slice("lists/".length));
-    const id = path;
+    const scoped = path.match(/^plans-v2\/([0-9a-f]{64})\/(.+)$/u);
+    const id = scoped?.[2] ?? path;
     if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(id)) {
       return new Response("Invalid plan ID", { status: 400 });
     }
-    const key = `plan:${id}`;
+    const key = scoped ? `plan:${scoped[1]}:${id}` : `plan:${id}`;
     if (request.method === "GET") {
       const snapshot = await this.ctx.storage.get<string>(key);
       return snapshot === undefined ? new Response("Not found", { status: 404 }) : new Response(snapshot, { headers: { "content-type": "application/json" } });
@@ -160,20 +162,24 @@ export default {
     return handleGatewayRequest(request, env, {
       authenticate,
       event: requestEvent,
-      async admit(operation, config) {
+      async admit(operation, principal, config) {
         const container = getContainer(env.NEMLIG_MCP_CONTAINER.jurisdiction("eu"), FIXED_CONTAINER_NAME);
         return container.admit(operation, {
           dailyLimit: config.dailyLimit,
           expensiveDailyLimit: config.expensiveDailyLimit,
           rateLimit: config.rateLimit,
           expensiveRateLimit: config.expensiveRateLimit,
+        }, { principalKey: principal.principal_key, tier: principal.tier }, {
+          revision: config.principalPolicy.revision,
+          budgets: config.principalPolicy.budgets,
+          principalKeys: config.principalPolicy.principals.map(({ principal_key }) => principal_key),
         });
       },
       async usage() {
         return getContainer(env.NEMLIG_MCP_CONTAINER.jurisdiction("eu"), FIXED_CONTAINER_NAME).usage();
       },
-      async resetUsage() {
-        return getContainer(env.NEMLIG_MCP_CONTAINER.jurisdiction("eu"), FIXED_CONTAINER_NAME).resetUsage();
+      async resetUsage(config) {
+        return getContainer(env.NEMLIG_MCP_CONTAINER.jurisdiction("eu"), FIXED_CONTAINER_NAME).resetUsage(config.principalPolicy.revision);
       },
       async forward(original, _operation, _config, deadline) {
         const namespace = env.NEMLIG_MCP_CONTAINER.jurisdiction("eu");

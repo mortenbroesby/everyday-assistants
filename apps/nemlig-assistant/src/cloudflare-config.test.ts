@@ -16,6 +16,18 @@ const validEnv: CloudflareEnv = {
   NEMLIG_MCP_AUTH0_ISSUER: "https://tenant.example.test",
   NEMLIG_MCP_AUTH0_AUDIENCE: "https://mcp.example.test/mcp",
   NEMLIG_MCP_AUTH0_OWNER_SUBJECT: "auth0|owner",
+  NEMLIG_MCP_PRINCIPALS: JSON.stringify({
+    schema_version: 1,
+    revision: "family-v1",
+    budgets: {
+      principal_minute_limits: { "0": 60, "1": 20, "2": 5 },
+      tier0_reserve: { minute: 20, month: 30_000 },
+      guest_limit: { minute: 40, month: 125_000 },
+      tier1_shed_at: { minute: 40, month: 125_000 },
+      tier2_shed_at: { minute: 20, month: 60_000 },
+    },
+    principals: [{ subject: "auth0|owner", principal_key: "a".repeat(32), tier: 0, enabled: true, nemlig: { username: "owner@example.test", password: "secret" } }],
+  }),
   NEMLIG_MCP_PUBLIC_URL: "https://mcp.example.test/mcp",
 };
 
@@ -35,6 +47,7 @@ test("Cloudflare safety configuration is explicit, bounded, and internally consi
   assert.equal(config.authTimeoutMs, 5_000);
   assert.equal(config.backendTimeoutMs, 85_000);
   assert.equal(config.issuer.href, "https://tenant.example.test/");
+  assert.equal(config.principalPolicy.principals[0]?.subject, "auth0|owner");
   assert.equal(FIXED_CONTAINER_NAME, "nemlig-production");
   assert.throws(() => loadGatewayConfig({ ...validEnv, MCP_DAILY_LIMIT: undefined }), /MCP_DAILY_LIMIT is required/u);
   assert.throws(() => loadGatewayConfig({ ...validEnv, MCP_TOTAL_TIMEOUT_MS: undefined }), /MCP_TOTAL_TIMEOUT_MS is required/u);
@@ -47,6 +60,24 @@ test("Cloudflare safety configuration is explicit, bounded, and internally consi
   assert.throws(() => loadGatewayConfig({ ...validEnv, MCP_TOTAL_TIMEOUT_MS: "5000" }), /MCP_AUTH_TIMEOUT_MS/u);
   assert.throws(() => loadGatewayConfig({ ...validEnv, MCP_CONTROL_TIMEOUT_MS: "30000" }), /MCP_CONTROL_TIMEOUT_MS/u);
   assert.throws(() => loadGatewayConfig({ ...validEnv, NEMLIG_MCP_PUBLIC_URL: "http://mcp.example.test/mcp" }), /HTTPS/u);
+  assert.throws(() => loadGatewayConfig({ ...validEnv, NEMLIG_MCP_PRINCIPALS: undefined }), /NEMLIG_MCP_PRINCIPALS/u);
+  assert.throws(() => loadGatewayConfig({ ...validEnv, NEMLIG_MCP_AUTH0_OWNER_SUBJECT: "auth0|other" }), /Legacy owner/u);
+  assert.throws(() => loadGatewayConfig({ ...validEnv, NEMLIG_USERNAME: "other@example.test", NEMLIG_PASSWORD: "secret" }), /Legacy owner credentials/u);
+  const policy = JSON.parse(validEnv.NEMLIG_MCP_PRINCIPALS!) as { budgets: { guest_limit: { minute: number; month: number }; principal_minute_limits: Record<string, number> } };
+  assert.throws(() => loadGatewayConfig({
+    ...validEnv,
+    NEMLIG_MCP_PRINCIPALS: JSON.stringify({
+      ...policy,
+      budgets: { ...policy.budgets, guest_limit: { ...policy.budgets.guest_limit, minute: 41 } },
+    }),
+  }), /global safety limits/u);
+  assert.throws(() => loadGatewayConfig({
+    ...validEnv,
+    NEMLIG_MCP_PRINCIPALS: JSON.stringify({
+      ...policy,
+      budgets: { ...policy.budgets, principal_minute_limits: { ...policy.budgets.principal_minute_limits, "1": 61 } },
+    }),
+  }), /global safety limits/u);
 });
 
 test("Wrangler configuration fixes both environments to one disabled EU lite Container", async () => {

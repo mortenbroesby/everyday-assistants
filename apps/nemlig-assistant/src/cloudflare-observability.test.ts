@@ -14,6 +14,8 @@ const safeEvent: GatewayRequestEvent = {
   route: "mcp",
   method: "POST",
   operation: "normal",
+  tier: "0",
+  denial_reason: "none",
   outcome: "completed",
   status: 200,
   elapsed_ms: 42,

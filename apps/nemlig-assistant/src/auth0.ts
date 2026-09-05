@@ -2,11 +2,12 @@ import { InvalidTokenError } from "@modelcontextprotocol/sdk/server/auth/errors.
 import type { OAuthTokenVerifier } from "@modelcontextprotocol/sdk/server/auth/provider.js";
 import { OpenIdProviderDiscoveryMetadataSchema, type OAuthMetadata } from "@modelcontextprotocol/sdk/shared/auth.js";
 import { createRemoteJWKSet, jwtVerify, type JWTVerifyGetKey } from "jose";
+import { parsePrincipalPolicy, type PrincipalPolicy } from "./principal-policy.js";
 
 export interface Auth0Config {
   issuer: URL;
   audience: string;
-  ownerSubject: string;
+  principalPolicy: PrincipalPolicy;
   requiredScope: string;
   publicUrl: URL;
   allowedOrigins: string[];
@@ -37,7 +38,7 @@ export function loadAuth0Config(env: NodeJS.ProcessEnv = process.env): Auth0Conf
   return {
     issuer,
     audience: required(env, "NEMLIG_MCP_AUTH0_AUDIENCE"),
-    ownerSubject: required(env, "NEMLIG_MCP_AUTH0_OWNER_SUBJECT"),
+    principalPolicy: parsePrincipalPolicy(env.NEMLIG_MCP_PRINCIPALS),
     requiredScope: env.NEMLIG_MCP_REQUIRED_SCOPE?.trim() || "use:nemlig-assistant",
     publicUrl,
     allowedOrigins: (env.NEMLIG_MCP_ALLOWED_ORIGINS ?? "https://chatgpt.com,https://chat.openai.com")
@@ -77,8 +78,10 @@ export function createAuth0Verifier(
           audience: config.audience,
           algorithms: ["RS256"],
         });
-        if (payload.sub !== config.ownerSubject) throw new Error("wrong owner");
         const scopes = typeof payload.scope === "string" ? payload.scope.split(/\s+/u).filter(Boolean) : [];
+        if (typeof payload.sub !== "string" || !payload.sub || !scopes.includes(config.requiredScope)) {
+          throw new Error("required claims missing");
+        }
         return {
           token,
           clientId: typeof payload.azp === "string" ? payload.azp : "unknown",

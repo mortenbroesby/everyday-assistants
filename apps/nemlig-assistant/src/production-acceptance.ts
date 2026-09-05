@@ -87,6 +87,25 @@ export interface AcceptanceDeadlineOptions {
   totalTimeoutMs?: number;
 }
 
+export async function verifyAggregateTierUsage(
+  origin: URL,
+  token: string,
+  fetcher: typeof fetch = fetch,
+): Promise<void> {
+  const response = await fetcher(new URL("/admin/usage", origin), {
+    headers: { authorization: `Bearer ${token}` },
+    signal: AbortSignal.timeout(3_000),
+  });
+  assert.equal(response.status, 200, "Tier usage acceptance failed");
+  const usage = await response.json() as Record<string, unknown>;
+  assert.equal(usage.schema_version, 1, "Tier usage schema is invalid");
+  const tiers = usage.tiers as Record<string, unknown> | undefined;
+  assert.deepEqual(Object.keys(tiers ?? {}).sort(), ["0", "1", "2"]);
+  const text = JSON.stringify(usage);
+  assert.doesNotMatch(text, /principals|principal_key|subject|username|password|credential/iu);
+  assert.doesNotMatch(text, new RegExp(token.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "u"));
+}
+
 export async function verifyReadOnlyProductionFeatures(
   client: AcceptanceClient,
   options: AcceptanceDeadlineOptions = {},

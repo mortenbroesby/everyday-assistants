@@ -5,6 +5,7 @@ import { join } from "node:path";
 import test from "node:test";
 import type { Basket, Product } from "./client.js";
 import { eligibleCandidates, httpPlanSnapshotStorage, loadShoppingPlan, resolveShoppingPlan, saveShoppingPlan, shoppingPlanInputSchema, type PlanSnapshotStorage } from "./plans.js";
+import { principalScopeFor } from "./principal-scope.js";
 
 const product = (id: number, name: string, overrides: Partial<Product> = {}): Product => ({
   id, name, price: 10, unit: "10 kr/kg", unitPrice: 10, unitSize: "1 kg", brand: "Test",
@@ -128,4 +129,34 @@ test("Cloudflare plan storage uses one bounded internal request per immutable re
     { url: `http://nemlig-plan-storage.internal/${id}`, method: "GET" },
   ]);
   assert.throws(() => httpPlanSnapshotStorage("https://example.test/", fetcher), /storage is invalid/u);
+});
+
+test("hosted plan snapshots are principal-scoped and only Tier 0 can copy a legacy snapshot", async () => {
+  const values = new Map<string, string>();
+  const fetcher: typeof fetch = async (input, init) => {
+    const url = String(input);
+    if (init?.method === "PUT") {
+      if (values.has(url)) return new Response("Already exists", { status: 409 });
+      values.set(url, String(init.body));
+      return new Response("Created", { status: 201 });
+    }
+    const value = values.get(url);
+    return value === undefined ? new Response("Not found", { status: 404 }) : new Response(value);
+  };
+  const id = "2ee94544-5f0a-4c89-95f0-f6af88f45ba1";
+  const input = shoppingPlanInputSchema.parse({ lines: [{ id: "milk", name: "mælk", quantity: 1 }] });
+  const legacy = `${JSON.stringify({ schema_version: 1, id, created_at: new Date().toISOString(), input })}\n`;
+  values.set(`http://nemlig-plan-storage.internal/${id}`, legacy);
+  const owner = httpPlanSnapshotStorage("http://nemlig-plan-storage.internal/", fetcher, 3_000, { key: "owner-key", allowLegacyRead: true });
+  const invitee = httpPlanSnapshotStorage("http://nemlig-plan-storage.internal/", fetcher, 3_000, { key: "invitee-key", allowLegacyRead: false });
+
+  assert.deepEqual(await loadShoppingPlan(id, owner), input);
+  await assert.rejects(loadShoppingPlan(id, invitee), /could not be loaded/u);
+  await saveShoppingPlan(input, owner, id);
+
+  const ownerUrl = `http://nemlig-plan-storage.internal/plans-v2/${principalScopeFor("owner-key")}/${id}`;
+  const inviteeUrl = `http://nemlig-plan-storage.internal/plans-v2/${principalScopeFor("invitee-key")}/${id}`;
+  assert.ok(values.has(ownerUrl));
+  assert.ok(values.has(`http://nemlig-plan-storage.internal/${id}`));
+  assert.equal(values.has(inviteeUrl), false);
 });

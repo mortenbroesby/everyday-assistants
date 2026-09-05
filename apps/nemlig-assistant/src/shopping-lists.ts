@@ -1,10 +1,11 @@
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { chmod, mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { z } from "zod";
 import { NemligError } from "./client.js";
 import { loadShoppingPlan, type PlanSnapshotStorage } from "./plans.js";
+import { principalScopeFor } from "./principal-scope.js";
 import {
   MAX_SHOPPING_LIST_LINES,
   MAX_SHOPPING_LISTS,
@@ -29,10 +30,7 @@ export const shoppingListsDirectory = (): string => process.env.NEMLIG_CONFIG_DI
   ? join(process.env.NEMLIG_CONFIG_DIR, "shopping-lists")
   : join(homedir(), ".nemlig-shopper", "shopping-lists");
 
-export const ownerScopeFor = (ownerSubject: string): string => {
-  const subject = z.string().trim().min(1).max(500).parse(ownerSubject);
-  return createHash("sha256").update(subject, "utf8").digest("hex");
-};
+export const ownerScopeFor = principalScopeFor;
 
 export const normalizeShoppingListName = (name: string): string => z.string().trim().min(1).max(120)
   .parse(name).normalize("NFKC").replace(/\s+/gu, " ").toLocaleLowerCase("da-DK");

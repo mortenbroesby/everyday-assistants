@@ -1,3 +1,5 @@
+import { parsePrincipalPolicy, type PrincipalPolicy } from "./principal-policy.js";
+
 export const FIXED_CONTAINER_NAME = "nemlig-production";
 
 export interface CloudflareEnv {
@@ -13,6 +15,7 @@ export interface CloudflareEnv {
   NEMLIG_MCP_AUTH0_ISSUER?: string;
   NEMLIG_MCP_AUTH0_AUDIENCE?: string;
   NEMLIG_MCP_AUTH0_OWNER_SUBJECT?: string;
+  NEMLIG_MCP_PRINCIPALS?: string;
   NEMLIG_MCP_REQUIRED_SCOPE?: string;
   NEMLIG_MCP_PUBLIC_URL?: string;
   NEMLIG_MCP_ALLOWED_ORIGINS?: string;
@@ -33,7 +36,7 @@ export interface GatewayConfig {
   backendTimeoutMs: number;
   issuer: URL;
   audience: string;
-  ownerSubject: string;
+  principalPolicy: PrincipalPolicy;
   requiredScope: string;
   publicUrl: URL;
   allowedOrigins: string[];
@@ -68,6 +71,23 @@ export function loadGatewayConfig(env: CloudflareEnv): GatewayConfig {
   if (backendTimeoutMs >= totalTimeoutMs) throw new Error("MCP_BACKEND_TIMEOUT_MS must be less than MCP_TOTAL_TIMEOUT_MS.");
   const issuer = new URL(required(env, "NEMLIG_MCP_AUTH0_ISSUER"));
   const publicUrl = new URL(required(env, "NEMLIG_MCP_PUBLIC_URL"));
+  const principalPolicy = parsePrincipalPolicy(env.NEMLIG_MCP_PRINCIPALS);
+  const { budgets } = principalPolicy;
+  const maximumMonthlyOperations = dailyLimit * 31;
+  if (budgets.guest_limit.minute + budgets.tier0_reserve.minute > rateLimit
+    || budgets.guest_limit.month + budgets.tier0_reserve.month > maximumMonthlyOperations
+    || Object.values(budgets.principal_minute_limits).some((limit) => limit > rateLimit)) {
+    throw new Error("Principal policy exceeds global safety limits.");
+  }
+  const owner = principalPolicy.principals.find(({ enabled, tier }) => enabled && tier === 0)!;
+  const legacyOwner = env.NEMLIG_MCP_AUTH0_OWNER_SUBJECT?.trim();
+  if (legacyOwner && legacyOwner !== owner.subject) throw new Error("Legacy owner configuration does not match principal policy.");
+  const legacyUsername = env.NEMLIG_USERNAME?.trim();
+  const legacyPassword = env.NEMLIG_PASSWORD;
+  if ((legacyUsername || legacyPassword)
+    && (legacyUsername !== owner.nemlig.username || legacyPassword !== owner.nemlig.password)) {
+    throw new Error("Legacy owner credentials do not match principal policy.");
+  }
   if (issuer.protocol !== "https:" || issuer.search || issuer.hash) throw new Error("NEMLIG_MCP_AUTH0_ISSUER must be an HTTPS URL without query or fragment.");
   if (!issuer.pathname.endsWith("/")) issuer.pathname += "/";
   if (publicUrl.protocol !== "https:" || publicUrl.pathname !== "/mcp" || publicUrl.search || publicUrl.hash) {
@@ -84,7 +104,7 @@ export function loadGatewayConfig(env: CloudflareEnv): GatewayConfig {
     backendTimeoutMs,
     issuer,
     audience: required(env, "NEMLIG_MCP_AUTH0_AUDIENCE"),
-    ownerSubject: required(env, "NEMLIG_MCP_AUTH0_OWNER_SUBJECT"),
+    principalPolicy,
     requiredScope: env.NEMLIG_MCP_REQUIRED_SCOPE?.trim() || "use:nemlig-assistant",
     publicUrl,
     allowedOrigins: (env.NEMLIG_MCP_ALLOWED_ORIGINS ?? "https://chatgpt.com,https://chat.openai.com")

@@ -47,7 +47,9 @@ export const safeNemligImageUrl = (value: unknown): string | undefined => {
 };
 
 export interface McpRequestContext {
-  ownerSubject: string;
+  principalKey: string;
+  policyRevision: string;
+  tier: 0 | 1 | 2;
 }
 
 const falseValues = new Set(["0", "false", "no", "off"]);
@@ -358,12 +360,12 @@ export function createMcpServer(
   );
   const localConnectionId = randomUUID();
   const connectionId = (sessionId: string | undefined): string =>
-    requestContext?.ownerSubject ?? sessionId ?? localConnectionId;
+    requestContext ? `${requestContext.principalKey}\0${requestContext.policyRevision}` : sessionId ?? localConnectionId;
   const search = async (query: string, limit: number) =>
     rankProducts(await client.searchProducts(query, limit), query);
-  const planStorage = configuredPlanSnapshotStorage(env);
+  const planStorage = configuredPlanSnapshotStorage(env, requestContext);
   const listStorage = configuredShoppingListStorage(env);
-  const ownerSubject = requestContext?.ownerSubject ?? env.NEMLIG_MCP_AUTH0_OWNER_SUBJECT ?? "local-owner";
+  const ownerSubject = requestContext?.principalKey ?? env.NEMLIG_MCP_AUTH0_OWNER_SUBJECT ?? "local-owner";
 
   server.registerTool(
     "find_groceries",

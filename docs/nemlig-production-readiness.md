@@ -30,7 +30,8 @@ Live checks remain separate from the automatic gate:
   owner token and a 90-second total budget. It exercises read-only paths,
   including shopping-list retrieval and at most one favorite result, without
   list writes, proposal preparation/application, feature requests, or basket
-  mutation.
+  mutation. It also verifies that `/admin/usage` returns only bounded aggregate
+  Tier 0/1/2 counts and headroom without identity or credential fields.
 - After deployment, refresh the one existing app named exactly `Nemlig Assistant`
   in place. Do not create a suffixed, bracketed, numbered, or parallel app.
 - `pnpm --filter nemlig-assistant production:test:mutation` requires separate
@@ -46,7 +47,7 @@ Provider and secret actions remain intentionally manual. Use the existing
 runbook for [deployment](cloudflare-operations.md#first-deployment-and-current-setup),
 [emergency disable](cloudflare-operations.md#emergency-disable-and-re-enable),
 [usage and breaker inspection](cloudflare-operations.md#inspect-usage-and-reset-the-breaker),
-[secret rotation](cloudflare-operations.md#rotate-secrets),
+[principal-policy and secret rotation](cloudflare-operations.md#create-or-rotate-the-private-principal-policy),
 [rollback](cloudflare-operations.md#roll-back), and
 [removal](cloudflare-operations.md#remove-the-deployment).
 

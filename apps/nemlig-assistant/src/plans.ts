@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { z } from "zod";
 import type { Basket, Product } from "./client.js";
 import { NemligError } from "./client.js";
+import { principalScopeFor } from "./principal-scope.js";
 
 const constraintsSchema = z.object({
   organic: z.boolean().optional(), vegan: z.boolean().optional(), gluten_free: z.boolean().optional(),
@@ -141,21 +142,32 @@ export const httpPlanSnapshotStorage = (
   baseUrl: string,
   fetcher: typeof fetch = fetch,
   timeoutMs = 3_000,
+  principal?: { key: string; allowLegacyRead: boolean },
 ): PlanSnapshotStorage => {
   const base = new URL(baseUrl);
   if (base.origin !== "http://nemlig-plan-storage.internal") throw new NemligError("Shopping plan storage is invalid.");
-  const request = async (id: string, init?: RequestInit): Promise<Response> => {
-    const response = await fetcher(new URL(id, base), { ...init, signal: AbortSignal.timeout(timeoutMs) });
-    if (!response.ok) throw new NemligError(`Shopping plan ${id} could not be ${init ? "saved" : "loaded"}.`);
-    return response;
-  };
+  const pathFor = (id: string): string => principal ? `plans-v2/${principalScopeFor(principal.key)}/${id}` : id;
+  const request = (path: string, init?: RequestInit): Promise<Response> =>
+    fetcher(new URL(path, base), { ...init, signal: AbortSignal.timeout(timeoutMs) });
   return {
-    create: async (id, snapshot) => { await request(id, { method: "PUT", body: snapshot, headers: { "content-type": "application/json" } }); },
-    read: async (id) => request(id).then((response) => response.text()),
+    async create(id, snapshot) {
+      const response = await request(pathFor(id), { method: "PUT", body: snapshot, headers: { "content-type": "application/json" } });
+      if (!response.ok) throw new NemligError(`Shopping plan ${id} could not be saved.`);
+    },
+    async read(id) {
+      let response = await request(pathFor(id));
+      if (response.status === 404 && principal?.allowLegacyRead) response = await request(id);
+      if (!response.ok) throw new NemligError(`Shopping plan ${id} could not be loaded.`);
+      return response.text();
+    },
   };
 };
-export const configuredPlanSnapshotStorage = (env: NodeJS.ProcessEnv = process.env): PlanSnapshotStorage =>
-  env.NEMLIG_PLAN_STORAGE_URL ? httpPlanSnapshotStorage(env.NEMLIG_PLAN_STORAGE_URL) : filePlanSnapshotStorage();
+export const configuredPlanSnapshotStorage = (
+  env: NodeJS.ProcessEnv = process.env,
+  principal?: { principalKey: string; tier: 0 | 1 | 2 },
+): PlanSnapshotStorage => env.NEMLIG_PLAN_STORAGE_URL
+  ? httpPlanSnapshotStorage(env.NEMLIG_PLAN_STORAGE_URL, fetch, 3_000, principal && { key: principal.principalKey, allowLegacyRead: principal.tier === 0 })
+  : filePlanSnapshotStorage();
 const snapshotStorage = (storage: string | PlanSnapshotStorage): PlanSnapshotStorage =>
   typeof storage === "string" ? filePlanSnapshotStorage(storage) : storage;
 export async function saveShoppingPlan(input: ShoppingPlanInput, storage: string | PlanSnapshotStorage = plansDirectory(), id: string = randomUUID()): Promise<{ id: string; created_at: string }> {

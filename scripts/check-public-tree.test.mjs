@@ -21,6 +21,20 @@ test("public-tree check rejects and then clears a synthetic private fixture", ()
   }
 });
 
+test("public-tree denylist rejects synthetic principal and credential markers", () => {
+  const directory = mkdtempSync(resolve(tmpdir(), "public-tree-policy-check-"));
+  const fixture = resolve(directory, "policy.txt");
+  try {
+    writeFileSync(fixture, "auth0|synthetic-private-principal\nsynthetic-private-password\n");
+    const result = spawnSync(process.execPath, [check, directory], {
+      env: { ...process.env, PUBLIC_RELEASE_DENYLIST: "auth0|synthetic-private-principal\nsynthetic-private-password" },
+    });
+    assert.notEqual(result.status, 0);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
 test("retired Nemlig tunnel cannot return as a supported repository path", () => {
   assert.equal(existsSync(resolve(root, "scripts/nemlig-tunnel.zsh")), false);
   assert.equal(existsSync(resolve(root, "apps/nemlig-assistant/SECURE_MCP_TUNNEL.md")), false);

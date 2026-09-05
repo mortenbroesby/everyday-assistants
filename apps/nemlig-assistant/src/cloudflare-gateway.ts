@@ -7,7 +7,8 @@ import {
   type GatewayOutcome,
   type GatewayRequestEvent,
 } from "./cloudflare-observability.js";
-import type { AdmissionResult, UsageState } from "./cloudflare-usage.js";
+import { aggregateUsage, type AdmissionResult, type UsageState } from "./cloudflare-usage.js";
+import type { Principal } from "./principal-policy.js";
 
 export type OperationClass = "protocol" | "normal" | "expensive";
 
@@ -17,8 +18,8 @@ export interface GatewayDeadline {
 }
 
 export interface GatewayDependencies {
-  authenticate(token: string, config: GatewayConfig, deadline: GatewayDeadline): Promise<void>;
-  admit(operation: OperationClass, config: GatewayConfig, deadline: GatewayDeadline): Promise<AdmissionResult>;
+  authenticate(token: string, config: GatewayConfig, deadline: GatewayDeadline): Promise<Principal | undefined>;
+  admit(operation: OperationClass, principal: Principal, config: GatewayConfig, deadline: GatewayDeadline): Promise<AdmissionResult>;
   forward(request: Request, operation: OperationClass, config: GatewayConfig, deadline: GatewayDeadline): Promise<Response>;
   resetUsage?(config: GatewayConfig, deadline: GatewayDeadline): Promise<UsageState>;
   usage?(config: GatewayConfig, deadline: GatewayDeadline): Promise<UsageState | undefined>;
@@ -160,6 +161,8 @@ export async function handleGatewayRequest(
   const method = classifyGatewayMethod(request.method);
   let revision = env.NEMLIG_MCP_REVISION?.trim() || "unconfigured";
   let operation: GatewayRequestEvent["operation"] = "none";
+  let tier: GatewayRequestEvent["tier"] = "none";
+  let denialReason: GatewayRequestEvent["denial_reason"] = "none";
   let emitted = false;
   const finish = (response: Response, outcome: GatewayOutcome): Response => {
     if (!emitted) {
@@ -172,6 +175,8 @@ export async function handleGatewayRequest(
         route,
         method,
         operation,
+        tier,
+        denial_reason: denialReason,
         outcome,
         status: response.status,
         elapsed_ms: Math.min(120_000, Math.max(0, Math.round(now() - startedAt))),
@@ -181,13 +186,17 @@ export async function handleGatewayRequest(
     return withRequestId(response, requestId);
   };
 
-  if (env.MCP_ENABLED !== "true") return finish(new Response("MCP temporarily disabled", { status: 503 }), "disabled");
+  if (env.MCP_ENABLED !== "true") {
+    denialReason = "mcp_disabled";
+    return finish(new Response("MCP temporarily disabled", { status: 503 }), "disabled");
+  }
 
   let config: GatewayConfig;
   try {
     config = loadGatewayConfig(env);
     revision = config.revision;
   } catch {
+    denialReason = "configuration_invalid";
     return finish(new Response("MCP configuration invalid", { status: 503 }), "configuration_rejected");
   }
 
@@ -206,32 +215,60 @@ export async function handleGatewayRequest(
       }), "protocol_completed");
     }
     const admin = url.pathname === "/admin/usage" || url.pathname === "/admin/reset-breaker";
-    if (url.pathname !== "/mcp" && !admin) return finish(new Response("Not found", { status: 404 }), "request_rejected");
+    if (url.pathname !== "/mcp" && !admin) {
+      denialReason = "request_invalid";
+      return finish(new Response("Not found", { status: 404 }), "request_rejected");
+    }
 
     const origin = request.headers.get("origin");
-    if (origin && !config.allowedOrigins.includes(origin)) return finish(json({ error: "origin_not_allowed" }, 403), "request_rejected");
+    if (origin && !config.allowedOrigins.includes(origin)) {
+      denialReason = "origin_not_allowed";
+      return finish(json({ error: "origin_not_allowed" }, 403), "request_rejected");
+    }
     const classified = admin
       ? { operation: "protocol" as const, request }
       : await withinBoundary((deadline) => classifyRequest(request, deadline.signal), remainingMs(), remainingMs, totalController.signal, "request_timeout");
-    if (classified instanceof Response) return finish(classified, "request_rejected");
+    if (classified instanceof Response) {
+      denialReason = "request_invalid";
+      return finish(classified, "request_rejected");
+    }
     operation = classified.operation;
     const authorization = request.headers.get("authorization");
     const match = authorization?.match(/^Bearer\s+([^\s]+)$/iu);
-    if (!match?.[1]) return finish(new Response("Unauthorized", { status: 401 }), "authentication_rejected");
+    if (!match?.[1]) {
+      denialReason = "authentication_required";
+      return finish(new Response("Unauthorized", { status: 401 }), "authentication_rejected");
+    }
+    let principal: Principal;
     try {
-      await withinBoundary(
+      const authenticated = await withinBoundary(
         (deadline) => dependencies.authenticate(match[1] as string, config, deadline),
         config.authTimeoutMs, remainingMs, totalController.signal, "authentication_timeout",
       );
+      if (!authenticated) {
+        denialReason = "principal_not_allowed";
+        return finish(json({ error: "principal_not_allowed" }, 403), "request_rejected");
+      }
+      principal = authenticated;
+      tier = String(principal.tier) as "0" | "1" | "2";
     } catch (error) {
       if (error instanceof BoundaryTimeoutError) return finish(json({ error: error.outcome }, 504), error.outcome);
+      denialReason = "authentication_failed";
       return finish(new Response("Unauthorized", { status: 401 }), "authentication_rejected");
+    }
+    if (admin && principal.tier !== 0) {
+      denialReason = "principal_not_allowed";
+      return finish(json({ error: "principal_not_allowed" }, 403), "request_rejected");
     }
     if (url.pathname === "/admin/usage") {
       if (request.method !== "GET" || !dependencies.usage) return finish(new Response("Method not allowed", { status: 405 }), "request_rejected");
       try {
         const usage = await withinBoundary((deadline) => dependencies.usage!(config, deadline), config.controlTimeoutMs, remainingMs, totalController.signal, "control_timeout");
-        return finish(json(usage ?? { status: "unused" }), "completed");
+        return finish(json(aggregateUsage(usage, {
+          revision: config.principalPolicy.revision,
+          budgets: config.principalPolicy.budgets,
+          principalKeys: config.principalPolicy.principals.map(({ principal_key }) => principal_key),
+        })), "completed");
       } catch (error) {
         const outcome = error instanceof BoundaryTimeoutError ? error.outcome : "backend_failed";
         return finish(json({ error: outcome }, outcome.endsWith("timeout") ? 504 : 502), outcome);
@@ -241,7 +278,11 @@ export async function handleGatewayRequest(
       if (request.method !== "POST" || !dependencies.resetUsage) return finish(new Response("Method not allowed", { status: 405 }), "request_rejected");
       try {
         const usage = await withinBoundary((deadline) => dependencies.resetUsage!(config, deadline), config.controlTimeoutMs, remainingMs, totalController.signal, "control_timeout");
-        return finish(json(usage), "completed");
+        return finish(json(aggregateUsage(usage, {
+          revision: config.principalPolicy.revision,
+          budgets: config.principalPolicy.budgets,
+          principalKeys: config.principalPolicy.principals.map(({ principal_key }) => principal_key),
+        })), "completed");
       } catch (error) {
         const outcome = error instanceof BoundaryTimeoutError ? error.outcome : "backend_failed";
         return finish(json({ error: outcome }, outcome.endsWith("timeout") ? 504 : 502), outcome);
@@ -249,13 +290,18 @@ export async function handleGatewayRequest(
     }
     let admission: AdmissionResult;
     try {
-      admission = await withinBoundary((deadline) => dependencies.admit(classified.operation, config, deadline), config.controlTimeoutMs, remainingMs, totalController.signal, "control_timeout");
+      admission = await withinBoundary((deadline) => dependencies.admit(classified.operation, principal, config, deadline), config.controlTimeoutMs, remainingMs, totalController.signal, "control_timeout");
     } catch (error) {
       const outcome = error instanceof BoundaryTimeoutError ? error.outcome : "backend_failed";
       return finish(json({ error: outcome }, outcome.endsWith("timeout") ? 504 : 502), outcome);
     }
     if (!admission.admitted) {
-      const outcome = admission.reason === "rate_limit" ? "rate_limited" : "breaker_rejected";
+      denialReason = admission.reason;
+      const outcome = admission.reason === "rate_limit" || admission.reason === "principal_rate_limit"
+        ? "rate_limited"
+        : admission.reason === "daily_limit" || admission.reason === "expensive_daily_limit" || admission.reason === "breaker_open"
+          ? "breaker_rejected"
+          : "capacity_rejected";
       return finish(json({ error: admission.reason }, admission.status), outcome);
     }
     try {

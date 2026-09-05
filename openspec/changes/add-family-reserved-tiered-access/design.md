@@ -96,8 +96,11 @@ Replace the shared hosted client/proposal service with a context map keyed only
 after Container-side authentication. Each context owns one `NemligClient` and
 one `BasketProposalService`; each MCP transport stores the same principal key
 and rejects cross-principal reuse. Bound the map to the parsed policy entry count
-and discard a context when its last transport closes or the policy revision
-changes. Local CLI behavior keeps the existing single client.
+and retain each context only for the Container process lifetime so the existing
+short-lived, principal-bound proposal replay/reconnect contract remains intact.
+A policy-revision mismatch invalidates the transport, and a version or secret
+deployment replaces the Container process and its contexts. Local CLI behavior
+keeps the existing single client.
 
 Named lists continue to use the existing hashed owner scope, fed by the opaque
 principal key. New hosted plan snapshots use a principal-scoped storage route.
@@ -142,6 +145,30 @@ Sources:
 - https://developers.cloudflare.com/containers/platform/pricing/
 - https://developers.cloudflare.com/billing/understand/usage-based-billing/
 - https://auth0.com/pricing
+
+### Implementation cost preflight (2026-09-05)
+
+Official pricing was rechecked before implementation. The change introduces no
+provider, paid feature, scheduled work, log drain, Container instance, or
+capacity increase:
+
+| Cost driver | Current maximum | Proposed maximum | Pricing consequence |
+| --- | ---: | ---: | --- |
+| Container topology | 1 EU `lite` instance | unchanged | No higher provisioned memory or disk ceiling |
+| Useful operations | 5,000/day; 500 expensive/day | unchanged | At most 155,000 useful operations in a 31-day month |
+| Worker CPU/subrequests | 100 ms / 8 per invocation | unchanged | No higher per-invocation ceiling |
+| Durable Objects | 2 existing SQLite classes | unchanged | A bounded policy revision and counter record stays within the existing objects; no new object class or service |
+| Workers Logs | Existing request-terminal events; no drain | Same bounded event count with fixed tier/reason fields | 20 million events/month remain included on Workers Paid; additional events remain $0.60/million |
+| Auth0 | Existing Free tenant | Same tenant; owner-only at delivery | Free remains $0/month for up to 25,000 MAU |
+
+At the documented 31-day continuously active Container worst case, the
+unchanged `lite` allocation is approximately $1.45 memory overage and $0.32
+disk overage; fully consuming its 1/16 vCPU continuously would add at most
+approximately $2.90 CPU overage after included usage. Worker requests, Durable
+Object storage/requests, logs, and EU egress retain their existing
+usage-priced exposure and advisory alerts rather than a provider billing cap.
+Tiering can consume existing ceilings sooner, but the implementation is not
+permitted to raise them.
 
 ## Risks / Trade-offs
 

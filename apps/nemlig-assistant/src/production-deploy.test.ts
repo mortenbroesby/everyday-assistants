@@ -46,9 +46,7 @@ const version = (id: string, revision: string, enabled: boolean) => JSON.stringi
       ].map(([name, text]) => ({ name, text, type: "plain_text" })),
       { name: "NEMLIG_MCP_CONTAINER", type: "durable_object_namespace" },
       { name: "NEMLIG_PLAN_STORAGE", type: "durable_object_namespace" },
-      { name: "NEMLIG_USERNAME", type: "secret_text" },
-      { name: "NEMLIG_PASSWORD", type: "secret_text" },
-      { name: "NEMLIG_MCP_AUTH0_OWNER_SUBJECT", type: "secret_text" },
+      { name: "NEMLIG_MCP_PRINCIPALS", type: "secret_text" },
     ],
   },
 });

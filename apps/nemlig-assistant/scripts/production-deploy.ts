@@ -167,7 +167,7 @@ export function verifyCandidateVersion(raw: string, expectedId: string, commit: 
   for (const [name, text] of Object.entries(expectedText)) {
     if (values.get(name)?.text !== text) fail("cloudflare_runtime_safety_mismatch");
   }
-  for (const name of ["NEMLIG_MCP_CONTAINER", "NEMLIG_PLAN_STORAGE", "NEMLIG_USERNAME", "NEMLIG_PASSWORD", "NEMLIG_MCP_AUTH0_OWNER_SUBJECT"]) {
+  for (const name of ["NEMLIG_MCP_CONTAINER", "NEMLIG_PLAN_STORAGE", "NEMLIG_MCP_PRINCIPALS"]) {
     if (!values.has(name)) fail("cloudflare_runtime_safety_mismatch");
   }
   return state;

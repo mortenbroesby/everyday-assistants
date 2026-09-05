@@ -253,6 +253,20 @@ in [Cloudflare operations](../../docs/cloudflare-operations.md). It is the only
 supported ChatGPT deployment. The CLI and stdio MCP server remain available for
 direct local development and use; they are not a ChatGPT hosting fallback.
 
+Hosted identity is resolved from the validated Auth0 subject through the
+encrypted `NEMLIG_MCP_PRINCIPALS` policy. The delivered policy remains
+owner-only: exactly one enabled Tier 0 principal, with every invitee absent or
+disabled. Each configured principal has independent Nemlig credentials,
+sessions, basket proposals, saved plans, and named lists; unknown identities are
+rejected before usage-state access or Container wake. Tier 0 keeps reserved
+capacity, while Tier 2 is shed before Tier 1. The global kill switch, breaker,
+quotas, deadlines, and one-Container ceiling still override every tier.
+
+Creating, rotating, or enabling a principal is a separate owner-controlled
+secret operation. Never send a Nemlig username or password through ChatGPT or a
+tool argument. Follow the disabled-first
+[principal-policy procedure](../../docs/cloudflare-operations.md#create-or-rotate-the-private-principal-policy).
+
 The MCP server advertises the original orange bitten-dot icon and the display
 name `Nemlig Assistant` to clients that render standard MCP app metadata.
 
