@@ -192,6 +192,19 @@ acceptance remains pending because no owner access token was available to the
 deployment shell and a background handoff to the existing chat did not start a
 new turn. No basket mutation was attempted.
 
+The 2026-09-05 catalogue-wording and fresh-product-revalidation rollout
+deployed exact revision `2c952d20999b8ac47f7b060be97f2f84445defcb`
+as disabled version `db819ef4-674c-4a56-a1fa-3ad9cc3b01d2`. Both production
+routes returned HTTP 503 with `MCP temporarily disabled`, and the sole
+Container instance reported `inactive`. Enabled version
+`958ad415-2395-40c1-8baf-b394dafce67f` reused the same Container image and
+passed the custom-domain edge probe: health 174 ms, revision 119 ms, OAuth
+metadata 11 ms, anonymous rejection 21 ms, and foreign-origin rejection 12 ms.
+The workers.dev health route also returned HTTP 200. Authenticated ChatGPT
+catalogue and apply-time revalidation acceptance remains pending until an owner
+login or access token is available. No proposal was prepared or applied, and
+no basket, favorite, or saved-list mutation was attempted.
+
 ## Verify production features and approved reversible mutations
 
 Run the credential-free edge probes at any time:

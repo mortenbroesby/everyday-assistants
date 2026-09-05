@@ -97,7 +97,7 @@ be freshly resolved after apply begins, or the proposal fails closed.
 - [x] Pass strict specs, privacy, focused tests, `pnpm verify`, package smoke,
   and the disabled Cloudflare dry-run.
 - [x] Integrate the exact commit into remote `main` and verify exact-head CI.
-- [ ] Deploy the exact CI-green revision disabled first, prove no backend wake,
+- [x] Deploy the exact CI-green revision disabled first, prove no backend wake,
   restore enabled state for the same revision, and pass credential-free probes.
 - [ ] Sync and archive the completed OpenSpec change, then integrate and verify
   its repository-only archival commit.
@@ -235,7 +235,7 @@ fallback, speculative request amplification, or basket changes.
 
 - [x] Run focused interface/planner tests, privacy checks, `pnpm verify`, the
   production-readiness gate, and strict specification validation.
-- [ ] Commit and push the scoped item, verify remote `main` and exact-head CI,
+- [x] Commit and push the scoped item, verify remote `main` and exact-head CI,
   then deploy the exact revision disabled first and enable the same artifact.
 - [ ] Refresh the one existing `Nemlig Assistant` app and verify the reported
   wording through a fresh read-only ChatGPT conversation with no favourite or

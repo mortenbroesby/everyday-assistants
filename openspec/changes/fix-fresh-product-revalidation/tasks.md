@@ -17,6 +17,6 @@
 
 ## 4. Production delivery
 
-- [ ] 4.1 After an explicit coordination checkpoint, deploy the exact CI-green `main` revision through the fail-closed disabled-first procedure without rebuilding or increasing capacity; record version and revision evidence.
+- [x] 4.1 After an explicit coordination checkpoint, deploy the exact CI-green `main` revision through the fail-closed disabled-first procedure without rebuilding or increasing capacity; record version and revision evidence.
 - [ ] 4.2 Verify disabled rejection before backend wake, restore the intended state for the same revision, and run revision, health, OAuth metadata, cheap rejection, and authorized read-only acceptance checks without preparing, applying, or mutating a basket.
 - [ ] 4.3 Sync the delta specification into the main spec, archive the completed OpenSpec change, integrate the archival commit into remote `main`, and verify its exact-head CI and production applicability before final handoff.
