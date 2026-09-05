@@ -58,7 +58,9 @@ plain shopping summary and waits for approval before changing the basket.
 
 ### Discover products
 
-- Search the Danish Nemlig catalog.
+- Translate or normalize ordinary product wording into one short Danish
+  catalogue phrase before searching; preserve distinctive brands and include
+  the Danish category (`Prince cookies` becomes `prince kiks`).
 - List or search authenticated favorites.
 - Browse departments with pagination.
 - Compare product name, ID, package, price, unit price, discount, organic
@@ -131,9 +133,12 @@ for one repeatable credential-free repository and CI check.
 ## 🧭 How guided shopping works
 
 ChatGPT turns a grocery request into structured lines with quantities, hard
-constraints, and optional preferences. `plan_my_shopping` searches the current
-catalogue for each line using short, loose Danish phrases and leaves uncertain
-matches for you to decide. Favourites are searched only when you explicitly ask.
+constraints, and optional preferences. It translates English or mixed wording,
+normalizes misspellings, and shortens over-specific requests before
+`plan_my_shopping` searches the current catalogue once per line. Distinctive
+brands stay in the phrase while generic categories become Danish; uncertain
+meaning is left for you to clarify. Favourites are searched only when you
+explicitly ask.
 
 The plan reports source, discount and dietary metadata, constraint outcomes,
 exact basket coverage, remaining quantities, and the estimated total. The

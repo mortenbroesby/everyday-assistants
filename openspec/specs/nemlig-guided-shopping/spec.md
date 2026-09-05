@@ -2,12 +2,12 @@
 
 ## Purpose
 
-Defines a read-only guided grocery run that resolves a structured household shopping list favorites-first, preserves user choice, accounts for the current basket, and supports private local plan snapshots.
+Defines a read-only guided grocery run that resolves a structured household shopping list from the current catalogue, preserves user choice, accounts for the current basket, and supports private local plan snapshots.
 
 ## Requirements
 
 ### Requirement: Structured whole-list planning
-The system SHALL accept between one and twenty grocery lines, each containing a non-empty Danish search phrase, a positive quantity, optional product constraints and preferences, and an optional selected product ID, and SHALL reject an invalid request before reading or changing external state.
+The system SHALL accept between one and twenty grocery lines, each containing one short non-empty Danish catalogue phrase, a positive quantity, optional product constraints and preferences, and an optional selected product ID, and SHALL reject an invalid request before reading or changing external state. Clients SHALL translate or normalize English, mixed-language, misspelled, or over-specific requests before submitting a line, preserving a distinctive brand with the intended Danish product category.
 
 #### Scenario: Valid grocery list
 - **WHEN** a client submits several valid grocery lines
@@ -17,23 +17,27 @@ The system SHALL accept between one and twenty grocery lines, each containing a 
 - **WHEN** any line has blank search text, a non-positive quantity, an unsupported preference, or more than twenty total lines are supplied
 - **THEN** the complete request fails before any product, basket, proposal, or local plan operation
 
-### Requirement: Favorites-first candidate resolution
-The system SHALL search one authenticated favorites pool for each grocery line before general catalog search, SHALL use catalog fallback only for lines with no matching favorite that satisfies their constraints, and SHALL return bounded candidates without selecting a product automatically.
+### Requirement: Catalogue-first candidate resolution
+The system SHALL search the current general catalogue exactly once for each grocery line, SHALL NOT search favourites during ordinary planning, and SHALL return bounded candidates without selecting a product automatically.
 
-#### Scenario: Matching favorite exists
-- **WHEN** one or more favorites match a line and satisfy its constraints
-- **THEN** the result contains those favorite candidates and performs no catalog fallback for that line
+#### Scenario: Catalogue candidates exist
+- **WHEN** one or more catalogue products match a line and satisfy its constraints
+- **THEN** the result contains those catalogue candidates and performs no favourites search for that line
 
-#### Scenario: No matching favorite exists
-- **WHEN** no favorite matches a line after its constraints are applied
-- **THEN** the system searches the general catalog and labels the returned candidates as catalog results
+#### Scenario: Catalogue search is empty
+- **WHEN** the catalogue search succeeds but no product satisfies the line and its constraints
+- **THEN** the line is unresolved as an empty result without searching favourites or issuing another speculative query
+
+#### Scenario: Catalogue discovery is unavailable
+- **WHEN** the catalogue request fails
+- **THEN** the line is unresolved as discovery unavailable, distinguishable from an empty result, without searching favourites or changing the basket
 
 #### Scenario: Several candidates remain plausible
 - **WHEN** more than one candidate remains after filtering and ranking
 - **THEN** the line remains unresolved until a client supplies an exact selected product ID
 
 #### Scenario: No candidate is usable
-- **WHEN** neither favorites nor catalog search yields a candidate satisfying the line constraints
+- **WHEN** catalogue search yields no candidate satisfying the line constraints
 - **THEN** the line is returned as unresolved with a concise reason and no proposal is prepared
 
 ### Requirement: Constraints and deterministic preferences

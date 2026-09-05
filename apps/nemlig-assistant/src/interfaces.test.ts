@@ -489,13 +489,25 @@ test("MCP routes ordinary product intent through loose catalogue-first planning"
     const instructions = mcp.getInstructions() ?? "";
     assert.match(instructions, /ordinary requests to find or add products, use plan_my_shopping/);
     assert.match(instructions, /short, loose Danish catalogue search phrase/);
-    assert.match(instructions, /Ordinary planning searches the current Nemlig catalogue, never favourites/);
+    assert.match(instructions, /English, mixed-language, misspelled, and over-specific wording/);
+    assert.match(instructions, /'oat milk' becomes 'havremælk'/);
+    assert.match(instructions, /'Prince biscuits' becomes 'prince kiks'/);
+    assert.match(instructions, /'lasange plader' becomes 'lasagneplader'/);
+    assert.match(instructions, /'the red Prince chocolate sandwich biscuits' becomes 'prince kiks'/);
+    assert.match(instructions, /issue extra speculative searches/);
+    assert.match(instructions, /Ordinary planning searches the current Nemlig catalogue once per line, never favourites/);
     assert.match(instructions, /show_my_favorites only when the user explicitly asks/);
     assert.match(instructions, /current Nemlig products, prices, availability/);
     assert.match(instructions, /Recipes and general food research do not require Nemlig tools/);
-    assert.match(tools.get("plan_my_shopping") ?? "", /searching the current Nemlig catalogue with short, loose Danish phrases/);
+    assert.match(tools.get("plan_my_shopping") ?? "", /translating or normalizing each request into one short Danish catalogue phrase/);
     assert.match(tools.get("find_groceries") ?? "", /current Nemlig catalogue directly/);
+    assert.match(tools.get("find_groceries") ?? "", /'Prince biscuits' becomes 'prince kiks'/);
     assert.match(tools.get("show_my_favorites") ?? "", /saved Nemlig favourites/);
+
+    const plan = (await mcp.listTools()).tools.find((tool) => tool.name === "plan_my_shopping");
+    const direct = (await mcp.listTools()).tools.find((tool) => tool.name === "find_groceries");
+    assert.match(JSON.stringify(plan?.inputSchema), /Prince biscuits.*prince kiks/);
+    assert.match(JSON.stringify(direct?.inputSchema), /prince kiks.*Prince biscuits/);
   });
 });
 

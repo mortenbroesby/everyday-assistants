@@ -166,17 +166,42 @@ guarantee access during a provider outage or global emergency shutdown.
 
 **Source:** [GitHub issue #7](https://github.com/mortenbroesby/everyday-assistants/issues/7)
 
-**Status:** Catalogue-first routing and loose Danish guidance are implemented;
-the reported Prince-cookie case remains unproven.
+**Status:** Active.
 
-- Reproduce the reported miss while confirming the Nemlig app can find the
-  product at the same time.
-- Cover English, mixed-language, misspelled, and over-specific requests with
-  prompt and contract tests, including the reported case.
-- Convert ordinary wording to a short Danish catalogue query, preserve
-  ambiguous candidates for user choice, and never fall back to favourites.
-- Distinguish unavailable discovery from a successful empty result and verify
-  the fix through the existing ChatGPT app without changing the basket.
+**Epic outcome:** Reliably turn ordinary product wording into one bounded Danish
+catalogue query that finds relevant current candidates without favourites
+fallback, speculative request amplification, or basket changes.
+
+### Story P1.W1 — reproduce and specify the translation boundary
+
+- [x] Reproduce the reported case against the live read-only catalogue. On
+  2026-09-05, `Prince cookies` returned unrelated cookies while `prince kiks`
+  returned product `904013`, `Kiks m. kakaocremefyld`, brand `Prince`, first.
+- [x] Confirm that brand-only `Prince` is ambiguous because it also returns
+  tobacco products, so the query must preserve the brand and add the Danish
+  grocery category.
+- [x] Specify English, mixed-language, misspelled, and over-specific examples
+  and require one best Danish phrase per line; ask when meaning stays uncertain.
+
+### Story P1.W2 — enforce the agent and tool contract
+
+- [x] Update server instructions, direct-search metadata, and plan-line schema
+  guidance to translate or normalize before the tool call.
+- [x] Preserve one catalogue search per line, explicit ambiguity, distinct
+  discovery-unavailable and empty-result outcomes, and zero favourites calls.
+- [x] Add contract tests for all four wording classes and the reported Prince
+  case without introducing a translation service or additional provider calls.
+- [x] Update the implemented feature documentation and package version.
+
+### Story P1.W3 — deliver and prove the fix
+
+- [x] Run focused interface/planner tests, privacy checks, `pnpm verify`, the
+  production-readiness gate, and strict specification validation.
+- [ ] Commit and push the scoped item, verify remote `main` and exact-head CI,
+  then deploy the exact revision disabled first and enable the same artifact.
+- [ ] Refresh the one existing `Nemlig Assistant` app and verify the reported
+  wording through a fresh read-only ChatGPT conversation with no favourite or
+  basket mutation.
 
 ## P1 — verify delivered department browsing and close the loop
 

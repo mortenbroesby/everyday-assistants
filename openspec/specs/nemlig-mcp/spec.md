@@ -172,22 +172,22 @@ The `list_favorites` tool SHALL accept optional non-empty search text, SHALL ret
 
 ### Requirement: Intent-directed product discovery
 
-The MCP server SHALL guide clients to use `plan_shopping_list` for ordinary requests to find or add products, SHALL reserve `search_products` for explicit general-catalog searches, and SHALL reserve `list_favorites` for explicit favorite browsing. Discovery and planning SHALL remain separate from basket preparation and application.
+The MCP server SHALL guide clients to use `plan_my_shopping` for ordinary requests to find or add products, SHALL use `find_groceries` for direct catalogue searches, and SHALL reserve `show_my_favorites` for explicit favourite browsing. Before either catalogue tool is called, the client SHALL translate or normalize English, mixed-language, misspelled, or over-specific wording into one short Danish catalogue phrase per line, preserving a distinctive brand with the intended Danish product category. Discovery and planning SHALL remain separate from basket preparation and application.
 
 #### Scenario: Ordinary product request
 
 - **WHEN** the user ordinarily asks to find or add one or more products without requesting a specific search source
-- **THEN** the server guidance directs the client to `plan_shopping_list`, which returns favorites-first candidates and uses catalog fallback only when no eligible favorite exists
+- **THEN** the server guidance directs the client to `plan_my_shopping` with one normalized Danish phrase per line, preserving useful brand intent with the intended Danish category and asking rather than guessing when meaning stays uncertain, and performs one catalogue search per line without searching favourites
 
 #### Scenario: Explicit catalog request
 
 - **WHEN** the user explicitly asks to search the general Nemlig catalog
-- **THEN** the server guidance permits `search_products` without first requiring a favorite match
+- **THEN** the server guidance permits `find_groceries` with the same normalized Danish catalogue-phrase rule
 
 #### Scenario: Explicit favorites request
 
 - **WHEN** the user explicitly asks to list or search saved favorites
-- **THEN** the server guidance directs the client to `list_favorites` and no catalog fallback occurs
+- **THEN** the server guidance directs the client to `show_my_favorites` and no catalogue fallback occurs
 
 #### Scenario: Product discovery remains non-mutating
 

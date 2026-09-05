@@ -14,7 +14,7 @@ const constraintsSchema = z.object({
 const preferenceSchema = z.enum(["discount", "organic", "lowest_unit_price", "non_frozen"]);
 export const shoppingPlanLineSchema = z.object({
   id: z.string().trim().min(1).max(80).describe("A short label that keeps this grocery line distinct."),
-  name: z.string().trim().min(1).max(200).describe("The grocery you want, written in ordinary Danish shopping language."),
+  name: z.string().trim().min(1).max(200).describe("One short Danish catalogue phrase. Translate or normalize English, mixed-language, misspelled, or over-specific wording before this call; preserve a distinctive brand and add the Danish product category, for example 'Prince biscuits' becomes 'prince kiks'."),
   quantity: z.number().int().positive().max(99).describe("How many you want."),
   constraints: constraintsSchema.default({}).describe("Requirements that every suggested product must meet."),
   preferences: z.array(preferenceSchema).max(4).default([]).describe("Optional preferences used to rank suitable products."),
