@@ -711,6 +711,7 @@ test("MCP replacement prepares factual savings and applies only the approved sta
   const writes: string[] = [];
   const client = fakeClient({
     getProduct: async (id) => id === 8 ? replacement : current,
+    getFreshProduct: async (id) => id === 8 ? replacement : current,
     getCart: async () => cart,
     addToCart: async (id, quantity) => {
       writes.push(`add:${id}:${quantity}`);
@@ -775,6 +776,7 @@ test("MCP replacement prepares factual savings and applies only the approved sta
 
   const uncertainClient = fakeClient({
     getProduct: async (id) => id === 8 ? replacement : current,
+    getFreshProduct: async (id) => id === 8 ? replacement : current,
     getCart: async () => ({
       items: [{ id: 7, name: current.name, quantity: 1, total: 12.5 }],
       productsPrice: 12.5, deliveryPrice: 0, numberOfProducts: 1, deliveryTime: undefined,

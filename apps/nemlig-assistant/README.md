@@ -168,7 +168,8 @@ Read or plan → review the exact change → show a clear shopping summary → u
 - The default 15-minute review window accommodates a normal ChatGPT approval
   round-trip without weakening final revalidation.
 - Any changed fact invalidates the approval.
-- The approved action revalidates the review and current state before writing.
+- The approved action freshly resolves every affected product upstream and
+  revalidates the review and current basket state before writing.
 - Add, remove, replace, and clear immediately read the basket back.
 - Writes are never automatically retried after an uncertain result.
 - Replacement adds and verifies the new line before removing the old one. If

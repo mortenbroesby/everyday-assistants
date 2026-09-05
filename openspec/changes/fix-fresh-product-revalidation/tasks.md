@@ -11,8 +11,8 @@
 
 ## 3. Contract and repository verification
 
-- [ ] 3.1 Update implementation-facing documentation only where needed to distinguish discovery reuse from fresh apply-time revalidation; verify the feature inventory and safety claims remain accurate.
-- [ ] 3.2 Run formatting/diff checks, focused tests, strict OpenSpec validation, privacy checks, and `pnpm verify`; record every passing command without exposing credentials or private shopping data.
+- [x] 3.1 Update implementation-facing documentation only where needed to distinguish discovery reuse from fresh apply-time revalidation; verify the feature inventory and safety claims remain accurate.
+- [x] 3.2 Run formatting/diff checks, focused tests, strict OpenSpec validation, privacy checks, and `pnpm verify`; record every passing command without exposing credentials or private shopping data.
 - [ ] 3.3 Reconcile current `origin/main`, coordinate with active sibling work, commit and integrate the scoped change into remote `main`, and verify exact-head CI succeeds.
 
 ## 4. Production delivery

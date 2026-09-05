@@ -66,6 +66,44 @@ OAuth boundary without weakening cost or basket safeguards.
 
 This item does not authorize any Nemlig basket mutation.
 
+## P0 — require fresh product data before an approved basket write
+
+**Status:** Active safety fix.
+
+**Epic outcome:** Ensure an approved addition or replacement cannot write from
+product details retained during discovery or review; every affected product must
+be freshly resolved after apply begins, or the proposal fails closed.
+
+### Story P0.F1 — separate reusable discovery from authoritative revalidation
+
+- [x] Add one exact-product client path that bypasses remembered products while
+  reusing the existing bounded upstream search, timeout, and retry behavior.
+- [x] Keep discovery and proposal preparation on the existing reusable lookup.
+- [x] Prove a populated product map cannot satisfy the fresh lookup.
+
+### Story P0.F2 — fail closed before any mutation
+
+- [x] Revalidate every addition line and both replacement products inside the
+  existing mutation lock before the first basket write.
+- [x] Invalidate the proposal without mutation when fresh lookup fails or any
+  reviewed identity, availability, package, price, or total changes.
+- [x] Preserve proposal expiry, basket fingerprinting, single-attempt mutation,
+  sequencing, and final basket readback.
+
+### Story P0.F3 — deliver and prove the safety fix
+
+- [x] Update focused tests, implementation documentation, OpenSpec tasks, and
+  package version without adding a service, cache, dependency, or background job.
+- [x] Pass strict specs, privacy, focused tests, `pnpm verify`, package smoke,
+  and the disabled Cloudflare dry-run.
+- [ ] Integrate the exact commit into remote `main` and verify exact-head CI.
+- [ ] Deploy the exact CI-green revision disabled first, prove no backend wake,
+  restore enabled state for the same revision, and pass credential-free probes.
+- [ ] Sync and archive the completed OpenSpec change, then integrate and verify
+  its repository-only archival commit.
+
+This item does not authorize a live proposal apply or any basket mutation.
+
 ## P1 — predictable automated production deployment
 
 **Status:** Not started.
