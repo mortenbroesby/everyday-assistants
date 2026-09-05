@@ -131,8 +131,9 @@ headers and forwards that sealed value only over the existing internal Container
 request. The Container receives the same key as a secret, verifies/decrypts the
 envelope, and binds each MCP session and principal context to its generation.
 
-A missing or changed generation, disabled principal, or revoked principal rejects the next request and closes the obsolete
-session. This makes revocation immediate without polling or a second Durable
+A missing or changed generation, disabled principal, or revoked principal
+rejects the next request and closes the obsolete session. This makes revocation
+immediate without polling or a second Durable
 Object call per request. A separate namespace or database would duplicate the
 existing serialized admission boundary and add cost and failure modes.
 
@@ -177,6 +178,27 @@ Worst credible abuse is therefore bounded by the separate onboarding switch,
 per-principal/global validation rates, request deadlines, and the existing one-
 Container ceiling. Any plan change or measured usage outside the existing
 Cloudflare/Auth0 allowances requires a new human cost decision.
+
+### Implementation map
+
+- `principal-policy.ts` keeps schema-v1 owner migration support and parses the
+  credential-free schema-v2 owner, budgets, Organization, and invite defaults.
+- `credential-envelope.ts` uses platform Web Crypto for the bounded sealed
+  credential value; no crypto package is added.
+- `cloudflare-worker.ts`, `cloudflare-gateway.ts`, and `cloudflare-usage.ts`
+  extend the existing fixed controller admission/storage boundary and Worker
+  routes; no namespace, Container, or per-request storage call is added.
+- `auth0.ts` and the Worker portal code use the existing issuer plus the one
+  human-configured web application and Organization; the existing ChatGPT
+  dynamic client remains unchanged.
+- `http.ts` and `mcp.ts` consume only the controller-supplied credential
+  generation and existing MCP SDK URL elicitation support.
+- Existing focused tests, production acceptance/deploy checks, privacy scripts,
+  and `docs/cloudflare-operations.md` provide the runnable evidence and runbook.
+
+This map adds no dependency, storage service, Durable Object namespace,
+Container, autoscaling, polling, scheduler, queue, or paid service. Ordinary MCP
+traffic retains one controller admission and at most one fixed Container wake.
 
 ## Risks / Trade-offs
 

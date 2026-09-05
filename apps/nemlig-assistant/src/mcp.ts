@@ -36,6 +36,7 @@ import {
 
 export const PICKER_URI = "ui://nemlig/picker.html";
 export const PICKER_MIME_TYPE = "text/html;profile=mcp-app";
+export const NEMLIG_CONNECT_URL = "https://nemlig-mcp.broesby.dk/connect";
 export const NEMLIG_IMAGE_ORIGINS = ["https://www.nemlig.com"] as const;
 
 export const safeNemligImageUrl = (value: unknown): string | undefined => {
@@ -366,6 +367,33 @@ export function createMcpServer(
   const planStorage = configuredPlanSnapshotStorage(env, requestContext);
   const listStorage = configuredShoppingListStorage(env);
   const ownerSubject = requestContext?.principalKey ?? env.NEMLIG_MCP_AUTH0_OWNER_SUBJECT ?? "local-owner";
+
+  server.registerTool(
+    "check_nemlig_connection",
+    {
+      title: "Check my Nemlig connection",
+      description: "Check whether your Nemlig account is connected. If needed, open the secure connection page; never send login details in chat.",
+      inputSchema: {},
+      outputSchema: z.object({
+        status: z.enum(["connected", "connection_required", "reconnect_required"]),
+        connection_url: z.literal(NEMLIG_CONNECT_URL),
+      }),
+      annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true },
+    },
+    async () => {
+      const connected = Boolean(requestContext || await loadCredentials());
+      if (!connected && server.server.getClientCapabilities()?.elicitation?.url) {
+        await server.server.elicitInput({
+          mode: "url",
+          message: "Open the secure Nemlig connection page. Do not enter your password in chat.",
+          elicitationId: randomUUID(),
+          url: NEMLIG_CONNECT_URL,
+        });
+      }
+      const status = connected ? "connected" as const : "connection_required" as const;
+      return success({ status, connection_url: NEMLIG_CONNECT_URL });
+    },
+  );
 
   server.registerTool(
     "find_groceries",

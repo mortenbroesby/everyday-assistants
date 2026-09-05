@@ -16,7 +16,7 @@ const tierSchema = z.enum(["0", "1", "2", "none"]);
 const denialReasonSchema = z.enum([
   "none", "mcp_disabled", "configuration_invalid", "request_invalid",
   "origin_not_allowed", "authentication_required", "authentication_failed",
-  "principal_not_allowed", ...ADMISSION_REASONS,
+  "principal_not_allowed", "credential_required", ...ADMISSION_REASONS,
 ]);
 const outcomeSchema = z.enum([
   "completed",

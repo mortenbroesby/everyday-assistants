@@ -26,6 +26,20 @@ const validPolicy = () => ({
   }],
 });
 
+const validV2Policy = () => ({
+  schema_version: 2,
+  revision: "family-v2",
+  budgets: validPolicy().budgets,
+  organization: { id: "org_abcdefgh" },
+  invitation: { default_tier: 1 },
+  owner: {
+    subject: "auth0|owner",
+    principal_key: key("a"),
+    tier: 0,
+    enabled: true,
+  },
+});
+
 test("parses a bounded owner-only policy and resolves only enabled exact subjects", () => {
   const raw = JSON.stringify(validPolicy());
   const policy = parsePrincipalPolicy(raw);
@@ -35,11 +49,27 @@ test("parses a bounded owner-only policy and resolves only enabled exact subject
   assert.equal(findEnabledPrincipal({ ...policy, principals: [{ ...policy.principals[0]!, enabled: false }] }, "auth0|owner"), undefined);
 });
 
+test("parses credential-free schema v2 and rejects dynamic identities or credentials in static policy", () => {
+  const policy = parsePrincipalPolicy(JSON.stringify(validV2Policy()));
+  assert.equal(policy.schema_version, 2);
+  assert.equal(policy.organization?.id, "org_abcdefgh");
+  assert.equal(policy.invitation?.default_tier, 1);
+  assert.deepEqual(policy.principals, [validV2Policy().owner]);
+  assert.equal(findEnabledPrincipal(policy, "auth0|owner")?.principal_key, key("a"));
+
+  for (const invalid of [
+    { ...validV2Policy(), principals: [{ ...validV2Policy().owner, subject: "auth0|guest", tier: 1 }] },
+    { ...validV2Policy(), owner: { ...validV2Policy().owner, nemlig: { username: "owner@example.test", password: "secret" } } },
+    { ...validV2Policy(), owner: { ...validV2Policy().owner, principal_key: "guessable" } },
+    { ...validV2Policy(), budgets: { ...validV2Policy().budgets, tier2_shed_at: { minute: 40, month: 125_000 } } },
+  ]) assert.throws(() => parsePrincipalPolicy(JSON.stringify(invalid)), /NEMLIG_MCP_PRINCIPALS is invalid/u);
+});
+
 test("fails closed for missing, malformed, duplicate, oversized, incomplete, and invalid tier policies", () => {
   const invalidPolicies: unknown[] = [
     undefined,
     "not-json",
-    { ...validPolicy(), schema_version: 2 },
+    { ...validPolicy(), schema_version: 3 },
     { ...validPolicy(), principals: [] },
     { ...validPolicy(), principals: [...validPolicy().principals, { ...validPolicy().principals[0], tier: 1 }] },
     { ...validPolicy(), principals: [...validPolicy().principals, { ...validPolicy().principals[0], subject: "auth0|guest" }] },

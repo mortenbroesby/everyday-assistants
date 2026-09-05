@@ -12,6 +12,9 @@ export interface CloudflareEnv {
   MCP_CONTROL_TIMEOUT_MS?: string;
   MCP_TOTAL_TIMEOUT_MS?: string;
   MCP_BACKEND_TIMEOUT_MS?: string;
+  MCP_CREDENTIAL_ONBOARDING_ENABLED?: string;
+  MCP_CREDENTIAL_RATE_LIMIT?: string;
+  MCP_CREDENTIAL_GLOBAL_RATE_LIMIT?: string;
   NEMLIG_MCP_AUTH0_ISSUER?: string;
   NEMLIG_MCP_AUTH0_AUDIENCE?: string;
   NEMLIG_MCP_AUTH0_OWNER_SUBJECT?: string;
@@ -20,6 +23,12 @@ export interface CloudflareEnv {
   NEMLIG_MCP_PUBLIC_URL?: string;
   NEMLIG_MCP_ALLOWED_ORIGINS?: string;
   NEMLIG_MCP_REVISION?: string;
+  NEMLIG_MCP_CREDENTIAL_KEY?: string;
+  NEMLIG_MCP_CREDENTIAL_KEY_VERSION?: string;
+  NEMLIG_MCP_AUTH0_ORGANIZATION_ID?: string;
+  NEMLIG_MCP_ONBOARDING_CLIENT_ID?: string;
+  NEMLIG_MCP_ONBOARDING_CLIENT_SECRET?: string;
+  NEMLIG_MCP_ONBOARDING_SESSION_KEY?: string;
   NEMLIG_USERNAME?: string;
   NEMLIG_PASSWORD?: string;
   GH_TOKEN?: string;
@@ -41,6 +50,8 @@ export interface GatewayConfig {
   publicUrl: URL;
   allowedOrigins: string[];
   revision: string;
+  credentialKey?: string;
+  credentialKeyVersion?: string;
 }
 
 const required = (env: CloudflareEnv, name: keyof CloudflareEnv): string => {
@@ -72,6 +83,13 @@ export function loadGatewayConfig(env: CloudflareEnv): GatewayConfig {
   const issuer = new URL(required(env, "NEMLIG_MCP_AUTH0_ISSUER"));
   const publicUrl = new URL(required(env, "NEMLIG_MCP_PUBLIC_URL"));
   const principalPolicy = parsePrincipalPolicy(env.NEMLIG_MCP_PRINCIPALS);
+  const credentialKey = env.NEMLIG_MCP_CREDENTIAL_KEY?.trim();
+  const credentialKeyVersion = env.NEMLIG_MCP_CREDENTIAL_KEY_VERSION?.trim();
+  if (principalPolicy.schema_version === 2
+    && (!credentialKey || !/^[A-Za-z0-9_-]{43}$/u.test(credentialKey)
+      || !credentialKeyVersion || !/^[A-Za-z0-9._-]{1,32}$/u.test(credentialKeyVersion))) {
+    throw new Error("Schema-v2 credential encryption configuration is invalid.");
+  }
   const { budgets } = principalPolicy;
   const maximumMonthlyOperations = dailyLimit * 31;
   if (budgets.guest_limit.minute + budgets.tier0_reserve.minute > rateLimit
@@ -85,7 +103,7 @@ export function loadGatewayConfig(env: CloudflareEnv): GatewayConfig {
   const legacyUsername = env.NEMLIG_USERNAME?.trim();
   const legacyPassword = env.NEMLIG_PASSWORD;
   if ((legacyUsername || legacyPassword)
-    && (legacyUsername !== owner.nemlig.username || legacyPassword !== owner.nemlig.password)) {
+    && (!owner.nemlig || legacyUsername !== owner.nemlig.username || legacyPassword !== owner.nemlig.password)) {
     throw new Error("Legacy owner credentials do not match principal policy.");
   }
   if (issuer.protocol !== "https:" || issuer.search || issuer.hash) throw new Error("NEMLIG_MCP_AUTH0_ISSUER must be an HTTPS URL without query or fragment.");
@@ -110,5 +128,7 @@ export function loadGatewayConfig(env: CloudflareEnv): GatewayConfig {
     allowedOrigins: (env.NEMLIG_MCP_ALLOWED_ORIGINS ?? "https://chatgpt.com,https://chat.openai.com")
       .split(",").map((value) => value.trim()).filter(Boolean),
     revision: env.NEMLIG_MCP_REVISION?.trim() || "development",
+    ...(credentialKey ? { credentialKey } : {}),
+    ...(credentialKeyVersion ? { credentialKeyVersion } : {}),
   };
 }

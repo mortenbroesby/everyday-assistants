@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { CloudflareEnv } from "./cloudflare-config.js";
-import { classifyMcpMessage, handleGatewayRequest, type GatewayDependencies, type OperationClass } from "./cloudflare-gateway.js";
+import { attachAdmissionCredential, classifyMcpMessage, handleGatewayRequest, type GatewayDependencies, type OperationClass } from "./cloudflare-gateway.js";
 import type { GatewayRequestEvent } from "./cloudflare-observability.js";
 import { emptyUsageState } from "./cloudflare-usage.js";
 import { parsePrincipalPolicy } from "./principal-policy.js";
@@ -38,6 +38,36 @@ const mcpRequest = (body: unknown, token = "owner-token") => new Request("https:
   method: "POST",
   headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
   body: JSON.stringify(body),
+});
+
+test("only controller-returned credential headers cross the internal boundary", () => {
+  const spoofed = new Request("https://mcp.example.test/mcp", { headers: {
+    "x-nemlig-credential-envelope": "attacker",
+    "x-nemlig-principal-key": "attacker",
+    "x-nemlig-policy-revision": "attacker",
+    "x-nemlig-credential-generation": "999",
+  } });
+  const withoutCredential = attachAdmissionCredential(spoofed, {
+    admitted: true,
+    state: emptyUsageState(new Date()),
+  });
+  assert.equal(withoutCredential.headers.get("x-nemlig-credential-envelope"), null);
+  const envelope = {
+    schema_version: 1 as const,
+    principal_key: "a".repeat(32),
+    policy_revision: "family-v2",
+    key_version: "one",
+    generation: 1,
+    nonce: "A".repeat(16),
+    ciphertext: "B".repeat(24),
+  };
+  const attached = attachAdmissionCredential(spoofed, {
+    admitted: true,
+    state: emptyUsageState(new Date()),
+    credential: envelope,
+  });
+  assert.equal(attached.headers.get("x-nemlig-principal-key"), envelope.principal_key);
+  assert.deepEqual(JSON.parse(atob(attached.headers.get("x-nemlig-credential-envelope")!)), envelope);
 });
 
 test("disabled Cloudflare MCP rejects before configuration, authentication, and backend access", async () => {
@@ -135,7 +165,15 @@ test("unauthorized, rate-limited, and open-breaker requests never reach the Cont
     authenticate: async () => principal,
     admit: async () => ({ admitted: false, status: 503, reason: "breaker_open", state: emptyUsageState(new Date()) }),
   });
-  assert.deepEqual([unauthorized.status, rateLimited.status, tripped.status], [401, 429, 503]);
+  const connectionRequired = await handleGatewayRequest(mcpRequest({ method: "initialize" }), env, {
+    ...base,
+    authenticate: async () => principal,
+    admit: async () => ({ admitted: false, status: 409, reason: "credential_required", state: emptyUsageState(new Date()) }),
+  });
+  assert.deepEqual(await connectionRequired.json(), {
+    error: "connection_required", connection_url: "https://nemlig-mcp.broesby.dk/connect",
+  });
+  assert.deepEqual([unauthorized.status, rateLimited.status, tripped.status, connectionRequired.status], [401, 429, 503, 409]);
   assert.equal(forwarded, 0);
 });
 

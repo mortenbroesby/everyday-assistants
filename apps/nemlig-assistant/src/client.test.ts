@@ -101,6 +101,26 @@ test("login rejects provider errors without exposing the supplied secret", async
   });
 });
 
+test("credential validation performs one login and one authenticated read with no retry or mutation", async () => {
+  const requests: ExpectedRequest[] = [
+    {
+      match: "/login$",
+      inspect: (_url, init) => assert.deepEqual(JSON.parse(String(init?.body)), {
+        Username: "person@example.test", Password: "private-secret", CheckForExistingProducts: false,
+        DoMerge: false, AppInstalled: false, SaveExistingBasket: false,
+      }),
+      response: json({ RedirectUrl: "/" }),
+    },
+    { match: "/Token$", response: json({ access_token: "validated" }) },
+  ];
+  await new NemligClient(mockFetch(requests)).validateCredentials("person@example.test", "private-secret");
+  assert.equal(requests.length, 0);
+  let attempts = 0;
+  const failing = new NemligClient((async () => { attempts += 1; throw new TypeError("offline"); }) as typeof fetch);
+  await assert.rejects(failing.validateCredentials("person@example.test", "private-secret"), /network unavailable/u);
+  assert.equal(attempts, 1);
+});
+
 test("network reads retry, while basket mutations do not", async () => {
   let reads = 0;
   const readClient = new NemligClient(

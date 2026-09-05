@@ -62,6 +62,7 @@ shopping. It can:
 - save and continue plans without trusting stale prices
 - inspect the basket and review exact additions, removals, replacements, or emptying it
 - expose household-language tools in ChatGPT instead of protocol-oriented names
+- support invited users connecting their own Nemlig account through a separately authenticated browser page when the operator enables it
 - work locally from a terminal or conversationally through an MCP client such as ChatGPT
 
 It cannot place an order, check out, or pay. Basket changes use a separate

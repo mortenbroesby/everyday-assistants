@@ -14,6 +14,8 @@ export interface Auth0Config {
   revision: string;
   host: "127.0.0.1" | "0.0.0.0";
   port: number;
+  credentialKey?: string;
+  credentialKeyVersion?: string;
 }
 
 const required = (env: NodeJS.ProcessEnv, name: string): string => {
@@ -35,10 +37,18 @@ export function loadAuth0Config(env: NodeJS.ProcessEnv = process.env): Auth0Conf
   }
   if (!Number.isInteger(port) || port < 1 || port > 65_535) throw new Error("NEMLIG_MCP_HTTP_PORT must be a valid port.");
   if (host !== "127.0.0.1" && host !== "0.0.0.0") throw new Error("NEMLIG_MCP_HTTP_HOST must be 127.0.0.1 or 0.0.0.0.");
+  const principalPolicy = parsePrincipalPolicy(env.NEMLIG_MCP_PRINCIPALS);
+  const credentialKey = env.NEMLIG_MCP_CREDENTIAL_KEY?.trim();
+  const credentialKeyVersion = env.NEMLIG_MCP_CREDENTIAL_KEY_VERSION?.trim();
+  if (principalPolicy.schema_version === 2
+    && (!credentialKey || !/^[A-Za-z0-9_-]{43}$/u.test(credentialKey)
+      || !credentialKeyVersion || !/^[A-Za-z0-9._-]{1,32}$/u.test(credentialKeyVersion))) {
+    throw new Error("Schema-v2 credential encryption configuration is invalid.");
+  }
   return {
     issuer,
     audience: required(env, "NEMLIG_MCP_AUTH0_AUDIENCE"),
-    principalPolicy: parsePrincipalPolicy(env.NEMLIG_MCP_PRINCIPALS),
+    principalPolicy,
     requiredScope: env.NEMLIG_MCP_REQUIRED_SCOPE?.trim() || "use:nemlig-assistant",
     publicUrl,
     allowedOrigins: (env.NEMLIG_MCP_ALLOWED_ORIGINS ?? "https://chatgpt.com,https://chat.openai.com")
@@ -46,6 +56,8 @@ export function loadAuth0Config(env: NodeJS.ProcessEnv = process.env): Auth0Conf
     revision: env.NEMLIG_MCP_REVISION?.trim() || "development",
     host,
     port,
+    ...(credentialKey ? { credentialKey } : {}),
+    ...(credentialKeyVersion ? { credentialKeyVersion } : {}),
   };
 }
 
@@ -94,4 +106,24 @@ export function createAuth0Verifier(
       }
     },
   };
+}
+
+export async function verifyAuth0BrowserIdToken(
+  token: string,
+  input: { issuer: URL; clientId: string; nonce: string; organizationId: string },
+  key: JWTVerifyGetKey,
+): Promise<{ subject: string; emailVerified: true; organizationId: string }> {
+  try {
+    const { payload } = await jwtVerify(token, key, {
+      issuer: input.issuer.href,
+      audience: input.clientId,
+      algorithms: ["RS256"],
+    });
+    if (typeof payload.sub !== "string" || !payload.sub || payload.nonce !== input.nonce
+      || payload.org_id !== input.organizationId || payload.email_verified !== true
+      || typeof payload.email !== "string" || !payload.email) throw new Error("required claims missing");
+    return { subject: payload.sub, emailVerified: true, organizationId: input.organizationId };
+  } catch {
+    throw new InvalidTokenError("Invalid ID token");
+  }
 }

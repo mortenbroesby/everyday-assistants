@@ -11,6 +11,24 @@ import { aggregateUsage, type AdmissionResult, type UsageState } from "./cloudfl
 import type { Principal } from "./principal-policy.js";
 
 export type OperationClass = "protocol" | "normal" | "expensive";
+export const INTERNAL_CREDENTIAL_HEADERS = [
+  "x-nemlig-credential-envelope",
+  "x-nemlig-principal-key",
+  "x-nemlig-policy-revision",
+  "x-nemlig-credential-generation",
+] as const;
+
+export function attachAdmissionCredential(request: Request, admission: AdmissionResult, signal?: AbortSignal): Request {
+  const headers = new Headers(request.headers);
+  for (const name of INTERNAL_CREDENTIAL_HEADERS) headers.delete(name);
+  if (admission.admitted && admission.credential) {
+    headers.set("x-nemlig-credential-envelope", btoa(JSON.stringify(admission.credential)));
+    headers.set("x-nemlig-principal-key", admission.credential.principal_key);
+    headers.set("x-nemlig-policy-revision", admission.credential.policy_revision);
+    headers.set("x-nemlig-credential-generation", String(admission.credential.generation));
+  }
+  return new Request(request, { headers, ...(signal ? { signal } : {}) });
+}
 
 export interface GatewayDeadline {
   readonly signal: AbortSignal;
@@ -20,7 +38,7 @@ export interface GatewayDeadline {
 export interface GatewayDependencies {
   authenticate(token: string, config: GatewayConfig, deadline: GatewayDeadline): Promise<Principal | undefined>;
   admit(operation: OperationClass, principal: Principal, config: GatewayConfig, deadline: GatewayDeadline): Promise<AdmissionResult>;
-  forward(request: Request, operation: OperationClass, config: GatewayConfig, deadline: GatewayDeadline): Promise<Response>;
+  forward(request: Request, operation: OperationClass, config: GatewayConfig, deadline: GatewayDeadline, admission: AdmissionResult): Promise<Response>;
   resetUsage?(config: GatewayConfig, deadline: GatewayDeadline): Promise<UsageState>;
   usage?(config: GatewayConfig, deadline: GatewayDeadline): Promise<UsageState | undefined>;
   event?(event: GatewayRequestEvent): void;
@@ -35,6 +53,7 @@ class BoundaryTimeoutError extends Error {
 }
 
 const normalTools = new Set([
+  "check_nemlig_connection",
   "find_groceries",
   "show_my_favorites",
   "show_grocery_sections",
@@ -302,11 +321,13 @@ export async function handleGatewayRequest(
         : admission.reason === "daily_limit" || admission.reason === "expensive_daily_limit" || admission.reason === "breaker_open"
           ? "breaker_rejected"
           : "capacity_rejected";
-      return finish(json({ error: admission.reason }, admission.status), outcome);
+      return finish(json(admission.reason === "credential_required"
+        ? { error: "connection_required", connection_url: "https://nemlig-mcp.broesby.dk/connect" }
+        : { error: admission.reason }, admission.status), outcome);
     }
     try {
       const response = await withinBoundary(
-        (deadline) => dependencies.forward(classified.request, classified.operation, config, deadline),
+        (deadline) => dependencies.forward(classified.request, classified.operation, config, deadline, admission),
         config.backendTimeoutMs, remainingMs, totalController.signal, "backend_timeout",
       );
       return finish(response, classified.operation === "protocol" ? "protocol_completed" : "completed");

@@ -25,9 +25,9 @@ test("public-tree denylist rejects synthetic principal and credential markers", 
   const directory = mkdtempSync(resolve(tmpdir(), "public-tree-policy-check-"));
   const fixture = resolve(directory, "policy.txt");
   try {
-    writeFileSync(fixture, "auth0|synthetic-private-principal\nsynthetic-private-password\n");
+    writeFileSync(fixture, "auth0|synthetic-private-principal\nsynthetic-private-password\nsynthetic-session-key\nsynthetic-envelope-value\n");
     const result = spawnSync(process.execPath, [check, directory], {
-      env: { ...process.env, PUBLIC_RELEASE_DENYLIST: "auth0|synthetic-private-principal\nsynthetic-private-password" },
+      env: { ...process.env, PUBLIC_RELEASE_DENYLIST: "auth0|synthetic-private-principal\nsynthetic-private-password\nsynthetic-session-key\nsynthetic-envelope-value" },
     });
     assert.notEqual(result.status, 0);
   } finally {

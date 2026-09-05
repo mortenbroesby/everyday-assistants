@@ -9,6 +9,7 @@ import type { Auth0Config } from "./auth0.js";
 import { BasketProposalService } from "./proposals.js";
 import { parsePrincipalPolicy } from "./principal-policy.js";
 import type { ShoppingClient } from "./cli.js";
+import { encryptCredentials, type CredentialEnvelope } from "./credential-envelope.js";
 
 const ownerSubject = "auth0|owner";
 const principalPolicy = parsePrincipalPolicy(JSON.stringify({
@@ -276,6 +277,130 @@ test("HTTP MCP creates bounded isolated clients, credentials, baskets, favourite
     assert.equal(proposalStores.size, 2);
     await owner.close();
     await guest.close();
+  } finally {
+    server.closeAllConnections();
+    await new Promise<void>((resolve, reject) => server.close((error?: Error) => error ? reject(error) : resolve()));
+  }
+});
+
+test("schema-v2 sessions decrypt controller credentials and reject stale generations or wrong principals", async () => {
+  const key = Buffer.alloc(32, 9).toString("base64url");
+  const guestKey = "c".repeat(32);
+  const v2Policy = parsePrincipalPolicy(JSON.stringify({
+    schema_version: 2,
+    revision: "family-v2",
+    budgets: principalPolicy.budgets,
+    organization: { id: "org_abcdefgh" },
+    invitation: { default_tier: 1 },
+    owner: { subject: ownerSubject, principal_key: "a".repeat(32), tier: 0, enabled: true },
+  }));
+  const v2Config: Auth0Config = {
+    ...config,
+    principalPolicy: v2Policy,
+    credentialKey: key,
+    credentialKeyVersion: "one",
+  };
+  const envelope = await encryptCredentials(
+    { username: "guest@example.test", password: "guest-secret" },
+    { principalKey: guestKey, policyRevision: v2Policy.revision, keyVersion: "one", generation: 1 },
+    key,
+  );
+  const internalHeaders = (value: CredentialEnvelope) => ({
+    authorization: "Bearer guest",
+    "x-nemlig-principal-key": value.principal_key,
+    "x-nemlig-policy-revision": value.policy_revision,
+    "x-nemlig-credential-generation": String(value.generation),
+    "x-nemlig-credential-envelope": btoa(JSON.stringify(value)),
+  });
+  const logins: string[] = [];
+  const client: ShoppingClient = {
+    isLoggedIn: () => false,
+    login: async (username, password) => { logins.push(`${username}:${password}`); },
+    searchProducts: async () => [], getProduct: async () => { throw new Error("unused"); },
+    getFreshProduct: async () => { throw new Error("unused"); }, listFavorites: async () => [],
+    listDepartments: async () => [], browseDepartment: async () => ({ products: [], page: 1, hasNext: false }),
+    getCart: async () => ({ items: [], productsPrice: 0, deliveryPrice: 0, numberOfProducts: 0, deliveryTime: "guest-v2" }),
+    addToCart: async () => { throw new Error("unused"); }, removeFromCart: async () => { throw new Error("unused"); },
+    clearCart: async () => { throw new Error("unused"); },
+  };
+  const app = createHttpApp(v2Config, oauth, {
+    verifyAccessToken: async (token) => ({ token, clientId: "chatgpt", scopes: [config.requiredScope], expiresAt: Date.now() / 1000 + 300, extra: { subject: "auth0|guest" } }),
+  }, () => ({ client, proposals: new BasketProposalService(client) }));
+  const server = app.listen(0, config.host);
+  await new Promise<void>((resolve, reject) => { server.once("listening", resolve); server.once("error", reject); });
+  const endpoint = new URL(`http://${config.host}:${(server.address() as AddressInfo).port}/mcp`);
+  try {
+    const mcp = new Client({ name: "v2-test", version: "1.0.0" });
+    const transport = new StreamableHTTPClientTransport(endpoint, { requestInit: { headers: internalHeaders(envelope) } });
+    await mcp.connect(transport);
+    await mcp.callTool({ name: "show_my_basket", arguments: {} });
+    assert.deepEqual(logins, ["guest@example.test:guest-secret"]);
+    const next = await encryptCredentials(
+      { username: "guest@example.test", password: "new-secret" },
+      { principalKey: guestKey, policyRevision: v2Policy.revision, keyVersion: "one", generation: 2 },
+      key,
+    );
+    const stale = await fetch(endpoint, {
+      method: "POST",
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "ping" }),
+      headers: { ...internalHeaders(next), "content-type": "application/json", "mcp-session-id": transport.sessionId! },
+    });
+    assert.equal(stale.status, 403);
+    assert.deepEqual(await stale.json(), { error: "reconnect_required", connection_url: "https://nemlig-mcp.broesby.dk/connect" });
+    const wrong = await fetch(endpoint, {
+      method: "POST",
+      body: JSON.stringify({ jsonrpc: "2.0", id: 2, method: "initialize", params: {} }),
+      headers: { ...internalHeaders({ ...envelope, principal_key: "d".repeat(32) }), "content-type": "application/json" },
+    });
+    assert.equal(wrong.status, 403);
+    const rotated = new Client({ name: "v2-rotated-test", version: "1.0.0" });
+    const rotatedTransport = new StreamableHTTPClientTransport(endpoint, { requestInit: { headers: internalHeaders(next) } });
+    await rotated.connect(rotatedTransport);
+    await rotated.callTool({ name: "show_my_basket", arguments: {} });
+    assert.deepEqual(logins, ["guest@example.test:guest-secret", "guest@example.test:new-secret"]);
+    await rotated.close();
+    await mcp.close();
+  } finally {
+    server.closeAllConnections();
+    await new Promise<void>((resolve, reject) => server.close((error?: Error) => error ? reject(error) : resolve()));
+  }
+});
+
+test("private validation route decrypts once and exposes no MCP or credential data", async () => {
+  const key = Buffer.alloc(32, 4).toString("base64url");
+  const v2Policy = parsePrincipalPolicy(JSON.stringify({
+    schema_version: 2, revision: "family-v2", budgets: principalPolicy.budgets,
+    organization: { id: "org_abcdefgh" }, invitation: { default_tier: 1 },
+    owner: { subject: ownerSubject, principal_key: "a".repeat(32), tier: 0, enabled: true },
+  }));
+  const validationConfig: Auth0Config = { ...config, principalPolicy: v2Policy, credentialKey: key, credentialKeyVersion: "one" };
+  const binding = { principalKey: "b".repeat(32), policyRevision: "family-v2", keyVersion: "one", generation: 1 };
+  const envelope = await encryptCredentials({ username: "guest@example.test", password: "private-password" }, binding, key);
+  let calls = 0;
+  const app = createHttpApp(validationConfig, oauth, { verifyAccessToken: async () => { throw new Error("unused"); } }, undefined, () => ({
+    validateCredentials: async (username, password) => {
+      calls += 1;
+      assert.deepEqual({ username, password }, { username: "guest@example.test", password: "private-password" });
+    },
+  }));
+  const server = app.listen(0, config.host);
+  await new Promise<void>((resolve, reject) => { server.once("listening", resolve); server.once("error", reject); });
+  const base = `http://${config.host}:${(server.address() as AddressInfo).port}`;
+  const headers = {
+    "x-nemlig-principal-key": binding.principalKey,
+    "x-nemlig-policy-revision": binding.policyRevision,
+    "x-nemlig-credential-generation": "1",
+    "x-nemlig-credential-envelope": btoa(JSON.stringify(envelope)),
+  };
+  try {
+    const accepted = await fetch(`${base}/__credential-validation`, { method: "POST", headers });
+    assert.equal(accepted.status, 204);
+    assert.equal(await accepted.text(), "");
+    assert.equal(calls, 1);
+    const rejected = await fetch(`${base}/__credential-validation`, { method: "POST", headers: { ...headers, "x-nemlig-principal-key": "c".repeat(32) } });
+    assert.equal(rejected.status, 401);
+    assert.deepEqual(await rejected.json(), { error: "validation_failed" });
+    assert.equal(calls, 1);
   } finally {
     server.closeAllConnections();
     await new Promise<void>((resolve, reject) => server.close((error?: Error) => error ? reject(error) : resolve()));

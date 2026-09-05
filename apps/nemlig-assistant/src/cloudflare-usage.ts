@@ -1,4 +1,5 @@
 import type { OperationClass } from "./cloudflare-gateway.js";
+import type { CredentialEnvelope } from "./credential-envelope.js";
 import type { PrincipalPolicy } from "./principal-policy.js";
 
 export type BreakerReason = "daily_limit" | "expensive_daily_limit";
@@ -51,8 +52,8 @@ export interface TierAdmissionPolicy {
 }
 
 export type AdmissionResult =
-  | { admitted: true; state: UsageState }
-  | { admitted: false; status: 429 | 503; reason: AdmissionReason; state: UsageState };
+  | { admitted: true; state: UsageState; credential?: CredentialEnvelope }
+  | { admitted: false; status: 409 | 429 | 503; reason: AdmissionReason | "credential_required"; state: UsageState };
 
 const periods = (now: Date) => {
   const iso = now.toISOString();
@@ -122,7 +123,7 @@ const currentState = (stored: UsageState | undefined, policy: TierAdmissionPolic
       state.rejections[tier][reason] = currentPeriodUsage(stored?.rejections?.[tier]?.[reason], now);
     }
   }
-  for (const principalKey of policy.principalKeys) {
+  for (const principalKey of new Set([...Object.keys(stored?.principals ?? {}), ...policy.principalKeys])) {
     state.principals[principalKey] = currentPeriodUsage(stored?.principals?.[principalKey], now);
   }
   return state;

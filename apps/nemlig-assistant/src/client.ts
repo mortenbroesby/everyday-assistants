@@ -209,6 +209,21 @@ export class NemligClient {
     throw new NemligError(`Login failed: ${message}`);
   }
 
+  async validateCredentials(username: string, password: string, signal?: AbortSignal): Promise<void> {
+    if (!username || !password) throw new NemligError("Nemlig username and password are required.");
+    const response = asRecord(await this.json(`${API_BASE_URL}/login`, {
+      method: "POST",
+      signal,
+      body: JSON.stringify({
+        Username: username, Password: password, CheckForExistingProducts: false,
+        DoMerge: false, AppInstalled: false, SaveExistingBasket: false,
+      }),
+    }, "Validate login", false));
+    if (!response.RedirectUrl && !response.MergeSuccessful) throw new NemligError("Login failed: invalid credentials");
+    const token = asRecord(await this.json(`${API_BASE_URL}/Token`, { signal }, "Validate account", false));
+    if (!asString(token.access_token)) throw new NemligError("Validate account failed: invalid response data.");
+  }
+
   async searchProducts(query: string, limit = 10): Promise<Product[]> {
     if (!query.trim()) throw new NemligError("Search query is required.");
     if (!Number.isInteger(limit) || limit < 1) throw new NemligError("Search limit must be positive.");

@@ -21,8 +21,8 @@ redemption, credential validation, and required isolation prerequisites succeed.
 
 #### Scenario: Unknown authenticated principal arrives
 
-- **WHEN** a valid token belongs to a subject absent from the private principal
-  static owner or invitation-gated principal registry
+- **WHEN** a valid token belongs to a subject absent from the static owner and
+  invitation-gated principal registry
 - **THEN** the gateway returns a stable non-sensitive denial without reading
   credential or usage state, waking or calling the MCP Container, or contacting
   Nemlig

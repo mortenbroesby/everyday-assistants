@@ -80,6 +80,24 @@ test("Cloudflare safety configuration is explicit, bounded, and internally consi
   }), /global safety limits/u);
 });
 
+test("schema-v2 requires only the versioned encryption secret and rejects legacy credential fallback", () => {
+  const legacy = JSON.parse(validEnv.NEMLIG_MCP_PRINCIPALS!) as { budgets: unknown };
+  const v2 = {
+    schema_version: 2, revision: "family-v2", budgets: legacy.budgets,
+    organization: { id: "org_abcdefgh" }, invitation: { default_tier: 1 },
+    owner: { subject: "auth0|owner", principal_key: "a".repeat(32), tier: 0, enabled: true },
+  };
+  const configured = {
+    ...validEnv,
+    NEMLIG_MCP_PRINCIPALS: JSON.stringify(v2),
+    NEMLIG_MCP_CREDENTIAL_KEY: Buffer.alloc(32, 1).toString("base64url"),
+    NEMLIG_MCP_CREDENTIAL_KEY_VERSION: "one",
+  };
+  assert.equal(loadGatewayConfig(configured).principalPolicy.schema_version, 2);
+  assert.throws(() => loadGatewayConfig({ ...configured, NEMLIG_MCP_CREDENTIAL_KEY: undefined }), /encryption configuration/u);
+  assert.throws(() => loadGatewayConfig({ ...configured, NEMLIG_USERNAME: "owner@example.test", NEMLIG_PASSWORD: "secret" }), /Legacy owner credentials/u);
+});
+
 test("Wrangler configuration fixes both environments to one disabled EU lite Container", async () => {
   const raw = await readFile(new URL("../wrangler.jsonc", import.meta.url), "utf8");
   const wrangler = JSON.parse(raw) as WranglerDeployment & {
@@ -88,6 +106,9 @@ test("Wrangler configuration fixes both environments to one disabled EU lite Con
   };
   for (const deployment of [wrangler, wrangler.env.production]) {
     assert.equal(deployment.vars.MCP_ENABLED, "false");
+    assert.equal(deployment.vars.MCP_CREDENTIAL_ONBOARDING_ENABLED, "false");
+    assert.equal(deployment.vars.MCP_CREDENTIAL_RATE_LIMIT, "3");
+    assert.equal(deployment.vars.MCP_CREDENTIAL_GLOBAL_RATE_LIMIT, "10");
     assert.equal(deployment.vars.MCP_TOTAL_TIMEOUT_MS, "90000");
     assert.equal(deployment.vars.MCP_CONTROL_TIMEOUT_MS, "3000");
     assert.equal(deployment.vars.MCP_AUTH_TIMEOUT_MS, "5000");

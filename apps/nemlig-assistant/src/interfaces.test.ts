@@ -1,5 +1,6 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
+import { ElicitRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import assert from "node:assert/strict";
 import { mkdtemp, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -8,7 +9,7 @@ import test from "node:test";
 import type { Basket, Product } from "./client.js";
 import { createProgram, type ShoppingClient } from "./cli.js";
 import type { FeatureRequest } from "./feature-request.js";
-import { createMcpServer, PICKER_HTML, PICKER_URI, rankProducts, safeNemligImageUrl } from "./mcp.js";
+import { createMcpServer, NEMLIG_CONNECT_URL, PICKER_HTML, PICKER_URI, rankProducts, safeNemligImageUrl } from "./mcp.js";
 import { BasketProposalService } from "./proposals.js";
 
 const basket: Basket = {
@@ -236,6 +237,7 @@ const assertFriendlyBasketText = (result: unknown): string => {
 const friendlyCatalog = [
   ["add_approved_items", "Add the approved items", false, false, ["approved_review"]],
   ["browse_grocery_section", "Browse a grocery section", true, false, ["section", "result_count", "page"]],
+  ["check_nemlig_connection", "Check my Nemlig connection", true, false, []],
   ["choose_products_visually", "Choose products visually", true, false, ["search_term", "result_count"]],
   ["continue_my_shopping_plan", "Continue my shopping plan", true, false, ["saved_plan"]],
   ["copy_my_shopping_list", "Copy my shopping list", false, false, ["source_list", "new_name", "type"]],
@@ -309,6 +311,36 @@ test("MCP exposes the complete friendly catalog and clean missing-credential err
     const content = result.content as Array<{ type: string; text?: string }>;
     assert.match(content[0]?.text ?? "", /credentials configured/);
   });
+});
+
+test("connection guidance uses URL elicitation only when explicitly supported", async () => {
+  await withMcpClient(createMcpServer(fakeClient(), async () => undefined), async (mcp) => {
+    const result = await mcp.callTool({ name: "check_nemlig_connection", arguments: {} });
+    assert.deepEqual(result.structuredContent, { status: "connection_required", connection_url: NEMLIG_CONNECT_URL });
+  });
+
+  const server = createMcpServer(fakeClient(), async () => undefined);
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  const client = new Client({ name: "url-test", version: "1.0.0" }, { capabilities: { elicitation: { url: {} } } });
+  let elicitation: unknown;
+  client.setRequestHandler(ElicitRequestSchema, async (request) => {
+    elicitation = request.params;
+    return { action: "accept" };
+  });
+  await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
+  try {
+    const result = await client.callTool({ name: "check_nemlig_connection", arguments: {} });
+    assert.deepEqual(result.structuredContent, { status: "connection_required", connection_url: NEMLIG_CONNECT_URL });
+    assert.deepEqual(elicitation, {
+      mode: "url",
+      message: "Open the secure Nemlig connection page. Do not enter your password in chat.",
+      elicitationId: (elicitation as { elicitationId: string }).elicitationId,
+      url: NEMLIG_CONNECT_URL,
+    });
+  } finally {
+    await client.close();
+    await server.close();
+  }
 });
 
 test("MCP favorites is read-only and returns listed, matched, or empty candidates", async () => {
