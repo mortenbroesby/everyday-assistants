@@ -2,6 +2,11 @@
 
 This repository contains independent assistants under `apps/`.
 
+- Perform repository changes in a dedicated non-primary Git worktree and branch
+  by default. Before editing, inspect the primary checkout and existing
+  worktrees, create the dedicated worktree from the latest `origin/main`, and
+  leave every other checkout and worktree untouched. Work directly in the
+  primary checkout only when the user explicitly instructs you to do so.
 - A user-selected repository task is standing authority for ordinary,
   non-destructive work in that scope: inspect, plan, update OpenSpec, edit, run
   checks, commit, push, and verify without asking for repeated approval.
