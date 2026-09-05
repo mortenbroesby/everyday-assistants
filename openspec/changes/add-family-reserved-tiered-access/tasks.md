@@ -61,7 +61,7 @@
   proposal, storage, observability, and config tests plus diff checks, strict
   OpenSpec validation, privacy checks, `pnpm verify`, package smoke, and the
   credential-free production-readiness gate; record every passing command.
-- [ ] 5.2 Reconcile current `origin/main` and active sibling work, commit and
+- [x] 5.2 Reconcile current `origin/main` and active sibling work, commit and
   integrate the scoped implementation into remote `main`, and verify exact-head
   CI succeeds without changing any provider or production secret.
 - [ ] 5.3 With current owner authentication and explicit secret-rotation and
