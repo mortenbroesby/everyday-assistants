@@ -39,6 +39,9 @@ principal's Nemlig account and private state remain isolated.
 - `nemlig-cloudflare-hosting`: Replace the single-owner-only gateway contract
   with an allowlisted multi-principal contract while preserving authentication
   before wake and every existing global safety ceiling.
+- `nemlig-chatgpt-integration`: Replace the stale single-owner expansion guard
+  with the approved private-principal policy while retaining owner-only defaults,
+  explicit activation, and the prohibition on public access.
 
 ## Impact
 
