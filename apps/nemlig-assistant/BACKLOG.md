@@ -96,7 +96,7 @@ be freshly resolved after apply begins, or the proposal fails closed.
   package version without adding a service, cache, dependency, or background job.
 - [x] Pass strict specs, privacy, focused tests, `pnpm verify`, package smoke,
   and the disabled Cloudflare dry-run.
-- [ ] Integrate the exact commit into remote `main` and verify exact-head CI.
+- [x] Integrate the exact commit into remote `main` and verify exact-head CI.
 - [ ] Deploy the exact CI-green revision disabled first, prove no backend wake,
   restore enabled state for the same revision, and pass credential-free probes.
 - [ ] Sync and archive the completed OpenSpec change, then integrate and verify
