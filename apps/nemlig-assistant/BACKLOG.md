@@ -106,24 +106,44 @@ This item does not authorize a live proposal apply or any basket mutation.
 
 ## P1 — predictable automated production deployment
 
-**Status:** Not started.
+**Status:** Planned; implementation not started.
 
-- Provide one repository-owned command or manually dispatched workflow that,
-  after explicit production approval, accepts an exact pushed `main` commit and
-  refuses a non-CI-green or mismatched revision.
-- Build once, deploy that exact artifact disabled, verify both routes fail
-  closed and the fixed Container is inactive, then enable or promote the same
-  artifact without rebuilding it.
-- Run revision, health, OAuth metadata, cheap rejection, and authenticated
-  read-only acceptance automatically with explicit deadlines.
-- Serialize deployments so two releases cannot overlap. On failure, leave the
-  service disabled or restore the recorded last-known-good version and report
-  the exact resulting state.
-- Publish a redacted deployment summary containing commit, version IDs,
-  timings, checks, and rollback state. Never treat green CI as deployment
-  authority or retry a Nemlig mutation.
-- Before implementation, document incremental CI minutes, probes, logs, and
-  provider calls; retain one `lite` Container and the existing cost ceilings.
+**Epic outcome:** Replace the error-prone manual release sequence with one
+explicit, serialized repository command that deploys an exact CI-green `main`
+revision disabled first, reuses its Container image when enabling, and always
+reports the last verified production state.
+
+### Story P1.D1 — admit only one exact approved release
+
+- [x] Choose an owner-run command instead of a hosted workflow so the current
+  Keychain-backed GitHub and Cloudflare sessions remain the credential boundary.
+- [ ] Require one full commit equal to local HEAD and refreshed remote `main`,
+  plus successful exact-head CI, before any Cloudflare mutation.
+- [ ] Serialize local worktrees and other machines with exclusive local and
+  atomic remote leases; never steal an interrupted lease automatically.
+
+### Story P1.D2 — automate the proven fail-closed sequence
+
+- [ ] Record and re-check current Cloudflare state, build and upload once with
+  `MCP_ENABLED=false`, and prove both routes reject while the Container is
+  inactive.
+- [ ] Enable the same source and image with no Container rollout, preserve one
+  `lite` instance and every existing quota, timeout, breaker, route, and binding,
+  then run bounded edge and authenticated read-only acceptance.
+- [ ] On failure, leave the candidate disabled or restore and verify the exact
+  starting version; never run a proposal or Nemlig mutation command.
+
+### Story P1.D3 — make evidence recoverable and cost-bounded
+
+- [x] Document the pre-implementation cost model: no new service, dependency,
+  hosted secret, scheduled run, CI job, storage, or capacity; each approved
+  release uses one image build/upload, one no-rollout enable upload, two disabled
+  route probes, bounded acceptance, and small GitHub/Cloudflare state reads.
+- [ ] Journal only redacted commit, version, timing, check, rollback, and
+  last-state evidence beneath the shared Git directory.
+- [ ] Pass focused failure-path tests, strict specs, privacy, `pnpm verify`,
+  package smoke, and production readiness; integrate exact-head green `main`,
+  prove one real approved release, then sync and archive its OpenSpec change.
 
 ## P1 — prove the kill switch and cost-containment safety net
 
