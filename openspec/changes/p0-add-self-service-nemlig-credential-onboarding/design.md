@@ -11,11 +11,11 @@ admission before it forwards an MCP request.
 The installed MCP SDK supports URL-mode elicitation, but ChatGPT support must be
 capability-detected rather than assumed. The existing Auth0 dynamic client flow
 authenticates ChatGPT to the MCP resource; it cannot safely authenticate a
-separate browser form and, as a third-party application, cannot use Auth0
-Organizations. The current tenant can instead use one Organization for the
-separate onboarding web application, subject to a human plan/availability
-check. Provider configuration, encryption-key provisioning, credential
-migration, the first invitation, and production rollout are human checkpoints.
+separate browser form. The separate onboarding application can use the current
+Auth0 Free database/social login, but Organizations are trial-only and would
+raise the continuing cost to at least $1,750/month. Provider configuration,
+encryption-key provisioning, credential migration, the first invitation, and
+production rollout are human checkpoints.
 
 ## Goals / Non-Goals
 
@@ -23,10 +23,10 @@ migration, the first invitation, and production rollout are human checkpoints.
 
 - Let an invited user own credential entry, rotation, status, and revocation
   without giving the password to the operator or ChatGPT.
-- Bind the organization-aware browser identity and organization-unaware MCP
-  identity to the same verified Auth0 subject and accepted principal record.
-- Let an exact-email Auth0 invitation create the recipient's Tier 1 principal
-  without manual subject copying or a second owner enable step.
+- Bind the verified-email browser identity and later MCP identity to the same
+  Auth0 subject and accepted principal record.
+- Let an owner-recorded exact-email invitation create the recipient's Tier 1
+  principal without manual subject copying or a second owner enable step.
 - Make rotation and revocation effective on the next MCP request, including an
   already-open session.
 - Reuse the existing Worker, Auth0 tenant, fixed controller Durable Object, and
@@ -38,8 +38,8 @@ migration, the first invitation, and production rollout are human checkpoints.
 
 - Public self-signup, end-user invitation issuance, user-selected tiers, Nemlig
   password recovery, shared accounts, or selecting another principal.
-- Organization-enabling ChatGPT's third-party OAuth client, automating Auth0
-  Management API invitations, or adding an email service in the first release.
+- Auth0 Organizations, changing ChatGPT's third-party OAuth client, automating
+  Auth0 Management API invitations, or adding an email service.
 - Giving the browser direct access to stored ciphertext, Durable Object APIs, or
   the Container.
 - Expanding Nemlig mutation behavior or using a basket read/write as credential
@@ -49,29 +49,29 @@ migration, the first invitation, and production rollout are human checkpoints.
 
 ## Decisions
 
-### 1. Use native Auth0 invitations with a separate organization-aware web session
+### 1. Use fixed-URL exact-email invitations with an Auth0 Free web session
 
-`https://nemlig-mcp.broesby.dk/connect` is constant and contains no subject,
-token, state, credential, or preauthenticated capability. A new confidential
-Auth0 Regular Web Application in the existing EU tenant uses authorization code
-with PKCE and an exact Worker callback. It is enabled for one Auth0 Organization;
-the owner issues invitations through the Auth0 Dashboard to exact email
-addresses. The portal accepts Auth0's `invitation` and `organization` parameters,
-passes them to authorization, and accepts enrollment only when Auth0 confirms a
-current invitation for the same email and organization. The Worker keeps a
-short-lived, server-authenticated, `Secure`, `HttpOnly`, `SameSite=Lax` browser
-session and a single-use CSRF value. Invitation tickets are never persisted or
-logged by the application.
+`https://nemlig-mcp.broesby.dk/connect` is constant and contains no email,
+subject, token, state, credential, or preauthenticated capability. A new
+confidential Auth0 Regular Web Application in the existing EU tenant uses
+authorization code with PKCE and an exact Worker callback. In the owner portal,
+the owner enters one exact email and receives only confirmation to share the
+same fixed URL through an existing channel. The controller stores a
+domain-separated HMAC-SHA-256 digest of the normalized email, a random opaque
+invitation id, creation/expiry timestamps, and status; it never stores or
+returns the email. The existing browser-session key also keys the digest, so no
+new secret is needed. Pending invitations expire after seven days, are capped at
+fifteen, and can be cancelled by the owner.
 
-The verified browser `sub` creates or resumes one accepted principal record.
-Later, ChatGPT's organization-unaware dynamically registered client presents the
-same authoritative `sub`, which the gateway resolves against that record. This
-is preferred over reusing or organization-enabling ChatGPT's third-party client,
-and over an application-built invite token because Auth0 already supplies
-expiry, exact-email binding, and redemption. The first release deliberately uses
-the Dashboard rather than adding a Management API machine client. If native
-Organizations are unavailable or require a paid plan, implementation pauses for
-a human choice instead of silently building a parallel invitation system.
+The Worker keeps a short-lived, server-authenticated, `Secure`, `HttpOnly`,
+`SameSite=Lax` browser session and a single-use CSRF value. After Auth0 login it
+requires `email_verified=true`, recomputes the digest, and atomically consumes a
+matching invitation while binding the verified `sub` to one pending Tier 1
+principal. Missing, expired, cancelled, reused, and wrong-email cases return one
+constant denial shape. Later, ChatGPT's dynamically registered client presents
+the same authoritative `sub`, which the gateway resolves against that record.
+This avoids paid Organizations, a guessable stored email hash, an application
+bearer-token link, a Management API machine client, and an email provider.
 
 ### 2. Prefer URL elicitation, but make the fixed page independently usable
 
@@ -88,11 +88,11 @@ no compatibility shim or new package is needed.
 ### 3. Split static operator policy from accepted principals and credentials
 
 Principal-policy schema version 2 contains the Tier 0 owner, tier rules, budgets,
-revision, Auth0 Organization identifier, and invitation defaults. Accepted
-invitees live in principal records inside the existing controller Durable Object,
-with subject, random opaque principal key, Tier 1 assignment, status, invitation
-metadata, and timestamps. Credentials live in separate records keyed by the
-opaque principal key. Unknown Auth0 users cannot create either record.
+revision, and invitation defaults. Pending invitation digests and accepted
+invitees live in separate records inside the existing controller Durable Object.
+Accepted records contain subject, random opaque principal key, Tier 1 assignment,
+status, invitation id, and timestamps. Credentials live in separate records keyed
+by the opaque principal key. Unknown Auth0 users cannot create either record.
 
 Issuing an invitation is the owner's explicit conditional Tier 1 grant. Exact-
 email redemption creates a pending principal; successful credential validation
@@ -153,12 +153,12 @@ human may retry after a sanitized result.
 
 ### 7. Keep the portal server-rendered and deliberately boring
 
-The Worker returns minimal semantic HTML with native username/password inputs,
-password-manager autocomplete attributes, no stored-value preload, no third-
-party assets or JavaScript, and `Cache-Control: no-store`. CSP, frame denial,
-referrer restriction, MIME protection, permissions policy, origin checks,
-bounded body parsing, POST-only changes, generic errors, and constant-shape
-status responses reduce disclosure and phishing surfaces.
+The Worker returns minimal semantic HTML with native owner-only invitation input
+and username/password inputs, password-manager autocomplete attributes, no
+stored-value preload, no third-party assets or JavaScript, and `Cache-Control:
+no-store`. CSP, frame denial, referrer restriction, MIME protection, permissions
+policy, origin checks, bounded body parsing, POST-only changes, generic errors,
+and constant-shape status responses reduce disclosure and phishing surfaces.
 
 Only credential-present state and non-secret timestamps are displayed. Neither
 username nor any masked password fragment is returned, because even partial
@@ -182,15 +182,15 @@ Cloudflare/Auth0 allowances requires a new human cost decision.
 ### Implementation map
 
 - `principal-policy.ts` keeps schema-v1 owner migration support and parses the
-  credential-free schema-v2 owner, budgets, Organization, and invite defaults.
+  credential-free schema-v2 owner, budgets, and invite defaults.
 - `credential-envelope.ts` uses platform Web Crypto for the bounded sealed
   credential value; no crypto package is added.
 - `cloudflare-worker.ts`, `cloudflare-gateway.ts`, and `cloudflare-usage.ts`
   extend the existing fixed controller admission/storage boundary and Worker
   routes; no namespace, Container, or per-request storage call is added.
-- `auth0.ts` and the Worker portal code use the existing issuer plus the one
-  human-configured web application and Organization; the existing ChatGPT
-  dynamic client remains unchanged.
+- `auth0.ts` and the Worker portal code use the existing issuer plus one
+  human-configured Free web application; the existing ChatGPT dynamic client
+  remains unchanged.
 - `http.ts` and `mcp.ts` consume only the controller-supplied credential
   generation and existing MCP SDK URL elicitation support.
 - Existing focused tests, production acceptance/deploy checks, privacy scripts,
@@ -205,17 +205,15 @@ traffic retains one controller admission and at most one fixed Container wake.
 - [A compromised Worker secret can decrypt every active record] -> Keep the key
   separate from stored envelopes, restrict provider access, version it, document
   emergency rotation, and never expose ciphertext through public routes.
-- [An Auth0 Organization or its invitation email may be unavailable or paid on
-  the current tenant] -> Verify the live tenant and plan at the human checkpoint;
-  use the native Dashboard email or generated link only if it adds no cost, and
-  require a new design decision otherwise.
+- [A stored plain email hash would be guessable] -> Key a domain-separated HMAC
+  with the existing browser-session secret, store no email, and return only an
+  opaque invitation id and constant-shape status.
 - [A second Auth0 application adds configuration drift] -> Use exact issuer,
-  organization, callback, logout, grant, and secret checks in the runbook;
-  create it only at the human provider checkpoint and record non-secret identifiers.
-- [An invitation URL may leak through browser or application telemetry] -> Treat
-  it as a short-lived Auth0 capability, pass it only to Auth0, avoid application
-  persistence/logging, and reject expired, replayed, wrong-email, or wrong-
-  organization redemption.
+  callback, logout, grant, and secret checks in the runbook; create it only at
+  the human provider checkpoint and record non-secret identifiers.
+- [A manually shared invitation lacks automatic email delivery] -> The owner
+  records the email and shares only the fixed URL through an existing channel;
+  add delivery automation only if repeated use justifies a reviewed provider.
 - [ChatGPT may not advertise URL elicitation] -> Keep the same fixed HTTPS page
   as a manual fallback and verify real client capabilities during acceptance.
 - [Credential validation wakes the fixed Container] -> Keep onboarding off by
@@ -240,11 +238,10 @@ traffic retains one controller admission and at most one fixed Container wake.
 2. Run focused tests, strict OpenSpec validation, privacy checks, `pnpm verify`,
    package smoke, and the credential-free Cloudflare dry run; commit, push, and
    require exact-head CI.
-3. At the human checkpoint, confirm Auth0 Organizations and invitations are
-   available with no new plan or email-provider cost; create one Organization
-   and one organization-aware web application, keep the ChatGPT third-party
-   client organization-unaware, set exact callbacks, and provision the browser-
-   session, OAuth-client, and encryption secrets without recording their values.
+3. At the human checkpoint, create one ordinary Auth0 Free web application, keep
+   the ChatGPT third-party client unchanged, set exact callbacks, and provision
+   the browser-session, OAuth-client, and encryption secrets without recording
+   their values.
 4. Record the enabled pre-migration Worker version, deploy the exact commit with
    both `MCP_ENABLED=false` and onboarding disabled, and prove both public routes
    fail closed without Container activity.
@@ -254,12 +251,13 @@ traffic retains one controller admission and at most one fixed Container wake.
 6. Switch to schema-v2 policy with the owner record, enable MCP, and prove owner
    read-only ChatGPT access, generation rotation, stale-session rejection,
    revocation/reconnect, privacy-safe logs, breaker state, and Container ceiling.
-7. At the human checkpoint, issue the boss an exact-email native Auth0 invitation
-   through the Dashboard. Have the boss redeem it, create or use their own login,
-   store their own credential, and verify account/state isolation. Treat the
-   invitation as the owner's conditional Tier 1 grant and activate only after
-   credential validation and automated isolation prerequisites pass; then verify
-   the same subject works through the organization-unaware ChatGPT client.
+7. At the human checkpoint, record the boss's exact email in the owner portal and
+   share only the fixed connection URL through an existing secure channel. Have
+   the boss authenticate with that verified email, consume the invitation, store
+   their own credential, and verify account/state isolation. Treat the invitation
+   as the owner's conditional Tier 1 grant and activate only after credential
+   validation and automated isolation prerequisites pass; then verify the same
+   subject works through the unchanged ChatGPT client.
 8. Remove the version-1 credential fallback only after both principals pass
    acceptance. If any gate fails, disable onboarding and MCP, restore the
    recorded version/policy, and verify owner read-only access before proceeding.

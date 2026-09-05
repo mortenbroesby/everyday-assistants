@@ -90,26 +90,28 @@ visible result.
 
 ### Requirement: Invite-gated self-enrollment and conditional activation
 
-Only an unexpired native Auth0 Organization invitation issued by the owner to an
-exact email address SHALL permit a new principal to enroll. Issuing the
+Only an unexpired pending invitation recorded by the owner for an exact email
+address SHALL permit a new principal to enroll. The service SHALL store only a
+keyed digest of the normalized email, SHALL require an Auth0-verified matching
+email at redemption, and SHALL consume the invitation atomically. Recording the
 invitation SHALL be the owner's explicit conditional grant of the default Tier 1
 role. Successful invitation redemption SHALL bind the verified Auth0 subject to
 one opaque principal record; successful credential validation and required
 isolation gates SHALL activate that record without manual subject copying or a
 second owner enable action. The invited user MUST NOT issue invitations, choose
 or change a tier, grant public access, or select another principal. The owner
-SHALL retain disable and access-revocation control.
+SHALL retain invitation cancellation, disable, and access-revocation control.
 
 #### Scenario: Unlisted user visits the connection page
 
-- **WHEN** an Auth0 user without a valid exact-email Organization invitation
+- **WHEN** an Auth0 user without a valid pending invitation for their verified exact email
   authenticates successfully
 - **THEN** the service denies enrollment without creating a principal, storing a
   credential, waking the Container, or contacting Nemlig
 
 #### Scenario: Invitee completes conditional activation
 
-- **WHEN** an exact-email invitee redeems the invitation, validates their own
+- **WHEN** an exact-email invitee authenticates through the fixed connection page, consumes the invitation, and validates their own
   credential, and the required isolation prerequisites succeed
 - **THEN** the system activates that principal at Tier 1 without a manual subject
   copy or second owner enable step
@@ -120,9 +122,16 @@ SHALL retain disable and access-revocation control.
 - **THEN** subsequent MCP admission fails closed and cannot use that principal's
   credential or session until the owner issues a new valid grant
 
-#### Scenario: ChatGPT authenticates without organization context
+#### Scenario: ChatGPT authenticates after invitation redemption
 
 - **WHEN** an accepted principal later connects through the existing dynamically
   registered third-party ChatGPT OAuth client with the same authoritative subject
-- **THEN** the gateway resolves the accepted principal without requiring an
-  organization claim or organization-enabling the ChatGPT client
+- **THEN** the gateway resolves the accepted principal without an invitation
+  value, email claim, or change to the ChatGPT client
+
+#### Scenario: Invitation is expired, cancelled, reused, or for another email
+
+- **WHEN** a user authenticates without a current pending digest matching their
+  verified email
+- **THEN** enrollment creates nothing, reveals no invitation or email state, and
+  returns the same denial shape used for other invalid invitations

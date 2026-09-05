@@ -9,9 +9,10 @@ confirm that principal has a current credential generation through the existing
 atomic admission boundary, and apply tier admission before forwarding a useful
 request, touching the MCP Container, or contacting Nemlig. The default
 production policy SHALL contain only the existing Tier 0 owner; the system SHALL
-NOT add public registration. An owner-issued invitation SHALL be the conditional
-Tier 1 grant, and the invitee SHALL become enabled only after exact-email
-redemption, credential validation, and required isolation prerequisites succeed.
+NOT add public registration. An owner-recorded exact-email invitation SHALL be
+the conditional Tier 1 grant, and the invitee SHALL become enabled only after
+verified-email redemption, credential validation, and required isolation
+prerequisites succeed.
 
 #### Scenario: Unauthenticated Internet request arrives
 
@@ -54,40 +55,48 @@ redemption, credential validation, and required isolation prerequisites succeed.
 
 ## ADDED Requirements
 
-### Requirement: Native invitation and principal-registration boundary
+### Requirement: Exact-email invitation and principal-registration boundary
 
-The onboarding web application SHALL use one Auth0 Organization and SHALL accept
-new principals only through an unexpired native invitation issued by the owner
-to the exact authenticating email address. The application SHALL pass Auth0's
-invitation and organization parameters only to the authoritative authorization
-flow and MUST NOT persist or log the invitation ticket. The existing dynamically
-registered third-party ChatGPT client SHALL remain organization-unaware. Accepted
-principal records SHALL be stored in the existing fixed controller boundary;
-the service SHALL NOT add an application invitation-token system, Management API
-machine client, email provider, database, or Durable Object namespace in the
-first release.
+The onboarding web application SHALL accept new principals only through an
+unexpired pending invitation recorded by the owner for the exact authenticating
+email address. Storage SHALL contain only a domain-separated keyed digest of the
+normalized email plus bounded non-secret invitation metadata, and redemption
+SHALL require a matching verified Auth0 email before atomically consuming the
+invitation and binding the authoritative subject. The connection URL SHALL stay
+fixed and contain no invitation secret, email, subject, or preauthenticated
+capability. Accepted principal records SHALL be stored in the existing fixed
+controller boundary; the service SHALL NOT add Auth0 Organizations, an
+invitation-token system, Management API machine client, email provider, database,
+secret, or Durable Object namespace.
 
 #### Scenario: Valid exact-email invitation is redeemed
 
-- **WHEN** the invited recipient authenticates with the exact invited email and
-  Auth0 accepts the current Organization invitation
+- **WHEN** the invited recipient opens the fixed page and authenticates with a
+  verified email whose keyed digest matches one current pending invitation
 - **THEN** the service atomically creates or resumes one pending Tier 1 principal
-  bound to the verified subject without copying the subject into static policy
+  bound to the verified subject, consumes the invitation, and never persists or
+  returns the email
 
 #### Scenario: Invalid invitation redemption occurs
 
-- **WHEN** the invitation is missing, expired, replayed, belongs to another
-  organization, or is redeemed by a different email
-- **THEN** enrollment fails closed without persisting the ticket, creating a
+- **WHEN** the invitation is missing, expired, cancelled, already consumed, or
+  belongs to a different verified email
+- **THEN** enrollment fails closed with a constant-shape denial without creating a
   principal, reading credential state, waking the Container, or contacting Nemlig
 
 #### Scenario: Existing ChatGPT client authenticates
 
 - **WHEN** an accepted principal uses the existing third-party ChatGPT OAuth
-  client and presents the same authoritative Auth0 subject without organization
-  context
+  client and presents the same authoritative Auth0 subject
 - **THEN** the gateway resolves the principal registry record without requiring
-  an organization claim or changing the ChatGPT client configuration
+  an invitation or email claim or changing the ChatGPT client configuration
+
+#### Scenario: Owner creates or cancels an invitation
+
+- **WHEN** the authenticated owner records or cancels an exact-email invitation
+- **THEN** the service stores or removes only its keyed digest and bounded expiry
+  metadata, returns no reusable capability, and leaves the fixed connection URL
+  unchanged
 
 ### Requirement: Encrypted principal credential records
 
@@ -179,8 +188,9 @@ Production migration SHALL begin disabled, preserve a recorded pre-migration
 rollback target, support the legacy owner credential only during the bounded
 migration window, and remove credentials from the principal policy only after
 the owner record passes read-only acceptance. No invitee SHALL be activated until
-their invitation, credential record, and isolation prerequisites pass; invitation
-issuance SHALL constitute the owner's explicit conditional activation grant.
+their exact-email invitation, credential record, and isolation prerequisites
+pass; recording the invitation SHALL constitute the owner's explicit conditional
+activation grant.
 
 #### Scenario: Owner migration fails
 
