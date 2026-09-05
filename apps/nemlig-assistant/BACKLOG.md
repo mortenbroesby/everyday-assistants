@@ -6,27 +6,63 @@
 [GitHub issue #6](https://github.com/mortenbroesby/everyday-assistants/issues/6)
 before further demo-dependent feature work.
 
-- Reproduce and identify the exact failing boundary in the expired ChatGPT OAuth
-  reconnect flow. The Worker, Auth0 discovery, OAuth resource metadata, and
-  authenticated read-only tools are currently responsive, so the remaining
-  root cause must not be attributed to the backend without evidence.
-- Restore and prove a fresh connection through the one existing Nemlig Assistant
-  app, including two successful read-only ChatGPT acceptance runs.
-- Add redacted structured Worker logs with correlation IDs and clear boundary
-  outcomes for the kill switch, authorization, Durable Object dispatch, upstream
-  calls, circuit-breaker changes, and deployment identity.
-- Keep the generous final 90-second request ceiling, 85-second Container
-  ceiling, and 60-second Nemlig interaction window so slow catalogue work can
-  finish while a genuinely stalled request still terminates clearly.
-- Keep retries bounded and mutation-safe. Preserve the kill switch, circuit
-  breaker, quotas, approval envelopes, and fail-closed behavior.
-- Bound observability cost with sampling, short retention, field-size limits,
-  and no payload duplication. Review the cost model and sensitive-field
-  redaction before production enablement.
-- Deploy disabled first, verify fail-closed behavior, enable the same version,
-  and rerun anonymous-edge plus authenticated read-only production acceptance.
-- Remove the inactive legacy Mac tunnel services only after the cloud-only path
-  is verified.
+**Epic outcome:** Restore a repeatably reconnectable, cloud-only ChatGPT app and
+close the incident with privacy-safe evidence that identifies the last completed
+OAuth boundary without weakening cost or basket safeguards.
+
+### Story P0.1 — make every hosted boundary diagnosable
+
+- [x] Add redacted structured Worker events and correlation IDs for the kill
+  switch, authorization, Durable Object dispatch, upstream calls,
+  circuit-breaker changes, timeouts, and deployment identity.
+- [x] Bound useful-operation evidence by the existing 5,000-per-day breaker,
+  sample ordinary public noise at one percent, add no paid log drain, and reject
+  sensitive or unbounded fields in tests.
+- [x] Publish a reconnect runbook that separates ChatGPT, Auth0, and Worker
+  evidence without collecting credentials, tokens, codes, OAuth state, raw
+  payloads, or private shopping data.
+- [ ] Run one bounded reconnect attempt and record only the privacy-safe Auth0
+  category plus matching Worker terminal evidence or a confirmed absence.
+- [ ] Identify and document the exact last completed boundary and either the
+  incident root cause or the evidenced external blocker.
+
+### Story P0.2 — terminate stalls without amplifying work
+
+- [x] Keep the final 90-second request ceiling, 85-second Container ceiling,
+  60-second Nemlig interaction window, and shorter control-plane budgets.
+- [x] Keep read retries bounded to an early transport failure and preserve
+  single-attempt, indeterminate-result handling for every mutation.
+- [x] Preserve the one-Container ceiling, kill switch, circuit breaker, quotas,
+  approval envelopes, authentication-before-wake, and fail-closed behavior.
+- [x] Verify the focused reliability tests, privacy checks, full repository
+  verification, production-readiness gate, and exact-head CI.
+
+### Story P0.3 — prove a fresh connection through the existing app
+
+- [x] Deploy the exact verified revision disabled first, prove both routes fail
+  closed with the fixed Container inactive, then enable the same revision.
+- [x] Pass the anonymous edge probe and authenticated read-only shopping-list
+  and one-result favourite checks without any basket or saved-list mutation.
+- [ ] Refresh the one existing app named exactly `Nemlig Assistant`; do not
+  create a suffixed, bracketed, numbered, or parallel app.
+- [ ] Have the owner complete a fresh Auth0 login through that existing app.
+- [ ] Complete two fresh normal ChatGPT conversations that each read shopping
+  lists and at most one favourite without creating, editing, preparing,
+  approving, applying, submitting, or mutating anything.
+
+### Story P0.4 — retire the legacy Mac tunnel after cloud-only acceptance
+
+- [x] Inventory the inactive legacy tunnel services and record a recoverable
+  removal plan without exposing credentials or changing the running service.
+  On 2026-09-05, `com.mortenbroesby.nemlig-tunnel` and
+  `com.mortenbroesby.nemlig-auth0-tunnel` were loaded with zero active processes,
+  one failed run each, and `EX_CONFIG`; both still referenced the already-removed
+  repository tunnel script. After P0.3, boot out only these two labels, move the
+  two mode-`0600` plist files to Trash for recovery, then verify the labels stay
+  absent before running the cloud checks.
+- [ ] After P0.3 passes, remove only the confirmed inactive legacy services.
+- [ ] Re-run Worker health, OAuth metadata, and authenticated read-only checks,
+  then record the cleanup outcome and close this epic.
 
 This item does not authorize any Nemlig basket mutation.
 
