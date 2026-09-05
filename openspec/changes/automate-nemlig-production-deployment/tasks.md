@@ -39,7 +39,7 @@
 - [x] 4.1 Run focused command tests, formatting/diff checks, strict OpenSpec
   validation, privacy checks, `pnpm verify`, package smoke, and the credential-free
   production-readiness gate; record every passing command.
-- [ ] 4.2 Reconcile current `origin/main`, coordinate with active sibling work,
+- [x] 4.2 Reconcile current `origin/main`, coordinate with active sibling work,
   commit and integrate the scoped implementation into remote `main`, and verify
   exact-head CI succeeds.
 - [ ] 4.3 With a current owner token and explicit production approval, invoke the
