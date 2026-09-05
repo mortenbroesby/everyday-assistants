@@ -2,9 +2,10 @@
 
 ### Requirement: Hosted owner and credential boundary
 
-The production integration SHALL accept only an enabled subject in the
-owner-controlled private principal policy, SHALL obtain that principal's Nemlig
-credentials only from the principal's authenticated hosted credential record,
+The production integration SHALL accept only the static Tier 0 owner or an
+enabled subject in the invitation-gated private principal registry, SHALL obtain
+that principal's Nemlig credentials only from the principal's authenticated
+hosted credential record,
 and SHALL keep credentials, cookies, access tokens, authorization headers,
 internal session identifiers, encrypted credential envelopes, and provider
 secret values out of tool results, logs, fixtures, committed files, URLs, and
@@ -15,7 +16,7 @@ record is missing, invalid, disabled, or revoked.
 #### Scenario: Unauthenticated or unknown-principal request
 
 - **WHEN** a request has no valid token or belongs to a subject absent from the
-  enabled private principal policy
+  static owner or enabled invitation-gated principal registry
 - **THEN** the gateway rejects it before reading a credential record, using
   another principal's state, waking the fixed backend, or contacting Nemlig
 
@@ -61,7 +62,7 @@ visible result.
 #### Scenario: Browser identity differs or is not invited
 
 - **WHEN** the browser session is unauthenticated, resolves to another subject,
-  or resolves to a subject absent from the private principal policy
+  or resolves to neither the static owner nor an accepted invited principal
 - **THEN** the connection page requires authoritative authentication or denies
   the operation without reading, revealing, replacing, or deleting a credential
   record
@@ -87,23 +88,41 @@ visible result.
   deletes the active record, invalidates its use, and never returns the username,
   password, or encrypted envelope
 
-### Requirement: Invite and activation remain owner controlled
+### Requirement: Invite-gated self-enrollment and conditional activation
 
-Self-service credential entry SHALL NOT create an invitation, choose or change a
-tier, enable a principal, grant public access, or activate useful MCP access.
-Identity allowlisting, tier assignment, isolation acceptance, and activation
-SHALL remain separate explicit owner actions.
+Only an unexpired native Auth0 Organization invitation issued by the owner to an
+exact email address SHALL permit a new principal to enroll. Issuing the
+invitation SHALL be the owner's explicit conditional grant of the default Tier 1
+role. Successful invitation redemption SHALL bind the verified Auth0 subject to
+one opaque principal record; successful credential validation and required
+isolation gates SHALL activate that record without manual subject copying or a
+second owner enable action. The invited user MUST NOT issue invitations, choose
+or change a tier, grant public access, or select another principal. The owner
+SHALL retain disable and access-revocation control.
 
 #### Scenario: Unlisted user visits the connection page
 
-- **WHEN** an Auth0 user who is not present in the private principal policy
+- **WHEN** an Auth0 user without a valid exact-email Organization invitation
   authenticates successfully
 - **THEN** the service denies enrollment without creating a principal, storing a
   credential, waking the Container, or contacting Nemlig
 
-#### Scenario: Disabled invitee stores a valid credential
+#### Scenario: Invitee completes conditional activation
 
-- **WHEN** an invited but disabled principal completes credential validation
-- **THEN** the credential may be held for owner review but useful MCP operations
-  remain denied until isolation acceptance succeeds and the owner explicitly
-  enables that principal
+- **WHEN** an exact-email invitee redeems the invitation, validates their own
+  credential, and the required isolation prerequisites succeed
+- **THEN** the system activates that principal at Tier 1 without a manual subject
+  copy or second owner enable step
+
+#### Scenario: Owner disables or revokes an invitee
+
+- **WHEN** the owner disables or revokes an accepted principal
+- **THEN** subsequent MCP admission fails closed and cannot use that principal's
+  credential or session until the owner issues a new valid grant
+
+#### Scenario: ChatGPT authenticates without organization context
+
+- **WHEN** an accepted principal later connects through the existing dynamically
+  registered third-party ChatGPT OAuth client with the same authoritative subject
+- **THEN** the gateway resolves the accepted principal without requiring an
+  organization claim or organization-enabling the ChatGPT client
