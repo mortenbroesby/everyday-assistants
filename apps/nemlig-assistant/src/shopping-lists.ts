@@ -30,8 +30,6 @@ export const shoppingListsDirectory = (): string => process.env.NEMLIG_CONFIG_DI
   ? join(process.env.NEMLIG_CONFIG_DIR, "shopping-lists")
   : join(homedir(), ".nemlig-shopper", "shopping-lists");
 
-export const ownerScopeFor = principalScopeFor;
-
 export const normalizeShoppingListName = (name: string): string => z.string().trim().min(1).max(120)
   .parse(name).normalize("NFKC").replace(/\s+/gu, " ").toLocaleLowerCase("da-DK");
 
@@ -153,7 +151,7 @@ export const showShoppingLists = async (
   selector?: string,
   includeArchived = false,
 ): Promise<ShoppingList[]> => {
-  const collection = await storage.read(ownerScopeFor(ownerSubject));
+  const collection = await storage.read(principalScopeFor(ownerSubject));
   if (selector) {
     const list = findList(collection, selector);
     if (!list || (!includeArchived && list.status === "archived")) throw new NemligError(`Shopping list “${selector}” was not found.`);
@@ -169,7 +167,7 @@ export const saveShoppingList = async (
   input: { name: string; type: ShoppingListType; lines: ShoppingListLine[]; list?: string; expected_revision?: number },
   now = new Date(),
 ): Promise<ShoppingList> => {
-  const ownerScope = ownerScopeFor(ownerSubject);
+  const ownerScope = principalScopeFor(ownerSubject);
   const collection = await storage.read(ownerScope);
   const name = z.string().trim().min(1).max(120).parse(input.name);
   const normalizedName = normalizeShoppingListName(name);
@@ -212,7 +210,7 @@ export const setShoppingListStatus = async (
   expectedRevision: number,
   now = new Date(),
 ): Promise<ShoppingList> => {
-  const collection = await storage.read(ownerScopeFor(ownerSubject));
+  const collection = await storage.read(principalScopeFor(ownerSubject));
   const current = findList(collection, selector);
   if (!current) throw new NemligError(`Shopping list “${selector}” was not found.`);
   if (current.revision !== expectedRevision) throw new NemligError(`“${current.name}” changed. Open it again before updating it.`);

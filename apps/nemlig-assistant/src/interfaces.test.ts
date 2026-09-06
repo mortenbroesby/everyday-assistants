@@ -9,7 +9,7 @@ import test from "node:test";
 import type { Basket, Product } from "./client.js";
 import { createProgram, type ShoppingClient } from "./cli.js";
 import type { FeatureRequest } from "./feature-request.js";
-import { createMcpServer, NEMLIG_CONNECT_URL, PICKER_HTML, PICKER_URI, rankProducts, safeNemligImageUrl } from "./mcp.js";
+import { createMcpServer, NEMLIG_CONNECT_URL, PICKER_HTML, PICKER_URI, rankProducts, safeNemligImageUrl, type Candidate } from "./mcp.js";
 import { BasketProposalService } from "./proposals.js";
 
 const basket: Basket = {
@@ -607,10 +607,6 @@ test("MCP search and picker return identical ranked structured data", async () =
     ]);
   });
 });
-
-interface Candidate {
-  tags: string[];
-}
 
 test("MCP additions require prepare then apply and direct mutation tools are unavailable", async () => {
   let added: [number, number] | undefined;

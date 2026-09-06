@@ -128,6 +128,7 @@ export function normalizeProducts(value: unknown, limit: number): Product[] {
       const labelsLower = labels.map((label) => label.toLocaleLowerCase("da-DK"));
       const category = asString(item.Category) ?? "";
       const subcategory = asString(item.SubCategory) ?? "";
+      const description = boundedText(item.Text, 2_000);
       const categoryLower = category.toLocaleLowerCase("da-DK");
       const subcategoryLower = subcategory.toLocaleLowerCase("da-DK");
       return {
@@ -137,7 +138,7 @@ export function normalizeProducts(value: unknown, limit: number): Product[] {
         unit: asString(item.UnitPrice) ?? "",
         unitPrice: asNumber(item.UnitPriceCalc),
         unitSize: asString(item.Description) ?? "",
-        ...(boundedText(item.Text, 2_000) ? { description: boundedText(item.Text, 2_000) } : {}),
+        ...(description ? { description } : {}),
         ...(Array.isArray(item.Attributes) ? {
           details: asRecords(item.Attributes).slice(0, 20).flatMap((attribute) => {
             const key = boundedText(attribute.Key, 100); const value = boundedText(attribute.Value, 300);
@@ -262,6 +263,11 @@ export class NemligClient {
     return [];
   }
 
+  /**
+   * Returns an already observed exact product without another provider request,
+   * or resolves it from the catalogue when absent. Use `getFreshProduct` for
+   * the final comparison immediately before a basket mutation.
+   */
   async getProduct(productId: number): Promise<Product> {
     this.validateProductId(productId);
     const known = this.knownProducts.get(productId);
@@ -269,6 +275,10 @@ export class NemligClient {
     return this.fetchExactProduct(productId);
   }
 
+  /**
+   * Resolves the exact product from the current catalogue, bypassing this
+   * client's observed-product cache for final pre-mutation revalidation.
+   */
   async getFreshProduct(productId: number): Promise<Product> {
     this.validateProductId(productId);
     return this.fetchExactProduct(productId);
@@ -523,7 +533,6 @@ export class NemligClient {
     retry = true,
     gateway = false,
   ): Promise<unknown> {
-    let lastFailure: unknown;
     for (let attempt = 0; attempt <= (retry ? NEMLIG_READ_MAX_RETRIES : 0); attempt += 1) {
       const attemptSignal = AbortSignal.timeout(NEMLIG_READ_ATTEMPT_TIMEOUT_MS);
       try {
@@ -566,11 +575,9 @@ export class NemligClient {
         }
       } catch (error) {
         if (error instanceof NemligError) throw error;
-        lastFailure = error;
         if (init.signal?.aborted || attemptSignal.aborted) break;
       }
     }
-    void lastFailure;
     throw new NemligError(`${operation} failed: network unavailable.`);
   }
 

@@ -2,7 +2,6 @@ import { z } from "zod";
 
 export const MAX_SHOPPING_LISTS = 25;
 export const MAX_SHOPPING_LIST_LINES = 50;
-export const MAX_RESOLVED_LIST_LINES = 20;
 
 const constraintsSchema = z.object({
   organic: z.boolean().optional(), vegan: z.boolean().optional(), gluten_free: z.boolean().optional(),

@@ -3,8 +3,7 @@ import { chmod, mkdir, readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { z } from "zod";
-import type { Basket, Product } from "./client.js";
-import { NemligError } from "./client.js";
+import { NemligError, type Basket, type Product } from "./client.js";
 import { principalScopeFor } from "./principal-scope.js";
 
 const constraintsSchema = z.object({

@@ -17,8 +17,7 @@ import { BasketProposalService } from "./proposals.js";
 import type { OAuthMetadata } from "@modelcontextprotocol/sdk/shared/auth.js";
 import type { OAuthTokenVerifier } from "@modelcontextprotocol/sdk/server/auth/provider.js";
 import type { AuthInfo } from "@modelcontextprotocol/sdk/server/auth/types.js";
-import { findEnabledPrincipal, type Principal } from "./principal-policy.js";
-import { MAX_PRINCIPALS } from "./principal-policy.js";
+import { findEnabledPrincipal, MAX_PRINCIPALS, type Principal } from "./principal-policy.js";
 import { decryptCredentials, type CredentialEnvelope } from "./credential-envelope.js";
 import type { Credentials } from "./config.js";
 

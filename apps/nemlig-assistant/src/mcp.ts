@@ -6,8 +6,13 @@ import { randomUUID } from "node:crypto";
 import { realpathSync } from "node:fs";
 import { basename } from "node:path";
 import { z } from "zod";
-import type { Basket, Product } from "./client.js";
-import { FAVORITES_SEARCH_POOL, matchFavorites, NemligError } from "./client.js";
+import {
+  FAVORITES_SEARCH_POOL,
+  matchFavorites,
+  NemligError,
+  type Basket,
+  type Product,
+} from "./client.js";
 import { ensureLoggedIn, getClient, NEMLIG_VERSION, type ShoppingClient } from "./cli.js";
 import { getCredentials, type Credentials } from "./config.js";
 import {
@@ -58,28 +63,6 @@ const falseValues = new Set(["0", "false", "no", "off"]);
 export const appsEnabled = (env: NodeJS.ProcessEnv = process.env): boolean =>
   !falseValues.has((env.NEMLIG_MCP_APPS ?? "1").trim().toLowerCase());
 
-export interface Candidate {
-  id: number | undefined;
-  name: string | undefined;
-  price: number | undefined;
-  unit_price: number | undefined;
-  unit_size: string | undefined;
-  description?: string;
-  details?: Array<{ key: string; value: string }>;
-  brand: string | undefined;
-  available: boolean;
-  is_organic: boolean;
-  is_frozen: boolean;
-  is_on_discount: boolean;
-  image_url: string | undefined;
-  tags: string[];
-  source?: "favorite" | "catalog";
-  dietary?: { organic: boolean; vegan: boolean; gluten_free: boolean; lactose_free: boolean };
-  constraint_outcomes?: Record<string, boolean>;
-  basket_quantity?: number;
-  remaining_quantity?: number;
-}
-
 const candidateSchema = z.object({
   id: z.number().int().positive().optional(),
   name: z.string().optional(),
@@ -101,6 +84,8 @@ const candidateSchema = z.object({
   basket_quantity: z.number().nonnegative().optional(),
   remaining_quantity: z.number().int().nonnegative().optional(),
 });
+
+export type Candidate = z.infer<typeof candidateSchema>;
 
 const basketItemSchema = z.object({
   id: z.number().int().positive().optional(),

@@ -19,3 +19,12 @@
 ## Slice results
 
 Each slice records its doubts, characterization evidence, production/test line delta, request/cost effect, and deliberately skipped abstractions here before integration.
+
+### Leaf deletion and type deduplication
+
+- Doubts resolved: repository-wide reference and package-export searches proved `MAX_RESOLVED_LIST_LINES` and `ownerScopeFor` unused outside internal/test callers; all duplicate same-source imports were enumerated; existing client tests characterize cached/fresh lookup and provider request counts.
+- Changes: removed the dead constant, redundant scope alias, discarded network-failure bookkeeping, repeated description bounding, and duplicate candidate shape; merged duplicate imports; documented cached versus fresh product lookup.
+- Verification: 61 focused tests, complete 174-test package suite, typecheck, lint, build, and `git diff --check` passed. Package exports do not expose the removed names; the build emits JavaScript/source maps rather than declarations.
+- Delta: production `+34/-42` (net `-8`); tests `+6/-10` (net `-4`); total net `-12` lines. Dependencies and provider request counts unchanged.
+- Skipped: no utility, type factory, registry, dependency, file split, or blanket documentation was added.
+- External state: no provider, basket, credential, Cloudflare, or deployment action occurred.

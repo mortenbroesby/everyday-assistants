@@ -7,12 +7,12 @@
 
 ## 2. Remove proven leaf-level complexity
 
-- [ ] 2.1 Verify repository-wide references and delete the unused `MAX_RESOLVED_LIST_LINES`; run the shopping-list-model tests and typecheck.
-- [ ] 2.2 Verify `ownerScopeFor` is only a redundant internal alias, replace its callers with `principalScopeFor`, and run shopping-list and principal-scope tests.
-- [ ] 2.3 Verify and remove unused `NemligClient` bookkeeping, normalize repeated product-description work once, and run the complete client test suite while asserting provider request counts remain unchanged.
-- [ ] 2.4 Infer duplicated private candidate types from their existing Zod schemas and merge duplicate same-module imports; run interface tests, typecheck, lint, and `git diff --check`.
-- [ ] 2.5 Add focused TSDoc for the cached-versus-fresh client lookup contract and any touched non-obvious boundary; verify generated declarations/build output and omit comments that only restate types.
-- [ ] 2.6 Record the slice's production-line delta and skipped abstractions, run `pnpm verify`, then commit, push, and verify the exact remote ref before starting the next slice.
+- [x] 2.1 Verify repository-wide references and delete the unused `MAX_RESOLVED_LIST_LINES`; run the shopping-list-model tests and typecheck.
+- [x] 2.2 Verify `ownerScopeFor` is only a redundant internal alias, replace its callers with `principalScopeFor`, and run shopping-list and principal-scope tests.
+- [x] 2.3 Verify and remove unused `NemligClient` bookkeeping, normalize repeated product-description work once, and run the complete client test suite while asserting provider request counts remain unchanged.
+- [x] 2.4 Infer duplicated private candidate types from their existing Zod schemas and merge duplicate same-module imports; run interface tests, typecheck, lint, and `git diff --check`.
+- [x] 2.5 Add focused TSDoc for the cached-versus-fresh client lookup contract and any touched non-obvious boundary; verify generated declarations/build output and omit comments that only restate types.
+- [x] 2.6 Record the slice's production-line delta and skipped abstractions, run `pnpm verify`, then commit, push, and verify the exact remote ref before starting the next slice.
 
 ## 3. Simplify shopping-plan resolution
 

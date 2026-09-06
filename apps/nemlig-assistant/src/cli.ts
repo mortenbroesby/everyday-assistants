@@ -3,8 +3,14 @@
 import { Command, InvalidArgumentError } from "commander";
 import { readFileSync, realpathSync } from "node:fs";
 import { basename } from "node:path";
-import type { Basket, Product } from "./client.js";
-import { FAVORITES_SEARCH_POOL, matchFavorites, NemligClient, NemligError } from "./client.js";
+import {
+  FAVORITES_SEARCH_POOL,
+  matchFavorites,
+  NemligClient,
+  NemligError,
+  type Basket,
+  type Product,
+} from "./client.js";
 import {
   clearCredentials,
   getCredentials,

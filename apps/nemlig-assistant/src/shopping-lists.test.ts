@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { saveShoppingPlan, type PlanSnapshotStorage } from "./plans.js";
+import { principalScopeFor } from "./principal-scope.js";
 import { handleShoppingListStorageRequest, type ShoppingListObjectStorage } from "./shopping-list-worker-storage.js";
 import {
   copyShoppingList,
@@ -13,7 +14,6 @@ import {
   MAX_SHOPPING_LISTS,
   migrateShoppingPlan,
   normalizeShoppingListName,
-  ownerScopeFor,
   saveShoppingList,
   setShoppingListStatus,
   shoppingListLineSchema,
@@ -73,7 +73,7 @@ test("local list repository creates, enumerates, opens, edits, copies, archives,
   assert.equal((await showShoppingLists(owner, storage, undefined, true)).length, 2);
   const restored = await setShoppingListStatus(owner, storage, birthday.id, "active", 2, instant);
   assert.equal(restored.status, "active");
-  const file = join(directory, `${ownerScopeFor(owner)}.json`);
+  const file = join(directory, `${principalScopeFor(owner)}.json`);
   assert.equal((await stat(directory)).mode & 0o777, 0o700);
   assert.equal((await stat(file)).mode & 0o777, 0o600);
   assert.doesNotMatch(await readFile(file, "utf8"), /auth0\|owner/u);
@@ -103,7 +103,7 @@ test("principal list scopes prevent cross-account read, overwrite, archive, and 
 
 test("HTTP list storage is owner-scoped, bounded, and uses one versioned internal request per operation", async () => {
   const calls: Array<{ url: string; method: string; protocol: string | null; match: string | null }> = [];
-  const ownerScope = ownerScopeFor("auth0|owner");
+  const ownerScope = principalScopeFor("auth0|owner");
   const collection: ShoppingListCollection = { schema_version: 2, owner_scope: ownerScope, generation: 0, lists: [] };
   const fetcher: typeof fetch = async (input, init) => {
     const headers = new Headers(init?.headers);
@@ -127,8 +127,8 @@ test("fixed storage object atomically isolates version-routed owners and revisio
     put: async (key, value) => { values.set(key, structuredClone(value)); },
     transaction: async (operation) => operation(),
   };
-  const owner = ownerScopeFor("auth0|owner");
-  const other = ownerScopeFor("auth0|other");
+  const owner = principalScopeFor("auth0|owner");
+  const other = principalScopeFor("auth0|other");
   const url = (scope: string) => `http://nemlig-plan-storage.internal/named-lists-v2/${scope}`;
   const get = (scope: string) => handleShoppingListStorageRequest(new Request(url(scope)), scope, storage);
   assert.equal(((await (await get(owner)).json()) as ShoppingListCollection).lists.length, 0);
