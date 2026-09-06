@@ -18,6 +18,7 @@ export const INTERNAL_CREDENTIAL_HEADERS = [
   "x-nemlig-credential-generation",
 ] as const;
 
+/** Copies only controller-issued credential headers onto the internal request. */
 export function attachAdmissionCredential(request: Request, admission: AdmissionResult, signal?: AbortSignal): Request {
   const headers = new Headers(request.headers);
   for (const name of INTERNAL_CREDENTIAL_HEADERS) headers.delete(name);
@@ -30,11 +31,13 @@ export function attachAdmissionCredential(request: Request, admission: Admission
   return new Request(request, { headers, ...(signal ? { signal } : {}) });
 }
 
+/** Time budget and cancellation signal passed to one bounded gateway stage. */
 export interface GatewayDeadline {
   readonly signal: AbortSignal;
   readonly remainingMs: number;
 }
 
+/** Provider seams used by the gateway; callers must keep authentication before wake/admission. */
 export interface GatewayDependencies {
   authenticate(token: string, config: GatewayConfig, deadline: GatewayDeadline): Promise<Principal | undefined>;
   admit(operation: OperationClass, principal: Principal, config: GatewayConfig, deadline: GatewayDeadline): Promise<AdmissionResult>;
@@ -73,6 +76,7 @@ const normalTools = new Set([
   "choose_products_visually",
 ]);
 
+/** Classifies protocol, normal, and unknown/expensive MCP traffic before admission. */
 export function classifyMcpMessage(value: unknown): OperationClass {
   if (!value || typeof value !== "object" || Array.isArray(value)) return "expensive";
   const message = value as { method?: unknown; params?: unknown };
@@ -167,6 +171,7 @@ const classifyRequest = async (request: Request, signal: AbortSignal): Promise<C
   }
 };
 
+/** Enforces the fail-closed edge pipeline before forwarding an admitted request. */
 export async function handleGatewayRequest(
   request: Request,
   env: CloudflareEnv,

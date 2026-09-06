@@ -39,11 +39,11 @@
 
 ## 6. Simplify Cloudflare admission when justified
 
-- [ ] 6.1 Characterize authentication/admission ordering, Container-wake prevention, exact tier decisions, reason/status mappings, quotas, rate limits, circuit breaker, hard ceilings, kill switch, and `outboundByHost` registration before production edits.
-- [ ] 6.2 Measure repeated admission conversions and unused parameters, then either delete/consolidate only exact duplicates or record why the slice is skipped; preserve fail-closed behavior and all cost controls.
-- [ ] 6.3 Add targeted TSDoc to `admitUsage`, `admitUsageAtomically`, and `handleGatewayRequest` where it explains the admission contract rather than syntax.
-- [ ] 6.4 Run usage, gateway, configuration, observability, HTTP, and acceptance tests plus the credential-free Wrangler dry run; verify no Cloudflare or provider mutation occurred.
-- [ ] 6.5 Record the production-line delta and skipped abstractions, run `pnpm verify` and `pnpm nemlig:production:ready`, then commit, push, and verify the exact remote ref.
+- [x] 6.1 Characterize authentication/admission ordering, Container-wake prevention, exact tier decisions, reason/status mappings, quotas, rate limits, circuit breaker, hard ceilings, kill switch, and `outboundByHost` registration before production edits.
+- [x] 6.2 Measure repeated admission conversions and unused parameters, then either delete/consolidate only exact duplicates or record why the slice is skipped; preserve fail-closed behavior and all cost controls.
+- [x] 6.3 Add targeted TSDoc to `admitUsage`, `admitUsageAtomically`, and `handleGatewayRequest` where it explains the admission contract rather than syntax.
+- [x] 6.4 Run usage, gateway, configuration, observability, HTTP, and acceptance tests plus the credential-free Wrangler dry run; verify no Cloudflare or provider mutation occurred.
+- [x] 6.5 Record the production-line delta and skipped abstractions, run `pnpm verify` and `pnpm nemlig:production:ready`, then commit, push, and verify the exact remote ref.
 
 ## 7. Complete repository hygiene and final proof
 

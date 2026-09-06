@@ -57,3 +57,12 @@ Each slice records its doubts, characterization evidence, production/test line d
 - Requests/cost: product revalidation and mutation remain sequential; calls, retries, storage, concurrency, and external cost are unchanged.
 - Skipped: no transition table, state-machine class, response abstraction, persistence change, or retry mechanism was introduced.
 - External state: no provider, basket, credential, Cloudflare, or deployment action occurred.
+
+### Cloudflare admission
+
+- Doubts resolved before production edit: existing focused coverage pins the kill switch before configuration/authentication, authentication and principal resolution before admission/Container wake, operation classification, tier/status mappings, quota and breaker behavior, timeouts, sanitized events, aggregate redaction, and post-class `outboundByHost` registration.
+- Changes: remove the unused private `deny` timestamp argument and document the credential-header, gateway-stage, operation-classification, fail-closed forwarding, aggregate-usage, and atomic-admission contracts.
+- Verification: focused Cloudflare configuration, gateway, usage, observability, HTTP, and acceptance tests passed `45/45`; typecheck, lint, `git diff --check`, full `pnpm verify` with 179 tests, packed-package smoke, privacy checks, strict OpenSpec validation, and the credential-free Wrangler production dry run passed.
+- Delta: production `+14/-5` (net `+9`); tests unchanged. Dependencies, quotas, rates, breakers, limits, retries, storage, concurrency, Container capacity, provider calls, and external cost are unchanged.
+- Skipped: the similar admin usage/reset blocks retain distinct method and dependency behavior; a parameterized control-flow helper was not smaller or easier to verify, so no abstraction was added.
+- External state: Wrangler built locally with `--dry-run` and exited without deployment; no Cloudflare, provider, basket, or credential mutation occurred.

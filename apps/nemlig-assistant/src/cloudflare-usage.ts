@@ -69,6 +69,7 @@ const emptyRejections = (now: Date): Record<AdmissionReason, PeriodUsage> => Obj
   ADMISSION_REASONS.map((reason) => [reason, emptyPeriodUsage(now)]),
 ) as Record<AdmissionReason, PeriodUsage>;
 
+/** Creates an empty usage state anchored to the supplied UTC period. */
 export const emptyUsageState = (now: Date, policyRevision = "unconfigured"): UsageState => {
   const current = periods(now);
   return {
@@ -141,6 +142,7 @@ const counts = ({ minuteCount, dayCount, monthCount }: PeriodUsage) => ({
   month: monthCount,
 });
 
+/** Returns bounded tier aggregates without exposing principal identifiers. */
 export function aggregateUsage(
   stored: UsageState | undefined,
   policy: TierAdmissionPolicy,
@@ -174,7 +176,7 @@ export function aggregateUsage(
   };
 }
 
-const deny = (state: UsageState, tier: Tier, reason: AdmissionReason, now: Date, status: 429 | 503 = 429): AdmissionResult => {
+const deny = (state: UsageState, tier: Tier, reason: AdmissionReason, status: 429 | 503 = 429): AdmissionResult => {
   const rejected = state.rejections[String(tier) as TierKey][reason];
   rejected.minuteCount += 1;
   rejected.dayCount += 1;
@@ -182,6 +184,7 @@ const deny = (state: UsageState, tier: Tier, reason: AdmissionReason, now: Date,
   return { admitted: false, status, reason, state };
 };
 
+/** Applies global, tier, principal, rate, and breaker admission rules. */
 export function admitUsage(
   stored: UsageState | undefined,
   operation: OperationClass,
@@ -191,13 +194,13 @@ export function admitUsage(
   now = new Date(),
 ): AdmissionResult {
   const state = currentState(stored, policy, now);
-  if (state.breakerOpen) return deny(state, principal.tier, "breaker_open", now, 503);
+  if (state.breakerOpen) return deny(state, principal.tier, "breaker_open", 503);
   if (operation === "protocol") return { admitted: true, state };
 
   const expensive = operation === "expensive";
   const minuteCountKey = expensive ? "expensiveMinuteCount" : "normalMinuteCount";
   const rateLimit = expensive ? limits.expensiveRateLimit : limits.rateLimit;
-  if (state[minuteCountKey] >= rateLimit) return deny(state, principal.tier, "rate_limit", now);
+  if (state[minuteCountKey] >= rateLimit) return deny(state, principal.tier, "rate_limit");
 
   const total = state.normalCount + state.expensiveCount;
   const tripReason: BreakerReason | undefined = total + 1 > limits.dailyLimit
@@ -209,14 +212,14 @@ export function admitUsage(
     state.breakerOpen = true;
     state.trippedAt = now.toISOString();
     state.tripReason = tripReason;
-    return deny(state, principal.tier, tripReason, now, 503);
+    return deny(state, principal.tier, tripReason, 503);
   }
 
   const principalUsage = state.principals[principal.principalKey];
   if (!principalUsage
     || principalUsage.minuteCount >= policy.budgets.principal_minute_limits[String(principal.tier) as TierKey]
     || principalUsage.monthCount >= policy.budgets.guest_limit.month) {
-    return deny(state, principal.tier, "principal_rate_limit", now);
+    return deny(state, principal.tier, "principal_rate_limit");
   }
 
   const tierUsage = state.tiers[String(principal.tier) as TierKey];
@@ -241,6 +244,7 @@ export interface UsageStorage {
   put(key: string, value: UsageState): Promise<void>;
 }
 
+/** Performs admission and persistence in one storage transaction. */
 export const admitUsageAtomically = (
   storage: UsageStorage,
   operation: OperationClass,
