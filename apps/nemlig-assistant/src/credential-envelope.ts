@@ -71,6 +71,7 @@ const validateCredentials = (value: unknown): Credentials => {
   return { username: username.trim(), password };
 };
 
+/** Seals credentials to the exact principal, policy, key version, and generation. */
 export async function encryptCredentials(
   credentials: Credentials,
   binding: CredentialBinding,
@@ -95,6 +96,7 @@ export async function encryptCredentials(
   };
 }
 
+/** Opens only an envelope whose authenticated binding exactly matches the caller. */
 export async function decryptCredentials(
   value: unknown,
   binding: CredentialBinding,

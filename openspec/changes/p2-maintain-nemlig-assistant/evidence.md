@@ -66,3 +66,19 @@ Each slice records its doubts, characterization evidence, production/test line d
 - Delta: production `+14/-5` (net `+9`); tests unchanged. Dependencies, quotas, rates, breakers, limits, retries, storage, concurrency, Container capacity, provider calls, and external cost are unchanged.
 - Skipped: the similar admin usage/reset blocks retain distinct method and dependency behavior; a parameterized control-flow helper was not smaller or easier to verify, so no abstraction was added.
 - External state: Wrangler built locally with `--dry-run` and exited without deployment; no Cloudflare, provider, basket, or credential mutation occurred.
+
+### Final production re-audit
+
+- Static and compiler checks found no duplicate same-source imports, single-occurrence declarations, or unused runtime/development dependencies. Typecheck and lint remain green.
+- The similar plan and persisted-list constraint/preference schemas remain separate because their public shapes and storage invariants differ; extracting them would add cross-domain coupling without meaningful deletion.
+- Exported module contracts and deliberate `ponytail:` cost ceilings remain unchanged because repository usage alone cannot prove them safe to remove.
+- Added concise TSDoc to the credential-envelope boundary: AES-GCM authenticated data binds ciphertext to the exact principal, policy revision, key version, and generation, and mismatches fail closed. Its two focused tests, typecheck, lint, and `git diff --check` pass.
+- No further production refactor candidate met the deletion-first evidence threshold.
+
+### Final gate and size snapshot
+
+- Strict validation passed for all 17 active changes/specs, including this change and every affected completed change; public-tree privacy passed across 244 files; packed-package interfaces passed.
+- The credential-free Wrangler production dry run built the one disabled Container artifact and exited at `--dry-run`; it performed no deployment or provider mutation.
+- Relative to base `origin/main`, production TypeScript is `+146/-154` (net `-8`) and tests are `+179/-36` (net `+143`); the overall production implementation therefore remains deletion-first and net-negative.
+- Dependency manifests and lockfile are unchanged. Runtime network requests, retries, storage, concurrency, logging, quotas, circuit breakers, Container capacity, and external cost are unchanged.
+- OpenSpec hygiene found three fully checked changes. `make-nemlig-assistant-production-ready` has one unsynced additive readiness requirement; the older catalogue/tool changes have deltas superseded by newer automatic-grocery main specs. Their archive/sync choice remains intentionally unresolved rather than overwriting newer requirements.

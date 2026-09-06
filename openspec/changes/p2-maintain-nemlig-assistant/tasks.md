@@ -47,8 +47,8 @@
 
 ## 7. Complete repository hygiene and final proof
 
-- [ ] 7.1 Re-audit production sources for dead declarations, redundant aliases, duplicate imports/types, unnecessary dependencies, and high-value missing TSDoc; verify every retained candidate has a recorded reason.
+- [x] 7.1 Re-audit production sources for dead declarations, redundant aliases, duplicate imports/types, unnecessary dependencies, and high-value missing TSDoc; verify every retained candidate has a recorded reason.
 - [ ] 7.2 Verify each fully checked open OpenSpec change is represented in main specs, then sync/archive only those with no pending rollout or acceptance task; leave incomplete changes untouched.
-- [ ] 7.3 Run strict validation for `p2-maintain-nemlig-assistant` and every affected OpenSpec change, plus privacy checks, packed-package smoke, and the credential-free Cloudflare dry run.
+- [x] 7.3 Run strict validation for `p2-maintain-nemlig-assistant` and every affected OpenSpec change, plus privacy checks, packed-package smoke, and the credential-free Cloudflare dry run.
 - [ ] 7.4 Run `pnpm verify` and `pnpm nemlig:production:ready` at the final rebased head, commit and push remaining planning/evidence updates, and verify exact-head CI.
 - [ ] 7.5 Report net production/test lines, dependency count, runtime/request impact, commits and SHAs, intentionally skipped abstractions, remaining doubts, and Astrograph usage; verify no deployment, provider mutation, basket mutation, or credential access occurred.
