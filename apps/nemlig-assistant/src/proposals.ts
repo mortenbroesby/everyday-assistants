@@ -181,6 +181,9 @@ const replacementLine = (product: Product, quantity: number, lineTotal?: number)
 const sameReplacementLine = (left: ReplacementLine, right: ReplacementLine): boolean =>
   JSON.stringify(left) === JSON.stringify(right);
 
+const canonicalAdditionItems = (items: Array<{ product_id: number; quantity: number }>): string =>
+  JSON.stringify([...items].sort((left, right) => left.product_id - right.product_id));
+
 class Mutex {
   private tail: Promise<void> = Promise.resolve();
 
@@ -234,7 +237,7 @@ export class BasketProposalService {
     if (authorization.kind === "same_run_automatic") {
       const stored = this.automaticAuthorizations.get(authorization.token);
       this.automaticAuthorizations.delete(authorization.token);
-      if (!stored || stored.connectionId !== connectionId || stored.expiresAt <= this.now() || stored.items !== JSON.stringify(items)) {
+      if (!stored || stored.connectionId !== connectionId || stored.expiresAt <= this.now() || stored.items !== canonicalAdditionItems(items)) {
         throw new NemligError("Automatic authorization is invalid, expired, or does not match these additions.");
       }
     }
@@ -266,7 +269,7 @@ export class BasketProposalService {
     const token = this.createId();
     this.automaticAuthorizations.set(token, {
       connectionId,
-      items: JSON.stringify(items),
+      items: canonicalAdditionItems(items),
       expiresAt: new Date(this.now().getTime() + this.ttlMs),
     });
     return token;

@@ -164,6 +164,19 @@ test("same-run automatic authorization is connection-bound, exact, expiring, and
   assert.equal(reads, 1);
 });
 
+test("same-run automatic authorization matches additions regardless of item order", async () => {
+  const service = new BasketProposalService(fakeClient({ getCart: async () => emptyBasket() }));
+  const items = [{ product_id: 8, quantity: 1 }, { product_id: 7, quantity: 2 }];
+  const token = service.createAutomaticAuthorization("connection", items);
+
+  const proposal = await service.prepareAdditions("connection", [items[1], items[0]], {
+    kind: "same_run_automatic",
+    token,
+  });
+
+  assert.equal(proposal.authorization, "same_run_automatic");
+});
+
 test("addition preparation accepts fifty unique lines and rejects fifty-one before basket access", async () => {
   let basketReads = 0;
   const service = new BasketProposalService(fakeClient({
