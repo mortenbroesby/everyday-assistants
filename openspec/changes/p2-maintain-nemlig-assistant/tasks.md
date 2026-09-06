@@ -16,10 +16,10 @@
 
 ## 3. Simplify shopping-plan resolution
 
-- [ ] 3.1 Add or identify characterization tests for plan-line ordering, duplicate basket-line aggregation, summaries, ambiguity, transport failures, and provider request counts; run them green before production edits.
-- [ ] 3.2 Replace the per-plan-line basket scan with one local quantity index while preserving exact output and request behavior; run the focused planner and proposal suites.
-- [ ] 3.3 Add targeted TSDoc to `eligibleCandidates` and `resolveShoppingPlan`, and simplify dense expressions only where the resulting production code is clearly smaller or easier to verify.
-- [ ] 3.4 Record CPU/request and production-line deltas, run `pnpm verify`, then commit, push, and verify the exact remote ref.
+- [x] 3.1 Add or identify characterization tests for plan-line ordering, duplicate basket-line aggregation, summaries, ambiguity, transport failures, and provider request counts; run them green before production edits.
+- [x] 3.2 Replace the per-plan-line basket scan with one local quantity index while preserving exact output and request behavior; run the focused planner and proposal suites.
+- [x] 3.3 Add targeted TSDoc to `eligibleCandidates` and `resolveShoppingPlan`, and simplify dense expressions only where the resulting production code is clearly smaller or easier to verify.
+- [x] 3.4 Record CPU/request and production-line deltas, run `pnpm verify`, then commit, push, and verify the exact remote ref.
 
 ## 4. Consolidate MCP failure handling when justified
 

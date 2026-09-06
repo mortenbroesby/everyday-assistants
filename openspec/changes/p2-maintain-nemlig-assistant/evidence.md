@@ -28,3 +28,13 @@ Each slice records its doubts, characterization evidence, production/test line d
 - Delta: production `+34/-42` (net `-8`); tests `+6/-10` (net `-4`); total net `-12` lines. Dependencies and provider request counts unchanged.
 - Skipped: no utility, type factory, registry, dependency, file split, or blanket documentation was added.
 - External state: no provider, basket, credential, Cloudflare, or deployment action occurred.
+
+### Shopping-plan resolution
+
+- Doubts resolved before production edit: 14 planner characterization tests proved full preference/ID ordering, input-line order, duplicate basket aggregation, mixed summary counters, exact provider call envelope, and one-read propagation of basket transport failure.
+- Changes: aggregate basket quantities once in a local `Map` and reuse them for every selected line; document the hard-constraint ordering and read-only resolution contracts.
+- Verification: characterization suite passed before production edits; afterwards planner/proposal tests passed `29/29`, planner tests passed `14/14`, and typecheck, lint, and `git diff --check` passed.
+- Delta: production `+16/-1` (net `+15`) and tests `+64/-0`. The non-negative slice is justified by explicit safety characterization, contract TSDoc, and CPU reduction from `O(plan lines × basket lines)` to `O(plan lines + basket lines)`.
+- Requests/cost: one basket read, bounded catalogue concurrency, request ordering/count, retries, storage, and external cost are unchanged.
+- Skipped: no helper abstraction or unrelated dense-expression rewrite was added because neither produced a smaller, clearer safe change.
+- External state: no provider, basket, credential, Cloudflare, or deployment action occurred.
