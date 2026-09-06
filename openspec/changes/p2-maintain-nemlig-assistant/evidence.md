@@ -47,3 +47,13 @@ Each slice records its doubts, characterization evidence, production/test line d
 - Delta: production `+58/-94` (net `-36`); tests `+50/-29` (net `+21`); total net `-15` lines. Dependencies, network calls, retries, storage, concurrency, and external cost are unchanged.
 - Skipped: no tool registry, compatibility export, new response type, dependency, or cross-module abstraction was added.
 - External state: no provider, basket, credential, Cloudflare, or deployment action occurred.
+
+### Proposal state transitions
+
+- Doubts resolved before production edit: a new characterization test pinned provider sequencing and the exact `created → applying → completed → replayed`, `created → expired`, `created → invalidated`, and `created → applying → indeterminate` audit streams without identifiers or product data.
+- Changes: consolidate five identical state-and-audit invalidations into one private method while retaining each exact caller-owned error message; document the same-run authorization and apply safety contracts.
+- Verification: proposal characterization passed `16/16`; proposal, MCP interface, and production-acceptance tests passed `56/56`; typecheck, lint, `git diff --check`, full `pnpm verify` with 179 tests, and `pnpm nemlig:production:ready` passed.
+- Delta: production `+20/-10` (net `+10`) and tests `+62/-0`. The retained documentation makes the security-critical sequencing, binding, single-use, fresh-revalidation, final-readback, and no-retry contracts explicit.
+- Requests/cost: product revalidation and mutation remain sequential; calls, retries, storage, concurrency, and external cost are unchanged.
+- Skipped: no transition table, state-machine class, response abstraction, persistence change, or retry mechanism was introduced.
+- External state: no provider, basket, credential, Cloudflare, or deployment action occurred.

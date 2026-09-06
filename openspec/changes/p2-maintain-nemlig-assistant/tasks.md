@@ -31,11 +31,11 @@
 
 ## 5. Simplify proposal state transitions
 
-- [ ] 5.1 Add or identify characterization coverage for exact audit ordering and every prepared, invalid, applying, completed, expired, replayed, and indeterminate transition; run the complete proposal suite green before production edits.
-- [ ] 5.2 Verify repeated invalidation-and-audit paths have identical semantics, then consolidate them into the smallest private operation without changing messages, persistence timing, ordering, or mutation retry behavior.
-- [ ] 5.3 Add targeted TSDoc for automatic authorization consumption, connection binding, expiry, fresh product revalidation, basket fingerprinting, single use, final readback, and indeterminate no-retry behavior.
-- [ ] 5.4 Run proposal, MCP, interface, and acceptance tests; verify provider revalidation and mutation remain sequential and no live basket action was performed.
-- [ ] 5.5 Record the production-line delta and skipped abstractions, run `pnpm verify` and `pnpm nemlig:production:ready`, then commit, push, and verify the exact remote ref.
+- [x] 5.1 Add or identify characterization coverage for exact audit ordering and every prepared, invalid, applying, completed, expired, replayed, and indeterminate transition; run the complete proposal suite green before production edits.
+- [x] 5.2 Verify repeated invalidation-and-audit paths have identical semantics, then consolidate them into the smallest private operation without changing messages, persistence timing, ordering, or mutation retry behavior.
+- [x] 5.3 Add targeted TSDoc for automatic authorization consumption, connection binding, expiry, fresh product revalidation, basket fingerprinting, single use, final readback, and indeterminate no-retry behavior.
+- [x] 5.4 Run proposal, MCP, interface, and acceptance tests; verify provider revalidation and mutation remain sequential and no live basket action was performed.
+- [x] 5.5 Record the production-line delta and skipped abstractions, run `pnpm verify` and `pnpm nemlig:production:ready`, then commit, push, and verify the exact remote ref.
 
 ## 6. Simplify Cloudflare admission when justified
 

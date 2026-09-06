@@ -177,6 +177,68 @@ test("same-run automatic authorization matches additions regardless of item orde
   assert.equal(proposal.authorization, "same_run_automatic");
 });
 
+test("proposal audits preserve terminal state order and provider sequencing", async () => {
+  const completedAudits: ProposalAuditEvent[] = [];
+  const calls: string[] = [];
+  const completed = new BasketProposalService(fakeClient({
+    getCart: async () => { calls.push("cart"); return emptyBasket(); },
+    getProduct: async () => { calls.push("review"); return product; },
+    getFreshProduct: async () => { calls.push("fresh"); return product; },
+    addToCart: async () => { calls.push("add"); return bananaBasket(); },
+  }), { id: () => "00000000-0000-4000-8000-000000000030", audit: (event) => completedAudits.push(event) });
+  const completedProposal = await completed.prepareAdditions("connection", [{ product_id: 7, quantity: 1 }], { kind: "exact_review" });
+  await completed.apply("connection", completedProposal.proposal_id, "additions");
+  await completed.apply("connection", completedProposal.proposal_id, "additions");
+  assert.deepEqual(calls, ["cart", "review", "cart", "fresh", "add"]);
+  assert.deepEqual(completedAudits, [
+    { event: "created", operation: "additions", result: "prepared" },
+    { event: "applying", operation: "additions", result: "started" },
+    { event: "completed", operation: "additions", result: "verified" },
+    { event: "replayed", operation: "additions", result: "known-result" },
+  ]);
+
+  let now = new Date("2026-09-06T10:00:00Z");
+  const expiredAudits: ProposalAuditEvent[] = [];
+  const expired = new BasketProposalService(fakeClient(), {
+    now: () => now, ttlMs: 1, id: () => "00000000-0000-4000-8000-000000000031", audit: (event) => expiredAudits.push(event),
+  });
+  const expiredProposal = await expired.prepareAdditions("connection", [{ product_id: 7, quantity: 1 }], { kind: "exact_review" });
+  now = new Date("2026-09-06T10:00:01Z");
+  await assert.rejects(expired.apply("connection", expiredProposal.proposal_id, "additions"), /expired/);
+  assert.deepEqual(expiredAudits, [
+    { event: "created", operation: "additions", result: "prepared" },
+    { event: "expired", operation: "additions", result: "expired" },
+  ]);
+
+  let current = emptyBasket();
+  const invalidAudits: ProposalAuditEvent[] = [];
+  const invalid = new BasketProposalService(fakeClient({ getCart: async () => current }), {
+    id: () => "00000000-0000-4000-8000-000000000032", audit: (event) => invalidAudits.push(event),
+  });
+  const invalidProposal = await invalid.prepareAdditions("connection", [{ product_id: 7, quantity: 1 }], { kind: "exact_review" });
+  current = bananaBasket();
+  await assert.rejects(invalid.apply("connection", invalidProposal.proposal_id, "additions"), /Basket changed/);
+  assert.deepEqual(invalidAudits, [
+    { event: "created", operation: "additions", result: "prepared" },
+    { event: "invalidated", operation: "additions", result: "rejected" },
+  ]);
+
+  let writes = 0;
+  const indeterminateAudits: ProposalAuditEvent[] = [];
+  const indeterminate = new BasketProposalService(fakeClient({
+    addToCart: async () => { writes += 1; throw new Error("lost readback"); },
+  }), { id: () => "00000000-0000-4000-8000-000000000033", audit: (event) => indeterminateAudits.push(event) });
+  const indeterminateProposal = await indeterminate.prepareAdditions("connection", [{ product_id: 7, quantity: 1 }], { kind: "exact_review" });
+  await assert.rejects(indeterminate.apply("connection", indeterminateProposal.proposal_id, "additions"), /may have changed/);
+  await assert.rejects(indeterminate.apply("connection", indeterminateProposal.proposal_id, "additions"), /no longer applicable/);
+  assert.equal(writes, 1);
+  assert.deepEqual(indeterminateAudits, [
+    { event: "created", operation: "additions", result: "prepared" },
+    { event: "applying", operation: "additions", result: "started" },
+    { event: "indeterminate", operation: "additions", result: "uncertain" },
+  ]);
+});
+
 test("addition preparation accepts fifty unique lines and rejects fifty-one before basket access", async () => {
   let basketReads = 0;
   const service = new BasketProposalService(fakeClient({
