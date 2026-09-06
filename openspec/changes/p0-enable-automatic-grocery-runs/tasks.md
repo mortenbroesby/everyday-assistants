@@ -41,7 +41,7 @@
 ## 7. Verification, integration, and production evidence
 
 - [x] 7.1 Run `openspec validate p0-enable-automatic-grocery-runs --strict --no-interactive`, the app check suite, `pnpm verify`, the packed-package smoke test, and the credential-free Cloudflare dry run; record exact results and do not weaken a failing gate
-- [ ] 7.2 Reconcile sibling-session changes, review the final diff requirement-by-requirement, commit the scoped implementation, push the feature branch, and verify its exact remote ref and exact-head CI without editing unrelated OpenSpec or runtime work
-- [ ] 7.3 Before any provider mutation, present the measured 50-line cost/deadline evidence and equal-tier availability trade-off; proceed only if they fit the existing cost envelope and no new cost or setup is required
+- [x] 7.2 Reconcile sibling-session changes, review the final diff requirement-by-requirement, commit the scoped implementation, push the feature branch, and verify its exact remote ref and exact-head CI without editing unrelated OpenSpec or runtime work
+- [x] 7.3 Before any provider mutation, present the measured 50-line cost/deadline evidence and equal-tier availability trade-off; proceed only if they fit the existing cost envelope and no new cost or setup is required
 - [ ] 7.4 Deploy through the existing disabled-first single-Container flow, verify both routes fail closed and the Container stays inactive, enable the same revision, run credential-free and authenticated read-only acceptance, refresh the one existing ChatGPT app in place, and verify no parallel app or infrastructure was created
 - [ ] 7.5 With the owner present, run one bounded reversible acceptance using “look at this shopping list and just go ahead,” verify no redundant choice/approval appears for clear lines, verify unclear lines remain unchanged, read back the basket and coverage summary, and record any manual cleanup without checkout, payment, ordering, or delivery-slot mutation
