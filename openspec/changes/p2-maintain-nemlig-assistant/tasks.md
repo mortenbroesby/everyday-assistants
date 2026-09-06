@@ -1,9 +1,9 @@
 ## 1. Establish the refactor baseline
 
-- [ ] 1.1 Refresh `origin/main`, verify the cleanup worktree ancestry/status, and record the exact base SHA plus production/test line counts in the change evidence.
-- [ ] 1.2 Install workspace dependencies with the frozen lockfile and verify the install completes without changing tracked manifests or the lockfile.
-- [ ] 1.3 Run `pnpm verify` and `pnpm nemlig:production:ready`; record any pre-existing failure before editing and proceed only with a reproducible baseline.
-- [ ] 1.4 Record the non-negotiable behavior, safety, privacy, and cost invariants from `design.md`, and verify the planned slices introduce no dependency, service, storage, concurrency, retry, logging, or provider-request increase.
+- [x] 1.1 Refresh `origin/main`, verify the cleanup worktree ancestry/status, and record the exact base SHA plus production/test line counts in the change evidence.
+- [x] 1.2 Install workspace dependencies with the frozen lockfile and verify the install completes without changing tracked manifests or the lockfile.
+- [x] 1.3 Run `pnpm verify` and `pnpm nemlig:production:ready`; record any pre-existing failure before editing and proceed only with a reproducible baseline.
+- [x] 1.4 Record the non-negotiable behavior, safety, privacy, and cost invariants from `design.md`, and verify the planned slices introduce no dependency, service, storage, concurrency, retry, logging, or provider-request increase.
 
 ## 2. Remove proven leaf-level complexity
 
