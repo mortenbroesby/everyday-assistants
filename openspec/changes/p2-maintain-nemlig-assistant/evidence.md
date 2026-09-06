@@ -38,3 +38,12 @@ Each slice records its doubts, characterization evidence, production/test line d
 - Requests/cost: one basket read, bounded catalogue concurrency, request ordering/count, retries, storage, and external cost are unchanged.
 - Skipped: no helper abstraction or unrelated dense-expression rewrite was added because neither produced a smaller, clearer safe change.
 - External state: no provider, basket, credential, Cloudflare, or deployment action occurred.
+
+### MCP failure handling
+
+- Doubts resolved before production edit: the interface and smoke suites characterized the explicit tool/resource catalog, annotations, schemas, friendly and structured responses, picker boundary, and existing sanitized `NemligError` behavior. A new failing-first test proved generic provider error details must remain hidden.
+- Changes: route identical tool-handler error boundaries through one private same-module `runMcpOperation`; keep every registration explicit; make the test-only picker HTML constant private and inspect it through the registered MCP resource; document request identity and server construction contracts.
+- Verification: interface and smoke tests passed `28/28`; typecheck, lint, packed-package smoke, `git diff --check`, and the full `pnpm verify` gate passed with 178 tests. An independent read-only review found every operation label, synchronous/rejected failure boundary, registration, provider-call order, and mutation behavior preserved.
+- Delta: production `+58/-94` (net `-36`); tests `+50/-29` (net `+21`); total net `-15` lines. Dependencies, network calls, retries, storage, concurrency, and external cost are unchanged.
+- Skipped: no tool registry, compatibility export, new response type, dependency, or cross-module abstraction was added.
+- External state: no provider, basket, credential, Cloudflare, or deployment action occurred.

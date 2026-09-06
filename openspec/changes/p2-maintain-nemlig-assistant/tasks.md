@@ -23,11 +23,11 @@
 
 ## 4. Consolidate MCP failure handling when justified
 
-- [ ] 4.1 Characterize the exact MCP tool catalog, annotations, input/output schemas, friendly text, structured payloads, and sanitized failure envelopes; run interface and smoke tests green before production edits.
-- [ ] 4.2 Measure repeated handler error code and either consolidate identical behavior into the smallest private same-module operation or record why the slice is skipped; keep every tool registration explicit and add no registry or compatibility alias.
-- [ ] 4.3 Make the picker HTML private if package/export analysis proves it is not a supported contract, adjust tests to exercise it through its runtime boundary, and run interface plus packed-package smoke tests.
-- [ ] 4.4 Add targeted TSDoc to `createMcpServer` and the request-context boundary, then verify exact catalog and failure behavior remain unchanged.
-- [ ] 4.5 Record the production-line delta and skipped abstractions, run `pnpm verify` and package smoke, then commit, push, and verify the exact remote ref.
+- [x] 4.1 Characterize the exact MCP tool catalog, annotations, input/output schemas, friendly text, structured payloads, and sanitized failure envelopes; run interface and smoke tests green before production edits.
+- [x] 4.2 Measure repeated handler error code and either consolidate identical behavior into the smallest private same-module operation or record why the slice is skipped; keep every tool registration explicit and add no registry or compatibility alias.
+- [x] 4.3 Make the picker HTML private if package/export analysis proves it is not a supported contract, adjust tests to exercise it through its runtime boundary, and run interface plus packed-package smoke tests.
+- [x] 4.4 Add targeted TSDoc to `createMcpServer` and the request-context boundary, then verify exact catalog and failure behavior remain unchanged.
+- [x] 4.5 Record the production-line delta and skipped abstractions, run `pnpm verify` and package smoke, then commit, push, and verify the exact remote ref.
 
 ## 5. Simplify proposal state transitions
 

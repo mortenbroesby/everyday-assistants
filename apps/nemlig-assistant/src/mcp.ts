@@ -52,6 +52,10 @@ export const safeNemligImageUrl = (value: unknown): string | undefined => {
   } catch { return undefined; }
 };
 
+/**
+ * Server-derived request identity that scopes private state and invalidates it
+ * when policy changes; it is never a user credential.
+ */
 export interface McpRequestContext {
   principalKey: string;
   policyRevision: string;
@@ -358,9 +362,21 @@ const failure = (operation: string, error: unknown) => ({
   ],
 });
 
+const runMcpOperation = async <Result>(operation: string, action: () => Promise<Result>): Promise<Result | ReturnType<typeof failure>> => {
+  try {
+    return await action();
+  } catch (error) {
+    return failure(operation, error);
+  }
+};
+
 const NEMLIG_ICON =
   "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAABAAAAAQACAYAAAB/HSuDAAAACXBIWXMAACxLAAAsSwGlPZapAAAgAElEQVR42uzdiZdU9YH34fmLRhTBJYkxEidxScZ4Ju/JpsYlzpyTvGZzsNk3FYKaqIDghiLuohMlGkUjism8GEFEBQfZZJGuqq7qruquru5af2/dImbUqGy9VN37fM55zpkzM1GD9L3396WWf+r+z5MCAAAAEG//5BcBAAAADAAAAACAAQAAAAAwAAAAAAAGAAAAAMAAAAAAABgAAAAAAAMAAAAAYAAAAAAAAwAAAABgAAAAAAAMAAAAAIABAAAAADAAAAAAAAYAAAAAwAAAAAAAGAAAAADAAAAAAAAYAAAAAAADAAAAAGAAAAAAAAwAAAAAgAEAAAAAMAAAAAAABgAAAAAwAPhFAAAAAAMAAAAAYAAAAAAADAAAAACAAQAAAAAwAAAAAAAGAAAAAMAAAAAAABgAAAAAwAAAAAAAGAAAAAAAAwAAAABgAAAAAAAMAAAAAIABAAAAADAAAAAAAAYAAAAAMAAAAAAABgAAAADAAAAAAAAYAAAAAAADAAAAAGAAAAAAAAwAAAAAgAEAAAAADAB+EQAAAMAAAAAAABgAAAAAAAMAAAAAYAAAAAAADAAAAACAAQAAAAAwAAAAAAAGAAAAADAAAAAAAAYAAAAAwAAAAAAAGAAAAAAAAwAAAABgAAAAAAAMAAAAAIABAAAAAAwAAAAAgAEAAAAAMAAAAAAABgAAAADAAAAAAAAYAAAAAAADAAAAAGAAAAAAAAOAXwgAAAAwAAAAAAAGAAAAAMAAAAAAABgAAAAAAAMAAAAAYAAAAAAADAAAAACAAQAAAAAMAAAAAIABAAAAADAAAAAAAAYAAAAAwAAAAAAAGAAAAAAAAwAAAABgAAAAAAADAAAAAGAAAAAAAAwAAAAAgAEAAAAAMAAAAAAABgAAAADAAAAAAAAYAAAAAMAAAAAAABgAAAAAAAMAAAAAYAAAAAAADAAAAACAAQAAAAAwAAAAAAAGAAAAAMAAAAAAAAYAAAAAwAAAAAAAGAAAAAAAAwAAAABgAAAAAAAMAAAAAIABAAAAADAAAAAAgAEAAAAAMAAAAAAABgAAAADAAAAAAAAYAAAAAAADAAAAAGAAAAAAAAwAAAAAYAAAAAAADAAAAACAAQAAAAAwAAAAAAAGAAAAAMAAAAAAABgAAAAAAAMAAAAAYAAAAAAAAwAAAABgAAAAAAAMAAAAAIABAAAAADAAAAAAAAYAAAAAwAAAAAAAGAAAAADAAAAAAAAYAAAAAAADAAAAAGAAAAAAAAwAAAAAgAEAAAAAMAAAAAAABgAAAAAwAAAAAAAGAAAAAMAAAAAAABgAAAAAAAMAAAAAYAAAAAAADAAAAACAAQAAAAAwAAAAAIABAAAAADAAAAAAAAYAAAAAwAAAAAAAGAAAAAAAAwAAAABgAAAAAAAMAAAAAGAAAAAAAAwAAAAAgAEAAAAAMAAAAAAABgAAAADAAAAAAAAYAAAAAAADAAAAABgAAAAAAAMAAAAAYAAAAAAADAAAAACAAQAAAAAwAAAAAAAGAAAAAMAAAAAAABgAAAAAwAAAAAAAGAAAAAAAAwAAAABgAAAAAAAMAAAAAIABAAAAADAAAAAAAAYAAAAAMAAAAAAABgAAAADAAAAAAAAYAAAAAAADAAAAAGAAAAAAAAwAAAAAgAEAAAAADAAAAACAAQAAAAAwAAAAAAAGAAAAAMAAAAAAABgAAAAAAAMAAAAAYAAAAAAADAAAAABgAAAAAAAMAAAAAIABAAAAADAAAAAAAAYAAAAAwAAAAAAAGAAAAAAAAwAAAAAYAAAAAAADAAAAAGAAAAAAAAwAAAAAgAEAAAAAMAAAAAAABgAAAADAAAAAAAAGAAAAAMAAAAAAABgAAAAAAAMAAAAAYAAAAAAADAAAAACAAQAAAAAwAAAAAAAGAAAAADAAAAAAAAYAAAAAwAAAAAAAGAAAAAAAAwAAAABgAAAAAAAMAAAAAIABAAAAAAwAAAAAgAEAAAAAMAAAAAAABgAAAADAAAAAAAAYAAAAAAADAAAAAGAAAAAAAAMAAAAAYAAAAAAADAAAAACAAQAAAAAwAAAAAAAGAAAAAMAAAAAAABgAAAAAwADgFwEAAAAMAAAAAIABAAAAADAAAAAAAAYAAAAAwAAAAAAAGAAAAAAAAwAAAABgAAAAAAADAAAAAGAAAAAAAAwAAAAAgAEAAAAAMAAAAAAABgAAAADAAAAAAAAYAAAAAMAAAAAAABgAAAAAAAMAAAAAYAAAAAAADAAAAACAAQAAAAAwAAAAAAAGAAAAADAA+EUAAAAAAwAAAABgAAAAAAAMAAAAAIABAAAAADAA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AAAAgAEAAAAADAAAAACAAQAAAAAwAAAAAAAGAAAAAMAAAAAAABgAAAAAAAMAAAAAYAAAAAAADAAAAABgAAAAAAAMAAAAAIABAAAAADAAAAAAAAYAAAAAwAAAAAAAGAAAAAAAAwAAAAAYAAAAAAADAAAAAGAAAAAAAAwAAAAAgAEAAAAAMAAAAAAABgAAAADAAAAAAAAGAAAAAMAAAAAAABgAAAAAAAMAAAAAYAAAAAAADAAAAACAAQAAAAAwAAAAAPD/27FDAgAAAABB/1+7wU7ggFEwAAAAAMAAAAAAAAwAAAAAwAAAAAAADAAAAADAAAAAAAAMAAAAAMAAAAAAAAwAAAAAMAAAAAAAAwAAAAAwAAAAAAADAAAAADAAAAAAAAMAAAAAMAAAAAAAAwAAAAAMAAAAAMAAAAAAAAwAAAAAwAAAAAAADAAAAADAAAAAAAAMAAAAAMAAAAAAAAwAAAAAMAAAAAAAAwAAAAAwAAAAAAADAAAAADAAAAAAAAMAAAAAMAAAAAAAAwAAAAAMAAAAAMAAAAAAAAwAAAAAwAAAAAAADAAAAADAAAAAAAAMAAAAAMAAAAAAAAMAAAAAMAAAAAAAAwAAAAAwAAAAAAADAAAAADAAAAAAAAMAAAAAMAAAAAAAAwAAAAAMAAAAAMAAAAAAAAwAAAAAwAAAAAAADAAAAADAAAAAAAAMAAAAAMAAAAAAAAMAAAAAMAAAAAAAAwAAAAAwAAAAAAADAAAAADAAAAAAAAMAAAAAMAAAAADAAAAAAAAMAAAAAMAAAAAAAAwAAAAAwAAAAAAADAAAAADAAAAAAAAMAAAAAMAAAAAAAAMAAAAAMAAAAAAAAwAAAAAwAAAAAAADAAAAADAAAAAAAAMAAAAAMAAAAADAAAAAAAAMAAAAAMAAAAAAAAwAAAAAwAAAAAAADAAAAADAAAAAAAAMAAAAADAAAAAAAAMAAAAAMAAAAAAAAwAAAAAwAAAAAAADAAAAADAAAAAAAAMAAAAAMAAAAADAAAAAAAAMAAAAAMAAAAAAAAwAAAAAwAAAAAAADAAAAADAAAAAAAAMAAAAADAAAAAAAAMAAAAAMAAAAAAAAwAAAAAwAAAAAAADAAAAADAAAAAAAAMAAAAADAAAAADAAAAAAAAMAAAAAMAAAAAAAAwAAAAAwAAAAAAADAAAAADAAAAAAAADQAQAAAAwAAAAAAADAAAAADAAAAAAAAMAAAAAMAAAAAAAAwAAAAAwAAAAAAADAAAAAAwAAAAAwAAAAAAADAAAAADAAAAAAAAMAAAAAMAAAAAAAAwAAAAAwAAAAAAAAwAAAAAwAAAAAAADAAAAADAAAAAAAAMAAAAAMAAAAAAAAwAAAAAwAAAAAMAAEAEAAAAMAAAAAMAAAAAAAAwAAAAAwAAAAAAADAAAAADAAAAAAAAMAAAAAMAAAAAAAAMAAAAAMAAAAAAAAwAAAAAwAAAAAAADAAAAADAAAAAAAAMAAAAAMAAAAADAAAAAAAAMAAAAAMAAAAAAAAwAAAAAwAAAAAAADAAAAADAAAAAAAAMAAAAADAARAAAAAADAAAAADAAAAAAAAMAAAAAMAAAAAAAAwAAAAAwAAAAAAADAAAAADAAAAAAwAAAAAAADAAAAADAAAAAAAAMAAAAAMAAAAAAAAwAAAAAwAAAAAAADAAAAAAwAAAAAAADAAAAADAAAAAAAAMAAAAAMAAAAAAAAwAAAAAwAAAAAAADAAAAAAwAIQAAAMAAAAAAAAwAAAAAwAAAAAAADAAAAADAAAAAAAAMAAAAAMAAAAAAAAwAAAAAMAAAAAAAAwAAAAAwAAAAAAADAAAAADAAAAAAAAMAAAAAMAAAAAAAAwAAAAAMAAAAAMAAAAAAAAwAAAAAwAAAAAAADAAAAADAAAAAAAAMAAAAAMAAAAAAAAMAAAAAMAAAAAAAAwAAAAAwAAAAAAADAAAAADAAAAAAAAMAAAAAMAAAAAAAAwAAAAAMAAAAAMAAAAAAAAwAAAAAwAAAAAAADAAAAADAAAAAAACeAJ4FMreMD0GTAAAAAElFTkSuQmCC";
 
+/**
+ * Creates the explicit MCP catalog. Basket writes remain staged through the
+ * review/apply tools, while request context binds private state to a principal.
+ */
 export function createMcpServer(
   client: ShoppingClient = getClient(),
   loadCredentials: () => Promise<Credentials | undefined> = getCredentials,
@@ -439,13 +455,7 @@ export function createMcpServer(
       outputSchema: z.object({ result: z.array(candidateSchema) }),
       annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true },
     },
-    async ({ search_term, result_count }) => {
-      try {
-        return success(await search(search_term, result_count));
-      } catch (error) {
-        return failure("find_groceries", error);
-      }
-    },
+    ({ search_term, result_count }) => runMcpOperation("find_groceries", async () => success(await search(search_term, result_count))),
   );
 
   server.registerTool(
@@ -461,8 +471,7 @@ export function createMcpServer(
       outputSchema: z.object({ result: z.array(candidateSchema) }),
       annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true },
     },
-    async ({ search_term, result_count, page }) => {
-      try {
+    ({ search_term, result_count, page }) => runMcpOperation("show_my_favorites", async () => {
         await ensureLoggedIn(client, loadCredentials);
         const favorites = await client.listFavorites(
           search_term === undefined ? result_count : FAVORITES_SEARCH_POOL,
@@ -470,10 +479,7 @@ export function createMcpServer(
         );
         const products = search_term === undefined ? favorites : matchFavorites(favorites, search_term, page * result_count).slice((page - 1) * result_count);
         return success(rankProducts(products, search_term ?? ""));
-      } catch (error) {
-        return failure("show_my_favorites", error);
-      }
-    },
+      }),
   );
 
   server.registerTool(
@@ -486,10 +492,10 @@ export function createMcpServer(
       annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true },
       ...(appsEnabled(env) ? { _meta: { ui: { resourceUri: PICKER_URI } } } : {}),
     },
-    async (input, extra) => {
-      try { await ensureLoggedIn(client, loadCredentials); return success(await resolveRun(input, extra.sessionId)); }
-      catch (error) { return failure("plan_my_shopping", error); }
-    },
+    (input, extra) => runMcpOperation("plan_my_shopping", async () => {
+      await ensureLoggedIn(client, loadCredentials);
+      return success(await resolveRun(input, extra.sessionId));
+    }),
   );
 
   server.registerTool(
@@ -499,7 +505,7 @@ export function createMcpServer(
       outputSchema: z.object({ departments: z.array(z.object({ id: z.string(), name: z.string() })) }),
       annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true },
     },
-    async () => { try { return success({ departments: await client.listDepartments() }); } catch (error) { return failure("show_grocery_sections", error); } },
+    () => runMcpOperation("show_grocery_sections", async () => success({ departments: await client.listDepartments() })),
   );
 
   server.registerTool(
@@ -514,7 +520,10 @@ export function createMcpServer(
       outputSchema: z.object({ result: z.array(candidateSchema), page: z.number().int().positive(), has_next: z.boolean() }),
       annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true },
     },
-    async ({ section, result_count, page }) => { try { const result = await client.browseDepartment(section, result_count, page); return success({ result: rankProducts(result.products, ""), page: result.page, has_next: result.hasNext }); } catch (error) { return failure("browse_grocery_section", error); } },
+    ({ section, result_count, page }) => runMcpOperation("browse_grocery_section", async () => {
+      const result = await client.browseDepartment(section, result_count, page);
+      return success({ result: rankProducts(result.products, ""), page: result.page, has_next: result.hasNext });
+    }),
   );
 
   server.registerTool(
@@ -525,7 +534,7 @@ export function createMcpServer(
       outputSchema: z.object({ id: z.string().uuid(), created_at: z.string().datetime() }),
       annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
     },
-    async (input) => { try { return success(await saveShoppingPlan(internalShoppingPlan(input), planStorage)); } catch (error) { return failure("save_my_shopping_plan", error); } },
+    (input) => runMcpOperation("save_my_shopping_plan", async () => success(await saveShoppingPlan(internalShoppingPlan(input), planStorage))),
   );
 
   server.registerTool(
@@ -535,7 +544,10 @@ export function createMcpServer(
       inputSchema: { saved_plan: z.string().uuid().describe("The saved-plan reference returned when the plan was saved.") }, outputSchema: planOutputSchema,
       annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true },
     },
-    async ({ saved_plan }) => { try { await ensureLoggedIn(client, loadCredentials); return success(safePlanImages(await resolveShoppingPlan(client, await loadShoppingPlan(saved_plan, planStorage)))); } catch (error) { return failure("continue_my_shopping_plan", error); } },
+    ({ saved_plan }) => runMcpOperation("continue_my_shopping_plan", async () => {
+      await ensureLoggedIn(client, loadCredentials);
+      return success(safePlanImages(await resolveShoppingPlan(client, await loadShoppingPlan(saved_plan, planStorage))));
+    }),
   );
 
   server.registerTool(
@@ -550,12 +562,10 @@ export function createMcpServer(
       outputSchema: z.object({ lists: z.array(z.any()) }),
       annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
     },
-    async ({ list, include_archived }) => {
-      try {
+    ({ list, include_archived }) => runMcpOperation("show_my_shopping_lists", async () => {
         const lists = await showShoppingLists(ownerSubject, listStorage, list, include_archived);
         return success({ lists: lists.map(listPayload) }, lists.length ? lists.map(listText).join("\n") : "Du har ingen aktive indkøbslister endnu.");
-      } catch (error) { return failure("show_my_shopping_lists", error); }
-    },
+      }),
   );
 
   server.registerTool(
@@ -573,12 +583,10 @@ export function createMcpServer(
       outputSchema: z.object({ list: z.any() }),
       annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
     },
-    async (input) => {
-      try {
+    (input) => runMcpOperation("save_my_shopping_list", async () => {
         const saved = await saveShoppingList(ownerSubject, listStorage, input);
         return success({ list: listPayload(saved) }, `${saved.name} er gemt med ${saved.lines.length} ${saved.lines.length === 1 ? "vare" : "varer"}.`);
-      } catch (error) { return failure("save_my_shopping_list", error); }
-    },
+      }),
   );
 
   server.registerTool(
@@ -594,12 +602,10 @@ export function createMcpServer(
       outputSchema: z.object({ list: z.any() }),
       annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
     },
-    async ({ source_list, new_name, type }) => {
-      try {
+    ({ source_list, new_name, type }) => runMcpOperation("copy_my_shopping_list", async () => {
         const copied = await copyShoppingList(ownerSubject, listStorage, source_list, new_name, type);
         return success({ list: listPayload(copied) }, `${copied.name} er gemt som en ny liste.`);
-      } catch (error) { return failure("copy_my_shopping_list", error); }
-    },
+      }),
   );
 
   server.registerTool(
@@ -615,12 +621,10 @@ export function createMcpServer(
       outputSchema: z.object({ list: z.any() }),
       annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
     },
-    async ({ list, status, expected_revision }) => {
-      try {
+    ({ list, status, expected_revision }) => runMcpOperation("set_my_shopping_list_status", async () => {
         const updated = await setShoppingListStatus(ownerSubject, listStorage, list, status, expected_revision);
         return success({ list: listPayload(updated) }, status === "archived" ? `${updated.name} er arkiveret.` : `${updated.name} er aktiv igen.`);
-      } catch (error) { return failure("set_my_shopping_list_status", error); }
-    },
+      }),
   );
 
   server.registerTool(
@@ -638,8 +642,7 @@ export function createMcpServer(
       annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true },
       ...(appsEnabled(env) ? { _meta: { ui: { resourceUri: PICKER_URI } } } : {}),
     },
-    async ({ list, line_ids, mode, proceed }, extra) => {
-      try {
+    ({ list, line_ids, mode, proceed }, extra) => runMcpOperation("shop_from_my_list", async () => {
         const [saved] = await showShoppingLists(ownerSubject, listStorage, list, true);
         const requested = new Set(line_ids);
         if (requested.size !== line_ids.length) throw new NemligError("Choose each grocery line only once.");
@@ -650,8 +653,7 @@ export function createMcpServer(
           id: line.id, name: line.name, quantity: line.quantity, constraints: line.constraints,
           preferences: line.preferences, selected_product: line.preferred_product_id,
         })), mode, proceed }, extra.sessionId));
-      } catch (error) { return failure("shop_from_my_list", error); }
-    },
+      }),
   );
 
   server.registerTool(
@@ -667,12 +669,10 @@ export function createMcpServer(
       outputSchema: z.object({ list: z.any() }),
       annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
     },
-    async ({ saved_plan, name, type }) => {
-      try {
+    ({ saved_plan, name, type }) => runMcpOperation("migrate_my_saved_plan", async () => {
         const migrated = await migrateShoppingPlan(ownerSubject, listStorage, planStorage, saved_plan, name, type);
         return success({ list: listPayload(migrated) }, `${migrated.name} er oprettet fra den gemte plan.`);
-      } catch (error) { return failure("migrate_my_saved_plan", error); }
-    },
+      }),
   );
 
   server.registerTool(
@@ -689,13 +689,7 @@ export function createMcpServer(
       outputSchema: featureRequestResultSchema,
       annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true },
     },
-    async (request) => {
-      try {
-        return success({ ...await requestFeature(request) });
-      } catch (error) {
-        return failure("suggest_an_improvement", error);
-      }
-    },
+    (request) => runMcpOperation("suggest_an_improvement", async () => success({ ...await requestFeature(request) })),
   );
 
   server.registerTool(
@@ -706,15 +700,11 @@ export function createMcpServer(
       outputSchema: basketSchema,
       annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true },
     },
-    async () => {
-      try {
+    () => runMcpOperation("show_my_basket", async () => {
         await ensureLoggedIn(client, loadCredentials);
         const basket = basketPayload(await client.getCart());
         return success(basket, basketText(basket));
-      } catch (error) {
-        return failure("show_my_basket", error);
-      }
-    },
+      }),
   );
 
   server.registerTool(
@@ -739,8 +729,7 @@ export function createMcpServer(
       outputSchema: additionsProposalSchema,
       annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true },
     },
-    async ({ items, authorization, automatic_authorization }, extra) => {
-      try {
+    ({ items, authorization, automatic_authorization }, extra) => runMcpOperation("review_items_to_add", async () => {
         await ensureLoggedIn(client, loadCredentials);
         if (authorization === "same_run_automatic" && !automatic_authorization) throw new NemligError("The current automatic authorization is required.");
         if (authorization === "exact_review" && automatic_authorization) throw new NemligError("Automatic authorization cannot be attached to an exact review.");
@@ -752,10 +741,7 @@ export function createMcpServer(
             : { kind: authorization },
         );
         return success(proposal, proposalText(proposal));
-      } catch (error) {
-        return failure("review_items_to_add", error);
-      }
-    },
+      }),
   );
 
   const registerAction = (
@@ -774,15 +760,11 @@ export function createMcpServer(
         outputSchema: applyResultSchema,
         annotations: { readOnlyHint: false, destructiveHint, openWorldHint: true },
       },
-      async ({ approved_review }, extra) => {
-        try {
+      ({ approved_review }, extra) => runMcpOperation(name, async () => {
           await ensureLoggedIn(client, loadCredentials);
           const result: ApplyResult = await proposals.apply(connectionId(extra.sessionId), approved_review, operation);
           return success(result, basketText(result.basket, true));
-        } catch (error) {
-          return failure(name, error);
-        }
-      },
+        }),
     );
   };
 
@@ -797,15 +779,11 @@ export function createMcpServer(
       outputSchema: removalProposalSchema,
       annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true },
     },
-    async ({ basket_item }, extra) => {
-      try {
+    ({ basket_item }, extra) => runMcpOperation("review_item_to_remove", async () => {
         await ensureLoggedIn(client, loadCredentials);
         const proposal = await proposals.prepareRemoval(connectionId(extra.sessionId), basket_item);
         return success(proposal, proposalText(proposal));
-      } catch (error) {
-        return failure("review_item_to_remove", error);
-      }
-    },
+      }),
   );
 
   registerAction("remove_approved_item", "removal", "Remove the approved item", "Remove exactly the item from the approved unchanged review, then show the verified basket. This changes your basket.", true);
@@ -823,8 +801,7 @@ export function createMcpServer(
       outputSchema: replacementProposalSchema,
       annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true },
     },
-    async ({ current_item, replacement_item, quantity }, extra) => {
-      try {
+    ({ current_item, replacement_item, quantity }, extra) => runMcpOperation("review_item_swap", async () => {
         await ensureLoggedIn(client, loadCredentials);
         const proposal = await proposals.prepareReplacement(
           connectionId(extra.sessionId),
@@ -833,10 +810,7 @@ export function createMcpServer(
           quantity,
         );
         return success(proposal, proposalText(proposal));
-      } catch (error) {
-        return failure("review_item_swap", error);
-      }
-    },
+      }),
   );
 
   registerAction("make_approved_item_swap", "replacement", "Make the approved swap", "Make exactly the swap from the approved unchanged review, then show the verified basket. This changes your basket.", true);
@@ -849,15 +823,11 @@ export function createMcpServer(
       outputSchema: clearProposalSchema,
       annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true },
     },
-    async (extra) => {
-      try {
+    (extra) => runMcpOperation("review_emptying_basket", async () => {
         await ensureLoggedIn(client, loadCredentials);
         const proposal = await proposals.prepareClear(connectionId(extra.sessionId));
         return success(proposal, proposalText(proposal));
-      } catch (error) {
-        return failure("review_emptying_basket", error);
-      }
-    },
+      }),
   );
 
   registerAction("empty_approved_basket", "clear", "Empty my approved basket", "Empty exactly the approved unchanged basket, then verify that it is empty. This changes your basket.", true);
@@ -876,13 +846,7 @@ export function createMcpServer(
         annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true },
         _meta: { ui: { resourceUri: PICKER_URI } },
       },
-      async ({ search_term, result_count }) => {
-        try {
-          return success(await search(search_term, result_count));
-        } catch (error) {
-          return failure("choose_products_visually", error);
-        }
-      },
+      ({ search_term, result_count }) => runMcpOperation("choose_products_visually", async () => success(await search(search_term, result_count))),
     );
     server.registerResource(
       "Nemlig product picker",
@@ -917,7 +881,7 @@ if (process.argv[1] && ["mcp.js", "mcp.ts"].includes(basename(realpathSync(proce
   });
 }
 
-export const PICKER_HTML = `<!DOCTYPE html>
+const PICKER_HTML = `<!DOCTYPE html>
 <html lang="da">
 <head>
 <meta charset="utf-8" />
