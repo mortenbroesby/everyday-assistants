@@ -82,3 +82,14 @@ Each slice records its doubts, characterization evidence, production/test line d
 - Relative to base `origin/main`, production TypeScript is `+146/-154` (net `-8`) and tests are `+179/-36` (net `+143`); the overall production implementation therefore remains deletion-first and net-negative.
 - Dependency manifests and lockfile are unchanged. Runtime network requests, retries, storage, concurrency, logging, quotas, circuit breakers, Container capacity, and external cost are unchanged.
 - OpenSpec hygiene found and archived exactly three fully checked changes. `make-nemlig-assistant-production-ready` first synced its missing additive readiness requirement. `restore-catalog-first-nemlig-planning` and `simplify-nemlig-chatgpt-tools` were archived without replaying deltas that were already represented and superseded by newer automatic-grocery and renamed-tool main specs. All changes with pending rollout or acceptance tasks remain active and untouched.
+
+### Completion report
+
+- Final head is based on current `origin/main`; `pnpm verify` passed 179 tests and `pnpm nemlig:production:ready` passed strict validation, privacy, build/type/lint/test/smoke, packed-package smoke, and the credential-free Cloudflare production dry run.
+- Exact-head CI passed for the integrated archive head `230fc0548256fbbe15eddd5d2c17347187780646`; the completion evidence commit is pushed and checked again before handoff.
+- Production TypeScript is net `-8` lines; tests are net `+143` lines of focused characterization. Runtime dependencies remain 6 and development dependencies remain 11; manifests and lockfile are unchanged.
+- Runtime/provider request count, ordering, retries, storage, concurrency, logging volume, quotas, circuit breakers, Container capacity, and cost are unchanged.
+- Intentionally skipped: tool registries, cross-module schema extraction, state-machine classes, admin control-flow helpers, compatibility aliases, new dependencies, broad file splits, and blanket documentation.
+- Remaining doubts: none within the behavior-preserving maintenance scope. Legacy saved-plan retirement, stricter output schemas, and authentication/topology changes remain separate feature or architecture work.
+- Astrograph identified initial structural hotspots across 60 indexed files and 678 symbols. Dependency expansion later remained degraded by unresolved relative imports/content drift, so direct static scans and runtime tests supplied final evidence; no measurable token savings were available.
+- No deployment, Cloudflare/Auth0/Nemlig/provider mutation, basket mutation, credential access, or secret handling occurred.
