@@ -45,32 +45,36 @@ Authenticated MCP tools SHALL reuse a logged-in session or load configured crede
 - **THEN** the tool instructs the user to configure credentials or run interactive login and performs no mutation
 
 ### Requirement: MCP basket tools
-The view tool SHALL return normalized basket data, and every model-visible add, remove, replace, or clear operation SHALL use the matching read-only prepare tool followed by its apply tool only after explicit approval of the unchanged proposal.
+The view tool SHALL return normalized basket data, and every model-visible add, remove, replace, or clear operation SHALL use the matching read-only prepare tool followed by its apply tool only after either explicit approval of the unchanged proposal or, for additions only, explicit same-run automatic authorization that covers the resolved lines.
 
 #### Scenario: Prepare additions
-- **WHEN** `prepare_cart_additions` receives one or more exact positive product quantities
-- **THEN** it returns an exact review without changing the basket
+- **WHEN** `review_items_to_add` receives between one and fifty exact positive product quantities plus its authorization scope
+- **THEN** it returns an exact proposal without changing the basket
 
 #### Scenario: Invalid add quantity
-- **WHEN** `prepare_cart_additions` receives a quantity below one
+- **WHEN** `review_items_to_add` receives a quantity below one
 - **THEN** it returns a validation error without calling Nemlig or creating a proposal
 
 #### Scenario: Apply approved additions
-- **WHEN** `apply_cart_additions` receives the still-valid proposal ID after explicit approval
+- **WHEN** `add_approved_items` receives the still-valid proposal after exact approval or covered same-run automatic authorization
 - **THEN** it applies only those unchanged lines and returns verified basket readback
 
 #### Scenario: Prepare a replacement
 
-- **WHEN** `prepare_cart_replacement` receives an exact current basket product ID, distinct replacement product ID, and positive final replacement quantity
+- **WHEN** `review_item_swap` receives an exact current basket product ID, distinct replacement product ID, and positive final replacement quantity
 - **THEN** it returns both exact lines, price and package metadata, signed basket-price difference, expected basket totals, and expiry without changing the basket
 
 #### Scenario: Apply an approved replacement
 
-- **WHEN** `apply_cart_replacement` receives the still-valid proposal ID after explicit approval
+- **WHEN** `make_approved_item_swap` receives the still-valid proposal ID after explicit approval
 - **THEN** it applies only the unchanged staged replacement and returns verified basket readback or sanitized inspection guidance for a consumed partial or uncertain result
 
+#### Scenario: Successful automatic add
+- **WHEN** an unchanged addition proposal is covered by the explicit same-run automatic authorization and applied
+- **THEN** the server adds only its exact sufficiently clear lines and returns verified basket readback
+
 #### Scenario: Successful add
-- **WHEN** an unchanged addition proposal is explicitly approved and applied
+- **WHEN** an unchanged addition proposal is covered by exact approval or same-run automatic authorization and applied
 - **THEN** the server adds only its exact lines and returns verified basket readback
 
 #### Scenario: Successful clear
@@ -78,7 +82,7 @@ The view tool SHALL return normalized basket data, and every model-visible add, 
 - **THEN** the server clears only that reviewed basket and returns verified empty-basket readback
 
 #### Scenario: Direct mutation is requested
-- **WHEN** a model-visible client requests `add_to_cart`, `remove_from_cart`, `replace_cart_line`, or `clear_cart`
+- **WHEN** a model-visible client requests an unregistered direct mutation tool
 - **THEN** the server reports that the tool is unavailable and performs no mutation
 
 ### Requirement: Factual replacement savings
@@ -107,23 +111,39 @@ The server SHALL enable `pick_products` and the shared `ui://nemlig/picker.html`
 - **THEN** the picker tool and resource are absent while guided planning and all other conversational tools remain available
 
 ### Requirement: Picker approval interaction
-The picker SHALL display candidate identity, source, constraints, preferences, price, availability, basket coverage, and quantity; SHALL let the user choose exact products for several lines; and SHALL use the existing separate prepare and apply tools for one exact batch review.
+The picker SHALL display candidate identity, source, constraints, preferences, description and direct product image when available, price, availability, basket coverage, and quantity. It SHALL remain hidden during a fully clear automatic run, SHALL let the user choose exact products in manual or unresolved cases, and SHALL use the existing separate prepare and apply tools for one exact batch proposal.
+
+#### Scenario: Automatic run is fully clear
+- **WHEN** every line in an explicitly authorized automatic run is covered or has a deterministic clear match
+- **THEN** no choice interface is shown and the unchanged additions may proceed through prepare and apply
+
+#### Scenario: Manual choice is needed
+- **WHEN** the user requests manual mode or an automatic line is unresolved
+- **THEN** the picker shows bounded candidates with the available factual product evidence and updates local choice state without changing the basket
 
 #### Scenario: User adds from a card
-- **WHEN** the user chooses available candidates and positive quantities from one or more cards in the guided workspace
-- **THEN** the picker updates the local review state without changing the basket or silently resolving another line
+- **WHEN** the user chooses available candidates and positive quantities from one or more cards
+- **THEN** the picker updates local review state without changing the basket or silently resolving another line
+
+#### Scenario: User prepares a manual batch
+- **WHEN** the user activates prepare with at least one selected positive remaining quantity
+- **THEN** the picker calls `review_items_to_add` once and displays every exact line, price, total, and expiry without mutation
 
 #### Scenario: User prepares the selected batch
 - **WHEN** the user activates prepare with at least one selected positive remaining quantity
-- **THEN** the picker calls `prepare_cart_additions` once and displays every exact line, price, total, and expiry without mutation
+- **THEN** the picker creates one exact additions proposal without mutation
+
+#### Scenario: User applies the displayed manual proposal
+- **WHEN** the user explicitly activates apply and the host authorizes the unchanged proposal
+- **THEN** the picker calls `add_approved_items` and displays verified basket readback or a sanitized refusal
 
 #### Scenario: User applies the displayed proposal
-- **WHEN** the user explicitly activates apply and the host authorizes the unchanged proposal
-- **THEN** the picker calls `apply_cart_additions` and displays verified basket readback or a sanitized refusal
+- **WHEN** the displayed proposal has exact approval or valid same-run automatic authorization and the host authorizes the write tool
+- **THEN** the picker calls `add_approved_items` and displays verified basket readback or a sanitized refusal
 
 #### Scenario: Client cannot render MCP Apps
 - **WHEN** a client does not support the interactive resource
-- **THEN** the same planning, selection, prepare, approval, and apply sequence remains available conversationally
+- **THEN** the same automatic and manual behavior remains available conversationally
 
 ### Requirement: Guided shopping MCP tools
 The server SHALL expose read-only `plan_shopping_list`, `list_departments`, `browse_department`, and `load_shopping_plan` tools plus a local-state `save_shopping_plan` tool, with schemas and annotations matching their actual behavior.
@@ -141,15 +161,19 @@ The server SHALL expose read-only `plan_shopping_list`, `list_departments`, `bro
 - **THEN** save is advertised as a non-destructive local state change and load is advertised as read-only, with neither tool changing Nemlig state
 
 ### Requirement: Planning candidate metadata
-The planning and browsing tools SHALL return source, normalized dietary and discount flags, item price, unit price, constraint outcomes, deterministic preference tags, current basket quantity, remaining quantity when selected, and resolution state.
+The planning and browsing tools SHALL return source, normalized dietary and discount flags, item price, unit price, package size, brand, description and approved direct HTTPS image URL when available, constraint outcomes, deterministic preference and clarity tags, current basket quantity, remaining quantity when selected, resolution state, and automatic coverage fields.
 
 #### Scenario: Client cannot render MCP Apps
 - **WHEN** a client does not support the interactive resource
-- **THEN** the conversational tool result contains every field required to review candidates, select exact product IDs, and prepare the existing addition proposal separately
+- **THEN** the conversational tool result contains every factual field required to select a clear candidate automatically or present an unresolved choice
+
+#### Scenario: Candidate is a clear automatic match
+- **WHEN** one eligible candidate satisfies the deterministic clarity rule in automatic mode
+- **THEN** the result marks that exact candidate selected without describing the clarity grade as a probability
 
 #### Scenario: Candidate is ambiguous
-- **WHEN** a line has several usable candidates and no selected product ID
-- **THEN** the result marks the line unresolved and does not present any candidate as approved
+- **WHEN** no eligible candidate satisfies the deterministic clarity rule
+- **THEN** the result marks the line unresolved and returns bounded evidence for optional user choice without treating any candidate as authorized
 
 ### Requirement: Read-only MCP favorites search
 The `list_favorites` tool SHALL accept optional non-empty search text, SHALL return only matching authenticated favorites as normalized ranked candidates up to the requested positive limit, and SHALL remain read-only and non-destructive.
@@ -172,12 +196,17 @@ The `list_favorites` tool SHALL accept optional non-empty search text, SHALL ret
 
 ### Requirement: Intent-directed product discovery
 
-The MCP server SHALL guide clients to use `plan_my_shopping` for ordinary requests to find or add products, SHALL use `find_groceries` for direct catalogue searches, and SHALL reserve `show_my_favorites` for explicit favourite browsing. Before either catalogue tool is called, the client SHALL translate or normalize English, mixed-language, misspelled, or over-specific wording into one short Danish catalogue phrase per line, preserving a distinctive brand with the intended Danish product category. Discovery and planning SHALL remain separate from basket preparation and application.
+The MCP server SHALL guide clients to use `plan_my_shopping` for ordinary product planning and automatic or manual grocery runs, SHALL use `find_groceries` for direct catalogue searches, and SHALL reserve `show_my_favorites` for explicit favourite browsing. Before either catalogue tool is called, the client SHALL translate or normalize English, mixed-language, misspelled, or over-specific wording into one short Danish catalogue phrase per line, preserving a distinctive brand with the intended Danish product category. The client SHALL carry explicit proceed intent and requested mode separately from the normalized search phrase.
 
 #### Scenario: Ordinary product request
 
-- **WHEN** the user ordinarily asks to find or add one or more products without requesting a specific search source
-- **THEN** the server guidance directs the client to `plan_my_shopping` with one normalized Danish phrase per line, preserving useful brand intent with the intended Danish category and asking rather than guessing when meaning stays uncertain, and performs one catalogue search per line without searching favourites
+- **WHEN** the user asks to find one or more products without requesting a specific search source or manual choice
+- **THEN** the server guidance directs the client to `plan_my_shopping` in automatic mode with one normalized Danish phrase per line and one catalogue search per line without searching favourites
+
+#### Scenario: User says to proceed
+
+- **WHEN** the user explicitly asks to use a recipe, conversation list, or named list and says to go ahead
+- **THEN** the server guidance preserves that authorization separately from product wording and continues the sufficiently clear additions through proposal and apply without a redundant question
 
 #### Scenario: Explicit catalog request
 
@@ -191,8 +220,24 @@ The MCP server SHALL guide clients to use `plan_my_shopping` for ordinary reques
 
 #### Scenario: Product discovery remains non-mutating
 
-- **WHEN** any intent-directed discovery tool returns candidates or an unresolved choice
-- **THEN** no basket proposal is prepared or applied and ambiguous candidates remain available for user choice
+- **WHEN** any intent-directed discovery tool returns candidates or an unresolved choice without explicit proceed authorization
+- **THEN** no basket proposal is applied and ambiguous candidates remain available for user choice
+
+#### Scenario: Unclear product intent
+
+- **WHEN** automatic planning cannot establish a deterministic clear match
+- **THEN** no addition is applied for that line and its candidates remain available for manual choice
+
+### Requirement: One-flow grocery-run result
+The MCP surface SHALL support one user-visible flow for up to fifty grocery lines that plans current products, prepares and applies sufficiently clear authorized additions, verifies basket readback, and returns exact coverage counts without exposing a direct unvalidated mutation tool.
+
+#### Scenario: Authorized automatic run completes
+- **WHEN** the client supplies valid lines, automatic mode, and explicit same-run proceed authorization
+- **THEN** the tool sequence completes sufficiently clear additions and returns verified basket data plus covered, selected, added, unresolved, and failed counts
+
+#### Scenario: Automatic run has unclear lines
+- **WHEN** some lines resolve clearly and others remain unresolved
+- **THEN** the clear authorized additions may complete while unresolved lines remain unchanged and are returned for optional manual follow-up
 ### Requirement: Complete production feature acceptance
 
 The system SHALL provide an automated production acceptance workflow that verifies the complete advertised MCP tool and resource surface against the hosted service. The workflow SHALL cover authentication, discovery, product search, favorites, guided planning, department browsing, plan snapshot save/load when supported in production, basket view, feature-request contract without submitting a real issue, picker metadata, and every proposal preparation path.

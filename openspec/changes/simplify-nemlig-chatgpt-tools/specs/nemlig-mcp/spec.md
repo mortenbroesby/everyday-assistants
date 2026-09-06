@@ -76,6 +76,10 @@ The `show_my_basket` tool SHALL return normalized basket data, and every model-v
 - **WHEN** `make_approved_item_swap` receives the still-valid `approved_review` reference after explicit approval
 - **THEN** it applies only the unchanged staged replacement and returns verified basket readback or sanitized inspection guidance for a consumed partial or uncertain result
 
+#### Scenario: Successful automatic add
+- **WHEN** an unchanged addition review is covered by explicit same-run automatic authorization and completed
+- **THEN** the server adds only its exact sufficiently clear lines and returns verified basket readback
+
 #### Scenario: Successful add
 - **WHEN** an unchanged addition review is explicitly approved and completed
 - **THEN** the server adds only its exact lines and returns verified basket readback
@@ -102,6 +106,14 @@ The server SHALL enable `choose_products_visually` and the shared `ui://nemlig/p
 ### Requirement: Picker approval interaction
 The picker SHALL display candidate identity, source, constraints, preferences, price, availability, basket coverage, and quantity; SHALL let the user choose exact products for several lines; and SHALL use `review_items_to_add` followed by `add_approved_items` for one exact batch review.
 
+#### Scenario: Automatic run is fully clear
+- **WHEN** every line in an explicitly authorized automatic run is covered or has a deterministic clear match
+- **THEN** no choice interface is shown and the unchanged additions may proceed through review and approved action
+
+#### Scenario: Manual choice is needed
+- **WHEN** the user requests manual mode or an automatic line is unresolved
+- **THEN** the picker shows bounded factual candidates and updates local choice state without changing the basket
+
 #### Scenario: User adds from a card
 - **WHEN** the user chooses available candidates and positive quantities from one or more cards in the guided workspace
 - **THEN** the picker updates the local review state without changing the basket or silently resolving another line
@@ -110,8 +122,16 @@ The picker SHALL display candidate identity, source, constraints, preferences, p
 - **WHEN** the user activates review with at least one selected positive remaining quantity
 - **THEN** the picker calls `review_items_to_add` once and displays every exact line, price, total, and expiry without mutation
 
-#### Scenario: User applies the displayed proposal
+#### Scenario: User prepares a manual batch
+- **WHEN** the user activates review with at least one manually selected positive remaining quantity
+- **THEN** the picker calls `review_items_to_add` once and displays every exact line, price, total, and expiry without mutation
+
+#### Scenario: User applies the displayed manual proposal
 - **WHEN** the user explicitly activates the approved action and the host authorizes the unchanged review
+- **THEN** the picker calls `add_approved_items` and displays verified basket readback or a sanitized refusal
+
+#### Scenario: User applies the displayed proposal
+- **WHEN** the displayed review has exact approval or valid same-run automatic authorization and the host authorizes the write tool
 - **THEN** the picker calls `add_approved_items` and displays verified basket readback or a sanitized refusal
 
 #### Scenario: Client cannot render MCP Apps
@@ -161,6 +181,11 @@ The MCP server SHALL guide clients to use `plan_my_shopping` with short, loose D
 - **WHEN** the user ordinarily asks to find or add one or more products without requesting a specific search source
 - **THEN** the server guidance directs the client to `plan_my_shopping`, which searches current catalogue inventory without loading or preferring favourites
 
+#### Scenario: User says to proceed
+
+- **WHEN** the user explicitly asks to use a recipe, conversation list, or named list and says to go ahead
+- **THEN** the server guidance preserves that authorization separately from product wording and continues sufficiently clear additions through review and approved action without a redundant question
+
 #### Scenario: Explicit catalog request
 
 - **WHEN** the user explicitly asks to search the general Nemlig catalog
@@ -170,6 +195,11 @@ The MCP server SHALL guide clients to use `plan_my_shopping` with short, loose D
 
 - **WHEN** the user explicitly asks to list or search saved favourites
 - **THEN** the server guidance directs the client to `show_my_favorites` and no catalog fallback occurs
+
+#### Scenario: Unclear product intent
+
+- **WHEN** automatic planning cannot establish a deterministic clear match
+- **THEN** no addition is applied for that line and its candidates remain available for manual choice
 
 #### Scenario: Product discovery remains non-mutating
 

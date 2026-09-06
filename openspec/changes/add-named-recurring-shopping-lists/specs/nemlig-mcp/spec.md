@@ -56,6 +56,10 @@ The MCP server SHALL guide clients to use Nemlig tools first for current Nemlig 
 - **WHEN** the user ordinarily asks to find or add one or more products without requesting a specific search source
 - **THEN** server guidance directs the client to catalogue-backed planning with short, loose Danish search wording and no implicit favourites lookup
 
+#### Scenario: User says to proceed
+- **WHEN** the user explicitly asks to use a recipe, conversation list, or named list and says to go ahead
+- **THEN** the server guidance preserves that authorization separately from product wording and continues sufficiently clear additions without a redundant question
+
 #### Scenario: Explicit catalog request
 - **WHEN** the user explicitly asks to search the general Nemlig catalog
 - **THEN** server guidance permits current Nemlig catalog search without first requiring a favorite match
@@ -67,6 +71,10 @@ The MCP server SHALL guide clients to use Nemlig tools first for current Nemlig 
 #### Scenario: General food research
 - **WHEN** the user asks for a recipe, cooking technique, or other information that does not claim current Nemlig catalogue state
 - **THEN** the Nemlig metadata does not claim exclusive routing or prohibit an appropriate non-Nemlig source
+
+#### Scenario: Unclear product intent
+- **WHEN** automatic planning cannot establish a deterministic clear match
+- **THEN** no addition is applied for that line and its candidates remain available for manual choice
 
 #### Scenario: Product discovery remains non-mutating
 - **WHEN** any intent-directed discovery tool returns candidates or an unresolved choice

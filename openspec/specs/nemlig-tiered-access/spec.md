@@ -38,31 +38,37 @@ committed identity or credential value.
 
 ### Requirement: Family-reserved tier admission
 
-The system SHALL enforce admission in the order Tier 0, Tier 1, then Tier 2,
-SHALL reserve configured monthly and short-window capacity exclusively for Tier
-0, and SHALL bound the combined Tier 1 and Tier 2 allocation below that reserve.
-Tier 2 SHALL be shed at its configured threshold before Tier 1, and Tier 1 SHALL
-be shed before Tier 0.
+The system SHALL retain Tier 0, Tier 1, and Tier 2 as identity and reporting labels but SHALL apply the same configured monthly, daily, and short-window admission allowances to all three tiers. It SHALL NOT reserve capacity for one tier or shed one otherwise eligible tier before another. Every tier SHALL remain subordinate to the unchanged global cost and safety ceilings.
+
+#### Scenario: Two tiers have equal usage
+
+- **WHEN** otherwise eligible principals in different tiers have the same current and forecast usage
+- **THEN** the admission decision is the same for both principals
+
+#### Scenario: A principal reaches the shared allowance
+
+- **WHEN** a principal in any tier reaches the configured shared admission threshold
+- **THEN** that principal is denied before Container wake without changing another principal’s independent allowance
+
+#### Scenario: Global headroom is exhausted
+
+- **WHEN** aggregate demand from any combination of tiers reaches a global breaker, quota, or cost ceiling
+- **THEN** the global safeguard denies further work without a tier bypass or reserved-capacity exception
 
 #### Scenario: Guest demand reaches the family reserve
 
-- **WHEN** admitting a Tier 1 or Tier 2 request would consume capacity reserved
-  for Tier 0
-- **THEN** the guest request is denied before Container wake and the Tier 0
-  reserve remains available
+- **WHEN** Tier 1 or Tier 2 demand reaches capacity that was formerly reserved for Tier 0
+- **THEN** admission uses the same per-principal and global allowances for every tier without retaining a Tier 0 reserve
 
 #### Scenario: Experimental threshold is reached first
 
-- **WHEN** projected or current usage reaches the Tier 2 shedding threshold but
-  remains below the Tier 1 threshold
-- **THEN** Tier 2 is denied while otherwise eligible Tier 0 and Tier 1 requests
-  remain admissible
+- **WHEN** a legacy configuration supplies a lower Tier 2 threshold than the shared allowance
+- **THEN** configuration validation fails rather than shedding Tier 2 under a different threshold
 
 #### Scenario: Trusted threshold is reached
 
-- **WHEN** projected or current usage reaches the Tier 1 shedding threshold
-- **THEN** Tier 1 and Tier 2 are denied while otherwise eligible Tier 0 requests
-  remain admissible
+- **WHEN** a legacy configuration supplies a different Tier 1 threshold from Tier 0 or Tier 2
+- **THEN** configuration validation fails rather than preserving ordered tier shedding
 
 ### Requirement: Deterministic bounded usage forecast
 

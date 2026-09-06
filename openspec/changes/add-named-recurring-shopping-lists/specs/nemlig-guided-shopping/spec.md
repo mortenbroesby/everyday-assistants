@@ -22,6 +22,10 @@ The system SHALL preserve loading existing valid immutable plan snapshots by opa
 ### Requirement: Planning never authorizes mutation
 The system SHALL keep planning, browsing, candidate selection, gap analysis, named-list lifecycle, legacy snapshot load or migration, picker interaction, and proposal preparation distinct from approval to apply a basket change.
 
+#### Scenario: Automatic run was explicitly authorized
+- **WHEN** the user explicitly instructs the assistant to proceed, automatic mode resolves one or more sufficiently clear additions, and the exact proposal remains valid
+- **THEN** the authorized additions may be applied without another approval question while unresolved lines remain unchanged
+
 #### Scenario: Plan is fully selected
 - **WHEN** every selected line has an exact available product and positive remaining quantity
 - **THEN** the system may prepare the existing exact additions review but SHALL NOT apply it without explicit approval of the unchanged review
@@ -29,6 +33,10 @@ The system SHALL keep planning, browsing, candidate selection, gap analysis, nam
 #### Scenario: List or snapshot state changes
 - **WHEN** a named list is created, edited, duplicated, archived, restored, resolved, or migrated from a snapshot
 - **THEN** no basket preparation, application, removal, clearing, checkout, order, payment, or delivery-slot mutation occurs automatically
+
+#### Scenario: Plan was requested without authorization to proceed
+- **WHEN** the user asks to plan, compare, show choices, or use manual mode without explicitly instructing the assistant to add the result
+- **THEN** the system does not apply a basket mutation
 
 #### Scenario: Plan is saved or resumed
 - **WHEN** reusable state is saved as a named list or an existing named list or legacy snapshot is opened

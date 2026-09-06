@@ -9,6 +9,11 @@ The MCP server SHALL guide clients to use `plan_shopping_list` for ordinary requ
 - **WHEN** the user ordinarily asks to find or add one or more products without requesting a specific search source
 - **THEN** the server guidance directs the client to catalogue-backed `plan_shopping_list` with short loose Danish search wording, which returns bounded current candidates without fetching or preferring favourites
 
+#### Scenario: User says to proceed
+
+- **WHEN** the user explicitly asks to use a recipe, conversation list, or named list and says to go ahead
+- **THEN** the server guidance preserves that authorization separately from product wording and continues sufficiently clear additions without a redundant question
+
 #### Scenario: Explicit catalog request
 
 - **WHEN** the user explicitly asks to search the general Nemlig catalog
@@ -18,6 +23,11 @@ The MCP server SHALL guide clients to use `plan_shopping_list` for ordinary requ
 
 - **WHEN** the user explicitly asks to list, search, or select from saved favorites
 - **THEN** the server guidance directs the client to `list_favorites` and no catalogue substitution occurs without another user choice
+
+#### Scenario: Unclear product intent
+
+- **WHEN** automatic planning cannot establish a deterministic clear match
+- **THEN** no addition is applied for that line and its candidates remain available for manual choice
 
 #### Scenario: Product discovery remains non-mutating
 
