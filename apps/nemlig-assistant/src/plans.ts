@@ -3,8 +3,7 @@ import { chmod, mkdir, readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { z } from "zod";
-import type { Basket, Product } from "./client.js";
-import { NemligError } from "./client.js";
+import { NemligError, type Basket, type Product } from "./client.js";
 import { principalScopeFor } from "./principal-scope.js";
 
 const constraintsSchema = z.object({
@@ -69,6 +68,11 @@ const outcomes = (product: Product, constraints: ParsedShoppingPlanLine["constra
   max_unit_price: constraints.max_unit_price === undefined || (product.unitPrice !== undefined && product.unitPrice <= constraints.max_unit_price),
 });
 
+/**
+ * Returns at most five deterministically ordered candidates that meet every
+ * hard constraint. The order drives automatic selection, so preferences only
+ * rank eligible products and never relax a constraint.
+ */
 export function eligibleCandidates(
   products: Product[], source: PlanSource, constraints: ParsedShoppingPlanLine["constraints"],
   preferences: ParsedShoppingPlanLine["preferences"],
@@ -122,6 +126,11 @@ const automaticCandidate = (name: string, candidates: PlanCandidate[]): { candid
     : { reason: "close_alternatives" };
 };
 
+/**
+ * Resolves a validated plan with one basket read and at most three concurrent
+ * catalogue reads. It never mutates: discovery failures stay per-line while a
+ * basket failure propagates because coverage cannot be trusted without it.
+ */
 export async function resolveShoppingPlan(client: PlanClient, raw: ShoppingPlanInput): Promise<ShoppingPlan> {
   const input = shoppingPlanInputSchema.parse(raw);
   const basketPromise = client.getCart();
@@ -136,6 +145,11 @@ export async function resolveShoppingPlan(client: PlanClient, raw: ShoppingPlanI
     }
   });
   const basket = await basketPromise;
+  const basketQuantities = new Map<number, number>();
+  for (const item of basket.items) {
+    if (item.id === undefined || Number.isNaN(item.id)) continue;
+    basketQuantities.set(item.id, (basketQuantities.get(item.id) ?? 0) + (item.quantity ?? 0));
+  }
   let selectedEstimatedTotal = 0;
   const lines = input.lines.map((line, index) => {
     const { candidates, unavailable } = discovered[index]!;
@@ -143,7 +157,7 @@ export async function resolveShoppingPlan(client: PlanClient, raw: ShoppingPlanI
     const selected = line.selected_product_id === undefined
       ? (input.mode === "automatic" ? automatic.candidate : undefined)
       : candidates.find((candidate) => candidate.id === line.selected_product_id && candidate.available);
-    const basketQuantity = selected ? basket.items.filter((item) => item.id === selected.id).reduce((sum, item) => sum + (item.quantity ?? 0), 0) : 0;
+    const basketQuantity = selected ? (basketQuantities.get(selected.id) ?? 0) : 0;
     const remainingQuantity = selected ? Math.max(0, line.quantity - basketQuantity) : line.quantity;
     if (selected?.price !== undefined) selectedEstimatedTotal += selected.price * remainingQuantity;
     const resolution: "selected" | "covered" | "unresolved" = selected ? (remainingQuantity === 0 ? "covered" : "selected") : "unresolved";

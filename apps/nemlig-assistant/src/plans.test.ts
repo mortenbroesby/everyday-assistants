@@ -25,6 +25,17 @@ test("constraints exclude unknown or failing data and preferences rank determini
   assert.equal(candidates[0]?.constraint_outcomes.organic, true);
 });
 
+test("candidate ordering uses every preference then stable price, source, and ID ties", () => {
+  const candidates = eligibleCandidates([
+    product(5, "Plain", { price: 5, unitPrice: 5 }),
+    product(4, "Discount", { price: 1, unitPrice: 1, isOnDiscount: true, isFrozen: true }),
+    product(3, "Organic", { price: 2, unitPrice: 2, isOrganic: true, isFrozen: true }),
+    product(2, "Tie two", { price: 3, unitPrice: 3 }),
+    product(1, "Tie one", { price: 3, unitPrice: 3 }),
+  ], "catalog", {}, ["discount", "organic", "non_frozen", "lowest_unit_price"]);
+  assert.deepEqual(candidates.map(({ id }) => id), [4, 3, 1, 2, 5]);
+});
+
 test("whole-list resolution searches the catalogue for every line, is bounded to three searches, ambiguity-safe, and basket-aware", async () => {
   let active = 0; let maximum = 0; const searched: string[] = [];
   const plan = await resolveShoppingPlan({
@@ -69,6 +80,59 @@ test("basket gaps cover absent, partial, complete, over-complete, and unresolved
   assert.deepEqual(plan.lines.map((line) => [line.id, line.remaining_quantity, line.resolution]), [
     ["absent", 2, "selected"], ["partial", 2, "selected"], ["complete", 0, "covered"], ["over", 0, "covered"], ["ambiguous", 1, "unresolved"],
   ]);
+});
+
+test("planning aggregates duplicate basket lines, preserves mixed summaries, and keeps its provider call envelope", async () => {
+  const calls: string[] = [];
+  const plan = await resolveShoppingPlan({
+    searchProducts: async (query) => {
+      calls.push(`search:${query}`);
+      if (query === "failed") throw new Error("provider unavailable");
+      if (query === "uncertain") return [product(4, "Uncertain A"), product(5, "Uncertain B")];
+      return [product(query === "milk" ? 1 : 2, query)];
+    },
+    getProduct: async (id) => { calls.push(`product:${id}`); return product(id, "Exact"); },
+    getCart: async () => {
+      calls.push("cart");
+      return basket([
+        { id: 1, name: "Milk", quantity: 1, total: 10 },
+        { id: 1, name: "Milk", quantity: 2, total: 20 },
+        { id: 2, name: "Yoghurt", quantity: 1, total: 10 },
+      ]);
+    },
+  }, { lines: [
+    { id: "milk", name: "milk", quantity: 3 },
+    { id: "yoghurt", name: "yoghurt", quantity: 2 },
+    { id: "uncertain", name: "uncertain", quantity: 1 },
+    { id: "failed", name: "failed", quantity: 1 },
+    { id: "exact", name: "ignored", quantity: 1, selected_product_id: 3 },
+  ] });
+  assert.equal(calls[0], "cart");
+  assert.deepEqual(calls.slice(1).sort(), ["product:3", "search:failed", "search:milk", "search:uncertain", "search:yoghurt"]);
+  assert.deepEqual(plan.lines.map(({ id, basket_quantity, remaining_quantity, resolution, clarity_reason }) =>
+    ({ id, basket_quantity, remaining_quantity, resolution, clarity_reason })), [
+    { id: "milk", basket_quantity: 3, remaining_quantity: 0, resolution: "covered", clarity_reason: "unique_candidate" },
+    { id: "yoghurt", basket_quantity: 1, remaining_quantity: 1, resolution: "selected", clarity_reason: "unique_candidate" },
+    { id: "uncertain", basket_quantity: 0, remaining_quantity: 1, resolution: "unresolved", clarity_reason: "close_alternatives" },
+    { id: "failed", basket_quantity: 0, remaining_quantity: 1, resolution: "unresolved", clarity_reason: "discovery_unavailable" },
+    { id: "exact", basket_quantity: 0, remaining_quantity: 1, resolution: "selected", clarity_reason: "exact_product" },
+  ]);
+  assert.deepEqual(plan.summary, {
+    total: 5, covered: 1, automatically_selected: 1, added: 0, unresolved: 1, failed: 1,
+    automatic_coverage_percent: 40,
+  });
+});
+
+test("basket transport failures propagate after one read without being relabeled as discovery failures", async () => {
+  const failure = new Error("basket transport unavailable");
+  let basketReads = 0; let searches = 0;
+  await assert.rejects(resolveShoppingPlan({
+    searchProducts: async () => { searches += 1; return [product(1, "Milk")]; },
+    getProduct: async (id) => product(id, "Exact"),
+    getCart: async () => { basketReads += 1; throw failure; },
+  }, { lines: [{ id: "milk", name: "milk", quantity: 1 }] }), (error) => error === failure);
+  assert.equal(basketReads, 1);
+  assert.equal(searches, 1);
 });
 
 test("an explicitly selected product is resolved by id without reconstructing its catalogue wording", async () => {

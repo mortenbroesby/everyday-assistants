@@ -9,7 +9,7 @@ import test from "node:test";
 import type { Basket, Product } from "./client.js";
 import { createProgram, type ShoppingClient } from "./cli.js";
 import type { FeatureRequest } from "./feature-request.js";
-import { createMcpServer, NEMLIG_CONNECT_URL, PICKER_HTML, PICKER_URI, rankProducts, safeNemligImageUrl } from "./mcp.js";
+import { createMcpServer, NEMLIG_CONNECT_URL, PICKER_URI, rankProducts, safeNemligImageUrl, type Candidate } from "./mcp.js";
 import { BasketProposalService } from "./proposals.js";
 
 const basket: Basket = {
@@ -224,6 +224,12 @@ const toolText = (result: unknown): string =>
   ((((result as { content?: unknown })?.content) as Array<{ type?: string; text?: string }> | undefined)
     ?.find(({ type }) => type === "text")?.text ?? "");
 
+const pickerHtml = async (): Promise<string> =>
+  withMcpClient(createMcpServer(fakeClient()), async (mcp) => {
+    const resource = await mcp.readResource({ uri: PICKER_URI });
+    return resource.contents[0] && "text" in resource.contents[0] ? resource.contents[0].text : "";
+  });
+
 const assertFriendlyBasketText = (result: unknown): string => {
   const text = toolText(result);
   assert.ok(text);
@@ -311,6 +317,19 @@ test("MCP exposes the complete friendly catalog and clean missing-credential err
     const content = result.content as Array<{ type: string; text?: string }>;
     assert.match(content[0]?.text ?? "", /credentials configured/);
   });
+});
+
+test("MCP hides generic provider failure details", async () => {
+  const providerSecret = "provider-secret-should-not-reach-mcp";
+  await withMcpClient(
+    createMcpServer(fakeClient({ searchProducts: async () => { throw new Error(providerSecret); } })),
+    async (mcp) => {
+      const result = await mcp.callTool({ name: "find_groceries", arguments: { search_term: "mælk", result_count: 1 } });
+      assert.equal(result.isError, true);
+      assert.equal(toolText(result), "find_groceries failed.");
+      assert.doesNotMatch(toolText(result), new RegExp(providerSecret));
+    },
+  );
 });
 
 test("connection guidance uses URL elicitation only when explicitly supported", async () => {
@@ -543,23 +562,24 @@ test("MCP routes ordinary product intent through loose catalogue-first planning"
   });
 });
 
-test("picker images use only the observed Nemlig HTTPS origin and keep a text-only fallback", () => {
+test("picker images use only the observed Nemlig HTTPS origin and keep a text-only fallback", async () => {
   assert.equal(safeNemligImageUrl("https://nemlig.com/scommerce/images/milk.jpg?i=1"), "https://nemlig.com/scommerce/images/milk.jpg?i=1");
   assert.equal(safeNemligImageUrl("https://www.nemlig.com/scommerce/images/milk.jpg?i=1"), "https://www.nemlig.com/scommerce/images/milk.jpg?i=1");
   for (const value of ["http://www.nemlig.com/image.jpg", "https://nemlig.com.evil.test/image.jpg", "https://images.test/image.jpg", "not a url", undefined]) {
     assert.equal(safeNemligImageUrl(value), undefined);
   }
-  assert.match(PICKER_HTML, /loading="lazy"/);
-  assert.match(PICKER_HTML, /referrerPolicy="no-referrer"/);
-  assert.match(PICKER_HTML, /onerror=\(\)=>image\.remove\(\)/);
-  assert.match(PICKER_HTML, /alt=product\.name/);
-  assert.match(PICKER_HTML, /imageOrigins\.has\(url\.origin\)/);
-  assert.match(PICKER_HTML, /if\(image\).*else label\.append\(radio\)/);
-  assert.match(PICKER_HTML, /plan\.mode==="automatic"&&line\.resolution==="selected"/);
-  assert.match(PICKER_HTML, /candidate\.description/);
-  assert.match(PICKER_HTML, /candidate\.details/);
-  assert.match(PICKER_HTML, /authorization:"exact_review"/);
-  assert.doesNotMatch(PICKER_HTML, /image[_-]proxy|fetch\(.*image/iu);
+  const html = await pickerHtml();
+  assert.match(html, /loading="lazy"/);
+  assert.match(html, /referrerPolicy="no-referrer"/);
+  assert.match(html, /onerror=\(\)=>image\.remove\(\)/);
+  assert.match(html, /alt=product\.name/);
+  assert.match(html, /imageOrigins\.has\(url\.origin\)/);
+  assert.match(html, /if\(image\).*else label\.append\(radio\)/);
+  assert.match(html, /plan\.mode==="automatic"&&line\.resolution==="selected"/);
+  assert.match(html, /candidate\.description/);
+  assert.match(html, /candidate\.details/);
+  assert.match(html, /authorization:"exact_review"/);
+  assert.doesNotMatch(html, /image[_-]proxy|fetch\(.*image/iu);
 });
 
 test("MCP creates one structured feature request without touching Nemlig", async () => {
@@ -607,10 +627,6 @@ test("MCP search and picker return identical ranked structured data", async () =
     ]);
   });
 });
-
-interface Candidate {
-  tags: string[];
-}
 
 test("MCP additions require prepare then apply and direct mutation tools are unavailable", async () => {
   let added: [number, number] | undefined;
@@ -935,20 +951,21 @@ test("picker gate hides only picker tool/resource for every false spelling", asy
 });
 
 test("picker resource prepares an exact quantity-one review before a distinct apply action", async () => {
-  assert.match(PICKER_HTML, /aria-live/);
-  assert.match(PICKER_HTML, /review_items_to_add/);
-  assert.match(PICKER_HTML, /add_approved_items/);
-  assert.match(PICKER_HTML, /prepareBatch\(\[\{product:product\.id,quantity:1\}\]/);
-  assert.match(PICKER_HTML, /renderPlan/);
-  assert.match(PICKER_HTML, /type="number"/);
-  assert.match(PICKER_HTML, /Godkend og tilføj/);
-  assert.match(PICKER_HTML, /Kurven indeholder nu/);
-  assert.match(PICKER_HTML, /applied\.basket\.items/);
-  assert.doesNotMatch(PICKER_HTML, /add_to_cart/);
-  assert.match(PICKER_HTML, /structuredContent/);
-  assert.match(PICKER_HTML, /proposal\.proposal_id/);
-  assert.doesNotMatch(PICKER_HTML, /ID:|"ID "|Udløber|expires_at/);
-  assert.match(PICKER_HTML, /line\.line_total/);
+  const html = await pickerHtml();
+  assert.match(html, /aria-live/);
+  assert.match(html, /review_items_to_add/);
+  assert.match(html, /add_approved_items/);
+  assert.match(html, /prepareBatch\(\[\{product:product\.id,quantity:1\}\]/);
+  assert.match(html, /renderPlan/);
+  assert.match(html, /type="number"/);
+  assert.match(html, /Godkend og tilføj/);
+  assert.match(html, /Kurven indeholder nu/);
+  assert.match(html, /applied\.basket\.items/);
+  assert.doesNotMatch(html, /add_to_cart/);
+  assert.match(html, /structuredContent/);
+  assert.match(html, /proposal\.proposal_id/);
+  assert.doesNotMatch(html, /ID:|"ID "|Udløber|expires_at/);
+  assert.match(html, /line\.line_total/);
   await withMcpClient(createMcpServer(fakeClient()), async (mcp) => {
     const resources = await mcp.listResources();
     assert.equal(resources.resources.some((resource) => resource.uri === PICKER_URI), true);

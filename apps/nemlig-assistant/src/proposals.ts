@@ -1,6 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import type { Basket, Product } from "./client.js";
-import { NemligError } from "./client.js";
+import { NemligError, type Basket, type Product } from "./client.js";
 import type { ShoppingClient } from "./cli.js";
 
 export type ProposalOperation = "additions" | "removal" | "replacement" | "clear";
@@ -225,6 +224,11 @@ export class BasketProposalService {
     if (!Number.isFinite(this.ttlMs) || this.ttlMs < 1) throw new NemligError("Proposal TTL must be positive.");
   }
 
+  /**
+   * Builds an additions review without mutation. A same-run authorization is
+   * consumed before catalogue or basket work, so it is exact, connection-bound,
+   * short-lived, and single-use even when preparation fails.
+   */
   async prepareAdditions(
     connectionId: string,
     items: Array<{ product_id: number; quantity: number }>,
@@ -381,6 +385,11 @@ export class BasketProposalService {
     return this.create(connectionId, basket, { kind: "clear", basket }, { basket: basketPayload(basket) });
   }
 
+  /**
+   * Applies one exact, connection-bound, unexpired review under a mutex. It
+   * checks the basket fingerprint and fresh product details before sequential
+   * writes, verifies final readback, and never retries an indeterminate result.
+   */
   apply(connectionId: string, proposalId: string, expected: ProposalOperation): Promise<ApplyResult> {
     return this.mutex.run(async () => {
       const proposal = this.proposals.get(proposalId);
@@ -400,8 +409,7 @@ export class BasketProposalService {
 
       const basket = await this.client.getCart();
       if (basketFingerprint(basket) !== proposal.basketFingerprint) {
-        proposal.state = "invalid";
-        this.record("invalidated", proposal.operation.kind, "rejected");
+        this.invalidate(proposal);
         throw new NemligError("Basket changed after review; prepare and review a new proposal.");
       }
       if (proposal.operation.kind === "additions") {
@@ -416,16 +424,14 @@ export class BasketProposalService {
           }
         } catch (error) {
           if (proposal.state === "invalid") throw error;
-          proposal.state = "invalid";
-          this.record("invalidated", proposal.operation.kind, "rejected");
+          this.invalidate(proposal);
           throw new NemligError("Current product details could not be revalidated; prepare and review a new proposal.");
         }
       } else if (proposal.operation.kind === "replacement") {
         const operation = proposal.operation;
         const currentBasketLine = basket.items.find((item) => sameId(item.id, operation.currentProductId));
         if (!currentBasketLine?.quantity || currentBasketLine.total === undefined) {
-          proposal.state = "invalid";
-          this.record("invalidated", proposal.operation.kind, "rejected");
+          this.invalidate(proposal);
           throw new NemligError("Current basket line changed after review; prepare and review a new proposal.");
         }
         let current: Product;
@@ -436,8 +442,7 @@ export class BasketProposalService {
             this.client.getFreshProduct(operation.replacement.product_id),
           ]);
         } catch {
-          proposal.state = "invalid";
-          this.record("invalidated", proposal.operation.kind, "rejected");
+          this.invalidate(proposal);
           throw new NemligError("Current product details could not be revalidated; prepare and review a new proposal.");
         }
         if (
@@ -450,8 +455,7 @@ export class BasketProposalService {
             operation.replacement,
           )
         ) {
-          proposal.state = "invalid";
-          this.record("invalidated", proposal.operation.kind, "rejected");
+          this.invalidate(proposal);
           throw new NemligError("Replacement details changed after review; prepare and review a new proposal.");
         }
       }
@@ -521,6 +525,11 @@ export class BasketProposalService {
         throw new NemligError("Basket may have changed but verification did not complete; inspect the basket and do not retry this proposal.");
       }
     });
+  }
+
+  private invalidate(proposal: StoredProposal): void {
+    proposal.state = "invalid";
+    this.record("invalidated", proposal.operation.kind, "rejected");
   }
 
   private create(
