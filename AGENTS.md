@@ -10,6 +10,22 @@ This repository contains independent assistants under `apps/`.
   inapplicable, record why; if it is unmet, keep the task active or report it as
   blocked rather than calling it done.
 
+## Sol, Terra, and Luna workflow
+
+- Use a Sol coordinator for planning, OpenSpec decisions, task decomposition,
+  integration, and final verification when that model is available.
+- Delegate substantial, well-bounded implementation work to Terra. Delegate
+  small mechanical edits, inventories, and focused verification to Luna.
+- Give each sub-agent an exclusive file or task scope that can proceed
+  independently. Do not let agents edit the same files concurrently.
+- Keep simple changes with the coordinator when delegation would add more work
+  than it saves. Do not create speculative sub-agents merely to use every slot.
+- The coordinator reviews every returned diff, resolves integration issues,
+  runs the repository gates, commits, pushes, and verifies the remote result.
+- Delegation never transfers or broadens approval. The coordinator retains all
+  human checkpoints for secrets, provider changes, costs, destructive actions,
+  external user data, and Nemlig basket mutations.
+
 - Perform repository changes in a dedicated non-primary Git worktree and branch
   by default. Before editing, inspect the primary checkout and existing
   worktrees, create the dedicated worktree from the latest `origin/main`, and
