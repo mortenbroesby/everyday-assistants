@@ -1,10 +1,10 @@
 # Cloudflare operations for Nemlig MCP
 
-Status: production version `4a74ac1a-4198-486b-9c2d-89c9aaa411f4` is enabled
+Status: production version `1e088bde-55ff-429a-a6dc-09d7e88360d3` is enabled
 for private family use. Health, OAuth metadata, anonymous rejection, Auth0
-authorization through the existing hosted app, authenticated shopping-list and
-favorite reads, and no unauthorized Container wake are verified. The deployed
-application revision is `f17d7c75352a7cd5dbceb91767e65fa68afd9c0b`.
+authorization through the existing hosted app, authenticated basket and
+shopping-list reads, and no unauthorized Container wake are verified. The
+deployed application revision is `7566d1eec1b435b86ef86afc50c45c14ffd8c9cd`.
 
 Current production endpoints:
 
@@ -325,6 +325,29 @@ The workers.dev health route also returned HTTP 200. Authenticated ChatGPT
 catalogue and apply-time revalidation acceptance remains pending until an owner
 login or access token is available. No proposal was prepared or applied, and
 no basket, favorite, or saved-list mutation was attempted.
+
+The 2026-09-06 automatic-grocery-run acceptance first deployed revision
+`d042f7e79d783329c821ba001c39e91eaf3a9cdc` behind the kill switch, rotated the
+owner credential and principal material without recording values, and passed
+the credential-free edge probe. In the existing connected ChatGPT app, one
+owner-requested automatic run added 27 of 28 shopping lines (96.4%) as 32
+products, left one unavailable line unchanged, and read back the resulting
+basket. It asked for no additional owner approval and made no checkout,
+payment, order, or delivery change. The resulting basket was the requested
+deliverable, so no manual cleanup or removal was performed.
+
+That acceptance exposed order-sensitive comparison of the same authorized
+addition set. Revision `7566d1eec1b435b86ef86afc50c45c14ffd8c9cd`
+canonicalizes the already validated unique product and quantity pairs before
+authorization comparison. Disabled version
+`0f163d9b-9a2f-4310-ad73-43fa60b3ab9f` returned HTTP 503 on both routes and the
+fixed Container instance reported `inactive`; its image digest was
+`sha256:55d97849ed60e69f9b5461ae88c95c76eedb2ff38843e27fe195fc2b1a033545`.
+Enabled version `1e088bde-55ff-429a-a6dc-09d7e88360d3` then passed the edge
+probe: health 145 ms, revision 39 ms, OAuth metadata 13 ms, anonymous rejection
+18 ms, and foreign-origin rejection 11 ms. A refreshed authenticated read-only
+ChatGPT check confirmed the same 32-product basket, no active shopping lists,
+and no mutation. No parallel app, Container, or paid resource was created.
 
 ## Verify production features and approved reversible mutations
 
