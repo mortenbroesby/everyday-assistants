@@ -4,6 +4,9 @@ import { NemligError } from "./client.js";
 import type { ShoppingClient } from "./cli.js";
 
 export type ProposalOperation = "additions" | "removal" | "replacement" | "clear";
+export type AdditionAuthorization =
+  | { kind: "exact_review" }
+  | { kind: "same_run_automatic"; token: string };
 
 export interface ProposalAuditEvent {
   event: "created" | "invalidated" | "applying" | "completed" | "replayed" | "expired" | "indeterminate";
@@ -72,6 +75,7 @@ export interface ProposalView extends Record<string, unknown> {
   expires_at: string;
   basket_fingerprint: string;
   review: Record<string, unknown>;
+  authorization?: "exact_review" | "same_run_automatic";
 }
 
 export interface NoopProposalView extends Record<string, unknown> {
@@ -95,6 +99,7 @@ interface StoredProposal {
   expiresAt: Date;
   operation: Operation;
   review: Record<string, unknown>;
+  authorization?: "exact_review" | "same_run_automatic";
   state: ProposalState;
   result?: ApplyResult;
 }
@@ -196,6 +201,7 @@ class Mutex {
 
 export class BasketProposalService {
   private readonly proposals = new Map<string, StoredProposal>();
+  private readonly automaticAuthorizations = new Map<string, { connectionId: string; items: string; expiresAt: Date }>();
   private readonly now: () => Date;
   private readonly createId: () => string;
   private readonly ttlMs: number;
@@ -219,16 +225,20 @@ export class BasketProposalService {
   async prepareAdditions(
     connectionId: string,
     items: Array<{ product_id: number; quantity: number }>,
+    authorization: AdditionAuthorization,
   ): Promise<ProposalView> {
-    if (!items.length) throw new NemligError("At least one product is required.");
-    if (items.some((item) => !Number.isInteger(item.product_id) || item.product_id < 1)) {
-      throw new NemligError("Product IDs must be positive integers.");
+    this.validateAdditionItems(items);
+    if (!authorization || !["exact_review", "same_run_automatic"].includes(authorization.kind)) {
+      throw new NemligError("A valid additions authorization is required.");
     }
-    if (items.some((item) => !Number.isInteger(item.quantity) || item.quantity < 1)) {
-      throw new NemligError("Quantities must be positive integers.");
+    if (authorization.kind === "same_run_automatic") {
+      const stored = this.automaticAuthorizations.get(authorization.token);
+      this.automaticAuthorizations.delete(authorization.token);
+      if (!stored || stored.connectionId !== connectionId || stored.expiresAt <= this.now() || stored.items !== JSON.stringify(items)) {
+        throw new NemligError("Automatic authorization is invalid, expired, or does not match these additions.");
+      }
     }
-    const ids = new Set(items.map((item) => item.product_id));
-    if (ids.size !== items.length) throw new NemligError("Each product ID may appear only once per proposal.");
+    const authorizationKind = authorization.kind;
     const basket = await this.client.getCart();
     const lines = await Promise.all(
       items.map(async (item) => productLine(await this.client.getProduct(item.product_id), item.quantity)),
@@ -248,7 +258,31 @@ export class BasketProposalService {
       lines,
       expected_products_price: money(currentTotal + delta),
       expected_number_of_products: currentCount + countDelta,
+    }, authorizationKind);
+  }
+
+  createAutomaticAuthorization(connectionId: string, items: Array<{ product_id: number; quantity: number }>): string {
+    this.validateAdditionItems(items);
+    const token = this.createId();
+    this.automaticAuthorizations.set(token, {
+      connectionId,
+      items: JSON.stringify(items),
+      expiresAt: new Date(this.now().getTime() + this.ttlMs),
     });
+    return token;
+  }
+
+  private validateAdditionItems(items: Array<{ product_id: number; quantity: number }>): void {
+    if (!items.length) throw new NemligError("At least one product is required.");
+    if (items.length > 50) throw new NemligError("At most 50 products may be added at once.");
+    if (items.some((item) => !Number.isInteger(item.product_id) || item.product_id < 1)) {
+      throw new NemligError("Product IDs must be positive integers.");
+    }
+    if (items.some((item) => !Number.isInteger(item.quantity) || item.quantity < 1)) {
+      throw new NemligError("Quantities must be positive integers.");
+    }
+    const ids = new Set(items.map((item) => item.product_id));
+    if (ids.size !== items.length) throw new NemligError("Each product ID may appear only once per proposal.");
   }
 
   async prepareRemoval(connectionId: string, productId: number): Promise<ProposalView | NoopProposalView> {
@@ -491,6 +525,7 @@ export class BasketProposalService {
     basket: Basket,
     operation: Operation,
     review: Record<string, unknown>,
+    authorization?: "exact_review" | "same_run_automatic",
   ): ProposalView {
     const issuedAt = this.now();
     const proposal: StoredProposal = {
@@ -501,6 +536,7 @@ export class BasketProposalService {
       expiresAt: new Date(issuedAt.getTime() + this.ttlMs),
       operation,
       review,
+      authorization,
       state: "prepared",
     };
     this.proposals.set(proposal.id, proposal);
@@ -513,6 +549,7 @@ export class BasketProposalService {
       issued_at: proposal.issuedAt.toISOString(),
       expires_at: proposal.expiresAt.toISOString(),
       basket_fingerprint: proposal.basketFingerprint,
+      ...(proposal.authorization ? { authorization: proposal.authorization } : {}),
       review,
     };
   }

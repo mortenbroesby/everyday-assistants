@@ -7,6 +7,7 @@ import {
   BasketProposalService,
   type ProposalAuditEvent,
 } from "./proposals.js";
+import { resolveShoppingPlan } from "./plans.js";
 
 const product: Product = {
   id: 7,
@@ -83,10 +84,11 @@ const replacementBasket = (oldQuantity = 1, replacementQuantity = 0): Basket => 
 
 type ProposalClient = Pick<
   ShoppingClient,
-  "getProduct" | "getFreshProduct" | "getCart" | "addToCart" | "removeFromCart" | "clearCart"
+  "searchProducts" | "getProduct" | "getFreshProduct" | "getCart" | "addToCart" | "removeFromCart" | "clearCart"
 >;
 
 const fakeClient = (overrides: Partial<ProposalClient> = {}): ProposalClient => ({
+  searchProducts: async () => [product],
   getProduct: async (id) => id === 8 ? replacementProduct : product,
   getFreshProduct: async (id) => id === 8 ? replacementProduct : product,
   getCart: async () => emptyBasket(),
@@ -117,7 +119,8 @@ test("addition preparation stores exact review data without mutation or connecti
       audit: (event) => audits.push(event),
     },
   );
-  const proposal = await service.prepareAdditions("private-connection", [{ product_id: 7, quantity: 2 }]);
+  const proposal = await service.prepareAdditions("private-connection", [{ product_id: 7, quantity: 2 }], { kind: "exact_review" });
+  assert.equal(proposal.authorization, "exact_review");
   assert.equal(proposal.expires_at, "2026-08-30T12:15:00.000Z");
   assert.equal(proposal.connection_bound, true);
   assert.doesNotMatch(JSON.stringify(proposal), /private-connection/);
@@ -140,6 +143,77 @@ test("addition preparation stores exact review data without mutation or connecti
   assert.doesNotMatch(JSON.stringify(audits), /Banan|private-connection|00000000/);
 });
 
+test("same-run automatic authorization is connection-bound, exact, expiring, and single-use", async () => {
+  let reads = 0; let now = new Date("2026-09-06T10:00:00Z"); let id = 0;
+  const service = new BasketProposalService(fakeClient({ getCart: async () => { reads += 1; return emptyBasket(); } }), {
+    now: () => now, ttlMs: 1_000, id: () => `00000000-0000-4000-8000-${String(++id).padStart(12, "0")}`,
+  });
+  const items = [{ product_id: 7, quantity: 1 }];
+  await assert.rejects(service.prepareAdditions("connection", items, undefined as never), /authorization is required/);
+  const wrongConnection = service.createAutomaticAuthorization("connection", items);
+  await assert.rejects(service.prepareAdditions("other", items, { kind: "same_run_automatic", token: wrongConnection }), /invalid, expired, or does not match/);
+  const mismatch = service.createAutomaticAuthorization("connection", items);
+  await assert.rejects(service.prepareAdditions("connection", [{ product_id: 7, quantity: 2 }], { kind: "same_run_automatic", token: mismatch }), /does not match/);
+  const expired = service.createAutomaticAuthorization("connection", items); now = new Date("2026-09-06T10:00:02Z");
+  await assert.rejects(service.prepareAdditions("connection", items, { kind: "same_run_automatic", token: expired }), /expired/);
+  now = new Date("2026-09-06T10:00:00Z");
+  const token = service.createAutomaticAuthorization("connection", items);
+  const proposal = await service.prepareAdditions("connection", items, { kind: "same_run_automatic", token });
+  assert.equal(proposal.authorization, "same_run_automatic");
+  await assert.rejects(service.prepareAdditions("connection", items, { kind: "same_run_automatic", token }), /invalid/);
+  assert.equal(reads, 1);
+});
+
+test("addition preparation accepts fifty unique lines and rejects fifty-one before basket access", async () => {
+  let basketReads = 0;
+  const service = new BasketProposalService(fakeClient({
+    getProduct: async (id) => ({ ...product, id, name: `Product ${id}` }),
+    getCart: async () => { basketReads += 1; return emptyBasket(); },
+  }));
+  const fifty = Array.from({ length: 50 }, (_, index) => ({ product_id: index + 1, quantity: 1 }));
+  assert.equal((await service.prepareAdditions("connection", fifty, { kind: "exact_review" })).review.lines instanceof Array, true);
+  assert.equal(basketReads, 1);
+  await assert.rejects(service.prepareAdditions("connection", [...fifty, { product_id: 51, quantity: 1 }], { kind: "exact_review" }), /At most 50/);
+  assert.equal(basketReads, 1);
+});
+
+test("synthetic twenty- and fifty-line runs keep exact bounded call counts inside the existing deadline", async () => {
+  const run = async (size: 20 | 50) => {
+    const calls = { searches: 0, basketReads: 0, reusableReads: 0, freshReads: 0, mutations: 0, mutationReadbacks: 0 };
+    let current = emptyBasket();
+    const exact = (id: number): Product => ({ ...product, id, name: `Product ${id}`, price: 1, unitPrice: 1 });
+    const client = fakeClient({
+      searchProducts: async (query) => { calls.searches += 1; return [exact(Number(query))]; },
+      getProduct: async (id) => { calls.reusableReads += 1; return exact(id); },
+      getFreshProduct: async (id) => { calls.freshReads += 1; return exact(id); },
+      getCart: async () => { calls.basketReads += 1; return current; },
+      addToCart: async (id, quantity = 1) => {
+        calls.mutations += 1; calls.mutationReadbacks += 1;
+        current = {
+          ...current,
+          items: [...current.items.filter((item) => item.id !== id), { id, name: `Product ${id}`, quantity, total: quantity }],
+          productsPrice: current.items.filter((item) => item.id !== id).reduce((sum, item) => sum + (item.total ?? 0), 0) + quantity,
+          numberOfProducts: current.items.filter((item) => item.id !== id).reduce((sum, item) => sum + (item.quantity ?? 0), 0) + quantity,
+        };
+        return current;
+      },
+    });
+    const started = performance.now();
+    const lines = Array.from({ length: size }, (_, index) => ({ id: `line-${index}`, name: String(index + 1), quantity: 1 }));
+    const plan = await resolveShoppingPlan(client, { lines });
+    const items = plan.lines.map((line) => ({ product_id: line.selected_product_id!, quantity: line.remaining_quantity }));
+    const service = new BasketProposalService(client);
+    const proposal = await service.prepareAdditions("connection", items, { kind: "exact_review" });
+    await service.apply("connection", proposal.proposal_id, "additions");
+    return { calls, elapsedMs: performance.now() - started };
+  };
+  for (const size of [20, 50] as const) {
+    const result = await run(size);
+    assert.deepEqual(result.calls, { searches: size, basketReads: 3, reusableReads: size, freshReads: size, mutations: size, mutationReadbacks: size });
+    assert.ok(result.elapsedMs < 85_000, `${size}-line synthetic run exceeded the existing backend deadline`);
+  }
+});
+
 test("application revalidates basket and product details before any mutation", async () => {
   let basket = emptyBasket();
   let currentProduct = product;
@@ -149,7 +223,7 @@ test("application revalidates basket and product details before any mutation", a
     getFreshProduct: async () => currentProduct,
     addToCart: async () => { mutations += 1; return bananaBasket(); },
   }), { id: () => "00000000-0000-4000-8000-000000000008" });
-  const changedBasketProposal = await service.prepareAdditions("connection", [{ product_id: 7, quantity: 1 }]);
+  const changedBasketProposal = await service.prepareAdditions("connection", [{ product_id: 7, quantity: 1 }], { kind: "exact_review" });
   basket = { ...emptyBasket(), productsPrice: 1 };
   await assert.rejects(
     service.apply("connection", changedBasketProposal.proposal_id, "additions"),
@@ -158,7 +232,7 @@ test("application revalidates basket and product details before any mutation", a
   assert.equal(mutations, 0);
 
   basket = emptyBasket();
-  const changedProductProposal = await service.prepareAdditions("connection", [{ product_id: 7, quantity: 1 }]);
+  const changedProductProposal = await service.prepareAdditions("connection", [{ product_id: 7, quantity: 1 }], { kind: "exact_review" });
   currentProduct = { ...product, price: 3 };
   await assert.rejects(
     service.apply("connection", changedProductProposal.proposal_id, "additions"),
@@ -174,7 +248,7 @@ test("application uses reusable lookup for review and authoritative lookup for a
     getProduct: async () => { reusableReads += 1; return product; },
     getFreshProduct: async () => { authoritativeReads += 1; return product; },
   }), { id: () => "00000000-0000-4000-8000-000000000027" });
-  const proposal = await service.prepareAdditions("connection", [{ product_id: 7, quantity: 1 }]);
+  const proposal = await service.prepareAdditions("connection", [{ product_id: 7, quantity: 1 }], { kind: "exact_review" });
   assert.deepEqual({ reusableReads, authoritativeReads }, { reusableReads: 1, authoritativeReads: 0 });
   await service.apply("connection", proposal.proposal_id, "additions");
   assert.deepEqual({ reusableReads, authoritativeReads }, { reusableReads: 1, authoritativeReads: 1 });
@@ -194,7 +268,7 @@ test("application checks every addition freshly before the first mutation", asyn
   const proposal = await service.prepareAdditions("connection", [
     { product_id: 7, quantity: 1 },
     { product_id: 8, quantity: 1 },
-  ]);
+  ], { kind: "exact_review" });
   await assert.rejects(
     service.apply("connection", proposal.proposal_id, "additions"),
     /could not be revalidated/,
@@ -390,7 +464,7 @@ test("completed application is single-use, mutex-serialized, and replayed withou
       return bananaBasket();
     },
   }), { id: () => "00000000-0000-4000-8000-000000000009" });
-  const proposal = await service.prepareAdditions("connection", [{ product_id: 7, quantity: 1 }]);
+  const proposal = await service.prepareAdditions("connection", [{ product_id: 7, quantity: 1 }], { kind: "exact_review" });
   const [first, second] = await Promise.all([
     service.apply("connection", proposal.proposal_id, "additions"),
     service.apply("connection", proposal.proposal_id, "additions"),
@@ -413,7 +487,7 @@ test("wrong-connection, expiry, restart, and indeterminate outcomes never write 
     id: () => "00000000-0000-4000-8000-000000000010",
     ttlMs: 1_000,
   });
-  const proposal = await service.prepareAdditions("connection", [{ product_id: 7, quantity: 1 }]);
+  const proposal = await service.prepareAdditions("connection", [{ product_id: 7, quantity: 1 }], { kind: "exact_review" });
   await assert.rejects(service.apply("other", proposal.proposal_id, "additions"), /another connection/);
   assert.equal(writes, 0);
   now = new Date("2026-08-30T12:00:02Z");
@@ -421,7 +495,7 @@ test("wrong-connection, expiry, restart, and indeterminate outcomes never write 
   assert.equal(writes, 0);
 
   const live = new BasketProposalService(client, { id: () => "00000000-0000-4000-8000-000000000011" });
-  const liveProposal = await live.prepareAdditions("connection", [{ product_id: 7, quantity: 1 }]);
+  const liveProposal = await live.prepareAdditions("connection", [{ product_id: 7, quantity: 1 }], { kind: "exact_review" });
   await assert.rejects(live.apply("connection", liveProposal.proposal_id, "additions"), /may have changed/);
   await assert.rejects(live.apply("connection", liveProposal.proposal_id, "additions"), /no longer applicable/);
   assert.equal(writes, 1);

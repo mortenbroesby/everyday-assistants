@@ -36,14 +36,15 @@ pnpm nemlig --help
    pnpm nemlig favorites --limit 5
    ```
 
-3. Present one proposal containing each product's exact name, ID, package or
-   size, quantity, price, and expected line total. State uncertain choices. Do
-   not mutate yet.
+3. For a whole list, use automatic mode by default and accept at most 50 lines.
+   Present choices only when requested or when no deterministic clear match
+   exists. Use Nemlig's description, item details, package, price, availability,
+   and direct image when supplied; keep a text fallback.
 
-4. Wait for explicit approval of the exact proposal. Any changed product,
-   quantity, price, or total requires a new proposal and approval.
-   Do not ask twice when the user already explicitly approved every exact detail
-   in the unchanged proposal, even if that approval came before preparation.
+4. Wait for explicit approval of the exact proposal unless the authenticated
+   user already said to proceed with the same automatic run. That scope covers
+   only its clear additions and is exact, expiring, connection-bound, and
+   single-use. Any changed fact requires a new authorization.
 
 5. Add only approved lines:
 
@@ -69,13 +70,12 @@ explicit approval. Never replace a basket, check out, pay, or place an order.
 
 ## MCP workflow
 
-Model-visible basket writes never call a direct mutation tool. Call the matching
-`review_*` tool, show its exact review, and wait for explicit approval of that
-unchanged review unless the user already explicitly approved every exact detail
-it contains. Never ask twice for the same unchanged review. Only then call the
-matching approved-action tool with its private `approved_review` reference. A
-review is not approval. Never retry an indeterminate action result; inspect the
-basket and create a new review.
+Model-visible basket writes never call a direct mutation tool. Automatic runs
+still use `plan_my_shopping` → `review_items_to_add` → `add_approved_items`;
+carry the same-run authorization through that sequence without asking twice.
+Manual or unresolved choices require an exact unchanged review. Removals,
+replacements, and clearing always require separate exact approval. Never retry
+an indeterminate action result; inspect the basket and create a new review.
 
 For private ChatGPT use, follow `../../../../docs/cloudflare-operations.md`.
 Identity, infrastructure, and app changes remain owner actions and never

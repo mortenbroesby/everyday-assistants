@@ -507,8 +507,8 @@ Before changing that entry to `enabled: true`, perform a separately approved
 two-account read-only isolation exercise: each identity must see only its own
 favorites, basket, plans, and named lists; guessed session, proposal, plan, and
 list references from the other account must return the same non-sensitive
-denial; Tier 2 must shed before Tier 1; and neither guest may consume the Tier 0
-reserve. Record only pass/fail, policy revision, tier labels, denial reasons,
+denial; equal usage must receive the same admission decision across Tier 0,
+Tier 1, and Tier 2. Record only pass/fail, policy revision, tier labels, denial reasons,
 correlation IDs, and aggregate headroom. Do not record subjects, opaque keys,
 credentials, returned shopping data, or per-principal counts.
 

@@ -22,7 +22,7 @@ import {
   type ProposalOperation,
   type ProposalView,
 } from "./proposals.js";
-import { configuredPlanSnapshotStorage, loadShoppingPlan, resolveShoppingPlan, saveShoppingPlan, shoppingPlanLineSchema } from "./plans.js";
+import { configuredPlanSnapshotStorage, loadShoppingPlan, resolveShoppingPlan, saveShoppingPlan, shoppingPlanLineSchema, type ShoppingPlan } from "./plans.js";
 import {
   configuredShoppingListStorage,
   copyShoppingList,
@@ -37,7 +37,7 @@ import {
 export const PICKER_URI = "ui://nemlig/picker.html";
 export const PICKER_MIME_TYPE = "text/html;profile=mcp-app";
 export const NEMLIG_CONNECT_URL = "https://nemlig-mcp.broesby.dk/connect";
-export const NEMLIG_IMAGE_ORIGINS = ["https://www.nemlig.com"] as const;
+export const NEMLIG_IMAGE_ORIGINS = ["https://nemlig.com", "https://www.nemlig.com"] as const;
 
 export const safeNemligImageUrl = (value: unknown): string | undefined => {
   if (typeof value !== "string") return undefined;
@@ -64,6 +64,8 @@ export interface Candidate {
   price: number | undefined;
   unit_price: number | undefined;
   unit_size: string | undefined;
+  description?: string;
+  details?: Array<{ key: string; value: string }>;
   brand: string | undefined;
   available: boolean;
   is_organic: boolean;
@@ -84,6 +86,8 @@ const candidateSchema = z.object({
   price: z.number().optional(),
   unit_price: z.number().optional(),
   unit_size: z.string().optional(),
+  description: z.string().optional(),
+  details: z.array(z.object({ key: z.string(), value: z.string() })).optional(),
   brand: z.string().optional(),
   available: z.boolean(),
   is_organic: z.boolean(),
@@ -136,6 +140,7 @@ const proposalLineSchema = z.object({
 const additionsProposalSchema = z.object({
   ...proposalBase,
   operation: z.literal("additions"),
+  authorization: z.enum(["exact_review", "same_run_automatic"]),
   review: z.object({
     lines: z.array(proposalLineSchema).min(1),
     expected_products_price: z.number(),
@@ -217,11 +222,41 @@ const featureRequestResultSchema = z.object({
 const shoppingPlanToolInputSchema = z.object({
   lines: z.array(shoppingPlanLineSchema.omit({ selected_product_id: true }).extend({
     selected_product: z.number().int().positive().optional().describe("The exact product selected from an earlier result."),
-  })).min(1).max(20).describe("The groceries to plan, with quantities and any requirements or preferences."),
+  })).min(1).max(50).describe("The groceries to plan, with quantities and any requirements or preferences."),
+  mode: z.enum(["automatic", "manual"]).default("automatic").describe("Automatic selects only deterministic clear matches; manual leaves candidates for choice."),
+}).strict();
+
+const shoppingRunToolInputSchema = shoppingPlanToolInputSchema.extend({
+  proceed: z.boolean().default(false).describe("True only when the user explicitly asked to add sufficiently clear products in this same run."),
 }).strict();
 
 const internalShoppingPlan = (input: z.infer<typeof shoppingPlanToolInputSchema>) => ({
   lines: input.lines.map(({ selected_product, ...line }) => ({ ...line, selected_product_id: selected_product })),
+  mode: input.mode,
+});
+
+const planOutputSchema = z.object({
+  mode: z.enum(["automatic", "manual"]),
+  lines: z.array(z.any()),
+  selected_estimated_total: z.number(),
+  summary: z.any(),
+  automatic_authorization: z.string().uuid().optional(),
+});
+
+const selectedAdditions = (plan: ShoppingPlan): Array<{ product_id: number; quantity: number }> => {
+  const quantities = new Map<number, number>();
+  for (const line of plan.lines) if (line.resolution === "selected" && line.selected_product_id && line.remaining_quantity > 0) {
+    quantities.set(line.selected_product_id, (quantities.get(line.selected_product_id) ?? 0) + line.remaining_quantity);
+  }
+  return [...quantities].map(([product_id, quantity]) => ({ product_id, quantity }));
+};
+
+const safePlanImages = (plan: ShoppingPlan): ShoppingPlan => ({
+  ...plan,
+  lines: plan.lines.map((line) => ({
+    ...line,
+    candidates: line.candidates.map((candidate) => ({ ...candidate, image_url: safeNemligImageUrl(candidate.image_url) })),
+  })),
 });
 
 export function rankProducts(products: Product[], query: string): Candidate[] {
@@ -231,12 +266,14 @@ export function rankProducts(products: Product[], query: string): Candidate[] {
     price: product.price,
     unit_price: product.unitPrice,
     unit_size: product.unitSize || undefined,
+    ...(product.description ? { description: product.description } : {}),
+    ...(product.details?.length ? { details: product.details } : {}),
     brand: product.brand || undefined,
     available: product.available,
     is_organic: product.isOrganic,
     is_frozen: product.isFrozen,
     is_on_discount: product.isOnDiscount,
-    image_url: product.imageUrl || undefined,
+    image_url: safeNemligImageUrl(product.imageUrl),
     tags: [] as string[],
   }));
   const available = candidates.filter((product) => product.available);
@@ -296,7 +333,7 @@ const proposalText = (proposal: ProposalView | NoopProposalView): string => {
   const review = record(proposal.review);
   if (proposal.operation === "additions") {
     const lines = Array.isArray(review.lines) ? review.lines : [];
-    return `Tilføj til kurven:\n${lines.map((line) => lineText(line, true)).join("\n")}\nForventet varetotal: ${kr(review.expected_products_price)}\nSkal jeg tilføje det?`;
+    return `Tilføj til kurven:\n${lines.map((line) => lineText(line, true)).join("\n")}\nForventet varetotal: ${kr(review.expected_products_price)}${proposal.authorization === "same_run_automatic" ? "\nGodkendt af den aktuelle automatiske kørsel." : "\nSkal jeg tilføje det?"}`;
   }
   if (proposal.operation === "removal") return `Fjern ${lineText(review.line)} fra kurven?`;
   if (proposal.operation === "replacement") {
@@ -356,7 +393,7 @@ export function createMcpServer(
     },
     {
       instructions:
-        "Use Nemlig Assistant for requests about current Nemlig products, prices, availability, favourites, basket contents, saved shopping lists, or choosing and adding groceries. For ordinary requests to find or add products, use plan_my_shopping and give each line one short, loose Danish catalogue search phrase. Translate or normalize English, mixed-language, misspelled, and over-specific wording before the tool call: keep distinctive brand words, replace a foreign generic category with the intended Danish category, and omit conversational context. Examples: 'oat milk' becomes 'havremælk', 'Prince biscuits' becomes 'prince kiks', 'lasange plader' becomes 'lasagneplader', and 'the red Prince chocolate sandwich biscuits' becomes 'prince kiks'. Do not pass the original sentence, reconstruct a full product title, issue extra speculative searches, or guess when the intended Danish category remains uncertain; ask the user instead. Ordinary planning searches the current Nemlig catalogue once per line, never favourites. Use find_groceries for a direct catalogue search with the same translation rule and show_my_favorites only when the user explicitly asks to browse or search saved favourites. An exact product chosen from any earlier result may be passed back as selected_product. Recipes and general food research do not require Nemlig tools. Opening a named list reads only private saved state; shop_from_my_list explicitly refreshes at most twenty selected lines from current Nemlig data. Reusable lists never run automatically. Finding, browsing, planning, viewing, list management, and review tools do not change the Nemlig basket. A review is not approval. Planning, selection, saving, resolving, and continuing are not approval either. Present basket reviews and results as concise shopping language; omit internal references, expiry times, revisions, and statuses unless the user requests technical detail or troubleshooting requires it. Invoke a matching approved-action tool only after the user explicitly approves every exact detail in the unchanged review. Do not ask for approval twice when the user's earlier approval already covers every exact detail. Every basket-changing action revalidates and reads back the basket. Suggest an improvement only when the user explicitly asks. Never check out, pay, place an order, or change a delivery slot.",
+        "Use Nemlig Assistant for current Nemlig products, prices, availability, favourites, basket contents, saved shopping lists, recipes, conversation lists, or choosing and adding groceries. For ordinary find or add requests, use plan_my_shopping in automatic mode with one short Danish catalogue phrase per line; use manual mode only when the user asks to choose or when automatic results are unclear. Translate or normalize English, mixed-language, misspelled, and over-specific wording before the tool call: keep distinctive brand words, replace a foreign generic category with the intended Danish category, and omit conversational context. Ordinary planning searches the current Nemlig catalogue once per line, never favourites. Use find_groceries only for a direct catalogue search and show_my_favorites only when explicitly requested. For 'use this recipe/list and go ahead', set proceed true, then pass the returned same-run authorization through review_items_to_add and immediately use add_approved_items for its unchanged proposal; do not ask for redundant approval. Without explicit proceed intent, a plan, saved or resumed plan, candidate choice, or exact review never authorizes mutation. A same-run authorization covers only clear additions from that run, never unresolved lines, removals, replacements, clearing, checkout, payment, ordering, or delivery slots. Named lists can refresh up to fifty selected lines. Present concise added, already-covered, unresolved, failed, and automatic-coverage results; omit internal references unless troubleshooting. Every basket change revalidates exact data, is single-use, stops on uncertainty, and reads back the basket. Suggest an improvement only when the user explicitly asks.",
     },
   );
   const localConnectionId = randomUUID();
@@ -367,6 +404,16 @@ export function createMcpServer(
   const planStorage = configuredPlanSnapshotStorage(env, requestContext);
   const listStorage = configuredShoppingListStorage(env);
   const ownerSubject = requestContext?.principalKey ?? env.NEMLIG_MCP_AUTH0_OWNER_SUBJECT ?? "local-owner";
+  const resolveRun = async (input: z.infer<typeof shoppingRunToolInputSchema>, sessionId?: string) => {
+    const plan = safePlanImages(await resolveShoppingPlan(client, internalShoppingPlan(input)));
+    const items = selectedAdditions(plan);
+    return {
+      ...plan,
+      ...(input.proceed && input.mode === "automatic" && items.length ? {
+        automatic_authorization: proposals.createAutomaticAuthorization(connectionId(sessionId), items),
+      } : {}),
+    };
+  };
 
   server.registerTool(
     "check_nemlig_connection",
@@ -448,14 +495,14 @@ export function createMcpServer(
     "plan_my_shopping",
     {
       title: "Plan my shopping",
-      description: "Build a plan for 1–20 groceries by translating or normalizing each request into one short Danish catalogue phrase before searching. This does not search favourites or change your basket, and uncertain choices remain open.",
-      inputSchema: shoppingPlanToolInputSchema.shape,
-      outputSchema: z.object({ lines: z.array(z.any()), selected_estimated_total: z.number() }),
+      description: "Resolve 1–50 groceries automatically by default, or leave choices open in manual mode. Set proceed only for the user's explicit same-run instruction to add clear results. Planning itself never changes the basket.",
+      inputSchema: shoppingRunToolInputSchema.shape,
+      outputSchema: planOutputSchema,
       annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true },
       ...(appsEnabled(env) ? { _meta: { ui: { resourceUri: PICKER_URI } } } : {}),
     },
-    async (input) => {
-      try { await ensureLoggedIn(client, loadCredentials); return success(await resolveShoppingPlan(client, internalShoppingPlan(input))); }
+    async (input, extra) => {
+      try { await ensureLoggedIn(client, loadCredentials); return success(await resolveRun(input, extra.sessionId)); }
       catch (error) { return failure("plan_my_shopping", error); }
     },
   );
@@ -500,10 +547,10 @@ export function createMcpServer(
     "continue_my_shopping_plan",
     {
       title: "Continue my shopping plan", description: "Continue a saved shopping plan using current products, prices, and basket contents. This does not change your basket.",
-      inputSchema: { saved_plan: z.string().uuid().describe("The saved-plan reference returned when the plan was saved.") }, outputSchema: z.object({ lines: z.array(z.any()), selected_estimated_total: z.number() }),
+      inputSchema: { saved_plan: z.string().uuid().describe("The saved-plan reference returned when the plan was saved.") }, outputSchema: planOutputSchema,
       annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true },
     },
-    async ({ saved_plan }) => { try { await ensureLoggedIn(client, loadCredentials); return success(await resolveShoppingPlan(client, await loadShoppingPlan(saved_plan, planStorage))); } catch (error) { return failure("continue_my_shopping_plan", error); } },
+    async ({ saved_plan }) => { try { await ensureLoggedIn(client, loadCredentials); return success(safePlanImages(await resolveShoppingPlan(client, await loadShoppingPlan(saved_plan, planStorage)))); } catch (error) { return failure("continue_my_shopping_plan", error); } },
   );
 
   server.registerTool(
@@ -598,13 +645,15 @@ export function createMcpServer(
       description: "Refresh selected groceries from a named list using current Nemlig favourites, products, prices, availability, and basket coverage. This does not save live results or change your basket.",
       inputSchema: {
         list: z.string().trim().min(1).max(120).describe("The list name or exact reference."),
-        line_ids: z.array(z.string().trim().min(1).max(80)).min(1).max(20).describe("One to twenty exact grocery-line references from the opened list."),
+        line_ids: z.array(z.string().trim().min(1).max(80)).min(1).max(50).describe("One to fifty exact grocery-line references from the opened list."),
+        mode: z.enum(["automatic", "manual"]).default("automatic").describe("Automatic selects only deterministic clear matches; manual leaves candidates for choice."),
+        proceed: z.boolean().default(false).describe("True only when the user explicitly asked to add clear results in this same run."),
       },
-      outputSchema: z.object({ lines: z.array(z.any()), selected_estimated_total: z.number() }),
+      outputSchema: planOutputSchema,
       annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true },
       ...(appsEnabled(env) ? { _meta: { ui: { resourceUri: PICKER_URI } } } : {}),
     },
-    async ({ list, line_ids }) => {
+    async ({ list, line_ids, mode, proceed }, extra) => {
       try {
         const [saved] = await showShoppingLists(ownerSubject, listStorage, list, true);
         const requested = new Set(line_ids);
@@ -612,10 +661,10 @@ export function createMcpServer(
         const selected = saved!.lines.filter(({ id }) => requested.has(id));
         if (selected.length !== requested.size) throw new NemligError(`One or more selected groceries are not in “${saved!.name}”. Open the list again.`);
         await ensureLoggedIn(client, loadCredentials);
-        return success(await resolveShoppingPlan(client, { lines: selected.map((line) => ({
+        return success(await resolveRun({ lines: selected.map((line) => ({
           id: line.id, name: line.name, quantity: line.quantity, constraints: line.constraints,
-          preferences: line.preferences, selected_product_id: line.preferred_product_id,
-        })) }));
+          preferences: line.preferences, selected_product: line.preferred_product_id,
+        })), mode, proceed }, extra.sessionId));
       } catch (error) { return failure("shop_from_my_list", error); }
     },
   );
@@ -697,16 +746,26 @@ export function createMcpServer(
             }),
           )
           .min(1)
-          .max(20)
+          .max(50)
           .describe("The exact products and quantities to review together."),
+        authorization: z.enum(["exact_review", "same_run_automatic"]).describe("Use same_run_automatic only with the token from an explicitly authorized current run."),
+        automatic_authorization: z.string().uuid().optional().describe("The same-run token returned by automatic planning."),
       },
       outputSchema: additionsProposalSchema,
       annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true },
     },
-    async ({ items }, extra) => {
+    async ({ items, authorization, automatic_authorization }, extra) => {
       try {
         await ensureLoggedIn(client, loadCredentials);
-        const proposal = await proposals.prepareAdditions(connectionId(extra.sessionId), items.map(({ product, quantity }) => ({ product_id: product, quantity })));
+        if (authorization === "same_run_automatic" && !automatic_authorization) throw new NemligError("The current automatic authorization is required.");
+        if (authorization === "exact_review" && automatic_authorization) throw new NemligError("Automatic authorization cannot be attached to an exact review.");
+        const proposal = await proposals.prepareAdditions(
+          connectionId(extra.sessionId),
+          items.map(({ product, quantity }) => ({ product_id: product, quantity })),
+          authorization === "same_run_automatic"
+            ? { kind: authorization, token: automatic_authorization! }
+            : { kind: authorization },
+        );
         return success(proposal, proposalText(proposal));
       } catch (error) {
         return failure("review_items_to_add", error);
@@ -887,12 +946,12 @@ body{font-family:system-ui,sans-serif;margin:0;padding:12px;color:#1a1a1a}.grid{
 import { App } from "https://unpkg.com/@modelcontextprotocol/ext-apps@0.4.0/app-with-deps";
 const root=document.getElementById("root");const app=new App({name:"Nemlig Picker",version:"1.0.0"});
 const kr=v=>typeof v==="number"?v.toFixed(2).replace(".",",")+" kr.":"";
-const imageOrigins=new Set(["https://www.nemlig.com"]);const safeImage=value=>{try{const url=new URL(value);return url.protocol==="https:"&&imageOrigins.has(url.origin)?url.href:null}catch{return null}};
+const imageOrigins=new Set(["https://nemlig.com","https://www.nemlig.com"]);const safeImage=value=>{try{const url=new URL(value);return url.protocol==="https:"&&imageOrigins.has(url.origin)?url.href:null}catch{return null}};
 const imageFor=product=>{const src=safeImage(product.image_url);if(!src)return null;const image=document.createElement("img");image.className="product-image";image.src=src;image.alt=product.name?"Billede af "+product.name:"Varebillede";image.loading="lazy";image.referrerPolicy="no-referrer";image.onerror=()=>image.remove();return image};
 const read=result=>{if(result?.structuredContent)return result.structuredContent;const text=(result?.content||result||[]).find(item=>item.type==="text");if(!text)return null;try{return JSON.parse(text.text)}catch{return null}};
 const parse=result=>{const value=read(result);return Array.isArray(value)?value:value?.result||[]};
 const render=products=>{if(!products.length){root.innerHTML='<div class="empty">Ingen varer fundet.</div>';return}const grid=document.createElement("div");grid.className="grid";for(const product of products){const card=document.createElement("article");card.className="card";const productArea=document.createElement("div");productArea.className="product";const image=imageFor(product);if(image)productArea.append(image);const info=document.createElement("div");const name=document.createElement("div");name.className="name";name.textContent=product.name??"Ukendt vare";const meta=document.createElement("div");meta.className="meta";meta.textContent=[product.brand,product.unit_size].filter(Boolean).join(" · ");const badges=document.createElement("div");badges.className="badges";for(const tag of product.tags||[]){const badge=document.createElement("span");badge.className="badge";badge.textContent=tag;badges.append(badge)}info.append(name,meta,badges);productArea.append(info);const actions=document.createElement("div");const price=document.createElement("div");price.className="price";price.textContent=kr(product.price);const prepare=document.createElement("button");prepare.textContent="Forbered";prepare.disabled=!product.available||product.id==null;prepare.onclick=async()=>prepareBatch([{product:product.id,quantity:1}],prepare);actions.append(price,prepare);card.append(productArea,actions);grid.append(card)}root.replaceChildren(grid)};
-const prepareBatch=async(items,button)=>{button.disabled=true;button.textContent="Forbereder…";try{const response=await app.callServerTool({name:"review_items_to_add",arguments:{items}});const proposal=read(response);if(!proposal?.applicable||!proposal.review?.lines?.length)throw new Error("invalid proposal");const review=document.createElement("section");review.setAttribute("aria-label","Præcis kurvegennemgang");const lines=document.createElement("div");lines.className="meta";lines.textContent=proposal.review.lines.map(line=>[line.quantity+" × "+line.name,line.unit_size,kr(line.line_total)].filter(Boolean).join(" · ")).join(" | ")+" · Forventet varetotal: "+kr(proposal.review.expected_products_price);const apply=document.createElement("button");apply.textContent="Godkend og tilføj";apply.onclick=async()=>{apply.disabled=true;apply.textContent="Afventer værtsgodkendelse…";try{const response=await app.callServerTool({name:"add_approved_items",arguments:{approved_review:proposal.proposal_id}});const applied=read(response);if(applied?.status!=="completed"||!applied.basket)throw new Error("unverified result");apply.textContent="Tilføjet ✓";const verified=document.createElement("div");verified.className="meta";verified.textContent="Kurven indeholder nu: "+(applied.basket.items||[]).map(item=>(item.quantity??0)+" × "+(item.name??"Ukendt")+" ("+kr(item.total)+")").join(" · ");review.append(verified)}catch{apply.textContent="Afvist";apply.disabled=false}};review.append(lines,apply);root.replaceChildren(review)}catch{button.textContent="Fejl";button.disabled=false}};
-const renderPlan=plan=>{const form=document.createElement("form");form.className="grid";const controls=[];for(const line of plan.lines){const field=document.createElement("fieldset");const legend=document.createElement("legend");legend.textContent=line.name+" · ønsket "+line.quantity;field.append(legend);if(line.resolution==="covered"){const covered=document.createElement("div");covered.textContent="Allerede dækket i kurven";field.append(covered);form.append(field);continue}const choices=document.createElement("div");choices.className="choices";let selected=null;for(const candidate of line.candidates){const label=document.createElement("label");label.className="choice";const radio=document.createElement("input");radio.type="radio";radio.name=line.id;radio.value=String(candidate.id);radio.checked=candidate.id===line.selected_product_id;if(radio.checked)selected=radio;const image=imageFor(candidate);if(image)label.append(radio,image);else label.append(radio);const text=document.createElement("span");text.textContent=candidate.name+" · "+kr(candidate.price)+(candidate.source==="favorite"?" · favorit":"");label.append(text);choices.append(label)}if(!line.candidates.length){const empty=document.createElement("div");empty.className="meta";empty.textContent="Ingen egnet vare";choices.append(empty)}const quantity=document.createElement("input");quantity.type="number";quantity.min="1";quantity.max="99";quantity.value=String(line.remaining_quantity);quantity.setAttribute("aria-label","Antal for "+line.name);controls.push({field,quantity});field.append(choices,quantity);form.append(field)}const prepare=document.createElement("button");prepare.type="submit";prepare.textContent="Forbered valgte varer";form.onsubmit=event=>{event.preventDefault();const items=controls.flatMap(({field,quantity})=>{const selected=field.querySelector('input[type="radio"]:checked');return selected?[{product:Number(selected.value),quantity:Number(quantity.value)}]:[]});if(items.length)prepareBatch(items,prepare)};form.append(prepare);root.replaceChildren(form)};
+const prepareBatch=async(items,button)=>{button.disabled=true;button.textContent="Forbereder…";try{const response=await app.callServerTool({name:"review_items_to_add",arguments:{items,authorization:"exact_review"}});const proposal=read(response);if(!proposal?.applicable||!proposal.review?.lines?.length)throw new Error("invalid proposal");const review=document.createElement("section");review.setAttribute("aria-label","Præcis kurvegennemgang");const lines=document.createElement("div");lines.className="meta";lines.textContent=proposal.review.lines.map(line=>[line.quantity+" × "+line.name,line.unit_size,kr(line.line_total)].filter(Boolean).join(" · ")).join(" | ")+" · Forventet varetotal: "+kr(proposal.review.expected_products_price);const apply=document.createElement("button");apply.textContent="Godkend og tilføj";apply.onclick=async()=>{apply.disabled=true;apply.textContent="Afventer værtsgodkendelse…";try{const response=await app.callServerTool({name:"add_approved_items",arguments:{approved_review:proposal.proposal_id}});const applied=read(response);if(applied?.status!=="completed"||!applied.basket)throw new Error("unverified result");apply.textContent="Tilføjet ✓";const verified=document.createElement("div");verified.className="meta";verified.textContent="Kurven indeholder nu: "+(applied.basket.items||[]).map(item=>(item.quantity??0)+" × "+(item.name??"Ukendt")+" ("+kr(item.total)+")").join(" · ");review.append(verified)}catch{apply.textContent="Afvist";apply.disabled=false}};review.append(lines,apply);root.replaceChildren(review)}catch{button.textContent="Fejl";button.disabled=false}};
+const renderPlan=plan=>{const form=document.createElement("form");form.className="grid";const controls=[];for(const line of plan.lines){if(plan.mode==="automatic"&&line.resolution==="selected")continue;const field=document.createElement("fieldset");const legend=document.createElement("legend");legend.textContent=line.name+" · ønsket "+line.quantity;field.append(legend);if(line.resolution==="covered"){const covered=document.createElement("div");covered.textContent="Allerede dækket i kurven";field.append(covered);form.append(field);continue}const choices=document.createElement("div");choices.className="choices";for(const candidate of line.candidates){const label=document.createElement("label");label.className="choice";const radio=document.createElement("input");radio.type="radio";radio.name=line.id;radio.value=String(candidate.id);radio.checked=candidate.id===line.selected_product_id;const image=imageFor(candidate);if(image)label.append(radio,image);else label.append(radio);const text=document.createElement("span");text.textContent=[candidate.name,candidate.brand,candidate.unit_size,candidate.description,...(candidate.details||[]).map(detail=>detail.key+": "+detail.value),kr(candidate.price),candidate.available?"Tilgængelig":"Ikke tilgængelig"].filter(Boolean).join(" · ");label.append(text);choices.append(label)}if(!line.candidates.length){const empty=document.createElement("div");empty.className="meta";empty.textContent="Ingen egnet vare";choices.append(empty)}const quantity=document.createElement("input");quantity.type="number";quantity.min="1";quantity.max="99";quantity.value=String(line.remaining_quantity);quantity.setAttribute("aria-label","Antal for "+line.name);controls.push({field,quantity});field.append(choices,quantity);form.append(field)}if(controls.length){const prepare=document.createElement("button");prepare.type="submit";prepare.textContent="Forbered valgte varer";form.onsubmit=event=>{event.preventDefault();const items=controls.flatMap(({field,quantity})=>{const selected=field.querySelector('input[type="radio"]:checked');return selected?[{product:Number(selected.value),quantity:Number(quantity.value)}]:[]});if(items.length)prepareBatch(items,prepare)};form.append(prepare)}else{const done=document.createElement("div");done.className="empty";done.textContent="Alle varer blev afgjort automatisk.";form.append(done)}root.replaceChildren(form)};
 app.ontoolresult=result=>{const value=read(result);if(value?.lines)renderPlan(value);else render(parse(result))};await app.connect();
 </script></body></html>`;

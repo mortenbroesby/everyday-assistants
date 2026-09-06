@@ -41,7 +41,7 @@ test("whole-list resolution searches the catalogue for every line, is bounded to
   assert.deepEqual(searched.sort(), ["brød", "kaffe", "mælk", "ost", "æbler"].sort());
   assert.ok(maximum <= 3);
   assert.deepEqual(plan.lines[0], { ...plan.lines[0], resolution: "selected", selected_product_id: 1, basket_quantity: 1, remaining_quantity: 1 });
-  assert.equal(plan.lines[1]?.reason, "multiple_candidates");
+  assert.equal(plan.lines[1]?.reason, "close_alternatives");
   assert.equal(plan.selected_estimated_total, 40);
 });
 
@@ -82,6 +82,37 @@ test("an explicitly selected product is resolved by id without reconstructing it
   assert.equal(searches, 0);
   assert.equal(plan.lines[0]?.selected_product_id, 38424);
   assert.equal(plan.lines[0]?.resolution, "selected");
+});
+
+test("automatic planning selects only deterministic clear matches and reports honest coverage", async () => {
+  const products = [
+    product(1, "Arla minimælk", { brand: "Arla", description: "Frisk mælk", details: [{ key: "Fedt", value: "0,4 %" }] }),
+    product(2, "Minimælk", { brand: "Andet" }),
+  ];
+  const client = { searchProducts: async () => products, getProduct: async (id: number) => products.find((item) => item.id === id)!, getCart: async () => basket() };
+  const automatic = await resolveShoppingPlan(client, { lines: [{ id: "milk", name: "arla minimælk", quantity: 1 }] });
+  assert.equal(automatic.mode, "automatic");
+  assert.equal(automatic.lines[0]?.clarity_reason, "clear_text_match");
+  assert.equal(automatic.lines[0]?.selected_product_id, 1);
+  assert.deepEqual(automatic.lines[0]?.candidates[0]?.details, [{ key: "Fedt", value: "0,4 %" }]);
+  assert.deepEqual(automatic.summary, { total: 1, covered: 0, automatically_selected: 1, added: 0, unresolved: 0, failed: 0, automatic_coverage_percent: 100 });
+
+  const manual = await resolveShoppingPlan(client, { mode: "manual", lines: [{ id: "milk", name: "arla minimælk", quantity: 1 }] });
+  assert.equal(manual.lines[0]?.resolution, "unresolved");
+  assert.equal(manual.lines[0]?.clarity_reason, "manual_choice");
+  assert.equal(manual.summary.automatic_coverage_percent, 0);
+});
+
+test("planning accepts fifty lines and rejects fifty-one before external reads", async () => {
+  let calls = 0;
+  const client = { searchProducts: async (query: string) => { calls += 1; return [product(Number(query), query)]; }, getProduct: async (id: number) => product(id, String(id)), getCart: async () => { calls += 1; return basket(); } };
+  const lines = Array.from({ length: 50 }, (_, index) => ({ id: `line-${index}`, name: String(index + 1), quantity: 1 }));
+  const plan = await resolveShoppingPlan(client, { lines });
+  assert.equal(plan.lines.length, 50);
+  assert.equal(calls, 51);
+  calls = 0;
+  await assert.rejects(resolveShoppingPlan(client, { lines: [...lines, { id: "extra", name: "51", quantity: 1 }] }), /Too big|too_big/iu);
+  assert.equal(calls, 0);
 });
 
 test("plan snapshots are owner-only, immutable, schema-validated, and contain only structured input", async () => {

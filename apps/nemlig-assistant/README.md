@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  Search, compare, plan, and review in conversation. Nothing changes your basket without explicit approval.
+  Search, compare, plan, and shop in conversation. Nothing changes your basket without explicit approval, including a clear same-run “go ahead.”
 </p>
 
 <p align="center">
@@ -42,7 +42,7 @@ Once connected, try prompts like:
 
 - “Show five of my favorite products.”
 - “Find organic milk and compare the best options by unit price.”
-- “Plan bread, milk, apples, and pasta. Prefer favorites and discounted products.”
+- “Use this shopping list and just go ahead; stop only where the product is unclear.”
 - “What is already in my basket, and what is still missing from this list?”
 - “Save this shopping plan so I can continue later.”
 - “Save this as a reusable list called Ugens basis.”
@@ -50,8 +50,9 @@ Once connected, try prompts like:
 - “Compare the cheese in my basket with this cheaper alternative.”
 - “Add these selected products after showing me a clear summary.”
 
-The first six examples are read-only or preparatory. The final example shows a
-plain shopping summary and waits for approval before changing the basket.
+The “go ahead” example uses automatic mode and adds only deterministic clear
+matches. Requests without that explicit proceed intent remain read-only or
+preparatory, and exact reviews still wait for approval.
 
 <a id="what-you-can-do"></a>
 ## ✨ What you can do
@@ -64,15 +65,20 @@ plain shopping summary and waits for approval before changing the basket.
 - List or search authenticated favorites.
 - Browse departments with pagination.
 - Compare product name, ID, package, price, unit price, discount, organic
-  status, availability, and other known classifications.
+  status, availability, product description, item details, and other known
+  classifications when Nemlig supplies them.
 
 ### Plan a whole shopping list
 
-- Turn 1–20 grocery lines into one structured plan.
+- Turn 1–50 grocery lines into one structured plan.
+- Use automatic mode by default; use manual mode when requested or when no
+  deterministic clear match exists.
 - Search the current catalogue for every ordinary line using short, loose Danish wording.
 - Apply hard constraints such as dietary, price, or frozen/non-frozen rules.
 - Prefer discounted, organic, non-frozen, or lowest-unit-price candidates.
 - Preserve ambiguity when several products could be right instead of guessing.
+- Report exact covered, automatically selected, unresolved, failed, and
+  automatic-coverage totals.
 - Account for current basket quantities and show what remains to buy.
 - Estimate the selected total from current product data.
 - Use the optional visual picker to choose products and quantities.
@@ -84,7 +90,7 @@ plain shopping summary and waits for approval before changing the basket.
 - Create up to 25 private named lists, each with up to 50 ordered grocery lines.
 - Keep regular household lists as `reusable` and event lists as `occasion`.
 - Rename, replace, copy, archive, and restore lists with stale-edit protection.
-- Open a list without contacting Nemlig, then explicitly refresh up to 20
+- Open a list without contacting Nemlig, then explicitly refresh up to 50
   selected lines against the current catalogue, prices, availability, and basket coverage.
 - Migrate an older saved-plan reference without deleting its source.
 - Save immutable, owner-only plan snapshots.
@@ -140,26 +146,26 @@ brands stay in the phrase while generic categories become Danish; uncertain
 meaning is left for you to clarify. Favourites are searched only when you
 explicitly ask.
 
-The plan reports source, discount and dietary metadata, constraint outcomes,
-exact basket coverage, remaining quantities, and the estimated total. The
-visual picker can collect all selected remaining quantities into one exact
-`review_items_to_add` review. Selection and review are not approval to add the
-items.
+The plan reports source, package size, product description and item details
+when Nemlig supplies them, discount and dietary metadata, constraint outcomes,
+exact basket coverage, remaining quantities, and automatic coverage. Fully
+clear automatic lines stay out of the picker; manual and unresolved lines keep
+their text-first choices and approved direct images.
 
 <a id="how-basket-changes-work"></a>
 ## 🛡️ How basket changes work
 
 ```text
-Read or plan → review the exact change → show a clear shopping summary → user approves → complete the action once → read back the basket
+Read or plan → resolve only clear matches → bind explicit proceed or exact approval → complete once → read back the basket
 ```
 
 - Search, favourites, browsing, planning, picker selection, saved plans, and
   basket inspection are read-only. Named-list edits change only private
   assistant state; they never authorize or change the Nemlig basket.
 - Every basket change starts with the matching `review_*` tool.
-- Approval is requested once. A prior approval counts when it explicitly covers
-  every exact detail in the unchanged review; otherwise the full review is
-  shown before asking.
+- Approval is requested once. “Go ahead” may authorize only clear additions
+  resolved from that same run; unresolved lines remain unchanged. Removals,
+  replacements, and clearing always require their own exact approval.
 - Ordinary summaries show names, quantities, useful package distinctions, and
   prices without internal IDs, expiry times, or protocol status fields. Ask for
   “technical details” when those internals are useful for troubleshooting.
@@ -259,8 +265,10 @@ the static Tier 0 owner and tier budgets in the encrypted
 invitations create bounded Tier 1 records in the existing controller. Each user
 has independent sealed credentials, sessions, basket proposals, saved plans,
 and named lists; unknown or disabled identities are rejected before Container
-wake. Tier 0 keeps reserved capacity. The global kill switch, breaker, quotas,
-deadlines, and one-Container ceiling still override every tier.
+wake. Tier labels remain for identity and reporting, but all three tiers use
+the same per-principal allowances without reserved capacity or ordered
+shedding. The global kill switch, breaker, quotas, deadlines, and one-Container
+ceiling still override every tier.
 
 When onboarding is enabled by the operator, use `check_nemlig_connection` or
 open `https://nemlig-mcp.broesby.dk/connect` and enter only your own Nemlig login
@@ -296,7 +304,8 @@ put a GitHub token in the repository or an environment file.
 3. Save and reload the plan. Confirm it resolves current availability, prices,
    and basket quantities rather than replaying stale data.
 4. Create `Ugens basis`, reopen it without a Nemlig lookup, refresh selected
-   lines, then archive and restore it. Confirm reusable does not mean automatic.
+   lines, then archive and restore it. Confirm opening is storage-only and a
+   requested run uses automatic mode by default.
 5. Use the picker, adjust a selection, and inspect the exact batch review.
    Stop unless you separately approve that unchanged review.
 6. Prepare one cheaper and one non-cheaper replacement. Verify both product
@@ -343,6 +352,7 @@ This README is the user-facing inventory of shipped feature sets:
 - account access
 - product and department discovery
 - catalogue-first guided shopping with explicit favourite browsing
+- automatic grocery runs with manual fallback and 50-line input
 - constrained product comparison and selection
 - basket-aware whole-list planning
 - private saved shopping plans that refresh current product data

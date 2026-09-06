@@ -31,10 +31,14 @@ const budgetsSchema = z.object({
 
 const refineBudgets = (budgets: z.infer<typeof budgetsSchema>, context: z.RefinementCtx): void => {
   for (const window of ["minute", "month"] as const) {
-    if (budgets.tier2_shed_at[window] >= budgets.tier1_shed_at[window]
-      || budgets.tier1_shed_at[window] > budgets.guest_limit[window]) {
-      context.addIssue({ code: "custom", message: `invalid ${window} tier order` });
+    if (budgets.tier0_reserve[window] !== budgets.guest_limit[window]
+      || budgets.tier1_shed_at[window] !== budgets.guest_limit[window]
+      || budgets.tier2_shed_at[window] !== budgets.guest_limit[window]) {
+      context.addIssue({ code: "custom", message: `unequal ${window} tier allowance` });
     }
+  }
+  if (Object.values(budgets.principal_minute_limits).some((limit) => limit !== budgets.guest_limit.minute)) {
+    context.addIssue({ code: "custom", message: "unequal principal minute tier allowance" });
   }
 };
 

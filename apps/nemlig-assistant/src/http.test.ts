@@ -15,9 +15,9 @@ const ownerSubject = "auth0|owner";
 const principalPolicy = parsePrincipalPolicy(JSON.stringify({
   schema_version: 1, revision: "family-v1",
   budgets: {
-    principal_minute_limits: { "0": 60, "1": 20, "2": 5 },
-    tier0_reserve: { minute: 20, month: 30_000 }, guest_limit: { minute: 40, month: 125_000 },
-    tier1_shed_at: { minute: 40, month: 125_000 }, tier2_shed_at: { minute: 20, month: 60_000 },
+    principal_minute_limits: { "0": 20, "1": 20, "2": 20 },
+    tier0_reserve: { minute: 20, month: 30_000 }, guest_limit: { minute: 20, month: 30_000 },
+    tier1_shed_at: { minute: 20, month: 30_000 }, tier2_shed_at: { minute: 20, month: 30_000 },
   },
   principals: [
     { subject: ownerSubject, principal_key: "a".repeat(32), tier: 0, enabled: true, nemlig: { username: "owner@example.test", password: "owner-secret" } },
@@ -187,7 +187,7 @@ test("HTTP MCP preserves an owner proposal across authenticated transport reconn
     const first = await connect();
     const prepared = await first.callTool({
       name: "review_items_to_add",
-      arguments: { items: [{ product: 7, quantity: 1 }] },
+      arguments: { items: [{ product: 7, quantity: 1 }], authorization: "exact_review" },
     });
     const proposalId = (prepared.structuredContent as { proposal_id: string }).proposal_id;
     await first.close();

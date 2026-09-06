@@ -20,9 +20,9 @@ const env: CloudflareEnv = {
     schema_version: 2,
     revision: "family-v2",
     budgets: {
-      principal_minute_limits: { "0": 60, "1": 20, "2": 5 },
-      tier0_reserve: { minute: 20, month: 30_000 }, guest_limit: { minute: 40, month: 125_000 },
-      tier1_shed_at: { minute: 40, month: 125_000 }, tier2_shed_at: { minute: 20, month: 60_000 },
+      principal_minute_limits: { "0": 20, "1": 20, "2": 20 },
+      tier0_reserve: { minute: 20, month: 30_000 }, guest_limit: { minute: 20, month: 30_000 },
+      tier1_shed_at: { minute: 20, month: 30_000 }, tier2_shed_at: { minute: 20, month: 30_000 },
     },
     organization: { id: "org_abcdefgh" }, invitation: { default_tier: 1 },
     owner: { subject: "auth0|owner", principal_key: "a".repeat(32), tier: 0, enabled: true },

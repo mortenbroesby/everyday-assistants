@@ -8,12 +8,13 @@ before Nemlig work.
 - Never request, print, copy, log, or commit Nemlig credentials. Ask the user to
   run interactive login; never place a password in command arguments.
 - Treat product search and basket viewing as read-only discovery.
-- Before adding, show the exact product name and ID, package or size, quantity,
-  price, and expected line total. Wait for explicit approval; changed details
-  require a new proposal and approval.
-- Do not ask for approval twice. An earlier approval counts only when it
-  explicitly covers every exact detail in the later unchanged proposal;
-  otherwise show the proposal and ask once.
+- Before adding, resolve exact product, quantity, price, and basket state. An
+  authenticated user's explicit same-run “go ahead” may authorize only the
+  deterministic clear additions from that request; otherwise show the exact
+  review and wait for approval. Changed details invalidate either scope.
+- Do not ask for approval twice. Same-run automatic authorization covers no
+  unresolved line, later run, removal, replacement, clear, checkout, payment,
+  order, or delivery-slot action.
 - Before removing one line, show its exact product ID, name, quantity, and total
   and wait for separate explicit approval. Never substitute a basket clear.
 - Before clearing, show the exact current basket and wait for explicit approval.

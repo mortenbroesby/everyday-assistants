@@ -92,8 +92,8 @@ export function loadGatewayConfig(env: CloudflareEnv): GatewayConfig {
   }
   const { budgets } = principalPolicy;
   const maximumMonthlyOperations = dailyLimit * 31;
-  if (budgets.guest_limit.minute + budgets.tier0_reserve.minute > rateLimit
-    || budgets.guest_limit.month + budgets.tier0_reserve.month > maximumMonthlyOperations
+  if (budgets.guest_limit.minute > rateLimit
+    || budgets.guest_limit.month > maximumMonthlyOperations
     || Object.values(budgets.principal_minute_limits).some((limit) => limit > rateLimit)) {
     throw new Error("Principal policy exceeds global safety limits.");
   }

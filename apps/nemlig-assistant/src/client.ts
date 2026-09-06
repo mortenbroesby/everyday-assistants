@@ -24,6 +24,8 @@ export interface Product {
   unit: string;
   unitPrice: number | undefined;
   unitSize: string;
+  description?: string;
+  details?: Array<{ key: string; value: string }>;
   brand: string;
   category: string;
   subcategory: string;
@@ -94,6 +96,10 @@ const asId = (value: unknown): number | undefined => {
   const id = typeof value === "string" && /^\d+$/u.test(value) ? Number(value) : asNumber(value);
   return id !== undefined && Number.isSafeInteger(id) && id > 0 ? id : undefined;
 };
+const boundedText = (value: unknown, length: number): string | undefined => {
+  const text = asString(value)?.replace(/<[^>]*>/gu, " ").replace(/\s+/gu, " ").trim();
+  return text ? text.slice(0, length) : undefined;
+};
 
 export function normalizeBasket(value: unknown): Basket {
   const cart = asRecord(value);
@@ -131,6 +137,13 @@ export function normalizeProducts(value: unknown, limit: number): Product[] {
         unit: asString(item.UnitPrice) ?? "",
         unitPrice: asNumber(item.UnitPriceCalc),
         unitSize: asString(item.Description) ?? "",
+        ...(boundedText(item.Text, 2_000) ? { description: boundedText(item.Text, 2_000) } : {}),
+        ...(Array.isArray(item.Attributes) ? {
+          details: asRecords(item.Attributes).slice(0, 20).flatMap((attribute) => {
+            const key = boundedText(attribute.Key, 100); const value = boundedText(attribute.Value, 300);
+            return key && value ? [{ key, value }] : [];
+          }),
+        } : {}),
         brand: asString(item.Brand) ?? "",
         category,
         subcategory,

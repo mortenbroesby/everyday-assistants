@@ -147,21 +147,10 @@ export function aggregateUsage(
   now = new Date(),
 ) {
   const state = currentState(stored, policy, now);
-  const totalMinute = state.tiers["0"].minuteCount + state.tiers["1"].minuteCount + state.tiers["2"].minuteCount;
-  const totalMonth = state.tiers["0"].monthCount + state.tiers["1"].monthCount + state.tiers["2"].monthCount;
-  const guestMinute = state.tiers["1"].minuteCount + state.tiers["2"].minuteCount;
-  const guestMonth = state.tiers["1"].monthCount + state.tiers["2"].monthCount;
-  const headroom = (tier: TierKey) => {
-    if (tier === "0") return {
-      minute: Math.max(0, policy.budgets.tier0_reserve.minute - state.tiers["0"].minuteCount),
-      month: Math.max(0, policy.budgets.tier0_reserve.month - state.tiers["0"].monthCount),
-    };
-    const threshold = tier === "1" ? policy.budgets.tier1_shed_at : policy.budgets.tier2_shed_at;
-    return {
-      minute: Math.max(0, Math.min(policy.budgets.guest_limit.minute - guestMinute, threshold.minute - totalMinute - 1)),
-      month: Math.max(0, Math.min(policy.budgets.guest_limit.month - guestMonth, threshold.month - monthEndForecast(totalMonth, now) - 1)),
-    };
-  };
+  const headroom = (tier: TierKey) => ({
+    minute: Math.max(0, policy.budgets.guest_limit.minute - state.tiers[tier].minuteCount),
+    month: Math.max(0, policy.budgets.guest_limit.month - state.tiers[tier].monthCount),
+  });
   return {
     schema_version: 1 as const,
     policy_revision: state.policyRevision,
@@ -224,24 +213,13 @@ export function admitUsage(
   }
 
   const principalUsage = state.principals[principal.principalKey];
-  if (!principalUsage || principalUsage.minuteCount >= policy.budgets.principal_minute_limits[String(principal.tier) as TierKey]) {
+  if (!principalUsage
+    || principalUsage.minuteCount >= policy.budgets.principal_minute_limits[String(principal.tier) as TierKey]
+    || principalUsage.monthCount >= policy.budgets.guest_limit.month) {
     return deny(state, principal.tier, "principal_rate_limit", now);
   }
 
   const tierUsage = state.tiers[String(principal.tier) as TierKey];
-  if (principal.tier > 0) {
-    const guestMinute = state.tiers["1"].minuteCount + state.tiers["2"].minuteCount + 1;
-    const guestMonth = state.tiers["1"].monthCount + state.tiers["2"].monthCount + 1;
-    if (guestMinute > policy.budgets.guest_limit.minute || guestMonth > policy.budgets.guest_limit.month) {
-      return deny(state, principal.tier, "family_reserve", now);
-    }
-    const totalMinute = state.tiers["0"].minuteCount + guestMinute;
-    const totalMonth = state.tiers["0"].monthCount + guestMonth;
-    const threshold = principal.tier === 2 ? policy.budgets.tier2_shed_at : policy.budgets.tier1_shed_at;
-    if (totalMinute >= threshold.minute || monthEndForecast(totalMonth, now) >= threshold.month) {
-      return deny(state, principal.tier, principal.tier === 2 ? "tier_2_shed" : "tier_1_shed", now);
-    }
-  }
 
   state[minuteCountKey] += 1;
   if (expensive) state.expensiveCount += 1;

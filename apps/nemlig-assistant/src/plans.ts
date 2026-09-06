@@ -22,26 +22,35 @@ export const shoppingPlanLineSchema = z.object({
   selected_product_id: z.number().int().positive().optional(),
 }).strict();
 export const shoppingPlanInputSchema = z.object({
-  lines: z.array(shoppingPlanLineSchema).min(1).max(20),
+  lines: z.array(shoppingPlanLineSchema).min(1).max(50),
+  mode: z.enum(["automatic", "manual"]).default("automatic"),
 }).strict();
-export type ShoppingPlanInput = z.infer<typeof shoppingPlanInputSchema>;
+export type ShoppingPlanInput = z.input<typeof shoppingPlanInputSchema>;
+export type StoredShoppingPlanInput = z.output<typeof shoppingPlanInputSchema>;
+type ParsedShoppingPlanLine = z.output<typeof shoppingPlanLineSchema>;
+type ClarityReason = "exact_product" | "unique_candidate" | "clear_text_match" | "manual_choice" | "close_alternatives" | "no_eligible_candidate" | "discovery_unavailable" | "unavailable";
 export type PlanSource = "favorite" | "catalog";
 
 export interface PlanCandidate {
   id: number; name: string; price: number | undefined; unit_price: number | undefined;
   unit_size: string; brand: string; available: boolean; source: PlanSource;
+  description?: string;
+  details?: Array<{ key: string; value: string }>;
   image_url: string | undefined;
   dietary: { organic: boolean; vegan: boolean; gluten_free: boolean; lactose_free: boolean };
   is_frozen: boolean; is_on_discount: boolean; constraint_outcomes: Record<string, boolean>; tags: string[];
 }
 
 export interface ShoppingPlan {
+  mode: "automatic" | "manual";
   lines: Array<{
     id: string; name: string; quantity: number; candidates: PlanCandidate[];
     resolution: "selected" | "covered" | "unresolved";
-    reason?: string; selected_product_id?: number; basket_quantity: number; remaining_quantity: number;
+    reason?: string; clarity: "clear" | "unclear"; clarity_reason: ClarityReason;
+    selected_product_id?: number; basket_quantity: number; remaining_quantity: number;
   }>;
   selected_estimated_total: number;
+  summary: { total: number; covered: number; automatically_selected: number; added: 0; unresolved: number; failed: number; automatic_coverage_percent: number };
 }
 
 export interface PlanClient {
@@ -50,7 +59,7 @@ export interface PlanClient {
   getCart(): Promise<Basket>;
 }
 
-const outcomes = (product: Product, constraints: ShoppingPlanInput["lines"][number]["constraints"]): Record<string, boolean> => ({
+const outcomes = (product: Product, constraints: ParsedShoppingPlanLine["constraints"]): Record<string, boolean> => ({
   available: constraints.available === false || product.available,
   organic: constraints.organic !== true || product.isOrganic,
   vegan: constraints.vegan !== true || product.isVegan,
@@ -61,8 +70,8 @@ const outcomes = (product: Product, constraints: ShoppingPlanInput["lines"][numb
 });
 
 export function eligibleCandidates(
-  products: Product[], source: PlanSource, constraints: ShoppingPlanInput["lines"][number]["constraints"],
-  preferences: ShoppingPlanInput["lines"][number]["preferences"],
+  products: Product[], source: PlanSource, constraints: ParsedShoppingPlanLine["constraints"],
+  preferences: ParsedShoppingPlanLine["preferences"],
 ): PlanCandidate[] {
   return products.flatMap((product) => {
     if (product.id === undefined || !product.name) return [];
@@ -71,6 +80,8 @@ export function eligibleCandidates(
     const candidate: PlanCandidate = {
       id: product.id, name: product.name, price: product.price, unit_price: product.unitPrice,
       unit_size: product.unitSize, brand: product.brand, available: product.available, source,
+      ...(product.description ? { description: product.description } : {}),
+      ...(product.details?.length ? { details: product.details } : {}),
       image_url: product.imageUrl || undefined,
       dietary: { organic: product.isOrganic, vegan: product.isVegan, gluten_free: product.isGlutenFree, lactose_free: product.isLactoseFree },
       is_frozen: product.isFrozen, is_on_discount: product.isOnDiscount,
@@ -95,6 +106,22 @@ const mapLimit = async <T, R>(values: T[], limit: number, work: (value: T) => Pr
   return result;
 };
 
+const normalizedWords = (value: string): string[] => value.toLocaleLowerCase("da-DK").match(/[\p{L}\p{N}]+/gu) ?? [];
+
+const automaticCandidate = (name: string, candidates: PlanCandidate[]): { candidate?: PlanCandidate; reason: "unique_candidate" | "clear_text_match" | "close_alternatives" | "no_eligible_candidate" | "unavailable" } => {
+  const available = candidates.filter((candidate) => candidate.available);
+  if (!available.length) return { reason: candidates.length ? "unavailable" : "no_eligible_candidate" };
+  if (available.length === 1) return { candidate: available[0], reason: "unique_candidate" };
+  const wanted = normalizedWords(name);
+  const covers = (candidate: PlanCandidate): boolean => {
+    const words = new Set(normalizedWords(`${candidate.brand} ${candidate.name}`));
+    return wanted.length > 0 && wanted.every((word) => words.has(word));
+  };
+  return covers(available[0]!) && !available.slice(1).some(covers)
+    ? { candidate: available[0], reason: "clear_text_match" }
+    : { reason: "close_alternatives" };
+};
+
 export async function resolveShoppingPlan(client: PlanClient, raw: ShoppingPlanInput): Promise<ShoppingPlan> {
   const input = shoppingPlanInputSchema.parse(raw);
   const basketPromise = client.getCart();
@@ -112,16 +139,32 @@ export async function resolveShoppingPlan(client: PlanClient, raw: ShoppingPlanI
   let selectedEstimatedTotal = 0;
   const lines = input.lines.map((line, index) => {
     const { candidates, unavailable } = discovered[index]!;
+    const automatic = automaticCandidate(line.name, candidates);
     const selected = line.selected_product_id === undefined
-      ? (candidates.length === 1 ? candidates[0] : undefined)
-      : candidates.find((candidate) => candidate.id === line.selected_product_id);
+      ? (input.mode === "automatic" ? automatic.candidate : undefined)
+      : candidates.find((candidate) => candidate.id === line.selected_product_id && candidate.available);
     const basketQuantity = selected ? basket.items.filter((item) => item.id === selected.id).reduce((sum, item) => sum + (item.quantity ?? 0), 0) : 0;
     const remainingQuantity = selected ? Math.max(0, line.quantity - basketQuantity) : line.quantity;
     if (selected?.price !== undefined) selectedEstimatedTotal += selected.price * remainingQuantity;
     const resolution: "selected" | "covered" | "unresolved" = selected ? (remainingQuantity === 0 ? "covered" : "selected") : "unresolved";
-    return { id: line.id, name: line.name, quantity: line.quantity, candidates, resolution, reason: selected ? undefined : unavailable ? "discovery_unavailable" : candidates.length ? "multiple_candidates" : "no_eligible_candidate", selected_product_id: selected?.id, basket_quantity: basketQuantity, remaining_quantity: remainingQuantity };
+    const clarityReason: ClarityReason = line.selected_product_id !== undefined ? (selected ? "exact_product" : "unavailable")
+      : unavailable ? "discovery_unavailable"
+      : input.mode === "manual" ? "manual_choice"
+      : automatic.reason;
+    return { id: line.id, name: line.name, quantity: line.quantity, candidates, resolution, reason: selected ? undefined : clarityReason, clarity: selected ? "clear" as const : "unclear" as const, clarity_reason: clarityReason, selected_product_id: selected?.id, basket_quantity: basketQuantity, remaining_quantity: remainingQuantity };
   });
-  return { lines, selected_estimated_total: Math.round(selectedEstimatedTotal * 100) / 100 };
+  const covered = lines.filter((line) => line.resolution === "covered").length;
+  const automaticallySelected = input.mode === "automatic"
+    ? lines.filter((line, index) => line.resolution === "selected" && input.lines[index]?.selected_product_id === undefined).length
+    : 0;
+  const failed = lines.filter((line) => line.clarity_reason === "discovery_unavailable").length;
+  const unresolved = lines.filter((line) => line.resolution === "unresolved" && line.clarity_reason !== "discovery_unavailable").length;
+  return {
+    mode: input.mode,
+    lines,
+    selected_estimated_total: Math.round(selectedEstimatedTotal * 100) / 100,
+    summary: { total: lines.length, covered, automatically_selected: automaticallySelected, added: 0, unresolved, failed, automatic_coverage_percent: Math.round(((covered + automaticallySelected) / lines.length) * 100) },
+  };
 }
 
 const snapshotSchema = z.object({ schema_version: z.literal(1), id: z.string().uuid(), created_at: z.string().datetime(), input: shoppingPlanInputSchema }).strict();
@@ -175,7 +218,7 @@ export async function saveShoppingPlan(input: ShoppingPlanInput, storage: string
   await snapshotStorage(storage).create(id, `${JSON.stringify({ schema_version: 1, id, created_at: createdAt, input: valid })}\n`);
   return { id, created_at: createdAt };
 }
-export async function loadShoppingPlan(id: string, storage: string | PlanSnapshotStorage = plansDirectory()): Promise<ShoppingPlanInput> {
+export async function loadShoppingPlan(id: string, storage: string | PlanSnapshotStorage = plansDirectory()): Promise<StoredShoppingPlanInput> {
   if (!z.string().uuid().safeParse(id).success) throw new NemligError("Shopping plan ID must be a UUID.");
   try { const snapshot = snapshotSchema.parse(JSON.parse(await snapshotStorage(storage).read(id))); if (snapshot.id !== id) throw new Error(); return snapshot.input; }
   catch { throw new NemligError(`Shopping plan ${id} could not be loaded.`); }

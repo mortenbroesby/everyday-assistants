@@ -20,11 +20,11 @@ const validEnv: CloudflareEnv = {
     schema_version: 1,
     revision: "family-v1",
     budgets: {
-      principal_minute_limits: { "0": 60, "1": 20, "2": 5 },
+      principal_minute_limits: { "0": 20, "1": 20, "2": 20 },
       tier0_reserve: { minute: 20, month: 30_000 },
-      guest_limit: { minute: 40, month: 125_000 },
-      tier1_shed_at: { minute: 40, month: 125_000 },
-      tier2_shed_at: { minute: 20, month: 60_000 },
+      guest_limit: { minute: 20, month: 30_000 },
+      tier1_shed_at: { minute: 20, month: 30_000 },
+      tier2_shed_at: { minute: 20, month: 30_000 },
     },
     principals: [{ subject: "auth0|owner", principal_key: "a".repeat(32), tier: 0, enabled: true, nemlig: { username: "owner@example.test", password: "secret" } }],
   }),
@@ -63,19 +63,16 @@ test("Cloudflare safety configuration is explicit, bounded, and internally consi
   assert.throws(() => loadGatewayConfig({ ...validEnv, NEMLIG_MCP_PRINCIPALS: undefined }), /NEMLIG_MCP_PRINCIPALS/u);
   assert.throws(() => loadGatewayConfig({ ...validEnv, NEMLIG_MCP_AUTH0_OWNER_SUBJECT: "auth0|other" }), /Legacy owner/u);
   assert.throws(() => loadGatewayConfig({ ...validEnv, NEMLIG_USERNAME: "other@example.test", NEMLIG_PASSWORD: "secret" }), /Legacy owner credentials/u);
-  const policy = JSON.parse(validEnv.NEMLIG_MCP_PRINCIPALS!) as { budgets: { guest_limit: { minute: number; month: number }; principal_minute_limits: Record<string, number> } };
+  const policy = JSON.parse(validEnv.NEMLIG_MCP_PRINCIPALS!) as { budgets: Record<string, { minute: number; month: number } | Record<string, number>> };
   assert.throws(() => loadGatewayConfig({
     ...validEnv,
     NEMLIG_MCP_PRINCIPALS: JSON.stringify({
       ...policy,
-      budgets: { ...policy.budgets, guest_limit: { ...policy.budgets.guest_limit, minute: 41 } },
-    }),
-  }), /global safety limits/u);
-  assert.throws(() => loadGatewayConfig({
-    ...validEnv,
-    NEMLIG_MCP_PRINCIPALS: JSON.stringify({
-      ...policy,
-      budgets: { ...policy.budgets, principal_minute_limits: { ...policy.budgets.principal_minute_limits, "1": 61 } },
+      budgets: {
+        principal_minute_limits: { "0": 61, "1": 61, "2": 61 },
+        tier0_reserve: { minute: 61, month: 30_000 }, guest_limit: { minute: 61, month: 30_000 },
+        tier1_shed_at: { minute: 61, month: 30_000 }, tier2_shed_at: { minute: 61, month: 30_000 },
+      },
     }),
   }), /global safety limits/u);
 });

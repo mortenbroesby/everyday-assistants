@@ -89,9 +89,9 @@ test("atomic admission requires the current sealed credential without another st
     revision: "family-v2",
     principalKeys: ["a".repeat(32)],
     budgets: {
-      principal_minute_limits: { "0": 60, "1": 20, "2": 5 },
-      tier0_reserve: { minute: 20, month: 30_000 }, guest_limit: { minute: 40, month: 125_000 },
-      tier1_shed_at: { minute: 40, month: 125_000 }, tier2_shed_at: { minute: 20, month: 60_000 },
+      principal_minute_limits: { "0": 20, "1": 20, "2": 20 },
+      tier0_reserve: { minute: 20, month: 30_000 }, guest_limit: { minute: 20, month: 30_000 },
+      tier1_shed_at: { minute: 20, month: 30_000 }, tier2_shed_at: { minute: 20, month: 30_000 },
     },
   };
   const limits = { dailyLimit: 5_000, expensiveDailyLimit: 500, rateLimit: 60, expensiveRateLimit: 10 };

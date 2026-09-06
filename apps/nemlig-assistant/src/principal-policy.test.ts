@@ -11,11 +11,11 @@ const validPolicy = () => ({
   schema_version: 1,
   revision: "family-v1",
   budgets: {
-    principal_minute_limits: { "0": 60, "1": 20, "2": 5 },
+    principal_minute_limits: { "0": 20, "1": 20, "2": 20 },
     tier0_reserve: { minute: 20, month: 30_000 },
-    guest_limit: { minute: 40, month: 125_000 },
-    tier1_shed_at: { minute: 40, month: 125_000 },
-    tier2_shed_at: { minute: 20, month: 60_000 },
+    guest_limit: { minute: 20, month: 30_000 },
+    tier1_shed_at: { minute: 20, month: 30_000 },
+    tier2_shed_at: { minute: 20, month: 30_000 },
   },
   principals: [{
     subject: "auth0|owner",
@@ -61,7 +61,7 @@ test("parses credential-free schema v2 and rejects dynamic identities or credent
     { ...validV2Policy(), principals: [{ ...validV2Policy().owner, subject: "auth0|guest", tier: 1 }] },
     { ...validV2Policy(), owner: { ...validV2Policy().owner, nemlig: { username: "owner@example.test", password: "secret" } } },
     { ...validV2Policy(), owner: { ...validV2Policy().owner, principal_key: "guessable" } },
-    { ...validV2Policy(), budgets: { ...validV2Policy().budgets, tier2_shed_at: { minute: 40, month: 125_000 } } },
+    { ...validV2Policy(), budgets: { ...validV2Policy().budgets, tier2_shed_at: { minute: 19, month: 30_000 } } },
   ]) assert.throws(() => parsePrincipalPolicy(JSON.stringify(invalid)), /NEMLIG_MCP_PRINCIPALS is invalid/u);
 });
 
@@ -76,7 +76,7 @@ test("fails closed for missing, malformed, duplicate, oversized, incomplete, and
     { ...validPolicy(), principals: [{ ...validPolicy().principals[0], enabled: false }] },
     { ...validPolicy(), principals: [{ ...validPolicy().principals[0], principal_key: "guessable" }] },
     { ...validPolicy(), principals: [{ ...validPolicy().principals[0], nemlig: { username: "", password: "" } }] },
-    { ...validPolicy(), budgets: { ...validPolicy().budgets, tier2_shed_at: { minute: 40, month: 125_000 } } },
+    { ...validPolicy(), budgets: { ...validPolicy().budgets, tier2_shed_at: { minute: 19, month: 30_000 } } },
   ];
   for (const value of invalidPolicies) {
     const raw = typeof value === "string" || value === undefined ? value : JSON.stringify(value);
