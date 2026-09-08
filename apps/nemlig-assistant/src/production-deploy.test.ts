@@ -10,6 +10,7 @@ import {
   parseDeployCli,
   parseCurrentDeployment,
   parseDeployArgs,
+  parseDeploymentJournal,
   productionDeployUsage,
   verifyCandidateVersion,
   type CommandRunner,
@@ -85,6 +86,7 @@ async function fixture(options: {
   const calls: Call[] = [];
   let current = startingId;
   let remoteLease = false;
+  const journalSha = "cccccccccccccccccccccccccccccccccccccccc";
   let disabledReads = 0;
   let remoteReads = 0;
   const run: CommandRunner = async (commandName, args, runOptions) => {
@@ -110,16 +112,20 @@ async function fixture(options: {
       };
       return JSON.stringify(options.runs ?? [base]);
     }
+    if (commandName === "gh" && args[0] === "api" && args.some((arg) => arg.includes("git/blobs"))) return JSON.stringify({ sha: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" });
+    if (commandName === "gh" && args[0] === "api" && args.some((arg) => arg.includes("git/trees"))) return JSON.stringify({ sha: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" });
+    if (commandName === "gh" && args[0] === "api" && args.some((arg) => arg.includes("git/commits"))) return JSON.stringify({ sha: journalSha });
     if (commandName === "gh" && args[0] === "api" && args.includes("POST")) {
       if (options.remoteLeaseBlocked) throw new Error("exists");
       remoteLease = true;
-      return "";
+      return "{}";
     }
+    if (commandName === "gh" && args[0] === "api" && args.includes("PATCH")) return "{}";
     if (commandName === "gh" && args[0] === "api" && args.includes("DELETE")) {
       remoteLease = false;
       return "";
     }
-    if (commandName === "gh" && args[0] === "api") return remoteLease ? (options.remoteLeaseChanges ? previousCommit : commit) : "";
+    if (commandName === "gh" && args[0] === "api") return remoteLease ? (options.remoteLeaseChanges ? previousCommit : journalSha) : "";
     if (commandName === "gh") return "";
     if (commandName === "git" && args[0] === "rev-parse" && args[1] === "HEAD") return options.head ?? commit;
     if (commandName === "git" && args[0] === "rev-parse" && args[1] === "origin/main") {
@@ -214,6 +220,25 @@ test("deployment arguments and provider JSON fail closed", () => {
   assert.equal(instancesInactive(JSON.stringify([{ state: "running" }])), false);
   assert.equal(verifyCandidateVersion(version(enabledId, commit, true), enabledId, commit, true).enabled, true);
   assert.throws(() => verifyCandidateVersion(version(enabledId, commit, false), enabledId, commit, true));
+});
+
+test("schema-2 recovery journals reject unknown, malformed, oversized, and excessive transitions", () => {
+  const journal = {
+    schema: 2,
+    operationId: "44444444-4444-4444-8444-444444444444",
+    commit,
+    startedAt: "2026-09-05T12:00:00.000Z",
+    checks: [],
+    lastVerifiedState: "unchanged",
+    rollback: "not_needed",
+    outcome: "running",
+    transitions: [],
+  };
+  assert.equal(parseDeploymentJournal(JSON.stringify(journal)).operationId, journal.operationId);
+  assert.throws(() => parseDeploymentJournal(JSON.stringify({ ...journal, token: "secret" })));
+  assert.throws(() => parseDeploymentJournal(JSON.stringify({ ...journal, operationId: commit })));
+  assert.throws(() => parseDeploymentJournal(JSON.stringify({ ...journal, transitions: Array.from({ length: 33 }, () => ({ phase: "disabled_deploy", kind: "intent", at: journal.startedAt })) })));
+  assert.throws(() => parseDeploymentJournal(JSON.stringify({ ...journal, checks: ["x".repeat(9000)] })));
 });
 
 test("source mismatch and unavailable leases stop before Cloudflare", async () => {
@@ -313,7 +338,7 @@ test("successful deployment builds once, reuses the image, and journals only red
     const journal = await readFile(join(root, "nemlig-production-deploy", "latest.json"), "utf8");
     assert.deepEqual(JSON.parse(journal), report);
     assert.doesNotMatch(journal, /owner-token|authorization|cookie|basket|favorite|saved-list/iu);
-    await assert.rejects(access(join(root, "nemlig-production-deploy.lock")));
+    await access(join(root, "nemlig-production-deploy.lock"));
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -362,12 +387,12 @@ test("unexpected enabled provider drift during recovery is retained without roll
   }
 });
 
-test("changed remote lease is never deleted and leaves the local safety stop", async () => {
+test("changed remote journal parent is never overwritten and leaves the local safety stop", async () => {
   const { deps, calls, root } = await fixture({ remoteLeaseChanges: true });
   try {
     const report = await deployProduction(commit, deps);
     assert.equal(report.outcome, "failed");
-    assert.equal(report.failure, "remote_deployment_lease_release_failed");
+    assert.equal(report.failure, "remote_journal_append_failed");
     assert.equal(calls.some(({ args }) => args.includes("DELETE")), false);
     await access(join(root, "nemlig-production-deploy.lock"));
   } finally {
