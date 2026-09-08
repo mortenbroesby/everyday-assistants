@@ -71,11 +71,22 @@ const parseArgs = (argv: string[]): { edgeOnly: boolean; mutation: boolean } => 
 };
 
 const abortable = async <T>(label: string, work: Promise<T>, signal: AbortSignal): Promise<T> => {
-  if (signal.aborted) throw new Error(`Production acceptance deadline exceeded during ${label}`);
-  return await Promise.race([
-    work,
-    new Promise<never>((_resolve, reject) => signal.addEventListener("abort", () => reject(new Error(`Production acceptance deadline exceeded during ${label}`)), { once: true })),
-  ]);
+  if (signal.aborted) {
+    void work.catch(() => undefined);
+    throw new Error(`Production acceptance deadline exceeded during ${label}`);
+  }
+  let onAbort: (() => void) | undefined;
+  try {
+    return await Promise.race([
+      work,
+      new Promise<never>((_resolve, reject) => {
+        onAbort = () => reject(new Error(`Production acceptance deadline exceeded during ${label}`));
+        signal.addEventListener("abort", onAbort, { once: true });
+      }),
+    ]);
+  } finally {
+    if (onAbort) signal.removeEventListener("abort", onAbort);
+  }
 };
 
 const defaultConnect = async (origin: URL, token: string, signal: AbortSignal): Promise<ConnectedAcceptanceClient> => {
@@ -83,12 +94,24 @@ const defaultConnect = async (origin: URL, token: string, signal: AbortSignal): 
   const transport = new StreamableHTTPClientTransport(origin, {
     requestInit: { headers: { authorization: `Bearer ${token}` } },
   });
-  const closeOnAbort = () => { void client.close(); };
+  const close = async (quiet = false): Promise<void> => {
+    const pending = client.close();
+    if (signal.aborted) {
+      void pending.catch(() => undefined);
+      return;
+    }
+    try {
+      await abortable("Authenticated MCP close", pending, signal);
+    } catch (error) {
+      if (!quiet) throw error;
+    }
+  };
+  const closeOnAbort = () => { void close(true); };
   signal.addEventListener("abort", closeOnAbort, { once: true });
   try {
     await abortable("Authenticated MCP connect", client.connect(transport), signal);
   } catch (error) {
-    await client.close();
+    await close(true);
     throw error;
   } finally {
     signal.removeEventListener("abort", closeOnAbort);
@@ -103,7 +126,7 @@ const defaultConnect = async (origin: URL, token: string, signal: AbortSignal): 
         structuredContent?: unknown;
       },
     },
-    close: () => client.close(),
+    close: async () => await close(),
   };
 };
 
@@ -176,19 +199,13 @@ export async function main(
 
   const accessToken = required(env, "NEMLIG_MCP_ACCESS_TOKEN");
     const connected = await abortable("Authenticated MCP connect", dependencies.connect(origin, accessToken, controller.signal), controller.signal);
-    const closeOnAbort = () => { void connected.close(); };
+    const closeOnAbort = () => { void connected.close().catch(() => undefined); };
     controller.signal.addEventListener("abort", closeOnAbort, { once: true });
   try {
     if (!mutations) {
         const report = await verifyReadOnlyProductionFeatures(connected.client, { signal: controller.signal });
-        const unavailable = [...report.unavailable];
-        try {
-          await verifyAggregateTierUsage(origin, accessToken, dependencies.fetcher, { signal: controller.signal });
-        } catch (error) {
-          if (controller.signal.aborted) throw error;
-          unavailable.push("owner_admin:unavailable");
-        }
-        return { profile: "live-user", required: ["edge", "live_user_features"], passed: ["edge", "live_user_features"], unavailable, lastCompletedBoundary: report.exercised.at(-1) ?? edge.lastCompletedBoundary, correlationIds: edge.correlationIds };
+        await verifyAggregateTierUsage(origin, accessToken, dependencies.fetcher, { signal: controller.signal });
+        return { profile: "live-user", required: ["edge", "live_user_features", "owner_admin"], passed: ["edge", "live_user_features", "owner_admin"], unavailable: report.unavailable, lastCompletedBoundary: "owner_admin", correlationIds: edge.correlationIds };
     } else {
       await verifyApprovedReversibleProductionMutation(connected.client, mutations.change, mutations.restoration);
         return { profile: "mutation", required: ["edge", "approved_mutation"], passed: ["edge", "approved_mutation"], unavailable: [], lastCompletedBoundary: "approved_mutation_restored", correlationIds: edge.correlationIds };

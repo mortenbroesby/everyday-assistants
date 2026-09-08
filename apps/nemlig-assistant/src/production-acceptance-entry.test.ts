@@ -66,7 +66,7 @@ test("importing the acceptance entry performs no work", async () => {
 test("default acceptance connects after edge, verifies read-only paths, aggregates, and closes", async () => {
   const calls: string[] = [];
   const events: string[] = [];
-  await (await import("../scripts/production-acceptance.js")).main([], {
+  const report = await (await import("../scripts/production-acceptance.js")).main([], {
     NEMLIG_PRODUCTION_MCP_URL: "https://nemlig-mcp.example.test/mcp",
     NEMLIG_MCP_ACCESS_TOKEN: "test-token",
   }, {
@@ -78,6 +78,28 @@ test("default acceptance connects after edge, verifies read-only paths, aggregat
   });
   assert.deepEqual(events, ["connect", "close"]);
   assert.deepEqual(calls, ["/healthz", "/revision", "/.well-known/oauth-protected-resource/mcp", "/mcp", "/mcp", "/admin/usage"]);
+  assert.deepEqual(report.required, ["edge", "live_user_features", "owner_admin"]);
+  assert.deepEqual(report.passed, ["edge", "live_user_features", "owner_admin"]);
+});
+
+test("default owner acceptance rejects unavailable or malformed aggregate admin evidence", async () => {
+  const entry = await import("../scripts/production-acceptance.js");
+  for (const response of [
+    new Response(null, { status: 500 }),
+    Response.json({ schema_version: 2, tiers: { "0": {}, "1": {}, "2": {} } }),
+  ]) {
+    let closed = 0;
+    await assert.rejects(entry.main([], {
+      NEMLIG_PRODUCTION_MCP_URL: "https://nemlig-mcp.example.test/mcp",
+      NEMLIG_MCP_ACCESS_TOKEN: "test-token",
+    }, {
+      fetcher: async (input, init) => new URL(input instanceof Request ? input.url : input).pathname === "/admin/usage"
+        ? response.clone()
+        : edgeFetcher([])(input, init),
+      connect: async () => ({ client: readonlyClient(), close: async () => { closed += 1; } }),
+    }), /Tier usage|schema/iu);
+    assert.equal(closed, 1);
+  }
 });
 
 test("edge-only skips credentials and connect", async () => {
@@ -170,6 +192,17 @@ test("deadline aborts a hanging feature call and cleanup without issuing later t
   }), /deadline/u);
   assert.ok(closes >= 1);
   assert.deepEqual(toolCalls, []);
+});
+
+test("rejecting cleanup is surfaced without an unhandled abort cleanup rejection", async () => {
+  const entry = await import("../scripts/production-acceptance.js");
+  await assert.rejects(entry.main([], {
+    NEMLIG_PRODUCTION_MCP_URL: "https://nemlig-mcp.example.test/mcp",
+    NEMLIG_MCP_ACCESS_TOKEN: "test-token",
+  }, {
+    fetcher: edgeFetcher([]),
+    connect: async () => ({ client: readonlyClient(), close: async () => { throw new Error("cleanup refused"); } }),
+  }), /cleanup refused/u);
 });
 
 test("missing token is rejected before connect", async () => {
