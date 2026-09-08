@@ -53,3 +53,31 @@ selected for output; secret values were not exported. The schema-v1 owner
 secret bindings remain present; onboarding/encryption bindings are not yet
 configured. No migration, configuration edit, wake request or deployment was
 performed. These reads do not prove rollback restores a Container image.
+
+U1 follow-up before release: Cloudflare's
+[rollout documentation](https://developers.cloudflare.com/containers/configuration/rollouts/)
+states Worker activation precedes image rollout and deploy success starts, not
+finishes, replacement. Candidate image metadata alone therefore cannot prove
+the running process uses that image. The adapter must reconcile application
+version with instance version after bounded acceptance, alongside the disabled
+and inactive pre-enable checks; a mismatch must not be reported as exact-image
+acceptance. This remains S2.6 work, not evidence collected in the current slice.
+
+## Acceptance slice release candidate
+
+Merged the sibling's exact CI-green main
+`50e1a9f10dedec20fea5be12f65740d3983fd1ff` while retaining saved-shopping
+removal. Release policy selects `4.0.1-alpha.17` for the acceptance helper
+changes; no dependency or infrastructure change is introduced.
+
+Composed `pnpm nemlig:production:ready` passed: strict OpenSpec 17/17,
+privacy checks, root `pnpm verify` with 209 tests and 3 smoke checks, packed
+package smoke and credential-free Wrangler/Docker dry run. Focused acceptance
+and deployment tests pass 38/38; typecheck and diff check pass. Coverage of
+loaded production files is 94.17% lines, 83.04% branches and 92.19% functions;
+this does not claim coverage of unloaded files. The dry run exited without a
+deployment. Exact pushed SHA/CI evidence is recorded after remote verification.
+
+Durable-recovery draft commits remain in the separate worktree and are not
+included in this release candidate. Required-job inspection, finalized journal
+recovery, fixture identity and protected CI activation remain incomplete.

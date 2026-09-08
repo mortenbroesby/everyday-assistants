@@ -359,8 +359,9 @@ pnpm --filter nemlig-assistant production:probe
 ```
 
 They verify enabled health, deployment revision, OAuth resource metadata,
-anonymous rejection, and foreign-origin rejection with per-step deadlines,
-latencies, and last-completed-boundary output. With a current owner access
+anonymous rejection, and foreign-origin rejection with per-step deadlines and
+bounded JSON evidence: requested source, observed revision, correlation IDs,
+fixed failure categories and last completed boundary. With a current owner access
 token, the default full acceptance command verifies the closed tool/resource
 inventory and read-only catalogue discovery, exact selected-product reuse,
 and at most one explicitly requested favourite result

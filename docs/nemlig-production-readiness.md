@@ -24,8 +24,9 @@ basket. CI runs this same command with read-only repository permissions.
 Live checks remain separate from the automatic gate:
 
 - `pnpm --filter nemlig-assistant production:probe` checks health, revision,
-  OAuth metadata, and cheap rejection paths with per-step deadlines and latency
-  plus last-completed-boundary output, without a token.
+  OAuth metadata, and cheap rejection paths with per-step deadlines, without a
+  token. Its bounded JSON report separates requested source from the observed
+  revision and includes correlation IDs and the last completed boundary.
 - `pnpm --filter nemlig-assistant production:test:features` requires a current
   owner token and a 90-second total budget. It exercises read-only paths,
   including catalogue planning and at most one favorite result, without
