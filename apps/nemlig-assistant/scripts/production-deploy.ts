@@ -22,6 +22,8 @@ export interface DeploymentJournal {
   operationId: string;
   commit: string;
   ciRunId: number;
+  releaseRunId: number | "local";
+  releaseRunAttempt: number | "local";
   startedAt: string;
   completedAt?: string;
   startingVersion?: string;
@@ -118,6 +120,7 @@ const operationId = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/u;
 const journalPhases = new Set<JournalPhase>(["disabled_deploy", "enable_deploy", "rollback"]);
 const journalKinds = new Set<JournalKind>(["intent", "result"]);
 const journalLimit = 8 * 1024;
+const validReleaseRun = (value: number | "local") => value === "local" || (Number.isSafeInteger(value) && value >= 1);
 const isoTime = (value: unknown): value is string => {
   if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/u.test(value)) return false;
   const date = new Date(value);
@@ -131,6 +134,8 @@ const journalJson = (journal: DeploymentJournal): string => {
   if (!journal || typeof journal !== "object" || !Array.isArray(journal.checks) || !Array.isArray(journal.transitions)
     || !operationId.test(journal.operationId) || !fullSha.test(journal.commit) || !Number.isSafeInteger(journal.ciRunId) || journal.ciRunId < 1
     || !isoTime(journal.startedAt) || (journal.completedAt !== undefined && !isoTime(journal.completedAt))
+    || !validReleaseRun(journal.releaseRunId) || !validReleaseRun(journal.releaseRunAttempt)
+    || ((journal.releaseRunId === "local") !== (journal.releaseRunAttempt === "local"))
     || journal.transitions.length > 32
     || (journal.remoteCommit !== undefined && (typeof journal.remoteCommit !== "string" || !fullSha.test(journal.remoteCommit)))
     || (journal.startingVersion !== undefined && (typeof journal.startingVersion !== "string" || !versionId.test(journal.startingVersion)))
@@ -159,9 +164,10 @@ const journalJson = (journal: DeploymentJournal): string => {
 
 export function parseDeploymentJournal(raw: string): DeploymentJournal {
   const value = object(json(raw, "deployment_journal_invalid"));
-  const allowed = new Set(["schema", "operationId", "commit", "ciRunId", "startedAt", "completedAt", "startingVersion", "disabledVersion", "enabledVersion", "startingContainerId", "startingImage", "disabledImage", "enabledImage", "checks", "lastVerifiedState", "rollback", "outcome", "failure", "remoteCommit", "transitions"]);
+  const allowed = new Set(["schema", "operationId", "commit", "ciRunId", "releaseRunId", "releaseRunAttempt", "startedAt", "completedAt", "startingVersion", "disabledVersion", "enabledVersion", "startingContainerId", "startingImage", "disabledImage", "enabledImage", "checks", "lastVerifiedState", "rollback", "outcome", "failure", "remoteCommit", "transitions"]);
   if (!value || Object.keys(value).some((key) => !allowed.has(key)) || value.schema !== 2
     || typeof value.operationId !== "string" || typeof value.commit !== "string" || typeof value.ciRunId !== "number" || typeof value.startedAt !== "string"
+    || (value.releaseRunId !== "local" && typeof value.releaseRunId !== "number") || (value.releaseRunAttempt !== "local" && typeof value.releaseRunAttempt !== "number")
     || !Array.isArray(value.checks) || !Array.isArray(value.transitions)
     || !["unchanged", "disabled", "enabled", "restored", "unknown"].includes(value.lastVerifiedState as string)
     || !["not_needed", "attempted", "restored", "failed"].includes(value.rollback as string)
@@ -640,6 +646,10 @@ const verifyCurrent = async (deps: DeployDependencies, expected: string): Promis
   if ((await readCurrent(deps)).version !== expected) fail("cloudflare_deployment_drift");
 };
 
+const verifyLeaseHead = async (deps: DeployDependencies, repository: string, journal: DeploymentJournal): Promise<void> => {
+  if (!journal.remoteCommit || await readRemoteHead(deps, repository) !== journal.remoteCommit) fail("remote_deployment_lease_changed");
+};
+
 const rollback = async (deps: DeployDependencies, journal: DeploymentJournal, starting: VersionState, startingContainer: ContainerState): Promise<void> => {
   journal.rollback = "attempted";
   await wrangler(deps, ["rollback", starting.id, "--message", `Automated rollback after failed ${journal.commit.slice(0, 7)} release`, "--yes"], 120_000);
@@ -662,6 +672,12 @@ const rollback = async (deps: DeployDependencies, journal: DeploymentJournal, st
 
 export async function deployProduction(commit: string, inputDeps: DeployDependencies): Promise<DeploymentJournal> {
   if (!fullSha.test(commit)) fail("invalid_commit");
+  const runIdText = inputDeps.env.GITHUB_RUN_ID;
+  const runAttemptText = inputDeps.env.GITHUB_RUN_ATTEMPT;
+  const decimal = /^[1-9]\d*$/u;
+  const releaseRunId = runIdText === undefined && runAttemptText === undefined ? "local" : decimal.test(runIdText ?? "") ? Number(runIdText) : fail("github_ci_invalid");
+  const releaseRunAttempt = runIdText === undefined && runAttemptText === undefined ? "local" : decimal.test(runAttemptText ?? "") ? Number(runAttemptText) : fail("github_ci_invalid");
+  if ((releaseRunId !== "local" && !Number.isSafeInteger(releaseRunId)) || (releaseRunAttempt !== "local" && !Number.isSafeInteger(releaseRunAttempt))) fail("github_ci_invalid");
   const operationController = new AbortController();
   const abortOperation = () => operationController.abort();
   const inheritedSignal = inputDeps.signal;
@@ -674,6 +690,8 @@ export async function deployProduction(commit: string, inputDeps: DeployDependen
     operationId: (deps.operationId ?? randomUUID)(),
     commit,
     ciRunId: 0,
+    releaseRunId,
+    releaseRunAttempt,
     startedAt: deps.now().toISOString(),
     checks: [],
     lastVerifiedState: "unchanged",
@@ -723,6 +741,7 @@ export async function deployProduction(commit: string, inputDeps: DeployDependen
 
     await transition("disabled_deploy", "intent", starting.id);
     await verifyCurrent(deps, starting.id);
+    await verifyLeaseHead(deps, repository, journal);
     providerMutation = true;
     mutationUncertain = true;
     const disabledOutput = await wrangler(deps, ["deploy", "--var", "MCP_ENABLED:false", "--var", `NEMLIG_MCP_REVISION:${commit}`,
@@ -742,6 +761,7 @@ export async function deployProduction(commit: string, inputDeps: DeployDependen
 
     await transition("enable_deploy", "intent", disabledId);
     await verifyCurrent(deps, disabledId);
+    await verifyLeaseHead(deps, repository, journal);
     mutationUncertain = true;
     const enabledOutput = await wrangler(deps, ["deploy", "--var", "MCP_ENABLED:true", "--var",
       `NEMLIG_MCP_REVISION:${commit}`, "--containers-rollout", "none", "--message",
@@ -787,6 +807,7 @@ export async function deployProduction(commit: string, inputDeps: DeployDependen
         } else if (startingContainer && transition) {
           await transition("rollback", "intent", starting.id);
           await verifyCurrent(deps, current.version);
+          await verifyLeaseHead(deps, repository, journal);
           await rollback(deps, journal, starting, startingContainer);
           await transition("rollback", "result", starting.id);
         }

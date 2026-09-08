@@ -90,7 +90,7 @@ const recoveryDeps = (journal: Record<string, unknown>, currentVersion: string, 
 };
 
 const terminalJournal = (extra: Record<string, unknown> = {}) => ({
-  schema: 2, operationId: "44444444-4444-4444-8444-444444444444", commit, ciRunId: 456, startedAt: "2026-09-05T12:00:00.000Z",
+  schema: 2, operationId: "44444444-4444-4444-8444-444444444444", commit, ciRunId: 456, releaseRunId: "local", releaseRunAttempt: "local", startedAt: "2026-09-05T12:00:00.000Z",
   startingVersion: startingId, startingContainerId: applicationId, startingImage: image, checks: [], rollback: "restored",
   outcome: "failed", lastVerifiedState: "restored", transitions: [
     { phase: "disabled_deploy", kind: "intent", at: "2026-09-05T12:00:00.000Z", version: startingId },
@@ -108,6 +108,8 @@ interface Call {
   env?: NodeJS.ProcessEnv;
   input?: string;
 }
+
+interface SharedLeaseStore { ref?: string }
 
 async function fixture(options: {
   head?: string;
@@ -127,12 +129,15 @@ async function fixture(options: {
   failFeatures?: boolean;
   externalEnabledDriftDuringRecovery?: boolean;
   remoteIntentFailure?: boolean;
+  sharedLease?: SharedLeaseStore;
 } = {}): Promise<{ deps: DeployDependencies; calls: Call[]; root: string }> {
   const root = await mkdtemp(join(tmpdir(), "nemlig-production-deploy-"));
   const calls: Call[] = [];
   let current = startingId;
   let appended = false;
-  let remoteLease: string | undefined;
+  let remoteLease: string | undefined = options.sharedLease?.ref;
+  const currentLease = () => options.sharedLease?.ref ?? remoteLease;
+  const setRemoteLease = (value: string | undefined) => { remoteLease = value; if (options.sharedLease) options.sharedLease.ref = value; };
   let objectNumber = 0;
   const blobs = new Map<string, string>();
   const trees = new Map<string, string>();
@@ -170,10 +175,10 @@ async function fixture(options: {
       const body = runOptions?.input ? JSON.parse(runOptions.input) as Record<string, unknown> : undefined;
       if (path.endsWith("git/ref/heads/codex-lock/nemlig-production") || path.endsWith("git/refs/heads/codex-lock/nemlig-production")) {
         if (method === "GET") {
-          if (!remoteLease) throw Object.assign(new Error("not found"), { status: 404 });
-          return remoteLease;
+          if (!currentLease()) throw Object.assign(new Error("not found"), { status: 404 });
+          return currentLease()!;
         }
-        if (method === "DELETE") { remoteLease = undefined; return ""; }
+        if (method === "DELETE") { setRemoteLease(undefined); return ""; }
       }
       if (path.endsWith("git/blobs") && method === "POST") {
         const snapshot = Buffer.from(String(body?.content), "base64").toString("utf8");
@@ -183,13 +188,13 @@ async function fixture(options: {
       if (path.endsWith("git/trees") && method === "POST") { const sha = nextSha(); trees.set(sha, String((body?.tree as Array<Record<string, unknown>>)?.[0]?.sha)); return JSON.stringify({ sha }); }
       if (path.endsWith("git/commits") && method === "POST") { const sha = nextSha(); commits.set(sha, { tree: String(body?.tree), parents: Array.isArray(body?.parents) ? body.parents.map(String) : [] }); return JSON.stringify({ sha }); }
       if (path.endsWith("git/refs") && method === "POST") {
-        if (options.remoteLeaseBlocked || remoteLease) throw new Error("exists");
-        remoteLease = String(body?.sha); return "{}";
+        if (options.remoteLeaseBlocked || currentLease()) throw new Error("exists");
+        setRemoteLease(String(body?.sha)); return "{}";
       }
       if (path.endsWith("git/refs/heads/codex-lock/nemlig-production") && method === "PATCH") {
-        if (!body || body.force !== false || !remoteLease) throw new Error("invalid patch");
-        if (options.remoteLeaseChanges && !appended) remoteLease = previousCommit;
-        else remoteLease = String(body.sha);
+        if (!body || body.force !== false || !currentLease()) throw new Error("invalid patch");
+        if (options.remoteLeaseChanges && !appended) setRemoteLease(previousCommit);
+        else setRemoteLease(String(body.sha));
         appended = true; return "{}";
       }
       const commitSha = path.match(/git\/commits\/([0-9a-f]{40})$/u)?.[1];
@@ -302,6 +307,8 @@ test("schema-2 recovery journals reject unknown, malformed, oversized, and exces
     operationId: "44444444-4444-4444-8444-444444444444",
     commit,
     ciRunId: 456,
+    releaseRunId: "local",
+    releaseRunAttempt: "local",
     startedAt: "2026-09-05T12:00:00.000Z",
     checks: [],
     lastVerifiedState: "unchanged",
@@ -344,6 +351,32 @@ test("source mismatch and unavailable leases stop before Cloudflare", async () =
     assert.equal(calls.some(({ args }) => args.includes("wrangler")), false);
   } finally {
     await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("same source uses distinct operation ownership and never replaces an existing or legacy remote ref", async () => {
+  const sharedLease: SharedLeaseStore = {};
+  const first = await fixture({ sharedLease });
+  const second = await fixture({ sharedLease });
+  try {
+    first.deps.operationId = () => "44444444-4444-4444-8444-444444444444";
+    second.deps.operationId = () => "55555555-5555-4555-8555-555555555555";
+    assert.equal((await deployProduction(commit, first.deps)).operationId, "44444444-4444-4444-8444-444444444444");
+    const blocked = await deployProduction(commit, second.deps);
+    assert.equal(blocked.operationId, "55555555-5555-4555-8555-555555555555");
+    assert.equal(blocked.failure, "remote_deployment_lease_unavailable");
+    assert.equal(second.calls.some(({ args }) => args.includes("wrangler")), false);
+  } finally {
+    await rm(first.root, { recursive: true, force: true });
+    await rm(second.root, { recursive: true, force: true });
+  }
+  const legacy = await fixture({ sharedLease: { ref: commit } });
+  try {
+    const blocked = await deployProduction(commit, legacy.deps);
+    assert.equal(blocked.failure, "remote_deployment_lease_unavailable");
+    assert.equal(legacy.calls.some(({ args }) => args.includes("wrangler")), false);
+  } finally {
+    await rm(legacy.root, { recursive: true, force: true });
   }
 });
 
@@ -424,9 +457,10 @@ test("successful deployment builds once, reuses the image, and journals only red
     const firstProviderRead = calls.findIndex(({ command, args }) => command === "pnpm" && args.includes("wrangler"));
     assert.ok(ref >= 0 && ref < firstProviderRead, "remote lease must exist before provider access");
     const remoteSnapshots = calls.filter(({ command, args }) => command === "gh" && args.some((arg) => arg.endsWith("git/blobs")))
-      .map(({ input }) => JSON.parse(Buffer.from(JSON.parse(input ?? "{}").content, "base64").toString("utf8")) as { operationId: string; transitions: Array<{ phase: string; kind: string }> });
+      .map(({ input }) => JSON.parse(Buffer.from(JSON.parse(input ?? "{}").content, "base64").toString("utf8")) as { operationId: string; releaseRunId: number | "local"; releaseRunAttempt: number | "local"; transitions: Array<{ phase: string; kind: string }> });
     assert.ok(remoteSnapshots.length >= 5);
     assert.match(remoteSnapshots[0]?.operationId ?? "", /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/u);
+    assert.deepEqual([remoteSnapshots[0]?.releaseRunId, remoteSnapshots[0]?.releaseRunAttempt], ["local", "local"]);
     assert.deepEqual(remoteSnapshots.at(-2)?.transitions.map(({ phase, kind }) => `${phase}:${kind}`), [
       "disabled_deploy:intent", "disabled_deploy:result", "enable_deploy:intent", "enable_deploy:result",
     ]);
@@ -436,6 +470,33 @@ test("successful deployment builds once, reuses the image, and journals only red
     await access(join(root, "nemlig-production-deploy.lock"));
   } finally {
     await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("release run identity is distinct from the trusted CI run and rejects malformed CI labels", async () => {
+  const { deps, root } = await fixture();
+  try {
+    deps.env.GITHUB_RUN_ID = "789";
+    deps.env.GITHUB_RUN_ATTEMPT = "2";
+    const report = await deployProduction(commit, deps);
+    assert.deepEqual([report.ciRunId, report.releaseRunId, report.releaseRunAttempt], [456, 789, 2]);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+  for (const env of [
+    { GITHUB_RUN_ID: "not-a-number", GITHUB_RUN_ATTEMPT: "1" },
+    { GITHUB_RUN_ID: "0x10", GITHUB_RUN_ATTEMPT: "1" },
+    { GITHUB_RUN_ID: " 10", GITHUB_RUN_ATTEMPT: "1" },
+    { GITHUB_RUN_ID: "10" },
+  ]) {
+    const malformed = await fixture();
+    try {
+      Object.assign(malformed.deps.env, env);
+      await assert.rejects(deployProduction(commit, malformed.deps), /github_ci_invalid/u);
+      assert.equal(malformed.calls.length, 0);
+    } finally {
+      await rm(malformed.root, { recursive: true, force: true });
+    }
   }
 });
 
@@ -537,7 +598,7 @@ test("finalize accepts GitHub's empty successful DELETE only after the exact rem
   const operation = "44444444-4444-4444-8444-444444444444";
   const remoteCommit = "cccccccccccccccccccccccccccccccccccccccc";
   const journal = JSON.stringify({
-    schema: 2, operationId: operation, commit, ciRunId: 456, startedAt: "2026-09-05T12:00:00.000Z",
+    schema: 2, operationId: operation, commit, ciRunId: 456, releaseRunId: "local", releaseRunAttempt: "local", startedAt: "2026-09-05T12:00:00.000Z",
     startingVersion: startingId, enabledVersion: enabledId, startingContainerId: applicationId, enabledImage: image, checks: [], lastVerifiedState: "enabled",
     rollback: "not_needed", outcome: "success", remoteCommit: "dddddddddddddddddddddddddddddddddddddddd",
     transitions: [
