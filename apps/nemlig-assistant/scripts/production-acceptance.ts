@@ -21,7 +21,8 @@ interface ConnectedAcceptanceClient {
 
 export interface AcceptanceEntryDependencies {
   fetcher: typeof fetch;
-  connect(origin: URL, token: string): Promise<ConnectedAcceptanceClient>;
+  connect(origin: URL, token: string, signal: AbortSignal): Promise<ConnectedAcceptanceClient>;
+  totalTimeoutMs?: number;
 }
 
 const required = (env: Environment, name: string): string => {
@@ -69,30 +70,28 @@ const parseArgs = (argv: string[]): { edgeOnly: boolean; mutation: boolean } => 
   return { edgeOnly, mutation };
 };
 
-const withinDeadline = async <T>(label: string, work: Promise<T>, timeoutMs = 90_000): Promise<T> => {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  try {
-    return await Promise.race([
-      work,
-      new Promise<never>((_resolve, reject) => {
-        timer = setTimeout(() => reject(new Error(`${label} timed out after ${timeoutMs} ms`)), timeoutMs);
-      }),
-    ]);
-  } finally {
-    if (timer) clearTimeout(timer);
-  }
+const abortable = async <T>(label: string, work: Promise<T>, signal: AbortSignal): Promise<T> => {
+  if (signal.aborted) throw new Error(`Production acceptance deadline exceeded during ${label}`);
+  return await Promise.race([
+    work,
+    new Promise<never>((_resolve, reject) => signal.addEventListener("abort", () => reject(new Error(`Production acceptance deadline exceeded during ${label}`)), { once: true })),
+  ]);
 };
 
-const defaultConnect = async (origin: URL, token: string): Promise<ConnectedAcceptanceClient> => {
+const defaultConnect = async (origin: URL, token: string, signal: AbortSignal): Promise<ConnectedAcceptanceClient> => {
   const client = new Client({ name: "nemlig-production-acceptance", version: "1.0.0" });
   const transport = new StreamableHTTPClientTransport(origin, {
     requestInit: { headers: { authorization: `Bearer ${token}` } },
   });
+  const closeOnAbort = () => { void client.close(); };
+  signal.addEventListener("abort", closeOnAbort, { once: true });
   try {
-    await withinDeadline("Authenticated MCP connect", client.connect(transport));
+    await abortable("Authenticated MCP connect", client.connect(transport), signal);
   } catch (error) {
     await client.close();
     throw error;
+  } finally {
+    signal.removeEventListener("abort", closeOnAbort);
   }
   return {
     client: {
@@ -110,13 +109,51 @@ const defaultConnect = async (origin: URL, token: string): Promise<ConnectedAcce
 
 const defaultDependencies: AcceptanceEntryDependencies = { fetcher: fetch, connect: defaultConnect };
 
+export interface AcceptanceReport {
+  schema: 1;
+  sourceSha?: string;
+  startedAt: string;
+  completedAt: string;
+  profile: "edge" | "live-user" | "mutation";
+  required: string[];
+  passed: string[];
+  failed: string[];
+  unavailable: string[];
+  lastCompletedBoundary: string;
+  failureCategory?: "input_invalid" | "deadline_exceeded" | "edge_failed" | "authentication_failed" | "transport_failed" | "feature_failed" | "owner_admin_failed" | "mutation_failed" | "unknown_failure";
+  correlationIds: string[];
+}
+
+type AcceptanceOutcome = Omit<AcceptanceReport, "schema" | "sourceSha" | "startedAt" | "completedAt" | "failed" | "failureCategory">;
+
+const inheritedMutationApproval = (env: Environment): boolean => Object.keys(env).some((name) =>
+  /^NEMLIG_PRODUCTION_(?:MUTATION|RESTORATION)(?:_CONFIRMATION)?$/u.test(name) && Boolean(env[name]?.trim()));
+
+const failureCategory = (error: unknown): NonNullable<AcceptanceReport["failureCategory"]> => {
+  const message = error instanceof Error ? error.message : "";
+  if (/deadline exceeded|timed out/iu.test(message)) return "deadline_exceeded";
+  if (/argument|valid URL|required|approval environment|cannot select mutation/iu.test(message)) return "input_invalid";
+  if (/edge|health|revision|OAuth|anonymous|Origin/iu.test(message)) return "edge_failed";
+  if (/token|authentication|authorization/iu.test(message)) return "authentication_failed";
+  if (/admin|tier usage/iu.test(message)) return "owner_admin_failed";
+  if (/mutation|restor/iu.test(message)) return "mutation_failed";
+  if (/connect|transport|MCP/iu.test(message)) return "transport_failed";
+  if (/feature|inventory|basket|favorites|shopping|resource/iu.test(message)) return "feature_failed";
+  return "unknown_failure";
+};
+
 /** Run credential-free edge, read-only, or explicitly approved reversible acceptance. */
 export async function main(
   argv: string[] = process.argv.slice(2),
   env: Environment = process.env,
   dependencies: AcceptanceEntryDependencies = defaultDependencies,
-): Promise<void> {
+): Promise<AcceptanceOutcome> {
   const options = parseArgs(argv);
+  if (options.mutation && env.CI?.trim()) throw new Error("CI acceptance cannot select mutation mode");
+  if (!options.mutation && inheritedMutationApproval(env)) throw new Error("mutation approval environment is not allowed for normal acceptance");
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(new Error("Production acceptance deadline exceeded")), dependencies.totalTimeoutMs ?? 90_000);
+  try {
   const mutations = options.mutation
     ? {
         change: approvedMutation(env, "NEMLIG_PRODUCTION_MUTATION"),
@@ -129,33 +166,66 @@ export async function main(
   } catch {
     throw new Error("NEMLIG_PRODUCTION_MCP_URL must be a valid URL");
   }
-  const edge = await verifyProductionEdge(origin, dependencies.fetcher, {
-    expectedRevision: env.NEMLIG_EXPECTED_REVISION?.trim() || undefined,
-  });
+    const edge = await verifyProductionEdge(origin, dependencies.fetcher, {
+      expectedRevision: env.NEMLIG_EXPECTED_REVISION?.trim() || undefined,
+      signal: controller.signal,
+    });
   if (options.edgeOnly) {
-    console.log(`Verified production edge ${origin.origin} at revision ${edge.revision}; last boundary ${edge.lastCompletedBoundary}; ${edge.steps.map(({ boundary, latencyMs }) => `${boundary}=${latencyMs}ms`).join(", ")}.`);
-    return;
+      return { profile: "edge", required: ["edge"], passed: ["edge"], unavailable: [], lastCompletedBoundary: edge.lastCompletedBoundary, correlationIds: edge.correlationIds };
   }
 
   const accessToken = required(env, "NEMLIG_MCP_ACCESS_TOKEN");
-  const connected = await dependencies.connect(origin, accessToken);
+    const connected = await abortable("Authenticated MCP connect", dependencies.connect(origin, accessToken, controller.signal), controller.signal);
+    const closeOnAbort = () => { void connected.close(); };
+    controller.signal.addEventListener("abort", closeOnAbort, { once: true });
   try {
     if (!mutations) {
-      const report = await verifyReadOnlyProductionFeatures(connected.client);
-      await verifyAggregateTierUsage(origin, accessToken, dependencies.fetcher);
-      console.log(`Verified ${report.exercised.length} production feature paths without external-state writes.`);
+        const report = await verifyReadOnlyProductionFeatures(connected.client, { signal: controller.signal });
+        const unavailable = [...report.unavailable];
+        try {
+          await verifyAggregateTierUsage(origin, accessToken, dependencies.fetcher, { signal: controller.signal });
+        } catch (error) {
+          if (controller.signal.aborted) throw error;
+          unavailable.push("owner_admin:unavailable");
+        }
+        return { profile: "live-user", required: ["edge", "live_user_features"], passed: ["edge", "live_user_features"], unavailable, lastCompletedBoundary: report.exercised.at(-1) ?? edge.lastCompletedBoundary, correlationIds: edge.correlationIds };
     } else {
       await verifyApprovedReversibleProductionMutation(connected.client, mutations.change, mutations.restoration);
-      console.log(`Verified and restored one production ${mutations.change.operation} mutation.`);
+        return { profile: "mutation", required: ["edge", "approved_mutation"], passed: ["edge", "approved_mutation"], unavailable: [], lastCompletedBoundary: "approved_mutation_restored", correlationIds: edge.correlationIds };
     }
   } finally {
-    await connected.close();
+      controller.signal.removeEventListener("abort", closeOnAbort);
+      await abortable("Authenticated MCP close", connected.close(), controller.signal);
+  }
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+export async function run(
+  argv: string[] = process.argv.slice(2),
+  env: Environment = process.env,
+  dependencies: AcceptanceEntryDependencies = defaultDependencies,
+): Promise<AcceptanceReport> {
+  const startedAt = new Date().toISOString();
+  const sourceSha = /^[0-9a-f]{40}$/u.test(env.GITHUB_SHA?.trim() ?? "") ? env.GITHUB_SHA?.trim() : undefined;
+  try {
+    const outcome = await main(argv, env, dependencies);
+    const report: AcceptanceReport = { schema: 1, sourceSha, startedAt, completedAt: new Date().toISOString(), ...outcome, failed: [] };
+    console.log(JSON.stringify(report));
+    return report;
+  } catch (error) {
+    const report: AcceptanceReport = {
+      schema: 1, sourceSha, startedAt, completedAt: new Date().toISOString(),
+      profile: argv.includes("--mutation") ? "mutation" : argv.includes("--edge-only") ? "edge" : "live-user",
+      required: [], passed: [], failed: [failureCategory(error)], unavailable: [], lastCompletedBoundary: "none",
+      failureCategory: failureCategory(error), correlationIds: [],
+    };
+    console.log(JSON.stringify(report));
+    return report;
   }
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  main().catch(() => {
-    console.error("Production acceptance failed");
-    process.exitCode = 1;
-  });
+  run().then((report) => { if (report.failed.length) process.exitCode = 1; });
 }

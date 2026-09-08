@@ -114,6 +114,64 @@ test("malformed flags and envelopes fail before network or connect", async () =>
   assert.deepEqual(calls, []);
 });
 
+test("ordinary acceptance rejects inherited mutation approval and CI mutation mode before network", async () => {
+  const calls: string[] = [];
+  let connected = false;
+  const dependencies = { fetcher: edgeFetcher(calls), connect: async () => { connected = true; throw new Error("must not connect"); } };
+  const entry = await import("../scripts/production-acceptance.js");
+  await assert.rejects(entry.main([], { NEMLIG_PRODUCTION_MUTATION: "{}" }, dependencies), /mutation approval environment is not allowed/u);
+  await assert.rejects(entry.main(["--mutation"], { CI: "true" }, dependencies), /CI acceptance cannot select mutation mode/u);
+  assert.equal(connected, false);
+  assert.deepEqual(calls, []);
+});
+
+test("acceptance uses one deadline, aborts hanging transport, and never continues after a late response", async () => {
+  const calls: string[] = [];
+  let aborts = 0;
+  let callsAfterTimeout = 0;
+  const entry = await import("../scripts/production-acceptance.js");
+  await assert.rejects(entry.main([], {
+    NEMLIG_PRODUCTION_MCP_URL: "https://nemlig-mcp.example.test/mcp",
+    NEMLIG_MCP_ACCESS_TOKEN: "test-token",
+  }, {
+    fetcher: edgeFetcher(calls),
+    totalTimeoutMs: 5,
+    connect: async (_origin, _token, signal) => {
+      signal.addEventListener("abort", () => { aborts += 1; }, { once: true });
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      callsAfterTimeout += 1;
+      return { client: readonlyClient(), close: async () => undefined };
+    },
+  }), /deadline/u);
+  assert.equal(aborts, 1);
+  assert.equal(callsAfterTimeout, 0);
+});
+
+test("deadline aborts a hanging feature call and cleanup without issuing later tool calls", async () => {
+  const edgeCalls: string[] = [];
+  const toolCalls: string[] = [];
+  let closes = 0;
+  const entry = await import("../scripts/production-acceptance.js");
+  await assert.rejects(entry.main([], {
+    NEMLIG_PRODUCTION_MCP_URL: "https://nemlig-mcp.example.test/mcp",
+    NEMLIG_MCP_ACCESS_TOKEN: "test-token",
+  }, {
+    fetcher: edgeFetcher(edgeCalls),
+    totalTimeoutMs: 5,
+    connect: async () => ({
+      client: {
+        listTools: async () => await new Promise((resolve) => setTimeout(() => resolve({ tools: allTools }), 20)),
+        listResources: async () => ({ resources: [] }),
+        readResource: async () => ({ contents: [] }),
+        callTool: async ({ name }) => { toolCalls.push(name); return { structuredContent: {} }; },
+      },
+      close: async () => { closes += 1; await new Promise(() => {}); },
+    }),
+  }), /deadline/u);
+  assert.ok(closes >= 1);
+  assert.deepEqual(toolCalls, []);
+});
+
 test("missing token is rejected before connect", async () => {
   const calls: string[] = [];
   let connected = false;
@@ -186,4 +244,29 @@ test("read-only failure after connect still closes the client", async () => {
     }),
   }), /provider detail with secret/u);
   assert.equal(closed, 1);
+});
+
+test("CLI report is allowlisted when a hostile provider failure occurs", async () => {
+  const output: string[] = [];
+  const originalLog = console.log;
+  console.log = (value: string) => output.push(value);
+  try {
+    const entry = await import("../scripts/production-acceptance.js");
+    const report = await entry.run([], {
+      GITHUB_SHA: "0123456789012345678901234567890123456789",
+      NEMLIG_PRODUCTION_MCP_URL: "https://nemlig-mcp.example.test/mcp",
+      NEMLIG_MCP_ACCESS_TOKEN: "private-token",
+    }, {
+      fetcher: edgeFetcher([]),
+      connect: async () => ({
+        client: { listTools: async () => { throw new Error("provider assertion private-token basket details"); }, listResources: async () => ({ resources: [] }), readResource: async () => ({ contents: [] }), callTool: async () => ({}) },
+        close: async () => undefined,
+      }),
+    });
+    assert.equal(report.failureCategory, "authentication_failed");
+    assert.deepEqual(Object.keys(JSON.parse(output[0] ?? "{}")).sort(), ["completedAt", "correlationIds", "failed", "failureCategory", "lastCompletedBoundary", "passed", "profile", "required", "schema", "sourceSha", "startedAt", "unavailable"]);
+    assert.doesNotMatch(output[0] ?? "", /private-token|basket details|assertion/iu);
+  } finally {
+    console.log = originalLog;
+  }
 });

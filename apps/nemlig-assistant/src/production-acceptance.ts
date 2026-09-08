@@ -85,16 +85,42 @@ export interface ProductionFeatureReport {
 
 export interface AcceptanceDeadlineOptions {
   totalTimeoutMs?: number;
+  signal?: AbortSignal;
 }
+
+const abortError = (signal: AbortSignal): Error => signal.reason instanceof Error
+  ? signal.reason
+  : new Error("Production acceptance deadline exceeded");
+
+const bounded = async <T>(label: string, work: () => Promise<T>, signal?: AbortSignal): Promise<T> => {
+  if (!signal) return await work();
+  if (signal.aborted) throw abortError(signal);
+  let onAbort: () => void;
+  const aborted = new Promise<never>((_resolve, reject) => {
+    onAbort = () => reject(abortError(signal));
+    signal.addEventListener("abort", onAbort, { once: true });
+  });
+  try {
+    const result = await Promise.race([work(), aborted]);
+    if (signal.aborted) throw abortError(signal);
+    return result;
+  } catch (error) {
+    if (signal.aborted) throw new Error(`Production acceptance deadline exceeded during ${label}`, { cause: error });
+    throw error;
+  } finally {
+    signal.removeEventListener("abort", onAbort);
+  }
+};
 
 export async function verifyAggregateTierUsage(
   origin: URL,
   token: string,
   fetcher: typeof fetch = fetch,
+  options: Pick<AcceptanceDeadlineOptions, "signal"> = {},
 ): Promise<void> {
   const response = await fetcher(new URL("/admin/usage", origin), {
     headers: { authorization: `Bearer ${token}` },
-    signal: AbortSignal.timeout(3_000),
+    signal: options.signal ? AbortSignal.any([options.signal, AbortSignal.timeout(3_000)]) : AbortSignal.timeout(3_000),
   });
   assert.equal(response.status, 200, "Tier usage acceptance failed");
   const usage = await response.json() as Record<string, unknown>;
@@ -112,13 +138,13 @@ export async function verifyReadOnlyProductionFeatures(
 ): Promise<ProductionFeatureReport> {
   const totalTimeoutMs = options.totalTimeoutMs ?? 90_000;
   const deadline = Date.now() + totalTimeoutMs;
-  const bounded = async <T>(label: string, work: () => Promise<T>): Promise<T> => {
+  const withinTotalDeadline = async <T>(label: string, work: () => Promise<T>): Promise<T> => {
     const remaining = deadline - Date.now();
     assert.ok(remaining > 0, `Production read-only acceptance timed out before ${label}`);
     let timer: ReturnType<typeof setTimeout> | undefined;
     try {
       return await Promise.race([
-        work(),
+        bounded(label, work, options.signal),
         new Promise<never>((_resolve, reject) => {
           timer = setTimeout(() => reject(new Error(`Production read-only acceptance timed out during ${label}`)), remaining);
         }),
@@ -129,14 +155,14 @@ export async function verifyReadOnlyProductionFeatures(
   };
   assert.ok(client.listResources && client.readResource, "Production resource client is required");
   assertProductionInventory(
-    (await bounded("tool inventory", () => client.listTools())).tools,
-    (await bounded("resource inventory", () => client.listResources!())).resources,
+    (await withinTotalDeadline("tool inventory", () => client.listTools())).tools,
+    (await withinTotalDeadline("resource inventory", () => client.listResources!())).resources,
   );
   const exercised: string[] = [];
   const unavailable: string[] = [];
   const call = async <T>(name: ToolName, args: Record<string, unknown> = {}): Promise<T> => {
     assert.ok((productionToolInventory.readOnly as readonly string[]).includes(name), `Read-only acceptance prohibited ${name}`);
-    const result = await bounded(name, () => client.callTool({ name, arguments: args }));
+    const result = await withinTotalDeadline(name, () => client.callTool({ name, arguments: args }));
     exercised.push(name);
     return content<T>(result, name);
   };
@@ -158,11 +184,11 @@ export async function verifyReadOnlyProductionFeatures(
   const current = await call<Basket>("show_my_basket");
   assert.ok(Array.isArray(current.items), "show_my_basket returned no basket items");
   await call("choose_products_visually", { search_term: "banan", result_count: 3 });
-  const resource = await bounded("picker resource", () => client.readResource!({ uri: productionResourceInventory[0] }));
+  const resource = await withinTotalDeadline("picker resource", () => client.readResource!({ uri: productionResourceInventory[0] }));
   assert.ok(resource.contents.length, "Production picker resource is empty");
   exercised.push(productionResourceInventory[0]);
 
-  const missingPlan = await bounded("continue_my_shopping_plan", () => client.callTool({
+  const missingPlan = await withinTotalDeadline("continue_my_shopping_plan", () => client.callTool({
     name: "continue_my_shopping_plan",
     arguments: { saved_plan: "00000000-0000-4000-8000-000000000000" },
   }));
@@ -269,15 +295,19 @@ export async function verifyApprovedReversibleProductionMutation(
 export async function verifyProductionEdge(
   origin: URL,
   fetcher: typeof fetch = fetch,
-  options: { stepTimeoutMs?: number; expectedRevision?: string } = {},
-): Promise<{ revision: string; lastCompletedBoundary: string; steps: Array<{ boundary: string; latencyMs: number }> }> {
+  options: { stepTimeoutMs?: number; expectedRevision?: string; signal?: AbortSignal } = {},
+): Promise<{ revision: string; lastCompletedBoundary: string; steps: Array<{ boundary: string; latencyMs: number }>; correlationIds: string[] }> {
   const stepTimeoutMs = options.stepTimeoutMs ?? 3_000;
   const steps: Array<{ boundary: string; latencyMs: number }> = [];
+  const correlationIds: string[] = [];
   let lastCompletedBoundary = "none";
   const step = async (boundary: string, input: URL, init?: RequestInit): Promise<Response> => {
     const started = Date.now();
     try {
-      const response = await fetcher(input, { ...init, signal: AbortSignal.timeout(stepTimeoutMs) });
+      const timeout = AbortSignal.timeout(stepTimeoutMs);
+      const response = await fetcher(input, { ...init, signal: options.signal ? AbortSignal.any([options.signal, timeout]) : timeout });
+      const correlationId = response.headers.get("x-nemlig-request-id");
+      if (correlationId && /^[A-Za-z0-9_-]{1,128}$/u.test(correlationId)) correlationIds.push(correlationId);
       steps.push({ boundary, latencyMs: Date.now() - started });
       lastCompletedBoundary = boundary;
       return response;
@@ -316,5 +346,5 @@ export async function verifyProductionEdge(
     body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize", params: {} }),
   });
   assert.equal(foreignOrigin.status, 403, "Foreign Origin was not rejected");
-  return { revision, lastCompletedBoundary, steps };
+  return { revision, lastCompletedBoundary, steps, correlationIds };
 }
