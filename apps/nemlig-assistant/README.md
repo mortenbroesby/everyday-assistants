@@ -343,8 +343,12 @@ Inspect or apply the repository's alpha version decision with:
 ```sh
 pnpm nemlig:release:plan
 pnpm nemlig:release:apply
-pnpm --filter nemlig-assistant check:version-bump --base origin/main
+pnpm --filter nemlig-assistant check:version-bump --base origin/main --head HEAD
 ```
+
+The version check compares committed revisions, not uncommitted manifest edits.
+CI checks the entire main push from its previous SHA, or the PR merge base through
+the tested SHA; missing or invalid comparison revisions fail closed.
 
 Nemlig runtime fixes require a patch, features a minor, and breaking changes a
 major; the monotonic `-alpha.N` counter never resets. `Nemlig-Release: none` is

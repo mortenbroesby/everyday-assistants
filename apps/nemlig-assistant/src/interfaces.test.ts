@@ -4,6 +4,7 @@ import { ElicitRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import { AjvJsonSchemaValidator } from "@modelcontextprotocol/sdk/validation/ajv-provider.js";
 import type { JsonSchemaType } from "@modelcontextprotocol/sdk/validation/types.js";
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { mkdtemp, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -657,6 +658,51 @@ test("picker images use only the observed Nemlig HTTPS origin and keep a text-on
   assert.match(html, /candidate\.details/);
   assert.match(html, /authorization:"exact_review"/);
   assert.doesNotMatch(html, /image[_-]proxy|fetch\(.*image/iu);
+});
+
+test("picker resource preserves its public presentation contract and isolates hostile product data", async () => {
+  const hostileName = `<img src=x onerror=alert("name")>`;
+  const hostileDescription = `<script>alert("description")</script>`;
+  const hostileDetails = [{ key: "<b>key</b>", value: `</script><script>alert("detail")</script>` }];
+  const hostile = {
+    ...product,
+    name: hostileName,
+    description: hostileDescription,
+    details: hostileDetails,
+    imageUrl: "javascript:alert(\"image\")",
+  };
+  await withMcpClient(createMcpServer(fakeClient({ searchProducts: async () => [hostile] })), async (mcp) => {
+    const info = mcp.getServerVersion();
+    assert.ok(info);
+    const icon = info.icons?.[0];
+    assert.equal(icon?.mimeType, "image/png");
+    assert.deepEqual(icon?.sizes, ["1024x1024"]);
+    assert.match(icon?.src ?? "", /^data:image\/png;base64,iVBOR/);
+    assert.equal(Buffer.byteLength(icon?.src ?? ""), 17_690);
+    assert.equal(createHash("sha256").update(icon?.src ?? "").digest("hex"), "7969c1825e5fec052e55b5740cb0171f0dc7f8b71bb6812b76a51aaf755ff95f");
+
+    const result = await mcp.callTool({ name: "choose_products_visually", arguments: { search_term: "mælk", result_count: 1 } });
+    const structured = result.structuredContent as { result: Array<{ name?: string; description?: string; details?: typeof hostileDetails; image_url?: string }> };
+    assert.equal(structured.result[0]?.name, hostileName);
+    assert.equal(structured.result[0]?.description, hostileDescription);
+    assert.deepEqual(structured.result[0]?.details, hostileDetails);
+    assert.equal(structured.result[0]?.image_url, undefined);
+
+    const resource = await mcp.readResource({ uri: PICKER_URI });
+    const content = resource.contents[0];
+    assert.ok(content && "text" in content);
+    assert.equal(content.uri, "ui://nemlig/picker.html");
+    assert.equal(content.mimeType, "text/html;profile=mcp-app");
+    assert.deepEqual(content._meta, { ui: { csp: { resourceDomains: ["https://unpkg.com", "https://nemlig.com", "https://www.nemlig.com"] } } });
+    assert.equal(Buffer.byteLength(content.text), 7_997);
+    assert.equal(createHash("sha256").update(content.text).digest("hex"), "c217988a64e819fde3deb3191b4bcc7f842ffbd2a3e4e75b35fa1528c8a19ca7");
+    for (const value of [hostileName, hostileDescription, ...hostileDetails.flatMap(({ key, value }) => [key, value])]) {
+      assert.equal(content.text.includes(value), false);
+    }
+    assert.match(content.text, /textContent/);
+    assert.match(content.text, /imageOrigins\.has\(url\.origin\)/);
+    assert.doesNotMatch(content.text, /fetch\(.*image/iu);
+  });
 });
 
 test("MCP creates one structured feature request without touching Nemlig", async () => {

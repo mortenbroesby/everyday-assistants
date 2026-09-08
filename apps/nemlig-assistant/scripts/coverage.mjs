@@ -50,6 +50,7 @@ async function main() {
       "--test-coverage-exclude=src/**/generated/**",
       "--test-coverage-exclude=src/**/*.generated.ts",
       "--test-coverage-include=release/**/*.ts",
+      "--test-coverage-include=scripts/production-acceptance.ts",
       "--test-coverage-exclude=release/**/*.test.ts",
       "--test-coverage-exclude=release/**/generated/**",
       "--test-coverage-exclude=release/**/*.generated.ts",

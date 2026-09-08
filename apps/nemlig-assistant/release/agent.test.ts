@@ -112,6 +112,51 @@ test("version gate ignores unrelated changes and rejects an unbumped runtime", a
   }
 });
 
+test("version gate uses explicit immutable revisions and rejects unavailable comparisons", async () => {
+  const { repo, base } = await fixture();
+  try {
+    await writeFile(path.join(repo, "apps/nemlig-assistant/src/client.ts"), "export const value = 2;\n");
+    await manifest(repo, "0.1.1-alpha.0");
+    git(repo, "add", ".");
+    git(repo, "commit", "-qm", "fix: first runtime change");
+    const head = git(repo, "rev-parse", "HEAD");
+    await manifest(repo, "0.1.0");
+    assert.match(checkVersionBump(repo, base, head), /passed/);
+    git(repo, "add", ".");
+    git(repo, "commit", "-qm", "chore: later checkout must not alter tested head");
+    assert.match(checkVersionBump(repo, base, head), /passed/);
+    assert.throws(() => checkVersionBump(repo, "missing-base", head), /Cannot resolve/);
+    assert.throws(() => checkVersionBump(repo, base, "missing-head"), /Cannot resolve/);
+    assert.throws(() => checkVersionBump(repo, head, base), /ancestor/);
+    git(repo, "rm", packagePath); git(repo, "commit", "-qm", "chore: missing manifest fixture");
+    assert.throws(() => checkVersionBump(repo, base, "HEAD"), /Cannot read/);
+  } finally { await rm(repo, { recursive: true, force: true }); }
+});
+
+test("version gate covers all commits and patch minor major or explicit no-release policy", async () => {
+  for (const [message, version] of [
+    ["fix: patch", "0.1.1-alpha.0"],
+    ["feat: capability", "0.2.0-alpha.0"],
+    ["feat!: breaking interface", "1.0.0-alpha.0"],
+  ]) {
+    const { repo, base } = await fixture();
+    try {
+      await writeFile(path.join(repo, "apps/nemlig-assistant/src/client.ts"), "export const value = 2;\n");
+      git(repo, "add", "."); git(repo, "commit", "-qm", message!);
+      assert.throws(() => checkVersionBump(repo, base, "HEAD"), /require a forward/);
+      await manifest(repo, version!);
+      git(repo, "add", "."); git(repo, "commit", "-qm", "chore: record release metadata");
+      assert.match(checkVersionBump(repo, base, "HEAD"), /passed/);
+    } finally { await rm(repo, { recursive: true, force: true }); }
+  }
+  const { repo, base } = await fixture();
+  try {
+    await writeFile(path.join(repo, "apps/nemlig-assistant/src/client.ts"), "export const value = 2;\n");
+    git(repo, "add", "."); git(repo, "commit", "-qm", "refactor: no release\n\nNemlig-Release: none");
+    assert.match(checkVersionBump(repo, base, "HEAD"), /not applicable/);
+  } finally { await rm(repo, { recursive: true, force: true }); }
+});
+
 test("merged documentation candidates are no-ops without registry access", async () => {
   const { repo, base } = await fixture();
   try {

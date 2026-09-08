@@ -2,12 +2,15 @@
 
 ## P2 — simplify maintained boundaries and make verification measurable
 
-**Status:** Proposed, not applied. Builds on the completed maintenance refactor;
+**Status:** In progress — repository-only slices applied; final integration and
+applicable live acceptance remain pending. Builds on the completed maintenance refactor;
 does not replace unfinished P0/P1 acceptance or onboarding work.
 
 Plan: [p2-simplify-nemlig-maintenance](../../openspec/changes/p2-simplify-nemlig-maintenance/proposal.md).
 See its [ordered epic/story checklist](../../openspec/changes/p2-simplify-nemlig-maintenance/tasks.md)
 and [design, npm evaluation and future improvements](../../openspec/changes/p2-simplify-nemlig-maintenance/design.md).
+Current checked outcomes and no-op decisions are recorded in the
+[implementation evidence](../../openspec/changes/p2-simplify-nemlig-maintenance/evidence.md).
 
 - Make coverage produce a real report with the existing test runner.
 - Reuse installed Commander for the hand-written release argument parser.

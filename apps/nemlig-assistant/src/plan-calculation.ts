@@ -1,6 +1,7 @@
 import type { Basket } from "./client.js";
 import type { PlanCandidate, ShoppingPlan, StoredShoppingPlanInput } from "./plans.js";
 
+/** One discovery result per input line, in matching order; unavailable denotes a failed lookup. */
 export interface DiscoveredPlanLine { candidates: PlanCandidate[]; unavailable: boolean }
 type ClarityReason = ShoppingPlan["lines"][number]["clarity_reason"];
 
@@ -30,17 +31,29 @@ export const calculateShoppingPlan = (input: StoredShoppingPlanInput, discovered
   const lines = input.lines.map((line, index) => {
     const { candidates, unavailable } = discovered[index]!;
     const automatic = automaticCandidate(line.name, candidates);
-    const selected = line.selected_product_id === undefined ? (input.mode === "automatic" ? automatic.candidate : undefined) : candidates.find((candidate) => candidate.id === line.selected_product_id && candidate.available);
+    const selected = line.selected_product_id === undefined
+      ? (input.mode === "automatic" ? automatic.candidate : undefined)
+      : candidates.find((candidate) => candidate.id === line.selected_product_id && candidate.available);
     const basketQuantity = selected ? (basketQuantities.get(selected.id) ?? 0) : 0;
     const remainingQuantity = selected ? Math.max(0, line.quantity - basketQuantity) : line.quantity;
     if (selected?.price !== undefined) selectedEstimatedTotal += selected.price * remainingQuantity;
     const resolution: "selected" | "covered" | "unresolved" = selected ? (remainingQuantity === 0 ? "covered" : "selected") : "unresolved";
-    const clarityReason: ClarityReason = line.selected_product_id !== undefined ? (selected ? "exact_product" : "unavailable") : unavailable ? "discovery_unavailable" : input.mode === "manual" ? "manual_choice" : automatic.reason;
+    const clarityReason: ClarityReason = line.selected_product_id !== undefined ? (selected ? "exact_product" : "unavailable")
+      : unavailable ? "discovery_unavailable"
+      : input.mode === "manual" ? "manual_choice"
+      : automatic.reason;
     return { id: line.id, name: line.name, quantity: line.quantity, candidates, resolution, reason: selected ? undefined : clarityReason, clarity: selected ? "clear" as const : "unclear" as const, clarity_reason: clarityReason, selected_product_id: selected?.id, basket_quantity: basketQuantity, remaining_quantity: remainingQuantity };
   });
   const covered = lines.filter((line) => line.resolution === "covered").length;
-  const automaticallySelected = input.mode === "automatic" ? lines.filter((line, index) => line.resolution === "selected" && input.lines[index]?.selected_product_id === undefined).length : 0;
+  const automaticallySelected = input.mode === "automatic"
+    ? lines.filter((line, index) => line.resolution === "selected" && input.lines[index]?.selected_product_id === undefined).length
+    : 0;
   const failed = lines.filter((line) => line.clarity_reason === "discovery_unavailable").length;
   const unresolved = lines.filter((line) => line.resolution === "unresolved" && line.clarity_reason !== "discovery_unavailable").length;
-  return { mode: input.mode, lines, selected_estimated_total: Math.round(selectedEstimatedTotal * 100) / 100, summary: { total: lines.length, covered, automatically_selected: automaticallySelected, added: 0, unresolved, failed, automatic_coverage_percent: Math.round(((covered + automaticallySelected) / lines.length) * 100) } };
+  return {
+    mode: input.mode,
+    lines,
+    selected_estimated_total: Math.round(selectedEstimatedTotal * 100) / 100,
+    summary: { total: lines.length, covered, automatically_selected: automaticallySelected, added: 0, unresolved, failed, automatic_coverage_percent: Math.round(((covered + automaticallySelected) / lines.length) * 100) },
+  };
 };

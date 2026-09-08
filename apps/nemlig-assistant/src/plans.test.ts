@@ -59,6 +59,15 @@ test("pure calculation preserves mixed selection, fractional coverage, ordering,
   ]);
   assert.deepEqual(plan.summary, { total: 5, covered: 1, automatically_selected: 2, added: 0, unresolved: 0, failed: 1, automatic_coverage_percent: 60 });
   assert.equal(plan.selected_estimated_total, 9);
+  const ambiguousInput = shoppingPlanInputSchema.parse({ lines: [{ id: "milk", name: "milk", quantity: 1 }] });
+  const candidates = [...candidate(8, "milk A"), ...candidate(7, "milk B")];
+  const discovered = [{ candidates, unavailable: false }];
+  const ambiguous = calculateShoppingPlan(ambiguousInput, discovered, basket([]));
+  assert.equal(ambiguous.lines[0]!.clarity_reason, "close_alternatives");
+  assert.deepEqual(ambiguous.lines[0]!.candidates.map(({ id }) => id), [8, 7]);
+  const manual = calculateShoppingPlan({ ...ambiguousInput, mode: "manual" }, discovered, basket([]));
+  assert.equal(manual.lines[0]!.clarity_reason, "manual_choice");
+  assert.equal(manual.summary.automatically_selected, 0);
 });
 
 test("whole-list resolution searches the catalogue for every line, is bounded to three searches, ambiguity-safe, and basket-aware", async () => {

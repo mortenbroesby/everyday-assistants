@@ -47,35 +47,35 @@ Execute one reviewable slice at a time. Sol coordinates/integrates, Terra implem
 
 ## 6. Story — Separate planning calculations from snapshot I/O
 
-- [ ] 6.1 Trace plan callers and snapshot consumers; establish deterministic fixtures for order/ties, explicit selection, missing results, quantities, duplicate products, totals and concurrency limits.
-- [ ] 6.2 Isolate pure calculations from discovery/basket loading with plain functions only where it enables meaningful no-I/O tests; preserve separate search and plan ranking policies.
-- [ ] 6.3 Demonstrate the concrete filesystem/HTTP import edge removed or no-I/O calculation test enabled before separating snapshot adapters; record a no-op if neither exists. Preserve file permissions, URLs, principal scope, validation, legacy Tier-0 reads and stored bytes.
-- [ ] 6.4 Run identical fixtures before/after, including storage adapter contract tests; verify no extra requests, retries, parallel writes or changed unmatched-line behavior.
-- [ ] 6.5 Route any reproduced request-rejection/cancellation defect to its separate reliability slice instead of silently fixing it here; record decisions, run pnpm verify, review and commit.
+- [x] 6.1 Trace plan callers and snapshot consumers; establish deterministic fixtures for order/ties, explicit selection, missing results, quantities, duplicate products, totals and concurrency limits.
+- [x] 6.2 Isolate pure calculations from discovery/basket loading with plain functions only where it enables meaningful no-I/O tests; preserve separate search and plan ranking policies.
+- [x] 6.3 Demonstrate the concrete filesystem/HTTP import edge removed or no-I/O calculation test enabled before separating snapshot adapters; record a no-op if neither exists. Preserve file permissions, URLs, principal scope, validation, legacy Tier-0 reads and stored bytes.
+- [x] 6.4 Run identical fixtures before/after, including storage adapter contract tests; verify no extra requests, retries, parallel writes or changed unmatched-line behavior.
+- [x] 6.5 Route any reproduced request-rejection/cancellation defect to its separate reliability slice instead of silently fixing it here; record decisions, run pnpm verify, review and commit.
 
 ## 7. Story — Make MCP presentation independently maintainable
 
-- [ ] 7.1 Trace picker/resource/icon consumers and packaging; characterize resource URI/MIME/metadata, selection messages, escaping, optional images and empty/error rendering.
-- [ ] 7.2 Extract existing static presentation only where it removes an orchestration dependency; retain a single minimal module or packaged asset and record a no-op decision if the split adds no value.
-- [ ] 7.3 Verify exact icon bytes and intended HTML behavior in built/packed resources, including hostile product text and absent images; no remote asset fetch or UI framework.
-- [ ] 7.4 Keep typed serializers and existing UI protocol; add concise security/packaging TSDoc, run focused tests and pnpm verify, record file/byte delta, review and commit.
+- [x] 7.1 Trace picker/resource/icon consumers and packaging; characterize resource URI/MIME/metadata, selection messages, escaping, optional images and empty/error rendering.
+- [x] 7.2 Extract existing static presentation only where it removes an orchestration dependency; retain a single minimal module or packaged asset and record a no-op decision if the split adds no value.
+- [x] 7.3 Verify exact icon bytes and intended HTML behavior in built/packed resources, including hostile product text and absent images; no remote asset fetch or UI framework.
+- [x] 7.4 Keep typed serializers and existing UI protocol; add concise security/packaging TSDoc, run focused tests and pnpm verify, record file/byte delta, review and commit.
 
 ## 8. Story — Make acceptance and release policy gates executable
 
-- [ ] 8.1 Trace production-acceptance script invocation and existing version checker; define fake test seams plus explicit CI base/head semantics for PRs and multi-commit main pushes.
-- [ ] 8.2 Move acceptance dispatch into an import-safe main with direct-entry guard. Verify importing performs zero network calls, server starts or process exits.
-- [ ] 8.3 Test missing credentials, edge-only, default read-only, malformed flags/envelopes and mutation/restoration confirmation with fake clients; verify mutation never becomes a default.
-- [ ] 8.4 Include acceptance-entry tests in the app test/coverage scripts and preserve explicit live acceptance commands; do not run credentialed or basket-mutating tests as part of this cleanup.
-- [ ] 8.5 Wire the existing version checker into CI with documented comparison inputs and docs-only handling; fixture-test patch/minor/major/no-release and unavailable-base failure without Git/provider writes.
+- [x] 8.1 Trace production-acceptance script invocation and existing version checker; define fake test seams plus explicit CI base/head semantics for PRs and multi-commit main pushes.
+- [x] 8.2 Move acceptance dispatch into an import-safe main with direct-entry guard. Verify importing performs zero network calls, server starts or process exits.
+- [x] 8.3 Test missing credentials, edge-only, default read-only, malformed flags/envelopes and mutation/restoration confirmation with fake clients; verify mutation never becomes a default.
+- [x] 8.4 Include acceptance-entry tests in the app test/coverage scripts and preserve explicit live acceptance commands; do not run credentialed or basket-mutating tests as part of this cleanup.
+- [x] 8.5 Wire the existing version checker into CI with documented comparison inputs and docs-only handling; fixture-test patch/minor/major/no-release and unavailable-base failure without Git/provider writes.
 - [ ] 8.6 Run focused release/acceptance tests, pnpm verify and credential-free readiness checks; record policy/command evidence, review and commit.
 
 ## 9. Story — Compiler hygiene, contract documentation and backlog truth
 
 - [x] 9.1 Run native noUnusedLocals/noUnusedParameters and inspect each finding/caller; resolve the observed unused Worker binding without changing a callable contract, then enable checks.
-- [ ] 9.2 Verify imports/configuration and dynamic/package entry points before declaring anything dead; retain all currently used dependencies unless new evidence proves a removal safe.
-- [ ] 9.3 Add TSDoc only for public contracts, units/bounds, freshness, non-retry mutations, owner isolation and pure/effectful boundaries; review against behavior/tests rather than a comment quota.
-- [ ] 9.4 Reconcile backlog and readiness claims against current/archive/acceptance evidence; mark historical SHAs explicitly and preserve outstanding owner/production tasks.
-- [ ] 9.5 Record deliberate ponytail ceilings and measured changes; run typecheck, pnpm verify and privacy checks, review and commit.
+- [x] 9.2 Verify imports/configuration and dynamic/package entry points before declaring anything dead; retain all currently used dependencies unless new evidence proves a removal safe.
+- [x] 9.3 Add TSDoc only for public contracts, units/bounds, freshness, non-retry mutations, owner isolation and pure/effectful boundaries; review against behavior/tests rather than a comment quota.
+- [x] 9.4 Reconcile backlog and readiness claims against current/archive/acceptance evidence; mark historical SHAs explicitly and preserve outstanding owner/production tasks.
+- [x] 9.5 Record deliberate ponytail ceilings and measured changes; run typecheck, pnpm verify and privacy checks, review and commit.
 
 ## 10. Story — Integrate, accept and close the epic
 

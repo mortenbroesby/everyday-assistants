@@ -53,6 +53,11 @@ runbook for [deployment](cloudflare-operations.md#first-deployment-and-current-s
 
 ## Paste-ready evidence update
 
+The block below is historical evidence from 2026-09-01, not a claim about the
+current checkout or live deployment. Current maintenance checks and exact-head
+CI links are tracked in the [P2 implementation evidence](../openspec/changes/p2-simplify-nemlig-maintenance/evidence.md).
+Repository-only refactor verification does not complete live acceptance.
+
 ```text
 Nemlig Assistant production-readiness evidence
 

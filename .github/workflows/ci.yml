@@ -24,6 +24,25 @@ jobs:
           node-version: 22.23.1
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - name: Check committed release version
+        env:
+          CI_EVENT: ${{ github.event_name }}
+          CI_HEAD: ${{ github.sha }}
+          CI_PUSH_BASE: ${{ github.event.before }}
+          CI_PR_BASE: ${{ github.event.pull_request.base.sha }}
+        run: |
+          head=$(git rev-parse --verify "$CI_HEAD^{commit}")
+          case "$CI_EVENT" in
+            pull_request) base=$(git merge-base "$CI_PR_BASE" "$head") ;;
+            push) base="$CI_PUSH_BASE" ;;
+            *) echo "Unsupported version-check event" >&2; exit 1 ;;
+          esac
+          if [[ -z "$base" || "$base" =~ ^0+$ ]]; then
+            echo "Missing version-check base" >&2
+            exit 1
+          fi
+          base=$(git rev-parse --verify "$base^{commit}")
+          pnpm --filter nemlig-assistant check:version-bump --base "$base" --head "$head"
       - run: pnpm nemlig:production:ready
       - uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # v4.6.0
         if: always()

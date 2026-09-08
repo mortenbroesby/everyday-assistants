@@ -88,8 +88,8 @@ export function readWorkingVersion(repoRoot: string): string {
   return readPackageVersion(readFileSync(resolve(repoRoot, packagePath), "utf8"), packagePath);
 }
 
-export function readChangedFiles(repoRoot: string, baseRef: string, includeWorking = true): string[] {
-  const changed = lines(gitMaybe(repoRoot, ["diff", "--name-only", `${baseRef}...HEAD`]));
+export function readChangedFiles(repoRoot: string, baseRef: string, includeWorking = true, headRef = "HEAD"): string[] {
+  const changed = lines(gitMaybe(repoRoot, ["diff", "--name-only", `${baseRef}...${headRef}`]));
   if (includeWorking) {
     changed.push(...lines(gitMaybe(repoRoot, ["diff", "--name-only", "HEAD"])));
     changed.push(...lines(gitMaybe(repoRoot, ["diff", "--cached", "--name-only", "HEAD"])));
@@ -97,8 +97,8 @@ export function readChangedFiles(repoRoot: string, baseRef: string, includeWorki
   return [...new Set(changed)];
 }
 
-export function readCommits(repoRoot: string, baseRef: string): ReleaseCommit[] {
-  const output = gitMaybe(repoRoot, ["log", "--format=%s%x00%b%x1e", `${baseRef}..HEAD`]);
+export function readCommits(repoRoot: string, baseRef: string, headRef = "HEAD"): ReleaseCommit[] {
+  const output = gitMaybe(repoRoot, ["log", "--format=%s%x00%b%x1e", `${baseRef}..${headRef}`]);
   return output.split("\x1e").map((entry) => entry.trim()).filter(Boolean).map((entry) => {
     const [subject = "", body = ""] = entry.split("\x00");
     return { subject, body };
