@@ -1,12 +1,10 @@
-import { execFile } from "node:child_process";
+import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { open, mkdir, rename, writeFile } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import process from "node:process";
-import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 
-const execute = promisify(execFile);
 const fullSha = /^[0-9a-f]{40}$/u;
 const versionId = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/u;
 const remoteLeaseRef = "refs/heads/codex-lock/nemlig-production";
@@ -23,11 +21,16 @@ export interface DeploymentJournal {
   schema: 2;
   operationId: string;
   commit: string;
+  ciRunId: number;
   startedAt: string;
   completedAt?: string;
   startingVersion?: string;
   disabledVersion?: string;
   enabledVersion?: string;
+  startingContainerId?: string;
+  startingImage?: string;
+  disabledImage?: string;
+  enabledImage?: string;
   checks: string[];
   lastVerifiedState: VerifiedState;
   rollback: "not_needed" | "attempted" | "restored" | "failed";
@@ -66,6 +69,7 @@ export interface DeployDependencies {
   now: () => Date;
   operationId?: () => string;
   stateRoot?: string;
+  signal?: AbortSignal;
 }
 
 interface CurrentDeployment {
@@ -107,15 +111,34 @@ const operationId = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/u;
 const journalPhases = new Set<JournalPhase>(["disabled_deploy", "enable_deploy", "rollback"]);
 const journalKinds = new Set<JournalKind>(["intent", "result"]);
 const journalLimit = 8 * 1024;
+const isoTime = (value: unknown): value is string => typeof value === "string" && Number.isFinite(Date.parse(value));
+const imageDigest = /^sha256:[0-9a-f]{64}$/u;
 const journalChecks = new Set(["source_and_auth_preflight", "exclusive_lease", "starting_state_recorded", "disabled_version", "disabled_routes", "container_inactive", "enabled_version", "image_reused", "edge_acceptance", "authenticated_read_only_acceptance", "starting_version_restored"]);
-const journalFailures = new Set(["owner_access_token_required", "github_repository_invalid", "source_revision_mismatch", "github_ci_workflow_invalid", "github_ci_invalid", "exact_head_ci_not_green", "local_deployment_lease_unavailable", "remote_deployment_lease_unavailable", "remote_journal_invalid", "remote_journal_append_failed", "remote_journal_parent_invalid", "remote_deployment_lease_changed", "deployment_journal_invalid", "deployment_journal_oversized", "deployment_journal_write_failed", "cloudflare_deployment_drift", "cloudflare_upload_version_missing", "disabled_route_unavailable", "disabled_route_mismatch", "container_inactive_timeout", "container_image_changed_during_enable", "unexpected_failure"]);
+const journalFailures = new Set(["owner_access_token_required", "github_repository_invalid", "source_revision_mismatch", "github_ci_workflow_invalid", "github_ci_invalid", "exact_head_ci_not_green", "local_deployment_lease_unavailable", "remote_deployment_lease_unavailable", "remote_journal_invalid", "remote_journal_append_failed", "remote_journal_parent_invalid", "remote_deployment_lease_changed", "deployment_journal_invalid", "deployment_journal_oversized", "deployment_journal_write_failed", "cloudflare_deployment_drift", "cloudflare_upload_version_missing", "disabled_route_unavailable", "disabled_route_mismatch", "container_inactive_timeout", "container_image_changed_during_enable", "command_failed", "command_cancelled", "unexpected_failure"]);
 
 const journalJson = (journal: DeploymentJournal): string => {
-  if (!operationId.test(journal.operationId) || !fullSha.test(journal.commit) || journal.transitions.length > 32) fail("deployment_journal_invalid");
+  if (!operationId.test(journal.operationId) || !fullSha.test(journal.commit) || !Number.isSafeInteger(journal.ciRunId) || journal.ciRunId < 1
+    || !isoTime(journal.startedAt) || (journal.completedAt !== undefined && !isoTime(journal.completedAt))
+    || journal.transitions.length > 32
+    || (journal.remoteCommit !== undefined && !fullSha.test(journal.remoteCommit))
+    || (journal.startingVersion !== undefined && !versionId.test(journal.startingVersion))
+    || (journal.disabledVersion !== undefined && !versionId.test(journal.disabledVersion))
+    || (journal.enabledVersion !== undefined && !versionId.test(journal.enabledVersion))
+    || (journal.startingContainerId !== undefined && !versionId.test(journal.startingContainerId))
+    || (journal.startingImage !== undefined && !imageDigest.test(journal.startingImage))
+    || (journal.disabledImage !== undefined && !imageDigest.test(journal.disabledImage))
+    || (journal.enabledImage !== undefined && !imageDigest.test(journal.enabledImage))) fail("deployment_journal_invalid");
   if (journal.checks.some((check) => !journalChecks.has(check)) || (journal.failure !== undefined && !journalFailures.has(journal.failure))) fail("deployment_journal_invalid");
+  let nextPhase = 0;
+  let expecting: JournalKind = "intent";
   for (const transition of journal.transitions) {
     if (!journalPhases.has(transition.phase) || !journalKinds.has(transition.kind)
-      || typeof transition.at !== "string" || (transition.version !== undefined && !versionId.test(transition.version))) fail("deployment_journal_invalid");
+      || !isoTime(transition.at) || (transition.version !== undefined && !versionId.test(transition.version))
+      || Object.keys(transition).some((key) => !["phase", "kind", "at", "version"].includes(key))
+      || transition.phase !== ["disabled_deploy", "enable_deploy", "rollback"][nextPhase]
+      || transition.kind !== expecting) fail("deployment_journal_invalid");
+    if (expecting === "intent") expecting = "result";
+    else { expecting = "intent"; nextPhase += 1; }
   }
   const serialized = JSON.stringify(journal);
   if (Buffer.byteLength(serialized, "utf8") > journalLimit) fail("deployment_journal_oversized");
@@ -124,9 +147,9 @@ const journalJson = (journal: DeploymentJournal): string => {
 
 export function parseDeploymentJournal(raw: string): DeploymentJournal {
   const value = object(json(raw, "deployment_journal_invalid"));
-  const allowed = new Set(["schema", "operationId", "commit", "startedAt", "completedAt", "startingVersion", "disabledVersion", "enabledVersion", "checks", "lastVerifiedState", "rollback", "outcome", "failure", "remoteCommit", "transitions"]);
+  const allowed = new Set(["schema", "operationId", "commit", "ciRunId", "startedAt", "completedAt", "startingVersion", "disabledVersion", "enabledVersion", "startingContainerId", "startingImage", "disabledImage", "enabledImage", "checks", "lastVerifiedState", "rollback", "outcome", "failure", "remoteCommit", "transitions"]);
   if (!value || Object.keys(value).some((key) => !allowed.has(key)) || value.schema !== 2
-    || typeof value.operationId !== "string" || typeof value.commit !== "string" || typeof value.startedAt !== "string"
+    || typeof value.operationId !== "string" || typeof value.commit !== "string" || typeof value.ciRunId !== "number" || typeof value.startedAt !== "string"
     || !Array.isArray(value.checks) || !Array.isArray(value.transitions)
     || !["unchanged", "disabled", "enabled", "restored", "unknown"].includes(value.lastVerifiedState as string)
     || !["not_needed", "attempted", "restored", "failed"].includes(value.rollback as string)
@@ -248,23 +271,56 @@ const deployedVersionFromOutput = (raw: string): string => {
   return id && versionId.test(id) ? id : fail("cloudflare_upload_version_missing");
 };
 
-const defaultRunner: CommandRunner = async (command, args, options = {}) => {
-  try {
-    const { stdout } = await execute(command, [...args], {
-      cwd: options.cwd,
-      encoding: "utf8",
-      env: options.env,
-      maxBuffer: 16 * 1024 * 1024,
-      timeout: options.timeoutMs ?? 30_000,
-    });
-    return stdout.trim();
-  } catch {
-    return fail(`command_failed_${basename(command).replaceAll(/[^a-z0-9]/giu, "_").toLowerCase()}`);
-  }
-};
+const defaultRunner: CommandRunner = async (command, args, options = {}) => await new Promise<string>((resolvePromise, reject) => {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), options.timeoutMs ?? 30_000);
+  const abort = () => controller.abort();
+  options.signal?.addEventListener("abort", abort, { once: true });
+  const child = spawn(command, args, {
+    cwd: options.cwd, env: options.env, detached: process.platform !== "win32", stdio: ["pipe", "pipe", "pipe"],
+  });
+  let output = "";
+  let overflow = false;
+  let terminated = false;
+  let finished = false;
+  const clean = () => {
+    clearTimeout(timeout);
+    options.signal?.removeEventListener("abort", abort);
+    controller.signal.removeEventListener("abort", terminate);
+  };
+  const done = (error?: Error) => {
+    if (finished) return;
+    finished = true;
+    clean();
+    if (error) reject(error);
+    else resolvePromise(output.trim());
+  };
+  const terminate = () => {
+    if (terminated) return;
+    terminated = true;
+    try { process.kill(process.platform === "win32" ? child.pid! : -child.pid!, "SIGTERM"); } catch { /* already closed */ }
+    setTimeout(() => {
+      if (!finished) try { process.kill(process.platform === "win32" ? child.pid! : -child.pid!, "SIGKILL"); } catch { /* already closed */ }
+    }, 5_000).unref();
+  };
+  controller.signal.addEventListener("abort", terminate, { once: true });
+  child.stdout.on("data", (chunk: Buffer) => {
+    if (output.length + chunk.length > 16 * 1024 * 1024) { overflow = true; controller.abort(); }
+    else output += chunk.toString();
+  });
+  child.stderr.resume();
+  child.on("error", () => done(new DeployFailure("command_failed")));
+  child.on("close", (code) => {
+    if (controller.signal.aborted) done(new DeployFailure(overflow ? "command_failed" : "command_cancelled"));
+    else if (code === 0) done();
+    else done(new DeployFailure("command_failed"));
+  });
+  if (options.input !== undefined) child.stdin.end(options.input);
+  else child.stdin.end();
+});
 
 const runAt = (deps: DeployDependencies, cwd: string, command: string, args: readonly string[], options: RunOptions = {}) =>
-  deps.run(command, args, { ...options, cwd, env: { ...deps.env, ...options.env } });
+  deps.run(command, args, { ...options, signal: options.signal ?? deps.signal, cwd, env: { ...deps.env, ...options.env } });
 
 const wrangler = (deps: DeployDependencies, args: readonly string[], timeoutMs = 30_000) =>
   runAt(deps, deps.packageRoot, "pnpm", ["exec", "wrangler", ...args, "--env", "production"], { timeoutMs });
@@ -284,10 +340,10 @@ const writeJournal = async (path: string, journal: DeploymentJournal): Promise<v
   await rename(temporary, path);
 };
 
-const acquireLocalLease = async (path: string, commit: string): Promise<void> => {
+const acquireLocalLease = async (path: string, operation: string, commit: string): Promise<void> => {
   try {
     const handle = await open(path, "wx", 0o600);
-    await handle.writeFile(`${JSON.stringify({ commit })}\n`);
+    await handle.writeFile(`${JSON.stringify({ operation, commit })}\n`);
     await handle.close();
   } catch {
     fail("local_deployment_lease_unavailable");
@@ -327,10 +383,23 @@ const journalCommit = async (deps: DeployDependencies, repository: string, journ
   return commitSha as string;
 };
 
+const readRemoteHead = async (deps: DeployDependencies, repository: string): Promise<string | undefined> => {
+  const value = await runAt(deps, deps.repoRoot, "gh", ["api", `repos/${repository}/git/ref/heads/codex-lock/nemlig-production`, "--jq", ".object.sha"]);
+  if (value === "") return undefined;
+  if (!fullSha.test(value)) fail("remote_journal_invalid");
+  return value;
+};
+
 const acquireRemoteJournal = async (deps: DeployDependencies, repository: string, journal: DeploymentJournal): Promise<string> => {
+  try {
+    if (await readRemoteHead(deps, repository)) fail("remote_deployment_lease_unavailable");
+  } catch (error) {
+    if (error instanceof DeployFailure) throw error;
+  }
   const root = await journalCommit(deps, repository, journal);
   try {
     await ghJson(deps, repository, "POST", "git/refs", { ref: remoteLeaseRef, sha: root });
+    if (await readRemoteHead(deps, repository) !== root) fail("remote_deployment_lease_changed");
   } catch {
     fail("remote_deployment_lease_unavailable");
   }
@@ -340,10 +409,11 @@ const acquireRemoteJournal = async (deps: DeployDependencies, repository: string
 const appendRemoteJournal = async (deps: DeployDependencies, repository: string, journal: DeploymentJournal): Promise<void> => {
   const parent = journal.remoteCommit;
   if (!parent || !fullSha.test(parent)) fail("remote_journal_parent_invalid");
+  if (await readRemoteHead(deps, repository) !== parent) fail("remote_journal_parent_invalid");
   const child = await journalCommit(deps, repository, journal, parent);
   try {
     await ghJson(deps, repository, "PATCH", "git/refs/heads/codex-lock/nemlig-production", { sha: child, force: false });
-    const current = await runAt(deps, deps.repoRoot, "gh", ["api", `repos/${repository}/git/ref/heads/codex-lock/nemlig-production`, "--jq", ".object.sha"]);
+    const current = await readRemoteHead(deps, repository);
     if (current !== child) fail("remote_deployment_lease_changed");
   } catch {
     fail("remote_journal_append_failed");
@@ -351,7 +421,7 @@ const appendRemoteJournal = async (deps: DeployDependencies, repository: string,
   journal.remoteCommit = child;
 };
 
-const verifySource = async (deps: DeployDependencies, commit: string, repo: { nameWithOwner: string; url: string }): Promise<void> => {
+const verifySource = async (deps: DeployDependencies, commit: string, repo: { nameWithOwner: string; url: string }): Promise<number> => {
   await runAt(deps, deps.repoRoot, "gh", ["auth", "status", "-h", "github.com"]);
   await runAt(deps, deps.repoRoot, "git", ["-c", "credential.helper=!gh auth git-credential", "fetch", repo.url, "main:refs/remotes/origin/main"]);
   const [head, remote, status] = await Promise.all([
@@ -378,9 +448,18 @@ const verifySource = async (deps: DeployDependencies, commit: string, repo: { na
     && run.workflowName === ciWorkflowName
     && run.workflowDatabaseId === workflowId
     && typeof run.databaseId === "number").sort((left, right) => (right!.databaseId as number) - (left!.databaseId as number))[0] : undefined;
-  if (!trusted || trusted.status !== "completed" || trusted.conclusion !== "success") {
+  if (!trusted) fail("exact_head_ci_not_green");
+  const trustedRun = trusted as Record<string, unknown>;
+  if (trustedRun.status !== "completed" || trustedRun.conclusion !== "success") {
     fail("exact_head_ci_not_green");
   }
+  const run = object(json(await runAt(deps, deps.repoRoot, "gh", [
+    "run", "view", String(trustedRun.databaseId), "--repo", repo.nameWithOwner, "--json", "jobs",
+  ]), "github_ci_invalid"));
+  const jobs = Array.isArray(run?.jobs) ? run.jobs.map(object).filter((job): job is Record<string, unknown> => Boolean(job)) : [];
+  const verify = jobs.filter((job) => job.name === "verify");
+  if (verify.length !== 1 || verify[0]?.status !== "completed" || verify[0]?.conclusion !== "success") fail("exact_head_ci_not_green");
+  return trustedRun.databaseId as number;
 };
 
 const verifyDisabledRoutes = async (deps: DeployDependencies): Promise<void> => {
@@ -403,10 +482,12 @@ const verifyCurrent = async (deps: DeployDependencies, expected: string): Promis
   if ((await readCurrent(deps)).version !== expected) fail("cloudflare_deployment_drift");
 };
 
-const rollback = async (deps: DeployDependencies, journal: DeploymentJournal, starting: VersionState): Promise<void> => {
+const rollback = async (deps: DeployDependencies, journal: DeploymentJournal, starting: VersionState, startingContainer: ContainerState): Promise<void> => {
   journal.rollback = "attempted";
   await wrangler(deps, ["rollback", starting.id, "--message", `Automated rollback after failed ${journal.commit.slice(0, 7)} release`, "--yes"], 120_000);
   await verifyCurrent(deps, starting.id);
+  const currentContainer = await readContainer(deps);
+  if (currentContainer.id !== startingContainer.id || currentContainer.image !== startingContainer.image) fail("cloudflare_deployment_drift");
   const restored = parseVersionState(await readVersion(deps, starting.id), starting.id);
   if (restored.enabled) {
     await runAt(deps, deps.packageRoot, "pnpm", ["production:probe"], {
@@ -427,6 +508,7 @@ export async function deployProduction(commit: string, deps: DeployDependencies)
     schema: 2,
     operationId: (deps.operationId ?? randomUUID)(),
     commit,
+    ciRunId: 0,
     startedAt: deps.now().toISOString(),
     checks: [],
     lastVerifiedState: "unchanged",
@@ -437,6 +519,7 @@ export async function deployProduction(commit: string, deps: DeployDependencies)
   let providerMutation = false;
   let mutationUncertain = false;
   let starting: VersionState | undefined;
+  let startingContainer: ContainerState | undefined;
   let repository = "";
   let journalPath = "";
 
@@ -444,21 +527,24 @@ export async function deployProduction(commit: string, deps: DeployDependencies)
     if (!deps.env.NEMLIG_MCP_ACCESS_TOKEN?.trim()) fail("owner_access_token_required");
     const repo = await repoIdentity(deps);
     repository = repo.nameWithOwner;
-    await verifySource(deps, commit, repo);
+    journal.ciRunId = await verifySource(deps, commit, repo);
     const common = deps.stateRoot ?? await runAt(deps, deps.repoRoot, "git", ["rev-parse", "--git-common-dir"]);
     const stateRoot = isAbsolute(common) ? common : resolve(deps.repoRoot, common);
     await mkdir(join(stateRoot, "nemlig-production-deploy"), { recursive: true, mode: 0o700 });
     const lockPath = join(stateRoot, "nemlig-production-deploy.lock");
     journalPath = join(stateRoot, "nemlig-production-deploy", "latest.json");
-    await acquireLocalLease(lockPath, commit);
+    await acquireLocalLease(lockPath, journal.operationId, commit);
     journal.remoteCommit = await acquireRemoteJournal(deps, repository, journal);
     await writeJournal(journalPath, journal);
 
-    await verifySource(deps, commit, repo);
+    if (await verifySource(deps, commit, repo) !== journal.ciRunId) fail("github_ci_invalid");
     await wrangler(deps, ["whoami"]);
     const start = await readCurrent(deps);
     starting = parseVersionState(await readVersion(deps, start.version), start.version);
+    startingContainer = await readContainer(deps);
     journal.startingVersion = starting.id;
+    journal.startingContainerId = startingContainer.id;
+    journal.startingImage = startingContainer.image;
     journal.checks.push("source_and_auth_preflight", "exclusive_lease", "starting_state_recorded");
     await writeJournal(journalPath, journal);
 
@@ -476,19 +562,20 @@ export async function deployProduction(commit: string, deps: DeployDependencies)
       "--message", `Automated production release disabled gate at ${commit.slice(0, 7)}`], 600_000);
     mutationUncertain = false;
     const disabledId = deployedVersionFromOutput(disabledOutput);
-    journal.disabledVersion = disabledId;
-    await transition("disabled_deploy", "result", disabledId);
     await verifyCurrent(deps, disabledId);
-    await transition("enable_deploy", "intent", disabledId);
     verifyCandidateVersion(await readVersion(deps, disabledId), disabledId, commit, false);
     const disabledContainer = await readContainer(deps);
+    if (disabledContainer.id !== startingContainer.id || disabledContainer.image !== startingContainer.image) fail("container_image_changed_during_enable");
     await verifyDisabledRoutes(deps);
     await waitForInactive(deps, disabledContainer.id);
+    journal.disabledVersion = disabledId;
+    journal.disabledImage = disabledContainer.image;
     journal.lastVerifiedState = "disabled";
     journal.checks.push("disabled_version", "disabled_routes", "container_inactive");
-    await writeJournal(journalPath, journal);
+    await transition("disabled_deploy", "result", disabledId);
 
     await verifyCurrent(deps, disabledId);
+    await transition("enable_deploy", "intent", disabledId);
     mutationUncertain = true;
     const enabledOutput = await wrangler(deps, ["deploy", "--var", "MCP_ENABLED:true", "--var",
       `NEMLIG_MCP_REVISION:${commit}`, "--containers-rollout", "none", "--message",
@@ -496,7 +583,6 @@ export async function deployProduction(commit: string, deps: DeployDependencies)
     mutationUncertain = false;
     const enabledId = deployedVersionFromOutput(enabledOutput);
     journal.enabledVersion = enabledId;
-    await transition("enable_deploy", "result", enabledId);
     await verifyCurrent(deps, enabledId);
     verifyCandidateVersion(await readVersion(deps, enabledId), enabledId, commit, true);
     const enabledContainer = await readContainer(deps);
@@ -508,8 +594,11 @@ export async function deployProduction(commit: string, deps: DeployDependencies)
       env: { NEMLIG_EXPECTED_REVISION: commit },
     });
     await runAt(deps, deps.packageRoot, "pnpm", ["production:test:features"], { timeoutMs: 120_000 });
+    journal.enabledVersion = enabledId;
+    journal.enabledImage = enabledContainer.image;
     journal.lastVerifiedState = "enabled";
     journal.checks.push("enabled_version", "image_reused", "edge_acceptance", "authenticated_read_only_acceptance");
+    await transition("enable_deploy", "result", enabledId);
     journal.outcome = "success";
   } catch (error) {
     journal.outcome = "failed";
@@ -528,8 +617,8 @@ export async function deployProduction(commit: string, deps: DeployDependencies)
           journal.lastVerifiedState = "disabled";
         } else if (current.version === starting.id) {
           journal.lastVerifiedState = starting.enabled ? "enabled" : "disabled";
-        } else {
-          await rollback(deps, journal, starting);
+        } else if (startingContainer) {
+          await rollback(deps, journal, starting, startingContainer);
         }
       } catch {
         journal.rollback = journal.rollback === "attempted" ? "failed" : journal.rollback;
@@ -558,15 +647,16 @@ async function main(): Promise<void> {
     console.log(`Usage: ${productionDeployUsage}`);
     return;
   }
+  const controller = new AbortController();
+  const abort = () => controller.abort();
+  process.once("SIGINT", abort);
+  process.once("SIGTERM", abort);
   const report = await deployProduction(input.commit, {
-    repoRoot,
-    packageRoot,
-    env: process.env,
-    run: defaultRunner,
-    fetcher: fetch,
-    sleep: async (milliseconds) => await new Promise((resolvePromise) => setTimeout(resolvePromise, milliseconds)),
-    now: () => new Date(),
+    repoRoot, packageRoot, env: process.env, run: defaultRunner, fetcher: fetch, signal: controller.signal,
+    sleep: async (milliseconds) => await new Promise((resolvePromise) => setTimeout(resolvePromise, milliseconds)), now: () => new Date(),
   });
+  process.removeListener("SIGINT", abort);
+  process.removeListener("SIGTERM", abort);
   console.log(JSON.stringify(report, null, 2));
   if (report.outcome !== "success") process.exitCode = 1;
 }

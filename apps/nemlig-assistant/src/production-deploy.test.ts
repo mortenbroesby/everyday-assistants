@@ -24,7 +24,7 @@ const disabledId = "11111111-1111-4111-8111-111111111111";
 const enabledId = "22222222-2222-4222-8222-222222222222";
 const thirdPartyId = "33333333-3333-4333-8333-333333333333";
 const applicationId = "a03ce8c9-3543-4505-866e-14d2e66007ca";
-const image = "registry.cloudflare.test/nemlig@sha256:abc";
+const image = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 
 const version = (id: string, revision: string, enabled: boolean) => JSON.stringify({
   id,
@@ -75,6 +75,7 @@ async function fixture(options: {
   workflowPath?: string;
   run?: Record<string, unknown>;
   runs?: Array<Record<string, unknown>>;
+  jobs?: Array<Record<string, unknown>>;
   disabledResponse?: string;
   disabledFetchFails?: boolean;
   driftBeforeEnable?: boolean;
@@ -86,6 +87,7 @@ async function fixture(options: {
   const calls: Call[] = [];
   let current = startingId;
   let remoteLease = false;
+  let appended = false;
   const journalSha = "cccccccccccccccccccccccccccccccccccccccc";
   let disabledReads = 0;
   let remoteReads = 0;
@@ -98,6 +100,7 @@ async function fixture(options: {
       return JSON.stringify([{ id: options.workflowId ?? 123, name: "CI", path: options.workflowPath ?? ".github/workflows/ci.yml", state: "active" }]);
     }
     if (commandName === "gh" && args[0] === "run") {
+      if (args[1] === "view") return JSON.stringify({ jobs: options.jobs ?? [{ name: "verify", status: "completed", conclusion: "success" }] });
       const base = {
         databaseId: 456,
         workflowDatabaseId: options.workflowId ?? 123,
@@ -120,12 +123,12 @@ async function fixture(options: {
       remoteLease = true;
       return "{}";
     }
-    if (commandName === "gh" && args[0] === "api" && args.includes("PATCH")) return "{}";
+    if (commandName === "gh" && args[0] === "api" && args.includes("PATCH")) { appended = true; return "{}"; }
     if (commandName === "gh" && args[0] === "api" && args.includes("DELETE")) {
       remoteLease = false;
       return "";
     }
-    if (commandName === "gh" && args[0] === "api") return remoteLease ? (options.remoteLeaseChanges ? previousCommit : journalSha) : "";
+    if (commandName === "gh" && args[0] === "api") return remoteLease ? (options.remoteLeaseChanges && appended ? previousCommit : journalSha) : "";
     if (commandName === "gh") return "";
     if (commandName === "git" && args[0] === "rev-parse" && args[1] === "HEAD") return options.head ?? commit;
     if (commandName === "git" && args[0] === "rev-parse" && args[1] === "origin/main") {
@@ -227,6 +230,7 @@ test("schema-2 recovery journals reject unknown, malformed, oversized, and exces
     schema: 2,
     operationId: "44444444-4444-4444-8444-444444444444",
     commit,
+    ciRunId: 456,
     startedAt: "2026-09-05T12:00:00.000Z",
     checks: [],
     lastVerifiedState: "unchanged",
@@ -237,6 +241,8 @@ test("schema-2 recovery journals reject unknown, malformed, oversized, and exces
   assert.equal(parseDeploymentJournal(JSON.stringify(journal)).operationId, journal.operationId);
   assert.throws(() => parseDeploymentJournal(JSON.stringify({ ...journal, token: "secret" })));
   assert.throws(() => parseDeploymentJournal(JSON.stringify({ ...journal, operationId: commit })));
+  assert.throws(() => parseDeploymentJournal(JSON.stringify({ ...journal, transitions: [{ phase: "disabled_deploy", kind: "intent", at: journal.startedAt, token: "no" }] })));
+  assert.throws(() => parseDeploymentJournal(JSON.stringify({ ...journal, transitions: [{ phase: "enable_deploy", kind: "intent", at: journal.startedAt }] })));
   assert.throws(() => parseDeploymentJournal(JSON.stringify({ ...journal, transitions: Array.from({ length: 33 }, () => ({ phase: "disabled_deploy", kind: "intent", at: journal.startedAt })) })));
   assert.throws(() => parseDeploymentJournal(JSON.stringify({ ...journal, checks: ["x".repeat(9000)] })));
 });
@@ -273,6 +279,8 @@ test("only the exact trusted main CI provenance may reach Wrangler", async () =>
     { run: { headBranch: "feature" } },
     { run: { event: "pull_request" } },
     { run: { headSha: previousCommit } },
+    { jobs: [{ name: "verify", status: "completed", conclusion: "skipped" }] },
+    { jobs: [{ name: "other", status: "completed", conclusion: "success" }] },
     { head: previousCommit },
   ];
   for (const options of rejected) {
