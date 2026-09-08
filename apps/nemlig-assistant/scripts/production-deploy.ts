@@ -94,6 +94,12 @@ class DeployFailure extends Error {
   }
 }
 
+class CommandFailure extends DeployFailure {
+  constructor(code: string, readonly status?: number) {
+    super(code);
+  }
+}
+
 const fail = (code: string): never => { throw new DeployFailure(code); };
 
 const json = (raw: string, code: string): unknown => {
@@ -125,20 +131,20 @@ const journalJson = (journal: DeploymentJournal): string => {
     || !operationId.test(journal.operationId) || !fullSha.test(journal.commit) || !Number.isSafeInteger(journal.ciRunId) || journal.ciRunId < 1
     || !isoTime(journal.startedAt) || (journal.completedAt !== undefined && !isoTime(journal.completedAt))
     || journal.transitions.length > 32
-    || (journal.remoteCommit !== undefined && !fullSha.test(journal.remoteCommit))
-    || (journal.startingVersion !== undefined && !versionId.test(journal.startingVersion))
-    || (journal.disabledVersion !== undefined && !versionId.test(journal.disabledVersion))
-    || (journal.enabledVersion !== undefined && !versionId.test(journal.enabledVersion))
-    || (journal.startingContainerId !== undefined && !versionId.test(journal.startingContainerId))
-    || (journal.startingImage !== undefined && !imageDigest.test(journal.startingImage))
-    || (journal.disabledImage !== undefined && !imageDigest.test(journal.disabledImage))
-    || (journal.enabledImage !== undefined && !imageDigest.test(journal.enabledImage))) fail("deployment_journal_invalid");
+    || (journal.remoteCommit !== undefined && (typeof journal.remoteCommit !== "string" || !fullSha.test(journal.remoteCommit)))
+    || (journal.startingVersion !== undefined && (typeof journal.startingVersion !== "string" || !versionId.test(journal.startingVersion)))
+    || (journal.disabledVersion !== undefined && (typeof journal.disabledVersion !== "string" || !versionId.test(journal.disabledVersion)))
+    || (journal.enabledVersion !== undefined && (typeof journal.enabledVersion !== "string" || !versionId.test(journal.enabledVersion)))
+    || (journal.startingContainerId !== undefined && (typeof journal.startingContainerId !== "string" || !versionId.test(journal.startingContainerId)))
+    || (journal.startingImage !== undefined && (typeof journal.startingImage !== "string" || !imageDigest.test(journal.startingImage)))
+    || (journal.disabledImage !== undefined && (typeof journal.disabledImage !== "string" || !imageDigest.test(journal.disabledImage)))
+    || (journal.enabledImage !== undefined && (typeof journal.enabledImage !== "string" || !imageDigest.test(journal.enabledImage)))) fail("deployment_journal_invalid");
   if (journal.checks.some((check) => !journalChecks.has(check)) || (journal.failure !== undefined && !journalFailures.has(journal.failure))) fail("deployment_journal_invalid");
   let nextPhase = 0;
   let expecting: JournalKind = "intent";
   for (const transition of journal.transitions) {
     if (!transition || typeof transition !== "object" || !journalPhases.has(transition.phase) || !journalKinds.has(transition.kind)
-      || !isoTime(transition.at) || (transition.version !== undefined && !versionId.test(transition.version))
+      || !isoTime(transition.at) || (transition.version !== undefined && (typeof transition.version !== "string" || !versionId.test(transition.version)))
       || Object.keys(transition).some((key) => !["phase", "kind", "at", "version"].includes(key))
       || transition.phase !== ["disabled_deploy", "enable_deploy", "rollback"][nextPhase]
       || transition.kind !== expecting) fail("deployment_journal_invalid");
@@ -285,6 +291,7 @@ const defaultRunner: CommandRunner = async (command, args, options = {}) => awai
     cwd: options.cwd, env: options.env, detached: process.platform !== "win32", stdio: ["pipe", "pipe", "pipe"],
   });
   let output = "";
+  let stderr = "";
   let overflow = false;
   let terminated = false;
   let finished = false;
@@ -313,12 +320,12 @@ const defaultRunner: CommandRunner = async (command, args, options = {}) => awai
     if (output.length + chunk.length > 16 * 1024 * 1024) { overflow = true; controller.abort(); }
     else output += chunk.toString();
   });
-  child.stderr.resume();
-  child.on("error", () => done(new DeployFailure("command_failed")));
+  child.stderr.on("data", (chunk: Buffer) => { stderr = `${stderr}${chunk.toString()}`.slice(-64 * 1024); });
+  child.on("error", () => done(new CommandFailure("command_failed")));
   child.on("close", (code) => {
     if (controller.signal.aborted) done(new DeployFailure(overflow ? "command_failed" : "command_cancelled"));
     else if (code === 0) done();
-    else done(new DeployFailure("command_failed"));
+    else done(new CommandFailure("command_failed", /HTTP 404\b/u.test(stderr) ? 404 : undefined));
   });
   if (options.input !== undefined) child.stdin.end(options.input);
   else child.stdin.end();
@@ -430,7 +437,7 @@ const appendRemoteJournal = async (deps: DeployDependencies, repository: string,
   journal.remoteCommit = child;
 };
 
-const readRemoteJournal = async (deps: DeployDependencies, repository: string): Promise<DeploymentJournal> => {
+const readRemoteJournal = async (deps: DeployDependencies, repository: string): Promise<{ head: string; journal: DeploymentJournal }> => {
   const head = await readRemoteHead(deps, repository);
   if (!head) fail("remote_journal_invalid");
   const commit = await ghJson(deps, repository, "GET", `git/commits/${head}`);
@@ -443,20 +450,28 @@ const readRemoteJournal = async (deps: DeployDependencies, repository: string): 
   if (!entriesList || entriesList.length !== 1 || entry?.path !== "journal.json" || entry.type !== "blob"
     || entry.mode !== "100644" || typeof entry.sha !== "string" || !fullSha.test(entry.sha)) fail("remote_journal_invalid");
   const blob = await ghJson(deps, repository, "GET", `git/blobs/${(entry as Record<string, unknown>).sha as string}`);
-  if (blob.encoding !== "base64" || typeof blob.content !== "string" || !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/u.test(blob.content)) fail("remote_journal_invalid");
-  const decoded = Buffer.from(blob.content, "base64");
-  if (decoded.length > journalLimit || decoded.toString("base64") !== blob.content) fail("remote_journal_invalid");
-  return parseDeploymentJournal(decoded.toString("utf8"));
+  const encodedLimit = 4 * Math.ceil(journalLimit / 3);
+  const content = blob.content;
+  if (blob.encoding !== "base64") fail("remote_journal_invalid");
+  if (typeof content !== "string") fail("remote_journal_invalid");
+  const encodedContent = content as string;
+  if (encodedContent.length > encodedLimit * 2 || !/^[A-Za-z0-9+/=\n]+$/u.test(encodedContent)) fail("remote_journal_invalid");
+  const encoded = encodedContent.replace(/\n/g, "");
+  if (encoded.length > encodedLimit || !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/u.test(encoded)) fail("remote_journal_invalid");
+  const decoded = Buffer.from(encoded, "base64");
+  if (decoded.length > journalLimit || decoded.toString("base64") !== encoded) fail("remote_journal_invalid");
+  return { head: head as string, journal: parseDeploymentJournal(decoded.toString("utf8")) };
 };
 
 export async function finalizeDeploymentRecovery(operation: string, deps: DeployDependencies, evidenceSaved: boolean): Promise<boolean> {
   if (!operationId.test(operation) || !evidenceSaved) return false;
   const repo = await repoIdentity(deps);
-  const journal = await readRemoteJournal(deps, repo.nameWithOwner);
+  const remote = await readRemoteJournal(deps, repo.nameWithOwner);
+  const { journal } = remote;
   const terminal = journal.outcome !== "running" && journal.lastVerifiedState !== "unknown" && journal.transitions.at(-1)?.kind === "result";
   const expected = journal.outcome === "success" ? journal.enabledVersion : journal.lastVerifiedState === "restored" ? journal.startingVersion : undefined;
   if (journal.operationId !== operation || !terminal || !expected || (await readCurrent(deps)).version !== expected) return false;
-  if (await readRemoteHead(deps, repo.nameWithOwner) !== journal.remoteCommit) return false;
+  if (await readRemoteHead(deps, repo.nameWithOwner) !== remote.head) return false;
   await runAt(deps, deps.repoRoot, "gh", ["api", "--method", "DELETE", `repos/${repo.nameWithOwner}/git/refs/heads/codex-lock/nemlig-production`]);
   const common = deps.stateRoot ?? await runAt(deps, deps.repoRoot, "git", ["rev-parse", "--git-common-dir"]);
   const lock = join(isAbsolute(common) ? common : resolve(deps.repoRoot, common), "nemlig-production-deploy.lock");

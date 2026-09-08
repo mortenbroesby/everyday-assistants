@@ -64,6 +64,7 @@ interface Call {
   command: string;
   args: readonly string[];
   env?: NodeJS.ProcessEnv;
+  input?: string;
 }
 
 async function fixture(options: {
@@ -93,7 +94,7 @@ async function fixture(options: {
   let disabledReads = 0;
   let remoteReads = 0;
   const run: CommandRunner = async (commandName, args, runOptions) => {
-    calls.push({ command: commandName, args: [...args], env: runOptions?.env });
+    calls.push({ command: commandName, args: [...args], env: runOptions?.env, input: runOptions?.input });
     if (commandName === "gh" && args[0] === "repo") {
       return JSON.stringify({ nameWithOwner: options.repository ?? "mortenbroesby/everyday-assistants", url: `https://github.com/${options.repository ?? "mortenbroesby/everyday-assistants"}` });
     }
@@ -249,6 +250,8 @@ test("schema-2 recovery journals reject unknown, malformed, oversized, and exces
   assert.throws(() => parseDeploymentJournal(JSON.stringify({ ...journal, completedAt: "2026-02-30T12:00:00.000Z" })));
   assert.throws(() => parseDeploymentJournal(JSON.stringify({ ...journal, transitions: null })));
   assert.throws(() => parseDeploymentJournal(JSON.stringify({ ...journal, transitions: [null] })));
+  assert.throws(() => parseDeploymentJournal(JSON.stringify({ ...journal, startingVersion: [startingId] })));
+  assert.throws(() => parseDeploymentJournal(JSON.stringify({ ...journal, startingImage: [image] })));
   assert.throws(() => parseDeploymentJournal(JSON.stringify({ ...journal, transitions: [{ phase: "disabled_deploy", kind: "intent", at: journal.startedAt, token: "no" }] })));
   assert.throws(() => parseDeploymentJournal(JSON.stringify({ ...journal, transitions: [{ phase: "enable_deploy", kind: "intent", at: journal.startedAt }] })));
   assert.throws(() => parseDeploymentJournal(JSON.stringify({ ...journal, transitions: Array.from({ length: 33 }, () => ({ phase: "disabled_deploy", kind: "intent", at: journal.startedAt })) })));
@@ -351,6 +354,16 @@ test("successful deployment builds once, reuses the image, and journals only red
     assert.deepEqual(deploys[1].args.slice(rollout, rollout + 2), ["--containers-rollout", "none"]);
     assert.equal(calls.some(({ args }) => args[0] === "production:test:features"), true);
     assert.doesNotMatch(JSON.stringify(calls.map(({ command, args }) => ({ command, args }))), /add_approved|remove_approved|make_approved|empty_approved/u);
+    const ref = calls.findIndex(({ command, args }) => command === "gh" && args.includes("POST") && args.some((arg) => arg.endsWith("git/refs")));
+    const firstProviderRead = calls.findIndex(({ command, args }) => command === "pnpm" && args.includes("wrangler"));
+    assert.ok(ref >= 0 && ref < firstProviderRead, "remote lease must exist before provider access");
+    const remoteSnapshots = calls.filter(({ command, args }) => command === "gh" && args.some((arg) => arg.endsWith("git/blobs")))
+      .map(({ input }) => JSON.parse(Buffer.from(JSON.parse(input ?? "{}").content, "base64").toString("utf8")) as { operationId: string; transitions: Array<{ phase: string; kind: string }> });
+    assert.ok(remoteSnapshots.length >= 5);
+    assert.match(remoteSnapshots[0]?.operationId ?? "", /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/u);
+    assert.deepEqual(remoteSnapshots.at(-2)?.transitions.map(({ phase, kind }) => `${phase}:${kind}`), [
+      "disabled_deploy:intent", "disabled_deploy:result", "enable_deploy:intent", "enable_deploy:result",
+    ]);
     const journal = await readFile(join(root, "nemlig-production-deploy", "latest.json"), "utf8");
     assert.deepEqual(JSON.parse(journal), report);
     assert.doesNotMatch(journal, /owner-token|authorization|cookie|basket|favorite|saved-list/iu);
@@ -436,7 +449,7 @@ test("finalize accepts GitHub's empty successful DELETE only after the exact rem
   const journal = JSON.stringify({
     schema: 2, operationId: operation, commit, ciRunId: 456, startedAt: "2026-09-05T12:00:00.000Z",
     startingVersion: startingId, enabledVersion: enabledId, checks: [], lastVerifiedState: "enabled",
-    rollback: "not_needed", outcome: "success", remoteCommit,
+    rollback: "not_needed", outcome: "success", remoteCommit: "dddddddddddddddddddddddddddddddddddddddd",
     transitions: [
       { phase: "disabled_deploy", kind: "intent", at: "2026-09-05T12:00:00.000Z", version: startingId },
       { phase: "disabled_deploy", kind: "result", at: "2026-09-05T12:00:01.000Z", version: disabledId },
@@ -457,7 +470,10 @@ test("finalize accepts GitHub's empty successful DELETE only after the exact rem
     if (path.includes("git/ref/")) return head;
     if (path.includes("git/commits/")) return JSON.stringify({ tree: { sha: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" } });
     if (path.includes("git/trees/")) return JSON.stringify({ tree: [{ path: "journal.json", type: "blob", mode: "100644", sha: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" }] });
-    if (path.includes("git/blobs/")) return JSON.stringify({ encoding: "base64", content: Buffer.from(journal).toString("base64") });
+    if (path.includes("git/blobs/")) {
+      const encoded = Buffer.from(journal).toString("base64");
+      return JSON.stringify({ encoding: "base64", content: `${encoded.slice(0, 76)}\n${encoded.slice(76)}` });
+    }
     throw new Error("unexpected gh api");
   };
   try {
