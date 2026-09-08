@@ -1,6 +1,6 @@
 # Cloudflare operations for Nemlig MCP
 
-Status: production version `1e088bde-55ff-429a-a6dc-09d7e88360d3` is enabled
+Historical production checkpoint (not a current deployment claim): version `1e088bde-55ff-429a-a6dc-09d7e88360d3` is enabled
 for private family use. Health, OAuth metadata, anonymous rejection, Auth0
 authorization through the existing hosted app, authenticated basket and
 shopping-list reads, and no unauthorized Container wake are verified. The
@@ -26,8 +26,11 @@ field names only, never values.
 ## Production shape and defaults
 
 The repository deploys one Worker, one fixed EU Container-controller Durable
-Object named `nemlig-production`, one fixed EU storage-only Durable Object for
-immutable plan snapshots and owner-scoped named lists, and at most one sleeping `lite` Container. The Worker
+Object named `nemlig-production`, and at most one sleeping `lite` Container. The
+legacy `PlanStorage` class, namespace binding and migration history are retained
+only to preserve existing records and rollback: its handler returns 410 without
+storage access, and the application no longer forwards saved-shopping requests.
+Do not delete that namespace or stored records as part of a routine deployment. The Worker
 is disabled by default. Useful operations default to 5,000/day, expensive operations
 to 500/day, and per-minute owner limits to 60 normal and 10 expensive. Valid MCP
 messages other than `tools/call` are protocol traffic and do not consume
@@ -360,7 +363,7 @@ anonymous rejection, and foreign-origin rejection with per-step deadlines,
 latencies, and last-completed-boundary output. With a current owner access
 token, the default full acceptance command verifies the closed tool/resource
 inventory and read-only catalogue discovery, exact selected-product reuse,
-shopping-list retrieval, and at most one explicitly requested favourite result
+and at most one explicitly requested favourite result
 under one 90-second deadline. It does not write a
 list, prepare or apply a proposal, create a GitHub issue, or mutate the basket:
 
@@ -474,7 +477,7 @@ authorization UI or Auth0's browser redirect before a request reaches it.
    Worker event, the last completed boundary is before the Worker—ChatGPT app
    state, browser authorization, or Auth0—not the Container or Nemlig.
 5. After reconnect succeeds, open two fresh normal ChatGPT conversations. In
-   each, read shopping lists and request at most one favorite. Record only pass
+   each, check the connection and request at most one favorite. Record only pass
    or fail, timestamps, and Worker correlation IDs; do not record returned
    private data. Do not create/edit lists, prepare/apply proposals, submit a
    feature request, or mutate the basket.
@@ -526,8 +529,8 @@ disabled record must still be denied before usage-state access or Container wake
 
 Before changing that entry to `enabled: true`, perform a separately approved
 two-account read-only isolation exercise: each identity must see only its own
-favorites, basket, plans, and named lists; guessed session, proposal, plan, and
-list references from the other account must return the same non-sensitive
+favorites and basket; guessed session and proposal references from the other
+account must return the same non-sensitive
 denial; equal usage must receive the same admission decision across Tier 0,
 Tier 1, and Tier 2. Record only pass/fail, policy revision, tier labels, denial reasons,
 correlation IDs, and aggregate headroom. Do not record subjects, opaque keys,

@@ -1,10 +1,5 @@
-import { randomUUID } from "node:crypto";
-import { chmod, mkdir, readFile, writeFile } from "node:fs/promises";
-import { homedir } from "node:os";
-import { join } from "node:path";
 import { z } from "zod";
-import { NemligError, type Basket, type Product } from "./client.js";
-import { principalScopeFor } from "./principal-scope.js";
+import { type Basket, type Product } from "./client.js";
 import { calculateShoppingPlan } from "./plan-calculation.js";
 
 const constraintsSchema = z.object({
@@ -131,61 +126,4 @@ export async function resolveShoppingPlan(client: PlanClient, raw: ShoppingPlanI
   });
   const basket = await basketPromise;
   return calculateShoppingPlan(input, discovered, basket);
-}
-
-const snapshotSchema = z.object({ schema_version: z.literal(1), id: z.string().uuid(), created_at: z.string().datetime(), input: shoppingPlanInputSchema }).strict();
-export const plansDirectory = (): string => process.env.NEMLIG_CONFIG_DIR ? join(process.env.NEMLIG_CONFIG_DIR, "plans") : join(homedir(), ".nemlig-shopper", "plans");
-export interface PlanSnapshotStorage {
-  create(id: string, snapshot: string): Promise<void>;
-  read(id: string): Promise<string>;
-}
-export const filePlanSnapshotStorage = (directory = plansDirectory()): PlanSnapshotStorage => ({
-  async create(id, snapshot) {
-    await mkdir(directory, { recursive: true, mode: 0o700 }); await chmod(directory, 0o700);
-    const file = join(directory, `${id}.json`);
-    await writeFile(file, snapshot, { encoding: "utf8", mode: 0o600, flag: "wx" }); await chmod(file, 0o600);
-  },
-  read: async (id) => readFile(join(directory, `${id}.json`), "utf8"),
-});
-export const httpPlanSnapshotStorage = (
-  baseUrl: string,
-  fetcher: typeof fetch = fetch,
-  timeoutMs = 3_000,
-  principal?: { key: string; allowLegacyRead: boolean },
-): PlanSnapshotStorage => {
-  const base = new URL(baseUrl);
-  if (base.origin !== "http://nemlig-plan-storage.internal") throw new NemligError("Shopping plan storage is invalid.");
-  const pathFor = (id: string): string => principal ? `plans-v2/${principalScopeFor(principal.key)}/${id}` : id;
-  const request = (path: string, init?: RequestInit): Promise<Response> =>
-    fetcher(new URL(path, base), { ...init, signal: AbortSignal.timeout(timeoutMs) });
-  return {
-    async create(id, snapshot) {
-      const response = await request(pathFor(id), { method: "PUT", body: snapshot, headers: { "content-type": "application/json" } });
-      if (!response.ok) throw new NemligError(`Shopping plan ${id} could not be saved.`);
-    },
-    async read(id) {
-      let response = await request(pathFor(id));
-      if (response.status === 404 && principal?.allowLegacyRead) response = await request(id);
-      if (!response.ok) throw new NemligError(`Shopping plan ${id} could not be loaded.`);
-      return response.text();
-    },
-  };
-};
-export const configuredPlanSnapshotStorage = (
-  env: NodeJS.ProcessEnv = process.env,
-  principal?: { principalKey: string; tier: 0 | 1 | 2 },
-): PlanSnapshotStorage => env.NEMLIG_PLAN_STORAGE_URL
-  ? httpPlanSnapshotStorage(env.NEMLIG_PLAN_STORAGE_URL, fetch, 3_000, principal && { key: principal.principalKey, allowLegacyRead: principal.tier === 0 })
-  : filePlanSnapshotStorage();
-const snapshotStorage = (storage: string | PlanSnapshotStorage): PlanSnapshotStorage =>
-  typeof storage === "string" ? filePlanSnapshotStorage(storage) : storage;
-export async function saveShoppingPlan(input: ShoppingPlanInput, storage: string | PlanSnapshotStorage = plansDirectory(), id: string = randomUUID()): Promise<{ id: string; created_at: string }> {
-  const valid = shoppingPlanInputSchema.parse(input); if (!z.string().uuid().safeParse(id).success) throw new NemligError("Shopping plan ID must be a UUID."); const createdAt = new Date().toISOString();
-  await snapshotStorage(storage).create(id, `${JSON.stringify({ schema_version: 1, id, created_at: createdAt, input: valid })}\n`);
-  return { id, created_at: createdAt };
-}
-export async function loadShoppingPlan(id: string, storage: string | PlanSnapshotStorage = plansDirectory()): Promise<StoredShoppingPlanInput> {
-  if (!z.string().uuid().safeParse(id).success) throw new NemligError("Shopping plan ID must be a UUID.");
-  try { const snapshot = snapshotSchema.parse(JSON.parse(await snapshotStorage(storage).read(id))); if (snapshot.id !== id) throw new Error(); return snapshot.input; }
-  catch { throw new NemligError(`Shopping plan ${id} could not be loaded.`); }
 }

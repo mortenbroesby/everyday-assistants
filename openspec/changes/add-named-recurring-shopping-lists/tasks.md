@@ -1,3 +1,6 @@
+> Superseded by `remove-saved-shopping`. Remaining list-feature acceptance is no
+> longer a delivery objective; historical checkboxes below are not removal tasks.
+
 ## 1. Named-list domain and storage
 
 - [x] 1.1 Add versioned named-list, line, collection, revision, status, and owner-scope schemas with the twenty-five-list, fifty-line, field-length, and normalized-name bounds; verify focused schema tests cover valid reusable/occasion lists and every rejected bound.

@@ -145,6 +145,21 @@ test("authenticated normal requests forward once and unknown tools fail into the
   assert.equal(classifyMcpMessage({ method: "tools/call", params: { name: "add_approved_items" } }), "expensive");
 });
 
+test("retired saved-shopping tools are unsupported and never classified as normal", () => {
+  for (const name of [
+    "save_my_shopping_plan",
+    "continue_my_shopping_plan",
+    "show_my_shopping_lists",
+    "save_my_shopping_list",
+    "copy_my_shopping_list",
+    "set_my_shopping_list_status",
+    "shop_from_my_list",
+    "migrate_my_saved_plan",
+  ]) {
+    assert.equal(classifyMcpMessage({ method: "tools/call", params: { name } }), "expensive");
+  }
+});
+
 test("unauthorized, rate-limited, and open-breaker requests never reach the Container", async () => {
   let forwarded = 0;
   const base = {

@@ -13,7 +13,7 @@ and preserves outstanding P0/P1 and live acceptance ownership.
 
 - Establish measured grocery journeys and the actual advertised tool surface.
 - Simplify shared grocery-run orchestration using existing application seams.
-- Prefer named lists while preserving old saved-plan references and ownership.
+- Remove assistant-managed saved plans and named lists; defer native Nemlig list integration.
 - Prove MCP v2 host confirmation before changing review/apply interaction.
 - Retire only accepted duplicates; retain authorization and mutation safeguards.
 - Evaluate Worker-native hosting separately with compatibility and cost gates.
@@ -37,8 +37,8 @@ Current checked outcomes and no-op decisions are recorded in the
 - Make coverage produce a real report with the existing test runner.
 - Reuse installed Commander for the hand-written release argument parser.
 - Evaluate `html-to-text` to replace regex HTML stripping for product evidence.
-- Replace permissive shopping-list and plan output schemas with explicit public schemas.
-- Decouple CLI/server composition and isolate testable planning/persistence responsibilities.
+- Keep explicit public planning output schemas; saved-list schemas are retired by `remove-saved-shopping`.
+- Decouple CLI/server composition and isolate testable planning responsibilities.
 - Separate picker presentation where packaging tests justify it, without rebuilding the UI.
 - Make acceptance entry points import-safe and enforce existing release-version policy in CI.
 - Enable native unused-code checks and document safety/public contracts.
@@ -50,7 +50,7 @@ reliability under their existing P0/P1 owners; these are not cleanup authority.
 
 Implementation must preserve provider-call budgets, fresh revalidation,
 authorization, private ownership, quotas and deployment safeguards. Future
-saved-plan retirement and matching improvements remain separate proposals.
+saved-shopping removal is now owned by `remove-saved-shopping`; matching improvements remain separate.
 
 ## P0 — restore reliable ChatGPT reconnect and add bounded observability
 
@@ -98,8 +98,8 @@ OAuth boundary without weakening cost or basket safeguards.
 - [ ] Refresh the one existing app named exactly `Nemlig Assistant`; do not
   create a suffixed, bracketed, numbered, or parallel app.
 - [ ] Have the owner complete a fresh Auth0 login through that existing app.
-- [ ] Complete two fresh normal ChatGPT conversations that each read shopping
-  lists and at most one favourite without creating, editing, preparing,
+- [ ] Complete two fresh normal ChatGPT conversations that each check the connection
+  and at most one favourite without creating, editing, preparing,
   approving, applying, submitting, or mutating anything.
 
 ### Story P0.4 — retire the legacy Mac tunnel after cloud-only acceptance
@@ -343,20 +343,16 @@ fallback, speculative request amplification, or basket changes.
   `main`, references, and exact-head CI.
 - Do not rename or expose the private `personal-assistant-private` repository.
 
-## Named and reusable shopping lists
+## Remove saved plans and named shopping lists
 
-**Status:** Implemented for the private owner alpha.
+**Status:** Owner-approved removal; source delivery and live acceptance tracked in
+[remove-saved-shopping](../../openspec/changes/remove-saved-shopping/proposal.md).
 
-- Named reusable and occasion lists are private, bounded, revision-checked,
-  copyable, and recoverable through archive/restore.
-- Opening a list is storage-only. Current Nemlig resolution is an explicit,
-  catalogue-backed action for at most fifty selected lines and uses automatic
-  mode by default.
-- The picker uses direct allowlisted Nemlig images with a complete text fallback
-  and no image proxy or cache.
-
-Invited-family collaboration remains future work until a second real user is
-ready and owner isolation can be designed from that concrete need.
+Remove all eight persistence tools and their application/storage adapters. Keep
+same-conversation planning, picker and exact basket operations. Existing saved
+records and the retained inactive storage namespace remain untouched; cleanup
+would be a separate data decision. Future native Nemlig-list support is deferred.
+This supersedes the earlier named-list and saved-plan retirement/migration plan.
 
 ## Catalogue-first product selection
 

@@ -122,9 +122,17 @@ test("Wrangler configuration fixes both environments to one disabled EU lite Con
   assert.doesNotMatch(raw, /getRandom|autoscal|NEMLIG_(?:USERNAME|PASSWORD)|GH_TOKEN/u);
 });
 
-test("Container outbound handlers register through the SDK static setter", async () => {
+test("Container has no saved-shopping outbound storage adapter", async () => {
   const worker = await readFile(new URL("./cloudflare-worker.ts", import.meta.url), "utf8");
-  assert.match(worker, /NemligMcpContainer\.outboundByHost\s*=/u);
-  assert.doesNotMatch(worker, /static\s+outboundByHost/u);
+  assert.doesNotMatch(worker, /outboundByHost|nemlig-plan-storage\.internal/u);
   assert.doesNotMatch(worker, /GH_TOKEN|suggest_an_improvement/u);
+});
+
+test("historical PlanStorage is inert and does not access stored records", async () => {
+  const worker = await readFile(new URL("./cloudflare-worker.ts", import.meta.url), "utf8");
+  const planStorage = worker.slice(worker.indexOf("export class PlanStorage"), worker.indexOf("export { ContainerProxy"));
+  assert.ok(planStorage);
+  assert.match(planStorage, /return new Response\([^\n]*, \{ status: 410 \}\)/u);
+  assert.doesNotMatch(planStorage, /storage\.(?:get|put|delete|transaction)\s*\(/u);
+  assert.doesNotMatch(worker, /NEMLIG_PLAN_STORAGE_URL/u);
 });

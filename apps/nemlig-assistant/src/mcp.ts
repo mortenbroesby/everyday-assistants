@@ -23,18 +23,7 @@ import {
   type ProposalOperation,
   type ProposalView,
 } from "./proposals.js";
-import { configuredPlanSnapshotStorage, loadShoppingPlan, resolveShoppingPlan, saveShoppingPlan, shoppingPlanLineSchema, type ShoppingPlan } from "./plans.js";
-import {
-  configuredShoppingListStorage,
-  copyShoppingList,
-  migrateShoppingPlan,
-  saveShoppingList,
-  setShoppingListStatus,
-  shoppingListLineSchema,
-  showShoppingLists,
-  type ShoppingList,
-} from "./shopping-lists.js";
-import { shoppingListSchema } from "./shopping-list-model.js";
+import { resolveShoppingPlan, shoppingPlanLineSchema, type ShoppingPlan } from "./plans.js";
 
 export const PICKER_URI = "ui://nemlig/picker.html";
 export const PICKER_MIME_TYPE = "text/html;profile=mcp-app";
@@ -368,22 +357,6 @@ const success = (value: unknown, text = JSON.stringify(value)) => ({
   structuredContent: (Array.isArray(value) ? { result: value } : value) as Record<string, unknown>,
 });
 
-const listPayloadSchema = shoppingListSchema.omit({ normalized_name: true }).strict();
-/** Projects only the public list contract; ownership and normalized lookup fields stay private. */
-const listPayload = (list: ShoppingList): z.output<typeof listPayloadSchema> => ({
-  schema_version: list.schema_version,
-  id: list.id,
-  name: list.name,
-  type: list.type,
-  status: list.status,
-  revision: list.revision,
-  created_at: list.created_at,
-  updated_at: list.updated_at,
-  ...(list.archived_at ? { archived_at: list.archived_at } : {}),
-  lines: list.lines,
-});
-const listText = (list: ShoppingList): string => `${list.name} · ${list.lines.length} ${list.lines.length === 1 ? "vare" : "varer"}`;
-
 const failure = (operation: string, error: unknown) => ({
   isError: true,
   content: [
@@ -425,7 +398,7 @@ export function createMcpServer(
     },
     {
       instructions:
-        "Use Nemlig Assistant for current Nemlig products, prices, availability, favourites, basket contents, saved shopping lists, recipes, conversation lists, or choosing and adding groceries. For ordinary find or add requests, use plan_my_shopping in automatic mode with one short Danish catalogue phrase per line; use manual mode only when the user asks to choose or when automatic results are unclear. Translate or normalize English, mixed-language, misspelled, and over-specific wording before the tool call: keep distinctive brand words, replace a foreign generic category with the intended Danish category, and omit conversational context. Ordinary planning searches the current Nemlig catalogue once per line, never favourites. Use find_groceries only for a direct catalogue search and show_my_favorites only when explicitly requested. For 'use this recipe/list and go ahead', set proceed true, then pass the returned same-run authorization through review_items_to_add and immediately use add_approved_items for its unchanged proposal; do not ask for redundant approval. Without explicit proceed intent, a plan, saved or resumed plan, candidate choice, or exact review never authorizes mutation. A same-run authorization covers only clear additions from that run, never unresolved lines, removals, replacements, clearing, checkout, payment, ordering, or delivery slots. Named lists can refresh up to fifty selected lines. Present concise added, already-covered, unresolved, failed, and automatic-coverage results; omit internal references unless troubleshooting. Every basket change revalidates exact data, is single-use, stops on uncertainty, and reads back the basket.",
+        "Use Nemlig Assistant for current Nemlig products, prices, availability, favourites, basket contents, recipes, conversation lists, or choosing and adding groceries. For ordinary find or add requests, use plan_my_shopping in automatic mode with one short Danish catalogue phrase per line; use manual mode only when the user asks to choose or when automatic results are unclear. Translate or normalize English, mixed-language, misspelled, and over-specific wording before the tool call: keep distinctive brand words, replace a foreign generic category with the intended Danish category, and omit conversational context. Ordinary planning searches the current Nemlig catalogue once per line, never favourites. Use find_groceries only for a direct catalogue search and show_my_favorites only when explicitly requested. For 'use this recipe/list and go ahead', set proceed true, then pass the returned same-run authorization through review_items_to_add and immediately use add_approved_items for its unchanged proposal; do not ask for redundant approval. Without explicit proceed intent, a plan, candidate choice, or exact review never authorizes mutation. A same-run authorization covers only clear additions from that run, never unresolved lines, removals, replacements, clearing, checkout, payment, ordering, or delivery slots. Present concise added, already-covered, unresolved, failed, and automatic-coverage results; omit internal references unless troubleshooting. Every basket change revalidates exact data, is single-use, stops on uncertainty, and reads back the basket.",
     },
   );
   const localConnectionId = randomUUID();
@@ -433,9 +406,6 @@ export function createMcpServer(
     requestContext ? `${requestContext.principalKey}\0${requestContext.policyRevision}` : sessionId ?? localConnectionId;
   const search = async (query: string, limit: number) =>
     rankProducts(await client.searchProducts(query, limit), query);
-  const planStorage = configuredPlanSnapshotStorage(env, requestContext);
-  const listStorage = configuredShoppingListStorage(env);
-  const ownerSubject = requestContext?.principalKey ?? env.NEMLIG_MCP_AUTH0_OWNER_SUBJECT ?? "local-owner";
   const resolveRun = async (input: z.infer<typeof shoppingRunToolInputSchema>, sessionId?: string) => {
     const plan = safePlanImages(await resolveShoppingPlan(client, internalShoppingPlan(input)));
     const items = selectedAdditions(plan);
@@ -555,155 +525,6 @@ export function createMcpServer(
       const result = await client.browseDepartment(section, result_count, page);
       return success({ result: rankProducts(result.products, ""), page: result.page, has_next: result.hasNext });
     }),
-  );
-
-  server.registerTool(
-    "save_my_shopping_plan",
-    {
-      title: "Save my shopping plan", description: "Save this private shopping plan so you can continue later. This creates saved state but does not change your basket.",
-      inputSchema: shoppingPlanToolInputSchema.shape,
-      outputSchema: z.object({ id: z.string().uuid(), created_at: z.string().datetime() }),
-      annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
-    },
-    (input) => runMcpOperation("save_my_shopping_plan", async () => success(await saveShoppingPlan(internalShoppingPlan(input), planStorage))),
-  );
-
-  server.registerTool(
-    "continue_my_shopping_plan",
-    {
-      title: "Continue my shopping plan", description: "Continue a saved shopping plan using current products, prices, and basket contents. This does not change your basket.",
-      inputSchema: { saved_plan: z.string().uuid().describe("The saved-plan reference returned when the plan was saved.") }, outputSchema: planOutputSchema,
-      annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true },
-    },
-    ({ saved_plan }) => runMcpOperation("continue_my_shopping_plan", async () => {
-      await ensureLoggedIn(client, loadCredentials);
-      return success(safePlanImages(await resolveShoppingPlan(client, await loadShoppingPlan(saved_plan, planStorage))));
-    }),
-  );
-
-  server.registerTool(
-    "show_my_shopping_lists",
-    {
-      title: "Show my shopping lists",
-      description: "Show your active named shopping lists, or open one list by name. This only reads private saved lists and does not contact Nemlig or change your basket.",
-      inputSchema: {
-        list: z.string().trim().min(1).max(120).optional().describe("Optional list name to open."),
-        include_archived: z.boolean().default(false).describe("Also show archived lists."),
-      },
-      outputSchema: z.object({ lists: z.array(listPayloadSchema) }).strict(),
-      annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
-    },
-    ({ list, include_archived }) => runMcpOperation("show_my_shopping_lists", async () => {
-        const lists = await showShoppingLists(ownerSubject, listStorage, list, include_archived);
-        return success({ lists: lists.map(listPayload) }, lists.length ? lists.map(listText).join("\n") : "Du har ingen aktive indkøbslister endnu.");
-      }),
-  );
-
-  server.registerTool(
-    "save_my_shopping_list",
-    {
-      title: "Save my shopping list",
-      description: "Create a named shopping list or replace the current version of one. This saves private list state only and does not contact Nemlig or change your basket.",
-      inputSchema: {
-        list: z.string().trim().min(1).max(120).optional().describe("For an edit, the existing list name or exact reference. Omit when creating a list."),
-        expected_revision: z.number().int().positive().optional().describe("For an edit, the current revision returned when the list was opened."),
-        name: z.string().trim().min(1).max(120).describe("The human-readable list name."),
-        type: z.enum(["reusable", "occasion"]).describe("Reusable for regular shopping, or occasion for an event. Neither runs automatically."),
-        lines: z.array(shoppingListLineSchema).max(50).describe("The ordered groceries to keep on the list, up to fifty."),
-      },
-      outputSchema: z.object({ list: listPayloadSchema }).strict(),
-      annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
-    },
-    (input) => runMcpOperation("save_my_shopping_list", async () => {
-        const saved = await saveShoppingList(ownerSubject, listStorage, input);
-        return success({ list: listPayload(saved) }, `${saved.name} er gemt med ${saved.lines.length} ${saved.lines.length === 1 ? "vare" : "varer"}.`);
-      }),
-  );
-
-  server.registerTool(
-    "copy_my_shopping_list",
-    {
-      title: "Copy my shopping list",
-      description: "Copy an existing named list under a new name. This only saves private list state and does not contact Nemlig or change your basket.",
-      inputSchema: {
-        source_list: z.string().trim().min(1).max(120).describe("The name or exact reference of the list to copy."),
-        new_name: z.string().trim().min(1).max(120).describe("The name for the copy."),
-        type: z.enum(["reusable", "occasion"]).optional().describe("Optional list kind for the copy; otherwise it keeps the source kind."),
-      },
-      outputSchema: z.object({ list: listPayloadSchema }).strict(),
-      annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
-    },
-    ({ source_list, new_name, type }) => runMcpOperation("copy_my_shopping_list", async () => {
-        const copied = await copyShoppingList(ownerSubject, listStorage, source_list, new_name, type);
-        return success({ list: listPayload(copied) }, `${copied.name} er gemt som en ny liste.`);
-      }),
-  );
-
-  server.registerTool(
-    "set_my_shopping_list_status",
-    {
-      title: "Archive or restore my shopping list",
-      description: "Archive a named shopping list or restore it later. This is reversible and does not contact Nemlig or change your basket.",
-      inputSchema: {
-        list: z.string().trim().min(1).max(120).describe("The list name or exact reference."),
-        status: z.enum(["active", "archived"]).describe("Active restores the list; archived hides it from the normal list view."),
-        expected_revision: z.number().int().positive().describe("The current revision returned when the list was opened."),
-      },
-      outputSchema: z.object({ list: listPayloadSchema }).strict(),
-      annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
-    },
-    ({ list, status, expected_revision }) => runMcpOperation("set_my_shopping_list_status", async () => {
-        const updated = await setShoppingListStatus(ownerSubject, listStorage, list, status, expected_revision);
-        return success({ list: listPayload(updated) }, status === "archived" ? `${updated.name} er arkiveret.` : `${updated.name} er aktiv igen.`);
-      }),
-  );
-
-  server.registerTool(
-    "shop_from_my_list",
-    {
-      title: "Shop from my list",
-      description: "Refresh selected groceries from a named list using current Nemlig favourites, products, prices, availability, and basket coverage. This does not save live results or change your basket.",
-      inputSchema: {
-        list: z.string().trim().min(1).max(120).describe("The list name or exact reference."),
-        line_ids: z.array(z.string().trim().min(1).max(80)).min(1).max(50).describe("One to fifty exact grocery-line references from the opened list."),
-        mode: z.enum(["automatic", "manual"]).default("automatic").describe("Automatic selects only deterministic clear matches; manual leaves candidates for choice."),
-        proceed: z.boolean().default(false).describe("True only when the user explicitly asked to add clear results in this same run."),
-      },
-      outputSchema: planOutputSchema,
-      annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true },
-      ...(appsEnabled(env) ? { _meta: { ui: { resourceUri: PICKER_URI } } } : {}),
-    },
-    ({ list, line_ids, mode, proceed }, extra) => runMcpOperation("shop_from_my_list", async () => {
-        const [saved] = await showShoppingLists(ownerSubject, listStorage, list, true);
-        const requested = new Set(line_ids);
-        if (requested.size !== line_ids.length) throw new NemligError("Choose each grocery line only once.");
-        const selected = saved!.lines.filter(({ id }) => requested.has(id));
-        if (selected.length !== requested.size) throw new NemligError(`One or more selected groceries are not in “${saved!.name}”. Open the list again.`);
-        await ensureLoggedIn(client, loadCredentials);
-        return success(await resolveRun({ lines: selected.map((line) => ({
-          id: line.id, name: line.name, quantity: line.quantity, constraints: line.constraints,
-          preferences: line.preferences, selected_product: line.preferred_product_id,
-        })), mode, proceed }, extra.sessionId));
-      }),
-  );
-
-  server.registerTool(
-    "migrate_my_saved_plan",
-    {
-      title: "Turn a saved plan into a shopping list",
-      description: "Copy an older saved shopping plan into a new named list while keeping the original plan unchanged. This does not contact Nemlig or change your basket.",
-      inputSchema: {
-        saved_plan: z.string().uuid().describe("The older saved-plan reference."),
-        name: z.string().trim().min(1).max(120).describe("The name for the new shopping list."),
-        type: z.enum(["reusable", "occasion"]).describe("Reusable for regular shopping, or occasion for an event. Neither runs automatically."),
-      },
-      outputSchema: z.object({ list: listPayloadSchema }).strict(),
-      annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
-    },
-    ({ saved_plan, name, type }) => runMcpOperation("migrate_my_saved_plan", async () => {
-        const migrated = await migrateShoppingPlan(ownerSubject, listStorage, planStorage, saved_plan, name, type);
-        return success({ list: listPayload(migrated) }, `${migrated.name} er oprettet fra den gemte plan.`);
-      }),
   );
 
   server.registerTool(

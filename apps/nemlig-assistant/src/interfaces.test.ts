@@ -5,9 +5,8 @@ import { AjvJsonSchemaValidator } from "@modelcontextprotocol/sdk/validation/ajv
 import type { JsonSchemaType } from "@modelcontextprotocol/sdk/validation/types.js";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdtemp, readFile } from "node:fs/promises";
+import { mkdtemp, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
 import test from "node:test";
 import type { Basket, Product, ShoppingClient } from "./client.js";
 import { createProgram } from "./cli.js";
@@ -239,26 +238,18 @@ const friendlyCatalog = [
   ["browse_grocery_section", "Browse a grocery section", true, false, ["section", "result_count", "page"]],
   ["check_nemlig_connection", "Check my Nemlig connection", true, false, []],
   ["choose_products_visually", "Choose products visually", true, false, ["search_term", "result_count"]],
-  ["continue_my_shopping_plan", "Continue my shopping plan", true, false, ["saved_plan"]],
-  ["copy_my_shopping_list", "Copy my shopping list", false, false, ["source_list", "new_name", "type"]],
   ["empty_approved_basket", "Empty my approved basket", false, true, ["approved_review"]],
   ["find_groceries", "Find groceries", true, false, ["search_term", "result_count"]],
   ["make_approved_item_swap", "Make the approved swap", false, true, ["approved_review"]],
-  ["migrate_my_saved_plan", "Turn a saved plan into a shopping list", false, false, ["saved_plan", "name", "type"]],
   ["plan_my_shopping", "Plan my shopping", true, false, ["lines", "mode", "proceed"]],
   ["remove_approved_item", "Remove the approved item", false, true, ["approved_review"]],
   ["review_emptying_basket", "Review emptying my basket", true, false, []],
   ["review_item_swap", "Review swapping an item", true, false, ["current_item", "replacement_item", "quantity"]],
   ["review_item_to_remove", "Review an item to remove", true, false, ["basket_item"]],
   ["review_items_to_add", "Review items to add", true, false, ["items", "authorization", "automatic_authorization"]],
-  ["save_my_shopping_list", "Save my shopping list", false, false, ["list", "expected_revision", "name", "type", "lines"]],
-  ["save_my_shopping_plan", "Save my shopping plan", false, false, ["lines", "mode"]],
-  ["set_my_shopping_list_status", "Archive or restore my shopping list", false, false, ["list", "status", "expected_revision"]],
-  ["shop_from_my_list", "Shop from my list", true, false, ["list", "line_ids", "mode", "proceed"]],
   ["show_grocery_sections", "Show grocery sections", true, false, []],
   ["show_my_basket", "Show my basket", true, false, []],
   ["show_my_favorites", "Show my favourites", true, false, ["search_term", "result_count", "page"]],
-  ["show_my_shopping_lists", "Show my shopping lists", true, false, ["list", "include_archived"]],
 ] as const;
 
 const formerToolNames = [
@@ -266,6 +257,8 @@ const formerToolNames = [
   "save_shopping_plan", "load_shopping_plan", "create_feature_request", "view_cart", "prepare_cart_additions",
   "apply_cart_additions", "prepare_cart_removal", "apply_cart_removal", "prepare_cart_replacement",
   "apply_cart_replacement", "prepare_cart_clear", "apply_cart_clear", "pick_products", "suggest_an_improvement",
+  "save_my_shopping_plan", "continue_my_shopping_plan", "show_my_shopping_lists", "save_my_shopping_list",
+  "copy_my_shopping_list", "set_my_shopping_list_status", "shop_from_my_list", "migrate_my_saved_plan",
 ] as const;
 
 test("ranking tags cheapest, recommended, and organic deterministically", () => {
@@ -292,8 +285,7 @@ test("MCP exposes the complete friendly catalog and clean missing-credential err
       const tool = tools.find((candidate) => candidate.name === name);
       assert.equal(tool?.title, title, name);
       assert.ok(tool?.description, `${name} needs a description`);
-      const privateStorageTool = ["save_my_shopping_plan", "show_my_shopping_lists", "save_my_shopping_list", "copy_my_shopping_list", "set_my_shopping_list_status", "migrate_my_saved_plan"].includes(name);
-      assert.deepEqual(tool?.annotations, { readOnlyHint, destructiveHint, openWorldHint: !privateStorageTool }, name);
+      assert.deepEqual(tool?.annotations, { readOnlyHint, destructiveHint, openWorldHint: true }, name);
       const properties = (tool?.inputSchema as { properties?: Record<string, { description?: string }> }).properties ?? {};
       assert.deepEqual(Object.keys(properties).sort(), [...inputs].sort(), `${name} inputs drifted`);
       for (const input of inputs) assert.ok(properties[input]?.description, `${name}.${input} needs plain-language guidance`);
@@ -322,6 +314,23 @@ test("production MCP inventory is exact with Apps enabled and disabled", async (
       assert.deepEqual((await mcp.listTools()).tools.map((tool) => tool.name).sort(), names);
     });
   }
+});
+
+test("retired saved-shopping MCP calls reject before the Nemlig client", async () => {
+  let calls = 0;
+  const unexpected = async (): Promise<never> => { calls += 1; throw new Error("unexpected Nemlig call"); };
+  const client = fakeClient({
+    isLoggedIn: () => { calls += 1; return true; }, login: unexpected, searchProducts: unexpected,
+    getProduct: unexpected, getFreshProduct: unexpected, listFavorites: unexpected, listDepartments: unexpected,
+    browseDepartment: unexpected, getCart: unexpected, addToCart: unexpected, removeFromCart: unexpected, clearCart: unexpected,
+  });
+  await withMcpClient(createMcpServer(client), async (mcp) => {
+    for (const name of [
+      "save_my_shopping_plan", "continue_my_shopping_plan", "show_my_shopping_lists", "save_my_shopping_list",
+      "copy_my_shopping_list", "set_my_shopping_list_status", "shop_from_my_list", "migrate_my_saved_plan",
+    ]) assert.equal((await mcp.callTool({ name, arguments: {} })).isError, true, name);
+  });
+  assert.equal(calls, 0);
 });
 
 test("MCP hides generic provider failure details", async () => {
@@ -425,75 +434,26 @@ test("MCP favorites is read-only and returns listed, matched, or empty candidate
   });
 });
 
-test("MCP plans whole lists and continuing a saved plan refreshes current product data", async () => {
-  const directory = await mkdtemp(join(tmpdir(), "nemlig-mcp-plans-"));
-  const previous = process.env.NEMLIG_CONFIG_DIR; process.env.NEMLIG_CONFIG_DIR = directory;
-  let current = product; let reads = 0;
+test("MCP plans whole lists without saved state", async () => {
+  const directory = await mkdtemp(`${tmpdir()}/nemlig-mcp-plan-`);
+  let reads = 0;
   const client = fakeClient({
-    searchProducts: async () => { reads += 1; return [current]; }, getCart: async () => { reads += 1; return { ...basket, items: [{ ...basket.items[0]!, id: 7 }] }; },
+    searchProducts: async () => { reads += 1; return [product]; }, getCart: async () => { reads += 1; return { ...basket, items: [{ ...basket.items[0]!, id: 7 }] }; },
     addToCart: async () => { throw new Error("mutation called"); }, removeFromCart: async () => { throw new Error("mutation called"); }, clearCart: async () => { throw new Error("mutation called"); },
   });
   try {
-    await withMcpClient(createMcpServer(client, async () => undefined, { NEMLIG_MCP_APPS: "0" }), async (mcp) => {
-      const input = { lines: [{ id: "milk", name: "mælk", quantity: 2 }] };
-      const planned = await mcp.callTool({ name: "plan_my_shopping", arguments: input });
-      const plan = planned.structuredContent as { lines: Array<{ candidates: Array<{ source: string; dietary: object }>; remaining_quantity: number }> };
+    await withMcpClient(createMcpServer(client, async () => undefined, { NEMLIG_MCP_APPS: "0", NEMLIG_CONFIG_DIR: directory }), async (mcp) => {
+      const planned = await mcp.callTool({ name: "plan_my_shopping", arguments: { lines: [{ id: "milk", name: "mælk", quantity: 2 }] } });
+      const plan = planned.structuredContent as { lines: Array<{ candidates: Array<{ source: string }>; remaining_quantity: number }> };
       assert.equal(plan.lines[0]?.candidates[0]?.source, "catalog"); assert.equal(plan.lines[0]?.remaining_quantity, 1);
-      const saved = await mcp.callTool({ name: "save_my_shopping_plan", arguments: input });
-      const id = (saved.structuredContent as { id: string }).id;
-      const file = join(directory, "plans", `${id}.json`); const before = await readFile(file, "utf8");
-      current = { ...product, price: 99 };
-      const loaded = await mcp.callTool({ name: "continue_my_shopping_plan", arguments: { saved_plan: id } });
-      const resumed = loaded.structuredContent as { lines: Array<{ candidates: Array<{ price: number }> }> };
-      assert.equal(resumed.lines[0]?.candidates[0]?.price, 99); assert.equal(await readFile(file, "utf8"), before);
-      const migrated = await mcp.callTool({ name: "migrate_my_saved_plan", arguments: { saved_plan: id, name: "Migreret", type: "reusable" } });
-      assert.deepEqual(Object.keys((migrated.structuredContent as { list: object }).list).sort(), ["created_at", "id", "lines", "name", "revision", "schema_version", "status", "type", "updated_at"]);
-      const invalid = await mcp.callTool({ name: "plan_my_shopping", arguments: { lines: [] } });
-      assert.equal(invalid.isError, true);
+      assert.equal((await mcp.callTool({ name: "plan_my_shopping", arguments: { lines: [] } })).isError, true);
     });
-    assert.equal(reads, 4);
-  } finally { if (previous === undefined) delete process.env.NEMLIG_CONFIG_DIR; else process.env.NEMLIG_CONFIG_DIR = previous; }
+    assert.equal(reads, 2);
+    assert.deepEqual(await readdir(directory), []);
+  } finally { await rm(directory, { recursive: true, force: true }); }
 });
 
-test("MCP named lists stay storage-only until a bounded explicit Nemlig refresh", async () => {
-  const directory = await mkdtemp(join(tmpdir(), "nemlig-mcp-lists-"));
-  let reads = 0; let mutations = 0;
-  const client = fakeClient({
-    listFavorites: async () => { reads += 1; return [product]; },
-    getCart: async () => { reads += 1; return basket; },
-    searchProducts: async () => { reads += 1; return [product]; },
-    addToCart: async () => { mutations += 1; return basket; },
-    removeFromCart: async () => { mutations += 1; return basket; },
-    clearCart: async () => { mutations += 1; return basket; },
-  });
-  await withMcpClient(createMcpServer(client, async () => undefined, { NEMLIG_MCP_APPS: "0", NEMLIG_CONFIG_DIR: directory }, undefined, { principalKey: "auth0|owner", policyRevision: "test-v1", tier: 0 }), async (mcp) => {
-    const created = await mcp.callTool({ name: "save_my_shopping_list", arguments: { name: "Ugens basis", type: "reusable", lines: [{ id: "milk", name: "mælk", quantity: 2 }] } });
-    assert.match(toolText(created), /Ugens basis er gemt/iu);
-    assert.doesNotMatch(toolText(created), /[0-9a-f]{8}-[0-9a-f-]{27}|revision|status/iu);
-    const opened = await mcp.callTool({ name: "show_my_shopping_lists", arguments: { list: "Ugens basis" } });
-    const saved = (opened.structuredContent as { lists: Array<{ id: string; revision: number }> }).lists[0]!;
-    assert.deepEqual(Object.keys(saved).sort(), ["created_at", "id", "lines", "name", "revision", "schema_version", "status", "type", "updated_at"]);
-    assert.equal(reads, 0);
-    const stale = await mcp.callTool({ name: "save_my_shopping_list", arguments: { list: "Ugens basis", expected_revision: 99, name: "Ugens basis", type: "reusable", lines: [] } });
-    assert.equal(stale.isError, true);
-    assert.match(toolText(stale), /Ugens basis.*changed/iu);
-    assert.doesNotMatch(toolText(stale), new RegExp(saved.id, "iu"));
-    const refreshed = await mcp.callTool({ name: "shop_from_my_list", arguments: { list: "Ugens basis", line_ids: ["milk"], proceed: true } });
-    assert.equal((refreshed.structuredContent as { lines: unknown[] }).lines.length, 1);
-    assert.ok((refreshed.structuredContent as { automatic_authorization?: string }).automatic_authorization);
-    assert.equal(reads, 2);
-    const duplicate = await mcp.callTool({ name: "shop_from_my_list", arguments: { list: "Ugens basis", line_ids: ["milk", "milk"] } });
-    assert.equal(duplicate.isError, true);
-    assert.equal(reads, 2);
-    const archived = await mcp.callTool({ name: "set_my_shopping_list_status", arguments: { list: "Ugens basis", status: "archived", expected_revision: saved.revision } });
-    assert.match(toolText(archived), /Ugens basis er arkiveret/iu);
-    assert.equal((archived.structuredContent as { list: { status: string } }).list.status, "archived");
-    assert.equal(mutations, 0);
-  });
-});
-
-test("published list and plan schemas validate real outputs and reject private or malformed data", async () => {
-  const directory = await mkdtemp(join(tmpdir(), "nemlig-output-contract-"));
+test("published plan schemas validate real outputs and reject malformed data", async () => {
   const client = fakeClient({
     getCart: async () => ({ ...basket, items: [{ ...basket.items[0]!, id: 7, quantity: 0.5 }] }),
     searchProducts: async (query) => query === "missing" ? [] : [{ ...product, description: "Mælk", details: [{ key: "Indhold", value: "Mælk" }] }],
@@ -501,7 +461,7 @@ test("published list and plan schemas validate real outputs and reject private o
     removeFromCart: async () => { throw new Error("unexpected mutation"); },
     clearCart: async () => { throw new Error("unexpected mutation"); },
   });
-  await withMcpClient(createMcpServer(client, undefined, { NEMLIG_CONFIG_DIR: directory, NEMLIG_MCP_APPS: "0" }), async (mcp) => {
+  await withMcpClient(createMcpServer(client, undefined, { NEMLIG_MCP_APPS: "0" }), async (mcp) => {
     const tools = new Map((await mcp.listTools()).tools.map((tool) => [tool.name, tool]));
     const provider = new AjvJsonSchemaValidator();
     const validator = (name: string) => provider.getValidator<Record<string, unknown>>(tools.get(name)!.outputSchema as JsonSchemaType);
@@ -510,17 +470,12 @@ test("published list and plan schemas validate real outputs and reject private o
       assert.notEqual(result.isError, true, `${name}: ${toolText(result)}`);
       const data = result.structuredContent as Record<string, unknown>;
       assert.equal(validator(name)(data).valid, true, name);
-      if (["plan_my_shopping", "continue_my_shopping_plan", "shop_from_my_list"].includes(name)) {
+      if (name === "plan_my_shopping") {
         assert.deepEqual(JSON.parse(toolText(result)), JSON.parse(JSON.stringify(data)));
       }
       return data;
     };
     const lines = [{ id: "milk", name: "mælk", quantity: 2 }];
-    const created = await call("save_my_shopping_list", { name: "Kontrakt", type: "reusable", lines });
-    const list = created.list as Record<string, unknown>;
-    const opened = await call("show_my_shopping_lists", { list: "Kontrakt" });
-    assert.deepEqual(opened.lists, [list]);
-    await call("copy_my_shopping_list", { source_list: "Kontrakt", new_name: "Kopi" });
     const plan = await call("plan_my_shopping", { lines });
     const planLines = plan.lines as Array<Record<string, unknown>>;
     assert.equal(planLines[0]!.basket_quantity, 0.5);
@@ -529,17 +484,6 @@ test("published list and plan schemas validate real outputs and reject private o
     assert.equal((manual.lines as Array<Record<string, unknown>>)[0]!.clarity_reason, "manual_choice");
     const empty = await call("plan_my_shopping", { lines: [{ id: "missing", name: "missing", quantity: 1 }] });
     assert.equal((empty.lines as Array<Record<string, unknown>>)[0]!.resolution, "unresolved");
-    const saved = await call("save_my_shopping_plan", { lines });
-    await call("continue_my_shopping_plan", { saved_plan: saved.id });
-    await call("shop_from_my_list", { list: "Kontrakt", line_ids: ["milk"] });
-    await call("migrate_my_saved_plan", { saved_plan: saved.id, name: "Migreret kontrakt", type: "occasion" });
-    const archived = await call("set_my_shopping_list_status", { list: "Kontrakt", status: "archived", expected_revision: list.revision });
-    assert.equal(typeof (archived.list as Record<string, unknown>).archived_at, "string");
-    for (const privateField of ["normalized_name", "owner_scope", "generation"]) {
-      assert.equal(validator("save_my_shopping_list")({ list: { ...list, [privateField]: "private" } }).valid, false);
-    }
-    assert.equal(validator("save_my_shopping_list")({ list: { ...list, archived_at: null } }).valid, false);
-    assert.equal(validator("save_my_shopping_list")({ list: { ...list, lines: [{ ...lines[0], owner_scope: "private" }] } }).valid, false);
     const candidate = (planLines[0]!.candidates as Array<Record<string, unknown>>)[0]!;
     const sparseCandidate = { ...candidate };
     for (const key of ["price", "unit_price", "description", "details", "image_url"]) delete sparseCandidate[key];
@@ -631,7 +575,7 @@ test("MCP routes ordinary product intent through loose catalogue-first planning"
     const direct = (await mcp.listTools()).tools.find((tool) => tool.name === "find_groceries");
     assert.match(JSON.stringify(plan?.inputSchema), /Prince biscuits.*prince kiks/);
     assert.match(JSON.stringify(direct?.inputSchema), /prince kiks.*Prince biscuits/);
-    for (const name of ["plan_my_shopping", "continue_my_shopping_plan", "shop_from_my_list", "show_my_shopping_lists", "save_my_shopping_list", "copy_my_shopping_list", "set_my_shopping_list_status", "migrate_my_saved_plan"]) {
+    for (const name of ["plan_my_shopping"]) {
       const tool = (await mcp.listTools()).tools.find((entry) => entry.name === name);
       assert.doesNotMatch(JSON.stringify(tool?.outputSchema), /"(?:items|summary|list)":\{\}/u, `${name} must not publish an unconstrained result schema`);
     }

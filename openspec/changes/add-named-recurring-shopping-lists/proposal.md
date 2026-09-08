@@ -1,3 +1,7 @@
+> Superseded on 2026-09-09 by the explicit owner decision in `remove-saved-shopping`.
+> Preserve this historical implementation record; do not apply or sync these deltas
+> to reintroduce named lists, snapshot migration or saved-state acceptance.
+
 ## Why
 
 The current saved-plan feature stores opaque immutable snapshots, so a household cannot reliably name, find, edit, or reuse several shopping lists. Real ChatGPT use also showed that current Nemlig product questions may fall back to public web search and that the interactive picker omits the product images already returned by the backend.

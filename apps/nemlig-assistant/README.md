@@ -85,21 +85,6 @@ preparatory, and exact reviews still wait for approval.
 - See direct Nemlig product images when the verified image host is available;
   every choice remains usable as text when an image is absent or fails.
 
-### Save and continue later
-
-- Create up to 25 private named lists, each with up to 50 ordered grocery lines.
-- Keep regular household lists as `reusable` and event lists as `occasion`.
-- Rename, replace, copy, archive, and restore lists with stale-edit protection.
-- Open a list without contacting Nemlig, then explicitly refresh up to 50
-  selected lines against the current catalogue, prices, availability, and basket coverage.
-- Migrate an older saved-plan reference without deleting its source.
-- Save immutable, owner-only plan snapshots.
-- Store only structured inputs and selections, never credentials or stale
-  product responses.
-- Re-resolve current prices, availability, products, and basket coverage when a
-  plan is loaded.
-- Persist locally or through the hosted EU plan-storage object.
-
 ### Review the basket safely
 
 - Inspect the current basket without changing it.
@@ -154,8 +139,9 @@ their text-first choices and approved direct images.
 Provider descriptions and item details are converted from HTML to bounded plain
 text, including Danish characters and entities. Scripts, styles, images and link
 destinations are omitted; conversion does not fetch additional resources.
-Shopping-list and plan tool outputs publish explicit nested schemas, excluding
-private ownership and lookup fields while preserving optional product evidence.
+Plan tool outputs publish explicit nested schemas while preserving optional
+product evidence. Supply groceries in the current conversation; the assistant
+does not save or reload plans or named lists.
 
 <a id="how-basket-changes-work"></a>
 ## 🛡️ How basket changes work
@@ -164,9 +150,8 @@ private ownership and lookup fields while preserving optional product evidence.
 Read or plan → resolve only clear matches → bind explicit proceed or exact approval → complete once → read back the basket
 ```
 
-- Search, favourites, browsing, planning, picker selection, saved plans, and
-  basket inspection are read-only. Named-list edits change only private
-  assistant state; they never authorize or change the Nemlig basket.
+- Search, favourites, browsing, planning, picker selection and basket inspection
+  are read-only; they never authorize or change the Nemlig basket.
 - Every basket change starts with the matching `review_*` tool.
 - Approval is requested once. “Go ahead” may authorize only clear additions
   resolved from that same run; unresolved lines remain unchanged. Removals,
@@ -235,11 +220,8 @@ The MCP surface is organized around household actions:
 
 - Find groceries and favourites: `find_groceries`, `show_my_favorites`,
   `show_grocery_sections`, and `browse_grocery_section`.
-- Plan and continue shopping: `plan_my_shopping`, `save_my_shopping_plan`, and
-  `continue_my_shopping_plan`.
-- Keep named lists: `show_my_shopping_lists`, `save_my_shopping_list`,
-  `copy_my_shopping_list`, `set_my_shopping_list_status`, `shop_from_my_list`,
-  and `migrate_my_saved_plan`.
+- Plan the groceries supplied in this conversation: `plan_my_shopping`.
+- Check the connection: `check_nemlig_connection`.
 - See the basket: `show_my_basket`.
 - Review basket changes: `review_items_to_add`, `review_item_to_remove`,
   `review_item_swap`, and `review_emptying_basket`.
@@ -267,8 +249,7 @@ Hosted identity is resolved from the validated Auth0 subject. Schema v2 keeps
 the static Tier 0 owner and tier budgets in the encrypted
 `NEMLIG_MCP_PRINCIPALS` policy while accepted native Auth0 Organization
 invitations create bounded Tier 1 records in the existing controller. Each user
-has independent sealed credentials, sessions, basket proposals, saved plans,
-and named lists; unknown or disabled identities are rejected before Container
+has independent sealed credentials, sessions and basket proposals; unknown or disabled identities are rejected before Container
 wake. Tier labels remain for identity and reporting, but all three tiers use
 the same per-principal allowances without reserved capacity or ordered
 shedding. The global kill switch, breaker, quotas, deadlines, and one-Container
@@ -351,14 +332,12 @@ This README is the user-facing inventory of shipped feature sets:
 - automatic grocery runs with manual fallback and 50-line input
 - constrained product comparison and selection
 - basket-aware whole-list planning
-- private saved shopping plans that refresh current product data
 - exact review/approve/complete basket operations
 - easy-to-understand ChatGPT tool names and descriptions
 - human-friendly basket reviews and verified results
 - replacement and savings review
 - CLI, MCP, MCP Apps, Auth0, and bounded Cloudflare hosting
 - credential-free production-readiness gate
-- explicit improvement suggestions
 - private package and guarded alpha release policy
 
 Update this inventory and the relevant section above whenever a shipped feature
@@ -376,7 +355,7 @@ src/cli.ts                    CLI entry point
 src/mcp.ts                    MCP server and picker resource
 src/http.ts                   Authenticated HTTP MCP transport
 src/cloudflare-worker.ts      Gateway, Container, and Durable Objects
-src/plans.ts                  Guided resolution and plan snapshots
+src/plans.ts                  Request-scoped guided resolution
 src/proposals.ts              Proposal store, revalidation, and mutation lock
 release/                      Version and publication policy
 scripts/smoke-package.ts      Installed-package interface proof
