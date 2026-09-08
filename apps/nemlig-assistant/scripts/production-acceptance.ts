@@ -154,8 +154,8 @@ export async function main(
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  main().catch((error) => {
-    console.error(error instanceof Error ? error.message : "Production acceptance failed");
+  main().catch(() => {
+    console.error("Production acceptance failed");
     process.exitCode = 1;
   });
 }

@@ -45,14 +45,22 @@ function readonlyClient(): AcceptanceClient {
 
 test("importing the acceptance entry performs no work", async () => {
   const calls: string[] = [];
+  const output: string[] = [];
+  const originalLog = console.log;
+  const originalError = console.error;
   const originalFetch = globalThis.fetch;
+  console.log = (...args: unknown[]) => output.push(args.join(" "));
+  console.error = (...args: unknown[]) => output.push(args.join(" "));
   globalThis.fetch = edgeFetcher(calls);
   try {
     await import("../scripts/production-acceptance.js");
   } finally {
     globalThis.fetch = originalFetch;
+    console.log = originalLog;
+    console.error = originalError;
   }
   assert.deepEqual(calls, []);
+  assert.deepEqual(output, []);
 });
 
 test("default acceptance connects after edge, verifies read-only paths, aggregates, and closes", async () => {
@@ -89,8 +97,19 @@ test("malformed flags and envelopes fail before network or connect", async () =>
   const dependencies = { fetcher: edgeFetcher(calls), connect: async () => { connected = true; throw new Error("must not connect"); } };
   const entry = await import("../scripts/production-acceptance.js");
   await assert.rejects(entry.main(["--edge-only", "--mutation"], {}, dependencies), /cannot be combined/u);
+  await assert.rejects(entry.main(["--edge-only", "--edge-only"], {}, dependencies), /must not be repeated/u);
+  await assert.rejects(entry.main(["--mutation", "--mutation"], {}, dependencies), /must not be repeated/u);
   await assert.rejects(entry.main(["--unknown"], {}, dependencies), /Unknown acceptance argument/u);
+  await assert.rejects(entry.main(["positional"], {}, dependencies), /Unknown acceptance argument/u);
   await assert.rejects(entry.main(["--mutation"], { NEMLIG_PRODUCTION_MUTATION: "{}" }, dependencies), /CONFIRMATION is required/u);
+  await assert.rejects(entry.main(["--mutation"], {
+    NEMLIG_PRODUCTION_MUTATION: "not-json",
+    NEMLIG_PRODUCTION_MUTATION_CONFIRMATION: "not-json",
+  }, dependencies), /valid JSON/u);
+  await assert.rejects(entry.main(["--mutation"], {
+    NEMLIG_PRODUCTION_MUTATION: "{}",
+    NEMLIG_PRODUCTION_MUTATION_CONFIRMATION: "different",
+  }, dependencies), /must exactly repeat/u);
   assert.equal(connected, false);
   assert.deepEqual(calls, []);
 });
@@ -108,6 +127,7 @@ test("missing token is rejected before connect", async () => {
 });
 
 test("mutation validates both envelopes, applies, restores once, and closes", async () => {
+  const edgeCalls: string[] = [];
   const calls: string[] = [];
   const events: string[] = [];
   const change: ApprovedProductionMutation = { operation: "additions", prepareArguments: {}, expectedReview: { exact: "change" } };
@@ -117,6 +137,7 @@ test("mutation validates both envelopes, applies, restores once, and closes", as
   const client: AcceptanceClient = {
     listTools: async () => ({ tools: allTools }),
     callTool: async ({ name }) => {
+      calls.push(name);
       if (name === "show_my_basket") return { structuredContent: { items: [], products_price: 0 } };
       if (name === "review_items_to_add") return { structuredContent: { applicable: true, operation: "additions", proposal_id: "919b4c09-704e-466b-8dda-fe4391b8561c", review: change.expectedReview } };
       if (name === "review_item_to_remove") return { structuredContent: { applicable: true, operation: "removal", proposal_id: "919b4c09-704e-466b-8dda-fe4391b8561c", review: restoration.expectedReview } };
@@ -133,9 +154,36 @@ test("mutation validates both envelopes, applies, restores once, and closes", as
     NEMLIG_PRODUCTION_RESTORATION: serializedRestoration,
     NEMLIG_PRODUCTION_RESTORATION_CONFIRMATION: serializedRestoration,
   }, {
-    fetcher: edgeFetcher(calls),
+    fetcher: edgeFetcher(edgeCalls),
     connect: async () => ({ client, close: async () => { events.push("close"); } }),
   });
   assert.deepEqual(events, ["close"]);
-  assert.equal(calls.length, 5);
+  assert.deepEqual(calls, [
+    "show_my_basket", "review_items_to_add", "add_approved_items", "show_my_basket",
+    "show_my_basket", "review_item_to_remove", "remove_approved_item", "show_my_basket",
+  ]);
+  assert.equal(calls.filter((name) => name === "add_approved_items").length, 1);
+  assert.equal(calls.filter((name) => name === "remove_approved_item").length, 1);
+});
+
+test("read-only failure after connect still closes the client", async () => {
+  const calls: string[] = [];
+  let closed = 0;
+  const entry = await import("../scripts/production-acceptance.js");
+  await assert.rejects(entry.main([], {
+    NEMLIG_PRODUCTION_MCP_URL: "https://nemlig-mcp.example.test/mcp",
+    NEMLIG_MCP_ACCESS_TOKEN: "test-token",
+  }, {
+    fetcher: edgeFetcher(calls),
+    connect: async () => ({
+      client: {
+        listTools: async () => { throw new Error("provider detail with secret"); },
+        listResources: async () => ({ resources: [] }),
+        readResource: async () => ({ contents: [] }),
+        callTool: async () => ({}),
+      },
+      close: async () => { closed += 1; },
+    }),
+  }), /provider detail with secret/u);
+  assert.equal(closed, 1);
 });
