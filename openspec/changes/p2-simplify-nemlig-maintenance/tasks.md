@@ -1,6 +1,6 @@
 # Epic P2 — Make the Nemlig assistant easier to change safely
 
-Status: **proposed, not applied**. Ten ordered stories; implementation checkboxes remain unchecked. Scope and evidence are in `design.md`. P0/P1/P3/P4 follow-up epics there are excluded from this change's apply/completion checklist.
+Status: **applying** following user approval on 2026-09-08. Ten stories; evidence is recorded in `evidence.md`. Independent module/parser preparation may overlap coverage under the user's module-first request; integration remains serialized. P0/P1/P3/P4 follow-up epics in `design.md` remain excluded from this change's apply/completion checklist.
 
 Definition of done: maintained parsing and concrete public contracts; independent transport composition and testable planning/acceptance boundaries; real coverage and release checks; preserved safety/storage/wire contracts; measured trade-offs; integrated commits, exact-head CI and applicable read-only runtime acceptance.
 
@@ -8,11 +8,11 @@ Execute one reviewable slice at a time. Sol coordinates/integrates, Terra implem
 
 ## 1. Story — Trustworthy baseline and coverage
 
-- [ ] 1.1 Refresh main in the assigned worktree; record base SHA, clean status, active ownership and scoped files in implementation evidence. Verify no sibling work is absorbed.
-- [ ] 1.2 Run baseline pnpm verify and record tests, wall time and actual coverage output; distinguish executed tests from instrumented coverage.
+- [x] 1.1 Refresh main in the assigned worktree; record base SHA, clean status, active ownership and scoped files in implementation evidence. Verify no sibling work is absorbed.
+- [x] 1.2 Run baseline pnpm verify and record tests, wall time and actual coverage output; distinguish executed tests from instrumented coverage.
 - [ ] 1.3 Wire Node coverage through the existing TS runner/app script into ignored app `coverage/coverage.txt`; verify production-source attribution and test/generated exclusions. Fail the gate if the report is missing/empty, lacks the native coverage summary, or has no eligible production-source entries; publish it as a CI artifact.
-- [ ] 1.4 Measure baseline line/branch/function coverage and execution overhead; ensure root verification runs all suites without an unexplained duplicate test pass.
-- [ ] 1.5 Record existing safety/contract fixtures and gaps, run the full gate, review and commit this baseline slice.
+- [x] 1.4 Measure baseline line/branch/function coverage and execution overhead; ensure root verification runs all suites without an unexplained duplicate test pass.
+- [x] 1.5 Record existing safety/contract fixtures and gaps, run the full gate, review and commit this baseline slice.
 
 ## 2. Story — Decouple server composition from the CLI
 
@@ -24,9 +24,9 @@ Execute one reviewable slice at a time. Sol coordinates/integrates, Terra implem
 
 ## 3. Story — Reuse the installed release argument parser
 
-- [ ] 3.1 Characterize parseArgs callers, defaults, valid flags, repeated flags, missing values, unknown flags and --no-release without Git/provider writes.
-- [ ] 3.2 Replace the manual loop with installed Commander; explicitly map negated release to existing noRelease and use thrown validation errors. Verify malformed inputs cannot initiate apply.
-- [ ] 3.3 Preserve the pure release policy and explicit side-effect entry point; document parser semantics, run release tests and pnpm verify, record code delta, review and commit.
+- [x] 3.1 Characterize parseArgs callers, defaults, valid flags, repeated flags, missing values, unknown flags and --no-release without Git/provider writes.
+- [x] 3.2 Replace the manual loop with installed Commander; explicitly map negated release to existing noRelease and use thrown validation errors. Verify malformed inputs cannot initiate apply.
+- [x] 3.3 Preserve the pure release policy and explicit side-effect entry point; document parser semantics, run release tests and pnpm verify, record code delta, review and commit.
 
 ## 4. Story — Replace invented HTML parsing with bounded readable evidence
 

@@ -4,7 +4,7 @@ import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { applyReleasePlan, createReleasePlan, packagePath } from "./agent.js";
+import { applyReleasePlan, createReleasePlan, packagePath, parseArgs } from "./agent.js";
 import { checkVersionBump } from "./check-version-bump.js";
 
 function git(repo: string, ...args: string[]): string {
@@ -30,6 +30,44 @@ async function fixture(): Promise<{ repo: string; base: string }> {
   git(repo, "commit", "-qm", "chore: baseline");
   return { repo, base: git(repo, "rev-parse", "HEAD") };
 }
+
+test("release arguments preserve defaults, flags, repeated values, and no-release semantics", () => {
+  assert.deepEqual(parseArgs([]), { baseRef: "origin/main" });
+  assert.deepEqual(parseArgs(["--apply", "--apply", "--merged-candidate", "--merged-candidate"]), {
+    baseRef: "origin/main",
+    apply: true,
+    mergedCandidate: true,
+  });
+  assert.deepEqual(parseArgs(["--base", "first", "--base", "last", "--main-ref", "first-main", "--main-ref", "main"]), {
+    baseRef: "last",
+    mainRef: "main",
+  });
+  assert.deepEqual(parseArgs(["--no-release", "--no-release"]), { baseRef: "origin/main", noRelease: true });
+  assert.equal("noRelease" in parseArgs([]), false);
+});
+
+test("release arguments reject missing values, unknown options, and positionals", () => {
+  for (const argv of [["--base"], ["--main-ref"], ["--base", "--apply"], ["--main-ref", "--apply"], ["--base="], ["--main-ref="], ["--unknown"], ["--help"], ["value"]]) {
+    assert.throws(() => parseArgs(argv), /argument|option|unknown|unexpected/i, argv.join(" "));
+  }
+});
+
+test("release parser keeps diagnostics silent", () => {
+  let stdout = "";
+  let stderr = "";
+  const originalStdout = process.stdout.write;
+  const originalStderr = process.stderr.write;
+  process.stdout.write = ((chunk: string | Uint8Array) => { stdout += chunk.toString(); return true; }) as typeof originalStdout;
+  process.stderr.write = ((chunk: string | Uint8Array) => { stderr += chunk.toString(); return true; }) as typeof originalStderr;
+  try {
+    assert.throws(() => parseArgs(["--unknown"]));
+  } finally {
+    process.stdout.write = originalStdout;
+    process.stderr.write = originalStderr;
+  }
+  assert.equal(stdout, "");
+  assert.equal(stderr, "");
+});
 
 test("release plan is read-only and apply changes only the Nemlig manifest", async () => {
   const { repo, base } = await fixture();

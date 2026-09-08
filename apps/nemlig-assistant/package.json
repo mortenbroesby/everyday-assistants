@@ -1,6 +1,6 @@
 {
   "name": "nemlig-assistant",
-  "version": "2.5.0-alpha.9",
+  "version": "2.5.1-alpha.10",
   "private": true,
   "description": "Safe local Nemlig Assistant CLI and MCP server",
   "type": "module",
@@ -46,7 +46,8 @@
     "release:retry:check": "tsx release/retry.ts",
     "smoke": "tsx --test src/smoke.test.ts",
     "smoke:package": "tsx scripts/smoke-package.ts",
-    "test": "tsx --test src/*.test.ts release/*.test.ts"
+    "test": "tsx --test src/*.test.ts release/*.test.ts scripts/*.test.mjs",
+    "coverage": "node scripts/coverage.mjs"
   },
   "dependencies": {
     "@cloudflare/containers": "0.3.7",

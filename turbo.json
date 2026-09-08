@@ -5,7 +5,9 @@
       "outputs": ["dist/**"]
     },
     "check": {},
-    "coverage": {},
+    "coverage": {
+      "outputs": ["coverage/coverage.txt"]
+    },
     "lint": {},
     "smoke": {},
     "test": {}

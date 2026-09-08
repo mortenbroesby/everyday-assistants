@@ -2,6 +2,7 @@
 .turbo/
 /apps/*/node_modules/
 /apps/*/dist/
+/apps/*/coverage/
 /.env
 /.env.*
 !.env.example

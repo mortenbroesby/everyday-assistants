@@ -3,6 +3,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { basename, dirname, resolve } from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
+import { Command, Option } from "commander";
 import {
   decideRelease,
   decideTransaction,
@@ -196,18 +197,37 @@ function writeGithubOutput(plan: ReleasePlan): void {
   ].join("\n") + "\n", { flag: "a" });
 }
 
-function parseArgs(argv: string[]): Omit<PlanOptions, "repoRoot"> {
-  const options: Omit<PlanOptions, "repoRoot"> = { baseRef: "origin/main" };
-  for (let index = 0; index < argv.length; index += 1) {
-    const argument = argv[index];
-    if (argument === "--apply") options.apply = true;
-    else if (argument === "--merged-candidate") options.mergedCandidate = true;
-    else if (argument === "--no-release") options.noRelease = true;
-    else if (argument === "--base" && argv[index + 1]) options.baseRef = argv[++index];
-    else if (argument === "--main-ref" && argv[index + 1]) options.mainRef = argv[++index];
-    else throw new Error(`Unknown release argument: ${argument}`);
-  }
-  return options;
+/** Parse release options without performing planning, I/O, or process termination. */
+export function parseArgs(argv: string[]): Omit<PlanOptions, "repoRoot"> {
+  const ref = (value: string): string => {
+    if (!value || value.startsWith("-")) throw new Error("Git refs must be non-empty and must not be options.");
+    return value;
+  };
+  const command = new Command()
+    .name("release-agent")
+    .exitOverride()
+    .configureOutput({ writeOut: () => {}, writeErr: () => {} })
+    .helpOption(false)
+    .addOption(new Option("--base <ref>", "base Git ref").default("origin/main").argParser(ref))
+    .addOption(new Option("--main-ref <ref>", "main Git ref").argParser(ref))
+    .option("--apply", "apply the planned version update")
+    .option("--merged-candidate", "evaluate a merged candidate")
+    .option("--no-release", "suppress release publication");
+  command.parse(["node", "release-agent", ...argv], { from: "node" });
+  const parsed = command.opts<{
+    base: string;
+    mainRef?: string;
+    apply?: boolean;
+    mergedCandidate?: boolean;
+    release?: boolean;
+  }>();
+  return {
+    baseRef: parsed.base,
+    ...(parsed.mainRef === undefined ? {} : { mainRef: parsed.mainRef }),
+    ...(parsed.apply === undefined ? {} : { apply: parsed.apply }),
+    ...(parsed.mergedCandidate === undefined ? {} : { mergedCandidate: parsed.mergedCandidate }),
+    ...(parsed.release === false ? { noRelease: true } : {}),
+  };
 }
 
 async function main(): Promise<void> {

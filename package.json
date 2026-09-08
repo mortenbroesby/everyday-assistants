@@ -12,7 +12,7 @@
   "scripts": {
     "build": "turbo build",
     "check": "turbo check",
-    "coverage": "turbo coverage",
+    "coverage": "turbo coverage && node apps/nemlig-assistant/scripts/coverage.mjs --validate",
     "nemlig": "pnpm --filter nemlig-assistant cli",
     "nemlig:production:ready": "pnpm spec:validate && pnpm privacy:check && pnpm verify && pnpm --filter nemlig-assistant smoke:package && pnpm --filter nemlig-assistant cloudflare:check",
     "nemlig:release:apply": "pnpm --filter nemlig-assistant release:apply",
@@ -23,7 +23,7 @@
     "smoke": "turbo smoke",
     "spec:validate": "DO_NOT_TRACK=1 openspec validate --all --strict --no-interactive",
     "test": "turbo test",
-    "verify": "pnpm lint && pnpm build && pnpm check && pnpm test && pnpm coverage && pnpm smoke"
+    "verify": "pnpm lint && pnpm build && pnpm check && pnpm coverage && pnpm smoke"
   },
   "devDependencies": {
     "@fission-ai/openspec": "1.11.0",
