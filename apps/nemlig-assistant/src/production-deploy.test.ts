@@ -5,6 +5,7 @@ import { join } from "node:path";
 import test from "node:test";
 import {
   deployProduction,
+  finalizeDeploymentRecovery,
   instancesInactive,
   parseContainer,
   parseDeployCli,
@@ -128,7 +129,10 @@ async function fixture(options: {
       remoteLease = false;
       return "";
     }
-    if (commandName === "gh" && args[0] === "api") return remoteLease ? (options.remoteLeaseChanges && appended ? previousCommit : journalSha) : "";
+    if (commandName === "gh" && args[0] === "api") {
+      if (!remoteLease) throw Object.assign(new Error("not found"), { status: 404 });
+      return options.remoteLeaseChanges && appended ? previousCommit : journalSha;
+    }
     if (commandName === "gh") return "";
     if (commandName === "git" && args[0] === "rev-parse" && args[1] === "HEAD") return options.head ?? commit;
     if (commandName === "git" && args[0] === "rev-parse" && args[1] === "origin/main") {
@@ -241,6 +245,10 @@ test("schema-2 recovery journals reject unknown, malformed, oversized, and exces
   assert.equal(parseDeploymentJournal(JSON.stringify(journal)).operationId, journal.operationId);
   assert.throws(() => parseDeploymentJournal(JSON.stringify({ ...journal, token: "secret" })));
   assert.throws(() => parseDeploymentJournal(JSON.stringify({ ...journal, operationId: commit })));
+  assert.throws(() => parseDeploymentJournal(JSON.stringify({ ...journal, startedAt: "2026-09-05T12:00:00Z" })));
+  assert.throws(() => parseDeploymentJournal(JSON.stringify({ ...journal, completedAt: "2026-02-30T12:00:00.000Z" })));
+  assert.throws(() => parseDeploymentJournal(JSON.stringify({ ...journal, transitions: null })));
+  assert.throws(() => parseDeploymentJournal(JSON.stringify({ ...journal, transitions: [null] })));
   assert.throws(() => parseDeploymentJournal(JSON.stringify({ ...journal, transitions: [{ phase: "disabled_deploy", kind: "intent", at: journal.startedAt, token: "no" }] })));
   assert.throws(() => parseDeploymentJournal(JSON.stringify({ ...journal, transitions: [{ phase: "enable_deploy", kind: "intent", at: journal.startedAt }] })));
   assert.throws(() => parseDeploymentJournal(JSON.stringify({ ...journal, transitions: Array.from({ length: 33 }, () => ({ phase: "disabled_deploy", kind: "intent", at: journal.startedAt })) })));
@@ -416,6 +424,51 @@ test("ambiguous deploy failure retains both leases and reports unknown state", a
     assert.equal(report.lastVerifiedState, "unknown");
     assert.equal(calls.some(({ args }) => args.includes("DELETE")), false);
     await access(join(root, "nemlig-production-deploy.lock"));
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("finalize accepts GitHub's empty successful DELETE only after the exact remote journal head", async () => {
+  const root = await mkdtemp(join(tmpdir(), "nemlig-production-finalize-"));
+  const operation = "44444444-4444-4444-8444-444444444444";
+  const remoteCommit = "cccccccccccccccccccccccccccccccccccccccc";
+  const journal = JSON.stringify({
+    schema: 2, operationId: operation, commit, ciRunId: 456, startedAt: "2026-09-05T12:00:00.000Z",
+    startingVersion: startingId, enabledVersion: enabledId, checks: [], lastVerifiedState: "enabled",
+    rollback: "not_needed", outcome: "success", remoteCommit,
+    transitions: [
+      { phase: "disabled_deploy", kind: "intent", at: "2026-09-05T12:00:00.000Z", version: startingId },
+      { phase: "disabled_deploy", kind: "result", at: "2026-09-05T12:00:01.000Z", version: disabledId },
+      { phase: "enable_deploy", kind: "intent", at: "2026-09-05T12:00:02.000Z", version: disabledId },
+      { phase: "enable_deploy", kind: "result", at: "2026-09-05T12:00:03.000Z", version: enabledId },
+    ],
+  });
+  let head = remoteCommit;
+  const calls: Call[] = [];
+  const run: CommandRunner = async (command, args) => {
+    calls.push({ command, args: [...args] });
+    if (command === "git" && args[0] === "rev-parse") return root;
+    if (command === "pnpm") return deployment(enabledId);
+    if (command !== "gh") throw new Error("unexpected command");
+    if (args[0] === "repo") return JSON.stringify({ nameWithOwner: "mortenbroesby/everyday-assistants", url: "https://github.com/mortenbroesby/everyday-assistants" });
+    if (args.includes("DELETE")) { head = ""; return ""; }
+    const path = args.find((value) => value.startsWith("repos/")) ?? "";
+    if (path.includes("git/ref/")) return head;
+    if (path.includes("git/commits/")) return JSON.stringify({ tree: { sha: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" } });
+    if (path.includes("git/trees/")) return JSON.stringify({ tree: [{ path: "journal.json", type: "blob", mode: "100644", sha: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" }] });
+    if (path.includes("git/blobs/")) return JSON.stringify({ encoding: "base64", content: Buffer.from(journal).toString("base64") });
+    throw new Error("unexpected gh api");
+  };
+  try {
+    await writeFile(join(root, "nemlig-production-deploy.lock"), JSON.stringify({ operation, commit }));
+    assert.equal(await finalizeDeploymentRecovery(operation, {
+      repoRoot: root, packageRoot: root, stateRoot: root, env: {}, run, fetcher: fetch,
+      sleep: async () => undefined, now: () => new Date(),
+    }, true), true);
+    assert.equal(head, "");
+    await assert.rejects(access(join(root, "nemlig-production-deploy.lock")));
+    assert.equal(calls.filter(({ args }) => args.includes("DELETE")).length, 1);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
