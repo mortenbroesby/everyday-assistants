@@ -39,3 +39,16 @@ jCodeMunch was used to trace saved-list imports, snapshot callers and worker
 storage before deletion. Changed source files were refreshed individually because
 bulk indexing encountered duplicate repository identities. Token savings were not
 measured.
+
+## Main integration
+
+Source revision `446fdb7434459feb2b3e27749dfbbfc8bb2666ec` was pushed to
+`main` and the task branch; remote `main` was read back at that exact revision.
+The committed major-version gate passed from `3.0.0-alpha.15` to
+`4.0.0-alpha.16`. Exact-source CI passed:
+https://github.com/mortenbroesby/everyday-assistants/actions/runs/34287860887
+
+Deployment and production acceptance remain pending separate current authority
+under the repository Definition of Ready. Existing provider records and native
+Nemlig shopping lists were untouched. Sync/archive remains pending acceptance;
+do not replay the superseded named-list delta or the older snapshot wording.

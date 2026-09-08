@@ -8,6 +8,6 @@
 ## 2. Verify and deliver
 
 - [x] 2.1 Run pnpm verify, strict specs, privacy, packed smoke and credential-free production readiness; record results and review source/compiled dependencies.
-- [ ] 2.2 Coordinate main integration, commit and push; verify exact remote main and exact-head CI.
+- [x] 2.2 Coordinate main integration, commit and push; verify exact remote main and exact-head CI.
 - [ ] 2.3 With explicit current production authority, deploy the exact verified revision disabled-first and verify retained read-only inventory and health; otherwise report deployment pending.
 - [ ] 2.4 After applicable acceptance sync removal specs and archive without replaying superseded deltas; verify final docs and remote CI.
