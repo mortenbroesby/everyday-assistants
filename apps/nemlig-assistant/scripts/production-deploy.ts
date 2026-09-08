@@ -9,6 +9,9 @@ const execute = promisify(execFile);
 const fullSha = /^[0-9a-f]{40}$/u;
 const versionId = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/u;
 const remoteLeaseRef = "refs/heads/codex-lock/nemlig-production";
+const productionRepository = "mortenbroesby/everyday-assistants";
+const ciWorkflowName = "CI";
+const ciWorkflowPath = ".github/workflows/ci.yml";
 const customMcp = new URL("https://nemlig-mcp.broesby.dk/mcp");
 const workersMcp = new URL("https://nemlig-mcp-cloudflare-production.mortenbroesby.workers.dev/mcp");
 export const productionDeployUsage = "pnpm --filter nemlig-assistant production:deploy -- <40-character-main-commit>";
@@ -244,7 +247,7 @@ const acquireLocalLease = async (path: string, commit: string): Promise<void> =>
 
 const repoIdentity = async (deps: DeployDependencies): Promise<{ nameWithOwner: string; url: string }> => {
   const value = object(json(await runAt(deps, deps.repoRoot, "gh", ["repo", "view", "--json", "nameWithOwner,url"]), "github_repository_invalid"));
-  if (!value || typeof value.nameWithOwner !== "string" || typeof value.url !== "string") {
+  if (!value || value.nameWithOwner !== productionRepository || typeof value.url !== "string") {
     throw new DeployFailure("github_repository_invalid");
   }
   return { nameWithOwner: value.nameWithOwner, url: value.url };
@@ -259,12 +262,25 @@ const verifySource = async (deps: DeployDependencies, commit: string, repo: { na
     runAt(deps, deps.repoRoot, "git", ["status", "--porcelain"]),
   ]);
   if (head !== commit || remote !== commit || status !== "") fail("source_revision_mismatch");
+  const workflows = json(await runAt(deps, deps.repoRoot, "gh", [
+    "workflow", "list", "--repo", repo.nameWithOwner, "--all", "--limit", "100", "--json", "id,name,path,state",
+  ]), "github_ci_workflow_invalid");
+  const matchingWorkflows = Array.isArray(workflows) ? workflows.map(object).filter((workflow) =>
+    workflow?.name === ciWorkflowName && workflow.path === ciWorkflowPath && workflow.state === "active") : [];
+  if (matchingWorkflows.length !== 1 || typeof matchingWorkflows[0]?.id !== "number") fail("github_ci_workflow_invalid");
+  const workflowId = matchingWorkflows[0].id as number;
   const runs = json(await runAt(deps, deps.repoRoot, "gh", [
-    "run", "list", "--repo", repo.nameWithOwner, "--commit", commit, "--workflow", "CI", "--limit", "10",
-    "--json", "conclusion,headSha,status,url",
+    "run", "list", "--repo", repo.nameWithOwner, "--commit", commit, "--workflow", String(workflowId), "--limit", "10",
+    "--json", "conclusion,databaseId,event,headBranch,headSha,status,url,workflowDatabaseId,workflowName",
   ]), "github_ci_invalid");
-  const latest = Array.isArray(runs) ? object(runs[0]) : undefined;
-  if (!latest || latest.headSha !== commit || latest.status !== "completed" || latest.conclusion !== "success") {
+  const trusted = Array.isArray(runs) ? runs.map(object).filter((run) =>
+    run?.headSha === commit
+    && run.event === "push"
+    && run.headBranch === "main"
+    && run.workflowName === ciWorkflowName
+    && run.workflowDatabaseId === workflowId
+    && typeof run.databaseId === "number").sort((left, right) => (right!.databaseId as number) - (left!.databaseId as number))[0] : undefined;
+  if (!trusted || trusted.status !== "completed" || trusted.conclusion !== "success") {
     fail("exact_head_ci_not_green");
   }
 };
@@ -360,6 +376,7 @@ export async function deployProduction(commit: string, deps: DeployDependencies)
     remoteLease = true;
     await writeJournal(journalPath, journal);
 
+    await verifySource(deps, commit, repo);
     await wrangler(deps, ["whoami"]);
     const start = await readCurrent(deps);
     starting = parseVersionState(await readVersion(deps, start.version), start.version);
@@ -416,7 +433,12 @@ export async function deployProduction(commit: string, deps: DeployDependencies)
       try {
         const current = await readCurrent(deps);
         const state = parseVersionState(await readVersion(deps, current.version), current.version);
-        if (!state.enabled) {
+        const candidate = journal.enabledVersion ?? journal.disabledVersion;
+        if (current.version !== candidate && current.version !== starting.id) {
+          journal.failure = "cloudflare_deployment_drift";
+          journal.lastVerifiedState = "unknown";
+          safeToRelease = false;
+        } else if (!state.enabled) {
           journal.lastVerifiedState = "disabled";
         } else if (current.version === starting.id) {
           journal.lastVerifiedState = starting.enabled ? "enabled" : "disabled";

@@ -21,6 +21,7 @@ const previousCommit = "2c952d20999b8ac47f7b060be97f2f84445defcb";
 const startingId = "958ad415-2395-40c1-8baf-b394dafce67f";
 const disabledId = "11111111-1111-4111-8111-111111111111";
 const enabledId = "22222222-2222-4222-8222-222222222222";
+const thirdPartyId = "33333333-3333-4333-8333-333333333333";
 const applicationId = "a03ce8c9-3543-4505-866e-14d2e66007ca";
 const image = "registry.cloudflare.test/nemlig@sha256:abc";
 
@@ -65,26 +66,49 @@ interface Call {
 
 async function fixture(options: {
   head?: string;
+  remoteAfterPreflight?: boolean;
   remoteLeaseBlocked?: boolean;
   remoteLeaseChanges?: boolean;
+  repository?: string;
+  workflowId?: number;
+  workflowPath?: string;
+  run?: Record<string, unknown>;
+  runs?: Array<Record<string, unknown>>;
   disabledResponse?: string;
   disabledFetchFails?: boolean;
   driftBeforeEnable?: boolean;
   failDisabledDeploy?: boolean;
   failFeatures?: boolean;
+  externalEnabledDriftDuringRecovery?: boolean;
 } = {}): Promise<{ deps: DeployDependencies; calls: Call[]; root: string }> {
   const root = await mkdtemp(join(tmpdir(), "nemlig-production-deploy-"));
   const calls: Call[] = [];
   let current = startingId;
   let remoteLease = false;
   let disabledReads = 0;
+  let remoteReads = 0;
   const run: CommandRunner = async (commandName, args, runOptions) => {
     calls.push({ command: commandName, args: [...args], env: runOptions?.env });
     if (commandName === "gh" && args[0] === "repo") {
-      return JSON.stringify({ nameWithOwner: "owner/repository", url: "https://github.com/owner/repository" });
+      return JSON.stringify({ nameWithOwner: options.repository ?? "mortenbroesby/everyday-assistants", url: `https://github.com/${options.repository ?? "mortenbroesby/everyday-assistants"}` });
+    }
+    if (commandName === "gh" && args[0] === "workflow") {
+      return JSON.stringify([{ id: options.workflowId ?? 123, name: "CI", path: options.workflowPath ?? ".github/workflows/ci.yml", state: "active" }]);
     }
     if (commandName === "gh" && args[0] === "run") {
-      return JSON.stringify([{ headSha: commit, status: "completed", conclusion: "success", url: "https://example.test/ci" }]);
+      const base = {
+        databaseId: 456,
+        workflowDatabaseId: options.workflowId ?? 123,
+        workflowName: "CI",
+        headSha: commit,
+        headBranch: "main",
+        event: "push",
+        status: "completed",
+        conclusion: "success",
+        url: "https://example.test/ci",
+        ...options.run,
+      };
+      return JSON.stringify(options.runs ?? [base]);
     }
     if (commandName === "gh" && args[0] === "api" && args.includes("POST")) {
       if (options.remoteLeaseBlocked) throw new Error("exists");
@@ -98,7 +122,10 @@ async function fixture(options: {
     if (commandName === "gh" && args[0] === "api") return remoteLease ? (options.remoteLeaseChanges ? previousCommit : commit) : "";
     if (commandName === "gh") return "";
     if (commandName === "git" && args[0] === "rev-parse" && args[1] === "HEAD") return options.head ?? commit;
-    if (commandName === "git" && args[0] === "rev-parse" && args[1] === "origin/main") return commit;
+    if (commandName === "git" && args[0] === "rev-parse" && args[1] === "origin/main") {
+      remoteReads += 1;
+      return options.remoteAfterPreflight && remoteReads > 1 ? previousCommit : commit;
+    }
     if (commandName === "git" && args[0] === "status") return "";
     if (commandName === "git") return "";
     if (commandName !== "pnpm") throw new Error("unexpected command");
@@ -109,6 +136,7 @@ async function fixture(options: {
     }
     if (!args.includes("wrangler")) throw new Error("unexpected pnpm command");
     if (args.includes("deployments") && args.includes("list")) {
+      if (options.externalEnabledDriftDuringRecovery && options.failFeatures && current === enabledId) return deployment(thirdPartyId);
       if (current === disabledId) disabledReads += 1;
       return deployment(options.driftBeforeEnable && disabledReads >= 2 ? startingId : current);
     }
@@ -117,6 +145,7 @@ async function fixture(options: {
       if (id === startingId) return version(id, previousCommit, true);
       if (id === disabledId) return version(id, commit, false);
       if (id === enabledId) return version(id, commit, true);
+      if (id === thirdPartyId) return version(id, previousCommit, true);
     }
     if (args.includes("containers") && args.includes("list")) return JSON.stringify([{
       id: applicationId,
@@ -210,6 +239,63 @@ test("source mismatch and unavailable leases stop before Cloudflare", async () =
   }
 });
 
+test("only the exact trusted main CI provenance may reach Wrangler", async () => {
+  const rejected = [
+    { repository: "owner/repository" },
+    { workflowPath: ".github/workflows/other.yml" },
+    { run: { workflowDatabaseId: 999 } },
+    { run: { workflowName: "Other" } },
+    { run: { headBranch: "feature" } },
+    { run: { event: "pull_request" } },
+    { run: { headSha: previousCommit } },
+    { head: previousCommit },
+  ];
+  for (const options of rejected) {
+    const { deps, calls, root } = await fixture(options);
+    try {
+      const report = await deployProduction(commit, deps);
+      assert.equal(report.outcome, "failed");
+      assert.equal(calls.some(({ args }) => args.includes("wrangler")), false);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  }
+  for (const unsafe of ["A".repeat(40), `${commit};wrangler deploy`, commit.slice(0, 39)]) {
+    const { deps, calls, root } = await fixture();
+    try {
+      await assert.rejects(deployProduction(unsafe, deps), /invalid_commit/u);
+      assert.equal(calls.length, 0);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  }
+});
+
+test("a newer failed trusted run cannot be masked by an older green run", async () => {
+  const { deps, calls, root } = await fixture({ runs: [
+    { databaseId: 457, workflowDatabaseId: 123, workflowName: "CI", headSha: commit, headBranch: "main", event: "push", status: "completed", conclusion: "failure" },
+    { databaseId: 456, workflowDatabaseId: 123, workflowName: "CI", headSha: commit, headBranch: "main", event: "push", status: "completed", conclusion: "success" },
+  ] });
+  try {
+    const report = await deployProduction(commit, deps);
+    assert.equal(report.outcome, "failed");
+    assert.equal(calls.some(({ args }) => args.includes("wrangler")), false);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("main advancing after initial approval stops before provider mutation", async () => {
+  const { deps, calls, root } = await fixture({ remoteAfterPreflight: true });
+  try {
+    const report = await deployProduction(commit, deps);
+    assert.equal(report.outcome, "failed");
+    assert.equal(calls.some(({ args }) => args.includes("deploy") || args.includes("rollback")), false);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("successful deployment builds once, reuses the image, and journals only redacted state", async () => {
   const { deps, calls, root } = await fixture();
   try {
@@ -256,6 +342,21 @@ test("enabled acceptance failure restores and verifies the exact starting versio
     const rollbackCall = calls.find(({ args }) => args.includes("rollback"));
     assert.ok(rollbackCall?.args.includes(startingId));
     assert.equal(calls.filter(({ args }) => args[0] === "production:probe").length, 2);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("unexpected enabled provider drift during recovery is retained without rollback", async () => {
+  const { deps, calls, root } = await fixture({ failFeatures: true, externalEnabledDriftDuringRecovery: true });
+  try {
+    const report = await deployProduction(commit, deps);
+    assert.equal(report.outcome, "failed");
+    assert.equal(report.failure, "cloudflare_deployment_drift");
+    assert.equal(report.lastVerifiedState, "unknown");
+    assert.equal(calls.some(({ args }) => args.includes("rollback")), false);
+    assert.equal(calls.some(({ args }) => args.includes("DELETE")), false);
+    await access(join(root, "nemlig-production-deploy.lock"));
   } finally {
     await rm(root, { recursive: true, force: true });
   }
