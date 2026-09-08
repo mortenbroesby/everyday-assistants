@@ -31,3 +31,25 @@ Initial planning CI rejected an absolute laptop path in this evidence file. The 
 - The first composed baseline passed `pnpm verify` (215 tests plus 3 smoke checks). This predates the final S1 correction and is not final integration evidence.
 - Read-only GitHub setup inspection: no environments, no branch protection on main, no rulesets; Actions enabled with all actions permitted. These are setup findings, not permission to change protections.
 - A sibling's newly authorized removal of all saved shopping requires a separate removal-only acceptance compatibility commit before its main push. Root holds CI integration until that change lands and will then recalculate the patch version and rerun full gates. No saved-storage fixture path will be introduced by this CI epic.
+- Removal-only compatibility `afaa22a0cd5b06831b8be215c9b220cdd433f7d4` was independently scoped to three acceptance files, reviewed and delivered to the sibling: 20 focused tests, typecheck and lint pass. It does not contain CI hardening; the sibling combines it with the removed runtime.
+- S1's final root correction `4c4ef75` retains only allowlisted observed revision evidence separately from the requested source SHA and rejects non-canonical CI targets before I/O. Both were reproduced with failing tests first; the corrected composed focused suite passes 38/38 and typecheck passes. Luna reviewed the diff without blockers. S1 is locally implemented; exact-main integration and full final gates remain pending under S7.
+- U4 implementation is assigned to Terra in a dedicated recovery worktree using `recovery-packet.md`; only the deploy script/test are owned there. U1 local Wrangler inspection confirms no-rollout skips Container updates, but Worker rollback alone cannot establish image restoration; runtime image/configuration proof remains incomplete.
+
+## Read-only production metadata, 2026-09-09
+
+Existing authenticated Wrangler metadata reads confirmed Worker version
+`1e088bde-55ff-429a-a6dc-09d7e88360d3` at 100%, application revision
+`7566d1eec1b435b86ef86afc50c45c14ffd8c9cd`, enabled MCP and disabled credential
+onboarding. CPU/subrequest limits remain 100/8 and normal/expensive daily limits
+5000/500. The sole Container application reports image digest
+`sha256:55d97849ed60e69f9b5461ae88c95c76eedb2ff38843e27fe195fc2b1a033545`
+and one instance slot. This is current metadata, not an authenticated feature
+test. A subsequent read-only instance query returned one `running` row; no
+disabled/no-wake acceptance is claimed from this enabled-state observation.
+
+Version/container JSON shapes match the pinned CLI inspection. Only allowlisted
+plain safety values, version/digest metadata and binding names/types were
+selected for output; secret values were not exported. The schema-v1 owner
+secret bindings remain present; onboarding/encryption bindings are not yet
+configured. No migration, configuration edit, wake request or deployment was
+performed. These reads do not prove rollback restores a Container image.

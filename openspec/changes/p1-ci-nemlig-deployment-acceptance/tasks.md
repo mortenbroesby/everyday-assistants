@@ -10,11 +10,11 @@ Epic: trusted CI release without routine owner-token handling, with durable reco
 
 Readiness: READY after 0.1–0.2. No provider identity choice needed. Terra owns `apps/nemlig-assistant/scripts/production-acceptance.ts`, `src/production-acceptance.ts`, `src/production-acceptance.test.ts`, and `src/production-acceptance-entry.test.ts` (all verified present). Existing default owner behavior and token requirement remain intact. Luna reviews/test-runs without overlapping edits. No service runtime path yet. Focused command from repository root: `pnpm --filter nemlig-assistant exec tsx --test src/production-acceptance.test.ts src/production-acceptance-entry.test.ts`.
 
-- [ ] 1.1 Characterize current owner sweep and unavailable fixtures, then add failing checks for separated owner-admin result and allowlisted report fields; verify existing tool calls/counts and missing-fixture results stay explicit.
-- [ ] 1.2 Implement explicit evidence labels and fixed-category redaction at CLI exit, preserving default live-user behavior; verify hostile assertion/provider payloads and tokens never appear in output or saved evidence.
-- [ ] 1.3 Enforce one 90-second operation deadline including connect/edge/features/admin/close and abort underlying work; verify hanging connect, call, cleanup and late-response tests terminate without further calls.
-- [ ] 1.4 Reject mutation mode/approval variables in CI acceptance and keep closed production target/tool lists; verify no fake trace invokes prepare, apply, list writes, issue creation or basket mutation.
-- [ ] 1.5 Luna runs focused acceptance/entry tests through installed `tsx --test`, and Sol reviews default-behavior diff; verify pass evidence and scoped commit before widening scope.
+- [x] 1.1 Characterize current owner sweep and unavailable fixtures, then add failing checks for separated owner-admin result and allowlisted report fields; verify existing tool calls/counts and missing-fixture results stay explicit.
+- [x] 1.2 Implement explicit evidence labels and fixed-category redaction at CLI exit, preserving default live-user behavior; verify hostile assertion/provider payloads and tokens never appear in output or saved evidence.
+- [x] 1.3 Enforce one 90-second operation deadline including connect/edge/features/admin/close and abort underlying work; verify hanging connect, call, cleanup and late-response tests terminate without further calls.
+- [x] 1.4 Reject mutation mode/approval variables in CI acceptance and keep closed production target/tool lists; verify no fake trace invokes prepare, apply, list writes, issue creation or basket mutation.
+- [x] 1.5 Luna runs focused acceptance/entry tests through installed `tsx --test`, and Sol reviews default-behavior diff; verify pass evidence and scoped commit before widening scope.
 
 ## 2. S2 — Trusted source and recoverable shared deployment command
 
