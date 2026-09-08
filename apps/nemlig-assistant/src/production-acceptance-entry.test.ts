@@ -113,6 +113,20 @@ test("edge-only skips credentials and connect", async () => {
   assert.equal(calls.length, 5);
 });
 
+test("acceptance preserves observed revision evidence without exposing arbitrary provider text", async () => {
+  const entry = await import("../scripts/production-acceptance.js");
+  for (const revision of ["a".repeat(40), "private-provider-marker"]) {
+    const report = await entry.main(["--edge-only"], {}, {
+      fetcher: async (input, init) => String(input).endsWith("/revision")
+        ? Response.json({ revision })
+        : edgeFetcher([], "https://nemlig-mcp.broesby.dk/mcp")(input, init),
+      connect: async () => { throw new Error("must not connect"); },
+    });
+    assert.equal(report.observedRevision, revision.length === 40 ? revision : undefined);
+    assert.equal(JSON.stringify(report).includes("private-provider-marker"), false);
+  }
+});
+
 test("malformed flags and envelopes fail before network or connect", async () => {
   const calls: string[] = [];
   let connected = false;
@@ -143,6 +157,7 @@ test("ordinary acceptance rejects inherited mutation approval and CI mutation mo
   const entry = await import("../scripts/production-acceptance.js");
   await assert.rejects(entry.main([], { NEMLIG_PRODUCTION_MUTATION: "{}" }, dependencies), /mutation approval environment is not allowed/u);
   await assert.rejects(entry.main(["--mutation"], { CI: "true" }, dependencies), /CI acceptance cannot select mutation mode/u);
+  await assert.rejects(entry.main([], { CI: "true", NEMLIG_PRODUCTION_MCP_URL: "https://untrusted.example/mcp" }, dependencies), /CI acceptance requires the fixed production target/u);
   assert.equal(connected, false);
   assert.deepEqual(calls, []);
 });

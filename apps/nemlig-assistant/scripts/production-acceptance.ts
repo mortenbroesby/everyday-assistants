@@ -135,6 +135,7 @@ const defaultDependencies: AcceptanceEntryDependencies = { fetcher: fetch, conne
 export interface AcceptanceReport {
   schema: 1;
   sourceSha?: string;
+  observedRevision?: string;
   startedAt: string;
   completedAt: string;
   profile: "edge" | "live-user" | "mutation";
@@ -155,7 +156,7 @@ const inheritedMutationApproval = (env: Environment): boolean => Object.keys(env
 const failureCategory = (error: unknown): NonNullable<AcceptanceReport["failureCategory"]> => {
   const message = error instanceof Error ? error.message : "";
   if (/deadline exceeded|timed out/iu.test(message)) return "deadline_exceeded";
-  if (/argument|valid URL|required|approval environment|cannot select mutation/iu.test(message)) return "input_invalid";
+  if (/argument|valid URL|required|approval environment|cannot select mutation|fixed production target/iu.test(message)) return "input_invalid";
   if (/edge|health|revision|OAuth|anonymous|Origin/iu.test(message)) return "edge_failed";
   if (/token|authentication|authorization/iu.test(message)) return "authentication_failed";
   if (/admin|tier usage/iu.test(message)) return "owner_admin_failed";
@@ -177,43 +178,47 @@ export async function main(
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(new Error("Production acceptance deadline exceeded")), dependencies.totalTimeoutMs ?? 90_000);
   try {
-  const mutations = options.mutation
-    ? {
-        change: approvedMutation(env, "NEMLIG_PRODUCTION_MUTATION"),
-        restoration: approvedMutation(env, "NEMLIG_PRODUCTION_RESTORATION"),
-      }
-    : undefined;
-  let origin: URL;
-  try {
-    origin = new URL(env.NEMLIG_PRODUCTION_MCP_URL?.trim() || "https://nemlig-mcp.broesby.dk/mcp");
-  } catch {
-    throw new Error("NEMLIG_PRODUCTION_MCP_URL must be a valid URL");
-  }
+    const mutations = options.mutation
+      ? {
+          change: approvedMutation(env, "NEMLIG_PRODUCTION_MUTATION"),
+          restoration: approvedMutation(env, "NEMLIG_PRODUCTION_RESTORATION"),
+        }
+      : undefined;
+    let origin: URL;
+    try {
+      origin = new URL(env.NEMLIG_PRODUCTION_MCP_URL?.trim() || "https://nemlig-mcp.broesby.dk/mcp");
+    } catch {
+      throw new Error("NEMLIG_PRODUCTION_MCP_URL must be a valid URL");
+    }
+    if (env.CI?.trim() && origin.href !== "https://nemlig-mcp.broesby.dk/mcp") {
+      throw new Error("CI acceptance requires the fixed production target");
+    }
     const edge = await verifyProductionEdge(origin, dependencies.fetcher, {
       expectedRevision: env.NEMLIG_EXPECTED_REVISION?.trim() || undefined,
       signal: controller.signal,
     });
-  if (options.edgeOnly) {
-      return { profile: "edge", required: ["edge"], passed: ["edge"], unavailable: [], lastCompletedBoundary: edge.lastCompletedBoundary, correlationIds: edge.correlationIds };
-  }
+    const observedRevision = /^[0-9a-f]{40}$/u.test(edge.revision) ? edge.revision : undefined;
+    if (options.edgeOnly) {
+      return { profile: "edge", observedRevision, required: ["edge"], passed: ["edge"], unavailable: [], lastCompletedBoundary: edge.lastCompletedBoundary, correlationIds: edge.correlationIds };
+    }
 
-  const accessToken = required(env, "NEMLIG_MCP_ACCESS_TOKEN");
+    const accessToken = required(env, "NEMLIG_MCP_ACCESS_TOKEN");
     const connected = await abortable("Authenticated MCP connect", dependencies.connect(origin, accessToken, controller.signal), controller.signal);
     const closeOnAbort = () => { void connected.close().catch(() => undefined); };
     controller.signal.addEventListener("abort", closeOnAbort, { once: true });
-  try {
-    if (!mutations) {
+    try {
+      if (!mutations) {
         const report = await verifyReadOnlyProductionFeatures(connected.client, { signal: controller.signal });
         await verifyAggregateTierUsage(origin, accessToken, dependencies.fetcher, { signal: controller.signal });
-        return { profile: "live-user", required: ["edge", "live_user_features", "owner_admin"], passed: ["edge", "live_user_features", "owner_admin"], unavailable: report.unavailable, lastCompletedBoundary: "owner_admin", correlationIds: edge.correlationIds };
-    } else {
-      await verifyApprovedReversibleProductionMutation(connected.client, mutations.change, mutations.restoration);
-        return { profile: "mutation", required: ["edge", "approved_mutation"], passed: ["edge", "approved_mutation"], unavailable: [], lastCompletedBoundary: "approved_mutation_restored", correlationIds: edge.correlationIds };
-    }
-  } finally {
+        return { profile: "live-user", observedRevision, required: ["edge", "live_user_features", "owner_admin"], passed: ["edge", "live_user_features", "owner_admin"], unavailable: report.unavailable, lastCompletedBoundary: "owner_admin", correlationIds: edge.correlationIds };
+      } else {
+        await verifyApprovedReversibleProductionMutation(connected.client, mutations.change, mutations.restoration);
+        return { profile: "mutation", observedRevision, required: ["edge", "approved_mutation"], passed: ["edge", "approved_mutation"], unavailable: [], lastCompletedBoundary: "approved_mutation_restored", correlationIds: edge.correlationIds };
+      }
+    } finally {
       controller.signal.removeEventListener("abort", closeOnAbort);
       await abortable("Authenticated MCP close", connected.close(), controller.signal);
-  }
+    }
   } finally {
     clearTimeout(timer);
   }
