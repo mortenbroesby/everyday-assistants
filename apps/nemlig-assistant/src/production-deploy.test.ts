@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { access, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { access, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -130,6 +130,8 @@ async function fixture(options: {
   externalEnabledDriftDuringRecovery?: boolean;
   remoteIntentFailure?: boolean;
   remoteResultFailure?: boolean;
+  remoteEnableIntentFailure?: boolean;
+  localResultMirrorFailure?: boolean;
   sharedLease?: SharedLeaseStore;
 } = {}): Promise<{ deps: DeployDependencies; calls: Call[]; root: string }> {
   const root = await mkdtemp(join(tmpdir(), "nemlig-production-deploy-"));
@@ -186,7 +188,12 @@ async function fixture(options: {
         const snapshot = Buffer.from(String(body?.content), "base64").toString("utf8");
         const transitionCount = JSON.parse(snapshot).transitions.length;
         if (options.remoteIntentFailure && transitionCount % 2 === 1) throw new Error("intent write failed");
+        if (options.remoteEnableIntentFailure && transitionCount === 3) throw new Error("enable intent write failed");
         if (options.remoteResultFailure && transitionCount > 0 && transitionCount % 2 === 0 && !resultWriteFailed) { resultWriteFailed = true; throw new Error("result write failed"); }
+        if (options.localResultMirrorFailure && transitionCount === 2) {
+          await rm(join(root, "nemlig-production-deploy", "latest.json"));
+          await mkdir(join(root, "nemlig-production-deploy", "latest.json"));
+        }
         const sha = nextSha(); blobs.set(sha, snapshot); return JSON.stringify({ sha });
       }
       if (path.endsWith("git/trees") && method === "POST") { const sha = nextSha(); trees.set(sha, String((body?.tree as Array<Record<string, unknown>>)?.[0]?.sha)); return JSON.stringify({ sha }); }
@@ -517,6 +524,21 @@ test("disabled verification failures and provider drift never enable", async () 
   }
 });
 
+test("incomplete disabled evidence remains unknown, while completed disabled proof survives a later safe failure", async () => {
+  for (const options of [{ disabledResponse: "wrong" }, { disabledFetchFails: true }]) {
+    const { deps, root } = await fixture(options);
+    try {
+      assert.equal((await deployProduction(commit, deps)).lastVerifiedState, "unknown");
+    } finally { await rm(root, { recursive: true, force: true }); }
+  }
+  const { deps, root } = await fixture({ remoteEnableIntentFailure: true });
+  try {
+    const report = await deployProduction(commit, deps);
+    assert.equal(report.outcome, "failed");
+    assert.equal(report.lastVerifiedState, "disabled");
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
 test("enabled acceptance failure restores and verifies the exact starting version", async () => {
   const { deps, calls, root } = await fixture({ failFeatures: true });
   try {
@@ -582,6 +604,23 @@ test("remote result persistence failure after provider success retains unknown s
   } finally {
     await rm(root, { recursive: true, force: true });
   }
+});
+
+test("local mirror write failure prevents dispatch before intent and retains unknown after provider success", async () => {
+  const before = await fixture();
+  try {
+    await mkdir(join(before.root, "nemlig-production-deploy", "latest.json"), { recursive: true });
+    const report = await deployProduction(commit, before.deps);
+    assert.equal(report.failure, "deployment_journal_write_failed");
+    assert.equal(before.calls.some(({ args }) => args.includes("deploy")), false);
+  } finally { await rm(before.root, { recursive: true, force: true }); }
+  const after = await fixture({ localResultMirrorFailure: true });
+  try {
+    const report = await deployProduction(commit, after.deps);
+    assert.equal(report.lastVerifiedState, "unknown");
+    assert.equal(after.calls.filter(({ args }) => args.includes("deploy")).length, 1);
+    assert.equal(after.calls.some(({ args }) => args.includes("rollback")), false);
+  } finally { await rm(after.root, { recursive: true, force: true }); }
 });
 
 test("successful deployment finalizes from its stateful remote journal chain", async () => {

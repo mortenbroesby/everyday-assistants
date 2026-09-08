@@ -735,8 +735,12 @@ export async function deployProduction(commit: string, inputDeps: DeployDependen
 
     transition = async (phase: JournalPhase, kind: JournalKind, version?: string): Promise<void> => {
       journal.transitions.push({ phase, kind, at: deps.now().toISOString(), ...(version ? { version } : {}) });
-      try { await appendRemoteJournal(deps, repository, journal); } catch { fail("remote_journal_append_failed"); }
-      await writeJournal(journalPath, journal);
+      try { await appendRemoteJournal(deps, repository, journal); } catch {
+        if (kind === "result") mutationUncertain = true;
+        else journal.transitions.pop();
+        fail("remote_journal_append_failed");
+      }
+      try { await writeJournal(journalPath, journal); } catch { if (kind === "result") mutationUncertain = true; fail("deployment_journal_write_failed"); }
     };
 
     await transition("disabled_deploy", "intent", starting.id);
@@ -790,7 +794,7 @@ export async function deployProduction(commit: string, inputDeps: DeployDependen
   } catch (error) {
     journal.outcome = "failed";
     journal.failure = error instanceof DeployFailure ? error.code : "unexpected_failure";
-    if (mutationUncertain || journal.failure === "remote_journal_append_failed") {
+    if (mutationUncertain) {
       journal.lastVerifiedState = "unknown";
     } else if (providerMutation && starting) {
       try {
@@ -800,7 +804,8 @@ export async function deployProduction(commit: string, inputDeps: DeployDependen
         if (current.version !== candidate && current.version !== starting.id) {
           journal.failure = "cloudflare_deployment_drift";
           journal.lastVerifiedState = "unknown";
-        } else if (!state.enabled) {
+        } else if (!state.enabled && current.version === journal.disabledVersion
+          && journal.checks.includes("disabled_routes") && journal.checks.includes("container_inactive")) {
           journal.lastVerifiedState = "disabled";
         } else if (current.version === starting.id) {
           journal.lastVerifiedState = starting.enabled ? "enabled" : "disabled";
