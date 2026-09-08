@@ -9,9 +9,11 @@ import {
   deployProduction,
   defaultRunner,
   finalizeDeploymentRecovery,
+  inspectDeploymentRecovery,
   instancesInactive,
   parseContainer,
   parseDeployCli,
+  parseProductionDeployCli,
   parseCurrentDeployment,
   parseDeployArgs,
   parseDeploymentJournal,
@@ -452,7 +454,7 @@ test("finalize accepts GitHub's empty successful DELETE only after the exact rem
   const remoteCommit = "cccccccccccccccccccccccccccccccccccccccc";
   const journal = JSON.stringify({
     schema: 2, operationId: operation, commit, ciRunId: 456, startedAt: "2026-09-05T12:00:00.000Z",
-    startingVersion: startingId, enabledVersion: enabledId, checks: [], lastVerifiedState: "enabled",
+    startingVersion: startingId, enabledVersion: enabledId, startingContainerId: applicationId, enabledImage: image, checks: [], lastVerifiedState: "enabled",
     rollback: "not_needed", outcome: "success", remoteCommit: "dddddddddddddddddddddddddddddddddddddddd",
     transitions: [
       { phase: "disabled_deploy", kind: "intent", at: "2026-09-05T12:00:00.000Z", version: startingId },
@@ -462,11 +464,16 @@ test("finalize accepts GitHub's empty successful DELETE only after the exact rem
     ],
   });
   let head = remoteCommit;
+  let currentImage = "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
   const calls: Call[] = [];
   const run: CommandRunner = async (command, args) => {
     calls.push({ command, args: [...args] });
     if (command === "git" && args[0] === "rev-parse") return root;
-    if (command === "pnpm") return deployment(enabledId);
+    if (command === "pnpm" && args.includes("deployments")) return deployment(enabledId);
+    if (command === "pnpm" && args.includes("versions")) return version(enabledId, commit, true);
+    if (command === "pnpm" && args.includes("containers")) return JSON.stringify([{
+      id: applicationId, name: "nemlig-mcp-cloudflare-production-nemligmcpcontainer-production", instances: 1, image: currentImage,
+    }]);
     if (command !== "gh") throw new Error("unexpected command");
     if (args[0] === "repo") return JSON.stringify({ nameWithOwner: "mortenbroesby/everyday-assistants", url: "https://github.com/mortenbroesby/everyday-assistants" });
     if (args.includes("DELETE")) { head = ""; return ""; }
@@ -485,6 +492,12 @@ test("finalize accepts GitHub's empty successful DELETE only after the exact rem
     assert.equal(await finalizeDeploymentRecovery(operation, {
       repoRoot: root, packageRoot: root, stateRoot: root, env: {}, run, fetcher: fetch,
       sleep: async () => undefined, now: () => new Date(),
+    }, true), false);
+    assert.equal(head, remoteCommit, "image drift retains the remote lease");
+    currentImage = image;
+    assert.equal(await finalizeDeploymentRecovery(operation, {
+      repoRoot: root, packageRoot: root, stateRoot: root, env: {}, run, fetcher: fetch,
+      sleep: async () => undefined, now: () => new Date(),
     }, true), true);
     assert.equal(head, "");
     await assert.rejects(access(join(root, "nemlig-production-deploy.lock")));
@@ -492,6 +505,25 @@ test("finalize accepts GitHub's empty successful DELETE only after the exact rem
   } finally {
     await rm(root, { recursive: true, force: true });
   }
+});
+
+test("recovery commands reject forged arguments before I/O", () => {
+  assert.deepEqual(parseProductionDeployCli(["inspect-recovery", "44444444-4444-4444-8444-444444444444"]), {
+    help: false, command: "inspect-recovery", operation: "44444444-4444-4444-8444-444444444444", originalRunnerStopped: false,
+  });
+  for (const argv of [["finalize", "44444444-4444-4444-8444-444444444444"], ["finalize", commit, "--evidence-saved"], ["inspect-recovery", commit]]) {
+    assert.throws(() => parseProductionDeployCli(argv));
+  }
+});
+
+test("inspection is read-only and denies malformed operation without a runner call", async () => {
+  let calls = 0;
+  const inspection = await inspectDeploymentRecovery("forged", {
+    repoRoot: ".", packageRoot: ".", env: {}, run: async () => { calls += 1; return ""; }, fetcher: fetch,
+    sleep: async () => undefined, now: () => new Date(),
+  });
+  assert.deepEqual(inspection, { operation: "forged", originalRunnerStopped: false, cleanupEligible: false, reason: "operation_mismatch", state: "unknown" });
+  assert.equal(calls, 0);
 });
 
 test("the runner rejects a pre-aborted command before spawning and kills a detached descendant after timeout", async () => {

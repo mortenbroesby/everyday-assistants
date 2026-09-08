@@ -13,7 +13,7 @@ const ciWorkflowName = "CI";
 const ciWorkflowPath = ".github/workflows/ci.yml";
 const customMcp = new URL("https://nemlig-mcp.broesby.dk/mcp");
 const workersMcp = new URL("https://nemlig-mcp-cloudflare-production.mortenbroesby.workers.dev/mcp");
-export const productionDeployUsage = "pnpm --filter nemlig-assistant production:deploy -- <40-character-main-commit>";
+export const productionDeployUsage = "pnpm --filter nemlig-assistant production:deploy -- <40-character-main-commit> | finalize <operation-id> --evidence-saved | inspect-recovery <operation-id> [--original-runner-stopped]";
 
 export type VerifiedState = "unchanged" | "disabled" | "enabled" | "restored" | "unknown";
 
@@ -184,6 +184,26 @@ export function parseDeployCli(argv: readonly string[]): { help: true } | { help
   return values.length === 1 && (values[0] === "--help" || values[0] === "-h")
     ? { help: true }
     : { help: false, commit: parseDeployArgs(values) };
+}
+
+export type RecoveryCli =
+  | { help: true }
+  | { help: false; command: "deploy"; commit: string }
+  | { help: false; command: "finalize"; operation: string; evidenceSaved: true }
+  | { help: false; command: "inspect-recovery"; operation: string; originalRunnerStopped: boolean };
+
+/** Parses all recovery commands before any repository or provider access. */
+export function parseProductionDeployCli(argv: readonly string[]): RecoveryCli {
+  const values = argv[0] === "--" ? argv.slice(1) : argv;
+  if (values.length === 1 && (values[0] === "--help" || values[0] === "-h")) return { help: true };
+  if (values[0] === "finalize" && values.length === 3 && operationId.test(values[1] ?? "") && values[2] === "--evidence-saved") {
+    return { help: false, command: "finalize", operation: values[1]!, evidenceSaved: true };
+  }
+  if (values[0] === "inspect-recovery" && operationId.test(values[1] ?? "")
+    && (values.length === 2 || (values.length === 3 && values[2] === "--original-runner-stopped"))) {
+    return { help: false, command: "inspect-recovery", operation: values[1]!, originalRunnerStopped: values[2] === "--original-runner-stopped" };
+  }
+  return { help: false, command: "deploy", commit: parseDeployArgs(values) };
 }
 
 export function parseCurrentDeployment(raw: string): CurrentDeployment {
@@ -475,14 +495,65 @@ const readRemoteJournal = async (deps: DeployDependencies, repository: string): 
   return { head: head as string, journal: parseDeploymentJournal(decoded.toString("utf8")) };
 };
 
+type RecoveryReason = "eligible" | "operation_mismatch" | "runner_not_stopped" | "pending_or_unknown" | "provider_drift" | "journal_invalid";
+export interface RecoveryInspection {
+  operation: string;
+  originalRunnerStopped: boolean;
+  cleanupEligible: boolean;
+  reason: RecoveryReason;
+  state: "enabled" | "disabled" | "restored" | "unknown";
+}
+
+const expectedRecovery = (journal: DeploymentJournal): { version: string; worker: string; image: string; state: "enabled" | "disabled" | "restored" } | undefined => {
+  if (journal.outcome === "success" && journal.enabledVersion && journal.startingContainerId && journal.enabledImage) {
+    return { version: journal.enabledVersion, worker: journal.startingContainerId, image: journal.enabledImage, state: "enabled" };
+  }
+  if (journal.lastVerifiedState === "restored" && journal.startingVersion && journal.startingContainerId && journal.startingImage) {
+    return { version: journal.startingVersion, worker: journal.startingContainerId, image: journal.startingImage, state: "restored" };
+  }
+  if (journal.outcome === "failed" && journal.lastVerifiedState === "disabled" && journal.disabledVersion && journal.startingContainerId && journal.disabledImage) {
+    return { version: journal.disabledVersion, worker: journal.startingContainerId, image: journal.disabledImage, state: "disabled" };
+  }
+  return undefined;
+};
+
+const knownTerminal = (journal: DeploymentJournal): boolean =>
+  journal.outcome !== "running" && journal.lastVerifiedState !== "unknown" && journal.transitions.at(-1)?.kind === "result";
+
+export async function inspectDeploymentRecovery(operation: string, deps: DeployDependencies, originalRunnerStopped = false): Promise<RecoveryInspection> {
+  if (!operationId.test(operation)) return { operation, originalRunnerStopped, cleanupEligible: false, reason: "operation_mismatch", state: "unknown" };
+  try {
+    const repo = await repoIdentity(deps);
+    const { journal } = await readRemoteJournal(deps, repo.nameWithOwner);
+    const expected = expectedRecovery(journal);
+    if (journal.operationId !== operation) return { operation, originalRunnerStopped, cleanupEligible: false, reason: "operation_mismatch", state: "unknown" };
+    if (!knownTerminal(journal) || !expected) return { operation, originalRunnerStopped, cleanupEligible: false, reason: "pending_or_unknown", state: "unknown" };
+    // Exactly three read-only provider calls: current deployment, its version, and sole Container.
+    const current = await readCurrent(deps);
+    const state = parseVersionState(await readVersion(deps, current.version), current.version);
+    const container = await readContainer(deps);
+    if (current.version !== expected.version || state.enabled !== (expected.state === "enabled") || container.id !== expected.worker || container.image !== expected.image) {
+      return { operation, originalRunnerStopped, cleanupEligible: false, reason: "provider_drift", state: "unknown" };
+    }
+    if (!originalRunnerStopped) return { operation, originalRunnerStopped, cleanupEligible: false, reason: "runner_not_stopped", state: expected.state };
+    return { operation, originalRunnerStopped, cleanupEligible: true, reason: "eligible", state: expected.state };
+  } catch {
+    return { operation, originalRunnerStopped, cleanupEligible: false, reason: "journal_invalid", state: "unknown" };
+  }
+}
+
 export async function finalizeDeploymentRecovery(operation: string, deps: DeployDependencies, evidenceSaved: boolean): Promise<boolean> {
   if (!operationId.test(operation) || !evidenceSaved) return false;
   const repo = await repoIdentity(deps);
   const remote = await readRemoteJournal(deps, repo.nameWithOwner);
   const { journal } = remote;
-  const terminal = journal.outcome !== "running" && journal.lastVerifiedState !== "unknown" && journal.transitions.at(-1)?.kind === "result";
-  const expected = journal.outcome === "success" ? journal.enabledVersion : journal.lastVerifiedState === "restored" ? journal.startingVersion : undefined;
-  if (journal.operationId !== operation || !terminal || !expected || (await readCurrent(deps)).version !== expected) return false;
+  const expected = expectedRecovery(journal);
+  if (journal.operationId !== operation || !knownTerminal(journal) || !expected) return false;
+  const current = await readCurrent(deps);
+  const state = parseVersionState(await readVersion(deps, current.version), current.version);
+  const container = await readContainer(deps);
+  if (current.version !== expected.version || state.enabled !== (expected.state === "enabled") || container.id !== expected.worker || container.image !== expected.image) return false;
+  // Compare the containing ref head, never journal.remoteCommit supplied by the blob.
   if (await readRemoteHead(deps, repo.nameWithOwner) !== remote.head) return false;
   await runAt(deps, deps.repoRoot, "gh", ["api", "--method", "DELETE", `repos/${repo.nameWithOwner}/git/refs/heads/codex-lock/nemlig-production`]);
   const common = deps.stateRoot ?? await runAt(deps, deps.repoRoot, "git", ["rev-parse", "--git-common-dir"]);
@@ -752,7 +823,7 @@ export async function deployProduction(commit: string, inputDeps: DeployDependen
 async function main(): Promise<void> {
   const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
   const repoRoot = resolve(packageRoot, "../..");
-  const input = parseDeployCli(process.argv.slice(2));
+  const input = parseProductionDeployCli(process.argv.slice(2));
   if (input.help) {
     console.log(`Usage: ${productionDeployUsage}`);
     return;
@@ -761,10 +832,25 @@ async function main(): Promise<void> {
   const abort = () => controller.abort();
   process.once("SIGINT", abort);
   process.once("SIGTERM", abort);
-  const report = await deployProduction(input.commit, {
+  const deps: DeployDependencies = {
     repoRoot, packageRoot, env: process.env, run: defaultRunner, fetcher: fetch, signal: controller.signal,
     sleep: async (milliseconds) => await new Promise((resolvePromise) => setTimeout(resolvePromise, milliseconds)), now: () => new Date(),
-  });
+  };
+  if (input.command === "inspect-recovery") {
+    console.log(JSON.stringify(await inspectDeploymentRecovery(input.operation, deps, input.originalRunnerStopped)));
+    process.removeListener("SIGINT", abort);
+    process.removeListener("SIGTERM", abort);
+    return;
+  }
+  if (input.command === "finalize") {
+    const finalized = await finalizeDeploymentRecovery(input.operation, deps, input.evidenceSaved);
+    process.removeListener("SIGINT", abort);
+    process.removeListener("SIGTERM", abort);
+    if (!finalized) process.exitCode = 1;
+    console.log(JSON.stringify({ finalized }));
+    return;
+  }
+  const report = await deployProduction(input.commit, deps);
   process.removeListener("SIGINT", abort);
   process.removeListener("SIGTERM", abort);
   console.log(JSON.stringify(report, null, 2));
