@@ -109,7 +109,13 @@ interface Call {
   input?: string;
 }
 
-interface SharedLeaseStore { ref?: string }
+interface SharedLeaseStore {
+  ref?: string;
+  objectNumber?: number;
+  blobs?: Map<string, string>;
+  trees?: Map<string, string>;
+  commits?: Map<string, { tree: string; parents: string[] }>;
+}
 
 async function fixture(options: {
   head?: string;
@@ -132,6 +138,8 @@ async function fixture(options: {
   remoteResultFailure?: boolean;
   remoteEnableIntentFailure?: boolean;
   localResultMirrorFailure?: boolean;
+  remoteObjectFailure?: "blob" | "tree" | "commit" | "patch";
+  localFinalMirrorFailure?: boolean;
   sharedLease?: SharedLeaseStore;
 } = {}): Promise<{ deps: DeployDependencies; calls: Call[]; root: string }> {
   const root = await mkdtemp(join(tmpdir(), "nemlig-production-deploy-"));
@@ -142,11 +150,13 @@ async function fixture(options: {
   let remoteLease: string | undefined = options.sharedLease?.ref;
   const currentLease = () => options.sharedLease?.ref ?? remoteLease;
   const setRemoteLease = (value: string | undefined) => { remoteLease = value; if (options.sharedLease) options.sharedLease.ref = value; };
-  let objectNumber = 0;
-  const blobs = new Map<string, string>();
-  const trees = new Map<string, string>();
-  const commits = new Map<string, { tree: string; parents: string[] }>();
-  const nextSha = () => (++objectNumber).toString(16).padStart(40, "0");
+  const shared = options.sharedLease;
+  let objectNumber = shared?.objectNumber ?? 0;
+  const blobs = shared?.blobs ?? new Map<string, string>();
+  const trees = shared?.trees ?? new Map<string, string>();
+  const commits = shared?.commits ?? new Map<string, { tree: string; parents: string[] }>();
+  if (shared) Object.assign(shared, { blobs, trees, commits });
+  const nextSha = () => { objectNumber += 1; if (shared) shared.objectNumber = objectNumber; return objectNumber.toString(16).padStart(40, "0"); };
   let disabledReads = 0;
   let remoteReads = 0;
   const run: CommandRunner = async (commandName, args, runOptions) => {
@@ -187,6 +197,7 @@ async function fixture(options: {
       if (path.endsWith("git/blobs") && method === "POST") {
         const snapshot = Buffer.from(String(body?.content), "base64").toString("utf8");
         const transitionCount = JSON.parse(snapshot).transitions.length;
+        if (options.remoteObjectFailure === "blob" && transitionCount % 2 === 1) throw new Error("blob failed");
         if (options.remoteIntentFailure && transitionCount % 2 === 1) throw new Error("intent write failed");
         if (options.remoteEnableIntentFailure && transitionCount === 3) throw new Error("enable intent write failed");
         if (options.remoteResultFailure && transitionCount > 0 && transitionCount % 2 === 0 && !resultWriteFailed) { resultWriteFailed = true; throw new Error("result write failed"); }
@@ -196,13 +207,14 @@ async function fixture(options: {
         }
         const sha = nextSha(); blobs.set(sha, snapshot); return JSON.stringify({ sha });
       }
-      if (path.endsWith("git/trees") && method === "POST") { const sha = nextSha(); trees.set(sha, String((body?.tree as Array<Record<string, unknown>>)?.[0]?.sha)); return JSON.stringify({ sha }); }
-      if (path.endsWith("git/commits") && method === "POST") { const sha = nextSha(); commits.set(sha, { tree: String(body?.tree), parents: Array.isArray(body?.parents) ? body.parents.map(String) : [] }); return JSON.stringify({ sha }); }
+      if (path.endsWith("git/trees") && method === "POST") { if (options.remoteObjectFailure === "tree") throw new Error("tree failed"); const sha = nextSha(); trees.set(sha, String((body?.tree as Array<Record<string, unknown>>)?.[0]?.sha)); return JSON.stringify({ sha }); }
+      if (path.endsWith("git/commits") && method === "POST") { if (options.remoteObjectFailure === "commit") throw new Error("commit failed"); const sha = nextSha(); commits.set(sha, { tree: String(body?.tree), parents: Array.isArray(body?.parents) ? body.parents.map(String) : [] }); return JSON.stringify({ sha }); }
       if (path.endsWith("git/refs") && method === "POST") {
         if (options.remoteLeaseBlocked || currentLease()) throw new Error("exists");
         setRemoteLease(String(body?.sha)); return "{}";
       }
       if (path.endsWith("git/refs/heads/codex-lock/nemlig-production") && method === "PATCH") {
+        if (options.remoteObjectFailure === "patch") throw new Error("patch failed");
         if (!body || body.force !== false || !currentLease()) throw new Error("invalid patch");
         if (options.remoteLeaseChanges && !appended) setRemoteLease(previousCommit);
         else setRemoteLease(String(body.sha));
@@ -228,6 +240,10 @@ async function fixture(options: {
     if (args[0] === "production:probe") return "edge ok";
     if (args[0] === "production:test:features") {
       if (options.failFeatures) throw new Error("acceptance failed");
+      if (options.localFinalMirrorFailure) {
+        await rm(join(root, "nemlig-production-deploy", "latest.json"));
+        await mkdir(join(root, "nemlig-production-deploy", "latest.json"));
+      }
       return "features ok";
     }
     if (!args.includes("wrangler")) throw new Error("unexpected pnpm command");
@@ -593,6 +609,17 @@ test("each failed remote intent write stops before its provider dispatch", async
   }
 });
 
+test("every remote journal object write failure before intent dispatch stops provider work", async () => {
+  for (const remoteObjectFailure of ["blob", "tree", "commit", "patch"] as const) {
+    const { deps, calls, root } = await fixture({ remoteObjectFailure });
+    try {
+      const report = await deployProduction(commit, deps);
+      assert.equal(report.outcome, "failed");
+      assert.equal(calls.some(({ args }) => args.includes("deploy") || args.includes("rollback")), false);
+    } finally { await rm(root, { recursive: true, force: true }); }
+  }
+});
+
 test("remote result persistence failure after provider success retains unknown state without rollback", async () => {
   const { deps, calls, root } = await fixture({ remoteResultFailure: true });
   try {
@@ -621,6 +648,21 @@ test("local mirror write failure prevents dispatch before intent and retains unk
     assert.equal(after.calls.filter(({ args }) => args.includes("deploy")).length, 1);
     assert.equal(after.calls.some(({ args }) => args.includes("rollback")), false);
   } finally { await rm(after.root, { recursive: true, force: true }); }
+  const terminal = await fixture({ localFinalMirrorFailure: true });
+  try {
+    const report = await deployProduction(commit, terminal.deps);
+    assert.equal(report.failure, "deployment_journal_write_failed");
+    assert.equal(report.lastVerifiedState, "unknown");
+  } finally { await rm(terminal.root, { recursive: true, force: true }); }
+});
+
+test("remote journal remains recoverable after losing the local mirror", async () => {
+  const { deps, root } = await fixture();
+  try {
+    const report = await deployProduction(commit, deps);
+    await rm(join(root, "nemlig-production-deploy", "latest.json"));
+    assert.equal((await inspectDeploymentRecovery(report.operationId, deps, true)).cleanupEligible, true);
+  } finally { await rm(root, { recursive: true, force: true }); }
 });
 
 test("successful deployment finalizes from its stateful remote journal chain", async () => {

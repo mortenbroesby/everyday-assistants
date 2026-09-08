@@ -720,7 +720,7 @@ export async function deployProduction(commit: string, inputDeps: DeployDependen
     journalPath = join(stateRoot, "nemlig-production-deploy", "latest.json");
     await acquireLocalLease(lockPath, journal.operationId, commit);
     journal.remoteCommit = await acquireRemoteJournal(deps, repository, journal);
-    await writeJournal(journalPath, journal);
+    try { await writeJournal(journalPath, journal); } catch { fail("deployment_journal_write_failed"); }
 
     if (await verifySource(deps, commit, repo) !== journal.ciRunId) fail("github_ci_invalid");
     await wrangler(deps, ["whoami"]);
@@ -731,7 +731,7 @@ export async function deployProduction(commit: string, inputDeps: DeployDependen
     journal.startingContainerId = startingContainer.id;
     journal.startingImage = startingContainer.image;
     journal.checks.push("source_and_auth_preflight", "exclusive_lease", "starting_state_recorded");
-    await writeJournal(journalPath, journal);
+    try { await writeJournal(journalPath, journal); } catch { fail("deployment_journal_write_failed"); }
 
     transition = async (phase: JournalPhase, kind: JournalKind, version?: string): Promise<void> => {
       journal.transitions.push({ phase, kind, at: deps.now().toISOString(), ...(version ? { version } : {}) });
@@ -793,7 +793,7 @@ export async function deployProduction(commit: string, inputDeps: DeployDependen
     journal.outcome = "success";
   } catch (error) {
     journal.outcome = "failed";
-    journal.failure = error instanceof DeployFailure ? error.code : "unexpected_failure";
+    journal.failure = error instanceof DeployFailure && journalFailures.has(error.code) ? error.code : "unexpected_failure";
     if (mutationUncertain) {
       journal.lastVerifiedState = "unknown";
     } else if (providerMutation && starting) {
@@ -838,6 +838,7 @@ export async function deployProduction(commit: string, inputDeps: DeployDependen
       } catch {
         journal.outcome = "failed";
         journal.failure = "deployment_journal_write_failed";
+        if (providerMutation) journal.lastVerifiedState = "unknown";
       }
     }
     clearTimeout(operationDeadline);
