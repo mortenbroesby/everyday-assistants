@@ -20,6 +20,18 @@ Status: PROVIDER SETUP NOT PERFORMED. The owner accepted the routine synthetic /
 
 ## Approved provider configuration
 
+**Unresolved lifetime checkpoint:** the proposed 30-minute lifetime below is
+not an approved setup step. Auth0 configures access-token lifetime on the API,
+including authorization-code/PKCE users; do not change the canonical API's
+lifetime assuming it affects only the CI client. Before S3/S4 setup, the owner
+must choose whether to retain its existing lifetime and revise the security
+premise, accept an API-wide change, or authorize a separate audience/design.
+No choice is inferred. See
+[Auth0 lifetime settings](https://auth0.com/docs/secure/tokens/access-tokens/update-access-token-lifetime).
+The actual tenant setting and M2M entitlement remain unverified. Four runs per
+day at one token per run imply at most 124 tokens in a 31-day month, excluding
+other clients' consumption; this is a request budget, not proof of no new cost.
+
 GitHub: create `nemlig-production` environment only after approved name/policy; configure selected branch `main`, chosen reviewers/self-review, no bypass and a readiness variable false until verification. Store only approved CI credentials as environment secrets. Workflow preflight must detect absent/unprotected setup; implicit environment creation is not setup. Keep public PR workflow credential-free.
 
 Auth0: create one clearly named M2M acceptance application; authorize only the service-acceptance permission for the exact existing canonical resource, never Management API or the ordinary user permission. Record safe configuration metadata privately; never print client secret or access tokens. The runtime exact-client/subject binding is distinct from the family's owner identity. Proposed access-token lifetime is 30 minutes with at least 27 minutes remaining at release preflight; issue once per 25-minute-bounded release, without reissuance or refresh. Keep client credential expiry/rotation ownership explicit.

@@ -81,3 +81,13 @@ deployment. Exact pushed SHA/CI evidence is recorded after remote verification.
 Durable-recovery draft commits remain in the separate worktree and are not
 included in this release candidate. Required-job inspection, finalized journal
 recovery, fixture identity and protected CI activation remain incomplete.
+
+## Acceptance slice delivered
+
+Main and the integration branch were pushed and verified at
+`94c5a7d428f1035ec1a4650c9df21e41309c4d56` (`4.0.1-alpha.17`).
+[Exact-head CI](https://github.com/mortenbroesby/everyday-assistants/actions/runs/34288608870)
+passed, including the required `verify` job. The sibling removal lane was
+notified of the exact revision and successful CI. This closes delivery of S1,
+not S2 or the full epic. Production remains at the separately recorded older
+application revision; no release was dispatched.
