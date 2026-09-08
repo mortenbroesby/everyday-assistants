@@ -735,7 +735,7 @@ export async function deployProduction(commit: string, inputDeps: DeployDependen
 
     transition = async (phase: JournalPhase, kind: JournalKind, version?: string): Promise<void> => {
       journal.transitions.push({ phase, kind, at: deps.now().toISOString(), ...(version ? { version } : {}) });
-      await appendRemoteJournal(deps, repository, journal);
+      try { await appendRemoteJournal(deps, repository, journal); } catch { fail("remote_journal_append_failed"); }
       await writeJournal(journalPath, journal);
     };
 
@@ -790,7 +790,7 @@ export async function deployProduction(commit: string, inputDeps: DeployDependen
   } catch (error) {
     journal.outcome = "failed";
     journal.failure = error instanceof DeployFailure ? error.code : "unexpected_failure";
-    if (mutationUncertain) {
+    if (mutationUncertain || journal.failure === "remote_journal_append_failed") {
       journal.lastVerifiedState = "unknown";
     } else if (providerMutation && starting) {
       try {

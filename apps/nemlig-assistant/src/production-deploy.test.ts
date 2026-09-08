@@ -129,12 +129,14 @@ async function fixture(options: {
   failFeatures?: boolean;
   externalEnabledDriftDuringRecovery?: boolean;
   remoteIntentFailure?: boolean;
+  remoteResultFailure?: boolean;
   sharedLease?: SharedLeaseStore;
 } = {}): Promise<{ deps: DeployDependencies; calls: Call[]; root: string }> {
   const root = await mkdtemp(join(tmpdir(), "nemlig-production-deploy-"));
   const calls: Call[] = [];
   let current = startingId;
   let appended = false;
+  let resultWriteFailed = false;
   let remoteLease: string | undefined = options.sharedLease?.ref;
   const currentLease = () => options.sharedLease?.ref ?? remoteLease;
   const setRemoteLease = (value: string | undefined) => { remoteLease = value; if (options.sharedLease) options.sharedLease.ref = value; };
@@ -182,7 +184,9 @@ async function fixture(options: {
       }
       if (path.endsWith("git/blobs") && method === "POST") {
         const snapshot = Buffer.from(String(body?.content), "base64").toString("utf8");
-        if (options.remoteIntentFailure && JSON.parse(snapshot).transitions.length % 2 === 1) throw new Error("intent write failed");
+        const transitionCount = JSON.parse(snapshot).transitions.length;
+        if (options.remoteIntentFailure && transitionCount % 2 === 1) throw new Error("intent write failed");
+        if (options.remoteResultFailure && transitionCount > 0 && transitionCount % 2 === 0 && !resultWriteFailed) { resultWriteFailed = true; throw new Error("result write failed"); }
         const sha = nextSha(); blobs.set(sha, snapshot); return JSON.stringify({ sha });
       }
       if (path.endsWith("git/trees") && method === "POST") { const sha = nextSha(); trees.set(sha, String((body?.tree as Array<Record<string, unknown>>)?.[0]?.sha)); return JSON.stringify({ sha }); }
@@ -562,6 +566,19 @@ test("each failed remote intent write stops before its provider dispatch", async
     const report = await deployProduction(commit, deps);
     assert.equal(report.outcome, "failed");
     assert.equal(calls.some(({ args }) => args.includes("deploy") || args.includes("rollback")), false);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("remote result persistence failure after provider success retains unknown state without rollback", async () => {
+  const { deps, calls, root } = await fixture({ remoteResultFailure: true });
+  try {
+    const report = await deployProduction(commit, deps);
+    assert.equal(report.outcome, "failed");
+    assert.equal(report.lastVerifiedState, "unknown");
+    assert.equal(calls.filter(({ args }) => args.includes("deploy")).length, 1);
+    assert.equal(calls.some(({ args }) => args.includes("rollback")), false);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
