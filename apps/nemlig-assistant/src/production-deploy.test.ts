@@ -66,6 +66,42 @@ const deployment = (id: string) => JSON.stringify([{
   versions: [{ version_id: id, percentage: 100 }],
 }]);
 
+const recoveryDeps = (journal: Record<string, unknown>, currentVersion: string, currentEnabled: boolean): DeployDependencies => {
+  const remoteCommit = "cccccccccccccccccccccccccccccccccccccccc";
+  const tree = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+  const blob = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+  const encoded = Buffer.from(JSON.stringify(journal)).toString("base64");
+  const run: CommandRunner = async (command, args) => {
+    if (command === "pnpm" && args.includes("deployments")) return deployment(currentVersion);
+    if (command === "pnpm" && args.includes("versions")) return version(currentVersion, commit, currentEnabled);
+    if (command === "pnpm" && args.includes("containers")) return JSON.stringify([{
+      id: applicationId, name: "nemlig-mcp-cloudflare-production-nemligmcpcontainer-production", instances: 1, image,
+    }]);
+    if (command !== "gh") throw new Error("unexpected command");
+    if (args[0] === "repo") return JSON.stringify({ nameWithOwner: "mortenbroesby/everyday-assistants", url: "https://github.com/mortenbroesby/everyday-assistants" });
+    const path = args.find((value) => value.startsWith("repos/")) ?? "";
+    if (path.includes("git/ref/")) return remoteCommit;
+    if (path.includes("git/commits/")) return JSON.stringify({ tree: { sha: tree } });
+    if (path.includes("git/trees/")) return JSON.stringify({ tree: [{ path: "journal.json", type: "blob", mode: "100644", sha: blob }] });
+    if (path.includes("git/blobs/")) return JSON.stringify({ encoding: "base64", content: encoded });
+    throw new Error("unexpected gh api");
+  };
+  return { repoRoot: ".", packageRoot: ".", env: {}, run, fetcher: fetch, sleep: async () => undefined, now: () => new Date() };
+};
+
+const terminalJournal = (extra: Record<string, unknown> = {}) => ({
+  schema: 2, operationId: "44444444-4444-4444-8444-444444444444", commit, ciRunId: 456, startedAt: "2026-09-05T12:00:00.000Z",
+  startingVersion: startingId, startingContainerId: applicationId, startingImage: image, checks: [], rollback: "restored",
+  outcome: "failed", lastVerifiedState: "restored", transitions: [
+    { phase: "disabled_deploy", kind: "intent", at: "2026-09-05T12:00:00.000Z", version: startingId },
+    { phase: "disabled_deploy", kind: "result", at: "2026-09-05T12:00:01.000Z", version: disabledId },
+    { phase: "enable_deploy", kind: "intent", at: "2026-09-05T12:00:02.000Z", version: disabledId },
+    { phase: "enable_deploy", kind: "result", at: "2026-09-05T12:00:03.000Z", version: enabledId },
+    { phase: "rollback", kind: "intent", at: "2026-09-05T12:00:04.000Z", version: startingId },
+    { phase: "rollback", kind: "result", at: "2026-09-05T12:00:05.000Z", version: startingId },
+  ], ...extra,
+});
+
 interface Call {
   command: string;
   args: readonly string[];
@@ -524,6 +560,32 @@ test("inspection is read-only and denies malformed operation without a runner ca
   });
   assert.deepEqual(inspection, { operation: "forged", originalRunnerStopped: false, cleanupEligible: false, reason: "operation_mismatch", state: "unknown" });
   assert.equal(calls, 0);
+});
+
+test("inspection accepts either enabled or disabled restored starting state only with stopped-runner attestation", async () => {
+  for (const enabled of [true, false]) {
+    const inspected = await inspectDeploymentRecovery("44444444-4444-4444-8444-444444444444", recoveryDeps(terminalJournal(), startingId, enabled), true);
+    assert.deepEqual(inspected, { operation: "44444444-4444-4444-8444-444444444444", originalRunnerStopped: true, cleanupEligible: true, reason: "eligible", state: "restored" });
+  }
+  const denied = await inspectDeploymentRecovery("44444444-4444-4444-8444-444444444444", recoveryDeps(terminalJournal(), startingId, true));
+  assert.equal(denied.reason, "runner_not_stopped");
+  assert.equal(denied.cleanupEligible, false);
+});
+
+test("inspection denies wrong operation, pending work, and recognizes known disabled terminal state", async () => {
+  const operation = "44444444-4444-4444-8444-444444444444";
+  assert.equal((await inspectDeploymentRecovery("55555555-5555-4555-8555-555555555555", recoveryDeps(terminalJournal(), startingId, true), true)).reason, "operation_mismatch");
+  assert.equal((await inspectDeploymentRecovery(operation, recoveryDeps(terminalJournal({ outcome: "running", lastVerifiedState: "unknown", transitions: [] }), startingId, true), true)).reason, "pending_or_unknown");
+  const disabled = terminalJournal({
+    rollback: "not_needed", lastVerifiedState: "disabled", disabledVersion: disabledId, disabledImage: image,
+    transitions: [
+      { phase: "disabled_deploy", kind: "intent", at: "2026-09-05T12:00:00.000Z", version: startingId },
+      { phase: "disabled_deploy", kind: "result", at: "2026-09-05T12:00:01.000Z", version: disabledId },
+    ],
+  });
+  assert.deepEqual(await inspectDeploymentRecovery(operation, recoveryDeps(disabled, disabledId, false), true), {
+    operation, originalRunnerStopped: true, cleanupEligible: true, reason: "eligible", state: "disabled",
+  });
 });
 
 test("the runner rejects a pre-aborted command before spawning and kills a detached descendant after timeout", async () => {

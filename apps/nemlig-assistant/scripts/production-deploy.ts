@@ -504,15 +504,15 @@ export interface RecoveryInspection {
   state: "enabled" | "disabled" | "restored" | "unknown";
 }
 
-const expectedRecovery = (journal: DeploymentJournal): { version: string; worker: string; image: string; state: "enabled" | "disabled" | "restored" } | undefined => {
+const expectedRecovery = (journal: DeploymentJournal): { version: string; containerId: string; image: string; enabled?: boolean; state: "enabled" | "disabled" | "restored" } | undefined => {
   if (journal.outcome === "success" && journal.enabledVersion && journal.startingContainerId && journal.enabledImage) {
-    return { version: journal.enabledVersion, worker: journal.startingContainerId, image: journal.enabledImage, state: "enabled" };
+    return { version: journal.enabledVersion, containerId: journal.startingContainerId, image: journal.enabledImage, enabled: true, state: "enabled" };
   }
   if (journal.lastVerifiedState === "restored" && journal.startingVersion && journal.startingContainerId && journal.startingImage) {
-    return { version: journal.startingVersion, worker: journal.startingContainerId, image: journal.startingImage, state: "restored" };
+    return { version: journal.startingVersion, containerId: journal.startingContainerId, image: journal.startingImage, state: "restored" };
   }
   if (journal.outcome === "failed" && journal.lastVerifiedState === "disabled" && journal.disabledVersion && journal.startingContainerId && journal.disabledImage) {
-    return { version: journal.disabledVersion, worker: journal.startingContainerId, image: journal.disabledImage, state: "disabled" };
+    return { version: journal.disabledVersion, containerId: journal.startingContainerId, image: journal.disabledImage, enabled: false, state: "disabled" };
   }
   return undefined;
 };
@@ -532,7 +532,7 @@ export async function inspectDeploymentRecovery(operation: string, deps: DeployD
     const current = await readCurrent(deps);
     const state = parseVersionState(await readVersion(deps, current.version), current.version);
     const container = await readContainer(deps);
-    if (current.version !== expected.version || state.enabled !== (expected.state === "enabled") || container.id !== expected.worker || container.image !== expected.image) {
+    if (current.version !== expected.version || (expected.enabled !== undefined && state.enabled !== expected.enabled) || container.id !== expected.containerId || container.image !== expected.image) {
       return { operation, originalRunnerStopped, cleanupEligible: false, reason: "provider_drift", state: "unknown" };
     }
     if (!originalRunnerStopped) return { operation, originalRunnerStopped, cleanupEligible: false, reason: "runner_not_stopped", state: expected.state };
@@ -552,7 +552,7 @@ export async function finalizeDeploymentRecovery(operation: string, deps: Deploy
   const current = await readCurrent(deps);
   const state = parseVersionState(await readVersion(deps, current.version), current.version);
   const container = await readContainer(deps);
-  if (current.version !== expected.version || state.enabled !== (expected.state === "enabled") || container.id !== expected.worker || container.image !== expected.image) return false;
+  if (current.version !== expected.version || (expected.enabled !== undefined && state.enabled !== expected.enabled) || container.id !== expected.containerId || container.image !== expected.image) return false;
   // Compare the containing ref head, never journal.remoteCommit supplied by the blob.
   if (await readRemoteHead(deps, repo.nameWithOwner) !== remote.head) return false;
   await runAt(deps, deps.repoRoot, "gh", ["api", "--method", "DELETE", `repos/${repo.nameWithOwner}/git/refs/heads/codex-lock/nemlig-production`]);
