@@ -12,8 +12,16 @@ and [design, npm evaluation and future improvements](../../openspec/changes/p2-s
 - Make coverage produce a real report with the existing test runner.
 - Reuse installed Commander for the hand-written release argument parser.
 - Evaluate `html-to-text` to replace regex HTML stripping for product evidence.
-- Replace permissive shopping-list output schemas with explicit public schemas.
+- Replace permissive shopping-list and plan output schemas with explicit public schemas.
+- Decouple CLI/server composition and isolate testable planning/persistence responsibilities.
+- Separate picker presentation where packaging tests justify it, without rebuilding the UI.
+- Make acceptance entry points import-safe and enforce existing release-version policy in CI.
+- Enable native unused-code checks and document safety/public contracts.
 - Reconcile backlog/documentation status with implementation and acceptance evidence.
+
+Expanded plan: one P2 epic, ten stories and 50 implementation tasks. The design
+also flags invitation-spec mismatch, principal retention/capacity and lifecycle
+reliability under their existing P0/P1 owners; these are not cleanup authority.
 
 Implementation must preserve provider-call budgets, fresh revalidation,
 authorization, private ownership, quotas and deployment safeguards. Future

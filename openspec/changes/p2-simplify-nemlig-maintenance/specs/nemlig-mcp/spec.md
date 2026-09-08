@@ -32,3 +32,17 @@ Shopping-list MCP tools SHALL publish concrete schemas for their returned public
 
 - **WHEN** a result contains private ownership metadata or violates the declared public field types
 - **THEN** contract verification rejects it rather than accepting an arbitrary object or leaking internal fields to clients
+
+### Requirement: Explicit public shopping-plan response contracts
+
+Shopping-plan resolution tools SHALL publish concrete schemas for public plan lines, candidate products and summary structures and SHALL return conforming structured results. Existing valid public field names, selection and quantity meanings, ordering, and tool names SHALL be preserved. Storage ownership and credential metadata SHALL NOT be exposed.
+
+#### Scenario: A plan resolves with selected and unresolved lines
+
+- **WHEN** an existing plan resolution operation returns selected candidates, unresolved lines and a summary
+- **THEN** every nested result conforms to the declared public schema without changing candidate ordering, quantities or unresolved-line semantics
+
+#### Scenario: A plan serializer drifts from its public contract
+
+- **WHEN** a result contains malformed nested values or private storage metadata
+- **THEN** contract verification rejects it rather than accepting arbitrary plan lines or summaries

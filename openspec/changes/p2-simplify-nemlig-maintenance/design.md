@@ -16,7 +16,7 @@ Paths above are relative to `apps/nemlig-assistant` unless described as root. So
 
 ## Goals / Non-Goals
 
-Use existing modules and plain functions as seams. Keep public tool names, valid CLI invocations, stored data, ownership, request budgets, mutation authorization, and price revalidation stable. Only the two explicit MCP additions in this proposal change behavior/contracts. Malformed release arguments must fail before actions; document any newly rejected malformed form.
+Use existing modules and plain functions as seams. Keep public tool names, valid CLI invocations, stored data, ownership, request budgets, mutation authorization, and price revalidation stable. Only the explicit MCP additions in this proposal change product behavior/contracts. Malformed release arguments must fail before actions; document any newly rejected malformed form. Verification policy enforcement implements existing requirements, not a new release policy.
 
 Do not use file length as a reason to split modules. No generic repository base class, plugin registry, dependency-injection container, state-machine framework, event bus, or schema factory. No retirement of externally callable tools within this change.
 
@@ -44,13 +44,15 @@ Recommend npm **`html-to-text`**, registry version **10.0.1** at inspection. MIT
 
 Compile options once in the product normalization boundary, disable wrapping, omit script/style/image content and link destinations, collapse whitespace and keep the existing 2,000-character description, 100-character attribute-key, 300-character attribute-value and 20-attribute limits. Use a pre-conversion raw-input cap of 16,384 UTF-16 code units per field, depth 32 and 1,000 child nodes per node; truncate locally so the converter's oversize warning does not create protocol/log noise. Preserve missing/empty-field omission. Output is untrusted plain text, never trusted HTML; retain picker escaping/text insertion and image allowlisting.
 
-Adoption gate: use synthetic fixtures, inspect exact-version exports/types/transitive dependencies and advisories, measure installed and packaged byte delta, cold import and repeated conversion time against the same fixtures, and prove no requests or logging are added. Record measurements without calling a parser faster than a regex. If packaging or material operating cost fails this gate, revise this slice before installing into production scope.
+Adoption gate: use synthetic fixtures, inspect exact-version exports/types/transitive dependencies and advisories, measure installed and packaged byte delta, cold import and repeated conversion time against the same fixtures, and prove no requests or logging are added. Record measurements without calling a parser faster than a regex. If packaging or material operating cost fails this gate, revise this slice before installing into production scope. The requirement is implementation-independent: a failed package gate does not waive it or complete the story. Evaluate the minimal alternative against the same fixtures or explicitly revise the requirement; do not archive with unmet text behavior.
 
 Alternatives: `entities` fixes entity decoding but leaves the broken HTML regex; a DOM emulator adds browser machinery; direct `htmlparser2` requires maintaining text formatting/traversal rules. A small configured converter is the clearest initial choice. Keep the existing seven-line `mapLimit` for now: swapping it for a concurrency package saves little and risks changing rejection/request scheduling.
 
 ### 3. Make verification claims executable
 
 Use the existing Node test runner's coverage capability through the installed TS execution path. Confirm source-file attribution and exclusions for tests/generated outputs on pinned Node, then capture a baseline. Do not invent a coverage percentage from test counts or add a test framework. Keep `test` useful on its own; measure whether running test plus coverage repeats the entire suite before altering root verification. The full gate must still execute every required suite once or report explicit reuse, and must fail if expected coverage output is missing.
+
+Artifact contract: ignored app `coverage/coverage.txt` contains the native coverage summary and eligible production-source entries, and CI uploads that report. Missing/empty output, absent summary or zero attributable production files fails the coverage gate even if tests passed. Verify source-map attribution before trusting percentages; no arbitrary minimum percentage is introduced. The smallest script/check around the existing runner is sufficient.
 
 ### 4. Strengthen the public list boundary using installed Zod
 
@@ -82,33 +84,14 @@ TSDoc belongs at these contracts: accepted units and bounds, omission behavior, 
 
 `p0-add-self-service-nemlig-credential-onboarding` owns Auth0/credential linking and principal lifecycle. `fix-nemlig-oauth-reliability` owns reconnect acceptance. `fix-fresh-product-revalidation` owns authoritative apply-time product checks. `automate-nemlig-production-deployment` owns deploy leases and fail-closed rollout. `add-named-recurring-shopping-lists` owns list persistence and pending acceptance.
 
-No opposing requirement has been identified in this proposed scope. Source overlap exists in client/MCP/list code: coordinate and serialize those slices. Do not archive another change from checkbox counts alone. If public list shapes conflict with an existing consumer, stop that slice with an exact compatibility example for human resolution. The older kill-switch worktree remains outside this plan. Invite tiers, credential retention and public-tool retirement still require their own product decisions.
+No opposing requirement has been identified within the ready P2 scope. The broader audit did identify a P0 implementation/spec mismatch and unresolved lifecycle choices, recorded below; these must not be hidden inside cleanup. Source overlap exists in client/MCP/list code: coordinate and serialize those slices. Do not archive another change from checkbox counts alone. If public shapes conflict with an existing consumer, stop that slice with an exact compatibility example for human resolution. The older kill-switch worktree remains outside this plan. Invite tiers, credential retention and public-tool retirement still require their own product decisions.
 
 ## Migration Plan
 
-Order: baseline/coverage, release CLI cleanup, product-text adapter, list contracts, documentation reconciliation. Each slice gets characterization first, focused tests, review, `pnpm verify`, and an independent commit. Use Sol for coordination, Terra for bounded implementation, Luna for inventory and focused checks. Give agents exclusive scopes; the coordinator owns integration and human checkpoints.
+Order: baseline/coverage, transport composition, release CLI cleanup, product-text adapter, public contracts, planning/persistence separation, presentation boundary, acceptance/release gates, compiler/documentation hygiene, delivery. Each slice gets characterization first, focused tests, review, `pnpm verify`, and an independent commit. Use Sol for coordination, Terra for bounded implementation, Luna for inventory and focused checks. Give agents exclusive scopes; the coordinator owns integration and human checkpoints. Do not run multiple edits to MCP/client/tests concurrently. Reassess each next slice against newly integrated main.
 
 Runtime slices require package/release-policy checks, packed smoke, production readiness and CI on integrated main before the existing approved deployment flow. This planning commit requires only documentation integration and CI; it does not deploy. Roll back an implementation slice by a normal reviewed revert and deploy the verified revision through existing procedures; no data migration is planned. Archive this change only after its applicable runtime acceptance is evidenced.
 
-## Future improvements — separate follow-up epics
-
-### P3 — establish repeatable maintenance measurements
-
-- [ ] Record a credential-free benchmark for normalization/planning and emitted package size; use medians and a recorded environment.
-- [ ] Try TypeScript's existing `noUnusedLocals`/`noUnusedParameters` checks first, then evaluate a development-only unused-code tool against explicit CLI, MCP, Worker, package, script and dynamic entry points only if a demonstrated gap remains.
-- [ ] Track deliberate `ponytail:` ceilings with owners and upgrade triggers; do not remove safety ceilings as debt cleanup.
-
-### P3 — retire legacy saved-plan duplication after compatibility evidence
-
-- [ ] Inventory consumers of saved-plan tools and the existing migration into named lists.
-- [ ] Propose deprecation, export/migration, recovery and compatibility tests; ask for the public-contract removal decision before removal.
-- [ ] Delete old persistence/tool code only after the migration and deprecation criteria are met.
-
-### P4 — evaluate smarter matching from real missed choices
-
-- [ ] Collect privacy-safe examples of ambiguous or missed grocery choices, including descriptions and comparable package units.
-- [ ] Compare current rules with a minimal alternative on that fixed corpus; report false confident choices separately from unresolved ones.
-- [ ] Propose any ranking, confidence, product-detail-fetch or automatic authorization behavior change separately, with a provider-call/cost envelope.
 
 ## Sources
 
@@ -116,3 +99,90 @@ Runtime slices require package/release-policy checks, packed smoke, production r
 - [html-to-text documentation](https://github.com/html-to-text/node-html-to-text/blob/master/packages/html-to-text/README.md): compilation, decoding, selectors, input/depth limits and Node support.
 - npm registry read-only metadata checks on 2026-09-08: `npm view html-to-text version engines license dependencies dist.unpackedSize --json` and `npm view commander version engines license --json`.
 - Existing evidence: `openspec/changes/archive/2026-09-06-p2-maintain-nemlig-assistant/evidence.md`; live source navigation through jCodeMunch. No token-saving estimate is asserted.
+
+## Expanded audit — second round, 2026-09-08
+
+Baseline `c4918237043fd900144f97e4ed81e32eb5338501`; changes since the completed maintenance revision are documentation-only. Audited client, planning/proposals, CLI/MCP/HTTP, principal/credential storage, onboarding/Worker, release/acceptance and CI/test configuration. This is a targeted maintenance audit, not an exhaustive security certification. Indexed navigation was followed by exact source inspection when duplicate local/git index identities blocked refresh; no shared index was invalidated.
+
+| Evidence | Consequence | Smallest proposed treatment / proof |
+| --- | --- | --- |
+| `src/mcp.ts:16` imports login helper, singleton, version and `ShoppingClient` from `cli.ts`; `http.ts` imports its type there too | Server composition depends on a command entry point and its imports | Move shared contract near client; move only shared composition/version responsibilities out of CLI; import-smoke CLI, stdio and HTTP independently |
+| `src/plans.ts:134-186` resolves provider data and computes output; `:187-239` owns filesystem/HTTP snapshots | Pure selection tests share a module with persistence concerns | Characterize selection, quantities and totals; separate calculation from I/O using functions and existing adapters, not a storage framework |
+| `src/mcp.ts:229-231` accepts arbitrary plan lines/summary in addition to list `z.any()` sites | Published contracts cannot catch real shape drift | Installed Zod schemas for public plan DTOs; strict result fixtures and representative MCP consumer checks |
+| Proposal schema fields combine `applicable` boolean with many optional fields | Impossible combinations can fit a schema | Characterize actual variants and improve internal typing; published-schema tightening is a separate follow-up |
+| `src/mcp.ts:884` embeds picker HTML alongside tool registration; icon is a very large constant | Presentation edits and orchestration are reviewed together | Move existing static presentation into a minimal module/asset only with exact-byte/URI/package smoke proof; no UI rebuild |
+| `scripts/production-acceptance.ts:40-77` performs network work at module import | Command routing/env validation cannot be imported safely for focused tests | Explicit `main` and direct-entry guard, fake clients/fetch, preserved edge/read-only/mutation distinctions |
+| `.github/workflows/ci.yml` calls readiness but not `check:version-bump` | Existing package-distribution version policy lacks CI enforcement | Wire existing checker with deliberate PR/push base/head semantics and offline fixtures, no new release engine |
+| Native TypeScript unused checks report `cloudflare-worker.ts:347` unused `config` | A simple compiler capability is unused | Inspect callable signature, remove binding only if safe, enable existing compiler checks; no deletion package needed |
+| `docs/nemlig-production-readiness.md:57-64` records old revision evidence and mentions coverage tasks | Readers can confuse historical acceptance with current evidence | Label history and distinguish current source/package/production proof; leave pending acceptance explicit |
+
+Dependency inventory found direct import/configuration use for all six runtime and eleven development dependencies. No dependency deletion is justified by this audit. A Node coverage experiment ran 179 tests, but headline percentages are not adopted as the baseline until production-source attribution and exclusions are verified. No measured performance improvement is claimed.
+
+Expanded-plan verification: strict validation passed all 14 items, privacy checks passed, and `pnpm verify` succeeded using Turbo's existing runtime cache (including the 179-test result). Coverage still reports zero tasks; this planning revision does not fix it. Only five documentation/spec files changed; no runtime code, dependencies, provider configuration or production state changed.
+
+### Target responsibility boundaries
+
+```text
+CLI / MCP / HTTP composition
+  -> shared client contract + explicit credential source (no prompt in server)
+  -> planning/proposal functions (selection, quantities, lifecycle)
+  -> existing provider client / existing snapshot and named-list adapters
+MCP public schemas + serializers -> structured results / existing picker
+Release and acceptance entry points -> pure policy/dispatch -> explicit effects
+```
+
+These are responsibilities, not a mandate for a file per box. Preserve compatibility exports where consumers require them. No new interface with a single implementation, class hierarchy, central tool registry or dependency injection container. A split must demonstrably remove an import dependency, isolate a side effect or make a meaningful test possible; otherwise leave the code in place and record why.
+
+### Additional design decisions and invariants
+
+1. **Transport independence:** put the `ShoppingClient` contract with client-domain types, not in a CLI entry point. Reuse the existing injected credential loader and client; do not create a new service layer. Version loading stays package-derived. Local interactive prompting must remain possible in CLI and impossible in server import/request paths. Tests cover invocation as source and packed entry points.
+2. **Planning as a functional core:** preserve candidate order/tie breakers, unavailable-line handling, duplicate product aggregation, units, totals, concurrency three and subtraction of current basket quantities. Existing search ranking and plan matching are different policies; do not merge them for visual similarity. Preserve saved-plan keys, TTL/validation, principal scopes and Tier-0 legacy fallback. Any discovered rejection/cancellation change is a separately specified bug fix, not a silent refactor.
+3. **Public contracts:** extend the list DTO work to plan lines/summary. Keep text and structured result meanings aligned with typed serializers. Characterize proposal success/not-applicable variants before reducing internal `Record<string, unknown>` casts; published proposal schema tightening is excluded and needs its own requirement if pursued. MCP SDK schema conversion must accept the chosen list/plan form; no breaking output shape or public tool removal to obtain prettier types.
+4. **Presentation boundary:** keep exact resource URI, MIME type, CSP/metadata, escaping, image allowlist and user-selection protocol. Move static data only if packaged deployment includes it reliably. Tests cover missing/empty products, malicious product text, selection message and absent optional images. Asset extraction is not authorization to change UI behavior or fetch remote assets.
+5. **Verification shell:** importing acceptance must have zero fetch/process-exit side effects. Parse and validate before executing requested operations while keeping the explicitly credential-free edge mode. Mutation acceptance still requires the exact approved envelope/restoration and must never become a default. Existing timeout promises do not necessarily cancel underlying work; cancellation is a separately investigated follow-up.
+6. **Release gate:** use existing version-bump checker. Specify PR merge-base and push comparison explicitly, including initial/missing base and docs-only revisions; fail clearly when a required comparison cannot be resolved. No generic `HEAD~1` assumption for multi-commit pushes. Unit fixtures must not push, tag or deploy.
+7. **Maintenance measurement:** record production/test line delta, files/dependencies added or removed, packed bytes, cold startup and test/check elapsed time per applicable slice. Numbers explain trade-offs, not quotas. Preserve bounds even when removing them would make a benchmark faster. TSDoc explains units, ownership, freshness, non-retry mutations, storage compatibility and pure/effectful boundaries.
+
+### npm decision matrix
+
+| Option | Real wheel or issue | Decision |
+| --- | --- | --- |
+| Installed `commander` | Release-agent custom flag parser | Adopt reuse, with exact negation/error tests |
+| Installed `zod` | Arbitrary public list/plan result shapes | Reuse concrete schemas; no schema framework |
+| `html-to-text` 10.0.1 | Regex attempts HTML parsing/decoding | Recommended new runtime module, subject to bounded-fixture/package/CPU gate above |
+| `tough-cookie` 6.0.2 | `client.ts:584-594` manually splits cookies into a host map, without path/expiry/deletion semantics | Evaluate in a separate auth reliability change; do not install in P2 |
+| Node coverage and TS unused checks | No-op coverage wiring and unused binding | Native tooling first; no test/dead-code dependency now |
+| `p-map`, new cache or state-machine packages | Existing small bounded loop/map/explicit proposal lifecycle | Reject without a measured gap; retain current scheduling and safety semantics |
+
+Read-only registry metadata on 2026-09-08: `tough-cookie` 6.0.2, BSD-3-Clause, Node >=16, direct dependency `tldts ^7.0.5`. Its [official CookieJar documentation](https://github.com/salesforce/tough-cookie) supports URL-scoped parsing/retrieval with an in-memory store. Adoption requires synthetic host/domain/path/expiry/deletion/Secure fixtures, explicit allowed origins, package/advisory checks and no persistent cookie serialization/logging. It may improve correctness rather than speed; changing cookie behavior requires the authentication owner's review. Keep custom request retry logic: a generic retry package could dangerously retry basket mutations.
+
+## Prioritized follow-up epics and human flags
+
+These checklists are **not part of applying this P2 change**. Transfer confirmed work to its owning change before implementation; do not duplicate active specs. Priority is a planning judgment, not a claim of a reproduced production incident.
+
+### P0 — reconcile existing invitation and principal lifecycle work
+
+- [ ] Reconcile active self-service design (fixed connect URL, exact-email invitation records, no paid Organizations dependency) with `onboarding.ts:47-76,176-204` and Worker organization checks. Current code forwards Organization invitations; this is incomplete implementation against that spec, not evidence of two approved opposing specs. **Human checkpoint:** confirm intended invitation model/any provider-cost implications before setup changes; keep the P0 owner responsible.
+- [ ] Decide whether accepted-principal capacity is lifetime or active: `principal-records.ts:59-115` increments for new subjects but revoke does not decrement. Test 15 distinct invite/revoke cycles and concurrent registration against the chosen invariant. **Human checkpoint:** retention/erasure policy before reclaiming slots.
+- [ ] Define revoke/reinvite and owner-key rotation data continuity: plans/lists are scoped by opaque principal key, and re-registration makes a new key. **Human checkpoint:** choose retain-inaccessible, recoverable continuity, or explicit purge/export; no cleanup migration or silent deletion.
+
+### P1 — prove lifecycle and request-failure behavior
+
+- [ ] Under the P0 owner, add barrier-controlled concurrent credential-rotation tests. Transactional generation mismatch appears to preserve one stored winner but returns generic failure to the other; specify a sanitized conflict result without retry before implementation.
+- [ ] Under OAuth/P0 ownership, prove stale transport closes and map entries are removed on invalidation. Current HTTP mismatch rejects but does not close the obsolete transport; preserve auth-before-wake, principal isolation and zero extra provider calls.
+- [ ] Reproduce early basket rejection while plan discovery is pending (`plans.ts:134-186`) in an isolated test process. It starts the basket promise before awaiting searches; an unhandled rejection is a hypothesis until the test proves it. If reproduced, attach rejection handling immediately without changing concurrency, fallback or retry policy.
+- [ ] Trace acceptance deadlines end-to-end and test a never-resolving fake request; determine which transports support real cancellation. Do not claim `Promise.race` stops underlying I/O or add automatic mutation retries.
+- [ ] Characterize provider cookie expiry/deletion and URL scope; evaluate `tough-cookie` only if fixtures prove the current jar fails a needed contract. Coordinate with fresh-revalidation and OAuth work.
+
+### P3 — measurable performance and compatibility-led deletion
+
+- [ ] Build a small synthetic normalization/planning corpus, record medians, request counts, peak memory and packed bytes; set regression budgets only after a repeatable baseline.
+- [ ] Inventory saved-plan consumers, legacy storage and named-list migration; propose deprecation/export/recovery acceptance before requesting public tool removal.
+- [ ] Evaluate unused-export tooling only if native checks miss a demonstrated issue; configure actual CLI/MCP/Worker/dynamic/package entry points and manually prove a candidate before deleting it.
+
+### P4 — product matching improvement, not cleanup
+
+- [ ] Capture privacy-safe missed/ambiguous choices and description/attribute evidence; compare false confident selections separately from unresolved results.
+- [ ] Evaluate description-aware matching against that corpus with explicit request/CPU budgets, then propose behavior and confidence presentation separately. Do not alter automatic basket consent or fetch volume inside maintenance.
+
+The ready P2 slices do not depend on resolving these human flags. If an apply slice touches their shared code, coordinate ownership and stop only the conflicting slice. This keeps maintenance actionable while exposing the more important product/security work instead of burying it.
