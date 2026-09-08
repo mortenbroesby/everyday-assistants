@@ -32,7 +32,7 @@ Existing characterization anchors: `client.test.ts` covers read retry versus mut
 - Coordinator's final `pnpm verify` passed with the combined 189-test instrumented suite, lint/build/typecheck/smoke. Strict OpenSpec validation passed 14/14 and privacy checks passed. Initial integration lint/public-path findings were corrected before this pass. CI artifact publication remains pending until exact-head CI; task 1.3 stays unchecked for that final acceptance.
 - First slice integrated as `ecac23894889aa90bd9f5e8034625a1d89f6107b`; exact remote main verified. [Exact-head CI](https://github.com/mortenbroesby/everyday-assistants/actions/runs/34272693165) passed, completing the artifact-publication acceptance and task 1.3.
 
-## HTML adapter — adoption in progress
+## HTML adapter — adopted and verified locally
 
 - Terra demonstrated three failing actual-normalization tests before adding a parser import: quoted delimiters/entities/script content, content-only omission, and raw-input bounding. Existing 189 tests remained green in that run.
 - Installed exact runtime `html-to-text@10.0.1` (MIT, Node >=20.19.0) with lifecycle scripts disabled. It has five direct dependencies. `pnpm audit --prod --json` reported zero advisories in the resulting runtime graph.
@@ -66,6 +66,7 @@ Existing characterization anchors: `client.test.ts` covers read retry versus mut
 - Coordinator full pnpm verify passed: 199 tests, 31.964-second instrumented run; loaded-source coverage 94.89% lines / 82.96% branches / 93.88% functions, plus three import smokes. Strict OpenSpec 14/14 and privacy passed. Native unused checks remain green. Metadata advances to 2.5.4-alpha.13; no new dependency, provider request, retry, storage or capacity change, and no plausible material operating-cost increase.
 - Production schema/type diff +51/-9 lines, interface tests +77. Existing output-field names, list identities/revisions, ownership isolation, ranking, freshness and mutation safeguards remain. Live acceptance/deployment and remaining stories are still pending.
 - Packed-package smoke also passed; exact-head CI is verified separately after this slice is pushed.
+- Initial exact-head CI at 00a6874 exposed an existing randomized test flaw in credential-envelope.test.ts (unchanged since aef124b): replacing the final ciphertext character with A sometimes leaves the ciphertext unchanged. A bounded synthetic reproduction demonstrated unchanged ciphertext decrypting successfully. The test now flips one decoded byte, guaranteeing actual tampering; no credential-handling implementation, secret access or wire behavior changed. This is verification hygiene within the maintenance scope, not a credential redesign. A fresh exact-head gate is required.
 
 ## Ready next slices (handoffs)
 

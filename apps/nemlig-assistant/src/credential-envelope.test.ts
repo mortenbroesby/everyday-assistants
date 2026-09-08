@@ -31,8 +31,10 @@ test("credential envelopes reject tampering, malformed sizes, and unsafe input g
   const password = "sentinel-private-value";
   const envelope = await encryptCredentials({ username, password }, binding, key(1));
   assert.doesNotMatch(JSON.stringify(envelope), /sentinel-user|sentinel-private-value/u);
+  const tampered = Buffer.from(envelope.ciphertext, "base64url");
+  tampered[0] = tampered[0]! ^ 1;
   for (const value of [
-    { ...envelope, ciphertext: `${envelope.ciphertext.slice(0, -1)}A` },
+    { ...envelope, ciphertext: tampered.toString("base64url") },
     { ...envelope, nonce: "short" },
     { ...envelope, ciphertext: "A".repeat(2_049) },
     { ...envelope, extra: "field" },
