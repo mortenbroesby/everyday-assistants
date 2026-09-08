@@ -6,6 +6,7 @@ import test from "node:test";
 import type { Basket, Product } from "./client.js";
 import { eligibleCandidates, httpPlanSnapshotStorage, loadShoppingPlan, resolveShoppingPlan, saveShoppingPlan, shoppingPlanInputSchema, type PlanSnapshotStorage } from "./plans.js";
 import { principalScopeFor } from "./principal-scope.js";
+import { calculateShoppingPlan } from "./plan-calculation.js";
 
 const product = (id: number, name: string, overrides: Partial<Product> = {}): Product => ({
   id, name, price: 10, unit: "10 kr/kg", unitPrice: 10, unitSize: "1 kg", brand: "Test",
@@ -34,6 +35,30 @@ test("candidate ordering uses every preference then stable price, source, and ID
     product(1, "Tie one", { price: 3, unitPrice: 3 }),
   ], "catalog", {}, ["discount", "organic", "non_frozen", "lowest_unit_price"]);
   assert.deepEqual(candidates.map(({ id }) => id), [4, 3, 1, 2, 5]);
+});
+
+test("pure calculation preserves mixed selection, fractional coverage, ordering, and totals", () => {
+  const input = shoppingPlanInputSchema.parse({ mode: "automatic", lines: [
+    { id: "covered", name: "milk", quantity: 2 }, { id: "selected", name: "yoghurt", quantity: 2 },
+    { id: "missing-price", name: "bread", quantity: 1 }, { id: "failed", name: "coffee", quantity: 1 },
+    { id: "exact", name: "ignored", quantity: 1, selected_product_id: 4 },
+  ] });
+  const candidate = (id: number, name: string, overrides: Partial<Product> = {}) => eligibleCandidates([product(id, name, overrides)], "catalog", {}, []);
+  const plan = calculateShoppingPlan(input, [
+    { candidates: candidate(1, "milk", { price: 2.5 }), unavailable: false },
+    { candidates: candidate(2, "yoghurt", { price: 3.335 }), unavailable: false },
+    { candidates: candidate(3, "bread", { price: undefined }), unavailable: false },
+    { candidates: [], unavailable: true }, { candidates: candidate(4, "exact", { price: 4 }), unavailable: false },
+  ], basket([{ id: 1, name: "milk", quantity: 1, total: 2.5 }, { id: 1, name: "milk", quantity: 1, total: 2.5 }, { id: 2, name: "yoghurt", quantity: 0.5, total: 1.6 }]));
+  assert.deepEqual(plan.lines.map(({ id, resolution, clarity_reason, basket_quantity, remaining_quantity, selected_product_id }) => ({ id, resolution, clarity_reason, basket_quantity, remaining_quantity, selected_product_id })), [
+    { id: "covered", resolution: "covered", clarity_reason: "unique_candidate", basket_quantity: 2, remaining_quantity: 0, selected_product_id: 1 },
+    { id: "selected", resolution: "selected", clarity_reason: "unique_candidate", basket_quantity: 0.5, remaining_quantity: 1.5, selected_product_id: 2 },
+    { id: "missing-price", resolution: "selected", clarity_reason: "unique_candidate", basket_quantity: 0, remaining_quantity: 1, selected_product_id: 3 },
+    { id: "failed", resolution: "unresolved", clarity_reason: "discovery_unavailable", basket_quantity: 0, remaining_quantity: 1, selected_product_id: undefined },
+    { id: "exact", resolution: "selected", clarity_reason: "exact_product", basket_quantity: 0, remaining_quantity: 1, selected_product_id: 4 },
+  ]);
+  assert.deepEqual(plan.summary, { total: 5, covered: 1, automatically_selected: 2, added: 0, unresolved: 0, failed: 1, automatic_coverage_percent: 60 });
+  assert.equal(plan.selected_estimated_total, 9);
 });
 
 test("whole-list resolution searches the catalogue for every line, is bounded to three searches, ambiguity-safe, and basket-aware", async () => {
