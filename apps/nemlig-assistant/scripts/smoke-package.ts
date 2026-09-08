@@ -6,7 +6,7 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const execute = promisify(execFile);
 const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -57,6 +57,15 @@ try {
   assert.equal(manifest.name, "nemlig-assistant");
   assert.equal(manifest.version, sourceManifest.version);
   assert.deepEqual(Object.keys(manifest.bin ?? {}).sort(), ["nemlig", "nemlig-assistant", "nemlig-mcp", "nemlig-mcp-http"]);
+
+  const installed = path.join(tempRoot, "node_modules", "nemlig-assistant", "dist");
+  const imports = await execute(
+    process.execPath,
+    ["--input-type=module", "--eval", `globalThis.fetch=()=>{throw new Error("fetch during import")};await Promise.all(${JSON.stringify(["cli.js", "mcp.js", "http.js"].map((file) => pathToFileURL(path.join(installed, file)).href))}.map((entry) => import(entry)))`],
+    { env: { PATH: process.env.PATH ?? "" }, timeout: 10_000 },
+  );
+  assert.equal(imports.stdout, "");
+  assert.equal(imports.stderr, "");
 
   const bin = (name: string): string => path.join(tempRoot, "node_modules", ".bin", name);
   const help = await execute(bin("nemlig"), ["--help"], { env: { PATH: process.env.PATH ?? "" } });

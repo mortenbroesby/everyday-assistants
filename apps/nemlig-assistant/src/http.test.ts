@@ -8,7 +8,7 @@ import { createHttpApp } from "./http.js";
 import type { Auth0Config } from "./auth0.js";
 import { BasketProposalService } from "./proposals.js";
 import { parsePrincipalPolicy } from "./principal-policy.js";
-import type { ShoppingClient } from "./cli.js";
+import type { ShoppingClient } from "./client.js";
 import { encryptCredentials, type CredentialEnvelope } from "./credential-envelope.js";
 
 const ownerSubject = "auth0|owner";

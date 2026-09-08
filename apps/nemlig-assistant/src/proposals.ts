@@ -1,6 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { NemligError, type Basket, type Product } from "./client.js";
-import type { ShoppingClient } from "./cli.js";
+import { NemligError, type Basket, type Product, type ShoppingClient } from "./client.js";
 
 export type ProposalOperation = "additions" | "removal" | "replacement" | "clear";
 export type AdditionAuthorization =

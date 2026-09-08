@@ -1,13 +1,13 @@
 #!/usr/bin/env node
 
 import { Command, InvalidArgumentError } from "commander";
-import { readFileSync, realpathSync } from "node:fs";
+import { realpathSync } from "node:fs";
 import { basename } from "node:path";
 import {
   FAVORITES_SEARCH_POOL,
   matchFavorites,
-  NemligClient,
   NemligError,
+  type ShoppingClient,
   type Basket,
   type Product,
 } from "./client.js";
@@ -23,22 +23,10 @@ import {
   type FeatureRequest,
   type FeatureRequestResult,
 } from "./feature-request.js";
+import { ensureLoggedIn, getClient, NEMLIG_VERSION } from "./runtime.js";
 
-export type ShoppingClient = Pick<
-  NemligClient,
-  | "isLoggedIn"
-  | "login"
-  | "searchProducts"
-  | "getProduct"
-  | "getFreshProduct"
-  | "listFavorites"
-  | "listDepartments"
-  | "browseDepartment"
-  | "getCart"
-  | "addToCart"
-  | "removeFromCart"
-  | "clearCart"
->;
+export { ensureLoggedIn, getClient, NEMLIG_VERSION } from "./runtime.js";
+export type { ShoppingClient } from "./client.js";
 
 interface CliDependencies {
   client: ShoppingClient;
@@ -49,13 +37,6 @@ interface CliDependencies {
   featureRequest: (request: FeatureRequest) => Promise<FeatureRequestResult>;
   out: (message: string) => void;
 }
-
-let sharedClient: NemligClient | undefined;
-const packageVersion = (JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")) as { version?: unknown }).version;
-if (typeof packageVersion !== "string") throw new Error("Nemlig package version is missing.");
-export const NEMLIG_VERSION = packageVersion;
-
-export const getClient = (): NemligClient => (sharedClient ??= new NemligClient());
 
 const positiveInteger = (value: string): number => {
   const parsed = Number(value);
@@ -100,18 +81,6 @@ const formatProduct = (product: Product): string => {
     ...(details ? [`         ${details}`] : []),
   ].join("\n");
 };
-
-export async function ensureLoggedIn(
-  client: ShoppingClient,
-  loadCredentials: () => Promise<Credentials | undefined> = getCredentials,
-): Promise<void> {
-  if (client.isLoggedIn()) return;
-  const credentials = await loadCredentials();
-  if (!credentials) {
-    throw new NemligError("No Nemlig credentials configured. Run `pnpm nemlig login --save`.");
-  }
-  await client.login(credentials.username, credentials.password);
-}
 
 export function createProgram(overrides: Partial<CliDependencies> = {}): Command {
   const dependencies: CliDependencies = {

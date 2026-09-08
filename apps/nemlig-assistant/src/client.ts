@@ -617,3 +617,20 @@ export class NemligClient {
     this.cookies.set(host, jar);
   }
 }
+
+/** The minimum provider surface shared by CLI, MCP, HTTP, and proposal flows. */
+export type ShoppingClient = Pick<
+  NemligClient,
+  | "isLoggedIn"
+  | "login"
+  | "searchProducts"
+  | "getProduct"
+  | "getFreshProduct"
+  | "listFavorites"
+  | "listDepartments"
+  | "browseDepartment"
+  | "getCart"
+  | "addToCart"
+  | "removeFromCart"
+  | "clearCart"
+>;

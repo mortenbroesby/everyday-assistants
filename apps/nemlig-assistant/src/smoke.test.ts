@@ -2,12 +2,30 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
+import { readFile } from "node:fs/promises";
 import { promisify } from "node:util";
 import test from "node:test";
-import type { ShoppingClient } from "./cli.js";
+import type { ShoppingClient } from "./client.js";
 import { createMcpServer } from "./mcp.js";
 
 const execute = promisify(execFile);
+
+test("server modules do not depend on the executable CLI entry point", async () => {
+  for (const file of ["mcp.ts", "http.ts", "proposals.ts"]) {
+    const source = await readFile(new URL(`./${file}`, import.meta.url), "utf8");
+    assert.doesNotMatch(source, /from "\.\/cli\.js"/u);
+  }
+});
+
+test("source CLI, MCP, and HTTP modules import without starting work", async () => {
+  const { stderr, stdout } = await execute(
+    process.execPath,
+    ["--import=tsx", "--input-type=module", "--eval", 'globalThis.fetch=()=>{throw new Error("fetch during import")};await Promise.all([import("./cli.ts"), import("./mcp.ts"), import("./http.ts")])'],
+    { cwd: import.meta.dirname, env: { PATH: process.env.PATH }, timeout: 10_000 },
+  );
+  assert.equal(stdout, "");
+  assert.equal(stderr, "");
+});
 
 test("local CLI help and MCP surface need no credentials or network", async () => {
   const { stdout } = await execute(

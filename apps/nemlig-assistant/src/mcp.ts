@@ -10,10 +10,11 @@ import {
   FAVORITES_SEARCH_POOL,
   matchFavorites,
   NemligError,
+  type ShoppingClient,
   type Basket,
   type Product,
 } from "./client.js";
-import { ensureLoggedIn, getClient, NEMLIG_VERSION, type ShoppingClient } from "./cli.js";
+import { ensureLoggedIn, getClient, NEMLIG_VERSION } from "./runtime.js";
 import { getCredentials, type Credentials } from "./config.js";
 import {
   createFeatureRequest,

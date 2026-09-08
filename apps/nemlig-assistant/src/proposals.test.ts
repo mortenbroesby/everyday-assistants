@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { Basket, Product } from "./client.js";
-import type { ShoppingClient } from "./cli.js";
+import type { Basket, Product, ShoppingClient } from "./client.js";
 import {
   basketFingerprint,
   BasketProposalService,
