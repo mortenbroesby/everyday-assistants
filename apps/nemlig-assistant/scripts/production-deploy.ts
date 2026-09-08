@@ -300,6 +300,7 @@ export const defaultRunner: CommandRunner = async (command, args, options = {}) 
   let overflow = false;
   let terminated = false;
   let finished = false;
+  let terminatedGroup: Promise<void> | undefined;
   const clean = () => {
     clearTimeout(timeout);
     options.signal?.removeEventListener("abort", abort);
@@ -316,9 +317,10 @@ export const defaultRunner: CommandRunner = async (command, args, options = {}) 
     if (terminated) return;
     terminated = true;
     try { process.kill(process.platform === "win32" ? child.pid! : -child.pid!, "SIGTERM"); } catch { /* already closed */ }
-    setTimeout(() => {
+    terminatedGroup = new Promise((resolvePromise) => setTimeout(() => {
       try { process.kill(process.platform === "win32" ? child.pid! : -child.pid!, "SIGKILL"); } catch { /* already closed */ }
-    }, 5_000).unref();
+      resolvePromise();
+    }, 5_000));
   };
   controller.signal.addEventListener("abort", terminate, { once: true });
   child.stdout.on("data", (chunk: Buffer) => {
@@ -328,7 +330,9 @@ export const defaultRunner: CommandRunner = async (command, args, options = {}) 
   child.stderr.on("data", (chunk: Buffer) => { stderr = `${stderr}${chunk.toString()}`.slice(-64 * 1024); });
   child.on("error", () => done(new CommandFailure("command_failed")));
   child.on("close", (code) => {
-    if (controller.signal.aborted) done(new DeployFailure(overflow ? "command_failed" : "command_cancelled"));
+    if (controller.signal.aborted) {
+      void (terminatedGroup ?? Promise.resolve()).then(() => done(new DeployFailure(overflow ? "command_failed" : "command_cancelled")));
+    }
     else if (code === 0) done();
     else done(new CommandFailure("command_failed", /HTTP 404\b/u.test(stderr) ? 404 : undefined));
   });
@@ -336,8 +340,11 @@ export const defaultRunner: CommandRunner = async (command, args, options = {}) 
   else child.stdin.end();
 });
 
-const runAt = (deps: DeployDependencies, cwd: string, command: string, args: readonly string[], options: RunOptions = {}) =>
-  deps.run(command, args, { ...options, signal: options.signal ?? deps.signal, cwd, env: { ...deps.env, ...options.env } });
+const runAt = (deps: DeployDependencies, cwd: string, command: string, args: readonly string[], options: RunOptions = {}) => {
+  const signal = options.signal ?? deps.signal;
+  signal?.throwIfAborted();
+  return deps.run(command, args, { ...options, signal, cwd, env: { ...deps.env, ...options.env } });
+};
 
 const wrangler = (deps: DeployDependencies, args: readonly string[], timeoutMs = 30_000) =>
   runAt(deps, deps.packageRoot, "pnpm", ["exec", "wrangler", ...args, "--env", "production"], { timeoutMs });
@@ -542,10 +549,18 @@ const waitForInactive = async (deps: DeployDependencies, applicationId: string):
   for (let attempt = 0; attempt < 36; attempt += 1) {
     deps.signal?.throwIfAborted();
     if (instancesInactive(await wrangler(deps, ["containers", "instances", applicationId, "--json"]))) return;
-    await Promise.race([
-      deps.sleep(5_000),
-      new Promise<never>((_resolvePromise, reject) => deps.signal?.addEventListener("abort", () => reject(new DeployFailure("command_cancelled")), { once: true })),
-    ]);
+    if (!deps.signal) await deps.sleep(5_000);
+    else await new Promise<void>((resolvePromise, reject) => {
+      const abort = () => reject(new DeployFailure("command_cancelled"));
+      deps.signal!.addEventListener("abort", abort, { once: true });
+      void deps.sleep(5_000).then(() => {
+        deps.signal!.removeEventListener("abort", abort);
+        resolvePromise();
+      }, (error) => {
+        deps.signal!.removeEventListener("abort", abort);
+        reject(error);
+      });
+    });
   }
   fail("container_inactive_timeout");
 };
@@ -574,15 +589,15 @@ const rollback = async (deps: DeployDependencies, journal: DeploymentJournal, st
   journal.checks.push("starting_version_restored");
 };
 
-export async function deployProduction(commit: string, deps: DeployDependencies): Promise<DeploymentJournal> {
+export async function deployProduction(commit: string, inputDeps: DeployDependencies): Promise<DeploymentJournal> {
   if (!fullSha.test(commit)) fail("invalid_commit");
   const operationController = new AbortController();
   const abortOperation = () => operationController.abort();
-  const inheritedSignal = deps.signal;
+  const inheritedSignal = inputDeps.signal;
   if (inheritedSignal?.aborted) abortOperation();
   else inheritedSignal?.addEventListener("abort", abortOperation, { once: true });
-  const operationDeadline = setTimeout(abortOperation, Math.min(deps.operationDeadlineMs ?? 25 * 60_000, 25 * 60_000));
-  deps.signal = operationController.signal;
+  const operationDeadline = setTimeout(abortOperation, Math.min(inputDeps.operationDeadlineMs ?? 25 * 60_000, 25 * 60_000));
+  const deps: DeployDependencies = { ...inputDeps, signal: operationController.signal };
   const journal: DeploymentJournal = {
     schema: 2,
     operationId: (deps.operationId ?? randomUUID)(),
@@ -604,7 +619,7 @@ export async function deployProduction(commit: string, deps: DeployDependencies)
   let transition: ((phase: JournalPhase, kind: JournalKind, version?: string) => Promise<void>) | undefined;
 
   try {
-    deps.signal.throwIfAborted();
+    deps.signal?.throwIfAborted();
     if (!deps.env.NEMLIG_MCP_ACCESS_TOKEN?.trim()) fail("owner_access_token_required");
     const repo = await repoIdentity(deps);
     repository = repo.nameWithOwner;
@@ -730,7 +745,6 @@ export async function deployProduction(commit: string, deps: DeployDependencies)
     }
     clearTimeout(operationDeadline);
     inheritedSignal?.removeEventListener("abort", abortOperation);
-    deps.signal = inheritedSignal;
   }
   return journal;
 }

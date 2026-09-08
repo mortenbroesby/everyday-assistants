@@ -1,8 +1,10 @@
 import assert from "node:assert/strict";
+import { execFile } from "node:child_process";
 import { access, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import { promisify } from "node:util";
 import {
   deployProduction,
   defaultRunner,
@@ -27,6 +29,7 @@ const enabledId = "22222222-2222-4222-8222-222222222222";
 const thirdPartyId = "33333333-3333-4333-8333-333333333333";
 const applicationId = "a03ce8c9-3543-4505-866e-14d2e66007ca";
 const image = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+const execFileAsync = promisify(execFile);
 
 const version = (id: string, revision: string, enabled: boolean) => JSON.stringify({
   id,
@@ -508,8 +511,8 @@ test("the runner rejects a pre-aborted command before spawning and kills a detac
   try {
     await assert.rejects(defaultRunner(process.execPath, ["-e", script, pidPath], { timeoutMs: 500 }), /command_cancelled/u);
     const descendant = Number(await readFile(pidPath, "utf8"));
-    await new Promise((resolvePromise) => setTimeout(resolvePromise, 5_200));
-    assert.throws(() => process.kill(descendant, 0));
+    const status = await execFileAsync("ps", ["-o", "stat=", "-p", String(descendant)]).then(({ stdout }) => stdout.trim(), () => "");
+    assert.ok(status === "" || status.startsWith("Z"), `descendant remains running: ${status}`);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
