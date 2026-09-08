@@ -267,8 +267,8 @@ const verifySource = async (deps: DeployDependencies, commit: string, repo: { na
   ]), "github_ci_workflow_invalid");
   const matchingWorkflows = Array.isArray(workflows) ? workflows.map(object).filter((workflow) =>
     workflow?.name === ciWorkflowName && workflow.path === ciWorkflowPath && workflow.state === "active") : [];
-  if (matchingWorkflows.length !== 1 || typeof matchingWorkflows[0]?.id !== "number") fail("github_ci_workflow_invalid");
-  const workflowId = matchingWorkflows[0].id as number;
+  const workflowId = matchingWorkflows.length === 1 ? matchingWorkflows[0]?.id : undefined;
+  if (typeof workflowId !== "number") fail("github_ci_workflow_invalid");
   const runs = json(await runAt(deps, deps.repoRoot, "gh", [
     "run", "list", "--repo", repo.nameWithOwner, "--commit", commit, "--workflow", String(workflowId), "--limit", "10",
     "--json", "conclusion,databaseId,event,headBranch,headSha,status,url,workflowDatabaseId,workflowName",

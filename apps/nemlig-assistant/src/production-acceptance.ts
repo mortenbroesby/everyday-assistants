@@ -95,7 +95,7 @@ const abortError = (signal: AbortSignal): Error => signal.reason instanceof Erro
 const bounded = async <T>(label: string, work: () => Promise<T>, signal?: AbortSignal): Promise<T> => {
   if (!signal) return await work();
   if (signal.aborted) throw abortError(signal);
-  let onAbort: () => void;
+  let onAbort: (() => void) | undefined;
   const aborted = new Promise<never>((_resolve, reject) => {
     onAbort = () => reject(abortError(signal));
     signal.addEventListener("abort", onAbort, { once: true });
@@ -108,7 +108,7 @@ const bounded = async <T>(label: string, work: () => Promise<T>, signal?: AbortS
     if (signal.aborted) throw new Error(`Production acceptance deadline exceeded during ${label}`, { cause: error });
     throw error;
   } finally {
-    signal.removeEventListener("abort", onAbort);
+    if (onAbort) signal.removeEventListener("abort", onAbort);
   }
 };
 
