@@ -1,6 +1,6 @@
 # Planning evidence
 
-Baseline: refreshed `origin/main` at `775b1fffaee74f3792661d45046f84b3cd60bea0`, clean isolated worktree `/Users/macbook/.codex/worktrees/plan-ci-nemlig-acceptance`, branch `codex/plan-ci-nemlig-acceptance`. Only this change's planning artifacts are modified. No runtime, provider, secret, deployment, Auth0 account or shopping-data change was performed.
+Baseline: refreshed `origin/main` at `775b1fffaee74f3792661d45046f84b3cd60bea0`, clean isolated worktree `plan-ci-nemlig-acceptance`, branch `codex/plan-ci-nemlig-acceptance`. Only this change's planning artifacts are modified. No runtime, provider, secret, deployment, Auth0 account or shopping-data change was performed.
 
 Verified during planning:
 
@@ -17,3 +17,5 @@ jCodeMunch was used first. Initial resolution matched a broad parent index, so t
 First implementation packet: S1 acceptance reporting/deadline/redaction, four verified existing files, focused acceptance tests, no provider choice or credentials needed. Second independent ready slice: S2.1 trusted CI provenance and S2.2 rollback-on-drift regression, existing deploy script/test only. Sol resolves U4 before remote-journal work and U1 before Container recovery changes. S3 identity runtime and S6 provider activation are gated by the explicit decisions in the design.
 
 Recommendation: machine identity for routine service acceptance; actual user/ChatGPT/provider evidence remains separately required for initial cutover and affected auth/client/provider changes. The parent has asked the owner the D1 release-evidence question; no answer is assumed here.
+
+Initial planning CI rejected an absolute laptop path in this evidence file. The path is now relative. The earlier local privacy pass did not establish that the newly added evidence was public-safe; rerun privacy checks with the planning files tracked before recording delivery success.
