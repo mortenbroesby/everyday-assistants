@@ -67,7 +67,7 @@ Execute one reviewable slice at a time. Sol coordinates/integrates, Terra implem
 - [x] 8.3 Test missing credentials, edge-only, default read-only, malformed flags/envelopes and mutation/restoration confirmation with fake clients; verify mutation never becomes a default.
 - [x] 8.4 Include acceptance-entry tests in the app test/coverage scripts and preserve explicit live acceptance commands; do not run credentialed or basket-mutating tests as part of this cleanup.
 - [x] 8.5 Wire the existing version checker into CI with documented comparison inputs and docs-only handling; fixture-test patch/minor/major/no-release and unavailable-base failure without Git/provider writes.
-- [ ] 8.6 Run focused release/acceptance tests, pnpm verify and credential-free readiness checks; record policy/command evidence, review and commit.
+- [x] 8.6 Run focused release/acceptance tests, pnpm verify and credential-free readiness checks; record policy/command evidence, review and commit.
 
 ## 9. Story — Compiler hygiene, contract documentation and backlog truth
 
@@ -79,9 +79,9 @@ Execute one reviewable slice at a time. Sol coordinates/integrates, Terra implem
 
 ## 10. Story — Integrate, accept and close the epic
 
-- [ ] 10.1 Review each story's evidence and compatibility/request-budget invariants; verify no auth redesign, data migration, unsafe deletion, capacity increase or repeated prior-maintenance work entered the diff.
-- [ ] 10.2 Run strict OpenSpec validation, privacy checks, pnpm verify and pnpm nemlig:production:ready; distinguish credential-free checks from outstanding live acceptance.
-- [ ] 10.3 Coordinate with siblings, refresh main, integrate scoped commits and verify exact remote SHA plus green exact-head CI before any runtime rollout.
+- [x] 10.1 Review each story's evidence and compatibility/request-budget invariants; verify no auth redesign, data migration, unsafe deletion, capacity increase or repeated prior-maintenance work entered the diff.
+- [x] 10.2 Run strict OpenSpec validation, privacy checks, pnpm verify and pnpm nemlig:production:ready; distinguish credential-free checks from outstanding live acceptance.
+- [x] 10.3 Coordinate with siblings, refresh main, integrate scoped commits and verify exact remote SHA plus green exact-head CI before any runtime rollout.
 - [ ] 10.4 For runtime changes verify current explicit deployment authority and coordinate before the existing rollout/read-only acceptance procedure; this plan grants no new provider authority. Retain human checkpoints for destructive/external-user-data actions, new costs, secrets, unresolved authority or conflicting scope. Never mutate a basket under cleanup authority.
-- [ ] 10.5 Record delivered code/dependency/package/check-time deltas, remaining risks and separate follow-up owners; verify evidence supports each completed checkbox.
+- [x] 10.5 Record delivered code/dependency/package/check-time deltas, remaining risks and separate follow-up owners; verify evidence supports each completed checkbox.
 - [ ] 10.6 Sync only this change's requirements and archive after applicable acceptance; push the final documentation commit and verify remote main/CI.
