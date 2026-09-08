@@ -283,6 +283,13 @@ const verifySource = async (deps: DeployDependencies, commit: string, repo: { na
   if (!trusted || trusted.status !== "completed" || trusted.conclusion !== "success") {
     fail("exact_head_ci_not_green");
   }
+  const run = object(json(await runAt(deps, deps.repoRoot, "gh", [
+    "run", "view", String(trusted!.databaseId), "--repo", repo.nameWithOwner, "--json", "jobs",
+  ]), "github_ci_invalid"));
+  const verifyJobs = Array.isArray(run?.jobs) ? run.jobs.map(object).filter((job) => job?.name === "verify") : [];
+  if (verifyJobs.length !== 1 || verifyJobs[0]?.status !== "completed" || verifyJobs[0]?.conclusion !== "success") {
+    fail("exact_head_ci_not_green");
+  }
 };
 
 const acquireRemoteLease = async (deps: DeployDependencies, repository: string, commit: string): Promise<void> => {

@@ -91,3 +91,15 @@ passed, including the required `verify` job. The sibling removal lane was
 notified of the exact revision and successful CI. This closes delivery of S1,
 not S2 or the full epic. Production remains at the separately recorded older
 application revision; no release was dispatched.
+
+## Required-job source gate
+
+The coordinator isolated S2.1's remaining guard from the unfinished recovery
+draft. A new regression reproduced acceptance of a green workflow with no
+required job; the correction requires exactly one completed successful
+`verify` job in the trusted run. Empty, other-only, skipped, failed, running
+and duplicate job sets stop before Wrangler. Focused deployment tests pass
+12/12 and `tsc --noEmit` passes. Including the package version edit makes the
+current classifier select a patch; this slice uses `4.0.2-alpha.18`. No npm
+publication is performed. Remote delivery/full gates are
+verified separately; no durable-recovery draft is included in this slice.

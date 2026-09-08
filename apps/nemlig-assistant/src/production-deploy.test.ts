@@ -74,6 +74,7 @@ async function fixture(options: {
   workflowPath?: string;
   run?: Record<string, unknown>;
   runs?: Array<Record<string, unknown>>;
+  jobs?: Array<Record<string, unknown>>;
   disabledResponse?: string;
   disabledFetchFails?: boolean;
   driftBeforeEnable?: boolean;
@@ -96,6 +97,7 @@ async function fixture(options: {
       return JSON.stringify([{ id: options.workflowId ?? 123, name: "CI", path: options.workflowPath ?? ".github/workflows/ci.yml", state: "active" }]);
     }
     if (commandName === "gh" && args[0] === "run") {
+      if (args[1] === "view") return JSON.stringify({ jobs: options.jobs ?? [{ name: "verify", status: "completed", conclusion: "success" }] });
       const base = {
         databaseId: 456,
         workflowDatabaseId: options.workflowId ?? 123,
@@ -265,6 +267,26 @@ test("only the exact trusted main CI provenance may reach Wrangler", async () =>
     try {
       await assert.rejects(deployProduction(unsafe, deps), /invalid_commit/u);
       assert.equal(calls.length, 0);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  }
+});
+
+test("a green workflow requires exactly one completed successful verify job", async () => {
+  for (const jobs of [
+    [],
+    [{ name: "other", status: "completed", conclusion: "success" }],
+    [{ name: "verify", status: "completed", conclusion: "skipped" }],
+    [{ name: "verify", status: "completed", conclusion: "failure" }],
+    [{ name: "verify", status: "in_progress", conclusion: "success" }],
+    Array.from({ length: 2 }, () => ({ name: "verify", status: "completed", conclusion: "success" })),
+  ]) {
+    const { deps, calls, root } = await fixture({ jobs });
+    try {
+      const report = await deployProduction(commit, deps);
+      assert.equal(report.failure, "exact_head_ci_not_green");
+      assert.equal(calls.some(({ args }) => args.includes("wrangler")), false);
     } finally {
       await rm(root, { recursive: true, force: true });
     }
