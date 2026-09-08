@@ -5,6 +5,7 @@ import { join } from "node:path";
 import test from "node:test";
 import {
   deployProduction,
+  defaultRunner,
   finalizeDeploymentRecovery,
   instancesInactive,
   parseContainer,
@@ -485,6 +486,75 @@ test("finalize accepts GitHub's empty successful DELETE only after the exact rem
     assert.equal(head, "");
     await assert.rejects(access(join(root, "nemlig-production-deploy.lock")));
     assert.equal(calls.filter(({ args }) => args.includes("DELETE")).length, 1);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("the runner rejects a pre-aborted command before spawning and kills a detached descendant after timeout", async () => {
+  const preAborted = new AbortController();
+  preAborted.abort();
+  await assert.rejects(defaultRunner("definitely-not-a-command", [], { signal: preAborted.signal }), /command_cancelled/u);
+
+  const root = await mkdtemp(join(tmpdir(), "nemlig-production-runner-"));
+  const pidPath = join(root, "descendant.pid");
+  const script = [
+    "const { spawn } = require('node:child_process');",
+    "const { writeFileSync } = require('node:fs');",
+    "const child = spawn(process.execPath, ['-e', \"process.on('SIGTERM', () => {}); setInterval(() => {}, 1_000)\"], { stdio: 'ignore' });",
+    "writeFileSync(process.argv[1], String(child.pid));",
+    "setInterval(() => {}, 1_000);",
+  ].join(" ");
+  try {
+    await assert.rejects(defaultRunner(process.execPath, ["-e", script, pidPath], { timeoutMs: 500 }), /command_cancelled/u);
+    const descendant = Number(await readFile(pidPath, "utf8"));
+    await new Promise((resolvePromise) => setTimeout(resolvePromise, 5_200));
+    assert.throws(() => process.kill(descendant, 0));
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("cancellation after remote intent retains the lease and suppresses rollback and later mutations", async () => {
+  const { deps, calls, root } = await fixture();
+  const controller = new AbortController();
+  const baseRun = deps.run;
+  deps.signal = controller.signal;
+  deps.run = async (command, args, options) => {
+    if (command === "pnpm" && args.includes("deploy") && args.includes("MCP_ENABLED:false")) {
+      controller.abort();
+      if (options?.signal?.aborted) throw new Error("cancelled");
+      return await new Promise<string>((_resolvePromise, reject) => options?.signal?.addEventListener("abort", () => reject(new Error("cancelled")), { once: true }));
+    }
+    return await baseRun(command, args, options);
+  };
+  try {
+    const report = await deployProduction(commit, deps);
+    assert.equal(report.outcome, "failed");
+    assert.equal(report.lastVerifiedState, "unknown");
+    assert.equal(calls.some(({ args }) => args.includes("MCP_ENABLED:true") || args.includes("rollback")), false);
+    await access(join(root, "nemlig-production-deploy.lock"));
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("a bounded operation deadline aborts an in-flight command and suppresses later commands", async () => {
+  const { deps, calls, root } = await fixture();
+  const baseRun = deps.run;
+  deps.operationDeadlineMs = 1;
+  deps.run = async (command, args, options) => {
+    if (command === "gh" && args[0] === "repo") {
+      return await new Promise<string>((_resolvePromise, reject) => {
+        options?.signal?.addEventListener("abort", () => reject(new Error("deadline")), { once: true });
+      });
+    }
+    return await baseRun(command, args, options);
+  };
+  try {
+    const report = await deployProduction(commit, deps);
+    assert.equal(report.outcome, "failed");
+    assert.equal(calls.some(({ args }) => args.includes("wrangler")), false);
   } finally {
     await rm(root, { recursive: true, force: true });
   }

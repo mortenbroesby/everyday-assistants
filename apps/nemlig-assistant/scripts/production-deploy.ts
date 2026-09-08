@@ -68,6 +68,7 @@ export interface DeployDependencies {
   sleep: (milliseconds: number) => Promise<void>;
   now: () => Date;
   operationId?: () => string;
+  operationDeadlineMs?: number;
   stateRoot?: string;
   signal?: AbortSignal;
 }
@@ -282,7 +283,11 @@ const deployedVersionFromOutput = (raw: string): string => {
   return id && versionId.test(id) ? id : fail("cloudflare_upload_version_missing");
 };
 
-const defaultRunner: CommandRunner = async (command, args, options = {}) => await new Promise<string>((resolvePromise, reject) => {
+export const defaultRunner: CommandRunner = async (command, args, options = {}) => await new Promise<string>((resolvePromise, reject) => {
+  if (options.signal?.aborted) {
+    reject(new DeployFailure("command_cancelled"));
+    return;
+  }
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), options.timeoutMs ?? 30_000);
   const abort = () => controller.abort();
@@ -312,7 +317,7 @@ const defaultRunner: CommandRunner = async (command, args, options = {}) => awai
     terminated = true;
     try { process.kill(process.platform === "win32" ? child.pid! : -child.pid!, "SIGTERM"); } catch { /* already closed */ }
     setTimeout(() => {
-      if (!finished) try { process.kill(process.platform === "win32" ? child.pid! : -child.pid!, "SIGKILL"); } catch { /* already closed */ }
+      try { process.kill(process.platform === "win32" ? child.pid! : -child.pid!, "SIGKILL"); } catch { /* already closed */ }
     }, 5_000).unref();
   };
   controller.signal.addEventListener("abort", terminate, { once: true });
@@ -525,7 +530,9 @@ const verifySource = async (deps: DeployDependencies, commit: string, repo: { na
 
 const verifyDisabledRoutes = async (deps: DeployDependencies): Promise<void> => {
   for (const endpoint of [customMcp, workersMcp]) {
-    const response = await deps.fetcher(endpoint, { signal: AbortSignal.timeout(10_000) })
+    const timeout = AbortSignal.timeout(10_000);
+    const signal = deps.signal ? AbortSignal.any([deps.signal, timeout]) : timeout;
+    const response = await deps.fetcher(endpoint, { signal })
       .catch(() => fail("disabled_route_unavailable"));
     if (response.status !== 503 || await response.text() !== "MCP temporarily disabled") fail("disabled_route_mismatch");
   }
@@ -533,8 +540,12 @@ const verifyDisabledRoutes = async (deps: DeployDependencies): Promise<void> => 
 
 const waitForInactive = async (deps: DeployDependencies, applicationId: string): Promise<void> => {
   for (let attempt = 0; attempt < 36; attempt += 1) {
+    deps.signal?.throwIfAborted();
     if (instancesInactive(await wrangler(deps, ["containers", "instances", applicationId, "--json"]))) return;
-    await deps.sleep(5_000);
+    await Promise.race([
+      deps.sleep(5_000),
+      new Promise<never>((_resolvePromise, reject) => deps.signal?.addEventListener("abort", () => reject(new DeployFailure("command_cancelled")), { once: true })),
+    ]);
   }
   fail("container_inactive_timeout");
 };
@@ -565,6 +576,13 @@ const rollback = async (deps: DeployDependencies, journal: DeploymentJournal, st
 
 export async function deployProduction(commit: string, deps: DeployDependencies): Promise<DeploymentJournal> {
   if (!fullSha.test(commit)) fail("invalid_commit");
+  const operationController = new AbortController();
+  const abortOperation = () => operationController.abort();
+  const inheritedSignal = deps.signal;
+  if (inheritedSignal?.aborted) abortOperation();
+  else inheritedSignal?.addEventListener("abort", abortOperation, { once: true });
+  const operationDeadline = setTimeout(abortOperation, Math.min(deps.operationDeadlineMs ?? 25 * 60_000, 25 * 60_000));
+  deps.signal = operationController.signal;
   const journal: DeploymentJournal = {
     schema: 2,
     operationId: (deps.operationId ?? randomUUID)(),
@@ -586,6 +604,7 @@ export async function deployProduction(commit: string, deps: DeployDependencies)
   let transition: ((phase: JournalPhase, kind: JournalKind, version?: string) => Promise<void>) | undefined;
 
   try {
+    deps.signal.throwIfAborted();
     if (!deps.env.NEMLIG_MCP_ACCESS_TOKEN?.trim()) fail("owner_access_token_required");
     const repo = await repoIdentity(deps);
     repository = repo.nameWithOwner;
@@ -709,6 +728,9 @@ export async function deployProduction(commit: string, deps: DeployDependencies)
         journal.failure = "deployment_journal_write_failed";
       }
     }
+    clearTimeout(operationDeadline);
+    inheritedSignal?.removeEventListener("abort", abortOperation);
+    deps.signal = inheritedSignal;
   }
   return journal;
 }
