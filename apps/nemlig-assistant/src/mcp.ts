@@ -17,11 +17,6 @@ import {
 import { ensureLoggedIn, getClient, NEMLIG_VERSION } from "./runtime.js";
 import { getCredentials, type Credentials } from "./config.js";
 import {
-  createFeatureRequest,
-  type FeatureRequest,
-  type FeatureRequestResult,
-} from "./feature-request.js";
-import {
   BasketProposalService,
   type ApplyResult,
   type NoopProposalView,
@@ -202,12 +197,6 @@ const applyResultSchema = z.object({
   operation: z.enum(["additions", "removal", "replacement", "clear"]),
   replayed: z.boolean(),
   basket: basketSchema,
-});
-
-const featureRequestResultSchema = z.object({
-  number: z.number().int().positive(),
-  title: z.string(),
-  url: z.string().url(),
 });
 
 const shoppingPlanToolInputSchema = z.object({
@@ -425,7 +414,6 @@ export function createMcpServer(
   loadCredentials: () => Promise<Credentials | undefined> = getCredentials,
   env: NodeJS.ProcessEnv = process.env,
   proposals: BasketProposalService = new BasketProposalService(client),
-  requestFeature: (request: FeatureRequest) => Promise<FeatureRequestResult> = createFeatureRequest,
   requestContext?: McpRequestContext,
 ): McpServer {
   const server = new McpServer(
@@ -437,7 +425,7 @@ export function createMcpServer(
     },
     {
       instructions:
-        "Use Nemlig Assistant for current Nemlig products, prices, availability, favourites, basket contents, saved shopping lists, recipes, conversation lists, or choosing and adding groceries. For ordinary find or add requests, use plan_my_shopping in automatic mode with one short Danish catalogue phrase per line; use manual mode only when the user asks to choose or when automatic results are unclear. Translate or normalize English, mixed-language, misspelled, and over-specific wording before the tool call: keep distinctive brand words, replace a foreign generic category with the intended Danish category, and omit conversational context. Ordinary planning searches the current Nemlig catalogue once per line, never favourites. Use find_groceries only for a direct catalogue search and show_my_favorites only when explicitly requested. For 'use this recipe/list and go ahead', set proceed true, then pass the returned same-run authorization through review_items_to_add and immediately use add_approved_items for its unchanged proposal; do not ask for redundant approval. Without explicit proceed intent, a plan, saved or resumed plan, candidate choice, or exact review never authorizes mutation. A same-run authorization covers only clear additions from that run, never unresolved lines, removals, replacements, clearing, checkout, payment, ordering, or delivery slots. Named lists can refresh up to fifty selected lines. Present concise added, already-covered, unresolved, failed, and automatic-coverage results; omit internal references unless troubleshooting. Every basket change revalidates exact data, is single-use, stops on uncertainty, and reads back the basket. Suggest an improvement only when the user explicitly asks.",
+        "Use Nemlig Assistant for current Nemlig products, prices, availability, favourites, basket contents, saved shopping lists, recipes, conversation lists, or choosing and adding groceries. For ordinary find or add requests, use plan_my_shopping in automatic mode with one short Danish catalogue phrase per line; use manual mode only when the user asks to choose or when automatic results are unclear. Translate or normalize English, mixed-language, misspelled, and over-specific wording before the tool call: keep distinctive brand words, replace a foreign generic category with the intended Danish category, and omit conversational context. Ordinary planning searches the current Nemlig catalogue once per line, never favourites. Use find_groceries only for a direct catalogue search and show_my_favorites only when explicitly requested. For 'use this recipe/list and go ahead', set proceed true, then pass the returned same-run authorization through review_items_to_add and immediately use add_approved_items for its unchanged proposal; do not ask for redundant approval. Without explicit proceed intent, a plan, saved or resumed plan, candidate choice, or exact review never authorizes mutation. A same-run authorization covers only clear additions from that run, never unresolved lines, removals, replacements, clearing, checkout, payment, ordering, or delivery slots. Named lists can refresh up to fifty selected lines. Present concise added, already-covered, unresolved, failed, and automatic-coverage results; omit internal references unless troubleshooting. Every basket change revalidates exact data, is single-use, stops on uncertainty, and reads back the basket.",
     },
   );
   const localConnectionId = randomUUID();
@@ -716,23 +704,6 @@ export function createMcpServer(
         const migrated = await migrateShoppingPlan(ownerSubject, listStorage, planStorage, saved_plan, name, type);
         return success({ list: listPayload(migrated) }, `${migrated.name} er oprettet fra den gemte plan.`);
       }),
-  );
-
-  server.registerTool(
-    "suggest_an_improvement",
-    {
-      title: "Suggest an improvement",
-      description: "Send a Nemlig Assistant suggestion by creating a GitHub issue. This changes an external system but never your Nemlig basket.",
-      inputSchema: {
-        title: z.string().trim().min(3).max(120).describe("A short title for the suggestion."),
-        summary: z.string().trim().min(1).max(2_000).describe("What should improve and why it would help."),
-        acceptance_criteria: z.array(z.string().trim().min(1).max(300)).max(10).default([]).describe("Simple observable outcomes that would make the improvement complete."),
-        context: z.string().trim().min(1).max(1_000).optional().describe("Optional non-sensitive context that helps explain the suggestion."),
-      },
-      outputSchema: featureRequestResultSchema,
-      annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true },
-    },
-    (request) => runMcpOperation("suggest_an_improvement", async () => success({ ...await requestFeature(request) })),
   );
 
   server.registerTool(

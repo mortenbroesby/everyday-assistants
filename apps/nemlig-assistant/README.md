@@ -117,7 +117,6 @@ preparatory, and exact reviews still wait for approval.
 - Use the HTTP MCP server behind Auth0.
 - Connect ChatGPT to the private hosted Cloudflare deployment.
 - Optionally expose the MCP Apps product picker.
-- Capture a concise, retry-safe GitHub feature request when explicitly asked.
 
 ### Hosted family alpha
 
@@ -247,7 +246,6 @@ The MCP surface is organized around household actions:
 - Complete an approved change: `add_approved_items`, `remove_approved_item`,
   `make_approved_item_swap`, and `empty_approved_basket`.
 - Choose visually: `choose_products_visually` and `ui://nemlig/picker.html`.
-- Suggest an improvement: `suggest_an_improvement`.
 
 After an ordinary release, open the existing app named exactly `Nemlig Assistant`
 and use **Refresh** so ChatGPT rediscovers tools, schemas, instructions,
@@ -289,18 +287,6 @@ name `Nemlig Assistant` to clients that render standard MCP app metadata.
 Creating or changing identity, hosting, DNS, runtime secrets, or paid resources
 is an owner-controlled infrastructure action. Nemlig credentials must stay out
 of the repository.
-
-### Feature requests
-
-```sh
-pnpm nemlig feature-request "Prefer discounted favorites" \
-  --summary "Choose discounted favorites first" \
-  --acceptance "Search favorites first" "Prefer discounted matches"
-```
-
-This uses the Keychain-backed GitHub CLI and creates an issue only when
-explicitly requested. Verify access with `gh auth status -h github.com`; never
-put a GitHub token in the repository or an environment file.
 
 ## 🧪 Owner alpha exercise
 

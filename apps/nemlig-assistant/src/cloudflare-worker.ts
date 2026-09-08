@@ -79,7 +79,6 @@ export class NemligMcpContainer extends Container<Env> {
     NEMLIG_MCP_HTTP_HOST: "0.0.0.0",
     NEMLIG_MCP_HTTP_PORT: "8080",
     NEMLIG_PLAN_STORAGE_URL: "http://nemlig-plan-storage.internal/",
-    GH_TOKEN: this.env.GH_TOKEN ?? "",
   };
 
   override onStart(): void {

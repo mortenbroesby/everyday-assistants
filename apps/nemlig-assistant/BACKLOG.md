@@ -2,7 +2,10 @@
 
 ## P3 — simplify the product model
 
-**Status:** Proposed roadmap; implementation has not started.
+**Status:** Broader roadmap proposed. The owner selected feature-request removal
+as the first deletion; source implementation and production acceptance are tracked
+in [remove-nemlig-feature-requests](../../openspec/changes/remove-nemlig-feature-requests/proposal.md).
+No replacement feedback workflow is planned.
 
 [Product simplification roadmap](../../docs/product-simplification-roadmap.md)
 expands the product review against current main. It builds on delivered P2 work

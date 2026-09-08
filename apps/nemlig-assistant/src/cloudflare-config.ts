@@ -31,7 +31,6 @@ export interface CloudflareEnv {
   NEMLIG_MCP_ONBOARDING_SESSION_KEY?: string;
   NEMLIG_USERNAME?: string;
   NEMLIG_PASSWORD?: string;
-  GH_TOKEN?: string;
 }
 
 export interface GatewayConfig {

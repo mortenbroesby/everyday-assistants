@@ -75,7 +75,7 @@ try {
   assert.match(help.stdout, /favorites/);
   assert.match(help.stdout, /departments/);
   assert.match(help.stdout, /browse/);
-  assert.match(help.stdout, /feature-request/);
+  assert.doesNotMatch(help.stdout, /feature-request/);
   assert.match(help.stdout, /cart/);
   assert.match(help.stdout, /add/);
   assert.match(help.stdout, /remove/);
@@ -115,7 +115,6 @@ try {
       "show_my_basket",
       "show_my_favorites",
       "show_my_shopping_lists",
-      "suggest_an_improvement",
     ]);
     assert.doesNotMatch(tools.join("\n"), /add_to_cart|remove_from_cart|replace_cart_line|clear_cart/);
     assert.doesNotMatch(tools.join("\n"), /recipe|checkout|order|payment/i);

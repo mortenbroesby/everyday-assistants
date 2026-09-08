@@ -9,7 +9,7 @@ interface ToolResult {
 export const productionToolInventory = {
   readOnly: [
     "find_groceries", "show_my_favorites", "plan_my_shopping", "show_grocery_sections",
-    "browse_grocery_section", "continue_my_shopping_plan", "show_my_basket", "choose_products_visually",
+    "browse_grocery_section", "check_nemlig_connection", "continue_my_shopping_plan", "show_my_basket", "choose_products_visually",
     "show_my_shopping_lists", "shop_from_my_list",
   ],
   prepareOnly: [
@@ -20,7 +20,7 @@ export const productionToolInventory = {
     "set_my_shopping_list_status", "migrate_my_saved_plan",
   ],
   externalState: [
-    "suggest_an_improvement", "add_approved_items",
+    "add_approved_items",
     "remove_approved_item", "make_approved_item_swap", "empty_approved_basket",
   ],
 } as const;

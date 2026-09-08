@@ -18,11 +18,6 @@ import {
   saveCredentials,
   type Credentials,
 } from "./config.js";
-import {
-  createFeatureRequest,
-  type FeatureRequest,
-  type FeatureRequestResult,
-} from "./feature-request.js";
 import { ensureLoggedIn, getClient, NEMLIG_VERSION } from "./runtime.js";
 
 export { ensureLoggedIn, getClient, NEMLIG_VERSION } from "./runtime.js";
@@ -34,7 +29,6 @@ interface CliDependencies {
   prompt: (username?: string) => Promise<Credentials>;
   save: (credentials: Credentials) => Promise<void>;
   clear: () => Promise<void>;
-  featureRequest: (request: FeatureRequest) => Promise<FeatureRequestResult>;
   out: (message: string) => void;
 }
 
@@ -89,7 +83,6 @@ export function createProgram(overrides: Partial<CliDependencies> = {}): Command
     prompt: promptCredentials,
     save: saveCredentials,
     clear: clearCredentials,
-    featureRequest: createFeatureRequest,
     out: console.log,
     ...overrides,
   };
@@ -176,23 +169,6 @@ export function createProgram(overrides: Partial<CliDependencies> = {}): Command
     .action(async (departmentId: string, options: { limit: number; page: number }) => {
       const result = await dependencies.client.browseDepartment(departmentId, options.limit, options.page);
       dependencies.out(result.products.length ? ["ID Name Price Size Status", ...result.products.map(formatProduct), ...(result.hasNext ? [`Next page: ${result.page + 1}`] : [])].join("\n") : "No products found.");
-    });
-
-  program
-    .command("feature-request")
-    .description("Create a concise GitHub issue for a requested Nemlig Assistant feature.")
-    .argument("<title>", "Short feature title")
-    .requiredOption("-s, --summary <text>", "Concise description of the requested behavior")
-    .option("-a, --acceptance <criterion...>", "Simple acceptance criteria")
-    .option("-c, --context <text>", "Optional supporting context")
-    .action(async (title: string, options: { summary: string; acceptance?: string[]; context?: string }) => {
-      const issue = await dependencies.featureRequest({
-        title,
-        summary: options.summary,
-        acceptance_criteria: options.acceptance,
-        context: options.context,
-      });
-      dependencies.out(`✓ Feature request #${issue.number}: ${issue.url}`);
     });
 
   program

@@ -78,14 +78,12 @@ disabled endpoint and no-running-Container state were verified.
    uses `keep_vars`, so repository deploys retain separately managed secrets. `NEMLIG_MCP_ALLOWED_ORIGINS`,
    `NEMLIG_MCP_REQUIRED_SCOPE`, and `NEMLIG_MCP_REVISION` remain optional.
 
-5. `GH_TOKEN` is optional; omit it if hosted feature-request creation is not
-   wanted. The three legacy owner secrets are accepted only as exact migration
-   checks against the policy; they are not runtime fallbacks and must never be
-   reused for an invitee.
-
-   ```sh
-   pnpm --filter nemlig-assistant exec wrangler secret put GH_TOKEN --env production
-   ```
+5. The runtime no longer submits GitHub issues and does not forward `GH_TOKEN`.
+   Do not provision a GitHub token for the assistant. Existing provider-held
+   secrets are unchanged by this source removal; any cleanup is a separate
+   owner credential operation. The three legacy owner secrets are accepted only
+   as exact migration checks against policy, not runtime fallbacks, and must
+   never be reused for an invitee.
 
 6. Keep `MCP_ENABLED=false`, validate, then deploy:
 

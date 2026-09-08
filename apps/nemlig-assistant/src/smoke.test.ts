@@ -37,7 +37,7 @@ test("local CLI help and MCP surface need no credentials or network", async () =
   assert.match(stdout, /login/);
   assert.match(stdout, /search/);
   assert.match(stdout, /favorites/);
-  assert.match(stdout, /feature-request/);
+  assert.doesNotMatch(stdout, /feature-request/);
   assert.match(stdout, /cart/);
   assert.match(stdout, /add/);
   assert.match(stdout, /remove/);
@@ -103,7 +103,6 @@ test("local CLI help and MCP surface need no credentials or network", async () =
         "show_my_basket",
         "show_my_favorites",
         "show_my_shopping_lists",
-        "suggest_an_improvement",
       ],
     );
   } finally {

@@ -11,8 +11,8 @@ import { join } from "node:path";
 import test from "node:test";
 import type { Basket, Product, ShoppingClient } from "./client.js";
 import { createProgram } from "./cli.js";
-import type { FeatureRequest } from "./feature-request.js";
 import { createMcpServer, NEMLIG_CONNECT_URL, PICKER_URI, rankProducts, safeNemligImageUrl, type Candidate } from "./mcp.js";
+import { productionToolInventory } from "./production-acceptance.js";
 import { BasketProposalService } from "./proposals.js";
 
 const basket: Basket = {
@@ -62,10 +62,10 @@ const fakeClient = (overrides: Partial<ShoppingClient> = {}): ShoppingClient => 
   ...overrides,
 });
 
-test("CLI exposes only non-recipe commands and never accepts a password option", () => {
+test("CLI exposes only supported commands and never accepts a password option", () => {
   const help = createProgram({ client: fakeClient() }).helpInformation();
-  for (const command of ["login", "logout", "search", "favorites", "feature-request", "add", "remove", "cart"]) assert.match(help, new RegExp(command));
-  for (const forbidden of ["parse", "checkout", "--password"]) assert.doesNotMatch(help, new RegExp(forbidden));
+  for (const command of ["login", "logout", "search", "favorites", "add", "remove", "cart"]) assert.match(help, new RegExp(command));
+  for (const forbidden of ["feature-request", "parse", "checkout", "--password"]) assert.doesNotMatch(help, new RegExp(forbidden));
 });
 
 test("CLI favorites authenticates and prints the existing product format", async () => {
@@ -178,34 +178,25 @@ test("CLI login saves only when requested and uses the masked prompt seam", asyn
   assert.deepEqual(saved, ["person@example.test"]);
 });
 
-test("CLI feature-request forwards ChatGPT-ready fields and prints the issue URL", async () => {
-  const output: string[] = [];
-  let received: unknown;
-  await createProgram({
-    client: fakeClient(),
-    featureRequest: async (request) => {
-      received = request;
-      return { number: 42, title: request.title, url: "https://github.com/mortenbroesby/everyday-assistants/issues/42" };
-    },
-    out: (message) => output.push(message),
-  }).parseAsync([
+test("retired CLI feature request is rejected without a side effect", async () => {
+  const client = fakeClient({
+    getCart: async () => { throw new Error("unexpected basket read"); },
+    addToCart: async () => { throw new Error("unexpected basket mutation"); },
+    removeFromCart: async () => { throw new Error("unexpected basket mutation"); },
+    clearCart: async () => { throw new Error("unexpected basket mutation"); },
+  });
+  const program = createProgram({
+    client,
+    out: () => {},
+  }).exitOverride();
+  await assert.rejects(program.parseAsync([
     "node",
     "nemlig",
     "feature-request",
     "Prefer discounted favorites",
     "--summary",
     "Choose discounted favorites first.",
-    "--acceptance",
-    "Search favorites first",
-    "Prefer discounted matches",
-  ]);
-  assert.deepEqual(received, {
-    title: "Prefer discounted favorites",
-    summary: "Choose discounted favorites first.",
-    acceptance_criteria: ["Search favorites first", "Prefer discounted matches"],
-    context: undefined,
-  });
-  assert.match(output.join("\n"), /Feature request #42.*issues\/42/);
+  ]), /unknown command|feature-request/iu);
 });
 
 const withMcpClient = async <T>(
@@ -268,14 +259,13 @@ const friendlyCatalog = [
   ["show_my_basket", "Show my basket", true, false, []],
   ["show_my_favorites", "Show my favourites", true, false, ["search_term", "result_count", "page"]],
   ["show_my_shopping_lists", "Show my shopping lists", true, false, ["list", "include_archived"]],
-  ["suggest_an_improvement", "Suggest an improvement", false, false, ["title", "summary", "acceptance_criteria", "context"]],
 ] as const;
 
 const formerToolNames = [
   "search_products", "list_favorites", "plan_shopping_list", "list_departments", "browse_department",
   "save_shopping_plan", "load_shopping_plan", "create_feature_request", "view_cart", "prepare_cart_additions",
   "apply_cart_additions", "prepare_cart_removal", "apply_cart_removal", "prepare_cart_replacement",
-  "apply_cart_replacement", "prepare_cart_clear", "apply_cart_clear", "pick_products",
+  "apply_cart_replacement", "prepare_cart_clear", "apply_cart_clear", "pick_products", "suggest_an_improvement",
 ] as const;
 
 test("ranking tags cheapest, recommended, and organic deterministically", () => {
@@ -320,6 +310,18 @@ test("MCP exposes the complete friendly catalog and clean missing-credential err
     const content = result.content as Array<{ type: string; text?: string }>;
     assert.match(content[0]?.text ?? "", /credentials configured/);
   });
+});
+
+test("production MCP inventory is exact with Apps enabled and disabled", async () => {
+  const expected = Object.values(productionToolInventory).flat().sort();
+  for (const [apps, names] of [
+    ["1", expected],
+    ["0", expected.filter((name) => name !== "choose_products_visually")],
+  ] as const) {
+    await withMcpClient(createMcpServer(fakeClient(), undefined, { NEMLIG_MCP_APPS: apps }), async (mcp) => {
+      assert.deepEqual((await mcp.listTools()).tools.map((tool) => tool.name).sort(), names);
+    });
+  }
 });
 
 test("MCP hides generic provider failure details", async () => {
@@ -455,7 +457,7 @@ test("MCP plans whole lists and continuing a saved plan refreshes current produc
 
 test("MCP named lists stay storage-only until a bounded explicit Nemlig refresh", async () => {
   const directory = await mkdtemp(join(tmpdir(), "nemlig-mcp-lists-"));
-  let reads = 0; let mutations = 0; let featureRequests = 0;
+  let reads = 0; let mutations = 0;
   const client = fakeClient({
     listFavorites: async () => { reads += 1; return [product]; },
     getCart: async () => { reads += 1; return basket; },
@@ -464,8 +466,7 @@ test("MCP named lists stay storage-only until a bounded explicit Nemlig refresh"
     removeFromCart: async () => { mutations += 1; return basket; },
     clearCart: async () => { mutations += 1; return basket; },
   });
-  const requestFeature = async () => { featureRequests += 1; throw new Error("feature request called"); };
-  await withMcpClient(createMcpServer(client, async () => undefined, { NEMLIG_MCP_APPS: "0", NEMLIG_CONFIG_DIR: directory }, undefined, requestFeature, { principalKey: "auth0|owner", policyRevision: "test-v1", tier: 0 }), async (mcp) => {
+  await withMcpClient(createMcpServer(client, async () => undefined, { NEMLIG_MCP_APPS: "0", NEMLIG_CONFIG_DIR: directory }, undefined, { principalKey: "auth0|owner", policyRevision: "test-v1", tier: 0 }), async (mcp) => {
     const created = await mcp.callTool({ name: "save_my_shopping_list", arguments: { name: "Ugens basis", type: "reusable", lines: [{ id: "milk", name: "mælk", quantity: 2 }] } });
     assert.match(toolText(created), /Ugens basis er gemt/iu);
     assert.doesNotMatch(toolText(created), /[0-9a-f]{8}-[0-9a-f-]{27}|revision|status/iu);
@@ -488,7 +489,6 @@ test("MCP named lists stay storage-only until a bounded explicit Nemlig refresh"
     assert.match(toolText(archived), /Ugens basis er arkiveret/iu);
     assert.equal((archived.structuredContent as { list: { status: string } }).list.status, "archived");
     assert.equal(mutations, 0);
-    assert.equal(featureRequests, 0);
   });
 });
 
@@ -584,8 +584,6 @@ test("every MCP tool has complete schemas, accurate annotations, and safe server
       assert.equal(byName.get(name)?.annotations?.destructiveHint, false, name);
     }
     assert.equal(byName.get("add_approved_items")?.annotations?.destructiveHint, false);
-    assert.equal(byName.get("suggest_an_improvement")?.annotations?.readOnlyHint, false);
-    assert.equal(byName.get("suggest_an_improvement")?.annotations?.destructiveHint, false);
     assert.equal(byName.get("remove_approved_item")?.annotations?.destructiveHint, true);
     assert.equal(byName.get("make_approved_item_swap")?.annotations?.destructiveHint, true);
     assert.equal(byName.get("empty_approved_basket")?.annotations?.destructiveHint, true);
@@ -602,7 +600,7 @@ test("every MCP tool has complete schemas, accurate annotations, and safe server
 test("authenticated HTTP request context preserves stdio tool and resource metadata", async () => {
   await withMcpClient(createMcpServer(fakeClient()), async (stdio) => {
     await withMcpClient(
-      createMcpServer(fakeClient(), undefined, undefined, undefined, undefined, { principalKey: "auth0|owner", policyRevision: "test-v1", tier: 0 }),
+      createMcpServer(fakeClient(), undefined, undefined, undefined, { principalKey: "auth0|owner", policyRevision: "test-v1", tier: 0 }),
       async (http) => {
         assert.deepEqual(await http.listTools(), await stdio.listTools());
         assert.deepEqual(await http.listResources(), await stdio.listResources());
@@ -623,7 +621,7 @@ test("MCP routes ordinary product intent through loose catalogue-first planning"
     assert.match(instructions, /show_my_favorites only when explicitly requested/);
     assert.match(instructions, /current Nemlig products, prices, availability/);
     assert.match(instructions, /use this recipe\/list and go ahead/);
-    assert.match(instructions, /Suggest an improvement only when the user explicitly asks/);
+    assert.doesNotMatch(instructions, /Suggest an improvement|GitHub issue/);
     assert.match(tools.get("plan_my_shopping") ?? "", /Resolve 1–50 groceries automatically by default/);
     assert.match(tools.get("find_groceries") ?? "", /current Nemlig catalogue directly/);
     assert.match(tools.get("find_groceries") ?? "", /'Prince biscuits' becomes 'prince kiks'/);
@@ -705,16 +703,17 @@ test("picker resource preserves its public presentation contract and isolates ho
   });
 });
 
-test("MCP creates one structured feature request without touching Nemlig", async () => {
-  const client = fakeClient();
-  let received: unknown;
-  const requestFeature = async (request: FeatureRequest) => {
-    received = request;
-    return { number: 42, title: request.title, url: "https://github.com/mortenbroesby/everyday-assistants/issues/42" };
-  };
+test("retired MCP feature request is unavailable and has no Nemlig side effect", async () => {
+  const client = fakeClient({
+    getCart: async () => { throw new Error("unexpected basket read"); },
+    addToCart: async () => { throw new Error("unexpected basket mutation"); },
+    removeFromCart: async () => { throw new Error("unexpected basket mutation"); },
+    clearCart: async () => { throw new Error("unexpected basket mutation"); },
+  });
   await withMcpClient(
-    createMcpServer(client, async () => undefined, { NEMLIG_MCP_APPS: "0" }, new BasketProposalService(client), requestFeature),
+    createMcpServer(client, async () => undefined, { NEMLIG_MCP_APPS: "0" }, new BasketProposalService(client)),
     async (mcp) => {
+      assert.equal((await mcp.listTools()).tools.some((tool) => tool.name === "suggest_an_improvement"), false);
       const result = await mcp.callTool({
         name: "suggest_an_improvement",
         arguments: {
@@ -723,17 +722,8 @@ test("MCP creates one structured feature request without touching Nemlig", async
           acceptance_criteria: ["Search favorites first"],
         },
       });
-      assert.equal(result.isError, undefined);
-      assert.deepEqual(received, {
-        title: "Prefer discounted favorites",
-        summary: "Choose discounted favorites first.",
-        acceptance_criteria: ["Search favorites first"],
-      });
-      assert.deepEqual(result.structuredContent, {
-        number: 42,
-        title: "Prefer discounted favorites",
-        url: "https://github.com/mortenbroesby/everyday-assistants/issues/42",
-      });
+      assert.equal(result.isError, true);
+      assert.match(toolText(result), /method not found|unknown tool|suggest_an_improvement/iu);
     },
   );
 });
@@ -864,7 +854,7 @@ test("hosted proposals survive a principal reconnect but remain isolated by prin
   let proposalId = "";
 
   await withMcpClient(
-    createMcpServer(client, undefined, undefined, proposals, undefined, { principalKey: "auth0|owner", policyRevision: "test-v1", tier: 0 }),
+    createMcpServer(client, undefined, undefined, proposals, { principalKey: "auth0|owner", policyRevision: "test-v1", tier: 0 }),
     async (mcp) => {
       const prepared = await mcp.callTool({
         name: "review_items_to_add",
@@ -875,7 +865,7 @@ test("hosted proposals survive a principal reconnect but remain isolated by prin
   );
 
   await withMcpClient(
-    createMcpServer(client, undefined, undefined, proposals, undefined, { principalKey: "auth0|other", policyRevision: "test-v1", tier: 1 }),
+    createMcpServer(client, undefined, undefined, proposals, { principalKey: "auth0|other", policyRevision: "test-v1", tier: 1 }),
     async (mcp) => {
       const rejected = await mcp.callTool({ name: "add_approved_items", arguments: { approved_review: proposalId } });
       assert.equal(rejected.isError, true);
@@ -884,7 +874,7 @@ test("hosted proposals survive a principal reconnect but remain isolated by prin
   );
 
   await withMcpClient(
-    createMcpServer(client, undefined, undefined, proposals, undefined, { principalKey: "auth0|owner", policyRevision: "test-v2", tier: 0 }),
+    createMcpServer(client, undefined, undefined, proposals, { principalKey: "auth0|owner", policyRevision: "test-v2", tier: 0 }),
     async (mcp) => {
       const rejected = await mcp.callTool({ name: "add_approved_items", arguments: { approved_review: proposalId } });
       assert.equal(rejected.isError, true);
@@ -893,7 +883,7 @@ test("hosted proposals survive a principal reconnect but remain isolated by prin
   );
 
   await withMcpClient(
-    createMcpServer(client, undefined, undefined, proposals, undefined, { principalKey: "auth0|owner", policyRevision: "test-v1", tier: 0 }),
+    createMcpServer(client, undefined, undefined, proposals, { principalKey: "auth0|owner", policyRevision: "test-v1", tier: 0 }),
     async (mcp) => {
       const result = await mcp.callTool({ name: "add_approved_items", arguments: { approved_review: proposalId } });
       assert.equal(result.isError, undefined);

@@ -126,4 +126,5 @@ test("Container outbound handlers register through the SDK static setter", async
   const worker = await readFile(new URL("./cloudflare-worker.ts", import.meta.url), "utf8");
   assert.match(worker, /NemligMcpContainer\.outboundByHost\s*=/u);
   assert.doesNotMatch(worker, /static\s+outboundByHost/u);
+  assert.doesNotMatch(worker, /GH_TOKEN|suggest_an_improvement/u);
 });

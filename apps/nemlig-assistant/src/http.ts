@@ -160,7 +160,6 @@ export function createHttpApp(
           async () => credentials,
           process.env,
           context.proposals,
-          undefined,
           { principalKey: principal.principal_key, policyRevision: config.principalPolicy.revision, tier: principal.tier },
         ).connect(transport);
       }

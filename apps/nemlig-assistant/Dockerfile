@@ -18,7 +18,7 @@ RUN pnpm --filter nemlig-assistant build \
 FROM node:22.23.1-bookworm-slim
 
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends ca-certificates gh \
+  && apt-get install -y --no-install-recommends ca-certificates \
   && rm -rf /var/lib/apt/lists/*
 
 ENV NODE_ENV=production

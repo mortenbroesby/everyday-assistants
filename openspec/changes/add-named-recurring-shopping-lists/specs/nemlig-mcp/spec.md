@@ -1,11 +1,11 @@
 ## MODIFIED Requirements
 
 ### Requirement: Non-recipe tool surface
-The server SHALL expose product search, favorites, guided planning, department browsing, named-list lifecycle, legacy plan loading, basket view, feature-request, and proposal-based basket tools; SHALL conditionally expose the picker; and SHALL NOT expose direct model-visible basket mutation, recipe, checkout, order, payment, purchase, delivery-slot, scheduled-list, or automatic-recurrence tools.
+The server SHALL expose product search, favorites, guided planning, department browsing, named-list lifecycle, legacy plan loading, basket view, and proposal-based basket tools; SHALL conditionally expose the picker; and SHALL NOT expose direct model-visible basket mutation, recipe, checkout, order, payment, purchase, delivery-slot, scheduled-list, or automatic-recurrence tools.
 
 #### Scenario: Enumerate base tools
 - **WHEN** a client lists tools with picker support disabled
-- **THEN** read-only discovery and planning, bounded named-list management, legacy plan loading, basket view, feature request, and prepare/apply review pairs remain available
+- **THEN** read-only discovery and planning, bounded named-list management, legacy plan loading, basket view, and prepare/apply review pairs remain available
 
 #### Scenario: Inspect prohibited tools
 - **WHEN** a client enumerates all tools
@@ -81,7 +81,7 @@ The MCP server SHALL guide clients to use Nemlig tools first for current Nemlig 
 - **THEN** no basket review is prepared or applied and ambiguous candidates remain available for user choice
 
 ### Requirement: Complete production feature acceptance
-The system SHALL provide an automated production acceptance workflow that verifies the complete advertised MCP tool and resource surface against the hosted service. The workflow SHALL cover authentication, discovery, Nemlig-first metadata, product search, favorites, guided planning, department browsing, named-list lifecycle and owner isolation, legacy snapshot compatibility, basket view, feature-request contract without submitting a real issue, picker image metadata and fallback behavior, and every proposal preparation path.
+The system SHALL provide an automated production acceptance workflow that verifies the complete advertised MCP tool and resource surface against the hosted service. The workflow SHALL cover authentication, discovery, Nemlig-first metadata, product search, favorites, guided planning, department browsing, named-list lifecycle and owner isolation, legacy snapshot compatibility, basket view, picker image metadata and fallback behavior, and every proposal preparation path.
 
 #### Scenario: Read-only production acceptance runs
 - **WHEN** the operator runs the default production acceptance command with valid owner authentication

@@ -35,14 +35,14 @@ one fixed EU container-enabled Durable Object
 one EU lite Container, asleep when idle
         |
         v
-Nemlig and, only for the feature-request tool, GitHub
+Nemlig
 
 Container -- internal egress --> one fixed EU plan-storage Durable Object
 ```
 
 This is the smallest safe migration. A Container preserves the existing Node 22
-HTTP process, Streamable HTTP/SSE session state, filesystem-capable runtime, and
-GitHub CLI child process. A direct Worker would require transport, process, and
+HTTP process, Streamable HTTP/SSE session state and filesystem-capable runtime.
+A direct Worker would require transport, process, and
 persistence changes before it could preserve all current tools.
 
 The implementation checkpoint added and locally measured the minimal image. It
@@ -55,6 +55,11 @@ before cutover; it does not threaten the memory/cost bound. Wrangler's productio
 dry run built the same `lite` image and confirmed the fixed EU bindings without
 uploading or creating resources.
 
+The feature-request subprocess and runtime GitHub CLI were removed in
+`3.0.0-alpha.15`. Earlier image measurements below are historical and do not
+measure the reduced image. Transport and persistence compatibility still need
+a separate Worker-native evaluation.
+
 ## Current application assessment
 
 | Area | Evidence | Hosting consequence |
@@ -65,7 +70,6 @@ uploading or creating resources.
 | Proposal safety | [`proposals.ts`](../apps/nemlig-assistant/src/proposals.ts) stores short-lived proposals and completed/invalid/indeterminate results in memory. Hosted transports for the configured owner share one service so approval survives a normal ChatGPT reconnect; local stdio remains session-bound. Mutation application is mutex-protected, and indeterminate outcomes explicitly say not to retry. | Proposal state is intentionally restart-discardable. A restart fails closed because an approval ID is no longer found. Preserve the owner binding and no-retry behavior. Serialize expensive/mutation admission globally in the fixed object. |
 | Durable files | [`plans.ts`](../apps/nemlig-assistant/src/plans.ts) atomically creates and later reads immutable shopping-plan JSON files under `NEMLIG_CONFIG_DIR/plans` or `~/.nemlig-shopper/plans`. It already accepts a `PlanSnapshotStorage` implementation. | Saved plans genuinely need restart persistence. Container disks and Worker `/tmp` are ephemeral. The hosted profile reuses the storage seam and routes snapshots through an internal Container outbound handler to one fixed storage-only SQLite Durable Object; no R2 bucket is needed. |
 | Credentials | [`config.ts`](../apps/nemlig-assistant/src/config.ts) accepts `NEMLIG_USERNAME` and `NEMLIG_PASSWORD` before its local-file fallback. | Inject production credentials as secrets; do not copy the local credentials file. Development must have no real mutation credentials by default. |
-| Child processes | [`feature-request.ts`](../apps/nemlig-assistant/src/feature-request.ts) executes `gh` with a 30-second timeout and bounded lookup/create/reconciliation. | Containers can preserve this tool by including `gh` and a narrowly scoped GitHub credential. Workers expose only a non-functional `node:child_process` stub, so Workers-native would need a GitHub API rewrite. |
 | Browser automation | There is no runtime browser-automation dependency. | No browser runtime is needed in the image. |
 | Transport | [`http.ts`](../apps/nemlig-assistant/src/http.ts) uses MCP Streamable HTTP and supports its event-stream response path. It has no WebSocket endpoint. | Proxy HTTP streaming unchanged through the fixed object and Container. Test reconnect after sleep. |
 | Connections | Runtime code uses HTTPS `fetch`; it does not manage raw persistent TCP connections. | No special TCP service is required. |
@@ -84,7 +88,6 @@ uploading or creating resources.
 | Rate windows, daily counts, breaker flag/time/reason | Restart-required safety state | Losing them could reopen a tripped backend or undercount usage. |
 | Nemlig account, basket, and favorites | External | Nemlig remains the system of record. |
 | Auth0 user/tenant configuration | External | Auth0 remains the identity provider. |
-| GitHub issues | External | Created only by an explicit feature-request tool call. |
 
 ## Platform comparison
 
@@ -96,7 +99,6 @@ and a normal Node listener is not a drop-in Worker entry point. Preserving the
 current MCP would require:
 
 - adapting the MCP server to a Worker-native fetch/Streamable HTTP handler;
-- replacing the `gh` child process with GitHub API calls;
 - moving saved-plan persistence to Durable Object storage; and
 - proving that all transitive Node dependencies and long-lived MCP streaming
   behavior work within Worker CPU and memory limits.
@@ -132,7 +134,7 @@ The owner reviewed and separately approved creation of:
 5. One Container application/image with `instance_type = "lite"`,
    `max_instances = 1`, EU placement, and a 10-minute idle sleep timeout.
 6. Worker secrets for actual credentials only: Nemlig credentials and any
-   required Auth0/GitHub secret. Thresholds and `MCP_ENABLED` are plain config.
+   required Auth0 secret. Thresholds and `MCP_ENABLED` are plain config.
 7. Two recommended informational account budget alerts: USD 10 warning and USD
    20 urgent. These remain an account-dashboard step and are not application
    enforcement.
@@ -225,7 +227,7 @@ correspond to roughly USD 15 total before tax and other fixed charges.
 - A Container that fails to sleep increases memory/disk duration. `max_instances
   = 1`, wake logging, and the manual switch are the primary controls.
 - Falling back from `lite` to `basic`, high CPU, excessive Auth0/JWKS fetches,
-  outbound Nemlig/GitHub traffic, logs, or egress can add cost.
+  outbound Nemlig traffic, logs, or egress can add cost.
 - Cloudflare budget alerts may arrive after usage and do not stop services.
 - The Worker Paid minimum is per account. Other workloads in the same account
   share billing and alert totals.

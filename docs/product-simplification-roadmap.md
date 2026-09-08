@@ -1,6 +1,7 @@
 # Product simplification roadmap
 
-Status: proposed roadmap, 2026-09-09. Scope: Nemlig Assistant in Everyday Assistants.
+Status: proposed roadmap, 2026-09-09; feature-request removal implemented in source
+as the first owner-selected deletion, with production acceptance pending. Scope: Nemlig Assistant in Everyday Assistants.
 Baseline: `a9306603c8f66f8631db3ce33c643729db133933` on remote main.
 Origin: the requested review of “Simplify Everyday Agents Code”; this document
 expands and checks its recommendations without copying the private conversation.
@@ -16,18 +17,20 @@ This deliverable is planning only. Each non-trivial delivery slice needs its own
 reviewed OpenSpec proposal, characterization or failing behavior test, focused
 checks, full `pnpm verify`, integration and applicable acceptance. Provider changes,
 real-user data migration and basket changes retain their existing authority gates.
-No SDK upgrade, infrastructure migration or public tool retirement happens here.
+The original roadmap authorized no runtime change. The subsequent explicit
+feature-request removal is tracked separately; SDK upgrades, infrastructure
+migration and other public tool retirements remain proposed.
 
-## Findings checked against current code
+## Findings checked against the roadmap baseline
 
 | Original direction | Current evidence | Roadmap consequence |
 | --- | --- | --- |
 | Finish P2 maintenance first | [P2 evidence](../openspec/changes/p2-simplify-nemlig-maintenance/evidence.md) records all nine repository stories integrated with 210 tests and exact-head CI; live acceptance and archive remain open. | Do not repeat parser, coverage, CLI decoupling, output-schema or pure-calculation work. Reconcile acceptance under its existing owner. |
 | Thin MCP adapters around application functions | [mcp.ts](../apps/nemlig-assistant/src/mcp.ts) still defines `resolveRun`, addition aggregation, list-to-run conversion and ranking beside registration and presentation. It already injects `BasketProposalService` and `ShoppingClient`. | Extract only a demonstrated shared workflow; reuse existing functions and dependency seams. No mandatory `NemligAssistant` class or forwarding facade. |
-| Fewer product actions | There are 22 registration sites, including a helper used for four approved actions and a conditional visual picker. Four executable names map to three entrypoint files. | There are 25 tools with the visual picker enabled, 24 without it. Measure actual `tools/list`; registration sites and executable names are not implementation counts. |
+| Fewer product actions | At the roadmap baseline there were 22 registration sites, including a helper used for four approved actions and a conditional visual picker. Four executable names map to three entrypoint files. | That baseline exposed 25 tools with the visual picker enabled, 24 without it. Measure actual `tools/list`; registration sites and executable names are not implementation counts. |
 | Unify plans and lists | [plans.ts](../apps/nemlig-assistant/src/plans.ts) and [shopping-lists.ts](../apps/nemlig-assistant/src/shopping-lists.ts) represent snapshots and editable, revision-checked lists; an additive migration tool already exists. | Prefer named lists for future saved intent, but preserve old references and snapshot semantics until a migration decision. |
 | Replace review/apply with protocol confirmation | [proposals.ts](../apps/nemlig-assistant/src/proposals.ts) owns business guarantees that transport confirmation does not supply. Current automatic runs already carry scoped same-run authorization. | Simplify the host interaction only after compatibility proof; keep the mutation engine. Never turn a model-supplied boolean into consent. |
-| Move directly into a Worker | [hosting assessment](cloudflare-hosting-assessment.md) records in-memory sessions, persistent storage needs and `gh` subprocess use; [feature-request.ts](../apps/nemlig-assistant/src/feature-request.ts) still imports `node:child_process`. | Runtime compatibility is an end-to-end spike, not an SDK version check. A native Worker would also need an explicit feedback-path decision. |
+| Move directly into a Worker | [hosting assessment](cloudflare-hosting-assessment.md) records in-memory sessions and persistent storage needs. Feature-request submission and its `gh` subprocess have since been removed. | Runtime compatibility is an end-to-end spike, not an SDK version check. Feedback is deferred without a replacement. |
 
 P2 deliberately retained inline picker presentation after finding one consumer and
 no coupling reduction from extraction. Respect that no-op. The embedded icon also
@@ -36,9 +39,11 @@ token-saving or cost-saving estimate is claimed by this roadmap.
 
 The production acceptance inventory in
 [production-acceptance.ts](../apps/nemlig-assistant/src/production-acceptance.ts)
-lists 24 tools and omits `check_nemlig_connection`, which the server and smoke
+at the roadmap baseline listed 24 tools and omitted `check_nemlig_connection`, which the server and smoke
 contract include. Slice 0 should reconcile this drift and test inventory agreement
 for each supported configuration. Count actual SDK registrations, not grep hits.
+The feature-request removal reconciles this inventory: the resulting surface is
+24 tools with the picker and 23 without, including connection checking.
 
 A small immediate candidate is contradictory tool guidance: `shop_from_my_list`
 still mentions current favourites while server instructions require catalogue-only
@@ -54,7 +59,7 @@ metadata slice; do not change discovery behavior to match the stale description.
 | Keep reusable lists | Save, open, copy, archive or restore named grocery intent. | Opening is storage-only; revisions and ownership remain enforced; refreshing is explicit. |
 | Inspect the basket | Show current items and totals. | No state change or proposal creation is implied. |
 | Change the basket | Review exact effects, consent once, then report verified results. | Additions, single-item swaps, removals and clearing keep their distinct authorization rules. Whole-basket replacement, checkout, payment and ordering remain prohibited. |
-| Get help or suggest an improvement | Recover the connection or submit explicitly requested feedback. | Credentials stay on the secure connection page; issue submission is an external write. |
+| Recover the connection | Check connection status and reconnect when needed. | Credentials stay on the secure connection page; feature-request submission has been removed. |
 
 These are product groupings, not a six-tool quota. Keep connection recovery
 accessible. Keep accurate read/write and destructive annotations per advertised
@@ -113,8 +118,8 @@ includes partial implementations and stubs. A successful bundle is insufficient.
 Exercise cookies/redirects, cancellation, streaming transport, SDK resources, auth,
 per-principal sessions, encryption, Durable Object storage and serialization with
 synthetic fixtures. Worker temporary files cannot replace durable saved data.
-Decide whether feedback keeps its current path or uses an explicitly designed
-GitHub API integration; do not silently drop a shipped feature or move credentials.
+Feature-request submission is intentionally removed; do not add a GitHub API
+replacement or move credentials as part of this spike.
 
 Current cost drivers: Worker requests/CPU, Durable Object operations/storage,
 Container awake duration, image storage and bounded logs. Proposed native drivers:
