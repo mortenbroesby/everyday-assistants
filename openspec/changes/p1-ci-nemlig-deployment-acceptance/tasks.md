@@ -1,0 +1,88 @@
+## 0. Sol coordination and story readiness
+
+Epic: trusted CI release without routine owner-token handling, with durable recovery and honest acceptance. No implementation task is complete at proposal delivery. Sol retains integration/provider decisions; Terra implements substantial packets and Luna verifies focused evidence in disjoint files/worktrees. All gates below are checkable; a blocked later story does not block independent ready repository work.
+
+- [ ] 0.1 Sol refreshes origin/main and records full SHA, clean worktree, active sibling ownership and predecessor task counts; verify with Git/OpenSpec state and preserve unrelated worktrees.
+- [ ] 0.2 Sol reads proposal/design/spec and resolves each ready packet's references/importers, invariant, cost effect and exact file/test scope before delegation; verify a short packet handoff is recorded with no delegated unresolved architecture decision.
+- [ ] 0.3 Sol records D1–D4 decisions separately from technical U1–U5 evidence, updating all affected artifacts together; verify undecided provider/fixture activation remains disabled and no routine repository reapproval is requested.
+
+## 1. S1 — Acceptance reports and bounded read-only execution
+
+Readiness: READY after 0.1–0.2. No provider identity choice needed. Terra owns `apps/nemlig-assistant/scripts/production-acceptance.ts`, `src/production-acceptance.ts`, `src/production-acceptance.test.ts`, and `src/production-acceptance-entry.test.ts` (all verified present). Existing default owner behavior and token requirement remain intact. Luna reviews/test-runs without overlapping edits. No service runtime path yet. Focused command from repository root: `pnpm --filter nemlig-assistant exec tsx --test src/production-acceptance.test.ts src/production-acceptance-entry.test.ts`.
+
+- [ ] 1.1 Characterize current owner sweep and unavailable fixtures, then add failing checks for separated owner-admin result and allowlisted report fields; verify existing tool calls/counts and missing-fixture results stay explicit.
+- [ ] 1.2 Implement explicit evidence labels and fixed-category redaction at CLI exit, preserving default live-user behavior; verify hostile assertion/provider payloads and tokens never appear in output or saved evidence.
+- [ ] 1.3 Enforce one 90-second operation deadline including connect/edge/features/admin/close and abort underlying work; verify hanging connect, call, cleanup and late-response tests terminate without further calls.
+- [ ] 1.4 Reject mutation mode/approval variables in CI acceptance and keep closed production target/tool lists; verify no fake trace invokes prepare, apply, list writes, issue creation or basket mutation.
+- [ ] 1.5 Luna runs focused acceptance/entry tests through installed `tsx --test`, and Sol reviews default-behavior diff; verify pass evidence and scoped commit before widening scope.
+
+## 2. S2 — Trusted source and recoverable shared deployment command
+
+Readiness: source-trust and drift tests READY after 0.1–0.2; remote-journal implementation requires Sol to settle U4 protocol locally; image/rollback adapter requires U1 installed-CLI evidence. Terra owns `scripts/production-deploy.ts` and `src/production-deploy.test.ts`. This is sequential with any other deploy-script packet. Luna independently inventories pinned Wrangler commands/JSON behavior and supplies redacted synthetic parser fixtures, not provider mutations. Focused command: `pnpm --filter nemlig-assistant exec tsx --test src/production-deploy.test.ts`.
+
+- [ ] 2.1 Add failing fake-runner cases for PR success at same SHA, wrong workflow ID/path/repo/ref, stale main after approval, malformed SHA and unsafe dispatch content; implement trusted CI provenance and verify all reject before mutation.
+- [ ] 2.2 Add a regression for unexpected enabled provider drift during failure recovery; restrict rollback to our known candidate/current ownership and verify no command overwrites the other actor's deployment.
+- [ ] 2.3 Replace source-SHA lease ownership with unique operation/run identity and a bounded remote journal on the shared ref; verify two hosts/same SHA, legacy lease, non-fast-forward update and changed owner cannot acquire, overwrite or clean each other's leases.
+- [ ] 2.4 Persist bounded redacted intent before and result after every transition, plus local mirror; verify remote persistence failure prevents mutation and a simulated lost local filesystem can reconstruct starting state and pending intent from remote evidence alone.
+- [ ] 2.5 Handle cancellation/child termination/late provider success as uncertain and retain lease; verify kill-before-result, timeout-after-upload, journal-write failure and failed final artifact scenarios never repeat a mutation or falsely release ownership.
+- [ ] 2.6 Record application/image digests and effective allowlisted config/secret binding names; verify single-build enablement, `keep_vars`/onboarding preservation, safety drift, unknown CLI schema and Worker-only rollback mismatch all fail or recover truthfully.
+- [ ] 2.7 Add bounded recovery inspection using the same journal and command seams, with no force-unlock or automatic stale takeover; verify a second host must establish original runner termination, current candidate state and exact lease identity before cleanup.
+- [ ] 2.8 Luna runs focused deploy tests and reviews command traces; Sol integrates S2 after source, ownership, durable evidence and configuration checks pass, recording scoped SHA and remaining live-only U1 proof.
+
+## 3. S3 — Isolated machine acceptance identity
+
+Readiness: BLOCKED until Sol resolves D1/D2/U2, records accepted fixture attack surface and exact runtime trace. Default-off code has no provider effect; activation is S6. Terra's exclusive scope: `src/auth0.ts`, `src/cloudflare-config.ts`, `src/cloudflare-gateway.ts`, `src/cloudflare-worker.ts`, `src/http.ts`, `src/mcp.ts`, `src/principal-policy.ts` only if needed, existing associated tests, and at most one small fixture module. Sol must minimize this provisional file set after reference tracing. No second server/framework/dependency. No concurrent credential-onboarding runtime edits.
+
+- [ ] 3.1 Add failing end-to-end local checks with real signed test JWTs for default-disabled service identity, wrong claims/client/scope, forged headers and ordinary-user fixture selection; verify no unauthorized admission/wake/credential read.
+- [ ] 3.2 Add explicit statically bounded non-owner service identity selection through real Worker and backend validation; verify owner schema-v1 and invited schema-v2 behavior remains green and no owner alias or onboarding migration is introduced.
+- [ ] 3.3 Reuse the existing context/client seams for immutable synthetic basket/catalogue/favorites/lists with no real credentials or provider client; verify an egress/credential spy fails if any service operation attempts Nemlig HTTP, envelope decrypt, real storage or owner context access.
+- [ ] 3.4 Enforce the service allowlist at both edge and backend, including advertised inventory and direct-call denial; verify every mutating/admin/credential/automatic-shopping/issue operation and unknown tool is denied.
+- [ ] 3.5 Preserve guest admission ceilings, family reserve, global breaker, one Container, deadlines and per-sweep request cap; verify exhausted/disabled/unknown service identity cannot bypass limits or cause extra wake.
+- [ ] 3.6 Luna executes real local HTTP/MCP fixture flow against built code plus negative cross-principal/session/resource cases; Sol reviews the trust boundary and confirms no production auth bypass or synthetic-only shortcut before integrating.
+
+## 4. S4 — Machine token issuance and release policy
+
+Readiness: after S1/S3, D1/D2 selection and local cryptographic test contract; provider secrets still absent. Terra owns a minimal token helper only if existing auth utilities cannot cover it, acceptance scripts/helpers and tests. `production-deploy.ts` edits begin only after S2 integration. Luna owns focused external docs/config verification, not secret handling.
+
+- [ ] 4.1 Add one bounded M2M token request with exact issuer/audience/service scope and in-memory response validation; verify signature/expiry/client/scope checks, invalid/expired credentials and token errors expose no values and trigger no automatic retries.
+- [ ] 4.2 Add the closed service-fixture acceptance profile, reuse bounded report/deadline helpers, and keep owner-admin/live-user evidence separate; verify expected synthetic inventory and forbidden-operation tests run through the real local MCP transport.
+- [ ] 4.3 Implement reviewed release-class evidence gating: initial cutover and affected auth/provider/client changes require additional live evidence, routine releases after cutover need no owner token; verify unknown diff scope/cutover status fails closed and cannot be overridden by arbitrary dispatch input.
+- [ ] 4.4 Integrate class-specific valid authentication preflight with deploy without weakening existing explicit local owner mode; verify missing/short-lived/invalid required credentials stop before first provider mutation and routine service mode never reads owner-token state.
+- [ ] 4.5 Luna verifies one-token/request budget and no refresh-token persistence path; Sol reviews complete credential flow, redacted report and scoped checks before integration.
+
+## 5. S5 — Protected GitHub Actions entry point
+
+Readiness: after S2/S4 for executable integration; workflow trust tests can be prepared after S2 source contract. Environment setup remains separate. Terra owns `.github/workflows/nemlig-production.yml` (new) and minimal workflow contract test; Sol owns package/version coordination. Existing PR CI credentials/permissions remain unchanged.
+
+- [ ] 5.1 Add failing workflow/input checks for non-main dispatch, missing environment readiness, untrusted CI provenance, unsafe input interpolation and forbidden event triggers; verify no job reaches deployment credentials in those cases.
+- [ ] 5.2 Add fixed manual dispatch, exact-SHA preflight, protected environment, immutable action pins, frozen install, isolated credential-free build and one production concurrency group with cancellation disabled; verify branch/ref gating, no privileged PR artifact/cache reuse and no persistence of checkout credentials.
+- [ ] 5.3 Scope GITHUB_TOKEN permissions to actual trust/journal calls and secrets to their exact command steps, with total timeout and bounded final evidence artifact; verify missing protections/credentials fail closed and artifact failure cannot erase the remote journal.
+- [ ] 5.4 Run a credential-free Linux workflow rehearsal using fake provider/token endpoints and the real command orchestration; verify successful trace, canceled run, same-SHA competing run, source drift and rollback failure all report the correct terminal state.
+- [ ] 5.5 Luna checks workflow syntax/action pins/permissions and Sol inspects exact workflow bytes against release trust policy; verify no provider changes occurred and production readiness stays false until S6.
+
+## 6. S6 — Owner-approved provider setup and cutover readiness
+
+Readiness: BLOCKED on D1–D4 and completed repository isolation/trust/recovery gates. Sol presents `owner-setup.md` with actual IDs/permissions/plan findings but no secret values. Owner authorizes provider/access/cost choices; only explicitly authorized setup runs. Terra/Luna receive no production secrets.
+
+- [ ] 6.1 Sol completes read-only Auth0/Cloudflare/GitHub entitlement and resource inventory, then presents exact identity, fixture boundary, token permission/expiry, reviewer policy and bounded cost proposal; verify owner decisions are recorded before mutations.
+- [ ] 6.2 Perform only approved GitHub environment, Auth0 M2M grant and Cloudflare CI-token setup using secure provider/UI secret entry; verify names/scopes/protection metadata and token validity without exposing values.
+- [ ] 6.3 Verify the service identity has no normal-user, Management API, owner, real provider or admin grant and required production switches/config preserve existing state; record only pass/fail and safe version/config names.
+- [ ] 6.4 Verify exact current main CI, deployment policy, remote journal recovery instructions and selected cutover/live acceptance path are ready; verify missing live cutover credentials/evidence plan blocks deployment and no predecessor task is prematurely checked.
+
+## 7. S7 — Full integration, approved release and evidence
+
+Readiness: repository verification can finish before S6; provider release requires S6 and explicit exact-release authority. Sol coordinates versions, main integration, provider commands and status. Luna verifies readbacks; Terra fixes only bounded assigned defects.
+
+- [ ] 7.1 Run scoped tests, public privacy, `pnpm verify`, `pnpm nemlig:production:ready` and `openspec validate --all --strict --no-interactive` on the composed revision; verify all required checks pass and record unrelated baseline failures separately.
+- [ ] 7.2 Commit/push scoped integration to main using the established worktree process and verify refreshed remote SHA plus trusted exact-head CI; verify running tests on an older SHA does not count as final evidence.
+- [ ] 7.3 After owner approves that release, dispatch once and verify remote intent journal, both disabled routes/inactive instance, one candidate image, same-image enablement and class-required acceptance; verify bounded sanitized report matches actual Worker/image/SHA and no data mutation occurred.
+- [ ] 7.4 Complete approved bounded live-user/provider and existing-app ChatGPT cutover evidence, recording actual timestamps/revision and pending/unavailable boundaries; verify no duplicate app, background-handoff assumption, prepare/apply or shopping-data write.
+- [ ] 7.5 Record measured CI duration, token calls, request counts and Container state against the initial cost budget, and verify recovery evidence; if a live rollback rehearsal is separately approved, execute and verify exact Worker/image restoration or honest disabled/unknown state.
+- [ ] 7.6 Sol updates operations/readiness docs and predecessor evidence only where actual acceptance satisfies their tasks; verify source/SHA/profile separation and no historical result is rewritten as current.
+
+## 8. S8 — Closure and archive
+
+Readiness: all applicable live and repository gates complete, no retained unknown production state. Sol owns specification/archive/docs changes and release version accounting.
+
+- [ ] 8.1 Reconcile older hosting deltas and their remaining live tasks, sync/archive completed predecessors in order, then this capability; verify strict validation and no conflicting, duplicated or silently waived requirement.
+- [ ] 8.2 Run required final repository gates, commit/push archival changes, verify exact remote main/CI and state last deployed application SHA separately from archival SHA; deliver durable evidence links, remaining owner operations if any, and jCodeMunch usage without invented savings.
