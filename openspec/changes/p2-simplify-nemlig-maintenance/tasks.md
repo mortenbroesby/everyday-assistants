@@ -38,12 +38,12 @@ Execute one reviewable slice at a time. Sol coordinates/integrates, Terra implem
 
 ## 5. Story — Make public MCP results concrete
 
-- [ ] 5.1 Inventory list, plan and proposal serializers/published schemas; record valid wire shapes and protected storage fields, coordinating named-list ownership.
-- [ ] 5.2 Add positive and negative fixtures for all affected tool result shapes, including private fields, malformed nested values and proposal success/not-applicable variants.
-- [ ] 5.3 Replace list z.any schemas with strict minimal public Zod schemas; verify unchanged names, fields, list identity/revision and ownership isolation.
-- [ ] 5.4 Replace plan lines/summary z.any schemas using actual public candidate/summary shapes; verify representative saved-plan/named-list resolution responses remain compatible.
-- [ ] 5.5 Characterize proposal variants and improve internal serializer typing only where all valid payloads remain identical; do not tighten published proposal schemas in this change. Record a separately scoped follow-up if public variant enforcement is needed.
-- [ ] 5.6 Verify schema conversion through the installed MCP SDK and text/structured result consistency; run interface/list/planner tests and pnpm verify, review and commit.
+- [x] 5.1 Inventory list, plan and proposal serializers/published schemas; record valid wire shapes and protected storage fields, coordinating named-list ownership.
+- [x] 5.2 Add positive and negative fixtures for all affected tool result shapes, including private fields, malformed nested values and proposal success/not-applicable variants.
+- [x] 5.3 Replace list z.any schemas with strict minimal public Zod schemas; verify unchanged names, fields, list identity/revision and ownership isolation.
+- [x] 5.4 Replace plan lines/summary z.any schemas using actual public candidate/summary shapes; verify representative saved-plan/named-list resolution responses remain compatible.
+- [x] 5.5 Characterize proposal variants and improve internal serializer typing only where all valid payloads remain identical; do not tighten published proposal schemas in this change. Record a separately scoped follow-up if public variant enforcement is needed.
+- [x] 5.6 Verify schema conversion through the installed MCP SDK and text/structured result consistency; run interface/list/planner tests and pnpm verify, review and commit.
 
 ## 6. Story — Separate planning calculations from snapshot I/O
 
@@ -71,7 +71,7 @@ Execute one reviewable slice at a time. Sol coordinates/integrates, Terra implem
 
 ## 9. Story — Compiler hygiene, contract documentation and backlog truth
 
-- [ ] 9.1 Run native noUnusedLocals/noUnusedParameters and inspect each finding/caller; resolve the observed unused Worker binding without changing a callable contract, then enable checks.
+- [x] 9.1 Run native noUnusedLocals/noUnusedParameters and inspect each finding/caller; resolve the observed unused Worker binding without changing a callable contract, then enable checks.
 - [ ] 9.2 Verify imports/configuration and dynamic/package entry points before declaring anything dead; retain all currently used dependencies unless new evidence proves a removal safe.
 - [ ] 9.3 Add TSDoc only for public contracts, units/bounds, freshness, non-retry mutations, owner isolation and pure/effectful boundaries; review against behavior/tests rather than a comment quota.
 - [ ] 9.4 Reconcile backlog and readiness claims against current/archive/acceptance evidence; mark historical SHAs explicitly and preserve outstanding owner/production tasks.

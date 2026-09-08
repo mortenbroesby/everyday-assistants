@@ -155,6 +155,8 @@ their text-first choices and approved direct images.
 Provider descriptions and item details are converted from HTML to bounded plain
 text, including Danish characters and entities. Scripts, styles, images and link
 destinations are omitted; conversion does not fetch additional resources.
+Shopping-list and plan tool outputs publish explicit nested schemas, excluding
+private ownership and lookup fields while preserving optional product evidence.
 
 <a id="how-basket-changes-work"></a>
 ## 🛡️ How basket changes work

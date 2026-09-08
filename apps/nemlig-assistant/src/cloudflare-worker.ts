@@ -344,7 +344,7 @@ export default {
       async resetUsage(config) {
         return getContainer(env.NEMLIG_MCP_CONTAINER.jurisdiction("eu"), FIXED_CONTAINER_NAME).resetUsage(config.principalPolicy.revision);
       },
-      async forward(original, _operation, config, deadline, admission) {
+      async forward(original, _operation, _config, deadline, admission) {
         const namespace = env.NEMLIG_MCP_CONTAINER.jurisdiction("eu");
         const container = getContainer(namespace, FIXED_CONTAINER_NAME);
         const request = attachAdmissionCredential(original, admission, deadline.signal);

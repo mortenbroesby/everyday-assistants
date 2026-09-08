@@ -39,6 +39,7 @@ import {
   showShoppingLists,
   type ShoppingList,
 } from "./shopping-lists.js";
+import { shoppingListSchema } from "./shopping-list-model.js";
 
 export const PICKER_URI = "ui://nemlig/picker.html";
 export const PICKER_MIME_TYPE = "text/html;profile=mcp-app";
@@ -225,13 +226,52 @@ const internalShoppingPlan = (input: z.infer<typeof shoppingPlanToolInputSchema>
   mode: input.mode,
 });
 
+const planCandidateOutputSchema = z.object({
+  id: z.number().int().positive(),
+  name: z.string(),
+  price: z.number().optional(),
+  unit_price: z.number().optional(),
+  unit_size: z.string(),
+  brand: z.string(),
+  available: z.boolean(),
+  source: z.enum(["favorite", "catalog"]),
+  description: z.string().optional(),
+  details: z.array(z.object({ key: z.string(), value: z.string() }).strict()).optional(),
+  image_url: z.string().optional(),
+  dietary: z.object({ organic: z.boolean(), vegan: z.boolean(), gluten_free: z.boolean(), lactose_free: z.boolean() }).strict(),
+  is_frozen: z.boolean(),
+  is_on_discount: z.boolean(),
+  constraint_outcomes: z.record(z.string(), z.boolean()),
+  tags: z.array(z.string()),
+}).strict();
+const planLineOutputSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  quantity: z.number().int().positive(),
+  candidates: z.array(planCandidateOutputSchema),
+  resolution: z.enum(["selected", "covered", "unresolved"]),
+  reason: z.string().optional(),
+  clarity: z.enum(["clear", "unclear"]),
+  clarity_reason: z.enum(["exact_product", "unique_candidate", "clear_text_match", "manual_choice", "close_alternatives", "no_eligible_candidate", "discovery_unavailable", "unavailable"]),
+  selected_product_id: z.number().int().positive().optional(),
+  basket_quantity: z.number(),
+  remaining_quantity: z.number().nonnegative(),
+}).strict();
 const planOutputSchema = z.object({
   mode: z.enum(["automatic", "manual"]),
-  lines: z.array(z.any()),
+  lines: z.array(planLineOutputSchema),
   selected_estimated_total: z.number(),
-  summary: z.any(),
+  summary: z.object({
+    total: z.number().int().nonnegative(),
+    covered: z.number().int().nonnegative(),
+    automatically_selected: z.number().int().nonnegative(),
+    added: z.literal(0),
+    unresolved: z.number().int().nonnegative(),
+    failed: z.number().int().nonnegative(),
+    automatic_coverage_percent: z.number().int().min(0).max(100),
+  }).strict(),
   automatic_authorization: z.string().uuid().optional(),
-});
+}).strict();
 
 const selectedAdditions = (plan: ShoppingPlan): Array<{ product_id: number; quantity: number }> => {
   const quantities = new Map<number, number>();
@@ -339,7 +379,9 @@ const success = (value: unknown, text = JSON.stringify(value)) => ({
   structuredContent: (Array.isArray(value) ? { result: value } : value) as Record<string, unknown>,
 });
 
-const listPayload = (list: ShoppingList) => ({
+const listPayloadSchema = shoppingListSchema.omit({ normalized_name: true }).strict();
+/** Projects only the public list contract; ownership and normalized lookup fields stay private. */
+const listPayload = (list: ShoppingList): z.output<typeof listPayloadSchema> => ({
   schema_version: list.schema_version,
   id: list.id,
   name: list.name,
@@ -560,7 +602,7 @@ export function createMcpServer(
         list: z.string().trim().min(1).max(120).optional().describe("Optional list name to open."),
         include_archived: z.boolean().default(false).describe("Also show archived lists."),
       },
-      outputSchema: z.object({ lists: z.array(z.any()) }),
+      outputSchema: z.object({ lists: z.array(listPayloadSchema) }).strict(),
       annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
     },
     ({ list, include_archived }) => runMcpOperation("show_my_shopping_lists", async () => {
@@ -581,7 +623,7 @@ export function createMcpServer(
         type: z.enum(["reusable", "occasion"]).describe("Reusable for regular shopping, or occasion for an event. Neither runs automatically."),
         lines: z.array(shoppingListLineSchema).max(50).describe("The ordered groceries to keep on the list, up to fifty."),
       },
-      outputSchema: z.object({ list: z.any() }),
+      outputSchema: z.object({ list: listPayloadSchema }).strict(),
       annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
     },
     (input) => runMcpOperation("save_my_shopping_list", async () => {
@@ -600,7 +642,7 @@ export function createMcpServer(
         new_name: z.string().trim().min(1).max(120).describe("The name for the copy."),
         type: z.enum(["reusable", "occasion"]).optional().describe("Optional list kind for the copy; otherwise it keeps the source kind."),
       },
-      outputSchema: z.object({ list: z.any() }),
+      outputSchema: z.object({ list: listPayloadSchema }).strict(),
       annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
     },
     ({ source_list, new_name, type }) => runMcpOperation("copy_my_shopping_list", async () => {
@@ -619,7 +661,7 @@ export function createMcpServer(
         status: z.enum(["active", "archived"]).describe("Active restores the list; archived hides it from the normal list view."),
         expected_revision: z.number().int().positive().describe("The current revision returned when the list was opened."),
       },
-      outputSchema: z.object({ list: z.any() }),
+      outputSchema: z.object({ list: listPayloadSchema }).strict(),
       annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
     },
     ({ list, status, expected_revision }) => runMcpOperation("set_my_shopping_list_status", async () => {
@@ -667,7 +709,7 @@ export function createMcpServer(
         name: z.string().trim().min(1).max(120).describe("The name for the new shopping list."),
         type: z.enum(["reusable", "occasion"]).describe("Reusable for regular shopping, or occasion for an event. Neither runs automatically."),
       },
-      outputSchema: z.object({ list: z.any() }),
+      outputSchema: z.object({ list: listPayloadSchema }).strict(),
       annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
     },
     ({ saved_plan, name, type }) => runMcpOperation("migrate_my_saved_plan", async () => {

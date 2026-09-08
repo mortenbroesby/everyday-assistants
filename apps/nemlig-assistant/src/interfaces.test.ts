@@ -1,6 +1,8 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { ElicitRequestSchema } from "@modelcontextprotocol/sdk/types.js";
+import { AjvJsonSchemaValidator } from "@modelcontextprotocol/sdk/validation/ajv-provider.js";
+import type { JsonSchemaType } from "@modelcontextprotocol/sdk/validation/types.js";
 import assert from "node:assert/strict";
 import { mkdtemp, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -441,6 +443,8 @@ test("MCP plans whole lists and continuing a saved plan refreshes current produc
       const loaded = await mcp.callTool({ name: "continue_my_shopping_plan", arguments: { saved_plan: id } });
       const resumed = loaded.structuredContent as { lines: Array<{ candidates: Array<{ price: number }> }> };
       assert.equal(resumed.lines[0]?.candidates[0]?.price, 99); assert.equal(await readFile(file, "utf8"), before);
+      const migrated = await mcp.callTool({ name: "migrate_my_saved_plan", arguments: { saved_plan: id, name: "Migreret", type: "reusable" } });
+      assert.deepEqual(Object.keys((migrated.structuredContent as { list: object }).list).sort(), ["created_at", "id", "lines", "name", "revision", "schema_version", "status", "type", "updated_at"]);
       const invalid = await mcp.callTool({ name: "plan_my_shopping", arguments: { lines: [] } });
       assert.equal(invalid.isError, true);
     });
@@ -466,6 +470,7 @@ test("MCP named lists stay storage-only until a bounded explicit Nemlig refresh"
     assert.doesNotMatch(toolText(created), /[0-9a-f]{8}-[0-9a-f-]{27}|revision|status/iu);
     const opened = await mcp.callTool({ name: "show_my_shopping_lists", arguments: { list: "Ugens basis" } });
     const saved = (opened.structuredContent as { lists: Array<{ id: string; revision: number }> }).lists[0]!;
+    assert.deepEqual(Object.keys(saved).sort(), ["created_at", "id", "lines", "name", "revision", "schema_version", "status", "type", "updated_at"]);
     assert.equal(reads, 0);
     const stale = await mcp.callTool({ name: "save_my_shopping_list", arguments: { list: "Ugens basis", expected_revision: 99, name: "Ugens basis", type: "reusable", lines: [] } });
     assert.equal(stale.isError, true);
@@ -480,8 +485,76 @@ test("MCP named lists stay storage-only until a bounded explicit Nemlig refresh"
     assert.equal(reads, 2);
     const archived = await mcp.callTool({ name: "set_my_shopping_list_status", arguments: { list: "Ugens basis", status: "archived", expected_revision: saved.revision } });
     assert.match(toolText(archived), /Ugens basis er arkiveret/iu);
+    assert.equal((archived.structuredContent as { list: { status: string } }).list.status, "archived");
     assert.equal(mutations, 0);
     assert.equal(featureRequests, 0);
+  });
+});
+
+test("published list and plan schemas validate real outputs and reject private or malformed data", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "nemlig-output-contract-"));
+  const client = fakeClient({
+    getCart: async () => ({ ...basket, items: [{ ...basket.items[0]!, id: 7, quantity: 0.5 }] }),
+    searchProducts: async (query) => query === "missing" ? [] : [{ ...product, description: "Mælk", details: [{ key: "Indhold", value: "Mælk" }] }],
+    addToCart: async () => { throw new Error("unexpected mutation"); },
+    removeFromCart: async () => { throw new Error("unexpected mutation"); },
+    clearCart: async () => { throw new Error("unexpected mutation"); },
+  });
+  await withMcpClient(createMcpServer(client, undefined, { NEMLIG_CONFIG_DIR: directory, NEMLIG_MCP_APPS: "0" }), async (mcp) => {
+    const tools = new Map((await mcp.listTools()).tools.map((tool) => [tool.name, tool]));
+    const provider = new AjvJsonSchemaValidator();
+    const validator = (name: string) => provider.getValidator<Record<string, unknown>>(tools.get(name)!.outputSchema as JsonSchemaType);
+    const call = async (name: string, args: Record<string, unknown>) => {
+      const result = await mcp.callTool({ name, arguments: args });
+      assert.notEqual(result.isError, true, `${name}: ${toolText(result)}`);
+      const data = result.structuredContent as Record<string, unknown>;
+      assert.equal(validator(name)(data).valid, true, name);
+      if (["plan_my_shopping", "continue_my_shopping_plan", "shop_from_my_list"].includes(name)) {
+        assert.deepEqual(JSON.parse(toolText(result)), JSON.parse(JSON.stringify(data)));
+      }
+      return data;
+    };
+    const lines = [{ id: "milk", name: "mælk", quantity: 2 }];
+    const created = await call("save_my_shopping_list", { name: "Kontrakt", type: "reusable", lines });
+    const list = created.list as Record<string, unknown>;
+    const opened = await call("show_my_shopping_lists", { list: "Kontrakt" });
+    assert.deepEqual(opened.lists, [list]);
+    await call("copy_my_shopping_list", { source_list: "Kontrakt", new_name: "Kopi" });
+    const plan = await call("plan_my_shopping", { lines });
+    const planLines = plan.lines as Array<Record<string, unknown>>;
+    assert.equal(planLines[0]!.basket_quantity, 0.5);
+    assert.equal(planLines[0]!.remaining_quantity, 1.5);
+    const manual = await call("plan_my_shopping", { lines, mode: "manual" });
+    assert.equal((manual.lines as Array<Record<string, unknown>>)[0]!.clarity_reason, "manual_choice");
+    const empty = await call("plan_my_shopping", { lines: [{ id: "missing", name: "missing", quantity: 1 }] });
+    assert.equal((empty.lines as Array<Record<string, unknown>>)[0]!.resolution, "unresolved");
+    const saved = await call("save_my_shopping_plan", { lines });
+    await call("continue_my_shopping_plan", { saved_plan: saved.id });
+    await call("shop_from_my_list", { list: "Kontrakt", line_ids: ["milk"] });
+    await call("migrate_my_saved_plan", { saved_plan: saved.id, name: "Migreret kontrakt", type: "occasion" });
+    const archived = await call("set_my_shopping_list_status", { list: "Kontrakt", status: "archived", expected_revision: list.revision });
+    assert.equal(typeof (archived.list as Record<string, unknown>).archived_at, "string");
+    for (const privateField of ["normalized_name", "owner_scope", "generation"]) {
+      assert.equal(validator("save_my_shopping_list")({ list: { ...list, [privateField]: "private" } }).valid, false);
+    }
+    assert.equal(validator("save_my_shopping_list")({ list: { ...list, archived_at: null } }).valid, false);
+    assert.equal(validator("save_my_shopping_list")({ list: { ...list, lines: [{ ...lines[0], owner_scope: "private" }] } }).valid, false);
+    const candidate = (planLines[0]!.candidates as Array<Record<string, unknown>>)[0]!;
+    const sparseCandidate = { ...candidate };
+    for (const key of ["price", "unit_price", "description", "details", "image_url"]) delete sparseCandidate[key];
+    assert.equal(validator("plan_my_shopping")({ ...plan, lines: [{ ...planLines[0], candidates: [sparseCandidate] }] }).valid, true);
+    for (const badCandidate of [
+      { ...candidate, owner_scope: "private" },
+      { ...candidate, description: null },
+      { ...candidate, details: [{ key: "Indhold", value: 42 }] },
+      { ...candidate, dietary: { ...(candidate.dietary as object), private: true } },
+    ]) {
+      assert.equal(validator("plan_my_shopping")({ ...plan, lines: [{ ...planLines[0], candidates: [badCandidate] }] }).valid, false);
+    }
+    assert.equal(validator("plan_my_shopping")({ ...plan, owner_scope: "private" }).valid, false);
+    assert.equal(validator("plan_my_shopping")({ ...plan, summary: { ...(plan.summary as object), failed: "zero" } }).valid, false);
+    const notApplicable = await call("review_item_to_remove", { basket_item: 999 });
+    assert.equal(notApplicable.applicable, false);
   });
 });
 
@@ -559,6 +632,10 @@ test("MCP routes ordinary product intent through loose catalogue-first planning"
     const direct = (await mcp.listTools()).tools.find((tool) => tool.name === "find_groceries");
     assert.match(JSON.stringify(plan?.inputSchema), /Prince biscuits.*prince kiks/);
     assert.match(JSON.stringify(direct?.inputSchema), /prince kiks.*Prince biscuits/);
+    for (const name of ["plan_my_shopping", "continue_my_shopping_plan", "shop_from_my_list", "show_my_shopping_lists", "save_my_shopping_list", "copy_my_shopping_list", "set_my_shopping_list_status", "migrate_my_saved_plan"]) {
+      const tool = (await mcp.listTools()).tools.find((entry) => entry.name === name);
+      assert.doesNotMatch(JSON.stringify(tool?.outputSchema), /"(?:items|summary|list)":\{\}/u, `${name} must not publish an unconstrained result schema`);
+    }
   });
 });
 
