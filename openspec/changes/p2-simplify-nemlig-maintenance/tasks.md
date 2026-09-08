@@ -16,11 +16,11 @@ Execute one reviewable slice at a time. Sol coordinates/integrates, Terra implem
 
 ## 2. Story — Decouple server composition from the CLI
 
-- [ ] 2.1 Trace all imports of ShoppingClient, ensureLoggedIn, getClient and NEMLIG_VERSION; characterize CLI, stdio and HTTP startup/authentication with fake credentials and no network.
-- [ ] 2.2 Move shared client types to the existing client-domain boundary and only the necessary shared bootstrap/version logic out of cli.ts; verify MCP/HTTP no longer import the executable CLI module.
-- [ ] 2.3 Preserve injected credential loading, lazy client construction, version lookup and compatibility exports where required; verify servers never prompt and local CLI login still can.
-- [ ] 2.4 Add import and packed-entry smoke checks for source/packaged CLI, stdio and HTTP; verify no import starts a server or performs network I/O.
-- [ ] 2.5 Add boundary TSDoc, record dependency/line/startup deltas, run pnpm verify, review and commit.
+- [x] 2.1 Trace all imports of ShoppingClient, ensureLoggedIn, getClient and NEMLIG_VERSION; characterize CLI, stdio and HTTP startup/authentication with fake credentials and no network.
+- [x] 2.2 Move shared client types to the existing client-domain boundary and only the necessary shared bootstrap/version logic out of cli.ts; verify MCP/HTTP no longer import the executable CLI module.
+- [x] 2.3 Preserve injected credential loading, lazy client construction, version lookup and compatibility exports where required; verify servers never prompt and local CLI login still can.
+- [x] 2.4 Add import and packed-entry smoke checks for source/packaged CLI, stdio and HTTP; verify no import starts a server or performs network I/O.
+- [x] 2.5 Add boundary TSDoc, record dependency/line/startup deltas, run pnpm verify, review and commit.
 
 ## 3. Story — Reuse the installed release argument parser
 
