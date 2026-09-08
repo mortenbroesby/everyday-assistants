@@ -152,6 +152,10 @@ exact basket coverage, remaining quantities, and automatic coverage. Fully
 clear automatic lines stay out of the picker; manual and unresolved lines keep
 their text-first choices and approved direct images.
 
+Provider descriptions and item details are converted from HTML to bounded plain
+text, including Danish characters and entities. Scripts, styles, images and link
+destinations are omitted; conversion does not fetch additional resources.
+
 <a id="how-basket-changes-work"></a>
 ## 🛡️ How basket changes work
 

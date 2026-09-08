@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { compile } from "html-to-text";
 import { z } from "zod";
 
 export const API_BASE_URL = "https://www.nemlig.com/webapi";
@@ -96,8 +97,31 @@ const asId = (value: unknown): number | undefined => {
   const id = typeof value === "string" && /^\d+$/u.test(value) ? Number(value) : asNumber(value);
   return id !== undefined && Number.isSafeInteger(id) && id > 0 ? id : undefined;
 };
+
+const convertProductText = compile({
+  wordwrap: false,
+  selectors: [
+    { selector: "a", options: { ignoreHref: true } },
+    { selector: "img", format: "skip" },
+    { selector: "script", format: "skip" },
+    { selector: "style", format: "skip" },
+    { selector: "h1", options: { uppercase: false } },
+    { selector: "h2", options: { uppercase: false } },
+    { selector: "h3", options: { uppercase: false } },
+    { selector: "h4", options: { uppercase: false } },
+    { selector: "h5", options: { uppercase: false } },
+    { selector: "h6", options: { uppercase: false } },
+    { selector: "ul", format: "block" },
+    { selector: "ol", format: "block" },
+    { selector: "li", format: "block" },
+  ],
+  limits: { maxInputLength: 16_384, maxDepth: 32, maxChildNodes: 1_000 },
+});
+
+/** Converts untrusted provider markup to bounded plain text without fetching; raw input is capped before parsing. */
 const boundedText = (value: unknown, length: number): string | undefined => {
-  const text = asString(value)?.replace(/<[^>]*>/gu, " ").replace(/\s+/gu, " ").trim();
+  const html = asString(value)?.slice(0, 16_384);
+  const text = html ? convertProductText(html).replace(/\s+/gu, " ").trim() : undefined;
   return text ? text.slice(0, length) : undefined;
 };
 

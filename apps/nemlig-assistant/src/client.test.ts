@@ -230,6 +230,73 @@ test("product normalization covers upstream fields and classifications", () => {
   });
 });
 
+test("product normalization turns provider HTML into bounded readable evidence", () => {
+  const [product] = normalizeProducts(
+    [{
+      Id: 101,
+      Name: "Mælk",
+      Text: '<h1>Mælk</h1><p title="1 > 0">Mælk &amp; kakao&nbsp;&#160;1 l</p><a href="https://example.test/private">Læs mere</a><img alt="hemmelig" src="https://example.test/image"><script>tracking()</script><style>.hidden { display: none }</style><ul><li>Første</li><li>Anden</li></ul>',
+      Attributes: [{
+        Key: '<span title=">">Nærings&nbsp;værdi</span>',
+        Value: '<script>ignore()</script><p>God&nbsp;værdi</p>',
+      }],
+    }],
+    1,
+  );
+  assert.equal(product?.description, "Mælk Mælk & kakao 1 l Læs mere Første Anden");
+  assert.deepEqual(product?.details, [{ key: "Nærings værdi", value: "God værdi" }]);
+});
+
+test("product normalization preserves meaningful malformed text and omits empty evidence", () => {
+  const [malformed, empty] = normalizeProducts(
+    [
+      { Id: 102, Name: "Ufuldstændig", Text: "<p>Ufuldstændig <strong>mælk" },
+      { Id: 103, Name: "Tom", Text: "<script>ignore()</script><style>ignore()</style>", Attributes: [{ Key: "", Value: "value" }, { Key: 1, Value: "value" }] },
+    ],
+    2,
+  );
+  assert.equal(malformed?.description, "Ufuldstændig mælk");
+  assert.equal(empty && "description" in empty, false);
+  assert.deepEqual(empty?.details, []);
+});
+
+test("product normalization keeps existing evidence limits before and after conversion", () => {
+  const [product] = normalizeProducts(
+    [{
+      Id: 104,
+      Name: "Begrænset",
+      Text: `<p>før</p>${" ".repeat(16_384)}<p>SENTINEL</p>`,
+      Attributes: Array.from({ length: 21 }, (_, index) => ({ Key: `Nøgle ${index}`, Value: "værdi" })),
+    }],
+    1,
+  );
+  assert.equal(product?.description, "før");
+  assert.equal(product?.description?.includes("SENTINEL"), false);
+  assert.equal(product?.details?.length, 20);
+  assert.equal(normalizeProducts([{ Id: 105, Name: "Loft", Text: `<p>${"å".repeat(2_000)}SENTINEL</p>`, Attributes: [{ Key: "k".repeat(101), Value: "v" }, { Key: "k", Value: "v".repeat(301) }] }], 1)[0]?.description?.length, 2_000);
+  assert.deepEqual(normalizeProducts([{ Id: 105, Name: "Loft", Attributes: [{ Key: "k".repeat(101), Value: "v" }, { Key: "k", Value: "v".repeat(301) }] }], 1)[0]?.details, [
+    { key: "k".repeat(100), value: "v" },
+    { key: "k", value: "v".repeat(300) },
+  ]);
+});
+
+test("product normalization bounds parser depth and child nodes without warnings", () => {
+  const warnings: unknown[][] = [];
+  const originalWarn = console.warn;
+  console.warn = (...args: unknown[]) => { warnings.push(args); };
+  try {
+    const [depth, children] = normalizeProducts([
+      { Id: 106, Name: "Dyb", Text: `<p>før</p>${"<div>".repeat(33)}SENTINEL${"</div>".repeat(33)}` },
+      { Id: 107, Name: "Bred", Text: `${"<span></span>".repeat(1_001)}<p>SENTINEL</p>` },
+    ], 2);
+    assert.equal(depth?.description?.includes("SENTINEL"), false);
+    assert.equal(children?.description?.includes("SENTINEL"), false);
+  } finally {
+    console.warn = originalWarn;
+  }
+  assert.deepEqual(warnings, []);
+});
+
 test("search accepts nested products and sends the current session values", async () => {
   const requests: ExpectedRequest[] = [
     ...sessionRequests(),

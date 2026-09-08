@@ -1,6 +1,6 @@
 {
   "name": "nemlig-assistant",
-  "version": "2.5.1-alpha.10",
+  "version": "2.5.2-alpha.11",
   "private": true,
   "description": "Safe local Nemlig Assistant CLI and MCP server",
   "type": "module",
@@ -54,12 +54,14 @@
     "@inquirer/password": "^5.2.0",
     "@modelcontextprotocol/sdk": "^1.30.0",
     "commander": "^15.0.0",
+    "html-to-text": "10.0.1",
     "jose": "^6.2.10",
     "zod": "^4.5.4"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "5.20260831.1",
     "@eslint/js": "^10.0.1",
+    "@types/html-to-text": "9.0.4",
     "@types/node": "22.20.1",
     "@types/semver": "7.8.0",
     "eslint": "^10.9.1",

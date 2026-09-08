@@ -10,7 +10,7 @@ Execute one reviewable slice at a time. Sol coordinates/integrates, Terra implem
 
 - [x] 1.1 Refresh main in the assigned worktree; record base SHA, clean status, active ownership and scoped files in implementation evidence. Verify no sibling work is absorbed.
 - [x] 1.2 Run baseline pnpm verify and record tests, wall time and actual coverage output; distinguish executed tests from instrumented coverage.
-- [ ] 1.3 Wire Node coverage through the existing TS runner/app script into ignored app `coverage/coverage.txt`; verify production-source attribution and test/generated exclusions. Fail the gate if the report is missing/empty, lacks the native coverage summary, or has no eligible production-source entries; publish it as a CI artifact.
+- [x] 1.3 Wire Node coverage through the existing TS runner/app script into ignored app `coverage/coverage.txt`; verify production-source attribution and test/generated exclusions. Fail the gate if the report is missing/empty, lacks the native coverage summary, or has no eligible production-source entries; publish it as a CI artifact.
 - [x] 1.4 Measure baseline line/branch/function coverage and execution overhead; ensure root verification runs all suites without an unexplained duplicate test pass.
 - [x] 1.5 Record existing safety/contract fixtures and gaps, run the full gate, review and commit this baseline slice.
 
@@ -30,11 +30,11 @@ Execute one reviewable slice at a time. Sol coordinates/integrates, Terra implem
 
 ## 4. Story — Replace invented HTML parsing with bounded readable evidence
 
-- [ ] 4.1 Add failing normalization tests for entities, quoted greater-than signs, script/style contents, lists, malformed/empty inputs and Danish characters through actual product normalization.
-- [ ] 4.2 Evaluate exact-version html-to-text exports/types/license/transitive dependencies/advisories; measure installed/packed-byte delta and cold/warm conversion timings on synthetic fixtures.
-- [ ] 4.3 After the adoption gate passes, add the scoped dependency and compile once with pre-input/depth/node limits; verify existing description/attribute output ceilings and omission rules.
-- [ ] 4.4 Trace catalogue/favorites/department/planner consumers; verify shared normalized evidence, escaped picker text, unchanged price/availability/fresh revalidation and provider-call counts.
-- [ ] 4.5 Run focused tests, pnpm verify and packed smoke; record CPU/package/code trade-offs, update required metadata, review and commit.
+- [x] 4.1 Add failing normalization tests for entities, quoted greater-than signs, script/style contents, lists, malformed/empty inputs and Danish characters through actual product normalization.
+- [x] 4.2 Evaluate exact-version html-to-text exports/types/license/transitive dependencies/advisories; measure installed/packed-byte delta and cold/warm conversion timings on synthetic fixtures.
+- [x] 4.3 After the adoption gate passes, add the scoped dependency and compile once with pre-input/depth/node limits; verify existing description/attribute output ceilings and omission rules.
+- [x] 4.4 Trace catalogue/favorites/department/planner consumers; verify shared normalized evidence, escaped picker text, unchanged price/availability/fresh revalidation and provider-call counts.
+- [x] 4.5 Run focused tests, pnpm verify and packed smoke; record CPU/package/code trade-offs, update required metadata, review and commit.
 
 ## 5. Story — Make public MCP results concrete
 
