@@ -1,6 +1,6 @@
 # Owner setup and activation checklist
 
-Status: NOT PERFORMED. This is a reviewable setup plan, not evidence of provider changes. Repository implementation can proceed on ready packets without waiting for these external actions.
+Status: PROVIDER SETUP NOT PERFORMED. The owner accepted the routine synthetic / first-cutover-and-relevant-change live evidence matrix on 2026-09-09. Remaining identity, credential, entitlement and protection setup decisions below are still pending concrete inventory. Repository implementation can proceed on ready packets without waiting for these external actions.
 
 ## Decisions to approve together after repository readiness
 

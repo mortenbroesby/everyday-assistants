@@ -19,3 +19,15 @@ First implementation packet: S1 acceptance reporting/deadline/redaction, four ve
 Recommendation: machine identity for routine service acceptance; actual user/ChatGPT/provider evidence remains separately required for initial cutover and affected auth/client/provider changes. The parent has asked the owner the D1 release-evidence question; no answer is assumed here.
 
 Initial planning CI rejected an absolute laptop path in this evidence file. The path is now relative. The earlier local privacy pass did not establish that the newly added evidence was public-safe; rerun privacy checks with the planning files tracked before recording delivery success.
+
+## First implementation integration (in progress, 2026-09-09)
+
+- Refreshed main includes `3c703ef` and the sibling's feature-request removal. The coordinator worktree was clean before fast-forward and integration; no unrelated worktree was modified. The sibling was notified before integration.
+- Terra delivered `a79c2eb`, `6fa4fbe`, and typecheck correction `f6c2c01`; Luna independently verified exact correction HEAD `f6c2c01fc287f4287a3af2c385a2522be9aff8ee`: 35 focused tests, typecheck and diff check pass. These are local packet results, not composed-revision or production proof.
+- S2.1 and S2.2 add exact repository/workflow/push/main/SHA/latest-run checks, a second source check before provider access, and refusal to roll back third-party enabled or disabled drift. Remote durable journal and image/configuration proof remain incomplete.
+- Root review requested further S1 corrections: default owner admin failures must not be silently downgraded to unavailable, and cleanup rejection/deadline handling needs explicit coverage. Terra corrected these in `7a15474`, independently reviewed by Luna; 37 focused tests and typecheck pass. Root also guarded the abort callback against a synchronous close throw. S1 checkboxes will be reconciled after sibling compatibility integration.
+- The user retained root coordination and accepted D1's recommended release-evidence matrix. D2–D4/provider setup remain unapproved; default-off identity runtime is not yet assigned. Sol is resolving the independent U4 recovery protocol while the first slice is verified.
+- No production deployment, secret handling, Auth0/Cloudflare configuration, or shopping-data mutation occurred.
+- The first composed baseline passed `pnpm verify` (215 tests plus 3 smoke checks). This predates the final S1 correction and is not final integration evidence.
+- Read-only GitHub setup inspection: no environments, no branch protection on main, no rulesets; Actions enabled with all actions permitted. These are setup findings, not permission to change protections.
+- A sibling's newly authorized removal of all saved shopping requires a separate removal-only acceptance compatibility commit before its main push. Root holds CI integration until that change lands and will then recalculate the patch version and rerun full gates. No saved-storage fixture path will be introduced by this CI epic.

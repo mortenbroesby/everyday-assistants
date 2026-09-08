@@ -106,7 +106,7 @@ const defaultConnect = async (origin: URL, token: string, signal: AbortSignal): 
       if (!quiet) throw error;
     }
   };
-  const closeOnAbort = () => { void close(true); };
+  const closeOnAbort = () => { void close(true).catch(() => undefined); };
   signal.addEventListener("abort", closeOnAbort, { once: true });
   try {
     await abortable("Authenticated MCP connect", client.connect(transport), signal);

@@ -30,6 +30,10 @@ Coordinator read-only provider inventory: repository PUBLIC, default `main`, no 
 
 ## Decisions
 
+2026-09-09 continuation: the owner answered the recommendation to use synthetic checks for routine releases, retaining real-user checks for first cutover and relevant behavior changes, with “Go ahead with remaining.” D1's release-evidence matrix is accepted. This does not approve new credentials, paid allowances, provider setup or production activation; D2–D4 remain pending their concrete inventory/checkpoint. The root thread coordinates at the owner's request, with Sol used only for bounded planning unknowns and Terra/Luna for implementation/review.
+
+Concurrent scope reconciliation: the product-simplification lane reports explicit owner approval to remove saved shopping plans and named lists. CI must preserve that removal: synthetic fixtures cover catalogue, favorites, basket and resource reads only, with same-conversation planning tested offline where appropriate. No saved-shopping storage dependency, fixture, advertised tool or acceptance call may be restored. References below to denying human stored data remain isolation requirements, not requirements to keep the removed feature alive. Historical baseline observations above remain historical.
+
 ### 1. Identity recommendation and evidence contract
 
 CI deployment authenticates to Cloudflare; API acceptance authenticates to Auth0. These are independent credentials. Recommend a dedicated Auth0 M2M application with only a new service-acceptance scope and exact synthetic service subject/client binding, no Management API grant, and no normal user API grant. Obtain one short-lived token per explicitly dispatched acceptance run. An M2M application is not a user [S1]. Use the canonical production issuer/audience with an additional service scope and exact client/subject checks; ordinary `use:nemlig-assistant` scope must not grant fixture admission by itself.
@@ -56,7 +60,7 @@ Repository tooling must enforce the class through reviewed release policy/change
 
 ### 2. Minimal synthetic runtime boundary, only after readiness
 
-Use existing `PrincipalContextFactory` and `ShoppingClient` seams rather than a second MCP server or proxy. Add one statically configured synthetic identity, disabled by default, with its own opaque principal key, reserved context and immutable in-memory fixtures. It is not Tier 0 and does not consume or impersonate any of the fifteen invited-human slots. Reuse the existing admission controller and guest budget ceiling; it must not draw the family reserve or increase any quota. A fixed small service rate/request budget (proposed 20 calls per accepted sweep, one sweep per release) additionally bounds it.
+Use existing `PrincipalContextFactory` and `ShoppingClient` seams rather than a second MCP server or proxy. Add one statically configured synthetic identity, disabled by default, with its own opaque principal key, reserved context and immutable in-memory catalogue/favorites/basket fixtures. It is not Tier 0 and does not consume or impersonate any of the fifteen invited-human slots. Reuse the existing admission controller and guest budget ceiling; it must not draw the family reserve or increase any quota. A fixed small service rate/request budget (proposed 20 calls per accepted sweep, one sweep per release) additionally bounds it.
 
 Validate the signed issuer, audience, expiry, required service scope, exact subject and authorized client at the edge and again in the Container. A request parameter, header, claimed tier, or normal user's token cannot select fixtures. Explicitly strip client-supplied internal principal/credential headers. Invalid/unknown/disabled identity is denied before usage state or wake; valid synthetic requests use normal admission/breaker checks before Container work.
 

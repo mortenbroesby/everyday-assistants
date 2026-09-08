@@ -1,9 +1,9 @@
 ## 0. Sol coordination and story readiness
 
-Epic: trusted CI release without routine owner-token handling, with durable recovery and honest acceptance. No implementation task is complete at proposal delivery. Sol retains integration/provider decisions; Terra implements substantial packets and Luna verifies focused evidence in disjoint files/worktrees. All gates below are checkable; a blocked later story does not block independent ready repository work.
+Epic: trusted CI release without routine owner-token handling, with durable recovery and honest acceptance. At the user's request, this root thread now coordinates integration/provider decisions; references to Sol coordination below describe that role, not a second persistent coordinator. Sol resolves bounded planning unknowns, Terra implements substantial packets, and Luna independently verifies. A blocked later story does not block independent ready repository work.
 
-- [ ] 0.1 Sol refreshes origin/main and records full SHA, clean worktree, active sibling ownership and predecessor task counts; verify with Git/OpenSpec state and preserve unrelated worktrees.
-- [ ] 0.2 Sol reads proposal/design/spec and resolves each ready packet's references/importers, invariant, cost effect and exact file/test scope before delegation; verify a short packet handoff is recorded with no delegated unresolved architecture decision.
+- [x] 0.1 Sol refreshes origin/main and records full SHA, clean worktree, active sibling ownership and predecessor task counts; verify with Git/OpenSpec state and preserve unrelated worktrees.
+- [x] 0.2 Sol reads proposal/design/spec and resolves each ready packet's references/importers, invariant, cost effect and exact file/test scope before delegation; verify a short packet handoff is recorded with no delegated unresolved architecture decision.
 - [ ] 0.3 Sol records D1–D4 decisions separately from technical U1–U5 evidence, updating all affected artifacts together; verify undecided provider/fixture activation remains disabled and no routine repository reapproval is requested.
 
 ## 1. S1 — Acceptance reports and bounded read-only execution
@@ -20,8 +20,8 @@ Readiness: READY after 0.1–0.2. No provider identity choice needed. Terra owns
 
 Readiness: source-trust and drift tests READY after 0.1–0.2; remote-journal implementation requires Sol to settle U4 protocol locally; image/rollback adapter requires U1 installed-CLI evidence. Terra owns `scripts/production-deploy.ts` and `src/production-deploy.test.ts`. This is sequential with any other deploy-script packet. Luna independently inventories pinned Wrangler commands/JSON behavior and supplies redacted synthetic parser fixtures, not provider mutations. Focused command: `pnpm --filter nemlig-assistant exec tsx --test src/production-deploy.test.ts`.
 
-- [ ] 2.1 Add failing fake-runner cases for PR success at same SHA, wrong workflow ID/path/repo/ref, stale main after approval, malformed SHA and unsafe dispatch content; implement trusted CI provenance and verify all reject before mutation.
-- [ ] 2.2 Add a regression for unexpected enabled provider drift during failure recovery; restrict rollback to our known candidate/current ownership and verify no command overwrites the other actor's deployment.
+- [x] 2.1 Add failing fake-runner cases for PR success at same SHA, wrong workflow ID/path/repo/ref, stale main after approval, malformed SHA and unsafe dispatch content; implement trusted CI provenance and verify all reject before mutation.
+- [x] 2.2 Add a regression for unexpected enabled provider drift during failure recovery; restrict rollback to our known candidate/current ownership and verify no command overwrites the other actor's deployment.
 - [ ] 2.3 Replace source-SHA lease ownership with unique operation/run identity and a bounded remote journal on the shared ref; verify two hosts/same SHA, legacy lease, non-fast-forward update and changed owner cannot acquire, overwrite or clean each other's leases.
 - [ ] 2.4 Persist bounded redacted intent before and result after every transition, plus local mirror; verify remote persistence failure prevents mutation and a simulated lost local filesystem can reconstruct starting state and pending intent from remote evidence alone.
 - [ ] 2.5 Handle cancellation/child termination/late provider success as uncertain and retain lease; verify kill-before-result, timeout-after-upload, journal-write failure and failed final artifact scenarios never repeat a mutation or falsely release ownership.
@@ -35,7 +35,7 @@ Readiness: BLOCKED until Sol resolves D1/D2/U2, records accepted fixture attack 
 
 - [ ] 3.1 Add failing end-to-end local checks with real signed test JWTs for default-disabled service identity, wrong claims/client/scope, forged headers and ordinary-user fixture selection; verify no unauthorized admission/wake/credential read.
 - [ ] 3.2 Add explicit statically bounded non-owner service identity selection through real Worker and backend validation; verify owner schema-v1 and invited schema-v2 behavior remains green and no owner alias or onboarding migration is introduced.
-- [ ] 3.3 Reuse the existing context/client seams for immutable synthetic basket/catalogue/favorites/lists with no real credentials or provider client; verify an egress/credential spy fails if any service operation attempts Nemlig HTTP, envelope decrypt, real storage or owner context access.
+- [ ] 3.3 Reuse the existing context/client seams for immutable synthetic basket/catalogue/favorites with no real credentials or provider client; preserve the separately approved saved-shopping removal and verify an egress/credential spy fails if any service operation attempts Nemlig HTTP, envelope decrypt, real storage or owner context access.
 - [ ] 3.4 Enforce the service allowlist at both edge and backend, including advertised inventory and direct-call denial; verify every mutating/admin/credential/automatic-shopping/issue operation and unknown tool is denied.
 - [ ] 3.5 Preserve guest admission ceilings, family reserve, global breaker, one Container, deadlines and per-sweep request cap; verify exhausted/disabled/unknown service identity cannot bypass limits or cause extra wake.
 - [ ] 3.6 Luna executes real local HTTP/MCP fixture flow against built code plus negative cross-principal/session/resource cases; Sol reviews the trust boundary and confirms no production auth bypass or synthetic-only shortcut before integrating.
