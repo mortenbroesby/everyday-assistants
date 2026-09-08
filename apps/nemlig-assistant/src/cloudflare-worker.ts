@@ -1,6 +1,6 @@
 /// <reference types="@cloudflare/workers-types" />
 
-import { Container, getContainer, type OutboundHandler } from "@cloudflare/containers";
+import { Container, getContainer } from "@cloudflare/containers";
 import { DurableObject } from "cloudflare:workers";
 import { createRemoteJWKSet } from "jose";
 import type { OAuthTokenVerifier } from "@modelcontextprotocol/sdk/server/auth/provider.js";
@@ -11,7 +11,6 @@ import { parseGatewayRequestEvent, type GatewayRequestEvent } from "./cloudflare
 import { resetUsage, type AdmissionLimits, type AdmissionPrincipal, type AdmissionResult, type TierAdmissionPolicy, type UsageState } from "./cloudflare-usage.js";
 import { findEnabledPrincipal, type Principal } from "./principal-policy.js";
 import { admitPrincipalRequest, consumePortalCsrf, consumeValidationRate, findPrincipalRecord, getCredentialRecord, listPrincipalRecords, registerInvitedPrincipal, replaceCredentialRecord, revokeCredentialRecord, setPrincipalStatus } from "./principal-records.js";
-import { handleShoppingListStorageRequest } from "./shopping-list-worker-storage.js";
 import { encryptCredentials } from "./credential-envelope.js";
 import type { Credentials } from "./config.js";
 import { handleOnboardingRequest, loadOnboardingConfig, type BrowserIdentity, type OnboardingConfig } from "./onboarding.js";
@@ -78,7 +77,6 @@ export class NemligMcpContainer extends Container<Env> {
     NEMLIG_MCP_CREDENTIAL_KEY_VERSION: this.env.NEMLIG_MCP_CREDENTIAL_KEY_VERSION ?? "",
     NEMLIG_MCP_HTTP_HOST: "0.0.0.0",
     NEMLIG_MCP_HTTP_PORT: "8080",
-    NEMLIG_PLAN_STORAGE_URL: "http://nemlig-plan-storage.internal/",
   };
 
   override onStart(): void {
@@ -199,47 +197,10 @@ export class NemligMcpContainer extends Container<Env> {
   }
 }
 
-NemligMcpContainer.outboundByHost = {
-  "nemlig-plan-storage.internal": (async (request, env) => {
-    const path = new URL(request.url).pathname;
-    const objectName = path.startsWith("/named-lists-v2/") || path.startsWith("/lists/")
-      ? "nemlig-lists-v2"
-      : "nemlig-plans";
-    const response = await env.NEMLIG_PLAN_STORAGE.jurisdiction("eu").getByName(objectName).fetch(request);
-    return response;
-  }) satisfies OutboundHandler<Env>,
-};
-
+// ponytail: retain the retired namespace and data; remove only with approved data cleanup.
 export class PlanStorage extends DurableObject<Env> {
-  async fetch(request: Request): Promise<Response> {
-    const path = new URL(request.url).pathname.slice(1);
-    if (path.startsWith("named-lists-v2/")) return this.handleShoppingLists(request, path.slice("named-lists-v2/".length));
-    if (path.startsWith("lists/")) return this.handleShoppingLists(request, path.slice("lists/".length));
-    const scoped = path.match(/^plans-v2\/([0-9a-f]{64})\/(.+)$/u);
-    const id = scoped?.[2] ?? path;
-    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(id)) {
-      return new Response("Invalid plan ID", { status: 400 });
-    }
-    const key = scoped ? `plan:${scoped[1]}:${id}` : `plan:${id}`;
-    if (request.method === "GET") {
-      const snapshot = await this.ctx.storage.get<string>(key);
-      return snapshot === undefined ? new Response("Not found", { status: 404 }) : new Response(snapshot, { headers: { "content-type": "application/json" } });
-    }
-    if (request.method !== "PUT") return new Response("Method not allowed", { status: 405 });
-    const declared = Number(request.headers.get("content-length") ?? "0");
-    if (!Number.isFinite(declared) || declared < 0 || declared > 65_536) return new Response("Too large", { status: 413 });
-    const snapshot = await request.text();
-    if (new TextEncoder().encode(snapshot).byteLength > 65_536) return new Response("Too large", { status: 413 });
-    const created = await this.ctx.storage.transaction(async () => {
-      if (await this.ctx.storage.get(key) !== undefined) return false;
-      await this.ctx.storage.put(key, snapshot);
-      return true;
-    });
-    return new Response(created ? "Created" : "Already exists", { status: created ? 201 : 409 });
-  }
-
-  private async handleShoppingLists(request: Request, ownerScope: string): Promise<Response> {
-    return handleShoppingListStorageRequest(request, ownerScope, this.ctx.storage);
+  async fetch(): Promise<Response> {
+    return new Response("Saved shopping storage retired", { status: 410 });
   }
 }
 

@@ -1,3 +1,5 @@
+> Integration note (2026-09-09): `remove-saved-shopping` subsequently removes all saved plans and named lists. When syncing these overlapping MCP requirements, apply the later removal last; do not restore the snapshot surface from this historical delta.
+
 ## Why
 
 The owner does not use feature-request submission and explicitly requested its removal. Remove the product surface and its GitHub subprocess/token machinery rather than maintain an unused workflow.

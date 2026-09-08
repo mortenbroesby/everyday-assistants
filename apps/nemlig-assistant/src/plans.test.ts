@@ -1,11 +1,7 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, stat, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import test from "node:test";
 import type { Basket, Product } from "./client.js";
-import { eligibleCandidates, httpPlanSnapshotStorage, loadShoppingPlan, resolveShoppingPlan, saveShoppingPlan, shoppingPlanInputSchema, type PlanSnapshotStorage } from "./plans.js";
-import { principalScopeFor } from "./principal-scope.js";
+import { eligibleCandidates, resolveShoppingPlan, shoppingPlanInputSchema } from "./plans.js";
 import { calculateShoppingPlan } from "./plan-calculation.js";
 
 const product = (id: number, name: string, overrides: Partial<Product> = {}): Product => ({
@@ -211,81 +207,4 @@ test("planning accepts fifty lines and rejects fifty-one before external reads",
   calls = 0;
   await assert.rejects(resolveShoppingPlan(client, { lines: [...lines, { id: "extra", name: "51", quantity: 1 }] }), /Too big|too_big/iu);
   assert.equal(calls, 0);
-});
-
-test("plan snapshots are owner-only, immutable, schema-validated, and contain only structured input", async () => {
-  const directory = await mkdtemp(join(tmpdir(), "nemlig-plans-"));
-  const input = shoppingPlanInputSchema.parse({ lines: [{ id: "milk", name: "mælk", quantity: 1 }] });
-  const saved = await saveShoppingPlan(input, directory);
-  assert.deepEqual(await loadShoppingPlan(saved.id, directory), input);
-  assert.equal((await stat(directory)).mode & 0o777, 0o700);
-  assert.equal((await stat(join(directory, `${saved.id}.json`))).mode & 0o777, 0o600);
-  const text = await readFile(join(directory, `${saved.id}.json`), "utf8");
-  assert.doesNotMatch(text, /password|proposal|basket_fingerprint/iu);
-  await assert.rejects(saveShoppingPlan(input, directory, saved.id), /EEXIST/);
-  await assert.rejects(loadShoppingPlan("not-a-uuid", directory), /must be a UUID/);
-  const malformed = "11111111-1111-4111-8111-111111111111";
-  await writeFile(join(directory, `${malformed}.json`), "{}\n");
-  await assert.rejects(loadShoppingPlan(malformed, directory), /could not be loaded/);
-});
-
-test("plan snapshot schema and identity checks are shared by storage implementations", async () => {
-  const snapshots = new Map<string, string>();
-  const storage: PlanSnapshotStorage = {
-    create: async (id, snapshot) => { if (snapshots.has(id)) throw new Error("collision"); snapshots.set(id, snapshot); },
-    read: async (id) => { const snapshot = snapshots.get(id); if (!snapshot) throw new Error("missing"); return snapshot; },
-  };
-  const id = "11111111-1111-4111-8111-111111111111";
-  const input = shoppingPlanInputSchema.parse({ lines: [{ id: "milk", name: "mælk", quantity: 1 }] });
-  await saveShoppingPlan(input, storage, id);
-  assert.deepEqual(await loadShoppingPlan(id, storage), input);
-  snapshots.set(id, "{}\n");
-  await assert.rejects(loadShoppingPlan(id, storage), /could not be loaded/);
-});
-
-test("Cloudflare plan storage uses one bounded internal request per immutable read or write", async () => {
-  const calls: Array<{ url: string; method: string }> = [];
-  const fetcher: typeof fetch = async (input, init) => {
-    calls.push({ url: String(input), method: init?.method ?? "GET" });
-    return new Response(init?.body ? "Created" : "{\"stored\":true}\n", { status: init?.body ? 201 : 200 });
-  };
-  const storage = httpPlanSnapshotStorage("http://nemlig-plan-storage.internal/", fetcher);
-  const id = "2ee94544-5f0a-4c89-95f0-f6af88f45ba1";
-  await storage.create(id, "{}\n");
-  assert.equal(await storage.read(id), "{\"stored\":true}\n");
-  assert.deepEqual(calls, [
-    { url: `http://nemlig-plan-storage.internal/${id}`, method: "PUT" },
-    { url: `http://nemlig-plan-storage.internal/${id}`, method: "GET" },
-  ]);
-  assert.throws(() => httpPlanSnapshotStorage("https://example.test/", fetcher), /storage is invalid/u);
-});
-
-test("hosted plan snapshots are principal-scoped and only Tier 0 can copy a legacy snapshot", async () => {
-  const values = new Map<string, string>();
-  const fetcher: typeof fetch = async (input, init) => {
-    const url = String(input);
-    if (init?.method === "PUT") {
-      if (values.has(url)) return new Response("Already exists", { status: 409 });
-      values.set(url, String(init.body));
-      return new Response("Created", { status: 201 });
-    }
-    const value = values.get(url);
-    return value === undefined ? new Response("Not found", { status: 404 }) : new Response(value);
-  };
-  const id = "2ee94544-5f0a-4c89-95f0-f6af88f45ba1";
-  const input = shoppingPlanInputSchema.parse({ lines: [{ id: "milk", name: "mælk", quantity: 1 }] });
-  const legacy = `${JSON.stringify({ schema_version: 1, id, created_at: new Date().toISOString(), input })}\n`;
-  values.set(`http://nemlig-plan-storage.internal/${id}`, legacy);
-  const owner = httpPlanSnapshotStorage("http://nemlig-plan-storage.internal/", fetcher, 3_000, { key: "owner-key", allowLegacyRead: true });
-  const invitee = httpPlanSnapshotStorage("http://nemlig-plan-storage.internal/", fetcher, 3_000, { key: "invitee-key", allowLegacyRead: false });
-
-  assert.deepEqual(await loadShoppingPlan(id, owner), input);
-  await assert.rejects(loadShoppingPlan(id, invitee), /could not be loaded/u);
-  await saveShoppingPlan(input, owner, id);
-
-  const ownerUrl = `http://nemlig-plan-storage.internal/plans-v2/${principalScopeFor("owner-key")}/${id}`;
-  const inviteeUrl = `http://nemlig-plan-storage.internal/plans-v2/${principalScopeFor("invitee-key")}/${id}`;
-  assert.ok(values.has(ownerUrl));
-  assert.ok(values.has(`http://nemlig-plan-storage.internal/${id}`));
-  assert.equal(values.has(inviteeUrl), false);
 });

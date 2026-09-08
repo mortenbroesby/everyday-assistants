@@ -13,9 +13,9 @@ Container application capped at one instance, and the custom hostname
 
 Use one Cloudflare Worker in front of one deterministic, EU-jurisdiction,
 container-enabled SQLite Durable Object. That object owns the safety state and
-one sleeping Nemlig MCP Container. A second fixed EU SQLite Durable Object stores
-only immutable plan snapshots because calling back into the in-flight Container
-controller would create a fragile re-entrancy dependency. Configure
+one sleeping Nemlig MCP Container. The former shopping storage namespace is
+retained inactive only to preserve existing data and rollback; the application
+no longer reads or writes saved shopping records. Configure
 `max_instances = 1`, route to fixed object IDs, and do not use `getRandom` or any
 dynamic instance-ID path.
 
@@ -37,7 +37,7 @@ one EU lite Container, asleep when idle
         v
 Nemlig
 
-Container -- internal egress --> one fixed EU plan-storage Durable Object
+Legacy plan-storage Durable Object: retained inactive, no application routing
 ```
 
 This is the smallest safe migration. A Container preserves the existing Node 22
@@ -68,7 +68,6 @@ a separate Worker-native evaluation.
 | Entry points | The package exposes CLI, stdio MCP, and HTTP MCP entry points. [`http.ts`](../apps/nemlig-assistant/src/http.ts) calls `app.listen`. | Host only the existing HTTP MCP entry point. It needs a configurable internal bind address instead of its current fixed `127.0.0.1`. |
 | Process state | [`http.ts`](../apps/nemlig-assistant/src/http.ts) stores MCP transports by session ID in a `Map`. [`client.ts`](../apps/nemlig-assistant/src/client.ts) stores cookies, token, user ID, product metadata, and timeslot in memory. | One fixed Container preserves state while awake. Sleep/restart drops sessions and login cache; the client must reinitialize and the app can log in again. |
 | Proposal safety | [`proposals.ts`](../apps/nemlig-assistant/src/proposals.ts) stores short-lived proposals and completed/invalid/indeterminate results in memory. Hosted transports for the configured owner share one service so approval survives a normal ChatGPT reconnect; local stdio remains session-bound. Mutation application is mutex-protected, and indeterminate outcomes explicitly say not to retry. | Proposal state is intentionally restart-discardable. A restart fails closed because an approval ID is no longer found. Preserve the owner binding and no-retry behavior. Serialize expensive/mutation admission globally in the fixed object. |
-| Durable files | [`plans.ts`](../apps/nemlig-assistant/src/plans.ts) atomically creates and later reads immutable shopping-plan JSON files under `NEMLIG_CONFIG_DIR/plans` or `~/.nemlig-shopper/plans`. It already accepts a `PlanSnapshotStorage` implementation. | Saved plans genuinely need restart persistence. Container disks and Worker `/tmp` are ephemeral. The hosted profile reuses the storage seam and routes snapshots through an internal Container outbound handler to one fixed storage-only SQLite Durable Object; no R2 bucket is needed. |
 | Credentials | [`config.ts`](../apps/nemlig-assistant/src/config.ts) accepts `NEMLIG_USERNAME` and `NEMLIG_PASSWORD` before its local-file fallback. | Inject production credentials as secrets; do not copy the local credentials file. Development must have no real mutation credentials by default. |
 | Browser automation | There is no runtime browser-automation dependency. | No browser runtime is needed in the image. |
 | Transport | [`http.ts`](../apps/nemlig-assistant/src/http.ts) uses MCP Streamable HTTP and supports its event-stream response path. It has no WebSocket endpoint. | Proxy HTTP streaming unchanged through the fixed object and Container. Test reconnect after sleep. |
@@ -84,7 +83,6 @@ a separate Worker-native evaluation.
 | Nemlig cookies, access token, user ID, timestamps, product-name cache, timeslot | Restart-discardable | They can be recovered by logging in and reading Nemlig again. |
 | Auth0 metadata and JWKS cache | Restart-discardable | They can be fetched again with bounded calls. |
 | Prepared, completed, invalid, or indeterminate basket proposals | Restart-discardable and fail-closed | Losing an approval ID prevents application; indeterminate operations remain non-retryable. |
-| Saved shopping-plan snapshots | Restart-required | `save` followed by a later `load` is a shipped feature contract. |
 | Rate windows, daily counts, breaker flag/time/reason | Restart-required safety state | Losing them could reopen a tripped backend or undercount usage. |
 | Nemlig account, basket, and favorites | External | Nemlig remains the system of record. |
 | Auth0 user/tenant configuration | External | Auth0 remains the identity provider. |
@@ -99,7 +97,6 @@ and a normal Node listener is not a drop-in Worker entry point. Preserving the
 current MCP would require:
 
 - adapting the MCP server to a Worker-native fetch/Streamable HTTP handler;
-- moving saved-plan persistence to Durable Object storage; and
 - proving that all transitive Node dependencies and long-lived MCP streaming
   behavior work within Worker CPU and memory limits.
 
@@ -108,17 +105,16 @@ That may become attractive later, but it is not the smallest first move.
 ### Workers plus Durable Objects, without a Container
 
 More practical than a stateless Worker because a Durable Object can own exact
-global quotas, sessions, and saved plans. It still requires the same transport
-and child-process rewrites. It does not materially reduce the expected bill
+global quotas and sessions. It still requires the transport and runtime
+compatibility work. It does not materially reduce the expected bill
 below the Workers Paid minimum for this traffic.
 
 ### Worker plus one Container
 
 Recommended. It preserves the application process and confines the migration to
-a thin gateway, a fixed safety/storage object, a minimal image, configurable
-internal binding, and the existing snapshot-storage seam. Cloudflare Containers
-can call Worker bindings through outbound handlers, including their own Durable
-Object state, so plan persistence does not require another storage product.
+a thin gateway, a fixed safety object and a minimal image. The original
+snapshot-storage seam has been removed; credential/admission state remains
+independent in the controller object.
 
 ## Production resources
 
@@ -129,8 +125,9 @@ The owner reviewed and separately approved creation of:
    hostname `nemlig-mcp.broesby.dk` and a workers.dev fallback.
 3. One EU-jurisdiction SQLite Durable Object namespace whose class is also the
    Container controller; application code always uses one fixed production ID.
-4. One EU-jurisdiction SQLite Durable Object namespace with one fixed ID for
-   immutable plan snapshots. It has no Container or public route.
+4. The existing EU-jurisdiction saved-shopping storage namespace, retained
+   inactive with its binding and migration history. Its handler returns 410
+   without storage access; no Container or public route is added.
 5. One Container application/image with `instance_type = "lite"`,
    `max_instances = 1`, EU placement, and a 10-minute idle sleep timeout.
 6. Worker secrets for actual credentials only: Nemlig credentials and any
@@ -145,8 +142,9 @@ staging infrastructure for this family-only service.
 ### Data held by Cloudflare
 
 - The Container-controller Durable Object stores daily/rate counters, breaker
-  status, and trip metadata. The separate storage-only Durable Object stores
-  saved shopping-plan input snapshots. Place both in EU jurisdiction.
+  status, and trip metadata, plus principal credential records. The former
+  shopping storage object may still hold prior saved data; this removal neither
+  reads nor deletes it. Keep existing EU jurisdiction.
 - Worker secrets store Nemlig credentials and any narrowly scoped provider
   credential required by the deployed tools.
 - The Container holds only ephemeral MCP sessions, Nemlig cookies/tokens, and
@@ -250,8 +248,8 @@ Full removal is:
 
 1. Disable the MCP and verify a 503 without a Container wake.
 2. Remove the Worker route/custom hostname.
-3. Export nothing unless saved plans are deliberately retained; otherwise invoke
-   the authenticated purge path to delete fixed-object storage.
+3. Separately agree which existing records to retain or delete before any
+   data or namespace cleanup. The retired application offers no purge endpoint.
 4. Delete the Worker/Container deployment, Container instances/application and
    image, both Durable Object data/namespaces, and Worker secrets.
 5. Remove related DNS only if it was created for this deployment, then cancel the

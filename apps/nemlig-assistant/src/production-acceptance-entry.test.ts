@@ -8,6 +8,11 @@ import {
 } from "./production-acceptance.js";
 
 const allTools = Object.values(productionToolInventory).flat().map((name) => ({ name }));
+const removedStorageTools = [
+  "save_my_shopping_plan", "continue_my_shopping_plan", "show_my_shopping_lists", "save_my_shopping_list",
+  "copy_my_shopping_list", "set_my_shopping_list_status", "shop_from_my_list", "migrate_my_saved_plan",
+];
+const retainedTools = allTools.filter(({ name }) => !removedStorageTools.includes(name));
 
 function edgeFetcher(calls: string[], origin = "https://nemlig-mcp.example.test/mcp"): typeof fetch {
   return async (input, init) => {
@@ -27,7 +32,7 @@ function edgeFetcher(calls: string[], origin = "https://nemlig-mcp.example.test/
 
 function readonlyClient(): AcceptanceClient {
   return {
-    listTools: async () => ({ tools: allTools }),
+    listTools: async () => ({ tools: retainedTools }),
     listResources: async () => ({ resources: productionResourceInventory.map((uri) => ({ uri })) }),
     readResource: async () => ({ contents: [{ text: "picker" }] }),
     callTool: async ({ name, arguments: args }) => {
@@ -36,8 +41,6 @@ function readonlyClient(): AcceptanceClient {
       if (name === "plan_my_shopping") return { structuredContent: { lines: [{ selected_product_id: (args.lines as Array<{ selected_product?: number }>)[0]?.selected_product }] } };
       if (name === "show_grocery_sections") return { structuredContent: { departments: [{ id: "fruit" }] } };
       if (name === "browse_grocery_section") return { structuredContent: { result: [] } };
-      if (name === "continue_my_shopping_plan") return { isError: true };
-      if (name === "show_my_shopping_lists") return { structuredContent: { lists: [] } };
       return { structuredContent: { items: [] } };
     },
   };

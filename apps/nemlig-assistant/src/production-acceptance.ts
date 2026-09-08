@@ -9,15 +9,10 @@ interface ToolResult {
 export const productionToolInventory = {
   readOnly: [
     "find_groceries", "show_my_favorites", "plan_my_shopping", "show_grocery_sections",
-    "browse_grocery_section", "check_nemlig_connection", "continue_my_shopping_plan", "show_my_basket", "choose_products_visually",
-    "show_my_shopping_lists", "shop_from_my_list",
+    "browse_grocery_section", "check_nemlig_connection", "show_my_basket", "choose_products_visually",
   ],
   prepareOnly: [
     "review_items_to_add", "review_item_to_remove", "review_item_swap", "review_emptying_basket",
-  ],
-  privateState: [
-    "save_my_shopping_plan", "save_my_shopping_list", "copy_my_shopping_list",
-    "set_my_shopping_list_status", "migrate_my_saved_plan",
   ],
   externalState: [
     "add_approved_items",
@@ -187,18 +182,6 @@ export async function verifyReadOnlyProductionFeatures(
   const resource = await withinTotalDeadline("picker resource", () => client.readResource!({ uri: productionResourceInventory[0] }));
   assert.ok(resource.contents.length, "Production picker resource is empty");
   exercised.push(productionResourceInventory[0]);
-
-  const missingPlan = await withinTotalDeadline("continue_my_shopping_plan", () => client.callTool({
-    name: "continue_my_shopping_plan",
-    arguments: { saved_plan: "00000000-0000-4000-8000-000000000000" },
-  }));
-  assert.equal(missingPlan.isError, true, "Missing production plan unexpectedly loaded");
-  exercised.push("continue_my_shopping_plan");
-  unavailable.push("continue_my_shopping_plan:no_safe_fixture");
-
-  const lists = await call<{ lists?: unknown[] }>("show_my_shopping_lists", { include_archived: true });
-  assert.ok(Array.isArray(lists.lists), "Shopping-list acceptance returned no list collection");
-  unavailable.push("shop_from_my_list:no_safe_fixture");
 
   return { exercised, unavailable };
 }
