@@ -91,7 +91,7 @@ const recoveryDeps = (journal: Record<string, unknown>, currentVersion: string, 
 
 const terminalJournal = (extra: Record<string, unknown> = {}) => ({
   schema: 2, operationId: "44444444-4444-4444-8444-444444444444", commit, ciRunId: 456, releaseRunId: "local", releaseRunAttempt: "local", startedAt: "2026-09-05T12:00:00.000Z",
-  startingVersion: startingId, startingContainerId: applicationId, startingImage: image, checks: [], rollback: "restored",
+  completedAt: "2026-09-05T12:00:06.000Z", startingVersion: startingId, startingContainerId: applicationId, startingImage: image, checks: ["starting_version_restored"], rollback: "restored",
   outcome: "failed", lastVerifiedState: "restored", transitions: [
     { phase: "disabled_deploy", kind: "intent", at: "2026-09-05T12:00:00.000Z", version: startingId },
     { phase: "disabled_deploy", kind: "result", at: "2026-09-05T12:00:01.000Z", version: disabledId },
@@ -697,7 +697,7 @@ test("finalize accepts GitHub's empty successful DELETE only after the exact rem
   const remoteCommit = "cccccccccccccccccccccccccccccccccccccccc";
   const journal = JSON.stringify({
     schema: 2, operationId: operation, commit, ciRunId: 456, releaseRunId: "local", releaseRunAttempt: "local", startedAt: "2026-09-05T12:00:00.000Z",
-    startingVersion: startingId, enabledVersion: enabledId, startingContainerId: applicationId, enabledImage: image, checks: [], lastVerifiedState: "enabled",
+    completedAt: "2026-09-05T12:00:04.000Z", startingVersion: startingId, enabledVersion: enabledId, startingContainerId: applicationId, enabledImage: image, checks: ["enabled_version", "image_reused", "edge_acceptance", "authenticated_read_only_acceptance"], lastVerifiedState: "enabled",
     rollback: "not_needed", outcome: "success", remoteCommit: "dddddddddddddddddddddddddddddddddddddddd",
     transitions: [
       { phase: "disabled_deploy", kind: "intent", at: "2026-09-05T12:00:00.000Z", version: startingId },
@@ -793,7 +793,7 @@ test("inspection denies wrong operation, pending work, and recognizes known disa
   assert.equal((await inspectDeploymentRecovery("55555555-5555-4555-8555-555555555555", recoveryDeps(terminalJournal(), startingId, true), true)).reason, "operation_mismatch");
   assert.equal((await inspectDeploymentRecovery(operation, recoveryDeps(terminalJournal({ outcome: "running", lastVerifiedState: "unknown", transitions: [] }), startingId, true), true)).reason, "pending_or_unknown");
   const disabled = terminalJournal({
-    rollback: "not_needed", lastVerifiedState: "disabled", disabledVersion: disabledId, disabledImage: image,
+    rollback: "not_needed", lastVerifiedState: "disabled", disabledVersion: disabledId, disabledImage: image, checks: ["disabled_routes", "container_inactive"],
     transitions: [
       { phase: "disabled_deploy", kind: "intent", at: "2026-09-05T12:00:00.000Z", version: startingId },
       { phase: "disabled_deploy", kind: "result", at: "2026-09-05T12:00:01.000Z", version: disabledId },

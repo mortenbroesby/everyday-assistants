@@ -523,8 +523,17 @@ const expectedRecovery = (journal: DeploymentJournal): { version: string; contai
   return undefined;
 };
 
-const knownTerminal = (journal: DeploymentJournal): boolean =>
-  journal.outcome !== "running" && journal.lastVerifiedState !== "unknown" && journal.transitions.at(-1)?.kind === "result";
+const knownTerminal = (journal: DeploymentJournal): boolean => {
+  if (!journal.completedAt || journal.outcome === "running" || journal.lastVerifiedState === "unknown") return false;
+  const result = journal.transitions.at(-1);
+  if (result?.kind !== "result") return false;
+  if (journal.outcome === "success") return journal.lastVerifiedState === "enabled" && result.phase === "enable_deploy"
+    && result.version === journal.enabledVersion && ["enabled_version", "image_reused", "edge_acceptance", "authenticated_read_only_acceptance"].every((check) => journal.checks.includes(check));
+  if (journal.lastVerifiedState === "disabled") return result.phase === "disabled_deploy" && result.version === journal.disabledVersion
+    && ["disabled_routes", "container_inactive"].every((check) => journal.checks.includes(check));
+  return journal.lastVerifiedState === "restored" && journal.rollback === "restored" && result.phase === "rollback"
+    && result.version === journal.startingVersion && journal.checks.includes("starting_version_restored");
+};
 
 export async function inspectDeploymentRecovery(operation: string, deps: DeployDependencies, originalRunnerStopped = false): Promise<RecoveryInspection> {
   if (!operationId.test(operation)) return { operation, originalRunnerStopped, cleanupEligible: false, reason: "operation_mismatch", state: "unknown" };
