@@ -721,8 +721,8 @@ export async function deployProduction(commit: string, inputDeps: DeployDependen
       await writeJournal(journalPath, journal);
     };
 
-    await verifyCurrent(deps, starting.id);
     await transition("disabled_deploy", "intent", starting.id);
+    await verifyCurrent(deps, starting.id);
     providerMutation = true;
     mutationUncertain = true;
     const disabledOutput = await wrangler(deps, ["deploy", "--var", "MCP_ENABLED:false", "--var", `NEMLIG_MCP_REVISION:${commit}`,
@@ -732,7 +732,6 @@ export async function deployProduction(commit: string, inputDeps: DeployDependen
     await verifyCurrent(deps, disabledId);
     verifyCandidateVersion(await readVersion(deps, disabledId), disabledId, commit, false);
     const disabledContainer = await readContainer(deps);
-    if (disabledContainer.id !== startingContainer.id || disabledContainer.image !== startingContainer.image) fail("container_image_changed_during_enable");
     await verifyDisabledRoutes(deps);
     await waitForInactive(deps, disabledContainer.id);
     journal.disabledVersion = disabledId;
@@ -741,8 +740,8 @@ export async function deployProduction(commit: string, inputDeps: DeployDependen
     journal.checks.push("disabled_version", "disabled_routes", "container_inactive");
     await transition("disabled_deploy", "result", disabledId);
 
-    await verifyCurrent(deps, disabledId);
     await transition("enable_deploy", "intent", disabledId);
+    await verifyCurrent(deps, disabledId);
     mutationUncertain = true;
     const enabledOutput = await wrangler(deps, ["deploy", "--var", "MCP_ENABLED:true", "--var",
       `NEMLIG_MCP_REVISION:${commit}`, "--containers-rollout", "none", "--message",
@@ -787,6 +786,7 @@ export async function deployProduction(commit: string, inputDeps: DeployDependen
           journal.lastVerifiedState = starting.enabled ? "enabled" : "disabled";
         } else if (startingContainer && transition) {
           await transition("rollback", "intent", starting.id);
+          await verifyCurrent(deps, current.version);
           await rollback(deps, journal, starting, startingContainer);
           await transition("rollback", "result", starting.id);
         }

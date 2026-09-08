@@ -126,13 +126,18 @@ async function fixture(options: {
   failDisabledDeploy?: boolean;
   failFeatures?: boolean;
   externalEnabledDriftDuringRecovery?: boolean;
+  remoteIntentFailure?: boolean;
 } = {}): Promise<{ deps: DeployDependencies; calls: Call[]; root: string }> {
   const root = await mkdtemp(join(tmpdir(), "nemlig-production-deploy-"));
   const calls: Call[] = [];
   let current = startingId;
-  let remoteLease = false;
   let appended = false;
-  const journalSha = "cccccccccccccccccccccccccccccccccccccccc";
+  let remoteLease: string | undefined;
+  let objectNumber = 0;
+  const blobs = new Map<string, string>();
+  const trees = new Map<string, string>();
+  const commits = new Map<string, { tree: string; parents: string[] }>();
+  const nextSha = () => (++objectNumber).toString(16).padStart(40, "0");
   let disabledReads = 0;
   let remoteReads = 0;
   const run: CommandRunner = async (commandName, args, runOptions) => {
@@ -159,22 +164,41 @@ async function fixture(options: {
       };
       return JSON.stringify(options.runs ?? [base]);
     }
-    if (commandName === "gh" && args[0] === "api" && args.some((arg) => arg.includes("git/blobs"))) return JSON.stringify({ sha: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" });
-    if (commandName === "gh" && args[0] === "api" && args.some((arg) => arg.includes("git/trees"))) return JSON.stringify({ sha: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" });
-    if (commandName === "gh" && args[0] === "api" && args.some((arg) => arg.includes("git/commits"))) return JSON.stringify({ sha: journalSha });
-    if (commandName === "gh" && args[0] === "api" && args.includes("POST")) {
-      if (options.remoteLeaseBlocked) throw new Error("exists");
-      remoteLease = true;
-      return "{}";
-    }
-    if (commandName === "gh" && args[0] === "api" && args.includes("PATCH")) { appended = true; return "{}"; }
-    if (commandName === "gh" && args[0] === "api" && args.includes("DELETE")) {
-      remoteLease = false;
-      return "";
-    }
     if (commandName === "gh" && args[0] === "api") {
-      if (!remoteLease) throw Object.assign(new Error("not found"), { status: 404 });
-      return options.remoteLeaseChanges && appended ? previousCommit : journalSha;
+      const method = args.includes("POST") ? "POST" : args.includes("PATCH") ? "PATCH" : args.includes("DELETE") ? "DELETE" : "GET";
+      const path = args.find((arg) => arg.startsWith("repos/")) ?? "";
+      const body = runOptions?.input ? JSON.parse(runOptions.input) as Record<string, unknown> : undefined;
+      if (path.endsWith("git/ref/heads/codex-lock/nemlig-production") || path.endsWith("git/refs/heads/codex-lock/nemlig-production")) {
+        if (method === "GET") {
+          if (!remoteLease) throw Object.assign(new Error("not found"), { status: 404 });
+          return remoteLease;
+        }
+        if (method === "DELETE") { remoteLease = undefined; return ""; }
+      }
+      if (path.endsWith("git/blobs") && method === "POST") {
+        const snapshot = Buffer.from(String(body?.content), "base64").toString("utf8");
+        if (options.remoteIntentFailure && JSON.parse(snapshot).transitions.length % 2 === 1) throw new Error("intent write failed");
+        const sha = nextSha(); blobs.set(sha, snapshot); return JSON.stringify({ sha });
+      }
+      if (path.endsWith("git/trees") && method === "POST") { const sha = nextSha(); trees.set(sha, String((body?.tree as Array<Record<string, unknown>>)?.[0]?.sha)); return JSON.stringify({ sha }); }
+      if (path.endsWith("git/commits") && method === "POST") { const sha = nextSha(); commits.set(sha, { tree: String(body?.tree), parents: Array.isArray(body?.parents) ? body.parents.map(String) : [] }); return JSON.stringify({ sha }); }
+      if (path.endsWith("git/refs") && method === "POST") {
+        if (options.remoteLeaseBlocked || remoteLease) throw new Error("exists");
+        remoteLease = String(body?.sha); return "{}";
+      }
+      if (path.endsWith("git/refs/heads/codex-lock/nemlig-production") && method === "PATCH") {
+        if (!body || body.force !== false || !remoteLease) throw new Error("invalid patch");
+        if (options.remoteLeaseChanges && !appended) remoteLease = previousCommit;
+        else remoteLease = String(body.sha);
+        appended = true; return "{}";
+      }
+      const commitSha = path.match(/git\/commits\/([0-9a-f]{40})$/u)?.[1];
+      if (commitSha) return JSON.stringify({ tree: { sha: commits.get(commitSha)?.tree } });
+      const treeSha = path.match(/git\/trees\/([0-9a-f]{40})$/u)?.[1];
+      if (treeSha) return JSON.stringify({ tree: [{ path: "journal.json", type: "blob", mode: "100644", sha: trees.get(treeSha) }] });
+      const blobSha = path.match(/git\/blobs\/([0-9a-f]{40})$/u)?.[1];
+      if (blobSha) return JSON.stringify({ encoding: "base64", content: Buffer.from(blobs.get(blobSha) ?? "").toString("base64") });
+      throw new Error("unexpected gh api");
     }
     if (commandName === "gh") return "";
     if (commandName === "git" && args[0] === "rev-parse" && args[1] === "HEAD") return options.head ?? commit;
@@ -466,6 +490,30 @@ test("changed remote journal parent is never overwritten and leaves the local sa
     assert.equal(report.failure, "remote_journal_append_failed");
     assert.equal(calls.some(({ args }) => args.includes("DELETE")), false);
     await access(join(root, "nemlig-production-deploy.lock"));
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("each failed remote intent write stops before its provider dispatch", async () => {
+  const { deps, calls, root } = await fixture({ remoteIntentFailure: true });
+  try {
+    const report = await deployProduction(commit, deps);
+    assert.equal(report.outcome, "failed");
+    assert.equal(calls.some(({ args }) => args.includes("deploy") || args.includes("rollback")), false);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("successful deployment finalizes from its stateful remote journal chain", async () => {
+  const { deps, calls, root } = await fixture();
+  try {
+    const report = await deployProduction(commit, deps);
+    assert.equal(report.outcome, "success");
+    assert.equal(await finalizeDeploymentRecovery(report.operationId, deps, true), true);
+    assert.equal(calls.filter(({ command, args }) => command === "gh" && args.includes("DELETE")).length, 1);
+    await assert.rejects(access(join(root, "nemlig-production-deploy.lock")));
   } finally {
     await rm(root, { recursive: true, force: true });
   }
