@@ -22,3 +22,5 @@
 - Production and final archive remain pending separate provider authority.
 
 - Final `pnpm nemlig:production:ready` passed: 16 strict spec checks, privacy, full verification, packed smoke and credential-free Wrangler dry-run including the reduced Docker image build. Running that image confirmed `gh` absent and CA certificates present. No live deployment occurred.
+
+- Source integration: remote main and task branch both verified at `09adaa53b9fcb292d4f692d15b6da15127512b48`. [Exact-source CI](https://github.com/mortenbroesby/everyday-assistants/actions/runs/34286037728) passed, including the breaking-version gate and production readiness. Deployment and archive stay open; this evidence-only follow-up does not change runtime artifacts.

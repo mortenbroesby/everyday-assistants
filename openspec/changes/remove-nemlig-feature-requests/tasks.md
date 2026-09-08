@@ -7,6 +7,6 @@
 ## 2. Deliver and accept
 
 - [x] 2.1 Run full pnpm verify, strict specs, privacy, packed smoke and credential-free production readiness; record red/green evidence and scoped review.
-- [ ] 2.2 Integrate and push the scoped commit to main; verify exact remote ref and green exact-head CI.
+- [x] 2.2 Integrate and push the scoped commit to main; verify exact remote ref and green exact-head CI.
 - [ ] 2.3 Confirm provider authority, deploy the exact verified main revision through the approved fail-closed procedure and verify health/read-only inventory; report pending if authority or credentials are unavailable.
 - [ ] 2.4 After applicable acceptance sync this delta and archive it; verify strict specs and exact remote main/CI for final documentation.
