@@ -15,6 +15,11 @@ import {
 } from "./production-acceptance.js";
 
 const allTools = Object.values(productionToolInventory).flat().map((name) => ({ name }));
+const removedStorageTools = [
+  "save_my_shopping_plan", "continue_my_shopping_plan", "show_my_shopping_lists", "save_my_shopping_list",
+  "copy_my_shopping_list", "set_my_shopping_list_status", "shop_from_my_list", "migrate_my_saved_plan",
+];
+const retainedTools = allTools.filter(({ name }) => !removedStorageTools.includes(name));
 
 test("production basket fingerprint is order-stable and state-sensitive", () => {
   const first = { items: [{ id: 7, name: "Milk", quantity: 1, total: 12 }, { id: 8, name: "Bread", quantity: 1, total: 20 }], products_price: 32 };
@@ -29,10 +34,10 @@ test("production inventory fails closed for missing and unknown entries", () => 
   assert.throws(() => assertProductionInventory(allTools, []), /resource inventory drifted/u);
 });
 
-test("default production feature acceptance covers safe paths and never calls external-state tools", async () => {
+test("production acceptance omits removed saved-storage tools while retaining safe planning", async () => {
   const calls: string[] = [];
   const client: AcceptanceClient = {
-    listTools: async () => ({ tools: allTools }),
+    listTools: async () => ({ tools: retainedTools }),
     listResources: async () => ({ resources: productionResourceInventory.map((uri) => ({ uri })) }),
     readResource: async () => ({ contents: [{ text: "picker" }] }),
     callTool: async ({ name, arguments: args }) => {
@@ -51,8 +56,6 @@ test("default production feature acceptance covers safe paths and never calls ex
       }
       if (name === "show_grocery_sections") return { structuredContent: { departments: [{ id: "fruit" }] } };
       if (name === "show_my_basket") return { structuredContent: { items: [] } };
-      if (name === "continue_my_shopping_plan") return { isError: true };
-      if (name === "show_my_shopping_lists") return { structuredContent: { lists: [] } };
       return { structuredContent: { applicable: false } };
     },
   };
@@ -60,15 +63,14 @@ test("default production feature acceptance covers safe paths and never calls ex
   const report = await verifyReadOnlyProductionFeatures(client);
   assert.deepEqual(calls, [
     "find_groceries", "show_my_favorites", "plan_my_shopping", "plan_my_shopping", "show_grocery_sections",
-    "browse_grocery_section", "show_my_basket", "choose_products_visually", "continue_my_shopping_plan",
-    "show_my_shopping_lists",
+    "browse_grocery_section", "show_my_basket", "choose_products_visually",
   ]);
   for (const forbidden of [
     ...productionToolInventory.prepareOnly,
-    ...productionToolInventory.privateState,
     ...productionToolInventory.externalState,
   ]) assert.equal(calls.includes(forbidden), false, `Read-only acceptance called ${forbidden}`);
-  assert.deepEqual(report.unavailable, ["continue_my_shopping_plan:no_safe_fixture", "shop_from_my_list:no_safe_fixture"]);
+  for (const removed of removedStorageTools) assert.equal(calls.includes(removed), false, `Read-only acceptance called removed ${removed}`);
+  assert.deepEqual(report.unavailable, []);
 });
 
 test("read-only acceptance has one total deadline", async () => {
