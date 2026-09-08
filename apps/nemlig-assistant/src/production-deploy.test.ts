@@ -355,7 +355,7 @@ test("schema-2 recovery journals reject unknown, malformed, oversized, and exces
   assert.throws(() => parseDeploymentJournal(JSON.stringify({ ...journal, transitions: [{ phase: "disabled_deploy", kind: "intent", at: journal.startedAt, token: "no" }] })));
   assert.throws(() => parseDeploymentJournal(JSON.stringify({ ...journal, transitions: [{ phase: "enable_deploy", kind: "intent", at: journal.startedAt }] })));
   assert.throws(() => parseDeploymentJournal(JSON.stringify({ ...journal, transitions: Array.from({ length: 33 }, () => ({ phase: "disabled_deploy", kind: "intent", at: journal.startedAt })) })));
-  assert.throws(() => parseDeploymentJournal(JSON.stringify({ ...journal, checks: ["x".repeat(9000)] })));
+  assert.throws(() => parseDeploymentJournal(JSON.stringify({ ...journal, checks: Array.from({ length: 2_000 }, () => "disabled_routes") })));
 });
 
 test("source mismatch and unavailable leases stop before Cloudflare", async () => {
@@ -766,6 +766,15 @@ test("inspection is read-only and denies malformed operation without a runner ca
     sleep: async () => undefined, now: () => new Date(),
   });
   assert.deepEqual(inspection, { operation: "forged", originalRunnerStopped: false, cleanupEligible: false, reason: "operation_mismatch", state: "unknown" });
+  assert.equal(calls, 0);
+});
+
+test("missing artifact attestation denies finalization before any recovery reads", async () => {
+  let calls = 0;
+  assert.equal(await finalizeDeploymentRecovery("44444444-4444-4444-8444-444444444444", {
+    repoRoot: ".", packageRoot: ".", env: {}, run: async () => { calls += 1; return ""; }, fetcher: fetch,
+    sleep: async () => undefined, now: () => new Date(),
+  }, false), false);
   assert.equal(calls, 0);
 });
 
