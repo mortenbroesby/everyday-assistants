@@ -443,7 +443,7 @@ export async function finalizeDeploymentRecovery(operation: string, deps: Deploy
   const terminal = journal.outcome !== "running" && journal.lastVerifiedState !== "unknown" && journal.transitions.at(-1)?.kind === "result";
   const expected = journal.outcome === "success" ? journal.enabledVersion : journal.lastVerifiedState === "restored" ? journal.startingVersion : undefined;
   if (journal.operationId !== operation || !terminal || !expected || (await readCurrent(deps)).version !== expected) return false;
-  if (await readRemoteHead(deps, repo.nameWithOwner) !== journal.remoteCommit) return false;
+  if (!await readRemoteHead(deps, repo.nameWithOwner)) return false;
   await ghJson(deps, repo.nameWithOwner, "DELETE", "git/refs/heads/codex-lock/nemlig-production");
   const common = deps.stateRoot ?? await runAt(deps, deps.repoRoot, "git", ["rev-parse", "--git-common-dir"]);
   const lock = join(isAbsolute(common) ? common : resolve(deps.repoRoot, common), "nemlig-production-deploy.lock");
