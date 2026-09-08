@@ -1,5 +1,24 @@
 # Nemlig Assistant backlog
 
+## P3 — simplify the product model
+
+**Status:** Proposed roadmap; implementation has not started.
+
+[Product simplification roadmap](../../docs/product-simplification-roadmap.md)
+expands the product review against current main. It builds on delivered P2 work
+and preserves outstanding P0/P1 and live acceptance ownership.
+
+- Establish measured grocery journeys and the actual advertised tool surface.
+- Simplify shared grocery-run orchestration using existing application seams.
+- Prefer named lists while preserving old saved-plan references and ownership.
+- Prove MCP v2 host confirmation before changing review/apply interaction.
+- Retire only accepted duplicates; retain authorization and mutation safeguards.
+- Evaluate Worker-native hosting separately with compatibility and cost gates.
+
+The next slice is baseline evidence and a reviewed application-orchestration
+proposal. Six journeys do not require six tools. This roadmap authorizes no
+runtime change, provider migration, user-data migration or basket mutation.
+
 ## P2 — simplify maintained boundaries and make verification measurable
 
 **Status:** In progress — repository-only slices applied; final integration and
