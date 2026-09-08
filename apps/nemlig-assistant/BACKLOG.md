@@ -1,5 +1,24 @@
 # Nemlig Assistant backlog
 
+## P2 — simplify maintained boundaries and make verification measurable
+
+**Status:** Proposed, not applied. Builds on the completed maintenance refactor;
+does not replace unfinished P0/P1 acceptance or onboarding work.
+
+Plan: [p2-simplify-nemlig-maintenance](../../openspec/changes/p2-simplify-nemlig-maintenance/proposal.md).
+See its [ordered epic/story checklist](../../openspec/changes/p2-simplify-nemlig-maintenance/tasks.md)
+and [design, npm evaluation and future improvements](../../openspec/changes/p2-simplify-nemlig-maintenance/design.md).
+
+- Make coverage produce a real report with the existing test runner.
+- Reuse installed Commander for the hand-written release argument parser.
+- Evaluate `html-to-text` to replace regex HTML stripping for product evidence.
+- Replace permissive shopping-list output schemas with explicit public schemas.
+- Reconcile backlog/documentation status with implementation and acceptance evidence.
+
+Implementation must preserve provider-call budgets, fresh revalidation,
+authorization, private ownership, quotas and deployment safeguards. Future
+saved-plan retirement and matching improvements remain separate proposals.
+
 ## P0 — restore reliable ChatGPT reconnect and add bounded observability
 
 **Status:** Active incident. Track and complete
