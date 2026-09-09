@@ -95,6 +95,13 @@ jobs:
         run: pnpm install --frozen-lockfile
       - name: Build candidate
         run: pnpm --filter nemlig-assistant build
+      - name: Verify Cloudflare release access
+        env:
+          CLOUDFLARE_API_TOKEN: "${{ secrets.CLOUDFLARE_API_TOKEN }}"
+          CLOUDFLARE_ACCOUNT_ID: "${{ vars.CLOUDFLARE_ACCOUNT_ID }}"
+        run: |
+          pnpm --filter nemlig-assistant exec wrangler deployments list --env production --json >/dev/null
+          pnpm --filter nemlig-assistant exec wrangler containers list --env production --json >/dev/null
       - name: Deploy through protected release command
         env:
           GH_TOKEN: "${{ github.token }}"
