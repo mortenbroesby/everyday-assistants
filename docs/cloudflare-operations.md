@@ -504,11 +504,12 @@ start/stop/error and breaker trip/reset. Logs contain no raw errors, headers,
 bodies, query strings, tokens, credentials, cookies, OAuth artifacts, prompts,
 tool arguments, shopping data, provider responses, or stacks.
 
-This adds no log drain or paid service. Mandatory request events are bounded by
-one per admitted useful operation under the existing 5,000-per-day breaker;
-public discovery and invalid-auth noise is sampled. The one `lite` Container,
-one-instance ceiling, quotas, rate limits, ten-minute sleep, and dynamic
-`MCP_ENABLED` kill switch remain unchanged.
+Workers Logs is enabled with 1% head sampling in Wrangler. Cloudflare includes
+20 million log events per month on Workers Paid, then charges $0.60 per
+additional million; the existing 5,000-per-day useful-operation breaker and
+sampling of public discovery and invalid-auth noise keep expected volume low.
+The one `lite` Container, one-instance ceiling, quotas, rate limits, ten-minute
+sleep, and dynamic `MCP_ENABLED` kill switch remain unchanged.
 
 ## Diagnose a ChatGPT reconnect without collecting secrets
 

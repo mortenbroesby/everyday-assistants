@@ -33,6 +33,7 @@ const validEnv: CloudflareEnv = {
 
 interface WranglerDeployment {
   keep_vars?: boolean;
+  observability: { enabled: boolean; head_sampling_rate: number };
   vars: Record<string, string>;
   containers: Array<{ max_instances: number; instance_type: string; constraints: { jurisdiction: string } }>;
   durable_objects: { bindings: unknown[] };
@@ -102,6 +103,7 @@ test("Wrangler configuration fixes both environments to one disabled EU lite Con
     limits: { cpu_ms: number; subrequests: number };
   };
   for (const deployment of [wrangler, wrangler.env.production]) {
+    assert.deepEqual(deployment.observability, { enabled: true, head_sampling_rate: 0.01 });
     assert.equal(deployment.vars.MCP_ENABLED, "false");
     assert.equal(deployment.vars.MCP_CREDENTIAL_ONBOARDING_ENABLED, "false");
     assert.equal(deployment.vars.MCP_CREDENTIAL_RATE_LIMIT, "3");
