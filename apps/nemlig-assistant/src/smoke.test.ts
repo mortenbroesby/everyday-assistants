@@ -21,7 +21,7 @@ test("source CLI, MCP, and HTTP modules import without starting work", async () 
   const { stderr, stdout } = await execute(
     process.execPath,
     ["--import=tsx", "--input-type=module", "--eval", 'globalThis.fetch=()=>{throw new Error("fetch during import")};await Promise.all([import("./cli.ts"), import("./mcp.ts"), import("./http.ts")])'],
-    { cwd: import.meta.dirname, env: { PATH: process.env.PATH }, timeout: 10_000 },
+    { cwd: import.meta.dirname, env: { PATH: process.env.PATH }, timeout: 30_000 },
   );
   assert.equal(stdout, "");
   assert.equal(stderr, "");

@@ -64,6 +64,8 @@ The operation SHALL distinguish repository contracts, edge, authenticated synthe
 
 Every release SHALL have unique operation ownership independent of source SHA and one shared cross-host production lease. Before and after each provider transition it SHALL persist a bounded redacted remote journal of intent and observed state. Concurrent, stale or changed ownership MUST NOT be stolen. A timeout, cancellation or lost response SHALL be treated as an uncertain mutation until provider readback reconciles it.
 
+A protected CI run MAY automatically release its own terminal lease only after the deployment command has stopped, the final bounded evidence artifact has uploaded successfully, and the existing recovery predicate re-verifies the exact journal head plus Worker, configuration, Container image, application version, and instance state. This cleanup MUST NOT use age, TTL, force, or an unchecked workflow status as proof, and cutovers awaiting live acceptance MUST retain ownership.
+
 #### Scenario: Two invocations deploy the same SHA
 - **WHEN** a second invocation encounters the first invocation's lease
 - **THEN** it fails without replacing or cleaning up the first invocation's ownership
@@ -75,6 +77,10 @@ Every release SHALL have unique operation ownership independent of source SHA an
 #### Scenario: Journal persistence fails
 - **WHEN** transition intent cannot be durably recorded
 - **THEN** the next provider mutation does not occur
+
+#### Scenario: A protected run reaches a verified terminal state
+- **WHEN** its deployment command has stopped, its bounded evidence artifact is saved, no live acceptance remains pending, and provider readback matches the exact terminal journal
+- **THEN** the same protected job releases only that journal's lease; any missing evidence, pending work, changed head, or provider drift retains it
 
 #### Scenario: Another actor changes production
 - **WHEN** provider state no longer matches the operation's known deployment during normal progress or rollback

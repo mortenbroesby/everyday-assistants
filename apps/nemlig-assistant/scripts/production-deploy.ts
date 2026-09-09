@@ -505,8 +505,12 @@ const readCurrent = async (deps: DeployDependencies): Promise<CurrentDeployment>
 const readVersion = async (deps: DeployDependencies, id: string): Promise<string> =>
   await wrangler(deps, ["versions", "view", id, "--json"]);
 
-const readContainer = async (deps: DeployDependencies): Promise<ContainerState> =>
-  parseContainer(await wrangler(deps, ["containers", "list", "--json"]));
+const readContainer = async (deps: DeployDependencies, applicationId?: string): Promise<ContainerState> => {
+  const id = applicationId ?? parseContainer(await wrangler(deps, ["containers", "list", "--json"])).id;
+  const info = object(json(await wrangler(deps, ["containers", "info", id, "--json"]), "cloudflare_containers_invalid"));
+  const configuration = object(info?.configuration);
+  return parseContainer(JSON.stringify([{ id: info?.id, name: info?.name, instances: info?.instances, image: configuration?.image, version: info?.version }]));
+};
 
 const resolveCandidateImage = async (deps: DeployDependencies, workerVersion: string): Promise<string> => {
   const account = deps.env.CLOUDFLARE_ACCOUNT_ID;
@@ -722,7 +726,7 @@ const verifyRecoveryTarget = async (deps: DeployDependencies, expected: Recovery
   const raw = await readVersion(deps, current.version);
   const state = parseVersionState(raw, current.version);
   verifyCandidateVersion(raw, current.version, state.revision, state.enabled);
-  const container = await readContainer(deps);
+  const container = await readContainer(deps, expected.containerId);
   const instances = await wrangler(deps, ["containers", "instances", container.id, "--json"]);
   return current.version === expected.version && (expected.enabled === undefined || state.enabled === expected.enabled)
     && container.id === expected.containerId && container.image === expected.image && container.version === expected.applicationVersion
@@ -944,7 +948,7 @@ const waitForAcceptedInstance = async (deps: DeployDependencies, applicationId: 
 const waitForCandidateContainer = async (deps: DeployDependencies, workerVersion: string, starting: ContainerState, image: string): Promise<ContainerState> => {
   for (let attempt = 0; attempt < 36; attempt += 1) {
     await verifyCurrent(deps, workerVersion);
-    const current = await readContainer(deps);
+    const current = await readContainer(deps, starting.id);
     if (current.id !== starting.id) fail("cloudflare_deployment_drift");
     if (current.image === image) return current;
     if (current.image !== starting.image || current.version !== starting.version) fail("cloudflare_deployment_drift");
@@ -1143,7 +1147,7 @@ export async function deployProduction(commit: string, inputDeps: DeployDependen
     await waitForInactive(deps, disabledContainer.id);
     await verifyCurrent(deps, disabledId);
     await verifyLeaseHead(deps, repository, journal);
-    const provenDisabledContainer = await readContainer(deps);
+    const provenDisabledContainer = await readContainer(deps, disabledContainer.id);
     if (provenDisabledContainer.id !== disabledContainer.id || provenDisabledContainer.image !== candidateImage
       || provenDisabledContainer.version !== disabledContainer.version) fail("cloudflare_deployment_drift");
     journal.disabledVersion = disabledId;
@@ -1166,7 +1170,7 @@ export async function deployProduction(commit: string, inputDeps: DeployDependen
     const enabledRaw = await readVersion(deps, enabledId);
     verifyCandidateVersion(enabledRaw, enabledId, commit, true);
     verifyConfig(enabledRaw, configured);
-    const enabledContainer = await readContainer(deps);
+    const enabledContainer = await readContainer(deps, disabledContainer.id);
     if (enabledContainer.id !== disabledContainer.id || enabledContainer.image !== candidateImage || enabledContainer.version !== disabledContainer.version) {
       fail("container_image_changed_during_enable");
     }
@@ -1181,7 +1185,7 @@ export async function deployProduction(commit: string, inputDeps: DeployDependen
     const runningVersion = await waitForAcceptedInstance(deps, enabledContainer.id, enabledContainer.version);
     await verifyCurrent(deps, enabledId);
     await verifyLeaseHead(deps, repository, journal);
-    const provenContainer = await readContainer(deps);
+    const provenContainer = await readContainer(deps, disabledContainer.id);
     if (provenContainer.id !== disabledContainer.id || provenContainer.image !== candidateImage
       || provenContainer.version !== disabledContainer.version || (runningVersion !== null && runningVersion !== provenContainer.version)) {
       fail("cloudflare_deployment_drift");

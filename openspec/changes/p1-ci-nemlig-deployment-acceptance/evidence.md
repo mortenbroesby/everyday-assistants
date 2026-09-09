@@ -1,5 +1,17 @@
 # Planning evidence
 
+## Deployment root-cause evidence, 2026-09-09
+
+Authenticated read-only production inspection found Worker version
+`173dbee6-e1ba-4236-bddd-23ea8828d373`. The Container list endpoint remained at
+application version 33 and its prior digest while authoritative Container info
+and the single running instance both reported version 34; info reported digest
+`sha256:ae0cf57c099223dcb96c1ea27ee99626af5ac52d89b4224d4a6ae6fa6a15cbbe`.
+This explains the repeated convergence failures. The shared deployment reader
+now uses list once for application discovery and info for all image/version
+decisions. Routine terminal runs finalize their recovery lease only after the
+bounded artifact succeeds; cutover and any uncertain state retain ownership.
+
 Baseline: refreshed `origin/main` at `775b1fffaee74f3792661d45046f84b3cd60bea0`, clean isolated worktree `plan-ci-nemlig-acceptance`, branch `codex/plan-ci-nemlig-acceptance`. Only this change's planning artifacts are modified. No runtime, provider, secret, deployment, Auth0 account or shopping-data change was performed.
 
 Verified during planning:

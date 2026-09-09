@@ -2,7 +2,7 @@ Owner clarification (2026-09-09): this is one-time restricted CI setup, not an o
 
 # Owner setup and activation checklist
 
-Status: PROVIDER SETUP NOT PERFORMED. The owner accepted the routine synthetic / first-cutover-and-relevant-change live evidence matrix on 2026-09-09. Remaining identity, credential, entitlement and protection setup decisions below are still pending concrete inventory. Repository implementation can proceed on ready packets without waiting for these external actions.
+Status: PROVIDER SETUP COMPLETE. On 2026-09-09 the protected `nemlig-production` environment was verified with the owner reviewer, exact `main` branch policy, two required secrets, three required variables, and readiness enabled. The owner accepted the routine synthetic / first-cutover-and-relevant-change live evidence matrix. Secret values remain outside repository evidence.
 
 ## Decisions to approve together after repository readiness
 
@@ -44,7 +44,7 @@ Record final public-safe evidence only: configuration/protection checks, source 
 
 Normal releases use `production:deploy -- --service <full-main-sha>`. The first release and changed runtime boundaries use `--service-cutover` with the same machine identity. Successful synthetic checks leave `live_acceptance_pending`; complete the approved real-user check through the existing connected app, then record its exact revision in `apps/nemlig-assistant/release/production-cutover.json` and finalize recovery only after the remaining journal conditions hold. The record begins with `acceptedRevision: null`; no historical or synthetic result fills it automatically.
 
-Read-only GitHub inventory on 2026-09-09 still reports zero environments. The committed workflow is therefore unavailable for deployment until the one-time protected environment and scoped credentials are configured and verified.
+GitHub inventory on 2026-09-09 confirms the protected environment and scoped configuration above. The committed workflow is available for an approved exact-main deployment.
 
 ## Scoped permission inventory (2026-09-09)
 

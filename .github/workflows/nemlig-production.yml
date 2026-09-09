@@ -120,6 +120,7 @@ jobs:
             pnpm --filter nemlig-assistant production:deploy -- --service "$CANDIDATE_SHA"
           fi >"$RUNNER_TEMP/nemlig-release.json"
       - name: Upload bounded release report and deployment journal
+        id: release-artifact
         if: always()
         uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # v4.6.0
         with:
@@ -130,3 +131,18 @@ jobs:
           if-no-files-found: warn
           retention-days: 7
           include-hidden-files: true
+      - name: Finalize routine deployment recovery
+        if: ${{ always() && steps.release-artifact.outcome == 'success' && env.CUTOVER != 'true' }}
+        env:
+          GH_TOKEN: "${{ github.token }}"
+          CLOUDFLARE_API_TOKEN: "${{ secrets.CLOUDFLARE_API_TOKEN }}"
+          CLOUDFLARE_ACCOUNT_ID: "${{ vars.CLOUDFLARE_ACCOUNT_ID }}"
+        run: |
+          set -euo pipefail
+          operation_id=$(node --input-type=module -e '
+            import { readFileSync } from "node:fs";
+            const value = JSON.parse(readFileSync(process.argv[1], "utf8"));
+            if (typeof value.operationId !== "string" || !/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/.test(value.operationId)) process.exit(1);
+            process.stdout.write(value.operationId);
+          ' "$RUNNER_TEMP/nemlig-release.json")
+          pnpm --filter nemlig-assistant production:deploy -- finalize "$operation_id" --evidence-saved --original-runner-stopped

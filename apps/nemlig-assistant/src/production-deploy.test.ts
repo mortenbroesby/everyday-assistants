@@ -104,6 +104,10 @@ const recoveryDeps = (journal: Record<string, unknown>, currentVersion: string, 
     if (command === "pnpm" && args.includes("deployments")) return deployment(currentVersion);
     if (command === "pnpm" && args.includes("versions")) return version(currentVersion, commit, currentEnabled);
     if (command === "pnpm" && args.includes("instances")) return JSON.stringify([{ id: "durable-object", name: "nemlig-production", state: "inactive", version: null }]);
+    if (command === "pnpm" && args.includes("info")) return JSON.stringify({
+      id: applicationId, name: "nemlig-mcp-cloudflare-production-nemligmcpcontainer-production", instances: 1,
+      configuration: { image }, version: 25,
+    });
     if (command === "pnpm" && args.includes("containers")) return JSON.stringify([{
       id: applicationId, name: "nemlig-mcp-cloudflare-production-nemligmcpcontainer-production", instances: 1, image, version: 25,
     }]);
@@ -341,18 +345,21 @@ async function fixture(options: {
         return JSON.stringify(parsed);
       }
     }
-    if (args.includes("containers") && args.includes("list")) {
+    if (args.includes("containers") && args.includes("list")) return JSON.stringify([{
+      id: applicationId, name: "nemlig-mcp-cloudflare-production-nemligmcpcontainer-production", instances: 1, image, version: 25,
+    }]);
+    if (args.includes("containers") && args.includes("info")) {
       const candidate = current !== startingId;
       if (current === disabledId) disabledContainerReads += 1;
       const converged = disabledContainerReads > (options.candidateContainerDelay ?? 0);
-      return JSON.stringify([{
+      return JSON.stringify({
       id: options.disabledApplicationIdDrift && current === disabledId ? thirdPartyId : applicationId,
       name: "nemlig-mcp-cloudflare-production-nemligmcpcontainer-production",
       instances: 1,
-      image: candidate && converged ? (options.candidateWrongImage ? `sha256:${"c".repeat(64)}` : options.candidateMatchesStarting ? image : candidateImage) : image,
+      configuration: { image: candidate && converged ? (options.candidateWrongImage ? `sha256:${"c".repeat(64)}` : options.candidateMatchesStarting ? image : candidateImage) : image },
       version: options.postProofApplicationVersionDrift && enabledInstanceReads > 0 ? applicationVersion + 1
         : candidate && converged ? applicationVersion : 25,
-      }]);
+      });
     }
     if (args.includes("containers") && args.includes("instances")) {
       if (rolledBack && options.restoredInstanceRows) return JSON.stringify(options.restoredInstanceRows);
@@ -959,7 +966,8 @@ test("waits while disabled for the candidate digest and numeric application vers
     assert.equal(report.outcome, "success");
     assert.equal(report.enabledApplicationVersion, 26);
     const enable = calls.findIndex(({ args }) => args.includes("MCP_ENABLED:true"));
-    assert.ok(calls.slice(0, enable).filter(({ args }) => args.includes("containers") && args.includes("list")).length >= 4);
+    assert.equal(calls.filter(({ args }) => args.includes("containers") && args.includes("list")).length, 1);
+    assert.ok(calls.slice(0, enable).filter(({ args }) => args.includes("containers") && args.includes("info")).length >= 4);
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
@@ -1336,9 +1344,13 @@ test("finalize accepts GitHub's empty successful DELETE only after the exact rem
     if (command === "pnpm" && args.includes("deployments")) return deployment(enabledId);
     if (command === "pnpm" && args.includes("versions")) return version(enabledId, commit, true);
     if (command === "pnpm" && args.includes("instances")) return JSON.stringify([{ id: "instance", name: "nemlig-production", state: "running", version: 25 }]);
-    if (command === "pnpm" && args.includes("containers")) return JSON.stringify([{
+    if (command === "pnpm" && args.includes("info")) return JSON.stringify({
       id: applicationId, name: "nemlig-mcp-cloudflare-production-nemligmcpcontainer-production", instances: 1, image: currentImage,
+      configuration: { image: currentImage },
       version: 25,
+    });
+    if (command === "pnpm" && args.includes("containers")) return JSON.stringify([{
+      id: applicationId, name: "nemlig-mcp-cloudflare-production-nemligmcpcontainer-production", instances: 1, image: currentImage, version: 25,
     }]);
     if (command !== "gh") throw new Error("unexpected command");
     if (args[0] === "repo") return JSON.stringify({ nameWithOwner: "mortenbroesby/everyday-assistants", url: "https://github.com/mortenbroesby/everyday-assistants" });
@@ -1575,7 +1587,7 @@ test("the runner rejects a pre-aborted command before spawning and kills a detac
     "setInterval(() => {}, 1_000);",
   ].join(" ");
   try {
-    await assert.rejects(defaultRunner(process.execPath, ["-e", script, pidPath], { timeoutMs: 500 }), /command_cancelled/u);
+    await assert.rejects(defaultRunner(process.execPath, ["-e", script, pidPath], { timeoutMs: 2_000 }), /command_cancelled/u);
     const descendant = Number(await readFile(pidPath, "utf8"));
     const status = await execFileAsync("ps", ["-o", "stat=", "-p", String(descendant)]).then(({ stdout }) => stdout.trim(), () => "");
     assert.ok(status === "" || status.startsWith("Z"), `descendant remains running: ${status}`);

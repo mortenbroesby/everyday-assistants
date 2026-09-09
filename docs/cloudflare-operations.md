@@ -176,7 +176,7 @@ responses.
 
 Routine CI releases use the manual **Nemlig production** workflow with the exact green `main` SHA. The protected `nemlig-production` environment holds a scoped Cloudflare deployment token and a dedicated Auth0 machine client secret. CI never requests an owner access token, password or browser session.
 
-One-time setup is still pending: on 2026-09-09 GitHub reports no environments, and the service runtime is disabled by default. Follow the [setup packet](../openspec/changes/p1-ci-nemlig-deployment-acceptance/owner-setup.md) before activation.
+One-time setup is complete: the `nemlig-production` environment requires the owner reviewer, permits only `main`, and contains the two scoped secrets and three non-secret variables required by the workflow. Routine releases need no owner or 1Password session.
 
 The shared command also supports supervised terminal execution with those same scoped CI credentials:
 
@@ -207,8 +207,10 @@ retains ownership without retrying or automatically rolling back that command.
 The operation has a 25-minute deadline; cancellation terminates the command's
 process group before returning.
 
-Every run retains both leases, including success. Save the final evidence first;
-only then use explicit finalization. It requires the exact operation UUID,
+After the deployment command stops and the bounded report artifact is saved, a
+known terminal routine run invokes exact-state finalization automatically. A
+cutover, failed artifact upload, pending intent, unknown state or drift retains
+both leases for explicit inspection and finalization. Finalization requires the exact operation UUID,
 complete terminal evidence, matching current Worker/configuration/application/instance and unchanged remote
 journal head. Missing evidence, pending intent, unknown state or drift blocks
 cleanup. A legacy source-SHA lease also blocks new releases; never steal it or
@@ -239,6 +241,12 @@ Rollback and failure recovery also verify configuration, image, application
 version and instance state before claiming a known result. A Worker-only rollback
 is not proof of image restoration. These local safeguards do not substitute for
 approved live cutover/recovery evidence or authorize a production mutation.
+
+Wrangler's Container list can lag an active rollout. Use
+`wrangler containers list --env production --json` only to discover the single
+application ID, then use `wrangler containers info APPLICATION_ID --env production --json`
+for authoritative image and application-version reads. Match that version to
+the single accepted instance before reporting convergence.
 
 This automation adds no workflow, CI job, hosted secret, service, dependency,
 schedule, or runtime capacity. It adds bounded Git journal objects, with at most

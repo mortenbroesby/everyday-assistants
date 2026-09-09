@@ -28,6 +28,7 @@ Readiness: source-trust and drift tests READY after 0.1–0.2; remote-journal im
 - [x] 2.6 Record application/image digests and effective allowlisted config/secret binding names; verify single-build enablement, `keep_vars`/onboarding preservation, safety drift, unknown CLI schema and Worker-only rollback mismatch all fail or recover truthfully.
 - [x] 2.7 Add bounded recovery inspection using the same journal and command seams, with no force-unlock or automatic stale takeover; verify a second host must establish original runner termination, current candidate state and exact lease identity before cleanup.
 - [x] 2.8 An independent review agent (Luna when available) runs focused deploy tests and reviews command traces; the current-thread coordinator, as requested by the user, integrates S2 after source, ownership, durable evidence and configuration checks pass, recording scoped SHA and remaining live-only U1 proof. The unavailable Luna slot and existing-agent review are recorded in evidence.
+- [x] 2.9 Replace stale `containers list` image/version reads with `containers info <validated-id> --json`; verify list is used only for single-application discovery and delayed list metadata cannot reject an otherwise matching info/instance state during deployment or recovery.
 
 ## 3. S3 — Isolated machine acceptance identity
 
@@ -59,6 +60,7 @@ Readiness: after S2/S4 for executable integration; workflow trust tests can be p
 - [x] 5.3 Scope GITHUB_TOKEN permissions to actual trust/journal calls and secrets to their exact command steps, with total timeout and bounded final evidence artifact; verify missing protections/credentials fail closed and artifact failure cannot erase the remote journal.
 - [ ] 5.4 Run a credential-free Linux workflow rehearsal using fake provider/token endpoints and the real command orchestration; verify successful trace, canceled run, same-SHA competing run, source drift and rollback failure all report the correct terminal state.
 - [x] 5.5 Luna checks workflow syntax/action pins/permissions and Sol inspects exact workflow bytes against release trust policy; verify no provider changes occurred and production readiness stays false until S6.
+- [x] 5.6 After the deployment process and bounded artifact upload complete, automatically invoke the existing exact-state finalizer for known terminal non-cutover runs; verify pending live acceptance, unknown state, failed artifact upload, changed lease head, or provider drift retains ownership, with no TTL or force cleanup.
 
 ## 6. S6 — Owner-approved provider setup and cutover readiness
 
@@ -74,7 +76,7 @@ Readiness: BLOCKED on D1–D4 and completed repository isolation/trust/recovery 
 Readiness: repository verification can finish before S6; provider release requires S6 and explicit exact-release authority. Sol coordinates versions, main integration, provider commands and status. Luna verifies readbacks; Terra fixes only bounded assigned defects.
 
 - [x] 7.1 Run scoped tests, public privacy, `pnpm verify`, `pnpm nemlig:production:ready` and `openspec validate --all --strict --no-interactive` on the composed revision; verify all required checks pass and record unrelated baseline failures separately.
-- [ ] 7.2 Commit/push scoped integration to main using the established worktree process and verify refreshed remote SHA plus trusted exact-head CI; verify running tests on an older SHA does not count as final evidence.
+- [x] 7.2 Commit/push scoped integration to main using the established worktree process and verify refreshed remote SHA plus trusted exact-head CI; verify running tests on an older SHA does not count as final evidence. Current proof: `8654a4ba67643abecbbe35516fc9bd15279044a4`, CI run `34363170924`.
 - [ ] 7.3 After owner approves that release, dispatch once and verify remote intent journal, both disabled routes/inactive instance, one candidate image, same-image enablement and class-required acceptance; verify bounded sanitized report matches actual Worker/image/SHA and no data mutation occurred.
 - [ ] 7.4 Complete approved bounded live-user/provider and existing-app ChatGPT cutover evidence, recording actual timestamps/revision and pending/unavailable boundaries; verify no duplicate app, background-handoff assumption, prepare/apply or shopping-data write.
 - [ ] 7.5 Record measured CI duration, token calls, request counts and Container state against the initial cost budget, and verify recovery evidence; if a live rollback rehearsal is separately approved, execute and verify exact Worker/image restoration or honest disabled/unknown state.

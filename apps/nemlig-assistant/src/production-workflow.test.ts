@@ -48,7 +48,25 @@ test("production workflow is manual, main-only, protected, and credential-scoped
   assert.match(deploy, /RUNNER_TEMP\/nemlig-release\.json/u);
   assert.match(deploy, /\.git\/nemlig-production-deploy\/latest\.json/u);
   assert.match(deploy, /actions\/upload-artifact@[0-9a-f]{40}/u);
+  assert.match(deploy, /id: release-artifact/u);
   assert.match(deploy, /retention-days: 7/u);
   assert.match(deploy, /include-hidden-files: true/u);
   assert.doesNotMatch(source, /setup-.*provider|activate|cloudflare\/workers/u);
+});
+
+test("routine recovery finalizes only after its artifact is saved", async () => {
+  const deploy = section(await readFile(workflowPath, "utf8"), "  deploy:");
+  const upload = deploy.indexOf("uses: actions/upload-artifact@");
+  const finalize = deploy.indexOf("production:deploy -- finalize");
+  assert.ok(upload >= 0 && finalize > upload);
+  assert.match(deploy, /if: \$\{\{ always\(\) && steps\.release-artifact\.outcome == 'success' && env\.CUTOVER != 'true' \}\}/u);
+  assert.match(deploy, /JSON\.parse\(readFileSync\(process\.argv\[1\], "utf8"\)\)/u);
+  assert.match(deploy, /\^\[0-9a-f\]\{8\}\(\?:-\[0-9a-f\]\{4\}\)\{3\}-\[0-9a-f\]\{12\}\$/u);
+  assert.match(deploy, /finalize "\$operation_id" --evidence-saved --original-runner-stopped/u);
+
+  const finalization = deploy.slice(deploy.lastIndexOf("      - name:", finalize));
+  assert.match(finalization, /GH_TOKEN:/u);
+  assert.match(finalization, /CLOUDFLARE_API_TOKEN:/u);
+  assert.match(finalization, /CLOUDFLARE_ACCOUNT_ID:/u);
+  assert.doesNotMatch(finalization, /NEMLIG_MCP_SERVICE_CLIENT_SECRET/u);
 });
