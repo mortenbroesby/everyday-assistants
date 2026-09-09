@@ -572,6 +572,13 @@ test("published plan schemas validate real outputs and reject malformed data", a
     const planLines = plan.lines as Array<Record<string, unknown>>;
     assert.equal(planLines[0]!.basket_quantity, 0.5);
     assert.equal(planLines[0]!.remaining_quantity, 1.5);
+    const amountPlan = await call("plan_my_shopping", { lines: [{ id: "milk", name: "mælk", requested_amount: 2, requested_unit: "l", preferred_brands: ["Test"] }] });
+    const amountLine = (amountPlan.lines as Array<Record<string, unknown>>)[0]!;
+    const amountCandidate = (amountLine.candidates as Array<Record<string, unknown>>)[0]!;
+    assert.equal(amountLine.requested_amount, 2);
+    assert.equal(amountCandidate.preferred_brand_match, true);
+    assert.equal(amountCandidate.required_packages, 2);
+    assert.equal(amountCandidate.covered_amount, 2000);
     const manual = await call("plan_my_shopping", { lines, mode: "manual" });
     assert.equal((manual.lines as Array<Record<string, unknown>>)[0]!.clarity_reason, "manual_choice");
     const empty = await call("plan_my_shopping", { lines: [{ id: "missing", name: "missing", quantity: 1 }] });

@@ -76,6 +76,9 @@ preparatory, and exact reviews still wait for approval.
 - Search the current catalogue for every ordinary line using short, loose Danish wording.
 - Apply hard constraints such as dietary, price, or frozen/non-frozen rules.
 - Prefer discounted, organic, non-frozen, or lowest-unit-price candidates.
+- Exclude clearly incompatible categories such as pet food from ordinary human-food plans.
+- Preserve requested weights, volumes, or counts and compare the package combinations needed to cover them.
+- Prefer brands the user explicitly states or ChatGPT remembers, and offer a bounded choice for brand-sensitive lines when no preference decides them.
 - Preserve ambiguity when several products could be right instead of guessing.
 - Report exact covered, automatically selected, unresolved, failed, and
   automatic-coverage totals.

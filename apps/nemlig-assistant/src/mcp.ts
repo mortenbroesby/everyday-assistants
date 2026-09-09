@@ -199,18 +199,22 @@ const applyResultSchema = z.object({
   basket: basketSchema,
 });
 
-const shoppingPlanToolInputSchema = z.object({
+const shoppingPlanToolBaseSchema = z.object({
   lines: z.array(shoppingPlanLineSchema.omit({ selected_product_id: true }).extend({
     selected_product: z.number().int().positive().optional().describe("The exact product selected from an earlier result."),
   })).min(1).max(50).describe("The groceries to plan, with quantities and any requirements or preferences."),
   mode: z.enum(["automatic", "manual"]).default("automatic").describe("Automatic selects only deterministic clear matches; manual leaves candidates for choice."),
 }).strict();
-
-const shoppingRunToolInputSchema = shoppingPlanToolInputSchema.extend({
+const validateRequestedAmounts = (input: { lines: Array<{ requested_amount?: number; requested_unit?: string }> }, context: z.RefinementCtx): void => {
+  for (const [index, line] of input.lines.entries()) if ((line.requested_amount === undefined) !== (line.requested_unit === undefined)) {
+    context.addIssue({ code: "custom", path: ["lines", index], message: "requested_amount and requested_unit must be supplied together." });
+  }
+};
+const shoppingRunToolInputSchema = shoppingPlanToolBaseSchema.extend({
   proceed: z.boolean().default(false).describe("True only when the user explicitly asked to add sufficiently clear products in this same run."),
-}).strict();
+}).strict().superRefine(validateRequestedAmounts);
 
-const internalShoppingPlan = (input: z.infer<typeof shoppingPlanToolInputSchema>) => ({
+const internalShoppingPlan = (input: z.infer<typeof shoppingPlanToolBaseSchema>) => ({
   lines: input.lines.map(({ selected_product, ...line }) => ({ ...line, selected_product_id: selected_product })),
   mode: input.mode,
 });
@@ -232,6 +236,13 @@ const planCandidateOutputSchema = z.object({
   is_on_discount: z.boolean(),
   constraint_outcomes: z.record(z.string(), z.boolean()),
   tags: z.array(z.string()),
+  relevant: z.boolean(),
+  preferred_brand_match: z.boolean(),
+  package_amount: z.number().positive().optional(),
+  package_unit: z.enum(["g", "ml", "stk"]).optional(),
+  required_packages: z.number().int().positive().optional(),
+  covered_amount: z.number().positive().optional(),
+  excess_amount: z.number().nonnegative().optional(),
 }).strict();
 const planLineOutputSchema = z.object({
   id: z.string(),
@@ -241,10 +252,12 @@ const planLineOutputSchema = z.object({
   resolution: z.enum(["selected", "covered", "unresolved"]),
   reason: z.string().optional(),
   clarity: z.enum(["clear", "unclear"]),
-  clarity_reason: z.enum(["exact_product", "unique_candidate", "clear_text_match", "manual_choice", "close_alternatives", "no_eligible_candidate", "discovery_unavailable", "unavailable"]),
+  clarity_reason: z.enum(["exact_product", "unique_candidate", "clear_text_match", "preferred_brand", "amount_match", "manual_choice", "brand_choice", "close_alternatives", "no_eligible_candidate", "discovery_unavailable", "unavailable"]),
   selected_product_id: z.number().int().positive().optional(),
   basket_quantity: z.number(),
   remaining_quantity: z.number().nonnegative(),
+  requested_amount: z.number().positive().optional(),
+  requested_unit: z.enum(["g", "kg", "ml", "cl", "l", "stk"]).optional(),
 }).strict();
 const planOutputSchema = z.object({
   mode: z.enum(["automatic", "manual"]),
@@ -409,7 +422,7 @@ export function createMcpServer(
     },
     {
       instructions:
-        "Use Nemlig Assistant for current Nemlig products, prices, availability, favourites, basket contents, recipes, conversation lists, or choosing and adding groceries. For ordinary find or add requests, use plan_my_shopping in automatic mode with one short Danish catalogue phrase per line; use manual mode only when the user asks to choose or when automatic results are unclear. Translate or normalize English, mixed-language, misspelled, and over-specific wording before the tool call: keep distinctive brand words, replace a foreign generic category with the intended Danish category, and omit conversational context. Ordinary planning searches the current Nemlig catalogue once per line, never favourites. When a line reports discovery_unavailable, call find_groceries once for that normalized line and continue conversationally. Use choose_products_visually only when the user explicitly asks for visual choice, and show_my_favorites only when explicitly requested. For 'use this recipe/list and go ahead', set proceed true, then pass the returned same-run authorization through review_items_to_add and immediately use add_approved_items for its unchanged proposal; do not ask for redundant approval. Without explicit proceed intent, a plan, candidate choice, or exact review never authorizes mutation. A same-run authorization covers only clear additions from that run, never unresolved lines, removals, replacements, clearing, checkout, payment, ordering, or delivery slots. Present concise added, already-covered, unresolved, failed, and automatic-coverage results; omit internal references unless troubleshooting. Every basket change revalidates exact data, is single-use, stops on uncertainty, and reads back the basket.",
+        "Use Nemlig Assistant for current Nemlig products, prices, availability, favourites, basket contents, recipes, conversation lists, or choosing and adding groceries. For ordinary find or add requests, use plan_my_shopping in automatic mode with one short Danish catalogue phrase per line; preserve a user's stated amount as requested_amount and requested_unit, pass explicitly stated or remembered brands as preferred_brands, and set require_choice for brand-sensitive lines when no preference resolves them. Use manual mode only when the user asks to choose or when automatic results are unclear. Translate or normalize English, mixed-language, misspelled, and over-specific wording before the tool call: keep distinctive brand words, replace a foreign generic category with the intended Danish category, and omit conversational context. Never silently choose the cheapest product for a line reported as brand_choice or close_alternatives. Ordinary planning searches the current Nemlig catalogue once per line, never favourites. When a line reports discovery_unavailable, call find_groceries once for that normalized line and continue conversationally. Use choose_products_visually only when the user explicitly asks for visual choice, and show_my_favorites only when explicitly requested. For 'use this recipe/list and go ahead', set proceed true, then pass the returned same-run authorization through review_items_to_add and immediately use add_approved_items for its unchanged proposal; do not ask for redundant approval. Without explicit proceed intent, a plan, candidate choice, or exact review never authorizes mutation. A same-run authorization covers only clear additions from that run, never unresolved lines, removals, replacements, clearing, checkout, payment, ordering, or delivery slots. Present concise added, already-covered, unresolved, failed, and automatic-coverage results; omit internal references unless troubleshooting. Every basket change revalidates exact data, is single-use, stops on uncertainty, and reads back the basket.",
     },
   );
   if (requestContext?.kind === "service") {
