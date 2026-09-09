@@ -12,6 +12,22 @@ now uses list once for application discovery and info for all image/version
 decisions. Routine terminal runs finalize their recovery lease only after the
 bounded artifact succeeds; cutover and any uncertain state retain ownership.
 
+Exact-head CI run `34368993721` passed for
+`095ef33072b1290a1b316c4fb45c334669d08736`. Protected cutover run
+`34369271232` passed in 3m41s after owner environment review. Its terminal
+journal records enabled Worker `44bc88b7-5424-427e-ab73-fd1c8ada57dd`,
+application version 35, digest
+`sha256:9561245a7370a7e40b3290a454b16c8f812d3e96171d64d0de40c5a670153514`,
+disabled-route and inactive-instance proof, edge acceptance, isolated service
+fixture acceptance, no rollback, and `live_acceptance_pending`. The cutover
+lease remains intentionally held until a connected real-user read succeeds.
+
+Artifact inspection also showed pnpm's lifecycle banner precedes the JSON in
+`nemlig-release.json`. The automatic routine finalizer therefore parses the
+separately uploaded canonical local journal at
+`.git/nemlig-production-deploy/latest.json`; missing or invalid journal data
+still leaves the lease held.
+
 Baseline: refreshed `origin/main` at `775b1fffaee74f3792661d45046f84b3cd60bea0`, clean isolated worktree `plan-ci-nemlig-acceptance`, branch `codex/plan-ci-nemlig-acceptance`. Only this change's planning artifacts are modified. No runtime, provider, secret, deployment, Auth0 account or shopping-data change was performed.
 
 Verified during planning:

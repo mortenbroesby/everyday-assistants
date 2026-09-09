@@ -144,5 +144,5 @@ jobs:
             const value = JSON.parse(readFileSync(process.argv[1], "utf8"));
             if (typeof value.operationId !== "string" || !/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/.test(value.operationId)) process.exit(1);
             process.stdout.write(value.operationId);
-          ' "$RUNNER_TEMP/nemlig-release.json")
+          ' "$GITHUB_WORKSPACE/.git/nemlig-production-deploy/latest.json")
           pnpm --filter nemlig-assistant production:deploy -- finalize "$operation_id" --evidence-saved --original-runner-stopped

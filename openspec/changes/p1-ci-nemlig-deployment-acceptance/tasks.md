@@ -66,10 +66,10 @@ Readiness: after S2/S4 for executable integration; workflow trust tests can be p
 
 Readiness: BLOCKED on D1–D4 and completed repository isolation/trust/recovery gates. Sol presents `owner-setup.md` with actual IDs/permissions/plan findings but no secret values. Owner authorizes provider/access/cost choices; only explicitly authorized setup runs. Terra/Luna receive no production secrets.
 
-- [ ] 6.1 Sol completes read-only Auth0/Cloudflare/GitHub entitlement and resource inventory, then presents exact identity, fixture boundary, token permission/expiry, reviewer policy and bounded cost proposal; verify owner decisions are recorded before mutations.
-- [ ] 6.2 Perform only approved GitHub environment, Auth0 M2M grant and Cloudflare CI-token setup using secure provider/UI secret entry; verify names/scopes/protection metadata and token validity without exposing values.
-- [ ] 6.3 Verify the service identity has no normal-user, Management API, owner, real provider or admin grant and required production switches/config preserve existing state; record only pass/fail and safe version/config names.
-- [ ] 6.4 Verify exact current main CI, deployment policy, remote journal recovery instructions and selected cutover/live acceptance path are ready; verify missing live cutover credentials/evidence plan blocks deployment and no predecessor task is prematurely checked.
+- [x] 6.1 Sol completes read-only Auth0/Cloudflare/GitHub entitlement and resource inventory, then presents exact identity, fixture boundary, token permission/expiry, reviewer policy and bounded cost proposal; verify owner decisions are recorded before mutations.
+- [x] 6.2 Perform only approved GitHub environment, Auth0 M2M grant and Cloudflare CI-token setup using secure provider/UI secret entry; verify names/scopes/protection metadata and token validity without exposing values.
+- [x] 6.3 Verify the service identity has no normal-user, Management API, owner, real provider or admin grant and required production switches/config preserve existing state; record only pass/fail and safe version/config names.
+- [x] 6.4 Verify exact current main CI, deployment policy, remote journal recovery instructions and selected cutover/live acceptance path are ready; verify missing live cutover credentials/evidence plan blocks deployment and no predecessor task is prematurely checked.
 
 ## 7. S7 — Full integration, approved release and evidence
 
@@ -77,7 +77,7 @@ Readiness: repository verification can finish before S6; provider release requir
 
 - [x] 7.1 Run scoped tests, public privacy, `pnpm verify`, `pnpm nemlig:production:ready` and `openspec validate --all --strict --no-interactive` on the composed revision; verify all required checks pass and record unrelated baseline failures separately.
 - [x] 7.2 Commit/push scoped integration to main using the established worktree process and verify refreshed remote SHA plus trusted exact-head CI; verify running tests on an older SHA does not count as final evidence. Current proof: `8654a4ba67643abecbbe35516fc9bd15279044a4`, CI run `34363170924`.
-- [ ] 7.3 After owner approves that release, dispatch once and verify remote intent journal, both disabled routes/inactive instance, one candidate image, same-image enablement and class-required acceptance; verify bounded sanitized report matches actual Worker/image/SHA and no data mutation occurred.
+- [x] 7.3 After owner approves that release, dispatch once and verify remote intent journal, both disabled routes/inactive instance, one candidate image, same-image enablement and class-required acceptance; verify bounded sanitized report matches actual Worker/image/SHA and no data mutation occurred. Cutover run `34369271232` deployed `095ef33072b1290a1b316c4fb45c334669d08736` as Worker `44bc88b7-5424-427e-ab73-fd1c8ada57dd`, application version 35, with successful artifact and pending live acceptance.
 - [ ] 7.4 Complete approved bounded live-user/provider and existing-app ChatGPT cutover evidence, recording actual timestamps/revision and pending/unavailable boundaries; verify no duplicate app, background-handoff assumption, prepare/apply or shopping-data write.
 - [ ] 7.5 Record measured CI duration, token calls, request counts and Container state against the initial cost budget, and verify recovery evidence; if a live rollback rehearsal is separately approved, execute and verify exact Worker/image restoration or honest disabled/unknown state.
 - [ ] 7.6 Sol updates operations/readiness docs and predecessor evidence only where actual acceptance satisfies their tasks; verify source/SHA/profile separation and no historical result is rewritten as current.
