@@ -91,11 +91,12 @@ test("login retains multiple cookies and reuses the session for basket access", 
 
 test("login rejects provider errors without exposing the supplied secret", async () => {
   const client = new NemligClient(
-    mockFetch([{ match: "/login$", response: json({ ErrorCode: "bad", ErrorMessage: "Nope" }) }]),
+    mockFetch([{ match: "/login$", response: new Response("{}", { status: 401 }) }]),
   );
   await assert.rejects(client.login("person@example.test", "private-secret"), (error) => {
     assert.ok(error instanceof NemligError);
-    assert.match(error.message, /Login failed: Nope/);
+    assert.equal(error.status, 401);
+    assert.match(error.message, /Login failed \(HTTP 401\)/);
     assert.doesNotMatch(error.message, /private-secret/);
     return true;
   });

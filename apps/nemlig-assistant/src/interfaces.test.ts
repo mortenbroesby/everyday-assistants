@@ -8,7 +8,7 @@ import { createHash } from "node:crypto";
 import { mkdtemp, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import test from "node:test";
-import type { Basket, Product, ShoppingClient } from "./client.js";
+import { NemligError, type Basket, type Product, type ShoppingClient } from "./client.js";
 import { createProgram } from "./cli.js";
 import { createMcpServer, NEMLIG_CONNECT_URL, PICKER_URI, rankProducts, safeNemligImageUrl, serviceAcceptanceResourceInventory, serviceAcceptanceToolInventory, type Candidate } from "./mcp.js";
 import { productionToolInventory } from "./production-acceptance.js";
@@ -452,6 +452,33 @@ test("MCP favorites is read-only and returns listed, matched, or empty candidate
     assert.deepEqual((empty.structuredContent as { result: unknown[] }).result, []);
     assert.deepEqual(requestedLimits, [1, 1000, 1000]);
   });
+});
+
+test("MCP find_groceries retries once on one expired-session response and reuses fresh credentials", async () => {
+  let calls = 0;
+  let logins = 0;
+  const client = fakeClient({
+    isLoggedIn: () => true,
+    login: async () => {
+      logins += 1;
+    },
+    searchProducts: async () => {
+      calls += 1;
+      if (calls === 1) throw new NemligError("Search failed", 401);
+      return [product];
+    },
+  });
+  await withMcpClient(
+    createMcpServer(client, async () => ({ username: "person@example.test", password: "secret" })),
+    async (mcp) => {
+      const result = await mcp.callTool({ name: "find_groceries", arguments: { search_term: "mælk", result_count: 1 } });
+      assert.notEqual(result.isError, true, toolText(result));
+      const returned = (result.structuredContent as { result: Array<{ id: number }> }).result;
+      assert.deepEqual(returned.map(({ id }) => id), [7]);
+    },
+  );
+  assert.equal(calls, 2);
+  assert.equal(logins, 1);
 });
 
 test("MCP plans whole lists without saved state", async () => {
