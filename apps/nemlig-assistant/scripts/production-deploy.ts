@@ -1124,6 +1124,12 @@ export async function deployProduction(commit: string, inputDeps: DeployDependen
     journal.lastVerifiedState = "enabled";
     journal.checks.push("enabled_version", "image_reused");
     await transition("enable_deploy", "result", enabledId);
+    await waitForRunningInstance(deps, enabledContainer.id, enabledContainer.version);
+    await verifyCurrent(deps, enabledId);
+    const provenContainer = await readContainer(deps);
+    if (provenContainer.id !== enabledContainer.id || provenContainer.image !== enabledContainer.image || provenContainer.version !== enabledContainer.version) {
+      fail("cloudflare_deployment_drift");
+    }
     await runAt(deps, deps.packageRoot, "pnpm", ["production:probe"], {
       timeoutMs: 120_000,
       env: { NEMLIG_EXPECTED_REVISION: commit },
@@ -1132,12 +1138,6 @@ export async function deployProduction(commit: string, inputDeps: DeployDependen
       timeoutMs: 120_000,
       ...(service ? { env: { NEMLIG_MCP_SERVICE_ACCESS_TOKEN: serviceToken, NEMLIG_EXPECTED_REVISION: commit } } : {}),
     });
-    await waitForRunningInstance(deps, enabledContainer.id, enabledContainer.version);
-    await verifyCurrent(deps, enabledId);
-    const provenContainer = await readContainer(deps);
-    if (provenContainer.id !== enabledContainer.id || provenContainer.image !== enabledContainer.image || provenContainer.version !== enabledContainer.version) {
-      fail("cloudflare_deployment_drift");
-    }
     journal.enabledVersion = enabledId;
     journal.checks.push("edge_acceptance", service ? "service_fixture_acceptance" : "authenticated_read_only_acceptance");
     if (inputDeps.acceptanceMode === "service-cutover") journal.checks.push("live_acceptance_pending");

@@ -618,6 +618,9 @@ test("successful deployment builds once, reuses the image, and journals only red
     const rollout = deploys[1].args.indexOf("--containers-rollout");
     assert.deepEqual(deploys[1].args.slice(rollout, rollout + 2), ["--containers-rollout", "none"]);
     assert.equal(calls.some(({ args }) => args[0] === "production:test:features"), true);
+    const enabledDeploy = calls.findIndex(({ args }) => args.includes("deploy") && args.includes("MCP_ENABLED:true"));
+    const probe = calls.findIndex(({ args }) => args[0] === "production:probe");
+    assert.ok(calls.slice(enabledDeploy + 1, probe).some(({ args }) => args.includes("instances")));
     assert.doesNotMatch(JSON.stringify(calls.map(({ command, args }) => ({ command, args }))), /add_approved|remove_approved|make_approved|empty_approved/u);
     const ref = calls.findIndex(({ command, args }) => command === "gh" && args.includes("POST") && args.some((arg) => arg.endsWith("git/refs")));
     const firstProviderRead = calls.findIndex(({ command, args }) => command === "pnpm" && args.includes("wrangler"));
