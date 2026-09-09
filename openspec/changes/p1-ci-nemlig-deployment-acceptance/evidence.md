@@ -304,3 +304,64 @@ Both a new Sol planning slot and reactivation of the existing independent
 reviewer were unavailable at the thread limit; root performed this small
 readiness review locally. Progress remains 15/44, with no provider authority
 inferred and no task marked complete from a plan alone.
+
+## U2 credential-path trace before identity approval
+
+Read-only source evidence at `9dac7a2e0c83a167ad1d2ee622679a554e447f49`, whose
+[exact-head CI](https://github.com/mortenbroesby/everyday-assistants/actions/runs/34299697286)
+passed. jCodeMunch verified source hashes for the functions below. No runtime
+change or identity approval is implied by this trace.
+
+- `auth0.ts:createAuth0Verifier` checks signed issuer/audience/RS256 and the
+  ordinary required scope, returns client ID and subject, and exposes expiry.
+  `cloudflare-worker.ts:authenticateSubject` discards everything except subject.
+  Service selection must preserve verified client/scope/expiry evidence, require
+  its exact configured binding, and never select from unverified headers. Cache
+  identity must account for any new verification configuration.
+- Worker `fetch.authenticate` resolves static principals, then schema-v2 stored
+  principals. Recognized service identity must branch before either human-data
+  resolution path; invalid/disabled service claims must not fall through to a
+  human identity or stored-principal lookup.
+- `handleGatewayRequest` orders kill switch, configuration, bounded request
+  classification, authentication, admin restriction, admission and forwarding.
+  Existing classification is a cost category, not a service authorization
+  allowlist. Deny service-forbidden protocol/tool/resource requests before
+  admission/forwarding while preserving existing deadlines and admission.
+- Worker `fetch.admit` currently sets credential-required for every schema-v2
+  request. `principal-records.ts:admitPrincipalRequest` already conditionally
+  reads the credential record while retaining transactional usage accounting.
+  Reuse that seam only after trusted service selection; never relax credential
+  requirements for ordinary users. Usage storage is required operational state,
+  distinct from forbidden human principal/credential/shopping storage. Negative
+  spies must distinguish these keys rather than ban all storage indiscriminately.
+- `attachAdmissionCredential` strips four client-supplied internal credential
+  headers. Preserve that stripping; no new caller-controlled fixture marker may
+  grant authority. The backend must independently verify the original JWT.
+- `http.ts:createHttpApp` currently enforces ordinary scope middleware, then
+  static credentials or schema-v2 envelope decryption, then session ownership,
+  context creation and MCP transport. Service selection must precede human
+  credential resolution without bypassing real authentication or transport.
+  Keep session principal/policy/generation ownership checks. The shared contexts
+  map enforces `MAX_PRINCIPALS`; use one separately bounded service context so it
+  neither consumes nor evicts an invited-human slot.
+- `defaultPrincipalContext` constructs a real `NemligClient` and proposal
+  service. Service context must not invoke it. MCP basket/favorites handlers use
+  `ensureLoggedIn`; the immutable client must satisfy its authenticated fixture
+  contract without ever reading credentials. MCP registration/direct dispatch
+  must independently exclude all mutations and automated shopping, not merely
+  hide them in the advertised inventory. Preserve the removed saved-shopping
+  and feature-request surfaces as removed.
+
+Implementation tests must cover wrong/missing client, scope and expiry; forged
+headers; disabled identity; both human-policy schemas; cross-principal/session
+reuse; full human capacity; forbidden direct tools/resources; and credential,
+decrypt, real-client, provider-egress and human-storage spies. Existing signed-JWT,
+HTTP and gateway tests are the seams to reuse, not a second server/test framework.
+This identifies the concrete pre-credential and capacity boundaries; U2 handoff
+still requires the accepted identity contract and final closed protocol/tool
+allowlist. S3/S4 remain gated, and no S3 checkbox is complete.
+
+Read-only setup refresh found zero GitHub environments and the existing Auth0
+tab still at login. Token lifetime/allowance and the owner identity decision
+therefore remain unresolved. The browser CLI was unavailable; only existing-tab
+inventory was inspected through the available browser connection.
