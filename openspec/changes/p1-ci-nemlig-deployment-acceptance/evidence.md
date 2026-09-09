@@ -285,3 +285,22 @@ remote-ref/CI confirmation follows separately. Actual image rollback behavior an
 first live acceptance remain U1/S7 evidence, not claims made by these tests.
 No provider setup, credential access, Container build cleanup or production
 mutation occurred.
+
+## S2 exact-head delivery and S5 readiness checkpoint
+
+Full recovery was integrated and remote-main verified at
+`1b5df9ebe09820a0ba934e803b0d46799df7675c` (`4.1.5-alpha.24`).
+[Exact-head CI](https://github.com/mortenbroesby/everyday-assistants/actions/runs/34299114456)
+completed successfully with the required `verify` job, including production
+readiness. A subsequent fetch confirmed clean coordinator HEAD and origin/main
+both matched that revision. The sibling was notified. Production was not changed.
+
+The coordinator prepared `workflow-trust-packet.md` from the actual existing
+source/provenance tests and CI workflow. This is preparation, not S5 completion:
+the production workflow depends on S4, and the Auth0 identity/lifetime decision
+still blocks S3/S4. Existing no-provider-call tests do not prove job-level secret
+withholding. No placeholder workflow or duplicate trust framework was added.
+Both a new Sol planning slot and reactivation of the existing independent
+reviewer were unavailable at the thread limit; root performed this small
+readiness review locally. Progress remains 15/44, with no provider authority
+inferred and no task marked complete from a plan alone.
