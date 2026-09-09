@@ -749,6 +749,27 @@ export async function inspectDeploymentRecovery(operation: string, deps: DeployD
   }
 }
 
+const releaseDeploymentLeases = async (
+  deps: DeployDependencies,
+  repository: string,
+  remoteHead: string,
+  operation: string,
+  localLock?: string,
+): Promise<boolean> => {
+  if (await readRemoteHead(deps, repository) !== remoteHead) return false;
+  await runAt(deps, deps.repoRoot, "gh", ["api", "--method", "DELETE", `repos/${repository}/git/refs/heads/codex-lock/nemlig-production`]);
+  let lock = localLock;
+  if (!lock) {
+    const common = deps.stateRoot ?? await runAt(deps, deps.repoRoot, "git", ["rev-parse", "--git-common-dir"]);
+    lock = join(isAbsolute(common) ? common : resolve(deps.repoRoot, common), "nemlig-production-deploy.lock");
+  }
+  try {
+    const local = object(json(await readFile(lock, "utf8"), "recovery_finalize_denied"));
+    if (local?.operation === operation) await unlink(lock);
+  } catch { /* remote release remains authoritative */ }
+  return true;
+};
+
 export async function finalizeDeploymentRecovery(operation: string, deps: DeployDependencies, evidenceSaved: boolean, originalRunnerStopped = false): Promise<boolean> {
   if (!operationId.test(operation) || !evidenceSaved || !originalRunnerStopped) return false;
   const repo = await repoIdentity(deps);
@@ -759,15 +780,7 @@ export async function finalizeDeploymentRecovery(operation: string, deps: Deploy
     || (journal.checks.includes("live_acceptance_pending") && await readAcceptedRevision(deps) !== journal.commit)) return false;
   if (!await verifyRecoveryTarget(deps, expected)) return false;
   // Compare the containing ref head, never journal.remoteCommit supplied by the blob.
-  if (await readRemoteHead(deps, repo.nameWithOwner) !== remote.head) return false;
-  await runAt(deps, deps.repoRoot, "gh", ["api", "--method", "DELETE", `repos/${repo.nameWithOwner}/git/refs/heads/codex-lock/nemlig-production`]);
-  const common = deps.stateRoot ?? await runAt(deps, deps.repoRoot, "git", ["rev-parse", "--git-common-dir"]);
-  const lock = join(isAbsolute(common) ? common : resolve(deps.repoRoot, common), "nemlig-production-deploy.lock");
-  try {
-    const local = object(json(await readFile(lock, "utf8"), "recovery_finalize_denied"));
-    if (local?.operation === operation) await unlink(lock);
-  } catch { /* remote finalize remains authoritative */ }
-  return true;
+  return releaseDeploymentLeases(deps, repo.nameWithOwner, remote.head, operation);
 }
 
 const verifySource = async (deps: DeployDependencies, commit: string, repo: { nameWithOwner: string; url: string }): Promise<number> => {
@@ -1009,6 +1022,7 @@ export async function deployProduction(commit: string, inputDeps: DeployDependen
   let configured: EffectiveConfig | undefined;
   let repository = "";
   let journalPath = "";
+  let lockPath = "";
   let transition: ((phase: JournalPhase, kind: JournalKind, version?: string) => Promise<void>) | undefined;
 
   try {
@@ -1027,7 +1041,7 @@ export async function deployProduction(commit: string, inputDeps: DeployDependen
     const common = deps.stateRoot ?? await runAt(deps, deps.repoRoot, "git", ["rev-parse", "--git-common-dir"]);
     const stateRoot = isAbsolute(common) ? common : resolve(deps.repoRoot, common);
     await mkdir(join(stateRoot, "nemlig-production-deploy"), { recursive: true, mode: 0o700 });
-    const lockPath = join(stateRoot, "nemlig-production-deploy.lock");
+    lockPath = join(stateRoot, "nemlig-production-deploy.lock");
     journalPath = join(stateRoot, "nemlig-production-deploy", "latest.json");
     await acquireLocalLease(lockPath, journal.operationId, commit);
     journal.remoteCommit = await acquireRemoteJournal(deps, repository, journal);
@@ -1170,23 +1184,32 @@ export async function deployProduction(commit: string, inputDeps: DeployDependen
     }
   } finally {
     journal.completedAt = deps.now().toISOString();
+    let remoteSaved = false;
     if (repository && journal.remoteCommit) {
       try {
         await appendRemoteJournal(deps, repository, journal);
+        remoteSaved = true;
       } catch {
         journal.outcome = "failed";
         journal.failure = "remote_journal_append_failed";
         journal.lastVerifiedState = "unknown";
       }
     }
+    let localSaved = false;
     if (journalPath) {
       try {
         await writeJournal(journalPath, journal);
+        localSaved = true;
       } catch {
         journal.outcome = "failed";
         journal.failure = "deployment_journal_write_failed";
         if (providerMutation) journal.lastVerifiedState = "unknown";
       }
+    }
+    if (journal.outcome === "failed" && journal.lastVerifiedState === "unchanged"
+      && !providerMutation && !mutationUncertain && remoteSaved && localSaved && repository && journal.remoteCommit && lockPath) {
+      try { await releaseDeploymentLeases(deps, repository, journal.remoteCommit, journal.operationId, lockPath); }
+      catch { /* retain either remaining lease for explicit recovery */ }
     }
     clearTimeout(operationDeadline);
     inheritedSignal?.removeEventListener("abort", abortOperation);

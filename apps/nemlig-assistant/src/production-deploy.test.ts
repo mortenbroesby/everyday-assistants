@@ -162,6 +162,7 @@ async function fixture(options: {
   driftBeforeEnable?: boolean;
   failDisabledDeploy?: boolean;
   failFeatures?: boolean;
+  failWhoami?: boolean;
   externalEnabledDriftDuringRecovery?: boolean;
   enableApplicationVersionDrift?: boolean;
   candidateApplicationVersion?: number;
@@ -356,7 +357,10 @@ async function fixture(options: {
       applicationVersion = options.candidateApplicationVersion ?? applicationVersion;
       return `Current Version ID: ${disabledId}`;
     }
-    if (args.includes("whoami")) return "authenticated";
+    if (args.includes("whoami")) {
+      if (options.failWhoami) throw new Error("not authenticated");
+      return "authenticated";
+    }
     throw new Error(`unexpected pnpm args: ${args.join(" ")}`);
   };
   return {
@@ -1040,6 +1044,18 @@ test("each failed remote intent write stops before its provider dispatch", async
   } finally {
     await rm(root, { recursive: true, force: true });
   }
+});
+
+test("a pre-provider failure releases its remote and local deployment leases", async () => {
+  const { deps, calls, root } = await fixture({ failWhoami: true });
+  try {
+    const report = await deployProduction(commit, deps);
+    assert.equal(report.outcome, "failed");
+    assert.equal(report.lastVerifiedState, "unchanged");
+    assert.equal(calls.some(({ args }) => args.includes("deploy") || args.includes("rollback")), false);
+    assert.equal(calls.filter(({ command, args }) => command === "gh" && args.includes("DELETE")).length, 1);
+    await assert.rejects(access(join(root, "nemlig-production-deploy.lock")));
+  } finally { await rm(root, { recursive: true, force: true }); }
 });
 
 test("every remote journal object write failure before intent dispatch stops provider work", async () => {
