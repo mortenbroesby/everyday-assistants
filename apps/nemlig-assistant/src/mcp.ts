@@ -14,7 +14,12 @@ import {
   type Basket,
   type Product,
 } from "./client.js";
-import { ensureLoggedIn, getClient, NEMLIG_VERSION } from "./runtime.js";
+import {
+  ensureLoggedIn,
+  getClient,
+  NEMLIG_VERSION,
+  withAuthenticatedReadRetry,
+} from "./runtime.js";
 import { getCredentials, type Credentials } from "./config.js";
 import {
   BasketProposalService,
@@ -419,6 +424,8 @@ export function createMcpServer(
     requestContext ? `${requestContext.principalKey}\0${requestContext.policyRevision}` : sessionId ?? localConnectionId;
   const search = async (query: string, limit: number) =>
     rankProducts(await client.searchProducts(query, limit), query);
+  const runAuthenticatedRead = async <Result>(operation: string, action: () => Promise<Result>) =>
+    runMcpOperation(operation, () => withAuthenticatedReadRetry(client, loadCredentials, action));
   const resolveRun = async (input: z.infer<typeof shoppingRunToolInputSchema>, sessionId?: string) => {
     const plan = safePlanImages(await resolveShoppingPlan(client, internalShoppingPlan(input)));
     const items = selectedAdditions(plan);
@@ -469,7 +476,7 @@ export function createMcpServer(
       outputSchema: z.object({ result: z.array(candidateSchema) }),
       annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true },
     },
-    ({ search_term, result_count }) => runMcpOperation("find_groceries", async () => success(await search(search_term, result_count))),
+    ({ search_term, result_count }) => runAuthenticatedRead("find_groceries", async () => success(await search(search_term, result_count))),
   );
 
   server.registerTool(
@@ -485,15 +492,14 @@ export function createMcpServer(
       outputSchema: z.object({ result: z.array(candidateSchema) }),
       annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true },
     },
-    ({ search_term, result_count, page }) => runMcpOperation("show_my_favorites", async () => {
-        await ensureLoggedIn(client, loadCredentials);
-        const favorites = await client.listFavorites(
-          search_term === undefined ? result_count : FAVORITES_SEARCH_POOL,
-          search_term === undefined ? page : 1,
-        );
-        const products = search_term === undefined ? favorites : matchFavorites(favorites, search_term, page * result_count).slice((page - 1) * result_count);
-        return success(rankProducts(products, search_term ?? ""));
-      }),
+    ({ search_term, result_count, page }) => runAuthenticatedRead("show_my_favorites", async () => {
+      const favorites = await client.listFavorites(
+        search_term === undefined ? result_count : FAVORITES_SEARCH_POOL,
+        search_term === undefined ? page : 1,
+      );
+      const products = search_term === undefined ? favorites : matchFavorites(favorites, search_term, page * result_count).slice((page - 1) * result_count);
+      return success(rankProducts(products, search_term ?? ""));
+    }),
   );
 
   server.registerTool(
@@ -506,8 +512,7 @@ export function createMcpServer(
       annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true },
       ...(appsEnabled(env) ? { _meta: { ui: { resourceUri: PICKER_URI } } } : {}),
     },
-    (input, extra) => runMcpOperation("plan_my_shopping", async () => {
-      await ensureLoggedIn(client, loadCredentials);
+    (input, extra) => runAuthenticatedRead("plan_my_shopping", async () => {
       return success(await resolveRun(input, extra.sessionId));
     }),
   );
@@ -519,7 +524,7 @@ export function createMcpServer(
       outputSchema: z.object({ departments: z.array(z.object({ id: z.string(), name: z.string() })) }),
       annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true },
     },
-    () => runMcpOperation("show_grocery_sections", async () => success({ departments: await client.listDepartments() })),
+    () => runAuthenticatedRead("show_grocery_sections", async () => success({ departments: await client.listDepartments() })),
   );
 
   server.registerTool(
@@ -534,7 +539,7 @@ export function createMcpServer(
       outputSchema: z.object({ result: z.array(candidateSchema), page: z.number().int().positive(), has_next: z.boolean() }),
       annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true },
     },
-    ({ section, result_count, page }) => runMcpOperation("browse_grocery_section", async () => {
+    ({ section, result_count, page }) => runAuthenticatedRead("browse_grocery_section", async () => {
       const result = await client.browseDepartment(section, result_count, page);
       return success({ result: rankProducts(result.products, ""), page: result.page, has_next: result.hasNext });
     }),
@@ -548,11 +553,10 @@ export function createMcpServer(
       outputSchema: basketSchema,
       annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true },
     },
-    () => runMcpOperation("show_my_basket", async () => {
-        await ensureLoggedIn(client, loadCredentials);
-        const basket = basketPayload(await client.getCart());
-        return success(basket, basketText(basket));
-      }),
+    () => runAuthenticatedRead("show_my_basket", async () => {
+      const basket = basketPayload(await client.getCart());
+      return success(basket, basketText(basket));
+    }),
   );
 
   server.registerTool(
@@ -577,19 +581,18 @@ export function createMcpServer(
       outputSchema: additionsProposalSchema,
       annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true },
     },
-    ({ items, authorization, automatic_authorization }, extra) => runMcpOperation("review_items_to_add", async () => {
-        await ensureLoggedIn(client, loadCredentials);
-        if (authorization === "same_run_automatic" && !automatic_authorization) throw new NemligError("The current automatic authorization is required.");
-        if (authorization === "exact_review" && automatic_authorization) throw new NemligError("Automatic authorization cannot be attached to an exact review.");
-        const proposal = await proposals.prepareAdditions(
-          connectionId(extra.sessionId),
-          items.map(({ product, quantity }) => ({ product_id: product, quantity })),
-          authorization === "same_run_automatic"
-            ? { kind: authorization, token: automatic_authorization! }
-            : { kind: authorization },
-        );
-        return success(proposal, proposalText(proposal));
-      }),
+    ({ items, authorization, automatic_authorization }, extra) => runAuthenticatedRead("review_items_to_add", async () => {
+      if (authorization === "same_run_automatic" && !automatic_authorization) throw new NemligError("The current automatic authorization is required.");
+      if (authorization === "exact_review" && automatic_authorization) throw new NemligError("Automatic authorization cannot be attached to an exact review.");
+      const proposal = await proposals.prepareAdditions(
+        connectionId(extra.sessionId),
+        items.map(({ product, quantity }) => ({ product_id: product, quantity })),
+        authorization === "same_run_automatic"
+          ? { kind: authorization, token: automatic_authorization! }
+          : { kind: authorization },
+      );
+      return success(proposal, proposalText(proposal));
+    }),
   );
 
   const registerAction = (
@@ -627,11 +630,10 @@ export function createMcpServer(
       outputSchema: removalProposalSchema,
       annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true },
     },
-    ({ basket_item }, extra) => runMcpOperation("review_item_to_remove", async () => {
-        await ensureLoggedIn(client, loadCredentials);
-        const proposal = await proposals.prepareRemoval(connectionId(extra.sessionId), basket_item);
-        return success(proposal, proposalText(proposal));
-      }),
+    ({ basket_item }, extra) => runAuthenticatedRead("review_item_to_remove", async () => {
+      const proposal = await proposals.prepareRemoval(connectionId(extra.sessionId), basket_item);
+      return success(proposal, proposalText(proposal));
+    }),
   );
 
   registerAction("remove_approved_item", "removal", "Remove the approved item", "Remove exactly the item from the approved unchanged review, then show the verified basket. This changes your basket.", true);
@@ -649,16 +651,15 @@ export function createMcpServer(
       outputSchema: replacementProposalSchema,
       annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true },
     },
-    ({ current_item, replacement_item, quantity }, extra) => runMcpOperation("review_item_swap", async () => {
-        await ensureLoggedIn(client, loadCredentials);
-        const proposal = await proposals.prepareReplacement(
-          connectionId(extra.sessionId),
-          current_item,
-          replacement_item,
-          quantity,
-        );
-        return success(proposal, proposalText(proposal));
-      }),
+    ({ current_item, replacement_item, quantity }, extra) => runAuthenticatedRead("review_item_swap", async () => {
+      const proposal = await proposals.prepareReplacement(
+        connectionId(extra.sessionId),
+        current_item,
+        replacement_item,
+        quantity,
+      );
+      return success(proposal, proposalText(proposal));
+    }),
   );
 
   registerAction("make_approved_item_swap", "replacement", "Make the approved swap", "Make exactly the swap from the approved unchanged review, then show the verified basket. This changes your basket.", true);
@@ -671,11 +672,10 @@ export function createMcpServer(
       outputSchema: clearProposalSchema,
       annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true },
     },
-    (extra) => runMcpOperation("review_emptying_basket", async () => {
-        await ensureLoggedIn(client, loadCredentials);
-        const proposal = await proposals.prepareClear(connectionId(extra.sessionId));
-        return success(proposal, proposalText(proposal));
-      }),
+    (extra) => runAuthenticatedRead("review_emptying_basket", async () => {
+      const proposal = await proposals.prepareClear(connectionId(extra.sessionId));
+      return success(proposal, proposalText(proposal));
+    }),
   );
 
   registerAction("empty_approved_basket", "clear", "Empty my approved basket", "Empty exactly the approved unchanged basket, then verify that it is empty. This changes your basket.", true);
@@ -694,7 +694,7 @@ export function createMcpServer(
         annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true },
         _meta: { ui: { resourceUri: PICKER_URI } },
       },
-      ({ search_term, result_count }) => runMcpOperation("choose_products_visually", async () => success(await search(search_term, result_count))),
+      ({ search_term, result_count }) => runAuthenticatedRead("choose_products_visually", async () => success(await search(search_term, result_count))),
     );
     server.registerResource(
       "Nemlig product picker",

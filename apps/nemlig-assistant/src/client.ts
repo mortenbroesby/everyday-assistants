@@ -16,6 +16,10 @@ const DEFAULT_CORRELATION_ID = "YFA_17hS";
 
 export class NemligError extends Error {
   override readonly name = "NemligError";
+
+  constructor(message: string, readonly status?: number) {
+    super(message);
+  }
 }
 
 export interface Product {
@@ -591,7 +595,7 @@ export class NemligClient {
           signal,
         });
         this.captureCookies(host, response.headers);
-        if (!response.ok) throw new NemligError(`${operation} failed (HTTP ${response.status}).`);
+        if (!response.ok) throw new NemligError(`${operation} failed (HTTP ${response.status}).`, response.status);
         try {
           return await response.json();
         } catch {
