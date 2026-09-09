@@ -393,3 +393,9 @@ Read-only setup refresh found zero GitHub environments and the existing Auth0
 tab still at login. Token lifetime/allowance and the owner identity decision
 therefore remain unresolved. The browser CLI was unavailable; only existing-tab
 inventory was inspected through the available browser connection.
+
+## 2026-09-09 protected deployment and live acceptance
+
+[Protected deployment run 34369271232](https://github.com/mortenbroesby/everyday-assistants/actions/runs/34369271232) deployed application source `095ef33072b1290a1b316c4fb45c334669d08736`. The deployment command ran from `2026-09-09T15:19:09.191Z` to `2026-09-09T15:22:19.770Z`, changed Container application version 34 to 35, reused one candidate image for disabled and enabled states, and finished enabled at Worker version `44bc88b7-5424-427e-ab73-fd1c8ada57dd`. The bounded journal recorded disabled-route, inactive-Container, edge and service-fixture acceptance with live acceptance pending; no rollback ran.
+
+At `2026-09-09T15:57:18Z`, the owner-approved reconnect of the existing ChatGPT app completed and one read-only `show_my_favorites` request succeeded without an OAuth error. No duplicate app, basket mutation, prepare/apply call or shopping-data write occurred. `apps/nemlig-assistant/release/production-cutover.json` records the accepted deployed revision; repository closure commits remain separate from that application source revision.
