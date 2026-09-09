@@ -162,7 +162,7 @@ async function fixture(options: {
   driftBeforeEnable?: boolean;
   failDisabledDeploy?: boolean;
   failFeatures?: boolean;
-  failWhoami?: boolean;
+  failCurrentRead?: boolean;
   externalEnabledDriftDuringRecovery?: boolean;
   enableApplicationVersionDrift?: boolean;
   candidateApplicationVersion?: number;
@@ -304,6 +304,7 @@ async function fixture(options: {
     }
     if (!args.includes("wrangler")) throw new Error("unexpected pnpm command");
     if (args.includes("deployments") && args.includes("list")) {
+      if (options.failCurrentRead) throw new Error("not authenticated");
       if (options.postProofWorkerDrift && enabledInstanceReads > 0) return deployment(thirdPartyId);
       if (options.externalEnabledDriftDuringRecovery && options.failFeatures && current === enabledId) return deployment(thirdPartyId);
       if (current === disabledId) disabledReads += 1;
@@ -356,10 +357,6 @@ async function fixture(options: {
       current = disabledId;
       applicationVersion = options.candidateApplicationVersion ?? applicationVersion;
       return `Current Version ID: ${disabledId}`;
-    }
-    if (args.includes("whoami")) {
-      if (options.failWhoami) throw new Error("not authenticated");
-      return "authenticated";
     }
     throw new Error(`unexpected pnpm args: ${args.join(" ")}`);
   };
@@ -1046,8 +1043,8 @@ test("each failed remote intent write stops before its provider dispatch", async
   }
 });
 
-test("a pre-provider failure releases its remote and local deployment leases", async () => {
-  const { deps, calls, root } = await fixture({ failWhoami: true });
+test("a pre-mutation failure releases its remote and local deployment leases", async () => {
+  const { deps, calls, root } = await fixture({ failCurrentRead: true });
   try {
     const report = await deployProduction(commit, deps);
     assert.equal(report.outcome, "failed");

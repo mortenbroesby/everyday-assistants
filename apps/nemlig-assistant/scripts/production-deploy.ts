@@ -1048,7 +1048,6 @@ export async function deployProduction(commit: string, inputDeps: DeployDependen
     try { await writeJournal(journalPath, journal); } catch { fail("deployment_journal_write_failed"); }
 
     if (await verifySource(deps, commit, repo) !== journal.ciRunId) fail("github_ci_invalid");
-    await wrangler(deps, ["whoami"]);
     const start = await readCurrent(deps);
     const startingRaw = await readVersion(deps, start.version);
     starting = parseVersionState(startingRaw, start.version);
