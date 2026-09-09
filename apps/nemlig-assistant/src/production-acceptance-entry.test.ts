@@ -15,7 +15,7 @@ const removedStorageTools = [
 ];
 const retainedTools = allTools.filter(({ name }) => !removedStorageTools.includes(name));
 
-function edgeFetcher(calls: string[], origin = "https://nemlig-mcp.example.test/mcp", scopes = ["use:nemlig-assistant"]): typeof fetch {
+function edgeFetcher(calls: string[], origin = "https://nemlig-mcp.example.test/mcp", scopes = ["use:nemlig-assistant", "acceptance:nemlig-assistant"]): typeof fetch {
   return async (input, init) => {
     const request = new Request(input, init);
     calls.push(new URL(request.url).pathname);

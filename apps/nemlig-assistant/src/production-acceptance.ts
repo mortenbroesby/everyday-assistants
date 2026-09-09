@@ -392,7 +392,7 @@ export async function verifyProductionEdge(
   assert.equal(metadata.status, 200, "OAuth resource metadata failed");
   const resource = await metadata.json() as Record<string, unknown>;
   assert.equal(resource.resource, new URL("/mcp", origin).href);
-  assert.deepEqual(resource.scopes_supported, options.expectedScopes ?? ["use:nemlig-assistant"]);
+  assert.deepEqual(resource.scopes_supported, options.expectedScopes ?? ["use:nemlig-assistant"], "OAuth scopes do not match production configuration");
   assert.deepEqual(resource.bearer_methods_supported, ["header"]);
 
   const anonymous = await step("anonymous_rejection", new URL("/mcp", origin), {

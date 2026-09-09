@@ -201,7 +201,7 @@ export async function main(
     const edge = await verifyProductionEdge(origin, dependencies.fetcher, {
       expectedRevision: env.NEMLIG_EXPECTED_REVISION?.trim() || undefined,
       signal: controller.signal,
-      ...(options.service ? { expectedScopes: ["use:nemlig-assistant", "acceptance:nemlig-assistant"] } : {}),
+      expectedScopes: ["use:nemlig-assistant", "acceptance:nemlig-assistant"],
     });
     const observedRevision = /^[0-9a-f]{40}$/u.test(edge.revision) ? edge.revision : undefined;
     if (options.edgeOnly) {
