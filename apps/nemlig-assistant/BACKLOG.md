@@ -383,3 +383,11 @@ allow explicitly invited family members to sign in with their own identity and
 link their own Nemlig account. Do not share the owner's credentials, basket,
 sessions, proposals, or approvals, and do not build multi-user infrastructure
 until a second real user is ready to onboard.
+
+## Optional picker polish
+
+**Status:** Deferred until family use identifies a concrete problem.
+
+The explicit visual chooser now has clean product cards with title, description,
+image, package, price, availability, and no controls for empty results. Revisit
+layout or richer comparison only when real use shows which details are missing.

@@ -1,12 +1,12 @@
 ## Context
 
-See `proposal.md` for motivation. The whole-list resolver already performs bounded direct catalogue reads with concurrency three, and the MCP wrapper already knows how to refresh an expired authenticated session once. The resolver currently catches every per-line error, including HTTP 401, before that wrapper can see it. Separately, `plan_my_shopping` statically advertises the shared picker, so ChatGPT renders an interactive surface even when all returned lines contain no candidates.
+See `proposal.md` for motivation. The whole-list resolver already performs bounded direct catalogue reads with concurrency three, and the MCP wrapper already knows how to establish or refresh an authenticated session. Its normal precondition trusts process-local `isLoggedIn` state, which can outlive the upstream session, and the resolver catches every per-line error, including HTTP 401, before the wrapper can see it. Separately, `plan_my_shopping` statically advertises the shared picker, so ChatGPT renders an interactive surface even when all returned lines contain no candidates.
 
 ## Goals / Non-Goals
 
 **Goals:**
 
-- Reuse the existing single authenticated-read retry instead of adding another retry system.
+- Reuse the existing credential login and single authenticated-read retry instead of adding another authentication system.
 - Preserve per-line isolation for non-auth discovery failures.
 - Keep normal planning and direct-search fallback fully conversational.
 - Restrict UI to the explicit visual-choice tool and make its empty state non-actionable.
@@ -20,9 +20,9 @@ See `proposal.md` for motivation. The whole-list resolver already performs bound
 
 ## Decisions
 
-### Propagate only expired-authentication failures from planning
+### Force authentication at the shared MCP boundary and propagate later authentication failures
 
-The per-line discovery catch will rethrow the existing typed Nemlig error when its status is 401. The outer authenticated-read wrapper will then log in from the same configured credential pair and rerun the read-only plan once. Every other discovery error remains an isolated `discovery_unavailable` line.
+The shared authenticated-read helper will load the configured credential pair and log in before every provider-backed MCP read regardless of local state. Approved write tools will use the same fresh-login precondition but keep their existing no-retry rule. The per-line discovery catch will rethrow the existing typed Nemlig error when its status is 401; the outer wrapper will then log in one additional time and rerun the read-only plan once. Every other discovery error remains an isolated `discovery_unavailable` line.
 
 This reuses the shared recovery boundary and avoids duplicating credential loading or retry state inside the planner. Retrying each line independently was rejected because concurrent 401 responses could trigger repeated logins. Treating every discovery failure as fatal was rejected because one provider error must not erase otherwise useful lines.
 
@@ -46,7 +46,7 @@ This deletion is smaller and safer than maintaining a second guided-plan client 
 
 ## Risks / Trade-offs
 
-- [A 401 can cause already-successful catalogue reads to run a second time] → Keep the existing single whole-operation retry and concurrency limit of three; the extra reads occur only during expired-session recovery and remain read-only.
+- [Every provider-backed tool performs one login and a later read-only 401 can repeat its operation] → Reuse one shared precondition, keep the existing single read-only retry, and never retry writes.
 - [One non-auth provider outage can still leave individual lines unavailable] → Preserve the honest failure reason and direct the agent to the already available `find_groceries` workaround rather than loop automatically.
 - [Manual whole-list choice no longer opens a multi-line workspace automatically] → Return all candidates conversationally; open one explicit visual chooser only when the user asks for visual selection.
 - [Removing plan rendering can expose stale assumptions in picker tests] → Characterize tool metadata and rendered zero/candidate states before deleting the unused branch.

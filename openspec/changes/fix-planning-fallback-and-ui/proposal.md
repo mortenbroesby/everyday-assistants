@@ -5,7 +5,8 @@
 ## What Changes
 
 - Keep ordinary whole-list planning conversational and agent-operated without automatically opening an interactive picker.
-- Let an authentication failure escape per-line discovery handling so the existing authenticated-read wrapper can re-login once and retry the read-only plan.
+- Always establish a fresh authenticated session before every provider-backed MCP tool call, even when process-local state reports a prior login.
+- Let any later authentication failure escape per-line discovery handling so the existing authenticated-read wrapper can re-login once and retry the read-only plan.
 - When individual catalogue discovery remains unavailable, return explicit model-visible guidance that identifies `find_groceries` as the read-only per-line workaround.
 - Reserve the picker for explicit visual-choice requests and render selection controls only for real candidates.
 - Replace empty or failed picker rows with a clear status explaining whether no match exists or discovery failed, without quantity inputs or a preparation button.
@@ -42,7 +43,8 @@ The supplied multi-recipe chat can resolve current Nemlig products through the a
 
 ## Acceptance Criteria
 
-- A 401 raised by any planning catalogue read triggers the existing single re-login and one whole-plan retry instead of returning `discovery_unavailable` for every line.
+- Every provider-backed MCP tool call logs in from the same configured credentials before performing its task, even when local state says it is logged in.
+- A later 401 raised by any planning catalogue read triggers the existing single additional re-login and one whole-plan retry instead of returning `discovery_unavailable` for every line.
 - A non-auth discovery failure remains isolated to its line and tells the model to use `find_groceries` for that line.
 - `plan_my_shopping` has no UI resource association and remains fully usable through structured conversational results.
 - `choose_products_visually` remains available only when Apps are enabled.

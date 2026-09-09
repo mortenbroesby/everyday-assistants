@@ -26,8 +26,9 @@ async function login(
 export async function ensureLoggedIn(
   client: Pick<ShoppingClient, "isLoggedIn" | "login">,
   loadCredentials: () => Promise<Credentials | undefined> = getCredentials,
+  fresh = false,
 ): Promise<void> {
-  if (client.isLoggedIn()) return;
+  if (!fresh && client.isLoggedIn()) return;
   await login(client, loadCredentials);
 }
 
@@ -35,8 +36,9 @@ export async function withAuthenticatedReadRetry<T>(
   client: Pick<ShoppingClient, "isLoggedIn" | "login">,
   loadCredentials: () => Promise<Credentials | undefined>,
   action: () => Promise<T>,
+  fresh = true,
 ): Promise<T> {
-  await ensureLoggedIn(client, loadCredentials);
+  await ensureLoggedIn(client, loadCredentials, fresh);
   try {
     return await action();
   } catch (error) {

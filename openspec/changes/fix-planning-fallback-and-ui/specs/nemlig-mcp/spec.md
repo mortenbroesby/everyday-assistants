@@ -1,5 +1,24 @@
 ## MODIFIED Requirements
 
+### Requirement: MCP authentication behavior
+Every provider-backed MCP tool SHALL load configured credentials and establish a fresh Nemlig session before performing its task, regardless of process-local login state, and SHALL return a clean remediation error when a complete credential pair is unavailable. Read-only tools MAY re-authenticate and retry once after a later HTTP 401. Basket writes SHALL NOT retry an indeterminate mutation.
+
+#### Scenario: Fresh authentication before a provider task
+- **WHEN** any provider-backed MCP tool is called while process-local state reports an existing login
+- **THEN** the tool establishes a fresh Nemlig session before reading or writing provider data
+
+#### Scenario: Credentials unavailable
+- **WHEN** a provider-backed MCP tool is called without a complete configured credential pair
+- **THEN** the tool instructs the user to configure credentials or run interactive login and performs no provider task or mutation
+
+#### Scenario: Read expires after pre-authentication
+- **WHEN** a read-only provider task returns HTTP 401 after fresh authentication
+- **THEN** the tool re-authenticates once and retries the complete read-only task once
+
+#### Scenario: Write result is indeterminate
+- **WHEN** an approved basket write fails after fresh authentication
+- **THEN** the tool does not retry the mutation
+
 ### Requirement: Optional interactive picker
 The server SHALL keep `plan_my_shopping` conversational without a UI resource association, SHALL enable the explicit `choose_products_visually` tool and shared `ui://nemlig/picker.html` resource by default, SHALL disable that picker tool and resource when `NEMLIG_MCP_APPS` is `0`, `false`, `no`, or `off` ignoring case and surrounding whitespace, and SHALL leave every conversational tool enabled.
 
