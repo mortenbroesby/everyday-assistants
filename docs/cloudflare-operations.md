@@ -208,7 +208,7 @@ process group before returning.
 
 Every run retains both leases, including success. Save the final evidence first;
 only then use explicit finalization. It requires the exact operation UUID,
-complete terminal evidence, matching current Worker/image and unchanged remote
+complete terminal evidence, matching current Worker/configuration/application/instance and unchanged remote
 journal head. Missing evidence, pending intent, unknown state or drift blocks
 cleanup. A legacy source-SHA lease also blocks new releases; never steal it or
 delete it on an age/TTL assumption.
@@ -218,20 +218,26 @@ pnpm --filter nemlig-assistant production:deploy -- inspect-recovery OPERATION_U
 # Only after independently confirming the original runner has stopped:
 pnpm --filter nemlig-assistant production:deploy -- inspect-recovery OPERATION_UUID --original-runner-stopped
 # Only after saving complete final evidence and reconciling the exact state:
-pnpm --filter nemlig-assistant production:deploy -- finalize OPERATION_UUID --evidence-saved
+pnpm --filter nemlig-assistant production:deploy -- finalize OPERATION_UUID --evidence-saved --original-runner-stopped
 ```
 
-Inspection is read-only and uses at most three provider reads; a stopped-runner
+Inspection is read-only and uses at most four provider reads; a stopped-runner
 attestation cannot make pending or unknown work cleanup-eligible. Do not rerun an
 uncertain release or manually continue its upload steps. GitHub ref deletion has
 no compare-and-swap parameter: the final read/delete pair cannot fence an
 out-of-protocol actor replacing the ref in that interval. All release clients
 must honor the no-steal rule.
 
-Full effective-configuration and Container application/instance-version proof
-remains tracked in S2.6 of `p1-ci-nemlig-deployment-acceptance`; these journal
-checks alone do not complete that gate or authorize production cutover. A Worker
-rollback is not proof that its previous Container image was restored.
+Both inspection and finalization require the applicable recorded application
+version, configuration digest and starting enabled flag. Old or incomplete journals remain readable but
+cannot authorize cleanup. Enabled recovery permits the fixed inactive assignment
+or one matching running instance; disabled recovery requires inactive. Neither
+operation wakes or polls a Container. Finalization independently requires both
+evidence-saved and stopped-runner attestations, then rechecks the remote head.
+Rollback and failure recovery also verify configuration, image, application
+version and instance state before claiming a known result. A Worker-only rollback
+is not proof of image restoration. These local safeguards do not substitute for
+approved live cutover/recovery evidence or authorize a production mutation.
 
 This automation adds no workflow, CI job, hosted secret, service, dependency,
 schedule, or runtime capacity. It adds bounded Git journal objects, with at most

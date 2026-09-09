@@ -13,7 +13,7 @@ const ciWorkflowName = "CI";
 const ciWorkflowPath = ".github/workflows/ci.yml";
 const customMcp = new URL("https://nemlig-mcp.broesby.dk/mcp");
 const workersMcp = new URL("https://nemlig-mcp-cloudflare-production.mortenbroesby.workers.dev/mcp");
-export const productionDeployUsage = "pnpm --filter nemlig-assistant production:deploy -- <40-character-main-commit> | finalize <operation-id> --evidence-saved | inspect-recovery <operation-id> [--original-runner-stopped]";
+export const productionDeployUsage = "pnpm --filter nemlig-assistant production:deploy -- <40-character-main-commit> | finalize <operation-id> --evidence-saved --original-runner-stopped | inspect-recovery <operation-id> [--original-runner-stopped]";
 
 export type VerifiedState = "unchanged" | "disabled" | "enabled" | "restored" | "unknown";
 
@@ -29,6 +29,11 @@ export interface DeploymentJournal {
   startingVersion?: string;
   disabledVersion?: string;
   enabledVersion?: string;
+  startingApplicationVersion?: number;
+  disabledApplicationVersion?: number;
+  enabledApplicationVersion?: number;
+  startingConfigDigest?: string;
+  startingEnabled?: boolean;
   startingContainerId?: string;
   startingImage?: string;
   disabledImage?: string;
@@ -149,6 +154,9 @@ const journalJson = (journal: DeploymentJournal): string => {
     || (journal.startingVersion !== undefined && (typeof journal.startingVersion !== "string" || !versionId.test(journal.startingVersion)))
     || (journal.disabledVersion !== undefined && (typeof journal.disabledVersion !== "string" || !versionId.test(journal.disabledVersion)))
     || (journal.enabledVersion !== undefined && (typeof journal.enabledVersion !== "string" || !versionId.test(journal.enabledVersion)))
+    || [journal.startingApplicationVersion, journal.disabledApplicationVersion, journal.enabledApplicationVersion].some((value) => value !== undefined && (!Number.isSafeInteger(value) || value < 1))
+    || (journal.startingConfigDigest !== undefined && (typeof journal.startingConfigDigest !== "string" || !/^[0-9a-f]{64}$/u.test(journal.startingConfigDigest)))
+    || (journal.startingEnabled !== undefined && typeof journal.startingEnabled !== "boolean")
     || (journal.startingContainerId !== undefined && (typeof journal.startingContainerId !== "string" || !versionId.test(journal.startingContainerId)))
     || (journal.startingImage !== undefined && (typeof journal.startingImage !== "string" || !imageDigest.test(journal.startingImage)))
     || (journal.disabledImage !== undefined && (typeof journal.disabledImage !== "string" || !imageDigest.test(journal.disabledImage)))
@@ -172,7 +180,7 @@ const journalJson = (journal: DeploymentJournal): string => {
 
 export function parseDeploymentJournal(raw: string): DeploymentJournal {
   const value = object(json(raw, "deployment_journal_invalid"));
-  const allowed = new Set(["schema", "operationId", "commit", "ciRunId", "releaseRunId", "releaseRunAttempt", "startedAt", "completedAt", "startingVersion", "disabledVersion", "enabledVersion", "startingContainerId", "startingImage", "disabledImage", "enabledImage", "checks", "lastVerifiedState", "rollback", "outcome", "failure", "remoteCommit", "transitions"]);
+  const allowed = new Set(["schema", "operationId", "commit", "ciRunId", "releaseRunId", "releaseRunAttempt", "startedAt", "completedAt", "startingVersion", "disabledVersion", "enabledVersion", "startingApplicationVersion", "disabledApplicationVersion", "enabledApplicationVersion", "startingConfigDigest", "startingEnabled", "startingContainerId", "startingImage", "disabledImage", "enabledImage", "checks", "lastVerifiedState", "rollback", "outcome", "failure", "remoteCommit", "transitions"]);
   if (!value || Object.keys(value).some((key) => !allowed.has(key)) || value.schema !== 2
     || typeof value.operationId !== "string" || typeof value.commit !== "string" || typeof value.ciRunId !== "number" || typeof value.startedAt !== "string"
     || (value.releaseRunId !== "local" && typeof value.releaseRunId !== "number") || (value.releaseRunAttempt !== "local" && typeof value.releaseRunAttempt !== "number")
@@ -203,15 +211,15 @@ export function parseDeployCli(argv: readonly string[]): { help: true } | { help
 export type RecoveryCli =
   | { help: true }
   | { help: false; command: "deploy"; commit: string }
-  | { help: false; command: "finalize"; operation: string; evidenceSaved: true }
+  | { help: false; command: "finalize"; operation: string; evidenceSaved: true; originalRunnerStopped: true }
   | { help: false; command: "inspect-recovery"; operation: string; originalRunnerStopped: boolean };
 
 /** Parses all recovery commands before any repository or provider access. */
 export function parseProductionDeployCli(argv: readonly string[]): RecoveryCli {
   const values = argv[0] === "--" ? argv.slice(1) : argv;
   if (values.length === 1 && (values[0] === "--help" || values[0] === "-h")) return { help: true };
-  if (values[0] === "finalize" && values.length === 3 && operationId.test(values[1] ?? "") && values[2] === "--evidence-saved") {
-    return { help: false, command: "finalize", operation: values[1]!, evidenceSaved: true };
+  if (values[0] === "finalize" && values.length === 4 && operationId.test(values[1] ?? "") && values[2] === "--evidence-saved" && values[3] === "--original-runner-stopped") {
+    return { help: false, command: "finalize", operation: values[1]!, evidenceSaved: true, originalRunnerStopped: true };
   }
   if (values[0] === "inspect-recovery" && operationId.test(values[1] ?? "")
     && (values.length === 2 || (values.length === 3 && values[2] === "--original-runner-stopped"))) {
@@ -653,17 +661,43 @@ export interface RecoveryInspection {
   state: "enabled" | "disabled" | "restored" | "unknown";
 }
 
-const expectedRecovery = (journal: DeploymentJournal): { version: string; containerId: string; image: string; enabled?: boolean; state: "enabled" | "disabled" | "restored" } | undefined => {
-  if (journal.outcome === "success" && journal.enabledVersion && journal.startingContainerId && journal.enabledImage) {
-    return { version: journal.enabledVersion, containerId: journal.startingContainerId, image: journal.enabledImage, enabled: true, state: "enabled" };
+interface RecoveryTarget {
+  version: string;
+  containerId: string;
+  image: string;
+  applicationVersion: number;
+  configDigest: string;
+  enabled?: boolean;
+  state: "enabled" | "disabled" | "restored";
+}
+
+const expectedRecovery = (journal: DeploymentJournal): RecoveryTarget | undefined => {
+  if (!journal.startingConfigDigest || !journal.startingContainerId || typeof journal.startingEnabled !== "boolean") return undefined;
+  const common = { containerId: journal.startingContainerId, configDigest: journal.startingConfigDigest };
+  if (journal.outcome === "success" && journal.enabledVersion && journal.enabledImage && journal.enabledApplicationVersion) {
+    return { ...common, version: journal.enabledVersion, image: journal.enabledImage, applicationVersion: journal.enabledApplicationVersion, enabled: true, state: "enabled" };
   }
-  if (journal.lastVerifiedState === "restored" && journal.startingVersion && journal.startingContainerId && journal.startingImage) {
-    return { version: journal.startingVersion, containerId: journal.startingContainerId, image: journal.startingImage, state: "restored" };
+  if (journal.lastVerifiedState === "restored" && journal.startingVersion && journal.startingImage && journal.startingApplicationVersion) {
+    return { ...common, version: journal.startingVersion, image: journal.startingImage, applicationVersion: journal.startingApplicationVersion, enabled: journal.startingEnabled, state: "restored" };
   }
-  if (journal.outcome === "failed" && journal.lastVerifiedState === "disabled" && journal.disabledVersion && journal.startingContainerId && journal.disabledImage) {
-    return { version: journal.disabledVersion, containerId: journal.startingContainerId, image: journal.disabledImage, enabled: false, state: "disabled" };
+  if (journal.outcome === "failed" && journal.lastVerifiedState === "disabled" && journal.disabledVersion && journal.disabledImage && journal.disabledApplicationVersion) {
+    return { ...common, version: journal.disabledVersion, image: journal.disabledImage, applicationVersion: journal.disabledApplicationVersion, enabled: false, state: "disabled" };
   }
   return undefined;
+};
+
+/** Metadata-only proof: four bounded reads, no instance wake or convergence retry. */
+const verifyRecoveryTarget = async (deps: DeployDependencies, expected: RecoveryTarget): Promise<boolean> => {
+  const current = await readCurrent(deps);
+  const raw = await readVersion(deps, current.version);
+  const state = parseVersionState(raw, current.version);
+  verifyCandidateVersion(raw, current.version, state.revision, state.enabled);
+  const container = await readContainer(deps);
+  const instances = await wrangler(deps, ["containers", "instances", container.id, "--json"]);
+  return current.version === expected.version && (expected.enabled === undefined || state.enabled === expected.enabled)
+    && container.id === expected.containerId && container.image === expected.image && container.version === expected.applicationVersion
+    && versionConfig(raw).digest === expected.configDigest
+    && (instancesInactive(instances) || (state.enabled && runningInstanceMatches(instances, expected.applicationVersion)));
 };
 
 const knownTerminal = (journal: DeploymentJournal): boolean => {
@@ -686,11 +720,7 @@ export async function inspectDeploymentRecovery(operation: string, deps: DeployD
     const expected = expectedRecovery(journal);
     if (journal.operationId !== operation) return { operation, originalRunnerStopped, cleanupEligible: false, reason: "operation_mismatch", state: "unknown" };
     if (!knownTerminal(journal) || !expected) return { operation, originalRunnerStopped, cleanupEligible: false, reason: "pending_or_unknown", state: "unknown" };
-    // Exactly three read-only provider calls: current deployment, its version, and sole Container.
-    const current = await readCurrent(deps);
-    const state = parseVersionState(await readVersion(deps, current.version), current.version);
-    const container = await readContainer(deps);
-    if (current.version !== expected.version || (expected.enabled !== undefined && state.enabled !== expected.enabled) || container.id !== expected.containerId || container.image !== expected.image) {
+    if (!await verifyRecoveryTarget(deps, expected)) {
       return { operation, originalRunnerStopped, cleanupEligible: false, reason: "provider_drift", state: "unknown" };
     }
     if (!originalRunnerStopped) return { operation, originalRunnerStopped, cleanupEligible: false, reason: "runner_not_stopped", state: expected.state };
@@ -700,17 +730,14 @@ export async function inspectDeploymentRecovery(operation: string, deps: DeployD
   }
 }
 
-export async function finalizeDeploymentRecovery(operation: string, deps: DeployDependencies, evidenceSaved: boolean): Promise<boolean> {
-  if (!operationId.test(operation) || !evidenceSaved) return false;
+export async function finalizeDeploymentRecovery(operation: string, deps: DeployDependencies, evidenceSaved: boolean, originalRunnerStopped = false): Promise<boolean> {
+  if (!operationId.test(operation) || !evidenceSaved || !originalRunnerStopped) return false;
   const repo = await repoIdentity(deps);
   const remote = await readRemoteJournal(deps, repo.nameWithOwner);
   const { journal } = remote;
   const expected = expectedRecovery(journal);
   if (journal.operationId !== operation || !knownTerminal(journal) || !expected) return false;
-  const current = await readCurrent(deps);
-  const state = parseVersionState(await readVersion(deps, current.version), current.version);
-  const container = await readContainer(deps);
-  if (current.version !== expected.version || (expected.enabled !== undefined && state.enabled !== expected.enabled) || container.id !== expected.containerId || container.image !== expected.image) return false;
+  if (!await verifyRecoveryTarget(deps, expected)) return false;
   // Compare the containing ref head, never journal.remoteCommit supplied by the blob.
   if (await readRemoteHead(deps, repo.nameWithOwner) !== remote.head) return false;
   await runAt(deps, deps.repoRoot, "gh", ["api", "--method", "DELETE", `repos/${repo.nameWithOwner}/git/refs/heads/codex-lock/nemlig-production`]);
@@ -836,14 +863,14 @@ const verifyLeaseHead = async (deps: DeployDependencies, repository: string, jou
 const rollback = async (deps: DeployDependencies, journal: DeploymentJournal, starting: VersionState, startingContainer: ContainerState): Promise<void> => {
   journal.rollback = "attempted";
   await wrangler(deps, ["rollback", starting.id, "--message", `Automated rollback after failed ${journal.commit.slice(0, 7)} release`, "--yes"], 120_000);
-  await verifyCurrent(deps, starting.id);
-  const currentContainer = await readContainer(deps);
-  if (currentContainer.id !== startingContainer.id || currentContainer.image !== startingContainer.image || currentContainer.version !== startingContainer.version) fail("cloudflare_deployment_drift");
-  const restored = parseVersionState(await readVersion(deps, starting.id), starting.id);
-  if (restored.enabled) {
+  if (!journal.startingConfigDigest || !await verifyRecoveryTarget(deps, {
+    version: starting.id, containerId: startingContainer.id, image: startingContainer.image,
+    applicationVersion: startingContainer.version, configDigest: journal.startingConfigDigest, enabled: starting.enabled, state: "restored",
+  })) fail("cloudflare_deployment_drift");
+  if (starting.enabled) {
     await runAt(deps, deps.packageRoot, "pnpm", ["production:probe"], {
       timeoutMs: 120_000,
-      env: { NEMLIG_EXPECTED_REVISION: restored.revision },
+      env: { NEMLIG_EXPECTED_REVISION: starting.revision },
     });
   } else {
     await verifyDisabledRoutes(deps);
@@ -919,6 +946,9 @@ export async function deployProduction(commit: string, inputDeps: DeployDependen
     journal.startingVersion = starting.id;
     journal.startingContainerId = startingContainer.id;
     journal.startingImage = startingContainer.image;
+    journal.startingApplicationVersion = startingContainer.version;
+    journal.startingConfigDigest = startingConfig.digest;
+    journal.startingEnabled = starting.enabled;
     journal.checks.push("source_and_auth_preflight", "exclusive_lease", "starting_state_recorded");
     try { await writeJournal(journalPath, journal); } catch { fail("deployment_journal_write_failed"); }
 
@@ -946,10 +976,12 @@ export async function deployProduction(commit: string, inputDeps: DeployDependen
     verifyCandidateVersion(disabledRaw, disabledId, commit, false);
     verifyConfig(disabledRaw, configured);
     const disabledContainer = await readContainer(deps);
+    if (disabledContainer.id !== startingContainer.id) fail("cloudflare_deployment_drift");
     await verifyDisabledRoutes(deps);
     await waitForInactive(deps, disabledContainer.id);
     journal.disabledVersion = disabledId;
     journal.disabledImage = disabledContainer.image;
+    journal.disabledApplicationVersion = disabledContainer.version;
     journal.lastVerifiedState = "disabled";
     journal.checks.push("disabled_version", "disabled_routes", "container_inactive");
     await transition("disabled_deploy", "result", disabledId);
@@ -972,6 +1004,7 @@ export async function deployProduction(commit: string, inputDeps: DeployDependen
       fail("container_image_changed_during_enable");
     }
     journal.enabledImage = enabledContainer.image;
+    journal.enabledApplicationVersion = enabledContainer.version;
     journal.lastVerifiedState = "enabled";
     journal.checks.push("enabled_version", "image_reused");
     await transition("enable_deploy", "result", enabledId);
@@ -1004,8 +1037,15 @@ export async function deployProduction(commit: string, inputDeps: DeployDependen
           journal.lastVerifiedState = "unknown";
         } else if (!state.enabled && current.version === journal.disabledVersion
           && journal.checks.includes("disabled_routes") && journal.checks.includes("container_inactive")) {
+          const expected = expectedRecovery({ ...journal, lastVerifiedState: "disabled" });
+          if (!expected || !await verifyRecoveryTarget(deps, expected)) fail("cloudflare_deployment_drift");
+          await verifyDisabledRoutes(deps);
           journal.lastVerifiedState = "disabled";
         } else if (current.version === starting.id) {
+          if (!startingContainer || !journal.startingConfigDigest || !await verifyRecoveryTarget(deps, {
+            version: starting.id, containerId: startingContainer.id, image: startingContainer.image,
+            applicationVersion: startingContainer.version, configDigest: journal.startingConfigDigest, enabled: starting.enabled, state: "restored",
+          })) fail("cloudflare_deployment_drift");
           journal.lastVerifiedState = starting.enabled ? "enabled" : "disabled";
         } else if (startingContainer && transition) {
           await transition("rollback", "intent", starting.id);
@@ -1068,7 +1108,7 @@ async function main(): Promise<void> {
     return;
   }
   if (input.command === "finalize") {
-    const finalized = await finalizeDeploymentRecovery(input.operation, deps, input.evidenceSaved);
+    const finalized = await finalizeDeploymentRecovery(input.operation, deps, input.evidenceSaved, input.originalRunnerStopped);
     process.removeListener("SIGINT", abort);
     process.removeListener("SIGTERM", abort);
     if (!finalized) process.exitCode = 1;

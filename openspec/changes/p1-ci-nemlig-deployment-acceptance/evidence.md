@@ -247,3 +247,41 @@ after the fix. The same 56-test matrix includes the additional invalid inputs.
 Integration candidate: `4.1.4-alpha.23`. Persisted configuration/application
 snapshots and full recovery proof remain open, so S2.6/S2.7 remain unchecked.
 No provider setup or production mutation occurred.
+
+Configuration preservation was integrated and remote-ref verified at
+`2ab66045aa30f94a9ebd54fe22961e2e97d63158` (`4.1.4-alpha.23`).
+[Exact-head CI](https://github.com/mortenbroesby/everyday-assistants/actions/runs/34297628273)
+passed the required `verify` job and full readiness. The worktree was clean
+afterward. Recovery snapshots and finalization proof continue separately.
+
+## Full recovery snapshot proof
+
+Terra supplied snapshot draft `1e21a2d`; the coordinator completed its integration
+tests and the shared recovery predicate in `7877567`. Journals now record numeric
+starting/disabled/enabled application versions and the starting config digest.
+The 25-to-26-to-26 fixture proves their distinct sources in both remote and local
+journals before the relevant transitions. Four metadata reads verify Worker,
+config, application ID/image/version and instance state without waking or polling
+an instance. Inspection and finalization share this predicate; finalization
+requires both evidence-saved and original-runner-stopped attestations. Failure
+recovery and rollback also reverify previously recorded state.
+
+New regressions failed before the stopped-runner, missing-snapshot and rollback
+proof fixes. Independent review then found that restored cleanup also needed the
+starting enabled flag. Its opposite-state test failed before `08da9fec278cc7d34453b3547d3ab99fc6422f9e`
+added the closed boolean snapshot and exact comparison. The reviewer independently
+reran all 65 focused tests and confirmed the blocker remediated with no remaining
+blocker. Old journals remain readable but lack cleanup authority. No secret value
+is recorded or hashed; new snapshot fields retain the 8 KiB/32-transition bounds.
+
+The requested extra Luna slot was unavailable, so the existing independent review
+agent was reused. Root remains coordinator under the user's explicit instruction;
+Terra drafted, root completed the missing tests and recovery implementation, and
+the independent reviewer verified the final immutable revision. This role
+fallback changes no verification requirement or external authority.
+
+S2.6–S2.8 are locally complete. Integration candidate is `4.1.5-alpha.24`;
+remote-ref/CI confirmation follows separately. Actual image rollback behavior and
+first live acceptance remain U1/S7 evidence, not claims made by these tests.
+No provider setup, credential access, Container build cleanup or production
+mutation occurred.

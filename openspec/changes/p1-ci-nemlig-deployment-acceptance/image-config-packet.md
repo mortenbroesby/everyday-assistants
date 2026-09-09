@@ -53,8 +53,8 @@ trusted source contract.
 ### Next implementation contract: persisted compatibility proof
 
 After the strict parser slice, extend the existing journal only with optional
-starting/disabled/enabled application-version numbers and one starting effective
-configuration SHA-256 digest. Keep the existing 8 KiB/32-transition bounds and
+starting/disabled/enabled application-version numbers, one starting effective
+configuration SHA-256 digest, and the starting enabled-state boolean. Keep the existing 8 KiB/32-transition bounds and
 closed field validation. Initial preflight snapshots may omit these fields;
 terminal image-aware recovery must require them rather than treating an older
 incomplete snapshot as proof.
@@ -164,6 +164,27 @@ state plus earlier checks. Reverify the same configuration/application/instance
 evidence before making those claims; otherwise retain unknown. Rollback must
 prove that full starting state before setting `restored`. Tests must cover
 external drift in these catch paths as well as explicit inspect/finalize calls.
+
+The concrete shared recovery predicate should reuse `versionConfig`,
+`instancesInactive` and `runningInstanceMatches`, not duplicate their parsers.
+Its four reads are current deployment, that immutable Worker version, the named
+application and that application's instance rows. Compare the target Worker,
+configuration digest, application ID/image/version and state-specific instance
+predicate. No convergence loop runs in recovery inspection. Missing snapshot
+fields must deny eligibility before provider reads; malformed provider records
+must never reach deletion. Reuse this predicate in finalization and keep its
+remote-head recheck after the provider proof.
+
+Finalization requires both `--evidence-saved` and
+`--original-runner-stopped`; the exported function must default the new stopped
+attestation to false so old callers cannot accidentally authorize deletion.
+Tests cover absent flags with zero reads, each terminal-state target, each
+provider-drift dimension, old journals with missing snapshot fields, and changed
+remote head. Match restored state to the starting snapshot, disabled state to
+the disabled snapshot, and successful enabled state to the enabled snapshot.
+The restored target must explicitly compare the recorded starting enabled flag:
+the configuration digest intentionally excludes `MCP_ENABLED`, so an immutable
+Worker identifier alone is not treated as evidence of that separate state field.
 
 ## Ordered changes and tests
 

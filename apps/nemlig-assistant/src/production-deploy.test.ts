@@ -31,6 +31,7 @@ const enabledId = "22222222-2222-4222-8222-222222222222";
 const thirdPartyId = "33333333-3333-4333-8333-333333333333";
 const applicationId = "a03ce8c9-3543-4505-866e-14d2e66007ca";
 const image = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+const configDigest = "332be69112cdcc926ca4f247c5401825a914b99b42e6bd108a287c3190ada6d6";
 const execFileAsync = promisify(execFile);
 
 const version = (id: string, revision: string, enabled: boolean) => JSON.stringify({
@@ -96,6 +97,7 @@ const recoveryDeps = (journal: Record<string, unknown>, currentVersion: string, 
   const run: CommandRunner = async (command, args) => {
     if (command === "pnpm" && args.includes("deployments")) return deployment(currentVersion);
     if (command === "pnpm" && args.includes("versions")) return version(currentVersion, commit, currentEnabled);
+    if (command === "pnpm" && args.includes("instances")) return JSON.stringify([{ id: "durable-object", name: "nemlig-production", state: "inactive", version: null }]);
     if (command === "pnpm" && args.includes("containers")) return JSON.stringify([{
       id: applicationId, name: "nemlig-mcp-cloudflare-production-nemligmcpcontainer-production", instances: 1, image, version: 25,
     }]);
@@ -113,7 +115,8 @@ const recoveryDeps = (journal: Record<string, unknown>, currentVersion: string, 
 
 const terminalJournal = (extra: Record<string, unknown> = {}) => ({
   schema: 2, operationId: "44444444-4444-4444-8444-444444444444", commit, ciRunId: 456, releaseRunId: "local", releaseRunAttempt: "local", startedAt: "2026-09-05T12:00:00.000Z",
-  completedAt: "2026-09-05T12:00:06.000Z", startingVersion: startingId, startingContainerId: applicationId, startingImage: image, checks: ["starting_version_restored"], rollback: "restored",
+  completedAt: "2026-09-05T12:00:06.000Z", startingVersion: startingId, startingContainerId: applicationId, startingImage: image,
+  startingApplicationVersion: 25, startingConfigDigest: configDigest, startingEnabled: true, checks: ["starting_version_restored"], rollback: "restored",
   outcome: "failed", lastVerifiedState: "restored", transitions: [
     { phase: "disabled_deploy", kind: "intent", at: "2026-09-05T12:00:00.000Z", version: startingId },
     { phase: "disabled_deploy", kind: "result", at: "2026-09-05T12:00:01.000Z", version: disabledId },
@@ -157,6 +160,9 @@ async function fixture(options: {
   failFeatures?: boolean;
   externalEnabledDriftDuringRecovery?: boolean;
   enableApplicationVersionDrift?: boolean;
+  candidateApplicationVersion?: number;
+  disabledApplicationIdDrift?: boolean;
+  restoredInstanceRows?: unknown[];
   rollbackApplicationVersionDrift?: boolean;
   enabledInstanceRows?: unknown[][];
   postProofWorkerDrift?: boolean;
@@ -177,6 +183,7 @@ async function fixture(options: {
   let current = startingId;
   let applicationVersion = 25;
   let enabledInstanceReads = 0;
+  let rolledBack = false;
   let appended = false;
   let resultWriteFailed = false;
   let remoteLease: string | undefined = options.sharedLease?.ref;
@@ -299,13 +306,14 @@ async function fixture(options: {
       }
     }
     if (args.includes("containers") && args.includes("list")) return JSON.stringify([{
-      id: applicationId,
+      id: options.disabledApplicationIdDrift && current === disabledId ? thirdPartyId : applicationId,
       name: "nemlig-mcp-cloudflare-production-nemligmcpcontainer-production",
       instances: 1,
       image,
       version: options.postProofApplicationVersionDrift && enabledInstanceReads > 0 ? 26 : applicationVersion,
     }]);
     if (args.includes("containers") && args.includes("instances")) {
+      if (rolledBack && options.restoredInstanceRows) return JSON.stringify(options.restoredInstanceRows);
       if (current === enabledId) {
         const rows = options.enabledInstanceRows?.[Math.min(enabledInstanceReads, options.enabledInstanceRows.length - 1)] ?? [{
           id: "instance", name: "nemlig-production", state: "running", version: applicationVersion,
@@ -322,6 +330,7 @@ async function fixture(options: {
     }
     if (args.includes("rollback")) {
       current = startingId;
+      rolledBack = true;
       if (options.rollbackApplicationVersionDrift) applicationVersion = 26;
       return "rolled back";
     }
@@ -333,6 +342,7 @@ async function fixture(options: {
     if (args.includes("deploy")) {
       if (options.failDisabledDeploy) throw new Error("timed out");
       current = disabledId;
+      applicationVersion = options.candidateApplicationVersion ?? applicationVersion;
       return `Current Version ID: ${disabledId}`;
     }
     if (args.includes("whoami")) return "authenticated";
@@ -413,6 +423,14 @@ test("schema-2 recovery journals reject unknown, malformed, oversized, and exces
     transitions: [],
   };
   assert.equal(parseDeploymentJournal(JSON.stringify(journal)).operationId, journal.operationId);
+  const snapshot = { ...journal, startingApplicationVersion: 25, disabledApplicationVersion: 26, enabledApplicationVersion: 26, startingConfigDigest: "a".repeat(64) };
+  assert.deepEqual(parseDeploymentJournal(JSON.stringify(snapshot)), snapshot);
+  for (const field of ["startingApplicationVersion", "disabledApplicationVersion", "enabledApplicationVersion"]) {
+    for (const value of [0, -1, 1.5, Number.MAX_SAFE_INTEGER + 1, "25", null]) assert.throws(() => parseDeploymentJournal(JSON.stringify({ ...journal, [field]: value })));
+  }
+  for (const value of ["A".repeat(64), "a".repeat(63), 12, null]) assert.throws(() => parseDeploymentJournal(JSON.stringify({ ...journal, startingConfigDigest: value })));
+  for (const value of ["true", 1, null]) assert.throws(() => parseDeploymentJournal(JSON.stringify({ ...journal, startingEnabled: value })));
+  for (const value of [true, false]) assert.equal(parseDeploymentJournal(JSON.stringify({ ...journal, startingEnabled: value })).startingEnabled, value);
   assert.throws(() => parseDeploymentJournal(JSON.stringify({ ...journal, token: "secret" })));
   assert.throws(() => parseDeploymentJournal(JSON.stringify({ ...journal, operationId: commit })));
   assert.throws(() => parseDeploymentJournal(JSON.stringify({ ...journal, startedAt: "2026-09-05T12:00:00Z" })));
@@ -599,6 +617,41 @@ test("config preflight supplies every validated plain production value to both d
       assert.ok(deploy.args.includes("NEMLIG_MCP_AUTH0_ISSUER:https://everyday-assistants.eu.auth0.com/"));
       assert.ok(deploy.args.includes("NEMLIG_MCP_PUBLIC_URL:https://nemlig-mcp.broesby.dk/mcp"));
     }
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test("durable snapshots record distinct starting and candidate versions before their transitions", async () => {
+  const { deps, calls, root } = await fixture({ candidateApplicationVersion: 26 });
+  try {
+    const report = await deployProduction(commit, deps);
+    assert.equal(report.outcome, "success");
+    const snapshots = calls.filter(({ args }) => args.some((arg) => arg.endsWith("git/blobs")) && args.includes("POST"))
+      .map(({ input }) => parseDeploymentJournal(Buffer.from((JSON.parse(input!) as { content: string }).content, "base64").toString("utf8")));
+    const intent = snapshots.find((snapshot) => snapshot.transitions.length === 1)!;
+    assert.equal(intent.startingApplicationVersion, 25);
+    assert.equal(intent.startingEnabled, true);
+    assert.equal(intent.startingConfigDigest, configDigest);
+    assert.equal(snapshots.find((snapshot) => snapshot.transitions.length === 2)!.disabledApplicationVersion, 26);
+    assert.equal(snapshots.find((snapshot) => snapshot.transitions.length === 4)!.enabledApplicationVersion, 26);
+    const local = parseDeploymentJournal(await readFile(join(root, "nemlig-production-deploy", "latest.json"), "utf8"));
+    for (const snapshot of [report, local, snapshots.at(-1)!]) {
+      assert.equal(snapshot.startingApplicationVersion, 25);
+      assert.equal(snapshot.disabledApplicationVersion, 26);
+      assert.equal(snapshot.enabledApplicationVersion, 26);
+      assert.equal(snapshot.startingConfigDigest, configDigest);
+      assert.equal(JSON.stringify(snapshot).includes("MCP_CREDENTIAL_ONBOARDING_ENABLED"), false);
+      assert.equal(JSON.stringify(snapshot).includes("owner-token"), false);
+    }
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test("disabled application identity drift never reaches enablement", async () => {
+  const { deps, calls, root } = await fixture({ disabledApplicationIdDrift: true });
+  try {
+    const report = await deployProduction(commit, deps);
+    assert.equal(report.outcome, "failed");
+    assert.equal(report.failure, "cloudflare_deployment_drift");
+    assert.equal(calls.some(({ args }) => args.includes("MCP_ENABLED:true")), false);
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
@@ -793,7 +846,8 @@ test("enabled acceptance bounds Container instance convergence at 36 reads", asy
     const report = await deployProduction(commit, deps);
     assert.equal(report.outcome, "failed");
     assert.equal(report.failure, "container_instance_timeout");
-    assert.equal(calls.filter(({ args }) => args.includes("containers") && args.includes("instances")).length, 37);
+    // One disabled read, 36 convergence reads, one rollback proof read.
+    assert.equal(calls.filter(({ args }) => args.includes("containers") && args.includes("instances")).length, 38);
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
@@ -805,7 +859,7 @@ test("a newer running Container application version is immediate deployment drif
     const report = await deployProduction(commit, deps);
     assert.equal(report.outcome, "failed");
     assert.equal(report.failure, "cloudflare_deployment_drift");
-    assert.equal(calls.filter(({ args }) => args.includes("containers") && args.includes("instances")).length, 2);
+    assert.equal(calls.filter(({ args }) => args.includes("containers") && args.includes("instances")).length, 3);
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
@@ -1035,7 +1089,7 @@ test("remote journal reader rejects malformed blobs and extra tree entries befor
     };
     const operation = terminalJournal().operationId;
     assert.equal((await inspectDeploymentRecovery(operation, deps, true)).reason, "journal_invalid");
-    await assert.rejects(finalizeDeploymentRecovery(operation, deps, true));
+    await assert.rejects(finalizeDeploymentRecovery(operation, deps, true, true));
     assert.equal(calls.some(({ command, args }) => command === "pnpm" || args.includes("DELETE")), false);
   }
 });
@@ -1054,7 +1108,7 @@ test("a second host recovers pending remote intent without the original local mi
     const inspection = await inspectDeploymentRecovery(report.operationId, second.deps, true);
     assert.equal(inspection.reason, "pending_or_unknown");
     assert.equal(inspection.cleanupEligible, false);
-    assert.equal(await finalizeDeploymentRecovery(report.operationId, second.deps, true), false);
+    assert.equal(await finalizeDeploymentRecovery(report.operationId, second.deps, true, true), false);
     assert.equal(second.calls.some(({ command, args }) => command === "pnpm" || args.includes("DELETE") || args.includes("PATCH")), false);
   } finally {
     await rm(first.root, { recursive: true, force: true });
@@ -1095,7 +1149,7 @@ test("finalization retains a lease whose owner changes during provider readback"
       if (args.some((arg) => arg.includes("git/ref/heads/")) && ++reads === 2) sharedLease.ref = previousCommit;
       return run(command, args, options);
     };
-    assert.equal(await finalizeDeploymentRecovery(report.operationId, deps, true), false);
+    assert.equal(await finalizeDeploymentRecovery(report.operationId, deps, true, true), false);
     assert.equal(sharedLease.ref, previousCommit);
     assert.equal(calls.some(({ args }) => args.includes("DELETE")), false);
     await access(join(root, "nemlig-production-deploy.lock"));
@@ -1107,7 +1161,7 @@ test("successful deployment finalizes from its stateful remote journal chain", a
   try {
     const report = await deployProduction(commit, deps);
     assert.equal(report.outcome, "success");
-    assert.equal(await finalizeDeploymentRecovery(report.operationId, deps, true), true);
+    assert.equal(await finalizeDeploymentRecovery(report.operationId, deps, true, true), true);
     assert.equal(calls.filter(({ command, args }) => command === "gh" && args.includes("DELETE")).length, 1);
     await assert.rejects(access(join(root, "nemlig-production-deploy.lock")));
   } finally {
@@ -1136,6 +1190,7 @@ test("finalize accepts GitHub's empty successful DELETE only after the exact rem
     schema: 2, operationId: operation, commit, ciRunId: 456, releaseRunId: "local", releaseRunAttempt: "local", startedAt: "2026-09-05T12:00:00.000Z",
     completedAt: "2026-09-05T12:00:04.000Z", startingVersion: startingId, enabledVersion: enabledId, startingContainerId: applicationId, enabledImage: image, checks: ["enabled_version", "image_reused", "edge_acceptance", "authenticated_read_only_acceptance"], lastVerifiedState: "enabled",
     rollback: "not_needed", outcome: "success", remoteCommit: "dddddddddddddddddddddddddddddddddddddddd",
+    enabledApplicationVersion: 25, startingConfigDigest: configDigest, startingEnabled: true,
     transitions: [
       { phase: "disabled_deploy", kind: "intent", at: "2026-09-05T12:00:00.000Z", version: startingId },
       { phase: "disabled_deploy", kind: "result", at: "2026-09-05T12:00:01.000Z", version: disabledId },
@@ -1151,6 +1206,7 @@ test("finalize accepts GitHub's empty successful DELETE only after the exact rem
     if (command === "git" && args[0] === "rev-parse") return root;
     if (command === "pnpm" && args.includes("deployments")) return deployment(enabledId);
     if (command === "pnpm" && args.includes("versions")) return version(enabledId, commit, true);
+    if (command === "pnpm" && args.includes("instances")) return JSON.stringify([{ id: "instance", name: "nemlig-production", state: "running", version: 25 }]);
     if (command === "pnpm" && args.includes("containers")) return JSON.stringify([{
       id: applicationId, name: "nemlig-mcp-cloudflare-production-nemligmcpcontainer-production", instances: 1, image: currentImage,
       version: 25,
@@ -1173,13 +1229,13 @@ test("finalize accepts GitHub's empty successful DELETE only after the exact rem
     assert.equal(await finalizeDeploymentRecovery(operation, {
       repoRoot: root, packageRoot: root, stateRoot: root, env: {}, run, fetcher: fetch,
       sleep: async () => undefined, now: () => new Date(),
-    }, true), false);
+    }, true, true), false);
     assert.equal(head, remoteCommit, "image drift retains the remote lease");
     currentImage = image;
     assert.equal(await finalizeDeploymentRecovery(operation, {
       repoRoot: root, packageRoot: root, stateRoot: root, env: {}, run, fetcher: fetch,
       sleep: async () => undefined, now: () => new Date(),
-    }, true), true);
+    }, true, true), true);
     assert.equal(head, "");
     await assert.rejects(access(join(root, "nemlig-production-deploy.lock")));
     assert.equal(calls.filter(({ args }) => args.includes("DELETE")).length, 1);
@@ -1189,6 +1245,11 @@ test("finalize accepts GitHub's empty successful DELETE only after the exact rem
 });
 
 test("recovery commands reject forged arguments before I/O", () => {
+  const operation = "44444444-4444-4444-8444-444444444444";
+  assert.deepEqual(parseProductionDeployCli(["finalize", operation, "--evidence-saved", "--original-runner-stopped"]), {
+    help: false, command: "finalize", operation, evidenceSaved: true, originalRunnerStopped: true,
+  });
+  assert.throws(() => parseProductionDeployCli(["finalize", operation, "--evidence-saved"]));
   assert.deepEqual(parseProductionDeployCli(["inspect-recovery", "44444444-4444-4444-8444-444444444444"]), {
     help: false, command: "inspect-recovery", operation: "44444444-4444-4444-8444-444444444444", originalRunnerStopped: false,
   });
@@ -1216,9 +1277,123 @@ test("missing artifact attestation denies finalization before any recovery reads
   assert.equal(calls, 0);
 });
 
+test("finalization also requires stopped-runner attestation before any reads", async () => {
+  let reads = 0;
+  const deps = recoveryDeps(terminalJournal(), startingId, true);
+  deps.run = async () => { reads += 1; throw new Error("must not read"); };
+  assert.equal(await finalizeDeploymentRecovery(terminalJournal().operationId, deps, true), false);
+  assert.equal(reads, 0);
+});
+
+test("restored cleanup rejects an enabled-state mismatch with the starting snapshot", async () => {
+  const journal = terminalJournal();
+  const result = await inspectDeploymentRecovery(journal.operationId, recoveryDeps(journal, startingId, false), true);
+  assert.equal(result.cleanupEligible, false);
+});
+
+test("recovery denies legacy terminal journals lacking snapshot proof", async () => {
+  for (const missing of ["startingConfigDigest", "startingApplicationVersion", "startingEnabled"]) {
+    const journal = terminalJournal({ startingConfigDigest: configDigest, startingApplicationVersion: 25, [missing]: undefined });
+    let reads = 0;
+    const deps = recoveryDeps(journal, startingId, true);
+    const run = deps.run;
+    deps.run = async (command, args, options) => { if (command === "pnpm") reads += 1; return run(command, args, options); };
+    const result = await inspectDeploymentRecovery(journal.operationId, deps, true);
+    assert.equal(result.cleanupEligible, false);
+    assert.equal(reads, 0);
+  }
+});
+
+test("four-read recovery proof rejects every provider drift dimension without deletion", async () => {
+  for (const drift of ["worker", "image", "application", "config", "instance", "malformed-instance"]) {
+    const journal = terminalJournal();
+    const deps = recoveryDeps(journal, startingId, true);
+    const run = deps.run;
+    let reads = 0;
+    let deletes = 0;
+    deps.run = async (command, args, options) => {
+      if (args.includes("DELETE")) { deletes += 1; return ""; }
+      if (command === "pnpm") reads += 1;
+      const raw = await run(command, args, options);
+      if (command !== "pnpm") return raw;
+      if (drift === "worker" && args.includes("deployments")) return deployment(thirdPartyId);
+      if (drift === "config" && args.includes("versions")) return raw.replace('"text":"3"', '"text":"4"');
+      if (args.includes("instances")) {
+        if (drift === "malformed-instance") return "[]";
+        if (drift === "instance") return JSON.stringify([{ id: "instance", name: "nemlig-production", state: "running", version: 24 }]);
+      } else if (args.includes("containers")) {
+        if (drift === "application") return raw.replace('"version":25', '"version":26');
+        if (drift === "image") return raw.replace(image, `sha256:${"b".repeat(64)}`);
+      }
+      return raw;
+    };
+    const inspection = await inspectDeploymentRecovery(journal.operationId, deps, true);
+    assert.equal(inspection.cleanupEligible, false, drift);
+    assert.ok(reads <= 4);
+    reads = 0;
+    // Malformed provider records may throw; either result must deny deletion.
+    assert.equal(await finalizeDeploymentRecovery(journal.operationId, deps, true, true).catch(() => false), false, drift);
+    assert.ok(reads <= 4);
+    assert.equal(deletes, 0);
+  }
+});
+
+test("enabled recovery accepts matching running or inactive instances but disabled recovery only inactive", async () => {
+  for (const enabled of [true, false]) {
+    for (const running of [true, false]) {
+      const journal = terminalJournal({ startingEnabled: enabled });
+      const deps = recoveryDeps(journal, startingId, enabled);
+      const run = deps.run;
+      let reads = 0;
+      deps.run = async (command, args, options) => {
+        if (command === "pnpm") reads += 1;
+        if (args.includes("instances") && running) return JSON.stringify([{ id: "instance", name: "nemlig-production", state: "running", version: 25 }]);
+        return run(command, args, options);
+      };
+      const result = await inspectDeploymentRecovery(journal.operationId, deps, true);
+      assert.equal(result.cleanupEligible, enabled || !running);
+      assert.equal(reads, 4);
+    }
+  }
+});
+
+test("rollback cannot claim restoration with changed configuration or a stale running instance", async () => {
+  for (const mode of ["config", "instance"]) {
+    let startingReads = 0;
+    const { deps, root } = await fixture({ failFeatures: true,
+      ...(mode === "instance" ? { restoredInstanceRows: [{ id: "instance", name: "nemlig-production", state: "running", version: 24 }] } : {}),
+      versionBindings: (values, id) => {
+        if (id === startingId && ++startingReads > 1 && mode === "config") return values.map((value) => value.name === "MCP_CREDENTIAL_RATE_LIMIT" ? { ...value, text: "4" } : value);
+        return values;
+      },
+    });
+    try {
+      const report = await deployProduction(commit, deps);
+      assert.equal(report.lastVerifiedState, "unknown");
+      assert.notEqual(report.rollback, "restored");
+    } finally { await rm(root, { recursive: true, force: true }); }
+  }
+});
+
+test("failure recovery rechecks earlier disabled or starting configuration before claiming known state", async () => {
+  for (const target of [disabledId, startingId]) {
+    let reads = 0;
+    const { deps, root } = await fixture({
+      ...(target === disabledId ? { remoteEnableIntentFailure: true } : { driftBeforeEnable: true }),
+      versionBindings: (values, id) => id === target && ++reads > 1
+        ? values.map((value) => value.name === "MCP_CREDENTIAL_RATE_LIMIT" ? { ...value, text: "4" } : value) : values,
+    });
+    try {
+      const report = await deployProduction(commit, deps);
+      assert.equal(report.outcome, "failed");
+      assert.equal(report.lastVerifiedState, "unknown");
+    } finally { await rm(root, { recursive: true, force: true }); }
+  }
+});
+
 test("inspection accepts either enabled or disabled restored starting state only with stopped-runner attestation", async () => {
   for (const enabled of [true, false]) {
-    const inspected = await inspectDeploymentRecovery("44444444-4444-4444-8444-444444444444", recoveryDeps(terminalJournal(), startingId, enabled), true);
+    const inspected = await inspectDeploymentRecovery("44444444-4444-4444-8444-444444444444", recoveryDeps(terminalJournal({ startingEnabled: enabled }), startingId, enabled), true);
     assert.deepEqual(inspected, { operation: "44444444-4444-4444-8444-444444444444", originalRunnerStopped: true, cleanupEligible: true, reason: "eligible", state: "restored" });
   }
   const denied = await inspectDeploymentRecovery("44444444-4444-4444-8444-444444444444", recoveryDeps(terminalJournal(), startingId, true));
@@ -1231,7 +1406,7 @@ test("inspection denies wrong operation, pending work, and recognizes known disa
   assert.equal((await inspectDeploymentRecovery("55555555-5555-4555-8555-555555555555", recoveryDeps(terminalJournal(), startingId, true), true)).reason, "operation_mismatch");
   assert.equal((await inspectDeploymentRecovery(operation, recoveryDeps(terminalJournal({ outcome: "running", lastVerifiedState: "unknown", transitions: [] }), startingId, true), true)).reason, "pending_or_unknown");
   const disabled = terminalJournal({
-    rollback: "not_needed", lastVerifiedState: "disabled", disabledVersion: disabledId, disabledImage: image, checks: ["disabled_routes", "container_inactive"],
+    rollback: "not_needed", lastVerifiedState: "disabled", disabledVersion: disabledId, disabledImage: image, disabledApplicationVersion: 25, checks: ["disabled_routes", "container_inactive"],
     transitions: [
       { phase: "disabled_deploy", kind: "intent", at: "2026-09-05T12:00:00.000Z", version: startingId },
       { phase: "disabled_deploy", kind: "result", at: "2026-09-05T12:00:01.000Z", version: disabledId },
