@@ -178,6 +178,27 @@ Routine CI releases use the manual **Nemlig production** workflow with the exact
 
 One-time setup is complete: the `nemlig-production` environment requires the owner reviewer, permits only `main`, and contains the two scoped secrets and three non-secret variables required by the workflow. Routine releases need no owner or 1Password session.
 
+### Repeatable release
+
+1. Push the candidate to `main` and wait for exact-head **CI** to pass.
+2. Dispatch the protected workflow with that full SHA:
+
+   ```sh
+   git fetch origin main
+   sha=$(git rev-parse origin/main)
+   gh workflow run nemlig-production.yml --ref main -f commit="$sha" -f cutover=false
+   ```
+
+3. Approve the `nemlig-production` environment gate and watch the returned run
+   URL. A successful routine run saves its artifact and removes its exact lease
+   automatically. Use `cutover=true` only for the first accepted revision or a
+   changed runtime boundary; it intentionally retains the lease for the live
+   read-only check below.
+4. If the run is canceled, fails, or leaves a lease, download its artifact and
+   run `inspect-recovery` with that artifact's operation UUID. Continue only
+   when inspection proves a terminal matching state; never retry the deployment
+   or delete the lease based on its age.
+
 The shared command also supports supervised terminal execution with those same scoped CI credentials:
 
 ```sh
