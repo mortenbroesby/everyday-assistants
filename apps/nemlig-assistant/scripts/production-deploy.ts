@@ -669,7 +669,7 @@ const rollback = async (deps: DeployDependencies, journal: DeploymentJournal, st
   await wrangler(deps, ["rollback", starting.id, "--message", `Automated rollback after failed ${journal.commit.slice(0, 7)} release`, "--yes"], 120_000);
   await verifyCurrent(deps, starting.id);
   const currentContainer = await readContainer(deps);
-  if (currentContainer.id !== startingContainer.id || currentContainer.image !== startingContainer.image) fail("cloudflare_deployment_drift");
+  if (currentContainer.id !== startingContainer.id || currentContainer.image !== startingContainer.image || currentContainer.version !== startingContainer.version) fail("cloudflare_deployment_drift");
   const restored = parseVersionState(await readVersion(deps, starting.id), starting.id);
   if (restored.enabled) {
     await runAt(deps, deps.packageRoot, "pnpm", ["production:probe"], {
@@ -790,7 +790,7 @@ export async function deployProduction(commit: string, inputDeps: DeployDependen
     await verifyCurrent(deps, enabledId);
     verifyCandidateVersion(await readVersion(deps, enabledId), enabledId, commit, true);
     const enabledContainer = await readContainer(deps);
-    if (enabledContainer.id !== disabledContainer.id || enabledContainer.image !== disabledContainer.image) {
+    if (enabledContainer.id !== disabledContainer.id || enabledContainer.image !== disabledContainer.image || enabledContainer.version !== disabledContainer.version) {
       fail("container_image_changed_during_enable");
     }
     journal.enabledImage = enabledContainer.image;

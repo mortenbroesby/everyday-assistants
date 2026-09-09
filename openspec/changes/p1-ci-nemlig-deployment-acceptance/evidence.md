@@ -173,3 +173,19 @@ and image-aware recovery still require implementation and composed proof. The
 integration candidate is `4.1.1-alpha.20`; production is unchanged. Local Docker
 remains blocked by its full data volume; exact-head CI supplies the full build
 gate and is recorded separately when verified.
+
+The parser slice was integrated and remote-ref verified at
+`ae1afda49c4e1c45b11eda191f137fa913fadf83` (`4.1.1-alpha.20`).
+[Exact-head CI](https://github.com/mortenbroesby/everyday-assistants/actions/runs/34294591659)
+passed the full readiness command. The integration worktree was clean afterward;
+no live deployment or local Docker cleanup occurred.
+
+## Application-version drift slice
+
+Terra commit `3bb7857cdf764f746d3208139983691b652f5b1f` adds exact numeric
+Container application-version comparison during enablement and rollback.
+Both regressions cover unchanged image digests with changed application versions;
+neither state may be reported verified. Coordinator independently reran all
+40 focused deploy tests successfully. Integration version is `4.1.2-alpha.21`.
+S2.6 remains open for effective configuration and running-instance proof.
+No production mutation occurred.

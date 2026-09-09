@@ -134,6 +134,8 @@ async function fixture(options: {
   failDisabledDeploy?: boolean;
   failFeatures?: boolean;
   externalEnabledDriftDuringRecovery?: boolean;
+  enableApplicationVersionDrift?: boolean;
+  rollbackApplicationVersionDrift?: boolean;
   remoteIntentFailure?: boolean;
   remoteResultFailure?: boolean;
   remoteEnableIntentFailure?: boolean;
@@ -145,6 +147,7 @@ async function fixture(options: {
   const root = await mkdtemp(join(tmpdir(), "nemlig-production-deploy-"));
   const calls: Call[] = [];
   let current = startingId;
+  let applicationVersion = 25;
   let appended = false;
   let resultWriteFailed = false;
   let remoteLease: string | undefined = options.sharedLease?.ref;
@@ -269,7 +272,7 @@ async function fixture(options: {
       name: "nemlig-mcp-cloudflare-production-nemligmcpcontainer-production",
       instances: 1,
       image,
-      version: 25,
+      version: applicationVersion,
     }]);
     if (args.includes("containers") && args.includes("instances")) return JSON.stringify([{
       id: "durable-object",
@@ -279,10 +282,12 @@ async function fixture(options: {
     }]);
     if (args.includes("rollback")) {
       current = startingId;
+      if (options.rollbackApplicationVersionDrift) applicationVersion = 26;
       return "rolled back";
     }
     if (args.includes("deploy") && args.includes("MCP_ENABLED:true")) {
       current = enabledId;
+      if (options.enableApplicationVersionDrift) applicationVersion = 26;
       return `Current Version ID: ${enabledId}`;
     }
     if (args.includes("deploy")) {
@@ -583,6 +588,15 @@ test("disabled verification failures and provider drift never enable", async () 
   }
 });
 
+test("enablement rejects a changed Container application version despite the same image", async () => {
+  const { deps, root } = await fixture({ enableApplicationVersionDrift: true });
+  try {
+    const report = await deployProduction(commit, deps);
+    assert.equal(report.outcome, "failed");
+    assert.equal(report.lastVerifiedState, "unknown");
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
 test("incomplete disabled evidence remains unknown, while completed disabled proof survives a later safe failure", async () => {
   for (const options of [{ disabledResponse: "wrong" }, { disabledFetchFails: true }]) {
     const { deps, root } = await fixture(options);
@@ -611,6 +625,15 @@ test("enabled acceptance failure restores and verifies the exact starting versio
   } finally {
     await rm(root, { recursive: true, force: true });
   }
+});
+
+test("rollback with a changed Container application version is not reported restored", async () => {
+  const { deps, root } = await fixture({ failFeatures: true, rollbackApplicationVersionDrift: true });
+  try {
+    const report = await deployProduction(commit, deps);
+    assert.equal(report.outcome, "failed");
+    assert.notEqual(report.lastVerifiedState, "restored");
+  } finally { await rm(root, { recursive: true, force: true }); }
 });
 
 test("unexpected enabled provider drift during recovery is retained without rollback", async () => {

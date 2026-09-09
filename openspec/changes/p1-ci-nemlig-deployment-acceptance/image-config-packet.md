@@ -78,6 +78,35 @@ This adds one read-only metadata request per inspection, no Container wake,
 mutation, paid resource, polling loop or capacity change. The operation's
 existing total deadline remains mandatory.
 
+### Running-instance proof packet
+
+Pinned `deriveInstanceState` emits `provisioning`, `running`, `failed`,
+`stopping`, `stopped`, `unhealthy` or `unknown`; an uninstantiated Durable Object
+assignment is separately `inactive`. Do not invent a `starting` CLI state.
+
+After authenticated read-only acceptance, require one row for the fixed
+`nemlig-production` assignment, a nonempty ID, state `running`, and the exact
+candidate numeric application version. Allow only bounded convergence: at most
+36 instance reads with the existing five-second abortable delay and shared
+operation deadline. Failed/unhealthy/unknown or malformed responses fail closed;
+provisioning or a previously running version can converge without a mutation
+retry. Reuse the existing polling/cancellation seam, not a new scheduler.
+
+After a matching row is observed, reread the current Worker and Container
+application and verify exact candidate Worker UUID, application ID, image digest
+and application version before recording success. This avoids three repeated
+metadata reads on every poll: at most 36 instance reads plus two final metadata
+reads, with no added Nemlig request or Container wake. Lease ownership must still
+be checked before any failure-recovery mutation.
+
+Persist the application versions before considering instance-aware recovery
+complete. Recovery of enabled production may observe the fixed inactive
+assignment or a matching running instance; it must never accept a different
+running version. Disabled recovery requires the fixed inactive assignment.
+Worker-only rollback with a different application/image remains unknown rather
+than a restoration claim. Configuration-digest proof is a separate prerequisite
+before S2.6/S2.7 are checked; neither parser nor instance tests alone close them.
+
 ## Ordered changes and tests
 
 - [ ] Characterize starting Worker, application image/version, instance state,
