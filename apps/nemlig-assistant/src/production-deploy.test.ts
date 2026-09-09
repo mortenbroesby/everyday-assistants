@@ -1599,6 +1599,7 @@ test("service deployment never reads owner credentials and issues one token befo
     assert.equal(report.checks.includes("authenticated_read_only_acceptance"), false);
     const acceptance = calls.find(({ args }) => args.includes("--service"));
     assert.ok(acceptance);
+    assert.deepEqual(acceptance.args, ["production:test:features", "--service"]);
     assert.equal(acceptance.env?.NEMLIG_MCP_SERVICE_ACCESS_TOKEN, "machine-token");
     for (const call of calls) {
       assert.equal(call.env?.NEMLIG_MCP_ACCESS_TOKEN, undefined);

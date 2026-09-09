@@ -1141,7 +1141,7 @@ export async function deployProduction(commit: string, inputDeps: DeployDependen
     journal.checks.push("enabled_version", "image_reused");
     await transition("enable_deploy", "result", enabledId);
     await waitForEdge(deps, commit);
-    await runAt(deps, deps.packageRoot, "pnpm", ["production:test:features", ...(service ? ["--", "--service"] : [])], {
+    await runAt(deps, deps.packageRoot, "pnpm", ["production:test:features", ...(service ? ["--service"] : [])], {
       timeoutMs: 120_000,
       ...(service ? { env: { NEMLIG_MCP_SERVICE_ACCESS_TOKEN: serviceToken, NEMLIG_EXPECTED_REVISION: commit } } : {}),
     });
