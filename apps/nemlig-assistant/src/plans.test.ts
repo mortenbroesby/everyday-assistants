@@ -33,6 +33,52 @@ test("candidate ordering uses every preference then stable price, source, and ID
   assert.deepEqual(candidates.map(({ id }) => id), [4, 3, 1, 2, 5]);
 });
 
+test("planning rejects pet food, covers requested amounts, honors brands, and preserves meaningful choice", async () => {
+  const meat = [
+    product(1, "Hakket oksekød", { unitSize: "500 g", category: "Kød" }),
+    product(2, "Hakket oksekød til kat", { unitSize: "400 g", category: "Kæledyr", subcategory: "Kattemad" }),
+    product(3, "Hakket oksekød", { unitSize: "800 g", category: "Kød" }),
+  ];
+  const amountPlan = await resolveShoppingPlan({
+    searchProducts: async () => meat,
+    getProduct: async (id) => meat.find((item) => item.id === id)!,
+    getCart: async () => basket(),
+  }, { lines: [{ id: "meat", name: "hakket oksekød", requested_amount: 1, requested_unit: "kg" }] });
+  assert.deepEqual(amountPlan.lines[0]?.candidates.map(({ id }) => id), [1, 3]);
+  assert.deepEqual(amountPlan.lines[0]?.candidates.map(({ required_packages, covered_amount, excess_amount }) => ({ required_packages, covered_amount, excess_amount })), [
+    { required_packages: 2, covered_amount: 1000, excess_amount: 0 },
+    { required_packages: 2, covered_amount: 1600, excess_amount: 600 },
+  ]);
+  assert.equal(amountPlan.lines[0]?.selected_product_id, 1);
+  assert.equal(amountPlan.lines[0]?.remaining_quantity, 2);
+  assert.equal(amountPlan.lines[0]?.clarity_reason, "amount_match");
+
+  const ketchup = [
+    product(4, "Tomatketchup", { brand: "Budget", price: 5 }),
+    product(5, "Tomato ketchup", { brand: "Heinz", price: 20 }),
+  ];
+  const preferred = await resolveShoppingPlan({ searchProducts: async () => ketchup, getProduct: async () => ketchup[0]!, getCart: async () => basket() }, {
+    lines: [{ id: "ketchup", name: "tomat ketchup", quantity: 1, preferred_brands: ["Heinz"], require_choice: true }],
+  });
+  assert.equal(preferred.lines[0]?.candidates[0]?.id, 5);
+  assert.equal(preferred.lines[0]?.candidates[0]?.preferred_brand_match, true);
+  assert.equal(preferred.lines[0]?.selected_product_id, 5);
+  assert.equal(preferred.lines[0]?.clarity_reason, "preferred_brand");
+
+  const choice = await resolveShoppingPlan({ searchProducts: async () => ketchup, getProduct: async () => ketchup[0]!, getCart: async () => basket() }, {
+    lines: [{ id: "ketchup", name: "tomat ketchup", quantity: 1, require_choice: true }],
+  });
+  assert.equal(choice.lines[0]?.resolution, "unresolved");
+  assert.equal(choice.lines[0]?.clarity_reason, "brand_choice");
+});
+
+test("requested amounts validate paired supported units before provider reads", async () => {
+  let calls = 0;
+  const client = { searchProducts: async () => { calls += 1; return []; }, getProduct: async () => { calls += 1; return product(1, "x"); }, getCart: async () => { calls += 1; return basket(); } };
+  await assert.rejects(resolveShoppingPlan(client, { lines: [{ id: "meat", name: "kød", requested_amount: 1 }] }), /requested_amount/u);
+  assert.equal(calls, 0);
+});
+
 test("pure calculation preserves mixed selection, fractional coverage, ordering, and totals", () => {
   const input = shoppingPlanInputSchema.parse({ mode: "automatic", lines: [
     { id: "covered", name: "milk", quantity: 2 }, { id: "selected", name: "yoghurt", quantity: 2 },
