@@ -939,6 +939,15 @@ test("accepts Cloudflare's application version advancing with the deployed Conta
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
+test("accepts the short-lived Container becoming inactive after service acceptance", async () => {
+  const { deps, root } = await fixture({ enabledInstanceRows: [[{
+    id: "durable-object", name: "nemlig-production", state: "inactive", version: null,
+  }]] });
+  try {
+    assert.equal((await deployProduction(commit, deps)).outcome, "success");
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
 test("cancelling Container instance convergence stops further reads", async () => {
   const { deps, calls, root } = await fixture({ enabledInstanceRows: [[{
     id: "instance", name: "nemlig-production", state: "provisioning", version: null,

@@ -912,10 +912,12 @@ const runningInstanceVersion = (raw: string, minimumVersion: number): number | n
 const runningInstanceMatches = (raw: string, expectedVersion: number): boolean =>
   runningInstanceVersion(raw, expectedVersion) === expectedVersion;
 
-const waitForRunningInstance = async (deps: DeployDependencies, applicationId: string, minimumVersion: number): Promise<number> => {
+const waitForAcceptedInstance = async (deps: DeployDependencies, applicationId: string, minimumVersion: number): Promise<number | null> => {
   for (let attempt = 0; attempt < 36; attempt += 1) {
     deps.signal?.throwIfAborted();
-    const version = runningInstanceVersion(await wrangler(deps, ["containers", "instances", applicationId, "--json"]), minimumVersion);
+    const raw = await wrangler(deps, ["containers", "instances", applicationId, "--json"]);
+    if (instancesInactive(raw)) return null;
+    const version = runningInstanceVersion(raw, minimumVersion);
     if (version !== null) return version;
     if (attempt < 35) await sleepAbortably(deps);
   }
@@ -1143,10 +1145,11 @@ export async function deployProduction(commit: string, inputDeps: DeployDependen
     await retryAcceptance(deps, ["production:probe"], { NEMLIG_EXPECTED_REVISION: commit }, 12);
     await retryAcceptance(deps, ["production:test:features", ...(service ? ["--service"] : [])],
       service ? { NEMLIG_MCP_SERVICE_ACCESS_TOKEN: serviceToken, NEMLIG_EXPECTED_REVISION: commit } : {}, service ? 12 : 1);
-    const runningVersion = await waitForRunningInstance(deps, enabledContainer.id, enabledContainer.version);
+    const runningVersion = await waitForAcceptedInstance(deps, enabledContainer.id, enabledContainer.version);
     await verifyCurrent(deps, enabledId);
     const provenContainer = await readContainer(deps);
-    if (provenContainer.id !== enabledContainer.id || provenContainer.image !== enabledContainer.image || provenContainer.version !== runningVersion) {
+    if (provenContainer.id !== enabledContainer.id || provenContainer.image !== enabledContainer.image
+      || provenContainer.version !== (runningVersion ?? enabledContainer.version)) {
       fail("cloudflare_deployment_drift");
     }
     journal.enabledApplicationVersion = provenContainer.version;
