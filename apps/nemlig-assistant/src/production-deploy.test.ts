@@ -429,6 +429,7 @@ test("Container metadata distinguishes numeric application versions from Worker 
     assert.throws(() => parseContainer(JSON.stringify([{ ...app, ...invalid }])), JSON.stringify(invalid));
   }
   assert.deepEqual(parseContainer(JSON.stringify([app])), { id: applicationId, image, version: 25 });
+  assert.deepEqual(parseContainer(JSON.stringify([{ ...app, image: `registry.cloudflare.com/example@${image}` }])), { id: applicationId, image, version: 25 });
   const inactive = { id: "durable-object", name: "nemlig-production", state: "inactive", version: null };
   assert.equal(instancesInactive(JSON.stringify([inactive])), true);
   for (const invalid of [{ id: "" }, { id: undefined }, { name: "other" }, { state: "running" }, { version: 25 }, { version: undefined }]) {

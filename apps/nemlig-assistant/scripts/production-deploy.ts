@@ -405,12 +405,13 @@ export function parseContainer(raw: string): ContainerState {
   if (!value) throw new DeployFailure("cloudflare_container_ambiguous");
   const id = value.id;
   const image = value.image;
+  const digest = typeof image === "string" ? image.match(/(?:^|@)(sha256:[0-9a-f]{64})$/u)?.[1] : undefined;
   const version = value.version;
-  if (typeof id !== "string" || !versionId.test(id) || typeof image !== "string" || !imageDigest.test(image)
+  if (typeof id !== "string" || !versionId.test(id) || !digest
     || typeof version !== "number" || !Number.isSafeInteger(version) || version < 1
     || value.name !== "nemlig-mcp-cloudflare-production-nemligmcpcontainer-production"
     || value.instances !== 1) throw new DeployFailure("cloudflare_container_ambiguous");
-  return { id, image, version };
+  return { id, image: digest, version };
 }
 
 export function instancesInactive(raw: string): boolean {
