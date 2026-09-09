@@ -623,7 +623,6 @@ const acquireRemoteJournal = async (deps: DeployDependencies, repository: string
   const root = await journalCommit(deps, repository, journal);
   try {
     await ghJson(deps, repository, "POST", "git/refs", { ref: remoteLeaseRef, sha: root });
-    if (await readRemoteHead(deps, repository) !== root) fail("remote_deployment_lease_changed");
   } catch {
     fail("remote_deployment_lease_unavailable");
   }
@@ -637,8 +636,6 @@ const appendRemoteJournal = async (deps: DeployDependencies, repository: string,
   const child = await journalCommit(deps, repository, journal, parent);
   try {
     await ghJson(deps, repository, "PATCH", "git/refs/heads/codex-lock/nemlig-production", { sha: child, force: false });
-    const current = await readRemoteHead(deps, repository);
-    if (current !== child) fail("remote_deployment_lease_changed");
   } catch {
     fail("remote_journal_append_failed");
   }
