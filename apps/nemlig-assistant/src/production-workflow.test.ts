@@ -8,7 +8,8 @@ const section = (source: string, heading: string): string => {
   const start = source.indexOf(`${heading}\n`);
   assert.notEqual(start, -1, `missing workflow section: ${heading}`);
   const rest = source.slice(start + heading.length + 1);
-  const next = rest.search(/^\S/m);
+  const indentation = heading.length - heading.trimStart().length;
+  const next = rest.search(new RegExp(`^ {0,${indentation}}\\S`, "m"));
   return next === -1 ? rest : rest.slice(0, next);
 };
 
@@ -24,7 +25,7 @@ test("production workflow is manual, main-only, protected, and credential-scoped
 
   const preflight = section(source, "  preflight:");
   const deploy = section(source, "  deploy:");
-  assert.match(preflight, /if: github\.ref == 'refs\/heads\/main'/u);
+  assert.match(preflight, /if: inputs\.finalize_operation == '' && github\.ref == 'refs\/heads\/main'/u);
   assert.match(preflight, /timeout-minutes: 30/u);
   assert.match(preflight, /permissions:\n\s+contents: read\n\s+actions: read/u);
   assert.match(preflight, /actions\/checkout@[0-9a-f]{40}/u);
@@ -34,8 +35,7 @@ test("production workflow is manual, main-only, protected, and credential-scoped
   assert.match(preflight, /env:\n\s+GH_TOKEN:/u);
 
   assert.match(deploy, /needs: preflight/u);
-  assert.match(deploy, /if: github\.ref == 'refs\/heads\/main'/u);
-  assert.doesNotMatch(deploy, /inputs\./u);
+  assert.match(deploy, /if: inputs\.finalize_operation == '' && github\.ref == 'refs\/heads\/main'/u);
   assert.match(deploy, /environment:\n\s+name: nemlig-production/u);
   assert.match(deploy, /permissions:\n\s+contents: write\n\s+actions: read/u);
   assert.match(deploy, /pnpm install --frozen-lockfile/u);
@@ -52,6 +52,22 @@ test("production workflow is manual, main-only, protected, and credential-scoped
   assert.match(deploy, /retention-days: 7/u);
   assert.match(deploy, /include-hidden-files: true/u);
   assert.doesNotMatch(source, /setup-.*provider|activate|cloudflare\/workers/u);
+});
+
+test("cutover recovery can be finalized through the protected environment", async () => {
+  const source = await readFile(workflowPath, "utf8");
+  const trigger = section(source, "on:");
+  const finalize = section(source, "  finalize:");
+  assert.match(trigger, /finalize_operation:[\s\S]*?required: false[\s\S]*?type: string/m);
+  assert.match(finalize, /if: inputs\.finalize_operation != '' && github\.ref == 'refs\/heads\/main'/u);
+  assert.match(finalize, /environment:\n\s+name: nemlig-production/u);
+  assert.match(finalize, /permissions:\n\s+contents: write\n\s+actions: read/u);
+  assert.match(finalize, /persist-credentials: false/u);
+  assert.match(finalize, /pnpm install --frozen-lockfile/u);
+  assert.match(finalize, /GH_TOKEN:/u);
+  assert.match(finalize, /CLOUDFLARE_API_TOKEN:/u);
+  assert.match(finalize, /CLOUDFLARE_ACCOUNT_ID:/u);
+  assert.match(finalize, /production:deploy -- finalize "\$FINALIZE_OPERATION" --evidence-saved --original-runner-stopped/u);
 });
 
 test("routine recovery finalizes only after its artifact is saved", async () => {
