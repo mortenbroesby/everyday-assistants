@@ -919,17 +919,14 @@ const waitForRunningInstance = async (deps: DeployDependencies, applicationId: s
   fail("container_instance_timeout");
 };
 
-const waitForEdge = async (deps: DeployDependencies, commit: string): Promise<void> => {
-  for (let attempt = 0; attempt < 12; attempt += 1) {
+const retryAcceptance = async (deps: DeployDependencies, args: readonly string[], env: NodeJS.ProcessEnv, attempts: number): Promise<void> => {
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
     try {
-      await runAt(deps, deps.packageRoot, "pnpm", ["production:probe"], {
-        timeoutMs: 120_000,
-        env: { NEMLIG_EXPECTED_REVISION: commit },
-      });
+      await runAt(deps, deps.packageRoot, "pnpm", args, { timeoutMs: 120_000, env });
       return;
     } catch (error) {
       deps.signal?.throwIfAborted();
-      if (attempt === 11) throw error;
+      if (attempt === attempts - 1) throw error;
       await sleepAbortably(deps);
     }
   }
@@ -1140,11 +1137,9 @@ export async function deployProduction(commit: string, inputDeps: DeployDependen
     journal.lastVerifiedState = "enabled";
     journal.checks.push("enabled_version", "image_reused");
     await transition("enable_deploy", "result", enabledId);
-    await waitForEdge(deps, commit);
-    await runAt(deps, deps.packageRoot, "pnpm", ["production:test:features", ...(service ? ["--service"] : [])], {
-      timeoutMs: 120_000,
-      ...(service ? { env: { NEMLIG_MCP_SERVICE_ACCESS_TOKEN: serviceToken, NEMLIG_EXPECTED_REVISION: commit } } : {}),
-    });
+    await retryAcceptance(deps, ["production:probe"], { NEMLIG_EXPECTED_REVISION: commit }, 12);
+    await retryAcceptance(deps, ["production:test:features", ...(service ? ["--service"] : [])],
+      service ? { NEMLIG_MCP_SERVICE_ACCESS_TOKEN: serviceToken, NEMLIG_EXPECTED_REVISION: commit } : {}, service ? 12 : 1);
     await waitForRunningInstance(deps, enabledContainer.id, enabledContainer.version);
     await verifyCurrent(deps, enabledId);
     const provenContainer = await readContainer(deps);

@@ -162,6 +162,7 @@ async function fixture(options: {
   driftBeforeEnable?: boolean;
   failDisabledDeploy?: boolean;
   failFeatures?: boolean;
+  failFeaturesOnce?: boolean;
   failProbeOnce?: boolean;
   failCurrentRead?: boolean;
   externalEnabledDriftDuringRecovery?: boolean;
@@ -190,6 +191,7 @@ async function fixture(options: {
   let applicationVersion = 25;
   let enabledInstanceReads = 0;
   let probeReads = 0;
+  let featureReads = 0;
   let rolledBack = false;
   let appended = false;
   let resultWriteFailed = false;
@@ -301,6 +303,8 @@ async function fixture(options: {
       return "edge ok";
     }
     if (args[0] === "production:test:features") {
+      featureReads += 1;
+      if (options.failFeaturesOnce && featureReads === 1) throw new Error("container not converged");
       if (options.failFeatures) throw new Error("acceptance failed");
       if (options.localFinalMirrorFailure) {
         await rm(join(root, "nemlig-production-deploy", "latest.json"));
@@ -663,6 +667,17 @@ test("enabled acceptance retries while the edge deployment converges", async () 
   try {
     assert.equal((await deployProduction(commit, deps)).outcome, "success");
     assert.equal(calls.filter(({ args }) => args[0] === "production:probe").length, 2);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test("enabled acceptance retries while the Container service converges", async () => {
+  const { deps, calls, root } = await fixture({ failFeaturesOnce: true });
+  deps.acceptanceMode = "service-cutover";
+  deps.env = { NEMLIG_MCP_SERVICE_CLIENT_ID: "service-client", NEMLIG_MCP_SERVICE_CLIENT_SECRET: "machine-secret", NEMLIG_CI_ACCEPTANCE_READY: "true" };
+  deps.issueServiceToken = async () => "machine-token";
+  try {
+    assert.equal((await deployProduction(commit, deps)).outcome, "success");
+    assert.equal(calls.filter(({ args }) => args[0] === "production:test:features").length, 2);
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
