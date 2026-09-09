@@ -22,6 +22,10 @@ The server SHALL enable the visual product chooser and shared `ui://nemlig/picke
 - **WHEN** the picker setting has a recognized false value
 - **THEN** the picker tool and resource are absent while guided planning, named lists, and all other conversational tools remain available
 
+#### Scenario: Ordinary planning runs
+- **WHEN** a client invokes `plan_my_shopping` in automatic or manual mode
+- **THEN** the client receives the complete structured result without automatically opening an interactive resource
+
 ### Requirement: Guided shopping MCP tools
 The server SHALL expose read-only whole-list planning, department browsing, current named-list opening and resolution, and legacy snapshot loading; SHALL expose accurately annotated non-destructive tools for creating, renaming, editing, duplicating, archiving, restoring, and migrating named lists; and SHALL preserve existing review/apply tools as the only basket-write path.
 
@@ -79,6 +83,14 @@ The MCP server SHALL guide clients to use Nemlig tools first for current Nemlig 
 #### Scenario: Product discovery remains non-mutating
 - **WHEN** any intent-directed discovery tool returns candidates or an unresolved choice
 - **THEN** no basket review is prepared or applied and ambiguous candidates remain available for user choice
+
+#### Scenario: Planning discovery fallback
+- **WHEN** one or more plan lines report `discovery_unavailable` after bounded authentication recovery
+- **THEN** the server guidance directs the client to call `find_groceries` once for each affected normalized line and continue with its structured candidates without UI or favourites fallback
+
+#### Scenario: Explicit visual-choice request
+- **WHEN** the user explicitly asks to choose products visually
+- **THEN** the server guidance permits `choose_products_visually` and no picker is attached to ordinary planning or fallback searches
 
 ### Requirement: Complete production feature acceptance
 The system SHALL provide an automated production acceptance workflow that verifies the complete advertised MCP tool and resource surface against the hosted service. The workflow SHALL cover authentication, discovery, Nemlig-first metadata, product search, favorites, guided planning, department browsing, named-list lifecycle and owner isolation, legacy snapshot compatibility, basket view, picker image metadata and fallback behavior, and every proposal preparation path.

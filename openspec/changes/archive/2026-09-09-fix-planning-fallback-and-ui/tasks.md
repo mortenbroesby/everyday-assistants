@@ -18,6 +18,6 @@
 ## 4. Release and live acceptance
 
 - [x] 4.1 Run OpenSpec strict validation, apply the required Nemlig release version, and run `pnpm verify`; verify every required check passes with no credential or basket fixture leakage.
-- [ ] 4.2 Commit, push, open and merge a green PR, then verify exact-head `main` CI before deployment.
-- [ ] 4.3 Deploy through the protected Nemlig production workflow and run read-only production acceptance; verify the deployed revision is exact and the basket remains unchanged.
-- [ ] 4.4 Re-run the supplied multi-recipe chat; verify `plan_my_shopping` or its direct-search fallback returns current products without rendering the empty picker, and separately verify an explicit visual-choice request renders only usable product cards.
+- [x] 4.2 Commit, push, open and merge a green PR, then verify exact-head `main` CI before deployment.
+- [x] 4.3 Deploy through the protected Nemlig production workflow and run read-only production acceptance; verify the deployed revision is exact and the basket remains unchanged.
+- [x] 4.4 Re-run the supplied multi-recipe chat; verify `plan_my_shopping` or its direct-search fallback returns current products without rendering the empty picker, and separately verify an explicit visual-choice request renders only usable product cards.
