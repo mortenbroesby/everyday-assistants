@@ -892,7 +892,7 @@ const waitForInactive = async (deps: DeployDependencies, applicationId: string):
   fail("container_inactive_timeout");
 };
 
-const runningInstanceMatches = (raw: string, expectedVersion: number): boolean => {
+const runningInstanceVersion = (raw: string, minimumVersion: number): number | null => {
   const parsed = json(raw, "cloudflare_instances_invalid");
   if (!Array.isArray(parsed) || parsed.length !== 1) fail("cloudflare_instances_invalid");
   const instance = object((parsed as unknown[])[0]) ?? fail("cloudflare_instances_invalid");
@@ -903,20 +903,23 @@ const runningInstanceMatches = (raw: string, expectedVersion: number): boolean =
   }
   if (state === "running") {
     if (typeof version !== "number") return fail("cloudflare_instances_invalid");
-    if (version > expectedVersion) return fail("cloudflare_deployment_drift");
-    return version === expectedVersion;
+    return version >= minimumVersion ? version : null;
   }
-  if (state === "provisioning") return false;
+  if (state === "provisioning") return null;
   return fail("cloudflare_instances_invalid");
 };
 
-const waitForRunningInstance = async (deps: DeployDependencies, applicationId: string, expectedVersion: number): Promise<void> => {
+const runningInstanceMatches = (raw: string, expectedVersion: number): boolean =>
+  runningInstanceVersion(raw, expectedVersion) === expectedVersion;
+
+const waitForRunningInstance = async (deps: DeployDependencies, applicationId: string, minimumVersion: number): Promise<number> => {
   for (let attempt = 0; attempt < 36; attempt += 1) {
     deps.signal?.throwIfAborted();
-    if (runningInstanceMatches(await wrangler(deps, ["containers", "instances", applicationId, "--json"]), expectedVersion)) return;
+    const version = runningInstanceVersion(await wrangler(deps, ["containers", "instances", applicationId, "--json"]), minimumVersion);
+    if (version !== null) return version;
     if (attempt < 35) await sleepAbortably(deps);
   }
-  fail("container_instance_timeout");
+  return fail("container_instance_timeout");
 };
 
 const retryAcceptance = async (deps: DeployDependencies, args: readonly string[], env: NodeJS.ProcessEnv, attempts: number): Promise<void> => {
@@ -1140,12 +1143,13 @@ export async function deployProduction(commit: string, inputDeps: DeployDependen
     await retryAcceptance(deps, ["production:probe"], { NEMLIG_EXPECTED_REVISION: commit }, 12);
     await retryAcceptance(deps, ["production:test:features", ...(service ? ["--service"] : [])],
       service ? { NEMLIG_MCP_SERVICE_ACCESS_TOKEN: serviceToken, NEMLIG_EXPECTED_REVISION: commit } : {}, service ? 12 : 1);
-    await waitForRunningInstance(deps, enabledContainer.id, enabledContainer.version);
+    const runningVersion = await waitForRunningInstance(deps, enabledContainer.id, enabledContainer.version);
     await verifyCurrent(deps, enabledId);
     const provenContainer = await readContainer(deps);
-    if (provenContainer.id !== enabledContainer.id || provenContainer.image !== enabledContainer.image || provenContainer.version !== enabledContainer.version) {
+    if (provenContainer.id !== enabledContainer.id || provenContainer.image !== enabledContainer.image || provenContainer.version !== runningVersion) {
       fail("cloudflare_deployment_drift");
     }
+    journal.enabledApplicationVersion = provenContainer.version;
     journal.enabledVersion = enabledId;
     journal.checks.push("edge_acceptance", service ? "service_fixture_acceptance" : "authenticated_read_only_acceptance");
     if (inputDeps.acceptanceMode === "service-cutover") journal.checks.push("live_acceptance_pending");

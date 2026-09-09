@@ -1,6 +1,6 @@
 {
   "name": "nemlig-assistant",
-  "version": "4.2.11-alpha.37",
+  "version": "4.2.12-alpha.38",
   "private": true,
   "description": "Safe local Nemlig Assistant CLI and MCP server",
   "type": "module",

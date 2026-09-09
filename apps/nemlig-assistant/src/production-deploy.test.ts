@@ -174,6 +174,7 @@ async function fixture(options: {
   enabledInstanceRows?: unknown[][];
   postProofWorkerDrift?: boolean;
   postProofApplicationVersionDrift?: boolean;
+  convergedApplicationVersion?: number;
   remoteIntentFailure?: boolean;
   remoteResultFailure?: boolean;
   remoteEnableIntentFailure?: boolean;
@@ -333,7 +334,9 @@ async function fixture(options: {
       name: "nemlig-mcp-cloudflare-production-nemligmcpcontainer-production",
       instances: 1,
       image,
-      version: options.postProofApplicationVersionDrift && enabledInstanceReads > 0 ? 26 : applicationVersion,
+      version: enabledInstanceReads > 0 && options.convergedApplicationVersion !== undefined
+        ? options.convergedApplicationVersion
+        : options.postProofApplicationVersionDrift && enabledInstanceReads > 0 ? 26 : applicationVersion,
     }]);
     if (args.includes("containers") && args.includes("instances")) {
       if (rolledBack && options.restoredInstanceRows) return JSON.stringify(options.restoredInstanceRows);
@@ -912,7 +915,7 @@ test("enabled acceptance bounds Container instance convergence at 36 reads", asy
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
-test("a newer running Container application version is immediate deployment drift", async () => {
+test("a newer running Container version without matching application metadata is deployment drift", async () => {
   const { deps, calls, root } = await fixture({ enabledInstanceRows: [[{
     id: "instance", name: "nemlig-production", state: "running", version: 26,
   }]] });
@@ -921,6 +924,18 @@ test("a newer running Container application version is immediate deployment drif
     assert.equal(report.outcome, "failed");
     assert.equal(report.failure, "cloudflare_deployment_drift");
     assert.equal(calls.filter(({ args }) => args.includes("containers") && args.includes("instances")).length, 3);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test("accepts Cloudflare's application version advancing with the deployed Container", async () => {
+  const { deps, root } = await fixture({
+    enabledInstanceRows: [[{ id: "instance", name: "nemlig-production", state: "running", version: 26 }]],
+    convergedApplicationVersion: 26,
+  });
+  try {
+    const report = await deployProduction(commit, deps);
+    assert.equal(report.outcome, "success");
+    assert.equal(report.enabledApplicationVersion, 26);
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
