@@ -12,6 +12,10 @@ on:
         required: false
         default: false
         type: boolean
+      finalize_operation:
+        description: Finalize one accepted cutover operation instead of deploying
+        required: false
+        type: string
 
 concurrency:
   group: nemlig-production
@@ -26,7 +30,7 @@ env:
 
 jobs:
   preflight:
-    if: github.ref == 'refs/heads/main'
+    if: inputs.finalize_operation == '' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -67,7 +71,7 @@ jobs:
 
   deploy:
     needs: preflight
-    if: github.ref == 'refs/heads/main'
+    if: inputs.finalize_operation == '' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     environment:
@@ -146,3 +150,40 @@ jobs:
             process.stdout.write(value.operationId);
           ' "$GITHUB_WORKSPACE/.git/nemlig-production-deploy/latest.json")
           pnpm --filter nemlig-assistant production:deploy -- finalize "$operation_id" --evidence-saved --original-runner-stopped
+
+  finalize:
+    if: inputs.finalize_operation != '' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: nemlig-production
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - name: Checkout accepted main revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6.0.1
+        with:
+          ref: "${{ github.sha }}"
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Set up pnpm
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+        with:
+          version: 9.15.9
+          run_install: false
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6.0.0
+        with:
+          node-version: 22.23.1
+      - name: Install frozen dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Finalize accepted cutover recovery
+        env:
+          FINALIZE_OPERATION: "${{ inputs.finalize_operation }}"
+          GH_TOKEN: "${{ github.token }}"
+          CLOUDFLARE_API_TOKEN: "${{ secrets.CLOUDFLARE_API_TOKEN }}"
+          CLOUDFLARE_ACCOUNT_ID: "${{ vars.CLOUDFLARE_ACCOUNT_ID }}"
+        run: |
+          set -euo pipefail
+          pnpm --filter nemlig-assistant production:deploy -- finalize "$FINALIZE_OPERATION" --evidence-saved --original-runner-stopped
