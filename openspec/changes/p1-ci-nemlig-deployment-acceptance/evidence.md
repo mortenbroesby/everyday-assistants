@@ -144,3 +144,13 @@ deleted. The existing CI runner runs the same full readiness command and must
 pass on the exact integrated revision before this slice is reported delivered.
 The committed minor-version gate passes from `4.0.2-alpha.18` to
 `4.1.0-alpha.19`.
+
+Durable recovery is delivered on verified remote main
+`3e3ad58f4a4e88a09820efa6da3f0efa58a50803`.
+[Exact-head CI](https://github.com/mortenbroesby/everyday-assistants/actions/runs/34293519052)
+passed the full readiness command, including its Docker dry run and artifact
+step. Local Colima's 20 GB data volume was verified full; host disk and VM root
+were not full. No shared cache, image, volume or provider resource was removed.
+S2.3–S2.5 are checked; the epic is 12/44. S2.6 continues in the isolated
+`codex/ci-image-config-proof` worktree, with real command-shape corrections
+recorded in its packet. Production remains unchanged.

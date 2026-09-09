@@ -27,6 +27,57 @@ Verify exact parser types against pinned CLI source before implementation.
 Reject missing, malformed, ambiguous or unknown shapes. Provider readback
 must remain bounded by the existing release deadline and request budget.
 
+### Verified command-shape clarification
+
+In pinned Wrangler 4.127.1, `instancesCommand` selects
+`rowsToJsonOutput(rows)` for our unpaginated `containers instances ID --json`
+command. This is a bare array. The `{ instances, result_info }` wrapper applies
+only when `--per-page` or `--page-token` is supplied; do not change the parser
+to that wrapper while leaving the command unpaginated.
+
+`rowsToJsonOutput` represents an assigned Durable Object with no running
+instance as `state: "inactive"`, its Durable Object ID/name, and `version: null`.
+Do not require an instance UUID or a non-null application version for that
+inactive assignment. Prove the fixed assignment name and one-row cardinality.
+Running rows expose `app_version` as `version`; compare that to the application
+version, not to a Worker UUID. The existing bare-array shape was correct; the
+missing strictness concerns field types and identity/version correspondence.
+
+The installed Wrangler package also exports `unstable_readConfig` (including
+production environment normalization) and `experimental_readRawConfig`. Prefer
+its existing JSONC/configuration machinery over a new parser dependency when
+implementing the proposed-config preflight; keep raw diagnostics/configuration
+out of persisted reports and verify that no redirected config changes the
+trusted source contract.
+
+### Next implementation contract: persisted compatibility proof
+
+After the strict parser slice, extend the existing journal only with optional
+starting/disabled/enabled application-version numbers and one starting effective
+configuration SHA-256 digest. Keep the existing 8 KiB/32-transition bounds and
+closed field validation. Initial preflight snapshots may omit these fields;
+terminal image-aware recovery must require them rather than treating an older
+incomplete snapshot as proof.
+
+Build the configuration digest from deterministically sorted, validated
+allowlisted safety/onboarding plain values, fixed Durable Object binding
+names/classes and secret binding names/types only. Never hash or read secret
+values. Keep `MCP_ENABLED` and source revision separate because the state machine
+intentionally changes them. Compare candidate configuration to the starting
+digest; retain plain values only in memory for validation/preservation, not in
+the public journal. Preserve current onboarding enablement explicitly when a
+repository default would overwrite it; unexplained safety/topology differences
+must stop before dispatch rather than being accepted as a new default.
+
+The image-aware recovery extension needs four bounded provider records:
+current deployment, Worker version, Container application, and instance rows.
+The earlier recovery-only three-read cap is insufficient for its new instance
+proof. Update the inspection cap, tests and runbook together in S2.6/S2.7;
+do not claim that the current three-read implementation already proves it.
+This adds one read-only metadata request per inspection, no Container wake,
+mutation, paid resource, polling loop or capacity change. The operation's
+existing total deadline remains mandatory.
+
 ## Ordered changes and tests
 
 - [ ] Characterize starting Worker, application image/version, instance state,
