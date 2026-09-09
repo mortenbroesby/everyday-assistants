@@ -103,3 +103,44 @@ and duplicate job sets stop before Wrangler. Focused deployment tests pass
 current classifier select a patch; this slice uses `4.0.2-alpha.18`. No npm
 publication is performed. Remote delivery/full gates are
 verified separately; no durable-recovery draft is included in this slice.
+
+## Durable recovery integration candidate
+
+The coordinator combined Terra's recovery implementation through `b555308`
+with current main `f04bcaf`, then incorporated its test corrections through
+`5395a4`. The required successful `verify` job guard and sibling runtime removals
+are preserved. Root completed the remaining remote-reader and multi-host tests.
+
+The composed focused suite passes 37/37, with actual TypeScript checking, lint
+and diff checks passing. Tests cover malformed/oversized remote blobs and extra
+tree entries; failures at every intent-object API stage after lease acquisition;
+pending intent inspected on another host without the original local mirror;
+competing direct children rejected without overwriting; changed ownership before
+finalization; missing artifact attestation; complete terminal evidence; remote
+and local result-write failures; cancellation/process-group termination; and a
+late successful upload response after the operation deadline, with no retry or
+lease deletion.
+The fake store enforces direct-parent updates and shares objects and identifiers
+across hosts. These are credential-free command tests, not live provider proof.
+
+The runbook now uses read-only inspection and explicit evidence-gated
+finalization instead of manual ref/file deletion. GitHub's final read/delete
+pair is not CAS; out-of-protocol races remain a documented boundary. A pending
+enable intent whose verification fails remains unknown: it is not silently
+converted into a verified result to permit rollback.
+
+The committed feature is classified as minor, so the corrected release
+candidate is `4.1.0-alpha.19`; no publication is intended. Full
+composed readiness, exact remote delivery and CI are recorded separately below
+when verified. S2.6 effective configuration/application/instance proof and S2.8
+combined review remain open. Auth0 identity, protected workflow setup and live
+cutover remain unactivated; no production or basket mutation occurred.
+
+Local composed `pnpm verify` passed on the final 37-test recovery suite. The
+readiness command passed its source/package stages but its credential-free Docker
+build failed with `ERR_PNPM_ENOSPC` while copying dependencies into `/app`.
+This is not a passing local dry run. No shared Docker cache, image or volume was
+deleted. The existing CI runner runs the same full readiness command and must
+pass on the exact integrated revision before this slice is reported delivered.
+The committed minor-version gate passes from `4.0.2-alpha.18` to
+`4.1.0-alpha.19`.

@@ -187,40 +187,57 @@ unset NEMLIG_MCP_ACCESS_TOKEN
 
 The command verifies local HEAD, refreshed remote `main`, exact-head CI, GitHub
 and Wrangler authentication, and owner-token presence before Cloudflare changes.
-It takes an exclusive lock shared by linked worktrees and an atomic temporary
-GitHub ref at `refs/heads/codex-lock/nemlig-production`. It then records the
+It takes an exclusive lock shared by linked worktrees and atomically creates
+`refs/heads/codex-lock/nemlig-production` for a unique operation UUID, not the
+source SHA. The ref contains a bounded public-safe recovery journal. It records the
 starting version, builds and deploys once with `MCP_ENABLED=false`, verifies both
 routes and an inactive Container, enables the same revision with no Container
 rollout, and runs the existing bounded edge and authenticated read-only checks.
 It never prepares or applies a proposal and never mutates a basket, favorite, or
 saved list.
 
-The latest redacted journal is stored below the common Git directory at
-`nemlig-production-deploy/latest.json`. It contains only commits, version IDs,
-timestamps, completed checks, rollback status, a fixed failure category, and the
-last verified production state. A successful or safely reconciled run removes
-both leases. An interrupted or indeterminate run deliberately leaves them in
-place.
+The remote journal is authoritative; the common Git directory's
+`nemlig-production-deploy/latest.json` is a local mirror. Snapshots contain only
+operation/run identifiers, source/version IDs, image digests, timestamps,
+allowlisted checks and failure categories, and intent/result state. Each snapshot
+is limited to 8 KiB and 32 transitions. Remote intent and its local mirror must
+persist before a provider mutation. An uncertain command or failed result write
+retains ownership without retrying or automatically rolling back that command.
+The operation has a 25-minute deadline; cancellation terminates the command's
+process group before returning.
 
-For a stale lease, first inspect the journal and current Wrangler deployment,
-version, Container application, and instances. Restore the journal's exact
-starting version or prove the recorded candidate is safely disabled; never infer
-state from a terminated shell. Only after that reconciliation, delete the fixed
-GitHub lock ref if it still points to the journal's commit and remove the local
-`nemlig-production-deploy.lock` file. Then rerun the command from the exact
-CI-green `main` commit rather than continuing individual deployment steps.
+Every run retains both leases, including success. Save the final evidence first;
+only then use explicit finalization. It requires the exact operation UUID,
+complete terminal evidence, matching current Worker/image and unchanged remote
+journal head. Missing evidence, pending intent, unknown state or drift blocks
+cleanup. A legacy source-SHA lease also blocks new releases; never steal it or
+delete it on an age/TTL assumption.
 
 ```sh
-git rev-parse --git-common-dir
-gh api repos/mortenbroesby/everyday-assistants/git/ref/heads/codex-lock/nemlig-production --jq .object.sha
-pnpm --filter nemlig-assistant exec wrangler deployments list --env production --json
-# After reconciling that exact commit and Cloudflare state:
-gh api --method DELETE repos/mortenbroesby/everyday-assistants/git/refs/heads/codex-lock/nemlig-production
-unlink "$(git rev-parse --git-common-dir)/nemlig-production-deploy.lock"
+pnpm --filter nemlig-assistant production:deploy -- inspect-recovery OPERATION_UUID
+# Only after independently confirming the original runner has stopped:
+pnpm --filter nemlig-assistant production:deploy -- inspect-recovery OPERATION_UUID --original-runner-stopped
+# Only after saving complete final evidence and reconciling the exact state:
+pnpm --filter nemlig-assistant production:deploy -- finalize OPERATION_UUID --evidence-saved
 ```
 
+Inspection is read-only and uses at most three provider reads; a stopped-runner
+attestation cannot make pending or unknown work cleanup-eligible. Do not rerun an
+uncertain release or manually continue its upload steps. GitHub ref deletion has
+no compare-and-swap parameter: the final read/delete pair cannot fence an
+out-of-protocol actor replacing the ref in that interval. All release clients
+must honor the no-steal rule.
+
+Full effective-configuration and Container application/instance-version proof
+remains tracked in S2.6 of `p1-ci-nemlig-deployment-acceptance`; these journal
+checks alone do not complete that gate or authorize production cutover. A Worker
+rollback is not proof that its previous Container image was restored.
+
 This automation adds no workflow, CI job, hosted secret, service, dependency,
-storage, schedule, or capacity. Each approved release retains the existing one
+schedule, or runtime capacity. It adds bounded Git journal objects, with at most
+32 snapshots and approximately 164 GitHub API calls plus finalization; ordinary
+runs use fewer. The current CI workflow only runs on main pushes and pull
+requests, not journal-ref pushes. Each approved release retains the existing one
 `lite` Container and cost ceilings and performs one image build/upload, one
 no-rollout enable upload, two disabled-route probes, bounded acceptance, and
 small GitHub and Cloudflare state reads.
