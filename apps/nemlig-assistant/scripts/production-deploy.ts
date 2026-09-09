@@ -1145,6 +1145,7 @@ export async function deployProduction(commit: string, inputDeps: DeployDependen
     if (inputDeps.acceptanceMode === "service-cutover") journal.checks.push("live_acceptance_pending");
     journal.outcome = "success";
   } catch (error) {
+    console.error(error instanceof Error ? error.message : "unexpected deployment failure");
     journal.outcome = "failed";
     journal.failure = error instanceof DeployFailure && journalFailures.has(error.code) ? error.code : "unexpected_failure";
     if (mutationUncertain) {
