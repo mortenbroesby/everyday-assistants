@@ -14,6 +14,7 @@ const ciWorkflowName = "CI";
 const ciWorkflowPath = ".github/workflows/ci.yml";
 const customMcp = new URL("https://nemlig-mcp.broesby.dk/mcp");
 const workersMcp = new URL("https://nemlig-mcp-cloudflare-production.mortenbroesby.workers.dev/mcp");
+const containerApplication = "nemlig-mcp-cloudflare-production-nemligmcpcontainer-production";
 export const productionDeployUsage = "pnpm --filter nemlig-assistant production:deploy -- preflight <40-character-main-commit> | [--service|--service-cutover] <40-character-main-commit> | finalize <operation-id> --evidence-saved --original-runner-stopped | inspect-recovery <operation-id> [--original-runner-stopped]";
 
 export type VerifiedState = "unchanged" | "disabled" | "enabled" | "restored" | "unknown";
@@ -144,7 +145,7 @@ const isoTime = (value: unknown): value is string => {
 };
 const imageDigest = /^sha256:[0-9a-f]{64}$/u;
 const journalChecks = new Set(["source_and_auth_preflight", "exclusive_lease", "starting_state_recorded", "disabled_version", "disabled_routes", "container_inactive", "enabled_version", "image_reused", "edge_acceptance", "authenticated_read_only_acceptance", "service_fixture_acceptance", "live_acceptance_pending", "starting_version_restored"]);
-const journalFailures = new Set(["service_cutover_required", "live_acceptance_required", "service_acceptance_not_ready", "service_token_unavailable", "owner_access_token_required", "github_repository_invalid", "source_revision_mismatch", "github_ci_workflow_invalid", "github_ci_invalid", "exact_head_ci_not_green", "github_environment_not_ready", "local_deployment_lease_unavailable", "remote_deployment_lease_unavailable", "remote_journal_invalid", "remote_journal_append_failed", "remote_journal_parent_invalid", "remote_deployment_lease_changed", "deployment_journal_invalid", "deployment_journal_oversized", "deployment_journal_write_failed", "cloudflare_deployment_drift", "cloudflare_upload_version_missing", "cloudflare_config_invalid", "cloudflare_runtime_safety_mismatch", "cloudflare_instances_invalid", "disabled_route_unavailable", "disabled_route_mismatch", "container_inactive_timeout", "container_instance_timeout", "container_image_changed_during_enable", "recovery_finalize_denied", "command_failed", "command_cancelled", "unexpected_failure"]);
+const journalFailures = new Set(["service_cutover_required", "live_acceptance_required", "service_acceptance_not_ready", "service_token_unavailable", "owner_access_token_required", "github_repository_invalid", "source_revision_mismatch", "github_ci_workflow_invalid", "github_ci_invalid", "exact_head_ci_not_green", "github_environment_not_ready", "local_deployment_lease_unavailable", "remote_deployment_lease_unavailable", "remote_journal_invalid", "remote_journal_append_failed", "remote_journal_parent_invalid", "remote_deployment_lease_changed", "deployment_journal_invalid", "deployment_journal_oversized", "deployment_journal_write_failed", "cloudflare_deployment_drift", "cloudflare_upload_version_missing", "cloudflare_registry_manifest_invalid", "cloudflare_config_invalid", "cloudflare_runtime_safety_mismatch", "cloudflare_instances_invalid", "disabled_route_unavailable", "disabled_route_mismatch", "container_inactive_timeout", "container_instance_timeout", "container_image_changed_during_enable", "recovery_finalize_denied", "command_failed", "command_cancelled", "unexpected_failure"]);
 
 const journalJson = (journal: DeploymentJournal): string => {
   if (!journal || typeof journal !== "object" || !Array.isArray(journal.checks) || !Array.isArray(journal.transitions)
@@ -409,7 +410,7 @@ export function parseContainer(raw: string): ContainerState {
   const version = value.version;
   if (typeof id !== "string" || !versionId.test(id) || !digest
     || typeof version !== "number" || !Number.isSafeInteger(version) || version < 1
-    || value.name !== "nemlig-mcp-cloudflare-production-nemligmcpcontainer-production"
+    || value.name !== containerApplication
     || value.instances !== 1) throw new DeployFailure("cloudflare_container_ambiguous");
   return { id, image: digest, version };
 }
@@ -424,6 +425,12 @@ export function instancesInactive(raw: string): boolean {
 const deployedVersionFromOutput = (raw: string): string => {
   const id = raw.match(/Current Version ID:\s*([0-9a-f-]{36})/u)?.[1];
   return id && versionId.test(id) ? id : fail("cloudflare_upload_version_missing");
+};
+
+const manifestDigest = (raw: string): string => {
+  const descriptor = object(object(json(raw, "cloudflare_registry_manifest_invalid"))?.Descriptor);
+  const digest = descriptor?.digest;
+  return typeof digest === "string" && imageDigest.test(digest) ? digest : fail("cloudflare_registry_manifest_invalid");
 };
 
 export const defaultRunner: CommandRunner = async (command, args, options = {}) => await new Promise<string>((resolvePromise, reject) => {
@@ -500,6 +507,13 @@ const readVersion = async (deps: DeployDependencies, id: string): Promise<string
 
 const readContainer = async (deps: DeployDependencies): Promise<ContainerState> =>
   parseContainer(await wrangler(deps, ["containers", "list", "--json"]));
+
+const resolveCandidateImage = async (deps: DeployDependencies, workerVersion: string): Promise<string> => {
+  const account = deps.env.CLOUDFLARE_ACCOUNT_ID;
+  if (!account || !/^[0-9a-f]{32}$/u.test(account)) fail("cloudflare_registry_manifest_invalid");
+  const ref = `registry.cloudflare.com/${account}/${containerApplication}:${workerVersion.split("-")[0]}`;
+  return manifestDigest(await runAt(deps, deps.packageRoot, "docker", ["manifest", "inspect", "-v", ref], { timeoutMs: 120_000 }));
+};
 
 const readLocalConfig = async (deps: DeployDependencies): Promise<EffectiveConfig> => {
   const trusted = await realpath(resolve(deps.packageRoot, "wrangler.jsonc")).catch(() => fail("cloudflare_config_invalid"));
@@ -723,7 +737,7 @@ const knownTerminal = (journal: DeploymentJournal): boolean => {
   if (journal.outcome === "success") return journal.lastVerifiedState === "enabled" && result.phase === "enable_deploy"
     && result.version === journal.enabledVersion && ["enabled_version", "image_reused", "edge_acceptance"].every((check) => journal.checks.includes(check))
     && (journal.checks.includes("authenticated_read_only_acceptance") || journal.checks.includes("service_fixture_acceptance"));
-  if (journal.lastVerifiedState === "disabled") return result.phase === "disabled_deploy" && result.version === journal.disabledVersion
+  if (journal.lastVerifiedState === "disabled") return ["disabled_deploy", "rollback"].includes(result.phase) && result.version === journal.disabledVersion
     && ["disabled_routes", "container_inactive"].every((check) => journal.checks.includes(check));
   return journal.lastVerifiedState === "restored" && journal.rollback === "restored" && result.phase === "rollback"
     && result.version === journal.startingVersion && journal.checks.includes("starting_version_restored");
@@ -905,7 +919,7 @@ const runningInstanceVersion = (raw: string, minimumVersion: number): number | n
     if (typeof version !== "number") return fail("cloudflare_instances_invalid");
     return version >= minimumVersion ? version : null;
   }
-  if (state === "provisioning") return null;
+  if (["provisioning", "stopping", "stopped"].includes(state as string)) return null;
   return fail("cloudflare_instances_invalid");
 };
 
@@ -918,7 +932,22 @@ const waitForAcceptedInstance = async (deps: DeployDependencies, applicationId: 
     const raw = await wrangler(deps, ["containers", "instances", applicationId, "--json"]);
     if (instancesInactive(raw)) return null;
     const version = runningInstanceVersion(raw, minimumVersion);
-    if (version !== null) return version;
+    if (version !== null) {
+      if (version !== minimumVersion) fail("cloudflare_deployment_drift");
+      return version;
+    }
+    if (attempt < 35) await sleepAbortably(deps);
+  }
+  return fail("container_instance_timeout");
+};
+
+const waitForCandidateContainer = async (deps: DeployDependencies, workerVersion: string, starting: ContainerState, image: string): Promise<ContainerState> => {
+  for (let attempt = 0; attempt < 36; attempt += 1) {
+    await verifyCurrent(deps, workerVersion);
+    const current = await readContainer(deps);
+    if (current.id !== starting.id) fail("cloudflare_deployment_drift");
+    if (current.image === image) return current;
+    if (current.image !== starting.image || current.version !== starting.version) fail("cloudflare_deployment_drift");
     if (attempt < 35) await sleepAbortably(deps);
   }
   return fail("container_instance_timeout");
@@ -945,24 +974,23 @@ const verifyLeaseHead = async (deps: DeployDependencies, repository: string, jou
   if (!journal.remoteCommit || await readRemoteHead(deps, repository) !== journal.remoteCommit) fail("remote_deployment_lease_changed");
 };
 
-const rollback = async (deps: DeployDependencies, journal: DeploymentJournal, starting: VersionState, startingContainer: ContainerState): Promise<void> => {
-  journal.rollback = "attempted";
-  await wrangler(deps, ["rollback", starting.id, "--message", `Automated rollback after failed ${journal.commit.slice(0, 7)} release`, "--yes"], 120_000);
-  if (!journal.startingConfigDigest || !await verifyRecoveryTarget(deps, {
-    version: starting.id, containerId: startingContainer.id, image: startingContainer.image,
-    applicationVersion: startingContainer.version, configDigest: journal.startingConfigDigest, enabled: starting.enabled, state: "restored",
-  })) fail("cloudflare_deployment_drift");
-  if (starting.enabled) {
-    await runAt(deps, deps.packageRoot, "pnpm", ["production:probe"], {
-      timeoutMs: 120_000,
-      env: { NEMLIG_EXPECTED_REVISION: starting.revision },
-    });
-  } else {
-    await verifyDisabledRoutes(deps);
+const rollbackToDisabled = async (deps: DeployDependencies, journal: DeploymentJournal, containerId: string): Promise<void> => {
+  const { disabledVersion, disabledImage, disabledApplicationVersion, startingConfigDigest } = journal;
+  if (!disabledVersion || !disabledImage || !disabledApplicationVersion || !startingConfigDigest) {
+    fail("cloudflare_deployment_drift");
   }
+  const version = disabledVersion as string;
+  const image = disabledImage as string;
+  const applicationVersion = disabledApplicationVersion as number;
+  const configDigest = startingConfigDigest as string;
+  journal.rollback = "attempted";
+  await wrangler(deps, ["rollback", version, "--message", `Automated rollback after failed ${journal.commit.slice(0, 7)} release`, "--yes"], 120_000);
+  if (!await verifyRecoveryTarget(deps, {
+    version, containerId, image, applicationVersion, configDigest, enabled: false, state: "disabled",
+  })) fail("cloudflare_deployment_drift");
+  await verifyDisabledRoutes(deps);
   journal.rollback = "restored";
-  journal.lastVerifiedState = "restored";
-  journal.checks.push("starting_version_restored");
+  journal.lastVerifiedState = "disabled";
 };
 
 const readAcceptedRevision = async (deps: DeployDependencies): Promise<string | null> => {
@@ -1105,17 +1133,22 @@ export async function deployProduction(commit: string, inputDeps: DeployDependen
       "--message", `Automated production release disabled gate at ${commit.slice(0, 7)}`], 600_000);
     mutationUncertain = false;
     const disabledId = deployedVersionFromOutput(disabledOutput);
+    const candidateImage = await resolveCandidateImage(deps, disabledId);
     await verifyCurrent(deps, disabledId);
     const disabledRaw = await readVersion(deps, disabledId);
     verifyCandidateVersion(disabledRaw, disabledId, commit, false);
     verifyConfig(disabledRaw, configured);
-    const disabledContainer = await readContainer(deps);
-    if (disabledContainer.id !== startingContainer.id) fail("cloudflare_deployment_drift");
+    const disabledContainer = await waitForCandidateContainer(deps, disabledId, startingContainer, candidateImage);
     await verifyDisabledRoutes(deps);
     await waitForInactive(deps, disabledContainer.id);
+    await verifyCurrent(deps, disabledId);
+    await verifyLeaseHead(deps, repository, journal);
+    const provenDisabledContainer = await readContainer(deps);
+    if (provenDisabledContainer.id !== disabledContainer.id || provenDisabledContainer.image !== candidateImage
+      || provenDisabledContainer.version !== disabledContainer.version) fail("cloudflare_deployment_drift");
     journal.disabledVersion = disabledId;
-    journal.disabledImage = disabledContainer.image;
-    journal.disabledApplicationVersion = disabledContainer.version;
+    journal.disabledImage = candidateImage;
+    journal.disabledApplicationVersion = provenDisabledContainer.version;
     journal.lastVerifiedState = "disabled";
     journal.checks.push("disabled_version", "disabled_routes", "container_inactive");
     await transition("disabled_deploy", "result", disabledId);
@@ -1134,7 +1167,7 @@ export async function deployProduction(commit: string, inputDeps: DeployDependen
     verifyCandidateVersion(enabledRaw, enabledId, commit, true);
     verifyConfig(enabledRaw, configured);
     const enabledContainer = await readContainer(deps);
-    if (enabledContainer.id !== disabledContainer.id || enabledContainer.image !== disabledContainer.image || enabledContainer.version !== disabledContainer.version) {
+    if (enabledContainer.id !== disabledContainer.id || enabledContainer.image !== candidateImage || enabledContainer.version !== disabledContainer.version) {
       fail("container_image_changed_during_enable");
     }
     journal.enabledImage = enabledContainer.image;
@@ -1147,12 +1180,12 @@ export async function deployProduction(commit: string, inputDeps: DeployDependen
       service ? { NEMLIG_MCP_SERVICE_ACCESS_TOKEN: serviceToken, NEMLIG_EXPECTED_REVISION: commit } : {}, service ? 12 : 1);
     const runningVersion = await waitForAcceptedInstance(deps, enabledContainer.id, enabledContainer.version);
     await verifyCurrent(deps, enabledId);
+    await verifyLeaseHead(deps, repository, journal);
     const provenContainer = await readContainer(deps);
-    if (provenContainer.id !== enabledContainer.id || provenContainer.image !== enabledContainer.image
-      || provenContainer.version !== (runningVersion ?? enabledContainer.version)) {
+    if (provenContainer.id !== disabledContainer.id || provenContainer.image !== candidateImage
+      || provenContainer.version !== disabledContainer.version || (runningVersion !== null && runningVersion !== provenContainer.version)) {
       fail("cloudflare_deployment_drift");
     }
-    journal.enabledApplicationVersion = provenContainer.version;
     journal.enabledVersion = enabledId;
     journal.checks.push("edge_acceptance", service ? "service_fixture_acceptance" : "authenticated_read_only_acceptance");
     if (inputDeps.acceptanceMode === "service-cutover") journal.checks.push("live_acceptance_pending");
@@ -1168,7 +1201,9 @@ export async function deployProduction(commit: string, inputDeps: DeployDependen
         const current = await readCurrent(deps);
         const state = parseVersionState(await readVersion(deps, current.version), current.version);
         const candidate = journal.enabledVersion ?? journal.disabledVersion;
-        if (current.version !== candidate && current.version !== starting.id) {
+        if (!candidate && !state.enabled) {
+          journal.lastVerifiedState = "unknown";
+        } else if (current.version !== candidate && current.version !== starting.id) {
           journal.failure = "cloudflare_deployment_drift";
           journal.lastVerifiedState = "unknown";
         } else if (!state.enabled && current.version === journal.disabledVersion
@@ -1183,12 +1218,12 @@ export async function deployProduction(commit: string, inputDeps: DeployDependen
             applicationVersion: startingContainer.version, configDigest: journal.startingConfigDigest, enabled: starting.enabled, state: "restored",
           })) fail("cloudflare_deployment_drift");
           journal.lastVerifiedState = starting.enabled ? "enabled" : "disabled";
-        } else if (startingContainer && transition) {
-          await transition("rollback", "intent", starting.id);
+        } else if (startingContainer && transition && journal.disabledVersion && journal.disabledImage && journal.disabledApplicationVersion) {
+          await transition("rollback", "intent", journal.disabledVersion);
           await verifyCurrent(deps, current.version);
           await verifyLeaseHead(deps, repository, journal);
-          await rollback(deps, journal, starting, startingContainer);
-          await transition("rollback", "result", starting.id);
+          await rollbackToDisabled(deps, journal, startingContainer.id);
+          await transition("rollback", "result", journal.disabledVersion);
         }
       } catch {
         journal.rollback = journal.rollback === "attempted" ? "failed" : journal.rollback;

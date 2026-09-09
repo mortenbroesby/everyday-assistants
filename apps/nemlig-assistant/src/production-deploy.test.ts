@@ -32,6 +32,8 @@ const enabledId = "22222222-2222-4222-8222-222222222222";
 const thirdPartyId = "33333333-3333-4333-8333-333333333333";
 const applicationId = "a03ce8c9-3543-4505-866e-14d2e66007ca";
 const image = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+const candidateImage = "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+const accountId = "0123456789abcdef0123456789abcdef";
 const configDigest = "c84479ec8eb4749a359bb2e3ea00853233987d202a116d16a24ec3f5152a0c0c";
 const execFileAsync = promisify(execFile);
 
@@ -173,8 +175,12 @@ async function fixture(options: {
   rollbackApplicationVersionDrift?: boolean;
   enabledInstanceRows?: unknown[][];
   postProofWorkerDrift?: boolean;
+  postProofLeaseDrift?: boolean;
   postProofApplicationVersionDrift?: boolean;
-  convergedApplicationVersion?: number;
+  candidateContainerDelay?: number;
+  candidateWrongImage?: boolean;
+  candidateMatchesStarting?: boolean;
+  malformedManifest?: boolean;
   remoteIntentFailure?: boolean;
   remoteResultFailure?: boolean;
   remoteEnableIntentFailure?: boolean;
@@ -193,6 +199,7 @@ async function fixture(options: {
   let enabledInstanceReads = 0;
   let probeReads = 0;
   let featureReads = 0;
+  let disabledContainerReads = 0;
   let rolledBack = false;
   let appended = false;
   let resultWriteFailed = false;
@@ -250,6 +257,7 @@ async function fixture(options: {
       if (path.endsWith("git/ref/heads/codex-lock/nemlig-production") || path.endsWith("git/refs/heads/codex-lock/nemlig-production")) {
         if (method === "GET") {
           if (!currentLease()) throw Object.assign(new Error("not found"), { status: 404 });
+          if (options.postProofLeaseDrift && enabledInstanceReads > 0) return previousCommit;
           return currentLease()!;
         }
         if (method === "DELETE") { setRemoteLease(undefined); return ""; }
@@ -290,6 +298,10 @@ async function fixture(options: {
       throw new Error("unexpected gh api");
     }
     if (commandName === "gh") return "";
+    if (commandName === "docker") {
+      if (options.malformedManifest) return JSON.stringify({ Descriptor: { digest: "latest" } });
+      return JSON.stringify({ Descriptor: { digest: options.candidateMatchesStarting ? image : candidateImage } });
+    }
     if (commandName === "git" && args[0] === "rev-parse" && args[1] === "HEAD") return options.head ?? commit;
     if (commandName === "git" && args[0] === "rev-parse" && args[1] === "origin/main") {
       remoteReads += 1;
@@ -329,15 +341,19 @@ async function fixture(options: {
         return JSON.stringify(parsed);
       }
     }
-    if (args.includes("containers") && args.includes("list")) return JSON.stringify([{
+    if (args.includes("containers") && args.includes("list")) {
+      const candidate = current !== startingId;
+      if (current === disabledId) disabledContainerReads += 1;
+      const converged = disabledContainerReads > (options.candidateContainerDelay ?? 0);
+      return JSON.stringify([{
       id: options.disabledApplicationIdDrift && current === disabledId ? thirdPartyId : applicationId,
       name: "nemlig-mcp-cloudflare-production-nemligmcpcontainer-production",
       instances: 1,
-      image,
-      version: enabledInstanceReads > 0 && options.convergedApplicationVersion !== undefined
-        ? options.convergedApplicationVersion
-        : options.postProofApplicationVersionDrift && enabledInstanceReads > 0 ? 26 : applicationVersion,
-    }]);
+      image: candidate && converged ? (options.candidateWrongImage ? `sha256:${"c".repeat(64)}` : options.candidateMatchesStarting ? image : candidateImage) : image,
+      version: options.postProofApplicationVersionDrift && enabledInstanceReads > 0 ? applicationVersion + 1
+        : candidate && converged ? applicationVersion : 25,
+      }]);
+    }
     if (args.includes("containers") && args.includes("instances")) {
       if (rolledBack && options.restoredInstanceRows) return JSON.stringify(options.restoredInstanceRows);
       if (current === enabledId) {
@@ -355,20 +371,20 @@ async function fixture(options: {
       }]);
     }
     if (args.includes("rollback")) {
-      current = startingId;
+      current = args[args.indexOf("rollback") + 1] ?? startingId;
       rolledBack = true;
-      if (options.rollbackApplicationVersionDrift) applicationVersion = 26;
+      if (options.rollbackApplicationVersionDrift) applicationVersion += 1;
       return "rolled back";
     }
     if (args.includes("deploy") && args.includes("MCP_ENABLED:true")) {
       current = enabledId;
-      if (options.enableApplicationVersionDrift) applicationVersion = 26;
+      if (options.enableApplicationVersionDrift) applicationVersion += 1;
       return `Current Version ID: ${enabledId}`;
     }
     if (args.includes("deploy")) {
       if (options.failDisabledDeploy) throw new Error("timed out");
       current = disabledId;
-      applicationVersion = options.candidateApplicationVersion ?? applicationVersion;
+      applicationVersion = options.candidateApplicationVersion ?? (options.candidateMatchesStarting ? 25 : 26);
       return `Current Version ID: ${disabledId}`;
     }
     throw new Error(`unexpected pnpm args: ${args.join(" ")}`);
@@ -380,7 +396,7 @@ async function fixture(options: {
       repoRoot: root,
       packageRoot: root,
       stateRoot: root,
-      env: { NEMLIG_MCP_ACCESS_TOKEN: "owner-token" },
+      env: { NEMLIG_MCP_ACCESS_TOKEN: "owner-token", CLOUDFLARE_ACCOUNT_ID: accountId },
       run,
       fetcher: async () => {
         if (options.disabledFetchFails) throw new Error("offline");
@@ -627,6 +643,8 @@ test("successful deployment builds once, reuses the image, and journals only red
     assert.deepEqual([report.startingVersion, report.disabledVersion, report.enabledVersion], [startingId, disabledId, enabledId]);
     const deploys = calls.filter(({ args }) => args.includes("deploy"));
     assert.equal(deploys.length, 2);
+    const manifest = calls.find(({ command }) => command === "docker");
+    assert.deepEqual(manifest?.args, ["manifest", "inspect", "-v", `registry.cloudflare.com/${accountId}/nemlig-mcp-cloudflare-production-nemligmcpcontainer-production:${disabledId.split("-")[0]}`]);
     assert.equal(deploys[0].args.includes("--containers-rollout"), false);
     const rollout = deploys[1].args.indexOf("--containers-rollout");
     assert.deepEqual(deploys[1].args.slice(rollout, rollout + 2), ["--containers-rollout", "none"]);
@@ -676,7 +694,7 @@ test("enabled acceptance retries while the edge deployment converges", async () 
 test("enabled acceptance retries while the Container service converges", async () => {
   const { deps, calls, root } = await fixture({ failFeaturesOnce: true });
   deps.acceptanceMode = "service-cutover";
-  deps.env = { NEMLIG_MCP_SERVICE_CLIENT_ID: "service-client", NEMLIG_MCP_SERVICE_CLIENT_SECRET: "machine-secret", NEMLIG_CI_ACCEPTANCE_READY: "true" };
+  deps.env = { CLOUDFLARE_ACCOUNT_ID: accountId, NEMLIG_MCP_SERVICE_CLIENT_ID: "service-client", NEMLIG_MCP_SERVICE_CLIENT_SECRET: "machine-secret", NEMLIG_CI_ACCEPTANCE_READY: "true" };
   deps.issueServiceToken = async () => "machine-token";
   try {
     assert.equal((await deployProduction(commit, deps)).outcome, "success");
@@ -717,6 +735,16 @@ test("disabled application identity drift never reaches enablement", async () =>
     assert.equal(report.failure, "cloudflare_deployment_drift");
     assert.equal(calls.some(({ args }) => args.includes("MCP_ENABLED:true")), false);
   } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test("wrong candidate digest or malformed registry manifest never reaches enablement", async () => {
+  for (const options of [{ candidateWrongImage: true }, { malformedManifest: true }]) {
+    const { deps, calls, root } = await fixture(options);
+    try {
+      assert.equal((await deployProduction(commit, deps)).outcome, "failed");
+      assert.equal(calls.some(({ args }) => args.includes("MCP_ENABLED:true")), false);
+    } finally { await rm(root, { recursive: true, force: true }); }
+  }
 });
 
 test("invalid local config reader stops before either deploy", async () => {
@@ -875,12 +903,13 @@ test("enabled acceptance waits for one matching running Container instance", asy
 test("enabled acceptance converges from provisioning and an older running Container application version", async () => {
   const { deps, calls, root } = await fixture({ enabledInstanceRows: [
     [{ id: "instance", name: "nemlig-production", state: "provisioning", version: null }],
-    [{ id: "instance", name: "nemlig-production", state: "running", version: 24 }],
-    [{ id: "instance", name: "nemlig-production", state: "running", version: 25 }],
+    [{ id: "instance", name: "nemlig-production", state: "stopping", version: 25 }],
+    [{ id: "instance", name: "nemlig-production", state: "stopped", version: 25 }],
+    [{ id: "instance", name: "nemlig-production", state: "running", version: 26 }],
   ] });
   try {
     assert.equal((await deployProduction(commit, deps)).outcome, "success");
-    assert.equal(calls.filter(({ args }) => args.includes("containers") && args.includes("instances")).length, 4);
+    assert.equal(calls.filter(({ args }) => args.includes("containers") && args.includes("instances")).length, 5);
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
@@ -890,8 +919,6 @@ test("enabled acceptance rejects malformed, wrong, or ambiguous Container instan
     [[{ id: "instance", name: "other", state: "running", version: 25 }]],
     [[{ id: "one", name: "nemlig-production", state: "running", version: 25 }, { id: "two", name: "nemlig-production", state: "running", version: 25 }]],
     [[{ id: "instance", name: "nemlig-production", state: "failed", version: 25 }]],
-    [[{ id: "instance", name: "nemlig-production", state: "stopping", version: 25 }]],
-    [[{ id: "instance", name: "nemlig-production", state: "stopped", version: 25 }]],
     [[{ id: "instance", name: "nemlig-production", state: "unhealthy", version: 25 }]],
     [[{ id: "instance", name: "nemlig-production", state: "unknown", version: 25 }]],
   ]) {
@@ -915,27 +942,33 @@ test("enabled acceptance bounds Container instance convergence at 36 reads", asy
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
-test("a newer running Container version without matching application metadata is deployment drift", async () => {
-  const { deps, calls, root } = await fixture({ enabledInstanceRows: [[{
-    id: "instance", name: "nemlig-production", state: "running", version: 26,
-  }]] });
+test("times out while disabled when candidate image and application version never converge", async () => {
+  const { deps, calls, root } = await fixture({ candidateContainerDelay: 40 });
   try {
     const report = await deployProduction(commit, deps);
     assert.equal(report.outcome, "failed");
-    assert.equal(report.failure, "cloudflare_deployment_drift");
-    assert.equal(calls.filter(({ args }) => args.includes("containers") && args.includes("instances")).length, 3);
+    assert.equal(report.failure, "container_instance_timeout");
+    assert.equal(calls.some(({ args }) => args.includes("MCP_ENABLED:true")), false);
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
-test("accepts Cloudflare's application version advancing with the deployed Container", async () => {
-  const { deps, root } = await fixture({
-    enabledInstanceRows: [[{ id: "instance", name: "nemlig-production", state: "running", version: 26 }]],
-    convergedApplicationVersion: 26,
-  });
+test("waits while disabled for the candidate digest and numeric application version together", async () => {
+  const { deps, calls, root } = await fixture({ candidateContainerDelay: 2 });
   try {
     const report = await deployProduction(commit, deps);
     assert.equal(report.outcome, "success");
     assert.equal(report.enabledApplicationVersion, 26);
+    const enable = calls.findIndex(({ args }) => args.includes("MCP_ENABLED:true"));
+    assert.ok(calls.slice(0, enable).filter(({ args }) => args.includes("containers") && args.includes("list")).length >= 4);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test("accepts an unchanged Container when the candidate digest matches the starting image", async () => {
+  const { deps, root } = await fixture({ candidateMatchesStarting: true });
+  try {
+    const report = await deployProduction(commit, deps);
+    assert.equal(report.outcome, "success");
+    assert.deepEqual([report.disabledImage, report.disabledApplicationVersion], [image, 25]);
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
@@ -961,8 +994,8 @@ test("cancelling Container instance convergence stops further reads", async () =
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
-test("post-instance Worker or Container application drift rejects enabled acceptance", async () => {
-  for (const options of [{ postProofWorkerDrift: true }, { postProofApplicationVersionDrift: true }]) {
+test("post-instance Worker, lease, or Container drift rejects enabled acceptance", async () => {
+  for (const options of [{ postProofWorkerDrift: true }, { postProofLeaseDrift: true }, { postProofApplicationVersionDrift: true }]) {
     const { deps, root } = await fixture(options);
     try {
       assert.equal((await deployProduction(commit, deps)).outcome, "failed");
@@ -1034,27 +1067,26 @@ test("incomplete disabled evidence remains unknown, while completed disabled pro
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
-test("enabled acceptance failure restores and verifies the exact starting version", async () => {
+test("enabled acceptance failure returns to the proven disabled candidate", async () => {
   const { deps, calls, root } = await fixture({ failFeatures: true });
   try {
     const report = await deployProduction(commit, deps);
     assert.equal(report.outcome, "failed");
     assert.equal(report.rollback, "restored");
-    assert.equal(report.lastVerifiedState, "restored");
+    assert.equal(report.lastVerifiedState, "disabled");
     const rollbackCall = calls.find(({ args }) => args.includes("rollback"));
-    assert.ok(rollbackCall?.args.includes(startingId));
-    assert.equal(calls.filter(({ args }) => args[0] === "production:probe").length, 2);
+    assert.ok(rollbackCall?.args.includes(disabledId));
   } finally {
     await rm(root, { recursive: true, force: true });
   }
 });
 
-test("rollback with a changed Container application version is not reported restored", async () => {
+test("Worker rollback with changed Container metadata remains unknown", async () => {
   const { deps, root } = await fixture({ failFeatures: true, rollbackApplicationVersionDrift: true });
   try {
     const report = await deployProduction(commit, deps);
     assert.equal(report.outcome, "failed");
-    assert.notEqual(report.lastVerifiedState, "restored");
+    assert.equal(report.lastVerifiedState, "unknown");
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
@@ -1454,13 +1486,13 @@ test("enabled recovery accepts matching running or inactive instances but disabl
   }
 });
 
-test("rollback cannot claim restoration with changed configuration or a stale running instance", async () => {
+test("rollback cannot claim the disabled candidate with changed configuration or a stale running instance", async () => {
   for (const mode of ["config", "instance"]) {
     let startingReads = 0;
     const { deps, root } = await fixture({ failFeatures: true,
       ...(mode === "instance" ? { restoredInstanceRows: [{ id: "instance", name: "nemlig-production", state: "running", version: 24 }] } : {}),
       versionBindings: (values, id) => {
-        if (id === startingId && ++startingReads > 1 && mode === "config") return values.map((value) => value.name === "MCP_CREDENTIAL_RATE_LIMIT" ? { ...value, text: "4" } : value);
+        if (id === disabledId && ++startingReads > 1 && mode === "config") return values.map((value) => value.name === "MCP_CREDENTIAL_RATE_LIMIT" ? { ...value, text: "4" } : value);
         return values;
       },
     });
@@ -1625,7 +1657,7 @@ test("service deployment never reads owner credentials and issues one token befo
   await mkdir(join(root, "release"));
   await writeFile(join(root, "release", "production-cutover.json"), JSON.stringify({ schema: 1, acceptedRevision: previousCommit }));
   let issues = 0;
-  const serviceEnv: NodeJS.ProcessEnv = { NEMLIG_MCP_SERVICE_CLIENT_ID: "service-client", NEMLIG_MCP_SERVICE_CLIENT_SECRET: "machine-secret", NEMLIG_CI_ACCEPTANCE_READY: "true" };
+  const serviceEnv: NodeJS.ProcessEnv = { CLOUDFLARE_ACCOUNT_ID: accountId, NEMLIG_MCP_SERVICE_CLIENT_ID: "service-client", NEMLIG_MCP_SERVICE_CLIENT_SECRET: "machine-secret", NEMLIG_CI_ACCEPTANCE_READY: "true" };
   Object.defineProperty(serviceEnv, "NEMLIG_MCP_ACCESS_TOKEN", { enumerable: true, get() { throw new Error("owner credential read"); } });
   deps.env = serviceEnv;
   deps.acceptanceMode = "service";
@@ -1652,7 +1684,7 @@ test("service deployment never reads owner credentials and issues one token befo
 test("CI never falls back to owner authentication or issues a service token before source verification", async () => {
   for (const badSource of [false, true]) {
     const { deps, calls, root } = await fixture(badSource ? { head: previousCommit } : {});
-    deps.env = { GITHUB_ACTIONS: "true", GITHUB_RUN_ID: "1", GITHUB_RUN_ATTEMPT: "1", NEMLIG_MCP_ACCESS_TOKEN: "owner-token" };
+    deps.env = { CLOUDFLARE_ACCOUNT_ID: accountId, GITHUB_ACTIONS: "true", GITHUB_RUN_ID: "1", GITHUB_RUN_ATTEMPT: "1", NEMLIG_MCP_ACCESS_TOKEN: "owner-token" };
     let issued = false;
     deps.issueServiceToken = async () => { issued = true; throw new Error("must not issue"); };
     try {
@@ -1668,7 +1700,7 @@ test("CI never falls back to owner authentication or issues a service token befo
 test("routine service releases require recorded cutover and reject unreviewed runtime changes", async () => {
   for (const change of ["missing", "apps/nemlig-assistant/src/http.ts", "unknown/config.json"]) {
     const { deps, calls, root } = await fixture();
-    deps.env = { NEMLIG_CI_ACCEPTANCE_READY: "true" };
+    deps.env = { CLOUDFLARE_ACCOUNT_ID: accountId, NEMLIG_CI_ACCEPTANCE_READY: "true" };
     deps.acceptanceMode = "service";
     await mkdir(join(root, "release"));
     await writeFile(join(root, "release", "production-cutover.json"), JSON.stringify({ schema: 1, acceptedRevision: change === "missing" ? null : previousCommit }));
@@ -1688,7 +1720,7 @@ test("routine service releases require recorded cutover and reject unreviewed ru
 
 test("supervised service cutover reports pending live acceptance and retains recovery ownership", async () => {
   const { deps, root } = await fixture();
-  deps.env = { NEMLIG_CI_ACCEPTANCE_READY: "true", NEMLIG_MCP_SERVICE_CLIENT_ID: "service-client" };
+  deps.env = { CLOUDFLARE_ACCOUNT_ID: accountId, NEMLIG_CI_ACCEPTANCE_READY: "true", NEMLIG_MCP_SERVICE_CLIENT_ID: "service-client" };
   deps.acceptanceMode = "service-cutover";
   deps.issueServiceToken = async () => "service-token";
   try {
