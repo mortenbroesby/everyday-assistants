@@ -89,6 +89,7 @@ interface VersionState {
 interface ContainerState {
   id: string;
   image: string;
+  version: number;
 }
 
 class DeployFailure extends Error {
@@ -293,15 +294,19 @@ export function parseContainer(raw: string): ContainerState {
   if (!value) throw new DeployFailure("cloudflare_container_ambiguous");
   const id = value.id;
   const image = value.image;
-  if (typeof id !== "string" || typeof image !== "string"
+  const version = value.version;
+  if (typeof id !== "string" || !versionId.test(id) || typeof image !== "string" || !imageDigest.test(image)
+    || typeof version !== "number" || !Number.isSafeInteger(version) || version < 1
     || value.name !== "nemlig-mcp-cloudflare-production-nemligmcpcontainer-production"
     || value.instances !== 1) throw new DeployFailure("cloudflare_container_ambiguous");
-  return { id, image };
+  return { id, image, version };
 }
 
 export function instancesInactive(raw: string): boolean {
   const parsed = json(raw, "cloudflare_instances_invalid");
-  return Array.isArray(parsed) && parsed.length === 1 && object(parsed[0])?.state === "inactive";
+  const instance = Array.isArray(parsed) && parsed.length === 1 ? object(parsed[0]) : undefined;
+  return instance?.state === "inactive" && typeof instance.id === "string" && instance.id.length > 0
+    && instance.name === "nemlig-production" && instance.version === null;
 }
 
 const deployedVersionFromOutput = (raw: string): string => {

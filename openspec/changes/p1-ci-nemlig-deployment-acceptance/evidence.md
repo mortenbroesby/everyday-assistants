@@ -154,3 +154,22 @@ were not full. No shared cache, image, volume or provider resource was removed.
 S2.3–S2.5 are checked; the epic is 12/44. S2.6 continues in the isolated
 `codex/ci-image-config-proof` worktree, with real command-shape corrections
 recorded in its packet. Production remains unchanged.
+
+## Strict Container parser slice
+
+Documentation main `4434c0258d00fb1159f9dffb47dd35986de64d3c` passed
+[exact-head CI](https://github.com/mortenbroesby/everyday-assistants/actions/runs/34294175685).
+Terra's parser draft was corrected and completed by the coordinator in isolated
+commit `c7644369e4c926801248415574f5b78611e3419f`. The new regression failed
+against the old parser because an invalid application ID was accepted, then
+passed with strict UUID/digest/positive-integer application-version validation.
+Inactive acceptance requires the one fixed Durable Object assignment and its
+null instance version. Worker UUID transition fixtures remain unchanged.
+
+Focused deploy tests pass 38/38; TypeScript, lint and strict OpenSpec checks
+pass. This is a parser slice, not completion of S2.6: same-application-version
+enablement, running-instance convergence, effective configuration preservation
+and image-aware recovery still require implementation and composed proof. The
+integration candidate is `4.1.1-alpha.20`; production is unchanged. Local Docker
+remains blocked by its full data volume; exact-head CI supplies the full build
+gate and is recorded separately when verified.

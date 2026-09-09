@@ -75,7 +75,7 @@ const recoveryDeps = (journal: Record<string, unknown>, currentVersion: string, 
     if (command === "pnpm" && args.includes("deployments")) return deployment(currentVersion);
     if (command === "pnpm" && args.includes("versions")) return version(currentVersion, commit, currentEnabled);
     if (command === "pnpm" && args.includes("containers")) return JSON.stringify([{
-      id: applicationId, name: "nemlig-mcp-cloudflare-production-nemligmcpcontainer-production", instances: 1, image,
+      id: applicationId, name: "nemlig-mcp-cloudflare-production-nemligmcpcontainer-production", instances: 1, image, version: 25,
     }]);
     if (command !== "gh") throw new Error("unexpected command");
     if (args[0] === "repo") return JSON.stringify({ nameWithOwner: "mortenbroesby/everyday-assistants", url: "https://github.com/mortenbroesby/everyday-assistants" });
@@ -269,11 +269,13 @@ async function fixture(options: {
       name: "nemlig-mcp-cloudflare-production-nemligmcpcontainer-production",
       instances: 1,
       image,
+      version: 25,
     }]);
     if (args.includes("containers") && args.includes("instances")) return JSON.stringify([{
-      id: "instance",
+      id: "durable-object",
       name: "nemlig-production",
       state: "inactive",
+      version: null,
     }]);
     if (args.includes("rollback")) {
       current = startingId;
@@ -325,12 +327,28 @@ test("deployment arguments and provider JSON fail closed", () => {
     name: "nemlig-mcp-cloudflare-production-nemligmcpcontainer-production",
     instances: 1,
     image,
+      version: 25,
   }])).image, image);
   assert.throws(() => parseContainer("[]"));
-  assert.equal(instancesInactive(JSON.stringify([{ state: "inactive" }])), true);
+  assert.equal(instancesInactive(JSON.stringify([{ id: "durable-object", name: "nemlig-production", state: "inactive", version: null }])), true);
   assert.equal(instancesInactive(JSON.stringify([{ state: "running" }])), false);
   assert.equal(verifyCandidateVersion(version(enabledId, commit, true), enabledId, commit, true).enabled, true);
   assert.throws(() => verifyCandidateVersion(version(enabledId, commit, false), enabledId, commit, true));
+});
+
+test("Container metadata distinguishes numeric application versions from Worker UUIDs", () => {
+  const app = { id: applicationId, name: "nemlig-mcp-cloudflare-production-nemligmcpcontainer-production", instances: 1, image, version: 25 };
+  for (const invalid of [{ id: "invalid" }, { image: "image:latest" }, { version: undefined }, { version: startingId }, { version: "25" }, { version: 0 }, { version: 1.5 }, { version: Number.MAX_SAFE_INTEGER + 1 }, { instances: 2 }]) {
+    assert.throws(() => parseContainer(JSON.stringify([{ ...app, ...invalid }])), JSON.stringify(invalid));
+  }
+  assert.deepEqual(parseContainer(JSON.stringify([app])), { id: applicationId, image, version: 25 });
+  const inactive = { id: "durable-object", name: "nemlig-production", state: "inactive", version: null };
+  assert.equal(instancesInactive(JSON.stringify([inactive])), true);
+  for (const invalid of [{ id: "" }, { id: undefined }, { name: "other" }, { state: "running" }, { version: 25 }, { version: undefined }]) {
+    assert.equal(instancesInactive(JSON.stringify([{ ...inactive, ...invalid }])), false, JSON.stringify(invalid));
+  }
+  assert.equal(instancesInactive(JSON.stringify({ instances: [inactive], result_info: {} })), false);
+  assert.equal(instancesInactive(JSON.stringify([inactive, inactive])), false);
 });
 
 test("schema-2 recovery journals reject unknown, malformed, oversized, and excessive transitions", () => {
@@ -829,6 +847,7 @@ test("finalize accepts GitHub's empty successful DELETE only after the exact rem
     if (command === "pnpm" && args.includes("versions")) return version(enabledId, commit, true);
     if (command === "pnpm" && args.includes("containers")) return JSON.stringify([{
       id: applicationId, name: "nemlig-mcp-cloudflare-production-nemligmcpcontainer-production", instances: 1, image: currentImage,
+      version: 25,
     }]);
     if (command !== "gh") throw new Error("unexpected command");
     if (args[0] === "repo") return JSON.stringify({ nameWithOwner: "mortenbroesby/everyday-assistants", url: "https://github.com/mortenbroesby/everyday-assistants" });
