@@ -162,6 +162,7 @@ async function fixture(options: {
   driftBeforeEnable?: boolean;
   failDisabledDeploy?: boolean;
   failFeatures?: boolean;
+  failProbeOnce?: boolean;
   failCurrentRead?: boolean;
   externalEnabledDriftDuringRecovery?: boolean;
   enableApplicationVersionDrift?: boolean;
@@ -188,6 +189,7 @@ async function fixture(options: {
   let current = startingId;
   let applicationVersion = 25;
   let enabledInstanceReads = 0;
+  let probeReads = 0;
   let rolledBack = false;
   let appended = false;
   let resultWriteFailed = false;
@@ -293,7 +295,11 @@ async function fixture(options: {
     if (commandName === "git" && args[0] === "status") return "";
     if (commandName === "git") return "";
     if (commandName !== "pnpm") throw new Error("unexpected command");
-    if (args[0] === "production:probe") return "edge ok";
+    if (args[0] === "production:probe") {
+      probeReads += 1;
+      if (options.failProbeOnce && probeReads === 1) throw new Error("edge not converged");
+      return "edge ok";
+    }
     if (args[0] === "production:test:features") {
       if (options.failFeatures) throw new Error("acceptance failed");
       if (options.localFinalMirrorFailure) {
@@ -618,9 +624,6 @@ test("successful deployment builds once, reuses the image, and journals only red
     const rollout = deploys[1].args.indexOf("--containers-rollout");
     assert.deepEqual(deploys[1].args.slice(rollout, rollout + 2), ["--containers-rollout", "none"]);
     assert.equal(calls.some(({ args }) => args[0] === "production:test:features"), true);
-    const enabledDeploy = calls.findIndex(({ args }) => args.includes("deploy") && args.includes("MCP_ENABLED:true"));
-    const probe = calls.findIndex(({ args }) => args[0] === "production:probe");
-    assert.ok(calls.slice(enabledDeploy + 1, probe).some(({ args }) => args.includes("instances")));
     assert.doesNotMatch(JSON.stringify(calls.map(({ command, args }) => ({ command, args }))), /add_approved|remove_approved|make_approved|empty_approved/u);
     const ref = calls.findIndex(({ command, args }) => command === "gh" && args.includes("POST") && args.some((arg) => arg.endsWith("git/refs")));
     const firstProviderRead = calls.findIndex(({ command, args }) => command === "pnpm" && args.includes("wrangler"));
@@ -652,6 +655,14 @@ test("config preflight supplies every validated plain production value to both d
       assert.ok(deploy.args.includes("NEMLIG_MCP_AUTH0_ISSUER:https://everyday-assistants.eu.auth0.com/"));
       assert.ok(deploy.args.includes("NEMLIG_MCP_PUBLIC_URL:https://nemlig-mcp.broesby.dk/mcp"));
     }
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test("enabled acceptance retries while the edge deployment converges", async () => {
+  const { deps, calls, root } = await fixture({ failProbeOnce: true });
+  try {
+    assert.equal((await deployProduction(commit, deps)).outcome, "success");
+    assert.equal(calls.filter(({ args }) => args[0] === "production:probe").length, 2);
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 

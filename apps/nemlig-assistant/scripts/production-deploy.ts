@@ -144,7 +144,7 @@ const isoTime = (value: unknown): value is string => {
 };
 const imageDigest = /^sha256:[0-9a-f]{64}$/u;
 const journalChecks = new Set(["source_and_auth_preflight", "exclusive_lease", "starting_state_recorded", "disabled_version", "disabled_routes", "container_inactive", "enabled_version", "image_reused", "edge_acceptance", "authenticated_read_only_acceptance", "service_fixture_acceptance", "live_acceptance_pending", "starting_version_restored"]);
-const journalFailures = new Set(["service_cutover_required", "live_acceptance_required", "service_acceptance_not_ready", "service_token_unavailable", "owner_access_token_required", "github_repository_invalid", "source_revision_mismatch", "github_ci_workflow_invalid", "github_ci_invalid", "exact_head_ci_not_green", "github_environment_not_ready", "local_deployment_lease_unavailable", "remote_deployment_lease_unavailable", "remote_journal_invalid", "remote_journal_append_failed", "remote_journal_parent_invalid", "remote_deployment_lease_changed", "deployment_journal_invalid", "deployment_journal_oversized", "deployment_journal_write_failed", "cloudflare_deployment_drift", "cloudflare_upload_version_missing", "cloudflare_config_invalid", "cloudflare_runtime_safety_mismatch", "disabled_route_unavailable", "disabled_route_mismatch", "container_inactive_timeout", "container_instance_timeout", "container_image_changed_during_enable", "recovery_finalize_denied", "command_failed", "command_cancelled", "unexpected_failure"]);
+const journalFailures = new Set(["service_cutover_required", "live_acceptance_required", "service_acceptance_not_ready", "service_token_unavailable", "owner_access_token_required", "github_repository_invalid", "source_revision_mismatch", "github_ci_workflow_invalid", "github_ci_invalid", "exact_head_ci_not_green", "github_environment_not_ready", "local_deployment_lease_unavailable", "remote_deployment_lease_unavailable", "remote_journal_invalid", "remote_journal_append_failed", "remote_journal_parent_invalid", "remote_deployment_lease_changed", "deployment_journal_invalid", "deployment_journal_oversized", "deployment_journal_write_failed", "cloudflare_deployment_drift", "cloudflare_upload_version_missing", "cloudflare_config_invalid", "cloudflare_runtime_safety_mismatch", "cloudflare_instances_invalid", "disabled_route_unavailable", "disabled_route_mismatch", "container_inactive_timeout", "container_instance_timeout", "container_image_changed_during_enable", "recovery_finalize_denied", "command_failed", "command_cancelled", "unexpected_failure"]);
 
 const journalJson = (journal: DeploymentJournal): string => {
   if (!journal || typeof journal !== "object" || !Array.isArray(journal.checks) || !Array.isArray(journal.transitions)
@@ -919,6 +919,22 @@ const waitForRunningInstance = async (deps: DeployDependencies, applicationId: s
   fail("container_instance_timeout");
 };
 
+const waitForEdge = async (deps: DeployDependencies, commit: string): Promise<void> => {
+  for (let attempt = 0; attempt < 12; attempt += 1) {
+    try {
+      await runAt(deps, deps.packageRoot, "pnpm", ["production:probe"], {
+        timeoutMs: 120_000,
+        env: { NEMLIG_EXPECTED_REVISION: commit },
+      });
+      return;
+    } catch (error) {
+      deps.signal?.throwIfAborted();
+      if (attempt === 11) throw error;
+      await sleepAbortably(deps);
+    }
+  }
+};
+
 const verifyCurrent = async (deps: DeployDependencies, expected: string): Promise<void> => {
   if ((await readCurrent(deps)).version !== expected) fail("cloudflare_deployment_drift");
 };
@@ -1124,20 +1140,17 @@ export async function deployProduction(commit: string, inputDeps: DeployDependen
     journal.lastVerifiedState = "enabled";
     journal.checks.push("enabled_version", "image_reused");
     await transition("enable_deploy", "result", enabledId);
+    await waitForEdge(deps, commit);
+    await runAt(deps, deps.packageRoot, "pnpm", ["production:test:features", ...(service ? ["--", "--service"] : [])], {
+      timeoutMs: 120_000,
+      ...(service ? { env: { NEMLIG_MCP_SERVICE_ACCESS_TOKEN: serviceToken, NEMLIG_EXPECTED_REVISION: commit } } : {}),
+    });
     await waitForRunningInstance(deps, enabledContainer.id, enabledContainer.version);
     await verifyCurrent(deps, enabledId);
     const provenContainer = await readContainer(deps);
     if (provenContainer.id !== enabledContainer.id || provenContainer.image !== enabledContainer.image || provenContainer.version !== enabledContainer.version) {
       fail("cloudflare_deployment_drift");
     }
-    await runAt(deps, deps.packageRoot, "pnpm", ["production:probe"], {
-      timeoutMs: 120_000,
-      env: { NEMLIG_EXPECTED_REVISION: commit },
-    });
-    await runAt(deps, deps.packageRoot, "pnpm", ["production:test:features", ...(service ? ["--", "--service"] : [])], {
-      timeoutMs: 120_000,
-      ...(service ? { env: { NEMLIG_MCP_SERVICE_ACCESS_TOKEN: serviceToken, NEMLIG_EXPECTED_REVISION: commit } } : {}),
-    });
     journal.enabledVersion = enabledId;
     journal.checks.push("edge_acceptance", service ? "service_fixture_acceptance" : "authenticated_read_only_acceptance");
     if (inputDeps.acceptanceMode === "service-cutover") journal.checks.push("live_acceptance_pending");
