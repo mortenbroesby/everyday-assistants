@@ -211,3 +211,39 @@ Coordinator reviewed the complete diff and independently passed all 47 focused
 deploy tests. The integration candidate is `4.1.3-alpha.22`. Configuration
 preservation, persisted application/configuration snapshots and instance-aware
 recovery remain open; S2.6/S2.7 are not checked. Production remains unchanged.
+
+Running-instance proof was integrated and remote-ref verified at
+`8532ef31d3a485c31598bf5786ba2f8d584e344b` (`4.1.3-alpha.22`). Full local
+verification and the committed version gate passed.
+[Exact-head CI](https://github.com/mortenbroesby/everyday-assistants/actions/runs/34295910383)
+passed full readiness on the required `verify` job. No live deployment occurred.
+
+## Effective configuration preservation
+
+Sol resolved the concrete configuration contract; Terra implemented draft
+`e615e5b16dcc49137ce806281561085e805a731b`. The coordinator completed the
+missing acceptance matrix and reviewed runtime validation in `1ec485d`.
+The pinned Wrangler reader is exercised without credentials, and both actual
+deploy argument lists preserve all 16 validated plain settings, including live
+onboarding over the repository default. Both version readbacks compare canonical
+configuration and secret-name/type metadata. No secret values enter the digest,
+deploy arguments or journal, and no provider read was added.
+
+All 56 focused tests, TypeScript and lint passed in the isolated implementation
+worktree. Coverage includes reordered bindings, explicit self targets, legacy and
+lowercase secret names, malformed/duplicate/wrong-type bindings, secret changes
+at both readbacks, redirected paths, and local/live safety drift. Invalid plain
+values also failed against the draft runtime, then passed with validation
+restored. Terra's first two regressions were run against the baseline only after
+implementation; this is retrospective failure evidence, not test-first process
+compliance. The coordinator recorded that deviation rather than claiming it met
+the required order.
+
+Final review added a test-first regression for credential-bearing HTTPS URLs
+and non-decimal ports: the draft incorrectly accepted a URL containing userinfo;
+`9c51abf` rejects it before deployment or digest creation. The regression passed
+after the fix. The same 56-test matrix includes the additional invalid inputs.
+
+Integration candidate: `4.1.4-alpha.23`. Persisted configuration/application
+snapshots and full recovery proof remain open, so S2.6/S2.7 remain unchecked.
+No provider setup or production mutation occurred.

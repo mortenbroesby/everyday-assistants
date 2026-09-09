@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
-import { randomUUID } from "node:crypto";
-import { open, mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
+import { createHash, randomUUID } from "node:crypto";
+import { open, mkdir, readFile, realpath, rename, unlink, writeFile } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
@@ -73,6 +73,7 @@ export interface DeployDependencies {
   operationDeadlineMs?: number;
   stateRoot?: string;
   signal?: AbortSignal;
+  configReader?: (options: { config: string; env: "production" }) => Promise<unknown> | unknown;
 }
 
 interface CurrentDeployment {
@@ -90,6 +91,12 @@ interface ContainerState {
   id: string;
   image: string;
   version: number;
+}
+
+interface EffectiveConfig {
+  vars: Map<string, string>;
+  secrets: string[];
+  digest: string;
 }
 
 class DeployFailure extends Error {
@@ -129,7 +136,7 @@ const isoTime = (value: unknown): value is string => {
 };
 const imageDigest = /^sha256:[0-9a-f]{64}$/u;
 const journalChecks = new Set(["source_and_auth_preflight", "exclusive_lease", "starting_state_recorded", "disabled_version", "disabled_routes", "container_inactive", "enabled_version", "image_reused", "edge_acceptance", "authenticated_read_only_acceptance", "starting_version_restored"]);
-const journalFailures = new Set(["owner_access_token_required", "github_repository_invalid", "source_revision_mismatch", "github_ci_workflow_invalid", "github_ci_invalid", "exact_head_ci_not_green", "local_deployment_lease_unavailable", "remote_deployment_lease_unavailable", "remote_journal_invalid", "remote_journal_append_failed", "remote_journal_parent_invalid", "remote_deployment_lease_changed", "deployment_journal_invalid", "deployment_journal_oversized", "deployment_journal_write_failed", "cloudflare_deployment_drift", "cloudflare_upload_version_missing", "disabled_route_unavailable", "disabled_route_mismatch", "container_inactive_timeout", "container_instance_timeout", "container_image_changed_during_enable", "recovery_finalize_denied", "command_failed", "command_cancelled", "unexpected_failure"]);
+const journalFailures = new Set(["owner_access_token_required", "github_repository_invalid", "source_revision_mismatch", "github_ci_workflow_invalid", "github_ci_invalid", "exact_head_ci_not_green", "local_deployment_lease_unavailable", "remote_deployment_lease_unavailable", "remote_journal_invalid", "remote_journal_append_failed", "remote_journal_parent_invalid", "remote_deployment_lease_changed", "deployment_journal_invalid", "deployment_journal_oversized", "deployment_journal_write_failed", "cloudflare_deployment_drift", "cloudflare_upload_version_missing", "cloudflare_config_invalid", "cloudflare_runtime_safety_mismatch", "disabled_route_unavailable", "disabled_route_mismatch", "container_inactive_timeout", "container_instance_timeout", "container_image_changed_during_enable", "recovery_finalize_denied", "command_failed", "command_cancelled", "unexpected_failure"]);
 
 const journalJson = (journal: DeploymentJournal): string => {
   if (!journal || typeof journal !== "object" || !Array.isArray(journal.checks) || !Array.isArray(journal.transitions)
@@ -232,12 +239,90 @@ export function parseCurrentDeployment(raw: string): CurrentDeployment {
   return { id, version: deployedId };
 }
 
+const configPlainNames = ["MCP_DAILY_LIMIT", "MCP_EXPENSIVE_DAILY_LIMIT", "MCP_RATE_LIMIT", "MCP_EXPENSIVE_RATE_LIMIT", "MCP_AUTH_TIMEOUT_MS", "MCP_CONTROL_TIMEOUT_MS", "MCP_TOTAL_TIMEOUT_MS", "MCP_BACKEND_TIMEOUT_MS", "MCP_CREDENTIAL_ONBOARDING_ENABLED", "MCP_CREDENTIAL_RATE_LIMIT", "MCP_CREDENTIAL_GLOBAL_RATE_LIMIT", "NEMLIG_MCP_HTTP_HOST", "NEMLIG_MCP_HTTP_PORT", "NEMLIG_MCP_AUTH0_ISSUER", "NEMLIG_MCP_AUTH0_AUDIENCE", "NEMLIG_MCP_PUBLIC_URL"] as const;
+const configPlainSet = new Set<string>(configPlainNames);
+const requiredSecrets = new Set(["NEMLIG_MCP_PRINCIPALS"]);
+const expectedDo = new Map([["NEMLIG_MCP_CONTAINER", "NemligMcpContainer"], ["NEMLIG_PLAN_STORAGE", "PlanStorage"]]);
+const productionWorker = "nemlig-mcp-cloudflare-production";
+
 const bindings = (resource: Record<string, unknown>): Map<string, Record<string, unknown>> => {
   const resources = object(resource.resources);
   const values = resources?.bindings;
   if (!Array.isArray(values)) throw new DeployFailure("cloudflare_version_bindings_invalid");
-  return new Map(values.map(object).filter((value): value is Record<string, unknown> =>
-    value !== undefined && typeof value.name === "string").map((value) => [value.name as string, value]));
+  const result = new Map<string, Record<string, unknown>>();
+  for (const entry of values) {
+    const value = object(entry) ?? fail("cloudflare_version_bindings_invalid");
+    const name = typeof value.name === "string" ? value.name : fail("cloudflare_version_bindings_invalid");
+    if (name.length === 0 || typeof value.type !== "string" || result.has(name)) {
+      fail("cloudflare_version_bindings_invalid");
+    }
+    result.set(name, value);
+  }
+  return result;
+};
+
+const validateDo = (bindings: Iterable<Record<string, unknown>>): void => {
+  const found = new Map<string, string>();
+  for (const value of bindings) {
+    if (value.type !== "durable_object_namespace") continue;
+    const name = typeof value.name === "string" ? value.name : fail("cloudflare_runtime_safety_mismatch");
+    const className = typeof value.class_name === "string" ? value.class_name : fail("cloudflare_runtime_safety_mismatch");
+    if (found.has(name)
+      || (value.script_name !== undefined && value.script_name !== productionWorker)
+      || (value.environment !== undefined && value.environment !== "production")
+      || (value.environment !== undefined && value.script_name === undefined)) fail("cloudflare_runtime_safety_mismatch");
+    found.set(name, className);
+  }
+  if (found.size !== expectedDo.size || [...expectedDo].some(([name, className]) => found.get(name) !== className)) fail("cloudflare_runtime_safety_mismatch");
+};
+
+const effectiveConfig = (vars: Map<string, string>, secrets: Iterable<string>, requireSecrets = true): EffectiveConfig => {
+  if ([...configPlainNames].some((name) => {
+    const value = vars.get(name);
+    return typeof value !== "string" || value.length === 0 || value.length > 2048;
+  })) fail("cloudflare_runtime_safety_mismatch");
+  if (!["true", "false"].includes(vars.get("MCP_CREDENTIAL_ONBOARDING_ENABLED") ?? "")) fail("cloudflare_runtime_safety_mismatch");
+  for (const name of ["MCP_DAILY_LIMIT", "MCP_EXPENSIVE_DAILY_LIMIT", "MCP_RATE_LIMIT", "MCP_EXPENSIVE_RATE_LIMIT", "MCP_AUTH_TIMEOUT_MS", "MCP_CONTROL_TIMEOUT_MS", "MCP_TOTAL_TIMEOUT_MS", "MCP_BACKEND_TIMEOUT_MS", "MCP_CREDENTIAL_RATE_LIMIT", "MCP_CREDENTIAL_GLOBAL_RATE_LIMIT"]) {
+    const value = vars.get(name) ?? "";
+    if (!/^[1-9]\d*$/u.test(value) || !Number.isSafeInteger(Number(value))) fail("cloudflare_runtime_safety_mismatch");
+  }
+  try {
+    const host = vars.get("NEMLIG_MCP_HTTP_HOST") ?? "";
+    const portText = vars.get("NEMLIG_MCP_HTTP_PORT") ?? "";
+    const port = Number(portText);
+    if (!/^[\w.-]+$/u.test(host) || !/^[1-9]\d*$/u.test(portText) || !Number.isSafeInteger(port) || port > 65535) throw new Error();
+    for (const name of ["NEMLIG_MCP_AUTH0_ISSUER", "NEMLIG_MCP_AUTH0_AUDIENCE", "NEMLIG_MCP_PUBLIC_URL"]) {
+      const url = new URL(vars.get(name) ?? "");
+      if (url.protocol !== "https:" || url.username || url.password || url.hash) throw new Error();
+    }
+  } catch { fail("cloudflare_runtime_safety_mismatch"); }
+  const secretNames = [...secrets].sort();
+  if (secretNames.some((name, index) => (index > 0 && name === secretNames[index - 1]) || !/^[A-Za-z_][A-Za-z0-9_]{0,127}$/u.test(name))
+    || (requireSecrets && [...requiredSecrets].some((name) => !secretNames.includes(name)))) fail("cloudflare_runtime_safety_mismatch");
+  const canonical = JSON.stringify({ limits: [100, 8], vars: [...vars].filter(([name]) => configPlainSet.has(name)).sort(([left], [right]) => left.localeCompare(right)), durableObjects: [...expectedDo].sort(([left], [right]) => left.localeCompare(right)), secrets: secretNames.map((name) => [name, "secret_text"]) });
+  return { vars, secrets: secretNames, digest: createHash("sha256").update(canonical).digest("hex") };
+};
+
+const versionConfig = (raw: string): EffectiveConfig => {
+  const parsed = object(json(raw, "cloudflare_version_invalid")) ?? fail("cloudflare_version_invalid");
+  const resources = object(parsed.resources);
+  const runtime = object(resources?.script_runtime);
+  const limits = object(runtime?.limits);
+  if (limits?.cpu_ms !== 100 || limits.subrequests !== 8) fail("cloudflare_runtime_safety_mismatch");
+  const values = bindings(parsed);
+  validateDo(values.values());
+  const vars = new Map<string, string>();
+  const secrets: string[] = [];
+  for (const [name, value] of values) {
+    if (configPlainSet.has(name) || name === "MCP_ENABLED" || name === "NEMLIG_MCP_REVISION") {
+      if (value.type !== "plain_text") fail("cloudflare_runtime_safety_mismatch");
+      const text = typeof value.text === "string" ? value.text : fail("cloudflare_runtime_safety_mismatch");
+      vars.set(name, text);
+    } else if (value.type === "secret_text") {
+      secrets.push(name);
+    } else if (value.type !== "durable_object_namespace") fail("cloudflare_runtime_safety_mismatch");
+  }
+  return effectiveConfig(vars, secrets);
 };
 
 export function parseVersionState(raw: string, expectedId?: string): VersionState {
@@ -286,6 +371,10 @@ export function verifyCandidateVersion(raw: string, expectedId: string, commit: 
   }
   return state;
 }
+
+const verifyConfig = (raw: string, expected: EffectiveConfig): void => {
+  if (versionConfig(raw).digest !== expected.digest) fail("cloudflare_runtime_safety_mismatch");
+};
 
 export function parseContainer(raw: string): ContainerState {
   const parsed = json(raw, "cloudflare_containers_invalid");
@@ -388,6 +477,55 @@ const readVersion = async (deps: DeployDependencies, id: string): Promise<string
 
 const readContainer = async (deps: DeployDependencies): Promise<ContainerState> =>
   parseContainer(await wrangler(deps, ["containers", "list", "--json"]));
+
+const readLocalConfig = async (deps: DeployDependencies): Promise<EffectiveConfig> => {
+  const trusted = await realpath(resolve(deps.packageRoot, "wrangler.jsonc")).catch(() => fail("cloudflare_config_invalid"));
+  let config: unknown;
+  try {
+    const reader = deps.configReader ?? (async ({ config: path, env }: { config: string; env: "production" }) => {
+      const { unstable_readConfig } = await import("wrangler");
+      return unstable_readConfig({ config: path, env }, { hideWarnings: true });
+    });
+    config = await reader({ config: trusted, env: "production" });
+  } catch { fail("cloudflare_config_invalid"); }
+  const value = object(config) ?? fail("cloudflare_config_invalid");
+  if (typeof value.configPath !== "string" || typeof value.userConfigPath !== "string"
+    || await realpath(value.configPath).catch(() => "") !== trusted || await realpath(value.userConfigPath).catch(() => "") !== trusted
+    || value.name !== productionWorker || value.keep_vars !== true) fail("cloudflare_config_invalid");
+  const limits = object(value.limits);
+  const containers = value.containers;
+  if (limits?.cpu_ms !== 100 || limits.subrequests !== 8 || !Array.isArray(containers) || containers.length !== 1) fail("cloudflare_config_invalid");
+  const container = object((containers as unknown[])[0]);
+  if (!container || container.class_name !== "NemligMcpContainer" || container.instance_type !== "lite" || container.max_instances !== 1
+    || object(container.constraints)?.jurisdiction !== "eu") fail("cloudflare_config_invalid");
+  const rawVars = object(value.vars) ?? fail("cloudflare_config_invalid");
+  if (Object.keys(rawVars).some((name) => name !== "MCP_ENABLED" && !configPlainSet.has(name))) fail("cloudflare_config_invalid");
+  const vars = new Map<string, string>();
+  for (const [name, plain] of Object.entries(rawVars)) {
+    vars.set(name, typeof plain === "string" ? plain : fail("cloudflare_config_invalid"));
+  }
+  const durable = object(value.durable_objects);
+  const durableBindings = durable?.bindings;
+  if (!Array.isArray(durableBindings)) fail("cloudflare_config_invalid");
+  validateDo((durableBindings as unknown[]).map((entry) => {
+    const binding = object(entry) ?? fail("cloudflare_config_invalid");
+    return { ...binding, type: "durable_object_namespace" };
+  }));
+  return effectiveConfig(vars, [], false);
+};
+
+const candidateConfig = (local: EffectiveConfig, live: EffectiveConfig): EffectiveConfig => {
+  const vars = new Map(local.vars);
+  const onboarding = live.vars.get("MCP_CREDENTIAL_ONBOARDING_ENABLED");
+  if (onboarding !== "true" && onboarding !== "false") fail("cloudflare_runtime_safety_mismatch");
+  vars.set("MCP_CREDENTIAL_ONBOARDING_ENABLED", onboarding as string);
+  return effectiveConfig(vars, live.secrets);
+};
+
+const deployVars = (config: EffectiveConfig, enabled: boolean, commit: string): string[] => [
+  ...[...config.vars].filter(([name]) => configPlainSet.has(name)).sort(([left], [right]) => left.localeCompare(right)).flatMap(([name, value]) => ["--var", `${name}:${value}`]),
+  "--var", `MCP_ENABLED:${enabled}`, "--var", `NEMLIG_MCP_REVISION:${commit}`,
+];
 
 const writeJournal = async (path: string, journal: DeploymentJournal): Promise<void> => {
   const temporary = `${path}.${process.pid}.tmp`;
@@ -748,6 +886,7 @@ export async function deployProduction(commit: string, inputDeps: DeployDependen
   let mutationUncertain = false;
   let starting: VersionState | undefined;
   let startingContainer: ContainerState | undefined;
+  let configured: EffectiveConfig | undefined;
   let repository = "";
   let journalPath = "";
   let transition: ((phase: JournalPhase, kind: JournalKind, version?: string) => Promise<void>) | undefined;
@@ -770,7 +909,12 @@ export async function deployProduction(commit: string, inputDeps: DeployDependen
     if (await verifySource(deps, commit, repo) !== journal.ciRunId) fail("github_ci_invalid");
     await wrangler(deps, ["whoami"]);
     const start = await readCurrent(deps);
-    starting = parseVersionState(await readVersion(deps, start.version), start.version);
+    const startingRaw = await readVersion(deps, start.version);
+    starting = parseVersionState(startingRaw, start.version);
+    verifyCandidateVersion(startingRaw, starting.id, starting.revision, starting.enabled);
+    const startingConfig = versionConfig(startingRaw);
+    configured = candidateConfig(await readLocalConfig(deps), startingConfig);
+    if (configured.digest !== startingConfig.digest) fail("cloudflare_runtime_safety_mismatch");
     startingContainer = await readContainer(deps);
     journal.startingVersion = starting.id;
     journal.startingContainerId = startingContainer.id;
@@ -793,12 +937,14 @@ export async function deployProduction(commit: string, inputDeps: DeployDependen
     await verifyLeaseHead(deps, repository, journal);
     providerMutation = true;
     mutationUncertain = true;
-    const disabledOutput = await wrangler(deps, ["deploy", "--var", "MCP_ENABLED:false", "--var", `NEMLIG_MCP_REVISION:${commit}`,
+    const disabledOutput = await wrangler(deps, ["deploy", ...deployVars(configured, false, commit),
       "--message", `Automated production release disabled gate at ${commit.slice(0, 7)}`], 600_000);
     mutationUncertain = false;
     const disabledId = deployedVersionFromOutput(disabledOutput);
     await verifyCurrent(deps, disabledId);
-    verifyCandidateVersion(await readVersion(deps, disabledId), disabledId, commit, false);
+    const disabledRaw = await readVersion(deps, disabledId);
+    verifyCandidateVersion(disabledRaw, disabledId, commit, false);
+    verifyConfig(disabledRaw, configured);
     const disabledContainer = await readContainer(deps);
     await verifyDisabledRoutes(deps);
     await waitForInactive(deps, disabledContainer.id);
@@ -812,14 +958,15 @@ export async function deployProduction(commit: string, inputDeps: DeployDependen
     await verifyCurrent(deps, disabledId);
     await verifyLeaseHead(deps, repository, journal);
     mutationUncertain = true;
-    const enabledOutput = await wrangler(deps, ["deploy", "--var", "MCP_ENABLED:true", "--var",
-      `NEMLIG_MCP_REVISION:${commit}`, "--containers-rollout", "none", "--message",
+    const enabledOutput = await wrangler(deps, ["deploy", ...deployVars(configured, true, commit), "--containers-rollout", "none", "--message",
       `Automated production release enabled at ${commit.slice(0, 7)}`], 180_000);
     mutationUncertain = false;
     const enabledId = deployedVersionFromOutput(enabledOutput);
     journal.enabledVersion = enabledId;
     await verifyCurrent(deps, enabledId);
-    verifyCandidateVersion(await readVersion(deps, enabledId), enabledId, commit, true);
+    const enabledRaw = await readVersion(deps, enabledId);
+    verifyCandidateVersion(enabledRaw, enabledId, commit, true);
+    verifyConfig(enabledRaw, configured);
     const enabledContainer = await readContainer(deps);
     if (enabledContainer.id !== disabledContainer.id || enabledContainer.image !== disabledContainer.image || enabledContainer.version !== disabledContainer.version) {
       fail("container_image_changed_during_enable");

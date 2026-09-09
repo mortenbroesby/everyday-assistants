@@ -130,18 +130,53 @@ safety values, enabled onboarding over a false repository default, absent option
 onboarding secrets, and added/removed secret binding names. A preservation test
 must inspect both actual deploy argument lists and subsequent version readbacks.
 
+The implementation uses one injected local configuration-reader seam, with a
+production default backed by pinned Wrangler and sanitized errors. Reuse the
+already-fetched starting version response. Compare canonical sorted SHA-256
+digests before the first mutation intent and after both deployments; the digest
+includes limits, allowlisted plain configuration, fixed DO identities and secret
+binding names/types, never secret values. Explicitly supply the same validated
+plain configuration (with live onboarding preserved) to both deploy commands.
+Optional onboarding secrets may remain absent. Added/removed secret names or
+changed binding types must fail readback verification. This slice does not by
+itself establish persisted configuration or instance-aware recovery proof.
+
+### Recovery follow-on review findings
+
+At `8532ef3`, inspection and finalization separately repeat only Worker/image
+checks. Replace that duplication with one bounded four-record proof reused by
+both paths, retaining the final remote-head comparison immediately before
+deletion. Finalization itself must require original-runner-stopped attestation;
+the earlier inspection flag alone cannot establish that a later finalizer has
+received it. Update CLI parsing, usage, tests and operations instructions together.
+
+Require the applicable numeric application version and starting config digest
+in every cleanup-eligible terminal journal. Legacy or incomplete journals remain
+readable but ineligible, with no inferred proof. Keep UUID Worker fields separate.
+The disabled deployment must retain the starting application ID before recording
+its image/version as verified. For recovery, a restored Worker alone is not
+enough: compare app ID, image, numeric version, config digest and one fixed
+instance assignment. Enabled states permit inactive or matching running; disabled
+states require inactive. Do not poll or wake an instance during inspection.
+
+The deployment catch path currently infers disabled/starting states from Worker
+state plus earlier checks. Reverify the same configuration/application/instance
+evidence before making those claims; otherwise retain unknown. Rollback must
+prove that full starting state before setting `restored`. Tests must cover
+external drift in these catch paths as well as explicit inspect/finalize calls.
+
 ## Ordered changes and tests
 
 - [ ] Characterize starting Worker, application image/version, instance state,
   allowlisted effective configuration and secret binding names/types. Add
   failures for wrong application, multiple slots, unknown state, invalid
   digest/version, missing limits and unexpected binding changes.
-- [ ] Compare effective starting configuration with proposed configuration
+- [x] Compare effective starting configuration with proposed configuration
   before dispatch. `keep_vars` preserves unspecified dashboard variables,
   not variables explicitly supplied by repository configuration. Preserve
   current onboarding and safety settings; unexplained drift stops the release.
   Do not hardcode onboarding secrets as present when they are not configured.
-- [ ] Prove one build: disabled command performs the image rollout; enable
+- [x] Prove one build: disabled command performs the image rollout; enable
   command supplies exactly `--containers-rollout none`. Its application image
   and version must remain unchanged. After bounded acceptance, reconcile the
   running instance version before claiming exact-image success.

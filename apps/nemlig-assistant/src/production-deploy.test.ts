@@ -44,6 +44,9 @@ const version = (id: string, revision: string, enabled: boolean) => JSON.stringi
       ...[
       ["MCP_AUTH_TIMEOUT_MS", "5000"],
       ["MCP_BACKEND_TIMEOUT_MS", "85000"],
+      ["MCP_CREDENTIAL_GLOBAL_RATE_LIMIT", "10"],
+      ["MCP_CREDENTIAL_ONBOARDING_ENABLED", "false"],
+      ["MCP_CREDENTIAL_RATE_LIMIT", "3"],
       ["MCP_CONTROL_TIMEOUT_MS", "3000"],
       ["MCP_DAILY_LIMIT", "5000"],
       ["MCP_ENABLED", String(enabled)],
@@ -51,10 +54,15 @@ const version = (id: string, revision: string, enabled: boolean) => JSON.stringi
       ["MCP_EXPENSIVE_RATE_LIMIT", "10"],
       ["MCP_RATE_LIMIT", "60"],
       ["MCP_TOTAL_TIMEOUT_MS", "90000"],
+      ["NEMLIG_MCP_AUTH0_AUDIENCE", "https://nemlig-mcp.broesby.dk/mcp"],
+      ["NEMLIG_MCP_AUTH0_ISSUER", "https://everyday-assistants.eu.auth0.com/"],
+      ["NEMLIG_MCP_HTTP_HOST", "0.0.0.0"],
+      ["NEMLIG_MCP_HTTP_PORT", "8080"],
+      ["NEMLIG_MCP_PUBLIC_URL", "https://nemlig-mcp.broesby.dk/mcp"],
       ["NEMLIG_MCP_REVISION", revision],
       ].map(([name, text]) => ({ name, text, type: "plain_text" })),
-      { name: "NEMLIG_MCP_CONTAINER", type: "durable_object_namespace" },
-      { name: "NEMLIG_PLAN_STORAGE", type: "durable_object_namespace" },
+      { name: "NEMLIG_MCP_CONTAINER", type: "durable_object_namespace", class_name: "NemligMcpContainer" },
+      { name: "NEMLIG_PLAN_STORAGE", type: "durable_object_namespace", class_name: "PlanStorage" },
       { name: "NEMLIG_MCP_PRINCIPALS", type: "secret_text" },
     ],
   },
@@ -65,6 +73,20 @@ const deployment = (id: string) => JSON.stringify([{
   created_on: "2026-09-05T12:00:00Z",
   versions: [{ version_id: id, percentage: 100 }],
 }]);
+
+const config = (path: string) => ({
+  configPath: path, userConfigPath: path, name: "nemlig-mcp-cloudflare-production", keep_vars: true,
+  limits: { cpu_ms: 100, subrequests: 8 },
+  vars: {
+    MCP_ENABLED: "false", MCP_DAILY_LIMIT: "5000", MCP_EXPENSIVE_DAILY_LIMIT: "500", MCP_RATE_LIMIT: "60", MCP_EXPENSIVE_RATE_LIMIT: "10",
+    MCP_AUTH_TIMEOUT_MS: "5000", MCP_CONTROL_TIMEOUT_MS: "3000", MCP_TOTAL_TIMEOUT_MS: "90000", MCP_BACKEND_TIMEOUT_MS: "85000",
+    MCP_CREDENTIAL_ONBOARDING_ENABLED: "false", MCP_CREDENTIAL_RATE_LIMIT: "3", MCP_CREDENTIAL_GLOBAL_RATE_LIMIT: "10",
+    NEMLIG_MCP_HTTP_HOST: "0.0.0.0", NEMLIG_MCP_HTTP_PORT: "8080", NEMLIG_MCP_AUTH0_ISSUER: "https://everyday-assistants.eu.auth0.com/",
+    NEMLIG_MCP_AUTH0_AUDIENCE: "https://nemlig-mcp.broesby.dk/mcp", NEMLIG_MCP_PUBLIC_URL: "https://nemlig-mcp.broesby.dk/mcp",
+  },
+  containers: [{ class_name: "NemligMcpContainer", instance_type: "lite", max_instances: 1, constraints: { jurisdiction: "eu" } }],
+  durable_objects: { bindings: [{ name: "NEMLIG_MCP_CONTAINER", class_name: "NemligMcpContainer" }, { name: "NEMLIG_PLAN_STORAGE", class_name: "PlanStorage" }] },
+});
 
 const recoveryDeps = (journal: Record<string, unknown>, currentVersion: string, currentEnabled: boolean): DeployDependencies => {
   const remoteCommit = "cccccccccccccccccccccccccccccccccccccccc";
@@ -146,8 +168,11 @@ async function fixture(options: {
   remoteObjectFailure?: "blob" | "tree" | "commit" | "patch";
   localFinalMirrorFailure?: boolean;
   sharedLease?: SharedLeaseStore;
+  configReader?: DeployDependencies["configReader"];
+  versionBindings?: (values: Record<string, unknown>[], id: string) => Record<string, unknown>[];
 } = {}): Promise<{ deps: DeployDependencies; calls: Call[]; root: string }> {
   const root = await mkdtemp(join(tmpdir(), "nemlig-production-deploy-"));
+  await writeFile(join(root, "wrangler.jsonc"), "{}", "utf8");
   const calls: Call[] = [];
   let current = startingId;
   let applicationVersion = 25;
@@ -267,10 +292,11 @@ async function fixture(options: {
     }
     if (args.includes("versions") && args.includes("view")) {
       const id = args[args.indexOf("view") + 1];
-      if (id === startingId) return version(id, previousCommit, true);
-      if (id === disabledId) return version(id, commit, false);
-      if (id === enabledId) return version(id, commit, true);
-      if (id === thirdPartyId) return version(id, previousCommit, true);
+      if (id && [startingId, disabledId, enabledId, thirdPartyId].includes(id)) {
+        const parsed = JSON.parse(version(id, id === startingId || id === thirdPartyId ? previousCommit : commit, id !== disabledId)) as { resources: { bindings: Record<string, unknown>[] } };
+        if (options.versionBindings) parsed.resources.bindings = options.versionBindings(parsed.resources.bindings, id);
+        return JSON.stringify(parsed);
+      }
     }
     if (args.includes("containers") && args.includes("list")) return JSON.stringify([{
       id: applicationId,
@@ -326,6 +352,7 @@ async function fixture(options: {
         return new Response(options.disabledResponse ?? "MCP temporarily disabled", { status: 503 });
       },
       sleep: async () => undefined,
+      configReader: options.configReader ?? (async () => config(join(root, "wrangler.jsonc"))),
       now: () => new Date("2026-09-05T12:00:00Z"),
     },
   };
@@ -559,6 +586,163 @@ test("successful deployment builds once, reuses the image, and journals only red
     await access(join(root, "nemlig-production-deploy.lock"));
   } finally {
     await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("config preflight supplies every validated plain production value to both deploys", async () => {
+  const { deps, calls, root } = await fixture();
+  try {
+    assert.equal((await deployProduction(commit, deps)).outcome, "success");
+    const deploys = calls.filter(({ args }) => args.includes("deploy"));
+    for (const deploy of deploys) {
+      assert.ok(deploy.args.includes("MCP_CREDENTIAL_ONBOARDING_ENABLED:false"));
+      assert.ok(deploy.args.includes("NEMLIG_MCP_AUTH0_ISSUER:https://everyday-assistants.eu.auth0.com/"));
+      assert.ok(deploy.args.includes("NEMLIG_MCP_PUBLIC_URL:https://nemlig-mcp.broesby.dk/mcp"));
+    }
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test("invalid local config reader stops before either deploy", async () => {
+  const { deps, calls, root } = await fixture({ configReader: async () => { throw new Error("private path"); } });
+  try {
+    const report = await deployProduction(commit, deps);
+    assert.equal(report.outcome, "failed");
+    assert.equal(report.failure, "cloudflare_config_invalid");
+    assert.equal(calls.some(({ args }) => args.includes("deploy")), false);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test("live onboarding survives the repository false default and both deployment readbacks", async () => {
+  const { deps, calls, root } = await fixture({ versionBindings: (values) => values.map((value) =>
+    value.name === "MCP_CREDENTIAL_ONBOARDING_ENABLED" ? { ...value, text: "true" } : value) });
+  try {
+    assert.equal((await deployProduction(commit, deps)).outcome, "success");
+    const deploys = calls.filter(({ args }) => args.includes("deploy"));
+    assert.equal(deploys.length, 2);
+    for (const { args } of deploys) {
+      assert.ok(args.includes("MCP_CREDENTIAL_ONBOARDING_ENABLED:true"));
+      assert.equal(args.includes("MCP_CREDENTIAL_ONBOARDING_ENABLED:false"), false);
+      for (const [name, value] of Object.entries(config("").vars)) {
+        if (name !== "MCP_ENABLED" && name !== "MCP_CREDENTIAL_ONBOARDING_ENABLED") assert.ok(args.includes(`${name}:${value}`));
+      }
+    }
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test("reordered bindings and explicit self targets preserve legacy and arbitrary secret metadata", async () => {
+  const secrets = ["NEMLIG_USERNAME", "NEMLIG_PASSWORD", "NEMLIG_MCP_CREDENTIAL_KEY", "lowercase_secret", "_private_key"];
+  const { deps, calls, root } = await fixture({ versionBindings: (values, id) => {
+    const updated = [...values.map((value) => value.type === "durable_object_namespace"
+      ? { ...value, script_name: "nemlig-mcp-cloudflare-production", environment: "production" } : value),
+    ...secrets.map((name) => ({ name, type: "secret_text", text: "never-copy-this-secret" }))];
+    return id === disabledId ? updated.reverse() : updated;
+  } });
+  try {
+    const report = await deployProduction(commit, deps);
+    assert.equal(report.outcome, "success");
+    const saved = await readFile(join(root, "nemlig-production-deploy", "latest.json"), "utf8");
+    for (const output of [JSON.stringify(report), saved, JSON.stringify(calls)]) assert.equal(output.includes("never-copy-this-secret"), false);
+    for (const { args } of calls.filter(({ args }) => args.includes("deploy"))) {
+      assert.equal(args.some((arg) => secrets.some((name) => arg.startsWith(`${name}:`))), false);
+    }
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test("malformed bindings and starting safety or DO drift stop before deployment", async () => {
+  const transforms: Array<(values: Record<string, unknown>[]) => Record<string, unknown>[]> = [
+    (values) => [...values, { ...values[0] }],
+    (values) => [...values, {}],
+    (values) => values.map((value) => value.name === "MCP_RATE_LIMIT" ? { ...value, type: "json" } : value),
+    (values) => values.map((value) => value.name === "MCP_RATE_LIMIT" ? { ...value, text: "61" } : value),
+    (values) => values.map((value) => value.name === "NEMLIG_MCP_CONTAINER" ? { ...value, class_name: "Other" } : value),
+    (values) => values.map((value) => value.type === "durable_object_namespace" ? { ...value, script_name: "other-worker" } : value),
+    (values) => values.map((value) => value.type === "durable_object_namespace" ? { ...value, environment: "staging" } : value),
+  ];
+  for (const versionBindings of transforms) {
+    const { deps, calls, root } = await fixture({ versionBindings });
+    try {
+      assert.equal((await deployProduction(commit, deps)).outcome, "failed");
+      assert.equal(calls.some(({ args }) => args.includes("deploy")), false);
+    } finally { await rm(root, { recursive: true, force: true }); }
+  }
+});
+
+test("each candidate readback rejects changed safety, DO or secret metadata", async () => {
+  for (const target of [disabledId, enabledId]) {
+    for (const mutation of ["safety", "do", "added-secret", "removed-secret", "wrong-type"]) {
+      const { deps, calls, root } = await fixture({ versionBindings: (values, id) => {
+        const baseline = [...values, { name: "legacy_secret", type: "secret_text" }];
+        if (id !== target) return baseline;
+        if (mutation === "added-secret") return [...baseline, { name: "extra_secret", type: "secret_text" }];
+        if (mutation === "removed-secret") return values;
+        return baseline.map((value) => {
+          if (mutation === "safety" && value.name === "MCP_CREDENTIAL_RATE_LIMIT") return { ...value, text: "4" };
+          if (mutation === "do" && value.name === "NEMLIG_MCP_CONTAINER") return { ...value, class_name: "Wrong" };
+          if (mutation === "wrong-type" && value.name === "legacy_secret") return { ...value, type: "plain_text", text: "wrong" };
+          return value;
+        });
+      } });
+      try {
+        const report = await deployProduction(commit, deps);
+        assert.equal(report.outcome, "failed", `${target}: ${mutation}`);
+        assert.equal(report.checks.includes("authenticated_read_only_acceptance"), false);
+        if (target === disabledId) assert.equal(calls.some(({ args }) => args.includes("MCP_ENABLED:true")), false);
+      } finally { await rm(root, { recursive: true, force: true }); }
+    }
+  }
+});
+
+test("redirected paths and local safety changes fail without leaking reader errors", async () => {
+  for (const field of ["configPath", "userConfigPath", "keep_vars", "limits", "vars", "reader-error"]) {
+    const { deps, calls, root } = await fixture({ configReader: ({ config: path }) => {
+      if (field === "reader-error") throw new Error("never-print-this-private-value");
+      const local = config(path);
+      if (field === "configPath" || field === "userConfigPath") return { ...local, [field]: `${path}.redirected` };
+      if (field === "keep_vars") return { ...local, keep_vars: false };
+      if (field === "limits") return { ...local, limits: { cpu_ms: 200, subrequests: 8 } };
+      return { ...local, vars: { ...local.vars, MCP_CREDENTIAL_RATE_LIMIT: "4" } };
+    } });
+    try {
+      const report = await deployProduction(commit, deps);
+      assert.equal(report.outcome, "failed");
+      assert.equal(calls.some(({ args }) => args.includes("deploy")), false);
+      assert.equal(JSON.stringify(report).includes("never-print-this-private-value"), false);
+    } finally { await rm(root, { recursive: true, force: true }); }
+  }
+});
+
+test("the default pinned Wrangler reader handles the real production environment without credentials", async () => {
+  const { deps, root } = await fixture();
+  try {
+    const local = config(join(root, "wrangler.jsonc"));
+    await writeFile(join(root, "wrangler.jsonc"), JSON.stringify({
+      name: "test-local", compatibility_date: "2026-08-31", keep_vars: true,
+      limits: local.limits,
+      env: { production: { name: local.name, vars: local.vars, durable_objects: local.durable_objects,
+        containers: [{ ...local.containers[0], image: "./Dockerfile" }] } },
+    }));
+    await writeFile(join(root, "Dockerfile"), "FROM scratch\n");
+    delete deps.configReader;
+    const report = await deployProduction(commit, deps);
+    assert.equal(report.outcome, "success", JSON.stringify(report));
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test("invalid plain values cannot become matching config proof even when local and live agree", async () => {
+  for (const [name, text] of [
+    ["NEMLIG_MCP_AUTH0_ISSUER", "https://user:password@example.com/"], ["NEMLIG_MCP_HTTP_PORT", "8.08e3"],
+    ["MCP_CREDENTIAL_RATE_LIMIT", "0"], ["MCP_CREDENTIAL_GLOBAL_RATE_LIMIT", "9007199254740992"],
+    ["MCP_CREDENTIAL_ONBOARDING_ENABLED", "yes"], ["NEMLIG_MCP_HTTP_PORT", "65536"],
+    ["NEMLIG_MCP_AUTH0_ISSUER", "http://insecure.example/"], ["NEMLIG_MCP_PUBLIC_URL", ""],
+  ] as const) {
+    const { deps, calls, root } = await fixture({
+      configReader: ({ config: path }) => { const local = config(path); return { ...local, vars: { ...local.vars, [name]: text } }; },
+      versionBindings: (values) => values.map((value) => value.name === name ? { ...value, text } : value),
+    });
+    try {
+      assert.equal((await deployProduction(commit, deps)).outcome, "failed");
+      assert.equal(calls.some(({ args }) => args.includes("deploy")), false);
+    } finally { await rm(root, { recursive: true, force: true }); }
   }
 });
 
