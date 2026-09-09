@@ -49,7 +49,7 @@ test("ensureLoggedIn preserves login failures and runtime keeps package identity
   assert.equal(NEMLIG_VERSION, manifest.version);
 });
 
-test("read operations retry once after expired session", async () => {
+test("read operations authenticate before the task and retry once after a later expired session", async () => {
   let calls = 0;
   let logins = 0;
   const client = {
@@ -71,7 +71,7 @@ test("read operations retry once after expired session", async () => {
   );
   assert.equal(result, "result");
   assert.equal(calls, 2);
-  assert.equal(logins, 1);
+  assert.equal(logins, 2);
 });
 
 test("expired session failures surface when a second 401 is returned", async () => {
@@ -95,5 +95,5 @@ test("expired session failures surface when a second 401 is returned", async () 
     (error) => error instanceof NemligError && error.status === 401,
   );
   assert.equal(calls, 2);
-  assert.equal(logins, 1);
+  assert.equal(logins, 2);
 });

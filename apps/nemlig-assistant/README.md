@@ -81,7 +81,8 @@ preparatory, and exact reviews still wait for approval.
   automatic-coverage totals.
 - Account for current basket quantities and show what remains to buy.
 - Estimate the selected total from current product data.
-- Use the optional visual picker to choose products and quantities.
+- Keep ordinary plans conversational; open the optional visual picker only
+  when the user explicitly asks to choose visually.
 - See direct Nemlig product images when the verified image host is available;
   every choice remains usable as text when an image is absent or fails.
 
@@ -132,9 +133,11 @@ explicitly ask.
 
 The plan reports source, package size, product description and item details
 when Nemlig supplies them, discount and dietary metadata, constraint outcomes,
-exact basket coverage, remaining quantities, and automatic coverage. Fully
-clear automatic lines stay out of the picker; manual and unresolved lines keep
-their text-first choices and approved direct images.
+exact basket coverage, remaining quantities, and automatic coverage. Plans stay
+conversational. If discovery is unavailable for a line, ChatGPT can retry that
+normalized line once with direct catalogue search. The picker opens only for an
+explicit visual-choice request and shows controls only for real, available
+candidates.
 
 Provider descriptions and item details are converted from HTML to bounded plain
 text, including Danish characters and entities. Scripts, styles, images and link
@@ -220,14 +223,16 @@ The MCP surface is organized around household actions:
 
 - Find groceries and favourites: `find_groceries`, `show_my_favorites`,
   `show_grocery_sections`, and `browse_grocery_section`.
-- Plan the groceries supplied in this conversation: `plan_my_shopping`.
+- Plan the groceries supplied in this conversation without opening UI:
+  `plan_my_shopping`.
 - Check the connection: `check_nemlig_connection`.
 - See the basket: `show_my_basket`.
 - Review basket changes: `review_items_to_add`, `review_item_to_remove`,
   `review_item_swap`, and `review_emptying_basket`.
 - Complete an approved change: `add_approved_items`, `remove_approved_item`,
   `make_approved_item_swap`, and `empty_approved_basket`.
-- Choose visually: `choose_products_visually` and `ui://nemlig/picker.html`.
+- Choose visually when explicitly requested: `choose_products_visually` and
+  `ui://nemlig/picker.html`.
 
 After an ordinary release, open the existing app named exactly `Nemlig Assistant`
 and use **Refresh** so ChatGPT rediscovers tools, schemas, instructions,
@@ -328,7 +333,9 @@ This README is the user-facing inventory of shipped feature sets:
 
 - account access
 - product and department discovery
-- catalogue-first guided shopping with explicit favourite browsing
+- fresh Nemlig authentication before every provider-backed MCP task
+- catalogue-first guided shopping with direct-search recovery and explicit
+  favourite browsing
 - automatic grocery runs with manual fallback and 50-line input
 - constrained product comparison and selection
 - basket-aware whole-list planning

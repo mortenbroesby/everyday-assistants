@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { Basket, Product } from "./client.js";
+import { NemligError, type Basket, type Product } from "./client.js";
 import { eligibleCandidates, resolveShoppingPlan, shoppingPlanInputSchema } from "./plans.js";
 import { calculateShoppingPlan } from "./plan-calculation.js";
 
@@ -95,6 +95,15 @@ test("invalid plans make no calls and discovery failures remain distinguishable 
   assert.equal(plan.lines[0]?.reason, "discovery_unavailable");
   const empty = await resolveShoppingPlan({ ...client, searchProducts: async () => [] }, { lines: [{ id: "milk", name: "mælk", quantity: 1, constraints: {}, preferences: [] }] });
   assert.equal(empty.lines[0]?.reason, "no_eligible_candidate");
+});
+
+test("expired authentication escapes per-line discovery for the shared read retry", async () => {
+  const expired = new NemligError("Search failed", 401);
+  await assert.rejects(resolveShoppingPlan({
+    searchProducts: async () => { throw expired; },
+    getProduct: async () => { throw expired; },
+    getCart: async () => basket(),
+  }, { lines: [{ id: "milk", name: "mælk", quantity: 1 }] }), (error) => error === expired);
 });
 
 test("basket gaps cover absent, partial, complete, over-complete, and unresolved lines", async () => {

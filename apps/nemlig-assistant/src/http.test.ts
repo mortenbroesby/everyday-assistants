@@ -325,7 +325,10 @@ test("HTTP MCP creates bounded isolated clients, credentials, baskets, favourite
     assert.match(JSON.stringify(guestBasket.structuredContent), /guest-basket/u);
     assert.match(JSON.stringify(ownerFavourites.structuredContent), /owner-favourite/u);
     assert.match(JSON.stringify(guestFavourites.structuredContent), /guest-favourite/u);
-    assert.deepEqual(logins.sort(), ["guest@example.test:guest-secret", "owner@example.test:owner-secret"]);
+    assert.deepEqual(logins.sort(), [
+      "guest@example.test:guest-secret", "guest@example.test:guest-secret",
+      "owner@example.test:owner-secret", "owner@example.test:owner-secret",
+    ]);
     assert.equal(clients.size, 2);
     assert.equal(proposalStores.size, 2);
     await owner.close();

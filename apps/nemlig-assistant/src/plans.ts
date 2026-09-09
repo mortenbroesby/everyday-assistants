@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { type Basket, type Product } from "./client.js";
+import { NemligError, type Basket, type Product } from "./client.js";
 import { calculateShoppingPlan } from "./plan-calculation.js";
 
 const constraintsSchema = z.object({
@@ -120,7 +120,8 @@ export async function resolveShoppingPlan(client: PlanClient, raw: ShoppingPlanI
         ? await client.searchProducts(line.name, 20)
         : [await client.getProduct(line.selected_product_id)];
       return { candidates: eligibleCandidates(products, "catalog", line.constraints, line.preferences), unavailable: false };
-    } catch {
+    } catch (error) {
+      if (error instanceof NemligError && error.status === 401) throw error;
       return { candidates: [], unavailable: true };
     }
   });
