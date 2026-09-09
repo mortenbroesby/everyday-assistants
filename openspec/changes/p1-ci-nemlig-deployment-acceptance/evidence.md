@@ -189,3 +189,25 @@ neither state may be reported verified. Coordinator independently reran all
 40 focused deploy tests successfully. Integration version is `4.1.2-alpha.21`.
 S2.6 remains open for effective configuration and running-instance proof.
 No production mutation occurred.
+
+Application-version drift protection was integrated and remote-ref verified at
+`4e164eaec3c0e864a30be3daffd30cbba0436ca3` (`4.1.2-alpha.21`). Full local
+`pnpm verify` and the committed patch-version gate passed.
+[Exact-head CI](https://github.com/mortenbroesby/everyday-assistants/actions/runs/34295397505)
+passed the required `verify` job, including full production readiness. The
+next running-instance slice remains local work, not a live acceptance result.
+
+## Running-instance acceptance slice
+
+Terra commit `9324b3e1d482c8424a48f75cb735abbb92dec190` adds post-acceptance
+proof of the fixed running instance at the candidate application version. It
+allows bounded convergence from provisioning or an older running version,
+rejects newer versions and invalid/terminal states, then rereads the Worker and
+application before success. The 36-read cap shares the existing operation
+deadline and cancellation-aware delay; no mutation retry or extra Nemlig request
+is introduced. Timeout reasons remain allowlisted in the recovery journal.
+
+Coordinator reviewed the complete diff and independently passed all 47 focused
+deploy tests. The integration candidate is `4.1.3-alpha.22`. Configuration
+preservation, persisted application/configuration snapshots and instance-aware
+recovery remain open; S2.6/S2.7 are not checked. Production remains unchanged.

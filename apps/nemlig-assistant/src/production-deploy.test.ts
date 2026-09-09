@@ -136,6 +136,9 @@ async function fixture(options: {
   externalEnabledDriftDuringRecovery?: boolean;
   enableApplicationVersionDrift?: boolean;
   rollbackApplicationVersionDrift?: boolean;
+  enabledInstanceRows?: unknown[][];
+  postProofWorkerDrift?: boolean;
+  postProofApplicationVersionDrift?: boolean;
   remoteIntentFailure?: boolean;
   remoteResultFailure?: boolean;
   remoteEnableIntentFailure?: boolean;
@@ -148,6 +151,7 @@ async function fixture(options: {
   const calls: Call[] = [];
   let current = startingId;
   let applicationVersion = 25;
+  let enabledInstanceReads = 0;
   let appended = false;
   let resultWriteFailed = false;
   let remoteLease: string | undefined = options.sharedLease?.ref;
@@ -256,6 +260,7 @@ async function fixture(options: {
     }
     if (!args.includes("wrangler")) throw new Error("unexpected pnpm command");
     if (args.includes("deployments") && args.includes("list")) {
+      if (options.postProofWorkerDrift && enabledInstanceReads > 0) return deployment(thirdPartyId);
       if (options.externalEnabledDriftDuringRecovery && options.failFeatures && current === enabledId) return deployment(thirdPartyId);
       if (current === disabledId) disabledReads += 1;
       return deployment(options.driftBeforeEnable && disabledReads >= 2 ? startingId : current);
@@ -272,14 +277,23 @@ async function fixture(options: {
       name: "nemlig-mcp-cloudflare-production-nemligmcpcontainer-production",
       instances: 1,
       image,
-      version: applicationVersion,
+      version: options.postProofApplicationVersionDrift && enabledInstanceReads > 0 ? 26 : applicationVersion,
     }]);
-    if (args.includes("containers") && args.includes("instances")) return JSON.stringify([{
-      id: "durable-object",
-      name: "nemlig-production",
-      state: "inactive",
-      version: null,
-    }]);
+    if (args.includes("containers") && args.includes("instances")) {
+      if (current === enabledId) {
+        const rows = options.enabledInstanceRows?.[Math.min(enabledInstanceReads, options.enabledInstanceRows.length - 1)] ?? [{
+          id: "instance", name: "nemlig-production", state: "running", version: applicationVersion,
+        }];
+        enabledInstanceReads += 1;
+        return JSON.stringify(rows);
+      }
+      return JSON.stringify([{
+        id: "durable-object",
+        name: "nemlig-production",
+        state: "inactive",
+        version: null,
+      }]);
+    }
     if (args.includes("rollback")) {
       current = startingId;
       if (options.rollbackApplicationVersionDrift) applicationVersion = 26;
@@ -545,6 +559,91 @@ test("successful deployment builds once, reuses the image, and journals only red
     await access(join(root, "nemlig-production-deploy.lock"));
   } finally {
     await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("enabled acceptance waits for one matching running Container instance", async () => {
+  const { deps, calls, root } = await fixture();
+  try {
+    const report = await deployProduction(commit, deps);
+    assert.equal(report.outcome, "success");
+    assert.equal(calls.filter(({ args }) => args.includes("containers") && args.includes("instances")).length, 2);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test("enabled acceptance converges from provisioning and an older running Container application version", async () => {
+  const { deps, calls, root } = await fixture({ enabledInstanceRows: [
+    [{ id: "instance", name: "nemlig-production", state: "provisioning", version: null }],
+    [{ id: "instance", name: "nemlig-production", state: "running", version: 24 }],
+    [{ id: "instance", name: "nemlig-production", state: "running", version: 25 }],
+  ] });
+  try {
+    assert.equal((await deployProduction(commit, deps)).outcome, "success");
+    assert.equal(calls.filter(({ args }) => args.includes("containers") && args.includes("instances")).length, 4);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test("enabled acceptance rejects malformed, wrong, or ambiguous Container instance rows", async () => {
+  for (const enabledInstanceRows of [
+    [["not-an-instance"]],
+    [[{ id: "instance", name: "other", state: "running", version: 25 }]],
+    [[{ id: "one", name: "nemlig-production", state: "running", version: 25 }, { id: "two", name: "nemlig-production", state: "running", version: 25 }]],
+    [[{ id: "instance", name: "nemlig-production", state: "failed", version: 25 }]],
+    [[{ id: "instance", name: "nemlig-production", state: "stopping", version: 25 }]],
+    [[{ id: "instance", name: "nemlig-production", state: "stopped", version: 25 }]],
+    [[{ id: "instance", name: "nemlig-production", state: "unhealthy", version: 25 }]],
+    [[{ id: "instance", name: "nemlig-production", state: "unknown", version: 25 }]],
+  ]) {
+    const { deps, root } = await fixture({ enabledInstanceRows });
+    try {
+      assert.equal((await deployProduction(commit, deps)).outcome, "failed");
+    } finally { await rm(root, { recursive: true, force: true }); }
+  }
+});
+
+test("enabled acceptance bounds Container instance convergence at 36 reads", async () => {
+  const { deps, calls, root } = await fixture({ enabledInstanceRows: [[{
+    id: "instance", name: "nemlig-production", state: "provisioning", version: null,
+  }]] });
+  try {
+    const report = await deployProduction(commit, deps);
+    assert.equal(report.outcome, "failed");
+    assert.equal(report.failure, "container_instance_timeout");
+    assert.equal(calls.filter(({ args }) => args.includes("containers") && args.includes("instances")).length, 37);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test("a newer running Container application version is immediate deployment drift", async () => {
+  const { deps, calls, root } = await fixture({ enabledInstanceRows: [[{
+    id: "instance", name: "nemlig-production", state: "running", version: 26,
+  }]] });
+  try {
+    const report = await deployProduction(commit, deps);
+    assert.equal(report.outcome, "failed");
+    assert.equal(report.failure, "cloudflare_deployment_drift");
+    assert.equal(calls.filter(({ args }) => args.includes("containers") && args.includes("instances")).length, 2);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test("cancelling Container instance convergence stops further reads", async () => {
+  const { deps, calls, root } = await fixture({ enabledInstanceRows: [[{
+    id: "instance", name: "nemlig-production", state: "provisioning", version: null,
+  }]] });
+  const controller = new AbortController();
+  deps.signal = controller.signal;
+  deps.sleep = async () => controller.abort();
+  try {
+    assert.equal((await deployProduction(commit, deps)).outcome, "failed");
+    assert.equal(calls.filter(({ args }) => args.includes("containers") && args.includes("instances")).length, 2);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test("post-instance Worker or Container application drift rejects enabled acceptance", async () => {
+  for (const options of [{ postProofWorkerDrift: true }, { postProofApplicationVersionDrift: true }]) {
+    const { deps, root } = await fixture(options);
+    try {
+      assert.equal((await deployProduction(commit, deps)).outcome, "failed");
+    } finally { await rm(root, { recursive: true, force: true }); }
   }
 });
 

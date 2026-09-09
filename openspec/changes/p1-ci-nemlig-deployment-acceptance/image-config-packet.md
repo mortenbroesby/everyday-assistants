@@ -107,6 +107,29 @@ Worker-only rollback with a different application/image remains unknown rather
 than a restoration claim. Configuration-digest proof is a separate prerequisite
 before S2.6/S2.7 are checked; neither parser nor instance tests alone close them.
 
+### Effective-config implementation preparation
+
+A local, credential-free call to pinned `unstable_readConfig` with
+`{ config: "wrangler.jsonc", env: "production" }` confirmed production
+normalization: the expected Worker name, `keep_vars: true`, CPU 100/subrequests 8,
+both fixed Durable Object bindings, and one EU `lite` Container with capacity 1.
+Both returned `configPath` and `userConfigPath` were `wrangler.jsonc`.
+This proves the local parser seam, not the live provider configuration.
+
+The next config slice must compare resolved paths against the intended checked-out
+file, reject redirection, and validate the normalized allowlist before dispatch.
+Use the same normalized result for validation and preserved CLI variables, not a
+second independently reconstructed configuration. Keep secret fields out of
+normalization: compare only their provider-reported binding names and types.
+
+Before constructing a binding map, reject duplicate names, malformed entries and
+wrong types; silently filtering malformed entries or letting a later duplicate
+overwrite an earlier binding is not evidence of a unique configuration.
+Characterize these cases along with reordered-but-equivalent bindings, changed
+safety values, enabled onboarding over a false repository default, absent optional
+onboarding secrets, and added/removed secret binding names. A preservation test
+must inspect both actual deploy argument lists and subsequent version readbacks.
+
 ## Ordered changes and tests
 
 - [ ] Characterize starting Worker, application image/version, instance state,

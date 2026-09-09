@@ -129,7 +129,7 @@ const isoTime = (value: unknown): value is string => {
 };
 const imageDigest = /^sha256:[0-9a-f]{64}$/u;
 const journalChecks = new Set(["source_and_auth_preflight", "exclusive_lease", "starting_state_recorded", "disabled_version", "disabled_routes", "container_inactive", "enabled_version", "image_reused", "edge_acceptance", "authenticated_read_only_acceptance", "starting_version_restored"]);
-const journalFailures = new Set(["owner_access_token_required", "github_repository_invalid", "source_revision_mismatch", "github_ci_workflow_invalid", "github_ci_invalid", "exact_head_ci_not_green", "local_deployment_lease_unavailable", "remote_deployment_lease_unavailable", "remote_journal_invalid", "remote_journal_append_failed", "remote_journal_parent_invalid", "remote_deployment_lease_changed", "deployment_journal_invalid", "deployment_journal_oversized", "deployment_journal_write_failed", "cloudflare_deployment_drift", "cloudflare_upload_version_missing", "disabled_route_unavailable", "disabled_route_mismatch", "container_inactive_timeout", "container_image_changed_during_enable", "recovery_finalize_denied", "command_failed", "command_cancelled", "unexpected_failure"]);
+const journalFailures = new Set(["owner_access_token_required", "github_repository_invalid", "source_revision_mismatch", "github_ci_workflow_invalid", "github_ci_invalid", "exact_head_ci_not_green", "local_deployment_lease_unavailable", "remote_deployment_lease_unavailable", "remote_journal_invalid", "remote_journal_append_failed", "remote_journal_parent_invalid", "remote_deployment_lease_changed", "deployment_journal_invalid", "deployment_journal_oversized", "deployment_journal_write_failed", "cloudflare_deployment_drift", "cloudflare_upload_version_missing", "disabled_route_unavailable", "disabled_route_mismatch", "container_inactive_timeout", "container_instance_timeout", "container_image_changed_during_enable", "recovery_finalize_denied", "command_failed", "command_cancelled", "unexpected_failure"]);
 
 const journalJson = (journal: DeploymentJournal): string => {
   if (!journal || typeof journal !== "object" || !Array.isArray(journal.checks) || !Array.isArray(journal.transitions)
@@ -636,24 +636,55 @@ const verifyDisabledRoutes = async (deps: DeployDependencies): Promise<void> => 
   }
 };
 
+const sleepAbortably = async (deps: DeployDependencies): Promise<void> => {
+  if (!deps.signal) return await deps.sleep(5_000);
+  await new Promise<void>((resolvePromise, reject) => {
+    const abort = () => reject(new DeployFailure("command_cancelled"));
+    deps.signal!.addEventListener("abort", abort, { once: true });
+    void deps.sleep(5_000).then(() => {
+      deps.signal!.removeEventListener("abort", abort);
+      resolvePromise();
+    }, (error) => {
+      deps.signal!.removeEventListener("abort", abort);
+      reject(error);
+    });
+  });
+};
+
 const waitForInactive = async (deps: DeployDependencies, applicationId: string): Promise<void> => {
   for (let attempt = 0; attempt < 36; attempt += 1) {
     deps.signal?.throwIfAborted();
     if (instancesInactive(await wrangler(deps, ["containers", "instances", applicationId, "--json"]))) return;
-    if (!deps.signal) await deps.sleep(5_000);
-    else await new Promise<void>((resolvePromise, reject) => {
-      const abort = () => reject(new DeployFailure("command_cancelled"));
-      deps.signal!.addEventListener("abort", abort, { once: true });
-      void deps.sleep(5_000).then(() => {
-        deps.signal!.removeEventListener("abort", abort);
-        resolvePromise();
-      }, (error) => {
-        deps.signal!.removeEventListener("abort", abort);
-        reject(error);
-      });
-    });
+    await sleepAbortably(deps);
   }
   fail("container_inactive_timeout");
+};
+
+const runningInstanceMatches = (raw: string, expectedVersion: number): boolean => {
+  const parsed = json(raw, "cloudflare_instances_invalid");
+  if (!Array.isArray(parsed) || parsed.length !== 1) fail("cloudflare_instances_invalid");
+  const instance = object((parsed as unknown[])[0]) ?? fail("cloudflare_instances_invalid");
+  const { id, name, state, version } = instance;
+  if (typeof id !== "string" || id.length === 0 || name !== "nemlig-production"
+    || typeof state !== "string" || (version !== null && (!Number.isSafeInteger(version) || (version as number) < 1))) {
+    fail("cloudflare_instances_invalid");
+  }
+  if (state === "running") {
+    if (typeof version !== "number") return fail("cloudflare_instances_invalid");
+    if (version > expectedVersion) return fail("cloudflare_deployment_drift");
+    return version === expectedVersion;
+  }
+  if (state === "provisioning") return false;
+  return fail("cloudflare_instances_invalid");
+};
+
+const waitForRunningInstance = async (deps: DeployDependencies, applicationId: string, expectedVersion: number): Promise<void> => {
+  for (let attempt = 0; attempt < 36; attempt += 1) {
+    deps.signal?.throwIfAborted();
+    if (runningInstanceMatches(await wrangler(deps, ["containers", "instances", applicationId, "--json"]), expectedVersion)) return;
+    if (attempt < 35) await sleepAbortably(deps);
+  }
+  fail("container_instance_timeout");
 };
 
 const verifyCurrent = async (deps: DeployDependencies, expected: string): Promise<void> => {
@@ -802,6 +833,12 @@ export async function deployProduction(commit: string, inputDeps: DeployDependen
       env: { NEMLIG_EXPECTED_REVISION: commit },
     });
     await runAt(deps, deps.packageRoot, "pnpm", ["production:test:features"], { timeoutMs: 120_000 });
+    await waitForRunningInstance(deps, enabledContainer.id, enabledContainer.version);
+    await verifyCurrent(deps, enabledId);
+    const provenContainer = await readContainer(deps);
+    if (provenContainer.id !== enabledContainer.id || provenContainer.image !== enabledContainer.image || provenContainer.version !== enabledContainer.version) {
+      fail("cloudflare_deployment_drift");
+    }
     journal.enabledVersion = enabledId;
     journal.checks.push("edge_acceptance", "authenticated_read_only_acceptance");
     journal.outcome = "success";
