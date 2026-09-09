@@ -17,6 +17,7 @@ import {
   parseCurrentDeployment,
   parseDeployArgs,
   parseDeploymentJournal,
+  preflightProductionDeploy,
   productionDeployUsage,
   verifyCandidateVersion,
   type CommandRunner,
@@ -31,7 +32,7 @@ const enabledId = "22222222-2222-4222-8222-222222222222";
 const thirdPartyId = "33333333-3333-4333-8333-333333333333";
 const applicationId = "a03ce8c9-3543-4505-866e-14d2e66007ca";
 const image = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
-const configDigest = "332be69112cdcc926ca4f247c5401825a914b99b42e6bd108a287c3190ada6d6";
+const configDigest = "c84479ec8eb4749a359bb2e3ea00853233987d202a116d16a24ec3f5152a0c0c";
 const execFileAsync = promisify(execFile);
 
 const version = (id: string, revision: string, enabled: boolean) => JSON.stringify({
@@ -61,6 +62,8 @@ const version = (id: string, revision: string, enabled: boolean) => JSON.stringi
       ["NEMLIG_MCP_HTTP_PORT", "8080"],
       ["NEMLIG_MCP_PUBLIC_URL", "https://nemlig-mcp.broesby.dk/mcp"],
       ["NEMLIG_MCP_REVISION", revision],
+      ["NEMLIG_MCP_SERVICE_ACCEPTANCE_ENABLED", "true"],
+      ["NEMLIG_MCP_SERVICE_CLIENT_ID", "service-client"],
       ].map(([name, text]) => ({ name, text, type: "plain_text" })),
       { name: "NEMLIG_MCP_CONTAINER", type: "durable_object_namespace", class_name: "NemligMcpContainer" },
       { name: "NEMLIG_PLAN_STORAGE", type: "durable_object_namespace", class_name: "PlanStorage" },
@@ -84,6 +87,7 @@ const config = (path: string) => ({
     MCP_CREDENTIAL_ONBOARDING_ENABLED: "false", MCP_CREDENTIAL_RATE_LIMIT: "3", MCP_CREDENTIAL_GLOBAL_RATE_LIMIT: "10",
     NEMLIG_MCP_HTTP_HOST: "0.0.0.0", NEMLIG_MCP_HTTP_PORT: "8080", NEMLIG_MCP_AUTH0_ISSUER: "https://everyday-assistants.eu.auth0.com/",
     NEMLIG_MCP_AUTH0_AUDIENCE: "https://nemlig-mcp.broesby.dk/mcp", NEMLIG_MCP_PUBLIC_URL: "https://nemlig-mcp.broesby.dk/mcp",
+    NEMLIG_MCP_SERVICE_ACCEPTANCE_ENABLED: "true", NEMLIG_MCP_SERVICE_CLIENT_ID: "service-client",
   },
   containers: [{ class_name: "NemligMcpContainer", instance_type: "lite", max_instances: 1, constraints: { jurisdiction: "eu" } }],
   durable_objects: { bindings: [{ name: "NEMLIG_MCP_CONTAINER", class_name: "NemligMcpContainer" }, { name: "NEMLIG_PLAN_STORAGE", class_name: "PlanStorage" }] },
@@ -230,6 +234,13 @@ async function fixture(options: {
       const method = args.includes("POST") ? "POST" : args.includes("PATCH") ? "PATCH" : args.includes("DELETE") ? "DELETE" : "GET";
       const path = args.find((arg) => arg.startsWith("repos/")) ?? "";
       const body = runOptions?.input ? JSON.parse(runOptions.input) as Record<string, unknown> : undefined;
+      if (path.endsWith("environments/nemlig-production")) return JSON.stringify({
+        can_admins_bypass: false,
+        deployment_branch_policy: { protected_branches: false, custom_branch_policies: true },
+        protection_rules: [{ type: "required_reviewers", prevent_self_review: false, reviewers: [{ type: "User", reviewer: { login: "mortenbroesby" } }] }, { type: "branch_policy" }],
+      });
+      if (path.endsWith("environments/nemlig-production/deployment-branch-policies")) return JSON.stringify({ branch_policies: [{ name: "main", type: "branch" }] });
+      if (path.endsWith("environments/nemlig-production/variables")) return JSON.stringify({ variables: [{ name: "NEMLIG_CI_ACCEPTANCE_READY", value: "true" }] });
       if (path.endsWith("git/ref/heads/codex-lock/nemlig-production") || path.endsWith("git/refs/heads/codex-lock/nemlig-production")) {
         if (method === "GET") {
           if (!currentLease()) throw Object.assign(new Error("not found"), { status: 404 });
@@ -390,6 +401,25 @@ test("deployment arguments and provider JSON fail closed", () => {
   assert.equal(instancesInactive(JSON.stringify([{ state: "running" }])), false);
   assert.equal(verifyCandidateVersion(version(enabledId, commit, true), enabledId, commit, true).enabled, true);
   assert.throws(() => verifyCandidateVersion(version(enabledId, commit, false), enabledId, commit, true));
+});
+
+test("preflight requires the exact protected production environment before any provider action", async () => {
+  const { deps, calls, root } = await fixture();
+  try {
+    assert.deepEqual(await preflightProductionDeploy(commit, deps), { commit, ciRunId: 456 });
+    assert.equal(calls.some(({ command }) => command === "pnpm"), false);
+    assert.ok(calls.some(({ args }) => args.some((value) => value.endsWith("/environments/nemlig-production"))));
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test("preflight fails closed for malformed native environment metadata", async () => {
+  const { deps, root } = await fixture();
+  const run = deps.run;
+  deps.run = async (command, args, options) => command === "gh" && args[0] === "api" && args.some((value) => value.endsWith("/environments/nemlig-production"))
+    ? JSON.stringify({ can_admins_bypass: true }) : await run(command, args, options);
+  try {
+    await assert.rejects(preflightProductionDeploy(commit, deps), /github_environment_not_ready/u);
+  } finally { await rm(root, { recursive: true, force: true }); }
 });
 
 test("Container metadata distinguishes numeric application versions from Worker UUIDs", () => {
@@ -1521,4 +1551,85 @@ test("a bounded operation deadline aborts an in-flight command and suppresses la
   } finally {
     await rm(root, { recursive: true, force: true });
   }
+});
+
+test("service deployment never reads owner credentials and issues one token before provider mutation", async () => {
+  const { deps, calls, root } = await fixture();
+  await mkdir(join(root, "release"));
+  await writeFile(join(root, "release", "production-cutover.json"), JSON.stringify({ schema: 1, acceptedRevision: previousCommit }));
+  let issues = 0;
+  const serviceEnv: NodeJS.ProcessEnv = { NEMLIG_MCP_SERVICE_CLIENT_ID: "service-client", NEMLIG_MCP_SERVICE_CLIENT_SECRET: "machine-secret", NEMLIG_CI_ACCEPTANCE_READY: "true" };
+  Object.defineProperty(serviceEnv, "NEMLIG_MCP_ACCESS_TOKEN", { enumerable: true, get() { throw new Error("owner credential read"); } });
+  deps.env = serviceEnv;
+  deps.acceptanceMode = "service";
+  deps.issueServiceToken = async () => { issues += 1; assert.equal(calls.some(({ args }) => args.includes("deploy")), false); return "machine-token"; };
+  try {
+    const report = await deployProduction(commit, deps);
+    assert.equal(report.outcome, "success");
+    assert.equal(issues, 1);
+    assert.ok(report.checks.includes("service_fixture_acceptance"));
+    assert.equal(report.checks.includes("authenticated_read_only_acceptance"), false);
+    const acceptance = calls.find(({ args }) => args.includes("--service"));
+    assert.ok(acceptance);
+    assert.equal(acceptance.env?.NEMLIG_MCP_SERVICE_ACCESS_TOKEN, "machine-token");
+    for (const call of calls) {
+      assert.equal(call.env?.NEMLIG_MCP_ACCESS_TOKEN, undefined);
+      assert.equal(call.env?.NEMLIG_MCP_SERVICE_CLIENT_SECRET, undefined);
+      if (call !== acceptance) assert.equal(call.env?.NEMLIG_MCP_SERVICE_ACCESS_TOKEN, undefined);
+    }
+    assert.doesNotMatch(JSON.stringify(report), /machine-token|machine-secret/);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test("CI never falls back to owner authentication or issues a service token before source verification", async () => {
+  for (const badSource of [false, true]) {
+    const { deps, calls, root } = await fixture(badSource ? { head: previousCommit } : {});
+    deps.env = { GITHUB_ACTIONS: "true", GITHUB_RUN_ID: "1", GITHUB_RUN_ATTEMPT: "1", NEMLIG_MCP_ACCESS_TOKEN: "owner-token" };
+    let issued = false;
+    deps.issueServiceToken = async () => { issued = true; throw new Error("must not issue"); };
+    try {
+      const report = await deployProduction(commit, deps);
+      assert.equal(report.outcome, "failed");
+      assert.equal(report.failure, badSource ? "source_revision_mismatch" : "service_acceptance_not_ready");
+      assert.equal(issued, false);
+      assert.equal(calls.some(({ command }) => command === "pnpm"), false);
+    } finally { await rm(root, { recursive: true, force: true }); }
+  }
+});
+
+test("routine service releases require recorded cutover and reject unreviewed runtime changes", async () => {
+  for (const change of ["missing", "apps/nemlig-assistant/src/http.ts", "unknown/config.json"]) {
+    const { deps, calls, root } = await fixture();
+    deps.env = { NEMLIG_CI_ACCEPTANCE_READY: "true" };
+    deps.acceptanceMode = "service";
+    await mkdir(join(root, "release"));
+    await writeFile(join(root, "release", "production-cutover.json"), JSON.stringify({ schema: 1, acceptedRevision: change === "missing" ? null : previousCommit }));
+    const run = deps.run;
+    deps.run = (command, args, options) => command === "git" && args[0] === "diff" ? Promise.resolve(change + "\0") : run(command, args, options);
+    let issued = false;
+    deps.issueServiceToken = async () => { issued = true; return "machine-token"; };
+    try {
+      const report = await deployProduction(commit, deps);
+      assert.equal(report.outcome, "failed");
+      assert.equal(report.failure, change === "missing" ? "service_cutover_required" : "live_acceptance_required");
+      assert.equal(issued, false);
+      assert.equal(calls.some(({ command }) => command === "pnpm"), false);
+    } finally { await rm(root, { recursive: true, force: true }); }
+  }
+});
+
+test("supervised service cutover reports pending live acceptance and retains recovery ownership", async () => {
+  const { deps, root } = await fixture();
+  deps.env = { NEMLIG_CI_ACCEPTANCE_READY: "true", NEMLIG_MCP_SERVICE_CLIENT_ID: "service-client" };
+  deps.acceptanceMode = "service-cutover";
+  deps.issueServiceToken = async () => "service-token";
+  try {
+    const report = await deployProduction(commit, deps);
+    assert.equal(report.outcome, "success");
+    assert.ok(report.checks.includes("live_acceptance_pending"));
+    assert.equal(await finalizeDeploymentRecovery(report.operationId, deps, true, true), false);
+    await mkdir(join(root, "release"));
+    await writeFile(join(root, "release", "production-cutover.json"), JSON.stringify({ schema: 1, acceptedRevision: commit }));
+    assert.equal(await finalizeDeploymentRecovery(report.operationId, deps, true, true), true);
+  } finally { await rm(root, { recursive: true, force: true }); }
 });

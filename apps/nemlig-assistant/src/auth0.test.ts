@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createLocalJWKSet, exportJWK, generateKeyPair, SignJWT } from "jose";
-import { createAuth0Verifier, fetchAuth0Metadata, loadAuth0Config, verifyAuth0BrowserIdToken, type Auth0Config } from "./auth0.js";
+import { createAuth0Verifier, fetchAuth0Metadata, loadAuth0Config, SERVICE_ACCEPTANCE_SCOPE, verifyAuth0BrowserIdToken, type Auth0Config } from "./auth0.js";
 import { parsePrincipalPolicy } from "./principal-policy.js";
 
 const ownerSubject = "auth0|owner";
@@ -59,6 +59,24 @@ test("Auth0 verifier returns the validated subject and enforces audience, issuer
   const expired = await new SignJWT({ scope: config.requiredScope }).setProtectedHeader({ alg: "RS256", kid: "test" })
     .setIssuer(config.issuer.href).setAudience(config.audience).setSubject(ownerSubject).setExpirationTime(1).sign(privateKey);
   await assert.rejects(() => verifier.verifyAccessToken(expired), /Invalid access token/u);
+});
+
+test("service acceptance requires the exact signed client, subject, and scope", async () => {
+  const { privateKey, publicKey } = await generateKeyPair("RS256");
+  const jwk = { ...await exportJWK(publicKey), kid: "service", alg: "RS256" };
+  const service = { ...config, serviceAcceptance: { clientId: "service-client" } };
+  const verifier = createAuth0Verifier(service, new URL("https://tenant.example.test/.well-known/jwks.json"), createLocalJWKSet({ keys: [jwk] }));
+  const sign = (claims: Record<string, unknown> = {}) => new SignJWT({ scope: SERVICE_ACCEPTANCE_SCOPE, azp: "service-client", ...claims })
+    .setProtectedHeader({ alg: "RS256", kid: "service" }).setIssuer(config.issuer.href).setAudience(config.audience)
+    .setSubject("service-client@clients").setExpirationTime("5m").sign(privateKey);
+  assert.equal((await verifier.verifyAccessToken(await sign())).extra?.subject, "service-client@clients");
+  for (const claims of [
+    { azp: "other-client" }, { scope: config.requiredScope }, { scope: `${SERVICE_ACCEPTANCE_SCOPE} extra:scope` },
+  ]) await assert.rejects(async () => verifier.verifyAccessToken(await sign(claims)), /Invalid access token/u);
+  const missingExpiry = await new SignJWT({ scope: SERVICE_ACCEPTANCE_SCOPE, azp: "service-client" })
+    .setProtectedHeader({ alg: "RS256", kid: "service" }).setIssuer(config.issuer.href).setAudience(config.audience)
+    .setSubject("service-client@clients").sign(privateKey);
+  await assert.rejects(() => verifier.verifyAccessToken(missingExpiry), /Invalid access token/u);
 });
 
 test("browser ID tokens require nonce, verified email, and the exact onboarding organization", async () => {
@@ -122,6 +140,20 @@ test("HTTP auth configuration defaults to loopback and allows only the Container
     NEMLIG_MCP_PRINCIPALS: JSON.stringify(principalPolicy),
     NEMLIG_MCP_PUBLIC_URL: config.publicUrl.href,
   }), /HTTPS/u);
+});
+
+test("service acceptance is disabled by default and requires its fixed client ID when enabled", () => {
+  const env = {
+    NEMLIG_MCP_AUTH0_ISSUER: config.issuer.href,
+    NEMLIG_MCP_AUTH0_AUDIENCE: config.audience,
+    NEMLIG_MCP_PRINCIPALS: JSON.stringify(principalPolicy),
+    NEMLIG_MCP_PUBLIC_URL: config.publicUrl.href,
+  };
+  assert.equal(loadAuth0Config(env).serviceAcceptance, undefined);
+  assert.throws(() => loadAuth0Config({ ...env, NEMLIG_MCP_SERVICE_ACCEPTANCE_ENABLED: "true" }), /NEMLIG_MCP_SERVICE_CLIENT_ID/u);
+  assert.deepEqual(loadAuth0Config({
+    ...env, NEMLIG_MCP_SERVICE_ACCEPTANCE_ENABLED: "true", NEMLIG_MCP_SERVICE_CLIENT_ID: "service-client",
+  }).serviceAcceptance, { clientId: "service-client" });
 });
 
 test("Auth0 metadata failure is fail-closed", async () => {

@@ -174,19 +174,20 @@ responses.
 
 ## Automated production release
 
-After the implementation commit is on `main`, exact-head CI is green, and the
-owner has explicitly approved that production release, use the repository-owned
-command from a clean checkout of the exact 40-character commit:
+Routine CI releases use the manual **Nemlig production** workflow with the exact green `main` SHA. The protected `nemlig-production` environment holds a scoped Cloudflare deployment token and a dedicated Auth0 machine client secret. CI never requests an owner access token, password or browser session.
+
+One-time setup is still pending: on 2026-09-09 GitHub reports no environments, and the service runtime is disabled by default. Follow the [setup packet](../openspec/changes/p1-ci-nemlig-deployment-acceptance/owner-setup.md) before activation.
+
+The shared command also supports supervised terminal execution with those same scoped CI credentials:
 
 ```sh
-read -rs NEMLIG_MCP_ACCESS_TOKEN
-export NEMLIG_MCP_ACCESS_TOKEN
-pnpm --filter nemlig-assistant production:deploy -- EXACT_MAIN_COMMIT
-unset NEMLIG_MCP_ACCESS_TOKEN
+pnpm --filter nemlig-assistant production:deploy -- preflight EXACT_MAIN_COMMIT
+pnpm --filter nemlig-assistant production:deploy -- --service EXACT_MAIN_COMMIT
 ```
 
-The command verifies local HEAD, refreshed remote `main`, exact-head CI, GitHub
-and Wrangler authentication, and owner-token presence before Cloudflare changes.
+Initial cutover and runtime boundary changes require `--service-cutover`. It performs machine acceptance, records `live_acceptance_pending`, and retains recovery ownership until actual live acceptance for that revision is recorded in `apps/nemlig-assistant/release/production-cutover.json`. Real-user checks run through the existing app outside CI. The initial record is null; ordinary service mode fails closed until a cutover is accepted. Unknown changed paths also require the supervised path. Legacy explicit local owner mode remains available but is never CI's fallback.
+
+The command verifies local HEAD, refreshed remote `main`, exact-head CI, and the required protected environment before issuing one bounded machine token or changing Cloudflare. Token validation checks signature, issuer, audience, exact identity/scope and remaining expiry. Fixture checks prove runtime transport and isolation; they do not prove live Nemlig or ChatGPT behavior.
 It takes an exclusive lock shared by linked worktrees and atomically creates
 `refs/heads/codex-lock/nemlig-production` for a unique operation UUID, not the
 source SHA. The ref contains a bounded public-safe recovery journal. It records the

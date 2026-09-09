@@ -31,34 +31,34 @@ Readiness: source-trust and drift tests READY after 0.1–0.2; remote-journal im
 
 ## 3. S3 — Isolated machine acceptance identity
 
-Readiness: BLOCKED until Sol resolves D1/D2/U2, records accepted fixture attack surface and exact runtime trace. Default-off code has no provider effect; activation is S6. Terra's exclusive scope: `src/auth0.ts`, `src/cloudflare-config.ts`, `src/cloudflare-gateway.ts`, `src/cloudflare-worker.ts`, `src/http.ts`, `src/mcp.ts`, `src/principal-policy.ts` only if needed, existing associated tests, and at most one small fixture module. Sol must minimize this provisional file set after reference tracing. No second server/framework/dependency. No concurrent credential-onboarding runtime edits.
+Readiness: default-off repository implementation authorized by the 2026-09-09 owner clarification after U2 tracing and closed fixture contract review. D2 provider setup remains blocked until concrete entitlement/access review. Default-off code has no provider effect; activation is S6. Terra's exclusive scope: `src/auth0.ts`, `src/cloudflare-config.ts`, `src/cloudflare-gateway.ts`, `src/cloudflare-worker.ts`, `src/http.ts`, `src/mcp.ts`, `src/principal-policy.ts` only if needed, existing associated tests, and at most one small fixture module. Sol must minimize this provisional file set after reference tracing. No second server/framework/dependency. No concurrent credential-onboarding runtime edits.
 
-- [ ] 3.1 Add failing end-to-end local checks with real signed test JWTs for default-disabled service identity, wrong claims/client/scope, forged headers and ordinary-user fixture selection; verify no unauthorized admission/wake/credential read.
-- [ ] 3.2 Add explicit statically bounded non-owner service identity selection through real Worker and backend validation; verify owner schema-v1 and invited schema-v2 behavior remains green and no owner alias or onboarding migration is introduced.
-- [ ] 3.3 Reuse the existing context/client seams for immutable synthetic basket/catalogue/favorites with no real credentials or provider client; preserve the separately approved saved-shopping removal and verify an egress/credential spy fails if any service operation attempts Nemlig HTTP, envelope decrypt, real storage or owner context access.
-- [ ] 3.4 Enforce the service allowlist at both edge and backend, including advertised inventory and direct-call denial; verify every mutating/admin/credential/automatic-shopping/issue operation and unknown tool is denied.
-- [ ] 3.5 Preserve guest admission ceilings, family reserve, global breaker, one Container, deadlines and per-sweep request cap; verify exhausted/disabled/unknown service identity cannot bypass limits or cause extra wake.
-- [ ] 3.6 Luna executes real local HTTP/MCP fixture flow against built code plus negative cross-principal/session/resource cases; Sol reviews the trust boundary and confirms no production auth bypass or synthetic-only shortcut before integrating.
+- [x] 3.1 Add failing end-to-end local checks with real signed test JWTs for default-disabled service identity, wrong claims/client/scope, forged headers and ordinary-user fixture selection; verify no unauthorized admission/wake/credential read.
+- [x] 3.2 Add explicit statically bounded non-owner service identity selection through real Worker and backend validation; verify owner schema-v1 and invited schema-v2 behavior remains green and no owner alias or onboarding migration is introduced.
+- [x] 3.3 Reuse the existing context/client seams for immutable synthetic basket/catalogue/favorites with no real credentials or provider client; preserve the separately approved saved-shopping removal and verify an egress/credential spy fails if any service operation attempts Nemlig HTTP, envelope decrypt, real storage or owner context access.
+- [x] 3.4 Enforce the service allowlist at both edge and backend, including advertised inventory and direct-call denial; verify every mutating/admin/credential/automatic-shopping/issue operation and unknown tool is denied.
+- [x] 3.5 Preserve guest admission ceilings, family reserve, global breaker, one Container, deadlines and per-sweep request cap; verify exhausted/disabled/unknown service identity cannot bypass limits or cause extra wake.
+- [x] 3.6 Luna executes real local HTTP/MCP fixture flow against built code plus negative cross-principal/session/resource cases; Sol reviews the trust boundary and confirms no production auth bypass or synthetic-only shortcut before integrating.
 
 ## 4. S4 — Machine token issuance and release policy
 
 Readiness: after S1/S3, D1/D2 selection and local cryptographic test contract; provider secrets still absent. Terra owns a minimal token helper only if existing auth utilities cannot cover it, acceptance scripts/helpers and tests. `production-deploy.ts` edits begin only after S2 integration. Luna owns focused external docs/config verification, not secret handling.
 
-- [ ] 4.1 Add one bounded M2M token request with exact issuer/audience/service scope and in-memory response validation; verify signature/expiry/client/scope checks, invalid/expired credentials and token errors expose no values and trigger no automatic retries.
-- [ ] 4.2 Add the closed service-fixture acceptance profile, reuse bounded report/deadline helpers, and keep owner-admin/live-user evidence separate; verify expected synthetic inventory and forbidden-operation tests run through the real local MCP transport.
-- [ ] 4.3 Implement reviewed release-class evidence gating: initial cutover and affected auth/provider/client changes require additional live evidence, routine releases after cutover need no owner token; verify unknown diff scope/cutover status fails closed and cannot be overridden by arbitrary dispatch input.
-- [ ] 4.4 Integrate class-specific valid authentication preflight with deploy without weakening existing explicit local owner mode; verify missing/short-lived/invalid required credentials stop before first provider mutation and routine service mode never reads owner-token state.
-- [ ] 4.5 Luna verifies one-token/request budget and no refresh-token persistence path; Sol reviews complete credential flow, redacted report and scoped checks before integration.
+- [x] 4.1 Add one bounded M2M token request with exact issuer/audience/service scope and in-memory response validation; verify signature/expiry/client/scope checks, invalid/expired credentials and token errors expose no values and trigger no automatic retries.
+- [x] 4.2 Add the closed service-fixture acceptance profile, reuse bounded report/deadline helpers, and keep owner-admin/live-user evidence separate; verify expected synthetic inventory and forbidden-operation tests run through the real local MCP transport.
+- [x] 4.3 Implement reviewed release-class evidence gating: initial cutover and affected auth/provider/client changes require additional live evidence, routine releases after cutover need no owner token; verify unknown diff scope/cutover status fails closed and cannot be overridden by arbitrary dispatch input.
+- [x] 4.4 Integrate class-specific valid authentication preflight with deploy without weakening existing explicit local owner mode; verify missing/short-lived/invalid required credentials stop before first provider mutation and routine service mode never reads owner-token state.
+- [x] 4.5 Luna verifies one-token/request budget and no refresh-token persistence path; Sol reviews complete credential flow, redacted report and scoped checks before integration.
 
 ## 5. S5 — Protected GitHub Actions entry point
 
 Readiness: after S2/S4 for executable integration; workflow trust tests can be prepared after S2 source contract. Environment setup remains separate. Terra owns `.github/workflows/nemlig-production.yml` (new) and minimal workflow contract test; Sol owns package/version coordination. Existing PR CI credentials/permissions remain unchanged.
 
-- [ ] 5.1 Add failing workflow/input checks for non-main dispatch, missing environment readiness, untrusted CI provenance, unsafe input interpolation and forbidden event triggers; verify no job reaches deployment credentials in those cases.
-- [ ] 5.2 Add fixed manual dispatch, exact-SHA preflight, protected environment, immutable action pins, frozen install, isolated credential-free build and one production concurrency group with cancellation disabled; verify branch/ref gating, no privileged PR artifact/cache reuse and no persistence of checkout credentials.
-- [ ] 5.3 Scope GITHUB_TOKEN permissions to actual trust/journal calls and secrets to their exact command steps, with total timeout and bounded final evidence artifact; verify missing protections/credentials fail closed and artifact failure cannot erase the remote journal.
+- [x] 5.1 Add failing workflow/input checks for non-main dispatch, missing environment readiness, untrusted CI provenance, unsafe input interpolation and forbidden event triggers; verify no job reaches deployment credentials in those cases.
+- [x] 5.2 Add fixed manual dispatch, exact-SHA preflight, protected environment, immutable action pins, frozen install, isolated credential-free build and one production concurrency group with cancellation disabled; verify branch/ref gating, no privileged PR artifact/cache reuse and no persistence of checkout credentials.
+- [x] 5.3 Scope GITHUB_TOKEN permissions to actual trust/journal calls and secrets to their exact command steps, with total timeout and bounded final evidence artifact; verify missing protections/credentials fail closed and artifact failure cannot erase the remote journal.
 - [ ] 5.4 Run a credential-free Linux workflow rehearsal using fake provider/token endpoints and the real command orchestration; verify successful trace, canceled run, same-SHA competing run, source drift and rollback failure all report the correct terminal state.
-- [ ] 5.5 Luna checks workflow syntax/action pins/permissions and Sol inspects exact workflow bytes against release trust policy; verify no provider changes occurred and production readiness stays false until S6.
+- [x] 5.5 Luna checks workflow syntax/action pins/permissions and Sol inspects exact workflow bytes against release trust policy; verify no provider changes occurred and production readiness stays false until S6.
 
 ## 6. S6 — Owner-approved provider setup and cutover readiness
 
@@ -73,7 +73,7 @@ Readiness: BLOCKED on D1–D4 and completed repository isolation/trust/recovery 
 
 Readiness: repository verification can finish before S6; provider release requires S6 and explicit exact-release authority. Sol coordinates versions, main integration, provider commands and status. Luna verifies readbacks; Terra fixes only bounded assigned defects.
 
-- [ ] 7.1 Run scoped tests, public privacy, `pnpm verify`, `pnpm nemlig:production:ready` and `openspec validate --all --strict --no-interactive` on the composed revision; verify all required checks pass and record unrelated baseline failures separately.
+- [x] 7.1 Run scoped tests, public privacy, `pnpm verify`, `pnpm nemlig:production:ready` and `openspec validate --all --strict --no-interactive` on the composed revision; verify all required checks pass and record unrelated baseline failures separately.
 - [ ] 7.2 Commit/push scoped integration to main using the established worktree process and verify refreshed remote SHA plus trusted exact-head CI; verify running tests on an older SHA does not count as final evidence.
 - [ ] 7.3 After owner approves that release, dispatch once and verify remote intent journal, both disabled routes/inactive instance, one candidate image, same-image enablement and class-required acceptance; verify bounded sanitized report matches actual Worker/image/SHA and no data mutation occurred.
 - [ ] 7.4 Complete approved bounded live-user/provider and existing-app ChatGPT cutover evidence, recording actual timestamps/revision and pending/unavailable boundaries; verify no duplicate app, background-handoff assumption, prepare/apply or shopping-data write.
@@ -86,3 +86,13 @@ Readiness: all applicable live and repository gates complete, no retained unknow
 
 - [ ] 8.1 Reconcile older hosting deltas and their remaining live tasks, sync/archive completed predecessors in order, then this capability; verify strict validation and no conflicting, duplicated or silently waived requirement.
 - [ ] 8.2 Run required final repository gates, commit/push archival changes, verify exact remote main/CI and state last deployed application SHA separately from archival SHA; deliver durable evidence links, remaining owner operations if any, and jCodeMunch usage without invented savings.
+
+## 2026-09-09 repository integration evidence
+
+Default-off S3/S4 and protected S5 workflow are implemented. Focused deployment tests pass 71/71. Real local signed edge-to-HTTP acceptance exercises six Apps tools/picker and five tools without Apps; exact HTTP 403 rejection is distinguished from transport failures. Guest admission still runs for the service identity, while schema-v2 human credential lookup is excluded for that verified identity. Missing/extra scope and missing expiry reject; cache policy changes invalidate the verifier.
+
+Native GitHub environment metadata is checked using Actions Read. Readiness is consumed only inside the protected deployment job; there is no unsupported variables-API permission or privileged GitHub token. No environments exist at the read-only check, runtime configuration remains default-off, and `acceptedRevision` remains null. S5.4 Linux orchestration rehearsal, S6 provisioning/entitlement, production deployment and live evidence remain open. Dry-run image build and packed package checks are local evidence, not production acceptance.
+
+Independent review passed 62 focused security/acceptance tests and all 6 HTTP transport tests. Full `pnpm verify` passed 284 tests plus 3 smoke checks. Strict specifications, privacy and packed interface checks passed.
+
+`pnpm nemlig:production:ready` passed, including the full local image dry run; no upload/deployment occurred. The journal artifact explicitly includes its hidden `.git` path; a failing structural check preceded that correction.

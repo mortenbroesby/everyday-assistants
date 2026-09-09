@@ -10,7 +10,7 @@ import { tmpdir } from "node:os";
 import test from "node:test";
 import type { Basket, Product, ShoppingClient } from "./client.js";
 import { createProgram } from "./cli.js";
-import { createMcpServer, NEMLIG_CONNECT_URL, PICKER_URI, rankProducts, safeNemligImageUrl, type Candidate } from "./mcp.js";
+import { createMcpServer, NEMLIG_CONNECT_URL, PICKER_URI, rankProducts, safeNemligImageUrl, serviceAcceptanceResourceInventory, serviceAcceptanceToolInventory, type Candidate } from "./mcp.js";
 import { productionToolInventory } from "./production-acceptance.js";
 import { BasketProposalService } from "./proposals.js";
 
@@ -329,6 +329,26 @@ test("retired saved-shopping MCP calls reject before the Nemlig client", async (
       "save_my_shopping_plan", "continue_my_shopping_plan", "show_my_shopping_lists", "save_my_shopping_list",
       "copy_my_shopping_list", "set_my_shopping_list_status", "shop_from_my_list", "migrate_my_saved_plan",
     ]) assert.equal((await mcp.callTool({ name, arguments: {} })).isError, true, name);
+  });
+  assert.equal(calls, 0);
+});
+
+test("service acceptance exposes only its fixed read-only tool inventory", async () => {
+  let calls = 0;
+  const unexpected = async (): Promise<never> => { calls += 1; throw new Error("unexpected Nemlig call"); };
+  const client = fakeClient({
+    isLoggedIn: () => { calls += 1; return true; }, login: unexpected, searchProducts: unexpected,
+    getProduct: unexpected, getFreshProduct: unexpected, listFavorites: unexpected, listDepartments: unexpected,
+    browseDepartment: unexpected, getCart: unexpected, addToCart: unexpected, removeFromCart: unexpected, clearCart: unexpected,
+  });
+  for (const apps of ["1", "0"] as const) await withMcpClient(createMcpServer(client, undefined, { NEMLIG_MCP_APPS: apps }, undefined, {
+    principalKey: "s".repeat(32), policyRevision: "service", tier: 2, kind: "service",
+  }), async (mcp) => {
+    const expected = apps === "1" ? serviceAcceptanceToolInventory : serviceAcceptanceToolInventory.filter((name) => name !== "choose_products_visually");
+    assert.deepEqual((await mcp.listTools()).tools.map(({ name }) => name).sort(), [...expected].sort());
+    if (apps === "1") assert.deepEqual((await mcp.listResources()).resources.map(({ uri }) => uri), serviceAcceptanceResourceInventory);
+    else await assert.rejects(mcp.listResources(), /Method not found/u);
+    assert.equal((await mcp.callTool({ name: "add_approved_items", arguments: { approved_review: "00000000-0000-4000-8000-000000000000" } })).isError, true);
   });
   assert.equal(calls, 0);
 });

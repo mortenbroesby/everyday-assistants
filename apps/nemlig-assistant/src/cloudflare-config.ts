@@ -25,6 +25,8 @@ export interface CloudflareEnv {
   NEMLIG_MCP_REVISION?: string;
   NEMLIG_MCP_CREDENTIAL_KEY?: string;
   NEMLIG_MCP_CREDENTIAL_KEY_VERSION?: string;
+  NEMLIG_MCP_SERVICE_ACCEPTANCE_ENABLED?: string;
+  NEMLIG_MCP_SERVICE_CLIENT_ID?: string;
   NEMLIG_MCP_AUTH0_ORGANIZATION_ID?: string;
   NEMLIG_MCP_ONBOARDING_CLIENT_ID?: string;
   NEMLIG_MCP_ONBOARDING_CLIENT_SECRET?: string;
@@ -51,6 +53,7 @@ export interface GatewayConfig {
   revision: string;
   credentialKey?: string;
   credentialKeyVersion?: string;
+  serviceAcceptance?: { clientId: string };
 }
 
 const required = (env: CloudflareEnv, name: keyof CloudflareEnv): string => {
@@ -84,6 +87,7 @@ export function loadGatewayConfig(env: CloudflareEnv): GatewayConfig {
   const principalPolicy = parsePrincipalPolicy(env.NEMLIG_MCP_PRINCIPALS);
   const credentialKey = env.NEMLIG_MCP_CREDENTIAL_KEY?.trim();
   const credentialKeyVersion = env.NEMLIG_MCP_CREDENTIAL_KEY_VERSION?.trim();
+  const serviceAcceptanceEnabled = env.NEMLIG_MCP_SERVICE_ACCEPTANCE_ENABLED === "true";
   if (principalPolicy.schema_version === 2
     && (!credentialKey || !/^[A-Za-z0-9_-]{43}$/u.test(credentialKey)
       || !credentialKeyVersion || !/^[A-Za-z0-9._-]{1,32}$/u.test(credentialKeyVersion))) {
@@ -129,5 +133,6 @@ export function loadGatewayConfig(env: CloudflareEnv): GatewayConfig {
     revision: env.NEMLIG_MCP_REVISION?.trim() || "development",
     ...(credentialKey ? { credentialKey } : {}),
     ...(credentialKeyVersion ? { credentialKeyVersion } : {}),
+    ...(serviceAcceptanceEnabled ? { serviceAcceptance: { clientId: required(env, "NEMLIG_MCP_SERVICE_CLIENT_ID") } } : {}),
   };
 }

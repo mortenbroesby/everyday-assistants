@@ -4,6 +4,7 @@ import { open, mkdir, readFile, realpath, rename, unlink, writeFile } from "node
 import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
+import { issueServiceToken } from "./service-token.js";
 
 const fullSha = /^[0-9a-f]{40}$/u;
 const versionId = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/u;
@@ -13,7 +14,7 @@ const ciWorkflowName = "CI";
 const ciWorkflowPath = ".github/workflows/ci.yml";
 const customMcp = new URL("https://nemlig-mcp.broesby.dk/mcp");
 const workersMcp = new URL("https://nemlig-mcp-cloudflare-production.mortenbroesby.workers.dev/mcp");
-export const productionDeployUsage = "pnpm --filter nemlig-assistant production:deploy -- <40-character-main-commit> | finalize <operation-id> --evidence-saved --original-runner-stopped | inspect-recovery <operation-id> [--original-runner-stopped]";
+export const productionDeployUsage = "pnpm --filter nemlig-assistant production:deploy -- preflight <40-character-main-commit> | [--service|--service-cutover] <40-character-main-commit> | finalize <operation-id> --evidence-saved --original-runner-stopped | inspect-recovery <operation-id> [--original-runner-stopped]";
 
 export type VerifiedState = "unchanged" | "disabled" | "enabled" | "restored" | "unknown";
 
@@ -77,6 +78,8 @@ export interface DeployDependencies {
   operationId?: () => string;
   operationDeadlineMs?: number;
   stateRoot?: string;
+  acceptanceMode?: "owner" | "service" | "service-cutover";
+  issueServiceToken?: typeof issueServiceToken;
   signal?: AbortSignal;
   configReader?: (options: { config: string; env: "production" }) => Promise<unknown> | unknown;
 }
@@ -140,8 +143,8 @@ const isoTime = (value: unknown): value is string => {
   return Number.isFinite(date.getTime()) && date.toISOString() === value;
 };
 const imageDigest = /^sha256:[0-9a-f]{64}$/u;
-const journalChecks = new Set(["source_and_auth_preflight", "exclusive_lease", "starting_state_recorded", "disabled_version", "disabled_routes", "container_inactive", "enabled_version", "image_reused", "edge_acceptance", "authenticated_read_only_acceptance", "starting_version_restored"]);
-const journalFailures = new Set(["owner_access_token_required", "github_repository_invalid", "source_revision_mismatch", "github_ci_workflow_invalid", "github_ci_invalid", "exact_head_ci_not_green", "local_deployment_lease_unavailable", "remote_deployment_lease_unavailable", "remote_journal_invalid", "remote_journal_append_failed", "remote_journal_parent_invalid", "remote_deployment_lease_changed", "deployment_journal_invalid", "deployment_journal_oversized", "deployment_journal_write_failed", "cloudflare_deployment_drift", "cloudflare_upload_version_missing", "cloudflare_config_invalid", "cloudflare_runtime_safety_mismatch", "disabled_route_unavailable", "disabled_route_mismatch", "container_inactive_timeout", "container_instance_timeout", "container_image_changed_during_enable", "recovery_finalize_denied", "command_failed", "command_cancelled", "unexpected_failure"]);
+const journalChecks = new Set(["source_and_auth_preflight", "exclusive_lease", "starting_state_recorded", "disabled_version", "disabled_routes", "container_inactive", "enabled_version", "image_reused", "edge_acceptance", "authenticated_read_only_acceptance", "service_fixture_acceptance", "live_acceptance_pending", "starting_version_restored"]);
+const journalFailures = new Set(["service_cutover_required", "live_acceptance_required", "service_acceptance_not_ready", "service_token_unavailable", "owner_access_token_required", "github_repository_invalid", "source_revision_mismatch", "github_ci_workflow_invalid", "github_ci_invalid", "exact_head_ci_not_green", "github_environment_not_ready", "local_deployment_lease_unavailable", "remote_deployment_lease_unavailable", "remote_journal_invalid", "remote_journal_append_failed", "remote_journal_parent_invalid", "remote_deployment_lease_changed", "deployment_journal_invalid", "deployment_journal_oversized", "deployment_journal_write_failed", "cloudflare_deployment_drift", "cloudflare_upload_version_missing", "cloudflare_config_invalid", "cloudflare_runtime_safety_mismatch", "disabled_route_unavailable", "disabled_route_mismatch", "container_inactive_timeout", "container_instance_timeout", "container_image_changed_during_enable", "recovery_finalize_denied", "command_failed", "command_cancelled", "unexpected_failure"]);
 
 const journalJson = (journal: DeploymentJournal): string => {
   if (!journal || typeof journal !== "object" || !Array.isArray(journal.checks) || !Array.isArray(journal.transitions)
@@ -210,7 +213,8 @@ export function parseDeployCli(argv: readonly string[]): { help: true } | { help
 
 export type RecoveryCli =
   | { help: true }
-  | { help: false; command: "deploy"; commit: string }
+  | { help: false; command: "preflight"; commit: string }
+  | { help: false; command: "deploy"; commit: string; acceptanceMode?: "service" | "service-cutover" }
   | { help: false; command: "finalize"; operation: string; evidenceSaved: true; originalRunnerStopped: true }
   | { help: false; command: "inspect-recovery"; operation: string; originalRunnerStopped: boolean };
 
@@ -225,6 +229,9 @@ export function parseProductionDeployCli(argv: readonly string[]): RecoveryCli {
     && (values.length === 2 || (values.length === 3 && values[2] === "--original-runner-stopped"))) {
     return { help: false, command: "inspect-recovery", operation: values[1]!, originalRunnerStopped: values[2] === "--original-runner-stopped" };
   }
+  if (values[0] === "preflight") return { help: false, command: "preflight", commit: parseDeployArgs(values.slice(1)) };
+  if (values[0] === "--service-cutover") return { help: false, command: "deploy", commit: parseDeployArgs(values.slice(1)), acceptanceMode: "service-cutover" };
+  if (values[0] === "--service") return { help: false, command: "deploy", commit: parseDeployArgs(values.slice(1)), acceptanceMode: "service" };
   return { help: false, command: "deploy", commit: parseDeployArgs(values) };
 }
 
@@ -247,7 +254,7 @@ export function parseCurrentDeployment(raw: string): CurrentDeployment {
   return { id, version: deployedId };
 }
 
-const configPlainNames = ["MCP_DAILY_LIMIT", "MCP_EXPENSIVE_DAILY_LIMIT", "MCP_RATE_LIMIT", "MCP_EXPENSIVE_RATE_LIMIT", "MCP_AUTH_TIMEOUT_MS", "MCP_CONTROL_TIMEOUT_MS", "MCP_TOTAL_TIMEOUT_MS", "MCP_BACKEND_TIMEOUT_MS", "MCP_CREDENTIAL_ONBOARDING_ENABLED", "MCP_CREDENTIAL_RATE_LIMIT", "MCP_CREDENTIAL_GLOBAL_RATE_LIMIT", "NEMLIG_MCP_HTTP_HOST", "NEMLIG_MCP_HTTP_PORT", "NEMLIG_MCP_AUTH0_ISSUER", "NEMLIG_MCP_AUTH0_AUDIENCE", "NEMLIG_MCP_PUBLIC_URL"] as const;
+const configPlainNames = ["MCP_DAILY_LIMIT", "MCP_EXPENSIVE_DAILY_LIMIT", "MCP_RATE_LIMIT", "MCP_EXPENSIVE_RATE_LIMIT", "MCP_AUTH_TIMEOUT_MS", "MCP_CONTROL_TIMEOUT_MS", "MCP_TOTAL_TIMEOUT_MS", "MCP_BACKEND_TIMEOUT_MS", "MCP_CREDENTIAL_ONBOARDING_ENABLED", "MCP_CREDENTIAL_RATE_LIMIT", "MCP_CREDENTIAL_GLOBAL_RATE_LIMIT", "NEMLIG_MCP_HTTP_HOST", "NEMLIG_MCP_HTTP_PORT", "NEMLIG_MCP_AUTH0_ISSUER", "NEMLIG_MCP_AUTH0_AUDIENCE", "NEMLIG_MCP_PUBLIC_URL", "NEMLIG_MCP_SERVICE_ACCEPTANCE_ENABLED", "NEMLIG_MCP_SERVICE_CLIENT_ID"] as const;
 const configPlainSet = new Set<string>(configPlainNames);
 const requiredSecrets = new Set(["NEMLIG_MCP_PRINCIPALS"]);
 const expectedDo = new Map([["NEMLIG_MCP_CONTAINER", "NemligMcpContainer"], ["NEMLIG_PLAN_STORAGE", "PlanStorage"]]);
@@ -285,29 +292,36 @@ const validateDo = (bindings: Iterable<Record<string, unknown>>): void => {
 };
 
 const effectiveConfig = (vars: Map<string, string>, secrets: Iterable<string>, requireSecrets = true): EffectiveConfig => {
-  if ([...configPlainNames].some((name) => {
-    const value = vars.get(name);
+  const normalized = new Map(vars);
+  if (!normalized.has("NEMLIG_MCP_SERVICE_ACCEPTANCE_ENABLED")) normalized.set("NEMLIG_MCP_SERVICE_ACCEPTANCE_ENABLED", "false");
+  if (!normalized.has("NEMLIG_MCP_SERVICE_CLIENT_ID")) normalized.set("NEMLIG_MCP_SERVICE_CLIENT_ID", "");
+  const serviceEnabled = normalized.get("NEMLIG_MCP_SERVICE_ACCEPTANCE_ENABLED");
+  const serviceClientId = normalized.get("NEMLIG_MCP_SERVICE_CLIENT_ID") ?? "";
+  if (configPlainNames.filter((name) => name !== "NEMLIG_MCP_SERVICE_CLIENT_ID").some((name) => {
+    const value = normalized.get(name);
     return typeof value !== "string" || value.length === 0 || value.length > 2048;
-  })) fail("cloudflare_runtime_safety_mismatch");
-  if (!["true", "false"].includes(vars.get("MCP_CREDENTIAL_ONBOARDING_ENABLED") ?? "")) fail("cloudflare_runtime_safety_mismatch");
+  }) || serviceClientId.length > 2048) fail("cloudflare_runtime_safety_mismatch");
+  if (!["true", "false"].includes(normalized.get("MCP_CREDENTIAL_ONBOARDING_ENABLED") ?? "")) fail("cloudflare_runtime_safety_mismatch");
+  if (!["true", "false"].includes(serviceEnabled ?? "")
+    || (serviceEnabled === "true" && !/^[A-Za-z0-9_-]{1,128}$/u.test(serviceClientId))) fail("cloudflare_runtime_safety_mismatch");
   for (const name of ["MCP_DAILY_LIMIT", "MCP_EXPENSIVE_DAILY_LIMIT", "MCP_RATE_LIMIT", "MCP_EXPENSIVE_RATE_LIMIT", "MCP_AUTH_TIMEOUT_MS", "MCP_CONTROL_TIMEOUT_MS", "MCP_TOTAL_TIMEOUT_MS", "MCP_BACKEND_TIMEOUT_MS", "MCP_CREDENTIAL_RATE_LIMIT", "MCP_CREDENTIAL_GLOBAL_RATE_LIMIT"]) {
     const value = vars.get(name) ?? "";
     if (!/^[1-9]\d*$/u.test(value) || !Number.isSafeInteger(Number(value))) fail("cloudflare_runtime_safety_mismatch");
   }
   try {
-    const host = vars.get("NEMLIG_MCP_HTTP_HOST") ?? "";
-    const portText = vars.get("NEMLIG_MCP_HTTP_PORT") ?? "";
+    const host = normalized.get("NEMLIG_MCP_HTTP_HOST") ?? "";
+    const portText = normalized.get("NEMLIG_MCP_HTTP_PORT") ?? "";
     const port = Number(portText);
     if (!/^[\w.-]+$/u.test(host) || !/^[1-9]\d*$/u.test(portText) || !Number.isSafeInteger(port) || port > 65535) throw new Error();
     for (const name of ["NEMLIG_MCP_AUTH0_ISSUER", "NEMLIG_MCP_AUTH0_AUDIENCE", "NEMLIG_MCP_PUBLIC_URL"]) {
-      const url = new URL(vars.get(name) ?? "");
+      const url = new URL(normalized.get(name) ?? "");
       if (url.protocol !== "https:" || url.username || url.password || url.hash) throw new Error();
     }
   } catch { fail("cloudflare_runtime_safety_mismatch"); }
   const secretNames = [...secrets].sort();
   if (secretNames.some((name, index) => (index > 0 && name === secretNames[index - 1]) || !/^[A-Za-z_][A-Za-z0-9_]{0,127}$/u.test(name))
     || (requireSecrets && [...requiredSecrets].some((name) => !secretNames.includes(name)))) fail("cloudflare_runtime_safety_mismatch");
-  const canonical = JSON.stringify({ limits: [100, 8], vars: [...vars].filter(([name]) => configPlainSet.has(name)).sort(([left], [right]) => left.localeCompare(right)), durableObjects: [...expectedDo].sort(([left], [right]) => left.localeCompare(right)), secrets: secretNames.map((name) => [name, "secret_text"]) });
+  const canonical = JSON.stringify({ limits: [100, 8], vars: [...normalized].filter(([name]) => configPlainSet.has(name)).sort(([left], [right]) => left.localeCompare(right)), durableObjects: [...expectedDo].sort(([left], [right]) => left.localeCompare(right)), secrets: secretNames.map((name) => [name, "secret_text"]) });
   return { vars, secrets: secretNames, digest: createHash("sha256").update(canonical).digest("hex") };
 };
 
@@ -527,6 +541,10 @@ const candidateConfig = (local: EffectiveConfig, live: EffectiveConfig): Effecti
   const onboarding = live.vars.get("MCP_CREDENTIAL_ONBOARDING_ENABLED");
   if (onboarding !== "true" && onboarding !== "false") fail("cloudflare_runtime_safety_mismatch");
   vars.set("MCP_CREDENTIAL_ONBOARDING_ENABLED", onboarding as string);
+  for (const name of ["NEMLIG_MCP_SERVICE_ACCEPTANCE_ENABLED", "NEMLIG_MCP_SERVICE_CLIENT_ID"]) {
+    const value = live.vars.get(name);
+    if (value !== undefined) vars.set(name, value);
+  }
   return effectiveConfig(vars, live.secrets);
 };
 
@@ -705,7 +723,8 @@ const knownTerminal = (journal: DeploymentJournal): boolean => {
   const result = journal.transitions.at(-1);
   if (result?.kind !== "result") return false;
   if (journal.outcome === "success") return journal.lastVerifiedState === "enabled" && result.phase === "enable_deploy"
-    && result.version === journal.enabledVersion && ["enabled_version", "image_reused", "edge_acceptance", "authenticated_read_only_acceptance"].every((check) => journal.checks.includes(check));
+    && result.version === journal.enabledVersion && ["enabled_version", "image_reused", "edge_acceptance"].every((check) => journal.checks.includes(check))
+    && (journal.checks.includes("authenticated_read_only_acceptance") || journal.checks.includes("service_fixture_acceptance"));
   if (journal.lastVerifiedState === "disabled") return result.phase === "disabled_deploy" && result.version === journal.disabledVersion
     && ["disabled_routes", "container_inactive"].every((check) => journal.checks.includes(check));
   return journal.lastVerifiedState === "restored" && journal.rollback === "restored" && result.phase === "rollback"
@@ -719,7 +738,7 @@ export async function inspectDeploymentRecovery(operation: string, deps: DeployD
     const { journal } = await readRemoteJournal(deps, repo.nameWithOwner);
     const expected = expectedRecovery(journal);
     if (journal.operationId !== operation) return { operation, originalRunnerStopped, cleanupEligible: false, reason: "operation_mismatch", state: "unknown" };
-    if (!knownTerminal(journal) || !expected) return { operation, originalRunnerStopped, cleanupEligible: false, reason: "pending_or_unknown", state: "unknown" };
+    if ((journal.checks.includes("live_acceptance_pending") && await readAcceptedRevision(deps) !== journal.commit) || !knownTerminal(journal) || !expected) return { operation, originalRunnerStopped, cleanupEligible: false, reason: "pending_or_unknown", state: "unknown" };
     if (!await verifyRecoveryTarget(deps, expected)) {
       return { operation, originalRunnerStopped, cleanupEligible: false, reason: "provider_drift", state: "unknown" };
     }
@@ -736,7 +755,8 @@ export async function finalizeDeploymentRecovery(operation: string, deps: Deploy
   const remote = await readRemoteJournal(deps, repo.nameWithOwner);
   const { journal } = remote;
   const expected = expectedRecovery(journal);
-  if (journal.operationId !== operation || !knownTerminal(journal) || !expected) return false;
+  if (journal.operationId !== operation || !knownTerminal(journal) || !expected
+    || (journal.checks.includes("live_acceptance_pending") && await readAcceptedRevision(deps) !== journal.commit)) return false;
   if (!await verifyRecoveryTarget(deps, expected)) return false;
   // Compare the containing ref head, never journal.remoteCommit supplied by the blob.
   if (await readRemoteHead(deps, repo.nameWithOwner) !== remote.head) return false;
@@ -790,6 +810,42 @@ const verifySource = async (deps: DeployDependencies, commit: string, repo: { na
   if (verify.length !== 1 || verify[0]?.status !== "completed" || verify[0]?.conclusion !== "success") fail("exact_head_ci_not_green");
   return trustedRun.databaseId as number;
 };
+
+const githubEnvironment = async (deps: DeployDependencies, repository: string, path: string): Promise<Record<string, unknown>> => {
+  try {
+    const value = json(await runAt(deps, deps.repoRoot, "gh", ["api", `repos/${repository}/${path}`]), "github_environment_not_ready");
+    return object(value) ?? fail("github_environment_not_ready");
+  } catch {
+    return fail("github_environment_not_ready");
+  }
+};
+
+const verifyGithubEnvironment = async (deps: DeployDependencies, repository: string): Promise<void> => {
+  const environment = await githubEnvironment(deps, repository, "environments/nemlig-production");
+  const rules = Array.isArray(environment.protection_rules) ? environment.protection_rules.map(object) : [];
+  if (rules.some((rule) => rule?.type !== "required_reviewers" && rule?.type !== "branch_policy")) fail("github_environment_not_ready");
+  const requiredReviewers = rules.filter((rule) => rule?.type === "required_reviewers");
+  const reviewers = requiredReviewers.length === 1 && Array.isArray(requiredReviewers[0]?.reviewers)
+    ? requiredReviewers[0]!.reviewers.map(object) : [];
+  const reviewer = reviewers.length === 1 ? reviewers[0] : undefined;
+  const reviewerUser = object(reviewer?.reviewer);
+  const branchPolicy = object(environment.deployment_branch_policy);
+  if (environment.can_admins_bypass !== false || requiredReviewers[0]?.prevent_self_review !== false
+    || branchPolicy?.protected_branches !== false || branchPolicy.custom_branch_policies !== true
+    || reviewer?.type !== "User" || reviewerUser?.login !== "mortenbroesby") fail("github_environment_not_ready");
+  const branches = await githubEnvironment(deps, repository, "environments/nemlig-production/deployment-branch-policies");
+  const policies = Array.isArray(branches.branch_policies) ? branches.branch_policies.map(object) : [];
+  if (policies.length !== 1 || policies[0]?.name !== "main" || policies[0]?.type !== "branch") fail("github_environment_not_ready");
+};
+
+/** Read-only exact-main CI and protected-environment proof for the deployment workflow. */
+export async function preflightProductionDeploy(commit: string, deps: DeployDependencies): Promise<{ commit: string; ciRunId: number }> {
+  if (!fullSha.test(commit)) fail("invalid_commit");
+  const repo = await repoIdentity(deps);
+  const ciRunId = await verifySource(deps, commit, repo);
+  await verifyGithubEnvironment(deps, repo.nameWithOwner);
+  return { commit, ciRunId };
+}
 
 const verifyDisabledRoutes = async (deps: DeployDependencies): Promise<void> => {
   for (const endpoint of [customMcp, workersMcp]) {
@@ -880,6 +936,37 @@ const rollback = async (deps: DeployDependencies, journal: DeploymentJournal, st
   journal.checks.push("starting_version_restored");
 };
 
+const readAcceptedRevision = async (deps: DeployDependencies): Promise<string | null> => {
+  try {
+    const value = object(JSON.parse(await readFile(join(deps.packageRoot, "release", "production-cutover.json"), "utf8")));
+    if (value?.schema !== 1 || Object.keys(value).some((key) => !["schema", "acceptedRevision"].includes(key))) return null;
+    return typeof value.acceptedRevision === "string" && fullSha.test(value.acceptedRevision) ? value.acceptedRevision : null;
+  } catch { return null; }
+};
+
+/** Only reviewed, previously accepted runtime can use the routine service gate. */
+const verifyRoutineRelease = async (deps: DeployDependencies, commit: string): Promise<void> => {
+  const accepted = await readAcceptedRevision(deps);
+  if (!accepted) fail("service_cutover_required");
+  try { await runAt(deps, deps.repoRoot, "git", ["merge-base", "--is-ancestor", accepted!, commit]); }
+  catch { fail("service_cutover_required"); }
+  const changed = await runAt(deps, deps.repoRoot, "git", ["diff", "--name-only", "-z", accepted!, commit]);
+  for (const path of changed.split("\0").filter(Boolean)) {
+    if (/^(?:docs\/|openspec\/)/u.test(path) || /\.md$/u.test(path) || /\.test\.(?:ts|mjs)$/u.test(path)
+      || path === "apps/nemlig-assistant/release/production-cutover.json") continue;
+    if (path === "apps/nemlig-assistant/package.json") {
+      const versions = await Promise.all([accepted!, commit].map(async (ref) => {
+        const value = object(json(await runAt(deps, deps.repoRoot, "git", ["show", `${ref}:${path}`]), "live_acceptance_required"));
+        if (!value) fail("live_acceptance_required");
+        delete value!.version;
+        return JSON.stringify(value);
+      }));
+      if (versions[0] === versions[1]) continue;
+    }
+    fail("live_acceptance_required");
+  }
+};
+
 export async function deployProduction(commit: string, inputDeps: DeployDependencies): Promise<DeploymentJournal> {
   if (!fullSha.test(commit)) fail("invalid_commit");
   const runIdText = inputDeps.env.GITHUB_RUN_ID;
@@ -894,7 +981,13 @@ export async function deployProduction(commit: string, inputDeps: DeployDependen
   if (inheritedSignal?.aborted) abortOperation();
   else inheritedSignal?.addEventListener("abort", abortOperation, { once: true });
   const operationDeadline = setTimeout(abortOperation, Math.min(inputDeps.operationDeadlineMs ?? 25 * 60_000, 25 * 60_000));
-  const deps: DeployDependencies = { ...inputDeps, signal: operationController.signal };
+  const service = inputDeps.env.GITHUB_ACTIONS === "true" || inputDeps.acceptanceMode === "service" || inputDeps.acceptanceMode === "service-cutover";
+  // Do not read owner credentials or pass the machine secret to child commands.
+  const env = service ? Object.fromEntries(Object.keys(inputDeps.env)
+    .filter((name) => !["NEMLIG_MCP_ACCESS_TOKEN", "NEMLIG_MCP_SERVICE_CLIENT_SECRET", "NEMLIG_MCP_SERVICE_ACCESS_TOKEN"].includes(name))
+    .map((name) => [name, inputDeps.env[name]])) : inputDeps.env;
+  const deps: DeployDependencies = { ...inputDeps, env, signal: operationController.signal };
+  let serviceToken: string | undefined;
   const journal: DeploymentJournal = {
     schema: 2,
     operationId: (deps.operationId ?? randomUUID)(),
@@ -920,10 +1013,17 @@ export async function deployProduction(commit: string, inputDeps: DeployDependen
 
   try {
     deps.signal?.throwIfAborted();
-    if (!deps.env.NEMLIG_MCP_ACCESS_TOKEN?.trim()) fail("owner_access_token_required");
+    if (!service && !deps.env.NEMLIG_MCP_ACCESS_TOKEN?.trim()) fail("owner_access_token_required");
     const repo = await repoIdentity(deps);
     repository = repo.nameWithOwner;
     journal.ciRunId = await verifySource(deps, commit, repo);
+    if (service) {
+      if (deps.env.NEMLIG_CI_ACCEPTANCE_READY !== "true") fail("service_acceptance_not_ready");
+      if (inputDeps.acceptanceMode !== "service-cutover") await verifyRoutineRelease(deps, commit);
+      await verifyGithubEnvironment(deps, repository);
+      try { serviceToken = await (deps.issueServiceToken ?? issueServiceToken)(inputDeps.env, { fetcher: inputDeps.fetcher, signal: deps.signal }); }
+      catch { fail("service_token_unavailable"); }
+    }
     const common = deps.stateRoot ?? await runAt(deps, deps.repoRoot, "git", ["rev-parse", "--git-common-dir"]);
     const stateRoot = isAbsolute(common) ? common : resolve(deps.repoRoot, common);
     await mkdir(join(stateRoot, "nemlig-production-deploy"), { recursive: true, mode: 0o700 });
@@ -942,6 +1042,11 @@ export async function deployProduction(commit: string, inputDeps: DeployDependen
     const startingConfig = versionConfig(startingRaw);
     configured = candidateConfig(await readLocalConfig(deps), startingConfig);
     if (configured.digest !== startingConfig.digest) fail("cloudflare_runtime_safety_mismatch");
+    if (service) {
+      const clientId = inputDeps.env.NEMLIG_MCP_SERVICE_CLIENT_ID?.trim();
+      if (!clientId || configured.vars.get("NEMLIG_MCP_SERVICE_ACCEPTANCE_ENABLED") !== "true"
+        || configured.vars.get("NEMLIG_MCP_SERVICE_CLIENT_ID") !== clientId) fail("service_acceptance_not_ready");
+    }
     startingContainer = await readContainer(deps);
     journal.startingVersion = starting.id;
     journal.startingContainerId = startingContainer.id;
@@ -1012,7 +1117,10 @@ export async function deployProduction(commit: string, inputDeps: DeployDependen
       timeoutMs: 120_000,
       env: { NEMLIG_EXPECTED_REVISION: commit },
     });
-    await runAt(deps, deps.packageRoot, "pnpm", ["production:test:features"], { timeoutMs: 120_000 });
+    await runAt(deps, deps.packageRoot, "pnpm", ["production:test:features", ...(service ? ["--", "--service"] : [])], {
+      timeoutMs: 120_000,
+      ...(service ? { env: { NEMLIG_MCP_SERVICE_ACCESS_TOKEN: serviceToken, NEMLIG_EXPECTED_REVISION: commit } } : {}),
+    });
     await waitForRunningInstance(deps, enabledContainer.id, enabledContainer.version);
     await verifyCurrent(deps, enabledId);
     const provenContainer = await readContainer(deps);
@@ -1020,7 +1128,8 @@ export async function deployProduction(commit: string, inputDeps: DeployDependen
       fail("cloudflare_deployment_drift");
     }
     journal.enabledVersion = enabledId;
-    journal.checks.push("edge_acceptance", "authenticated_read_only_acceptance");
+    journal.checks.push("edge_acceptance", service ? "service_fixture_acceptance" : "authenticated_read_only_acceptance");
+    if (inputDeps.acceptanceMode === "service-cutover") journal.checks.push("live_acceptance_pending");
     journal.outcome = "success";
   } catch (error) {
     journal.outcome = "failed";
@@ -1115,7 +1224,13 @@ async function main(): Promise<void> {
     console.log(JSON.stringify({ finalized }));
     return;
   }
-  const report = await deployProduction(input.commit, deps);
+  if (input.command === "preflight") {
+    console.log(JSON.stringify(await preflightProductionDeploy(input.commit, deps)));
+    process.removeListener("SIGINT", abort);
+    process.removeListener("SIGTERM", abort);
+    return;
+  }
+  const report = await deployProduction(input.commit, { ...deps, ...(input.acceptanceMode ? { acceptanceMode: input.acceptanceMode } : {}) });
   process.removeListener("SIGINT", abort);
   process.removeListener("SIGTERM", abort);
   console.log(JSON.stringify(report, null, 2));

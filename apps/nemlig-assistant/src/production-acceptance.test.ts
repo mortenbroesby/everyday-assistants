@@ -10,9 +10,11 @@ import {
   verifyAggregateTierUsage,
   verifyProductionEdge,
   verifyReadOnlyProductionFeatures,
+  verifyServiceAcceptanceFeatures,
   type AcceptanceClient,
   type ApprovedProductionMutation,
 } from "./production-acceptance.js";
+import { serviceAcceptanceResourceInventory, serviceAcceptanceToolInventory } from "./mcp.js";
 
 const allTools = Object.values(productionToolInventory).flat().map((name) => ({ name }));
 const removedStorageTools = [
@@ -71,6 +73,68 @@ test("production acceptance omits removed saved-storage tools while retaining sa
   ]) assert.equal(calls.includes(forbidden), false, `Read-only acceptance called ${forbidden}`);
   for (const removed of removedStorageTools) assert.equal(calls.includes(removed), false, `Read-only acceptance called removed ${removed}`);
   assert.deepEqual(report.unavailable, []);
+});
+
+test("service acceptance has a closed read-only fixture inventory and proves planning and mutations are denied", async () => {
+  const calls: string[] = [];
+  const client: AcceptanceClient = {
+    listTools: async () => ({ tools: serviceAcceptanceToolInventory.map((name) => ({ name })) }),
+    listResources: async () => ({ resources: serviceAcceptanceResourceInventory.map((uri) => ({ uri })) }),
+    readResource: async () => ({ contents: [{ text: "picker" }] }),
+    callTool: async ({ name }) => {
+      calls.push(name);
+      if (["plan_my_shopping", "review_items_to_add", "add_approved_items"].includes(name)) return { isError: true };
+      if (name === "show_grocery_sections") return { structuredContent: { departments: [{ id: "fruit" }] } };
+      if (name === "show_my_basket") return { structuredContent: { items: [] } };
+      return { structuredContent: { result: [] } };
+    },
+  };
+  const report = await verifyServiceAcceptanceFeatures(client);
+  assert.deepEqual(calls, [
+    "find_groceries", "show_my_favorites", "show_grocery_sections", "browse_grocery_section", "show_my_basket",
+    "choose_products_visually", "plan_my_shopping", "review_items_to_add", "add_approved_items",
+  ]);
+  assert.deepEqual(report.denied, ["plan_my_shopping", "review_items_to_add", "add_approved_items"]);
+  assert.equal(report.requestCount, 12);
+});
+
+test("service acceptance closes its inventory when Apps are disabled", async () => {
+  const calls: string[] = [];
+  const client: AcceptanceClient = {
+    listTools: async () => ({ tools: serviceAcceptanceToolInventory.filter((name) => name !== "choose_products_visually").map((name) => ({ name })) }),
+    listResources: async () => ({ resources: [] }),
+    readResource: async () => { throw new Error("Apps-disabled acceptance must not read a picker resource"); },
+    callTool: async ({ name }) => {
+      calls.push(name);
+      if (["plan_my_shopping", "review_items_to_add", "add_approved_items"].includes(name)) return { isError: true };
+      if (name === "show_grocery_sections") return { structuredContent: { departments: [{ id: "fruit" }] } };
+      if (name === "show_my_basket") return { structuredContent: { items: [] } };
+      return { structuredContent: { result: [] } };
+    },
+  };
+  const report = await verifyServiceAcceptanceFeatures(client);
+  assert.equal(calls.includes("choose_products_visually"), false);
+  assert.equal(report.requestCount, 10);
+});
+
+test("service acceptance accepts only explicit HTTP 403 transport denials", async () => {
+  const client = {
+    listTools: async () => ({ tools: serviceAcceptanceToolInventory.filter((name) => name !== "choose_products_visually").map((name) => ({ name })) }),
+    listResources: async () => ({ resources: [] }),
+    readResource: async () => ({ contents: [] }),
+    callTool: async ({ name }: { name: string }) => {
+      if (["plan_my_shopping", "review_items_to_add", "add_approved_items"].includes(name)) throw { status: 403 };
+      if (name === "show_grocery_sections") return { structuredContent: { departments: [{ id: "fruit" }] } };
+      if (name === "show_my_basket") return { structuredContent: { items: [] } };
+      return { structuredContent: { result: [] } };
+    },
+  };
+  assert.deepEqual((await verifyServiceAcceptanceFeatures(client)).denied, ["plan_my_shopping", "review_items_to_add", "add_approved_items"]);
+  const failed = { ...client, callTool: async ({ name }: { name: string }) => {
+    if (name === "plan_my_shopping") throw { status: 500 };
+    return await client.callTool({ name });
+  } };
+  await assert.rejects(verifyServiceAcceptanceFeatures(failed), /precise HTTP 403/u);
 });
 
 test("read-only acceptance has one total deadline", async () => {

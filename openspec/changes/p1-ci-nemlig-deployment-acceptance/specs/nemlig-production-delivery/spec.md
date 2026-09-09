@@ -56,6 +56,10 @@ The operation SHALL distinguish repository contracts, edge, authenticated synthe
 - **WHEN** a feature cannot be exercised without creating or changing user data
 - **THEN** it is reported unavailable and is never silently counted as exercised
 
+#### Scenario: Owner credentials are offered to a CI release
+- **WHEN** CI performs routine or initial-cutover delivery
+- **THEN** it never requests, reads or stores owner credentials; required real-user cutover evidence is collected through the existing user client outside CI, and missing proof remains explicitly incomplete
+
 ### Requirement: Release ownership and recovery survive runner loss
 
 Every release SHALL have unique operation ownership independent of source SHA and one shared cross-host production lease. Before and after each provider transition it SHALL persist a bounded redacted remote journal of intent and observed state. Concurrent, stale or changed ownership MUST NOT be stolen. A timeout, cancellation or lost response SHALL be treated as an uncertain mutation until provider readback reconciles it.

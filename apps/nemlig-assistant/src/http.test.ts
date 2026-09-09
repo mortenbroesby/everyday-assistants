@@ -5,7 +5,12 @@ import assert from "node:assert/strict";
 import type { AddressInfo } from "node:net";
 import test from "node:test";
 import { createHttpApp } from "./http.js";
-import type { Auth0Config } from "./auth0.js";
+import { createLocalJWKSet, exportJWK, generateKeyPair, SignJWT } from "jose";
+import { createAuth0Verifier, SERVICE_ACCEPTANCE_SCOPE, type Auth0Config } from "./auth0.js";
+import { serviceAcceptanceToolInventory } from "./mcp.js";
+import { verifyServiceAcceptanceFeatures } from "./production-acceptance.js";
+import { handleGatewayRequest } from "./cloudflare-gateway.js";
+import { emptyUsageState } from "./cloudflare-usage.js";
 import { BasketProposalService } from "./proposals.js";
 import { parsePrincipalPolicy } from "./principal-policy.js";
 import type { ShoppingClient } from "./client.js";
@@ -125,6 +130,54 @@ test("HTTP MCP advertises Auth0, rejects anonymous and foreign origins, and pres
   } finally {
     server.closeAllConnections();
     await new Promise<void>((resolve, reject) => server.close((error?: Error) => error ? reject(error) : resolve()));
+  }
+});
+
+test("HTTP service acceptance uses signed machine identity and its fixed fixture without a human context", async () => {
+  const serviceConfig = { ...config, serviceAcceptance: { clientId: "service-client" } };
+  const { privateKey, publicKey } = await generateKeyPair("RS256");
+  const jwk = { ...await exportJWK(publicKey), kid: "service", alg: "RS256" };
+  const verifier = createAuth0Verifier(serviceConfig, new URL("https://tenant.example.test/.well-known/jwks.json"), createLocalJWKSet({ keys: [jwk] }));
+  const token = await new SignJWT({ scope: SERVICE_ACCEPTANCE_SCOPE, azp: "service-client" })
+    .setProtectedHeader({ alg: "RS256", kid: "service" }).setIssuer(config.issuer.href).setAudience(config.audience)
+    .setSubject("service-client@clients").setExpirationTime("5m").sign(privateKey);
+  for (const apps of ["1", "0"] as const) {
+    const app = createHttpApp(serviceConfig, oauth, verifier, () => { throw new Error("service must not resolve a human context"); }, undefined, { NEMLIG_MCP_APPS: apps });
+    const server = app.listen(0, config.host);
+    await new Promise<void>((resolve, reject) => { server.once("listening", resolve); server.once("error", reject); });
+    try {
+      const endpoint = new URL(`http://${config.host}:${(server.address() as AddressInfo).port}/mcp`);
+      const edgeFetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => await handleGatewayRequest(new Request(input, init), {
+        MCP_ENABLED: "true", MCP_DAILY_LIMIT: "5000", MCP_EXPENSIVE_DAILY_LIMIT: "500", MCP_RATE_LIMIT: "60", MCP_EXPENSIVE_RATE_LIMIT: "10",
+        MCP_AUTH_TIMEOUT_MS: "5000", MCP_CONTROL_TIMEOUT_MS: "3000", MCP_TOTAL_TIMEOUT_MS: "30000", MCP_BACKEND_TIMEOUT_MS: "25000",
+        NEMLIG_MCP_AUTH0_ISSUER: config.issuer.href, NEMLIG_MCP_AUTH0_AUDIENCE: config.audience,
+        NEMLIG_MCP_PRINCIPALS: JSON.stringify(principalPolicy), NEMLIG_MCP_PUBLIC_URL: config.publicUrl.href,
+        NEMLIG_MCP_SERVICE_ACCEPTANCE_ENABLED: "true", NEMLIG_MCP_SERVICE_CLIENT_ID: "service-client",
+      }, {
+        authenticate: async () => ({ subject: "service-client@clients", principal_key: "s".repeat(32), tier: 2, enabled: true }),
+        admit: async () => ({ admitted: true, state: emptyUsageState(new Date()) }),
+        forward: async (request) => fetch(request),
+      });
+      const client = new Client({ name: "service-test", version: "1.0.0" });
+      const transport = new StreamableHTTPClientTransport(endpoint, { requestInit: { headers: { authorization: `Bearer ${token}` } }, ...(apps === "1" ? { fetch: edgeFetch } : {}) });
+      await client.connect(transport);
+      if (apps === "1") {
+        const report = await verifyServiceAcceptanceFeatures({
+          listTools: async () => client.listTools(),
+          callTool: async (request) => await client.callTool(request) as { isError?: boolean; structuredContent?: unknown },
+          listResources: async () => client.listResources(),
+          readResource: async (request) => client.readResource(request),
+        });
+        assert.equal(report.requestCount, 12);
+      } else {
+        assert.deepEqual((await client.listTools()).tools.map(({ name }) => name).sort(), serviceAcceptanceToolInventory.filter((name) => name !== "choose_products_visually").sort());
+        await assert.rejects(client.listResources(), /Method not found/u);
+      }
+      await client.close();
+    } finally {
+      server.closeAllConnections();
+      await new Promise<void>((resolve, reject) => server.close((error?: Error) => error ? reject(error) : resolve()));
+    }
   }
 });
 

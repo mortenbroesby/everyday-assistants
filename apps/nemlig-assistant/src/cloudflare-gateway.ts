@@ -9,6 +9,7 @@ import {
 } from "./cloudflare-observability.js";
 import { aggregateUsage, type AdmissionResult, type UsageState } from "./cloudflare-usage.js";
 import type { Principal } from "./principal-policy.js";
+import { SERVICE_ACCEPTANCE_SCOPE } from "./auth0.js";
 
 export type OperationClass = "protocol" | "normal" | "expensive";
 export const INTERNAL_CREDENTIAL_HEADERS = [
@@ -68,6 +69,35 @@ const normalTools = new Set([
   "review_emptying_basket",
   "choose_products_visually",
 ]);
+
+const serviceTools = new Set([
+  "find_groceries",
+  "show_my_favorites",
+  "show_grocery_sections",
+  "browse_grocery_section",
+  "show_my_basket",
+  "choose_products_visually",
+]);
+
+const isServiceRequestAllowed = async (request: Request): Promise<boolean> => {
+  if (request.method === "GET" || request.method === "DELETE") return true;
+  try {
+    const message = await request.clone().json() as { method?: unknown; params?: unknown };
+    if (message.method === "initialize" || message.method === "ping" || message.method === "notifications/initialized"
+      || message.method === "tools/list" || message.method === "resources/list") return true;
+    if (message.method === "tools/call") {
+      const name = message.params && typeof message.params === "object" ? (message.params as { name?: unknown }).name : undefined;
+      return typeof name === "string" && serviceTools.has(name);
+    }
+    if (message.method === "resources/read") {
+      const uri = message.params && typeof message.params === "object" ? (message.params as { uri?: unknown }).uri : undefined;
+      return uri === "ui://nemlig/picker.html";
+    }
+  } catch {
+    // Request parsing already succeeded in classifyRequest; retain fail-closed behavior if it cannot be read again.
+  }
+  return false;
+};
 
 /** Classifies protocol, normal, and unknown/expensive MCP traffic before admission. */
 export function classifyMcpMessage(value: unknown): OperationClass {
@@ -227,7 +257,7 @@ export async function handleGatewayRequest(
       return finish(json({
         resource: config.publicUrl.href,
         authorization_servers: [config.issuer.href],
-        scopes_supported: [config.requiredScope],
+        scopes_supported: [config.requiredScope, ...(config.serviceAcceptance ? [SERVICE_ACCEPTANCE_SCOPE] : [])],
         bearer_methods_supported: ["header"],
       }), "protocol_completed");
     }
@@ -274,6 +304,11 @@ export async function handleGatewayRequest(
       return finish(new Response("Unauthorized", { status: 401 }), "authentication_rejected");
     }
     if (admin && principal.tier !== 0) {
+      denialReason = "principal_not_allowed";
+      return finish(json({ error: "principal_not_allowed" }, 403), "request_rejected");
+    }
+    if (config.serviceAcceptance && principal.subject === `${config.serviceAcceptance.clientId}@clients`
+      && !await isServiceRequestAllowed(classified.request)) {
       denialReason = "principal_not_allowed";
       return finish(json({ error: "principal_not_allowed" }, 403), "request_rejected");
     }

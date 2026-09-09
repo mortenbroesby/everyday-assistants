@@ -4,7 +4,7 @@ import { Container, getContainer } from "@cloudflare/containers";
 import { DurableObject } from "cloudflare:workers";
 import { createRemoteJWKSet } from "jose";
 import type { OAuthTokenVerifier } from "@modelcontextprotocol/sdk/server/auth/provider.js";
-import { createAuth0Verifier, fetchAuth0Metadata, verifyAuth0BrowserIdToken, type Auth0Config } from "./auth0.js";
+import { createAuth0Verifier, fetchAuth0Metadata, SERVICE_ACCEPTANCE_SCOPE, verifyAuth0BrowserIdToken, type Auth0Config } from "./auth0.js";
 import { FIXED_CONTAINER_NAME, loadGatewayConfig, type CloudflareEnv, type GatewayConfig } from "./cloudflare-config.js";
 import { attachAdmissionCredential, handleGatewayRequest, type GatewayDeadline } from "./cloudflare-gateway.js";
 import { parseGatewayRequestEvent, type GatewayRequestEvent } from "./cloudflare-observability.js";
@@ -28,6 +28,7 @@ const auth0Config = (config: GatewayConfig): Auth0Config => ({
   audience: config.audience,
   principalPolicy: config.principalPolicy,
   requiredScope: config.requiredScope,
+  ...(config.serviceAcceptance ? { serviceAcceptance: config.serviceAcceptance } : {}),
   publicUrl: config.publicUrl,
   allowedOrigins: config.allowedOrigins,
   revision: config.revision,
@@ -35,8 +36,14 @@ const auth0Config = (config: GatewayConfig): Auth0Config => ({
   port: 8080,
 });
 
-const authenticateSubject = async (token: string, config: GatewayConfig, deadline: GatewayDeadline): Promise<string | undefined> => {
-  const key = `${config.issuer.href}\0${config.audience}\0${config.requiredScope}`;
+interface VerifiedSubject {
+  subject: string;
+  clientId: string;
+  scopes: string[];
+}
+
+const authenticateSubject = async (token: string, config: GatewayConfig, deadline: GatewayDeadline): Promise<VerifiedSubject | undefined> => {
+  const key = `${config.issuer.href}\0${config.audience}\0${config.requiredScope}\0${config.serviceAcceptance?.clientId ?? ""}`;
   if (cachedVerifier?.key !== key) {
     const auth = auth0Config(config);
     const boundedFetch: typeof fetch = (input, init) => fetch(input, {
@@ -48,8 +55,13 @@ const authenticateSubject = async (token: string, config: GatewayConfig, deadlin
   }
   const verified = await cachedVerifier.verifier.verifyAccessToken(token);
   const subject = verified.extra?.subject;
-  return typeof subject === "string" ? subject : undefined;
+  return typeof subject === "string" ? { subject, clientId: verified.clientId, scopes: verified.scopes } : undefined;
 };
+
+const isVerifiedServicePrincipal = (principal: Principal, config: GatewayConfig): boolean =>
+  !!config.serviceAcceptance
+  && principal.principal_key === "s".repeat(32)
+  && principal.subject === `${config.serviceAcceptance.clientId}@clients`;
 
 const requestEvent = (event: GatewayRequestEvent): void => {
   console.log(JSON.stringify(parseGatewayRequestEvent(event)));
@@ -75,6 +87,8 @@ export class NemligMcpContainer extends Container<Env> {
     NEMLIG_MCP_REVISION: this.env.NEMLIG_MCP_REVISION ?? "development",
     NEMLIG_MCP_CREDENTIAL_KEY: this.env.NEMLIG_MCP_CREDENTIAL_KEY ?? "",
     NEMLIG_MCP_CREDENTIAL_KEY_VERSION: this.env.NEMLIG_MCP_CREDENTIAL_KEY_VERSION ?? "",
+    NEMLIG_MCP_SERVICE_ACCEPTANCE_ENABLED: this.env.NEMLIG_MCP_SERVICE_ACCEPTANCE_ENABLED ?? "false",
+    NEMLIG_MCP_SERVICE_CLIENT_ID: this.env.NEMLIG_MCP_SERVICE_CLIENT_ID ?? "",
     NEMLIG_MCP_HTTP_HOST: "0.0.0.0",
     NEMLIG_MCP_HTTP_PORT: "8080",
   };
@@ -277,12 +291,17 @@ export default {
     }
     return handleGatewayRequest(request, env, {
       async authenticate(token, config, deadline) {
-        const subject = await authenticateSubject(token, config, deadline);
-        if (!subject) return undefined;
-        const configured = findEnabledPrincipal(config.principalPolicy, subject);
+        const identity = await authenticateSubject(token, config, deadline);
+        if (!identity) return undefined;
+        const service = config.serviceAcceptance
+          && identity.clientId === config.serviceAcceptance.clientId
+          && identity.subject === `${config.serviceAcceptance.clientId}@clients`
+          && identity.scopes.length === 1 && identity.scopes[0] === SERVICE_ACCEPTANCE_SCOPE;
+        if (service) return { subject: identity.subject, principal_key: "s".repeat(32), tier: 2, enabled: true };
+        const configured = findEnabledPrincipal(config.principalPolicy, identity.subject);
         if (configured) return configured;
         if (config.principalPolicy.schema_version !== 2) return undefined;
-        return getContainer(env.NEMLIG_MCP_CONTAINER.jurisdiction("eu"), FIXED_CONTAINER_NAME).principal(subject);
+        return getContainer(env.NEMLIG_MCP_CONTAINER.jurisdiction("eu"), FIXED_CONTAINER_NAME).principal(identity.subject);
       },
       event: requestEvent,
       async admit(operation, principal, config) {
@@ -296,7 +315,7 @@ export default {
           revision: config.principalPolicy.revision,
           budgets: config.principalPolicy.budgets,
           principalKeys: config.principalPolicy.principals.map(({ principal_key }) => principal_key),
-        }, config.principalPolicy.schema_version === 2);
+        }, config.principalPolicy.schema_version === 2 && !isVerifiedServicePrincipal(principal, config));
       },
       async usage() {
         return getContainer(env.NEMLIG_MCP_CONTAINER.jurisdiction("eu"), FIXED_CONTAINER_NAME).usage();

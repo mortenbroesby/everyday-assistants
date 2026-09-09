@@ -1,3 +1,5 @@
+Owner clarification (2026-09-09): this is one-time restricted CI setup, not an owner login required per release. Do not add a local owner-token acquisition client or change the shared API lifetime by default. First-cutover real-user evidence is separate from CI credentials.
+
 # Owner setup and activation checklist
 
 Status: PROVIDER SETUP NOT PERFORMED. The owner accepted the routine synthetic / first-cutover-and-relevant-change live evidence matrix on 2026-09-09. Remaining identity, credential, entitlement and protection setup decisions below are still pending concrete inventory. Repository implementation can proceed on ready packets without waiting for these external actions.
@@ -20,25 +22,15 @@ Status: PROVIDER SETUP NOT PERFORMED. The owner accepted the routine synthetic /
 
 ## Approved provider configuration
 
-**Unresolved lifetime checkpoint:** the proposed 30-minute lifetime below is
-not an approved setup step. Auth0 configures access-token lifetime on the API,
-including authorization-code/PKCE users; do not change the canonical API's
-lifetime assuming it affects only the CI client. Before S3/S4 setup, the owner
-must choose whether to retain its existing lifetime and revise the security
-premise, accept an API-wide change, or authorize a separate audience/design.
-No choice is inferred. See
-[Auth0 lifetime settings](https://auth0.com/docs/secure/tokens/access-tokens/update-access-token-lifetime).
-The actual tenant setting and M2M entitlement remain unverified. Four runs per
-day at one token per run imply at most 124 tokens in a 31-day month, excluding
-other clients' consumption; this is a request budget, not proof of no new cost.
+**Lifetime decision:** retain the existing API-wide access-token lifetime. Do not change user-token lifetime for CI. The token helper requires at least 27 minutes remaining for the bounded release; the actual tenant setting, residual lifetime risk and M2M entitlement must be verified during one-time setup. Four runs per day imply at most 124 token requests in a 31-day month, excluding other clients; this is a budget, not proof of entitlement.
 
 GitHub: create `nemlig-production` environment only after approved name/policy; configure selected branch `main`, chosen reviewers/self-review, no bypass and a readiness variable false until verification. Store only approved CI credentials as environment secrets. Workflow preflight must detect absent/unprotected setup; implicit environment creation is not setup. Keep public PR workflow credential-free.
 
-Auth0: create one clearly named M2M acceptance application; authorize only the service-acceptance permission for the exact existing canonical resource, never Management API or the ordinary user permission. Record safe configuration metadata privately; never print client secret or access tokens. The runtime exact-client/subject binding is distinct from the family's owner identity. Proposed access-token lifetime is 30 minutes with at least 27 minutes remaining at release preflight; issue once per 25-minute-bounded release, without reissuance or refresh. Keep client credential expiry/rotation ownership explicit.
+Auth0: create one clearly named M2M acceptance application; authorize only the service-acceptance permission for the exact existing canonical resource, never Management API or the ordinary user permission. Record safe configuration metadata privately; never print client secret or access tokens. The runtime exact-client/subject binding is distinct from the family's owner identity. Keep the existing API-wide lifetime with at least 27 minutes remaining at release preflight; issue once per 25-minute-bounded release, without reissuance or refresh. Keep client credential expiry/rotation ownership explicit.
 
 Cloudflare: owner creates the minimum-scoped expiring CI token only after Sol supplies verified Worker/Container/registry permission names; accept that provider scoping may be account-wide rather than one Worker. Store `CLOUDFLARE_API_TOKEN` securely in the protected environment. Account ID is configuration metadata. CI must not hold Nemlig credentials, principal-policy secret contents, encryption keys, owner access/refresh tokens or browser cookies. Runtime service identity configuration contains only its exact allowed public identifiers and feature switch, never the Auth0 client secret.
 
-Rotation: owner owns a dated expiration/rotation record in a private password manager, replaces the environment secret through the secure UI, verifies one bounded token/API preflight, then revokes the old credential and verifies rejection. Auth0 client-secret rotation may invalidate the old value immediately: inspect supported overlap first and use a maintenance window if needed. No scheduled rotation service or GitHub secret-writing token is added. Revoking a client secret does not necessarily revoke already issued access tokens; use short expiry and disable the runtime identity immediately for emergency denial. Cloudflare deployment-token revocation and runtime MCP kill switch address different threats.
+Rotation: owner owns a dated expiration/rotation record in a private password manager, replaces the environment secret through the secure UI, verifies one bounded token/API preflight, then revokes the old credential and verifies rejection. Auth0 client-secret rotation may invalidate the old value immediately: inspect supported overlap first and use a maintenance window if needed. No scheduled rotation service or GitHub secret-writing token is added. Revoking a client secret does not necessarily revoke already issued access tokens; account for the existing token lifetime and disable the runtime identity immediately for emergency denial. Cloudflare deployment-token revocation and runtime MCP kill switch address different threats.
 
 ## Verification and rollback of setup
 
@@ -47,3 +39,15 @@ Verify environment protections through metadata, token claims/allowed scope with
 If setup fails, disable CI readiness/service identity and revoke newly created CI credentials as explicitly approved. Preserve the existing user client, owner credentials, live policy and deployment. If a release has begun, use the durable journal and ownership-safe recovery; never delete an active lease because the workflow UI says canceled. No provider resource deletion or family-credential rotation is incidental cleanup.
 
 Record final public-safe evidence only: configuration/protection checks, source and Worker versions/image digest, timestamps, fixed check outcomes, cost observations, and whether setup is enabled. Keep actual secret values, subjects, emails, returned account data and raw provider payloads out of repository/chat/logs/artifacts.
+
+## Release operation
+
+Normal releases use `production:deploy -- --service <full-main-sha>`. The first release and changed runtime boundaries use `--service-cutover` with the same machine identity. Successful synthetic checks leave `live_acceptance_pending`; complete the approved real-user check through the existing connected app, then record its exact revision in `apps/nemlig-assistant/release/production-cutover.json` and finalize recovery only after the remaining journal conditions hold. The record begins with `acceptedRevision: null`; no historical or synthetic result fills it automatically.
+
+Read-only GitHub inventory on 2026-09-09 still reports zero environments. The committed workflow is therefore unavailable for deployment until the one-time protected environment and scoped credentials are configured and verified.
+
+## Scoped permission inventory (2026-09-09)
+
+Pinned Wrangler 4.127.1 uses Worker version/deployment APIs and Container application/deployment/registry APIs. The proposed single-account token permissions are Account Settings Read, Workers Scripts Read/Edit, and Containers Read/Edit. These confer authority across that account, not just this Worker. No KV, R2, DNS, token-management or user permission is proposed. Custom-domain reconciliation may additionally require Workers Routes permission on the existing zone; its necessity remains to be demonstrated before granting it. This inventory is a setup candidate, not a verified token or successful deployment. See [Cloudflare permission catalog](https://developers.cloudflare.com/fundamentals/api/reference/permissions/) and [Workers token template](https://developers.cloudflare.com/fundamentals/api/reference/template/).
+
+GitHub's built-in job token supports Actions Read for native environment and branch-policy metadata. Environment-variable REST reads require a separate permission absent from workflow `permissions`; no new privileged GitHub token is introduced. Preflight checks native protections. The protected deploy job reads its readiness variable through `vars` after native approval and checks it before issuance/mutation. See [environment API permissions](https://docs.github.com/en/rest/deployments/environments) and [environment variable permissions](https://docs.github.com/en/rest/actions/variables).

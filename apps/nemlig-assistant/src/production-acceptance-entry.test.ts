@@ -6,6 +6,7 @@ import {
   type AcceptanceClient,
   type ApprovedProductionMutation,
 } from "./production-acceptance.js";
+import { serviceAcceptanceResourceInventory, serviceAcceptanceToolInventory } from "./mcp.js";
 
 const allTools = Object.values(productionToolInventory).flat().map((name) => ({ name }));
 const removedStorageTools = [
@@ -14,7 +15,7 @@ const removedStorageTools = [
 ];
 const retainedTools = allTools.filter(({ name }) => !removedStorageTools.includes(name));
 
-function edgeFetcher(calls: string[], origin = "https://nemlig-mcp.example.test/mcp"): typeof fetch {
+function edgeFetcher(calls: string[], origin = "https://nemlig-mcp.example.test/mcp", scopes = ["use:nemlig-assistant"]): typeof fetch {
   return async (input, init) => {
     const request = new Request(input, init);
     calls.push(new URL(request.url).pathname);
@@ -22,11 +23,25 @@ function edgeFetcher(calls: string[], origin = "https://nemlig-mcp.example.test/
     if (request.url.endsWith("/revision")) return Response.json({ revision: "test-revision" });
     if (request.url.includes("oauth-protected-resource")) return Response.json({
       resource: origin,
-      scopes_supported: ["use:nemlig-assistant"],
+      scopes_supported: scopes,
       bearer_methods_supported: ["header"],
     });
     if (request.url.endsWith("/admin/usage")) return Response.json({ schema_version: 1, tiers: { "0": {}, "1": {}, "2": {} } });
     return new Response(null, { status: request.headers.has("origin") ? 403 : 401 });
+  };
+}
+
+function serviceClient(): AcceptanceClient {
+  return {
+    listTools: async () => ({ tools: serviceAcceptanceToolInventory.map((name) => ({ name })) }),
+    listResources: async () => ({ resources: serviceAcceptanceResourceInventory.map((uri) => ({ uri })) }),
+    readResource: async () => ({ contents: [{ text: "picker" }] }),
+    callTool: async ({ name }) => {
+      if (["plan_my_shopping", "review_items_to_add", "add_approved_items"].includes(name)) return { isError: true };
+      if (name === "show_grocery_sections") return { structuredContent: { departments: [{ id: "fruit" }] } };
+      if (name === "show_my_basket") return { structuredContent: { items: [] } };
+      return { structuredContent: { result: [] } };
+    },
   };
 }
 
@@ -103,6 +118,30 @@ test("default owner acceptance rejects unavailable or malformed aggregate admin 
     }), /Tier usage|schema/iu);
     assert.equal(closed, 1);
   }
+});
+
+test("service acceptance uses only its in-memory token, closes the MCP session, and skips owner admin access", async () => {
+  const calls: string[] = [];
+  const tokens: string[] = [];
+  const events: string[] = [];
+  const report = await (await import("../scripts/production-acceptance.js")).main(["--service"], {
+    NEMLIG_PRODUCTION_MCP_URL: "https://nemlig-mcp.example.test/mcp",
+    NEMLIG_MCP_SERVICE_ACCESS_TOKEN: "service-token",
+    NEMLIG_MCP_ACCESS_TOKEN: "owner-token-must-not-be-used",
+  }, {
+    fetcher: edgeFetcher(calls, "https://nemlig-mcp.example.test/mcp", ["use:nemlig-assistant", "acceptance:nemlig-assistant"]),
+    connect: async (_origin, token) => {
+      tokens.push(token);
+      events.push("connect");
+      return { client: serviceClient(), close: async () => { events.push("close"); } };
+    },
+  });
+  assert.deepEqual(tokens, ["service-token"]);
+  assert.deepEqual(events, ["connect", "close"]);
+  assert.equal(calls.includes("/admin/usage"), false);
+  assert.deepEqual(report.required, ["edge", "service_fixture"]);
+  assert.deepEqual(report.passed, ["edge", "service_fixture"]);
+  assert.equal(report.profile, "service");
 });
 
 test("edge-only skips credentials and connect", async () => {

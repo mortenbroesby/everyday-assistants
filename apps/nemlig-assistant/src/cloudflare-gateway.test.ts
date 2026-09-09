@@ -160,6 +160,45 @@ test("retired saved-shopping tools are unsupported and never classified as norma
   }
 });
 
+test("service acceptance denies forbidden calls before admission and Container forwarding", async () => {
+  let admitted = 0;
+  let forwarded = 0;
+  const service = { subject: "service-client@clients", principal_key: "s".repeat(32), tier: 2 as const, enabled: true };
+  const response = await handleGatewayRequest(mcpRequest({ method: "tools/call", params: { name: "add_approved_items" } }), {
+    ...env,
+    NEMLIG_MCP_SERVICE_ACCEPTANCE_ENABLED: "true",
+    NEMLIG_MCP_SERVICE_CLIENT_ID: "service-client",
+  }, {
+    authenticate: async () => service,
+    admit: async () => { admitted += 1; throw new Error("unexpected admission"); },
+    forward: async () => { forwarded += 1; return new Response("unexpected"); },
+  });
+  assert.equal(response.status, 403);
+  assert.deepEqual(await response.json(), { error: "principal_not_allowed" });
+  assert.equal(admitted, 0);
+  assert.equal(forwarded, 0);
+});
+
+test("service acceptance cannot access edge administration", async () => {
+  let admitted = 0;
+  let forwarded = 0;
+  const response = await handleGatewayRequest(new Request("https://mcp.example.test/admin/usage", {
+    headers: { authorization: "Bearer service-token" },
+  }), {
+    ...env,
+    NEMLIG_MCP_SERVICE_ACCEPTANCE_ENABLED: "true",
+    NEMLIG_MCP_SERVICE_CLIENT_ID: "service-client",
+  }, {
+    authenticate: async () => ({ subject: "service-client@clients", principal_key: "s".repeat(32), tier: 2, enabled: true }),
+    admit: async () => { admitted += 1; throw new Error("unexpected admission"); },
+    forward: async () => { forwarded += 1; return new Response("unexpected"); },
+  });
+  assert.equal(response.status, 403);
+  assert.deepEqual(await response.json(), { error: "principal_not_allowed" });
+  assert.equal(admitted, 0);
+  assert.equal(forwarded, 0);
+});
+
 test("unauthorized, rate-limited, and open-breaker requests never reach the Container", async () => {
   let forwarded = 0;
   const base = {

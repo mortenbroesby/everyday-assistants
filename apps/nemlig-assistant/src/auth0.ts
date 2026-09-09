@@ -16,7 +16,10 @@ export interface Auth0Config {
   port: number;
   credentialKey?: string;
   credentialKeyVersion?: string;
+  serviceAcceptance?: { clientId: string };
 }
+
+export const SERVICE_ACCEPTANCE_SCOPE = "acceptance:nemlig-assistant";
 
 const required = (env: NodeJS.ProcessEnv, name: string): string => {
   const value = env[name]?.trim();
@@ -40,6 +43,7 @@ export function loadAuth0Config(env: NodeJS.ProcessEnv = process.env): Auth0Conf
   const principalPolicy = parsePrincipalPolicy(env.NEMLIG_MCP_PRINCIPALS);
   const credentialKey = env.NEMLIG_MCP_CREDENTIAL_KEY?.trim();
   const credentialKeyVersion = env.NEMLIG_MCP_CREDENTIAL_KEY_VERSION?.trim();
+  const serviceAcceptanceEnabled = env.NEMLIG_MCP_SERVICE_ACCEPTANCE_ENABLED === "true";
   if (principalPolicy.schema_version === 2
     && (!credentialKey || !/^[A-Za-z0-9_-]{43}$/u.test(credentialKey)
       || !credentialKeyVersion || !/^[A-Za-z0-9._-]{1,32}$/u.test(credentialKeyVersion))) {
@@ -58,6 +62,7 @@ export function loadAuth0Config(env: NodeJS.ProcessEnv = process.env): Auth0Conf
     port,
     ...(credentialKey ? { credentialKey } : {}),
     ...(credentialKeyVersion ? { credentialKeyVersion } : {}),
+    ...(serviceAcceptanceEnabled ? { serviceAcceptance: { clientId: required(env, "NEMLIG_MCP_SERVICE_CLIENT_ID") } } : {}),
   };
 }
 
@@ -91,7 +96,14 @@ export function createAuth0Verifier(
           algorithms: ["RS256"],
         });
         const scopes = typeof payload.scope === "string" ? payload.scope.split(/\s+/u).filter(Boolean) : [];
-        if (typeof payload.sub !== "string" || !payload.sub || !scopes.includes(config.requiredScope)) {
+        const service = config.serviceAcceptance;
+        const serviceSubject = service ? `${service.clientId}@clients` : undefined;
+        const serviceToken = payload.sub === serviceSubject && payload.azp === service?.clientId
+          && scopes.length === 1 && scopes[0] === SERVICE_ACCEPTANCE_SCOPE
+          && typeof payload.exp === "number" && Number.isFinite(payload.exp);
+        const claimsServiceIdentity = !!service && (payload.sub === serviceSubject || payload.azp === service.clientId);
+        if (typeof payload.sub !== "string" || !payload.sub
+          || (claimsServiceIdentity ? !serviceToken : !scopes.includes(config.requiredScope))) {
           throw new Error("required claims missing");
         }
         return {

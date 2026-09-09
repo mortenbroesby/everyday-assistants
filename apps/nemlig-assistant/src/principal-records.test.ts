@@ -109,6 +109,21 @@ test("atomic admission requires the current sealed credential without another st
   assert.equal((await storage.get<ReturnType<typeof emptyUsageState>>("usage"))?.normalCount, 1);
 });
 
+test("service fixture admission retains usage accounting without a human credential envelope", async () => {
+  const storage = new MemoryStorage();
+  const policy: TierAdmissionPolicy = {
+    revision: "family-v2", principalKeys: ["a".repeat(32)],
+    budgets: {
+      principal_minute_limits: { "0": 20, "1": 20, "2": 20 },
+      tier0_reserve: { minute: 20, month: 30_000 }, guest_limit: { minute: 20, month: 30_000 },
+      tier1_shed_at: { minute: 20, month: 30_000 }, tier2_shed_at: { minute: 20, month: 30_000 },
+    },
+  };
+  const admitted = await admitPrincipalRequest(storage, "normal", { dailyLimit: 5_000, expensiveDailyLimit: 500, rateLimit: 60, expensiveRateLimit: 10 }, { principalKey: "s".repeat(32), tier: 2 }, policy, false);
+  assert.equal(admitted.admitted, true);
+  assert.equal((await storage.get<ReturnType<typeof emptyUsageState>>("usage"))?.normalCount, 1);
+});
+
 test("credential validation rate limits stop before backend work", async () => {
   const storage = new MemoryStorage();
   const key = "a".repeat(32);

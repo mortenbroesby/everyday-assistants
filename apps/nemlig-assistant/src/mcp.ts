@@ -46,7 +46,13 @@ export interface McpRequestContext {
   principalKey: string;
   policyRevision: string;
   tier: 0 | 1 | 2;
+  kind?: "service";
 }
+
+export const serviceAcceptanceToolInventory = [
+  "find_groceries", "show_my_favorites", "show_grocery_sections", "browse_grocery_section", "show_my_basket", "choose_products_visually",
+] as const;
+export const serviceAcceptanceResourceInventory = [PICKER_URI] as const;
 
 const falseValues = new Set(["0", "false", "no", "off"]);
 
@@ -401,6 +407,13 @@ export function createMcpServer(
         "Use Nemlig Assistant for current Nemlig products, prices, availability, favourites, basket contents, recipes, conversation lists, or choosing and adding groceries. For ordinary find or add requests, use plan_my_shopping in automatic mode with one short Danish catalogue phrase per line; use manual mode only when the user asks to choose or when automatic results are unclear. Translate or normalize English, mixed-language, misspelled, and over-specific wording before the tool call: keep distinctive brand words, replace a foreign generic category with the intended Danish category, and omit conversational context. Ordinary planning searches the current Nemlig catalogue once per line, never favourites. Use find_groceries only for a direct catalogue search and show_my_favorites only when explicitly requested. For 'use this recipe/list and go ahead', set proceed true, then pass the returned same-run authorization through review_items_to_add and immediately use add_approved_items for its unchanged proposal; do not ask for redundant approval. Without explicit proceed intent, a plan, candidate choice, or exact review never authorizes mutation. A same-run authorization covers only clear additions from that run, never unresolved lines, removals, replacements, clearing, checkout, payment, ordering, or delivery slots. Present concise added, already-covered, unresolved, failed, and automatic-coverage results; omit internal references unless troubleshooting. Every basket change revalidates exact data, is single-use, stops on uncertainty, and reads back the basket.",
     },
   );
+  if (requestContext?.kind === "service") {
+    const registerTool = server.registerTool.bind(server);
+    const allowed = new Set<string>(serviceAcceptanceToolInventory);
+    server.registerTool = ((name: string, ...args: unknown[]) => allowed.has(name)
+      ? (registerTool as unknown as (...values: unknown[]) => unknown)(name, ...args)
+      : undefined) as typeof server.registerTool;
+  }
   const localConnectionId = randomUUID();
   const connectionId = (sessionId: string | undefined): string =>
     requestContext ? `${requestContext.principalKey}\0${requestContext.policyRevision}` : sessionId ?? localConnectionId;

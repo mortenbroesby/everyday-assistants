@@ -9,7 +9,7 @@ import { randomUUID } from "node:crypto";
 import { realpathSync } from "node:fs";
 import { basename } from "node:path";
 import type { IncomingMessage, Server, ServerResponse } from "node:http";
-import { createAuth0Verifier, fetchAuth0Metadata, loadAuth0Config, type Auth0Config } from "./auth0.js";
+import { createAuth0Verifier, fetchAuth0Metadata, loadAuth0Config, SERVICE_ACCEPTANCE_SCOPE, type Auth0Config } from "./auth0.js";
 import { NemligClient, type ShoppingClient } from "./client.js";
 import { createMcpServer } from "./mcp.js";
 import { BasketProposalService } from "./proposals.js";
@@ -32,6 +32,18 @@ const defaultPrincipalContext: PrincipalContextFactory = () => {
   return { client, proposals: new BasketProposalService(client) };
 };
 
+const servicePrincipal: Principal = { subject: "service", principal_key: "s".repeat(32), tier: 2, enabled: true };
+const serviceContext = (): PrincipalContext => {
+  const product = () => ({ id: 1, name: "Service fixture banana", price: 1, unit: "1 kr/stk.", unitPrice: 1, unitSize: "1 stk.", brand: "Fixture", category: "Frugt", subcategory: "Bananer", imageUrl: "", available: true, labels: [], isOrganic: false, isFrozen: false, isRefrigerated: false, isDairy: false, isLactoseFree: false, isGlutenFree: false, isVegan: true, isOnDiscount: false });
+  const client: ShoppingClient = {
+    isLoggedIn: () => true, login: async () => {}, searchProducts: async () => [product()], getProduct: async () => product(), getFreshProduct: async () => product(),
+    listFavorites: async () => [product()], listDepartments: async () => [{ id: "/frugt", name: "Frugt" }], browseDepartment: async () => ({ products: [product()], page: 1, hasNext: false }),
+    getCart: async () => ({ items: [], productsPrice: 0, deliveryPrice: 0, numberOfProducts: 0, deliveryTime: undefined }),
+    addToCart: async () => { throw new Error("service fixture is read-only"); }, removeFromCart: async () => { throw new Error("service fixture is read-only"); }, clearCart: async () => { throw new Error("service fixture is read-only"); },
+  };
+  return { client, proposals: new BasketProposalService(client) };
+};
+
 type Request = IncomingMessage & { auth?: AuthInfo; body?: unknown; get(name: string): string | undefined };
 type Response = ServerResponse & {
   headersSent: boolean;
@@ -51,6 +63,7 @@ export function createHttpApp(
   verifier: OAuthTokenVerifier,
   createContext: PrincipalContextFactory = defaultPrincipalContext,
   createValidationClient: () => Pick<NemligClient, "validateCredentials"> = () => new NemligClient(),
+  mcpEnv: NodeJS.ProcessEnv = process.env,
 ) {
   const app = createMcpExpressApp({ host: config.host });
   const contexts = new Map<string, PrincipalContext>();
@@ -58,7 +71,7 @@ export function createHttpApp(
   app.use(mcpAuthMetadataRouter({
     oauthMetadata: oauth,
     resourceServerUrl: config.publicUrl,
-    scopesSupported: [config.requiredScope],
+    scopesSupported: [config.requiredScope, ...(config.serviceAcceptance ? [SERVICE_ACCEPTANCE_SCOPE] : [])],
     resourceName: "Nemlig Assistant",
   }));
   app.get("/healthz", (_req: Request, res: Response) => res.json({ status: "ok" }));
@@ -85,7 +98,7 @@ export function createHttpApp(
 
   const authenticate = requireBearerAuth({
     verifier,
-    requiredScopes: [config.requiredScope],
+    requiredScopes: [],
     resourceMetadataUrl: getOAuthProtectedResourceMetadataUrl(config.publicUrl),
   });
   app.use("/mcp", (req: Request, res: Response, next: Next) => {
@@ -97,11 +110,19 @@ export function createHttpApp(
   app.all("/mcp", async (req: Request, res: Response) => {
     try {
       const subject = req.auth?.extra?.subject;
-      const configured = typeof subject === "string" ? findEnabledPrincipal(config.principalPolicy, subject) : undefined;
+      const service = config.serviceAcceptance
+        && req.auth?.clientId === config.serviceAcceptance.clientId
+        && subject === `${config.serviceAcceptance.clientId}@clients`
+        && req.auth.scopes.length === 1 && req.auth.scopes[0] === SERVICE_ACCEPTANCE_SCOPE;
+      if (!service && !req.auth?.scopes.includes(config.requiredScope)) return res.status(403).json({ error: "principal_not_allowed" });
+      const configured = !service && typeof subject === "string" ? findEnabledPrincipal(config.principalPolicy, subject) : undefined;
       let principal = configured;
       let credentials: Credentials | undefined = configured?.nemlig;
       let generation = 0;
-      if (config.principalPolicy.schema_version === 2 && typeof subject === "string") {
+      if (service) {
+        principal = servicePrincipal;
+        credentials = undefined;
+      } else if (config.principalPolicy.schema_version === 2 && typeof subject === "string") {
         const principalKey = req.get("x-nemlig-principal-key");
         const policyRevision = req.get("x-nemlig-policy-revision");
         const generationValue = Number(req.get("x-nemlig-credential-generation"));
@@ -127,7 +148,7 @@ export function createHttpApp(
         }
       }
       if (!principal) return res.status(403).json({ error: "principal_not_allowed" });
-      if (!credentials) return res.status(409).json({ error: "connection_required", connection_url: "https://nemlig-mcp.broesby.dk/connect" });
+      if (!service && !credentials) return res.status(409).json({ error: "connection_required", connection_url: "https://nemlig-mcp.broesby.dk/connect" });
       const sessionId = req.get("mcp-session-id");
       const session = sessionId ? sessions.get(sessionId) : undefined;
       if (session && (session.principalKey !== principal.principal_key
@@ -137,7 +158,7 @@ export function createHttpApp(
       let transport = session?.transport;
       if (!transport && req.method === "POST" && isInitializeRequest(req.body)) {
         const contextKey = `${principal.principal_key}:${generation}`;
-        let context = contexts.get(contextKey);
+        let context = service ? serviceContext() : contexts.get(contextKey);
         if (!context) {
           for (const key of contexts.keys()) if (key.startsWith(`${principal.principal_key}:`)) contexts.delete(key);
           if (contexts.size >= MAX_PRINCIPALS) {
@@ -158,9 +179,9 @@ export function createHttpApp(
         await createMcpServer(
           context.client,
           async () => credentials,
-          process.env,
+          mcpEnv,
           context.proposals,
-          { principalKey: principal.principal_key, policyRevision: config.principalPolicy.revision, tier: principal.tier },
+          { principalKey: principal.principal_key, policyRevision: config.principalPolicy.revision, tier: principal.tier, ...(service ? { kind: "service" as const } : {}) },
         ).connect(transport);
       }
       if (!transport) return res.status(400).json({ jsonrpc: "2.0", error: { code: -32_000, message: "Invalid or missing session." }, id: null });

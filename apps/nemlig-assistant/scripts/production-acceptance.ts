@@ -8,6 +8,7 @@ import {
   verifyAggregateTierUsage,
   verifyProductionEdge,
   verifyReadOnlyProductionFeatures,
+  verifyServiceAcceptanceFeatures,
   type AcceptanceClient,
   type ApprovedProductionMutation,
 } from "../src/production-acceptance.js";
@@ -52,9 +53,10 @@ const approvedMutation = (env: Environment, name: string): ApprovedProductionMut
   return object as unknown as ApprovedProductionMutation;
 };
 
-const parseArgs = (argv: string[]): { edgeOnly: boolean; mutation: boolean } => {
+const parseArgs = (argv: string[]): { edgeOnly: boolean; mutation: boolean; service: boolean } => {
   let edgeOnly = false;
   let mutation = false;
+  let service = false;
   for (const argument of argv) {
     if (argument === "--edge-only") {
       if (edgeOnly) throw new Error("--edge-only must not be repeated");
@@ -62,12 +64,15 @@ const parseArgs = (argv: string[]): { edgeOnly: boolean; mutation: boolean } => 
     } else if (argument === "--mutation") {
       if (mutation) throw new Error("--mutation must not be repeated");
       mutation = true;
+    } else if (argument === "--service") {
+      if (service) throw new Error("--service must not be repeated");
+      service = true;
     } else {
       throw new Error(`Unknown acceptance argument: ${argument}`);
     }
   }
-  if (edgeOnly && mutation) throw new Error("--edge-only and --mutation cannot be combined");
-  return { edgeOnly, mutation };
+  if ((edgeOnly && mutation) || (edgeOnly && service) || (mutation && service)) throw new Error("--edge-only, --mutation, and --service cannot be combined");
+  return { edgeOnly, mutation, service };
 };
 
 const abortable = async <T>(label: string, work: Promise<T>, signal: AbortSignal): Promise<T> => {
@@ -138,7 +143,7 @@ export interface AcceptanceReport {
   observedRevision?: string;
   startedAt: string;
   completedAt: string;
-  profile: "edge" | "live-user" | "mutation";
+  profile: "edge" | "live-user" | "service" | "mutation";
   required: string[];
   passed: string[];
   failed: string[];
@@ -196,18 +201,22 @@ export async function main(
     const edge = await verifyProductionEdge(origin, dependencies.fetcher, {
       expectedRevision: env.NEMLIG_EXPECTED_REVISION?.trim() || undefined,
       signal: controller.signal,
+      ...(options.service ? { expectedScopes: ["use:nemlig-assistant", "acceptance:nemlig-assistant"] } : {}),
     });
     const observedRevision = /^[0-9a-f]{40}$/u.test(edge.revision) ? edge.revision : undefined;
     if (options.edgeOnly) {
       return { profile: "edge", observedRevision, required: ["edge"], passed: ["edge"], unavailable: [], lastCompletedBoundary: edge.lastCompletedBoundary, correlationIds: edge.correlationIds };
     }
 
-    const accessToken = required(env, "NEMLIG_MCP_ACCESS_TOKEN");
+    const accessToken = required(env, options.service ? "NEMLIG_MCP_SERVICE_ACCESS_TOKEN" : "NEMLIG_MCP_ACCESS_TOKEN");
     const connected = await abortable("Authenticated MCP connect", dependencies.connect(origin, accessToken, controller.signal), controller.signal);
     const closeOnAbort = () => { void connected.close().catch(() => undefined); };
     controller.signal.addEventListener("abort", closeOnAbort, { once: true });
     try {
-      if (!mutations) {
+      if (options.service) {
+        const report = await verifyServiceAcceptanceFeatures(connected.client, { signal: controller.signal });
+        return { profile: "service", observedRevision, required: ["edge", "service_fixture"], passed: ["edge", "service_fixture"], unavailable: [], lastCompletedBoundary: `service_fixture_${report.requestCount}_requests`, correlationIds: edge.correlationIds };
+      } else if (!mutations) {
         const report = await verifyReadOnlyProductionFeatures(connected.client, { signal: controller.signal });
         await verifyAggregateTierUsage(origin, accessToken, dependencies.fetcher, { signal: controller.signal });
         return { profile: "live-user", observedRevision, required: ["edge", "live_user_features", "owner_admin"], passed: ["edge", "live_user_features", "owner_admin"], unavailable: report.unavailable, lastCompletedBoundary: "owner_admin", correlationIds: edge.correlationIds };
@@ -239,7 +248,7 @@ export async function run(
   } catch (error) {
     const report: AcceptanceReport = {
       schema: 1, sourceSha, startedAt, completedAt: new Date().toISOString(),
-      profile: argv.includes("--mutation") ? "mutation" : argv.includes("--edge-only") ? "edge" : "live-user",
+      profile: argv.includes("--mutation") ? "mutation" : argv.includes("--edge-only") ? "edge" : argv.includes("--service") ? "service" : "live-user",
       required: [], passed: [], failed: [failureCategory(error)], unavailable: [], lastCompletedBoundary: "none",
       failureCategory: failureCategory(error), correlationIds: [],
     };

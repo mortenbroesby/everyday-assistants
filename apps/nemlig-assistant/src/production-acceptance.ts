@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
+import { serviceAcceptanceResourceInventory, serviceAcceptanceToolInventory } from "./mcp.js";
 
 interface ToolResult {
   isError?: boolean;
@@ -28,7 +29,7 @@ type ToolName = typeof productionToolInventory[keyof typeof productionToolInvent
 export interface AcceptanceClient {
   listTools(): Promise<{ tools: Array<{ name: string }> }>;
   callTool(request: {
-    name: ToolName;
+    name: string;
     arguments: Record<string, unknown>;
   }): Promise<ToolResult>;
   listResources?(): Promise<{ resources: Array<{ uri: string }> }>;
@@ -62,6 +63,11 @@ const basket = (result: ToolResult, operation: string): Basket => {
   return value;
 };
 
+const isServiceForbiddenResponse = (error: unknown): boolean =>
+  !!error && typeof error === "object"
+  && (("status" in error && (error as { status?: unknown }).status === 403)
+    || ("code" in error && (error as { code?: unknown }).code === 403));
+
 const expectedTools = Object.values(productionToolInventory).flat();
 
 export function assertProductionInventory(
@@ -76,6 +82,12 @@ export function assertProductionInventory(
 export interface ProductionFeatureReport {
   exercised: string[];
   unavailable: string[];
+}
+
+export interface ServiceAcceptanceFeatureReport {
+  exercised: string[];
+  denied: string[];
+  requestCount: number;
 }
 
 export interface AcceptanceDeadlineOptions {
@@ -186,6 +198,73 @@ export async function verifyReadOnlyProductionFeatures(
   return { exercised, unavailable };
 }
 
+/** Verify the deliberately closed, machine-authenticated MCP fixture surface. */
+export async function verifyServiceAcceptanceFeatures(
+  client: AcceptanceClient,
+  options: AcceptanceDeadlineOptions = {},
+): Promise<ServiceAcceptanceFeatureReport> {
+  const totalTimeoutMs = options.totalTimeoutMs ?? 90_000;
+  const deadline = Date.now() + totalTimeoutMs;
+  const withinTotalDeadline = async <T>(label: string, work: () => Promise<T>): Promise<T> => {
+    const remaining = deadline - Date.now();
+    assert.ok(remaining > 0, `Service acceptance timed out before ${label}`);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      return await Promise.race([
+        bounded(label, work, options.signal),
+        new Promise<never>((_resolve, reject) => {
+          timer = setTimeout(() => reject(new Error(`Service acceptance timed out during ${label}`)), remaining);
+        }),
+      ]);
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+  };
+  assert.ok(client.listResources && client.readResource, "Service resource client is required");
+  const tools = (await withinTotalDeadline("tool inventory", () => client.listTools())).tools;
+  const resources = (await withinTotalDeadline("resource inventory", () => client.listResources!())).resources;
+  const names = tools.map(({ name }) => name).sort();
+  const baseTools = serviceAcceptanceToolInventory.filter((name) => name !== "choose_products_visually");
+  const pickerEnabled = names.includes("choose_products_visually");
+  assert.deepEqual(names, [...baseTools, ...(pickerEnabled ? ["choose_products_visually"] : [])].sort(), "Service MCP tool inventory drifted");
+  assert.deepEqual(resources.map(({ uri }) => uri).sort(), pickerEnabled ? [...serviceAcceptanceResourceInventory] : [], "Service MCP resource inventory drifted");
+
+  const exercised: string[] = [];
+  let requestCount = 2;
+  const call = async (name: string, args: Record<string, unknown> = {}): Promise<ToolResult> => {
+    requestCount += 1;
+    const result = await withinTotalDeadline(name, () => client.callTool({ name, arguments: args }));
+    exercised.push(name);
+    return result;
+  };
+  content(await call("find_groceries", { search_term: "banan", result_count: 1 }), "find_groceries");
+  content(await call("show_my_favorites", { search_term: "banan", result_count: 1, page: 1 }), "show_my_favorites");
+  const sections = content<{ departments?: Array<{ id?: string }> }>(await call("show_grocery_sections"), "show_grocery_sections");
+  const section = sections.departments?.find(({ id }) => id)?.id;
+  assert.ok(section, "Service grocery sections returned no usable section");
+  content(await call("browse_grocery_section", { section, result_count: 1, page: 1 }), "browse_grocery_section");
+  basket(await call("show_my_basket"), "show_my_basket");
+  if (pickerEnabled) {
+    content(await call("choose_products_visually", { search_term: "banan", result_count: 1 }), "choose_products_visually");
+    const resource = await withinTotalDeadline("picker resource", () => client.readResource!({ uri: serviceAcceptanceResourceInventory[0] }));
+    assert.ok(resource.contents.length, "Service picker resource is empty");
+    exercised.push(serviceAcceptanceResourceInventory[0]);
+    requestCount += 1;
+  }
+  const denied: string[] = [];
+  for (const name of ["plan_my_shopping", "review_items_to_add", "add_approved_items"]) {
+    try {
+      const result = await call(name);
+      assert.equal(result.isError, true, `Service acceptance allowed forbidden ${name}`);
+    } catch (error) {
+      assert.ok(isServiceForbiddenResponse(error), `Service acceptance failed ${name} without a precise HTTP 403 denial`);
+    }
+    denied.push(name);
+  }
+  assert.ok(requestCount <= 12, "Service MCP acceptance exceeded its 12-request budget");
+  return { exercised, denied, requestCount };
+}
+
 export type ProductionMutationOperation = "additions" | "removal" | "replacement" | "clear";
 
 export interface ApprovedProductionMutation {
@@ -278,7 +357,7 @@ export async function verifyApprovedReversibleProductionMutation(
 export async function verifyProductionEdge(
   origin: URL,
   fetcher: typeof fetch = fetch,
-  options: { stepTimeoutMs?: number; expectedRevision?: string; signal?: AbortSignal } = {},
+  options: { stepTimeoutMs?: number; expectedRevision?: string; expectedScopes?: string[]; signal?: AbortSignal } = {},
 ): Promise<{ revision: string; lastCompletedBoundary: string; steps: Array<{ boundary: string; latencyMs: number }>; correlationIds: string[] }> {
   const stepTimeoutMs = options.stepTimeoutMs ?? 3_000;
   const steps: Array<{ boundary: string; latencyMs: number }> = [];
@@ -313,7 +392,7 @@ export async function verifyProductionEdge(
   assert.equal(metadata.status, 200, "OAuth resource metadata failed");
   const resource = await metadata.json() as Record<string, unknown>;
   assert.equal(resource.resource, new URL("/mcp", origin).href);
-  assert.deepEqual(resource.scopes_supported, ["use:nemlig-assistant"]);
+  assert.deepEqual(resource.scopes_supported, options.expectedScopes ?? ["use:nemlig-assistant"]);
   assert.deepEqual(resource.bearer_methods_supported, ["header"]);
 
   const anonymous = await step("anonymous_rejection", new URL("/mcp", origin), {
