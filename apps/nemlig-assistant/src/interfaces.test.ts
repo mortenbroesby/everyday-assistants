@@ -632,6 +632,7 @@ test("every MCP tool has complete schemas, accurate annotations, and safe server
     assert.equal(byName.get("empty_approved_basket")?.annotations?.destructiveHint, true);
     assert.match(mcp.getInstructions() ?? "", /exact review never authorizes mutation/);
     assert.match(mcp.getInstructions() ?? "", /do not ask for redundant approval/);
+    assert.match(mcp.getInstructions() ?? "", /pass only the plan's selected additions.*never supplement them with unresolved candidates/);
     assert.match(mcp.getInstructions() ?? "", /never unresolved lines, removals, replacements, clearing, checkout, payment, ordering, or delivery slots/);
     assert.doesNotMatch(
       JSON.stringify({ tools, instructions: mcp.getInstructions() }),
