@@ -79,10 +79,17 @@ const outcomes = (product: Product, constraints: ParsedShoppingPlanLine["constra
 
 const words = (value: string): string[] => value.toLocaleLowerCase("da-DK").normalize("NFKD").replace(/\p{M}/gu, "").match(/[a-z0-9]+/gu) ?? [];
 const petWords = new Set(["kat", "katte", "kattemad", "hund", "hunde", "hundemad", "kaeledyr", "dyrefoder"]);
+const quantityWords = new Set(["g", "kg", "ml", "cl", "l", "stk"]);
 const relevantProduct = (product: Product, query: string): boolean => {
-  const requested = new Set(words(query));
+  const requested = new Set(words(query).filter((word) => !quantityWords.has(word) && !/^\d+$/u.test(word)));
   if ([...requested].some((word) => petWords.has(word))) return true;
-  return !words(`${product.category} ${product.subcategory} ${product.name} ${product.description ?? ""}`).some((word) => petWords.has(word));
+  const productWords = words(`${product.brand} ${product.category} ${product.subcategory} ${product.name}`);
+  if (productWords.some((word) => petWords.has(word))) return false;
+  if (requested.size === 0) return true;
+  const joined = [...requested].join("");
+  return productWords.includes(joined) || [...requested].every((requestedWord) => productWords.some((productWord) =>
+    productWord === requestedWord || (requestedWord.length >= 5 && (productWord.startsWith(requestedWord) || requestedWord.startsWith(productWord))),
+  ));
 };
 
 type BaseUnit = "g" | "ml" | "stk";
@@ -110,12 +117,19 @@ export function eligibleCandidates(
   preferences: ParsedShoppingPlanLine["preferences"],
   planning: Pick<ParsedShoppingPlanLine, "name" | "requested_amount" | "requested_unit" | "preferred_brands"> = { name: "", preferred_brands: [] },
 ): PlanCandidate[] {
+  const requestedWords = new Set(words(planning.name));
+  const preferred = new Set([
+    ...planning.preferred_brands.map((brand) => brand.toLocaleLowerCase("da-DK")),
+    ...products.map((product) => product.brand).filter((brand) => {
+      const brandWords = words(brand);
+      return brandWords.length > 0 && brandWords.every((word) => requestedWords.has(word));
+    }).map((brand) => brand.toLocaleLowerCase("da-DK")),
+  ]);
   return products.flatMap((product) => {
     if (product.id === undefined || !product.name) return [];
     if (!relevantProduct(product, planning.name)) return [];
     const constraintOutcomes = outcomes(product, constraints);
     if (Object.values(constraintOutcomes).includes(false)) return [];
-    const preferred = new Set(planning.preferred_brands.map((brand) => brand.toLocaleLowerCase("da-DK")));
     const preferredBrandMatch = preferred.has(product.brand.toLocaleLowerCase("da-DK"));
     const parsedPackage = packageAmount(product.unitSize);
     const requested = planning.requested_amount !== undefined && planning.requested_unit
@@ -172,7 +186,8 @@ export async function resolveShoppingPlan(client: PlanClient, raw: ShoppingPlanI
       const products = line.selected_product_id === undefined
         ? await client.searchProducts(line.name, 20)
         : [await client.getProduct(line.selected_product_id)];
-      return { candidates: eligibleCandidates(products, "catalog", line.constraints, line.preferences, line), unavailable: false };
+      return { candidates: eligibleCandidates(products, "catalog", line.constraints, line.preferences,
+        line.selected_product_id === undefined ? line : { ...line, name: "" }), unavailable: false };
     } catch (error) {
       if (error instanceof NemligError && error.status === 401) throw error;
       return { candidates: [], unavailable: true };

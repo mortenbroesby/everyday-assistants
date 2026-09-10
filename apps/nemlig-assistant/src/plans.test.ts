@@ -38,6 +38,8 @@ test("planning rejects pet food, covers requested amounts, honors brands, and pr
     product(1, "Hakket oksekød", { unitSize: "500 g", category: "Kød" }),
     product(2, "Hakket oksekød til kat", { unitSize: "400 g", category: "Kæledyr", subcategory: "Kattemad" }),
     product(3, "Hakket oksekød", { unitSize: "800 g", category: "Kød" }),
+    product(6, "Hakket kyllingekød", { unitSize: "400 g", category: "Kød" }),
+    product(7, "Salatboks", { unitSize: "500 g", category: "Færdigretter" }),
   ];
   const amountPlan = await resolveShoppingPlan({
     searchProducts: async () => meat,
@@ -65,11 +67,24 @@ test("planning rejects pet food, covers requested amounts, honors brands, and pr
   assert.equal(preferred.lines[0]?.selected_product_id, 5);
   assert.equal(preferred.lines[0]?.clarity_reason, "preferred_brand");
 
+  const namedBrand = await resolveShoppingPlan({ searchProducts: async () => ketchup, getProduct: async () => ketchup[0]!, getCart: async () => basket() }, {
+    lines: [{ id: "ketchup", name: "Heinz ketchup", quantity: 1, require_choice: true }],
+  });
+  assert.deepEqual(namedBrand.lines[0]?.candidates.map(({ id }) => id), [5]);
+  assert.equal(namedBrand.lines[0]?.candidates[0]?.preferred_brand_match, true);
+  assert.equal(namedBrand.lines[0]?.clarity_reason, "preferred_brand");
+
   const choice = await resolveShoppingPlan({ searchProducts: async () => ketchup, getProduct: async () => ketchup[0]!, getCart: async () => basket() }, {
     lines: [{ id: "ketchup", name: "tomat ketchup", quantity: 1, require_choice: true }],
   });
   assert.equal(choice.lines[0]?.resolution, "unresolved");
   assert.equal(choice.lines[0]?.clarity_reason, "brand_choice");
+
+  const cola = eligibleCandidates([
+    product(8, "Coca-Cola Original Taste", { brand: "Coca-Cola" }),
+    product(9, "Colais", { brand: "Sun Lolly", category: "Is" }),
+  ], "catalog", {}, [], { name: "cola", preferred_brands: [] });
+  assert.deepEqual(cola.map(({ id }) => id), [8]);
 });
 
 test("requested amounts validate paired supported units before provider reads", async () => {
@@ -241,7 +256,7 @@ test("automatic planning selects only deterministic clear matches and reports ho
   const client = { searchProducts: async () => products, getProduct: async (id: number) => products.find((item) => item.id === id)!, getCart: async () => basket() };
   const automatic = await resolveShoppingPlan(client, { lines: [{ id: "milk", name: "arla minimælk", quantity: 1 }] });
   assert.equal(automatic.mode, "automatic");
-  assert.equal(automatic.lines[0]?.clarity_reason, "clear_text_match");
+  assert.equal(automatic.lines[0]?.clarity_reason, "preferred_brand");
   assert.equal(automatic.lines[0]?.selected_product_id, 1);
   assert.deepEqual(automatic.lines[0]?.candidates[0]?.details, [{ key: "Fedt", value: "0,4 %" }]);
   assert.deepEqual(automatic.summary, { total: 1, covered: 0, automatically_selected: 1, added: 0, unresolved: 0, failed: 0, automatic_coverage_percent: 100 });

@@ -11,8 +11,8 @@ const automaticCandidate = (line: StoredShoppingPlanInput["lines"][number], cand
   if (!available.length) return { reason: candidates.length ? "unavailable" : "no_eligible_candidate" };
   if (line.requested_amount !== undefined && available[0]?.required_packages === undefined) return { reason: "close_alternatives" };
   if (line.require_choice && !available[0]?.preferred_brand_match) return { reason: "brand_choice" };
-  if (available.length === 1) return { candidate: available[0], reason: "unique_candidate" };
   if (available[0]?.preferred_brand_match && !available.slice(1).some((candidate) => candidate.preferred_brand_match)) return { candidate: available[0], reason: "preferred_brand" };
+  if (available.length === 1) return { candidate: available[0], reason: "unique_candidate" };
   if (line.requested_amount !== undefined && (available[0]?.excess_amount ?? Infinity) < (available[1]?.excess_amount ?? Infinity)) return { candidate: available[0], reason: "amount_match" };
   const wanted = normalizedWords(line.name);
   const covers = (candidate: PlanCandidate): boolean => {
