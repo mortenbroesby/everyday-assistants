@@ -1,12 +1,12 @@
 ## ADDED Requirements
 
-### Requirement: Automated production releases are exact and explicit
+### Requirement: Automated production releases are exact and review-gated
 
-The repository SHALL provide one explicitly invoked production release operation
-that accepts an exact commit, requires that commit to equal local HEAD and current
-remote `main`, and requires successful CI for that exact revision before any
-Cloudflare mutation. Repository state, green CI, and planning or test execution
-MUST NOT invoke or authorize the operation automatically.
+The repository SHALL provide one production release operation that accepts an
+exact `main` commit and requires successful CI for that exact revision before any
+Cloudflare mutation. It MAY start from a manual dispatch or after successful CI
+for a merged pull request carrying `deploy:nemlig-production`; an unlabeled merge
+MUST NOT deploy. The protected production environment remains the final approval.
 
 #### Scenario: Exact release is authorized and ready
 
@@ -14,6 +14,17 @@ MUST NOT invoke or authorize the operation automatically.
   commit that equals local HEAD and refreshed remote `main` and exact-head CI is
   successful
 - **THEN** the operation may proceed to its serialized Cloudflare preflight
+
+#### Scenario: Labeled merge is ready
+
+- **WHEN** a pull request carrying `deploy:nemlig-production` is merged to `main`
+  and CI succeeds for the exact merge commit
+- **THEN** the protected routine release starts for that exact commit
+
+#### Scenario: Merge is not labeled
+
+- **WHEN** CI succeeds for an unlabeled merge to `main`
+- **THEN** no production job is submitted for approval and Cloudflare is unchanged
 
 #### Scenario: Source or CI does not match
 
@@ -91,4 +102,3 @@ attempt, and last verified production state.
 - **WHEN** the exact candidate passes every disabled and enabled acceptance check
 - **THEN** the operation reports the deployed commit and enabled version, releases
   its production lease, and records that rollback was unnecessary
-

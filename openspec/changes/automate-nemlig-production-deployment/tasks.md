@@ -42,10 +42,20 @@
 - [x] 4.2 Reconcile current `origin/main`, coordinate with active sibling work,
   commit and integrate the scoped implementation into remote `main`, and verify
   exact-head CI succeeds.
-- [ ] 4.3 With a current owner token and explicit production approval, invoke the
-  command for the exact CI-green `main` commit; verify its disabled, inactive,
-  enabled, authenticated read-only, rollback, and redacted-summary evidence
-  without any Nemlig mutation.
+- [x] 4.3 With explicit production approval, invoke the protected command for an
+  exact CI-green `main` commit; verify its disabled, inactive, enabled,
+  authenticated read-only, rollback, and redacted-summary evidence without any
+  Nemlig mutation.
 - [ ] 4.4 Sync the delta specification into the main spec, archive the completed
   change, integrate the archival commit into remote `main`, and verify exact-head
   CI plus the recorded production state before final handoff.
+
+## 5. Pull-request release policy
+
+- [x] 5.1 Let routine mode deploy CI-green descendants of the accepted cutover;
+  verify a missing or unrelated cutover still fails before provider access.
+- [x] 5.2 After exact-main CI, require the exact merged pull request to carry
+  `deploy:nemlig-production` before entering the protected environment; keep
+  manual dispatch and recovery finalization available.
+- [ ] 5.3 Document pull-request-only `main` integration and the label contract,
+  create the label and repository ruleset, and verify direct pushes are blocked.

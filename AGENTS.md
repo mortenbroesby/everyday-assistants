@@ -59,5 +59,9 @@ This repository contains independent assistants under `apps/`.
 - Use OpenSpec for non-trivial feature and architecture changes: propose, review,
   apply, then archive. Trivial fixes and documentation edits do not need a spec.
 - An OpenSpec proposal never authorizes a Nemlig mutation.
-- Preserve unrelated changes. Commit completed scoped work to `main`, push it,
-  and verify the remote ref before handoff.
+- Preserve unrelated changes. Commit and push completed scoped work on a feature
+  branch, open a pull request, wait for required CI, and merge through GitHub;
+  never push directly to `main`. Add the `deploy:nemlig-production` label only
+  when that merged pull request should start the protected production workflow.
+  The label authorizes the workflow to start, while the `nemlig-production`
+  environment remains the final deployment approval.

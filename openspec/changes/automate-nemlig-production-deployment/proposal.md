@@ -4,7 +4,8 @@ Nemlig production releases currently depend on a careful sequence of manual
 commands, making it easy to rebuild twice, overlap another deployment, or lose
 track of the last verified state after interruption. A repository-owned command
 can make the proven disabled-first procedure repeatable without adding a hosted
-secret, paid service, or automatic production authority.
+secret or paid service. The remaining manual dispatch step is easy to forget
+after a reviewed Worker change has already passed CI.
 
 ## What Changes
 
@@ -20,10 +21,13 @@ secret, paid service, or automatic production authority.
   never prepare or apply a proposal, mutate Nemlig data, or persist credentials.
 - Emit one redacted summary containing commits, version IDs, timings, completed
   checks, last verified state, and rollback outcome.
-- Keep production activation explicit. The command does nothing unless the
-  operator invokes it with the exact commit after production approval.
-- Non-goals: scheduled or push-triggered deployment, a second environment or
-  Container, GitHub-hosted Cloudflare credentials, new infrastructure, and any
+- Keep production activation explicit. A manual dispatch or the
+  `deploy:nemlig-production` label on the merged pull request may start the
+  workflow; the protected environment remains the final approval.
+- Require pull requests and green CI for `main`, so the deployed revision always
+  comes from the reviewed merge path.
+- Non-goals: scheduled or unlabeled deployment, a second environment or
+  Container, new infrastructure, and any
   basket, favorite, or saved-list mutation.
 - Acceptance: tests prove mismatched revisions, non-green CI, concurrent runs,
   failed disabled checks, changed Cloudflare state, missing owner authentication,
@@ -46,10 +50,12 @@ None.
 
 - Affected areas: Nemlig production scripts and tests, package commands,
   Cloudflare operations documentation, and backlog status.
-- External systems: read-only GitHub commit/CI checks and the existing Cloudflare
-  Worker/Container deployment APIs only after explicit invocation.
+- External systems: GitHub pull-request labels, rulesets and CI checks, plus the
+  existing Cloudflare Worker/Container deployment APIs after label or manual
+  approval.
 - Cost: no new dependency, workflow, service, secret, storage, scheduled run, or
-  CI job. Each approved release adds only the provider calls already used by the
+  service or secret. Each merged `main` CI run adds one short label-check job;
+  each approved release adds only the provider calls already used by the
   manual procedure: one image build/upload, one enabled Worker upload without a
   Container rollout, two disabled route probes, existing bounded acceptance
   probes, and small deployment/status reads. The one `lite` Container ceiling,

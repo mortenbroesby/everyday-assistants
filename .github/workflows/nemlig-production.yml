@@ -1,6 +1,9 @@
 name: Nemlig production
 
 on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
   workflow_dispatch:
     inputs:
       commit:
@@ -25,31 +28,72 @@ permissions:
   contents: read
 
 env:
-  CANDIDATE_SHA: "${{ inputs.commit }}"
-  CUTOVER: "${{ inputs.cutover }}"
+  CANDIDATE_SHA: "${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || inputs.commit }}"
+  CUTOVER: "${{ github.event_name == 'workflow_run' && 'false' || inputs.cutover }}"
 
 jobs:
+  release-gate:
+    if: >-
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') ||
+      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' && github.event.workflow_run.head_branch == 'main')
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      deploy: "${{ steps.approval.outputs.deploy }}"
+    steps:
+      - name: Require the production label on the merged pull request
+        id: approval
+        env:
+          GH_TOKEN: "${{ github.token }}"
+          EVENT_NAME: "${{ github.event_name }}"
+          CANDIDATE_SHA: "${{ env.CANDIDATE_SHA }}"
+          REPOSITORY: "${{ github.repository }}"
+        run: |
+          node --input-type=module <<'NODE'
+          import { appendFile } from "node:fs/promises";
+          if (process.env.EVENT_NAME === "workflow_dispatch") {
+            await appendFile(process.env.GITHUB_OUTPUT, "deploy=true\n");
+            process.exit(0);
+          }
+          const candidate = process.env.CANDIDATE_SHA;
+          const response = await fetch(`https://api.github.com/repos/${process.env.REPOSITORY}/commits/${encodeURIComponent(candidate)}/pulls`, {
+            headers: {
+              Accept: "application/vnd.github+json",
+              Authorization: `Bearer ${process.env.GH_TOKEN}`,
+              "X-GitHub-Api-Version": "2022-11-28",
+            },
+          });
+          if (!response.ok) throw new Error(`Pull request lookup failed: ${response.status}`);
+          const pulls = await response.json();
+          const deploy = Array.isArray(pulls) && pulls.some((pull) =>
+            pull?.merge_commit_sha === candidate && pull?.base?.ref === "main" && pull?.merged_at &&
+            pull.labels?.some((label) => label?.name === "deploy:nemlig-production"));
+          await appendFile(process.env.GITHUB_OUTPUT, `deploy=${deploy}\n`);
+          NODE
+
   preflight:
-    if: inputs.finalize_operation == '' && github.ref == 'refs/heads/main'
+    needs: release-gate
+    if: needs.release-gate.outputs.deploy == 'true' && inputs.finalize_operation == ''
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
       contents: read
       actions: read
     steps:
-      - name: Checkout dispatch commit
+      - name: Checkout candidate commit
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6.0.1
         with:
-          ref: "${{ github.sha }}"
+          ref: "${{ env.CANDIDATE_SHA }}"
           persist-credentials: false
           fetch-depth: 0
       - name: Verify candidate SHA
-        env:
-          CANDIDATE_SHA: "${{ inputs.commit }}"
-          GITHUB_SHA_VALUE: "${{ github.sha }}"
         run: |
           set -euo pipefail
-          [[ "$GITHUB_SHA_VALUE" == "$CANDIDATE_SHA" ]]
+          [[ "$(git rev-parse HEAD)" == "$CANDIDATE_SHA" ]]
           git rev-parse --verify "$CANDIDATE_SHA^{commit}" >/dev/null
       - name: Set up pnpm
         uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
@@ -70,8 +114,8 @@ jobs:
           pnpm --filter nemlig-assistant production:deploy -- preflight "$CANDIDATE_SHA"
 
   deploy:
-    needs: preflight
-    if: inputs.finalize_operation == '' && github.ref == 'refs/heads/main'
+    needs: [release-gate, preflight]
+    if: needs.release-gate.outputs.deploy == 'true' && inputs.finalize_operation == ''
     runs-on: ubuntu-latest
     timeout-minutes: 30
     environment:
@@ -152,7 +196,8 @@ jobs:
           pnpm --filter nemlig-assistant production:deploy -- finalize "$operation_id" --evidence-saved --original-runner-stopped
 
   finalize:
-    if: inputs.finalize_operation != '' && github.ref == 'refs/heads/main'
+    needs: release-gate
+    if: needs.release-gate.outputs.deploy == 'true' && inputs.finalize_operation != ''
     runs-on: ubuntu-latest
     timeout-minutes: 10
     environment:

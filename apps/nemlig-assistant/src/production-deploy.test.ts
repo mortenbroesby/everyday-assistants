@@ -1709,23 +1709,21 @@ test("CI never falls back to owner authentication or issues a service token befo
   }
 });
 
-test("routine service releases require recorded cutover and reject unreviewed runtime changes", async () => {
-  for (const change of ["missing", "apps/nemlig-assistant/src/http.ts", "unknown/config.json"]) {
+test("routine service releases require one accepted cutover and then allow CI-green descendants", async () => {
+  for (const acceptedRevision of [null, previousCommit]) {
     const { deps, calls, root } = await fixture();
-    deps.env = { CLOUDFLARE_ACCOUNT_ID: accountId, NEMLIG_CI_ACCEPTANCE_READY: "true" };
+    deps.env = { CLOUDFLARE_ACCOUNT_ID: accountId, NEMLIG_CI_ACCEPTANCE_READY: "true", NEMLIG_MCP_SERVICE_CLIENT_ID: "service-client" };
     deps.acceptanceMode = "service";
     await mkdir(join(root, "release"));
-    await writeFile(join(root, "release", "production-cutover.json"), JSON.stringify({ schema: 1, acceptedRevision: change === "missing" ? null : previousCommit }));
-    const run = deps.run;
-    deps.run = (command, args, options) => command === "git" && args[0] === "diff" ? Promise.resolve(change + "\0") : run(command, args, options);
+    await writeFile(join(root, "release", "production-cutover.json"), JSON.stringify({ schema: 1, acceptedRevision }));
     let issued = false;
     deps.issueServiceToken = async () => { issued = true; return "machine-token"; };
     try {
       const report = await deployProduction(commit, deps);
-      assert.equal(report.outcome, "failed");
-      assert.equal(report.failure, change === "missing" ? "service_cutover_required" : "live_acceptance_required");
-      assert.equal(issued, false);
-      assert.equal(calls.some(({ command }) => command === "pnpm"), false);
+      assert.equal(report.outcome, acceptedRevision ? "success" : "failed");
+      assert.equal(report.failure, acceptedRevision ? undefined : "service_cutover_required");
+      assert.equal(issued, Boolean(acceptedRevision));
+      assert.equal(calls.some(({ command }) => command === "pnpm"), Boolean(acceptedRevision));
     } finally { await rm(root, { recursive: true, force: true }); }
   }
 });

@@ -18,8 +18,8 @@ keeps production disabled by default and fixes capacity at one `lite` Container.
 
 **Non-Goals:**
 
-- A push-triggered deployment, GitHub Actions deployment job, dashboard rewrite,
-  new provider, new credential, or general infrastructure framework.
+- An unlabeled or scheduled deployment, dashboard rewrite, new provider, new
+  credential, or general infrastructure framework.
 - Automatic recovery from a stale lease without operator reconciliation.
 - Any Nemlig write-path acceptance.
 
@@ -32,9 +32,16 @@ filesystem/process primitives plus the installed `git`, `gh`, Wrangler, and the
 existing production acceptance script. A command runner seam is sufficient for
 deterministic tests; no orchestration dependency or shell framework is added.
 
-Alternative: a manually dispatched GitHub workflow. Rejected because it needs a
-new hosted Cloudflare credential and consumes extra hosted CI minutes even though
-the current operator environment already has the required authenticated tools.
+The same command also runs inside the existing protected GitHub workflow with a
+scoped Cloudflare token and machine acceptance identity.
+
+### Start routine releases from the reviewed merge label
+
+After exact-main CI completes, the production workflow uses GitHub's commit to
+pull-request association to require an exact merged pull request carrying
+`deploy:nemlig-production`. It then runs ordinary service mode for that merge
+commit. Manual dispatch remains available for recovery. The environment reviewer
+is retained, and the initial accepted cutover remains the ancestry baseline.
 
 ### Acquire local and remote leases before provider reads
 
@@ -100,8 +107,10 @@ explicit unknown or last-verified state; it is never reported as restored.
    backlog, and operations documentation.
 2. Run repository and production-readiness gates without provider mutation.
 3. Commit, integrate to `main`, and require exact-head CI.
-4. With an owner token available and explicit production approval, invoke the
-   command once for that exact `main` commit and retain its redacted summary.
+4. Invoke the protected workflow once for that exact `main` commit and retain its
+   redacted summary.
+5. Require pull requests for `main`; use `deploy:nemlig-production` only on
+   changes intended for production and let exact-main CI start the workflow.
 5. If the command cannot finish, reconcile the reported version and lease using
    the existing manual runbook; keep the service disabled or restore the recorded
    starting version before removing a stale lock.
