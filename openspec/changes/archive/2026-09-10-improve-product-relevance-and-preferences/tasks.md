@@ -27,4 +27,4 @@
 
 - [x] 5.1 After production deployment is authorized, deploy through the protected workflow and verify the exact accepted revision without weakening cost or mutation safeguards.
 - [x] 5.2 In the supplied ChatGPT conversation, verify minced meat excludes pet food, 1 kg shows available package trade-offs, Heinz wins when preferred, an unpreferred brand-sensitive line offers a useful bounded choice, and the basket remains unchanged.
-- [ ] 5.3 Record accepted production evidence, finalize the deployment lease, sync and archive the OpenSpec change, and verify exact-main CI is green.
+- [x] 5.3 Record accepted production evidence, finalize the deployment lease, sync and archive the OpenSpec change, and verify exact-main CI is green.
