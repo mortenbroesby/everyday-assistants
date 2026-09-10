@@ -174,14 +174,27 @@ responses.
 
 ## Automated production release
 
-Routine CI releases use the manual **Nemlig production** workflow with the exact green `main` SHA. The protected `nemlig-production` environment holds a scoped Cloudflare deployment token and a dedicated Auth0 machine client secret. CI never requests an owner access token, password or browser session.
+Routine releases use the **Nemlig production** workflow with the exact green
+`main` SHA. Add `deploy:nemlig-production` to a pull request when its merge should
+start a production release. After exact-main CI passes, the workflow verifies
+that label on the exact merged pull request and enters the protected environment.
+Unlabeled merges stop after the label check. CI never requests an owner access
+token, password or browser session.
 
 One-time setup is complete: the `nemlig-production` environment requires the owner reviewer, permits only `main`, and contains the two scoped secrets and three non-secret variables required by the workflow. Routine releases need no owner or 1Password session.
 
 ### Repeatable release
 
-1. Push the candidate to `main` and wait for exact-head **CI** to pass.
-2. Dispatch the protected workflow with that full SHA:
+1. Open a pull request and add `deploy:nemlig-production` only when the merged
+   change should deploy the Nemlig Worker.
+2. Merge after required CI passes. Exact-main **CI** then starts the protected
+   workflow for the merge commit.
+3. Approve the `nemlig-production` environment gate and watch the returned run.
+   A successful routine run saves its artifact and removes its exact lease
+   automatically.
+
+Manual dispatch remains available for recovery or an intentionally unlabeled
+merge:
 
    ```sh
    git fetch origin main
@@ -189,11 +202,6 @@ One-time setup is complete: the `nemlig-production` environment requires the own
    gh workflow run nemlig-production.yml --ref main -f commit="$sha" -f cutover=false
    ```
 
-3. Approve the `nemlig-production` environment gate and watch the returned run
-   URL. A successful routine run saves its artifact and removes its exact lease
-   automatically. Use `cutover=true` only for the first accepted revision or a
-   changed runtime boundary; it intentionally retains the lease for the live
-   read-only check below.
 4. If the run is canceled, fails, or leaves a lease, download its artifact and
    run `inspect-recovery` with that artifact's operation UUID. Continue only
    when inspection proves a terminal matching state; never retry the deployment
@@ -206,7 +214,12 @@ pnpm --filter nemlig-assistant production:deploy -- preflight EXACT_MAIN_COMMIT
 pnpm --filter nemlig-assistant production:deploy -- --service EXACT_MAIN_COMMIT
 ```
 
-Initial cutover and runtime boundary changes require `--service-cutover`. It performs machine acceptance, records `live_acceptance_pending`, and retains recovery ownership until actual live acceptance for that revision is recorded in `apps/nemlig-assistant/release/production-cutover.json`. Real-user checks run through the existing app outside CI. The initial record is null; ordinary service mode fails closed until a cutover is accepted. Unknown changed paths also require the supervised path. Legacy explicit local owner mode remains available but is never CI's fallback.
+The initial service-identity cutover requires `--service-cutover`. It performs
+machine acceptance, records `live_acceptance_pending`, and retains recovery
+ownership until actual live acceptance is recorded in
+`apps/nemlig-assistant/release/production-cutover.json`. After that accepted
+baseline, routine mode accepts only descendants with exact-main green CI. Legacy
+explicit local owner mode remains available but is never CI's fallback.
 
 The command verifies local HEAD, refreshed remote `main`, exact-head CI, and the required protected environment before issuing one bounded machine token or changing Cloudflare. Token validation checks signature, issuer, audience, exact identity/scope and remaining expiry. Fixture checks prove runtime transport and isolation; they do not prove live Nemlig or ChatGPT behavior.
 It takes an exclusive lock shared by linked worktrees and atomically creates

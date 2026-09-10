@@ -13,19 +13,26 @@ const section = (source: string, heading: string): string => {
   return next === -1 ? rest : rest.slice(0, next);
 };
 
-test("production workflow is manual, main-only, protected, and credential-scoped", async () => {
+test("production workflow accepts manual dispatch or a labeled CI-green merge", async () => {
   const source = await readFile(workflowPath, "utf8");
   const trigger = section(source, "on:");
   assert.match(trigger, /^\x20{2}workflow_dispatch:\n/m);
-  assert.doesNotMatch(trigger, /^\x20{2}(?:push|pull_request|schedule|workflow_call):/m);
+  assert.match(trigger, /^\x20{2}workflow_run:\n\s+workflows: \[CI\]\n\s+types: \[completed\]/m);
+  assert.doesNotMatch(trigger, /^\x20{2}(?:push|pull_request|schedule):/m);
   assert.match(trigger, /commit:\n\s+description:.*commit/m);
   assert.match(trigger, /commit:[\s\S]*?required: true[\s\S]*?type: string/m);
   assert.match(trigger, /cutover:[\s\S]*?default: false[\s\S]*?type: boolean/m);
   assert.match(source, /^concurrency:\n\x20{2}group: nemlig-production\n\x20{2}cancel-in-progress: false$/m);
 
+  const gate = section(source, "  release-gate:");
   const preflight = section(source, "  preflight:");
   const deploy = section(source, "  deploy:");
-  assert.match(preflight, /if: inputs\.finalize_operation == '' && github\.ref == 'refs\/heads\/main'/u);
+  assert.match(gate, /pull-requests: read/u);
+  assert.match(gate, /deploy:nemlig-production/u);
+  assert.match(gate, /commits\/\$\{encodeURIComponent\(candidate\)\}\/pulls/u);
+  assert.match(gate, /merge_commit_sha === candidate/u);
+  assert.match(preflight, /needs: release-gate/u);
+  assert.match(preflight, /needs\.release-gate\.outputs\.deploy == 'true'/u);
   assert.match(preflight, /timeout-minutes: 30/u);
   assert.match(preflight, /permissions:\n\s+contents: read\n\s+actions: read/u);
   assert.match(preflight, /actions\/checkout@[0-9a-f]{40}/u);
@@ -34,8 +41,8 @@ test("production workflow is manual, main-only, protected, and credential-scoped
   assert.match(preflight, /production:deploy -- preflight "\$CANDIDATE_SHA"/u);
   assert.match(preflight, /env:\n\s+GH_TOKEN:/u);
 
-  assert.match(deploy, /needs: preflight/u);
-  assert.match(deploy, /if: inputs\.finalize_operation == '' && github\.ref == 'refs\/heads\/main'/u);
+  assert.match(deploy, /needs: \[release-gate, preflight\]/u);
+  assert.match(deploy, /needs\.release-gate\.outputs\.deploy == 'true'/u);
   assert.match(deploy, /environment:\n\s+name: nemlig-production/u);
   assert.match(deploy, /permissions:\n\s+contents: write\n\s+actions: read/u);
   assert.match(deploy, /pnpm install --frozen-lockfile/u);
@@ -59,7 +66,8 @@ test("cutover recovery can be finalized through the protected environment", asyn
   const trigger = section(source, "on:");
   const finalize = section(source, "  finalize:");
   assert.match(trigger, /finalize_operation:[\s\S]*?required: false[\s\S]*?type: string/m);
-  assert.match(finalize, /if: inputs\.finalize_operation != '' && github\.ref == 'refs\/heads\/main'/u);
+  assert.match(finalize, /needs: release-gate/u);
+  assert.match(finalize, /needs\.release-gate\.outputs\.deploy == 'true' && inputs\.finalize_operation != ''/u);
   assert.match(finalize, /environment:\n\s+name: nemlig-production/u);
   assert.match(finalize, /permissions:\n\s+contents: write\n\s+actions: read/u);
   assert.match(finalize, /persist-credentials: false/u);

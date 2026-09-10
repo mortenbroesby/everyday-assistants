@@ -1005,27 +1005,12 @@ const readAcceptedRevision = async (deps: DeployDependencies): Promise<string | 
   } catch { return null; }
 };
 
-/** Only reviewed, previously accepted runtime can use the routine service gate. */
+/** Routine releases must descend from the accepted service cutover. */
 const verifyRoutineRelease = async (deps: DeployDependencies, commit: string): Promise<void> => {
   const accepted = await readAcceptedRevision(deps);
   if (!accepted) fail("service_cutover_required");
   try { await runAt(deps, deps.repoRoot, "git", ["merge-base", "--is-ancestor", accepted!, commit]); }
   catch { fail("service_cutover_required"); }
-  const changed = await runAt(deps, deps.repoRoot, "git", ["diff", "--name-only", "-z", accepted!, commit]);
-  for (const path of changed.split("\0").filter(Boolean)) {
-    if (/^(?:docs\/|openspec\/)/u.test(path) || /\.md$/u.test(path) || /\.test\.(?:ts|mjs)$/u.test(path)
-      || path === "apps/nemlig-assistant/release/production-cutover.json") continue;
-    if (path === "apps/nemlig-assistant/package.json") {
-      const versions = await Promise.all([accepted!, commit].map(async (ref) => {
-        const value = object(json(await runAt(deps, deps.repoRoot, "git", ["show", `${ref}:${path}`]), "live_acceptance_required"));
-        if (!value) fail("live_acceptance_required");
-        delete value!.version;
-        return JSON.stringify(value);
-      }));
-      if (versions[0] === versions[1]) continue;
-    }
-    fail("live_acceptance_required");
-  }
 };
 
 export async function deployProduction(commit: string, inputDeps: DeployDependencies): Promise<DeploymentJournal> {
