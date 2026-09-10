@@ -46,7 +46,7 @@
   exact CI-green `main` commit; verify its disabled, inactive, enabled,
   authenticated read-only, rollback, and redacted-summary evidence without any
   Nemlig mutation.
-- [ ] 4.4 Sync the delta specification into the main spec, archive the completed
+- [x] 4.4 Sync the delta specification into the main spec, archive the completed
   change, integrate the archival commit into remote `main`, and verify exact-head
   CI plus the recorded production state before final handoff.
 
@@ -57,5 +57,5 @@
 - [x] 5.2 After exact-main CI, require the exact merged pull request to carry
   `deploy:nemlig-production` before entering the protected environment; keep
   manual dispatch and recovery finalization available.
-- [ ] 5.3 Document pull-request-only `main` integration and the label contract,
+- [x] 5.3 Document pull-request-only `main` integration and the label contract,
   create the label and repository ruleset, and verify direct pushes are blocked.
