@@ -78,8 +78,8 @@ jobs:
           policy=$(pnpm --silent --filter nemlig-assistant check:version-bump --base "$CANDIDATE_PARENT" --head "$CANDIDATE_SHA" --json)
           node --input-type=module -e '
             const policy = JSON.parse(process.argv[1]);
-            if (policy.eligible === true) process.stdout.write("deploy=true\\n");
-            else if (policy.eligible === false) process.stdout.write("deploy=false\\n");
+            if (policy.eligible === true) process.stdout.write("deploy=true\n");
+            else if (policy.eligible === false) process.stdout.write("deploy=false\n");
             else throw new Error("Version policy did not return eligibility.");
           ' "$policy" >> "$GITHUB_OUTPUT"
 
