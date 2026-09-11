@@ -28,7 +28,7 @@ import {
   type ProposalOperation,
   type ProposalView,
 } from "./proposals.js";
-import { resolveShoppingPlan, shoppingPlanLineSchema, type ShoppingPlan } from "./plans.js";
+import { relevantProduct, resolveShoppingPlan, shoppingPlanLineSchema, type ShoppingPlan } from "./plans.js";
 
 export const PICKER_URI = "ui://nemlig/picker.html";
 export const PICKER_MIME_TYPE = "text/html;profile=mcp-app";
@@ -87,6 +87,34 @@ const candidateSchema = z.object({
 });
 
 export type Candidate = z.infer<typeof candidateSchema>;
+
+const proposedCandidateSchema = candidateSchema.extend({ id: z.number().int().positive() });
+const proposedBasketItemInputSchema = z.object({
+  ingredient: z.string().trim().min(1).max(120),
+  product: z.number().int().positive(),
+  alternatives: z.array(z.number().int().positive()).max(4).default([]),
+  quantity: z.number().int().positive(),
+  confidence: z.number().int().min(0).max(100),
+  favorite_match: z.boolean().default(false),
+}).superRefine(({ product, alternatives }, context) => {
+  if (alternatives.includes(product)) context.addIssue({ code: "custom", path: ["alternatives"], message: "Alternatives must differ from the proposed product." });
+  if (new Set(alternatives).size !== alternatives.length) context.addIssue({ code: "custom", path: ["alternatives"], message: "Alternatives must be unique." });
+});
+const proposedBasketInputSchema = z.object({
+  items: z.array(proposedBasketItemInputSchema).min(1).max(5).describe("Up to five ingredient choices, each with the proposed product, quantity, confidence, and optional alternatives."),
+  pantry_assumptions: z.array(z.string().trim().min(1).max(120)).max(20).default([]).describe("Optional staples assumed to be available, such as salt or flour."),
+});
+const proposedBasketOutputSchema = z.object({
+  pantry_assumptions: z.array(z.string()),
+  items: z.array(z.object({
+    ingredient: z.string(),
+    quantity: z.number().int().positive(),
+    confidence: z.number().int().min(0).max(100),
+    favorite_match: z.boolean(),
+    product: proposedCandidateSchema,
+    alternatives: z.array(proposedCandidateSchema),
+  })).min(1).max(5),
+});
 
 const basketItemSchema = z.object({
   id: z.number().int().positive().optional(),
@@ -422,7 +450,7 @@ export function createMcpServer(
     },
     {
       instructions:
-        "Use Nemlig Assistant for current Nemlig products, prices, availability, favourites, basket contents, recipes, conversation lists, or choosing and adding groceries. For ordinary find or add requests, use plan_my_shopping in automatic mode with one short Danish catalogue phrase per line; preserve a user's stated amount as requested_amount and requested_unit, pass explicitly stated or remembered brands as preferred_brands, and set require_choice for brand-sensitive lines when no preference resolves them. Use manual mode only when the user asks to choose or when automatic results are unclear. Translate or normalize English, mixed-language, misspelled, and over-specific wording before the tool call: keep distinctive brand words, replace a foreign generic category with the intended Danish category, and omit conversational context. Never silently choose the cheapest product for a line reported as brand_choice or close_alternatives. Ordinary planning searches the current Nemlig catalogue once per line, never favourites. When a line reports discovery_unavailable, call find_groceries once for that normalized line and continue conversationally. Use choose_products_visually only when the user explicitly asks for visual choice, and show_my_favorites only when explicitly requested. For 'use this recipe/list and go ahead', set proceed true, then pass the returned same-run authorization through review_items_to_add and immediately use add_approved_items for its unchanged proposal; pass only the plan's selected additions and never supplement them with unresolved candidates. Complete the clear subset and report unresolved choices separately; do not ask for redundant approval. Without explicit proceed intent, a plan, candidate choice, or exact review never authorizes mutation. A same-run authorization covers only clear additions from that run, never unresolved lines, removals, replacements, clearing, checkout, payment, ordering, or delivery slots. Present concise added, already-covered, unresolved, failed, and automatic-coverage results; omit internal references unless troubleshooting. Every basket change revalidates exact data, is single-use, stops on uncertainty, and reads back the basket.",
+        "Use Nemlig Assistant for current Nemlig products, prices, availability, favourites, basket contents, recipes, conversation lists, or choosing and adding groceries. For ordinary recipe or shopping requests, search each ingredient with find_groceries using one short Danish catalogue phrase, such as 'cheddar' or 'ketchup'. Translate or normalize English, mixed-language, misspelled, and over-specific wording before the call: keep distinctive brand words, replace a foreign generic category with the intended Danish category, and omit conversational context. Refine an unsuitable result with another short phrase; do not treat the cheapest item as the best match. When match confidence is below 80%, call show_my_favorites for the ingredient and use matching favourites as evidence, without changing favourites. Do not inspect the current basket while planning a proposed shop. Before adding, present a proposed basket through review_proposed_basket in groups of at most five: include a chosen product, requested quantity, 0–100 match confidence, and alternatives. Below 80% confidence, include alternatives for the user to inspect. Use plan_my_shopping only when the user explicitly asks for its batch planning mode. Without explicit approval, a plan, candidate choice, proposed basket, or exact review never authorizes mutation. For an approved add, use review_items_to_add followed by add_approved_items only for its unchanged proposal. For a batch run, pass only the plan's selected additions and never supplement them with unresolved candidates; do not ask for redundant approval. A same-run authorization covers only clear additions from its automatic batch run, never unresolved lines, removals, replacements, clearing, checkout, payment, ordering, or delivery slots. Every basket change revalidates exact data, is single-use, stops on uncertainty, and reads back the basket.",
     },
   );
   if (requestContext?.kind === "service") {
@@ -437,6 +465,14 @@ export function createMcpServer(
     requestContext ? `${requestContext.principalKey}\0${requestContext.policyRevision}` : sessionId ?? localConnectionId;
   const search = async (query: string, limit: number) =>
     rankProducts(await client.searchProducts(query, limit), query);
+  const proposedCandidate = async (productId: number, ingredient: string): Promise<z.infer<typeof proposedCandidateSchema>> => {
+    const product = await client.getProduct(productId);
+    if (product.id !== productId) throw new NemligError("Product metadata did not match the requested product.");
+    if (!relevantProduct(product, ingredient)) throw new NemligError("Product does not match the requested ingredient.");
+    const candidate = rankProducts([product], ingredient)[0];
+    if (!candidate?.id) throw new NemligError("Product metadata is incomplete.");
+    return { ...candidate, id: candidate.id };
+  };
   const runAuthenticatedRead = async <Result>(operation: string, action: () => Promise<Result>) =>
     runMcpOperation(operation, () => withAuthenticatedReadRetry(client, loadCredentials, action, requestContext?.kind !== "service"));
   const resolveRun = async (input: z.infer<typeof shoppingRunToolInputSchema>, sessionId?: string) => {
@@ -694,6 +730,31 @@ export function createMcpServer(
 
   if (appsEnabled(env)) {
     server.registerTool(
+      "review_proposed_basket",
+      {
+        title: "Review proposed basket",
+        description: "Show up to five proposed ingredient choices with current Nemlig product details, confidence, and alternatives. This does not read or change your basket.",
+        inputSchema: proposedBasketInputSchema.shape,
+        outputSchema: proposedBasketOutputSchema,
+        annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true },
+        _meta: { ui: { resourceUri: PICKER_URI } },
+      },
+      ({ items, pantry_assumptions }) => runAuthenticatedRead("review_proposed_basket", async () => {
+        const reviewed = proposedBasketInputSchema.parse({ items, pantry_assumptions });
+        return success({
+        pantry_assumptions: reviewed.pantry_assumptions,
+        items: await Promise.all(reviewed.items.map(async ({ ingredient, quantity, confidence, favorite_match, product, alternatives }) => ({
+          ingredient,
+          quantity,
+          confidence,
+          favorite_match,
+          product: await proposedCandidate(product, ingredient),
+          alternatives: await Promise.all(alternatives.map((alternative) => proposedCandidate(alternative, ingredient))),
+        }))),
+        });
+      }),
+    );
+    server.registerTool(
       "choose_products_visually",
       {
         title: "Choose products visually",
@@ -761,5 +822,8 @@ const read=result=>{if(result?.structuredContent)return result.structuredContent
 const parse=result=>{const value=read(result);return Array.isArray(value)?value:value?.result||[]};
 const render=products=>{if(!products.length){root.innerHTML='<div class="empty">Ingen matchende varer fundet.</div>';return}const grid=document.createElement("div");grid.className="grid";for(const product of products){const card=document.createElement("article");card.className="card";const productArea=document.createElement("div");productArea.className="product";const image=imageFor(product);if(image)productArea.append(image);const info=document.createElement("div");const name=document.createElement("div");name.className="name";name.textContent=product.name??"Ukendt vare";const description=document.createElement("div");description.className="description";description.textContent=product.description??"";const meta=document.createElement("div");meta.className="meta";meta.textContent=[product.brand,product.unit_size,product.available?"Tilgængelig":"Ikke tilgængelig"].filter(Boolean).join(" · ");const badges=document.createElement("div");badges.className="badges";for(const tag of product.tags||[]){const badge=document.createElement("span");badge.className="badge";badge.textContent=tag;badges.append(badge)}info.append(name);if(description.textContent)info.append(description);info.append(meta,badges);productArea.append(info);const actions=document.createElement("div");actions.className="actions";const price=document.createElement("div");price.className="price";price.textContent=kr(product.price);actions.append(price);if(product.available&&product.id!=null){const prepare=document.createElement("button");prepare.textContent="Vælg vare";prepare.onclick=async()=>prepareBatch([{product:product.id,quantity:1}],prepare);actions.append(prepare)}card.append(productArea,actions);grid.append(card)}root.replaceChildren(grid)};
 const prepareBatch=async(items,button)=>{button.disabled=true;button.textContent="Forbereder…";try{const response=await app.callServerTool({name:"review_items_to_add",arguments:{items,authorization:"exact_review"}});const proposal=read(response);if(!proposal?.applicable||!proposal.review?.lines?.length)throw new Error("invalid proposal");const review=document.createElement("section");review.setAttribute("aria-label","Præcis kurvegennemgang");const lines=document.createElement("div");lines.className="meta";lines.textContent=proposal.review.lines.map(line=>[line.quantity+" × "+line.name,line.unit_size,kr(line.line_total)].filter(Boolean).join(" · ")).join(" | ")+" · Forventet varetotal: "+kr(proposal.review.expected_products_price);const apply=document.createElement("button");apply.textContent="Godkend og tilføj";apply.onclick=async()=>{apply.disabled=true;apply.textContent="Afventer værtsgodkendelse…";try{const response=await app.callServerTool({name:"add_approved_items",arguments:{approved_review:proposal.proposal_id}});const applied=read(response);if(applied?.status!=="completed"||!applied.basket)throw new Error("unverified result");apply.textContent="Tilføjet ✓";const verified=document.createElement("div");verified.className="meta";verified.textContent="Kurven indeholder nu: "+(applied.basket.items||[]).map(item=>(item.quantity??0)+" × "+(item.name??"Ukendt")+" ("+kr(item.total)+")").join(" · ");review.append(verified)}catch{apply.textContent="Afvist";apply.disabled=false}};review.append(lines,apply);root.replaceChildren(review)}catch{button.textContent="Fejl";button.disabled=false}};
-app.ontoolresult=result=>render(parse(result));await app.connect();
+const selectAlternative=async(item,product,button)=>{button.disabled=true;try{await app.sendMessage({role:"user",content:[{type:"text",text:"Choose product "+product.id+" for "+item.ingredient+" instead."}]});button.textContent="Valgt"}catch{button.disabled=false;button.textContent="Vælg dette"}};
+const proposedCard=(item,product,alternative)=>{const card=document.createElement("article");card.className="card";const productArea=document.createElement("div");productArea.className="product";const image=imageFor(product);if(image)productArea.append(image);const info=document.createElement("div");const name=document.createElement("div");name.className="name";name.textContent=product.name??"Ukendt vare";const description=document.createElement("div");description.className="description";description.textContent=product.description??"";const meta=document.createElement("div");meta.className="meta";meta.textContent=[product.brand,product.unit_size,product.available?"Tilgængelig":"Ikke tilgængelig"].filter(Boolean).join(" · ");info.append(name);if(description.textContent)info.append(description);info.append(meta);productArea.append(info);const actions=document.createElement("div");actions.className="actions";const price=document.createElement("div");price.className="price";price.textContent=[kr(product.price),product.unit_price!=null?kr(product.unit_price)+"/enhed":""].filter(Boolean).join(" · ");actions.append(price);const choice=document.createElement("button");choice.textContent=alternative?"Vælg dette":"Foreslået";choice.disabled=!alternative||!product.available;if(alternative)choice.onclick=()=>selectAlternative(item,product,choice);actions.append(choice);card.append(productArea,actions);return card};
+const renderProposed=value=>{if(!Array.isArray(value?.items))return false;if(!value.items.length){root.innerHTML='<div class="empty">Ingen foreslåede varer.</div>';return true}const page=document.createElement("div");page.className="grid";if(value.pantry_assumptions?.length){const pantry=document.createElement("div");pantry.className="meta";pantry.textContent="Antager allerede: "+value.pantry_assumptions.join(", ");page.append(pantry)}for(const item of value.items){const section=document.createElement("section");const heading=document.createElement("div");heading.className="name";heading.textContent=item.ingredient+" · "+item.quantity+" stk · "+item.confidence+"% match"+(item.favorite_match?" · favorit":"");section.append(heading,proposedCard(item,item.product,false));if(item.alternatives?.length){const details=document.createElement("details");details.open=item.confidence<80;const summary=document.createElement("summary");summary.textContent="Andre muligheder ("+item.alternatives.length+")";const choices=document.createElement("div");choices.className="grid";for(const alternative of item.alternatives)choices.append(proposedCard(item,alternative,true));details.append(summary,choices);section.append(details)}page.append(section)}root.replaceChildren(page);return true};
+app.ontoolresult=result=>{const value=read(result);if(!renderProposed(value))render(Array.isArray(value)?value:value?.result||[])};await app.connect();
 </script></body></html>`;
