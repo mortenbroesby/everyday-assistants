@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { applyReleasePlan, createReleasePlan, packagePath, parseArgs } from "./agent.js";
-import { checkVersionBump } from "./check-version-bump.js";
+import { checkVersionBump, checkVersionEligibility } from "./check-version-bump.js";
 
 function git(repo: string, ...args: string[]): string {
   return execFileSync("git", args, { cwd: repo, encoding: "utf8" }).trim();
@@ -94,6 +94,28 @@ test("release plan is read-only and apply changes only the Nemlig manifest", asy
   }
 });
 
+test("an applied internal-only increment remains an internal no-op plan", async () => {
+  const { repo, base } = await fixture();
+  try {
+    await mkdir(path.join(repo, "apps/nemlig-assistant/release"), { recursive: true });
+    await writeFile(path.join(repo, "apps/nemlig-assistant/release/check.ts"), "export const value = 2;\n");
+    git(repo, "add", "apps/nemlig-assistant/release/check.ts");
+    const plan = await createReleasePlan({ repoRoot: repo, baseRef: base, mainRef: base });
+    assert.equal(plan.releaseKind, "increment");
+    assert.equal(plan.targetVersion, "0.1.0-alpha.0");
+    applyReleasePlan(repo, plan);
+
+    const applied = await createReleasePlan({ repoRoot: repo, baseRef: base, mainRef: base });
+    assert.equal(applied.releaseKind, "increment");
+    assert.equal(applied.currentVersion, "0.1.0-alpha.0");
+    assert.equal(applied.targetVersion, "0.1.0-alpha.0");
+    assert.equal(applied.versionValid, true);
+    assert.equal(applied.shouldRelease, false);
+  } finally {
+    await rm(repo, { recursive: true, force: true });
+  }
+});
+
 test("version gate ignores unrelated changes and rejects an unbumped runtime", async () => {
   const { repo, base } = await fixture();
   try {
@@ -107,6 +129,64 @@ test("version gate ignores unrelated changes and rejects an unbumped runtime", a
     git(repo, "add", ".");
     git(repo, "commit", "-qm", "fix: client");
     assert.throws(() => checkVersionBump(repo, base), /require a forward/);
+  } finally {
+    await rm(repo, { recursive: true, force: true });
+  }
+});
+
+test("machine-readable version eligibility releases only versioned runtime changes", async () => {
+  const { repo, base } = await fixture();
+  try {
+    await writeFile(path.join(repo, "README.md"), "docs\n");
+    git(repo, "add", ".");
+    git(repo, "commit", "-qm", "docs: clarify");
+    assert.deepEqual(checkVersionEligibility(repo, base), {
+      eligible: false,
+      kind: "none",
+      previous: "0.1.0",
+      current: "0.1.0",
+      reason: "No Nemlig package files changed.",
+    });
+
+    await mkdir(path.join(repo, "apps/nemlig-assistant/release"), { recursive: true });
+    await writeFile(path.join(repo, "apps/nemlig-assistant/release/check.ts"), "export const value = 2;\n");
+    await manifest(repo, "0.1.0-alpha.1");
+    git(repo, "add", ".");
+    git(repo, "commit", "-qm", "chore: release check");
+    assert.deepEqual(checkVersionEligibility(repo, base), {
+      eligible: false,
+      kind: "increment",
+      previous: "0.1.0",
+      current: "0.1.0-alpha.1",
+      reason: "Only Nemlig tests or release internals changed.",
+    });
+
+    await writeFile(path.join(repo, packagePath), `${JSON.stringify({
+      name: "nemlig-assistant",
+      version: "0.1.1-alpha.1",
+      dependencies: { "example-dependency": "1.0.0" },
+    }, null, 2)}\n`);
+    git(repo, "add", ".");
+    git(repo, "commit", "-qm", "fix: package configuration");
+    assert.deepEqual(checkVersionEligibility(repo, base), {
+      eligible: true,
+      kind: "patch",
+      previous: "0.1.0",
+      current: "0.1.1-alpha.1",
+      reason: "The Nemlig package changed without a feature or breaking marker.",
+    });
+
+    await writeFile(path.join(repo, "apps/nemlig-assistant/src/client.ts"), "export const value = 2;\n");
+    await manifest(repo, "0.1.1-alpha.2");
+    git(repo, "add", ".");
+    git(repo, "commit", "-qm", "fix: runtime");
+    assert.deepEqual(checkVersionEligibility(repo, base), {
+      eligible: true,
+      kind: "patch",
+      previous: "0.1.0",
+      current: "0.1.1-alpha.2",
+      reason: "The Nemlig package changed without a feature or breaking marker.",
+    });
   } finally {
     await rm(repo, { recursive: true, force: true });
   }

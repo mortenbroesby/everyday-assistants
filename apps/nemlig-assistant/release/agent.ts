@@ -97,6 +97,25 @@ export function readChangedFiles(repoRoot: string, baseRef: string, includeWorki
   return [...new Set(changed)];
 }
 
+function packageWithoutVersion(contents: string): string {
+  const manifest = JSON.parse(contents) as Record<string, unknown>;
+  delete manifest.version;
+  return JSON.stringify(manifest);
+}
+
+/** Excludes the version-only manifest edit so release planning remains idempotent after applying its own bump. */
+export function readReleaseChangedFiles(repoRoot: string, baseRef: string, includeWorking = true, headRef = "HEAD"): string[] {
+  const changed = readChangedFiles(repoRoot, baseRef, includeWorking, headRef);
+  if (!changed.includes(packagePath)) return changed;
+  const baseManifest = packageWithoutVersion(git(repoRoot, ["show", `${baseRef}:${packagePath}`]));
+  const currentManifest = packageWithoutVersion(includeWorking
+    ? readFileSync(resolve(repoRoot, packagePath), "utf8")
+    : git(repoRoot, ["show", `${headRef}:${packagePath}`]));
+  return baseManifest === currentManifest
+    ? changed.filter((filePath) => filePath !== packagePath)
+    : changed;
+}
+
 export function readCommits(repoRoot: string, baseRef: string, headRef = "HEAD"): ReleaseCommit[] {
   const output = gitMaybe(repoRoot, ["log", "--format=%s%x00%b%x1e", `${baseRef}..${headRef}`]);
   return output.split("\x1e").map((entry) => entry.trim()).filter(Boolean).map((entry) => {
@@ -135,7 +154,7 @@ export async function createReleasePlan(options: PlanOptions): Promise<ReleasePl
   const currentVersion = readWorkingVersion(options.repoRoot);
   const release = decideRelease({
     commits: readCommits(options.repoRoot, options.baseRef),
-    changedFiles: readChangedFiles(options.repoRoot, options.baseRef, !options.mergedCandidate),
+    changedFiles: readReleaseChangedFiles(options.repoRoot, options.baseRef, !options.mergedCandidate),
     noRelease: options.noRelease,
   });
   const versionValid = versionSatisfies(baseVersion, currentVersion, release.kind);

@@ -1,1 +1,5 @@
+set -e
+
+base=$(git merge-base origin/main HEAD)
+pnpm --filter nemlig-assistant check:version-bump --base "$base" --head HEAD
 pnpm verify
