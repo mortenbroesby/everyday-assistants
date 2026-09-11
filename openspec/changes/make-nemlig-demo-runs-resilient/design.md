@@ -1,54 +1,77 @@
 ## Context
 
-See [proposal.md](proposal.md) for motivation. Product discovery already filters relevance and hard constraints, computes requested-amount package counts, and sorts eligible candidates deterministically. The remaining `automaticCandidate` step rejects the sorted first result whenever several close candidates lack a unique text or amount distinction. This caused the observed 2-of-30 recipe result even though most lines had suitable ordinary products.
+Recent recipe runs showed that the batch planner is the wrong default interaction. It left ordinary ingredients unresolved, while short individual searches found usable products. The existing visual picker then moved too quickly toward adding one product and did not show the family the complete proposed shop.
 
-The existing in-memory MCP test path already covers plan, same-run authorization, proposal, apply, and readback for one item. The root `pnpm verify` command already invokes the package `smoke` script, so the full-flow gate can reuse these paths without a new runner or dependency.
+The useful primitives already exist: bounded product search, product metadata, read-only favourites, exact proposal review, same-run authorization, and verified basket readback. This change composes those primitives into a clearer conversational flow without adding storage, a recommendation service, or an unbounded server loop.
 
 ## Goals / Non-Goals
 
 **Goals:**
 
-- Change one shared selection decision so every caller gets the practical automatic behavior.
-- Prove the complete household workflow with one mixed recipe-scale smoke scenario.
-- Keep provider call limits, authentication, authorization, and mutation safety unchanged.
+- Make short, individual product searches the normal recipe workflow.
+- Show one proposed product per ingredient, with evidence and an honest model-supplied match-confidence score.
+- Consult existing favourites when a match remains uncertain.
+- Let the user review the whole proposed basket and resolve meaningful alternatives in groups of at most five.
+- Preserve the existing exact approval and mutation safety boundary.
+- Prove the flow with a deterministic recipe-scale smoke scenario.
 
 **Non-Goals:**
 
-- New ranking scores, machine learning, preference storage, fallback searches, or retries.
-- Live basket mutation in CI or routine production acceptance.
-- A separate end-to-end testing framework.
+- A statistical confidence model, learned recommender, or perfect catalogue classifier.
+- Cloudflare preference, pantry, or shopping-list storage.
+- Favourite mutation in this change.
+- Removing `plan_my_shopping` compatibility.
+- Checkout, payment, ordering, or delivery changes.
 
 ## Decisions
 
-### Use the existing ranked candidate list as the ordinary default
+### Use individual searches as the default orchestration
 
-`eligibleCandidates` remains responsible for relevance, hard constraints, amount coverage, brand preference, and deterministic ordering. `automaticCandidate` will retain its existing exact, preferred-brand, unique, and amount-specific reasons, then select the first available candidate with a new `ranked_default` reason when no explicit-choice boundary applies.
+ChatGPT will call `find_groceries` separately for each ingredient, starting with a one- or two-word Danish term and refining when results are empty or unsuitable. There is no product-level attempt counter. Every tool call remains bounded by the existing request deadline, quota, circuit breaker, kill switch, and single-Container ceiling.
 
-An explicitly supplied preferred brand with no matching eligible candidate remains unresolved. `require_choice` also remains unresolved unless an explicit preferred-brand match decides it. This keeps the smallest behavior change in the shared calculation path.
+`plan_my_shopping` remains available for explicit batch use and compatibility, but instructions no longer require it before ordinary recipe shopping. The individual flow does not inspect or subtract the current basket.
 
-Alternatives considered: lowering a score threshold or adding category policies. No score currently exists, and category policies would add speculative data and maintenance before the real failure requires them.
+### Keep recommendation reasoning in ChatGPT
 
-### Extend the existing credentials-free smoke test
+The server returns current catalogue evidence and validates proposed confidence as an integer from 0 to 100. ChatGPT chooses the recommended product, package quantity, confidence, and alternatives from that evidence. Confidence is labelled as match confidence, not a measured probability.
 
-Add one recipe-scale case to the package's existing smoke suite. A small in-memory `ShoppingClient` fixture will return deterministic candidate sets for at least twenty lines and maintain an in-memory basket during the MCP proposal/apply flow. The case will assert the plan summary, selected package counts, exclusions, unresolved explicit choice, exact proposal subset, successful apply, and final basket readback.
+The server will reject unknown product identifiers and malformed proposals. It will not invent a category model. Existing relevance and constraint evidence remains available so ChatGPT can avoid proposing obviously unsuitable products even when an unrelated product appears in search results.
 
-Alternatives considered: a live Nemlig smoke or a new test harness. A live mutation is unsafe and flaky for required CI; a new harness duplicates the MCP in-memory path already used by the repository.
+### Use favourites only as extra evidence for uncertainty
 
-### Make smoke evidence part of feature completion
+When confidence is below 80%, ChatGPT checks `show_my_favorites` and may prefer a favourite that fits the requested ingredient. Favourites never override an incompatible product type or explicit requirement. No preference copy is stored by the assistant.
 
-The existing root verification chain remains the executable gate because it already calls every workspace's `smoke` task. Repository instructions will state that user-visible feature work must add or update one representative multi-step smoke scenario and report its passing command before completion. This is a process rule plus an executable test, without another CI workflow.
+Add/remove favourite tools are deferred until the provider endpoint, authorization boundary, and readback semantics are verified. That follow-up will require explicit user approval for every mutation and may offer a dedicated favouriting session.
+
+### Extend the existing MCP App into a read-only proposed-basket review
+
+A proposed-basket tool accepts at most five actionable entries per view. Each entry contains the requested ingredient, one chosen product, requested quantity, match confidence, and bounded alternatives. The server resolves current product metadata and returns image, description, package size, price, and unit price.
+
+The view expands alternatives automatically below 80% confidence and otherwise keeps them collapsed. For fewer than twenty products, ChatGPT may show the entire proposal as consecutive groups of at most five. For larger shops, confident selections stay compact and only uncertain decisions require grouped interaction.
+
+Selecting an alternative sends the choice back to the conversation through the existing MCP Apps message channel. The view does not call basket mutation tools and stores no draft state. After all choices are settled, ChatGPT shows the complete proposed basket once more.
+
+### Keep basket inspection inside the approved mutation boundary
+
+Recipe planning and proposed-basket review neither show nor use current basket contents. Once the user explicitly approves the final additions, the existing `review_items_to_add` and `add_approved_items` flow may read the basket internally for its fingerprint, exact authorization, drift detection, single-attempt write, and final readback. It does not use current basket contents to decide what the user intended to shop for.
+
+### Reuse the existing smoke harness
+
+The existing credentials-free MCP smoke path will cover a mixed recipe scenario derived from recent cake, burger, and lasagna runs. It will prove short searches, an uncertain favourite, an incompatible search result that is not proposed, package quantity, grouped review, authorization rejection on drift, apply, and final readback without contacting Nemlig.
 
 ## Risks / Trade-offs
 
-- [A top-ranked product can differ from the user's unstated taste] → Keep deterministic evidence in the result, honor explicit brand and choice inputs, and allow the user to refine preferences in a later request.
-- [Broader automatic selection can expose weak relevance filtering] → Preserve the existing relevance and hard-constraint gates and include clearly incompatible catalogue data in the smoke scenario.
-- [A large fixture can become noisy] → Keep one table-driven scenario with compact generated ordinary lines and a few explicit edge cases.
-- [Deterministic fixtures do not prove live provider availability] → Retain exact-revision read-only production acceptance for deployment; treat provider availability separately from product behavior.
+- [More individual searches increase read-only calls] → Preserve current quotas and infrastructure limits; do not add retries inside the server.
+- [Model-supplied confidence can look more precise than it is] → Label it as a match-confidence judgment and show the product evidence used.
+- [Catalogue searches can include unrelated products] → Permit imperfect result sets but require the proposed choice to match available evidence; uncertain choices remain visible.
+- [A grouped UI can add state complexity] → Keep each view stateless, cap it at five decisions, and return user choices to the conversation.
+- [Favourites can be stale or unsuitable] → Treat them as supporting evidence only.
 
 ## Migration Plan
 
-1. Add focused failing assertions for ordinary close alternatives and missing explicit-brand matches.
-2. Apply the shared selection change and expose the new clarity reason through existing schemas.
-3. Extend the existing smoke suite with the recipe-scale MCP flow and update completion instructions.
-4. Run focused tests, root `pnpm verify`, package smoke, strict OpenSpec validation, and the credentials-free production-readiness gate.
-5. Deploy through the existing pull-request workflow, then run exact-revision read-only production acceptance. Roll back the commit if automatic selections or smoke evidence regress.
+1. Add failing tests for instructions, proposal validation, the 80% expansion boundary, favourites guidance, and planning that does not inspect the current basket.
+2. Update tool instructions and add the minimum read-only proposed-basket contract and view behavior.
+3. Route settled product identifiers through the unchanged exact review/apply boundary.
+4. Add the representative smoke scenario and update user-facing documentation and package version.
+5. Run focused tests, package smoke, root verification, strict OpenSpec validation, and production-readiness checks.
+6. Merge through the protected pull-request path, deploy the release-eligible change, and perform fresh read-only ChatGPT acceptance before any separately authorized live basket test.

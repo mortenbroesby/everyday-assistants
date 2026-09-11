@@ -1,24 +1,52 @@
 ## ADDED Requirements
 
-### Requirement: Practical automatic defaults for ordinary groceries
-After relevance filtering, hard-constraint checks, requested-amount evaluation, explicit-brand matching, and deterministic ranking, automatic mode SHALL treat the first eligible candidate as a clear selection for an ordinary grocery line unless the line requests explicit choice. When the user names or prefers a brand, the selected candidate SHALL match that brand; when the requested amount is present, the selected package combination SHALL cover it. The system SHALL NOT require uniqueness or a large score gap merely because several otherwise suitable products remain.
+### Requirement: Evidence-based product proposals
 
-#### Scenario: Ordinary line has close alternatives
-- **WHEN** several relevant products satisfy an ordinary line's hard constraints and no explicit choice or brand requirement applies
-- **THEN** automatic mode selects the first deterministically ranked candidate without presenting a choice
+For each requested ingredient, ChatGPT SHALL propose one current product with package quantity, an integer match-confidence judgment from 0 to 100, and supporting product evidence. Match confidence SHALL be presented as a judgment, not a statistical probability. Catalogue results MAY contain unrelated products, but the proposed choice SHALL satisfy the available ingredient, brand, dietary, package, and product-purpose evidence.
 
-#### Scenario: Requested amount needs several packages
-- **WHEN** the first ranked eligible candidate requires multiple packages to cover the requested amount
-- **THEN** automatic mode selects that candidate with the calculated package count and covered amount
+#### Scenario: Search includes an unrelated product
 
-#### Scenario: Explicit brand is available
-- **WHEN** the user names or prefers a brand and an eligible matching product is available
-- **THEN** automatic mode selects a matching-brand candidate ahead of non-matching candidates
+- **WHEN** a search result contains an available product that does not fit the requested ingredient or purpose
+- **THEN** it may remain among raw results but is not presented as the proposed choice
 
-#### Scenario: Explicit choice remains required
-- **WHEN** the line requests explicit choice and several eligible candidates remain
-- **THEN** the line remains unresolved and no candidate is covered by automatic authorization
+#### Scenario: Several suitable products differ meaningfully
 
-#### Scenario: Required brand or evidence is unavailable
-- **WHEN** no eligible candidate satisfies an explicit brand, hard constraint, relevance requirement, or requested-amount evidence requirement
-- **THEN** the line remains unresolved rather than selecting a merely available product
+- **WHEN** price, brand, quality, size, or purpose creates a meaningful choice
+- **THEN** ChatGPT recommends one product and includes the useful alternatives with the evidence needed for an informed choice
+
+### Requirement: Confidence-aware alternatives
+
+Alternatives SHALL remain collapsed for recommendations at or above 80% match confidence and SHALL expand automatically below 80%.
+
+#### Scenario: Recommendation is uncertain
+
+- **WHEN** match confidence is below 80%
+- **THEN** the proposed-basket view exposes the alternatives without requiring an extra action
+
+#### Scenario: Recommendation is confident
+
+- **WHEN** match confidence is at least 80%
+- **THEN** one recommendation is shown and its alternatives remain available in a collapsed control
+
+### Requirement: Favourites guide uncertain matches
+
+When match confidence is below 80%, ChatGPT SHALL consult the user's existing Nemlig favourites and MAY prefer a favourite that satisfies the requested evidence. A favourite SHALL NOT override an incompatible product type or explicit requirement. The assistant SHALL NOT copy or persist favourite data as a preference profile.
+
+#### Scenario: A suitable favourite exists
+
+- **WHEN** an uncertain ingredient has a matching favourite
+- **THEN** ChatGPT uses that favourite as supporting ranking evidence and identifies it in the proposal
+
+#### Scenario: Favourite is unsuitable
+
+- **WHEN** a favourite conflicts with the requested ingredient, brand, dietary constraint, package requirement, or product purpose
+- **THEN** ChatGPT does not recommend it merely because it is a favourite
+
+### Requirement: Explicit pantry assumptions
+
+When common staples are omitted from a recipe proposal, ChatGPT SHALL list the assumptions, such as flour, salt, or pepper already being available.
+
+#### Scenario: Recipe includes assumed staples
+
+- **WHEN** ChatGPT omits a common household staple from discovery
+- **THEN** the proposed basket states that the staple was assumed to be available

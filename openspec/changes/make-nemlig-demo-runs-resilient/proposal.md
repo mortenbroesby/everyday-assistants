@@ -1,34 +1,42 @@
 ## Why
 
-A real 30-line recipe run safely avoided an authorization mismatch but selected only 2 ordinary ingredients, leaving the demo unable to complete. The planner needs a practical default-selection rule, and feature delivery needs a representative end-to-end smoke test so isolated unit coverage cannot hide a broken household workflow.
+Nemlig Assistant is already useful, but recent recipe runs exposed an awkward split: `plan_my_shopping` left 28 of 30 ordinary ingredients unresolved, while later individual searches succeeded after the user simplified phrases such as `mørk chokolade til bagning` to `mørk chokolade`. The current visual chooser also treats one product at a time and jumps toward basket review instead of helping the family inspect a complete proposed shop.
+
+The family wants ChatGPT to reason about each ingredient, search with short Danish terms until it finds useful options, consult Nemlig favourites when uncertain, and present a polished proposed basket before any basket approval.
 
 ## What Changes
 
-- In automatic mode, select the highest-ranked eligible product for an ordinary grocery line after hard constraints, relevance, requested amount, explicit brand, and explicit-choice rules have been applied.
-- Leave a line unresolved only when the user requested a choice, an explicit brand or hard constraint cannot be satisfied, no eligible product exists, discovery is unavailable, or the result lacks evidence needed for safe selection.
-- Preserve the exact same-run authorization boundary: only products selected from the current request may enter the proposal and apply flow, while unresolved lines remain unchanged.
-- Add one deterministic, credentials-free, recipe-scale smoke test that exercises planning, amount/package calculation, partial basket coverage, same-run authorization, proposal application, and verified readback across a mixed multi-line request.
-- Require user-visible feature changes to include or update a representative complex smoke path, with the Nemlig production-readiness gate running that path before the change is considered complete.
-- Keep live production acceptance read-only by default; this change does not authorize a real basket mutation.
+- Make individual `find_groceries` searches the normal recipe-shopping path. Start with one- or two-word Danish terms, refine unsuccessful or unsuitable searches, and distinguish catalogue interpretation from connectivity failure.
+- Keep `plan_my_shopping` for compatibility and explicit batch use, but stop presenting it as the required first step for ordinary recipe shopping.
+- Let ChatGPT propose a product and an honest 0–100 match-confidence score from current product evidence. Confidence is a decision aid, not a statistical probability.
+- Consult existing Nemlig favourites for uncertain matches without storing preferences in Cloudflare. Record explicitly approved add/remove-favourite tools as an early follow-up after the provider contract is verified.
+- Add one read-only proposed-basket view. It shows every chosen item with image, description, package size, quantity, price, unit price, confidence, and collapsed alternatives. Choices below 80% expand automatically.
+- For fewer than twenty items, allow visual review across the whole proposal. Present actionable decisions in groups of at most five; larger shops keep confident items compact and group only uncertain decisions.
+- State omitted pantry assumptions such as flour, salt, and pepper. Planning neither displays nor uses the current Nemlig basket. The separately approved mutation flow retains its existing internal before/after basket verification.
+- After choices are settled, show the complete proposed basket again before creating the exact basket-addition review. Preserve fresh product revalidation, exact approval scope, single-attempt writes, and verified readback.
+- Add a deterministic recipe-scale smoke scenario and fresh ChatGPT acceptance steps that cover discovery, favourites, grouped choices, proposed-basket review, approval boundaries, and final readback.
 
 ### Goal
 
-Make an explicitly authorized recipe-sized grocery run complete its ordinary lines reliably while preserving hard constraints, meaningful user choices, and exact mutation authorization.
+Make recipe and meal-prep shopping feel like an interactive product-selection assistant: persistent individual discovery, useful recommendations, limited meaningful choices, and one clear proposed basket before an approved add.
 
 ### Non-goals
 
-- Perfect semantic understanding of every catalogue result.
-- Learned or persisted household product preferences.
-- Automatic fallback queries, unbounded retries, or relaxed hard constraints.
-- Checkout, payment, ordering, delivery-slot changes, or any new provider mutation.
+- Perfect catalogue classification or a learned recommendation system.
+- Cloudflare preference profiles, pantry storage, or saved shopping lists.
+- Add/remove Nemlig favourites in this change.
+- Removing the existing batch planner or weakening basket-mutation verification.
+- Checkout, payment, ordering, or delivery-slot changes.
+- Unbounded server-side retry loops or new paid services.
 
 ### Acceptance criteria
 
-- A deterministic fixture representing a roughly 30-line recipe run selects or recognizes basket coverage for ordinary eligible lines, including requested amounts that require multiple packages.
-- Clearly incompatible products remain excluded, explicit brands win when available, and `require_choice` lines remain unresolved.
-- The same run prepares and applies exactly its selected positive basket gaps and verifies the resulting basket in the fixture.
-- The root required verification gate runs the recipe-scale smoke test and fails if the complete path regresses.
-- Repository instructions state that a user-visible feature change is incomplete without a representative complex smoke test and its passing evidence.
+- A recipe request is resolved through individual short searches; unsuitable or empty results can be refined without exposing internal tool choreography.
+- Each proposed item carries current evidence and a match-confidence score; below-80 items receive actionable alternatives in groups of no more than five.
+- Existing favourites are consulted only for uncertain matches and can raise a matching product in the proposed choices.
+- The proposed-basket view contains only proposed additions and stated pantry assumptions, never the current basket.
+- A deterministic mixed recipe fixture proves confident selections, uncertain choices, package quantities, final exact review, authorization rejection on drift, application, verified readback, and no write retry.
+- The normal live acceptance remains read-only until a separate exact basket mutation is explicitly authorized.
 
 ## Capabilities
 
@@ -38,11 +46,11 @@ None.
 
 ### Modified Capabilities
 
-- `nemlig-guided-shopping`: Make automatic selection practical for ordinary eligible products while retaining explicit choice and hard-constraint boundaries.
-- `nemlig-mcp`: Require a representative recipe-scale planning-through-readback smoke path for the conversational MCP workflow.
-- `nemlig-package-distribution`: Include the complex smoke path in the credentials-free production-readiness gate.
-- `nemlig-chatgpt-integration`: Define successful recipe-sized automatic completion as the normal demo behavior while reporting genuinely unresolved lines concisely.
+- `nemlig-chatgpt-integration`: Make individual, persistent catalogue discovery and grouped visual review the normal recipe workflow.
+- `nemlig-guided-shopping`: Add confidence-aware proposed choices, favourite guidance, pantry assumptions, and a complete proposed-basket review.
+- `nemlig-mcp`: Provide a read-only grouped proposal UI and representative conversational smoke path.
+- `nemlig-package-distribution`: Require the recipe-scale smoke path in production readiness.
 
 ## Impact
 
-The change affects the Nemlig planning decision in `plans.ts` or its existing calculation helper, focused planning and MCP tests, the existing smoke suite and root verification command, and repository/app completion instructions. It adds no dependency, storage, provider call, retry, or paid service. Runtime catalogue and basket call bounds remain unchanged.
+Expected code changes are limited to MCP tool instructions/contracts, candidate presentation, the existing MCP App resource, focused tests, smoke coverage, and user-facing documentation. The design adds no storage, dependency, Container, scheduler, queue, autoscaling, or paid service. ChatGPT may make more read-only search calls; existing authentication-before-wake, per-request deadlines, account quotas, breaker, kill switch, and one-Container ceiling remain the hard cost boundary.
