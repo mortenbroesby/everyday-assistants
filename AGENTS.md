@@ -12,8 +12,8 @@ This repository contains independent assistants under `apps/`.
 
 ## Sol, Terra, and Luna workflow
 
-- Use a Sol coordinator for planning, OpenSpec decisions, task decomposition,
-  integration, and final verification when that model is available.
+- The main thread is Sol: it owns planning, OpenSpec decisions, task
+  decomposition, integration, and final verification.
 - Delegate substantial, well-bounded implementation work to Terra. Delegate
   small mechanical edits, inventories, and focused verification to Luna.
 - Give each sub-agent an exclusive file or task scope that can proceed
@@ -25,6 +25,10 @@ This repository contains independent assistants under `apps/`.
 - Delegation never transfers or broadens approval. The coordinator retains all
   human checkpoints for secrets, provider changes, costs, destructive actions,
   external user data, and Nemlig basket mutations.
+- For a long-running task, keep one quiet decision-input heartbeat. Notify only
+  when a named decision, approval, credential action, or other concrete user
+  input blocks progress; do not repeat an unchanged request. Disable it when
+  the task completes.
 
 - Perform repository changes in a dedicated non-primary Git worktree and branch
   by default. Before editing, inspect the primary checkout and existing
@@ -60,8 +64,8 @@ This repository contains independent assistants under `apps/`.
   apply, then archive. Trivial fixes and documentation edits do not need a spec.
 - An OpenSpec proposal never authorizes a Nemlig mutation.
 - Preserve unrelated changes. Commit and push completed scoped work on a feature
-  branch, open a pull request, wait for required CI, and merge through GitHub;
-  never push directly to `main`. Add the `deploy:nemlig-production` label only
-  when that merged pull request should start the protected production workflow.
-  The label authorizes the workflow to start, while the `nemlig-production`
-  environment remains the final deployment approval.
+  branch, open a pull request, wait for required CI, and merge through the
+  active GitHub pull-request ruleset; `main` accepts integration through that
+  protected path only. The package-scoped version policy selects
+  release-bearing Nemlig merges. The
+  `nemlig-production` environment remains the final deployment approval.

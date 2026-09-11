@@ -18,6 +18,13 @@ repository, or current external state.
 - **Dependencies:** Resolve required decisions, access, credentials, upstream
   availability, and prerequisite changes. Never expose credentials while
   checking readiness.
+- **Bootstrap:** In the assigned worktree, pin Node 22.23.1 and pnpm 9.15.9,
+  then perform one `pnpm install --frozen-lockfile`. Stop and report the
+  missing prerequisite if that bootstrap cannot complete; do not repeat it for
+  every iteration.
+- **Reproducer:** Identify the smallest failing check that demonstrates the
+  requested behavior and use it as the iteration gate. Stop and reassess the
+  hypothesis after two failed iterations that produce no new evidence.
 - **Safety and cost:** Identify plausible privacy, security, mutation, retry,
   scaling, storage, logging, egress, and provider-cost effects. Preserve existing
   safeguards, or obtain approval for a documented replacement.

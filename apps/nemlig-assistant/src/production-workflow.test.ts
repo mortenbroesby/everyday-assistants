@@ -13,7 +13,7 @@ const section = (source: string, heading: string): string => {
   return next === -1 ? rest : rest.slice(0, next);
 };
 
-test("production workflow accepts manual dispatch or a labeled CI-green merge", async () => {
+test("production workflow accepts manual dispatch or a version-policy-eligible CI-green merge", async () => {
   const source = await readFile(workflowPath, "utf8");
   const trigger = section(source, "on:");
   assert.match(trigger, /^\x20{2}workflow_dispatch:\n/m);
@@ -27,10 +27,19 @@ test("production workflow accepts manual dispatch or a labeled CI-green merge", 
   const gate = section(source, "  release-gate:");
   const preflight = section(source, "  preflight:");
   const deploy = section(source, "  deploy:");
-  assert.match(gate, /pull-requests: read/u);
-  assert.match(gate, /deploy:nemlig-production/u);
-  assert.match(gate, /commits\/\$\{encodeURIComponent\(candidate\)\}\/pulls/u);
-  assert.match(gate, /merge_commit_sha === candidate/u);
+  assert.doesNotMatch(gate, /pull-requests: read|deploy:nemlig-production|\/pulls|merge_commit_sha/u);
+  assert.match(gate, /actions\/checkout@[0-9a-f]{40}/u);
+  assert.match(gate, /ref: "\$\{\{ env\.CANDIDATE_SHA \}\}"/u);
+  assert.match(gate, /persist-credentials: false/u);
+  assert.match(gate, /fetch-depth: 0/u);
+  assert.match(gate, /pnpm install --frozen-lockfile/u);
+  assert.match(gate, /CANDIDATE_PARENT=\$\(git rev-parse "\$CANDIDATE_SHA\^1"\)/u);
+  assert.match(gate, /git fetch origin refs\/heads\/main:refs\/remotes\/origin\/main/u);
+  assert.match(gate, /\[\[ "\$\(git rev-parse origin\/main\)" == "\$CANDIDATE_SHA" \]\]/u);
+  assert.match(gate, /check:version-bump --base "\$CANDIDATE_PARENT" --head "\$CANDIDATE_SHA" --json/u);
+  assert.match(gate, /policy\.eligible === true/u);
+  assert.match(gate, /\[\[ "\$EVENT_NAME" == "workflow_dispatch" \]\]/u);
+  assert.doesNotMatch(gate, /CLOUDFLARE|NEMLIG_MCP|secrets\./u);
   assert.match(preflight, /needs: release-gate/u);
   assert.match(preflight, /needs\.release-gate\.outputs\.deploy == 'true'/u);
   assert.match(preflight, /timeout-minutes: 30/u);

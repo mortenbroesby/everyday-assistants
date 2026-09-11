@@ -175,25 +175,28 @@ responses.
 ## Automated production release
 
 Routine releases use the **Nemlig production** workflow with the exact green
-`main` SHA. Add `deploy:nemlig-production` to a pull request when its merge should
-start a production release. After exact-main CI passes, the workflow verifies
-that label on the exact merged pull request and enters the protected environment.
-Unlabeled merges stop after the label check. CI never requests an owner access
-token, password or browser session.
+`main` SHA. After exact-main CI passes, the workflow checks out the merged
+commit and its merge base, then reuses the package-scoped Nemlig version policy.
+Only a merge that changes the Nemlig runtime and carries the required forward
+package version becomes release-bearing. Documentation, specifications, agent
+instructions, workflow changes, other assistants, malformed ranges, and stale
+or ineligible versions stop before production credentials or provider access.
+CI never requests an owner access token, password or browser session.
 
 One-time setup is complete: the `nemlig-production` environment requires the owner reviewer, permits only `main`, and contains the two scoped secrets and three non-secret variables required by the workflow. Routine releases need no owner or 1Password session.
 
 ### Repeatable release
 
-1. Open a pull request and add `deploy:nemlig-production` only when the merged
-   change should deploy the Nemlig Worker.
-2. Merge after required CI passes. Exact-main **CI** then starts the protected
-   workflow for the merge commit.
-3. Approve the `nemlig-production` environment gate and watch the returned run.
+1. Open a pull request and merge after required CI passes. Exact-main **CI**
+   then starts the protected workflow for the merge commit.
+2. The workflow selects the release-bearing result from the exact merged range;
+   an ineligible merge ends successfully before credentials are available.
+3. For an eligible merge, approve the `nemlig-production` environment gate and
+   watch the returned run.
    A successful routine run saves its artifact and removes its exact lease
    automatically.
 
-Manual dispatch remains available for recovery or an intentionally unlabeled
+Manual dispatch remains available for recovery or an intentionally selected
 merge:
 
    ```sh

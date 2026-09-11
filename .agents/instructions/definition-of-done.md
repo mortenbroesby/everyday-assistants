@@ -6,8 +6,10 @@ when every applicable criterion below is satisfied with current evidence.
 - **Outcome and acceptance:** The requested outcome and all acceptance criteria
   are met. Intended failure behavior, safety boundaries, and state readback are
   verified where applicable.
-- **Quality:** Relevant focused checks pass. Run `pnpm verify` after non-trivial
-  changes, and resolve failures caused by the work. Review the final diff for
+- **Quality:** Relevant focused checks pass. For behavior changes, run one
+  representative end-to-end smoke test. Run the final `pnpm verify` once on
+  the final candidate; repeat it only after a relevant diff or a diagnosed
+  failure. Resolve failures caused by the work and review the final diff for
   accidental edits, sensitive data, and unjustified complexity.
 - **Documentation:** Update affected instructions, documentation, backlog, and
   OpenSpec artifacts. Complete and archive an implemented OpenSpec change when
