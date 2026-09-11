@@ -186,7 +186,7 @@ test("recipe discovery reaches a reviewed proposal and verified basket without u
     const proposed = await mcp.callTool({ name: "review_proposed_basket", arguments: {
       pantry_assumptions: ["mel", "salt", "peber"],
       items: [
-        { ingredient: "hakket oksekød", product: 101, quantity: 3, confidence: 92 },
+        { ingredient: "minced beef", search_term: "hakket oksekød", product: 101, quantity: 3, confidence: 92 },
         { ingredient: "ketchup", product: 201, alternatives: [202], quantity: 1, confidence: 72, favorite_match: true },
         { ingredient: "cheddar", product: 301, quantity: 2, confidence: 85 },
       ],

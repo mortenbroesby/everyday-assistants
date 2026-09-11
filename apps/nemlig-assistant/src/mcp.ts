@@ -94,6 +94,8 @@ const confidenceInputSchema = z.number().min(0).max(100)
   .transform((value) => Math.round(value <= 1 ? value * 100 : value));
 const proposedBasketItemInputSchema = z.object({
   ingredient: z.string().trim().min(1).max(120),
+  search_term: z.string().trim().min(1).max(120).optional()
+    .describe("The same short Danish catalogue phrase used to find this product. Supply it when the user-facing ingredient label is not Danish."),
   product: z.number().int().positive(),
   alternatives: z.array(z.number().int().positive()).max(4).default([]),
   quantity: z.number().int().positive(),
@@ -454,7 +456,7 @@ export function createMcpServer(
     },
     {
       instructions:
-        "Use Nemlig Assistant for current Nemlig products, prices, availability, favourites, basket contents, recipes, conversation lists, or choosing and adding groceries. For ordinary recipe or shopping requests, search each ingredient with find_groceries using one short Danish catalogue phrase, such as 'cheddar' or 'ketchup'. Translate or normalize English, mixed-language, misspelled, and over-specific wording before the call: keep distinctive brand words, replace a foreign generic category with the intended Danish category, and omit conversational context. Refine an unsuitable result with another short phrase; do not treat the cheapest item as the best match. When match confidence is below 80%, call show_my_favorites for the ingredient and use matching favourites as evidence, without changing favourites. Do not inspect the current basket while planning a proposed shop. Before adding, present a proposed basket through review_proposed_basket in groups of at most five: include a chosen product, requested quantity, 0–100 match confidence, and alternatives. Below 80% confidence, include alternatives for the user to inspect. Use plan_my_shopping only when the user explicitly asks for its batch planning mode. Without explicit approval, a plan, candidate choice, proposed basket, or exact review never authorizes mutation. For an approved add, use review_items_to_add followed by add_approved_items only for its unchanged proposal. For a batch run, pass only the plan's selected additions and never supplement them with unresolved candidates; do not ask for redundant approval. A same-run authorization covers only clear additions from its automatic batch run, never unresolved lines, removals, replacements, clearing, checkout, payment, ordering, or delivery slots. Every basket change revalidates exact data, is single-use, stops on uncertainty, and reads back the basket.",
+        "Use Nemlig Assistant for current Nemlig products, prices, availability, favourites, basket contents, recipes, conversation lists, or choosing and adding groceries. For ordinary recipe or shopping requests, search each ingredient with find_groceries using one short Danish catalogue phrase, such as 'cheddar' or 'ketchup'. Translate or normalize English, mixed-language, misspelled, and over-specific wording before the call: keep distinctive brand words, replace a foreign generic category with the intended Danish category, and omit conversational context. Refine an unsuitable result with another short phrase; do not treat the cheapest item as the best match. When match confidence is below 80%, call show_my_favorites for the ingredient and use matching favourites as evidence, without changing favourites. Do not inspect the current basket while planning a proposed shop. Before adding, present a proposed basket through review_proposed_basket in groups of at most five: include a chosen product, requested quantity, 0–100 match confidence, and alternatives. Keep the user's ingredient label for display, and pass the same short Danish phrase used for discovery as search_term whenever that label is not Danish. Below 80% confidence, include alternatives for the user to inspect. Use plan_my_shopping only when the user explicitly asks for its batch planning mode. Without explicit approval, a plan, candidate choice, proposed basket, or exact review never authorizes mutation. For an approved add, use review_items_to_add followed by add_approved_items only for its unchanged proposal. For a batch run, pass only the plan's selected additions and never supplement them with unresolved candidates; do not ask for redundant approval. A same-run authorization covers only clear additions from its automatic batch run, never unresolved lines, removals, replacements, clearing, checkout, payment, ordering, or delivery slots. Every basket change revalidates exact data, is single-use, stops on uncertainty, and reads back the basket.",
     },
   );
   if (requestContext?.kind === "service") {
@@ -740,7 +742,7 @@ export function createMcpServer(
       "review_proposed_basket",
       {
         title: "Review proposed basket",
-        description: "Show up to five proposed ingredient choices with current Nemlig product details, confidence, and alternatives. This does not read or change your basket.",
+        description: "Show up to five proposed ingredient choices with current Nemlig product details, confidence, and alternatives. Preserve the user's ingredient label and include the short Danish search_term used to find it. This does not read or change your basket.",
         inputSchema: proposedBasketInputSchema.shape,
         outputSchema: proposedBasketOutputSchema,
         annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true },
@@ -748,10 +750,11 @@ export function createMcpServer(
       },
       ({ items, pantry_assumptions }) => runAuthenticatedRead("review_proposed_basket", async () => {
         const reviewed = proposedBasketInputSchema.parse({ items, pantry_assumptions });
-        const resolved = await Promise.all(reviewed.items.map(async ({ ingredient, quantity, confidence, favorite_match, product, alternatives }) => {
-          const proposed = await proposedCandidate(product, ingredient);
+        const resolved = await Promise.all(reviewed.items.map(async ({ ingredient, search_term, quantity, confidence, favorite_match, product, alternatives }) => {
+          const relevanceTerm = search_term ?? ingredient;
+          const proposed = await proposedCandidate(product, relevanceTerm);
           if (!proposed) return { rejected: { ingredient, reason: "No proposed product matched this ingredient." } };
-          const resolvedAlternatives = (await Promise.all(alternatives.map((alternative) => proposedCandidate(alternative, ingredient))))
+          const resolvedAlternatives = (await Promise.all(alternatives.map((alternative) => proposedCandidate(alternative, relevanceTerm))))
             .filter((candidate): candidate is z.infer<typeof proposedCandidateSchema> => candidate !== undefined);
           return { item: { ingredient, quantity, confidence, favorite_match, product: proposed, alternatives: resolvedAlternatives } };
         }));

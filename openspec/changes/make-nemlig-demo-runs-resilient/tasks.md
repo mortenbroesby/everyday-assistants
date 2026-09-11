@@ -56,3 +56,15 @@
 - [x] 10.2 Normalize fractional confidence and return valid choices plus identified rejected lines without weakening the unrelated-product guard.
 - [x] 10.3 Treat a product that disappears between search and review as an identified rejected line while preserving valid choices and propagating real service failures.
 - [ ] 10.4 Verify, deploy, refresh the ChatGPT app, and repeat both read-only recipe acceptances without a proposal retry storm.
+
+## 11. Preserve translated ingredient choices
+
+- [x] 11.1 Reproduce a large live review where English display labels reject otherwise suitable products found with Danish searches.
+- [x] 11.2 Keep the user's ingredient label while validating the product against the same short Danish search term, with focused and representative smoke coverage.
+- [ ] 11.3 Deploy, refresh the ChatGPT app, and repeat the large read-only acceptance with the translated choices preserved.
+
+## 12. Avoid normal recipe rate-limit errors
+
+- [x] 12.1 Reproduce a shared-principal burst by running the sixteen- and twenty-four-product acceptances concurrently; observe one bounded rate-limit response while both runs still complete.
+- [x] 12.2 Preserve the existing principal, global, daily, and monthly ceilings because the concurrent test does not represent the intended one-at-a-time household workflow.
+- [ ] 12.3 Repeat both read-only acceptances sequentially without a visible rate-limit error.
