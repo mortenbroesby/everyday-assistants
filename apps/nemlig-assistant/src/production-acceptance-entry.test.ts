@@ -38,6 +38,8 @@ function serviceClient(): AcceptanceClient {
     readResource: async () => ({ contents: [{ text: "picker" }] }),
     callTool: async ({ name }) => {
       if (["plan_my_shopping", "review_items_to_add", "add_approved_items"].includes(name)) return { isError: true };
+      if (name === "find_groceries") return { structuredContent: { result: [{ id: 7 }] } };
+      if (name === "review_proposed_basket") return { structuredContent: { items: [] } };
       if (name === "show_grocery_sections") return { structuredContent: { departments: [{ id: "fruit" }] } };
       if (name === "show_my_basket") return { structuredContent: { items: [] } };
       return { structuredContent: { result: [] } };
@@ -51,7 +53,8 @@ function readonlyClient(): AcceptanceClient {
     listResources: async () => ({ resources: productionResourceInventory.map((uri) => ({ uri })) }),
     readResource: async () => ({ contents: [{ text: "picker" }] }),
     callTool: async ({ name, arguments: args }) => {
-      if (name === "find_groceries" || name === "choose_products_visually") return { structuredContent: { result: [{ id: 7 }] } };
+      if (name === "find_groceries") return { structuredContent: { result: [{ id: 7 }] } };
+      if (name === "review_proposed_basket") return { structuredContent: { items: [] } };
       if (name === "show_my_favorites") return { structuredContent: { result: [] } };
       if (name === "plan_my_shopping") return { structuredContent: { lines: [{ selected_product_id: (args.lines as Array<{ selected_product?: number }>)[0]?.selected_product }] } };
       if (name === "show_grocery_sections") return { structuredContent: { departments: [{ id: "fruit" }] } };

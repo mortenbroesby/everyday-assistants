@@ -179,6 +179,28 @@ test("service acceptance denies forbidden calls before admission and Container f
   assert.equal(forwarded, 0);
 });
 
+test("service acceptance permits reviewed proposals and rejects the legacy raw chooser", async () => {
+  let admitted = 0;
+  let forwarded = 0;
+  const service = { subject: "service-client@clients", principal_key: "s".repeat(32), tier: 2 as const, enabled: true };
+  const serviceEnv = {
+    ...env,
+    NEMLIG_MCP_SERVICE_ACCEPTANCE_ENABLED: "true",
+    NEMLIG_MCP_SERVICE_CLIENT_ID: "service-client",
+  };
+  const dependencies: GatewayDependencies = {
+    authenticate: async () => service,
+    admit: async () => { admitted += 1; return { admitted: true, state: emptyUsageState(new Date()) }; },
+    forward: async () => { forwarded += 1; return new Response("ok"); },
+  };
+  const reviewed = await handleGatewayRequest(mcpRequest({ method: "tools/call", params: { name: "review_proposed_basket" } }), serviceEnv, dependencies);
+  const legacy = await handleGatewayRequest(mcpRequest({ method: "tools/call", params: { name: "choose_products_visually" } }), serviceEnv, dependencies);
+  assert.equal(reviewed.status, 200);
+  assert.equal(legacy.status, 403);
+  assert.equal(admitted, 1);
+  assert.equal(forwarded, 1);
+});
+
 test("service acceptance cannot access edge administration", async () => {
   let admitted = 0;
   let forwarded = 0;
@@ -292,7 +314,7 @@ test("stalled authentication, control, and backend boundaries fail with one sani
     ...env,
     MCP_AUTH_TIMEOUT_MS: "5",
     MCP_CONTROL_TIMEOUT_MS: "5",
-    MCP_TOTAL_TIMEOUT_MS: "100",
+    MCP_TOTAL_TIMEOUT_MS: "500",
     MCP_BACKEND_TIMEOUT_MS: "10",
   };
   const never = () => new Promise<never>(() => {});

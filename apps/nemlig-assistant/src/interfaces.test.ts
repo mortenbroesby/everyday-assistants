@@ -10,7 +10,7 @@ import { tmpdir } from "node:os";
 import test from "node:test";
 import { NemligError, type Basket, type Product, type ShoppingClient } from "./client.js";
 import { createProgram } from "./cli.js";
-import { createMcpServer, NEMLIG_CONNECT_URL, PICKER_URI, rankProducts, safeNemligImageUrl, serviceAcceptanceResourceInventory, serviceAcceptanceToolInventory, type Candidate } from "./mcp.js";
+import { createMcpServer, NEMLIG_CONNECT_URL, PICKER_URI, rankProducts, safeNemligImageUrl, serviceAcceptanceResourceInventory, serviceAcceptanceToolInventory } from "./mcp.js";
 import { productionToolInventory } from "./production-acceptance.js";
 import { BasketProposalService } from "./proposals.js";
 
@@ -239,7 +239,6 @@ const friendlyCatalog = [
   ["add_approved_items", "Add the approved items", false, false, ["approved_review"]],
   ["browse_grocery_section", "Browse a grocery section", true, false, ["section", "result_count", "page"]],
   ["check_nemlig_connection", "Check my Nemlig connection", true, false, []],
-  ["choose_products_visually", "Choose products visually", true, false, ["search_term", "result_count"]],
   ["empty_approved_basket", "Empty my approved basket", false, true, ["approved_review"]],
   ["find_groceries", "Find groceries", true, false, ["search_term", "result_count"]],
   ["make_approved_item_swap", "Make the approved swap", false, true, ["approved_review"]],
@@ -260,6 +259,7 @@ const formerToolNames = [
   "save_shopping_plan", "load_shopping_plan", "create_feature_request", "view_cart", "prepare_cart_additions",
   "apply_cart_additions", "prepare_cart_removal", "apply_cart_removal", "prepare_cart_replacement",
   "apply_cart_replacement", "prepare_cart_clear", "apply_cart_clear", "pick_products", "suggest_an_improvement",
+  "choose_products_visually",
   "save_my_shopping_plan", "continue_my_shopping_plan", "show_my_shopping_lists", "save_my_shopping_list",
   "copy_my_shopping_list", "set_my_shopping_list_status", "shop_from_my_list", "migrate_my_saved_plan",
 ] as const;
@@ -311,7 +311,7 @@ test("production MCP inventory is exact with Apps enabled and disabled", async (
   const expected = Object.values(productionToolInventory).flat().sort();
   for (const [apps, names] of [
     ["1", expected],
-    ["0", expected.filter((name) => name !== "choose_products_visually" && name !== "review_proposed_basket")],
+    ["0", expected.filter((name) => name !== "review_proposed_basket")],
   ] as const) {
     await withMcpClient(createMcpServer(fakeClient(), testCredentials, { NEMLIG_MCP_APPS: apps }), async (mcp) => {
       assert.deepEqual((await mcp.listTools()).tools.map((tool) => tool.name).sort(), names);
@@ -337,6 +337,8 @@ test("retired saved-shopping MCP calls reject before the Nemlig client", async (
 });
 
 test("service acceptance exposes only its fixed read-only tool inventory", async () => {
+  assert.equal((serviceAcceptanceToolInventory as readonly string[]).includes("review_proposed_basket"), true);
+  assert.equal((serviceAcceptanceToolInventory as readonly string[]).includes("choose_products_visually"), false);
   let calls = 0;
   const unexpected = async (): Promise<never> => { calls += 1; throw new Error("unexpected Nemlig call"); };
   const client = fakeClient({
@@ -347,7 +349,7 @@ test("service acceptance exposes only its fixed read-only tool inventory", async
   for (const apps of ["1", "0"] as const) await withMcpClient(createMcpServer(client, testCredentials, { NEMLIG_MCP_APPS: apps }, undefined, {
     principalKey: "s".repeat(32), policyRevision: "service", tier: 2, kind: "service",
   }), async (mcp) => {
-    const expected = apps === "1" ? serviceAcceptanceToolInventory : serviceAcceptanceToolInventory.filter((name) => name !== "choose_products_visually");
+    const expected = apps === "1" ? serviceAcceptanceToolInventory : serviceAcceptanceToolInventory.filter((name) => name !== "review_proposed_basket");
     assert.deepEqual((await mcp.listTools()).tools.map(({ name }) => name).sort(), [...expected].sort());
     if (apps === "1") assert.deepEqual((await mcp.listResources()).resources.map(({ uri }) => uri), serviceAcceptanceResourceInventory);
     else await assert.rejects(mcp.listResources(), /Method not found/u);
@@ -622,7 +624,7 @@ test("every MCP tool has complete schemas, accurate annotations, and safe server
       "review_item_to_remove",
       "review_item_swap",
       "review_emptying_basket",
-      "choose_products_visually",
+      "review_proposed_basket",
     ]) {
       assert.equal(byName.get(name)?.annotations?.readOnlyHint, true, name);
       assert.equal(byName.get(name)?.annotations?.destructiveHint, false, name);
@@ -676,10 +678,8 @@ test("MCP routes recipe discovery through individual short searches and favourit
 
     const plan = (await mcp.listTools()).tools.find((tool) => tool.name === "plan_my_shopping");
     const direct = (await mcp.listTools()).tools.find((tool) => tool.name === "find_groceries");
-    const visual = (await mcp.listTools()).tools.find((tool) => tool.name === "choose_products_visually");
     const proposed = (await mcp.listTools()).tools.find((tool) => tool.name === "review_proposed_basket");
     assert.equal(plan?._meta, undefined);
-    assert.equal((visual?._meta as { ui?: { resourceUri?: string } } | undefined)?.ui?.resourceUri, PICKER_URI);
     assert.equal((proposed?._meta as { ui?: { resourceUri?: string } } | undefined)?.ui?.resourceUri, PICKER_URI);
     assert.match(JSON.stringify(plan?.inputSchema), /Prince biscuits.*prince kiks/);
     assert.match(JSON.stringify(direct?.inputSchema), /prince kiks.*Prince biscuits/);
@@ -752,6 +752,8 @@ test("picker images use only the observed Nemlig HTTPS origin and keep a text-on
     assert.equal(safeNemligImageUrl(value), undefined);
   }
   const html = await pickerHtml();
+  assert.match(html, /prefers-color-scheme:\s*dark/u);
+  assert.match(html, /--text:/u);
   assert.match(html, /loading="lazy"/);
   assert.match(html, /referrerPolicy="no-referrer"/);
   assert.match(html, /onerror=\(\)=>image\.remove\(\)/);
@@ -764,7 +766,6 @@ test("picker images use only the observed Nemlig HTTPS origin and keep a text-on
   assert.match(html, /item\.favorite_match/);
   assert.match(html, /value\.pantry_assumptions/);
   assert.doesNotMatch(html, /renderPlan|Ingen egnet vare|type="number"|Forbered valgte varer/u);
-  assert.match(html, /authorization:"exact_review"/);
   assert.doesNotMatch(html, /image[_-]proxy|fetch\(.*image/iu);
 });
 
@@ -789,21 +790,12 @@ test("picker resource preserves its public presentation contract and isolates ho
     assert.equal(Buffer.byteLength(icon?.src ?? ""), 17_690);
     assert.equal(createHash("sha256").update(icon?.src ?? "").digest("hex"), "7969c1825e5fec052e55b5740cb0171f0dc7f8b71bb6812b76a51aaf755ff95f");
 
-    const result = await mcp.callTool({ name: "choose_products_visually", arguments: { search_term: "mælk", result_count: 1 } });
-    const structured = result.structuredContent as { result: Array<{ name?: string; description?: string; details?: typeof hostileDetails; image_url?: string }> };
-    assert.equal(structured.result[0]?.name, hostileName);
-    assert.equal(structured.result[0]?.description, hostileDescription);
-    assert.deepEqual(structured.result[0]?.details, hostileDetails);
-    assert.equal(structured.result[0]?.image_url, undefined);
-
     const resource = await mcp.readResource({ uri: PICKER_URI });
     const content = resource.contents[0];
     assert.ok(content && "text" in content);
     assert.equal(content.uri, "ui://nemlig/picker.html");
     assert.equal(content.mimeType, "text/html;profile=mcp-app");
     assert.deepEqual(content._meta, { ui: { csp: { resourceDomains: ["https://unpkg.com", "https://nemlig.com", "https://www.nemlig.com"] } } });
-    assert.equal(Buffer.byteLength(content.text), 8_824);
-    assert.equal(createHash("sha256").update(content.text).digest("hex"), "4b9e596b6bc5820cd0d11492321746fb1048f1ba82c05b1ef4d0ba4e6f491619");
     for (const value of [hostileName, hostileDescription, ...hostileDetails.flatMap(({ key, value }) => [key, value])]) {
       assert.equal(content.text.includes(value), false);
     }
@@ -838,16 +830,10 @@ test("retired MCP feature request is unavailable and has no Nemlig side effect",
   );
 });
 
-test("MCP search and picker return identical ranked structured data", async () => {
+test("legacy raw visual chooser is unavailable", async () => {
   await withMcpClient(createMcpServer(fakeClient(), testCredentials), async (mcp) => {
-    const search = await mcp.callTool({ name: "find_groceries", arguments: { search_term: "mælk", result_count: 5 } });
     const pick = await mcp.callTool({ name: "choose_products_visually", arguments: { search_term: "mælk", result_count: 5 } });
-    assert.deepEqual(search.structuredContent, pick.structuredContent);
-    assert.deepEqual((search.structuredContent as { result: Candidate[] }).result[0]?.tags, [
-      "cheapest",
-      "recommended",
-      "organic",
-    ]);
+    assert.equal(pick.isError, true);
   });
 });
 
@@ -1191,32 +1177,23 @@ test("MCP removal and clear keep exact structured data behind friendly shopping 
   });
 });
 
-test("picker gate hides only picker tool/resource for every false spelling", async () => {
+test("picker gate hides proposed-basket tool and resource for every false spelling", async () => {
   for (const value of ["0", "false", "FALSE", " no ", "off"]) {
     await withMcpClient(createMcpServer(fakeClient(), async () => undefined, { NEMLIG_MCP_APPS: value }), async (mcp) => {
-      assert.equal((await mcp.listTools()).tools.some((tool) => tool.name === "choose_products_visually"), false);
       assert.equal((await mcp.listTools()).tools.some((tool) => tool.name === "review_proposed_basket"), false);
       await assert.rejects(mcp.listResources(), /Method not found/);
     });
   }
 });
 
-test("picker resource prepares an exact quantity-one review before a distinct apply action", async () => {
+test("picker resource only renders reviewed proposals and returns alternative choices to chat", async () => {
   const html = await pickerHtml();
   assert.match(html, /aria-live/);
-  assert.match(html, /review_items_to_add/);
-  assert.match(html, /add_approved_items/);
-  assert.match(html, /prepareBatch\(\[\{product:product\.id,quantity:1\}\]/);
-  assert.match(html, /Ingen matchende varer fundet/u);
-  assert.doesNotMatch(html, /renderPlan|type="number"|Forbered valgte varer/u);
-  assert.match(html, /Godkend og tilføj/);
-  assert.match(html, /Kurven indeholder nu/);
-  assert.match(html, /applied\.basket\.items/);
-  assert.doesNotMatch(html, /add_to_cart/);
+  assert.match(html, /sendMessage/);
+  assert.match(html, /renderProposed/);
+  assert.doesNotMatch(html, /callServerTool|review_items_to_add|add_approved_items|prepareBatch/u);
   assert.match(html, /structuredContent/);
-  assert.match(html, /proposal\.proposal_id/);
   assert.doesNotMatch(html, /ID:|"ID "|Udløber|expires_at/);
-  assert.match(html, /line\.line_total/);
   await withMcpClient(createMcpServer(fakeClient(), testCredentials), async (mcp) => {
     const resources = await mcp.listResources();
     assert.equal(resources.resources.some((resource) => resource.uri === PICKER_URI), true);

@@ -10,7 +10,7 @@ interface ToolResult {
 export const productionToolInventory = {
   readOnly: [
     "find_groceries", "show_my_favorites", "plan_my_shopping", "show_grocery_sections",
-    "browse_grocery_section", "check_nemlig_connection", "show_my_basket", "choose_products_visually", "review_proposed_basket",
+    "browse_grocery_section", "check_nemlig_connection", "show_my_basket", "review_proposed_basket",
   ],
   prepareOnly: [
     "review_items_to_add", "review_item_to_remove", "review_item_swap", "review_emptying_basket",
@@ -190,7 +190,10 @@ export async function verifyReadOnlyProductionFeatures(
 
   const current = await call<Basket>("show_my_basket");
   assert.ok(Array.isArray(current.items), "show_my_basket returned no basket items");
-  await call("choose_products_visually", { search_term: "banan", result_count: 3 });
+  await call("review_proposed_basket", {
+    items: [{ ingredient: "banan", product: productIds[0], quantity: 1, confidence: 90 }],
+    pantry_assumptions: [],
+  });
   const resource = await withinTotalDeadline("picker resource", () => client.readResource!({ uri: productionResourceInventory[0] }));
   assert.ok(resource.contents.length, "Production picker resource is empty");
   exercised.push(productionResourceInventory[0]);
@@ -224,9 +227,9 @@ export async function verifyServiceAcceptanceFeatures(
   const tools = (await withinTotalDeadline("tool inventory", () => client.listTools())).tools;
   const resources = (await withinTotalDeadline("resource inventory", () => client.listResources!())).resources;
   const names = tools.map(({ name }) => name).sort();
-  const baseTools = serviceAcceptanceToolInventory.filter((name) => name !== "choose_products_visually");
-  const pickerEnabled = names.includes("choose_products_visually");
-  assert.deepEqual(names, [...baseTools, ...(pickerEnabled ? ["choose_products_visually"] : [])].sort(), "Service MCP tool inventory drifted");
+  const baseTools = serviceAcceptanceToolInventory.filter((name) => name !== "review_proposed_basket");
+  const pickerEnabled = names.includes("review_proposed_basket");
+  assert.deepEqual(names, [...baseTools, ...(pickerEnabled ? ["review_proposed_basket"] : [])].sort(), "Service MCP tool inventory drifted");
   assert.deepEqual(resources.map(({ uri }) => uri).sort(), pickerEnabled ? [...serviceAcceptanceResourceInventory] : [], "Service MCP resource inventory drifted");
 
   const exercised: string[] = [];
@@ -237,7 +240,9 @@ export async function verifyServiceAcceptanceFeatures(
     exercised.push(name);
     return result;
   };
-  content(await call("find_groceries", { search_term: "banan", result_count: 1 }), "find_groceries");
+  const searched = content<{ result?: Array<{ id?: number }> }>(await call("find_groceries", { search_term: "banan", result_count: 1 }), "find_groceries");
+  const productId = searched.result?.find(({ id }) => typeof id === "number")?.id;
+  assert.ok(productId, "Service product search returned no usable product");
   content(await call("show_my_favorites", { search_term: "banan", result_count: 1, page: 1 }), "show_my_favorites");
   const sections = content<{ departments?: Array<{ id?: string }> }>(await call("show_grocery_sections"), "show_grocery_sections");
   const section = sections.departments?.find(({ id }) => id)?.id;
@@ -245,7 +250,10 @@ export async function verifyServiceAcceptanceFeatures(
   content(await call("browse_grocery_section", { section, result_count: 1, page: 1 }), "browse_grocery_section");
   basket(await call("show_my_basket"), "show_my_basket");
   if (pickerEnabled) {
-    content(await call("choose_products_visually", { search_term: "banan", result_count: 1 }), "choose_products_visually");
+    content(await call("review_proposed_basket", {
+      items: [{ ingredient: "banan", product: productId, quantity: 1, confidence: 90 }],
+      pantry_assumptions: [],
+    }), "review_proposed_basket");
     const resource = await withinTotalDeadline("picker resource", () => client.readResource!({ uri: serviceAcceptanceResourceInventory[0] }));
     assert.ok(resource.contents.length, "Service picker resource is empty");
     exercised.push(serviceAcceptanceResourceInventory[0]);

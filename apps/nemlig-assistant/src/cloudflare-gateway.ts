@@ -67,7 +67,7 @@ const normalTools = new Set([
   "review_item_to_remove",
   "review_item_swap",
   "review_emptying_basket",
-  "choose_products_visually",
+  "review_proposed_basket",
 ]);
 
 const serviceTools = new Set([
@@ -76,7 +76,7 @@ const serviceTools = new Set([
   "show_grocery_sections",
   "browse_grocery_section",
   "show_my_basket",
-  "choose_products_visually",
+  "review_proposed_basket",
 ]);
 
 const isServiceRequestAllowed = async (request: Request): Promise<boolean> => {
