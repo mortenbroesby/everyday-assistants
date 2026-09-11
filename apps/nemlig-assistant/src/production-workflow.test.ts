@@ -39,6 +39,7 @@ test("production workflow accepts manual dispatch or a version-policy-eligible C
   assert.match(gate, /check:version-bump --base "\$CANDIDATE_PARENT" --head "\$CANDIDATE_SHA" --json/u);
   assert.match(gate, /policy\.eligible === true/u);
   assert.match(gate, /\[\[ "\$EVENT_NAME" == "workflow_dispatch" \]\]/u);
+  assert.match(gate, /exit 0\n\x20{10}fi/u);
   assert.doesNotMatch(gate, /CLOUDFLARE|NEMLIG_MCP|secrets\./u);
   assert.match(preflight, /needs: release-gate/u);
   assert.match(preflight, /needs\.release-gate\.outputs\.deploy == 'true'/u);

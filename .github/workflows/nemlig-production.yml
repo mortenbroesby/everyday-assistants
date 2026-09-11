@@ -71,7 +71,7 @@ jobs:
           if [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
             echo "deploy=true" >> "$GITHUB_OUTPUT"
             exit 0
-          }
+          fi
           CANDIDATE_PARENT=$(git rev-parse "$CANDIDATE_SHA^1")
           git fetch origin refs/heads/main:refs/remotes/origin/main
           [[ "$(git rev-parse origin/main)" == "$CANDIDATE_SHA" ]]
