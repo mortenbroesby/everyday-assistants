@@ -36,35 +36,35 @@
 
 - [x] 7.1 Commit and push the scoped branch, open a pull request, and verify exact-head CI before merge.
 - [x] 7.2 Merge through the protected pull-request path and verify the production deployment reports the merged revision.
-- [ ] 7.3 Run two fresh read-only ChatGPT recipe acceptances: one under twenty products with grouped visual choices and one larger proposal with confident items compact; record any live basket mutation as a separate explicit approval.
+- [x] 7.3 Run two fresh read-only ChatGPT recipe acceptances: one under twenty products with grouped visual choices and one larger proposal with confident items compact; record any live basket mutation as a separate explicit approval.
 
 ## 8. Remove the live authentication race
 
 - [x] 8.1 Reproduce parallel read-only searches starting overlapping fresh logins on the shared principal client.
 - [x] 8.2 Coalesce only overlapping login attempts per client while preserving fresh pre-authentication and one 401 retry.
-- [ ] 8.3 Deploy the fix and repeat the fresh read-only ChatGPT acceptances without a visible authentication error.
+- [x] 8.3 Deploy the fix and repeat the fresh read-only ChatGPT acceptances without a visible authentication error.
 
 ## 9. Make the reviewed proposal the only visual path
 
 - [x] 9.1 Reproduce the production mismatch where the legacy raw chooser remains exposed while the reviewed-basket tool is blocked at the gateway, and capture the dark-theme contrast failure.
 - [x] 9.2 Retire the raw chooser, expose `review_proposed_basket` through the maintained HTTP and service paths, and render readable light and dark themes.
-- [ ] 9.3 Run focused and full verification, merge and deploy through the protected PR path, then repeat both fresh read-only ChatGPT recipe acceptances.
+- [x] 9.3 Run focused and full verification, merge and deploy through the protected PR path, then repeat both fresh read-only ChatGPT recipe acceptances.
 
 ## 10. Prevent proposal retry storms
 
 - [x] 10.1 Reproduce a live ChatGPT run where fractional confidence and one mismatched line fail whole proposal groups and leave many error widgets.
 - [x] 10.2 Normalize fractional confidence and return valid choices plus identified rejected lines without weakening the unrelated-product guard.
 - [x] 10.3 Treat a product that disappears between search and review as an identified rejected line while preserving valid choices and propagating real service failures.
-- [ ] 10.4 Verify, deploy, refresh the ChatGPT app, and repeat both read-only recipe acceptances without a proposal retry storm.
+- [x] 10.4 Verify, deploy, refresh the ChatGPT app, and repeat both read-only recipe acceptances without a proposal retry storm.
 
 ## 11. Preserve translated ingredient choices
 
 - [x] 11.1 Reproduce a large live review where English display labels reject otherwise suitable products found with Danish searches.
 - [x] 11.2 Keep the user's ingredient label while validating the product against the same short Danish search term, with focused and representative smoke coverage.
-- [ ] 11.3 Deploy, refresh the ChatGPT app, and repeat the large read-only acceptance with the translated choices preserved.
+- [x] 11.3 Deploy, refresh the ChatGPT app, and repeat the large read-only acceptance with the translated choices preserved.
 
 ## 12. Avoid normal recipe rate-limit errors
 
 - [x] 12.1 Reproduce a shared-principal burst by running the sixteen- and twenty-four-product acceptances concurrently; observe one bounded rate-limit response while both runs still complete.
 - [x] 12.2 Preserve the existing principal, global, daily, and monthly ceilings because the concurrent test does not represent the intended one-at-a-time household workflow.
-- [ ] 12.3 Repeat both read-only acceptances sequentially without a visible rate-limit error.
+- [x] 12.3 Repeat both read-only acceptances sequentially without a visible rate-limit error.
