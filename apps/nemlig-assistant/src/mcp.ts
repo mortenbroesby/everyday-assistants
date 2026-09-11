@@ -470,7 +470,11 @@ export function createMcpServer(
   const search = async (query: string, limit: number) =>
     rankProducts(await client.searchProducts(query, limit), query);
   const proposedCandidate = async (productId: number, ingredient: string): Promise<z.infer<typeof proposedCandidateSchema> | undefined> => {
-    const product = await client.getProduct(productId);
+    const product = await client.getProduct(productId).catch((error: unknown) => {
+      if (error instanceof NemligError && error.status === 404) return undefined;
+      throw error;
+    });
+    if (!product) return undefined;
     if (product.id !== productId || !relevantProduct(product, ingredient)) return undefined;
     const candidate = rankProducts([product], ingredient)[0];
     if (!candidate?.id) return undefined;

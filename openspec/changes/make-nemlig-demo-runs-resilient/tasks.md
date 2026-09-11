@@ -54,4 +54,5 @@
 
 - [x] 10.1 Reproduce a live ChatGPT run where fractional confidence and one mismatched line fail whole proposal groups and leave many error widgets.
 - [x] 10.2 Normalize fractional confidence and return valid choices plus identified rejected lines without weakening the unrelated-product guard.
-- [ ] 10.3 Verify, deploy, refresh the ChatGPT app, and repeat both read-only recipe acceptances without a proposal retry storm.
+- [x] 10.3 Treat a product that disappears between search and review as an identified rejected line while preserving valid choices and propagating real service failures.
+- [ ] 10.4 Verify, deploy, refresh the ChatGPT app, and repeat both read-only recipe acceptances without a proposal retry storm.
