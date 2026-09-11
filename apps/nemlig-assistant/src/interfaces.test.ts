@@ -669,6 +669,7 @@ test("MCP routes recipe discovery through individual short searches and favourit
     assert.match(instructions, /Do not inspect the current basket while planning/u);
     assert.match(instructions, /current Nemlig products, prices, availability/);
     assert.match(instructions, /review_proposed_basket/);
+    assert.match(instructions, /same short Danish phrase.*search_term/u);
     assert.doesNotMatch(instructions, /Suggest an improvement|GitHub issue/);
     assert.match(tools.get("plan_my_shopping") ?? "", /Resolve 1–50 groceries automatically by default/);
     assert.match(tools.get("plan_my_shopping") ?? "", /discovery_unavailable.*find_groceries/u);
@@ -681,6 +682,7 @@ test("MCP routes recipe discovery through individual short searches and favourit
     const proposed = (await mcp.listTools()).tools.find((tool) => tool.name === "review_proposed_basket");
     assert.equal(plan?._meta, undefined);
     assert.equal((proposed?._meta as { ui?: { resourceUri?: string } } | undefined)?.ui?.resourceUri, PICKER_URI);
+    assert.match(JSON.stringify(proposed?.inputSchema), /search_term.*same short Danish catalogue phrase/u);
     assert.match(JSON.stringify(plan?.inputSchema), /Prince biscuits.*prince kiks/);
     assert.match(JSON.stringify(direct?.inputSchema), /prince kiks.*Prince biscuits/);
     for (const name of ["plan_my_shopping"]) {
@@ -747,6 +749,25 @@ test("MCP proposed basket reports pet food as a rejected line without failing th
       items: [],
       rejected: [{ ingredient: "hakket oksekød", reason: "No proposed product matched this ingredient." }],
     });
+  });
+});
+
+test("MCP proposed basket keeps the user label while validating the Danish search term", async () => {
+  const client = fakeClient({
+    getProduct: async (id) => ({ ...product, id, name: "Hakket oksekød", category: "Kød", subcategory: "Oksekød" }),
+  });
+  await withMcpClient(createMcpServer(client, testCredentials), async (mcp) => {
+    const result = await mcp.callTool({
+      name: "review_proposed_basket",
+      arguments: { items: [{
+        ingredient: "minced beef", search_term: "hakket oksekød", product: 7, quantity: 2, confidence: 92,
+      }] },
+    });
+    assert.notEqual(result.isError, true, toolText(result));
+    const view = result.structuredContent as { items: Array<{ ingredient: string; product: { id: number } }> };
+    assert.deepEqual(view.items.map(({ ingredient, product }) => ({ ingredient, product: product.id })), [
+      { ingredient: "minced beef", product: 7 },
+    ]);
   });
 });
 

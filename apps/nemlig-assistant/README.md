@@ -130,9 +130,11 @@ collapsed.
 
 The read-only proposed-basket view reports package size, quantity, product
 description, price, unit price, confidence, and current alternatives. Choices
-are handled in groups of at most five. A mismatched or vanished catalogue item
-is identified without hiding the other valid choices or failing the whole group.
-Planning does not inspect the current basket; after choices settle, ChatGPT shows the complete proposed basket before
+are handled in groups of at most five. It keeps the user's ingredient label but
+validates each choice with the same short Danish term used for discovery. A
+mismatched or vanished catalogue item is identified without hiding the other
+valid choices or failing the whole group. Planning does not inspect the current
+basket; after choices settle, ChatGPT shows the complete proposed basket before
 preparing the separate exact basket-addition review.
 
 Provider descriptions and item details are converted from HTML to bounded plain

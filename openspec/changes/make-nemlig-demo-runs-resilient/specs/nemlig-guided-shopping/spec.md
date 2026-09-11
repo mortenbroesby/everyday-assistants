@@ -9,6 +9,11 @@ For each requested ingredient, ChatGPT SHALL propose one current product with pa
 - **WHEN** a search result contains an available product that does not fit the requested ingredient or purpose
 - **THEN** it may remain among raw results but is not presented as the proposed choice
 
+#### Scenario: The user's ingredient label is not Danish
+
+- **WHEN** ChatGPT found a suitable product with a normalized Danish catalogue phrase
+- **THEN** the proposal keeps the user's label for display and validates relevance with that same Danish phrase
+
 #### Scenario: Several suitable products differ meaningfully
 
 - **WHEN** price, brand, quality, size, or purpose creates a meaningful choice
