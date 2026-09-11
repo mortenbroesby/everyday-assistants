@@ -10,7 +10,7 @@ interface ToolResult {
 export const productionToolInventory = {
   readOnly: [
     "find_groceries", "show_my_favorites", "plan_my_shopping", "show_grocery_sections",
-    "browse_grocery_section", "check_nemlig_connection", "show_my_basket", "choose_products_visually",
+    "browse_grocery_section", "check_nemlig_connection", "show_my_basket", "choose_products_visually", "review_proposed_basket",
   ],
   prepareOnly: [
     "review_items_to_add", "review_item_to_remove", "review_item_swap", "review_emptying_basket",

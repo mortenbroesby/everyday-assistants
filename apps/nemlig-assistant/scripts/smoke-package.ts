@@ -125,7 +125,7 @@ try {
     assert.ok(resource && "text" in resource);
     assert.equal(resource.uri, "ui://nemlig/picker.html");
     assert.equal(resource.mimeType, "text/html;profile=mcp-app");
-    assert.equal(createHash("sha256").update(resource.text).digest("hex"), "aa4c15a29f9a094f876b92d52e2d0558a70ec3892e7e0542b8b8c8a94653e3be");
+    assert.equal(createHash("sha256").update(resource.text).digest("hex"), "4b9e596b6bc5820cd0d11492321746fb1048f1ba82c05b1ef4d0ba4e6f491619");
     assert.deepEqual(resource._meta, { ui: { csp: { resourceDomains: ["https://unpkg.com", "https://nemlig.com", "https://www.nemlig.com"] } } });
   } finally { await presentation.close(); }
 

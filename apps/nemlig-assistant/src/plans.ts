@@ -80,7 +80,7 @@ const outcomes = (product: Product, constraints: ParsedShoppingPlanLine["constra
 const words = (value: string): string[] => value.toLocaleLowerCase("da-DK").normalize("NFKD").replace(/\p{M}/gu, "").match(/[a-z0-9]+/gu) ?? [];
 const petWords = new Set(["kat", "katte", "kattemad", "hund", "hunde", "hundemad", "kaeledyr", "dyrefoder"]);
 const quantityWords = new Set(["g", "kg", "ml", "cl", "l", "stk"]);
-const relevantProduct = (product: Product, query: string): boolean => {
+export const relevantProduct = (product: Product, query: string): boolean => {
   const requested = new Set(words(query).filter((word) => !quantityWords.has(word) && !/^\d+$/u.test(word)));
   if ([...requested].some((word) => petWords.has(word))) return true;
   const productWords = words(`${product.brand} ${product.category} ${product.subcategory} ${product.name}`);

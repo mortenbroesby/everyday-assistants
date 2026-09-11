@@ -249,6 +249,7 @@ const friendlyCatalog = [
   ["review_item_swap", "Review swapping an item", true, false, ["current_item", "replacement_item", "quantity"]],
   ["review_item_to_remove", "Review an item to remove", true, false, ["basket_item"]],
   ["review_items_to_add", "Review items to add", true, false, ["items", "authorization", "automatic_authorization"]],
+  ["review_proposed_basket", "Review proposed basket", true, false, ["items", "pantry_assumptions"]],
   ["show_grocery_sections", "Show grocery sections", true, false, []],
   ["show_my_basket", "Show my basket", true, false, []],
   ["show_my_favorites", "Show my favourites", true, false, ["search_term", "result_count", "page"]],
@@ -310,7 +311,7 @@ test("production MCP inventory is exact with Apps enabled and disabled", async (
   const expected = Object.values(productionToolInventory).flat().sort();
   for (const [apps, names] of [
     ["1", expected],
-    ["0", expected.filter((name) => name !== "choose_products_visually")],
+    ["0", expected.filter((name) => name !== "choose_products_visually" && name !== "review_proposed_basket")],
   ] as const) {
     await withMcpClient(createMcpServer(fakeClient(), testCredentials, { NEMLIG_MCP_APPS: apps }), async (mcp) => {
       assert.deepEqual((await mcp.listTools()).tools.map((tool) => tool.name).sort(), names);
@@ -654,19 +655,18 @@ test("authenticated HTTP request context preserves stdio tool and resource metad
   });
 });
 
-test("MCP routes ordinary product intent through loose catalogue-first planning", async () => {
+test("MCP routes recipe discovery through individual short searches and favourites for uncertainty", async () => {
   await withMcpClient(createMcpServer(fakeClient(), testCredentials), async (mcp) => {
     const tools = new Map((await mcp.listTools()).tools.map((tool) => [tool.name, tool.description ?? ""]));
     const instructions = mcp.getInstructions() ?? "";
-    assert.match(instructions, /ordinary find or add requests, use plan_my_shopping in automatic mode/);
-    assert.match(instructions, /one short Danish catalogue phrase per line/);
+    assert.match(instructions, /ordinary recipe or shopping requests, search each ingredient with find_groceries/);
+    assert.match(instructions, /one short Danish catalogue phrase/);
     assert.match(instructions, /English, mixed-language, misspelled, and over-specific wording/);
-    assert.match(instructions, /Ordinary planning searches the current Nemlig catalogue once per line, never favourites/);
-    assert.match(instructions, /discovery_unavailable.*find_groceries/u);
-    assert.match(instructions, /choose_products_visually only when the user explicitly asks/u);
-    assert.match(instructions, /show_my_favorites only when explicitly requested/);
+    assert.match(instructions, /Refine an unsuitable result with another short phrase/);
+    assert.match(instructions, /confidence is below 80.*show_my_favorites/u);
+    assert.match(instructions, /Do not inspect the current basket while planning/u);
     assert.match(instructions, /current Nemlig products, prices, availability/);
-    assert.match(instructions, /use this recipe\/list and go ahead/);
+    assert.match(instructions, /review_proposed_basket/);
     assert.doesNotMatch(instructions, /Suggest an improvement|GitHub issue/);
     assert.match(tools.get("plan_my_shopping") ?? "", /Resolve 1–50 groceries automatically by default/);
     assert.match(tools.get("plan_my_shopping") ?? "", /discovery_unavailable.*find_groceries/u);
@@ -677,14 +677,71 @@ test("MCP routes ordinary product intent through loose catalogue-first planning"
     const plan = (await mcp.listTools()).tools.find((tool) => tool.name === "plan_my_shopping");
     const direct = (await mcp.listTools()).tools.find((tool) => tool.name === "find_groceries");
     const visual = (await mcp.listTools()).tools.find((tool) => tool.name === "choose_products_visually");
+    const proposed = (await mcp.listTools()).tools.find((tool) => tool.name === "review_proposed_basket");
     assert.equal(plan?._meta, undefined);
     assert.equal((visual?._meta as { ui?: { resourceUri?: string } } | undefined)?.ui?.resourceUri, PICKER_URI);
+    assert.equal((proposed?._meta as { ui?: { resourceUri?: string } } | undefined)?.ui?.resourceUri, PICKER_URI);
     assert.match(JSON.stringify(plan?.inputSchema), /Prince biscuits.*prince kiks/);
     assert.match(JSON.stringify(direct?.inputSchema), /prince kiks.*Prince biscuits/);
     for (const name of ["plan_my_shopping"]) {
       const tool = (await mcp.listTools()).tools.find((entry) => entry.name === name);
       assert.doesNotMatch(JSON.stringify(tool?.outputSchema), /"(?:items|summary|list)":\{\}/u, `${name} must not publish an unconstrained result schema`);
     }
+  });
+});
+
+test("MCP proposed basket resolves current products without reading or changing the basket", async () => {
+  const resolved: number[] = [];
+  const client = fakeClient({
+    getProduct: async (id) => {
+      resolved.push(id);
+      return { ...product, id, name: id === 8 ? "Heinz Tomato Ketchup" : "Tomatketchup" };
+    },
+    getCart: async () => { throw new Error("basket read"); },
+    addToCart: async () => { throw new Error("basket mutation"); },
+    removeFromCart: async () => { throw new Error("basket mutation"); },
+    clearCart: async () => { throw new Error("basket mutation"); },
+  });
+  await withMcpClient(createMcpServer(client, testCredentials), async (mcp) => {
+    const result = await mcp.callTool({
+      name: "review_proposed_basket",
+      arguments: {
+        pantry_assumptions: ["salt", "mel"],
+        items: [{ ingredient: "ketchup", product: 7, alternatives: [8], quantity: 2, confidence: 75, favorite_match: true }],
+      },
+    });
+    assert.notEqual(result.isError, true, toolText(result));
+    const view = result.structuredContent as { pantry_assumptions: string[]; items: Array<{ ingredient: string; confidence: number; favorite_match: boolean; product: { id: number }; alternatives: Array<{ id: number }> }> };
+    assert.deepEqual(view.pantry_assumptions, ["salt", "mel"]);
+    assert.equal(view.items[0]?.favorite_match, true);
+    assert.deepEqual(view.items, [{ ingredient: "ketchup", confidence: 75, quantity: 2, favorite_match: true, product: { ...view.items[0]!.product, id: 7 }, alternatives: [{ ...view.items[0]!.alternatives[0], id: 8 }] }]);
+  });
+  assert.deepEqual(resolved, [7, 8]);
+});
+
+test("MCP proposed basket rejects malformed confidence, quantities, repeated alternatives, and groups over five", async () => {
+  await withMcpClient(createMcpServer(fakeClient(), testCredentials), async (mcp) => {
+    const call = (items: unknown) => mcp.callTool({ name: "review_proposed_basket", arguments: { items } });
+    assert.equal((await call([{ ingredient: "ketchup", product: 7, quantity: 1, confidence: 101 }])).isError, true);
+    assert.equal((await call([{ ingredient: "ketchup", product: 7, quantity: 0, confidence: 80 }])).isError, true);
+    assert.equal((await call([{ ingredient: "ketchup", product: 7, alternatives: [7], quantity: 1, confidence: 80 }])).isError, true);
+    assert.equal((await call([{ ingredient: "ketchup", product: 7, quantity: 1, confidence: 80, favorite_match: "yes" }])).isError, true);
+    assert.equal((await call(Array.from({ length: 6 }, (_, index) => ({ ingredient: `vare ${index}`, product: index + 1, quantity: 1, confidence: 80 })))).isError, true);
+  });
+});
+
+test("MCP proposed basket rejects pet food for minced meat", async () => {
+  const client = fakeClient({
+    getProduct: async () => ({ ...product, id: 9, name: "Hakket oksekød til kat", category: "Kæledyr", subcategory: "Kattemad" }),
+    getCart: async () => { throw new Error("basket read"); },
+  });
+  await withMcpClient(createMcpServer(client, testCredentials), async (mcp) => {
+    const result = await mcp.callTool({
+      name: "review_proposed_basket",
+      arguments: { items: [{ ingredient: "hakket oksekød", product: 9, quantity: 1, confidence: 90 }] },
+    });
+    assert.equal(result.isError, true);
+    assert.match(toolText(result), /does not match the requested ingredient/u);
   });
 });
 
@@ -701,6 +758,11 @@ test("picker images use only the observed Nemlig HTTPS origin and keep a text-on
   assert.match(html, /alt=product\.name/);
   assert.match(html, /imageOrigins\.has\(url\.origin\)/);
   assert.match(html, /product\.description/);
+  assert.match(html, /renderProposed/);
+  assert.match(html, /app\.sendMessage/);
+  assert.match(html, /details\.open=item\.confidence<80/);
+  assert.match(html, /item\.favorite_match/);
+  assert.match(html, /value\.pantry_assumptions/);
   assert.doesNotMatch(html, /renderPlan|Ingen egnet vare|type="number"|Forbered valgte varer/u);
   assert.match(html, /authorization:"exact_review"/);
   assert.doesNotMatch(html, /image[_-]proxy|fetch\(.*image/iu);
@@ -740,8 +802,8 @@ test("picker resource preserves its public presentation contract and isolates ho
     assert.equal(content.uri, "ui://nemlig/picker.html");
     assert.equal(content.mimeType, "text/html;profile=mcp-app");
     assert.deepEqual(content._meta, { ui: { csp: { resourceDomains: ["https://unpkg.com", "https://nemlig.com", "https://www.nemlig.com"] } } });
-    assert.equal(Buffer.byteLength(content.text), 5_714);
-    assert.equal(createHash("sha256").update(content.text).digest("hex"), "aa4c15a29f9a094f876b92d52e2d0558a70ec3892e7e0542b8b8c8a94653e3be");
+    assert.equal(Buffer.byteLength(content.text), 8_824);
+    assert.equal(createHash("sha256").update(content.text).digest("hex"), "4b9e596b6bc5820cd0d11492321746fb1048f1ba82c05b1ef4d0ba4e6f491619");
     for (const value of [hostileName, hostileDescription, ...hostileDetails.flatMap(({ key, value }) => [key, value])]) {
       assert.equal(content.text.includes(value), false);
     }
@@ -1133,6 +1195,7 @@ test("picker gate hides only picker tool/resource for every false spelling", asy
   for (const value of ["0", "false", "FALSE", " no ", "off"]) {
     await withMcpClient(createMcpServer(fakeClient(), async () => undefined, { NEMLIG_MCP_APPS: value }), async (mcp) => {
       assert.equal((await mcp.listTools()).tools.some((tool) => tool.name === "choose_products_visually"), false);
+      assert.equal((await mcp.listTools()).tools.some((tool) => tool.name === "review_proposed_basket"), false);
       await assert.rejects(mcp.listResources(), /Method not found/);
     });
   }

@@ -25,8 +25,8 @@
 ## Your grocery copilot, with you still in charge
 
 Nemlig Assistant is an unofficial Node.js and TypeScript assistant for
-nemlig.com. It helps you move from “we need groceries” to a reviewed plan with
-current products, prices, favorites, basket coverage, and exact quantities.
+nemlig.com. It helps you move from “we need groceries” to a reviewed proposal
+with current products, prices, favourites, and exact quantities.
 
 Use it from a terminal or connect its MCP server to an AI client such as
 ChatGPT. The assistant can do useful read-only work immediately. Basket writes
@@ -42,11 +42,9 @@ Once connected, try prompts like:
 
 - “Show five of my favorite products.”
 - “Find organic milk and compare the best options by unit price.”
-- “Use this shopping list and just go ahead; stop only where the product is unclear.”
-- “What is already in my basket, and what is still missing from this list?”
-- “Save this shopping plan so I can continue later.”
-- “Save this as a reusable list called Ugens basis.”
-- “Make a separate birthday list, then show me both lists.”
+- “Find the ingredients for burgers and lasagna, then show me the proposed basket.”
+- “For uncertain choices, check whether I already have a suitable favourite.”
+- “Show one recommendation per ingredient and expand alternatives below 80% match confidence.”
 - “Compare the cheese in my basket with this cheaper alternative.”
 - “Add these selected products after showing me a clear summary.”
 
@@ -68,26 +66,24 @@ preparatory, and exact reviews still wait for approval.
   status, availability, product description, item details, and other known
   classifications when Nemlig supplies them.
 
-### Plan a whole shopping list
+### Build a proposed shopping basket
 
-- Turn 1–50 grocery lines into one structured plan.
-- Use automatic mode by default; use manual mode when requested or when no
-  deterministic clear match exists.
-- Search the current catalogue for every ordinary line using short, loose Danish wording.
+- Search each ingredient separately with one- or two-word Danish catalogue terms.
+- Refine empty or unsuitable searches without a fixed product-level attempt count.
+- Show one recommended product per ingredient with package quantity and an
+  evidence-based match-confidence judgment.
+- Consult existing favourites when match confidence is below 80%.
+- Keep alternatives collapsed at or above 80% and expand them below 80%.
+- Present actionable visual choices in groups of at most five and show the
+  complete proposed basket before asking to add anything.
+- State omitted pantry assumptions such as flour, salt, and pepper.
 - Apply hard constraints such as dietary, price, or frozen/non-frozen rules.
-- Prefer discounted, organic, non-frozen, or lowest-unit-price candidates.
-- Exclude clearly incompatible categories such as pet food from ordinary human-food plans.
 - Preserve requested weights, volumes, or counts and compare the package combinations needed to cover them.
-- Prefer brands the user explicitly states or ChatGPT remembers, and offer a bounded choice for brand-sensitive lines when no preference decides them.
-- Preserve ambiguity when several products could be right instead of guessing.
-- Report exact covered, automatically selected, unresolved, failed, and
-  automatic-coverage totals.
-- Account for current basket quantities and show what remains to buy.
-- Estimate the selected total from current product data.
-- Keep ordinary plans conversational; open the optional visual picker only
-  when the user explicitly asks to choose visually.
+- Treat catalogue results as options rather than assuming every result suits the ingredient.
 - See direct Nemlig product images when the verified image host is available;
   every choice remains usable as text when an image is absent or fails.
+- Use the basket-aware `plan_my_shopping` only when explicitly requesting the
+  legacy batch-planning behavior.
 
 ### Review the basket safely
 
@@ -126,21 +122,17 @@ for one repeatable credential-free repository and CI check.
 
 ## 🧭 How guided shopping works
 
-ChatGPT turns a grocery request into structured lines with quantities, hard
-constraints, and optional preferences. It translates English or mixed wording,
-normalizes misspellings, and shortens over-specific requests before
-`plan_my_shopping` searches the current catalogue once per line. Distinctive
-brands stay in the phrase while generic categories become Danish; uncertain
-meaning is left for you to clarify. Favourites are searched only when you
-explicitly ask.
+ChatGPT searches each ingredient separately with short Danish catalogue terms.
+It can refine an empty or unsuitable result, then recommends one current product
+from the available evidence. Below 80% match confidence it checks favourites and
+opens useful alternatives automatically. Higher-confidence alternatives stay
+collapsed.
 
-The plan reports source, package size, product description and item details
-when Nemlig supplies them, discount and dietary metadata, constraint outcomes,
-exact basket coverage, remaining quantities, and automatic coverage. Plans stay
-conversational. If discovery is unavailable for a line, ChatGPT can retry that
-normalized line once with direct catalogue search. The picker opens only for an
-explicit visual-choice request and shows controls only for real, available
-candidates.
+The read-only proposed-basket view reports package size, quantity, product
+description, price, unit price, confidence, and current alternatives. Choices
+are handled in groups of at most five. Planning does not inspect the current
+basket; after choices settle, ChatGPT shows the complete proposed basket before
+preparing the separate exact basket-addition review.
 
 Provider descriptions and item details are converted from HTML to bounded plain
 text, including Danish characters and entities. Scripts, styles, images and link
@@ -156,7 +148,7 @@ does not save or reload plans or named lists.
 Read or plan → resolve only clear matches → bind explicit proceed or exact approval → complete once → read back the basket
 ```
 
-- Search, favourites, browsing, planning, picker selection and basket inspection
+- Search, favourites, browsing, proposed-basket review and basket inspection
   are read-only; they never authorize or change the Nemlig basket.
 - Every basket change starts with the matching `review_*` tool.
 - Approval is requested once. “Go ahead” may authorize only clear additions
@@ -226,16 +218,17 @@ The MCP surface is organized around household actions:
 
 - Find groceries and favourites: `find_groceries`, `show_my_favorites`,
   `show_grocery_sections`, and `browse_grocery_section`.
-- Plan the groceries supplied in this conversation without opening UI:
-  `plan_my_shopping`.
+- Review proposed groceries without reading or changing the basket:
+  `review_proposed_basket`.
+- Use basket-aware batch planning explicitly when needed: `plan_my_shopping`.
 - Check the connection: `check_nemlig_connection`.
 - See the basket: `show_my_basket`.
 - Review basket changes: `review_items_to_add`, `review_item_to_remove`,
   `review_item_swap`, and `review_emptying_basket`.
 - Complete an approved change: `add_approved_items`, `remove_approved_item`,
   `make_approved_item_swap`, and `empty_approved_basket`.
-- Choose visually when explicitly requested: `choose_products_visually` and
-  `ui://nemlig/picker.html`.
+- Choose visually with `choose_products_visually` or review proposed groups with
+  `review_proposed_basket`; both use `ui://nemlig/picker.html`.
 
 After an ordinary release, open the existing app named exactly `Nemlig Assistant`
 and use **Refresh** so ChatGPT rediscovers tools, schemas, instructions,
@@ -279,15 +272,14 @@ of the repository.
 
 ## 🧪 Owner alpha exercise
 
-1. Ask for a short plan containing one favorite, one ambiguous item, and one
-   constrained item. Confirm the ambiguous line stays unresolved.
-2. Browse a department's second page and inspect deal and unit-price metadata.
-3. Save and reload the plan. Confirm it resolves current availability, prices,
-   and basket quantities rather than replaying stale data.
-4. Create `Ugens basis`, reopen it without a Nemlig lookup, refresh selected
-   lines, then archive and restore it. Confirm opening is storage-only and a
-   requested run uses automatic mode by default.
-5. Use the picker, adjust a selection, and inspect the exact batch review.
+1. Ask for a recipe proposal containing one favourite, one ambiguous item, and
+   one constrained item. Confirm each ingredient uses a short individual search.
+2. Confirm alternatives expand below 80% match confidence and remain collapsed
+   at or above 80%.
+3. Browse a department's second page and inspect deal and unit-price metadata.
+4. Review the complete proposed basket and its stated pantry assumptions without
+   reading or changing the current basket.
+5. Adjust a selection, then inspect the separate exact batch review.
    Stop unless you separately approve that unchanged review.
 6. Prepare one cheaper and one non-cheaper replacement. Verify both product
    IDs, packages, unit prices, final quantity, signed price difference, and
@@ -337,11 +329,10 @@ This README is the user-facing inventory of shipped feature sets:
 - account access
 - product and department discovery
 - fresh Nemlig authentication before every provider-backed MCP task
-- catalogue-first guided shopping with direct-search recovery and explicit
-  favourite browsing
-- automatic grocery runs with manual fallback and 50-line input
-- constrained product comparison and selection
-- basket-aware whole-list planning
+- individual short-query ingredient discovery and refinement
+- favourites as read-only evidence for uncertain matches
+- confidence-aware grouped proposed-basket review
+- constrained product comparison and selection, with legacy batch planning
 - exact review/approve/complete basket operations
 - easy-to-understand ChatGPT tool names and descriptions
 - human-friendly basket reviews and verified results
