@@ -5,7 +5,7 @@ import { execFile } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import { promisify } from "node:util";
 import test from "node:test";
-import type { Basket, Product, ShoppingClient } from "./client.js";
+import { NemligError, type Basket, type Product, type ShoppingClient } from "./client.js";
 import { createMcpServer } from "./mcp.js";
 
 const execute = promisify(execFile);
@@ -127,7 +127,10 @@ test("recipe discovery reaches a reviewed proposal and verified basket without u
     searchProducts: async (query) => query === "hakket oksekød"
       ? [products.get(101)!, products.get(102)!]
       : query === "ketchup" ? [products.get(201)!, products.get(202)!] : [products.get(301)!],
-    getProduct: async (id) => products.get(id)!,
+    getProduct: async (id) => {
+      if (id === 103) throw new NemligError("Resource not found.", 404);
+      return products.get(id)!;
+    },
     getFreshProduct: async (id) => products.get(id)!,
     listFavorites: async () => [products.get(201)!],
     listDepartments: async () => [],
@@ -166,6 +169,18 @@ test("recipe discovery reaches a reviewed proposal and verified basket without u
       items: [],
       rejected: [{ ingredient: "hakket oksekød", reason: "No proposed product matched this ingredient." }],
     });
+    assert.equal(reads, 0);
+
+    const partiallyAvailable = await mcp.callTool({ name: "review_proposed_basket", arguments: {
+      items: [
+        { ingredient: "forsvundet vare", product: 103, quantity: 1, confidence: 90 },
+        { ingredient: "ketchup", product: 201, quantity: 1, confidence: 90 },
+      ],
+    } });
+    assert.notEqual(partiallyAvailable.isError, true);
+    const partial = partiallyAvailable.structuredContent as { items: Array<{ ingredient: string }>; rejected: Array<{ ingredient: string }> };
+    assert.deepEqual(partial.items.map(({ ingredient }) => ingredient), ["ketchup"]);
+    assert.deepEqual(partial.rejected.map(({ ingredient }) => ingredient), ["forsvundet vare"]);
     assert.equal(reads, 0);
 
     const proposed = await mcp.callTool({ name: "review_proposed_basket", arguments: {

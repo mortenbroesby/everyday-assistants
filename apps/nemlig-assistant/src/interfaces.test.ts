@@ -750,6 +750,37 @@ test("MCP proposed basket reports pet food as a rejected line without failing th
   });
 });
 
+test("MCP proposed basket reports a vanished product as a rejected line without failing the group", async () => {
+  const client = fakeClient({
+    getProduct: async (id) => {
+      if (id === 7) throw new NemligError("Resource not found.", 404);
+      return { ...product, id, name: "Heinz Tomato Ketchup" };
+    },
+  });
+  await withMcpClient(createMcpServer(client, testCredentials), async (mcp) => {
+    const result = await mcp.callTool({
+      name: "review_proposed_basket",
+      arguments: { items: [
+        { ingredient: "hakket oksekød", product: 7, quantity: 1, confidence: 90 },
+        { ingredient: "ketchup", product: 8, quantity: 1, confidence: 90 },
+      ] },
+    });
+    assert.notEqual(result.isError, true, toolText(result));
+    const view = result.structuredContent as { items: Array<{ ingredient: string }>; rejected: Array<{ ingredient: string }> };
+    assert.deepEqual(view.items.map(({ ingredient }) => ingredient), ["ketchup"]);
+    assert.deepEqual(view.rejected, [{ ingredient: "hakket oksekød", reason: "No proposed product matched this ingredient." }]);
+  });
+  await withMcpClient(createMcpServer(fakeClient({
+    getProduct: async () => { throw new NemligError("Network unavailable.", 503); },
+  }), testCredentials), async (mcp) => {
+    const result = await mcp.callTool({
+      name: "review_proposed_basket",
+      arguments: { items: [{ ingredient: "ketchup", product: 8, quantity: 1, confidence: 90 }] },
+    });
+    assert.equal(result.isError, true);
+  });
+});
+
 test("picker images use only the observed Nemlig HTTPS origin and keep a text-only fallback", async () => {
   assert.equal(safeNemligImageUrl("https://nemlig.com/scommerce/images/milk.jpg?i=1"), "https://nemlig.com/scommerce/images/milk.jpg?i=1");
   assert.equal(safeNemligImageUrl("https://www.nemlig.com/scommerce/images/milk.jpg?i=1"), "https://www.nemlig.com/scommerce/images/milk.jpg?i=1");
