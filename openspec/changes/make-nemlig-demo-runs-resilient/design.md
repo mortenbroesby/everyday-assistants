@@ -37,6 +37,10 @@ The server returns current catalogue evidence and validates proposed confidence 
 
 The server will reject unknown product identifiers and malformed proposals. It will not invent a category model. Existing relevance and constraint evidence remains available so ChatGPT can avoid proposing obviously unsuitable products even when an unrelated product appears in search results.
 
+### Coalesce overlapping pre-authentication
+
+Every provider-backed task still performs fresh pre-authentication. When ChatGPT starts independent searches in parallel for the same principal, overlapping tasks share the same in-flight login instead of mutating the shared Nemlig session concurrently. Sequential tasks continue to authenticate freshly, and a later HTTP 401 still triggers one fresh login and one read retry.
+
 ### Use favourites only as extra evidence for uncertainty
 
 When confidence is below 80%, ChatGPT checks `show_my_favorites` and may prefer a favourite that fits the requested ingredient. Favourites never override an incompatible product type or explicit requirement. No preference copy is stored by the assistant.
@@ -62,6 +66,7 @@ The existing credentials-free MCP smoke path will cover a mixed recipe scenario 
 ## Risks / Trade-offs
 
 - [More individual searches increase read-only calls] → Preserve current quotas and infrastructure limits; do not add retries inside the server.
+- [Parallel searches can overlap provider login] → Share only the in-flight login per client; keep product reads independent and retain the existing bounded retry.
 - [Model-supplied confidence can look more precise than it is] → Label it as a match-confidence judgment and show the product evidence used.
 - [Catalogue searches can include unrelated products] → Permit imperfect result sets but require the proposed choice to match available evidence; uncertain choices remain visible.
 - [A grouped UI can add state complexity] → Keep each view stateless, cap it at five decisions, and return user choices to the conversation.

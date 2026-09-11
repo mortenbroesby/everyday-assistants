@@ -1,5 +1,14 @@
 ## ADDED Requirements
 
+### Requirement: Parallel reads share pre-authentication
+
+The MCP runtime SHALL authenticate before every provider-backed task and SHALL coalesce overlapping login attempts for the same principal client. It SHALL preserve the existing single retry after an HTTP 401.
+
+#### Scenario: ChatGPT starts independent searches concurrently
+
+- **WHEN** multiple read-only tools begin while a fresh login for their shared principal client is in flight
+- **THEN** they await that login and continue without starting competing login sessions
+
 ### Requirement: Read-only proposed-basket tool
 
 The MCP server SHALL provide a read-only proposed-basket tool that accepts no more than five actionable entries per invocation. It SHALL validate match confidence, product identifiers, quantities, and alternative identifiers, then return current image, description, package size, price, unit price, confidence, and favourite evidence for display. It SHALL NOT read or mutate the basket.

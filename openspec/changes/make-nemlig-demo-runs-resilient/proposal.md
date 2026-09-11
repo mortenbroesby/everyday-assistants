@@ -15,6 +15,7 @@ The family wants ChatGPT to reason about each ingredient, search with short Dani
 - State omitted pantry assumptions such as flour, salt, and pepper. Planning neither displays nor uses the current Nemlig basket. The separately approved mutation flow retains its existing internal before/after basket verification.
 - After choices are settled, show the complete proposed basket again before creating the exact basket-addition review. Preserve fresh product revalidation, exact approval scope, single-attempt writes, and verified readback.
 - Add a deterministic recipe-scale smoke scenario and fresh ChatGPT acceptance steps that cover discovery, favourites, grouped choices, proposed-basket review, approval boundaries, and final readback.
+- Coalesce overlapping fresh logins when ChatGPT starts independent read-only searches in parallel on the same principal client.
 
 ### Goal
 
@@ -37,6 +38,7 @@ Make recipe and meal-prep shopping feel like an interactive product-selection as
 - The proposed-basket view contains only proposed additions and stated pantry assumptions, never the current basket.
 - A deterministic mixed recipe fixture proves confident selections, uncertain choices, package quantities, final exact review, authorization rejection on drift, application, verified readback, and no write retry.
 - The normal live acceptance remains read-only until a separate exact basket mutation is explicitly authorized.
+- Parallel read-only searches share one in-flight login and do not surface competing-session authentication failures.
 
 ## Capabilities
 
