@@ -34,6 +34,12 @@
 
 ## 7. Deliver and accept
 
-- [ ] 7.1 Commit and push the scoped branch, open a pull request, and verify exact-head CI before merge.
-- [ ] 7.2 Merge through the protected pull-request path and verify the production deployment reports the merged revision.
+- [x] 7.1 Commit and push the scoped branch, open a pull request, and verify exact-head CI before merge.
+- [x] 7.2 Merge through the protected pull-request path and verify the production deployment reports the merged revision.
 - [ ] 7.3 Run two fresh read-only ChatGPT recipe acceptances: one under twenty products with grouped visual choices and one larger proposal with confident items compact; record any live basket mutation as a separate explicit approval.
+
+## 8. Remove the live authentication race
+
+- [x] 8.1 Reproduce parallel read-only searches starting overlapping fresh logins on the shared principal client.
+- [x] 8.2 Coalesce only overlapping login attempts per client while preserving fresh pre-authentication and one 401 retry.
+- [ ] 8.3 Deploy the fix and repeat the fresh read-only ChatGPT acceptances without a visible authentication error.

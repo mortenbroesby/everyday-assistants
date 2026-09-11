@@ -74,6 +74,24 @@ test("read operations authenticate before the task and retry once after a later 
   assert.equal(logins, 2);
 });
 
+test("parallel read operations share one in-flight login", async () => {
+  let logins = 0;
+  const client = {
+    isLoggedIn: () => true,
+    login: async () => {
+      logins += 1;
+      await new Promise((resolve) => setImmediate(resolve));
+    },
+  };
+  const credentials = async () => ({ username: "owner@example.test", password: "secret" });
+  const results = await Promise.all([
+    withAuthenticatedReadRetry(client, credentials, async () => "first"),
+    withAuthenticatedReadRetry(client, credentials, async () => "second"),
+  ]);
+  assert.deepEqual(results, ["first", "second"]);
+  assert.equal(logins, 1);
+});
+
 test("expired session failures surface when a second 401 is returned", async () => {
   let calls = 0;
   let logins = 0;
