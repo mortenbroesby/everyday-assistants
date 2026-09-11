@@ -160,7 +160,12 @@ test("recipe discovery reaches a reviewed proposal and verified basket without u
     const rejected = await mcp.callTool({ name: "review_proposed_basket", arguments: {
       items: [{ ingredient: "hakket oksekød", product: 102, quantity: 3, confidence: 90 }],
     } });
-    assert.equal(rejected.isError, true);
+    assert.notEqual(rejected.isError, true);
+    assert.deepEqual(rejected.structuredContent, {
+      pantry_assumptions: [],
+      items: [],
+      rejected: [{ ingredient: "hakket oksekød", reason: "No proposed product matched this ingredient." }],
+    });
     assert.equal(reads, 0);
 
     const proposed = await mcp.callTool({ name: "review_proposed_basket", arguments: {

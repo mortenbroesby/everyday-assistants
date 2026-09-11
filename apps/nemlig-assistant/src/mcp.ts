@@ -89,12 +89,15 @@ const candidateSchema = z.object({
 export type Candidate = z.infer<typeof candidateSchema>;
 
 const proposedCandidateSchema = candidateSchema.extend({ id: z.number().int().positive() });
+const confidenceInputSchema = z.number().min(0).max(100)
+  .describe("Match confidence as either 0–100 percent or a 0–1 fraction.")
+  .transform((value) => Math.round(value <= 1 ? value * 100 : value));
 const proposedBasketItemInputSchema = z.object({
   ingredient: z.string().trim().min(1).max(120),
   product: z.number().int().positive(),
   alternatives: z.array(z.number().int().positive()).max(4).default([]),
   quantity: z.number().int().positive(),
-  confidence: z.number().int().min(0).max(100),
+  confidence: confidenceInputSchema,
   favorite_match: z.boolean().default(false),
 }).superRefine(({ product, alternatives }, context) => {
   if (alternatives.includes(product)) context.addIssue({ code: "custom", path: ["alternatives"], message: "Alternatives must differ from the proposed product." });
@@ -113,7 +116,8 @@ const proposedBasketOutputSchema = z.object({
     favorite_match: z.boolean(),
     product: proposedCandidateSchema,
     alternatives: z.array(proposedCandidateSchema),
-  })).min(1).max(5),
+  })).max(5),
+  rejected: z.array(z.object({ ingredient: z.string(), reason: z.string() })),
 });
 
 const basketItemSchema = z.object({
@@ -465,12 +469,11 @@ export function createMcpServer(
     requestContext ? `${requestContext.principalKey}\0${requestContext.policyRevision}` : sessionId ?? localConnectionId;
   const search = async (query: string, limit: number) =>
     rankProducts(await client.searchProducts(query, limit), query);
-  const proposedCandidate = async (productId: number, ingredient: string): Promise<z.infer<typeof proposedCandidateSchema>> => {
+  const proposedCandidate = async (productId: number, ingredient: string): Promise<z.infer<typeof proposedCandidateSchema> | undefined> => {
     const product = await client.getProduct(productId);
-    if (product.id !== productId) throw new NemligError("Product metadata did not match the requested product.");
-    if (!relevantProduct(product, ingredient)) throw new NemligError("Product does not match the requested ingredient.");
+    if (product.id !== productId || !relevantProduct(product, ingredient)) return undefined;
     const candidate = rankProducts([product], ingredient)[0];
-    if (!candidate?.id) throw new NemligError("Product metadata is incomplete.");
+    if (!candidate?.id) return undefined;
     return { ...candidate, id: candidate.id };
   };
   const runAuthenticatedRead = async <Result>(operation: string, action: () => Promise<Result>) =>
@@ -741,16 +744,17 @@ export function createMcpServer(
       },
       ({ items, pantry_assumptions }) => runAuthenticatedRead("review_proposed_basket", async () => {
         const reviewed = proposedBasketInputSchema.parse({ items, pantry_assumptions });
+        const resolved = await Promise.all(reviewed.items.map(async ({ ingredient, quantity, confidence, favorite_match, product, alternatives }) => {
+          const proposed = await proposedCandidate(product, ingredient);
+          if (!proposed) return { rejected: { ingredient, reason: "No proposed product matched this ingredient." } };
+          const resolvedAlternatives = (await Promise.all(alternatives.map((alternative) => proposedCandidate(alternative, ingredient))))
+            .filter((candidate): candidate is z.infer<typeof proposedCandidateSchema> => candidate !== undefined);
+          return { item: { ingredient, quantity, confidence, favorite_match, product: proposed, alternatives: resolvedAlternatives } };
+        }));
         return success({
-        pantry_assumptions: reviewed.pantry_assumptions,
-        items: await Promise.all(reviewed.items.map(async ({ ingredient, quantity, confidence, favorite_match, product, alternatives }) => ({
-          ingredient,
-          quantity,
-          confidence,
-          favorite_match,
-          product: await proposedCandidate(product, ingredient),
-          alternatives: await Promise.all(alternatives.map((alternative) => proposedCandidate(alternative, ingredient))),
-        }))),
+          pantry_assumptions: reviewed.pantry_assumptions,
+          items: resolved.flatMap((entry) => entry.item ? [entry.item] : []),
+          rejected: resolved.flatMap((entry) => entry.rejected ? [entry.rejected] : []),
         });
       }),
     );
@@ -806,6 +810,6 @@ const imageFor=product=>{const src=safeImage(product.image_url);if(!src)return n
 const read=result=>{if(result?.structuredContent)return result.structuredContent;const text=(result?.content||result||[]).find(item=>item.type==="text");if(!text)return null;try{return JSON.parse(text.text)}catch{return null}};
 const selectAlternative=async(item,product,button)=>{button.disabled=true;try{await app.sendMessage({role:"user",content:[{type:"text",text:"Choose product "+product.id+" for "+item.ingredient+" instead."}]});button.textContent="Valgt"}catch{button.disabled=false;button.textContent="Vælg dette"}};
 const proposedCard=(item,product,alternative)=>{const card=document.createElement("article");card.className="card";const productArea=document.createElement("div");productArea.className="product";const image=imageFor(product);if(image)productArea.append(image);const info=document.createElement("div");const name=document.createElement("div");name.className="name";name.textContent=product.name??"Ukendt vare";const description=document.createElement("div");description.className="description";description.textContent=product.description??"";const meta=document.createElement("div");meta.className="meta";meta.textContent=[product.brand,product.unit_size,product.available?"Tilgængelig":"Ikke tilgængelig"].filter(Boolean).join(" · ");info.append(name);if(description.textContent)info.append(description);info.append(meta);productArea.append(info);const actions=document.createElement("div");actions.className="actions";const price=document.createElement("div");price.className="price";price.textContent=[kr(product.price),product.unit_price!=null?kr(product.unit_price)+"/enhed":""].filter(Boolean).join(" · ");actions.append(price);const choice=document.createElement("button");choice.textContent=alternative?"Vælg dette":"Foreslået";choice.disabled=!alternative||!product.available;if(alternative)choice.onclick=()=>selectAlternative(item,product,choice);actions.append(choice);card.append(productArea,actions);return card};
-const renderProposed=value=>{if(!Array.isArray(value?.items))return false;if(!value.items.length){root.innerHTML='<div class="empty">Ingen foreslåede varer.</div>';return true}const page=document.createElement("div");page.className="grid";if(value.pantry_assumptions?.length){const pantry=document.createElement("div");pantry.className="meta";pantry.textContent="Antager allerede: "+value.pantry_assumptions.join(", ");page.append(pantry)}for(const item of value.items){const section=document.createElement("section");const heading=document.createElement("div");heading.className="name";heading.textContent=item.ingredient+" · "+item.quantity+" stk · "+item.confidence+"% match"+(item.favorite_match?" · favorit":"");section.append(heading,proposedCard(item,item.product,false));if(item.alternatives?.length){const details=document.createElement("details");details.open=item.confidence<80;const summary=document.createElement("summary");summary.textContent="Andre muligheder ("+item.alternatives.length+")";const choices=document.createElement("div");choices.className="grid";for(const alternative of item.alternatives)choices.append(proposedCard(item,alternative,true));details.append(summary,choices);section.append(details)}page.append(section)}root.replaceChildren(page);return true};
+const renderProposed=value=>{if(!Array.isArray(value?.items))return false;const rejected=Array.isArray(value.rejected)?value.rejected.map(item=>item?.ingredient).filter(Boolean):[];if(!value.items.length){const empty=document.createElement("div");empty.className="empty";empty.textContent=rejected.length?"Kunne ikke bekræfte: "+rejected.join(", "):"Ingen foreslåede varer.";root.replaceChildren(empty);return true}const page=document.createElement("div");page.className="grid";if(value.pantry_assumptions?.length){const pantry=document.createElement("div");pantry.className="meta";pantry.textContent="Antager allerede: "+value.pantry_assumptions.join(", ");page.append(pantry)}for(const item of value.items){const section=document.createElement("section");const heading=document.createElement("div");heading.className="name";heading.textContent=item.ingredient+" · "+item.quantity+" stk · "+item.confidence+"% match"+(item.favorite_match?" · favorit":"");section.append(heading,proposedCard(item,item.product,false));if(item.alternatives?.length){const details=document.createElement("details");details.open=item.confidence<80;const summary=document.createElement("summary");summary.textContent="Andre muligheder ("+item.alternatives.length+")";const choices=document.createElement("div");choices.className="grid";for(const alternative of item.alternatives)choices.append(proposedCard(item,alternative,true));details.append(summary,choices);section.append(details)}page.append(section)}if(rejected.length){const notice=document.createElement("div");notice.className="meta";notice.textContent="Kunne ikke bekræfte: "+rejected.join(", ");page.append(notice)}root.replaceChildren(page);return true};
 app.ontoolresult=result=>{if(!renderProposed(read(result)))root.innerHTML='<div class="empty">Forslaget kunne ikke vises.</div>'};await app.connect();
 </script></body></html>`;
