@@ -36,7 +36,7 @@ test("production workflow accepts manual dispatch or a version-policy-eligible C
   assert.match(gate, /CANDIDATE_PARENT=\$\(git rev-parse "\$CANDIDATE_SHA\^1"\)/u);
   assert.match(gate, /git fetch origin refs\/heads\/main:refs\/remotes\/origin\/main/u);
   assert.match(gate, /\[\[ "\$\(git rev-parse origin\/main\)" == "\$CANDIDATE_SHA" \]\]/u);
-  assert.match(gate, /check:version-bump --base "\$CANDIDATE_PARENT" --head "\$CANDIDATE_SHA" --json/u);
+  assert.match(gate, /pnpm --silent --filter nemlig-assistant check:version-bump --base "\$CANDIDATE_PARENT" --head "\$CANDIDATE_SHA" --json/u);
   assert.match(gate, /policy\.eligible === true/u);
   assert.match(gate, /\[\[ "\$EVENT_NAME" == "workflow_dispatch" \]\]/u);
   assert.match(gate, /exit 0\n\x20{10}fi/u);
