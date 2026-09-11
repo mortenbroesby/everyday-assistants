@@ -43,3 +43,9 @@
 - [x] 8.1 Reproduce parallel read-only searches starting overlapping fresh logins on the shared principal client.
 - [x] 8.2 Coalesce only overlapping login attempts per client while preserving fresh pre-authentication and one 401 retry.
 - [ ] 8.3 Deploy the fix and repeat the fresh read-only ChatGPT acceptances without a visible authentication error.
+
+## 9. Make the reviewed proposal the only visual path
+
+- [x] 9.1 Reproduce the production mismatch where the legacy raw chooser remains exposed while the reviewed-basket tool is blocked at the gateway, and capture the dark-theme contrast failure.
+- [x] 9.2 Retire the raw chooser, expose `review_proposed_basket` through the maintained HTTP and service paths, and render readable light and dark themes.
+- [ ] 9.3 Run focused and full verification, merge and deploy through the protected PR path, then repeat both fresh read-only ChatGPT recipe acceptances.

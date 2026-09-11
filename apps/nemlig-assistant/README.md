@@ -101,7 +101,7 @@ preparatory, and exact reviews still wait for approval.
 - Use the stdio MCP server with a local MCP client.
 - Use the HTTP MCP server behind Auth0.
 - Connect ChatGPT to the private hosted Cloudflare deployment.
-- Optionally expose the MCP Apps product picker.
+- Optionally expose the MCP Apps proposed-basket review.
 
 ### Hosted family alpha
 
@@ -227,8 +227,9 @@ The MCP surface is organized around household actions:
   `review_item_swap`, and `review_emptying_basket`.
 - Complete an approved change: `add_approved_items`, `remove_approved_item`,
   `make_approved_item_swap`, and `empty_approved_basket`.
-- Choose visually with `choose_products_visually` or review proposed groups with
-  `review_proposed_basket`; both use `ui://nemlig/picker.html`.
+- Review proposed groups with `review_proposed_basket`, which uses
+  `ui://nemlig/picker.html`. Raw catalogue searches remain conversational so
+  unrelated search results cannot appear as selectable proposal choices.
 
 After an ordinary release, open the existing app named exactly `Nemlig Assistant`
 and use **Refresh** so ChatGPT rediscovers tools, schemas, instructions,
@@ -237,7 +238,7 @@ bracketed or numbered variant, or a parallel copy for a normal release.
 
 Direct `add_to_cart`, `remove_from_cart`, `replace_cart_line`, and
 `clear_cart` MCP tools intentionally do not exist. Set `NEMLIG_MCP_APPS=0` to
-disable only the visual picker while keeping conversational tools.
+disable the visual proposed-basket review while keeping conversational tools.
 
 ### Auth0 and hosted MCP
 
@@ -367,5 +368,5 @@ scripts/smoke-package.ts      Installed-package interface proof
 The rewrite targets `mhattingpete/nemlig-shopper` commit
 `65a681c1c5510ce03886ed16305b0a2d652c5be1`. Login/logout, session setup,
 search, category fallback, product classification, basket operations, CLI, MCP,
-ranking, and the optional picker are included. Recipe parsing and all
+ranking, and the optional proposed-basket review are included. Recipe parsing and all
 checkout/order/payment capabilities are intentionally excluded.
