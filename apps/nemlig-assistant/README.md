@@ -130,7 +130,8 @@ collapsed.
 
 The read-only proposed-basket view reports package size, quantity, product
 description, price, unit price, confidence, and current alternatives. Choices
-are handled in groups of at most five. Planning does not inspect the current
+are handled in groups of at most five. A mismatched line is identified without
+hiding the other valid choices or failing the whole group. Planning does not inspect the current
 basket; after choices settle, ChatGPT shows the complete proposed basket before
 preparing the separate exact basket-addition review.
 

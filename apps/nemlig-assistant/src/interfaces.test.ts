@@ -707,12 +707,13 @@ test("MCP proposed basket resolves current products without reading or changing 
       name: "review_proposed_basket",
       arguments: {
         pantry_assumptions: ["salt", "mel"],
-        items: [{ ingredient: "ketchup", product: 7, alternatives: [8], quantity: 2, confidence: 75, favorite_match: true }],
+        items: [{ ingredient: "ketchup", product: 7, alternatives: [8], quantity: 2, confidence: 0.75, favorite_match: true }],
       },
     });
     assert.notEqual(result.isError, true, toolText(result));
-    const view = result.structuredContent as { pantry_assumptions: string[]; items: Array<{ ingredient: string; confidence: number; favorite_match: boolean; product: { id: number }; alternatives: Array<{ id: number }> }> };
+    const view = result.structuredContent as { pantry_assumptions: string[]; rejected: Array<{ ingredient: string }>; items: Array<{ ingredient: string; confidence: number; favorite_match: boolean; product: { id: number }; alternatives: Array<{ id: number }> }> };
     assert.deepEqual(view.pantry_assumptions, ["salt", "mel"]);
+    assert.deepEqual(view.rejected, []);
     assert.equal(view.items[0]?.favorite_match, true);
     assert.deepEqual(view.items, [{ ingredient: "ketchup", confidence: 75, quantity: 2, favorite_match: true, product: { ...view.items[0]!.product, id: 7 }, alternatives: [{ ...view.items[0]!.alternatives[0], id: 8 }] }]);
   });
@@ -730,7 +731,7 @@ test("MCP proposed basket rejects malformed confidence, quantities, repeated alt
   });
 });
 
-test("MCP proposed basket rejects pet food for minced meat", async () => {
+test("MCP proposed basket reports pet food as a rejected line without failing the group", async () => {
   const client = fakeClient({
     getProduct: async () => ({ ...product, id: 9, name: "Hakket oksekød til kat", category: "Kæledyr", subcategory: "Kattemad" }),
     getCart: async () => { throw new Error("basket read"); },
@@ -740,8 +741,12 @@ test("MCP proposed basket rejects pet food for minced meat", async () => {
       name: "review_proposed_basket",
       arguments: { items: [{ ingredient: "hakket oksekød", product: 9, quantity: 1, confidence: 90 }] },
     });
-    assert.equal(result.isError, true);
-    assert.match(toolText(result), /does not match the requested ingredient/u);
+    assert.notEqual(result.isError, true, toolText(result));
+    assert.deepEqual(result.structuredContent, {
+      pantry_assumptions: [],
+      items: [],
+      rejected: [{ ingredient: "hakket oksekød", reason: "No proposed product matched this ingredient." }],
+    });
   });
 });
 
@@ -765,6 +770,7 @@ test("picker images use only the observed Nemlig HTTPS origin and keep a text-on
   assert.match(html, /details\.open=item\.confidence<80/);
   assert.match(html, /item\.favorite_match/);
   assert.match(html, /value\.pantry_assumptions/);
+  assert.match(html, /Kunne ikke bekræfte/);
   assert.doesNotMatch(html, /renderPlan|Ingen egnet vare|type="number"|Forbered valgte varer/u);
   assert.doesNotMatch(html, /image[_-]proxy|fetch\(.*image/iu);
 });

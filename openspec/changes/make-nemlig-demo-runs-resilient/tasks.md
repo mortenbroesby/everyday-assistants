@@ -49,3 +49,9 @@
 - [x] 9.1 Reproduce the production mismatch where the legacy raw chooser remains exposed while the reviewed-basket tool is blocked at the gateway, and capture the dark-theme contrast failure.
 - [x] 9.2 Retire the raw chooser, expose `review_proposed_basket` through the maintained HTTP and service paths, and render readable light and dark themes.
 - [ ] 9.3 Run focused and full verification, merge and deploy through the protected PR path, then repeat both fresh read-only ChatGPT recipe acceptances.
+
+## 10. Prevent proposal retry storms
+
+- [x] 10.1 Reproduce a live ChatGPT run where fractional confidence and one mismatched line fail whole proposal groups and leave many error widgets.
+- [x] 10.2 Normalize fractional confidence and return valid choices plus identified rejected lines without weakening the unrelated-product guard.
+- [ ] 10.3 Verify, deploy, refresh the ChatGPT app, and repeat both read-only recipe acceptances without a proposal retry storm.
