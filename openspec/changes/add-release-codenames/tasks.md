@@ -3,6 +3,7 @@
 - [x] 1.1 Add focused failing tests for strict codename parsing, `Alpha` bootstrap, NATO-style advancement, `Zulu` rollover, malformed values, and stale/mismatched candidates; verify the new policy tests fail for the expected missing behavior.
 - [x] 1.2 Implement the minimum codename sequence and manifest identity helpers, then verify the focused policy tests pass without adding a dependency or parallel registry.
 - [x] 1.3 Extend release planning and apply to report and atomically persist current/target version-codename pairs, exclude only its own metadata edit from release classification, and reject a no-release or inconsistent codename change; verify focused agent and version-gate tests cover read-only planning, idempotent apply, concurrent-stale candidates, and non-release merges.
+- [ ] 1.4 Replace the historical `major.minor.patch-alpha.increment` policy with strict plain SemVer for new releases, remove internal-only increments, and verify migration, patch/minor/major, non-release, registry, tag, and retry behavior.
 
 ## 2. Reviewed note and publication
 
@@ -17,7 +18,7 @@
 
 ## 4. Release and delivery
 
-- [ ] 4.1 Run the release planner, apply the one final semantic version and first codename `Alpha`, author the matching bounded note, and verify the exact candidate passes version and note gates without tagging, publishing, or deploying.
+- [ ] 4.1 Run the release planner, apply final plain version `4.8.0` and first codename `Alpha`, replace the superseded alpha-version note with the matching bounded note, and verify the exact candidate passes version and note gates without tagging, publishing, or deploying.
 - [ ] 4.2 Run focused tests while iterating, then `pnpm verify`, strict OpenSpec validation, `pnpm privacy:check`, packed-package smoke, and the credential-free production dry run; verify every gate passes and record any inapplicable live checks.
 - [ ] 4.3 Review the final diff for unchanged safety/cost controls, commit and push the scoped branch, open one pull request, and verify the remote head and exact-head CI; do not merge or deploy without the separately applicable protected workflow decision.
 - [ ] 4.4 After authorized merge, verify exact-main CI and the automatic release path deploy the same version/codename candidate, read back the production MCP identity, confirm the GitHub prerelease tag/target/title/note, then sync and archive the OpenSpec deltas; if deployment does not succeed, leave the codename unpublished and record the recovery state.

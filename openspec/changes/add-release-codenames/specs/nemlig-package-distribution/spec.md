@@ -8,7 +8,10 @@ and codename without mutation, release apply SHALL record both atomically, and
 candidate validation SHALL reject missing, malformed, stale, skipped, or
 mismatched pairs before deployment. The ordered sequence SHALL begin `Alpha`,
 `Bravo`, `Charlie`, continue through the NATO-style alphabet, and add a cycle
-suffix after `Zulu` so the sequence remains deterministic and unbounded.
+suffix after `Zulu` so the sequence remains deterministic and unbounded. New
+package versions SHALL use strict `major.minor.patch` SemVer with no prerelease
+suffix or independent increment counter. Changes that are not release-bearing
+SHALL change neither the version nor the codename.
 
 #### Scenario: Plan and apply a release identity
 
@@ -19,6 +22,11 @@ suffix after `Zulu` so the sequence remains deterministic and unbounded.
 
 - **WHEN** a candidate changes only paths excluded by the package-scoped release policy
 - **THEN** the release decision remains inapplicable and allocates neither a version nor a codename
+
+#### Scenario: Historical alpha version advances
+
+- **WHEN** the first codenamed release follows a historical `major.minor.patch-alpha.increment` version
+- **THEN** its release kind selects the next plain `major.minor.patch` version and records `Alpha` separately
 
 #### Scenario: Candidate identity is invalid
 

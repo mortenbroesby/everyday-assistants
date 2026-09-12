@@ -11,6 +11,9 @@ one concise, recognizable answer without weakening the existing release gate.
   advances with its version; begin the sequence with `Alpha`, then `Bravo`,
   `Charlie`, and the remaining NATO-style alphabet, adding a cycle suffix only
   after `Zulu`.
+- Replace the historical `major.minor.patch-alpha.increment` package version
+  with plain `major.minor.patch`; keep the codename in separate release metadata.
+  Non-release changes advance neither field.
 - Treat the version and codename as one immutable release identity across the
   package manifest, release note, deployed MCP metadata/instructions, deployment
   evidence, and GitHub prerelease.
@@ -21,8 +24,8 @@ one concise, recognizable answer without weakening the existing release gate.
   publish no codename, and retries reuse rather than advance the same candidate
   identity.
 - Preserve package-scoped release eligibility: documentation, specifications,
-  tests, agent rules, and workflow-only changes still do not bump or deploy the
-  Nemlig package.
+  tests, agent rules, and workflow-only changes do not bump, allocate a
+  codename, or deploy the Nemlig package.
 - Preserve the invariant that GitHub release publication occurs only after the
   exact candidate has deployed successfully and passed terminal acceptance.
 
@@ -34,11 +37,14 @@ one concise, recognizable answer without weakening the existing release gate.
 - Adding a release-info MCP tool, changing the installed app name, publishing to
   npm, or weakening any deployment approval, rollback, or safety control.
 - Retrospectively renaming existing releases.
+- Encoding the codename into the SemVer package version.
 
 ### Acceptance criteria
 
 - The release planner reports the next version and codename together without
   modifying files, while apply records them atomically in the candidate.
+- New release versions use strict `major.minor.patch`; the obsolete `-alpha.N`
+  suffix and internal-only increment disappear.
 - Release validation rejects a missing, malformed, stale, skipped, or mismatched
   codename before deployment or publication.
 - A deployed MCP initialization identifies itself to ChatGPT with the exact

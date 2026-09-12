@@ -23,7 +23,7 @@ deliberately excluded from versioning and deployment.
 
 - Give names to merges that do not produce a Nemlig deployment.
 - Add mutable release state, provider configuration, or a second version stream.
-- Change semantic-version/tag ordering or retrofit historical releases.
+- Encode codenames in SemVer or retrofit historical releases.
 
 ## Decisions
 
@@ -40,6 +40,19 @@ packs the identity with the application. A separate registry file was rejected
 because it would introduce another synchronization boundary; deriving a name
 only from the version at display time was rejected because it would not leave a
 reviewed, explicit release identity in the candidate.
+
+### Use plain SemVer and keep codename separate
+
+New candidates use strict `major.minor.patch`. The first candidate migrates the
+historical `major.minor.patch-alpha.increment` value to the plain version chosen
+by its release kind. Later release-bearing changes advance major, minor, or
+patch normally. Internal-only and non-release changes leave both version and
+codename unchanged; the old independent alpha increment is removed.
+
+Keeping `nemligRelease.codename` separate avoids conflating a human release name
+with SemVer prerelease precedence. Encoding the codename as a SemVer suffix was
+rejected because the package version already identifies the release and the
+separate reviewed metadata is the source used by notes and ChatGPT.
 
 ### Use a deterministic NATO-style sequence
 
@@ -81,7 +94,7 @@ because it would not be validated against the deployed artifact.
 
 Runtime exports the validated version/codename pair. `createMcpServer` prefixes
 its existing instructions with a short sentence such as `Current release:
-4.8.0-alpha.72 - Alpha.` The server name, title, semantic version, icon, tools,
+4.8.0 - Alpha.` The server name, title, semantic version, icon, tools,
 and resources remain unchanged. The package and interface smoke checks verify
 the sentence.
 
@@ -91,9 +104,8 @@ unnecessary surface expansion and compatibility churn.
 
 ## Risks / Trade-offs
 
-- [The word `Alpha` resembles the semantic prerelease label] -> Always present
-  it after the full version with an explicit separator and label it codename in
-  release planning and documentation.
+- [Historical tags use alpha prerelease versions] -> Accept them only as the
+  migration baseline; all new candidates and tags use plain SemVer.
 - [Concurrent release-bearing pull requests select the same successor] -> Keep
   the current exact-base/version gate; the later pull request must refresh its
   version and codename together after the first merges.
@@ -108,9 +120,9 @@ unnecessary surface expansion and compatibility churn.
 
 ## Migration Plan
 
-1. Add strict codename parsing/sequencing and characterize release planning,
-   apply, candidate validation, and retry behavior from a baseline without a
-   codename.
+1. Add strict codename parsing/sequencing, replace the old alpha increment with
+   plain SemVer, and characterize release planning, apply, candidate validation,
+   and retry behavior from the historical baseline without a codename.
 2. Apply the first candidate codename (`Alpha`) together with this pull
    request's normal version decision and matching release note.
 3. Expose and verify the pair in runtime/MCP instructions and GitHub publication
