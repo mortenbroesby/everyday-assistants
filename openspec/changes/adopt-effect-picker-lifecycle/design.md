@@ -1,82 +1,160 @@
 ## Context
 
-See [proposal.md](proposal.md) for motivation. This draft is stacked on `adopt-react-picker`, which owns observable picker behavior and supplies the chosen UI, native functional baseline, host lifecycle, and fake-host tests. This change has `skip_specs: true` and must not weaken that contract.
+See `proposal.md` for motivation. Merged PR #34 provides a native TypeScript
+production picker, a development-only showcase, a self-contained Vite build,
+and host lifecycle tests. This change compares two functional designs without
+replacing that production path.
 
-The picker has two relevant jobs: transform validated proposal data into a view model, then own one MCP Apps `App` through result registration, connection, deliberate message send, replacement, and disposal. The pure job is currently small; the lifecycle still requires explicit stale-state protection because cancelling a local computation cannot retract a delivered host message or necessarily cancel an SDK Promise.
+The real problem has two distinct parts:
 
-Registry versions checked on 2026-09-12 were Effect 3.22.2, fp-ts 2.16.11, Remeda 2.48.0, neverthrow 8.2.0, and ts-pattern 5.9.0. Effect 4 remained an RC. Version recency is maintenance evidence, not proof of fit.
+1. Derive a plain display model from a validated proposal with safe images,
+   available alternatives, rejected ingredients, and stable choice identities.
+2. Coordinate one host message through pending, success, failure, replacement,
+   stale completion, and disposal states without retry or duplicate delivery.
+
+`fp-ts` can represent both parts with its own data types and `TaskEither`.
+`Remeda + Effect` deliberately splits responsibilities: Remeda owns plain-data
+pipelines; Effect owns typed failures, execution, and resource cleanup. Native
+TypeScript defines the expected observable result for both.
 
 ## Goals / Non-Goals
 
 **Goals:**
 
-- Compare functional approaches on both the real pure core and asynchronous boundary.
-- Prefer one coherent long-term model over overlapping utilities.
-- Preserve plain data at the UI boundary and one lifecycle owner.
+- Make both candidate implementations small enough to review side by side.
+- Use identical inputs, outputs, fake host, timing controls, and assertions.
+- Show end-user-visible state sequences in the existing local showcase.
+- Measure each candidate in isolation and record reproducible evidence.
 
 **Non-Goals:**
 
-- No generic FP platform, repository-wide conversion, layer graph, service interface, factory, schema replacement, server migration, or second host owner.
-- No behavioral, rendering, payload, packaging, CSP, message, retry, proposal, or basket change.
+- No production architecture decision, generic FP layer, SDK wrapper, schema
+  replacement, runtime service graph, or synthetic throughput contest.
+- No change to tool registration, picker resource, CSP, messages, provider
+  access, proposal application, basket mutation, release, or deployment.
 
 ## Decisions
 
-### 1. Compare candidates by role, not as false whole-stack substitutes
+### 1. Compare two stacks, not individual package features
 
-Use one representative validated proposal to derive rejected items, safe images, proposed products, and available alternatives; use one fake-host lifecycle for callback-before-connect, send success/failure, duplicate activation, result replacement, disposal, remount, and stale completion.
-
-| Candidate | Pure transformations | Async/resource boundary | Decision |
+| Stack | Pure data | Async and cleanup | Question |
 | --- | --- | --- | --- |
-| Native TypeScript | Readonly inputs, arrays, `Map`, discriminated unions, exhaustive `never` | Promises, explicit cleanup and stale guards | Required baseline and fallback. |
-| fp-ts | `Option`, `Either`, `ReadonlyArray`, composition | `TaskEither`/`ReaderTaskEither` and `bracket`; host cancellation and stale delivery still explicit | Give an equivalent candidate, but do not prefer it for new long-term adoption because its project identifies Effect as successor. |
-| Effect pure modules | `Array`, `Option`, `Either`, `Match` without running an Effect program | None until runtime APIs are used | Compare separately from the runtime. |
-| Effect runtime | Can connect deterministic and effectful composition | Typed failures, scopes, finalizers, interruption | Preferred integrated ecosystem candidate, subject to measured proof. |
-| Remeda | Pragmatic typed collection pipelines | No resource lifecycle | Strongest lightweight pure-core challenger. |
-| neverthrow | Focused `Result` composition | `ResultAsync`, but cleanup/cancellation remain external | Evaluate only if expected failures are the demonstrated problem. |
-| ts-pattern | Exhaustive structured matching | No resource lifecycle | Evaluate only if actual branching beats a native discriminated-union switch. |
+| `fp-ts` | `ReadonlyArray`, `Option`, `Either`, `pipe` | `TaskEither` plus explicit session invalidation and cleanup | Is one traditional FP vocabulary clearer across the whole boundary? |
+| `Remeda + Effect` | TypeScript-first collection pipelines over plain data | Effect typed failures, scopes/finalizers, and explicit delivery guards | Is specialization clearer despite using two packages? |
 
-Effect Micro is comparison research only: current Effect v3 documentation marks it experimental. Do not install or select it under the stable-dependency constraint. Do not add another candidate unless new primary evidence exposes a capability gap in this table.
+Ramda is not a candidate; the TypeScript-first package is Remeda. Native
+TypeScript remains the reference and fallback. No other library enters the
+comparison unless a missing competency is demonstrated first.
 
-Sources: [fp-ts project direction](https://github.com/gcanti/fp-ts), [fp-ts TaskEither bracket](https://gcanti.github.io/fp-ts/modules/TaskEither.ts.html), [Effect scopes](https://effect.website/docs/v3/resource-management/scope), [Effect Micro status](https://effect.website/docs/v3/micro/new-users), [Remeda](https://github.com/remeda/remeda), [neverthrow](https://github.com/supermacro/neverthrow), and [ts-pattern](https://github.com/gvergnaud/ts-pattern).
+### 2. Use one candidate-neutral contract
 
-### 2. Native code is the required shipping baseline
+Add a development-only comparison folder with plain public types:
 
-Do not compare candidates against the old minified document. Identify the exact verified UI commit and run all candidates against the same plain inputs, outputs, SDK cohort, TypeScript configuration, bundler settings, and tests. Candidate packages remain temporary until the decision.
+- `derive(payload)` returns a serializable display model.
+- `runScenario(scenario, host)` returns a Promise of an ordered state/event
+  trace and guarantees disposal before resolving.
+- Scenarios describe host delay, resolve/reject, replacement, duplicate click,
+  disposal, and remount timing without exposing a library type.
 
-The pure comparison may use each library's natural API, but it must not manufacture complexity or widen into safety-sensitive proposal/application code. The async comparison must preserve the same explicit message-delivery and stale-result semantics.
+Candidate modules may use their natural internal APIs but must return the same
+plain values. They must not import React, the production picker entry, server
+code, or basket operations. Shared fixtures and assertions own expected output;
+candidate code cannot define its own success criteria.
 
-### 3. Adoption measures maintainability, not only line count
+### 3. Preserve manual delivery guards where the host cannot cancel delivery
 
-Select a dependency only when behavior and safety remain green; it demonstrates a concrete improvement in composition, expected-error handling, resource ownership, or change comprehension; measured browser output and type-check cost stay within the project's recorded budgets; and one coherent model remains.
+Neither stack may claim to cancel a message already delivered to the MCP host.
+Both keep an explicit pending guard and generation/active invalidation for stale
+Promise completion. Effect interruption or a `TaskEither` resource bracket may
+clean up local work, but it cannot weaken at-most-one-send or stale-result
+checks. Automatic retry, reconnect, and polling are prohibited.
 
-Record concepts a maintainer must learn, inference/diagnostic quality, migration direction, remaining manual guards, and production code changed. Fewer lines help but cannot overrule clearer contracts or long-term consistency. If separate narrow packages would overlap, prefer the single candidate covering the demonstrated needs or native TypeScript.
+### 4. Extend the showcase without changing the production resource
 
-### 4. Stable Effect 3 is the leading integrated candidate, not a foregone conclusion
+Add a development-only comparison panel to `showcase.html` with:
 
-If Effect wins, use the exact tested stable 3.x release and only the pure modules/runtime APIs demonstrated by the comparison. One scope may own construction, callback registration, connection, deliberate sends, failure mapping, and finalization. No `@effect/platform`, Effect Schema, layer/service hierarchy, retry schedule, polling fiber, or reconnect loop.
+- a stack selector;
+- deterministic scenario controls;
+- the derived display model;
+- ordered user-visible states and event trace;
+- elapsed local orchestration time clearly labeled as diagnostic, not network
+  performance.
 
-If Remeda or neverthrow wins a narrow need while native lifecycle code remains clearer, adopt only that narrow library. If no dependency materially improves the cases, retain native TypeScript and record the rejection. Never keep multiple candidates for speculative future use.
+The production `picker.html` build continues to import only native production
+modules. The existing artifact guard must prove that comparison labels and
+candidate packages do not enter the shipped resource.
 
-### 5. Preserve SDK, package, and safety boundaries
+### 5. Build and measure candidates separately
 
-React or Preact consumes plain state/callbacks and does not create a second `App`. Pending state blocks duplicate sends; failure permits only a later deliberate retry. Interruption or disposal closes/invalidates local work but never claims to retract a delivered message.
+A small comparison Vite config aliases one candidate at a time into the same
+browser entry and writes ignored artifacts outside `dist/`. A benchmark script
+runs the same commands and records:
 
-The selected dependency is browser-only and bundled into the self-contained picker. Node entry points do not import it. No CSP, resource, tool, authorization, provider, or deployment permission changes. The dependency landscape records version, measured artifact/type-check delta, APIs used, and decision.
+- minified raw and gzip candidate bundle bytes;
+- median TypeScript check time over five warm runs using candidate-specific
+  configs and the same compiler version;
+- candidate production lines and direct imported package count;
+- required concepts, explicit state guards, and diagnostic quality;
+- identical scenario pass/fail results.
+
+The script emits machine-readable JSON to an ignored directory. The checked-in
+comparison document records the environment, commands, medians, pros, cons, and
+interpretation. Browser interaction timings are supporting diagnostics only;
+host/network latency is excluded and collection throughput is not scored.
+
+### 6. Treat correctness as a gate and comprehension as evidence
+
+Both stacks must pass exact output, exact message, at-most-one-send, failure,
+replacement, disposal/remount, and stale-completion assertions. A candidate that
+fails is ineligible regardless of size or speed.
+
+For eligible candidates, compare:
+
+- whether expected failures and cleanup ownership are visible at the call site;
+- how many library concepts a maintainer must learn;
+- how many manual delivery guards remain;
+- how localized an equivalent change is;
+- compiler diagnostic clarity;
+- bundle and type-check cost.
+
+There is no aggregate numeric winner because arbitrary weights would disguise
+the owner's priorities. The result presents evidence and explicit trade-offs for
+human selection.
+
+### 7. Keep dependencies temporary and production-neutral
+
+Use exact stable versions verified from the registry at implementation time.
+Add them as development dependencies because only experimental/showcase builds
+consume them. Node entry points and production `picker.html` must not contain
+candidate imports. Before any later merge, either remove all comparison code and
+dependencies or retain only the explicitly selected production model under a
+separately reviewed release decision.
 
 ## Risks / Trade-offs
 
-- [The lifecycle biases the result toward Effect] -> Score the pure core independently and give fp-ts an equivalent lifecycle candidate.
-- [Narrow libraries are rejected for not being runtimes] -> Evaluate Remeda, neverthrow, and ts-pattern only against their documented roles.
-- [Several attractive candidates survive] -> Keep one coherent model or native TypeScript; delete every rejected package and spike.
-- [Type complexity shifts cost to builds/reviewers] -> Record diagnostics, type-check time, required concepts, and comprehension feedback.
-- [Cancellation is mistaken for delivery rollback] -> Preserve explicit pending and stale-generation guards where the SDK cannot cancel.
-- [The stacked branch drifts] -> Merge UI first, then rebase onto its exact integrated `origin/main` revision.
+- [The two-package stack is penalized automatically] -> report package count but
+  decide on total clarity and cost, not dependency count alone.
+- [The lifecycle inherently favors Effect] -> require the same manual host-
+  delivery guards and score only cleanup/error composition it actually removes.
+- [The showcase bundle hides candidate cost] -> build each candidate separately
+  for measurements; never compare the combined showcase artifact.
+- [Benchmark noise creates a false winner] -> use repeated warm medians, record
+  environment, and treat small differences as ties.
+- [Experiment code leaks into production] -> retain the existing production
+  artifact guard and add explicit forbidden-marker/import assertions.
+- [The draft becomes permanent dual architecture] -> keep it draft and require
+  an explicit selection/removal slice before merge.
 
 ## Migration Plan
 
-1. Identify the verified UI baseline and record native pure-core, lifecycle, bundle, and type-check evidence.
-2. Implement bounded equivalent candidates without changing the production call site.
-3. Apply the role-specific and integrated decision matrix; record one selection and delete all rejected code/dependencies.
-4. Switch only the selected pure/lifecycle call sites, then run focused, package, privacy, and repository checks.
-5. Rebase or retarget after UI merges, make a separate release/version decision, and integrate through the protected ruleset.
-6. Roll back the dependency to native TypeScript; use `NEMLIG_MCP_APPS` only as emergency UI fallback. No data migration is required.
+1. Reconcile PR #36 with the merged UI baseline and add shared failing
+   characterization tests for the comparison contract.
+2. Implement the `fp-ts` and `Remeda + Effect` candidates against the same tests.
+3. Add the development showcase controls and candidate-isolated builds.
+4. Run repeated measurements and record the side-by-side code, behavior, costs,
+   strengths, and weaknesses.
+5. Push the draft proof of concept for owner review. Do not switch production,
+   version, merge, release, deploy, or archive the change.
+
+Rollback is deletion of development-only comparison files and dependencies; the
+native production picker is unchanged throughout.

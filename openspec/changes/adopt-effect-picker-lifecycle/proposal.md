@@ -1,43 +1,74 @@
 ## Why
 
-The repository intends to use functional programming for long-term maintainability, but the earlier draft examined only Effect at one lifecycle boundary. That risks selecting a library because the comparison was shaped around its strongest feature rather than the picker's actual pure-data and asynchronous needs.
-
-Current research favors stable Effect 3 as the leading integrated ecosystem, keeps native TypeScript as the shipping baseline, and treats Remeda as the strongest lightweight transformation challenger. This change performs one fair comparison before choosing a production dependency.
+The picker now has a production-ready native TypeScript baseline, but the
+repository has not demonstrated whether a functional approach would make its
+data transformation and asynchronous host lifecycle easier to maintain. A small
+side-by-side proof of concept can answer that with runnable code and comparable
+evidence before any production rewrite.
 
 ## What Changes
 
-- Compare native TypeScript, fp-ts, stable Effect 3, Remeda, neverthrow, and ts-pattern on the roles they actually solve: one picker view-model transformation and one MCP Apps connection/result/send/dispose lifecycle.
-- Compare Effect's pure modules separately from its runtime. Record Effect Micro as experimental research only; do not adopt it under the stable-dependency policy.
-- Preserve a functional core with thin effectful boundaries regardless of which dependency, if any, wins.
-- Select one coherent dependency model using behavior parity, composition, expected-error contracts, resource ownership, reviewer comprehension, learning/migration cost, type-check cost, and measured raw/gzip output. Fewer lines are supporting evidence, not the sole gate.
-- Remove all rejected candidate code and dependencies before switching the production call site.
-- Preserve every UI, payload, exact choice-message, packaging, CSP, gate, fallback, proposal, approval, and basket-safety contract owned by the stacked UI draft.
+- Compare two coherent candidate stacks on the same picker problem:
+  - `fp-ts` for pure transformations, expected failures, and asynchronous
+    composition.
+  - `Remeda + Effect`, using Remeda for pure transformations and Effect for
+    expected failures and resource lifecycle.
+- Keep native TypeScript as the shared behavior reference, not a scored third
+  candidate.
+- Build both candidates behind the development-only showcase with identical
+  fixtures and deterministic controls for success, delay, failure, duplicate
+  activation, replacement, stale completion, disposal, and remount.
+- Reuse one fake-host harness and require identical plain outputs, exact choice
+  messages, at-most-one send, cleanup, and stale-result behavior.
+- Benchmark raw/gzip browser output, startup and interaction timing, TypeScript
+  check time, production code shape, concepts introduced, diagnostics, remaining
+  manual guards, and one small equivalent change exercise.
+- Record clear strengths, weaknesses, and unresolved trade-offs for each stack.
+  Measurements inform the decision; they do not automatically choose a winner.
+- Keep the current native production call site unchanged while the pull request
+  is a draft. After human review, a separately approved final slice may select
+  one candidate or retain native TypeScript and remove all experiment code.
 
 ### Goal
 
-Make an evidence-backed functional-TypeScript foundation decision without confusing a focused utility with a whole-runtime replacement or preselecting Effect by the shape of the experiment.
+Give the repository owner a small, fair, runnable comparison of `fp-ts` versus
+`Remeda + Effect`, covering both end-user behavior and maintainer experience.
 
 ### Non-goals
 
-- No repository-wide FP migration or dependency mandate.
-- No server orchestration, authentication, provider retry, proposal preparation/application, basket tool, Effect Schema, layer hierarchy, service factory, Effect 4 release candidate, polling, reconnect, telemetry, storage, or provider change.
-- No agent-artifact routing implementation in this pull request.
+- No repository-wide functional-programming migration or generic abstraction.
+- No production call-site switch, package release, deployment, provider call,
+  credential use, proposal application, basket mutation, retry, reconnect,
+  polling, telemetry, storage, or server orchestration.
+- No comparison of Ramda, neverthrow, ts-pattern, Effect Micro, Effect 4 release
+  candidates, Effect Schema, platform packages, layers, or service factories.
+- No microbenchmark of five-item collection throughput; that is too small to be
+  meaningful to an end user.
 
 ### Acceptance criteria
 
-- Native TypeScript, fp-ts, and Effect receive equivalent pure-core and lifecycle cases; Remeda, neverthrow, and ts-pattern are evaluated only for the narrower roles they claim to solve.
-- Identical behavior and fake-host lifecycle tests pass for every retained candidate, including connection/result timing, send failure, duplicate activation, replacement, unmount/remount, and stale completion.
-- The decision records composition and error/resource clarity, required concepts, reviewer comprehension, type-check diagnostics/time, migration risk, and raw/gzip artifact output.
-- The final picker contains one dependency model and one lifecycle owner, with no rejected candidate code, automatic retry/reconnect/polling, proposal application, or basket mutation.
-- Stable Effect 3 remains the preferred integrated candidate, but native TypeScript or a narrower library wins if the equivalent implementation provides the better measured maintenance trade-off.
+- Both candidates implement the same bounded pure transformation and host
+  lifecycle behind one candidate-neutral interface.
+- The same tests pass for both candidates across normal, failure, duplicate,
+  replacement, disposal/remount, and stale-completion cases.
+- The development showcase can select either candidate and replay the same
+  synthetic states without contacting Nemlig or mutating external state.
+- Comparable repeated measurements report medians, inputs, environment, and
+  emitted artifacts; bundle measurements use separate candidate builds.
+- The result documents concrete pros and cons, required concepts, manual guards,
+  and one equivalent change exercise so the owner can compare both the code and
+  the end-user behavior.
+- Production remains native TypeScript and the draft is not merged until the
+  owner selects a direction and rejected code is removed.
 
 ### Epic and pull-request boundary
 
-The draft branch is `codex/adopt-effect-picker-lifecycle`, stacked on UI draft branch `codex/adopt-react-effect`. Research and isolated comparison may proceed concurrently, but the UI draft merges first. Before integration, rebase or retarget this draft to the merged UI revision on `origin/main` and make a separate release decision.
-
-### Follow-up
-
-After both drafts are merged or this comparison selects no FP dependency, create the separately scoped agent-artifact routing pull request recorded by the UI proposal.
+Use the existing `codex/adopt-effect-picker-lifecycle` worktree, branch, and
+draft PR #36 for the complete comparison. Checkpoint commits may separate the
+shared harness, candidates, and measurements. This proof of concept has no
+version or deployment decision; any production selection is a later approved
+slice on the same epic branch or a replacement change if the design materially
+expands.
 
 ## Capabilities
 
@@ -47,11 +78,14 @@ None.
 
 ### Modified Capabilities
 
-None. This is a behavior-preserving implementation and dependency decision; the UI change owns observable requirements, and this change declares `skip_specs: true`.
+None. This is a behavior-preserving development experiment and dependency
+comparison; `.openspec.yaml` keeps `skip_specs: true`.
 
 ## Impact
 
-- Potentially affects only the selected picker pure-core helpers and host adapter, their shared harness, the Nemlig manifest/lockfile, and `docs/dependency-landscape.md` during implementation.
-- Candidate packages are temporary comparison inputs. Only the selected stable dependency, if any, remains in the browser build; Node entry points do not import it.
-- Adds possible build/type-check time, browser bytes, and parse work but no service, storage, polling, retry amplification, provider request, operator cost, or basket mutation.
-- Dependency-only rollback restores native TypeScript; `NEMLIG_MCP_APPS` remains the emergency picker kill switch.
+- Development-only picker comparison modules, shared fake-host tests, showcase
+  controls, benchmark tooling, and comparison documentation.
+- Temporary exact candidate versions in the Nemlig package and lockfile. The
+  production picker build and Node entry points remain unchanged.
+- No new service, storage, schedule, runtime request, credential, provider,
+  production, external-data, or basket effect.
