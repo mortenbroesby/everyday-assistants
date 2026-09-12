@@ -5,9 +5,10 @@ import { safeAreaStyle } from "../ui/AppFrame.js";
 import { bindPickerHost, type PickerHost } from "./session.js";
 
 test("picker reads structured content before a JSON text fallback and rejects unsafe images", () => {
-  const structured = { items: [{ ingredient: "mælk", quantity: 1, confidence: 95, product: { id: 7, available: true } }] };
+  const structured = { items: [{ ingredient: "mælk", quantity: 1, confidence: 95, product: { id: 7, available: true, details: [{ key: "Varedeklaration", value: "Mælk" }] } }] };
   const fallback = { items: [{ ingredient: "brød", quantity: 2, confidence: 80, product: { id: 8, available: true } }] };
   assert.equal(readPickerPayload({ structuredContent: structured, content: [{ type: "text", text: JSON.stringify(fallback) }] })?.items[0]?.ingredient, "mælk");
+  assert.deepEqual(readPickerPayload({ structuredContent: structured })?.items[0]?.product.details, [{ key: "Varedeklaration", value: "Mælk" }]);
   assert.equal(readPickerPayload({ content: [{ type: "text", text: JSON.stringify(fallback) }] })?.items[0]?.ingredient, "brød");
   assert.equal(readPickerPayload({ content: [{ type: "text", text: "not json" }] }), undefined);
   assert.equal(readPickerPayload({ structuredContent: { items: Array.from({ length: 6 }, () => structured.items[0]) } }), undefined);
