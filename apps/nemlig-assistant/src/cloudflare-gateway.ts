@@ -250,6 +250,21 @@ export async function handleGatewayRequest(
   const totalController = new AbortController();
   const totalTimer = setTimeout(() => totalController.abort(), config.totalTimeoutMs);
   const remainingMs = () => config.totalTimeoutMs - (now() - startedAt);
+  const runAdminControl = async (
+    work: (deadline: GatewayDeadline) => Promise<UsageState | undefined>,
+  ): Promise<Response> => {
+    try {
+      const usage = await withinBoundary(work, config.controlTimeoutMs, remainingMs, totalController.signal, "control_timeout");
+      return finish(json(aggregateUsage(usage, {
+        revision: config.principalPolicy.revision,
+        budgets: config.principalPolicy.budgets,
+        principalKeys: config.principalPolicy.principals.map(({ principal_key }) => principal_key),
+      })), "completed");
+    } catch (error) {
+      const outcome = error instanceof BoundaryTimeoutError ? error.outcome : "backend_failed";
+      return finish(json({ error: outcome }, outcome.endsWith("timeout") ? 504 : 502), outcome);
+    }
+  };
   try {
     if (url.pathname === "/healthz") return finish(json({ status: "ok", enabled: true }), "protocol_completed");
     if (url.pathname === "/revision") return finish(json({ revision: config.revision }), "protocol_completed");
@@ -314,31 +329,11 @@ export async function handleGatewayRequest(
     }
     if (url.pathname === "/admin/usage") {
       if (request.method !== "GET" || !dependencies.usage) return finish(new Response("Method not allowed", { status: 405 }), "request_rejected");
-      try {
-        const usage = await withinBoundary((deadline) => dependencies.usage!(config, deadline), config.controlTimeoutMs, remainingMs, totalController.signal, "control_timeout");
-        return finish(json(aggregateUsage(usage, {
-          revision: config.principalPolicy.revision,
-          budgets: config.principalPolicy.budgets,
-          principalKeys: config.principalPolicy.principals.map(({ principal_key }) => principal_key),
-        })), "completed");
-      } catch (error) {
-        const outcome = error instanceof BoundaryTimeoutError ? error.outcome : "backend_failed";
-        return finish(json({ error: outcome }, outcome.endsWith("timeout") ? 504 : 502), outcome);
-      }
+      return runAdminControl((deadline) => dependencies.usage!(config, deadline));
     }
     if (url.pathname === "/admin/reset-breaker") {
       if (request.method !== "POST" || !dependencies.resetUsage) return finish(new Response("Method not allowed", { status: 405 }), "request_rejected");
-      try {
-        const usage = await withinBoundary((deadline) => dependencies.resetUsage!(config, deadline), config.controlTimeoutMs, remainingMs, totalController.signal, "control_timeout");
-        return finish(json(aggregateUsage(usage, {
-          revision: config.principalPolicy.revision,
-          budgets: config.principalPolicy.budgets,
-          principalKeys: config.principalPolicy.principals.map(({ principal_key }) => principal_key),
-        })), "completed");
-      } catch (error) {
-        const outcome = error instanceof BoundaryTimeoutError ? error.outcome : "backend_failed";
-        return finish(json({ error: outcome }, outcome.endsWith("timeout") ? 504 : 502), outcome);
-      }
+      return runAdminControl((deadline) => dependencies.resetUsage!(config, deadline));
     }
     let admission: AdmissionResult;
     try {

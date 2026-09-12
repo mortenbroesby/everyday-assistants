@@ -253,6 +253,41 @@ test("unauthorized, rate-limited, and open-breaker requests never reach the Cont
   assert.equal(forwarded, 0);
 });
 
+test("admin controls preserve their bounded execution and terminal outcomes", async () => {
+  const state = emptyUsageState(new Date("2026-09-01T00:00:00Z"));
+  const never = () => new Promise<never>(() => {});
+  for (const control of [
+    { path: "/admin/usage", method: "GET", dependency: "usage" as const },
+    { path: "/admin/reset-breaker", method: "POST", dependency: "resetUsage" as const },
+  ]) {
+    for (const scenario of [
+      { name: "success", method: control.method, backend: async () => state, status: 200, outcome: "completed" },
+      { name: "wrong method", method: control.method === "GET" ? "POST" : "GET", backend: async () => state, status: 405, outcome: "request_rejected" },
+      { name: "missing dependency", method: control.method, backend: undefined, status: 405, outcome: "request_rejected" },
+      { name: "timeout", method: control.method, backend: never, status: 504, outcome: "control_timeout" },
+      { name: "backend error", method: control.method, backend: async () => { throw new Error("failed"); }, status: 502, outcome: "backend_failed" },
+    ]) {
+      const events: GatewayRequestEvent[] = [];
+      const response = await handleGatewayRequest(new Request(`https://mcp.example.test${control.path}`, {
+        method: scenario.method,
+        headers: { authorization: "Bearer owner-token" },
+      }), {
+        ...env,
+        MCP_CONTROL_TIMEOUT_MS: "5",
+      }, {
+        authenticate: async () => principal,
+        admit: async () => { throw new Error("unexpected"); },
+        forward: async () => { throw new Error("unexpected"); },
+        ...(scenario.backend ? { [control.dependency]: scenario.backend } : {}),
+        event: (event) => events.push(event),
+      });
+      assert.equal(response.status, scenario.status, `${control.path} ${scenario.name}`);
+      assert.equal(events.length, 1, `${control.path} ${scenario.name}`);
+      assert.equal(events[0]?.outcome, scenario.outcome, `${control.path} ${scenario.name}`);
+    }
+  }
+});
+
 test("manual reset requires owner authentication and backend timeout is returned without retry", async () => {
   let reset = 0;
   let attempts = 0;

@@ -152,6 +152,16 @@ test("read-only acceptance has one total deadline", async () => {
   await assert.rejects(verifyReadOnlyProductionFeatures(client, { totalTimeoutMs: 5 }), /timed out during tool inventory/u);
 });
 
+test("service acceptance preserves its operation-specific total deadline context", async () => {
+  const client: AcceptanceClient = {
+    listTools: async () => new Promise(() => {}),
+    listResources: async () => ({ resources: [] }),
+    readResource: async () => ({ contents: [] }),
+    callTool: async () => ({ structuredContent: {} }),
+  };
+  await assert.rejects(verifyServiceAcceptanceFeatures(client, { totalTimeoutMs: 5 }), /Service acceptance timed out during tool inventory/u);
+});
+
 test("tier usage acceptance requires bounded aggregate output without identity data", async () => {
   let authorization = "";
   await verifyAggregateTierUsage(new URL("https://nemlig-mcp.example.test/mcp"), "private-token", async (_input, init) => {
@@ -316,7 +326,13 @@ test("production edge probe times out a stalled step with boundary evidence", as
   const fetcher: typeof fetch = async (input, init) => {
     const path = new URL(input instanceof Request ? input.url : input).pathname;
     if (path === "/healthz") return Response.json({ status: "ok", enabled: true });
-    return new Promise((_resolve, reject) => init?.signal?.addEventListener("abort", () => reject(init.signal?.reason), { once: true }));
+    return new Promise((_resolve, reject) => {
+      const openConnection = setTimeout(() => {}, 1_000);
+      init?.signal?.addEventListener("abort", () => {
+        clearTimeout(openConnection);
+        reject(init.signal?.reason);
+      }, { once: true });
+    });
   };
   await assert.rejects(
     verifyProductionEdge(new URL("https://nemlig-mcp.broesby.dk"), fetcher, { stepTimeoutMs: 5 }),
