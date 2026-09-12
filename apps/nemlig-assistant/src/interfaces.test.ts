@@ -5,7 +5,7 @@ import { AjvJsonSchemaValidator } from "@modelcontextprotocol/sdk/validation/ajv
 import type { JsonSchemaType } from "@modelcontextprotocol/sdk/validation/types.js";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdtemp, readdir, rm } from "node:fs/promises";
+import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import test from "node:test";
 import { NemligError, type Basket, type Product, type ShoppingClient } from "./client.js";
@@ -809,25 +809,26 @@ test("picker images use only the observed Nemlig HTTPS origin and keep a text-on
     assert.equal(safeNemligImageUrl(value), undefined);
   }
   const html = await pickerHtml();
-  assert.match(html, /prefers-color-scheme:\s*dark/u);
-  assert.match(html, /--text:/u);
-  assert.match(html, /loading="lazy"/);
-  assert.match(html, /referrerPolicy="no-referrer"/);
-  assert.match(html, /onerror=\(\)=>image\.remove\(\)/);
-  assert.match(html, /alt=product\.name/);
-  assert.match(html, /imageOrigins\.has\(url\.origin\)/);
-  assert.match(html, /product\.description/);
-  assert.match(html, /renderProposed/);
-  assert.match(html, /app\.sendMessage/);
-  assert.match(html, /details\.open=item\.confidence<80/);
-  assert.match(html, /item\.favorite_match/);
-  assert.match(html, /value\.pantry_assumptions/);
+  assert.match(html, /color-scheme:light dark/u);
+  assert.match(html, /loading:`lazy`/u);
+  assert.match(html, /referrerPolicy:`no-referrer`/u);
+  assert.match(html, /Choose product \$\{t\} for \$\{n\} instead\./u);
   assert.match(html, /Kunne ikke bekræfte/);
-  assert.doesNotMatch(html, /renderPlan|Ingen egnet vare|type="number"|Forbered valgte varer/u);
-  assert.doesNotMatch(html, /image[_-]proxy|fetch\(.*image/iu);
+  assert.match(html, /Forslaget kunne ikke vises/);
+  assert.match(html, /setupSizeChangedNotifications/);
+  assert.match(html, /document\.documentElement\.dataset\.theme/);
+  assert.match(html, /loading:/);
+  assert.match(html, /Valgt/);
+  for (const component of ["Button", "Badge"]) {
+    const className = html.match(new RegExp(`${component}:` + "`([^`]+)`"))?.[1];
+    assert.ok(className, `${component} class is bundled`);
+    assert.match(html, new RegExp(`\\.${className}\\s*\\{`), `${component} CSS module is inlined`);
+  }
+  assert.doesNotMatch(html, /type="number"|Forbered valgte varer|add_approved_items/u);
 });
 
 test("picker resource preserves its public presentation contract and isolates hostile product data", async () => {
+  const builtPicker = await readFile(new URL("../dist/picker.html", import.meta.url), "utf8");
   const hostileName = `<img src=x onerror=alert("name")>`;
   const hostileDescription = `<script>alert("description")</script>`;
   const hostileDetails = [{ key: "<b>key</b>", value: `</script><script>alert("detail")</script>` }];
@@ -853,13 +854,13 @@ test("picker resource preserves its public presentation contract and isolates ho
     assert.ok(content && "text" in content);
     assert.equal(content.uri, "ui://nemlig/picker.html");
     assert.equal(content.mimeType, "text/html;profile=mcp-app");
-    assert.deepEqual(content._meta, { ui: { csp: { resourceDomains: ["https://unpkg.com", "https://nemlig.com", "https://www.nemlig.com"] } } });
+    assert.equal(content.text, builtPicker);
+    assert.deepEqual(content._meta, { ui: { csp: { resourceDomains: ["https://nemlig.com", "https://www.nemlig.com"] } } });
     for (const value of [hostileName, hostileDescription, ...hostileDetails.flatMap(({ key, value }) => [key, value])]) {
       assert.equal(content.text.includes(value), false);
     }
-    assert.match(content.text, /textContent/);
-    assert.match(content.text, /imageOrigins\.has\(url\.origin\)/);
-    assert.doesNotMatch(content.text, /fetch\(.*image/iu);
+    assert.doesNotMatch(content.text, /(?:url\(|(?:src|href)=['"])(?:https?:)?\/\//iu);
+    assert.doesNotMatch(content.text, /\b(?:review_items_to_add|add_approved_items)\b/iu);
   });
 });
 
@@ -1247,15 +1248,13 @@ test("picker gate hides proposed-basket tool and resource for every false spelli
 test("picker resource only renders reviewed proposals and returns alternative choices to chat", async () => {
   const html = await pickerHtml();
   assert.match(html, /aria-live/);
-  assert.match(html, /sendMessage/);
-  assert.match(html, /renderProposed/);
-  assert.doesNotMatch(html, /callServerTool|review_items_to_add|add_approved_items|prepareBatch/u);
-  assert.match(html, /structuredContent/);
-  assert.doesNotMatch(html, /ID:|"ID "|Udløber|expires_at/);
+  assert.match(html, /ui\/message/);
+  assert.doesNotMatch(html, /review_items_to_add|add_approved_items|prepareBatch/u);
+  assert.match(html, /Choose product/);
   await withMcpClient(createMcpServer(fakeClient(), testCredentials), async (mcp) => {
     const resources = await mcp.listResources();
     assert.equal(resources.resources.some((resource) => resource.uri === PICKER_URI), true);
     const resource = await mcp.readResource({ uri: PICKER_URI });
-    assert.match(resource.contents[0] && "text" in resource.contents[0] ? resource.contents[0].text : "", /<!DOCTYPE html>/);
+    assert.match(resource.contents[0] && "text" in resource.contents[0] ? resource.contents[0].text : "", /<!doctype html>/iu);
   });
 });

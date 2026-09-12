@@ -14,4 +14,5 @@ export default defineConfig([
   { ...executable, clean: true, entry: { cli: "src/cli.ts" } },
   { ...executable, clean: false, entry: { mcp: "src/mcp.ts" } },
   { ...executable, clean: false, entry: { http: "src/http.ts" } },
+  { entry: { picker: "src/picker/main.tsx" }, format: "iife", outDir: "dist/picker", platform: "browser", target: "es2022", minify: true, sourcemap: false, deps: { alwaysBundle: [/./] } },
 ]);

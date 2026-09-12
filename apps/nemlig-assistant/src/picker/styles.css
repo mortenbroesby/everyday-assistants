@@ -1,0 +1,10 @@
+@import "tailwindcss";
+@import "@openai/apps-sdk-ui/css";
+@source "../../node_modules/@openai/apps-sdk-ui";
+
+:root { color-scheme: light dark; font-family: system-ui, sans-serif; }
+body { margin: 0; overflow-x: clip; }
+.picker-root { color: var(--text-primary, CanvasText); background: var(--background-primary, Canvas); padding: 12px; }
+.picker-grid { display: grid; gap: 12px; min-width: 0; }
+.picker-card { border: 1px solid var(--border-default, color-mix(in srgb, CanvasText 20%, Canvas)); border-radius: 12px; display: flex; gap: 12px; justify-content: space-between; padding: 12px; }
+.picker-product { display: flex; gap: 12px; min-width: 0; align-items: center; }.picker-product p,.picker-product small { display:block; margin: 3px 0; color: var(--text-secondary, GrayText); }.picker-image { width:72px; height:72px; object-fit:contain; border-radius:8px; flex:none; }.picker-actions { display:grid; gap:8px; justify-items:end; text-align:end; flex:none; } summary { cursor:pointer; margin:12px 0; } button:focus-visible, summary:focus-visible { outline: 3px solid Highlight; outline-offset: 2px; }.picker-empty { color: var(--text-secondary, GrayText); padding:16px; } @media (max-width: 360px) { .picker-card { align-items: stretch; flex-direction: column; }.picker-actions { justify-items: start; text-align:start; } } @media (prefers-reduced-motion: reduce) { *,::before,::after { scroll-behavior:auto!important; transition:none!important; animation:none!important; } }
