@@ -44,7 +44,7 @@
 ## 7. Integration, deployment, and follow-ups
 
 - [x] 7.1 Run focused checks, OpenSpec strict validation, package/version planning, privacy/safety verification, and final `pnpm verify`; record that implementation made no credential, provider, or basket mutation.
-- [ ] 7.2 Push the completed branch, wait for exact-head CI, mark PR #34 ready, merge through the active ruleset, and verify the exact remote `main` revision and merged-revision CI.
-- [ ] 7.3 Use the approved protected production workflow once for the exact merged revision, verify deployed-revision and health evidence, and perform sequential read-only acceptance without accessing or mutating basket/account/order state.
-- [ ] 7.4 Rebase and retarget the stacked functional-TypeScript comparison to merged `main`, keeping UI behavior tests as its invariant; hand the merged SHA to the parked agent-artifact routing pull request.
-- [ ] 7.5 Sync and archive the completed UI OpenSpec change independently after integration and production acceptance.
+- [x] 7.2 Push the completed branch, wait for exact-head CI, mark PR #34 ready, merge through the active ruleset, and verify the exact remote `main` revision and merged-revision CI.
+- [x] 7.3 Use the approved protected production workflow once for the exact merged revision, verify deployed-revision and health evidence, and perform sequential read-only acceptance without accessing or mutating basket/account/order state.
+- [x] 7.4 Rebase and retarget the stacked functional-TypeScript comparison to merged `main`, keeping UI behavior tests as its invariant; hand the merged SHA to the parked agent-artifact routing pull request.
+- [x] 7.5 Sync and archive the completed UI OpenSpec change independently after integration and production acceptance.
