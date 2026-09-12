@@ -21,6 +21,6 @@
   representative task routes; state what the evidence does and does not prove.
 - [x] 3.2 Run direct route and model-name checks, strict OpenSpec validation,
   privacy validation, and final `pnpm verify`; resolve only caused failures.
-- [ ] 3.3 Commit and push the revised epic branch, update the pull request, and
+- [x] 3.3 Commit and push the revised epic branch, update the pull request, and
   verify required CI for its exact head. Keep merge behind explicit approval and
   do not deploy.
