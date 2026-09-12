@@ -97,7 +97,7 @@ because it would not be validated against the deployed artifact.
 
 Runtime exports the validated version/codename pair. `createMcpServer` prefixes
 its existing instructions with a short sentence such as `Current release:
-4.8.0 - Callsign.` The server name, title, semantic version, icon, tools,
+4.9.0 - Callsign.` The server name, title, semantic version, icon, tools,
 and resources remain unchanged. The package and interface smoke checks verify
 the sentence.
 

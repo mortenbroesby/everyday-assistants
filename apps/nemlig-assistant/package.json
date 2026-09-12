@@ -1,6 +1,6 @@
 {
   "name": "nemlig-assistant",
-  "version": "4.8.0-alpha.72",
+  "version": "4.9.0",
   "private": true,
   "description": "Safe local Nemlig Assistant CLI and MCP server",
   "type": "module",
@@ -88,5 +88,8 @@
     "vite": "7.3.6",
     "vite-plugin-singlefile": "2.3.3",
     "wrangler": "4.127.1"
+  },
+  "nemligRelease": {
+    "codename": "Callsign"
   }
 }
