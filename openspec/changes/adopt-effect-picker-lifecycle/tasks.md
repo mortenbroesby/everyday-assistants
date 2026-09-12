@@ -36,10 +36,10 @@
 
 ## 4. Verify and deliver the draft comparison
 
-- [ ] 4.1 Prove production `picker.html` excludes candidate imports and showcase
+- [x] 4.1 Prove production `picker.html` excludes candidate imports and showcase
   markers; run focused comparison, picker artifact, package, and MCP safety
   checks and verify identical candidate behavior.
-- [ ] 4.2 Run strict OpenSpec validation, `pnpm privacy:check`, and final
+- [x] 4.2 Run strict OpenSpec validation, `pnpm privacy:check`, and final
   `pnpm verify`; review the diff for secrets, unrelated edits, hidden runtime
   adoption, cost, safety regression, and unjustified benchmark machinery.
 - [ ] 4.3 Push the complete comparison to draft PR #36 and verify exact-head CI.
