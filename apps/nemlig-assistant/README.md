@@ -73,9 +73,13 @@ preparatory, and exact reviews still wait for approval.
 - Show one recommended product per ingredient with package quantity and an
   evidence-based match-confidence judgment.
 - Consult existing favourites when match confidence is below 80%.
-- Keep alternatives collapsed at or above 80% and expand them below 80%.
+- Keep alternatives collapsed by default and let the user expand them per
+  ingredient.
 - Present actionable visual choices in groups of at most five and show the
   complete proposed basket before asking to add anything.
+- Give every product its own visual island, while labeling the collapsed
+  alternatives with the ingredient they belong to; expose product description,
+  declaration, and supplied item details through compact disclosures.
 - State omitted pantry assumptions such as flour, salt, and pepper.
 - Apply hard constraints such as dietary, price, or frozen/non-frozen rules.
 - Preserve requested weights, volumes, or counts and compare the package combinations needed to cover them.

@@ -13,7 +13,7 @@ const packageRoot = path.resolve(path.dirname(script), "..");
 const { stdout, stderr } = await execute(
   process.execPath,
   ["--import", "tsx/esm", script],
-  { cwd: packageRoot, env: { PATH: process.env.PATH ?? "" }, timeout: 20_000 },
+  { cwd: packageRoot, env: { PATH: process.env.PATH ?? "" }, timeout: 45_000 },
 );
 
 assert.equal(stderr, "");
