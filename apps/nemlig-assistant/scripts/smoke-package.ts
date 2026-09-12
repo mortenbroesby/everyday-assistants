@@ -38,6 +38,7 @@ try {
     "dist/http.js.map",
     "dist/mcp.js",
     "dist/mcp.js.map",
+    "dist/picker.html",
     "package.json",
   ]);
   assert.doesNotMatch(packedPaths.join("\n"), /test|credential|token|cookie|\.auth|python/i);
@@ -54,10 +55,11 @@ try {
 
   const manifest = JSON.parse(
     await readFile(path.join(tempRoot, "node_modules", "nemlig-assistant", "package.json"), "utf8"),
-  ) as { name?: string; version?: string; bin?: Record<string, string> };
+  ) as { name?: string; version?: string; bin?: Record<string, string>; dependencies?: Record<string, string> };
   assert.equal(manifest.name, "nemlig-assistant");
   assert.equal(manifest.version, sourceManifest.version);
   assert.deepEqual(Object.keys(manifest.bin ?? {}).sort(), ["nemlig", "nemlig-assistant", "nemlig-mcp", "nemlig-mcp-http"]);
+  for (const browserBuildInput of ["@modelcontextprotocol/ext-apps", "@openai/apps-sdk-ui", "react", "react-dom"]) assert.equal(manifest.dependencies?.[browserBuildInput], undefined);
 
   const installed = path.join(tempRoot, "node_modules", "nemlig-assistant", "dist");
   const imports = await execute(
@@ -125,8 +127,8 @@ try {
     assert.ok(resource && "text" in resource);
     assert.equal(resource.uri, "ui://nemlig/picker.html");
     assert.equal(resource.mimeType, "text/html;profile=mcp-app");
-    assert.equal(createHash("sha256").update(resource.text).digest("hex"), "6d12de8ad011a1374fa2a668ea17eda220513c9ee85fda6e9337ee3e8ec05f4d");
-    assert.deepEqual(resource._meta, { ui: { csp: { resourceDomains: ["https://unpkg.com", "https://nemlig.com", "https://www.nemlig.com"] } } });
+    assert.equal(resource.text, await readFile(path.join(installed, "picker.html"), "utf8"));
+    assert.deepEqual(resource._meta, { ui: { csp: { resourceDomains: ["https://nemlig.com", "https://www.nemlig.com", "https://cdn.openai.com"] } } });
   } finally { await presentation.close(); }
 
   console.log("Packed Nemlig Assistant interfaces verified.");

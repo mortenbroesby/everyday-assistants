@@ -3,7 +3,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { randomUUID } from "node:crypto";
-import { realpathSync } from "node:fs";
+import { readFileSync, realpathSync } from "node:fs";
 import { basename } from "node:path";
 import { z } from "zod";
 import {
@@ -29,19 +29,16 @@ import {
   type ProposalView,
 } from "./proposals.js";
 import { relevantProduct, resolveShoppingPlan, shoppingPlanLineSchema, type ShoppingPlan } from "./plans.js";
+import { IMAGE_ORIGINS, safePickerImageUrl } from "./picker/contract.js";
 
 export const PICKER_URI = "ui://nemlig/picker.html";
 export const PICKER_MIME_TYPE = "text/html;profile=mcp-app";
 export const NEMLIG_CONNECT_URL = "https://nemlig-mcp.broesby.dk/connect";
-export const NEMLIG_IMAGE_ORIGINS = ["https://nemlig.com", "https://www.nemlig.com"] as const;
+export const NEMLIG_IMAGE_ORIGINS = IMAGE_ORIGINS;
+export const NEMLIG_RESOURCE_ORIGINS = [...NEMLIG_IMAGE_ORIGINS, "https://cdn.openai.com"] as const;
+export const safeNemligImageUrl = safePickerImageUrl;
 
-export const safeNemligImageUrl = (value: unknown): string | undefined => {
-  if (typeof value !== "string") return undefined;
-  try {
-    const url = new URL(value);
-    return url.protocol === "https:" && NEMLIG_IMAGE_ORIGINS.includes(url.origin as typeof NEMLIG_IMAGE_ORIGINS[number]) ? url.href : undefined;
-  } catch { return undefined; }
-};
+const pickerHtml = (): string => readFileSync(new URL("../dist/picker.html", import.meta.url), "utf8");
 
 /**
  * Server-derived request identity that scopes private state and invalidates it
@@ -770,15 +767,15 @@ export function createMcpServer(
       PICKER_URI,
       {
         mimeType: PICKER_MIME_TYPE,
-        _meta: { ui: { csp: { resourceDomains: ["https://unpkg.com", ...NEMLIG_IMAGE_ORIGINS] } } },
+        _meta: { ui: { csp: { resourceDomains: NEMLIG_RESOURCE_ORIGINS } } },
       },
       async () => ({
         contents: [
           {
             uri: PICKER_URI,
             mimeType: PICKER_MIME_TYPE,
-            text: PICKER_HTML,
-            _meta: { ui: { csp: { resourceDomains: ["https://unpkg.com", ...NEMLIG_IMAGE_ORIGINS] } } },
+            text: pickerHtml(),
+            _meta: { ui: { csp: { resourceDomains: NEMLIG_RESOURCE_ORIGINS } } },
           },
         ],
       }),
@@ -797,26 +794,3 @@ if (process.argv[1] && ["mcp.js", "mcp.ts"].includes(basename(realpathSync(proce
     process.exitCode = 1;
   });
 }
-
-const PICKER_HTML = `<!DOCTYPE html>
-<html lang="da">
-<head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<style>
-:root{color-scheme:light dark;--text:#1a1a1a;--muted:#555;--border:#ddd;--surface:#fff;--image:#f7f7f7;--badge:#eef}@media (prefers-color-scheme:dark){:root{--text:#f5f5f5;--muted:#c8c8c8;--border:#555;--surface:#202124;--image:#fff;--badge:#343755}}body{font-family:system-ui,sans-serif;margin:0;padding:12px;color:var(--text);background:var(--surface)}.grid{display:grid;gap:10px}.card{border:1px solid var(--border);border-radius:10px;padding:12px;display:flex;align-items:center;justify-content:space-between;gap:12px}.product{display:flex;align-items:center;gap:12px;min-width:0}.product-image{width:72px;height:72px;object-fit:contain;border-radius:8px;background:var(--image);flex:none}.name{font-weight:650}.description,.meta{color:var(--muted);font-size:13px}.description{margin-top:3px}.actions{text-align:right;flex:none}.price{font-weight:700;margin-bottom:6px}button{padding:8px 14px;border:0;border-radius:8px;background:#087d33;color:white;font-weight:650}.empty{color:var(--muted);padding:16px}
-</style>
-</head>
-<body><main id="root" aria-live="polite"><div class="empty">Henter varer…</div></main>
-<script type="module">
-import { App } from "https://unpkg.com/@modelcontextprotocol/ext-apps@0.4.0/app-with-deps";
-const root=document.getElementById("root");const app=new App({name:"Nemlig Picker",version:"1.0.0"});
-const kr=v=>typeof v==="number"?v.toFixed(2).replace(".",",")+" kr.":"";
-const imageOrigins=new Set(["https://nemlig.com","https://www.nemlig.com"]);const safeImage=value=>{try{const url=new URL(value);return url.protocol==="https:"&&imageOrigins.has(url.origin)?url.href:null}catch{return null}};
-const imageFor=product=>{const src=safeImage(product.image_url);if(!src)return null;const image=document.createElement("img");image.className="product-image";image.src=src;image.alt=product.name?"Billede af "+product.name:"Varebillede";image.loading="lazy";image.referrerPolicy="no-referrer";image.onerror=()=>image.remove();return image};
-const read=result=>{if(result?.structuredContent)return result.structuredContent;const text=(result?.content||result||[]).find(item=>item.type==="text");if(!text)return null;try{return JSON.parse(text.text)}catch{return null}};
-const selectAlternative=async(item,product,button)=>{button.disabled=true;try{await app.sendMessage({role:"user",content:[{type:"text",text:"Choose product "+product.id+" for "+item.ingredient+" instead."}]});button.textContent="Valgt"}catch{button.disabled=false;button.textContent="Vælg dette"}};
-const proposedCard=(item,product,alternative)=>{const card=document.createElement("article");card.className="card";const productArea=document.createElement("div");productArea.className="product";const image=imageFor(product);if(image)productArea.append(image);const info=document.createElement("div");const name=document.createElement("div");name.className="name";name.textContent=product.name??"Ukendt vare";const description=document.createElement("div");description.className="description";description.textContent=product.description??"";const meta=document.createElement("div");meta.className="meta";meta.textContent=[product.brand,product.unit_size,product.available?"Tilgængelig":"Ikke tilgængelig"].filter(Boolean).join(" · ");info.append(name);if(description.textContent)info.append(description);info.append(meta);productArea.append(info);const actions=document.createElement("div");actions.className="actions";const price=document.createElement("div");price.className="price";price.textContent=[kr(product.price),product.unit_price!=null?kr(product.unit_price)+"/enhed":""].filter(Boolean).join(" · ");actions.append(price);const choice=document.createElement("button");choice.textContent=alternative?"Vælg dette":"Foreslået";choice.disabled=!alternative||!product.available;if(alternative)choice.onclick=()=>selectAlternative(item,product,choice);actions.append(choice);card.append(productArea,actions);return card};
-const renderProposed=value=>{if(!Array.isArray(value?.items))return false;const rejected=Array.isArray(value.rejected)?value.rejected.map(item=>item?.ingredient).filter(Boolean):[];if(!value.items.length){const empty=document.createElement("div");empty.className="empty";empty.textContent=rejected.length?"Kunne ikke bekræfte: "+rejected.join(", "):"Ingen foreslåede varer.";root.replaceChildren(empty);return true}const page=document.createElement("div");page.className="grid";if(value.pantry_assumptions?.length){const pantry=document.createElement("div");pantry.className="meta";pantry.textContent="Antager allerede: "+value.pantry_assumptions.join(", ");page.append(pantry)}for(const item of value.items){const section=document.createElement("section");const heading=document.createElement("div");heading.className="name";heading.textContent=item.ingredient+" · "+item.quantity+" stk · "+item.confidence+"% match"+(item.favorite_match?" · favorit":"");section.append(heading,proposedCard(item,item.product,false));if(item.alternatives?.length){const details=document.createElement("details");details.open=item.confidence<80;const summary=document.createElement("summary");summary.textContent="Andre muligheder ("+item.alternatives.length+")";const choices=document.createElement("div");choices.className="grid";for(const alternative of item.alternatives)choices.append(proposedCard(item,alternative,true));details.append(summary,choices);section.append(details)}page.append(section)}if(rejected.length){const notice=document.createElement("div");notice.className="meta";notice.textContent="Kunne ikke bekræfte: "+rejected.join(", ");page.append(notice)}root.replaceChildren(page);return true};
-app.ontoolresult=result=>{if(!renderProposed(read(result)))root.innerHTML='<div class="empty">Forslaget kunne ikke vises.</div>'};await app.connect();
-</script></body></html>`;

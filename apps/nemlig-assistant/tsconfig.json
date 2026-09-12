@@ -3,10 +3,12 @@
     "target": "ES2022",
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
+    "jsx": "react-jsx",
     "strict": true,
     "noUnusedLocals": true,
     "noUnusedParameters": true,
     "skipLibCheck": true
   },
-  "include": ["src", "scripts", "release", "tsdown.config.ts"]
+  "include": ["src", "scripts", "release", "tsdown.config.ts"],
+  "exclude": ["src/picker", "src/ui"]
 }

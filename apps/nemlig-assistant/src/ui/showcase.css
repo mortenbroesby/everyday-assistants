@@ -1,0 +1,42 @@
+.showcase-intro {
+  color: var(--color-text-secondary, GrayText);
+}
+
+.showcase-header {
+  margin-bottom: 16px;
+}
+
+.showcase-header h1,
+.showcase-header p {
+  margin: 0 0 4px;
+}
+
+.showcase-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.showcase-controls button {
+  min-height: 44px;
+  padding: 8px 12px;
+  color: var(--color-text-primary, CanvasText);
+  border: var(--border-width-regular, 1px) solid var(--color-border-primary, GrayText);
+  border-radius: var(--border-radius-md, 8px);
+  background: var(--color-background-primary, Canvas);
+}
+
+.showcase-stage {
+  display: grid;
+  gap: 24px;
+  max-width: 800px;
+}
+
+.showcase-stage > section > h2 {
+  margin: 0 0 8px;
+}
+
+.showcase-stage-narrow {
+  max-width: 320px;
+}

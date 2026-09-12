@@ -101,7 +101,8 @@ preparatory, and exact reviews still wait for approval.
 - Use the stdio MCP server with a local MCP client.
 - Use the HTTP MCP server behind Auth0.
 - Connect ChatGPT to the private hosted Cloudflare deployment.
-- Optionally expose the MCP Apps proposed-basket review.
+- Optionally expose the self-contained MCP Apps proposed-basket review, rendered
+  with React and OpenAI Apps SDK UI without runtime CDN dependencies.
 
 ### Hosted family alpha
 
