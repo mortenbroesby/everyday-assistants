@@ -1,18 +1,18 @@
 ## 1. Release identity policy
 
-- [ ] 1.1 Add focused failing tests for strict codename parsing, `Alpha` bootstrap, NATO-style advancement, `Zulu` rollover, malformed values, and stale/mismatched candidates; verify the new policy tests fail for the expected missing behavior.
-- [ ] 1.2 Implement the minimum codename sequence and manifest identity helpers, then verify the focused policy tests pass without adding a dependency or parallel registry.
-- [ ] 1.3 Extend release planning and apply to report and atomically persist current/target version-codename pairs, exclude only its own metadata edit from release classification, and reject a no-release or inconsistent codename change; verify focused agent and version-gate tests cover read-only planning, idempotent apply, concurrent-stale candidates, and non-release merges.
+- [x] 1.1 Add focused failing tests for strict codename parsing, `Alpha` bootstrap, NATO-style advancement, `Zulu` rollover, malformed values, and stale/mismatched candidates; verify the new policy tests fail for the expected missing behavior.
+- [x] 1.2 Implement the minimum codename sequence and manifest identity helpers, then verify the focused policy tests pass without adding a dependency or parallel registry.
+- [x] 1.3 Extend release planning and apply to report and atomically persist current/target version-codename pairs, exclude only its own metadata edit from release classification, and reject a no-release or inconsistent codename change; verify focused agent and version-gate tests cover read-only planning, idempotent apply, concurrent-stale candidates, and non-release merges.
 
 ## 2. Reviewed note and publication
 
-- [ ] 2.1 Update the bounded release-note contract to require the exact version and codename in its heading, with legacy reads limited to historical releases; verify focused tests reject missing, excessive, malformed, or mismatched notes before deployment.
-- [ ] 2.2 Make GitHub prerelease publication read the exact candidate identity, retain the version-only tag, and use `Nemlig Assistant <version> - <codename>` as the release name; verify publication tests cover success, conflict, post-deployment retry, and no mutation before journal validation.
-- [ ] 2.3 Keep the existing exact-SHA deployment journal as the binding between candidate identity and production acceptance, and verify workflow/release tests prove failed, non-release, recovery, and finalization paths allocate or publish no new codename.
+- [x] 2.1 Update the bounded release-note contract to require the exact version and codename in its heading, with legacy reads limited to historical releases; verify focused tests reject missing, excessive, malformed, or mismatched notes before deployment.
+- [x] 2.2 Make GitHub prerelease publication read the exact candidate identity, retain the version-only tag, and use `Nemlig Assistant <version> - <codename>` as the release name; verify publication tests cover success, conflict, post-deployment retry, and no mutation before journal validation.
+- [x] 2.3 Keep the existing exact-SHA deployment journal as the binding between candidate identity and production acceptance, and verify workflow/release tests prove failed, non-release, recovery, and finalization paths allocate or publish no new codename.
 
 ## 3. Model-visible deployed identity
 
-- [ ] 3.1 Read and validate the manifest version/codename pair at runtime and prefix the existing MCP instructions with the exact current release identity; verify source, interface, HTTP, and packed-package smoke tests retain the existing title, version, icon, tools, and resources and require no release-info tool call.
+- [x] 3.1 Read and validate the manifest version/codename pair at runtime and prefix the existing MCP instructions with the exact current release identity; verify source, interface, HTTP, and packed-package smoke tests retain the existing title, version, icon, tools, and resources and require no release-info tool call.
 - [ ] 3.2 Update feature/release/operations documentation with the version-codename format, first-release bootstrap, non-release behavior, and ChatGPT question example; verify documentation links, strict specs, and privacy checks pass.
 
 ## 4. Release and delivery
