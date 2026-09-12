@@ -15,6 +15,9 @@ sub-agent. New worktrees also lack installed dependencies until bootstrapped.
 
 - Make local failure reproduction the iteration loop and reserve full CI for a
   final candidate.
+- Make one coherent epic the normal branch, pull-request, version, and release
+  boundary while allowing related OpenSpec changes and checkpoint commits
+  inside it.
 - Preserve PR-only integration and turn a versioned Nemlig merge into one
   protected release candidate without a label.
 - Notify a remote user once when progress truly requires their input.
@@ -25,6 +28,23 @@ sub-agent. New worktrees also lack installed dependencies until bootstrapped.
   notification service, or changing the deployment command and recovery model.
 
 ## Decisions
+
+### Use the epic as the delivery boundary
+
+One outcome normally owns one dedicated worktree and branch, one pull request,
+one version decision near merge, and at most one production deployment. Related
+OpenSpec changes may share that epic when they have the same acceptance and
+release boundary. Checkpoint commits remain useful inside the branch, but they
+do not each require a pull request.
+
+Small pull requests remain appropriate for urgent fixes or changes whose risk
+should be reviewed and released independently. This is an exception based on
+outcome and risk, not a commit-size target.
+
+After integration, GitHub deletes the merged remote branch. A local worktree is
+removed only when it is clean, inactive, and its commits remain recoverable from
+`main`, a retained branch, or the merged pull request. Deliberately parked work
+keeps its worktree.
 
 ### Reuse the package release decision
 
@@ -77,17 +97,22 @@ This reuses ChatGPT task notifications rather than adding a messaging service.
   unchanged alerts, and disable it at completion.
 - [A narrow test misses integration failure] → require one representative smoke
   test and the full repository gate on the final candidate.
+- [Worktree cleanup removes unfinished work] → require clean, inactive, and
+  recoverable-state checks; keep any unresolved or deliberately parked worktree.
 
 ## Migration Plan
 
-1. Update repository guidance and the pre-push hook; verify their focused
-   commands without changing GitHub or production state.
-2. Add failing workflow and version-policy tests for eligible and ineligible
+1. Update OpenSpec and repository guidance with the epic delivery boundary;
+   enable merged-branch deletion and remove only proven-complete local
+   worktrees without changing production state.
+2. Update the pre-push hook and verify its focused commands without changing
+   GitHub or production state.
+3. Add failing workflow and version-policy tests for eligible and ineligible
    merge ranges, then replace the label gate.
-3. Run the focused tests, representative smoke test, strict OpenSpec validation,
+4. Run the focused tests, representative smoke test, strict OpenSpec validation,
    and one final `pnpm verify`.
-4. Open a pull request, verify the active ruleset blocks direct integration and
+5. Open a pull request, verify the active ruleset blocks direct integration and
    exact-head CI passes, then merge through GitHub.
-5. This workflow-only merge is ineligible for a Nemlig release. The next
+6. This workflow-only merge is ineligible for a Nemlig release. The next
    versioned Nemlig runtime merge exercises the new protected submission path;
    rollback restores the label-gated workflow if selection is wrong.

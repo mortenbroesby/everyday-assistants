@@ -17,7 +17,9 @@ when every applicable criterion below is satisfied with current evidence.
 - **Integration:** Commit the complete scoped change, reconcile the latest
   `origin/main` without overwriting concurrent work, integrate it into remote
   `main`, and verify the remote ref contains the exact intended commit. A
-  feature branch alone is not done.
+  feature branch alone is not done. After required evidence, remove the local
+  worktree only when it is clean, inactive, and its commits remain recoverable;
+  preserve unresolved or deliberately parked worktrees.
 - **CI:** Verify required CI for the exact integrated `main` revision succeeds.
   Do not infer success from an older run or only from local checks.
 - **Production:** When the task changes hosted behavior or configuration, deploy
