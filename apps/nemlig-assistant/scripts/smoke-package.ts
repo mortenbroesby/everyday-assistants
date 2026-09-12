@@ -14,7 +14,7 @@ const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "
 const tempRoot = await mkdtemp(path.join(tmpdir(), "nemlig-assistant-package-"));
 const sourceManifest = JSON.parse(
   await readFile(path.join(packageRoot, "package.json"), "utf8"),
-) as { version?: string };
+) as { version?: string; nemligRelease?: { codename?: string } };
 
 try {
   const { stdout } = await execute(
@@ -93,6 +93,7 @@ try {
   try {
     assert.equal(client.getServerVersion()?.name, "nemlig-assistant");
     assert.equal(client.getServerVersion()?.version, sourceManifest.version);
+    assert.equal(client.getInstructions()?.startsWith(`Current release: ${sourceManifest.version} - ${sourceManifest.nemligRelease?.codename}.`), true);
     const tools = (await client.listTools()).tools.map((tool) => tool.name).sort();
     assert.deepEqual(tools, [
       "add_approved_items",

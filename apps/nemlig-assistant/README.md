@@ -47,6 +47,7 @@ Once connected, try prompts like:
 - “Show one recommendation per ingredient and expand alternatives below 80% match confidence.”
 - “Compare the cheese in my basket with this cheaper alternative.”
 - “Add these selected products after showing me a clear summary.”
+- “Which Nemlig Assistant version and codename are running?”
 
 The “go ahead” example uses automatic mode and adds only deterministic clear
 matches. Requests without that explicit proceed intent remain read-only or
@@ -359,13 +360,17 @@ The version check compares committed revisions, not uncommitted manifest edits.
 CI checks the entire main push from its previous SHA, or the PR merge base through
 the tested SHA; missing or invalid comparison revisions fail closed.
 
-For a release-bearing epic, the coding agent also writes
+For a release-bearing epic, the release planner advances the semantic version
+and its codename together. The first codenamed release is `Alpha`, followed by
+`Bravo` through `Zulu`, then `Alpha-2` and so on. The coding agent also writes
 `release/notes/<version>.md` after the final version decision and copies its
 concise summary into the pull request. CI validates that reviewed, bounded note
 against the same exact base and head. A successful protected routine deployment
 publishes it as a GitHub prerelease tagged `nemlig-assistant-v<version>` at the
-exact deployed commit. This application release does not publish the npm
-package.
+exact deployed commit and titled `Nemlig Assistant <version> - <codename>`.
+Non-release merges allocate no codename. The deployed MCP instructions expose
+the same pair so ChatGPT can answer the question above without a tool call. This
+application release does not publish the npm package.
 
 Nemlig runtime fixes require a patch, features a minor, and breaking changes a
 major; the monotonic `-alpha.N` counter never resets. `Nemlig-Release: none` is
@@ -390,6 +395,7 @@ This README is the user-facing inventory of shipped feature sets:
 - CLI, MCP, MCP Apps, Auth0, and bounded Cloudflare hosting
 - credential-free production-readiness gate
 - private package and guarded alpha release policy
+- deployed version and codename identity
 
 Update this inventory and the relevant section above whenever a shipped feature
 set is added, removed, or materially changed. Planned work belongs in

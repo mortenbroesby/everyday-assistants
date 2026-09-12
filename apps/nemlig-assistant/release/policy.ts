@@ -2,6 +2,7 @@ import { compare, valid } from "semver";
 
 export type ReleaseKind = "none" | "increment" | "patch" | "minor" | "major";
 export type PublishKind = Exclude<ReleaseKind, "none" | "increment">;
+export { nextCodename, parseCodename, readPackageIdentity, type PackageIdentity } from "../src/release-identity.js";
 
 export interface VersionParts {
   major: number;

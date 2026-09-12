@@ -1,5 +1,6 @@
 import { execFileSync } from "node:child_process";
-import { readFileSync, writeFileSync } from "node:fs";
+import { randomUUID } from "node:crypto";
+import { readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { basename, dirname, resolve } from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
@@ -8,7 +9,10 @@ import {
   decideRelease,
   decideTransaction,
   nextVersion,
+  nextCodename,
   parseVersion,
+  readPackageIdentity,
+  type PackageIdentity,
   type RegistryState,
   type ReleaseCommit,
   type ReleaseDecision,
@@ -20,13 +24,18 @@ export interface ReleasePlan {
   apply: boolean;
   baseRef: string;
   baseVersion: string;
+  baseCodename: string | null;
   currentVersion: string;
+  currentCodename: string | null;
+  mainRef: string;
   mainVersion: string | null;
+  mainCodename: string | null;
   releaseKind: ReleaseDecision["kind"];
   reason: string;
   releaseFiles: string[];
   internalFiles: string[];
   targetVersion: string;
+  targetCodename: string | null;
   targetTag: string;
   tagState: TagState;
   registry: RegistryState;
@@ -34,6 +43,7 @@ export interface ReleasePlan {
   transactionReason: string;
   shouldRelease: boolean;
   versionValid: boolean;
+  codenameValid: boolean;
 }
 
 export interface PlanOptions {
@@ -84,6 +94,11 @@ export function readPackageVersionAtRef(repoRoot: string, ref: string): string |
   }
 }
 
+export function readPackageIdentityAtRef(repoRoot: string, ref: string): PackageIdentity | null {
+  const contents = gitMaybe(repoRoot, ["show", `${ref}:${packagePath}`]);
+  return contents ? readPackageIdentity(contents, `${ref}:${packagePath}`) : null;
+}
+
 export function readWorkingVersion(repoRoot: string): string {
   return readPackageVersion(readFileSync(resolve(repoRoot, packagePath), "utf8"), packagePath);
 }
@@ -97,18 +112,23 @@ export function readChangedFiles(repoRoot: string, baseRef: string, includeWorki
   return [...new Set(changed)];
 }
 
-function packageWithoutVersion(contents: string): string {
+function packageWithoutReleaseIdentity(contents: string): string {
   const manifest = JSON.parse(contents) as Record<string, unknown>;
   delete manifest.version;
+  if (manifest.nemligRelease && typeof manifest.nemligRelease === "object" && !Array.isArray(manifest.nemligRelease)) {
+    const metadata = manifest.nemligRelease as Record<string, unknown>;
+    delete metadata.codename;
+    if (Object.keys(metadata).length === 0) delete manifest.nemligRelease;
+  }
   return JSON.stringify(manifest);
 }
 
-/** Excludes the version-only manifest edit so release planning remains idempotent after applying its own bump. */
+/** Excludes only the version/codename edit; callers validate its expected identity separately. */
 export function readReleaseChangedFiles(repoRoot: string, baseRef: string, includeWorking = true, headRef = "HEAD"): string[] {
   const changed = readChangedFiles(repoRoot, baseRef, includeWorking, headRef);
   if (!changed.includes(packagePath)) return changed;
-  const baseManifest = packageWithoutVersion(git(repoRoot, ["show", `${baseRef}:${packagePath}`]));
-  const currentManifest = packageWithoutVersion(includeWorking
+  const baseManifest = packageWithoutReleaseIdentity(git(repoRoot, ["show", `${baseRef}:${packagePath}`]));
+  const currentManifest = packageWithoutReleaseIdentity(includeWorking
     ? readFileSync(resolve(repoRoot, packagePath), "utf8")
     : git(repoRoot, ["show", `${headRef}:${packagePath}`]));
   return baseManifest === currentManifest
@@ -149,15 +169,26 @@ function readTagState(repoRoot: string, tag: string): TagState {
 }
 
 export async function createReleasePlan(options: PlanOptions): Promise<ReleasePlan> {
-  const baseVersion = readPackageVersionAtRef(options.repoRoot, options.baseRef);
-  if (baseVersion === null) throw new Error(`Cannot read Nemlig package version at ${options.baseRef}.`);
-  const currentVersion = readWorkingVersion(options.repoRoot);
+  const base = readPackageIdentityAtRef(options.repoRoot, options.baseRef);
+  if (base === null) throw new Error(`Cannot read Nemlig package version at ${options.baseRef}.`);
+  const { version: baseVersion, codename: baseCodename } = base;
+  const current = options.mergedCandidate
+    ? readPackageIdentityAtRef(options.repoRoot, "HEAD")
+    : readPackageIdentity(readFileSync(resolve(options.repoRoot, packagePath), "utf8"), packagePath);
+  if (!current) throw new Error("Cannot read Nemlig candidate identity.");
+  const { version: currentVersion, codename: currentCodename } = current;
   const release = decideRelease({
     commits: readCommits(options.repoRoot, options.baseRef),
     changedFiles: readReleaseChangedFiles(options.repoRoot, options.baseRef, !options.mergedCandidate),
     noRelease: options.noRelease,
   });
   const versionValid = versionSatisfies(baseVersion, currentVersion, release.kind);
+  const releaseBearing = release.kind === "patch" || release.kind === "minor" || release.kind === "major";
+  const targetCodename = releaseBearing ? nextCodename(baseCodename) : baseCodename;
+  const codenameValid = currentCodename === targetCodename;
+  const codenameConsistent = options.mergedCandidate
+    ? codenameValid
+    : currentCodename === baseCodename || (releaseBearing && codenameValid && versionValid && currentVersion !== baseVersion);
   const targetVersion = release.kind === "none"
     ? currentVersion
     : options.mergedCandidate
@@ -165,27 +196,42 @@ export async function createReleasePlan(options: PlanOptions): Promise<ReleasePl
       : nextVersion(baseVersion, currentVersion, release.kind);
   const targetTag = `nemlig-assistant-v${targetVersion}`;
   const tagState = readTagState(options.repoRoot, targetTag);
-  const registry = release.kind === "patch" || release.kind === "minor" || release.kind === "major"
+  const registry = releaseBearing
     ? options.registry ?? await fetchRegistryState()
     : { status: "unavailable" as const, reason: "Registry state is not required for a non-publish decision." };
-  const mainVersion = readPackageVersionAtRef(options.repoRoot, options.mainRef ?? "origin/main");
-  const transaction = release.kind === "patch" || release.kind === "minor" || release.kind === "major"
-    ? options.mergedCandidate && !versionValid
-      ? { action: "reject" as const, reason: "Merged candidate does not satisfy its version policy.", versionAlreadyCurrent: false }
-      : decideTransaction({ candidateVersion: targetVersion, mainVersion, registry, tagState })
-    : { action: "no-op" as const, reason: "This change does not publish npm.", versionAlreadyCurrent: false };
+  const mainRef = options.mainRef ?? "origin/main";
+  const main = readPackageIdentityAtRef(options.repoRoot, mainRef);
+  const mainVersion = main?.version ?? null;
+  const mainCodename = main?.codename ?? null;
+  const staleBaseline = releaseBearing && main && (options.mergedCandidate
+    ? mainVersion !== currentVersion || mainCodename !== currentCodename
+    : mainVersion !== baseVersion || mainCodename !== baseCodename);
+  const transaction = !codenameConsistent
+    ? { action: "reject" as const, reason: `Candidate codename must match ${targetCodename ?? "the unchanged historical identity"}.`, versionAlreadyCurrent: false }
+    : staleBaseline
+      ? { action: "reject" as const, reason: "Release baseline is stale relative to main identity.", versionAlreadyCurrent: false }
+      : releaseBearing
+        ? options.mergedCandidate && !versionValid
+          ? { action: "reject" as const, reason: "Merged candidate does not satisfy its version policy.", versionAlreadyCurrent: false }
+          : decideTransaction({ candidateVersion: targetVersion, mainVersion, registry, tagState })
+        : { action: "no-op" as const, reason: "This change does not publish npm.", versionAlreadyCurrent: false };
 
   return {
     apply: options.apply ?? false,
     baseRef: options.baseRef,
     baseVersion,
+    baseCodename,
     currentVersion,
+    currentCodename,
+    mainRef,
     mainVersion,
+    mainCodename,
     releaseKind: release.kind,
     reason: release.reason,
     releaseFiles: release.releaseFiles,
     internalFiles: release.internalFiles,
     targetVersion,
+    targetCodename,
     targetTag,
     tagState,
     registry,
@@ -194,16 +240,36 @@ export async function createReleasePlan(options: PlanOptions): Promise<ReleasePl
     shouldRelease: transaction.action === "apply"
       && (release.kind === "patch" || release.kind === "minor" || release.kind === "major"),
     versionValid,
+    codenameValid,
   };
 }
 
 export function applyReleasePlan(repoRoot: string, plan: ReleasePlan): void {
   if (plan.transactionAction === "reject") throw new Error(plan.transactionReason);
-  if (plan.releaseKind === "none" || plan.targetVersion === plan.currentVersion) return;
+  if (plan.releaseKind === "none") return;
   const manifestPath = resolve(repoRoot, packagePath);
-  const manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as { version?: string };
+  const contents = readFileSync(manifestPath, "utf8");
+  const current = readPackageIdentity(contents, packagePath);
+  const base = readPackageIdentityAtRef(repoRoot, plan.baseRef);
+  const main = readPackageIdentityAtRef(repoRoot, plan.mainRef);
+  if (base?.version !== plan.baseVersion || base?.codename !== plan.baseCodename
+    || (main?.version ?? null) !== plan.mainVersion || (main?.codename ?? null) !== plan.mainCodename) {
+    throw new Error("Release plan is stale; its base or main identity changed. Replan before apply.");
+  }
+  if (current.version === plan.targetVersion && current.codename === plan.targetCodename) return;
+  if (current.version !== plan.currentVersion || current.codename !== plan.currentCodename) {
+    throw new Error("Release plan is stale; the working manifest identity changed. Replan before apply.");
+  }
+  const manifest = JSON.parse(contents) as { version: string; nemligRelease?: { codename: string } };
   manifest.version = plan.targetVersion;
-  writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+  if (plan.targetCodename !== null) manifest.nemligRelease = { ...manifest.nemligRelease, codename: plan.targetCodename };
+  const temporaryPath = `${manifestPath}.${randomUUID()}.tmp`;
+  try {
+    writeFileSync(temporaryPath, `${JSON.stringify(manifest, null, 2)}\n`, { flag: "wx" });
+    renameSync(temporaryPath, manifestPath);
+  } finally {
+    rmSync(temporaryPath, { force: true });
+  }
 }
 
 function writeGithubOutput(plan: ReleasePlan): void {
@@ -211,6 +277,7 @@ function writeGithubOutput(plan: ReleasePlan): void {
   writeFileSync(process.env.GITHUB_OUTPUT, [
     `should_release=${plan.shouldRelease ? "true" : "false"}`,
     `target_version=${plan.targetVersion}`,
+    `target_codename=${plan.targetCodename ?? ""}`,
     `target_tag=${plan.targetTag}`,
     `transaction_action=${plan.transactionAction}`,
   ].join("\n") + "\n", { flag: "a" });

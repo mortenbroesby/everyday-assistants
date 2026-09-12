@@ -5,10 +5,10 @@ import { execFileSync } from "node:child_process";
 import {
   packagePath,
   readCommits,
-  readPackageVersionAtRef,
+  readPackageIdentityAtRef,
   readReleaseChangedFiles,
 } from "./agent.js";
-import { decideRelease, versionSatisfies, type ReleaseKind } from "./policy.js";
+import { decideRelease, nextCodename, versionSatisfies, type ReleaseKind } from "./policy.js";
 
 export interface VersionEligibility {
   eligible: boolean;
@@ -30,15 +30,21 @@ export function checkVersionEligibility(repoRoot: string, baseRef: string, headR
   try {
     execFileSync("git", ["merge-base", "--is-ancestor", base, head], { cwd: repoRoot, stdio: "ignore" });
   } catch { throw new Error("Version comparison base must be an ancestor of head."); }
-  const previous = readPackageVersionAtRef(repoRoot, base);
-  if (previous === null) throw new Error(`Cannot read ${packagePath} at ${baseRef}.`);
-  const current = readPackageVersionAtRef(repoRoot, head);
-  if (current === null) throw new Error(`Cannot read ${packagePath} at ${headRef}.`);
+  const previousIdentity = readPackageIdentityAtRef(repoRoot, base);
+  if (previousIdentity === null) throw new Error(`Cannot read ${packagePath} at ${baseRef}.`);
+  const currentIdentity = readPackageIdentityAtRef(repoRoot, head);
+  if (currentIdentity === null) throw new Error(`Cannot read ${packagePath} at ${headRef}.`);
+  const previous = previousIdentity.version;
+  const current = currentIdentity.version;
   const decision = decideRelease({
     commits: readCommits(repoRoot, base, head),
     changedFiles: readReleaseChangedFiles(repoRoot, base, false, head),
   });
+  const expectedCodename = decision.kind === "patch" || decision.kind === "minor" || decision.kind === "major"
+    ? nextCodename(previousIdentity.codename)
+    : previousIdentity.codename;
   if (decision.kind === "none") {
+    if (currentIdentity.codename !== expectedCodename) throw new Error("Non-release changes cannot change the release codename.");
     return { eligible: false, kind: decision.kind, previous, current, reason: decision.reason };
   }
   if (!versionSatisfies(previous, current, decision.kind)) {
@@ -47,6 +53,9 @@ export function checkVersionEligibility(repoRoot: string, baseRef: string, headR
       `Previous: ${previous}`,
       `Current: ${current}`,
     ].join("\n"));
+  }
+  if (currentIdentity.codename !== expectedCodename) {
+    throw new Error(`Nemlig candidate codename must be ${expectedCodename ?? "unchanged"}; current: ${currentIdentity.codename ?? "missing"}.`);
   }
   return {
     eligible: decision.releaseFiles.length > 0

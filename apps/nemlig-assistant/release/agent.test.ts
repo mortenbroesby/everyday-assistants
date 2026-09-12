@@ -11,10 +11,10 @@ function git(repo: string, ...args: string[]): string {
   return execFileSync("git", args, { cwd: repo, encoding: "utf8" }).trim();
 }
 
-async function manifest(repo: string, version: string): Promise<void> {
+async function manifest(repo: string, version: string, codename?: string): Promise<void> {
   await writeFile(
     path.join(repo, packagePath),
-    `${JSON.stringify({ name: "nemlig-assistant", version }, null, 2)}\n`,
+    `${JSON.stringify({ name: "nemlig-assistant", version, ...(codename ? { nemligRelease: { codename } } : {}) }, null, 2)}\n`,
   );
 }
 
@@ -82,9 +82,16 @@ test("release plan is read-only and apply changes only the Nemlig manifest", asy
     });
     assert.equal(plan.releaseKind, "patch");
     assert.equal(plan.targetVersion, "0.1.1-alpha.0");
+    assert.equal(plan.currentCodename, null);
+    assert.equal(plan.targetCodename, "Alpha");
     assert.equal(git(repo, "status", "--short"), beforePlan);
     applyReleasePlan(repo, plan);
     assert.equal(JSON.parse(await readFile(path.join(repo, packagePath), "utf8")).version, "0.1.1-alpha.0");
+    assert.equal(JSON.parse(await readFile(path.join(repo, packagePath), "utf8")).nemligRelease.codename, "Alpha");
+    applyReleasePlan(repo, plan);
+    const applied = await createReleasePlan({ repoRoot: repo, baseRef: base, mainRef: base, registry: { status: "unpublished" } });
+    assert.equal(applied.targetCodename, "Alpha");
+    assert.equal(applied.codenameValid, true);
     assert.deepEqual(git(repo, "status", "--short").split("\n").map((line) => line.trim()).sort(), [
       "M apps/nemlig-assistant/package.json",
       "M apps/nemlig-assistant/src/client.ts",
@@ -111,6 +118,7 @@ test("an applied internal-only increment remains an internal no-op plan", async 
     assert.equal(applied.targetVersion, "0.1.0-alpha.0");
     assert.equal(applied.versionValid, true);
     assert.equal(applied.shouldRelease, false);
+    assert.equal(applied.targetCodename, null);
   } finally {
     await rm(repo, { recursive: true, force: true });
   }
@@ -164,6 +172,7 @@ test("machine-readable version eligibility releases only versioned runtime chang
     await writeFile(path.join(repo, packagePath), `${JSON.stringify({
       name: "nemlig-assistant",
       version: "0.1.1-alpha.1",
+      nemligRelease: { codename: "Alpha" },
       dependencies: { "example-dependency": "1.0.0" },
     }, null, 2)}\n`);
     git(repo, "add", ".");
@@ -177,7 +186,7 @@ test("machine-readable version eligibility releases only versioned runtime chang
     });
 
     await writeFile(path.join(repo, "apps/nemlig-assistant/src/client.ts"), "export const value = 2;\n");
-    await manifest(repo, "0.1.1-alpha.2");
+    await manifest(repo, "0.1.1-alpha.2", "Alpha");
     git(repo, "add", ".");
     git(repo, "commit", "-qm", "fix: runtime");
     assert.deepEqual(checkVersionEligibility(repo, base), {
@@ -196,7 +205,7 @@ test("version gate uses explicit immutable revisions and rejects unavailable com
   const { repo, base } = await fixture();
   try {
     await writeFile(path.join(repo, "apps/nemlig-assistant/src/client.ts"), "export const value = 2;\n");
-    await manifest(repo, "0.1.1-alpha.0");
+    await manifest(repo, "0.1.1-alpha.0", "Alpha");
     git(repo, "add", ".");
     git(repo, "commit", "-qm", "fix: first runtime change");
     const head = git(repo, "rev-parse", "HEAD");
@@ -224,7 +233,7 @@ test("version gate covers all commits and patch minor major or explicit no-relea
       await writeFile(path.join(repo, "apps/nemlig-assistant/src/client.ts"), "export const value = 2;\n");
       git(repo, "add", "."); git(repo, "commit", "-qm", message!);
       assert.throws(() => checkVersionBump(repo, base, "HEAD"), /require a forward/);
-      await manifest(repo, version!);
+      await manifest(repo, version!, "Alpha");
       git(repo, "add", "."); git(repo, "commit", "-qm", "chore: record release metadata");
       assert.match(checkVersionBump(repo, base, "HEAD"), /passed/);
     } finally { await rm(repo, { recursive: true, force: true }); }
@@ -251,4 +260,81 @@ test("merged documentation candidates are no-ops without registry access", async
   } finally {
     await rm(repo, { recursive: true, force: true });
   }
+});
+
+test("release identity gate rejects missing or skipped codenames and permits only the expected successor", async () => {
+  const { repo } = await fixture();
+  try {
+    await manifest(repo, "1.0.0-alpha.1", "Zulu");
+    git(repo, "add", "."); git(repo, "commit", "-qm", "chore: prior release");
+    const base = git(repo, "rev-parse", "HEAD");
+    await writeFile(path.join(repo, "apps/nemlig-assistant/src/client.ts"), "export const value = 2;\n");
+    for (const codename of [undefined, "Zulu", "Bravo-2", "Alpha-2"]) {
+      await manifest(repo, "1.0.1-alpha.2", codename);
+      git(repo, "add", "."); git(repo, "commit", "-qm", "fix: candidate identity");
+      if (codename === "Alpha-2") assert.equal(checkVersionEligibility(repo, base).eligible, true);
+      else assert.throws(() => checkVersionEligibility(repo, base), /codename/i);
+      const plan = await createReleasePlan({ repoRoot: repo, baseRef: base, mainRef: "HEAD", mergedCandidate: true, registry: { status: "unpublished" } });
+      assert.equal(plan.transactionAction, codename === "Alpha-2" ? "apply" : "reject");
+    }
+  } finally { await rm(repo, { recursive: true, force: true }); }
+});
+
+test("codename-only and no-release overrides cannot allocate a release identity", async () => {
+  for (const override of [false, true]) {
+    const { repo, base } = await fixture();
+    try {
+      await manifest(repo, "0.1.0", "Alpha");
+      git(repo, "add", "."); git(repo, "commit", "-qm", `chore: metadata${override ? "\n\nNemlig-Release: none" : ""}`);
+      assert.throws(() => checkVersionEligibility(repo, base), /codename/i);
+      const plan = await createReleasePlan({ repoRoot: repo, baseRef: base, mainRef: base, noRelease: override });
+      assert.equal(plan.transactionAction, "reject");
+      assert.throws(() => applyReleasePlan(repo, plan), /codename/i);
+    } finally { await rm(repo, { recursive: true, force: true }); }
+  }
+});
+
+test("apply rejects changed manifests and a concurrent release on main", async () => {
+  const { repo, base } = await fixture();
+  try {
+    git(repo, "branch", "release-main", base);
+    await writeFile(path.join(repo, "apps/nemlig-assistant/src/client.ts"), "export const value = 2;\n");
+    const plan = await createReleasePlan({ repoRoot: repo, baseRef: base, mainRef: "release-main", registry: { status: "unpublished" } });
+    await manifest(repo, "0.1.2-alpha.3", "Bravo");
+    const staleManifest = await readFile(path.join(repo, packagePath), "utf8");
+    assert.throws(() => applyReleasePlan(repo, plan), /stale/i);
+    assert.equal(await readFile(path.join(repo, packagePath), "utf8"), staleManifest);
+    git(repo, "add", "."); git(repo, "commit", "-qm", "fix: concurrent release");
+    git(repo, "branch", "-f", "release-main", "HEAD");
+    await manifest(repo, "0.1.0");
+    assert.throws(() => applyReleasePlan(repo, plan), /stale/i);
+    const replanned = await createReleasePlan({ repoRoot: repo, baseRef: base, mainRef: "release-main", registry: { status: "unpublished" } });
+    assert.equal(replanned.transactionAction, "reject");
+  } finally { await rm(repo, { recursive: true, force: true }); }
+});
+
+test("internal increments retain existing codenames and other manifest metadata remains release-bearing", async () => {
+  const { repo } = await fixture();
+  try {
+    await manifest(repo, "1.0.0-alpha.1", "Alpha");
+    git(repo, "add", "."); git(repo, "commit", "-qm", "chore: prior release");
+    const base = git(repo, "rev-parse", "HEAD");
+    await writeFile(path.join(repo, "apps/nemlig-assistant/src/client.test.ts"), "// fixture\n");
+    git(repo, "add", ".");
+    const plan = await createReleasePlan({ repoRoot: repo, baseRef: base, mainRef: base });
+    assert.equal(plan.releaseKind, "increment");
+    assert.equal(plan.targetCodename, "Alpha");
+    applyReleasePlan(repo, plan);
+    git(repo, "add", "."); git(repo, "commit", "-qm", "test: characterization");
+    assert.equal(checkVersionEligibility(repo, base).eligible, false);
+
+    const contents = JSON.parse(await readFile(path.join(repo, packagePath), "utf8"));
+    contents.nemligRelease.extra = true;
+    await writeFile(path.join(repo, packagePath), JSON.stringify(contents));
+    const changed = await createReleasePlan({ repoRoot: repo, baseRef: base, mainRef: base, registry: { status: "unpublished" } });
+    assert.equal(changed.releaseKind, "patch");
+    assert.equal(changed.targetCodename, "Bravo");
+    applyReleasePlan(repo, changed);
+    assert.deepEqual(JSON.parse(await readFile(path.join(repo, packagePath), "utf8")).nemligRelease, { codename: "Bravo", extra: true });
+  } finally { await rm(repo, { recursive: true, force: true }); }
 });

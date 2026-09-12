@@ -1,13 +1,16 @@
 import { readFileSync } from "node:fs";
 import { NemligClient, NemligError, type ShoppingClient } from "./client.js";
 import { getCredentials, type Credentials } from "./config.js";
+import { readPackageIdentity } from "./release-identity.js";
 
 let sharedClient: NemligClient | undefined;
 const loginInFlight = new WeakMap<object, Promise<void>>();
-const packageVersion = (JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")) as { version?: unknown }).version;
-if (typeof packageVersion !== "string") throw new Error("Nemlig package version is missing.");
+const packageIdentity = readPackageIdentity(readFileSync(new URL("../package.json", import.meta.url), "utf8"), "Nemlig package manifest");
+if (packageIdentity.codename === null) throw new Error("Nemlig package codename is missing.");
 
-export const NEMLIG_VERSION = packageVersion;
+export const NEMLIG_VERSION = packageIdentity.version;
+export const NEMLIG_CODENAME = packageIdentity.codename;
+export const NEMLIG_RELEASE_IDENTITY = `${NEMLIG_VERSION} - ${NEMLIG_CODENAME}`;
 
 /** Lazily creates the process-local provider client without logging in or prompting. */
 export const getClient = (): NemligClient => (sharedClient ??= new NemligClient());

@@ -16,6 +16,7 @@ import { productionToolInventory } from "./production-acceptance.js";
 import { BasketProposalService } from "./proposals.js";
 import { PlanningDeadlineError } from "./product-discovery.js";
 import { resolveShoppingPlan } from "./plans.js";
+import { NEMLIG_RELEASE_IDENTITY } from "./runtime.js";
 
 const basket: Basket = {
   items: [{ name: "Milk", quantity: 1, total: 12.5 }],
@@ -808,6 +809,7 @@ test("every MCP tool has complete schemas, accurate annotations, and safe server
     assert.equal(byName.get("make_approved_item_swap")?.annotations?.destructiveHint, true);
     assert.equal(byName.get("empty_approved_basket")?.annotations?.destructiveHint, true);
     assert.match(mcp.getInstructions() ?? "", /exact review never authorizes mutation/);
+    assert.equal(mcp.getInstructions()?.startsWith(`Current release: ${NEMLIG_RELEASE_IDENTITY}.`), true);
     assert.match(mcp.getInstructions() ?? "", /do not ask for redundant approval/);
     assert.match(mcp.getInstructions() ?? "", /pass only the plan's selected additions.*never supplement them with unresolved candidates/);
     assert.match(mcp.getInstructions() ?? "", /never unresolved lines, removals, replacements, clearing, checkout, payment, ordering, or delivery slots/);

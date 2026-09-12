@@ -27,10 +27,10 @@ async function fixture(): Promise<{ repo: string; base: string }> {
 
 async function releaseChange(repo: string, version = "0.1.1-alpha.0"): Promise<void> {
   await writeFile(path.join(repo, "apps/nemlig-assistant/src/client.ts"), "export const value = 2;\n");
-  await writeFile(path.join(repo, packagePath), `{"name":"nemlig-assistant","version":"${version}"}\n`);
+  await writeFile(path.join(repo, packagePath), `{"name":"nemlig-assistant","version":"${version}","nemligRelease":{"codename":"Alpha"}}\n`);
 }
 
-async function note(repo: string, version: string, body = `# Nemlig Assistant ${version}\n\n- Fixes the deterministic release gate.\n`): Promise<void> {
+async function note(repo: string, version: string, body = `# Nemlig Assistant ${version} - Alpha\n\n- Fixes the deterministic release gate.\n`): Promise<void> {
   const notePath = path.join(repo, "apps/nemlig-assistant/release/notes", `${version}.md`);
   await mkdir(path.dirname(notePath), { recursive: true });
   await writeFile(notePath, body);
@@ -49,8 +49,9 @@ test("release notes are required only for exact-range release-bearing candidates
     assert.deepEqual(validateReleaseNoteCandidate({ repoRoot: repo, baseRef: base }), {
       eligible: true,
       version: "0.1.1-alpha.0",
+      codename: "Alpha",
       path: "apps/nemlig-assistant/release/notes/0.1.1-alpha.0.md",
-      body: "# Nemlig Assistant 0.1.1-alpha.0\n\n- Fixes the deterministic release gate.\n",
+      body: "# Nemlig Assistant 0.1.1-alpha.0 - Alpha\n\n- Fixes the deterministic release gate.\n",
     });
   } finally { await rm(repo, { recursive: true, force: true }); }
 });
@@ -67,7 +68,7 @@ test("release notes fail closed for missing, malformed, wrong-version, or non-di
       }
       await releaseChange(repo);
       if (scenario === "malformed") await note(repo, "0.1.1-alpha.0", "A prose note without an identity heading.\n");
-      if (scenario === "wrong-version") await note(repo, "0.1.1-alpha.0", "# Nemlig Assistant 0.1.1-alpha.9\n\n- Wrong version.\n");
+      if (scenario === "wrong-version") await note(repo, "0.1.1-alpha.0", "# Nemlig Assistant 0.1.1-alpha.9 - Alpha\n\n- Wrong version.\n");
       git(repo, "add", "."); git(repo, "commit", "-qm", "fix: runtime");
       assert.throws(() => validateReleaseNoteCandidate({ repoRoot: repo, baseRef: base }), /release note|Markdown|candidate diff/i, scenario);
     } finally { await rm(repo, { recursive: true, force: true }); }
@@ -87,8 +88,24 @@ test("release notes reject a second version note and oversized Markdown", async 
   const oversized = await fixture();
   try {
     await releaseChange(oversized.repo);
-    await note(oversized.repo, "0.1.1-alpha.0", `# Nemlig Assistant 0.1.1-alpha.0\n\n${"x".repeat(8 * 1024)}\n`);
+    await note(oversized.repo, "0.1.1-alpha.0", `# Nemlig Assistant 0.1.1-alpha.0 - Alpha\n\n${"x".repeat(8 * 1024)}\n`);
     git(oversized.repo, "add", "."); git(oversized.repo, "commit", "-qm", "fix: runtime");
     assert.throws(() => validateReleaseNoteCandidate({ repoRoot: oversized.repo, baseRef: oversized.base }), /too large/i);
   } finally { await rm(oversized.repo, { recursive: true, force: true }); }
+});
+
+test("release notes reject missing or mismatched codenames", async () => {
+  for (const heading of [
+    "# Nemlig Assistant 0.1.1-alpha.0",
+    "# Nemlig Assistant 0.1.1-alpha.0 - Bravo",
+    "# Nemlig Assistant 0.1.1-alpha.0 - alpha",
+  ]) {
+    const { repo, base } = await fixture();
+    try {
+      await releaseChange(repo);
+      await note(repo, "0.1.1-alpha.0", `${heading}\n\n- Wrong codename.\n`);
+      git(repo, "add", "."); git(repo, "commit", "-qm", "fix: runtime");
+      assert.throws(() => validateReleaseNoteCandidate({ repoRoot: repo, baseRef: base }), /codename|release note|Markdown/i);
+    } finally { await rm(repo, { recursive: true, force: true }); }
+  }
 });

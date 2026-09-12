@@ -178,8 +178,10 @@ Routine releases use the **Nemlig production** workflow with the exact green
 `main` SHA. After exact-main CI passes, the workflow checks out the merged
 commit and its merge base, then reuses the package-scoped Nemlig version policy.
 Only a merge that changes the Nemlig runtime and carries the required forward
-package version and committed `apps/nemlig-assistant/release/notes/<version>.md`
-becomes release-bearing. The coding agent writes that reviewed epic summary and
+package version, deterministic `nemligRelease.codename`, and committed
+`apps/nemlig-assistant/release/notes/<version>.md` becomes release-bearing. The
+first codenamed release uses `Alpha`; later releases advance through `Zulu`, then
+continue with `Alpha-2`. The coding agent writes that reviewed epic summary and
 copies it into the pull request; deployment CI does not generate prose from
 commits or call an LLM. Documentation, specifications, agent
 instructions, workflow changes, other assistants, malformed ranges, and stale
@@ -204,8 +206,12 @@ decision.
    human checkpoint. A successful routine run saves its artifact and removes its exact lease
    automatically. A downstream job validates that deployment journal, then
    publishes or confirms the exact `nemlig-assistant-v<version>` GitHub
-   prerelease. Verify its tag resolves to the deployed SHA and its body matches
-   the committed note. The historical cutover `acceptedRevision` is not the
+   prerelease titled `Nemlig Assistant <version> - <codename>`. Verify its tag
+   resolves to the deployed SHA and its body matches the committed note. Ask the
+   connected app “Which version and codename are running?” to confirm that its
+   model-visible initialization instructions report the same pair. Non-release
+   merges and failed deployments publish no codename. A publication retry reuses
+   the candidate pair. The historical cutover `acceptedRevision` is not the
    deployed revision; the journal's `commit` is authoritative.
 
 Manual dispatch remains available for recovery or an intentionally selected

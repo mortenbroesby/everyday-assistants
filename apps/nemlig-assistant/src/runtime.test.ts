@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 import { NemligError } from "./client.js";
 import { ensureLoggedIn as ensureLoggedInFromCli } from "./cli.js";
-import { ensureLoggedIn, getClient, withAuthenticatedReadRetry, NEMLIG_VERSION } from "./runtime.js";
+import { ensureLoggedIn, getClient, withAuthenticatedReadRetry, NEMLIG_CODENAME, NEMLIG_RELEASE_IDENTITY, NEMLIG_VERSION } from "./runtime.js";
 
 test("ensureLoggedIn uses injected credentials and does not prompt", async () => {
   let loggedIn = false;
@@ -45,8 +45,10 @@ test("ensureLoggedIn preserves login failures and runtime keeps package identity
     (error) => error === failure,
   );
   assert.equal(getClient(), getClient());
-  const manifest = JSON.parse(await readFile(new URL("../package.json", import.meta.url), "utf8")) as { version?: unknown };
+  const manifest = JSON.parse(await readFile(new URL("../package.json", import.meta.url), "utf8")) as { version?: unknown; nemligRelease?: { codename?: unknown } };
   assert.equal(NEMLIG_VERSION, manifest.version);
+  assert.equal(NEMLIG_CODENAME, manifest.nemligRelease?.codename);
+  assert.equal(NEMLIG_RELEASE_IDENTITY, `${manifest.version} - ${manifest.nemligRelease?.codename}`);
 });
 
 test("read operations authenticate before the task and retry once after a later expired session", async () => {

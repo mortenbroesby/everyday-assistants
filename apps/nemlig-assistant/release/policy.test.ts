@@ -5,11 +5,38 @@ import {
   decideRelease,
   decideTransaction,
   nextVersion,
+  nextCodename,
+  parseCodename,
+  readPackageIdentity,
   parseBaselineVersion,
   parseVersion,
   validateRetry,
   versionSatisfies,
 } from "./policy.js";
+
+test("codenames bootstrap, advance strictly, and roll over without a numeric ceiling", () => {
+  assert.equal(nextCodename(null), "Alpha");
+  const words = "Alpha Bravo Charlie Delta Echo Foxtrot Golf Hotel India Juliett Kilo Lima Mike November Oscar Papa Quebec Romeo Sierra Tango Uniform Victor Whiskey Xray Yankee Zulu".split(" ");
+  for (const [index, word] of words.entries()) {
+    assert.deepEqual(parseCodename(word), { word, cycle: 1n });
+    assert.equal(nextCodename(word), words[index + 1] ?? "Alpha-2");
+  }
+  assert.equal(nextCodename("Alpha-2"), "Bravo-2");
+  assert.equal(nextCodename("Zulu-99999999999999999999"), "Alpha-100000000000000000000");
+  for (const invalid of ["", "alpha", "Alfa", "Juliet", "X-ray", "Alpha-1", "Alpha-0", "Alpha-02", "Bravo-2.0", "Bravo-2\n", " Bravo", "Zulu-"]) {
+    assert.throws(() => parseCodename(invalid), /codename/i, invalid);
+  }
+});
+
+test("manifest identities permit absent historical metadata but reject malformed candidate metadata", () => {
+  const version = "1.2.3-alpha.4";
+  assert.deepEqual(readPackageIdentity(JSON.stringify({ version }), "fixture"), { version, codename: null });
+  assert.deepEqual(readPackageIdentity(JSON.stringify({ version, nemligRelease: { codename: "Alpha" } }), "fixture"), { version, codename: "Alpha" });
+  for (const nemligRelease of [null, [], {}, { codename: null }, { codename: 1 }, { codename: "alpha" }]) {
+    assert.throws(() => readPackageIdentity(JSON.stringify({ version, nemligRelease }), "fixture"), /codename/i);
+  }
+  assert.throws(() => readPackageIdentity('{"version":42}', "fixture"), /version/i);
+});
 
 test("strict versions and the legacy bootstrap preserve a monotonic alpha increment", () => {
   assert.deepEqual(parseVersion("1.2.3-alpha.4"), { major: 1, minor: 2, patch: 3, increment: 4 });
