@@ -43,6 +43,7 @@ async function main() {
       "exec",
       "tsx",
       "--test",
+      "--test-concurrency=2",
       "--experimental-test-coverage",
       "--test-reporter=tap",
       "--test-coverage-include=src/**/*.ts",
