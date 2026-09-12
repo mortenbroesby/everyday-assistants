@@ -32,7 +32,7 @@ async function releaseChange(repo: string, version = "0.1.1"): Promise<void> {
   await writeFile(path.join(repo, "apps/nemlig-assistant/release/codenames.csv"), `version,codename\n${version},Callsign\n`);
 }
 
-async function note(repo: string, version: string, body = `# Nemlig Assistant ${version} - Callsign\n\n- Fixes the deterministic release gate.\n`): Promise<void> {
+async function note(repo: string, version: string, body = `# Nemlig Assistant ${version} - Callsign\n\n## In plain language\n\nThis release makes publishing safer and easier to recognize.\n\n## Changes\n\n- Fixes the deterministic release gate.\n`): Promise<void> {
   const notePath = path.join(repo, "apps/nemlig-assistant/release/notes", `${version}.md`);
   await mkdir(path.dirname(notePath), { recursive: true });
   await writeFile(notePath, body);
@@ -53,7 +53,7 @@ test("release notes are required only for exact-range release-bearing candidates
       version: "0.1.1",
       codename: "Callsign",
       path: "apps/nemlig-assistant/release/notes/0.1.1.md",
-      body: "# Nemlig Assistant 0.1.1 - Callsign\n\n- Fixes the deterministic release gate.\n",
+      body: "# Nemlig Assistant 0.1.1 - Callsign\n\n## In plain language\n\nThis release makes publishing safer and easier to recognize.\n\n## Changes\n\n- Fixes the deterministic release gate.\n",
     });
   } finally { await rm(repo, { recursive: true, force: true }); }
 });
@@ -108,6 +108,22 @@ test("release notes reject missing or mismatched codenames", async () => {
       await note(repo, "0.1.1", `${heading}\n\n- Wrong codename.\n`);
       git(repo, "add", "."); git(repo, "commit", "-qm", "fix: runtime");
       assert.throws(() => validateReleaseNoteCandidate({ repoRoot: repo, baseRef: base }), /codename|release note|Markdown/i);
+    } finally { await rm(repo, { recursive: true, force: true }); }
+  }
+});
+
+test("codenamed release notes require a short plain-language opening", async () => {
+  for (const body of [
+    "# Nemlig Assistant 0.1.1 - Callsign\n\n## Changes\n\n- Technical changes only.\n",
+    "# Nemlig Assistant 0.1.1 - Callsign\n\n## In plain language\n\n## Changes\n\n- Missing explanation.\n",
+    `# Nemlig Assistant 0.1.1 - Callsign\n\n## In plain language\n\n${"x".repeat(501)}\n\n## Changes\n\n- Excessive explanation.\n`,
+  ]) {
+    const { repo, base } = await fixture();
+    try {
+      await releaseChange(repo);
+      await note(repo, "0.1.1", body);
+      git(repo, "add", "."); git(repo, "commit", "-qm", "fix: runtime");
+      assert.throws(() => validateReleaseNoteCandidate({ repoRoot: repo, baseRef: base }), /plain language/i);
     } finally { await rm(repo, { recursive: true, force: true }); }
   }
 });

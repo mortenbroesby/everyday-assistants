@@ -93,6 +93,20 @@ Changing the tag was rejected because the version already provides a unique,
 stable automation key. Adding the codename only to release prose was rejected
 because it would not be validated against the deployed artifact.
 
+### Lead with plain language and keep one shared glossary
+
+Every new codenamed release note starts with `## In plain language` followed by
+a short explanation for a non-technical reader. More detailed change bullets
+may follow. Release documentation links to one shared glossary whose table
+combines the technical term or acronym, a plain-language alias, and a concise
+meaning.
+
+This makes the primary release text understandable without requiring a lookup,
+while the glossary gives optional depth without expanding the codename CSV,
+package manifest, runtime metadata, or release CLI. Per-release glossary files
+and machine-enforced vocabulary lists were rejected as duplicate state and an
+unreliable attempt to classify every difficult word.
+
 ### Put the deployed identity in MCP instructions
 
 Runtime exports the validated version/codename pair. `createMcpServer` prefixes
@@ -121,6 +135,9 @@ unnecessary surface expansion and compatibility churn.
 - [A codename is subjective] -> Keep it explicit in the reviewed candidate and
   use the release theme as the naming rule; CI validates shape, global ledger
   uniqueness, and consistency.
+- [Plain-language quality cannot be fully linted] -> Enforce the section and
+  review its wording in the pull request; use the shared glossary for terms that
+  still need explanation.
 
 ## Migration Plan
 
@@ -128,12 +145,13 @@ unnecessary surface expansion and compatibility churn.
    plain SemVer, and characterize release planning, apply, candidate validation,
    and retry behavior from the historical baseline without a codename.
 2. Apply the first candidate codename (`Callsign`) together with this pull
-   request's normal version decision and matching release note.
+   request's normal version decision and matching plain-language release note.
 3. Expose and verify the pair in runtime/MCP instructions and GitHub publication
    while retaining existing tags and journal schema.
-4. Run repository, package, privacy, OpenSpec, and credential-free Cloudflare
+4. Add the shared release glossary and link it from the release guidance.
+5. Run repository, package, privacy, OpenSpec, and credential-free Cloudflare
    gates. Merge through the protected pull request path only after review.
-5. If separately authorized by the existing merge-time release contract, deploy
+6. If separately authorized by the existing merge-time release contract, deploy
    the exact merge and verify production reports the new pair before publication
    readback. Rollback restores the prior artifact, which continues to report its
    prior version without a codename; do not rewrite historical releases.

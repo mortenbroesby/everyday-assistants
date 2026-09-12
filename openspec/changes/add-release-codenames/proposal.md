@@ -16,6 +16,8 @@ one concise, recognizable answer without weakening the existing release gate.
 - Treat the version and codename as one immutable release identity across the
   package manifest, codename ledger, release note, deployed MCP
   metadata/instructions, deployment evidence, and GitHub prerelease.
+- Require every release note to lead with a short non-technical explanation and
+  link to one shared glossary for release aliases, acronyms, and difficult terms.
 - Make the deployed MCP instructions state the exact version and codename so
   ChatGPT can answer a direct release-identification question without adding a
   new tool.
@@ -52,6 +54,9 @@ one concise, recognizable answer without weakening the existing release gate.
 - A successful exact-head deployment publishes one GitHub prerelease whose tag
   remains `nemlig-assistant-v<version>` and whose human-facing title and note
   contain the same codename.
+- Every codenamed release note starts with an `In plain language` section that
+  explains the release outcome without requiring technical knowledge, and the
+  release documentation links to the shared glossary.
 - Failed deployment and non-release merges publish no new codename; an
   idempotent publication retry retains the original version and codename.
 - Release-kind semantics, release-note bounds, exact-main verification,
@@ -87,7 +92,7 @@ None.
 
 The implementation is expected to touch the Nemlig package manifest and runtime
 metadata, release planning/validation/publication scripts and tests, bounded
-release-note format, MCP presentation tests, production workflow evidence, and
-the relevant release/operations documentation. It adds no runtime service,
+release-note format, MCP presentation tests, production workflow evidence, the
+shared release glossary, and the relevant release/operations documentation. It adds no runtime service,
 network request, storage, secret, provider dependency, polling, or material
 operating cost.

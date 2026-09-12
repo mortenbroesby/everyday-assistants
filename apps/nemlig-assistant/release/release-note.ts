@@ -9,6 +9,7 @@ import { parseCodename, readPackageIdentity } from "../src/release-identity.js";
 
 export const releaseNotesDirectory = "apps/nemlig-assistant/release/notes";
 export const maximumReleaseNoteBytes = 8 * 1024;
+export const maximumPlainLanguageBytes = 500;
 
 export interface ReleaseNote {
   version: string;
@@ -49,6 +50,17 @@ export function validateReleaseNote(version: string, codename: string | null, bo
   const lines = body.replace(/^\uFEFF/u, "").split(/\r?\n/u);
   if (lines[0] !== heading || !body.slice(heading.length).trim()) {
     throw new Error(`Release note ${notePath} must start with "${heading}" and contain Markdown content.`);
+  }
+  if (codename !== null) {
+    if (lines[1] !== "" || lines[2] !== "## In plain language") {
+      throw new Error(`Release note ${notePath} must begin with an "In plain language" section.`);
+    }
+    const remaining = lines.slice(3);
+    const nextSection = remaining.findIndex((line) => line.startsWith("## "));
+    const summary = (nextSection === -1 ? remaining : remaining.slice(0, nextSection)).join("\n").trim();
+    if (!summary || Buffer.byteLength(summary, "utf8") > maximumPlainLanguageBytes) {
+      throw new Error(`Release note ${notePath} must contain a plain language explanation of at most ${maximumPlainLanguageBytes} bytes.`);
+    }
   }
   return { version, codename, path: notePath, body };
 }

@@ -7,7 +7,7 @@ const version = "4.5.5";
 const codename = "Callsign";
 const tag = `nemlig-assistant-v${version}`;
 const name = `Nemlig Assistant ${version} - ${codename}`;
-const note = `# ${name}\n\n- Makes deployment release evidence readable.\n`;
+const note = `# ${name}\n\n## In plain language\n\nThis release makes deployment records easier to understand.\n\n## Changes\n\n- Makes deployment release evidence readable.\n`;
 
 function journal(overrides: Record<string, unknown> = {}): string {
   return JSON.stringify({
@@ -122,6 +122,7 @@ test("publisher validates codename evidence before any GitHub mutation", async (
     { codename: "Bravo" },
     { codename: "alpha" },
     { note: `# Nemlig Assistant ${version}\n\n- Missing codename.\n` },
+    { note: `# ${name}\n\n## Changes\n\n- Missing plain language.\n` },
   ]) {
     const client = new FakeGitHub();
     await assert.rejects(() => publishGitHubPrerelease({ ...input(client), ...changes }), /codename|release note|Markdown/i);

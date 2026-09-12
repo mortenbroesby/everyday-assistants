@@ -15,6 +15,11 @@ package versions SHALL use strict `major.minor.patch` SemVer with no prerelease
 suffix or independent increment counter. Changes that are not release-bearing
 SHALL change neither the version nor the codename.
 
+Each new codenamed release note SHALL begin with an `In plain language` section
+that describes the user-visible outcome for a non-technical reader. Release
+guidance SHALL link to one shared glossary that maps release acronyms and
+difficult terms to plain-language aliases and concise explanations.
+
 #### Scenario: Plan and apply a release identity
 
 - **WHEN** a maintainer plans and then applies an eligible release-bearing change
@@ -39,3 +44,8 @@ SHALL change neither the version nor the codename.
 
 - **WHEN** publication of an already deployed candidate is retried
 - **THEN** the retry reuses the candidate's recorded version and codename without advancing either value
+
+#### Scenario: A non-technical reader opens a release
+
+- **WHEN** a reader opens a codenamed release note without prior knowledge of the codebase
+- **THEN** the first content section explains the release in plain language and the release guidance provides one glossary lookup for unfamiliar aliases, acronyms, and terms

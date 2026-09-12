@@ -370,8 +370,11 @@ the release-identity feature. The planner advances the semantic version and
 records the reviewed codename in `release/codenames.csv`, whose validation
 rejects reused names case-insensitively. The coding agent also writes
 `release/notes/<version>.md` after the final version decision and copies its
-concise summary into the pull request. CI validates that reviewed, bounded note
-against the same exact base and head. A successful protected routine deployment
+concise summary into the pull request. Every new note starts with an
+`In plain language` section for non-technical readers; unfamiliar aliases,
+acronyms, and release terms belong in the shared
+[release glossary](../../docs/release-glossary.md). CI validates that reviewed,
+bounded note against the same exact base and head. A successful protected routine deployment
 publishes it as a GitHub prerelease tagged `nemlig-assistant-v<version>` at the
 exact deployed commit and titled `Nemlig Assistant <version> - <codename>`.
 Non-release merges allocate no codename. The deployed MCP instructions expose

@@ -183,7 +183,9 @@ package version, reviewed `nemligRelease.codename`, matching unique entry in
 `apps/nemlig-assistant/release/notes/<version>.md` becomes release-bearing. The
 maintainer chooses a short, single-word codename matching the release theme;
 validation rejects reuse case-insensitively. The coding agent writes that
-reviewed epic summary and copies it into the pull request; deployment CI does
+reviewed epic summary, beginning with an `In plain language` section, and copies
+it into the pull request. Use the [release glossary](release-glossary.md) for
+aliases, acronyms, and difficult release terms; deployment CI does
 not generate prose from commits or call an LLM. Documentation, specifications, agent
 instructions, workflow changes, other assistants, malformed ranges, and stale
 or ineligible versions stop before production credentials or provider access.
