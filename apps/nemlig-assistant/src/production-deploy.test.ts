@@ -254,7 +254,7 @@ async function fixture(options: {
       if (path.endsWith("environments/nemlig-production")) return JSON.stringify({
         can_admins_bypass: false,
         deployment_branch_policy: { protected_branches: false, custom_branch_policies: true },
-        protection_rules: [{ type: "required_reviewers", prevent_self_review: false, reviewers: [{ type: "User", reviewer: { login: "mortenbroesby" } }] }, { type: "branch_policy" }],
+        protection_rules: [{ type: "branch_policy" }],
       });
       if (path.endsWith("environments/nemlig-production/deployment-branch-policies")) return JSON.stringify({ branch_policies: [{ name: "main", type: "branch" }] });
       if (path.endsWith("environments/nemlig-production/variables")) return JSON.stringify({ variables: [{ name: "NEMLIG_CI_ACCEPTANCE_READY", value: "true" }] });
@@ -440,7 +440,7 @@ test("deployment arguments and provider JSON fail closed", () => {
   assert.throws(() => verifyCandidateVersion(version(enabledId, commit, false), enabledId, commit, true));
 });
 
-test("preflight requires the exact protected production environment before any provider action", async () => {
+test("preflight requires the exact main-only production environment before any provider action", async () => {
   const { deps, calls, root } = await fixture();
   try {
     assert.deepEqual(await preflightProductionDeploy(commit, deps), { commit, ciRunId: 456 });

@@ -852,22 +852,16 @@ const githubEnvironment = async (deps: DeployDependencies, repository: string, p
 const verifyGithubEnvironment = async (deps: DeployDependencies, repository: string): Promise<void> => {
   const environment = await githubEnvironment(deps, repository, "environments/nemlig-production");
   const rules = Array.isArray(environment.protection_rules) ? environment.protection_rules.map(object) : [];
-  if (rules.some((rule) => rule?.type !== "required_reviewers" && rule?.type !== "branch_policy")) fail("github_environment_not_ready");
-  const requiredReviewers = rules.filter((rule) => rule?.type === "required_reviewers");
-  const reviewers = requiredReviewers.length === 1 && Array.isArray(requiredReviewers[0]?.reviewers)
-    ? requiredReviewers[0]!.reviewers.map(object) : [];
-  const reviewer = reviewers.length === 1 ? reviewers[0] : undefined;
-  const reviewerUser = object(reviewer?.reviewer);
   const branchPolicy = object(environment.deployment_branch_policy);
-  if (environment.can_admins_bypass !== false || requiredReviewers[0]?.prevent_self_review !== false
+  if (environment.can_admins_bypass !== false || rules.length !== 1 || rules[0]?.type !== "branch_policy"
     || branchPolicy?.protected_branches !== false || branchPolicy.custom_branch_policies !== true
-    || reviewer?.type !== "User" || reviewerUser?.login !== "mortenbroesby") fail("github_environment_not_ready");
+  ) fail("github_environment_not_ready");
   const branches = await githubEnvironment(deps, repository, "environments/nemlig-production/deployment-branch-policies");
   const policies = Array.isArray(branches.branch_policies) ? branches.branch_policies.map(object) : [];
   if (policies.length !== 1 || policies[0]?.name !== "main" || policies[0]?.type !== "branch") fail("github_environment_not_ready");
 };
 
-/** Read-only exact-main CI and protected-environment proof for the deployment workflow. */
+/** Read-only exact-main CI and main-only environment proof for the deployment workflow. */
 export async function preflightProductionDeploy(commit: string, deps: DeployDependencies): Promise<{ commit: string; ciRunId: number }> {
   if (!fullSha.test(commit)) fail("invalid_commit");
   const repo = await repoIdentity(deps);

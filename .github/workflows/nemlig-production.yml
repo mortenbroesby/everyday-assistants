@@ -178,7 +178,7 @@ jobs:
         run: |
           pnpm --filter nemlig-assistant exec wrangler deployments list --env production --json >/dev/null
           pnpm --filter nemlig-assistant exec wrangler containers list --env production --json >/dev/null
-      - name: Deploy through protected release command
+      - name: Deploy exact approved merge
         env:
           GH_TOKEN: "${{ github.token }}"
           CLOUDFLARE_API_TOKEN: "${{ secrets.CLOUDFLARE_API_TOKEN }}"
@@ -191,9 +191,9 @@ jobs:
         run: |
           set -euo pipefail
           if [[ "$CUTOVER" == "true" ]]; then
-            pnpm --filter nemlig-assistant production:deploy -- --service-cutover "$CANDIDATE_SHA"
+            pnpm --silent --filter nemlig-assistant production:deploy -- --service-cutover "$CANDIDATE_SHA"
           else
-            pnpm --filter nemlig-assistant production:deploy -- --service "$CANDIDATE_SHA"
+            pnpm --silent --filter nemlig-assistant production:deploy -- --service "$CANDIDATE_SHA"
           fi >"$RUNNER_TEMP/nemlig-release.json"
       - name: Upload bounded release report and deployment journal
         id: release-artifact
@@ -264,7 +264,7 @@ jobs:
           set -euo pipefail
           mapfile -t journals < <(find "$RUNNER_TEMP/nemlig-release-artifact" -type f -name nemlig-release.json -print)
           [[ "${#journals[@]}" -eq 1 ]]
-          pnpm --filter nemlig-assistant publish:deployment-release -- \
+          pnpm --filter nemlig-assistant publish:deployment-release \
             --journal "${journals[0]}" \
             --candidate "$CANDIDATE_SHA" \
             --repository "$GITHUB_REPOSITORY"

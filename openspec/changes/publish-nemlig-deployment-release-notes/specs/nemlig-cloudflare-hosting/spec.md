@@ -8,8 +8,10 @@ any Cloudflare mutation. It MAY start from a manual dispatch or SHALL be
 submitted after successful CI for a merged pull request whose exact merge range
 satisfies the package-scoped Nemlig release policy, contains the required
 forward version, and contains its reviewed agent-authored note. An ineligible
-merge MUST stop before production credentials or provider access. The protected
-production environment remains the final approval.
+merge MUST stop before production credentials or provider access. The owner's
+explicit approval of the release-bearing pull request SHALL be the sole human
+release checkpoint; after that pull request is merged, exact-main CI,
+deployment, and publication SHALL proceed without a second approval gate.
 
 After routine deployment succeeds, a separate job SHALL publish the reviewed
 note as a GitHub prerelease only when the schema-2 deployment journal identifies
@@ -27,9 +29,11 @@ pending live acceptance. The journal commit, not the historical cutover
 
 #### Scenario: Labeled merge is ready
 
-- **WHEN** a pull request with a version-policy-eligible Nemlig change and its
-  reviewed note is merged to `main` and CI succeeds for the exact merge commit
-- **THEN** the protected routine release is submitted for that exact commit
+- **WHEN** the owner explicitly approves a pull request with a
+  version-policy-eligible Nemlig change and its reviewed note, that pull request
+  is merged to `main`, and CI succeeds for the exact merge commit
+- **THEN** the routine release proceeds automatically for that exact commit
+  without another human approval
 
 #### Scenario: Merge is not labeled
 
@@ -47,7 +51,7 @@ pending live acceptance. The journal commit, not the historical cutover
 
 #### Scenario: Exact routine deployment is published
 
-- **WHEN** the protected routine release succeeds for the exact candidate and
+- **WHEN** the automatic routine release succeeds for the exact candidate and
   its deployment journal contains every required terminal acceptance check
 - **THEN** the downstream job publishes or confirms an idempotent prerelease
   whose tag resolves to that candidate and whose body matches its committed note

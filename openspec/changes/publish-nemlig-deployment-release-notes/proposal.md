@@ -14,7 +14,7 @@ at the most sensitive point in delivery.
 - Validate that note through the existing package-scoped version policy and the
   exact pull-request base/candidate range. Documentation, workflow, test, and
   release-tooling-only changes remain ineligible.
-- After the protected production deployment succeeds, validate its immutable
+- After the automatic production deployment succeeds, validate its immutable
   deployment journal and publish a GitHub prerelease whose tag targets the exact
   deployed SHA and whose body uses the committed note.
 - Keep publication idempotent and fail closed on conflicting tags, releases,
@@ -24,9 +24,8 @@ at the most sensitive point in delivery.
   npm publication disabled.
 - Prove the path with one behavior-preserving cleanup of product relevance
   matching, protected by direct characterization tests.
-- Non-goals: npm publication, generated GitHub notes, a live LLM in CI, removal
-  of production approval, Cloudflare capacity changes, or Nemlig account and
-  basket mutation.
+- Non-goals: npm publication, generated GitHub notes, a live LLM in CI,
+  Cloudflare capacity changes, or Nemlig account and basket mutation.
 
 ## Capabilities
 
