@@ -19,6 +19,6 @@
 ## 4. Release and delivery
 
 - [x] 4.1 Run the release planner with reviewed codename `Callsign`, apply final plain version `4.8.0`, replace the superseded alpha-version note with the matching bounded note, and verify the exact candidate passes version and note gates without tagging, publishing, or deploying.
-- [ ] 4.2 Run focused tests while iterating, then `pnpm verify`, strict OpenSpec validation, `pnpm privacy:check`, packed-package smoke, and the credential-free production dry run; verify every gate passes and record any inapplicable live checks.
+- [x] 4.2 Run focused tests while iterating, then `pnpm verify`, strict OpenSpec validation, `pnpm privacy:check`, packed-package smoke, and the credential-free production dry run; verify every gate passes and record any inapplicable live checks.
 - [ ] 4.3 Review the final diff for unchanged safety/cost controls, commit and push the scoped branch, open one pull request, and verify the remote head and exact-head CI; do not merge or deploy without the separately applicable protected workflow decision.
 - [ ] 4.4 After authorized merge, verify exact-main CI and the automatic release path deploy the same version/codename candidate, read back the production MCP identity, confirm the GitHub prerelease tag/target/title/note, then sync and archive the OpenSpec deltas; if deployment does not succeed, leave the codename unpublished and record the recovery state.
