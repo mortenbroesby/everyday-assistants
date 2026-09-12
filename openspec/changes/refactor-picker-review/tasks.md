@@ -46,13 +46,13 @@
 
 ## 5. Verify and Deliver the Epic
 
-- [ ] 5.1 Run focused coordination, MCP, proposal, picker, plan, and smoke tests,
+- [x] 5.1 Run focused coordination, MCP, proposal, picker, plan, and smoke tests,
   then strict OpenSpec validation and privacy checks.
-- [ ] 5.2 Run the final `pnpm verify`, packed-package smoke, and Cloudflare dry
+- [x] 5.2 Run the final `pnpm verify`, packed-package smoke, and Cloudflare dry
   run once against the final candidate.
-- [ ] 5.3 Review the diff for secrets, accidental behavior changes, unjustified
+- [x] 5.3 Review the diff for secrets, accidental behavior changes, unjustified
   abstraction, cost amplification, and retained mutation safeguards.
 - [ ] 5.4 Apply the package version policy and agent-written release note,
   commit and push the epic, open one pull request, and verify exact-head CI.
-- [ ] 5.5 Leave merge, publication, deployment, and any live provider or basket
+- [x] 5.5 Leave merge, publication, deployment, and any live provider or basket
   acceptance at their existing human and production checkpoints.
