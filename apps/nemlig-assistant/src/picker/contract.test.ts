@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { readPickerPayload, safePickerImageUrl } from "./contract.js";
-import { createPickerSession, type PickerHost } from "./session.js";
+import { safeAreaStyle } from "../ui/AppFrame.js";
+import { bindPickerHost, type PickerHost } from "./session.js";
 
 test("picker reads structured content before a JSON text fallback and rejects unsafe images", () => {
   const structured = { items: [{ ingredient: "mælk", quantity: 1, confidence: 95, product: { id: 7, available: true } }] };
@@ -16,41 +17,36 @@ test("picker reads structured content before a JSON text fallback and rejects un
   assert.equal(safePickerImageUrl("javascript:alert(1)"), undefined);
 });
 
-test("picker session registers callbacks before connecting, sends once, and ignores callbacks after close", async () => {
+test("picker host binding disposes stale callbacks before a remount", async () => {
   const received: unknown[] = [];
-  const themes: string[] = [];
+  const contexts: unknown[] = [];
   const messages: unknown[] = [];
-  let closed = false;
-  let resizeStarted = 0;
-  let resizeStopped = 0;
   const host: PickerHost = {
-    connect: async () => { assert.equal(typeof host.ontoolresult, "function"); assert.equal(typeof host.onhostcontextchanged, "function"); },
-    close: async () => { closed = true; },
-    getHostContext: () => ({ theme: "light" }),
-    setupSizeChangedNotifications: () => { resizeStarted += 1; return () => { resizeStopped += 1; }; },
     sendMessage: async (message) => { messages.push(message); },
   };
-  const session = createPickerSession(host, (result) => received.push(result), (theme) => themes.push(theme));
-  await session.connected;
+  const first = bindPickerHost(host, (result) => received.push(result), (context) => contexts.push(context));
+  const staleHandler = host.ontoolresult;
+  const staleContextHandler = host.onhostcontextchanged;
   host.ontoolresult?.({ structuredContent: { items: [] } });
-  host.onhostcontextchanged?.({ theme: "dark" });
-  await session.sendChoice(7, "mælk");
+  host.onhostcontextchanged?.({ theme: "light" });
+  first.dispose();
+  staleHandler?.({ stale: true });
+  staleContextHandler?.({ theme: "dark" });
+
+  const second = bindPickerHost(host, (result) => received.push(result));
+  await second.sendChoice(7, "mælk");
   assert.deepEqual(messages, [{ role: "user", content: [{ type: "text", text: "Choose product 7 for mælk instead." }] }]);
   assert.deepEqual(received, [{ structuredContent: { items: [] } }]);
-  assert.deepEqual(themes, ["light", "dark"]);
-  assert.equal(resizeStarted, 1);
-  await session.close();
-  assert.equal(closed, true);
-  assert.equal(resizeStopped, 1);
-  host.ontoolresult?.({ stale: true });
-  assert.deepEqual(received, [{ structuredContent: { items: [] } }]);
+  assert.deepEqual(contexts, [{ theme: "light" }]);
+  second.dispose();
 });
 
-test("picker exposes connection failure for the component without retrying", async () => {
-  const host: PickerHost = {
-    connect: async () => { throw new Error("offline"); },
-    close: async () => undefined,
-    sendMessage: async () => undefined,
-  };
-  await assert.rejects(createPickerSession(host, () => undefined, () => undefined).connected, /offline/);
+test("picker frame translates host safe-area insets to CSS variables", () => {
+  assert.deepEqual(safeAreaStyle({ top: 7, right: 8, bottom: 9, left: 10 }), {
+    "--safe-area-top": "7px",
+    "--safe-area-right": "8px",
+    "--safe-area-bottom": "9px",
+    "--safe-area-left": "10px",
+  });
+  assert.deepEqual(safeAreaStyle(undefined), {});
 });

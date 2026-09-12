@@ -128,7 +128,7 @@ try {
     assert.equal(resource.uri, "ui://nemlig/picker.html");
     assert.equal(resource.mimeType, "text/html;profile=mcp-app");
     assert.equal(resource.text, await readFile(path.join(installed, "picker.html"), "utf8"));
-    assert.deepEqual(resource._meta, { ui: { csp: { resourceDomains: ["https://nemlig.com", "https://www.nemlig.com"] } } });
+    assert.deepEqual(resource._meta, { ui: { csp: { resourceDomains: ["https://nemlig.com", "https://www.nemlig.com", "https://cdn.openai.com"] } } });
   } finally { await presentation.close(); }
 
   console.log("Packed Nemlig Assistant interfaces verified.");

@@ -810,21 +810,22 @@ test("picker images use only the observed Nemlig HTTPS origin and keep a text-on
   }
   const html = await pickerHtml();
   assert.match(html, /color-scheme:light dark/u);
-  assert.match(html, /loading:`lazy`/u);
-  assert.match(html, /referrerPolicy:`no-referrer`/u);
-  assert.match(html, /Choose product \$\{t\} for \$\{n\} instead\./u);
+  assert.match(html, /loading:"lazy"/u);
+  assert.match(html, /referrerPolicy:"no-referrer"/u);
+  assert.match(html, /Choose product \$\{[a-z]+\} for \$\{[a-z]+\} instead\./u);
   assert.match(html, /Kunne ikke bekræfte/);
   assert.match(html, /Forslaget kunne ikke vises/);
   assert.match(html, /setupSizeChangedNotifications/);
-  assert.match(html, /document\.documentElement\.dataset\.theme/);
+  assert.match(html, /data-theme/);
+  assert.match(html, /__mcp-host-fonts/);
   assert.match(html, /loading:/);
   assert.match(html, /Valgt/);
   for (const component of ["Button", "Badge"]) {
-    const className = html.match(new RegExp(`${component}:` + "`([^`]+)`"))?.[1];
+    const className = html.match(new RegExp(`_${component}_[a-z0-9_]+`))?.[0];
     assert.ok(className, `${component} class is bundled`);
     assert.match(html, new RegExp(`\\.${className}\\s*\\{`), `${component} CSS module is inlined`);
   }
-  assert.doesNotMatch(html, /type="number"|Forbered valgte varer|add_approved_items/u);
+  assert.doesNotMatch(html, /Forbered valgte varer|add_approved_items/u);
 });
 
 test("picker resource preserves its public presentation contract and isolates hostile product data", async () => {
@@ -855,11 +856,11 @@ test("picker resource preserves its public presentation contract and isolates ho
     assert.equal(content.uri, "ui://nemlig/picker.html");
     assert.equal(content.mimeType, "text/html;profile=mcp-app");
     assert.equal(content.text, builtPicker);
-    assert.deepEqual(content._meta, { ui: { csp: { resourceDomains: ["https://nemlig.com", "https://www.nemlig.com"] } } });
+    assert.deepEqual(content._meta, { ui: { csp: { resourceDomains: ["https://nemlig.com", "https://www.nemlig.com", "https://cdn.openai.com"] } } });
     for (const value of [hostileName, hostileDescription, ...hostileDetails.flatMap(({ key, value }) => [key, value])]) {
       assert.equal(content.text.includes(value), false);
     }
-    assert.doesNotMatch(content.text, /(?:url\(|(?:src|href)=['"])(?:https?:)?\/\//iu);
+    assert.doesNotMatch(content.text.replaceAll("https://cdn.openai.com", ""), /(?:url\(|(?:src|href)=['"])(?:https?:)?\/\//iu);
     assert.doesNotMatch(content.text, /\b(?:review_items_to_add|add_approved_items)\b/iu);
   });
 });

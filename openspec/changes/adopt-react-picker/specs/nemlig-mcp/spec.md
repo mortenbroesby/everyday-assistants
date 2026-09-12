@@ -1,7 +1,7 @@
 ## ADDED Requirements
 
 ### Requirement: Self-contained picker resource
-The server SHALL serve the optional picker as a locally built, self-contained HTML resource whose executable JavaScript and styles require no network origin, SHALL preserve `ui://nemlig/picker.html` and `text/html;profile=mcp-app`, SHALL retain the default-on feature gate and all recognized false spellings, and SHALL preserve conversational results when the resource is disabled or unsupported.
+The server SHALL serve the optional picker as a locally built, self-contained HTML resource whose executable JavaScript and application styles require no network origin, SHALL preserve `ui://nemlig/picker.html` and `text/html;profile=mcp-app`, SHALL retain the default-on feature gate and all recognized false spellings, and SHALL preserve conversational results when the resource is disabled or unsupported.
 
 #### Scenario: Render without executable network access
 - **WHEN** a compatible client loads the enabled picker while executable network access is unavailable
@@ -13,10 +13,10 @@ The server SHALL serve the optional picker as a locally built, self-contained HT
 
 #### Scenario: Inspect resource policy
 - **WHEN** a client receives the picker resource metadata and built HTML
-- **THEN** the artifact contains no executable network load and `resourceDomains` contains only approved Nemlig product-resource origins
+- **THEN** the artifact contains no external application script, stylesheet, dynamic JavaScript chunk, or API fetch and `resourceDomains` contains only the approved Nemlig product-image origins plus the exact optional OpenAI font origin
 
 ### Requirement: Safe reviewed-proposal presentation
-The picker SHALL use React and selected OpenAI Apps SDK UI components, SHALL prefer structured content over the JSON-text fallback, SHALL preserve loading, malformed, rejected, empty, ingredient, quantity, confidence, favorite, pantry, proposed-product, alternative, price, description, availability, and alternative-disclosure presentation, and SHALL render all untrusted product content without executable interpretation.
+The picker SHALL use the shared Nemlig React and OpenAI Apps SDK UI foundation, SHALL prefer structured content over the JSON-text fallback, SHALL preserve loading, malformed, rejected, empty, ingredient, quantity, confidence, favorite, pantry, proposed-product, alternative, price, description, availability, and alternative-disclosure presentation, and SHALL render all untrusted product content without executable interpretation.
 
 #### Scenario: Render a complete reviewed proposal
 - **WHEN** a valid structured tool result contains proposed products, alternatives, rejected items, favorite matches, or pantry assumptions
@@ -34,9 +34,13 @@ The picker SHALL use React and selected OpenAI Apps SDK UI components, SHALL pre
 - **WHEN** proposed and alternative product cards render shared content or an enabled alternative action
 - **THEN** both use one shared card implementation and the action/status styling comes from Apps SDK UI rather than a duplicated local component system
 
+#### Scenario: Showcase intended visual states
+- **WHEN** a developer opens the local Nemlig UI showcase
+- **THEN** it uses the production presentation and foundational styles with clearly synthetic state, makes no Nemlig call, and demonstrates the reviewed design across representative success, progress, empty, error, light/dark, and narrow/wide states
+
 #### Scenario: Follow the host theme
-- **WHEN** the host changes between supported light and dark appearance or no host context is available yet
-- **THEN** the picker applies the host theme when known, uses the operating-system preference as its initial fallback, retains system fonts, and requests no remote font or stylesheet
+- **WHEN** the host supplies or changes supported theme, style variables, fonts, or safe-area insets, or no host context is available yet
+- **THEN** official SDK hooks apply the authenticated host context, the picker uses operating-system appearance and system fonts as fallbacks, its layout respects safe areas, and blocked optional fonts do not prevent rendering or choosing
 
 #### Scenario: Use an accessible narrow layout
 - **WHEN** the picker is used with a keyboard at a 320 px viewport or 200% text zoom

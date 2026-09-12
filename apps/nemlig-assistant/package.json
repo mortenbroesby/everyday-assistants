@@ -28,15 +28,14 @@
     "nemlig-mcp-http": "dist/http.js"
   },
   "scripts": {
-    "build": "tsdown && pnpm build:picker:css && tsx scripts/build-picker.ts",
-    "build:picker:css": "tailwindcss -i src/picker/styles.css -o dist/picker.css --minify",
-    "check": "tsc -p tsconfig.json --noEmit",
+    "build": "tsdown && vite build && tsx scripts/check-picker.ts",
+    "check": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.ui.json --noEmit",
     "cloudflare:check": "wrangler deploy --dry-run --env production",
     "cloudflare:dev": "wrangler dev",
     "cli": "pnpm build && node dist/cli.js",
     "check:version-bump": "tsx release/check-version-bump.ts",
     "check:release-note": "tsx release/release-note.ts",
-    "lint": "eslint src scripts release tsdown.config.ts --max-warnings=0",
+    "lint": "eslint src scripts release tsdown.config.ts vite.config.ts --max-warnings=0",
     "mcp": "pnpm build && node dist/mcp.js",
     "prepack": "pnpm build",
     "production:probe": "tsx scripts/production-acceptance.ts --edge-only",
@@ -49,7 +48,8 @@
     "release:retry:check": "tsx release/retry.ts",
     "smoke": "tsx --test src/smoke.test.ts",
     "smoke:package": "tsx scripts/smoke-package.ts",
-    "test": "tsx --test src/*.test.ts release/*.test.ts scripts/*.test.mjs",
+    "test": "tsx --test src/*.test.ts src/picker/*.test.ts release/*.test.ts scripts/*.test.mjs",
+    "ui:showcase": "vite --open /showcase.html",
     "coverage": "node scripts/coverage.mjs"
   },
   "dependencies": {
@@ -68,8 +68,8 @@
     "@types/node": "22.20.1",
     "@types/react": "19.2.7",
     "@types/react-dom": "19.2.3",
-    "@tailwindcss/cli": "4.1.18",
-    "@tsdown/css": "0.22.14",
+    "@tailwindcss/vite": "4.1.18",
+    "@vitejs/plugin-react": "5.2.0",
     "@modelcontextprotocol/ext-apps": "1.7.5",
     "@openai/apps-sdk-ui": "0.2.2",
     "@types/semver": "7.8.0",
@@ -82,6 +82,8 @@
     "tsx": "4.23.13",
     "typescript": "5.9.3",
     "typescript-eslint": "^8.68.0",
+    "vite": "7.3.6",
+    "vite-plugin-singlefile": "2.3.3",
     "wrangler": "4.127.1"
   }
 }

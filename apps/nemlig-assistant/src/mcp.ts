@@ -35,6 +35,7 @@ export const PICKER_URI = "ui://nemlig/picker.html";
 export const PICKER_MIME_TYPE = "text/html;profile=mcp-app";
 export const NEMLIG_CONNECT_URL = "https://nemlig-mcp.broesby.dk/connect";
 export const NEMLIG_IMAGE_ORIGINS = IMAGE_ORIGINS;
+export const NEMLIG_RESOURCE_ORIGINS = [...NEMLIG_IMAGE_ORIGINS, "https://cdn.openai.com"] as const;
 export const safeNemligImageUrl = safePickerImageUrl;
 
 const pickerHtml = (): string => readFileSync(new URL("../dist/picker.html", import.meta.url), "utf8");
@@ -766,7 +767,7 @@ export function createMcpServer(
       PICKER_URI,
       {
         mimeType: PICKER_MIME_TYPE,
-        _meta: { ui: { csp: { resourceDomains: NEMLIG_IMAGE_ORIGINS } } },
+        _meta: { ui: { csp: { resourceDomains: NEMLIG_RESOURCE_ORIGINS } } },
       },
       async () => ({
         contents: [
@@ -774,7 +775,7 @@ export function createMcpServer(
             uri: PICKER_URI,
             mimeType: PICKER_MIME_TYPE,
             text: pickerHtml(),
-            _meta: { ui: { csp: { resourceDomains: NEMLIG_IMAGE_ORIGINS } } },
+            _meta: { ui: { csp: { resourceDomains: NEMLIG_RESOURCE_ORIGINS } } },
           },
         ],
       }),

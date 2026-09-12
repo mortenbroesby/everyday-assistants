@@ -1,75 +1,79 @@
 ## Context
 
-See [proposal.md](proposal.md) for motivation. `src/mcp.ts` currently embeds the complete imperative picker, imports MCP Apps client 0.4.0 from unpkg, and serves it behind `NEMLIG_MCP_APPS`. The HTML is 5,955 bytes raw and 2,353 bytes gzip but excludes its remotely loaded runtime, so it is not a complete load-size comparison. The picker displays an already reviewed proposal and sends one exact alternative-choice message; quantity is display-only and it cannot apply basket changes.
+See [proposal.md](proposal.md). The MVP in this branch replaced the remote imperative picker with React 19, Tailwind 4, Apps SDK UI 0.2.2, and ext-apps 1.7.5. It preserved behavior and produced a deterministic 751,268-byte raw / 181,996-byte gzip artifact, but the browser pipeline combines tsdown output and Tailwind CLI output in a custom script, regex-deletes all `@font-face` rules, interpolates an HTML string, and deletes intermediates. The IIFE build also warns when Apps SDK UI references `import.meta`.
 
-The package uses MCP SDK `^1.30.0`, Zod `^4.5.4`, and tsdown `0.22.14`, with no browser CSS pipeline. Verified package evidence on 2026-09-12 shows `@modelcontextprotocol/ext-apps` 1.7.5 peers with SDK `^1.29.0`, Zod 3/4, and React 17/18/19. OpenAI Apps SDK UI 0.2.2 is MIT-licensed and peers with React 18/19 and Tailwind `^4.0.10`.
+The current stylesheet uses `--text-primary`, `--background-primary`, and similar names while the kit/host publishes `--color-text-primary`, `--color-background-primary`, and related variables. The result often falls back to browser colors instead of the host design language.
 
-OpenAI's [UI integration guide](https://developers.openai.com/plugins/build/chatgpt-ui) recommends a lean, self-contained component bundle and treats the resource URI as a cache key. Its [UI guidelines](https://developers.openai.com/plugins/concepts/ui-guidelines) recommend focused inline cards, system styling, and accessibility. The optional [Apps SDK UI library](https://github.com/openai/apps-sdk-ui) supplies the selected React components and Tailwind tokens; it is not the MCP host bridge.
+OpenAI's Apps SDK UI documentation requires React 18/19 and Tailwind 4, documents its stylesheet/source order and per-component imports, and demonstrates React Strict Mode. MCP Apps' React integration supplies `useApp`, `useHostStyles`, and `useAutoResize`; its quickstart recommends Vite with `vite-plugin-singlefile` for a self-contained app resource. tsdown's CSS support remains explicitly experimental and does not provide a complete HTML browser pipeline.
 
 ## Goals / Non-Goals
 
 **Goals:**
 
-- Prove React, Tailwind 4, and Apps SDK UI on the real picker and ship them when the explicit gates pass.
-- Remove imperative DOM construction and manual visual-state mutation in favor of one shared declarative product card.
-- Keep payload normalization pure and host effects in one tested lifecycle owner.
-- Preserve behavior, accessibility, deterministic packaging, narrow CSP, and safety before any FP-runtime experiment.
+- Replace the MVP build workaround with the supported browser pipeline while retaining tsdown for Node.
+- Establish the smallest shared Nemlig visual foundation with two real consumers: the production picker and a synthetic local showcase.
+- Apply correct Apps SDK UI/host tokens, fonts, theme updates, and safe-area context through official hooks.
+- Preserve the reviewed-proposal contract, deterministic packaging, accessibility, safety, cost controls, merge rules, and protected deployment acceptance.
 
 **Non-Goals:**
 
-- No native/React/Preact bake-off, new picker feature, editable quantity, basket call, router, global store, generic UI platform, patched dependency, or host-service abstraction.
-- No FP runtime, server orchestration conversion, authentication change, proposal/application change, protocol-major migration, or repository-wide UI mandate.
+- No new shopping capability, editable quantity, basket call, router, store, generic design-system abstraction, service, patched dependency, protocol-major upgrade, FP runtime, server orchestration conversion, or authentication change.
+- No lazy React chunks or external application assets without measured evidence that the self-contained bounded view has become a bottleneck.
 
 ## Decisions
 
-### 1. Build the selected stack, with a measured contingency
+### 1. Use Vite for the browser and tsdown for Node
 
-Use React 19, React DOM, Tailwind 4, and `@openai/apps-sdk-ui`. Use `Button` for available-alternative actions and `Badge` for existing proposed/favorite status where it improves clarity. Keep `<article>`, `<section>`, `<details>`, `<summary>`, and `<img>` native. Do not add `AppsSDKUIProvider`, a router, input/select controls, a store, or a local component layer.
+Keep the existing three Node entry points in tsdown 0.22.14. Add exact browser-build pins compatible with Node 22.23.1 and Tailwind 4.1.18: Vite 7.3.6, `@vitejs/plugin-react` 5.2.0, `@tailwindcss/vite` 4.1.18, and `vite-plugin-singlefile` 2.3.3. Remove `@tailwindcss/cli` and `@tsdown/css`.
 
-The MVP passes when it preserves all specified behavior, makes no executable/style/font request, is deterministic, meets the accessibility gates, and stays at or below 1.5 MiB raw and 350 KiB gzip. These are generous project budgets chosen to expose accidental whole-library or remote-asset bundling; maintainability and correctness remain primary. A failure produces a named measured problem and a correction attempt before native rendering is reconsidered.
+Use a real HTML entry whose TSX imports the foundational stylesheet first. Vite's React, Tailwind, and single-file plugins emit the existing `dist/picker.html`; the UI build keeps Node outputs by disabling output-directory clearing. Delete the custom emitted-CSS rewrite/HTML assembler. Assertions inspect the finished artifact without rewriting it.
 
-Maintainability is evidenced by one payload validator, one host owner, one shared product card, no `document.createElement`/`innerHTML` renderer, no manual button-text mutation, and behavior tests that do not depend on implementation spellings.
+The picker stays one self-contained resource. React lazy loading and code splitting would still be inlined, add lifecycle complexity, and provide no transfer benefit at this scale. Native lazy images and progressive alternative disclosure remain.
 
-### 2. Use Tailwind tokens without inheriting remote assets
+### 2. Share only the production presentation that the showcase exercises
 
-Follow the library's documented Tailwind order: import Tailwind, import `@openai/apps-sdk-ui/css`, declare the package source, then add only picker layout/image rules. Use system fonts and supported host style variables.
+Keep browser-safe validation and business behavior under `src/picker/`. Put the shared stylesheet and the smallest shared root/pure reviewed-proposal view under `src/ui/`. The production container owns MCP host effects; the showcase supplies synthetic validated state and local simulated callbacks.
 
-The published UI stylesheet includes KaTeX font declarations that reference `https://cdn.openai.com`. The picker uses no math. The build must remove unused remote font declarations or otherwise prove they are absent from the emitted HTML; CSP must not be widened. Host appearance sets `data-theme` when available, with `prefers-color-scheme` as the initial fallback. Do not use remote host-font loading.
+The showcase displays representative reviewed-list states: proposed and alternative products, favorite/confidence/availability/price/quantity/pantry/rejection treatment, loading, empty, malformed/connection failure, sending, send failure, and selected behavior across light/dark and narrow/wide examples. It reuses production presentation and clearly synthetic fixtures, makes no live Nemlig call, and is excluded from the production resource and tarball.
 
-### 3. Prefer the existing bundler, add one small browser pipeline only when needed
+Future Nemlig visual work first adds its intended states to this local showcase and then uses the shared foundation. This is a routing convention, not a component registry, dashboard, Storybook deployment, or speculative widget library.
 
-First prove whether pinned tsdown can emit the browser JavaScript while Tailwind produces static CSS and a small deterministic step inlines both into one HTML file. If that requires a private bundler or brittle assembly, use the minimum official Vite single-file path instead. Node entry points remain on tsdown.
+### 3. Use official host styling with narrow resource policy
 
-Browser libraries are bundled build inputs. The tarball contains the generated HTML beside the compiled MCP entry point but excludes uncompiled browser source and tests. Two clean builds must yield the same HTML hash.
+Follow the library's documented CSS order: Tailwind, `@openai/apps-sdk-ui/css`, the package source declaration, then local foundation rules. Use real `--color-*` variables and `font-family: var(--font-sans, system-ui, sans-serif)`.
 
-### 4. Keep one SDK-owned host lifecycle
+One `useApp` owner registers `ontoolresult` in `onAppCreated` before connection, uses `autoResize: false`, and pairs with the disposed `useAutoResize` hook. `useHostStyles(app, app?.getHostContext())` owns initial/live theme, variables, and authenticated host-provided fonts; operating-system appearance and system fonts remain the pre-connect/offline fallback. The root accounts for supplied safe-area insets.
 
-Use the SDK-1-compatible MCP Apps React support only after testing callback-before-connect ordering and cleanup. `useApp` 1.7.5 supplies `onAppCreated` before connection and its shipped implementation closes on cleanup, although its declaration comments conflict with that behavior. The implementation must not rely on the ambiguity: a fake-host test proves teardown, or the picker uses one direct `App` effect with explicit close.
+The SDK's declaration commentary and shipped cleanup behavior conflict, so executable connection, cleanup, replacement, delayed completion, and remount tests define the lifecycle contract. Remove competing manual host-theme assignment and unsafe host casts when the official types cover them.
 
-Disable automatic resize when using `useApp` and pair it with the separately disposed resize hook. Connect once, block duplicate activation synchronously while `sendMessage` is pending, show concise failure, allow only a later deliberate retry, and ignore stale completion after a new result or unmount. No automatic retry, reconnect, polling, or resend.
+Import the complete documented Apps SDK UI CSS. Its unused KaTeX font declarations reference `https://cdn.openai.com`; do not regex-delete them. Permit only that exact optional font resource origin, the existing two product-image origins, no connect domains, no frames, and no external application scripts/styles/chunks. Blocked fonts/images must leave rendering and choosing functional. Tool-result content is never interpreted as CSS.
 
-The adapter sends exactly `Choose product <id> for <ingredient> instead.` and exposes no proposal or basket tool. Temporary view state stays local and business data comes only from validated tool results.
+### 4. Preserve the browser-safe contract and behavior
 
-### 5. Keep one browser-safe contract and verify the packed result
+Keep one Zod validator and approved image-origin rule, prefer structured content over JSON-text fallback, and create no parallel DTO hierarchy. Keep one synchronous duplicate-send lock and generation invalidation. The adapter sends exactly `Choose product <id> for <ingredient> instead.`, performs no automatic retry/reconnect/polling/resend, and exposes no proposal or basket tool.
 
-Extract only the picker parser and approved image-origin rule into a browser-safe leaf, reuse Zod, prefer structured content over JSON-text fallback, and create no duplicate DTO hierarchy.
+Preserve `ui://nemlig/picker.html` because this is a behavior-compatible migration. If a future breaking resource revision is needed, update the URI, MCP registration, gateway allowlist, production inventory, tests, and package smoke together.
 
-Tests execute the built HTML with a fake local host and cover payload variants, hostile content, action semantics, connection/send failures, replacement, cleanup, theme, offline asset policy, narrow layout, and focus. Package smoke compares the served resource with the generated file rather than a hard-coded obsolete source hash. Preserve the URI for this behavior-compatible migration; a later breaking resource contract uses a new URI.
+### 5. Verify the shipped result, then merge and deploy once
+
+Extend the existing artifact/lifecycle/browser/package tests. Verify host theme/variables/fonts/safe areas, missing-host fallback, callback-before-connect, success/failure/duplicate/stale/unmount/remount behavior, hostile text and image origins, accessibility, offline fallback, deterministic clean builds, and clean tarball serving. Keep the decimal budgets of 1,500,000 raw bytes and 350,000 gzip bytes and record actual output.
+
+Run the repository gates, make one package-scoped release decision, refresh the draft PR, wait for exact-head checks, merge through the active ruleset, verify the exact `main` revision, use the existing protected deployment workflow once, and run sequential read-only production acceptance. No basket/account/order state is read or mutated.
 
 ## Risks / Trade-offs
 
-- [UI package pulls a broad dependency graph] -> Import components through documented per-component exports, inspect emitted JavaScript/CSS, and enforce the resource budget.
-- [UI CSS references unused remote fonts] -> Remove them from emitted CSS and fail the artifact check rather than widening CSP.
-- [SDK lifecycle documentation conflicts with implementation] -> Test actual cleanup; use one explicit `App` effect if the helper does not meet the contract.
-- [Build output is erased, unstable, or omitted] -> Verify build ordering, byte-identical rebuilds, and clean packed-resource loading.
-- [React increases parse work] -> Record JavaScript/CSS contributions and twenty local result-to-render samples; investigate any p95 over 250 ms or render-related long task over 100 ms rather than declaring a platform guarantee.
-- [Disabled mode could fail on eager artifact loading] -> Keep artifact reading inside the enabled resource path and smoke-test disabled startup.
+- [Browser build adds four development dependencies] -> Remove two superseded build dependencies and use the exact official-compatible cohort instead of maintaining custom bundling code.
+- [Kit CSS names an optional OpenAI font origin] -> Allow only `https://cdn.openai.com`, keep all executable/application styling embedded, and verify offline fallback.
+- [SDK lifecycle documentation conflicts with implementation] -> Treat focused executable lifecycle tests as the contract and retain one host owner.
+- [Reusable foundation grows into a platform] -> Share only code already consumed by both production picker and synthetic showcase; add another abstraction only with another real visual consumer.
+- [React increases parse/render work] -> Enforce current byte budgets and inspect browser timing before adding lazy loading or another optimizer.
+- [Deployment changes hosted behavior] -> Preserve `NEMLIG_MCP_APPS`, existing quotas/kill switches, exact-revision checks, protected approval, and previous-release rollback.
 
 ## Migration Plan
 
-1. Characterize the current resource and establish a behavioral built-artifact test.
-2. Prove the minimum deterministic single-file browser build and record exact dependency/license/output evidence.
-3. Move parsing and shared rendering while retaining the old resource until parity passes.
-4. Add the single host lifecycle, switch the resource loader, and remove the inline document and unpkg origin.
-5. Run focused, package, privacy, accessibility, and repository gates; use the existing release workflow for one version decision.
-6. Roll back immediately with `NEMLIG_MCP_APPS` or restore the prior release. No data migration is required.
+1. Revise this change from MVP acceptance to the production foundation and keep the already verified MVP as baseline evidence.
+2. Replace the browser build dependencies/configuration and prove deterministic `dist/picker.html` without post-build mutation.
+3. Correct host styling/lifecycle, extract the shared pure view, and review the local synthetic showcase before production acceptance.
+4. Update resource/CSP/package assertions and documentation; run focused and repository-wide gates.
+5. Make one release decision, merge once, deploy the exact merged revision once, and complete sequential read-only acceptance.
+6. Sync/archive this change and hand merged `main` to the separately parked Effect and agent-artifact branches.
