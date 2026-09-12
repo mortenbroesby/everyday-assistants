@@ -394,20 +394,7 @@ export class NemligClient {
     this.requireLogin("add items");
     if (!Number.isInteger(productId) || productId < 1) throw new NemligError("Product ID must be positive.");
     if (!Number.isInteger(quantity) || quantity < 1) throw new NemligError("Quantity must be at least 1.");
-    await this.json(
-      `${API_BASE_URL}/basket/AddToBasket`,
-      {
-        method: "POST",
-        body: JSON.stringify({
-          ProductId: productId,
-          quantity,
-          AffectPartialQuantity: false,
-          disableQuantityValidation: false,
-        }),
-      },
-      "Add to basket",
-      false,
-    );
+    await this.writeBasket(productId, quantity, "Add to basket");
     return this.readback("Product was added");
   }
 
@@ -418,20 +405,7 @@ export class NemligClient {
     if (!(await this.getCart()).items.some(matchesProduct)) {
       throw new NemligError(`Product ${productId} is not in the basket; nothing was removed.`);
     }
-    await this.json(
-      `${API_BASE_URL}/basket/AddToBasket`,
-      {
-        method: "POST",
-        body: JSON.stringify({
-          ProductId: productId,
-          quantity: 0,
-          AffectPartialQuantity: false,
-          disableQuantityValidation: false,
-        }),
-      },
-      "Remove from basket",
-      false,
-    );
+    await this.writeBasket(productId, 0, "Remove from basket");
     const basket = await this.readback("Product was removed");
     if (basket.items.some(matchesProduct)) {
       throw new NemligError(`Product ${productId} may not have been removed; stop before further mutations.`);
@@ -456,6 +430,23 @@ export class NemligClient {
     } catch {
       throw new NemligError(`${action}, but basket verification failed; stop before further mutations.`);
     }
+  }
+
+  private async writeBasket(productId: number, quantity: number, operation: string): Promise<void> {
+    await this.json(
+      `${API_BASE_URL}/basket/AddToBasket`,
+      {
+        method: "POST",
+        body: JSON.stringify({
+          ProductId: productId,
+          quantity,
+          AffectPartialQuantity: false,
+          disableQuantityValidation: false,
+        }),
+      },
+      operation,
+      false,
+    );
   }
 
   private requireLogin(operation: string): void {

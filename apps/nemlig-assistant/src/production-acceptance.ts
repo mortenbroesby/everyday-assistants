@@ -119,6 +119,26 @@ const bounded = async <T>(label: string, work: () => Promise<T>, signal?: AbortS
   }
 };
 
+const createTotalDeadline = (
+  deadline: number,
+  context: string,
+  signal?: AbortSignal,
+): (<T>(label: string, work: () => Promise<T>) => Promise<T>) => async <T>(label: string, work: () => Promise<T>): Promise<T> => {
+  const remaining = deadline - Date.now();
+  assert.ok(remaining > 0, `${context} timed out before ${label}`);
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      bounded(label, work, signal),
+      new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(() => reject(new Error(`${context} timed out during ${label}`)), remaining);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+};
+
 export async function verifyAggregateTierUsage(
   origin: URL,
   token: string,
@@ -143,23 +163,11 @@ export async function verifyReadOnlyProductionFeatures(
   client: AcceptanceClient,
   options: AcceptanceDeadlineOptions = {},
 ): Promise<ProductionFeatureReport> {
-  const totalTimeoutMs = options.totalTimeoutMs ?? 90_000;
-  const deadline = Date.now() + totalTimeoutMs;
-  const withinTotalDeadline = async <T>(label: string, work: () => Promise<T>): Promise<T> => {
-    const remaining = deadline - Date.now();
-    assert.ok(remaining > 0, `Production read-only acceptance timed out before ${label}`);
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    try {
-      return await Promise.race([
-        bounded(label, work, options.signal),
-        new Promise<never>((_resolve, reject) => {
-          timer = setTimeout(() => reject(new Error(`Production read-only acceptance timed out during ${label}`)), remaining);
-        }),
-      ]);
-    } finally {
-      if (timer) clearTimeout(timer);
-    }
-  };
+  const withinTotalDeadline = createTotalDeadline(
+    Date.now() + (options.totalTimeoutMs ?? 90_000),
+    "Production read-only acceptance",
+    options.signal,
+  );
   assert.ok(client.listResources && client.readResource, "Production resource client is required");
   assertProductionInventory(
     (await withinTotalDeadline("tool inventory", () => client.listTools())).tools,
@@ -206,23 +214,11 @@ export async function verifyServiceAcceptanceFeatures(
   client: AcceptanceClient,
   options: AcceptanceDeadlineOptions = {},
 ): Promise<ServiceAcceptanceFeatureReport> {
-  const totalTimeoutMs = options.totalTimeoutMs ?? 90_000;
-  const deadline = Date.now() + totalTimeoutMs;
-  const withinTotalDeadline = async <T>(label: string, work: () => Promise<T>): Promise<T> => {
-    const remaining = deadline - Date.now();
-    assert.ok(remaining > 0, `Service acceptance timed out before ${label}`);
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    try {
-      return await Promise.race([
-        bounded(label, work, options.signal),
-        new Promise<never>((_resolve, reject) => {
-          timer = setTimeout(() => reject(new Error(`Service acceptance timed out during ${label}`)), remaining);
-        }),
-      ]);
-    } finally {
-      if (timer) clearTimeout(timer);
-    }
-  };
+  const withinTotalDeadline = createTotalDeadline(
+    Date.now() + (options.totalTimeoutMs ?? 90_000),
+    "Service acceptance",
+    options.signal,
+  );
   assert.ok(client.listResources && client.readResource, "Service resource client is required");
   const tools = (await withinTotalDeadline("tool inventory", () => client.listTools())).tools;
   const resources = (await withinTotalDeadline("resource inventory", () => client.listResources!())).resources;
