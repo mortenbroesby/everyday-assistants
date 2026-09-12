@@ -1,71 +1,82 @@
 ## Context
 
-See [proposal.md](proposal.md) for motivation. This draft is stacked on `adopt-react-picker`, which owns every observable picker requirement and supplies a native React/MCP Apps lifecycle plus fake-host tests. This change is therefore a pure implementation comparison with `skip_specs: true`; it must not make React depend on Effect or weaken the React contract.
+See [proposal.md](proposal.md) for motivation. This draft is stacked on `adopt-react-picker`, which owns observable picker behavior and supplies the chosen UI, native functional baseline, host lifecycle, and fake-host tests. This change has `skip_specs: true` and must not weaken that contract.
 
-The current SDK line constructs one `App`, registers `ontoolresult` before `connect()`, and sends the exact conversational choice message. Effect interruption cannot undo a message already delivered through the host or necessarily cancel an underlying SDK Promise, so explicit stale-state protection remains required where the SDK provides no cancellation guarantee.
+The picker has two relevant jobs: transform validated proposal data into a view model, then own one MCP Apps `App` through result registration, connection, deliberate message send, replacement, and disposal. The pure job is currently small; the lifecycle still requires explicit stale-state protection because cancelling a local computation cannot retract a delivered host message or necessarily cancel an SDK Promise.
+
+Registry versions checked on 2026-09-12 were Effect 3.22.2, fp-ts 2.16.11, Remeda 2.48.0, neverthrow 8.2.0, and ts-pattern 5.9.0. Effect 4 remained an RC. Version recency is maintenance evidence, not proof of fit.
 
 ## Goals / Non-Goals
 
 **Goals:**
 
-- Compare stable Effect 3 with the completed native lifecycle using the same production boundary and tests.
-- Use Effect only when scoped finalization or typed failure handling removes real manual coordination.
-- Keep one lifecycle owner and a small plain React-facing adapter.
+- Compare functional approaches on both the real pure core and asynchronous boundary.
+- Prefer one coherent long-term model over overlapping utilities.
+- Preserve plain data at the UI boundary and one lifecycle owner.
 
 **Non-Goals:**
 
-- No generic Effect platform, layer graph, service interface, factory, schema replacement, server conversion, or second host owner.
+- No generic FP platform, repository-wide conversion, layer graph, service interface, factory, schema replacement, server migration, or second host owner.
 - No behavioral, rendering, payload, packaging, CSP, message, retry, proposal, or basket change.
 
 ## Decisions
 
-### 1. React's native adapter is the required baseline
+### 1. Compare candidates by role, not as false whole-stack substitutes
 
-Do not implement Effect against the old inline DOM picker. Identify the exact React prerequisite commit and run the same fake-host lifecycle harness against its native adapter first. The React adapter remains a complete rollback and must satisfy all observable behavior without Effect.
+Use one representative validated proposal to derive rejected items, safe images, proposed products, and available alternatives; use one fake-host lifecycle for callback-before-connect, send success/failure, duplicate activation, result replacement, disposal, remount, and stale completion.
 
-Alternative: add Effect while React is still being built. Rejected because there would be no stable native comparison and the two drafts could accidentally share ownership.
+| Candidate | Pure transformations | Async/resource boundary | Decision |
+| --- | --- | --- | --- |
+| Native TypeScript | Readonly inputs, arrays, `Map`, discriminated unions, exhaustive `never` | Promises, explicit cleanup and stale guards | Required baseline and fallback. |
+| fp-ts | `Option`, `Either`, `ReadonlyArray`, composition | `TaskEither`/`ReaderTaskEither` and `bracket`; host cancellation and stale delivery still explicit | Give an equivalent candidate, but do not prefer it for new long-term adoption because its project identifies Effect as successor. |
+| Effect pure modules | `Array`, `Option`, `Either`, `Match` without running an Effect program | None until runtime APIs are used | Compare separately from the runtime. |
+| Effect runtime | Can connect deterministic and effectful composition | Typed failures, scopes, finalizers, interruption | Preferred integrated ecosystem candidate, subject to measured proof. |
+| Remeda | Pragmatic typed collection pipelines | No resource lifecycle | Strongest lightweight pure-core challenger. |
+| neverthrow | Focused `Result` composition | `ResultAsync`, but cleanup/cancellation remain external | Evaluate only if expected failures are the demonstrated problem. |
+| ts-pattern | Exhaustive structured matching | No resource lifecycle | Evaluate only if actual branching beats a native discriminated-union switch. |
 
-### 2. One small Effect scope owns the existing SDK App
+Effect Micro is comparison research only: current Effect v3 documentation marks it experimental. Do not install or select it under the stable-dependency constraint. Do not add another candidate unless new primary evidence exposes a capability gap in this table.
 
-Use stable Effect 3 only around construction, callback registration, connection, explicit sends, failure mapping, and finalization of the one MCP Apps `App`. Register cleanup as soon as the `App` exists and before awaiting connection so failed or interrupted acquisition cannot leak it. React consumes plain state/callbacks and does not also call `useApp` or create another `App`.
+Sources: [fp-ts project direction](https://github.com/gcanti/fp-ts), [fp-ts TaskEither bracket](https://gcanti.github.io/fp-ts/modules/TaskEither.ts.html), [Effect scopes](https://effect.website/docs/v3/resource-management/scope), [Effect Micro status](https://effect.website/docs/v3/micro/new-users), [Remeda](https://github.com/remeda/remeda), [neverthrow](https://github.com/supermacro/neverthrow), and [ts-pattern](https://github.com/gvergnaud/ts-pattern).
 
-No `@effect/platform`, Effect Schema, service/layer hierarchy, retry schedule, polling fiber, reconnect loop, or repository-wide wrapper is allowed. Pin the exact tested stable Effect 3 version only after the evidence gate passes.
+### 2. Native code is the required shipping baseline
 
-Alternative: convert server wrappers or proposal operations. Rejected because current wrappers are small and proposal/application code has a safety-sensitive blast radius unrelated to this experiment.
+Do not compare candidates against the old minified document. Identify the exact verified UI commit and run all candidates against the same plain inputs, outputs, SDK cohort, TypeScript configuration, bundler settings, and tests. Candidate packages remain temporary until the decision.
 
-### 3. Cancellation never stands in for delivery semantics
+The pure comparison may use each library's natural API, but it must not manufacture complexity or widen into safety-sensitive proposal/application code. The async comparison must preserve the same explicit message-delivery and stale-result semantics.
 
-One deliberate activation starts at most one `sendMessage`. Pending state blocks duplication. Failure becomes plain React state and permits only a later deliberate retry. Unmount or result replacement interrupts local work, closes or invalidates the old session, and ignores stale completion. It never claims to retract an already delivered message.
+### 3. Adoption measures maintainability, not only line count
 
-Verify the pinned SDK's close and pending-Promise behavior. Keep the smallest generation guard needed where SDK cancellation is absent; do not hide it behind another abstraction.
+Select a dependency only when behavior and safety remain green; it demonstrates a concrete improvement in composition, expected-error handling, resource ownership, or change comprehension; measured browser output and type-check cost stay within the project's recorded budgets; and one coherent model remains.
 
-### 4. Adoption requires comparative evidence
+Record concepts a maintainer must learn, inference/diagnostic quality, migration direction, remaining manual guards, and production code changed. Fewer lines help but cannot overrule clearer contracts or long-term consistency. If separate narrow packages would overlap, prefer the single candidate covering the demonstrated needs or native TypeScript.
 
-Run identical connection timing, result replacement, failure, repeated activation, unmount, remount, and stale-completion cases against native and Effect adapters. Record raw/gzip artifact bytes and the lifecycle coordination each implementation requires.
+### 4. Stable Effect 3 is the leading integrated candidate, not a foregone conclusion
 
-Adopt Effect only if all behavior remains green, the built resource stays within React's verified host ceiling, there is still one lifecycle owner, and Effect removes at least one real manual acquisition/finalization or expected-failure coordination path without adding a parallel service hierarchy. Otherwise retain native code, record the rejection, remove the candidate dependency, and close the implementation without switching production.
+If Effect wins, use the exact tested stable 3.x release and only the pure modules/runtime APIs demonstrated by the comparison. One scope may own construction, callback registration, connection, deliberate sends, failure mapping, and finalization. No `@effect/platform`, Effect Schema, layer/service hierarchy, retry schedule, polling fiber, or reconnect loop.
 
-### 5. Preserve package and safety boundaries
+If Remeda or neverthrow wins a narrow need while native lifecycle code remains clearer, adopt only that narrow library. If no dependency materially improves the cases, retain native TypeScript and record the rejection. Never keep multiple candidates for speculative future use.
 
-The Effect adapter remains browser-only and bundled into the existing self-contained picker. Node entry points do not import it. No CSP, resource, tool, authorization, retry, provider, or deployment permission changes. The dependency landscape records version, artifact delta, APIs used, and adopt/reject reasoning.
+### 5. Preserve SDK, package, and safety boundaries
+
+React or Preact consumes plain state/callbacks and does not create a second `App`. Pending state blocks duplicate sends; failure permits only a later deliberate retry. Interruption or disposal closes/invalidates local work but never claims to retract a delivered message.
+
+The selected dependency is browser-only and bundled into the self-contained picker. Node entry points do not import it. No CSP, resource, tool, authorization, provider, or deployment permission changes. The dependency landscape records version, measured artifact/type-check delta, APIs used, and decision.
 
 ## Risks / Trade-offs
 
-- [Effect adds bytes without reducing lifecycle complexity] → Compare against native and reject when the evidence gate fails.
-- [Effect and React both own the SDK session] → Keep one adapter call site and prohibit simultaneous `useApp` or direct `App` construction.
-- [Interrupted Promises update stale state or delivered messages are misreported] → Verify SDK semantics and retain a minimal generation guard.
-- [The stacked branch drifts after React merges] → React merges first; then rebase Effect onto its exact merged `origin/main` revision before final verification.
-- [Dependency work conflicts with another release] → Serialize manifest/lockfile edits and recompute the package version from the final base.
+- [The lifecycle biases the result toward Effect] -> Score the pure core independently and give fp-ts an equivalent lifecycle candidate.
+- [Narrow libraries are rejected for not being runtimes] -> Evaluate Remeda, neverthrow, and ts-pattern only against their documented roles.
+- [Several attractive candidates survive] -> Keep one coherent model or native TypeScript; delete every rejected package and spike.
+- [Type complexity shifts cost to builds/reviewers] -> Record diagnostics, type-check time, required concepts, and comprehension feedback.
+- [Cancellation is mistaken for delivery rollback] -> Preserve explicit pending and stale-generation guards where the SDK cannot cancel.
+- [The stacked branch drifts] -> Merge UI first, then rebase onto its exact integrated `origin/main` revision.
 
 ## Migration Plan
 
-1. Wait for the React adapter and lifecycle harness, then identify its exact commit and artifact baseline.
-2. Implement the isolated Effect candidate without changing the production call site.
-3. Run the comparative evidence gate and record the decision.
-4. If adopted, switch the single adapter call site, bundle Effect, and run focused, package, privacy, and full repository checks. If rejected, delete the candidate and retain the native adapter.
-5. Rebase or retarget the draft after React merges, make a separate release/version decision, and integrate through the protected ruleset.
-6. Roll back Effect alone to the native adapter; use `NEMLIG_MCP_APPS` only as the emergency picker fallback. No data migration is required.
-
-## Open Questions
-
-- The pinned MCP Apps SDK's close and pending-operation guarantees are verified in the first comparison slice; the result selects the minimum explicit stale-state guard but does not change scope.
+1. Identify the verified UI baseline and record native pure-core, lifecycle, bundle, and type-check evidence.
+2. Implement bounded equivalent candidates without changing the production call site.
+3. Apply the role-specific and integrated decision matrix; record one selection and delete all rejected code/dependencies.
+4. Switch only the selected pure/lifecycle call sites, then run focused, package, privacy, and repository checks.
+5. Rebase or retarget after UI merges, make a separate release/version decision, and integrate through the protected ruleset.
+6. Roll back the dependency to native TypeScript; use `NEMLIG_MCP_APPS` only as emergency UI fallback. No data migration is required.
