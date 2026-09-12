@@ -1,5 +1,7 @@
 .env
 credentials.json
 dist/
+.comparison/
+.product-discovery/
 node_modules/
 /.wrangler/

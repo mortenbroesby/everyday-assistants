@@ -211,6 +211,43 @@ pnpm nemlig remove 701015
 
 They remain subject to the exact-product approval and readback contract above.
 
+### Local plan command
+
+`plan` resolves a strict JSON file with one to fifty shopping lines using the
+same planner as `plan_my_shopping`. It reads the current catalogue and basket to
+calculate coverage, but it never creates a proposal or calls a basket mutation
+method.
+
+```json
+{
+  "lines": [
+    { "id": "milk", "name": "mælk", "quantity": 2 },
+    { "id": "coffee", "name": "kaffe", "quantity": 1 }
+  ]
+}
+```
+
+```sh
+pnpm nemlig plan ./shopping.json --timeout-ms 30000
+pnpm nemlig plan ./shopping.json --json
+```
+
+The file is parsed and validated before login or any provider request. Press
+`Ctrl-C` to cancel; the command waits for its active reads to finish unwinding.
+
+The credential-free acceptance below starts a real HTTP server on `127.0.0.1`,
+drives this CLI command with real Node fetch, and proves success, cancellation,
+socket closure, and fatal-failure quiescence outside ChatGPT:
+
+```sh
+pnpm --filter nemlig-assistant demo:product-discovery
+```
+
+Account-backed acceptance is intentionally not performed: the current Nemlig
+login request can ask the provider to merge a pre-login basket. The command's
+planner never invokes a basket mutation, but an authenticated terminal run
+still inherits that login behavior until it is separately redesigned.
+
 ### Local MCP server
 
 ```sh

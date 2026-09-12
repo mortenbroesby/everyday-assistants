@@ -196,6 +196,11 @@ export function normalizeProducts(value: unknown, limit: number): Product[] {
 
 type Fetch = typeof fetch;
 
+const abortReason = (signal: AbortSignal): unknown => signal.reason ?? new DOMException("Read cancelled.", "AbortError");
+const throwIfAborted = (signal: AbortSignal | null | undefined): void => {
+  if (signal?.aborted) throw abortReason(signal);
+};
+
 export class NemligClient {
   private readonly cookies = new Map<string, Map<string, string>>();
   private loggedIn = false;
@@ -266,12 +271,13 @@ export class NemligClient {
     if (!asString(token.access_token)) throw new NemligError("Validate account failed: invalid response data.");
   }
 
-  async searchProducts(query: string, limit = 10): Promise<Product[]> {
+  async searchProducts(query: string, limit = 10, signal?: AbortSignal): Promise<Product[]> {
     if (!query.trim()) throw new NemligError("Search query is required.");
     if (!Number.isInteger(limit) || limit < 1) throw new NemligError("Search limit must be positive.");
-    if (!this.productTimestamp) await this.refreshSession();
+    throwIfAborted(signal);
+    if (!this.productTimestamp) await this.refreshSession(signal);
 
-    const primary = this.rememberProducts(await this.searchGateway(query, limit));
+    const primary = this.rememberProducts(await this.searchGateway(query, limit, signal));
     if (primary.length || !this.accessToken) return primary;
 
     const quick = await this.optionalJson(
@@ -281,11 +287,12 @@ export class NemligClient {
       })}`,
       "Quick search",
       true,
+      signal,
     );
     for (const category of asRecords(asRecord(quick).Categories).slice(0, 3)) {
       const path = asString(category.Url);
       if (!path) continue;
-      const products = this.rememberProducts(await this.productsByCategory(path, limit));
+      const products = this.rememberProducts(await this.productsByCategory(path, limit, 1, signal));
       if (products.length) return products;
     }
     return [];
@@ -296,11 +303,12 @@ export class NemligClient {
    * or resolves it from the catalogue when absent. Use `getFreshProduct` for
    * the final comparison immediately before a basket mutation.
    */
-  async getProduct(productId: number): Promise<Product> {
+  async getProduct(productId: number, signal?: AbortSignal): Promise<Product> {
     this.validateProductId(productId);
+    throwIfAborted(signal);
     const known = this.knownProducts.get(productId);
     if (known) return known;
-    return this.fetchExactProduct(productId);
+    return this.fetchExactProduct(productId, signal);
   }
 
   /**
@@ -316,8 +324,8 @@ export class NemligClient {
     if (!Number.isInteger(productId) || productId < 1) throw new NemligError("Product ID must be positive.");
   }
 
-  private async fetchExactProduct(productId: number): Promise<Product> {
-    const product = (await this.searchProducts(String(productId), 10)).find(
+  private async fetchExactProduct(productId: number, signal?: AbortSignal): Promise<Product> {
+    const product = (await this.searchProducts(String(productId), 10, signal)).find(
       (candidate) => String(candidate.id) === String(productId),
     );
     if (!product) throw new NemligError(`Product ${productId} could not be resolved exactly.`);
@@ -385,9 +393,10 @@ export class NemligClient {
     return { products: unique, page, hasNext: products.length === limit && offset + products.length < 1000 };
   }
 
-  async getCart(): Promise<Basket> {
+  async getCart(signal?: AbortSignal): Promise<Basket> {
     this.requireLogin("view the basket");
-    return normalizeBasket(await this.json(`${API_BASE_URL}/basket/GetBasket`, {}, "Get basket"));
+    throwIfAborted(signal);
+    return normalizeBasket(await this.json(`${API_BASE_URL}/basket/GetBasket`, { signal }, "Get basket"));
   }
 
   async addToCart(productId: number, quantity = 1): Promise<Basket> {
@@ -453,29 +462,30 @@ export class NemligClient {
     if (!this.loggedIn) throw new NemligError(`Must be logged in to ${operation}.`);
   }
 
-  private async refreshSession(): Promise<void> {
-    const token = asRecord(await this.json(`${API_BASE_URL}/Token`, {}, "Get token", true));
+  private async refreshSession(signal?: AbortSignal): Promise<void> {
+    throwIfAborted(signal);
+    const token = asRecord(await this.json(`${API_BASE_URL}/Token`, { signal }, "Get token", true));
     this.accessToken = asString(token.access_token);
     if (!this.accessToken) throw new NemligError("Get token failed: invalid response data.");
     const settings = asRecord(
-      await this.optionalJson(`${API_BASE_URL}/v2/AppSettings/Website`, "Get app settings"),
+      await this.optionalJson(`${API_BASE_URL}/v2/AppSettings/Website`, "Get app settings", false, signal),
     );
     this.productTimestamp =
       asString(settings.CombinedProductsAndSitecoreTimestamp) ?? DEFAULT_PRODUCT_TIMESTAMP;
     this.correlationId = asString(settings.SitecorePublishedStamp) ?? DEFAULT_CORRELATION_ID;
     const user = asRecord(
-      await this.optionalJson(`${API_BASE_URL}/user/GetCurrentUser`, "Get current user"),
+      await this.optionalJson(`${API_BASE_URL}/user/GetCurrentUser`, "Get current user", false, signal),
     );
     const userId = user.DebitorId ?? user.Id;
     if (typeof userId === "number" || typeof userId === "string") this.userId = String(userId);
     const delivery = asRecord(
-      await this.optionalJson(`${API_BASE_URL}/Order/DeliverySpot`, "Get delivery spot"),
+      await this.optionalJson(`${API_BASE_URL}/Order/DeliverySpot`, "Get delivery spot", false, signal),
     );
     this.timeslot = asString(delivery.TimeslotUtc) ?? this.timeslot;
     this.timeslotId = asNumber(delivery.TimeslotId) ?? this.timeslotId;
   }
 
-  private async searchGateway(query: string, limit: number): Promise<Product[]> {
+  private async searchGateway(query: string, limit: number, signal?: AbortSignal): Promise<Product[]> {
     if (!this.accessToken || !this.productTimestamp) return [];
     const params = new URLSearchParams({
       query,
@@ -489,7 +499,7 @@ export class NemligClient {
       TimeSlotId: String(this.timeslotId),
     });
     const response = asRecord(
-      await this.json(`${SEARCH_GATEWAY_URL}/search?${params}`, {}, "Search products", true, true),
+      await this.json(`${SEARCH_GATEWAY_URL}/search?${params}`, { signal }, "Search products", true, true),
     );
     const products = response.Products;
     return normalizeProducts(Array.isArray(products) ? products : asRecord(products).Products, limit);
@@ -509,15 +519,15 @@ export class NemligClient {
     return products;
   }
 
-  private async productsByCategory(path: string, limit: number, page = 1): Promise<Product[]> {
+  private async productsByCategory(path: string, limit: number, page = 1, signal?: AbortSignal): Promise<Product[]> {
     const pageUrl = new URL(path, "https://www.nemlig.com");
     if (pageUrl.origin !== "https://www.nemlig.com") return [];
     pageUrl.searchParams.set("GetAsJson", "1");
-    const categoryPage = asRecord(await this.optionalJson(pageUrl.toString(), "Get category"));
+    const categoryPage = asRecord(await this.optionalJson(pageUrl.toString(), "Get category", false, signal));
     const group = asRecords(categoryPage.content).find((entry) => entry.ProductGroupId)?.ProductGroupId;
     if (typeof group !== "string" && typeof group !== "number") return [];
 
-    return this.productsByGroup(group, limit, "Get category products", page);
+    return this.productsByGroup(group, limit, "Get category products", page, signal);
   }
 
   private async productsByGroup(
@@ -525,6 +535,7 @@ export class NemligClient {
     limit: number,
     operation: string,
     page = 1,
+    signal?: AbortSignal,
   ): Promise<Product[]> {
     const endpoint = `${API_BASE_URL}/${this.productTimestamp ?? DEFAULT_PRODUCT_TIMESTAMP}/${this.timeslot}/1/${this.userId ?? "0"}/Products/GetByProductGroupId`;
     const params = new URLSearchParams({
@@ -533,14 +544,16 @@ export class NemligClient {
       pagesize: String(limit),
       sortorder: "default",
     });
-    const response = asRecord(await this.optionalJson(`${endpoint}?${params}`, operation));
+    const response = asRecord(await this.optionalJson(`${endpoint}?${params}`, operation, false, signal));
     return normalizeProducts(response.Products, limit);
   }
 
-  private async optionalJson(url: string, operation: string, gateway = false): Promise<unknown> {
+  private async optionalJson(url: string, operation: string, gateway = false, signal?: AbortSignal): Promise<unknown> {
     try {
-      return await this.json(url, {}, operation, true, gateway);
-    } catch {
+      return await this.json(url, { signal }, operation, true, gateway);
+    } catch (error) {
+      if (signal?.aborted) throw abortReason(signal);
+      if (error instanceof NemligError && error.status === 401) throw error;
       return {};
     }
   }
@@ -552,7 +565,9 @@ export class NemligClient {
     retry = true,
     gateway = false,
   ): Promise<unknown> {
+    throwIfAborted(init.signal);
     for (let attempt = 0; attempt <= (retry ? NEMLIG_READ_MAX_RETRIES : 0); attempt += 1) {
+      throwIfAborted(init.signal);
       const attemptSignal = AbortSignal.timeout(NEMLIG_READ_ATTEMPT_TIMEOUT_MS);
       try {
         const headers = new Headers(init.headers);
@@ -590,9 +605,11 @@ export class NemligClient {
         try {
           return await response.json();
         } catch {
+          if (init.signal?.aborted) throw abortReason(init.signal);
           throw new NemligError(`${operation} failed: invalid response data.`);
         }
       } catch (error) {
+        if (init.signal?.aborted) throw abortReason(init.signal);
         if (error instanceof NemligError) throw error;
         if (init.signal?.aborted || attemptSignal.aborted) break;
       }

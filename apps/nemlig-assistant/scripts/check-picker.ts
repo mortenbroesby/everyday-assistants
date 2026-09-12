@@ -12,3 +12,6 @@ assert.doesNotMatch(html, /\bimport\s*\(/u, "picker contains a dynamic import");
 assert.doesNotMatch(html, /\bfetch\s*\(/u, "picker contains an application fetch");
 assert.doesNotMatch(html, /No Nemlig service is contacted/u, "picker contains the local showcase");
 assert.doesNotMatch(html, /showcase-stage/u, "picker contains showcase-only styling");
+assert.doesNotMatch(html, /Functional approach comparison/u, "picker contains the comparison showcase");
+assert.doesNotMatch(html, /effect-remeda/u, "picker contains the Effect and Remeda candidate");
+assert.doesNotMatch(html, /fp-ts/u, "picker contains the fp-ts candidate");

@@ -481,8 +481,12 @@ export function createMcpServer(
   };
   const runAuthenticatedRead = async <Result>(operation: string, action: () => Promise<Result>) =>
     runMcpOperation(operation, () => withAuthenticatedReadRetry(client, loadCredentials, action, requestContext?.kind !== "service"));
-  const resolveRun = async (input: z.infer<typeof shoppingRunToolInputSchema>, sessionId?: string) => {
-    const plan = safePlanImages(await resolveShoppingPlan(client, internalShoppingPlan(input)));
+  const resolveRun = async (
+    input: z.infer<typeof shoppingRunToolInputSchema>,
+    sessionId?: string,
+    signal?: AbortSignal,
+  ) => {
+    const plan = safePlanImages(await resolveShoppingPlan(client, internalShoppingPlan(input), { signal }));
     const items = selectedAdditions(plan);
     return {
       ...plan,
@@ -567,7 +571,7 @@ export function createMcpServer(
       annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true },
     },
     (input, extra) => runAuthenticatedRead("plan_my_shopping", async () => {
-      return success(await resolveRun(input, extra.sessionId));
+      return success(await resolveRun(input, extra.sessionId, extra.signal));
     }),
   );
 

@@ -5,7 +5,8 @@ import { AjvJsonSchemaValidator } from "@modelcontextprotocol/sdk/validation/ajv
 import type { JsonSchemaType } from "@modelcontextprotocol/sdk/validation/types.js";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
+import { EventEmitter } from "node:events";
+import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import test from "node:test";
 import { NemligError, type Basket, type Product, type ShoppingClient } from "./client.js";
@@ -13,6 +14,8 @@ import { createProgram } from "./cli.js";
 import { createMcpServer, NEMLIG_CONNECT_URL, PICKER_URI, rankProducts, safeNemligImageUrl, serviceAcceptanceResourceInventory, serviceAcceptanceToolInventory } from "./mcp.js";
 import { productionToolInventory } from "./production-acceptance.js";
 import { BasketProposalService } from "./proposals.js";
+import { PlanningDeadlineError } from "./product-discovery.js";
+import { resolveShoppingPlan } from "./plans.js";
 
 const basket: Basket = {
   items: [{ name: "Milk", quantity: 1, total: 12.5 }],
@@ -65,7 +68,7 @@ const testCredentials = async () => ({ username: "person@example.test", password
 
 test("CLI exposes only supported commands and never accepts a password option", () => {
   const help = createProgram({ client: fakeClient() }).helpInformation();
-  for (const command of ["login", "logout", "search", "favorites", "add", "remove", "cart"]) assert.match(help, new RegExp(command));
+  for (const command of ["login", "logout", "search", "favorites", "add", "remove", "cart", "plan"]) assert.match(help, new RegExp(command));
   for (const forbidden of ["feature-request", "parse", "checkout", "--password"]) assert.doesNotMatch(help, new RegExp(forbidden));
 });
 
@@ -198,6 +201,110 @@ test("retired CLI feature request is rejected without a side effect", async () =
     "--summary",
     "Choose discounted favorites first.",
   ]), /unknown command|feature-request/iu);
+});
+
+const withPlanFile = async <T>(input: unknown, action: (file: string) => Promise<T>): Promise<T> => {
+  const directory = await mkdtemp(`${tmpdir()}/nemlig-cli-plan-`);
+  const file = `${directory}/plan.json`;
+  await writeFile(file, JSON.stringify(input));
+  try {
+    return await action(file);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+};
+
+test("CLI plan validates malformed and over-limit files before login or provider reads", async () => {
+  for (const input of [{ lines: [] }, { lines: Array.from({ length: 51 }, (_, index) => ({ id: `line-${index}`, name: "mælk" })) }]) {
+    await withPlanFile(input, async (file) => {
+      let logins = 0;
+      let reads = 0;
+      const client = fakeClient({
+        isLoggedIn: () => false,
+        login: async () => { logins += 1; },
+        searchProducts: async () => { reads += 1; return [product]; },
+        getCart: async () => { reads += 1; return basket; },
+      });
+      await assert.rejects(createProgram({ client, credentials: testCredentials, out: () => {} }).parseAsync([
+        "node", "nemlig", "plan", file,
+      ]));
+      assert.equal(logins, 0);
+      assert.equal(reads, 0);
+    });
+  }
+});
+
+test("CLI plan formats or serializes a read-only plan without basket mutations", async () => {
+  await withPlanFile({ lines: [{ id: "milk", name: "mælk", quantity: 2 }] }, async (file) => {
+    const output: string[] = [];
+    let logins = 0;
+    const client = fakeClient({
+      isLoggedIn: () => false,
+      login: async () => { logins += 1; },
+      addToCart: async () => { throw new Error("basket mutation called"); },
+      removeFromCart: async () => { throw new Error("basket mutation called"); },
+      clearCart: async () => { throw new Error("basket mutation called"); },
+    });
+    await createProgram({ client, credentials: testCredentials, out: (message) => output.push(message) }).parseAsync([
+      "node", "nemlig", "plan", file,
+    ]);
+    assert.equal(logins, 1);
+    assert.match(output.join("\n"), /SHOPPING PLAN/u);
+    assert.match(output.join("\n"), /Økologisk mælk/u);
+    assert.match(output.join("\n"), /no basket mutation/u);
+
+    output.length = 0;
+    await createProgram({ client, credentials: testCredentials, out: (message) => output.push(message) }).parseAsync([
+      "node", "nemlig", "plan", file, "--json",
+    ]);
+    const plan = JSON.parse(output.join("\n")) as { lines: Array<{ id: string }>; summary: { added: number } };
+    assert.deepEqual(plan.lines.map(({ id }) => id), ["milk"]);
+    assert.equal(plan.summary.added, 0);
+  });
+});
+
+test("CLI plan reports ordinary discovery failures and drains reads after SIGINT", async () => {
+  await withPlanFile({ lines: [{ id: "milk", name: "mælk", quantity: 1 }] }, async (file) => {
+    const unavailable: string[] = [];
+    await createProgram({
+      client: fakeClient({ searchProducts: async () => { throw new Error("catalogue unavailable"); } }),
+      out: (message) => unavailable.push(message),
+    }).parseAsync(["node", "nemlig", "plan", file]);
+    assert.match(unavailable.join("\n"), /discovery unavailable/iu);
+
+    const signals = new EventEmitter();
+    let started: (() => void) | undefined;
+    const startedRead = new Promise<void>((resolve) => { started = resolve; });
+    let settled = 0;
+    const waitForAbort = <T>(_value: T, signal?: AbortSignal): Promise<T> => new Promise((_resolve, reject) => {
+      started?.();
+      signal?.addEventListener("abort", () => setTimeout(() => {
+        settled += 1;
+        reject(signal.reason);
+      }, 3), { once: true });
+    });
+    const client = fakeClient({
+      searchProducts: (_query, _limit, signal) => waitForAbort([product], signal),
+      getCart: (signal) => waitForAbort(basket, signal),
+      addToCart: async () => { throw new Error("basket mutation called"); },
+      removeFromCart: async () => { throw new Error("basket mutation called"); },
+      clearCart: async () => { throw new Error("basket mutation called"); },
+    });
+    const pending = createProgram({ client, signals, out: () => {} }).parseAsync(["node", "nemlig", "plan", file]);
+    await startedRead;
+    signals.emit("SIGINT");
+    await assert.rejects(pending, (error) => error instanceof DOMException && error.name === "AbortError" && error.message === "Planning cancelled.");
+    assert.equal(settled, 2);
+    assert.equal(signals.listenerCount("SIGINT"), 0);
+
+    settled = 0;
+    await assert.rejects(
+      createProgram({ client, signals, out: () => {} }).parseAsync(["node", "nemlig", "plan", file, "--timeout-ms", "1"]),
+      PlanningDeadlineError,
+    );
+    assert.equal(settled, 2);
+    assert.equal(signals.listenerCount("SIGINT"), 0);
+  });
 });
 
 const withMcpClient = async <T>(
@@ -509,6 +616,73 @@ test("MCP plan_my_shopping retries one expired session and returns recovered can
   assert.equal(searches, 2);
   assert.equal(logins, 2);
   assert.equal(basketReads, 2);
+});
+
+test("default planning starts no reads when its request is already aborted", async () => {
+  const controller = new AbortController();
+  const reason = new Error("caller stopped before planning");
+  controller.abort(reason);
+  let reads = 0;
+  await assert.rejects(resolveShoppingPlan({
+    searchProducts: async () => { reads += 1; return [product]; },
+    getProduct: async () => { reads += 1; return product; },
+    getCart: async () => { reads += 1; return { ...basket, items: [] }; },
+  }, {
+    lines: [{ id: "milk", name: "mælk", quantity: 1 }],
+  }, { signal: controller.signal }), (error) => error === reason);
+  assert.equal(reads, 0);
+});
+
+test("Effect planning settles the expired attempt before authenticated retry", async () => {
+  let logins = 0;
+  let firstAttemptSlowSettled = false;
+  let retryOverlappedFirstAttempt = false;
+  let firstAttemptStartedQueued = false;
+  const starts: string[] = [];
+  const client = fakeClient({
+    isLoggedIn: () => true,
+    login: async () => {
+      logins += 1;
+      if (logins === 2 && !firstAttemptSlowSettled) retryOverlappedFirstAttempt = true;
+    },
+    searchProducts: async (query, _limit, signal) => {
+      const attempt = logins;
+      starts.push(`${attempt}:${query}`);
+      if (attempt === 1 && query === "queued") firstAttemptStartedQueued = true;
+      if (attempt === 1 && query === "expired") {
+        await new Promise((resolve) => setTimeout(resolve, 1));
+        throw new NemligError("Search failed", 401);
+      }
+      if (attempt === 1) {
+        return new Promise((resolve, reject) => {
+          const timer = setTimeout(() => resolve([{ ...product, name: query, description: query }]), 40);
+          signal?.addEventListener("abort", () => {
+            clearTimeout(timer);
+            setTimeout(() => {
+              firstAttemptSlowSettled = true;
+              reject(signal.reason);
+            }, 5);
+          }, { once: true });
+        });
+      }
+      return [{ ...product, name: query, description: query }];
+    },
+    getCart: async () => ({ ...basket, items: [] }),
+  });
+  await withMcpClient(createMcpServer(client, testCredentials), async (mcp) => {
+    const result = await mcp.callTool({
+      name: "plan_my_shopping",
+      arguments: {
+        lines: ["expired", "slow-a", "slow-b", "queued"].map((name) => ({ id: name, name, quantity: 1 })),
+      },
+    });
+    assert.notEqual(result.isError, true, toolText(result));
+  });
+  assert.equal(logins, 2);
+  assert.equal(firstAttemptSlowSettled, true);
+  assert.equal(retryOverlappedFirstAttempt, false);
+  assert.equal(firstAttemptStartedQueued, false);
+  assert.ok(starts.includes("2:queued"));
 });
 
 test("MCP plan_my_shopping surfaces a second 401 without looping", async () => {
