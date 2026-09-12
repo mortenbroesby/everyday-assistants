@@ -25,6 +25,10 @@
 
 ## 4. Acceptance, documentation, and release evidence
 
+Disposition: superseded on 2026-09-09 by `remove-saved-shopping`. Task 4.5 is
+intentionally not performed because deploying or accepting the retired list
+surface would reintroduce removed behavior.
+
 - [x] 4.1 Extend the closed tool/resource inventory and authenticated production feature acceptance with Nemlig-first metadata, one deterministic reserved list lifecycle, legacy compatibility, list resolution, picker image metadata, and original-state restoration; verify acceptance tests cannot submit a feature request or apply a basket proposal.
 - [x] 4.2 Update the Nemlig README feature inventory and examples, backlog status, production readiness, and Cloudflare operations with named-list usage, reusable-versus-automatic semantics, image fallback, migration, cost model, rollback, and the owner-only deployment boundary; state prominently that ordinary releases update and Refresh the one exact `Nemlig Assistant` app and must never create `(new)`, bracketed, numbered, or parallel copies; verify documentation links and repository privacy checks pass.
 - [x] 4.3 Apply the required alpha feature version decision and verify the package/version policy accepts the resulting source and documentation diff.
