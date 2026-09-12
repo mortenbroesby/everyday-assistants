@@ -39,34 +39,41 @@ export const shoppingPlanInputSchema = z.object({
 export type ShoppingPlanInput = z.input<typeof shoppingPlanInputSchema>;
 export type StoredShoppingPlanInput = z.output<typeof shoppingPlanInputSchema>;
 type ParsedShoppingPlanLine = z.output<typeof shoppingPlanLineSchema>;
-type ClarityReason = "exact_product" | "unique_candidate" | "clear_text_match" | "preferred_brand" | "amount_match" | "manual_choice" | "brand_choice" | "close_alternatives" | "no_eligible_candidate" | "discovery_unavailable" | "unavailable";
 export type PlanSource = "favorite" | "catalog";
 
-export interface PlanCandidate {
-  id: number; name: string; price: number | undefined; unit_price: number | undefined;
-  unit_size: string; brand: string; available: boolean; source: PlanSource;
-  description?: string;
-  details?: Array<{ key: string; value: string }>;
-  image_url: string | undefined;
-  dietary: { organic: boolean; vegan: boolean; gluten_free: boolean; lactose_free: boolean };
-  is_frozen: boolean; is_on_discount: boolean; constraint_outcomes: Record<string, boolean>; tags: string[];
-  relevant: boolean; preferred_brand_match: boolean;
-  package_amount?: number; package_unit?: "g" | "ml" | "stk";
-  required_packages?: number; covered_amount?: number; excess_amount?: number;
-}
+const clarityReasonSchema = z.enum(["exact_product", "unique_candidate", "clear_text_match", "preferred_brand", "amount_match", "manual_choice", "brand_choice", "close_alternatives", "no_eligible_candidate", "discovery_unavailable", "unavailable"]);
+export const planCandidateSchema = z.object({
+  id: z.number().int().positive(), name: z.string(), price: z.number().optional(), unit_price: z.number().optional(),
+  unit_size: z.string(), brand: z.string(), available: z.boolean(), source: z.enum(["favorite", "catalog"]),
+  description: z.string().optional(), details: z.array(z.object({ key: z.string(), value: z.string() }).strict()).optional(),
+  image_url: z.string().optional(),
+  dietary: z.object({ organic: z.boolean(), vegan: z.boolean(), gluten_free: z.boolean(), lactose_free: z.boolean() }).strict(),
+  is_frozen: z.boolean(), is_on_discount: z.boolean(), constraint_outcomes: z.record(z.string(), z.boolean()), tags: z.array(z.string()),
+  relevant: z.boolean(), preferred_brand_match: z.boolean(), package_amount: z.number().positive().optional(),
+  package_unit: z.enum(["g", "ml", "stk"]).optional(), required_packages: z.number().int().positive().optional(),
+  covered_amount: z.number().positive().optional(), excess_amount: z.number().nonnegative().optional(),
+}).strict();
+export type PlanCandidate = z.infer<typeof planCandidateSchema>;
 
-export interface ShoppingPlan {
-  mode: "automatic" | "manual";
-  lines: Array<{
-    id: string; name: string; quantity: number; candidates: PlanCandidate[];
-    resolution: "selected" | "covered" | "unresolved";
-    reason?: string; clarity: "clear" | "unclear"; clarity_reason: ClarityReason;
-    selected_product_id?: number; basket_quantity: number; remaining_quantity: number;
-    requested_amount?: number; requested_unit?: string;
-  }>;
-  selected_estimated_total: number;
-  summary: { total: number; covered: number; automatically_selected: number; added: 0; unresolved: number; failed: number; automatic_coverage_percent: number };
-}
+export const shoppingPlanSchema = z.object({
+  mode: z.enum(["automatic", "manual"]),
+  lines: z.array(z.object({
+    id: z.string(), name: z.string(), quantity: z.number().int().positive(), candidates: z.array(planCandidateSchema),
+    resolution: z.enum(["selected", "covered", "unresolved"]), reason: z.string().optional(),
+    clarity: z.enum(["clear", "unclear"]), clarity_reason: clarityReasonSchema,
+    selected_product_id: z.number().int().positive().optional(), basket_quantity: z.number().nonnegative(),
+    remaining_quantity: z.number().nonnegative(), requested_amount: z.number().positive().optional(),
+    requested_unit: requestedUnitSchema.optional(),
+  }).strict()),
+  selected_estimated_total: z.number(),
+  summary: z.object({
+    total: z.number().int().nonnegative(), covered: z.number().int().nonnegative(),
+    automatically_selected: z.number().int().nonnegative(), added: z.literal(0),
+    unresolved: z.number().int().nonnegative(), failed: z.number().int().nonnegative(),
+    automatic_coverage_percent: z.number().int().min(0).max(100),
+  }).strict(),
+}).strict();
+export type ShoppingPlan = z.infer<typeof shoppingPlanSchema>;
 
 export type PlanClient = ProductDiscoveryClient;
 

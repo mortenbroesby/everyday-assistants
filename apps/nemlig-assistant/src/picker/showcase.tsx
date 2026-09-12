@@ -1,8 +1,8 @@
 import { StrictMode, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { PickerView } from "../picker/PickerView.js";
-import type { PickerPayload } from "../picker/contract.js";
-import { AppFrame } from "./AppFrame.js";
+import { PickerFrame } from "./PickerFrame.js";
+import { PickerView } from "./PickerView.js";
+import type { PickerPayload } from "./contract.js";
 import "./styles.css";
 import "./showcase.css";
 
@@ -34,7 +34,7 @@ function Showcase() {
     document.documentElement.style.colorScheme = theme;
   }, [theme]);
 
-  return <AppFrame>
+  return <PickerFrame>
     <header className="showcase-header">
       <h1>Nemlig UI</h1>
       <p className="showcase-intro">Synthetic design states using the production picker presentation. No Nemlig service is contacted.</p>
@@ -51,7 +51,7 @@ function Showcase() {
       <section><h2>Empty</h2><PickerView payload={{ items: [] }} onChoose={() => undefined} /></section>
       <section><h2>Connection error</h2><PickerView failure="Forbindelsen kunne ikke oprettes. Prøv igen." onChoose={() => undefined} /></section>
     </div>
-  </AppFrame>;
+  </PickerFrame>;
 }
 
 const root = document.getElementById("root");

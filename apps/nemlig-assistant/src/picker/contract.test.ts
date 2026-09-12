@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { readPickerPayload, safePickerImageUrl } from "./contract.js";
-import { safeAreaStyle } from "../ui/AppFrame.js";
+import { safeAreaStyle } from "./PickerFrame.js";
 import { bindPickerHost, type PickerHost } from "./session.js";
 
 test("picker reads structured content before a JSON text fallback and rejects unsafe images", () => {
@@ -11,7 +11,8 @@ test("picker reads structured content before a JSON text fallback and rejects un
   assert.deepEqual(readPickerPayload({ structuredContent: structured })?.items[0]?.product.details, [{ key: "Varedeklaration", value: "Mælk" }]);
   assert.equal(readPickerPayload({ content: [{ type: "text", text: JSON.stringify(fallback) }] })?.items[0]?.ingredient, "brød");
   assert.equal(readPickerPayload({ content: [{ type: "text", text: "not json" }] }), undefined);
-  assert.equal(readPickerPayload({ structuredContent: { items: Array.from({ length: 6 }, () => structured.items[0]) } }), undefined);
+  assert.equal(readPickerPayload({ structuredContent: { items: Array.from({ length: 50 }, () => structured.items[0]) } })?.items.length, 50);
+  assert.equal(readPickerPayload({ structuredContent: { items: Array.from({ length: 51 }, () => structured.items[0]) } }), undefined);
   assert.equal(readPickerPayload({ structuredContent: { items: [{ ...structured.items[0], quantity: 1.5 }] } }), undefined);
   assert.equal(readPickerPayload({ structuredContent: { items: [{ ...structured.items[0], confidence: 101 }] } }), undefined);
   assert.equal(safePickerImageUrl("https://nemlig.com/scommerce/images/milk.jpg"), "https://nemlig.com/scommerce/images/milk.jpg");

@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { NemligError, type Basket, type Product, type ShoppingClient } from "./client.js";
+import { runReadPool } from "./read-coordination.js";
 
 export type ProposalOperation = "additions" | "removal" | "replacement" | "clear";
 export type AdditionAuthorization =
@@ -86,7 +87,15 @@ export interface ApplyResult extends Record<string, unknown> {
   status: "completed";
   operation: ProposalOperation;
   replayed: boolean;
-  basket: Record<string, unknown>;
+  basket: BasketPayload;
+}
+
+export interface BasketPayload extends Record<string, unknown> {
+  items: Basket["items"];
+  products_price: number | undefined;
+  delivery_price: number | undefined;
+  number_of_products: number | undefined;
+  delivery_time: string | undefined;
 }
 
 interface StoredProposal {
@@ -109,11 +118,15 @@ export interface ProposalServiceOptions {
   audit?: (event: ProposalAuditEvent) => void;
 }
 
+export interface ProposalReadOptions {
+  readonly signal?: AbortSignal;
+}
+
 const money = (value: number): number => Math.round(value * 100) / 100;
 const sameId = (left: number | string | undefined, right: number): boolean =>
   left !== undefined && String(left) === String(right);
 
-const basketPayload = (basket: Basket): Record<string, unknown> => ({
+export const basketPayload = (basket: Basket): BasketPayload => ({
   items: basket.items,
   products_price: basket.productsPrice,
   delivery_price: basket.deliveryPrice,
@@ -232,6 +245,7 @@ export class BasketProposalService {
     connectionId: string,
     items: Array<{ product_id: number; quantity: number }>,
     authorization: AdditionAuthorization,
+    options: ProposalReadOptions = {},
   ): Promise<ProposalView> {
     this.validateAdditionItems(items);
     if (!authorization || !["exact_review", "same_run_automatic"].includes(authorization.kind)) {
@@ -245,25 +259,25 @@ export class BasketProposalService {
       }
     }
     const authorizationKind = authorization.kind;
-    const basket = await this.client.getCart();
-    const lines = await Promise.all(
-      items.map(async (item) => productLine(await this.client.getProduct(item.product_id), item.quantity)),
-    );
+    const basket = await this.client.getCart(options.signal);
+    const lines = await runReadPool(items, async (item, signal) =>
+      productLine(await this.client.getProduct(item.product_id, signal), item.quantity), options);
     if (lines.some((line) => !line.available)) throw new NemligError("An exact product is unavailable; no proposal was created.");
-    const currentTotal = basket.productsPrice ?? 0;
-    const delta = lines.reduce((sum, line) => {
-      const currentLine = basket.items.find((item) => sameId(item.id, line.product_id));
-      return sum + line.line_total - (currentLine?.total ?? 0);
-    }, 0);
-    const currentCount = basket.numberOfProducts ?? 0;
-    const countDelta = lines.reduce((sum, line) => {
-      const currentLine = basket.items.find((item) => sameId(item.id, line.product_id));
-      return sum + line.quantity - (currentLine?.quantity ?? 0);
-    }, 0);
+    const basketLines = new Map<string, Basket["items"][number]>();
+    for (const line of basket.items) if (line.id !== undefined && !basketLines.has(String(line.id))) {
+      basketLines.set(String(line.id), line);
+    }
+    const totals = lines.reduce((result, line) => {
+      const currentLine = basketLines.get(String(line.product_id));
+      return {
+        price: result.price + line.line_total - (currentLine?.total ?? 0),
+        count: result.count + line.quantity - (currentLine?.quantity ?? 0),
+      };
+    }, { price: basket.productsPrice ?? 0, count: basket.numberOfProducts ?? 0 });
     return this.create(connectionId, basket, { kind: "additions", lines }, {
       lines,
-      expected_products_price: money(currentTotal + delta),
-      expected_number_of_products: currentCount + countDelta,
+      expected_products_price: money(totals.price),
+      expected_number_of_products: totals.count,
     }, authorizationKind);
   }
 
@@ -291,9 +305,13 @@ export class BasketProposalService {
     if (ids.size !== items.length) throw new NemligError("Each product ID may appear only once per proposal.");
   }
 
-  async prepareRemoval(connectionId: string, productId: number): Promise<ProposalView | NoopProposalView> {
+  async prepareRemoval(
+    connectionId: string,
+    productId: number,
+    options: ProposalReadOptions = {},
+  ): Promise<ProposalView | NoopProposalView> {
     if (!Number.isInteger(productId) || productId < 1) throw new NemligError("Product ID must be positive.");
-    const basket = await this.client.getCart();
+    const basket = await this.client.getCart(options.signal);
     const line = basket.items.find((item) => sameId(item.id, productId));
     if (!line) return { applicable: false, operation: "removal", reason: `Product ${productId} is not in the basket.` };
     return this.create(connectionId, basket, { kind: "removal", productId, line }, { line });
@@ -304,6 +322,7 @@ export class BasketProposalService {
     currentProductId: number,
     replacementProductId: number,
     replacementQuantity: number,
+    options: ProposalReadOptions = {},
   ): Promise<ProposalView | NoopProposalView> {
     if (!Number.isInteger(currentProductId) || currentProductId < 1) {
       throw new NemligError("Current product ID must be positive.");
@@ -318,7 +337,7 @@ export class BasketProposalService {
       throw new NemligError("Replacement quantity must be positive.");
     }
 
-    const basket = await this.client.getCart();
+    const basket = await this.client.getCart(options.signal);
     const basketLine = basket.items.find((item) => sameId(item.id, currentProductId));
     if (!basketLine) {
       return {
@@ -332,10 +351,11 @@ export class BasketProposalService {
       throw new NemligError("Current basket line is incomplete; no proposal was created.");
     }
 
-    const [currentProduct, replacementProduct] = await Promise.all([
-      this.client.getProduct(currentProductId),
-      this.client.getProduct(replacementProductId),
-    ]);
+    const [currentProduct, replacementProduct] = await runReadPool(
+      [currentProductId, replacementProductId],
+      (productId, signal) => this.client.getProduct(productId, signal),
+      options,
+    );
     const current = replacementLine(currentProduct, currentQuantity, basketLine.total);
     const replacement = replacementLine(replacementProduct, replacementQuantity);
     if (!replacement.available) {
@@ -378,8 +398,11 @@ export class BasketProposalService {
     });
   }
 
-  async prepareClear(connectionId: string): Promise<ProposalView | NoopProposalView> {
-    const basket = await this.client.getCart();
+  async prepareClear(
+    connectionId: string,
+    options: ProposalReadOptions = {},
+  ): Promise<ProposalView | NoopProposalView> {
+    const basket = await this.client.getCart(options.signal);
     if (!basket.items.length) return { applicable: false, operation: "clear", reason: "The basket is already empty." };
     return this.create(connectionId, basket, { kind: "clear", basket }, { basket: basketPayload(basket) });
   }

@@ -22,8 +22,8 @@ export const pickerPayload = z.object({
   items: z.array(z.object({
     ingredient: z.string().trim().min(1).max(120), quantity: z.number().int().positive(), confidence: z.number().int().min(0).max(100), favorite_match: z.boolean().optional(),
     product, alternatives: z.array(product).max(4).optional(),
-  })).max(5),
-  rejected: z.array(z.object({ ingredient: z.string().trim().min(1).max(120), reason: z.string().optional() })).max(5).optional(),
+  })).max(50),
+  rejected: z.array(z.object({ ingredient: z.string().trim().min(1).max(120), reason: z.string().optional() })).max(50).optional(),
 });
 
 export type PickerPayload = z.infer<typeof pickerPayload>;

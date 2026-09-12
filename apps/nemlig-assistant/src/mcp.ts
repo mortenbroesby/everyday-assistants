@@ -11,8 +11,6 @@ import {
   matchFavorites,
   NemligError,
   type ShoppingClient,
-  type Basket,
-  type Product,
 } from "./client.js";
 import {
   ensureLoggedIn,
@@ -24,13 +22,16 @@ import {
 import { getCredentials, type Credentials } from "./config.js";
 import {
   BasketProposalService,
+  basketPayload,
   type ApplyResult,
   type NoopProposalView,
   type ProposalOperation,
   type ProposalView,
 } from "./proposals.js";
-import { relevantProduct, resolveShoppingPlan, shoppingPlanLineSchema, type ShoppingPlan } from "./plans.js";
+import { rankProducts } from "./product-presentation.js";
+import { resolveShoppingPlan, shoppingPlanLineSchema, shoppingPlanSchema, type ShoppingPlan } from "./plans.js";
 import { IMAGE_ORIGINS, safePickerImageUrl } from "./picker/contract.js";
+import { resolveProposedBasketReview } from "./picker/review.js";
 
 export const PICKER_URI = "ui://nemlig/picker.html";
 export const PICKER_MIME_TYPE = "text/html;profile=mcp-app";
@@ -104,7 +105,7 @@ const proposedBasketItemInputSchema = z.object({
   if (new Set(alternatives).size !== alternatives.length) context.addIssue({ code: "custom", path: ["alternatives"], message: "Alternatives must be unique." });
 });
 const proposedBasketInputSchema = z.object({
-  items: z.array(proposedBasketItemInputSchema).min(1).max(5).describe("Up to five ingredient choices, each with the proposed product, quantity, confidence, and optional alternatives."),
+  items: z.array(proposedBasketItemInputSchema).min(1).max(50).describe("Up to fifty ingredient choices, each with the proposed product, quantity, confidence, and optional alternatives."),
   pantry_assumptions: z.array(z.string().trim().min(1).max(120)).max(20).default([]).describe("Optional staples assumed to be available, such as salt or flour."),
 });
 const proposedBasketOutputSchema = z.object({
@@ -116,8 +117,8 @@ const proposedBasketOutputSchema = z.object({
     favorite_match: z.boolean(),
     product: proposedCandidateSchema,
     alternatives: z.array(proposedCandidateSchema),
-  })).max(5),
-  rejected: z.array(z.object({ ingredient: z.string(), reason: z.string() })),
+  })).max(50),
+  rejected: z.array(z.object({ ingredient: z.string(), reason: z.string() })).max(50),
 });
 
 const basketItemSchema = z.object({
@@ -251,61 +252,7 @@ const internalShoppingPlan = (input: z.infer<typeof shoppingPlanToolBaseSchema>)
   mode: input.mode,
 });
 
-const planCandidateOutputSchema = z.object({
-  id: z.number().int().positive(),
-  name: z.string(),
-  price: z.number().optional(),
-  unit_price: z.number().optional(),
-  unit_size: z.string(),
-  brand: z.string(),
-  available: z.boolean(),
-  source: z.enum(["favorite", "catalog"]),
-  description: z.string().optional(),
-  details: z.array(z.object({ key: z.string(), value: z.string() }).strict()).optional(),
-  image_url: z.string().optional(),
-  dietary: z.object({ organic: z.boolean(), vegan: z.boolean(), gluten_free: z.boolean(), lactose_free: z.boolean() }).strict(),
-  is_frozen: z.boolean(),
-  is_on_discount: z.boolean(),
-  constraint_outcomes: z.record(z.string(), z.boolean()),
-  tags: z.array(z.string()),
-  relevant: z.boolean(),
-  preferred_brand_match: z.boolean(),
-  package_amount: z.number().positive().optional(),
-  package_unit: z.enum(["g", "ml", "stk"]).optional(),
-  required_packages: z.number().int().positive().optional(),
-  covered_amount: z.number().positive().optional(),
-  excess_amount: z.number().nonnegative().optional(),
-}).strict();
-const planLineOutputSchema = z.object({
-  id: z.string(),
-  name: z.string(),
-  quantity: z.number().int().positive(),
-  candidates: z.array(planCandidateOutputSchema),
-  resolution: z.enum(["selected", "covered", "unresolved"]),
-  reason: z.string().optional(),
-  clarity: z.enum(["clear", "unclear"]),
-  clarity_reason: z.enum(["exact_product", "unique_candidate", "clear_text_match", "preferred_brand", "amount_match", "manual_choice", "brand_choice", "close_alternatives", "no_eligible_candidate", "discovery_unavailable", "unavailable"]),
-  selected_product_id: z.number().int().positive().optional(),
-  basket_quantity: z.number(),
-  remaining_quantity: z.number().nonnegative(),
-  requested_amount: z.number().positive().optional(),
-  requested_unit: z.enum(["g", "kg", "ml", "cl", "l", "stk"]).optional(),
-}).strict();
-const planOutputSchema = z.object({
-  mode: z.enum(["automatic", "manual"]),
-  lines: z.array(planLineOutputSchema),
-  selected_estimated_total: z.number(),
-  summary: z.object({
-    total: z.number().int().nonnegative(),
-    covered: z.number().int().nonnegative(),
-    automatically_selected: z.number().int().nonnegative(),
-    added: z.literal(0),
-    unresolved: z.number().int().nonnegative(),
-    failed: z.number().int().nonnegative(),
-    automatic_coverage_percent: z.number().int().min(0).max(100),
-  }).strict(),
-  automatic_authorization: z.string().uuid().optional(),
-}).strict();
+const planOutputSchema = shoppingPlanSchema.extend({ automatic_authorization: z.string().uuid().optional() }).strict();
 
 const selectedAdditions = (plan: ShoppingPlan): Array<{ product_id: number; quantity: number }> => {
   const quantities = new Map<number, number>();
@@ -323,58 +270,7 @@ const safePlanImages = (plan: ShoppingPlan): ShoppingPlan => ({
   })),
 });
 
-export function rankProducts(products: Product[], query: string): Candidate[] {
-  const candidates = products.map((product) => ({
-    id: product.id,
-    name: product.name,
-    price: product.price,
-    unit_price: product.unitPrice,
-    unit_size: product.unitSize || undefined,
-    ...(product.description ? { description: product.description } : {}),
-    ...(product.details?.length ? { details: product.details } : {}),
-    brand: product.brand || undefined,
-    available: product.available,
-    is_organic: product.isOrganic,
-    is_frozen: product.isFrozen,
-    is_on_discount: product.isOnDiscount,
-    image_url: safeNemligImageUrl(product.imageUrl),
-    tags: [] as string[],
-  }));
-  const available = candidates.filter((product) => product.available);
-  if (available.length) {
-    available.reduce((lowest, product) =>
-      (product.price ?? Number.POSITIVE_INFINITY) < (lowest.price ?? Number.POSITIVE_INFINITY)
-        ? product
-        : lowest,
-    ).tags.push("cheapest");
-    const keyword = query.trim().split(/\s+/u)[0]?.toLocaleLowerCase("da-DK") ?? "";
-    available
-      .find(
-        (product) =>
-          !product.is_frozen &&
-          (!keyword || product.name?.toLocaleLowerCase("da-DK").includes(keyword)),
-      )
-      ?.tags.push("recommended");
-  }
-  for (const product of candidates) if (product.is_organic) product.tags.push("organic");
-  return candidates;
-}
-
-interface BasketPayload extends Record<string, unknown> {
-  items: Basket["items"];
-  products_price: number | undefined;
-  delivery_price: number | undefined;
-  number_of_products: number | undefined;
-  delivery_time: string | undefined;
-}
-
-const basketPayload = (basket: Basket): BasketPayload => ({
-  items: basket.items,
-  products_price: basket.productsPrice,
-  delivery_price: basket.deliveryPrice,
-  number_of_products: basket.numberOfProducts,
-  delivery_time: basket.deliveryTime,
-});
+export { rankProducts } from "./product-presentation.js";
 
 const currency = new Intl.NumberFormat("da-DK", { style: "currency", currency: "DKK" });
 const kr = (value: unknown): string =>
@@ -454,7 +350,7 @@ export function createMcpServer(
     },
     {
       instructions:
-        `Current release: ${NEMLIG_RELEASE_IDENTITY}. Use Nemlig Assistant for current Nemlig products, prices, availability, favourites, basket contents, recipes, conversation lists, or choosing and adding groceries. For ordinary recipe or shopping requests, search each ingredient with find_groceries using one short Danish catalogue phrase, such as 'cheddar' or 'ketchup'. Translate or normalize English, mixed-language, misspelled, and over-specific wording before the call: keep distinctive brand words, replace a foreign generic category with the intended Danish category, and omit conversational context. Refine an unsuitable result with another short phrase; do not treat the cheapest item as the best match. When match confidence is below 80%, call show_my_favorites for the ingredient and use matching favourites as evidence, without changing favourites. Do not inspect the current basket while planning a proposed shop. Before adding, present a proposed basket through review_proposed_basket in groups of at most five: include a chosen product, requested quantity, 0–100 match confidence, and alternatives. Keep the user's ingredient label for display, and pass the same short Danish phrase used for discovery as search_term whenever that label is not Danish. Below 80% confidence, include alternatives for the user to inspect. Use plan_my_shopping only when the user explicitly asks for its batch planning mode. Without explicit approval, a plan, candidate choice, proposed basket, or exact review never authorizes mutation. For an approved add, use review_items_to_add followed by add_approved_items only for its unchanged proposal. For a batch run, pass only the plan's selected additions and never supplement them with unresolved candidates; do not ask for redundant approval. A same-run authorization covers only clear additions from its automatic batch run, never unresolved lines, removals, replacements, clearing, checkout, payment, ordering, or delivery slots. Every basket change revalidates exact data, is single-use, stops on uncertainty, and reads back the basket.`,
+        `Current release: ${NEMLIG_RELEASE_IDENTITY}. Use Nemlig Assistant for current Nemlig products, prices, availability, favourites, basket contents, recipes, conversation lists, or choosing and adding groceries. For ordinary recipe or shopping requests, search each ingredient with find_groceries using one short Danish catalogue phrase, such as 'cheddar' or 'ketchup'. Translate or normalize English, mixed-language, misspelled, and over-specific wording before the call: keep distinctive brand words, replace a foreign generic category with the intended Danish category, and omit conversational context. Refine an unsuitable result with another short phrase; do not treat the cheapest item as the best match. When match confidence is below 80%, call show_my_favorites for the ingredient and use matching favourites as evidence, without changing favourites. Do not inspect the current basket while planning a proposed shop. Before adding, present up to fifty ingredient decisions through one review_proposed_basket call: include a chosen product, requested quantity, 0–100 match confidence, and alternatives. Keep the user's ingredient label for display, and pass the same short Danish phrase used for discovery as search_term whenever that label is not Danish. Below 80% confidence, include alternatives for the user to inspect. Use plan_my_shopping only when the user explicitly asks for its batch planning mode. Without explicit approval, a plan, candidate choice, proposed basket, or exact review never authorizes mutation. For an approved add, use review_items_to_add followed by add_approved_items only for its unchanged proposal. For a batch run, pass only the plan's selected additions and never supplement them with unresolved candidates; do not ask for redundant approval. A same-run authorization covers only clear additions from its automatic batch run, never unresolved lines, removals, replacements, clearing, checkout, payment, ordering, or delivery slots. Every basket change revalidates exact data, is single-use, stops on uncertainty, and reads back the basket.`,
     },
   );
   if (requestContext?.kind === "service") {
@@ -469,17 +365,6 @@ export function createMcpServer(
     requestContext ? `${requestContext.principalKey}\0${requestContext.policyRevision}` : sessionId ?? localConnectionId;
   const search = async (query: string, limit: number) =>
     rankProducts(await client.searchProducts(query, limit), query);
-  const proposedCandidate = async (productId: number, ingredient: string): Promise<z.infer<typeof proposedCandidateSchema> | undefined> => {
-    const product = await client.getProduct(productId).catch((error: unknown) => {
-      if (error instanceof NemligError && error.status === 404) return undefined;
-      throw error;
-    });
-    if (!product) return undefined;
-    if (product.id !== productId || !relevantProduct(product, ingredient)) return undefined;
-    const candidate = rankProducts([product], ingredient)[0];
-    if (!candidate?.id) return undefined;
-    return { ...candidate, id: candidate.id };
-  };
   const runAuthenticatedRead = async <Result>(operation: string, action: () => Promise<Result>) =>
     runMcpOperation(operation, () => withAuthenticatedReadRetry(client, loadCredentials, action, requestContext?.kind !== "service"));
   const resolveRun = async (
@@ -649,6 +534,7 @@ export function createMcpServer(
         authorization === "same_run_automatic"
           ? { kind: authorization, token: automatic_authorization! }
           : { kind: authorization },
+        { signal: extra.signal },
       );
       return success(proposal, proposalText(proposal));
     }),
@@ -690,7 +576,7 @@ export function createMcpServer(
       annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true },
     },
     ({ basket_item }, extra) => runAuthenticatedRead("review_item_to_remove", async () => {
-      const proposal = await proposals.prepareRemoval(connectionId(extra.sessionId), basket_item);
+      const proposal = await proposals.prepareRemoval(connectionId(extra.sessionId), basket_item, { signal: extra.signal });
       return success(proposal, proposalText(proposal));
     }),
   );
@@ -716,6 +602,7 @@ export function createMcpServer(
         current_item,
         replacement_item,
         quantity,
+        { signal: extra.signal },
       );
       return success(proposal, proposalText(proposal));
     }),
@@ -732,7 +619,7 @@ export function createMcpServer(
       annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true },
     },
     (extra) => runAuthenticatedRead("review_emptying_basket", async () => {
-      const proposal = await proposals.prepareClear(connectionId(extra.sessionId));
+      const proposal = await proposals.prepareClear(connectionId(extra.sessionId), { signal: extra.signal });
       return success(proposal, proposalText(proposal));
     }),
   );
@@ -744,26 +631,18 @@ export function createMcpServer(
       "review_proposed_basket",
       {
         title: "Review proposed basket",
-        description: "Show up to five proposed ingredient choices with current Nemlig product details, confidence, and alternatives. Preserve the user's ingredient label and include the short Danish search_term used to find it. This does not read or change your basket.",
+        description: "Show up to fifty proposed ingredient choices with current Nemlig product details, confidence, and alternatives. Preserve the user's ingredient label and include the short Danish search_term used to find it. This does not read or change your basket.",
         inputSchema: proposedBasketInputSchema.shape,
         outputSchema: proposedBasketOutputSchema,
         annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true },
         _meta: { ui: { resourceUri: PICKER_URI } },
       },
-      ({ items, pantry_assumptions }) => runAuthenticatedRead("review_proposed_basket", async () => {
+      ({ items, pantry_assumptions }, extra) => runAuthenticatedRead("review_proposed_basket", async () => {
         const reviewed = proposedBasketInputSchema.parse({ items, pantry_assumptions });
-        const resolved = await Promise.all(reviewed.items.map(async ({ ingredient, search_term, quantity, confidence, favorite_match, product, alternatives }) => {
-          const relevanceTerm = search_term ?? ingredient;
-          const proposed = await proposedCandidate(product, relevanceTerm);
-          if (!proposed) return { rejected: { ingredient, reason: "No proposed product matched this ingredient." } };
-          const resolvedAlternatives = (await Promise.all(alternatives.map((alternative) => proposedCandidate(alternative, relevanceTerm))))
-            .filter((candidate): candidate is z.infer<typeof proposedCandidateSchema> => candidate !== undefined);
-          return { item: { ingredient, quantity, confidence, favorite_match, product: proposed, alternatives: resolvedAlternatives } };
-        }));
+        const resolved = await resolveProposedBasketReview(client, reviewed.items, { signal: extra.signal });
         return success({
           pantry_assumptions: reviewed.pantry_assumptions,
-          items: resolved.flatMap((entry) => entry.item ? [entry.item] : []),
-          rejected: resolved.flatMap((entry) => entry.rejected ? [entry.rejected] : []),
+          ...resolved,
         });
       }),
     );

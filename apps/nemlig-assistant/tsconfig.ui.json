@@ -4,6 +4,6 @@
     "module": "ESNext",
     "moduleResolution": "Bundler"
   },
-  "include": ["src/picker", "src/ui", "vite.config.ts"],
+  "include": ["src/picker", "vite.config.ts"],
   "exclude": []
 }
