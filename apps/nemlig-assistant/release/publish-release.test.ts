@@ -74,6 +74,8 @@ test("publication journal requires exact successful routine deployment evidence"
     { releaseRunId: 203 },
     { outcome: "failed" },
     { lastVerifiedState: "restored" },
+    { rollback: "restored" },
+    { failure: "command_failed" },
     { completedAt: undefined },
     { checks: ["edge_acceptance"] },
     { checks: ["edge_acceptance", "service_fixture_acceptance", "live_acceptance_pending"] },

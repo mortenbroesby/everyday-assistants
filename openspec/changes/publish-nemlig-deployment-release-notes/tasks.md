@@ -37,7 +37,7 @@
 
 ## 4. Trial, integrate, and accept
 
-- [ ] 4.1 Reconcile latest `origin/main`, calculate one final patch prerelease,
+- [x] 4.1 Reconcile latest `origin/main`, calculate one final patch prerelease,
   and create its reviewed note; copy the summary into the pull request.
 - [ ] 4.2 Run focused tests, representative mocked publisher smoke, strict
   OpenSpec validation, package/artifact checks, and one final `pnpm verify`.

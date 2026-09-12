@@ -44,6 +44,9 @@ export function validatePublicationJournal(raw: string, evidence: PublicationEvi
   if (journal.outcome !== "success" || journal.lastVerifiedState !== "enabled" || !journal.completedAt) {
     throw new Error("Deployment journal does not record a completed successful enabled deployment.");
   }
+  if (journal.rollback !== "not_needed" || journal.failure !== undefined) {
+    throw new Error("Deployment journal contains failure or rollback evidence.");
+  }
   const checks = new Set(journal.checks);
   if (!checks.has("edge_acceptance") || !checks.has("service_fixture_acceptance") || checks.has("live_acceptance_pending")) {
     throw new Error("Deployment journal is missing routine acceptance evidence or still has live acceptance pending.");
