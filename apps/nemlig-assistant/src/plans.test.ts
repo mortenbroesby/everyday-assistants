@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { NemligError, type Basket, type Product } from "./client.js";
-import { eligibleCandidates, resolveShoppingPlan, shoppingPlanInputSchema } from "./plans.js";
+import { eligibleCandidates, relevantProduct, resolveShoppingPlan, shoppingPlanInputSchema } from "./plans.js";
 import { calculateShoppingPlan } from "./plan-calculation.js";
 
 const product = (id: number, name: string, overrides: Partial<Product> = {}): Product => ({
@@ -11,6 +11,23 @@ const product = (id: number, name: string, overrides: Partial<Product> = {}): Pr
   isGlutenFree: false, isVegan: false, isOnDiscount: false, ...overrides,
 });
 const basket = (items: Basket["items"] = []): Basket => ({ items, productsPrice: 0, deliveryPrice: 0, numberOfProducts: 0, deliveryTime: undefined });
+
+test("relevantProduct preserves query normalization, pet handling, compounds, and prefix boundaries", () => {
+  const ketchup = product(1, "Tomatketchup", { category: "Kolonial" });
+  const chocolate = product(2, "Chocolate");
+  const catFood = product(3, "Kattemad", { category: "Kæledyr", subcategory: "Kattemad" });
+
+  assert.equal(relevantProduct(ketchup, "tomat tomat ketchup"), true);
+  assert.equal(relevantProduct(ketchup, "tomat ketchup"), true);
+  assert.equal(relevantProduct(product(4, "Ål"), "ål"), true);
+  assert.equal(relevantProduct(ketchup, ""), true);
+  assert.equal(relevantProduct(ketchup, "1 kg"), true);
+  assert.equal(relevantProduct(catFood, "kat"), true);
+  assert.equal(relevantProduct(ketchup, "hund"), true);
+  assert.equal(relevantProduct(catFood, "mælk"), false);
+  assert.equal(relevantProduct(chocolate, "choco"), true);
+  assert.equal(relevantProduct(chocolate, "choc"), false);
+});
 
 test("constraints exclude unknown or failing data and preferences rank deterministically", () => {
   const candidates = eligibleCandidates([

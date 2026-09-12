@@ -3,10 +3,10 @@
 - [x] 1.1 Validate this change strictly and confirm it narrows only GitHub
   deployment-release tags while npm publication and package privacy remain
   unchanged.
-- [ ] 1.2 Add a direct `relevantProduct` characterization matrix covering
+- [x] 1.2 Add a direct `relevantProduct` characterization matrix covering
   duplicates, empty and quantity-only queries, Danish accents, pet cases,
   compound joining, and the five-character prefix boundary; establish green.
-- [ ] 1.3 Materialize requested words once in `relevantProduct`; rerun focused
+- [x] 1.3 Materialize requested words once in `relevantProduct`; rerun focused
   planning and MCP interface tests and verify behavior is unchanged.
 
 ## 2. Validate reviewed release notes
