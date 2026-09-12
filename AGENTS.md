@@ -40,6 +40,11 @@ This repository contains independent assistants under `apps/`.
   production deployment. The epic may contain multiple related OpenSpec changes
   and checkpoint commits. Use a smaller separate pull request when urgency or
   independently reviewed risk makes it the clearer boundary.
+- For a release-bearing Nemlig epic, have the coding agent author one concise
+  reviewed note at `apps/nemlig-assistant/release/notes/<version>.md` after the
+  final version decision and copy its summary into the pull request. Describe
+  the epic outcome and impact; do not substitute an uncurated commit list or
+  generate release prose during deployment CI.
 - A user-selected repository task is standing authority for ordinary,
   non-destructive work in that scope: inspect, plan, update OpenSpec, edit, run
   checks, commit, push, and verify without asking for repeated approval.
@@ -72,8 +77,10 @@ This repository contains independent assistants under `apps/`.
   branch, open a pull request, wait for required CI, and merge through the
   active GitHub pull-request ruleset; `main` accepts integration through that
   protected path only. The package-scoped version policy selects
-  release-bearing Nemlig merges. The
-  `nemlig-production` environment remains the final deployment approval.
+  release-bearing Nemlig merges and validates their committed note. The
+  `nemlig-production` environment remains the final deployment approval; only a
+  successful exact-SHA routine deployment may publish the matching GitHub
+  prerelease, while npm publication remains disabled.
 - After integration and required evidence, remove a completed local worktree
   only when it is clean, inactive, and its commits remain recoverable. Preserve
   dirty, unresolved, active, and deliberately parked worktrees.

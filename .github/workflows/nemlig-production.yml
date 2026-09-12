@@ -43,6 +43,7 @@ jobs:
       contents: read
     outputs:
       deploy: "${{ steps.approval.outputs.deploy }}"
+      publish: "${{ steps.approval.outputs.publish }}"
     steps:
       - name: Checkout exact release candidate
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6.0.1
@@ -66,22 +67,39 @@ jobs:
         env:
           EVENT_NAME: "${{ github.event_name }}"
           CANDIDATE_SHA: "${{ env.CANDIDATE_SHA }}"
+          FINALIZE_OPERATION: "${{ inputs.finalize_operation }}"
         run: |
           set -euo pipefail
-          if [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
+          if [[ -n "$FINALIZE_OPERATION" ]]; then
             echo "deploy=true" >> "$GITHUB_OUTPUT"
+            echo "publish=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
           CANDIDATE_PARENT=$(git rev-parse "$CANDIDATE_SHA^1")
           git fetch origin refs/heads/main:refs/remotes/origin/main
           [[ "$(git rev-parse origin/main)" == "$CANDIDATE_SHA" ]]
           policy=$(pnpm --silent --filter nemlig-assistant check:version-bump --base "$CANDIDATE_PARENT" --head "$CANDIDATE_SHA" --json)
-          node --input-type=module -e '
+          eligible=$(node --input-type=module -e '
             const policy = JSON.parse(process.argv[1]);
-            if (policy.eligible === true) process.stdout.write("deploy=true\n");
-            else if (policy.eligible === false) process.stdout.write("deploy=false\n");
+            if (policy.eligible === true) process.stdout.write("true");
+            else if (policy.eligible === false) process.stdout.write("false");
             else throw new Error("Version policy did not return eligibility.");
-          ' "$policy" >> "$GITHUB_OUTPUT"
+          ' "$policy")
+          if [[ "$eligible" == "true" ]]; then
+            pnpm --filter nemlig-assistant check:release-note --base "$CANDIDATE_PARENT" --head "$CANDIDATE_SHA"
+            echo "deploy=true" >> "$GITHUB_OUTPUT"
+            if [[ "$CUTOVER" == "true" ]]; then
+              echo "publish=false" >> "$GITHUB_OUTPUT"
+            else
+              echo "publish=true" >> "$GITHUB_OUTPUT"
+            fi
+          elif [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
+            echo "deploy=true" >> "$GITHUB_OUTPUT"
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "deploy=false" >> "$GITHUB_OUTPUT"
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+          fi
 
   preflight:
     needs: release-gate
@@ -131,6 +149,8 @@ jobs:
     permissions:
       contents: write
       actions: read
+    outputs:
+      artifact-id: "${{ steps.release-artifact.outputs.artifact-id }}"
     steps:
       - name: Checkout validated candidate
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6.0.1
@@ -178,7 +198,7 @@ jobs:
       - name: Upload bounded release report and deployment journal
         id: release-artifact
         if: always()
-        uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # v4.6.0
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: nemlig-production-release
           path: |
@@ -202,6 +222,52 @@ jobs:
             process.stdout.write(value.operationId);
           ' "$GITHUB_WORKSPACE/.git/nemlig-production-deploy/latest.json")
           pnpm --filter nemlig-assistant production:deploy -- finalize "$operation_id" --evidence-saved --original-runner-stopped
+
+  publish-release:
+    needs: [release-gate, deploy]
+    if: >-
+      needs.release-gate.outputs.deploy == 'true' &&
+      needs.release-gate.outputs.publish == 'true' &&
+      inputs.finalize_operation == ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout exact deployed candidate
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6.0.1
+        with:
+          ref: "${{ env.CANDIDATE_SHA }}"
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Download exact deployment journal
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          artifact-ids: "${{ needs.deploy.outputs.artifact-id }}"
+          path: "${{ runner.temp }}/nemlig-release-artifact"
+      - name: Set up pnpm
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+        with:
+          version: 9.15.9
+          run_install: false
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6.0.0
+        with:
+          node-version: 22.23.1
+      - name: Install frozen dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Publish verified deployment release
+        env:
+          GITHUB_TOKEN: "${{ github.token }}"
+          GITHUB_RUN_ID: "${{ github.run_id }}"
+        run: |
+          set -euo pipefail
+          mapfile -t journals < <(find "$RUNNER_TEMP/nemlig-release-artifact" -type f -name nemlig-release.json -print)
+          [[ "${#journals[@]}" -eq 1 ]]
+          pnpm --filter nemlig-assistant publish:deployment-release -- \
+            --journal "${journals[0]}" \
+            --candidate "$CANDIDATE_SHA" \
+            --repository "$GITHUB_REPOSITORY"
 
   finalize:
     needs: release-gate
