@@ -1,43 +1,38 @@
 ## Why
 
-The repository has root and app instructions, lifecycle gates, and eleven
-task-specific skills, but no authoritative inventory explains which guidance an
-agent should load. Discovery currently depends on knowing paths in advance, and
-the app-local skill index has already drifted from the files it is meant to
-describe.
+Repository guidance should help an agent reach the smallest relevant contract
+without loading a second metadata system. The current root guidance is useful
+but names transient model personas and leaves some task-specific skills hard to
+discover; the first implementation made routing explicit at the cost of a large
+manifest and validator that did not prove better task outcomes.
 
 ## What Changes
 
-- Add one machine-readable repository manifest that inventories maintained
-  agent instructions, skills, and the supporting workflow surfaces they use.
-- Route common task intents from the root instructions to the smallest relevant
-  set of scoped instructions and skills, without copying their contracts into
-  the manifest.
-- Keep universal authority, safety, readiness, and completion boundaries at the
-  root; move detailed delivery mechanics into one mandatory repository workflow
-  instruction.
-- Add a dependency-free validator that rejects malformed, unsafe, broken, or
-  incomplete manifest entries and run it through the existing verification
-  gate.
-- Add two focused skills for recurring gaps exposed by the inventory: evidence-
-  based roadmap triage and safe maintenance of the artifact catalog itself.
-- Correct stale routing and release-approval prose while preserving every
-  Nemlig mutation, credential, cost, and production safeguard.
-- Non-goals: an executable agent framework, automatic skill invocation, a
-  broad epic-delivery skill that duplicates mandatory workflow, a hosted
-  registry, provider configuration, production deployment, or an agent review
-  CI job.
-- Acceptance: a new agent can start at root `AGENTS.md`, select the relevant
-  guidance from the manifest, and reach every maintained instruction and skill;
-  focused tests prove invalid references and inventory drift fail closed; and
-  the repository's existing checks pass.
+- Replace named model personas with durable, capability-based coordination
+  guidance. Model and runtime selection remains a user or machine concern.
+- Put a compact task-to-guidance table directly in root `AGENTS.md` and rely on
+  nearest-scope `AGENTS.md` files plus on-demand skills.
+- Keep the roadmap-triage skill, corrected Nemlig routing, and repaired
+  documentation link because each addresses a demonstrated navigation gap.
+- Record a small routing evaluation that compares baseline, rejected, and
+  revised designs and defines outcome metrics for future real tasks.
+- Remove the JSON manifest, its validator and tests, the extracted mandatory
+  workflow file, and the maintenance skill created only for that machinery.
+- Preserve all readiness, completion, safety, cost, worktree, integration,
+  release, and mutation boundaries.
+- Non-goals: an agent framework, committed model selection, automatic skill
+  invocation, provider changes, deployment, or a permanent CI gate for prose.
+- Acceptance: representative tasks have an explicit shortest route, no named
+  model is required, the always-loaded root remains concise, broken routes are
+  checked directly, and existing repository verification passes.
 
 ## Capabilities
 
 ### New Capabilities
 
-- `agent-workflow`: Discover and validate repository-owned agent guidance and
-  route tasks to the relevant scoped instructions and skills.
+- `agent-workflow`: Route repository tasks through concise, scoped,
+  model-neutral instructions and evaluate whether the routing reduces context
+  without losing required guidance.
 
 ### Modified Capabilities
 
@@ -45,12 +40,13 @@ None.
 
 ## Impact
 
-- Agent guidance: root and Nemlig-scoped `AGENTS.md`, app-local skill index, one
-  extracted repository workflow instruction, and two repository-local skills.
-- Agent metadata: `.agents/manifest.json`.
-- Validation: a Node standard-library checker and focused tests, wired into the
-  existing root verification command.
-- Delivery: one worktree, branch, and pull request. This repository-only change
-  does not change a package version and does not deploy.
-- Cost and safety: no dependency, service, schedule, retry, storage, capacity,
-  credential, external-data, or provider change.
+- Agent guidance: root and Nemlig-scoped `AGENTS.md`, the app-local skill index,
+  and one repository-local roadmap-triage skill.
+- Evidence: a documentation-only routing evaluation with representative tasks
+  and future whole-task measures.
+- Removed machinery: `.agents/manifest.json`, its checker and tests, the
+  extracted workflow instruction, and its maintenance skill.
+- Delivery: one existing worktree, branch, and pull request. This repository-
+  only change does not change a package version and does not deploy.
+- Cost and safety: no dependency, service, schedule, credential, external-data,
+  provider, or production change.

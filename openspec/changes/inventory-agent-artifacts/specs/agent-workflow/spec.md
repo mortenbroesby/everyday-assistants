@@ -1,98 +1,86 @@
+## Purpose
+
+Help repository agents reach the smallest relevant, durable guidance set while
+preserving safety and delivery contracts and avoiding runtime-specific policy.
+
 ## ADDED Requirements
 
-### Requirement: Repository agent artifacts have one discoverable inventory
+### Requirement: Root guidance provides direct model-neutral routing
 
-The repository SHALL maintain one machine-readable manifest that inventories
-every maintained agent instruction and skill with a stable identity, path,
-scope, kind, and use condition. Supporting reference collections and workflow
-surfaces MAY be represented as collection-level entries instead of enumerating
-historical files individually. The manifest MUST identify Markdown instruction
-and skill bodies as authoritative and MUST NOT grant authority to perform an
-action.
+The repository SHALL provide a concise root instruction file that links common
+task intents directly to the applicable scoped instruction or skill. It MUST
+describe responsibilities without requiring a named model, vendor, or persona,
+and MUST direct unmatched work to root and nearest-scope guidance without
+loading unrelated skills.
 
-#### Scenario: An agent discovers available guidance
+#### Scenario: A specialized task is selected
 
-- **WHEN** an agent starts a repository task from the root instructions
-- **THEN** it can use the manifest to discover every maintained instruction and
-  skill without already knowing their paths
-
-#### Scenario: Metadata conflicts with an instruction
-
-- **WHEN** manifest metadata and an applicable instruction disagree
-- **THEN** the instruction and higher-priority user or platform authority apply
-  and the manifest grants no additional permission
-
-### Requirement: Root guidance routes by scope and task intent
-
-The root agent instructions SHALL require the readiness, repository workflow,
-and completion instructions for repository work, define how more-specific
-scoped instructions compose, and direct agents to load only manifest routes
-that match the current task. Unknown tasks MUST fall back to root workflow and
-the nearest scoped instructions rather than loading every skill.
-
-#### Scenario: Nemlig production repository work is selected
-
-- **WHEN** a task concerns Nemlig production readiness or deployment
-- **THEN** the agent loads the root workflow, Nemlig-scoped instructions, and
-  production skill without treating that selection as provider authorization
-
-#### Scenario: Basket work is selected
-
-- **WHEN** a task concerns Nemlig search, review, or a basket operation
-- **THEN** the agent also loads the basket skill and retains its distinct
-  mutation approval boundary
+- **WHEN** a task matches a listed OpenSpec, refactoring, roadmap, Nemlig
+  production, or Nemlig basket intent
+- **THEN** the agent can follow a direct repository-relative link to the
+  smallest specialized guidance set
 
 #### Scenario: No specialized route matches
 
-- **WHEN** a repository task does not match a specialized route
-- **THEN** the agent uses the universal workflow and nearest scoped instruction
-  without loading unrelated skills
+- **WHEN** a repository task matches no listed specialized intent
+- **THEN** the agent uses the root workflow and nearest scoped instructions
+  without loading every skill
 
-### Requirement: Manifest drift fails the existing verification gate
+#### Scenario: Runtime capabilities change
 
-The repository SHALL validate the agent manifest with no new runtime dependency
-as part of its existing verification command. Validation MUST reject malformed
-entries, duplicate identities or paths, absolute or escaping paths, missing or
-untracked required targets, broken or cyclic relationships, invalid skill
-frontmatter, and maintained instructions or skills missing from the inventory.
+- **WHEN** a user or machine selects different models or orchestration support
+- **THEN** repository guidance remains valid because it defines responsibilities
+  and checkpoints rather than named runtime assignments
 
-#### Scenario: A maintained skill is added without registration
+### Requirement: Scoped guidance composes without weakening authority
 
-- **WHEN** verification discovers a tracked `SKILL.md` that is absent from the
-  manifest
-- **THEN** verification fails with an actionable inventory-drift error
+Applicable nested instructions and task-specific skills SHALL add constraints
+to root guidance and MUST NOT grant approval for destructive actions, secrets,
+material cost, provider or production changes, external-data changes, or a
+Nemlig basket mutation.
 
-#### Scenario: A manifest relationship is invalid
+#### Scenario: Nemlig production guidance is selected
 
-- **WHEN** a route or prerequisite references an unknown artifact, forms a
-  cycle, or resolves outside the repository
-- **THEN** validation fails before the change can pass CI
+- **WHEN** a task concerns Nemlig production readiness or deployment
+- **THEN** the agent loads Nemlig-scoped instructions and the production skill
+  while retaining the provider approval boundary
 
-#### Scenario: The manifest is valid
+#### Scenario: Basket guidance is selected
 
-- **WHEN** every required artifact is registered and all schema, path,
-  relationship, and frontmatter checks pass
-- **THEN** the focused agent-artifact check and the existing repository
-  verification command succeed
+- **WHEN** a task concerns Nemlig search, review, or a basket operation
+- **THEN** the agent loads the basket skill and retains its distinct mutation
+  approval and readback requirements
 
-### Requirement: Recurring planning and catalog maintenance have focused skills
+### Requirement: Routing value is evaluated proportionately
+
+The repository SHALL record representative task routes, compare always-loaded
+guidance size, and distinguish static discoverability evidence from end-to-end
+task success. Broken direct routes MUST be detected before delivery. Future
+guidance expansion MUST be justified by observed task outcomes rather than
+catalog size or theoretical completeness.
+
+#### Scenario: The revised router is reviewed
+
+- **WHEN** representative repository tasks are evaluated
+- **THEN** each task has one expected shortest route, unrelated skills are not
+  required, and every linked guidance file exists
+
+#### Scenario: More guidance is proposed later
+
+- **WHEN** a future change adds routing or agent workflow machinery
+- **THEN** it identifies an observed failure and evaluates task success, human
+  interventions, avoidable retries, elapsed time, or total cost
+
+### Requirement: Roadmap uncertainty has focused planning guidance
 
 The repository SHALL provide a planning-only roadmap-triage skill that
-reconciles current specifications, backlog, branches, worktrees, pull requests,
-and delivery evidence before recommending one next epic. It SHALL distinguish
-shipped, active, parked, blocked, stale, and historical work and SHALL NOT
-authorize cleanup or integration. The repository SHALL also provide an agent-
-artifact-maintenance skill that preserves instruction precedence, manifest
-coverage, validation, and repository-local scope when guidance changes.
+reconciles specifications, backlog, branches, worktrees, pull requests, and
+delivery evidence before recommending one next epic. It MUST distinguish done,
+active, parked, blocked, stale, and historical work and MUST NOT authorize
+cleanup, integration, release, deployment, or external mutation.
 
-#### Scenario: The roadmap is unclear
+#### Scenario: The next epic is unclear
 
-- **WHEN** an agent is asked what work remains or what should happen next
-- **THEN** it uses current repository and delivery evidence to produce a
-  short-, medium-, and long-term roadmap with one recommended next epic
-
-#### Scenario: Guidance is added or retired
-
-- **WHEN** an agent changes a repository-owned instruction or skill
-- **THEN** it follows the maintenance skill and updates routing, inventory, and
-  focused validation without modifying host-global agent configuration
+- **WHEN** an agent is asked what remains or what should happen next
+- **THEN** it produces a concise now/next/later roadmap, dispositions uncertain
+  work, and recommends exactly one approval-sized next epic

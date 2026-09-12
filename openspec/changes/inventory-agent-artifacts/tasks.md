@@ -1,23 +1,26 @@
-## 1. Establish the agent artifact contract
+## 1. Simplify the guidance design
 
-- [x] 1.1 Inventory root, scoped, lifecycle, skill, OpenSpec, GitHub, and validator surfaces; record intentional collection-level entries and current routing gaps.
-- [x] 1.2 Define manifest schema, instruction precedence, task routes, authority boundary, and drift-validation behavior in proposal, design, and delta spec.
+- [x] 1.1 Inventory current guidance and representative task intents, then
+  verify the routing gaps against repository evidence and recent owner briefs.
+- [x] 1.2 Replace the manifest design with direct Markdown routing and verify
+  proposal, design, requirements, and tasks remain coherent.
 
-## 2. Add the inventory and validation
+## 2. Apply model-neutral, scoped routing
 
-- [x] 2.1 Add a complete `.agents/manifest.json` with stable artifact ids, scopes, use conditions, relationships, and common task routes; verify every maintained instruction and skill is registered.
-- [x] 2.2 Add failing Node tests for malformed metadata, unsafe paths, invalid references and cycles, and unregistered guidance, then implement the smallest dependency-free validator that passes them.
-- [x] 2.3 Wire one agent-artifact check into the existing root verification command without adding a workflow or dependency.
-- [x] 2.4 Add focused repository-local skills for roadmap triage and agent-artifact maintenance; register their distinct triggers and avoid duplicating the mandatory epic-delivery workflow.
+- [x] 2.1 Rewrite root `AGENTS.md` around durable responsibilities, direct task
+  routes, and preserved safety/delivery boundaries; verify no named runtime
+  persona is required.
+- [x] 2.2 Retain scoped Nemlig routing, the roadmap-triage skill, and the repaired
+  documentation link; verify every direct route resolves to a tracked file.
+- [x] 2.3 Remove the manifest, validator and tests, extracted workflow file,
+  maintenance skill, and package hooks; verify no references remain.
 
-## 3. Make instructions route deterministically
+## 3. Evaluate and deliver
 
-- [x] 3.1 Turn root `AGENTS.md` into the universal entry point and move detailed delivery mechanics into one mandatory repository-workflow instruction; verify every original policy remains represented.
-- [x] 3.2 Route Nemlig repository, production, and basket tasks to their distinct app-local skills, update the local skill index, and repair touched broken relative links without changing their safety contracts.
-- [x] 3.3 Reconcile release prose with the current merge-approved automatic post-merge workflow; verify repository-only changes remain release-ineligible and require no deployment.
-
-## 4. Verify and deliver the pull request
-
-- [x] 4.1 Run the focused validator tests and check, strict OpenSpec validation, and privacy validation; resolve only failures caused by this change.
-- [x] 4.2 Run one final `pnpm verify`, review the diff for policy loss, secrets, unrelated edits, dependencies, cost, and scope growth, and refresh the code index where supported.
-- [x] 4.3 Commit and push the epic branch, open one pull request, and verify required CI for its exact head succeeds. Keep merge behind explicit user approval and do not deploy.
+- [x] 3.1 Record baseline, rejected-design, and revised routing measurements plus
+  representative task routes; state what the evidence does and does not prove.
+- [x] 3.2 Run direct route and model-name checks, strict OpenSpec validation,
+  privacy validation, and final `pnpm verify`; resolve only caused failures.
+- [ ] 3.3 Commit and push the revised epic branch, update the pull request, and
+  verify required CI for its exact head. Keep merge behind explicit approval and
+  do not deploy.

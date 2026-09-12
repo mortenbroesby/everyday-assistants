@@ -1,92 +1,100 @@
 ## Context
 
-Repository guidance is split across a root instruction file, a Nemlig-scoped
-instruction file, two lifecycle gates, nine root skills, and two app-local
-skills. These sources are useful in isolation, but no catalog describes their
-scope, prerequisites, or task triggers. Root guidance also carries detailed
-delivery mechanics that obscure its role as the entry point.
+See `proposal.md` for motivation. The durable guidance boundary is plain
+Markdown: the root file is always loaded, a nearer `AGENTS.md` adds local
+constraints, and task-specific skills are loaded only when their description
+matches the request. The repository already has readiness and completion gates,
+so routing should expose those contracts rather than create another registry.
+
+Recent scheduled AI briefs supplied by the repository owner emphasized runtime-
+enforced permissions, native worktrees, lazy tool discovery, model-neutral
+instructions, and whole-task evaluation. Current primary guidance supports the
+same direction:
+
+- [AGENTS.md](https://agents.md/) describes a schema-free Markdown convention,
+  nested scope, and closest-file precedence.
+- [GitHub guidance for effective repository instructions](https://docs.github.com/en/copilot/tutorials/optimize-ai-usage)
+  recommends short, specific, repository-grounded instructions and deterministic
+  tools for behavior that can be checked mechanically.
 
 ## Goals / Non-Goals
 
 **Goals:**
 
-- Make root guidance a concise, deterministic router.
-- Inventory every maintained instruction and skill without duplicating its body.
-- Detect missing paths, invalid relationships, unsafe paths, and unregistered
-  guidance in the existing CI gate.
-- Preserve the current instruction precedence and every authority boundary.
+- Minimize always-loaded guidance while preserving repository invariants.
+- Make common task routes directly readable without a parser or generated index.
+- Keep model, vendor, and laptop orchestration preferences outside the repo.
+- Measure static routing improvement honestly and define how real-task value
+  will be assessed over time.
 
 **Non-Goals:**
 
-- Selecting or executing skills in code, standardizing external agent runtimes,
-  cataloging every archived OpenSpec artifact individually, or adding review or
-  deployment automation.
+- Enforcing natural-language routing in CI, selecting a model, building an
+  orchestration framework, or duplicating every skill description at root.
 
 ## Decisions
 
-### Use JSON metadata and Markdown contracts
+### Use a Markdown routing table, not a manifest
 
-`.agents/manifest.json` is the single inventory and routing index. JSON is
-machine-readable with the Node standard library, while the existing Markdown
-files remain the authoritative contracts. Manifest metadata only supports
-discovery: it cannot override instructions or grant authority.
+Root `AGENTS.md` will map recurring intents to the exact instruction or skill to
+load. Plain links are inspectable by humans and agents, require no schema, and
+can be checked with a small one-off link audit. A JSON manifest was rejected
+because it added 357 lines plus 423 lines of validator code and tests while
+proving only catalog consistency.
 
-Each artifact has a stable id, kind, repository-relative path, scope, and short
-use condition. Relationships refer to ids. Named routes cover ordinary work,
-the OpenSpec lifecycle, the explicit refactoring skills, and the distinct
-Nemlig repository, production, and basket-operation paths.
+### Keep durable policy at root and specialized procedure on demand
 
-The inventory also justifies two new skills. `roadmap-triage` consolidates the
-repeated evidence-gathering needed to distinguish shipped, active, parked,
-blocked, and stale work before recommending one next epic. `agent-artifact-
-maintenance` provides the safe change procedure for this manifest and its
-guidance. An `epic-delivery` skill is rejected because the mandatory repository
-workflow already owns that contract; duplicating it would create drift.
+The root keeps the readiness/completion gates, worktree and epic boundaries,
+authority and cost safeguards, final verification, integration, and release
+rules. It points to the nearest app instructions and to task-specific skills.
+No mandatory intermediate workflow file is introduced. This avoids both an
+oversized root and a multi-hop entry path.
 
-### Keep the root router small without weakening policy
+### Describe work by responsibility, not model or persona
 
-The root file retains mandatory readiness/completion gates, task selection,
-instruction precedence, universal approval and safety boundaries, and the
-manifest entry point. Detailed worktree, coordination, verification, release,
-integration, and cleanup rules move verbatim or equivalently into a mandatory
-`.agents/instructions/repository-workflow.md` entry.
+The repository may say that a coordinating agent owns integration and human
+checkpoints, and that bounded independent work may be delegated when supported.
+It will not name a model, vendor, or preferred persona. Those choices change
+faster than repository contracts and belong in user or machine configuration.
 
-More-specific applicable instructions add requirements. They do not replace
-higher-priority platform or user instructions, and no repository artifact
-authorizes secrets, costs, destructive actions, external data changes,
-production mutation, or Nemlig basket mutation.
+### Evaluate navigation without pretending prose is executable behavior
 
-### Validate the catalog, not agent behavior
+`docs/agent-routing-evaluation.md` will test representative task-to-file routes
+and compare always-loaded size across the baseline, rejected manifest design,
+and revised design. It will state that route coverage and context size are
+static evidence, not proof of task success. Future real work should track task
+success, human interventions, avoidable tool retries, elapsed time, and total
+cost before adding more guidance.
 
-A dependency-free Node checker validates the schema, unique identities and
-paths, safe repository-relative paths, existing tracked targets, relationships,
-cycles, and skill frontmatter. It also discovers tracked `AGENTS.md`,
-`CLAUDE.md`, instruction files, and `SKILL.md` files and rejects catalog drift.
-It does not interpret natural-language triggers or attempt runtime dispatch.
+### Keep only the demonstrated new skill
+
+`roadmap-triage` remains because repository planning repeatedly requires
+reconciling specs, branches, worktrees, pull requests, and delivery evidence.
+The artifact-maintenance skill is removed because its purpose disappears with
+the manifest. Existing OpenSpec and refactoring skills remain routed on demand.
 
 ## Risks / Trade-offs
 
-- [Policy is lost while shortening root guidance] -> compare each original rule
-  with the root router or mandatory workflow destination and review the final
-  diff explicitly.
-- [The manifest becomes another stale index] -> filesystem discovery runs in
-  `pnpm verify` and fails on unregistered maintained guidance.
-- [Routes imply authorization] -> state in both root guidance and manifest that
-  selection is informational and cannot grant authority.
-- [The catalog becomes too detailed] -> inventory guidance individually but use
-  collection entries for pattern references, canonical specs, and change
-  history.
-- [New skills restate mandatory policy] -> keep them task-specific, reference
-  root authority, and omit a general epic-delivery skill.
+- [A route becomes stale] -> keep direct relative links and run a focused link
+  audit when guidance changes; do not add a permanent framework pre-emptively.
+- [Shortening loses a safety rule] -> compare root and scoped guidance against
+  the pre-change root and retain every authority, cost, release, and mutation
+  boundary.
+- [The routing table grows into another catalog] -> list only recurring intents;
+  use skill frontmatter as the detailed discovery contract.
+- [Static evaluation is mistaken for outcome proof] -> label its limits and use
+  real-task outcome metrics before future expansion.
 
 ## Migration Plan
 
-1. Add the manifest and focused validator tests.
-2. Extract detailed repository workflow guidance and reduce root guidance to a
-   router that requires it.
-3. Make Nemlig routing distinguish repository, production, and basket work, and
-   repair affected local references.
-4. Run focused validation, strict OpenSpec validation, privacy checks, and the
-   final repository gate.
-5. Open a PR at the verified branch head and wait for explicit approval before
-   merge. No production action is applicable.
+1. Rewrite the existing OpenSpec artifacts around the simpler design.
+2. Consolidate durable policy and direct routes in root `AGENTS.md`; keep scoped
+   Nemlig guidance and the useful roadmap-triage skill.
+3. Remove the manifest-specific files and package scripts, then record measured
+   before/after routing evidence.
+4. Run direct link and model-name checks, strict OpenSpec validation, privacy
+   validation, and the final repository gate.
+5. Push the revised PR and wait for exact-head CI and explicit merge approval.
+
+Rollback is the normal Git revert of this repository-only commit. No provider or
+production rollback applies.
