@@ -97,6 +97,9 @@ Non-trivial feature and architecture changes use OpenSpec. The
 `nemlig-assistant` npm-format package remains private and unpublished; package
 ownership and public release are deliberately deferred.
 
+Candidate libraries and their adoption status are tracked in the
+[Dependency Landscape](docs/dependency-landscape.md).
+
 ## ⚖️ License
 
 [MIT](LICENSE)
