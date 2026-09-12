@@ -1,36 +1,38 @@
 ## Why
 
-The optional Nemlig product picker is a large inline HTML string that loads executable JavaScript from a public CDN. It needs a self-contained package and a maintainable renderer, but those are separate decisions: native TypeScript, React, or Preact can all be bundled locally.
+The optional Nemlig product picker is a large inline HTML string that loads executable JavaScript from a public CDN. The user wants a maintainable, long-lived ChatGPT app UI that follows OpenAI's published component guidance, not a framework choice optimized only for the smallest byte count.
 
-Current OpenAI guidance uses React for component UIs and offers an optional React/Tailwind design system, while MCP Apps also documents vanilla and Preact implementations. React is the preferred long-term renderer for this repository, subject to one equal built-artifact comparison before the switch.
+OpenAI Apps SDK UI supplies accessible React components and Tailwind design tokens for this purpose. A bounded MVP can prove that stack against the picker's real packaging, lifecycle, accessibility, and safety constraints before it becomes a wider repository convention.
 
 ## What Changes
 
-- Bundle the existing picker into one self-contained HTML resource with no executable network dependency.
-- Compare bundled native TypeScript, React, and Preact under the same production settings; adopt React when it preserves behavior and stays within the recorded project size/performance budget, otherwise retain the smallest passing option.
-- Preserve reviewed-proposal presentation, accessibility, approved product images, the exact alternative-choice chat message, the default-on feature gate, and conversational fallback.
-- Use native CSS, host theme variables, system fonts, and native controls initially. Defer Tailwind and `@openai/apps-sdk-ui` until repeated styled components or a complex accessible interaction demonstrates their value.
-- Use the smallest native MCP Apps host integration needed for connection, results, cleanup, and one deliberate message send; functional payload normalization remains part of this change, but an FP runtime dependency is not.
-- Validate the emitted HTML, hostile-data handling, lifecycle behavior, package contents, accessibility, and raw/gzip size without Nemlig credentials or network access.
+- Replace the inline DOM renderer with a locally bundled React 19 picker using Tailwind 4 and selected `@openai/apps-sdk-ui` components.
+- Use the UI kit for shared interactive/status styling and keep semantic native elements for articles, disclosures, and images; do not create a local design-system clone.
+- Keep the MCP Apps host bridge separate from the UI design system and use one SDK-owned React lifecycle with explicit duplicate-send and stale-completion guards.
+- Preserve reviewed-proposal presentation, approved product images, the exact alternative-choice chat message, the default-on feature gate, and conversational fallback.
+- Validate the emitted HTML rather than source spellings, including offline execution and styling, hostile-data handling, lifecycle behavior, accessibility, deterministic package contents, and measured raw/gzip size.
+- Remove the executable CDN and do not widen CSP for fonts or other UI-library assets.
 
 ### Goal
 
-Ship an independently usable, locally bundled picker with a justified long-term UI stack while preserving all current Nemlig behavior and safety contracts.
+Ship an independently usable, self-contained Nemlig picker whose React and OpenAI Apps SDK UI implementation is easier to change safely than the current imperative inline document.
 
 ### Non-goals
 
 - No FP runtime dependency; the stacked functional-TypeScript comparison owns that decision.
-- No editable quantities, new selection workflow, basket tool call, server orchestration change, protocol-major upgrade, router, global state library, compiler, service, or provider change.
-- No Tailwind or component-library adoption without a concrete component/style benefit and measured emitted-CSS cost.
+- No editable quantities, new selection workflow, basket tool call, server orchestration change, protocol-major upgrade, router, global state library, compiler, service, provider, or production mutation.
+- No repository-wide React, Tailwind, or Apps SDK UI mandate based on this one MVP.
 - No reorganization of agent instructions, skills, or Copilot agents in this pull request.
 
 ### Acceptance criteria
 
-- One representative native, React, and Preact build uses the same payload, SDK cohort, CSS, production settings, and behavioral assertions; the framework decision and raw/gzip output are recorded before switching.
-- The built MCP Apps resource is self-contained and preserves the existing URI, MIME type, picker behavior, feature gate, and conversational fallback.
-- One alternative activation sends `Choose product <id> for <ingredient> instead.` at most once and never mutates the basket.
-- The selected UI passes focused built-artifact, lifecycle, security, package, keyboard, contrast, text-resizing, narrow-viewport, and theme checks, followed by the repository verification gate.
-- The picker can ship and roll back independently of the functional-programming follow-up.
+- The picker has one payload validator, one host-session owner, and one shared product-card implementation; changing common card presentation does not require separate proposed/alternative renderers.
+- The built resource makes zero executable, stylesheet, or font requests. Optional images remain limited to the two approved Nemlig HTTPS origins, and unpkg is removed from CSP.
+- The complete self-contained HTML is at most 1.5 MiB raw and 350 KiB gzip. These are project budgets, not claimed OpenAI limits; actual JavaScript, CSS, and package footprints are recorded separately.
+- One alternative activation sends `Choose product <id> for <ingredient> instead.` at most once while pending, handles failure without automatic retry, ignores stale completion, and never prepares or applies a proposal or mutates the basket.
+- Keyboard disclosure/action behavior, visible focus, at least 44 px enabled action targets, WCAG AA text contrast, 320 px layout, 200% text zoom, reduced motion, and host light/dark switching are verified against the emitted artifact.
+- Two clean builds produce identical HTML, and a clean tarball installation serves that exact artifact without source files, unresolved imports, or credentials.
+- Focused built-artifact, lifecycle, safety, package, privacy, and repository verification gates pass.
 
 ### Follow-ups
 
@@ -45,12 +47,12 @@ None.
 
 ### Modified Capabilities
 
-- `nemlig-mcp`: Require the optional picker to be a locally bundled resource that preserves presentation, safe rendering, deliberate choice messaging, lifecycle behavior, gate, and fallback contracts.
-- `nemlig-package-distribution`: Require the packed package to contain and serve the built picker without repository source files or unresolved browser imports.
+- `nemlig-mcp`: Require the optional picker to be a locally bundled React and Apps SDK UI resource that preserves presentation, safe rendering, deliberate choice messaging, lifecycle behavior, gate, and fallback contracts.
+- `nemlig-package-distribution`: Require the packed package to contain and serve the deterministic built picker without repository source files, unresolved browser imports, or remote executable/style/font dependencies.
 
 ## Impact
 
-- Affects only the picker source/build path, browser-safe payload boundary, `apps/nemlig-assistant/src/mcp.ts`, picker-focused tests, package validation, manifest, and lockfile during implementation.
-- React is preferred; Preact and bundled native TypeScript are bounded comparison candidates. The compatible MCP Apps client is a build input. Tailwind and OpenAI Apps SDK UI are deferred.
+- Affects only the picker source/build path, browser-safe payload boundary, `apps/nemlig-assistant/src/mcp.ts`, picker-focused tests, package validation, manifest, lockfile, and dependency documentation during implementation.
+- React, React DOM, Tailwind, OpenAI Apps SDK UI, and an SDK-1-compatible MCP Apps client become browser build inputs. A minimal single-file build tool may be added only if existing tsdown cannot produce the required artifact cleanly.
 - Adds browser bytes and parse work but no service, storage, polling, retry amplification, provider request, recurring operating cost, or basket mutation.
-- Preserves `NEMLIG_MCP_APPS` as the immediate kill switch and the previous release as the code rollback.
+- Preserves `NEMLIG_MCP_APPS` as the immediate UI kill switch and the previous release as the code rollback.
