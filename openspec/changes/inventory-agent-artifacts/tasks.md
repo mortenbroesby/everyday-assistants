@@ -20,4 +20,4 @@
 
 - [x] 4.1 Run the focused validator tests and check, strict OpenSpec validation, and privacy validation; resolve only failures caused by this change.
 - [x] 4.2 Run one final `pnpm verify`, review the diff for policy loss, secrets, unrelated edits, dependencies, cost, and scope growth, and refresh the code index where supported.
-- [ ] 4.3 Commit and push the epic branch, open one pull request, and verify required CI for its exact head succeeds. Keep merge behind explicit user approval and do not deploy.
+- [x] 4.3 Commit and push the epic branch, open one pull request, and verify required CI for its exact head succeeds. Keep merge behind explicit user approval and do not deploy.
