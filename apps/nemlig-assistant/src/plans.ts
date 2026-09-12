@@ -81,13 +81,13 @@ const words = (value: string): string[] => value.toLocaleLowerCase("da-DK").norm
 const petWords = new Set(["kat", "katte", "kattemad", "hund", "hunde", "hundemad", "kaeledyr", "dyrefoder"]);
 const quantityWords = new Set(["g", "kg", "ml", "cl", "l", "stk"]);
 export const relevantProduct = (product: Product, query: string): boolean => {
-  const requested = new Set(words(query).filter((word) => !quantityWords.has(word) && !/^\d+$/u.test(word)));
-  if ([...requested].some((word) => petWords.has(word))) return true;
+  const requestedWords = [...new Set(words(query).filter((word) => !quantityWords.has(word) && !/^\d+$/u.test(word)))];
+  if (requestedWords.some((word) => petWords.has(word))) return true;
   const productWords = words(`${product.brand} ${product.category} ${product.subcategory} ${product.name}`);
   if (productWords.some((word) => petWords.has(word))) return false;
-  if (requested.size === 0) return true;
-  const joined = [...requested].join("");
-  return productWords.includes(joined) || [...requested].every((requestedWord) => productWords.some((productWord) =>
+  if (requestedWords.length === 0) return true;
+  const joined = requestedWords.join("");
+  return productWords.includes(joined) || requestedWords.every((requestedWord) => productWords.some((productWord) =>
     productWord === requestedWord || (requestedWord.length >= 5 && (productWord.startsWith(requestedWord) || requestedWord.startsWith(productWord))),
   ));
 };

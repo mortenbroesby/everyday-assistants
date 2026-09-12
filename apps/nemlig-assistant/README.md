@@ -304,10 +304,10 @@ pnpm --filter nemlig-assistant smoke:package
 Tests use synthetic HTTP responses and never access a real Nemlig account.
 
 The private npm-format package is named `nemlig-assistant`; it is installable
-from the smoke-tested tarball but remains `private: true` and unpublished. Its
-binaries are `nemlig`, `nemlig-assistant`, `nemlig-mcp`, and
-`nemlig-mcp-http`. Publication requires a separate approved change and is not a
-deployment shortcut.
+from the smoke-tested tarball but remains `private: true` and unpublished to
+npm. Its binaries are `nemlig`, `nemlig-assistant`, `nemlig-mcp`, and
+`nemlig-mcp-http`. npm publication requires a separate approved change and is
+not a deployment shortcut.
 
 Inspect or apply the repository's alpha version decision with:
 
@@ -320,6 +320,14 @@ pnpm --filter nemlig-assistant check:version-bump --base origin/main --head HEAD
 The version check compares committed revisions, not uncommitted manifest edits.
 CI checks the entire main push from its previous SHA, or the PR merge base through
 the tested SHA; missing or invalid comparison revisions fail closed.
+
+For a release-bearing epic, the coding agent also writes
+`release/notes/<version>.md` after the final version decision and copies its
+concise summary into the pull request. CI validates that reviewed, bounded note
+against the same exact base and head. A successful protected routine deployment
+publishes it as a GitHub prerelease tagged `nemlig-assistant-v<version>` at the
+exact deployed commit. This application release does not publish the npm
+package.
 
 Nemlig runtime fixes require a patch, features a minor, and breaking changes a
 major; the monotonic `-alpha.N` counter never resets. `Nemlig-Release: none` is

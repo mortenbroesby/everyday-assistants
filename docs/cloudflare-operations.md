@@ -178,7 +178,10 @@ Routine releases use the **Nemlig production** workflow with the exact green
 `main` SHA. After exact-main CI passes, the workflow checks out the merged
 commit and its merge base, then reuses the package-scoped Nemlig version policy.
 Only a merge that changes the Nemlig runtime and carries the required forward
-package version becomes release-bearing. Documentation, specifications, agent
+package version and committed `apps/nemlig-assistant/release/notes/<version>.md`
+becomes release-bearing. The coding agent writes that reviewed epic summary and
+copies it into the pull request; deployment CI does not generate prose from
+commits or call an LLM. Documentation, specifications, agent
 instructions, workflow changes, other assistants, malformed ranges, and stale
 or ineligible versions stop before production credentials or provider access.
 CI never requests an owner access token, password or browser session.
@@ -194,7 +197,11 @@ One-time setup is complete: the `nemlig-production` environment requires the own
 3. For an eligible merge, approve the `nemlig-production` environment gate and
    watch the returned run.
    A successful routine run saves its artifact and removes its exact lease
-   automatically.
+   automatically. A downstream job validates that deployment journal, then
+   publishes or confirms the exact `nemlig-assistant-v<version>` GitHub
+   prerelease. Verify its tag resolves to the deployed SHA and its body matches
+   the committed note. The historical cutover `acceptedRevision` is not the
+   deployed revision; the journal's `commit` is authoritative.
 
 Manual dispatch remains available for recovery or an intentionally selected
 merge:
@@ -209,6 +216,12 @@ merge:
    run `inspect-recovery` with that artifact's operation UUID. Continue only
    when inspection proves a terminal matching state; never retry the deployment
    or delete the lease based on its age.
+
+If deployment succeeds but only GitHub publication fails, rerun the failed
+publication job within the seven-day artifact-retention window. It reconciles a
+matching tag or partial release and fails rather than retargeting or overwriting
+a conflict. Do not repeat or roll back a healthy deployment merely to repair
+release notes.
 
 The shared command also supports supervised terminal execution with those same scoped CI credentials:
 

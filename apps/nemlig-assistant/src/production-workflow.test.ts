@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 const workflowPath = new URL("../../../.github/workflows/nemlig-production.yml", import.meta.url);
+const ciWorkflowPath = new URL("../../../.github/workflows/ci.yml", import.meta.url);
 
 const section = (source: string, heading: string): string => {
   const start = source.indexOf(`${heading}\n`);
@@ -38,9 +39,11 @@ test("production workflow accepts manual dispatch or a version-policy-eligible C
   assert.match(gate, /\[\[ "\$\(git rev-parse origin\/main\)" == "\$CANDIDATE_SHA" \]\]/u);
   assert.match(gate, /pnpm --silent --filter nemlig-assistant check:version-bump --base "\$CANDIDATE_PARENT" --head "\$CANDIDATE_SHA" --json/u);
   assert.match(gate, /policy\.eligible === true/u);
-  assert.match(gate, /process\.stdout\.write\("deploy=true\\n"\)/u);
+  assert.match(gate, /echo "deploy=true" >> "\$GITHUB_OUTPUT"/u);
   assert.match(gate, /\[\[ "\$EVENT_NAME" == "workflow_dispatch" \]\]/u);
-  assert.match(gate, /exit 0\n\x20{10}fi/u);
+  assert.match(gate, /FINALIZE_OPERATION/u);
+  assert.match(gate, /\[\[ "\$CUTOVER" == "true" \]\]/u);
+  assert.match(gate, /publish: "\$\{\{ steps\.approval\.outputs\.publish \}\}"/u);
   assert.doesNotMatch(gate, /CLOUDFLARE|NEMLIG_MCP|secrets\./u);
   assert.match(preflight, /needs: release-gate/u);
   assert.match(preflight, /needs\.release-gate\.outputs\.deploy == 'true'/u);
@@ -70,6 +73,50 @@ test("production workflow accepts manual dispatch or a version-policy-eligible C
   assert.match(deploy, /retention-days: 7/u);
   assert.match(deploy, /include-hidden-files: true/u);
   assert.doesNotMatch(source, /setup-.*provider|activate|cloudflare\/workers/u);
+});
+
+test("CI validates the reviewed release note over the same immutable range", async () => {
+  const source = await readFile(ciWorkflowPath, "utf8");
+  const versionCheck = source.indexOf("check:version-bump --base \"$base\" --head \"$head\"");
+  const noteCheck = source.indexOf("check:release-note --base \"$base\" --head \"$head\"");
+  assert.ok(versionCheck >= 0 && noteCheck > versionCheck);
+  assert.match(source, /actions\/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7\.0\.1/u);
+});
+
+test("release-bearing candidates validate reviewed notes before protected deployment", async () => {
+  const source = await readFile(workflowPath, "utf8");
+  const gate = section(source, "  release-gate:");
+  assert.match(gate, /check:release-note/u);
+  assert.match(gate, /--base "\$CANDIDATE_PARENT" --head "\$CANDIDATE_SHA"/u);
+  assert.ok(
+    gate.indexOf("check:version-bump") < gate.indexOf("check:release-note"),
+    "version eligibility must be established before note validation",
+  );
+  assert.doesNotMatch(gate, /GH_TOKEN|pull-requests: read|\/pulls/u);
+});
+
+test("verified routine deployments publish an exact immutable GitHub prerelease downstream", async () => {
+  const source = await readFile(workflowPath, "utf8");
+  const deploy = section(source, "  deploy:");
+  const publish = section(source, "  publish-release:");
+
+  assert.match(deploy, /outputs:\n\s+artifact-id: "\$\{\{ steps\.release-artifact\.outputs\.artifact-id \}\}"/u);
+  assert.match(deploy, /actions\/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7\.0\.1/u);
+  assert.match(publish, /needs: \[release-gate, deploy\]/u);
+  assert.match(publish, /needs\.release-gate\.outputs\.deploy == 'true'/u);
+  assert.match(publish, /needs\.release-gate\.outputs\.publish == 'true'/u);
+  assert.match(publish, /inputs\.finalize_operation == ''/u);
+  assert.match(publish, /permissions:\n\s+contents: write/u);
+  assert.doesNotMatch(publish, /environment:|CLOUDFLARE|NEMLIG_MCP|secrets\./u);
+  assert.match(publish, /actions\/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8\.0\.1/u);
+  assert.match(publish, /artifact-ids: "\$\{\{ needs\.deploy\.outputs\.artifact-id \}\}"/u);
+  assert.match(publish, /actions\/checkout@[0-9a-f]{40}/u);
+  assert.match(publish, /ref: "\$\{\{ env\.CANDIDATE_SHA \}\}"/u);
+  assert.match(publish, /persist-credentials: false/u);
+  assert.match(publish, /pnpm install --frozen-lockfile/u);
+  assert.match(publish, /publish:deployment-release/u);
+  assert.match(publish, /GITHUB_RUN_ID/u);
+  assert.match(publish, /GITHUB_TOKEN: "\$\{\{ github\.token \}\}"/u);
 });
 
 test("cutover recovery can be finalized through the protected environment", async () => {
