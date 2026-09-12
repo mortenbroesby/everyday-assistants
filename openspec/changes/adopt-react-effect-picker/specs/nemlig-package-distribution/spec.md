@@ -1,0 +1,12 @@
+## ADDED Requirements
+
+### Requirement: Packaged picker artifact
+The private package SHALL contain the built self-contained picker artifact required by the MCP resource, SHALL load it without repository source files, and SHALL contain no unresolved browser imports or executable CDN dependency.
+
+#### Scenario: Inspect packed picker
+- **WHEN** the package is packed without credentials or Nemlig network access
+- **THEN** the declared package files contain the built picker artifact and omit its uncompiled browser source and test files
+
+#### Scenario: Run picker from packed installation
+- **WHEN** the credential-free MCP server is launched from a clean tarball installation and a client reads the enabled picker resource
+- **THEN** the server returns the complete built resource without resolving repository paths, bare browser imports, or executable network dependencies
