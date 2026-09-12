@@ -13,6 +13,7 @@ export const safePickerImageUrl = (value: unknown): string | undefined => {
 const product = z.object({
   id: z.number().int().positive(), name: z.string().optional(), price: z.number().optional(), unit_price: z.number().optional(),
   unit_size: z.string().optional(), description: z.string().optional(), brand: z.string().optional(), available: z.boolean().default(false),
+  details: z.array(z.object({ key: z.string().max(100), value: z.string().max(300) }).strict()).max(20).optional(),
   image_url: z.string().optional(), labels: z.array(z.string()).max(20).optional(),
 });
 
