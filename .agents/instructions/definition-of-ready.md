@@ -9,6 +9,10 @@ repository, or current external state.
 - **Scope:** Identify the affected assistant, files or systems, and important
   non-goals. Confirm that the work does not overlap an active worktree or
   sibling task; coordinate ownership when it might.
+- **Epic boundary:** Use one worktree, branch, pull request, version decision,
+  and deployment boundary for one coherent outcome. Name any related OpenSpec
+  changes included in that epic. Use a smaller separate pull request only when
+  urgency or independently reviewed risk warrants it.
 - **Acceptance:** Write testable acceptance criteria, including expected failure
   behavior and readback where the task changes state.
 - **Authority:** Confirm the request authorizes the intended repository work.
