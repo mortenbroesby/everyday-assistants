@@ -60,3 +60,12 @@
 - `pnpm verify`: passed on the versioned final candidate; lint, build, both TypeScript configurations, coverage (326 tests; 94.38% lines, 85.33% branches, 92.22% functions), and smoke (5/5) all passed.
 - No live provider, owner-token, basket, account, secret, or Cloudflare mutation check was run. The credential-free production-readiness dry run is recorded separately when complete.
 - `pnpm nemlig:production:ready`: passed. It validated all 21 OpenSpec items, the public tree, the repository gate, packed-package interfaces, and a Cloudflare production dry run with the existing one-container limits and disabled defaults. It did not deploy or use production credentials.
+
+## Integration and release evidence
+
+- Commit `c4d4ead423eb61fba4801ad94a68df104237994b` was pushed to `codex/heavy-refactor`; the remote ref matched the reviewed commit.
+- Pull request #41 passed exact-head CI run `34713104495` and was squash-merged through the protected ruleset.
+- The merged `main` commit is `e29dd8dc7a7da74fc3460cf3f0c20067287c8fb2`; exact-main CI run `34713217912` passed its production-readiness gate.
+- The runtime diff required a release. Nemlig production run `34713319361` deployed the exact merged commit and published prerelease `nemlig-assistant-v4.6.1-alpha.70`; the tag resolves to the same commit.
+- External live acceptance remained out of scope because this behavior-preserving refactor did not authorize account, basket, or other user-data access.
+- The change has no delta specs. It is archived directly after this evidence update, and `openspec list` is checked afterward to confirm it leaves the active queue.
