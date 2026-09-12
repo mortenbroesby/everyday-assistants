@@ -7,16 +7,15 @@ one concise, recognizable answer without weakening the existing release gate.
 
 ## What Changes
 
-- Give every release-bearing Nemlig candidate exactly one reviewed codename that
-  advances with its version; begin the sequence with `Alpha`, then `Bravo`,
-  `Charlie`, and the remaining NATO-style alphabet, adding a cycle suffix only
-  after `Zulu`.
+- Give every release-bearing Nemlig candidate exactly one reviewed, single-word
+  codename chosen to reflect the main theme of that release, and record it in a
+  checked-in ledger that rejects reuse across releases.
 - Replace the historical `major.minor.patch-alpha.increment` package version
   with plain `major.minor.patch`; keep the codename in separate release metadata.
   Non-release changes advance neither field.
 - Treat the version and codename as one immutable release identity across the
-  package manifest, release note, deployed MCP metadata/instructions, deployment
-  evidence, and GitHub prerelease.
+  package manifest, codename ledger, release note, deployed MCP
+  metadata/instructions, deployment evidence, and GitHub prerelease.
 - Make the deployed MCP instructions state the exact version and codename so
   ChatGPT can answer a direct release-identification question without adding a
   new tool.
@@ -41,12 +40,13 @@ one concise, recognizable answer without weakening the existing release gate.
 
 ### Acceptance criteria
 
-- The release planner reports the next version and codename together without
-  modifying files, while apply records them atomically in the candidate.
+- The release planner reports the next version and maintainer-supplied codename
+  together without modifying files, while apply records them atomically in the
+  candidate.
 - New release versions use strict `major.minor.patch`; the obsolete `-alpha.N`
   suffix and internal-only increment disappear.
-- Release validation rejects a missing, malformed, stale, skipped, or mismatched
-  codename before deployment or publication.
+- Release validation rejects a missing, malformed, stale, reused, unchanged, or
+  mismatched codename before deployment or publication.
 - A deployed MCP initialization identifies itself to ChatGPT with the exact
   package version and codename while retaining the title `Nemlig Assistant`.
 - A successful exact-head deployment publishes one GitHub prerelease whose tag
@@ -54,7 +54,7 @@ one concise, recognizable answer without weakening the existing release gate.
   contain the same codename.
 - Failed deployment and non-release merges publish no new codename; an
   idempotent publication retry retains the original version and codename.
-- Existing version semantics, release-note bounds, exact-main verification,
+- Release-kind semantics, release-note bounds, exact-main verification,
   production approval, single-Container ceiling, and no-npm-publication policy
   remain unchanged.
 

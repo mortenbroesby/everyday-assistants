@@ -12,7 +12,7 @@ deliberately excluded from versioning and deployment.
 
 **Goals:**
 
-- Extend the existing release identity with one deterministic codename without
+- Extend the existing release identity with one reviewed codename without
   creating a parallel release system.
 - Keep planning/apply, validation, deployment proof, MCP presentation, and
   GitHub publication consistent and retry-safe.
@@ -30,16 +30,17 @@ deliberately excluded from versioning and deployment.
 ### Store the candidate codename beside the package version
 
 Add one bounded `nemligRelease.codename` string to the existing package
-manifest. Runtime, validation, notes, and publication read the pair from the
-same exact candidate. The release agent treats its own version-and-codename
-manifest update as release metadata when determining whether apply is already
+manifest and a small checked-in CSV ledger that maps each codenamed version to
+its unique name. Runtime, validation, notes, and publication read the pair from
+the same exact candidate. The release agent treats its own identity and ledger
+updates as release metadata when determining whether apply is already
 idempotent, while rejecting manual or inconsistent codename changes.
 
-This reuses the file every release-bearing pull request already changes and
-packs the identity with the application. A separate registry file was rejected
-because it would introduce another synchronization boundary; deriving a name
-only from the version at display time was rejected because it would not leave a
-reviewed, explicit release identity in the candidate.
+The manifest packs the identity with the application, while the ledger makes
+global non-reuse reviewable and mechanically enforceable without a service or
+dependency. Deriving a name only from the version at display time was rejected
+because it would not leave a reviewed, explicit release identity in the
+candidate.
 
 ### Use plain SemVer and keep codename separate
 
@@ -54,25 +55,27 @@ with SemVer prerelease precedence. Encoding the codename as a SemVer suffix was
 rejected because the package version already identifies the release and the
 separate reviewed metadata is the source used by notes and ChatGPT.
 
-### Use a deterministic NATO-style sequence
+### Use a reviewed theme codename
 
-Keep the ordered words in the release policy code. With no codename on the
-historical baseline, the first release produced by this change is `Alpha`;
-subsequent releases advance through `Bravo` to `Zulu`, then `Alpha-2` through
-`Zulu-2`, and so on. Parsing is strict and case-sensitive.
+Require a maintainer-supplied, short, single-word codename for every
+release-bearing candidate. The word should reflect the release's main theme;
+the first candidate is `Callsign` because it introduces release identities.
+Parsing is strict and case-sensitive. A release cannot retain its parent's
+codename or use any codename already assigned in the ledger.
 
-This is predictable, testable, and requires no name service or subjective name
-selection. Arbitrary Linux-style names were rejected because collision checks
-and human selection would make automated release apply less reliable.
+This keeps names memorable without a generator, dependency, or numeric recycle
+scheme. Automatic theme generation was rejected because release planning must
+remain reproducible and reviewable.
 
 ### Bind codename validation to the existing exact-range gate
 
 Release planning reports `currentCodename` and `targetCodename`. Apply updates
-version and codename in one manifest write. Exact-candidate validation computes
-the expected successor from the merge parent and requires the manifest and
-version-addressed release note to match it. Non-release decisions neither
-advance nor validate a new name. The no-release override cannot be used to slip
-a codename-only change into main.
+version and codename in the manifest and appends their mapping to the ledger.
+Exact-candidate validation computes the expected version from the merge parent
+and requires one new, unique, validated codename in the manifest, ledger, and
+version-addressed release note. Non-release decisions neither advance nor
+validate a new name. The no-release override cannot be used to slip a codename
+or ledger-only change into main.
 
 The existing candidate SHA remains the deployment journal's cryptographic Git
 binding; no journal schema migration is needed. Publication reads the exact
@@ -94,7 +97,7 @@ because it would not be validated against the deployed artifact.
 
 Runtime exports the validated version/codename pair. `createMcpServer` prefixes
 its existing instructions with a short sentence such as `Current release:
-4.8.0 - Alpha.` The server name, title, semantic version, icon, tools,
+4.8.0 - Callsign.` The server name, title, semantic version, icon, tools,
 and resources remain unchanged. The package and interface smoke checks verify
 the sentence.
 
@@ -115,15 +118,16 @@ unnecessary surface expansion and compatibility churn.
 - [Publication fails after deployment] -> Retry from the immutable candidate;
   strict readback accepts only matching tag, target, title, body, version, and
   codename.
-- [The sequence eventually repeats words] -> Add the cycle suffix after every 26
-  releases; the full version/codename pair remains unique and unambiguous.
+- [A codename is subjective] -> Keep it explicit in the reviewed candidate and
+  use the release theme as the naming rule; CI validates shape, global ledger
+  uniqueness, and consistency.
 
 ## Migration Plan
 
-1. Add strict codename parsing/sequencing, replace the old alpha increment with
+1. Add strict codename and ledger parsing, replace the old alpha increment with
    plain SemVer, and characterize release planning, apply, candidate validation,
    and retry behavior from the historical baseline without a codename.
-2. Apply the first candidate codename (`Alpha`) together with this pull
+2. Apply the first candidate codename (`Callsign`) together with this pull
    request's normal version decision and matching release note.
 3. Expose and verify the pair in runtime/MCP instructions and GitHub publication
    while retaining existing tags and journal schema.
