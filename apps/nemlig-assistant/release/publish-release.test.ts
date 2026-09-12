@@ -3,9 +3,11 @@ import test from "node:test";
 import { publishGitHubPrerelease, validatePublicationJournal, type GitHubReleaseClient } from "../scripts/publish-release.js";
 
 const sha = "a".repeat(40);
-const version = "4.5.5-alpha.66";
+const version = "4.5.5";
+const codename = "Callsign";
 const tag = `nemlig-assistant-v${version}`;
-const note = `# Nemlig Assistant ${version}\n\n- Makes deployment release evidence readable.\n`;
+const name = `Nemlig Assistant ${version} - ${codename}`;
+const note = `# ${name}\n\n## In plain language\n\nThis release makes deployment records easier to understand.\n\n## Changes\n\n- Makes deployment release evidence readable.\n`;
 
 function journal(overrides: Record<string, unknown> = {}): string {
   return JSON.stringify({
@@ -64,7 +66,7 @@ class FakeGitHub implements GitHubReleaseClient {
 }
 
 function input(client: FakeGitHub) {
-  return { client, repository: "mortenbroesby/everyday-assistants", candidate: sha, version, note, journal: journal(), expectedRunId: 202 };
+  return { client, repository: "mortenbroesby/everyday-assistants", candidate: sha, version, codename, note, journal: journal(), expectedRunId: 202 };
 }
 
 test("publication journal requires exact successful routine deployment evidence", () => {
@@ -89,6 +91,7 @@ test("publisher creates the exact prerelease once and then is a matching no-op",
   const first = await publishGitHubPrerelease(input(client));
   assert.equal(first.action, "published");
   assert.equal(client.tagSha, sha);
+  assert.equal(client.release?.name, name);
   assert.match(String(client.release?.body), /\/commit\//);
   assert.match(String(client.release?.body), /actions\/runs\/101/);
   assert.match(String(client.release?.body), /actions\/runs\/202/);
@@ -110,8 +113,21 @@ test("publisher resumes a matching tag without a release and rejects conflicts",
 
   const releaseConflict = new FakeGitHub();
   releaseConflict.tagSha = sha;
-  releaseConflict.release = { tag_name: tag, target_commitish: sha, name: tag, body: "changed", prerelease: true, draft: false };
+  releaseConflict.release = { tag_name: tag, target_commitish: sha, name, body: "changed", prerelease: true, draft: false };
   await assert.rejects(() => publishGitHubPrerelease(input(releaseConflict)), /release.*conflicts/i);
+});
+
+test("publisher validates codename evidence before any GitHub mutation", async () => {
+  for (const changes of [
+    { codename: "Bravo" },
+    { codename: "alpha" },
+    { note: `# Nemlig Assistant ${version}\n\n- Missing codename.\n` },
+    { note: `# ${name}\n\n## Changes\n\n- Missing plain language.\n` },
+  ]) {
+    const client = new FakeGitHub();
+    await assert.rejects(() => publishGitHubPrerelease({ ...input(client), ...changes }), /codename|release note|Markdown/i);
+    assert.deepEqual(client.calls, []);
+  }
 });
 
 test("publisher reconciles an uncertain write response before retrying", async () => {

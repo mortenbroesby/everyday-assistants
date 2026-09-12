@@ -5,6 +5,7 @@ import process from "node:process";
 import { fileURLToPath } from "node:url";
 import { parseVersion } from "../release/policy.js";
 import { readReleaseNoteAtRef, validateReleaseNote } from "../release/release-note.js";
+import { readPackageIdentity } from "../src/release-identity.js";
 import { parseDeploymentJournal, type DeploymentJournal } from "./production-deploy.js";
 
 const fullSha = /^[0-9a-f]{40}$/u;
@@ -67,10 +68,10 @@ export function releaseBody(note: string, repository: string, candidate: string,
   return `${note.trimEnd()}\n\n---\n\n[Commit](https://github.com/${repository}/commit/${candidate}) · [CI run](https://github.com/${repository}/actions/runs/${journal.ciRunId}) · [Deployment run](https://github.com/${repository}/actions/runs/${journal.releaseRunId})\n`;
 }
 
-function releaseMatches(release: Record<string, unknown>, expected: { tag: string; target: string; body: string }): boolean {
+function releaseMatches(release: Record<string, unknown>, expected: { tag: string; target: string; name: string; body: string }): boolean {
   return release.tag_name === expected.tag
     && release.target_commitish === expected.target
-    && release.name === expected.tag
+    && release.name === expected.name
     && release.body === expected.body
     && release.prerelease === true
     && release.draft === false;
@@ -101,28 +102,30 @@ export async function publishGitHubPrerelease(input: {
   repository: string;
   candidate: string;
   version: string;
+  codename: string;
   note: string;
   journal: string;
   expectedRunId: number;
 }): Promise<PublicationResult> {
   const journal = validatePublicationJournal(input.journal, { candidate: input.candidate, expectedRunId: input.expectedRunId });
-  const checkedNote = validateReleaseNote(input.version, input.note);
+  const checkedNote = validateReleaseNote(input.version, input.codename, input.note);
   const tag = releaseTag(input.version);
+  const name = `Nemlig Assistant ${input.version} - ${input.codename}`;
   const body = releaseBody(checkedNote.body, input.repository, input.candidate, journal);
   await reconcileTag(input.client, tag, input.candidate);
   const existing = await input.client.getRelease(tag);
   if (existing) {
-    if (!releaseMatches(existing, { tag, target: input.candidate, body })) throw new Error(`GitHub prerelease ${tag} conflicts with the committed release evidence.`);
+    if (!releaseMatches(existing, { tag, target: input.candidate, name, body })) throw new Error(`GitHub prerelease ${tag} conflicts with the committed release evidence.`);
     return { action: "no-op", tag, body };
   }
   try {
-    await input.client.createRelease({ tag, target: input.candidate, name: tag, body, prerelease: true });
+    await input.client.createRelease({ tag, target: input.candidate, name, body, prerelease: true });
   } catch (error) {
     const readback = await input.client.getRelease(tag);
-    if (!readback || !releaseMatches(readback, { tag, target: input.candidate, body })) throw error;
+    if (!readback || !releaseMatches(readback, { tag, target: input.candidate, name, body })) throw error;
   }
   const readback = await input.client.getRelease(tag);
-  if (!readback || !releaseMatches(readback, { tag, target: input.candidate, body })) {
+  if (!readback || !releaseMatches(readback, { tag, target: input.candidate, name, body })) {
     throw new Error(`GitHub prerelease ${tag} could not be reconciled to the committed release evidence.`);
   }
   return { action: "published", tag, body };
@@ -205,12 +208,13 @@ async function main(): Promise<void> {
   const expectedRunId = Number(process.env.GITHUB_RUN_ID);
   if (!Number.isSafeInteger(expectedRunId) || expectedRunId < 1) throw new Error("GITHUB_RUN_ID must be a positive integer.");
   const repoRoot = resolve(fileURLToPath(new URL("../../..", import.meta.url)));
-  const version = JSON.parse(readFileSync(resolve(repoRoot, "apps/nemlig-assistant/package.json"), "utf8")) as { version?: unknown };
-  if (typeof version.version !== "string") throw new Error("Nemlig package manifest is missing a version.");
-  const note = readReleaseNoteAtRef(repoRoot, options.candidate, version.version);
+  const manifest = execFileSync("git", ["show", `${options.candidate}:apps/nemlig-assistant/package.json`], { cwd: repoRoot, encoding: "utf8" });
+  const identity = readPackageIdentity(manifest, `Nemlig package manifest at ${options.candidate}`);
+  if (identity.codename === null) throw new Error("Nemlig release candidate is missing a codename.");
+  const note = readReleaseNoteAtRef(repoRoot, options.candidate, identity.version, identity.codename);
   const result = await publishGitHubPrerelease({
     client: ghClient(options.repository), repository: options.repository, candidate: options.candidate,
-    version: version.version, note: note.body, journal: readFileSync(options.journalPath, "utf8"), expectedRunId,
+    version: identity.version, codename: identity.codename, note: note.body, journal: readFileSync(options.journalPath, "utf8"), expectedRunId,
   });
   console.log(JSON.stringify({ action: result.action, tag: result.tag }));
 }

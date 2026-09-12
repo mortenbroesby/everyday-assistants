@@ -1,13 +1,44 @@
 import { compare, valid } from "semver";
+import { parseCodename, type PackageIdentity } from "../src/release-identity.js";
 
-export type ReleaseKind = "none" | "increment" | "patch" | "minor" | "major";
-export type PublishKind = Exclude<ReleaseKind, "none" | "increment">;
+export type ReleaseKind = "none" | "patch" | "minor" | "major";
+export type PublishKind = Exclude<ReleaseKind, "none">;
+export { parseCodename, readPackageIdentity, type PackageIdentity } from "../src/release-identity.js";
+
+export function parseCodenameLedger(contents: string | null): { version: string; codename: string }[] {
+  if (contents === null) return [];
+  const [header, ...rows] = contents.replace(/\n$/u, "").split("\n");
+  if (header !== "version,codename") throw new Error("Invalid codename ledger header.");
+  const versions = new Set<string>();
+  const names = new Set<string>();
+  return rows.map((row) => {
+    const [version, codename, extra] = row.split(",");
+    if (!version || !codename || extra !== undefined) throw new Error("Invalid codename ledger row.");
+    parseVersion(version);
+    if (versions.has(version) || names.has(codename.toLowerCase())) throw new Error("Codename ledger reuses a version or codename.");
+    parseCodename(codename);
+    versions.add(version);
+    names.add(codename.toLowerCase());
+    return { version, codename };
+  });
+}
+
+export function validateCodenameLedger(base: string | null, current: string | null, identity: PackageIdentity, releaseBearing: boolean): void {
+  const previous = parseCodenameLedger(base);
+  const candidate = parseCodenameLedger(current);
+  if (!releaseBearing) {
+    if (base !== current) throw new Error("Non-release changes cannot change the codename ledger.");
+    return;
+  }
+  if (!identity.codename) throw new Error("Candidate codename is missing from the ledger identity.");
+  const expected = [...previous, identity];
+  if (JSON.stringify(candidate) !== JSON.stringify(expected)) throw new Error("Codename ledger must append exactly the candidate version and codename.");
+}
 
 export interface VersionParts {
   major: number;
   minor: number;
   patch: number;
-  increment: number;
 }
 
 export interface ReleaseCommit {
@@ -40,43 +71,41 @@ export interface RetryValidation {
   tag: string;
 }
 
-const strictPattern = /^(?<major>0|[1-9]\d*)\.(?<minor>0|[1-9]\d*)\.(?<patch>0|[1-9]\d*)-alpha\.(?<increment>0|[1-9]\d*)$/u;
-const legacyPattern = /^(?<major>0|[1-9]\d*)\.(?<minor>0|[1-9]\d*)\.(?<patch>0|[1-9]\d*)$/u;
-const order: Record<ReleaseKind, number> = { none: 0, increment: 1, patch: 2, minor: 3, major: 4 };
+const strictPattern = /^(?<major>0|[1-9]\d*)\.(?<minor>0|[1-9]\d*)\.(?<patch>0|[1-9]\d*)$/u;
+const legacyPattern = /^(?<version>(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*))-alpha\.(?:0|[1-9]\d*)$/u;
+const order: Record<ReleaseKind, number> = { none: 0, patch: 1, minor: 2, major: 3 };
 
-function parts(match: RegExpMatchArray, increment: number): VersionParts {
+function parts(match: RegExpMatchArray): VersionParts {
   const groups = match.groups;
   if (!groups) throw new Error("Version parser did not return components.");
   return {
     major: Number(groups.major),
     minor: Number(groups.minor),
     patch: Number(groups.patch),
-    increment,
   };
 }
 
 export function parseVersion(version: string): VersionParts {
   const match = version.match(strictPattern);
-  if (!match) {
-    throw new Error(`Invalid Nemlig Assistant version "${version}". Expected major.minor.patch-alpha.increment`);
+  if (!match || match[0] !== version || !Object.values(parts(match)).every(Number.isSafeInteger)) {
+    throw new Error(`Invalid Nemlig Assistant version "${version}". Expected plain major.minor.patch`);
   }
-  return parts(match, Number(match.groups?.increment));
+  return parts(match);
 }
 
 export function parseBaselineVersion(version: string): VersionParts {
   const legacy = version.match(legacyPattern);
-  return legacy ? parts(legacy, -1) : parseVersion(version);
+  return parseVersion(legacy?.[0] === version ? legacy.groups!.version! : version);
 }
 
 export function formatVersion(version: VersionParts): string {
-  return `${version.major}.${version.minor}.${version.patch}-alpha.${version.increment}`;
+  return `${version.major}.${version.minor}.${version.patch}`;
 }
 
 function compareParts(left: VersionParts, right: VersionParts): number {
   return left.major - right.major
     || left.minor - right.minor
-    || left.patch - right.patch
-    || left.increment - right.increment;
+    || left.patch - right.patch;
 }
 
 export function compareVersions(left: string, right: string): number {
@@ -100,9 +129,6 @@ export function assessVersionBump(previous: VersionParts, next: VersionParts): {
   if (compareParts(next, previous) <= 0) {
     return { ok: false, kind: null, reason: "Nemlig Assistant version must move forward." };
   }
-  if (next.increment <= previous.increment) {
-    return { ok: false, kind: null, reason: "Alpha increment must keep increasing across every bump." };
-  }
   if (next.major > previous.major) {
     return next.minor === 0 && next.patch === 0
       ? { ok: true, kind: "major", reason: "Major bump accepted." }
@@ -120,17 +146,11 @@ export function assessVersionBump(previous: VersionParts, next: VersionParts): {
     return { ok: false, kind: null, reason: "Minor version cannot move backward." };
   }
   if (next.patch > previous.patch) return { ok: true, kind: "patch", reason: "Patch bump accepted." };
-  if (next.patch === previous.patch) return { ok: true, kind: "increment", reason: "Increment bump accepted." };
   return { ok: false, kind: null, reason: "Patch version cannot move backward." };
 }
 
-export function isBootstrapVersion(previous: string, next: string): boolean {
-  return previous === "0.1.0" && next === "0.1.0-alpha.0";
-}
-
 export function versionSatisfies(previous: string, next: string, required: ReleaseKind): boolean {
-  if (required === "none") return true;
-  if (isBootstrapVersion(previous, next)) return true;
+  if (required === "none") return previous === next;
   try {
     const assessment = assessVersionBump(parseBaselineVersion(previous), parseVersion(next));
     return assessment.ok && assessment.kind !== null && order[assessment.kind] >= order[required];
@@ -140,16 +160,9 @@ export function versionSatisfies(previous: string, next: string, required: Relea
 }
 
 export function nextVersion(previous: string, current: string, kind: Exclude<ReleaseKind, "none">): string {
-  if (isBootstrapVersion(previous, current)) return current;
   if (versionSatisfies(previous, current, kind)) return current;
   const baseline = parseBaselineVersion(previous);
-  let currentIncrement = baseline.increment;
-  try {
-    currentIncrement = Math.max(currentIncrement, parseVersion(current).increment);
-  } catch {
-    // A malformed working version is replaced only by explicit release apply.
-  }
-  const next = { ...baseline, increment: currentIncrement + 1 };
+  const next = { ...baseline };
   if (kind === "major") {
     next.major += 1;
     next.minor = 0;
@@ -198,7 +211,7 @@ export function decideRelease(input: {
   if (noRelease) return { kind: "none", reason: "The validated no-release override is set.", ...classified };
   if (classified.releaseFiles.length === 0) {
     return classified.internalFiles.length > 0
-      ? { kind: "increment", reason: "Only Nemlig tests or release internals changed.", ...classified }
+      ? { kind: "none", reason: "Only Nemlig tests or release internals changed.", ...classified }
       : { kind: "none", reason: "No Nemlig package files changed.", ...classified };
   }
   let kind: PublishKind = "patch";

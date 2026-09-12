@@ -5,12 +5,15 @@ import { fileURLToPath } from "node:url";
 import { checkVersionEligibility } from "./check-version-bump.js";
 import { readReleaseChangedFiles } from "./agent.js";
 import { parseVersion } from "./policy.js";
+import { parseCodename, readPackageIdentity } from "../src/release-identity.js";
 
 export const releaseNotesDirectory = "apps/nemlig-assistant/release/notes";
 export const maximumReleaseNoteBytes = 8 * 1024;
+export const maximumPlainLanguageBytes = 500;
 
 export interface ReleaseNote {
   version: string;
+  codename: string | null;
   path: string;
   body: string;
 }
@@ -21,6 +24,7 @@ export interface ReleaseNoteValidation {
 
 export interface EligibleReleaseNoteValidation extends ReleaseNote {
   eligible: true;
+  codename: string;
 }
 
 export type ReleaseNoteCandidateValidation = ReleaseNoteValidation | EligibleReleaseNoteValidation;
@@ -35,22 +39,34 @@ function git(repoRoot: string, args: readonly string[]): string {
 }
 
 /** Validates bounded, version-addressed Markdown independently of Git range handling. */
-export function validateReleaseNote(version: string, body: string): ReleaseNote {
+export function validateReleaseNote(version: string, codename: string | null, body: string): ReleaseNote {
   const notePath = exactNotePath(version);
+  if (codename !== null) parseCodename(codename);
   const size = Buffer.byteLength(body, "utf8");
   if (size === 0) throw new Error(`Release note ${notePath} must not be empty.`);
   if (size > maximumReleaseNoteBytes) throw new Error(`Release note ${notePath} is too large (maximum ${maximumReleaseNoteBytes} bytes).`);
   if (body.includes("\u0000")) throw new Error(`Release note ${notePath} is not valid Markdown text.`);
-  const heading = `# Nemlig Assistant ${version}`;
+  const heading = `# Nemlig Assistant ${version}${codename === null ? "" : ` - ${codename}`}`;
   const lines = body.replace(/^\uFEFF/u, "").split(/\r?\n/u);
   if (lines[0] !== heading || !body.slice(heading.length).trim()) {
     throw new Error(`Release note ${notePath} must start with "${heading}" and contain Markdown content.`);
   }
-  return { version, path: notePath, body };
+  if (codename !== null) {
+    if (lines[1] !== "" || lines[2] !== "## In plain language") {
+      throw new Error(`Release note ${notePath} must begin with an "In plain language" section.`);
+    }
+    const remaining = lines.slice(3);
+    const nextSection = remaining.findIndex((line) => line.startsWith("## "));
+    const summary = (nextSection === -1 ? remaining : remaining.slice(0, nextSection)).join("\n").trim();
+    if (!summary || Buffer.byteLength(summary, "utf8") > maximumPlainLanguageBytes) {
+      throw new Error(`Release note ${notePath} must contain a plain language explanation of at most ${maximumPlainLanguageBytes} bytes.`);
+    }
+  }
+  return { version, codename, path: notePath, body };
 }
 
 /** Reads the immutable note at an exact Git revision; callers still bind it to their own range or evidence. */
-export function readReleaseNoteAtRef(repoRoot: string, ref: string, version: string): ReleaseNote {
+export function readReleaseNoteAtRef(repoRoot: string, ref: string, version: string, codename: string | null = null): ReleaseNote {
   const notePath = exactNotePath(version);
   let body: string;
   try {
@@ -58,7 +74,7 @@ export function readReleaseNoteAtRef(repoRoot: string, ref: string, version: str
   } catch {
     throw new Error(`Release note ${notePath} is missing at ${ref}.`);
   }
-  return validateReleaseNote(version, body);
+  return validateReleaseNote(version, codename, body);
 }
 
 /** Reuses the canonical exact-range release policy and changed-file reader. */
@@ -70,13 +86,16 @@ export function validateReleaseNoteCandidate(input: {
   const headRef = input.headRef ?? "HEAD";
   const eligibility = checkVersionEligibility(input.repoRoot, input.baseRef, headRef);
   if (!eligibility.eligible) return { eligible: false };
-  const note = readReleaseNoteAtRef(input.repoRoot, headRef, eligibility.current);
+  const manifest = git(input.repoRoot, ["show", `${headRef}:apps/nemlig-assistant/package.json`]);
+  const identity = readPackageIdentity(manifest, `Nemlig package manifest at ${headRef}`);
+  if (identity.codename === null) throw new Error("Release-bearing candidate is missing its codename.");
+  const note = readReleaseNoteAtRef(input.repoRoot, headRef, eligibility.current, identity.codename);
   const changedFiles = readReleaseChangedFiles(input.repoRoot, input.baseRef, false, headRef);
   const notes = changedFiles.filter((filePath) => filePath.startsWith(`${releaseNotesDirectory}/`));
   if (notes.length !== 1 || notes[0] !== note.path) {
     throw new Error(`Release-bearing candidate must include exactly one target release note in its candidate diff: ${note.path}.`);
   }
-  return { eligible: true, ...note };
+  return { eligible: true, ...note, codename: identity.codename };
 }
 
 function parseCli(argv: readonly string[]): { baseRef: string; headRef: string; json: boolean } {

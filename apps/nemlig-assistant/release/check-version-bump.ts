@@ -5,10 +5,11 @@ import { execFileSync } from "node:child_process";
 import {
   packagePath,
   readCommits,
-  readPackageVersionAtRef,
+  readPackageIdentityAtRef,
   readReleaseChangedFiles,
+  readCodenameLedger,
 } from "./agent.js";
-import { decideRelease, versionSatisfies, type ReleaseKind } from "./policy.js";
+import { decideRelease, validateCodenameLedger, versionSatisfies, type ReleaseKind } from "./policy.js";
 
 export interface VersionEligibility {
   eligible: boolean;
@@ -30,24 +31,31 @@ export function checkVersionEligibility(repoRoot: string, baseRef: string, headR
   try {
     execFileSync("git", ["merge-base", "--is-ancestor", base, head], { cwd: repoRoot, stdio: "ignore" });
   } catch { throw new Error("Version comparison base must be an ancestor of head."); }
-  const previous = readPackageVersionAtRef(repoRoot, base);
-  if (previous === null) throw new Error(`Cannot read ${packagePath} at ${baseRef}.`);
-  const current = readPackageVersionAtRef(repoRoot, head);
-  if (current === null) throw new Error(`Cannot read ${packagePath} at ${headRef}.`);
+  const previousIdentity = readPackageIdentityAtRef(repoRoot, base);
+  if (previousIdentity === null) throw new Error(`Cannot read ${packagePath} at ${baseRef}.`);
+  const currentIdentity = readPackageIdentityAtRef(repoRoot, head);
+  if (currentIdentity === null) throw new Error(`Cannot read ${packagePath} at ${headRef}.`);
+  const previous = previousIdentity.version;
+  const current = currentIdentity.version;
   const decision = decideRelease({
     commits: readCommits(repoRoot, base, head),
     changedFiles: readReleaseChangedFiles(repoRoot, base, false, head),
   });
   if (decision.kind === "none") {
+    if (currentIdentity.codename !== previousIdentity.codename) throw new Error("Non-release changes cannot change the release codename.");
+    if (current !== previous) throw new Error("Non-release changes cannot change the version.");
+    validateCodenameLedger(readCodenameLedger(repoRoot, base), readCodenameLedger(repoRoot, head), currentIdentity, false);
     return { eligible: false, kind: decision.kind, previous, current, reason: decision.reason };
   }
   if (!versionSatisfies(previous, current, decision.kind)) {
     throw new Error([
-      `Nemlig ${decision.kind} changes require a forward major.minor.patch-alpha.increment version.`,
+      `Nemlig ${decision.kind} changes require a forward plain major.minor.patch version.`,
       `Previous: ${previous}`,
       `Current: ${current}`,
     ].join("\n"));
   }
+  if (!currentIdentity.codename || currentIdentity.codename.toLowerCase() === previousIdentity.codename?.toLowerCase()) throw new Error("Release candidate requires a new codename.");
+  validateCodenameLedger(readCodenameLedger(repoRoot, base), readCodenameLedger(repoRoot, head), currentIdentity, true);
   return {
     eligible: decision.releaseFiles.length > 0
       && (decision.kind === "patch" || decision.kind === "minor" || decision.kind === "major"),

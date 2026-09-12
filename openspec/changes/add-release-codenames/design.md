@@ -1,0 +1,157 @@
+## Context
+
+See `proposal.md` for motivation. The current package version is the canonical
+release identifier: the release agent derives it from the exact Git range,
+stores it in `package.json`, requires a version-addressed note, and the
+production workflow publishes `nemlig-assistant-v<version>` only after the exact
+commit deploys successfully. MCP initialization already exposes the package
+version and supplies model-visible instructions. Non-release changes are
+deliberately excluded from versioning and deployment.
+
+## Goals / Non-Goals
+
+**Goals:**
+
+- Extend the existing release identity with one reviewed codename without
+  creating a parallel release system.
+- Keep planning/apply, validation, deployment proof, MCP presentation, and
+  GitHub publication consistent and retry-safe.
+- Let ChatGPT answer from initialization context with no additional tool or
+  request.
+
+**Non-Goals:**
+
+- Give names to merges that do not produce a Nemlig deployment.
+- Add mutable release state, provider configuration, or a second version stream.
+- Encode codenames in SemVer or retrofit historical releases.
+
+## Decisions
+
+### Store the candidate codename beside the package version
+
+Add one bounded `nemligRelease.codename` string to the existing package
+manifest and a small checked-in CSV ledger that maps each codenamed version to
+its unique name. Runtime, validation, notes, and publication read the pair from
+the same exact candidate. The release agent treats its own identity and ledger
+updates as release metadata when determining whether apply is already
+idempotent, while rejecting manual or inconsistent codename changes.
+
+The manifest packs the identity with the application, while the ledger makes
+global non-reuse reviewable and mechanically enforceable without a service or
+dependency. Deriving a name only from the version at display time was rejected
+because it would not leave a reviewed, explicit release identity in the
+candidate.
+
+### Use plain SemVer and keep codename separate
+
+New candidates use strict `major.minor.patch`. The first candidate migrates the
+historical `major.minor.patch-alpha.increment` value to the plain version chosen
+by its release kind. Later release-bearing changes advance major, minor, or
+patch normally. Internal-only and non-release changes leave both version and
+codename unchanged; the old independent alpha increment is removed.
+
+Keeping `nemligRelease.codename` separate avoids conflating a human release name
+with SemVer prerelease precedence. Encoding the codename as a SemVer suffix was
+rejected because the package version already identifies the release and the
+separate reviewed metadata is the source used by notes and ChatGPT.
+
+### Use a reviewed theme codename
+
+Require a maintainer-supplied, short, single-word codename for every
+release-bearing candidate. The word should reflect the release's main theme;
+the first candidate is `Callsign` because it introduces release identities.
+Parsing is strict and case-sensitive. A release cannot retain its parent's
+codename or use any codename already assigned in the ledger.
+
+This keeps names memorable without a generator, dependency, or numeric recycle
+scheme. Automatic theme generation was rejected because release planning must
+remain reproducible and reviewable.
+
+### Bind codename validation to the existing exact-range gate
+
+Release planning reports `currentCodename` and `targetCodename`. Apply updates
+version and codename in the manifest and appends their mapping to the ledger.
+Exact-candidate validation computes the expected version from the merge parent
+and requires one new, unique, validated codename in the manifest, ledger, and
+version-addressed release note. Non-release decisions neither advance nor
+validate a new name. The no-release override cannot be used to slip a codename
+or ledger-only change into main.
+
+The existing candidate SHA remains the deployment journal's cryptographic Git
+binding; no journal schema migration is needed. Publication reads the exact
+candidate manifest and note, while the journal proves that same SHA deployed
+and passed acceptance.
+
+### Keep the stable tag and add the codename to human-facing release text
+
+Tags remain `nemlig-assistant-v<version>` so retries, automation, and semantic
+ordering remain compatible. The release note heading and GitHub prerelease name
+become `Nemlig Assistant <version> - <codename>` using an ASCII separator in
+machine-validated text. Existing releases remain untouched.
+
+Changing the tag was rejected because the version already provides a unique,
+stable automation key. Adding the codename only to release prose was rejected
+because it would not be validated against the deployed artifact.
+
+### Lead with plain language and keep one shared glossary
+
+Every new codenamed release note starts with `## In plain language` followed by
+a short explanation for a non-technical reader. More detailed change bullets
+may follow. Release documentation links to one shared glossary whose table
+combines the technical term or acronym, a plain-language alias, and a concise
+meaning.
+
+This makes the primary release text understandable without requiring a lookup,
+while the glossary gives optional depth without expanding the codename CSV,
+package manifest, runtime metadata, or release CLI. Per-release glossary files
+and machine-enforced vocabulary lists were rejected as duplicate state and an
+unreliable attempt to classify every difficult word.
+
+### Put the deployed identity in MCP instructions
+
+Runtime exports the validated version/codename pair. `createMcpServer` prefixes
+its existing instructions with a short sentence such as `Current release:
+4.9.0 - Callsign.` The server name, title, semantic version, icon, tools,
+and resources remain unchanged. The package and interface smoke checks verify
+the sentence.
+
+This is the smallest model-visible surface and costs no tool slot or network
+request. A dedicated release-info tool and a renamed app title were rejected as
+unnecessary surface expansion and compatibility churn.
+
+## Risks / Trade-offs
+
+- [Historical tags use alpha prerelease versions] -> Accept them only as the
+  migration baseline; all new candidates and tags use plain SemVer.
+- [Concurrent release-bearing pull requests select the same successor] -> Keep
+  the current exact-base/version gate; the later pull request must refresh its
+  version and codename together after the first merges.
+- [Main contains candidate metadata before deployment completes] -> Call it a
+  candidate until the existing exact deployment and terminal acceptance pass;
+  production continues reporting its previously deployed artifact.
+- [Publication fails after deployment] -> Retry from the immutable candidate;
+  strict readback accepts only matching tag, target, title, body, version, and
+  codename.
+- [A codename is subjective] -> Keep it explicit in the reviewed candidate and
+  use the release theme as the naming rule; CI validates shape, global ledger
+  uniqueness, and consistency.
+- [Plain-language quality cannot be fully linted] -> Enforce the section and
+  review its wording in the pull request; use the shared glossary for terms that
+  still need explanation.
+
+## Migration Plan
+
+1. Add strict codename and ledger parsing, replace the old alpha increment with
+   plain SemVer, and characterize release planning, apply, candidate validation,
+   and retry behavior from the historical baseline without a codename.
+2. Apply the first candidate codename (`Callsign`) together with this pull
+   request's normal version decision and matching plain-language release note.
+3. Expose and verify the pair in runtime/MCP instructions and GitHub publication
+   while retaining existing tags and journal schema.
+4. Add the shared release glossary and link it from the release guidance.
+5. Run repository, package, privacy, OpenSpec, and credential-free Cloudflare
+   gates. Merge through the protected pull request path only after review.
+6. If separately authorized by the existing merge-time release contract, deploy
+   the exact merge and verify production reports the new pair before publication
+   readback. Rollback restores the prior artifact, which continues to report its
+   prior version without a codename; do not rewrite historical releases.

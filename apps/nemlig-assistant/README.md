@@ -47,6 +47,7 @@ Once connected, try prompts like:
 - “Show one recommendation per ingredient and expand alternatives below 80% match confidence.”
 - “Compare the cheese in my basket with this cheaper alternative.”
 - “Add these selected products after showing me a clear summary.”
+- “Which Nemlig Assistant version and codename are running?”
 
 The “go ahead” example uses automatic mode and adds only deterministic clear
 matches. Requests without that explicit proceed intent remain read-only or
@@ -351,11 +352,11 @@ npm. Its binaries are `nemlig`, `nemlig-assistant`, `nemlig-mcp`, and
 `nemlig-mcp-http`. npm publication requires a separate approved change and is
 not a deployment shortcut.
 
-Inspect or apply the repository's alpha version decision with:
+Inspect or apply the repository's release version decision with:
 
 ```sh
-pnpm nemlig:release:plan
-pnpm nemlig:release:apply
+pnpm nemlig:release:plan --codename Callsign
+pnpm nemlig:release:apply --codename Callsign
 pnpm --filter nemlig-assistant check:version-bump --base origin/main --head HEAD
 ```
 
@@ -363,18 +364,29 @@ The version check compares committed revisions, not uncommitted manifest edits.
 CI checks the entire main push from its previous SHA, or the PR merge base through
 the tested SHA; missing or invalid comparison revisions fail closed.
 
-For a release-bearing epic, the coding agent also writes
+For a release-bearing epic, the maintainer chooses a short, single-word codename
+that reflects the release's main theme; the example above uses `Callsign` for
+the release-identity feature. The planner advances the semantic version and
+records the reviewed codename in `release/codenames.csv`, whose validation
+rejects reused names case-insensitively. The coding agent also writes
 `release/notes/<version>.md` after the final version decision and copies its
-concise summary into the pull request. CI validates that reviewed, bounded note
-against the same exact base and head. A successful protected routine deployment
+concise summary into the pull request. Every new note starts with an
+`In plain language` section for non-technical readers; unfamiliar aliases,
+acronyms, and release terms belong in the shared
+[release glossary](../../docs/release-glossary.md). CI validates that reviewed,
+bounded note against the same exact base and head. A successful protected routine deployment
 publishes it as a GitHub prerelease tagged `nemlig-assistant-v<version>` at the
-exact deployed commit. This application release does not publish the npm
-package.
+exact deployed commit and titled `Nemlig Assistant <version> - <codename>`.
+Non-release merges allocate no codename. The deployed MCP instructions expose
+the same pair so ChatGPT can answer the question above without a tool call. This
+application release does not publish the npm package.
 
 Nemlig runtime fixes require a patch, features a minor, and breaking changes a
-major; the monotonic `-alpha.N` counter never resets. `Nemlig-Release: none` is
-the exact commit-body trailer for a reviewed runtime change that must not
-publish. Documentation and unrelated changes are already release no-ops.
+major. New releases use plain `major.minor.patch`; their codename is stored and
+validated separately. `Nemlig-Release: none` is the exact commit-body trailer
+for a reviewed runtime change that must not publish. Documentation, tests,
+release tooling, and unrelated changes are release no-ops and change neither
+version nor codename.
 
 ## 📋 Maintained feature inventory
 
@@ -393,7 +405,8 @@ This README is the user-facing inventory of shipped feature sets:
 - replacement and savings review
 - CLI, MCP, MCP Apps, Auth0, and bounded Cloudflare hosting
 - credential-free production-readiness gate
-- private package and guarded alpha release policy
+- private package and guarded SemVer release policy
+- deployed version and codename identity
 
 Update this inventory and the relevant section above whenever a shipped feature
 set is added, removed, or materially changed. Planned work belongs in
