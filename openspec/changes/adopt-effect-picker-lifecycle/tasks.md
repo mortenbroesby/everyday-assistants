@@ -42,6 +42,6 @@
 - [x] 4.2 Run strict OpenSpec validation, `pnpm privacy:check`, and final
   `pnpm verify`; review the diff for secrets, unrelated edits, hidden runtime
   adoption, cost, safety regression, and unjustified benchmark machinery.
-- [ ] 4.3 Push the complete comparison to draft PR #36 and verify exact-head CI.
+- [x] 4.3 Push the complete comparison to draft PR #36 and verify exact-head CI.
   Keep production native, leave the PR unmerged, and request owner selection
   before deleting candidates or making any release/deployment decision.
