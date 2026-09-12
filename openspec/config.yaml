@@ -4,9 +4,13 @@ context: |
   Public pnpm/Turborepo monorepo of independent local-first assistants under apps/.
   Preserve each app's safety contract and keep credentials and local artifacts ignored.
   A spec or implementation plan never authorizes external state mutations.
+  One coherent epic normally uses one branch and one pull request. It may include
+  multiple OpenSpec changes when they share one outcome and release boundary.
 
 rules:
   proposal:
     - State the goal, non-goals, and acceptance criteria.
+    - State the epic branch and pull-request boundary, including any related OpenSpec changes delivered with it.
   tasks:
     - Include the smallest relevant verification step.
+    - Use checkpoint commits inside the epic and one final version, integration, and deployment sequence.

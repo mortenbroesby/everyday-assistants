@@ -35,6 +35,11 @@ This repository contains independent assistants under `apps/`.
   worktrees, create the dedicated worktree from the latest `origin/main`, and
   leave every other checkout and worktree untouched. Work directly in the
   primary checkout only when the user explicitly instructs you to do so.
+- Treat one coherent epic outcome as the normal delivery unit: one worktree and
+  branch, one pull request, one version decision near merge, and at most one
+  production deployment. The epic may contain multiple related OpenSpec changes
+  and checkpoint commits. Use a smaller separate pull request when urgency or
+  independently reviewed risk makes it the clearer boundary.
 - A user-selected repository task is standing authority for ordinary,
   non-destructive work in that scope: inspect, plan, update OpenSpec, edit, run
   checks, commit, push, and verify without asking for repeated approval.
@@ -69,3 +74,6 @@ This repository contains independent assistants under `apps/`.
   protected path only. The package-scoped version policy selects
   release-bearing Nemlig merges. The
   `nemlig-production` environment remains the final deployment approval.
+- After integration and required evidence, remove a completed local worktree
+  only when it is clean, inactive, and its commits remain recoverable. Preserve
+  dirty, unresolved, active, and deliberately parked worktrees.

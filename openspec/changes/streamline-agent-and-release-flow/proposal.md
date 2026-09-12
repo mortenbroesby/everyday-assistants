@@ -11,6 +11,11 @@ requests contain versioned Nemlig runtime changes.
   failure-driven verification loop: bootstrap a worktree once, run the narrow
   reproducer while iterating, perform a reality check after repeated failures,
   and run the full gate once for the final candidate.
+- Treat one coherent epic outcome as the normal delivery unit: one dedicated
+  branch, one pull request, one version decision, and at most one production
+  deployment. An epic may contain multiple OpenSpec changes when they serve the
+  same outcome and can be reviewed, verified, and released together. Keep small
+  pull requests for urgent or independently risky changes, not every checkpoint.
 - For long-running tasks, maintain one quiet thread heartbeat that notifies the
   user only when a concrete decision or approval is blocking progress, and stop
   it when the task finishes.
@@ -26,14 +31,21 @@ requests contain versioned Nemlig runtime changes.
 - Keep manual dispatch, the `nemlig-production` environment approval, exact-SHA
   checks, bounded execution, durable recovery, and all existing safety and cost
   limits.
+- Enable GitHub's merged-branch deletion and remove a clean local worktree after
+  its pull request is integrated and its commits remain recoverable. Never
+  remove active, dirty, unresolved, or deliberately parked worktrees.
 - Non-goals: npm publication, deployments for documentation/spec/agent/workflow
   changes or other assistants, automatic retries, removing production approval,
   changing Cloudflare capacity, or changing Nemlig product behavior.
-- Acceptance: tests prove a versioned Nemlig runtime merge submits the exact
-  merge SHA for protected release, ineligible merges skip before credentials or
-  provider access, direct-main instructions are absent, and focused/full gates
-  follow the documented one-pass workflow. A waiting task emits one actionable
-  notification rather than repeated status noise.
+- Acceptance: repository guidance maps each epic to one branch and pull request,
+  permits related OpenSpec changes within that boundary, and retains exceptional
+  small pull requests. Tests prove a versioned Nemlig runtime merge submits the
+  exact merge SHA for protected release, ineligible merges skip before
+  credentials or provider access, direct-main instructions are absent, and
+  focused/full gates follow the documented one-pass workflow. GitHub reports
+  merged-branch deletion enabled, completed local worktrees are removed only
+  after clean and recoverable-state checks, and a waiting task emits one
+  actionable notification rather than repeated status noise.
 
 ## Capabilities
 
@@ -50,6 +62,7 @@ None.
 ## Impact
 
 - Repository guidance: `AGENTS.md`, Definition of Ready, and Definition of Done.
+- OpenSpec guidance: `openspec/config.yaml`.
 - Local gate: `.husky/pre-push`, reusing the existing version-check command.
 - Delivery: `.github/workflows/nemlig-production.yml`, its focused contract
   tests, Cloudflare operations documentation, and the existing hosting spec.
