@@ -28,6 +28,6 @@
 - [x] 6.2 Refresh the jCodeMunch index for changed and deleted files, trace affected callers, and verify no stale reference or external contract was introduced; record whether token savings were measurable.
 - [x] 6.3 Run `openspec validate simplify-nemlig-runtime-boundaries --strict`, package-focused checks, privacy checks, and `pnpm verify`; verify all applicable Definition of Done gates pass and record any inapplicable criteria.
 - [x] 6.4 Coordinate with the sibling session, refresh onto settled `origin/main`, resolve the package version decision under the repository release policy without overwriting sibling-owned manifest/lockfile work, and rerun affected gates.
-- [ ] 6.5 Commit and push `codex/heavy-refactor`, open one pull request, wait for required exact-head CI, and verify the remote branch matches the reviewed commit.
-- [ ] 6.6 Squash-merge through the protected pull-request ruleset and verify the merge commit and exact-main CI; record that production deployment and external acceptance are inapplicable unless the release policy or final diff makes them required.
-- [ ] 6.7 Sync or archive the completed OpenSpec change as required by the repository workflow and verify `openspec list` no longer reports unfinished implementation tasks for this change.
+- [x] 6.5 Commit and push `codex/heavy-refactor`, open one pull request, wait for required exact-head CI, and verify the remote branch matches the reviewed commit.
+- [x] 6.6 Squash-merge through the protected pull-request ruleset and verify the merge commit and exact-main CI; record that production deployment and external acceptance are inapplicable unless the release policy or final diff makes them required.
+- [x] 6.7 Sync or archive the completed OpenSpec change as required by the repository workflow and verify `openspec list` no longer reports unfinished implementation tasks for this change.
