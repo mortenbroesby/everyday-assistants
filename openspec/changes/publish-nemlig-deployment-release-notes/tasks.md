@@ -30,8 +30,9 @@
   conflicts, and uncertain-response reconciliation.
 - [x] 3.3 Add a downstream publication job that downloads the producing deploy
   artifact, checks out the exact candidate, validates before `contents: write`,
-  and preserves approval, concurrency, timeouts, manual finalize, supervised
-  cutover, and recovery behavior.
+  and preserves concurrency, timeouts, manual finalize, supervised cutover, and
+  recovery behavior while making pre-merge owner approval the sole human
+  release checkpoint.
 - [x] 3.4 Add focused workflow contracts and operator guidance for readback and
   publisher-only retry within the seven-day artifact window.
 
@@ -44,6 +45,6 @@
 - [ ] 4.3 Review for secrets, unrelated changes, dependencies, retries, capacity,
   or cost growth; commit and push the epic branch, open one pull request, verify
   exact-head CI, merge through the ruleset, and verify integrated-SHA CI.
-- [ ] 4.4 Obtain the existing production-environment approval, verify one
-  successful exact-SHA deployment and matching GitHub prerelease, and record the
-  deployment run, release URL, tag target, and note-body evidence before archive.
+- [ ] 4.4 Obtain owner approval before merge, verify one successful automatic
+  exact-SHA deployment and matching GitHub prerelease, and record the deployment
+  run, release URL, tag target, and note-body evidence before archive.

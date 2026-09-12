@@ -67,6 +67,7 @@ test("production workflow accepts manual dispatch or a version-policy-eligible C
   assert.match(deploy, /NEMLIG_MCP_AUTH0_ISSUER: https:\/\/everyday-assistants\.eu\.auth0\.com\//u);
   assert.match(deploy, /NEMLIG_MCP_PUBLIC_URL: https:\/\/nemlig-mcp\.broesby\.dk\/mcp/u);
   assert.match(deploy, /RUNNER_TEMP\/nemlig-release\.json/u);
+  assert.match(deploy, /pnpm --silent --filter nemlig-assistant production:deploy/u);
   assert.match(deploy, /\.git\/nemlig-production-deploy\/latest\.json/u);
   assert.match(deploy, /actions\/upload-artifact@[0-9a-f]{40}/u);
   assert.match(deploy, /id: release-artifact/u);
@@ -83,7 +84,7 @@ test("CI validates the reviewed release note over the same immutable range", asy
   assert.match(source, /actions\/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7\.0\.1/u);
 });
 
-test("release-bearing candidates validate reviewed notes before protected deployment", async () => {
+test("release-bearing candidates validate reviewed notes before automatic deployment", async () => {
   const source = await readFile(workflowPath, "utf8");
   const gate = section(source, "  release-gate:");
   assert.match(gate, /check:release-note/u);
@@ -115,6 +116,11 @@ test("verified routine deployments publish an exact immutable GitHub prerelease 
   assert.match(publish, /persist-credentials: false/u);
   assert.match(publish, /pnpm install --frozen-lockfile/u);
   assert.match(publish, /publish:deployment-release/u);
+  assert.doesNotMatch(
+    publish,
+    /publish:deployment-release --\s*\\/u,
+    "the package script must not receive a literal argument separator",
+  );
   assert.match(publish, /GITHUB_RUN_ID/u);
   assert.match(publish, /GITHUB_TOKEN: "\$\{\{ github\.token \}\}"/u);
 });

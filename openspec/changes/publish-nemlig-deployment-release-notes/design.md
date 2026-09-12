@@ -46,7 +46,7 @@ because reviewed prose should already be immutable in the candidate.
 
 ### Publish only from successful routine deployment evidence
 
-A downstream publication job depends on the protected deploy job, downloads the
+A downstream publication job depends on the main-only deploy job, downloads the
 deployment artifact produced by that job, checks out the exact candidate, and
 validates before any GitHub write:
 
@@ -104,11 +104,13 @@ behavior remain unchanged. Its `words` helper stays separate from
 2. Add the minimal note validator, deployment-evidence validator, and idempotent
    GitHub publisher without a new dependency.
 3. Wire exact-range CI validation and a downstream publication job while
-   preserving production approval and recovery behavior.
+   preserving recovery behavior and moving the sole human release decision to
+   explicit pull-request approval before merge.
 4. Calculate the final patch prerelease, commit its agent-authored note, run the
    full repository gate, and merge one epic pull request.
-5. Approve one protected production deployment and verify the prerelease tag,
-   body, and target SHA against the journal.
+5. Approve the release-bearing pull request before merge, then verify the
+   automatic production deployment and prerelease tag, body, and target SHA
+   against the journal.
 
 Rollback disables/removes only the downstream publication job. It does not roll
 back a healthy production deployment. A published immutable tag is retained as

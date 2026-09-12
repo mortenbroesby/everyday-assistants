@@ -186,17 +186,22 @@ instructions, workflow changes, other assistants, malformed ranges, and stale
 or ineligible versions stop before production credentials or provider access.
 CI never requests an owner access token, password or browser session.
 
-One-time setup is complete: the `nemlig-production` environment requires the owner reviewer, permits only `main`, and contains the two scoped secrets and three non-secret variables required by the workflow. Routine releases need no owner or 1Password session.
+One-time setup is complete: the `nemlig-production` environment permits only
+`main` and contains the two scoped secrets and three non-secret variables
+required by the workflow. It has no post-merge reviewer gate. The owner approves
+the release-bearing pull request before merge; that merge is the human release
+decision.
 
 ### Repeatable release
 
-1. Open a pull request and merge after required CI passes. Exact-main **CI**
-   then starts the protected workflow for the merge commit.
+1. Open a release-bearing pull request, verify its version and committed release
+   note, and obtain the owner's explicit approval before merging. Merge only
+   after required CI passes. Exact-main **CI** then starts the production
+   workflow for the merge commit.
 2. The workflow selects the release-bearing result from the exact merged range;
    an ineligible merge ends successfully before credentials are available.
-3. For an eligible merge, approve the `nemlig-production` environment gate and
-   watch the returned run.
-   A successful routine run saves its artifact and removes its exact lease
+3. For an eligible merge, deployment proceeds automatically without a second
+   human checkpoint. A successful routine run saves its artifact and removes its exact lease
    automatically. A downstream job validates that deployment journal, then
    publishes or confirms the exact `nemlig-assistant-v<version>` GitHub
    prerelease. Verify its tag resolves to the deployed SHA and its body matches
@@ -237,7 +242,11 @@ ownership until actual live acceptance is recorded in
 baseline, routine mode accepts only descendants with exact-main green CI. Legacy
 explicit local owner mode remains available but is never CI's fallback.
 
-The command verifies local HEAD, refreshed remote `main`, exact-head CI, and the required protected environment before issuing one bounded machine token or changing Cloudflare. Token validation checks signature, issuer, audience, exact identity/scope and remaining expiry. Fixture checks prove runtime transport and isolation; they do not prove live Nemlig or ChatGPT behavior.
+The command verifies local HEAD, refreshed remote `main`, exact-head CI, and the
+required main-only environment before issuing one bounded machine token or
+changing Cloudflare. Token validation checks signature, issuer, audience, exact
+identity/scope and remaining expiry. Fixture checks prove runtime transport and
+isolation; they do not prove live Nemlig or ChatGPT behavior.
 It takes an exclusive lock shared by linked worktrees and atomically creates
 `refs/heads/codex-lock/nemlig-production` for a unique operation UUID, not the
 source SHA. The ref contains a bounded public-safe recovery journal. It records the
