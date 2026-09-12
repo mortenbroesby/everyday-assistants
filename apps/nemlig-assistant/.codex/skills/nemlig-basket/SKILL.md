@@ -77,6 +77,6 @@ Manual or unresolved choices require an exact unchanged review. Removals,
 replacements, and clearing always require separate exact approval. Never retry
 an indeterminate action result; inspect the basket and create a new review.
 
-For private ChatGPT use, follow `../../../../docs/cloudflare-operations.md`.
+For private ChatGPT use, follow `../../../../../docs/cloudflare-operations.md`.
 Identity, infrastructure, and app changes remain owner actions and never
 authorize a basket mutation.

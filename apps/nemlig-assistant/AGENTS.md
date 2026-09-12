@@ -1,7 +1,15 @@
 # Nemlig Food Assistant operating contract
 
-Read the repository-root `AGENTS.md` and `.codex/skills/nemlig-basket/SKILL.md`
-before Nemlig work.
+Read the repository-root `AGENTS.md` before Nemlig work. For any work in this
+app, also apply this file. Then select the matching app-local skill:
+
+- Load `.codex/skills/nemlig-production/SKILL.md` for production readiness,
+  deployment, provider, or hosted-service operations.
+- Load `.codex/skills/nemlig-basket/SKILL.md` for product search, proposals,
+  basket review, or any basket operation.
+- Load both only when the task genuinely spans both scopes. Loading a skill
+  never authorizes credentials, provider changes, production changes, or a
+  basket mutation.
 
 - Use the local TypeScript CLI and inspect its current help instead of guessing
   commands or options.

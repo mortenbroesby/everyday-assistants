@@ -10,6 +10,7 @@
     "pnpm": "9.15.9"
   },
   "scripts": {
+    "agent:check": "node --test scripts/check-agent-artifacts.test.mjs && node scripts/check-agent-artifacts.mjs",
     "build": "turbo build",
     "check": "turbo check",
     "coverage": "turbo coverage && node apps/nemlig-assistant/scripts/coverage.mjs --validate",
@@ -23,7 +24,7 @@
     "smoke": "turbo smoke",
     "spec:validate": "DO_NOT_TRACK=1 openspec validate --all --strict --no-interactive",
     "test": "turbo test",
-    "verify": "pnpm lint && pnpm build && pnpm check && pnpm coverage && pnpm smoke"
+    "verify": "pnpm agent:check && pnpm lint && pnpm build && pnpm check && pnpm coverage && pnpm smoke"
   },
   "devDependencies": {
     "@fission-ai/openspec": "1.11.0",
