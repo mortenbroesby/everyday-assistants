@@ -23,13 +23,13 @@
 
 ## 3. Make behavior and costs inspectable
 
-- [ ] 3.1 Extend the development-only showcase with candidate and deterministic
+- [x] 3.1 Extend the development-only showcase with candidate and deterministic
   scenario controls, derived output, state sequence, and event trace; verify no
   Nemlig request or external mutation is possible.
-- [ ] 3.2 Add candidate-isolated browser builds, candidate-specific type checks,
+- [x] 3.2 Add candidate-isolated browser builds, candidate-specific type checks,
   and one reproducible benchmark command; verify ignored JSON output reports
   repeated medians, bundle bytes, code shape, and pass/fail evidence.
-- [ ] 3.3 Run the benchmark on the pinned environment and write
+- [x] 3.3 Run the benchmark on the pinned environment and write
   `docs/picker-functional-comparison.md` with commands, results, clear pros and
   cons, manual guards, diagnostic notes, and no manufactured numeric winner;
   checkpoint commit the evidence.
