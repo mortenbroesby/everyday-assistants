@@ -2,6 +2,7 @@
 
 import { Command, InvalidArgumentError } from "commander";
 import { realpathSync } from "node:fs";
+import { readFile } from "node:fs/promises";
 import { basename } from "node:path";
 import {
   FAVORITES_SEARCH_POOL,
@@ -18,10 +19,16 @@ import {
   saveCredentials,
   type Credentials,
 } from "./config.js";
+import { resolveShoppingPlan, shoppingPlanInputSchema, type ShoppingPlan } from "./plans.js";
 import { ensureLoggedIn, getClient, NEMLIG_VERSION } from "./runtime.js";
 
 export { ensureLoggedIn, getClient, NEMLIG_VERSION } from "./runtime.js";
 export type { ShoppingClient } from "./client.js";
+
+interface SignalSource {
+  once(event: "SIGINT", listener: () => void): unknown;
+  removeListener(event: "SIGINT", listener: () => void): unknown;
+}
 
 interface CliDependencies {
   client: ShoppingClient;
@@ -30,11 +37,18 @@ interface CliDependencies {
   save: (credentials: Credentials) => Promise<void>;
   clear: () => Promise<void>;
   out: (message: string) => void;
+  signals: SignalSource;
 }
 
 const positiveInteger = (value: string): number => {
   const parsed = Number(value);
   if (!Number.isInteger(parsed) || parsed < 1) throw new InvalidArgumentError("must be a positive integer");
+  return parsed;
+};
+
+const timeoutMilliseconds = (value: string): number => {
+  const parsed = positiveInteger(value);
+  if (parsed > 60_000) throw new InvalidArgumentError("must be between 1 and 60000 milliseconds");
   return parsed;
 };
 
@@ -53,6 +67,24 @@ export const formatBasket = (basket: Basket): string => {
     `Delivery: ${delivery.toFixed(2)} DKK`,
     `Total: ${(products + delivery).toFixed(2)} DKK`,
     ...(basket.deliveryTime ? [`Delivery: ${basket.deliveryTime}`] : []),
+  ].join("\n");
+};
+
+export const formatShoppingPlan = (plan: ShoppingPlan): string => {
+  const lines = plan.lines.map((line) => {
+    const selected = line.selected_product_id === undefined ? undefined : line.candidates.find((candidate) => candidate.id === line.selected_product_id);
+    const status = line.clarity_reason === "discovery_unavailable"
+      ? "Discovery unavailable"
+      : line.resolution === "covered" ? "Covered"
+      : line.resolution === "selected" ? "Selected"
+      : "Unresolved";
+    return `  ${status}: ${line.name}${selected ? ` — ${selected.name}` : ""}`;
+  });
+  return [
+    "SHOPPING PLAN",
+    ...lines,
+    `Summary: ${plan.summary.automatically_selected} selected, ${plan.summary.covered} covered, ${plan.summary.unresolved} unresolved.`,
+    "The planner called no basket mutation.",
   ].join("\n");
 };
 
@@ -84,6 +116,7 @@ export function createProgram(overrides: Partial<CliDependencies> = {}): Command
     save: saveCredentials,
     clear: clearCredentials,
     out: console.log,
+    signals: process,
     ...overrides,
   };
   const program = new Command()
@@ -156,6 +189,29 @@ export function createProgram(overrides: Partial<CliDependencies> = {}): Command
           ? ["ID       Name                          Price    Size       Status", ...products.map(formatProduct)].join("\n")
           : "No favorites found.",
       );
+    });
+
+  program
+    .command("plan")
+    .description("Resolve a local JSON shopping plan without applying basket changes.")
+    .argument("<input-file>", "JSON file with 1–50 shopping-plan lines")
+    .option("--json", "Print the resolved plan as JSON", false)
+    .option("--timeout-ms <number>", "Stop planning after 1–60000 milliseconds", timeoutMilliseconds)
+    .action(async (inputFile: string, options: { json: boolean; timeoutMs?: number }) => {
+      const input = shoppingPlanInputSchema.parse(JSON.parse(await readFile(inputFile, "utf8")));
+      const controller = new AbortController();
+      const interrupt = () => controller.abort(new DOMException("Planning cancelled.", "AbortError"));
+      dependencies.signals.once("SIGINT", interrupt);
+      try {
+        await ensureLoggedIn(dependencies.client, dependencies.credentials);
+        const plan = await resolveShoppingPlan(dependencies.client, input, {
+          signal: controller.signal,
+          deadlineMs: options.timeoutMs,
+        });
+        dependencies.out(options.json ? JSON.stringify(plan, null, 2) : formatShoppingPlan(plan));
+      } finally {
+        dependencies.signals.removeListener("SIGINT", interrupt);
+      }
     });
 
   program.command("departments").description("List current Nemlig department IDs.").action(async () => {

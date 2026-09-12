@@ -154,21 +154,20 @@ test("primary catalogue failures are not converted into empty results", async ()
   assert.equal(requests.length, 0);
 });
 
-test("caller cancellation stops read retries and network mutation failures remain single-attempt", async () => {
+test("caller cancellation starts no read, preserves its identity, and leaves mutations single-attempt", async () => {
   const controller = new AbortController();
-  controller.abort();
+  const cancelled = new Error("caller cancelled");
+  controller.abort(cancelled);
   let cancelledReads = 0;
-  const cancelledClient = new NemligClient((async (_url, init) => {
+  const cancelledClient = new NemligClient((async () => {
     cancelledReads += 1;
-    assert.equal(init?.signal?.aborted, true);
-    throw new DOMException("cancelled", "AbortError");
+    return new Response();
   }) as typeof fetch);
   await assert.rejects(
-    // Exercise the private transport contract without exposing upstream details in its public error.
     Reflect.get(cancelledClient, "json").call(cancelledClient, "https://example.test/read", { signal: controller.signal }, "Read"),
-    /^NemligError: Read failed: network unavailable\.$/u,
+    (error) => error === cancelled,
   );
-  assert.equal(cancelledReads, 1);
+  assert.equal(cancelledReads, 0);
 
   let mutationAttempts = 0;
   const mutationClient = new NemligClient((async () => {
@@ -180,6 +179,45 @@ test("caller cancellation stops read retries and network mutation failures remai
     /^NemligError: Write failed: network unavailable\.$/u,
   );
   assert.equal(mutationAttempts, 1);
+});
+
+test("catalogue and basket reads pass caller signals through initialization, fallback, and response bodies", async () => {
+  const preAborted = new AbortController(); const preAbortedReason = new Error("cancel before read");
+  preAborted.abort(preAbortedReason);
+  let preAbortedFetches = 0;
+  const preAbortedClient = new NemligClient((async () => { preAbortedFetches += 1; return new Response(); }) as typeof fetch);
+  await assert.rejects(preAbortedClient.searchProducts("mælk", 2, preAborted.signal), (error) => error === preAbortedReason);
+  Object.assign(preAbortedClient, { loggedIn: true });
+  await assert.rejects(preAbortedClient.getCart(preAborted.signal), (error) => error === preAbortedReason);
+  assert.equal(preAbortedFetches, 0);
+
+  const fallbackAbort = new AbortController(); const fallbackReason = new Error("cancel fallback");
+  const fallbackRequests: ExpectedRequest[] = [
+    ...sessionRequests(),
+    { match: "/search\\?", inspect: (_url, init) => assert.equal(init?.signal?.aborted, false), response: json({ Products: [] }) },
+    { match: "/quick\\?", inspect: (_url, init) => assert.equal(init?.signal?.aborted, false), response: json({ Categories: [{ Url: "/one" }, { Url: "/two" }] }) },
+    { match: "https://www.nemlig.com/one\\?GetAsJson=1", inspect: (_url, init) => { assert.equal(init?.signal?.aborted, false); fallbackAbort.abort(fallbackReason); assert.equal(init?.signal?.aborted, true); }, response: () => { throw new DOMException("aborted", "AbortError"); } },
+  ];
+  await assert.rejects(new NemligClient(mockFetch(fallbackRequests)).searchProducts("mælk", 2, fallbackAbort.signal), (error) => error === fallbackReason);
+  assert.equal(fallbackRequests.length, 0, "cancellation starts no later category fallback");
+
+  const bodyAbort = new AbortController(); const bodyReason = new Error("cancel body");
+  const bodyClient = new NemligClient((async () => ({
+    ok: true, headers: new Headers(), json: async () => { bodyAbort.abort(bodyReason); throw new DOMException("aborted", "AbortError"); },
+  }) as unknown as Response) as typeof fetch);
+  await assert.rejects(Reflect.get(bodyClient, "json").call(bodyClient, "https://example.test/read", { signal: bodyAbort.signal }, "Read"), (error) => error === bodyReason);
+});
+
+test("optional reads preserve cancellation and HTTP 401 while ordinary failures remain empty", async () => {
+  const cancelled = new AbortController(); const cancellation = new Error("stop optional");
+  const cancellingClient = new NemligClient((async () => { cancelled.abort(cancellation); throw new DOMException("aborted", "AbortError"); }) as typeof fetch);
+  await assert.rejects(Reflect.get(cancellingClient, "optionalJson").call(cancellingClient, "https://example.test/optional", "Optional", false, cancelled.signal), (error) => error === cancellation);
+
+  const unauthorizedClient = new NemligClient(mockFetch([{ match: "optional", response: json({}, { status: 401 }) }]));
+  await assert.rejects(Reflect.get(unauthorizedClient, "optionalJson").call(unauthorizedClient, "https://example.test/optional", "Optional"), (error) => error instanceof NemligError && error.status === 401);
+
+  const unavailableClient = new NemligClient((async () => { throw new TypeError("offline"); }) as typeof fetch);
+  assert.deepEqual(await Reflect.get(unavailableClient, "optionalJson").call(unavailableClient, "https://example.test/optional", "Optional"), {});
 });
 
 test("product normalization covers upstream fields and classifications", () => {

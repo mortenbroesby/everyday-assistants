@@ -1,6 +1,13 @@
 import { z } from "zod";
-import { NemligError, type Basket, type Product } from "./client.js";
+import { type Product } from "./client.js";
 import { calculateShoppingPlan } from "./plan-calculation.js";
+import {
+  type CatalogueRetrieval,
+  type ProductDiscoveryClient,
+  type ProductDiscoveryOptions,
+  type ProductDiscoveryResult,
+  resolveProductDiscovery,
+} from "./product-discovery.js";
 
 const constraintsSchema = z.object({
   organic: z.boolean().optional(), vegan: z.boolean().optional(), gluten_free: z.boolean().optional(),
@@ -61,11 +68,7 @@ export interface ShoppingPlan {
   summary: { total: number; covered: number; automatically_selected: number; added: 0; unresolved: number; failed: number; automatic_coverage_percent: number };
 }
 
-export interface PlanClient {
-  searchProducts(query: string, limit?: number): Promise<Product[]>;
-  getProduct(productId: number): Promise<Product>;
-  getCart(): Promise<Basket>;
-}
+export type PlanClient = ProductDiscoveryClient;
 
 const outcomes = (product: Product, constraints: ParsedShoppingPlanLine["constraints"]): Record<string, boolean> => ({
   available: constraints.available === false || product.available,
@@ -165,34 +168,32 @@ export function eligibleCandidates(
   }).slice(0, 5);
 }
 
-const mapLimit = async <T, R>(values: T[], limit: number, work: (value: T) => Promise<R>): Promise<R[]> => {
-  const result = new Array<R>(values.length); let next = 0;
-  await Promise.all(Array.from({ length: Math.min(limit, values.length) }, async () => {
-    while (next < values.length) { const index = next++; result[index] = await work(values[index]!); }
-  }));
-  return result;
-};
+const retrievalForLine = (line: ParsedShoppingPlanLine): CatalogueRetrieval => line.selected_product_id === undefined
+  ? { kind: "search", query: line.name, limit: 20 }
+  : { kind: "product", productId: line.selected_product_id };
+
+const calculateDiscoveredPlan = (
+  input: StoredShoppingPlanInput,
+  discovery: ProductDiscoveryResult,
+): ShoppingPlan => calculateShoppingPlan(input, discovery.discoveries.map(({ products, unavailable }, index) => {
+  const line = input.lines[index]!;
+  return {
+    candidates: eligibleCandidates(products, "catalog", line.constraints, line.preferences,
+      line.selected_product_id === undefined ? line : { ...line, name: "" }),
+    unavailable,
+  };
+}), discovery.basket);
 
 /**
  * Resolves a validated plan with one basket read and at most three concurrent
  * catalogue reads. It never mutates: discovery failures stay per-line while a
  * basket failure propagates because coverage cannot be trusted without it.
  */
-export async function resolveShoppingPlan(client: PlanClient, raw: ShoppingPlanInput): Promise<ShoppingPlan> {
+export const resolveShoppingPlan = async (
+  client: PlanClient,
+  raw: ShoppingPlanInput,
+  options?: ProductDiscoveryOptions,
+): Promise<ShoppingPlan> => {
   const input = shoppingPlanInputSchema.parse(raw);
-  const basketPromise = client.getCart();
-  const discovered = await mapLimit(input.lines, 3, async (line) => {
-    try {
-      const products = line.selected_product_id === undefined
-        ? await client.searchProducts(line.name, 20)
-        : [await client.getProduct(line.selected_product_id)];
-      return { candidates: eligibleCandidates(products, "catalog", line.constraints, line.preferences,
-        line.selected_product_id === undefined ? line : { ...line, name: "" }), unavailable: false };
-    } catch (error) {
-      if (error instanceof NemligError && error.status === 401) throw error;
-      return { candidates: [], unavailable: true };
-    }
-  });
-  const basket = await basketPromise;
-  return calculateShoppingPlan(input, discovered, basket);
-}
+  return calculateDiscoveredPlan(input, await resolveProductDiscovery(client, input.lines.map(retrievalForLine), options));
+};

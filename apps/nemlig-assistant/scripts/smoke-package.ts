@@ -77,6 +77,7 @@ try {
   assert.match(help.stdout, /favorites/);
   assert.match(help.stdout, /departments/);
   assert.match(help.stdout, /browse/);
+  assert.match(help.stdout, /plan/);
   assert.doesNotMatch(help.stdout, /feature-request/);
   assert.match(help.stdout, /cart/);
   assert.match(help.stdout, /add/);
