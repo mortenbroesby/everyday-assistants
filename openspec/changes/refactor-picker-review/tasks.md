@@ -52,7 +52,7 @@
   run once against the final candidate.
 - [x] 5.3 Review the diff for secrets, accidental behavior changes, unjustified
   abstraction, cost amplification, and retained mutation safeguards.
-- [ ] 5.4 Apply the package version policy and agent-written release note,
+- [x] 5.4 Apply the package version policy and agent-written release note,
   commit and push the epic, open one pull request, and verify exact-head CI.
 - [x] 5.5 Leave merge, publication, deployment, and any live provider or basket
   acceptance at their existing human and production checkpoints.
