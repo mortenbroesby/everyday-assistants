@@ -39,7 +39,7 @@
 
 - [x] 4.1 Reconcile latest `origin/main`, calculate one final patch prerelease,
   and create its reviewed note; copy the summary into the pull request.
-- [ ] 4.2 Run focused tests, representative mocked publisher smoke, strict
+- [x] 4.2 Run focused tests, representative mocked publisher smoke, strict
   OpenSpec validation, package/artifact checks, and one final `pnpm verify`.
 - [ ] 4.3 Review for secrets, unrelated changes, dependencies, retries, capacity,
   or cost growth; commit and push the epic branch, open one pull request, verify
