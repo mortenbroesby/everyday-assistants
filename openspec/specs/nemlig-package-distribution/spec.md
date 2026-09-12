@@ -27,23 +27,43 @@ The repository SHALL build the publishable package with a bundler version compat
 - **THEN** the repository retains the newest compatible release line and records the compatibility reason rather than forcing the incompatible major
 
 ### Requirement: Package-scoped version policy
-The system SHALL require every pull request with Nemlig release-bearing changes to advance the Nemlig package version according to conventional commit intent, SHALL preserve a monotonically increasing alpha increment across semantic-version bumps, and SHALL NOT require a Nemlig version change for unrelated workspaces or documentation, specification, agent-rule, and workflow-only changes.
+The system SHALL require every pull request with Nemlig release-bearing changes
+to advance the Nemlig package version according to conventional commit intent,
+preserve a monotonically increasing alpha increment across semantic-version
+bumps, and include one bounded, non-empty, version-addressed agent-authored
+release note in the exact candidate diff. The system SHALL NOT require a Nemlig
+version or release note for unrelated workspaces or documentation,
+specification, agent-rule, test, release-tooling, and workflow-only changes.
 
 #### Scenario: Runtime feature changes
+
 - **WHEN** a pull request contains a `feat` commit and changes the publishable Nemlig runtime
-- **THEN** the version gate requires a forward minor prerelease version with an alpha increment greater than its baseline
+- **THEN** the version gate requires a forward minor prerelease version with an alpha increment greater than its baseline and its reviewed release note
 
 #### Scenario: Runtime fix changes
+
 - **WHEN** a pull request changes the publishable Nemlig runtime without a feature or breaking marker
-- **THEN** the version gate requires a forward patch prerelease version with an alpha increment greater than its baseline
+- **THEN** the version gate requires a forward patch prerelease version and its reviewed agent-authored release note in the candidate diff
 
 #### Scenario: Breaking runtime changes
+
 - **WHEN** a release-bearing commit uses `!` or `BREAKING CHANGE:`
-- **THEN** the version gate requires a forward major prerelease version with an alpha increment greater than its baseline
+- **THEN** the version gate requires a forward major prerelease version with an alpha increment greater than its baseline and its reviewed release note
 
 #### Scenario: Unrelated assistant changes
+
 - **WHEN** a pull request changes only another app or other non-release-bearing paths
-- **THEN** the Nemlig version gate reports no required package version change
+- **THEN** the Nemlig version gate reports no required package version or note
+
+#### Scenario: Ineligible change
+
+- **WHEN** a pull request changes only paths excluded by the package-scoped release policy
+- **THEN** neither a Nemlig version change nor release note is required
+
+#### Scenario: Release note is missing or malformed
+
+- **WHEN** a release-bearing candidate lacks the expected version-addressed note or its Markdown content is empty, excessive, or identifies another version
+- **THEN** the exact-range gate fails before deployment
 
 ### Requirement: Safe release planning and apply
 The system SHALL provide a read-only release plan and an explicit apply operation that derive the release decision from Git history and package-scoped changed files, and SHALL reject malformed, stale, duplicate, conflicting, or unverifiable candidates before changing a version or creating a tag.
@@ -64,33 +84,36 @@ The system SHALL provide a read-only release plan and an explicit apply operatio
 - **WHEN** the exact package-scoped tag already identifies the candidate
 - **THEN** ordinary release application is an idempotent no-op and does not create another version or tag
 
-### Requirement: External publication remains disabled
-The system SHALL keep all tag creation and npm publication behavior disabled for the private-first delivery. Publication jobs SHALL run only when `NEMLIG_PUBLISH_ENABLED` is exactly `true`, and the package SHALL remain marked private. Package claiming, trusted-publisher configuration, provenance, GitHub deployment-environment setup, and repository visibility SHALL require a separate explicitly approved change.
+### Requirement: External package publication remains disabled
+The system SHALL keep the Nemlig package marked private and SHALL NOT publish it
+to npm. After a successful verified production deployment, the system MAY create
+one GitHub application-release tag and prerelease for the exact deployed commit.
+Package claiming, npm trusted-publisher configuration, npm provenance, package
+visibility changes, and npm publication SHALL require a separate explicitly
+approved change.
 
-#### Scenario: Merge while publication is deferred
-- **WHEN** full CI succeeds for a push to `main` while `NEMLIG_PUBLISH_ENABLED` is absent or false
-- **THEN** the publication job is skipped and creates no package tag or npm publication
+#### Scenario: Verified application release
 
-#### Scenario: Manual retry while publication is deferred
-- **WHEN** the CI workflow is manually dispatched while `NEMLIG_PUBLISH_ENABLED` is absent or false
-- **THEN** the retry job is skipped before checkout, tag validation, or npm access
+- **WHEN** a versioned Nemlig candidate has successfully completed protected production deployment and its exact journal and reviewed note are valid
+- **THEN** the repository may publish `nemlig-assistant-v<version>` as a GitHub prerelease targeting that exact deployed commit without publishing to npm
 
-#### Scenario: Publication variable is enabled prematurely
-- **WHEN** `NEMLIG_PUBLISH_ENABLED` is set before the deferred activation change removes the package's private guard and verifies every external prerequisite
-- **THEN** npm publication fails closed rather than publishing the private package
+#### Scenario: Package publication remains private
+
+- **WHEN** a GitHub application prerelease is created or retried
+- **THEN** the package remains `private: true` and no npm tag, package, registry credential, or trusted-publisher operation is created
 
 ### Requirement: Deterministic production-readiness gate
 
-The repository SHALL provide one CI-enforced production-readiness gate that validates strict OpenSpec contracts, public-tree privacy, root quality checks, the installed private package interfaces, and the Cloudflare production deployment artifact. The gate MUST run without Nemlig credentials, provider secrets, live Nemlig access, provider mutation, or basket mutation and MUST fail when any constituent check fails.
+The repository SHALL provide one CI-enforced production-readiness gate that validates strict OpenSpec contracts, public-tree privacy, root quality checks, a representative individual-discovery and proposed-basket conversational smoke scenario, installed private package interfaces, and the Cloudflare production deployment artifact. The gate MUST run without Nemlig credentials, provider secrets, live Nemlig access, provider mutation, or basket mutation and MUST fail when any constituent check fails.
 
 #### Scenario: Pull request is production-ready
 
-- **WHEN** CI evaluates a pull request whose specifications, source, tests, packed interfaces, and Cloudflare production artifact are valid
+- **WHEN** CI evaluates a pull request whose specifications, source, tests, recipe-scale smoke behavior, packed interfaces, and Cloudflare production artifact are valid
 - **THEN** the production-readiness gate succeeds and records each required constituent check as passed
 
 #### Scenario: A production artifact drifts
 
-- **WHEN** any required specification, privacy, source, test, packed-package, or Cloudflare dry-run check fails
+- **WHEN** any required specification, privacy, source, test, recipe-scale smoke, packed-package, or Cloudflare dry-run check fails
 - **THEN** the production-readiness gate fails and identifies the failing constituent command without continuing to a production deployment
 
 #### Scenario: Repository readiness is checked without production authority

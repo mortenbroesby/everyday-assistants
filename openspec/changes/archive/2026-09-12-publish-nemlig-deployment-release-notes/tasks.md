@@ -42,9 +42,13 @@
   and create its reviewed note; copy the summary into the pull request.
 - [x] 4.2 Run focused tests, representative mocked publisher smoke, strict
   OpenSpec validation, package/artifact checks, and one final `pnpm verify`.
-- [ ] 4.3 Review for secrets, unrelated changes, dependencies, retries, capacity,
+- [x] 4.3 Review for secrets, unrelated changes, dependencies, retries, capacity,
   or cost growth; commit and push the epic branch, open one pull request, verify
-  exact-head CI, merge through the ruleset, and verify integrated-SHA CI.
-- [ ] 4.4 Obtain owner approval before merge, verify one successful automatic
+  exact-head CI, merge through the ruleset, and verify integrated-SHA CI. PR #35
+  merged the implementation and PR #37 aligned merge-time authorization.
+- [x] 4.4 Obtain owner approval before merge, verify one successful automatic
   exact-SHA deployment and matching GitHub prerelease, and record the deployment
-  run, release URL, tag target, and note-body evidence before archive.
+  run, release URL, tag target, and note-body evidence before archive. The
+  owner-approved cleanup PR #41 deployed commit
+  `e29dd8dc7a7da74fc3460cf3f0c20067287c8fb2` in production run `34713319361`
+  and published matching prerelease `nemlig-assistant-v4.6.1-alpha.70`.
