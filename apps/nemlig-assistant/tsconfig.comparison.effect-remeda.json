@@ -1,0 +1,9 @@
+{
+  "extends": "./tsconfig.ui.json",
+  "include": [
+    "src/picker/contract.ts",
+    "src/picker/comparison/types.ts",
+    "src/picker/comparison/harness.ts",
+    "src/picker/comparison/effect-remeda.ts"
+  ]
+}

@@ -1,5 +1,6 @@
 .env
 credentials.json
 dist/
+.comparison/
 node_modules/
 /.wrangler/
