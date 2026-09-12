@@ -9,8 +9,10 @@ import {
   decideRelease,
   decideTransaction,
   nextVersion,
-  nextCodename,
-  parseVersion,
+  parseCodename,
+  parseCodenameLedger,
+  validateCodenameLedger,
+  parseBaselineVersion,
   readPackageIdentity,
   type PackageIdentity,
   type RegistryState,
@@ -44,6 +46,10 @@ export interface ReleasePlan {
   shouldRelease: boolean;
   versionValid: boolean;
   codenameValid: boolean;
+  baseLedger: string | null;
+  currentLedger: string | null;
+  targetLedger: string | null;
+  mainLedger: string | null;
 }
 
 export interface PlanOptions {
@@ -54,9 +60,24 @@ export interface PlanOptions {
   mergedCandidate?: boolean;
   noRelease?: boolean;
   registry?: RegistryState;
+  codename?: string;
 }
 
 export const packagePath = "apps/nemlig-assistant/package.json";
+export const ledgerPath = "apps/nemlig-assistant/release/codenames.csv";
+
+export function readCodenameLedger(repoRoot: string, ref?: string): string | null {
+  if (ref && !git(repoRoot, ["ls-tree", "--name-only", ref, "--", ledgerPath])) return null;
+  try {
+    const contents = ref
+      ? execFileSync("git", ["show", `${ref}:${ledgerPath}`], { cwd: repoRoot, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] })
+      : readFileSync(resolve(repoRoot, ledgerPath), "utf8");
+    return contents.replace(/\n$/u, "");
+  } catch (error) {
+    if (!ref && (error as NodeJS.ErrnoException).code === "ENOENT") return null;
+    throw error;
+  }
+}
 
 function git(repoRoot: string, args: readonly string[]): string {
   return execFileSync("git", [...args], {
@@ -125,7 +146,7 @@ function packageWithoutReleaseIdentity(contents: string): string {
 
 /** Excludes only the version/codename edit; callers validate its expected identity separately. */
 export function readReleaseChangedFiles(repoRoot: string, baseRef: string, includeWorking = true, headRef = "HEAD"): string[] {
-  const changed = readChangedFiles(repoRoot, baseRef, includeWorking, headRef);
+  const changed = readChangedFiles(repoRoot, baseRef, includeWorking, headRef).filter((file) => file !== ledgerPath);
   if (!changed.includes(packagePath)) return changed;
   const baseManifest = packageWithoutReleaseIdentity(git(repoRoot, ["show", `${baseRef}:${packagePath}`]));
   const currentManifest = packageWithoutReleaseIdentity(includeWorking
@@ -155,7 +176,7 @@ export async function fetchRegistryState(): Promise<RegistryState> {
     const metadata = await response.json() as { "dist-tags"?: { latest?: unknown } };
     const version = metadata["dist-tags"]?.latest;
     if (typeof version !== "string") return { status: "unavailable", reason: "missing latest dist-tag" };
-    parseVersion(version);
+    parseBaselineVersion(version);
     return { status: "published", version };
   } catch (error) {
     return { status: "unavailable", reason: error instanceof Error ? error.message : String(error) };
@@ -184,7 +205,9 @@ export async function createReleasePlan(options: PlanOptions): Promise<ReleasePl
   });
   const versionValid = versionSatisfies(baseVersion, currentVersion, release.kind);
   const releaseBearing = release.kind === "patch" || release.kind === "minor" || release.kind === "major";
-  const targetCodename = releaseBearing ? nextCodename(baseCodename) : baseCodename;
+  const selectedCodename = options.codename ?? (options.mergedCandidate ? currentCodename : null);
+  if (releaseBearing && !selectedCodename) throw new Error("Release planning and apply require --codename <word>.");
+  const targetCodename = releaseBearing ? parseCodename(selectedCodename!) : baseCodename;
   const codenameValid = currentCodename === targetCodename;
   const codenameConsistent = options.mergedCandidate
     ? codenameValid
@@ -195,6 +218,22 @@ export async function createReleasePlan(options: PlanOptions): Promise<ReleasePl
       ? currentVersion
       : nextVersion(baseVersion, currentVersion, release.kind);
   const targetTag = `nemlig-assistant-v${targetVersion}`;
+  const baseLedger = readCodenameLedger(options.repoRoot, options.baseRef);
+  const currentLedger = readCodenameLedger(options.repoRoot, options.mergedCandidate ? "HEAD" : undefined);
+  let targetLedger = baseLedger;
+  let ledgerError: string | null = null;
+  try {
+    const previous = parseCodenameLedger(baseLedger);
+    if (releaseBearing) {
+      if (targetCodename!.toLowerCase() === baseCodename?.toLowerCase()) throw new Error("Release codename cannot reuse its parent's codename.");
+      targetLedger = ["version,codename", ...previous.map(({ version, codename }) => `${version},${codename}`), `${targetVersion},${targetCodename}`].join("\n");
+      parseCodenameLedger(targetLedger);
+      if (options.mergedCandidate) validateCodenameLedger(baseLedger, currentLedger, current, true);
+      else if (currentLedger !== targetLedger && JSON.stringify(parseCodenameLedger(currentLedger)) !== JSON.stringify(previous)) {
+        throw new Error("Codename ledger has an inconsistent candidate mapping.");
+      }
+    } else validateCodenameLedger(baseLedger, currentLedger, current, false);
+  } catch (error) { ledgerError = error instanceof Error ? error.message : String(error); }
   const tagState = readTagState(options.repoRoot, targetTag);
   const registry = releaseBearing
     ? options.registry ?? await fetchRegistryState()
@@ -203,10 +242,15 @@ export async function createReleasePlan(options: PlanOptions): Promise<ReleasePl
   const main = readPackageIdentityAtRef(options.repoRoot, mainRef);
   const mainVersion = main?.version ?? null;
   const mainCodename = main?.codename ?? null;
+  const mainLedger = readCodenameLedger(options.repoRoot, mainRef);
   const staleBaseline = releaseBearing && main && (options.mergedCandidate
-    ? mainVersion !== currentVersion || mainCodename !== currentCodename
-    : mainVersion !== baseVersion || mainCodename !== baseCodename);
-  const transaction = !codenameConsistent
+    ? mainVersion !== currentVersion || mainCodename !== currentCodename || mainLedger !== currentLedger
+    : mainVersion !== baseVersion || mainCodename !== baseCodename || mainLedger !== baseLedger);
+  const transaction = ledgerError
+    ? { action: "reject" as const, reason: ledgerError, versionAlreadyCurrent: false }
+    : !releaseBearing && !versionValid
+    ? { action: "reject" as const, reason: "Non-release changes cannot change the version.", versionAlreadyCurrent: false }
+    : !codenameConsistent
     ? { action: "reject" as const, reason: `Candidate codename must match ${targetCodename ?? "the unchanged historical identity"}.`, versionAlreadyCurrent: false }
     : staleBaseline
       ? { action: "reject" as const, reason: "Release baseline is stale relative to main identity.", versionAlreadyCurrent: false }
@@ -241,9 +285,14 @@ export async function createReleasePlan(options: PlanOptions): Promise<ReleasePl
       && (release.kind === "patch" || release.kind === "minor" || release.kind === "major"),
     versionValid,
     codenameValid,
+    baseLedger,
+    currentLedger,
+    targetLedger,
+    mainLedger,
   };
 }
 
+/** Rolls back a failed second rename; an interrupted process still requires the candidate gate or retry. */
 export function applyReleasePlan(repoRoot: string, plan: ReleasePlan): void {
   if (plan.transactionAction === "reject") throw new Error(plan.transactionReason);
   if (plan.releaseKind === "none") return;
@@ -252,23 +301,42 @@ export function applyReleasePlan(repoRoot: string, plan: ReleasePlan): void {
   const current = readPackageIdentity(contents, packagePath);
   const base = readPackageIdentityAtRef(repoRoot, plan.baseRef);
   const main = readPackageIdentityAtRef(repoRoot, plan.mainRef);
+  const ledger = readCodenameLedger(repoRoot);
   if (base?.version !== plan.baseVersion || base?.codename !== plan.baseCodename
-    || (main?.version ?? null) !== plan.mainVersion || (main?.codename ?? null) !== plan.mainCodename) {
+    || (main?.version ?? null) !== plan.mainVersion || (main?.codename ?? null) !== plan.mainCodename
+    || readCodenameLedger(repoRoot, plan.baseRef) !== plan.baseLedger || readCodenameLedger(repoRoot, plan.mainRef) !== plan.mainLedger) {
     throw new Error("Release plan is stale; its base or main identity changed. Replan before apply.");
   }
-  if (current.version === plan.targetVersion && current.codename === plan.targetCodename) return;
-  if (current.version !== plan.currentVersion || current.codename !== plan.currentCodename) {
+  if (current.version === plan.targetVersion && current.codename === plan.targetCodename && ledger === plan.targetLedger) return;
+  if ((current.version !== plan.currentVersion || current.codename !== plan.currentCodename)
+    && (current.version !== plan.targetVersion || current.codename !== plan.targetCodename)) {
     throw new Error("Release plan is stale; the working manifest identity changed. Replan before apply.");
   }
+  if (ledger !== plan.currentLedger && ledger !== plan.targetLedger) throw new Error("Release plan is stale; the codename ledger changed.");
   const manifest = JSON.parse(contents) as { version: string; nemligRelease?: { codename: string } };
   manifest.version = plan.targetVersion;
   if (plan.targetCodename !== null) manifest.nemligRelease = { ...manifest.nemligRelease, codename: plan.targetCodename };
   const temporaryPath = `${manifestPath}.${randomUUID()}.tmp`;
+  const ledgerFile = resolve(repoRoot, ledgerPath);
+  const originalLedger = ledger === null ? null : readFileSync(ledgerFile, "utf8");
+  const temporaryLedger = `${ledgerFile}.${randomUUID()}.tmp`;
   try {
     writeFileSync(temporaryPath, `${JSON.stringify(manifest, null, 2)}\n`, { flag: "wx" });
-    renameSync(temporaryPath, manifestPath);
+    writeFileSync(temporaryLedger, `${plan.targetLedger}\n`, { flag: "wx" });
+    renameSync(temporaryLedger, ledgerFile);
+    try {
+      renameSync(temporaryPath, manifestPath);
+    } catch (error) {
+      if (originalLedger === null) rmSync(ledgerFile);
+      else {
+        writeFileSync(temporaryLedger, originalLedger, { flag: "wx" });
+        renameSync(temporaryLedger, ledgerFile);
+      }
+      throw error;
+    }
   } finally {
     rmSync(temporaryPath, { force: true });
+    rmSync(temporaryLedger, { force: true });
   }
 }
 
@@ -296,6 +364,7 @@ export function parseArgs(argv: string[]): Omit<PlanOptions, "repoRoot"> {
     .helpOption(false)
     .addOption(new Option("--base <ref>", "base Git ref").default("origin/main").argParser(ref))
     .addOption(new Option("--main-ref <ref>", "main Git ref").argParser(ref))
+    .addOption(new Option("--codename <word>", "reviewed release codename").argParser(parseCodename))
     .option("--apply", "apply the planned version update")
     .option("--merged-candidate", "evaluate a merged candidate")
     .option("--no-release", "suppress release publication");
@@ -303,6 +372,7 @@ export function parseArgs(argv: string[]): Omit<PlanOptions, "repoRoot"> {
   const parsed = command.opts<{
     base: string;
     mainRef?: string;
+    codename?: string;
     apply?: boolean;
     mergedCandidate?: boolean;
     release?: boolean;
@@ -310,6 +380,7 @@ export function parseArgs(argv: string[]): Omit<PlanOptions, "repoRoot"> {
   return {
     baseRef: parsed.base,
     ...(parsed.mainRef === undefined ? {} : { mainRef: parsed.mainRef }),
+    ...(parsed.codename === undefined ? {} : { codename: parsed.codename }),
     ...(parsed.apply === undefined ? {} : { apply: parsed.apply }),
     ...(parsed.mergedCandidate === undefined ? {} : { mergedCandidate: parsed.mergedCandidate }),
     ...(parsed.release === false ? { noRelease: true } : {}),

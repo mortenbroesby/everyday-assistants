@@ -351,8 +351,8 @@ not a deployment shortcut.
 Inspect or apply the repository's release version decision with:
 
 ```sh
-pnpm nemlig:release:plan
-pnpm nemlig:release:apply
+pnpm nemlig:release:plan --codename Callsign
+pnpm nemlig:release:apply --codename Callsign
 pnpm --filter nemlig-assistant check:version-bump --base origin/main --head HEAD
 ```
 
@@ -360,9 +360,11 @@ The version check compares committed revisions, not uncommitted manifest edits.
 CI checks the entire main push from its previous SHA, or the PR merge base through
 the tested SHA; missing or invalid comparison revisions fail closed.
 
-For a release-bearing epic, the release planner advances the semantic version
-and its codename together. The first codenamed release is `Alpha`, followed by
-`Bravo` through `Zulu`, then `Alpha-2` and so on. The coding agent also writes
+For a release-bearing epic, the maintainer chooses a short, single-word codename
+that reflects the release's main theme; the example above uses `Callsign` for
+the release-identity feature. The planner advances the semantic version and
+records the reviewed codename in `release/codenames.csv`, whose validation
+rejects reused names case-insensitively. The coding agent also writes
 `release/notes/<version>.md` after the final version decision and copies its
 concise summary into the pull request. CI validates that reviewed, bounded note
 against the same exact base and head. A successful protected routine deployment

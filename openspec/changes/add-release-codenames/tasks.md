@@ -1,9 +1,9 @@
 ## 1. Release identity policy
 
-- [ ] 1.1 Add focused failing tests for strict theme-codename and CSV-ledger parsing, explicit selection, duplicate names, malformed values, and stale/mismatched candidates; verify the policy tests fail for the expected missing behavior.
-- [ ] 1.2 Implement the minimum explicit codename option, checked-in uniqueness ledger, and manifest identity helpers, then verify focused tests pass without adding a generator, dependency, or external registry.
-- [ ] 1.3 Extend release planning and apply to report and persist current/target version-codename pairs with their ledger entry, exclude only those identity edits from release classification, and reject a no-release, duplicate, or inconsistent codename change; verify focused agent and version-gate tests cover read-only planning, idempotent apply, concurrent-stale candidates, and non-release merges.
-- [ ] 1.4 Replace the historical `major.minor.patch-alpha.increment` policy with strict plain SemVer for new releases, remove internal-only increments, and verify migration, patch/minor/major, non-release, registry, tag, and retry behavior.
+- [x] 1.1 Add focused failing tests for strict theme-codename and CSV-ledger parsing, explicit selection, duplicate names, malformed values, and stale/mismatched candidates; verify the policy tests fail for the expected missing behavior.
+- [x] 1.2 Implement the minimum explicit codename option, checked-in uniqueness ledger, and manifest identity helpers, then verify focused tests pass without adding a generator, dependency, or external registry.
+- [x] 1.3 Extend release planning and apply to report and persist current/target version-codename pairs with their ledger entry, exclude only those identity edits from release classification, and reject a no-release, duplicate, or inconsistent codename change; verify focused agent and version-gate tests cover read-only planning, idempotent apply, concurrent-stale candidates, and non-release merges.
+- [x] 1.4 Replace the historical `major.minor.patch-alpha.increment` policy with strict plain SemVer for new releases, remove internal-only increments, and verify migration, patch/minor/major, non-release, registry, tag, and retry behavior.
 
 ## 2. Reviewed note and publication
 
@@ -14,7 +14,7 @@
 ## 3. Model-visible deployed identity
 
 - [x] 3.1 Read and validate the manifest version/codename pair at runtime and prefix the existing MCP instructions with the exact current release identity; verify source, interface, HTTP, and packed-package smoke tests retain the existing title, version, icon, tools, and resources and require no release-info tool call.
-- [ ] 3.2 Update feature/release/operations documentation with the version-codename format, first-release bootstrap, non-release behavior, and ChatGPT question example; verify documentation links, strict specs, and privacy checks pass.
+- [x] 3.2 Update feature/release/operations documentation with the version-codename format, first-release bootstrap, non-release behavior, and ChatGPT question example; verify documentation links, strict specs, and privacy checks pass.
 
 ## 4. Release and delivery
 

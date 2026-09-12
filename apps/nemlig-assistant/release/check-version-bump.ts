@@ -7,8 +7,9 @@ import {
   readCommits,
   readPackageIdentityAtRef,
   readReleaseChangedFiles,
+  readCodenameLedger,
 } from "./agent.js";
-import { decideRelease, nextCodename, versionSatisfies, type ReleaseKind } from "./policy.js";
+import { decideRelease, validateCodenameLedger, versionSatisfies, type ReleaseKind } from "./policy.js";
 
 export interface VersionEligibility {
   eligible: boolean;
@@ -40,23 +41,21 @@ export function checkVersionEligibility(repoRoot: string, baseRef: string, headR
     commits: readCommits(repoRoot, base, head),
     changedFiles: readReleaseChangedFiles(repoRoot, base, false, head),
   });
-  const expectedCodename = decision.kind === "patch" || decision.kind === "minor" || decision.kind === "major"
-    ? nextCodename(previousIdentity.codename)
-    : previousIdentity.codename;
   if (decision.kind === "none") {
-    if (currentIdentity.codename !== expectedCodename) throw new Error("Non-release changes cannot change the release codename.");
+    if (currentIdentity.codename !== previousIdentity.codename) throw new Error("Non-release changes cannot change the release codename.");
+    if (current !== previous) throw new Error("Non-release changes cannot change the version.");
+    validateCodenameLedger(readCodenameLedger(repoRoot, base), readCodenameLedger(repoRoot, head), currentIdentity, false);
     return { eligible: false, kind: decision.kind, previous, current, reason: decision.reason };
   }
   if (!versionSatisfies(previous, current, decision.kind)) {
     throw new Error([
-      `Nemlig ${decision.kind} changes require a forward major.minor.patch-alpha.increment version.`,
+      `Nemlig ${decision.kind} changes require a forward plain major.minor.patch version.`,
       `Previous: ${previous}`,
       `Current: ${current}`,
     ].join("\n"));
   }
-  if (currentIdentity.codename !== expectedCodename) {
-    throw new Error(`Nemlig candidate codename must be ${expectedCodename ?? "unchanged"}; current: ${currentIdentity.codename ?? "missing"}.`);
-  }
+  if (!currentIdentity.codename || currentIdentity.codename.toLowerCase() === previousIdentity.codename?.toLowerCase()) throw new Error("Release candidate requires a new codename.");
+  validateCodenameLedger(readCodenameLedger(repoRoot, base), readCodenameLedger(repoRoot, head), currentIdentity, true);
   return {
     eligible: decision.releaseFiles.length > 0
       && (decision.kind === "patch" || decision.kind === "minor" || decision.kind === "major"),

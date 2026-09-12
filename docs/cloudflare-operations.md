@@ -178,12 +178,13 @@ Routine releases use the **Nemlig production** workflow with the exact green
 `main` SHA. After exact-main CI passes, the workflow checks out the merged
 commit and its merge base, then reuses the package-scoped Nemlig version policy.
 Only a merge that changes the Nemlig runtime and carries the required forward
-package version, deterministic `nemligRelease.codename`, and committed
+package version, reviewed `nemligRelease.codename`, matching unique entry in
+`apps/nemlig-assistant/release/codenames.csv`, and committed
 `apps/nemlig-assistant/release/notes/<version>.md` becomes release-bearing. The
-first codenamed release uses `Alpha`; later releases advance through `Zulu`, then
-continue with `Alpha-2`. The coding agent writes that reviewed epic summary and
-copies it into the pull request; deployment CI does not generate prose from
-commits or call an LLM. Documentation, specifications, agent
+maintainer chooses a short, single-word codename matching the release theme;
+validation rejects reuse case-insensitively. The coding agent writes that
+reviewed epic summary and copies it into the pull request; deployment CI does
+not generate prose from commits or call an LLM. Documentation, specifications, agent
 instructions, workflow changes, other assistants, malformed ranges, and stale
 or ineligible versions stop before production credentials or provider access.
 CI never requests an owner access token, password or browser session.

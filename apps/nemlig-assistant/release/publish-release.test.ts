@@ -3,8 +3,8 @@ import test from "node:test";
 import { publishGitHubPrerelease, validatePublicationJournal, type GitHubReleaseClient } from "../scripts/publish-release.js";
 
 const sha = "a".repeat(40);
-const version = "4.5.5-alpha.66";
-const codename = "Alpha";
+const version = "4.5.5";
+const codename = "Callsign";
 const tag = `nemlig-assistant-v${version}`;
 const name = `Nemlig Assistant ${version} - ${codename}`;
 const note = `# ${name}\n\n- Makes deployment release evidence readable.\n`;
