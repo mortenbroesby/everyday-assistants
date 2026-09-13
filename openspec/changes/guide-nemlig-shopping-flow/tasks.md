@@ -1,16 +1,18 @@
 ## 1. Characterize the guided journey
 
-- [ ] 1.1 Add focused component or rendered-contract tests for the shared List → Proposal → Choices → Approve indicator, including completed/current/upcoming semantics and the optional Choices branch; verify the new tests fail against the current UI.
-- [ ] 1.2 Add focused assertions for each view's single next-action guidance and confirm no test permits a basket mutation from Proposal or Choices.
+- [ ] 1.1 Add focused component or rendered-contract tests for the approved four-screen visual structure, including List rows, the shared stepper, card hierarchy, mobile layout, and completed/current/upcoming semantics; verify the new tests fail against the current UI.
+- [ ] 1.2 Add focused host-session tests for List submit, Proposal Back/Continue, Choices Back/submit, and branch-aware Approve Back; verify duplicate sends are coalesced and no action before final approval can mutate the basket.
 
 ## 2. Implement the guidance
 
-- [ ] 2.1 Add the shared journey header by mapping the existing `presentation` value to stage state; verify Proposal, Choices, and Approve render independently without new client state or dependencies.
-- [ ] 2.2 Replace ambiguous stage copy with one explicit next action per view while preserving unresolved-item guidance, product evidence accordions, alternatives, and the protected `Add to Nemlig basket` boundary.
-- [ ] 2.3 Add minimal responsive and accessible styling for the stage indicator and verify keyboard semantics plus the existing mobile-width showcase.
+- [ ] 2.1 Add the bounded read-only List-stage tool and extend the existing shared UI payload with list rows and navigation context; verify checked state and requested amounts round-trip without a provider or basket call.
+- [ ] 2.2 Implement the shared four-stage header and approved visual system using the existing Apps SDK UI and CSS; verify List, Proposal, Choices, and Approve match the supplied mobile design without a new dependency.
+- [ ] 2.3 Implement guarded bottom Back/Next controls through the existing host-message bridge, including direct Proposal → Approve and Proposal → Choices → Approve branches; verify pending controls disable and the preceding visited stage is restored.
+- [ ] 2.4 Preserve unresolved-item guidance, evidence accordions, alternatives, product imagery, exact approval, fresh validation, cancellation, readback, and no-retry behavior; verify existing focused safeguards remain green.
+- [ ] 2.5 Update the showcase to exercise all four screens and both navigation branches at mobile width; visually compare hierarchy, spacing, shapes, colors, imagery, and controls with the approved design.
 
 ## 3. Verify and deliver
 
 - [ ] 3.1 Run the focused picker checks, TypeScript/build checks, and one final root `pnpm verify`; review the diff for unrelated changes, secret exposure, new provider access, and unjustified complexity.
-- [ ] 3.2 Run a fresh read-only ChatGPT acceptance that renders the independently placed Proposal and Choices views, verifies that each communicates the current and next stage, and stops before `Add to Nemlig basket`.
+- [ ] 3.2 Run a fresh read-only ChatGPT acceptance through List → Proposal → Choices → Approve, exercise Back at each applicable stage plus the direct Proposal → Approve skip path, verify independent cards retain journey context, and stop before `Add to Nemlig basket`.
 - [ ] 3.3 Make the package-scoped version decision near merge, update release artifacts only if the change is release-bearing, then commit, push, open the single epic pull request, verify exact-head CI, merge through the repository ruleset, and verify the exact integrated `main` revision and production deployment when applicable.

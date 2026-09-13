@@ -1,26 +1,38 @@
 ## Context
 
-See `proposal.md` for motivation. The existing Apps SDK resource renders three `presentation` values—`proposal`, `choices`, and `recap`—from the same React component. ChatGPT may place each result in a separate conversation turn, so continuity cannot depend on a previous iframe remaining mounted. The current host/session bridge already handles choice submission and recap handoff; provider access stays server-side.
+See `proposal.md` for motivation. The existing Apps SDK resource renders three `presentation` values—`proposal`, `choices`, and `recap`—from the same React component. The approved design adds a selectable List screen and establishes a precise shared visual system across all four stages. ChatGPT may place each result in a separate conversation turn, so continuity cannot depend on a previous iframe remaining mounted. The current host/session bridge already sends deliberate messages for choice submission and recap approval; provider access stays server-side.
 
 ## Goals / Non-Goals
 
 **Goals:**
 
+- Match the approved four-screen mobile design, not merely its information architecture.
 - Make each independent render self-orienting within one four-stage shopping journey.
-- Reuse the existing presentation value as the only source of current-stage state.
-- Keep stage and next-action guidance accessible and legible at mobile width.
+- Keep stage guidance and bottom Back/Next controls accessible and legible at mobile width.
+- Preserve enough bounded, non-secret journey context for reliable backward navigation.
 
 **Non-Goals:**
 
 - A client-side router, persistent workflow state machine, or browser-side Nemlig fetch.
-- A new MCP tool, resource, framework, dependency, or mutation path.
-- Forcing the conversational List stage into the product-review payload.
+- A new resource, framework, dependency, client router, provider client, or mutation path.
 
 ## Decisions
 
-### Render a shared static journey header in every view
+### Treat the approved mockup as a visual contract
 
-Map the existing presentation to the current stage: `proposal` → Proposal, `choices` → Choices, and `recap` → Approve. List is already complete whenever the server can render a product proposal. This makes every iframe understandable without storing cross-turn browser state.
+All four screens use the same four-column numbered stepper above a rounded white flow container. The current stage uses the pale-green highlight and green type. Headers pair title/subtitle with a soft-green count pill. Content uses pale neutral-green backgrounds, white rounded cards, subtle borders/shadows, generous mobile spacing, square pale image wells, dark product names, muted metadata, and solid green primary buttons. Back is visually secondary and shares the bottom action area with Next. Product evidence stays expandable without turning every card into a dense form.
+
+Alternative considered: keep the current UI and add only a step label. Rejected by the live review because it does not resemble the approved design.
+
+### Reuse one resource with a List-stage read tool
+
+Add a bounded, read-only shopping-list review tool that attaches the existing UI resource and returns list labels, requested amounts, initial inclusion state, and a journey identifier or equivalent opaque non-secret navigation context. Extend the view payload as a discriminated union for List and the existing product-backed presentations. The List primary action sends only checked lines through the existing host conversation; it never contacts Nemlig from the browser.
+
+Alternative considered: encode shopping-list rows as fake products in `review_proposed_basket`. Rejected because it weakens schemas and mixes pre-discovery intent with real product evidence.
+
+### Render a shared journey header in every view
+
+Map presentation to the current stage: `list` → List, `proposal` → Proposal, `choices` → Choices, and `recap` → Approve. This makes every iframe understandable even when earlier result cards are off-screen.
 
 Alternative considered: one persistent multi-page widget. Rejected because ChatGPT controls result placement and lifecycle, while the user explicitly accepts independently rendered views.
 
@@ -30,11 +42,15 @@ Proposal guidance offers two paths: name challenged products conversationally, o
 
 Alternative considered: always advance through an empty Choices screen. Rejected because it adds a meaningless step.
 
-### Keep exactly one stage-specific next action
+### Use the existing host-message bridge for real navigation
 
-The proposal uses conversational guidance, Choices uses the existing `Use these choices` control, and Approve uses the existing `Add to Nemlig basket` control. Supporting safety text may remain, but it must not compete with the next action.
+Extend the existing guarded `sendMessage` path with explicit List submit, forward, and backward intents. Messages carry the bounded selections needed to re-render the target stage; they do not call provider APIs in the iframe. Disable both navigation controls while a message is pending and prevent duplicate sends. Proposal Continue renders recap directly when no correction branch is needed. Approve Back targets Choices only when that stage was actually visited; otherwise it targets Proposal.
 
-Alternative considered: adding Back, Continue, and Search buttons. Rejected because those controls have no existing server contract and would duplicate conversation.
+Alternative considered: maintain an in-widget history/router. Rejected because result iframes are independently mounted and ChatGPT already provides the supported host bridge.
+
+### Keep one primary action and one secondary Back action
+
+List has only `Search selected items with Nemlig`. Proposal has `Back to shopping list` and `Continue to final review`. Choices has `Back to proposal` and `Use these choices`. Approve has `Back` and `Add to Nemlig basket`. Supporting copy may explain conversational correction, but must not compete with these controls.
 
 ### Use semantic HTML and existing styling primitives
 
@@ -42,16 +58,17 @@ Represent the journey as an ordered list with an accessible current-step marker 
 
 ## Risks / Trade-offs
 
-- [ChatGPT does not expose an explicit no-changes transition from Proposal to Recap] → Stage copy tells the user what to ask conversationally; implementation tests the copy and host handoff separately.
+- [Host navigation is conversation-mediated rather than an in-place router] → Use the already-supported guarded message bridge, include exact bounded navigation context, and verify each transition in a fresh ChatGPT session.
+- [Back could reconstruct the wrong branch] → Carry the preceding visited stage explicitly and test Approve after both direct Proposal and Choices paths.
 - [A four-stage header may crowd narrow screens] → Use short labels, a responsive grid, and the existing mobile showcase gate.
 - [A user may read Choices as required] → Mark it optional in Proposal and completed/skipped in Approve semantics and copy.
 
 ## Migration Plan
 
-1. Add focused component/contract tests for stage mapping and next-action copy.
-2. Add the journey header and minimal responsive styles to the existing picker.
-3. Update the showcase to render Proposal, Choices, and Approve at mobile width.
+1. Add focused component/contract tests for the List payload, visual structure, stage mapping, and navigation intents.
+2. Add the read-only List tool, extend the existing shared picker, and wire guarded forward/back host messages.
+3. Update the showcase to render all four approved screens and exercise both direct and replacement branches at mobile width.
 4. Run focused checks and `pnpm verify` once on the final candidate.
-5. After merge and normal release deployment, run a fresh read-only ChatGPT acceptance through the rendered proposal and choices flow; do not activate the basket mutation action.
+5. After merge and normal release deployment, run a fresh read-only ChatGPT acceptance through List → Proposal → Choices → Approve, exercise Back at every applicable stage, and do not activate the basket mutation action.
 
 Rollback is the single UI commit: the MCP payload and protected server workflow remain backward compatible.
