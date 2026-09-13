@@ -1,3 +1,4 @@
+import { useId } from "react";
 import { Badge } from "@openai/apps-sdk-ui/components/Badge";
 import { Button } from "@openai/apps-sdk-ui/components/Button";
 import { pickerProductEvidence, type PickerPayload, safePickerImageUrl } from "./contract.js";
@@ -13,7 +14,7 @@ function DetailList({ details }: { details: Array<{ key: string; value: string }
 function ProductCard({ item, product, radio, showMatch = true }: {
   item: Item;
   product: Product;
-  radio?: { checked: boolean; name: string; onChange: () => void };
+  radio?: { checked: boolean; name: string; onChange: () => void; disabled?: boolean };
   showMatch?: boolean;
 }) {
   const image = safePickerImageUrl(product.image_url);
@@ -45,11 +46,11 @@ function ProductCard({ item, product, radio, showMatch = true }: {
 
   return <article className={`picker-card picker-island${radio?.checked ? " picker-card-selected" : ""}`}>
     {radio
-      ? <div className="picker-choice"><input id={choiceId} aria-label={`Choose ${product.name ?? "product"} for ${item.ingredient}`} type="radio" name={radio.name} value={product.id} checked={radio.checked} onChange={radio.onChange} /><label htmlFor={choiceId}>{summary}</label></div>
+      ? <div className="picker-choice"><input id={choiceId} aria-label={`Choose ${product.name ?? "product"} for ${item.ingredient}`} type="radio" name={radio.name} value={product.id} checked={radio.checked} onChange={radio.onChange} disabled={radio.disabled} /><label htmlFor={choiceId}>{summary}</label></div>
       : summary}
-    <div className="picker-product-info">
+    {evidence.length ? <details className="picker-product-info"><summary>Product details</summary><div>
       {evidence.map(({ label, text, details }) => <details key={label}><summary>{label}</summary>{text ? <p>{text}</p> : <DetailList details={details ?? []} />}</details>)}
-    </div>
+    </div></details> : null}
   </article>;
 }
 
@@ -58,43 +59,70 @@ export type PickerViewProps = {
   failure?: string;
   onChoice: (itemIndex: number, productId: number) => void;
   onSubmit: () => void;
+  onBack?: () => void;
+  onInclude?: (index: number, included: boolean) => void;
+  included?: Record<number, boolean>;
   payload?: PickerPayload;
   pending?: boolean;
   submitted?: boolean;
 };
 
 const copy = {
+  list: ["Shopping list", "Choose what Nemlig should search for"],
   proposal: ["Proposed basket", "Real products selected for your list"],
   choices: ["Choose replacements", "Only the products you questioned"],
   recap: ["Final basket review", "One complete recap before approval"],
 } as const;
 
-export function PickerView({ payload, failure, choices, onChoice, onSubmit, pending, submitted }: PickerViewProps) {
+export function PickerView({ payload, failure, choices, onChoice, onSubmit, onBack, onInclude, included = {}, pending, submitted }: PickerViewProps) {
+  const choiceGroupPrefix = useId();
   const presentation = payload?.presentation ?? "proposal";
-  const itemCount = payload?.items.length;
+  const itemCount = payload?.presentation === "list" ? payload.list.filter((row, index) => included[index] ?? row.included).length : payload?.items.length;
   const [title, subtitle] = copy[presentation];
+  const stageIndex = ["list", "proposal", "choices", "recap"].indexOf(presentation);
+  const guidance = {
+    list: "Check the items you need. Already-have items can stay unchecked.",
+    proposal: "Name any products you want to change in ChatGPT and keep everything else. Happy with these? Continue to final review; Choices is optional.",
+    choices: "Select one replacement per item, then use these choices. All unchallenged products remain unchanged.",
+    recap: "Nothing has been added yet. Review every product before adding. Changed products are marked.",
+  };
   return <main className="picker-root" aria-live="polite">
+    <nav aria-label="Shopping journey"><ol className="picker-steps">{["List", "Proposal", "Choices", "Approve"].map((label, index) => {
+      const skipped = index === 2 && presentation === "recap" && payload?.presentation === "recap" && payload.journey?.previous !== "choices";
+      const state = index === stageIndex ? "current" : skipped ? "skipped" : index < stageIndex ? "completed" : "upcoming";
+      return <li key={label} className={`picker-step picker-step-${state}`} aria-current={state === "current" ? "step" : undefined}>
+        <span className="picker-step-number" aria-hidden="true">{index + 1}</span>
+        <span>{label}</span><small className="picker-sr-only">{skipped ? "Skipped" : index === 2 && stageIndex < 2 ? "Optional" : state === "completed" ? "Done" : state === "current" ? "Current" : "Next"}</small>
+      </li>;
+    })}</ol></nav>
+    <div className="picker-flow">
     <header className="picker-header">
       <div><h1>{title}</h1><p>{subtitle}</p></div>
-      <span className="picker-count">{itemCount === undefined ? "…" : `${itemCount} ${itemCount === 1 ? "item" : "items"}`}</span>
+      <span className="picker-count">{itemCount === undefined ? "…" : `${itemCount} ${presentation === "list" ? "selected" : presentation === "choices" ? itemCount === 1 ? "choice" : "choices" : itemCount === 1 ? "item" : "items"}`}</span>
     </header>
     <div className="picker-content">
       {!payload
         ? failure ? null : <p className="picker-empty">Loading products…</p>
-        : !payload.items.length
+        : payload.presentation === "list" ? <>
+          <p className="picker-note picker-list-intro">{guidance.list}</p>
+          <div className="picker-list picker-card">{payload.list.map((row, index) => <label className="picker-list-row" key={`${index}-${row.ingredient}`}>
+            <input type="checkbox" checked={included[index] ?? row.included} onChange={(event) => onInclude?.(index, event.currentTarget.checked)} disabled={pending || submitted} />
+            <strong>{row.ingredient}</strong><span className="picker-have">{(included[index] ?? row.included) ? row.amount : <>Already have<span className="picker-sr-only"> · {row.amount}</span></>}</span>
+          </label>)}</div>
+        </> : !payload.items.length
           ? <p className="picker-empty">{payload.rejected?.length ? `Could not match: ${payload.rejected.map(({ ingredient }) => ingredient).join(", ")}` : "No proposed products."}</p>
           : <>
-            {presentation === "proposal" ? <p className="picker-note">Nothing has been added yet. Tell ChatGPT naturally which choices are wrong and ask it to keep everything else.</p> : null}
-            {presentation === "recap" ? <p className="picker-note">Nothing has been added yet. Changed products are marked; everything else stayed as proposed.</p> : null}
+            <p className="picker-note">{guidance[payload.presentation]}</p>
             {payload.pantry_assumptions?.length ? <p className="picker-note">Already in the pantry: {payload.pantry_assumptions.join(", ")}</p> : null}
             <div className="picker-grid">
               {payload.items.map((item, itemIndex) => <section className="picker-ingredient" key={`${itemIndex}-${item.ingredient}-${item.product.id}`}>
-                <div className="picker-section-heading"><h2>{item.ingredient} · {item.quantity} {item.quantity === 1 ? "package" : "packages"}</h2></div>
+                {presentation === "choices" ? <div className="picker-section-heading"><h2>{item.ingredient} · {item.quantity} {item.quantity === 1 ? "package" : "packages"}</h2></div> : null}
                 {presentation === "choices"
                   ? <div className="picker-grid">{[item.product, ...(item.alternatives ?? [])].map((product) =>
                     <ProductCard key={product.id} item={item} product={product} radio={{
                       checked: choices[itemIndex] === product.id,
-                      name: `picker-choice-${itemIndex}`,
+                      disabled: pending || submitted,
+                      name: `${choiceGroupPrefix}-picker-choice-${itemIndex}`,
                       onChange: () => onChoice(itemIndex, product.id),
                     }} showMatch={product.id === item.product.id} />)}
                     {!item.alternatives?.length ? <p className="picker-note">No other reliable candidate was found. Ask ChatGPT for a more specific Danish product term, package, or acceptable substitute.</p> : null}
@@ -106,13 +134,18 @@ export function PickerView({ payload, failure, choices, onChoice, onSubmit, pend
               <strong>Not matched: {payload.rejected.map(({ ingredient }) => ingredient).join(", ")}</strong>
               <p>Nothing will be added for these lines. Ask ChatGPT with a more specific Danish product term, package, or acceptable substitute.</p>
             </div> : null}
-            {presentation === "choices" ? <p className="picker-note">All unchallenged products remain unchanged.</p> : null}
-            {presentation !== "proposal" ? <Button className="picker-submit" color="success" size="lg" pill={false} onClick={onSubmit} loading={pending} disabled={pending || submitted}>
-              {submitted ? "Sent" : presentation === "choices" ? "Use these choices" : "Add to Nemlig basket"}
-            </Button> : null}
             {presentation === "recap" ? <p className="picker-note">Products and basket state will be freshly validated before the first write.</p> : null}
           </>}
       {failure ? <p role="alert">{failure}</p> : null}
+    </div>
+    {payload ? <footer className="picker-actions">
+      {presentation !== "list" ? <Button className="picker-back" color="secondary" variant="outline" size="lg" pill={false} onClick={onBack} disabled={pending || submitted}>
+        {presentation === "proposal" ? "Back to shopping list" : presentation === "choices" ? "Back to proposal" : "Back"}
+      </Button> : null}
+      <Button className="picker-submit" color="success" size="lg" pill={false} onClick={onSubmit} loading={pending} disabled={pending || submitted || !itemCount}>
+        {submitted ? "Sent" : presentation === "list" ? "Search selected items with Nemlig" : presentation === "proposal" ? "Continue to final review" : presentation === "choices" ? "Use these choices" : "Add to Nemlig basket"}
+      </Button>
+    </footer> : null}
     </div>
   </main>;
 }

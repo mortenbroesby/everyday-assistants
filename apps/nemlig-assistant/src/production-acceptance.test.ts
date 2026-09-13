@@ -104,7 +104,7 @@ test("service acceptance has a closed read-only fixture inventory and proves pla
 test("service acceptance closes its inventory when Apps are disabled", async () => {
   const calls: string[] = [];
   const client: AcceptanceClient = {
-    listTools: async () => ({ tools: serviceAcceptanceToolInventory.filter((name) => name !== "review_proposed_basket").map((name) => ({ name })) }),
+    listTools: async () => ({ tools: serviceAcceptanceToolInventory.filter((name) => name !== "review_proposed_basket" && name !== "review_shopping_list").map((name) => ({ name })) }),
     listResources: async () => ({ resources: [] }),
     readResource: async () => { throw new Error("Apps-disabled acceptance must not read a picker resource"); },
     callTool: async ({ name }) => {
@@ -123,7 +123,7 @@ test("service acceptance closes its inventory when Apps are disabled", async () 
 
 test("service acceptance accepts only explicit HTTP 403 transport denials", async () => {
   const client = {
-    listTools: async () => ({ tools: serviceAcceptanceToolInventory.filter((name) => name !== "review_proposed_basket").map((name) => ({ name })) }),
+    listTools: async () => ({ tools: serviceAcceptanceToolInventory.filter((name) => name !== "review_proposed_basket" && name !== "review_shopping_list").map((name) => ({ name })) }),
     listResources: async () => ({ resources: [] }),
     readResource: async () => ({ contents: [] }),
     callTool: async ({ name }: { name: string }) => {

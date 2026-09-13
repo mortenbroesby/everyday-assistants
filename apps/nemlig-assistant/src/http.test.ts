@@ -170,7 +170,7 @@ test("HTTP service acceptance uses signed machine identity and its fixed fixture
         });
         assert.equal(report.requestCount, 12);
       } else {
-        assert.deepEqual((await client.listTools()).tools.map(({ name }) => name).sort(), serviceAcceptanceToolInventory.filter((name) => name !== "review_proposed_basket").sort());
+        assert.deepEqual((await client.listTools()).tools.map(({ name }) => name).sort(), serviceAcceptanceToolInventory.filter((name) => name !== "review_proposed_basket" && name !== "review_shopping_list").sort());
         await assert.rejects(client.listResources(), /Method not found/u);
       }
       await client.close();

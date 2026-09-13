@@ -16,6 +16,7 @@ function Picker() {
   const [failure, setFailure] = useState("");
   const [hostContext, setHostContext] = useState<HostContext>();
   const [choices, setChoices] = useState<Record<number, number>>({});
+  const [included, setIncluded] = useState<Record<number, boolean>>({});
   const [pendingAction, setPendingAction] = useState(false);
   const [submittedAction, setSubmittedAction] = useState(false);
   const pending = useRef(false);
@@ -34,6 +35,7 @@ function Picker() {
         setSubmittedAction(false);
         const nextPayload = readPickerPayload(result);
         setPayload(nextPayload);
+        setIncluded({});
         setChoices(Object.fromEntries(nextPayload?.items.map((item, index) => [index, item.product.id]) ?? []));
         setFailure(nextPayload ? "" : "The proposal could not be displayed.");
       }, (context) => setHostContext((current) => ({ ...current, ...context })));
@@ -49,20 +51,22 @@ function Picker() {
     binding.current?.dispose();
   }, []);
 
-  const submit = () => {
-    if (pending.current || submittedAction || !binding.current || !payload || payload.presentation === "proposal") return;
-    const selections: PickerSelection[] = payload.items.map((item, index) => ({
+  const submit = (direction: "back" | "next" = "next") => {
+    if (pending.current || submittedAction || !binding.current || !payload) return;
+    if (direction === "next" && payload.presentation === "list" && !payload.list.some((row, index) => included[index] ?? row.included)) return;
+    const selections: PickerSelection[] = payload.items.map((item) => ({
       ingredient: item.ingredient,
-      product: choices[index] ?? item.product.id,
+      product: item.product.id,
       quantity: item.quantity,
     }));
     pending.current = true;
     setPendingAction(true);
     setFailure("");
     const currentGeneration = generation.current;
-    const action = payload.presentation === "choices"
-      ? binding.current.sendSelections(selections)
-      : binding.current.sendApproval(selections);
+    const approval = payload.presentation === "recap" && direction === "next";
+    const action = approval
+      ? binding.current.sendApproval(selections)
+      : binding.current.sendNavigation(payload, direction, choices, included);
     void action.then(() => {
       if (currentGeneration !== generation.current) return;
       pending.current = false;
@@ -72,7 +76,8 @@ function Picker() {
       if (currentGeneration !== generation.current) return;
       pending.current = false;
       setPendingAction(false);
-      setFailure("The request could not be sent. Try again.");
+      setSubmittedAction(true);
+      setFailure(approval ? "The approval result is uncertain. Check the conversation and basket before requesting a fresh review; do not retry this approval." : "The navigation result is uncertain. Check the conversation before asking ChatGPT to show this step again.");
     });
   };
 
@@ -81,10 +86,13 @@ function Picker() {
       payload={payload}
       failure={failure || (error ? "The connection could not be established. Try again." : "")}
       choices={choices}
+      included={included}
       pending={pendingAction}
       submitted={submittedAction}
       onChoice={(itemIndex, productId) => setChoices((current) => ({ ...current, [itemIndex]: productId }))}
-      onSubmit={submit}
+      onInclude={(index, value) => setIncluded((current) => ({ ...current, [index]: value }))}
+      onBack={() => submit("back")}
+      onSubmit={() => submit("next")}
     />
   </PickerFrame>;
 }

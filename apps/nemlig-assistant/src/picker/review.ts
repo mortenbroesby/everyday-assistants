@@ -19,6 +19,7 @@ type ResolvedCandidate = ProductCandidate & { id: number };
 export interface ProposedBasketReviewResult {
   readonly items: Array<{
     ingredient: string;
+    search_term?: string;
     quantity: number;
     confidence: number;
     favorite_match: boolean;
@@ -62,6 +63,7 @@ const reconstructReview = (
     return {
       item: {
         ingredient,
+        ...(search_term ? { search_term } : {}),
         quantity,
         confidence,
         favorite_match,

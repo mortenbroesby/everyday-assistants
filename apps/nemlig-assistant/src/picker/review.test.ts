@@ -75,6 +75,12 @@ test("picker review coalesces exact IDs while evaluating each ingredient positio
   assert.deepEqual(fake.events.filter((event) => event.startsWith("start:")).sort(), ["start:7", "start:8"]);
 });
 
+test("picker review carries the exact search term through navigation", async () => {
+  const fake = abortableProducts({ name: () => "mælk" });
+  const result = await resolveProposedBasketReview(fake.client, [{ ...reviewItem(0), ingredient: "milk", search_term: "mælk", alternatives: [] }]);
+  assert.equal(result.items[0]?.search_term, "mælk");
+});
+
 test("picker review keeps 404 local to the missing proposed product or alternative", async () => {
   const missing = new Set([1, 3]);
   const fake = abortableProducts({

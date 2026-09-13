@@ -10,7 +10,7 @@ interface ToolResult {
 export const productionToolInventory = {
   readOnly: [
     "find_groceries", "show_my_favorites", "plan_my_shopping", "show_grocery_sections",
-    "browse_grocery_section", "check_nemlig_connection", "reconnect_nemlig_assistant", "show_my_basket", "review_proposed_basket",
+    "browse_grocery_section", "check_nemlig_connection", "reconnect_nemlig_assistant", "show_my_basket", "review_proposed_basket", "review_shopping_list",
   ],
   prepareOnly: [
     "review_items_to_add", "review_item_to_remove", "review_item_swap", "review_emptying_basket",
@@ -223,9 +223,9 @@ export async function verifyServiceAcceptanceFeatures(
   const tools = (await withinTotalDeadline("tool inventory", () => client.listTools())).tools;
   const resources = (await withinTotalDeadline("resource inventory", () => client.listResources!())).resources;
   const names = tools.map(({ name }) => name).sort();
-  const baseTools = serviceAcceptanceToolInventory.filter((name) => name !== "review_proposed_basket");
+  const baseTools = serviceAcceptanceToolInventory.filter((name) => name !== "review_proposed_basket" && name !== "review_shopping_list");
   const pickerEnabled = names.includes("review_proposed_basket");
-  assert.deepEqual(names, [...baseTools, ...(pickerEnabled ? ["review_proposed_basket"] : [])].sort(), "Service MCP tool inventory drifted");
+  assert.deepEqual(names, [...baseTools, ...(pickerEnabled ? ["review_proposed_basket", "review_shopping_list"] : [])].sort(), "Service MCP tool inventory drifted");
   assert.deepEqual(resources.map(({ uri }) => uri).sort(), pickerEnabled ? [...serviceAcceptanceResourceInventory] : [], "Service MCP resource inventory drifted");
 
   const exercised: string[] = [];
