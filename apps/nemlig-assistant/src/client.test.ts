@@ -57,8 +57,8 @@ test("login retains multiple cookies and reuses the session for basket access", 
         assert.deepEqual(JSON.parse(String(init?.body)), {
           Username: "person@example.test",
           Password: "never-logged",
-          CheckForExistingProducts: true,
-          DoMerge: true,
+          CheckForExistingProducts: false,
+          DoMerge: false,
           AppInstalled: false,
           SaveExistingBasket: false,
         }),
@@ -463,7 +463,8 @@ test("exact product lookup rejects invalid and unresolved IDs", async () => {
     ]),
   );
   await assert.rejects(client.getProduct(0), /Product ID must be positive/);
-  await assert.rejects(client.getProduct(7), (error) => error instanceof NemligError && error.status === 404);
+  await assert.rejects(client.getProduct(7), (error) =>
+    error instanceof NemligError && error.status === 404 && /could not be resolved exactly/u.test(error.message));
   await assert.rejects(client.getFreshProduct(0), /Product ID must be positive/);
 });
 

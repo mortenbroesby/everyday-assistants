@@ -254,8 +254,8 @@ export class NemligClient {
         body: JSON.stringify({
           Username: username,
           Password: password,
-          CheckForExistingProducts: true,
-          DoMerge: true,
+          CheckForExistingProducts: false,
+          DoMerge: false,
           AppInstalled: false,
           SaveExistingBasket: false,
         }),
@@ -345,15 +345,24 @@ export class NemligClient {
     throwIfAborted(signal);
     if (!this.productTimestamp) await this.refreshSession(signal);
     const endpoint = `${API_BASE_URL}/${this.productTimestamp ?? DEFAULT_PRODUCT_TIMESTAMP}/${this.timeslot}/${this.deliveryZoneId}/${this.userId ?? "0"}/Products/Get`;
-    const response = asRecord(await this.json(
-      `${endpoint}?${new URLSearchParams({ id: String(productId) })}`,
-      { signal },
-      `Get product ${productId}`,
-    ));
+    let response: Record<string, unknown>;
+    try {
+      response = asRecord(await this.json(
+        `${endpoint}?${new URLSearchParams({ id: String(productId) })}`,
+        { signal },
+        `Get product ${productId}`,
+      ));
+    } catch (error) {
+      if (error instanceof NemligError && error.status === 404) {
+        throw new NemligError(`Product ${productId} could not be resolved exactly.`, 404);
+      }
+      throw error;
+    }
     const payload = asRecord(response.Product).Id === undefined ? response : asRecord(response.Product);
     const product = normalizeProducts([payload], 1)[0];
-    if (!product) throw new NemligError(`Product ${productId} could not be resolved exactly.`);
-    if (product.id !== productId) throw new NemligError(`Product ${productId} could not be resolved exactly.`);
+    if (!product || product.id !== productId) {
+      throw new NemligError(`Product ${productId} could not be resolved exactly.`, 404);
+    }
     return this.rememberProducts([product], true)[0]!;
   }
 
