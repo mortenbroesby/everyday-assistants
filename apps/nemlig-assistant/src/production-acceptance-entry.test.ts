@@ -26,6 +26,7 @@ function edgeFetcher(calls: string[], origin = "https://nemlig-mcp.example.test/
       scopes_supported: scopes,
       bearer_methods_supported: ["header"],
     });
+    if (request.headers.get("mcp-session-id") === "expired-production-acceptance-session") return new Response(null, { status: 404 });
     if (request.url.endsWith("/admin/usage")) return Response.json({ schema_version: 1, tiers: { "0": {}, "1": {}, "2": {} } });
     return new Response(null, { status: request.headers.has("origin") ? 403 : 401 });
   };
@@ -142,9 +143,26 @@ test("service acceptance uses only its in-memory token, closes the MCP session, 
   assert.deepEqual(tokens, ["service-token"]);
   assert.deepEqual(events, ["connect", "close"]);
   assert.equal(calls.includes("/admin/usage"), false);
+  assert.equal(calls.filter((path) => path === "/mcp").length, 3);
   assert.deepEqual(report.required, ["edge", "service_fixture"]);
   assert.deepEqual(report.passed, ["edge", "service_fixture"]);
   assert.equal(report.profile, "service");
+});
+
+test("service acceptance fails before connecting when expired sessions cannot recover", async () => {
+  let connected = false;
+  await assert.rejects((await import("../scripts/production-acceptance.js")).main(["--service"], {
+    NEMLIG_PRODUCTION_MCP_URL: "https://nemlig-mcp.example.test/mcp",
+    NEMLIG_MCP_SERVICE_ACCESS_TOKEN: "service-token",
+  }, {
+    fetcher: async (input, init) => {
+      const request = new Request(input, init);
+      if (request.headers.has("mcp-session-id")) return new Response(null, { status: 400 });
+      return edgeFetcher([])(input, init);
+    },
+    connect: async () => { connected = true; throw new Error("must not connect"); },
+  }), /must return 404, received 400/u);
+  assert.equal(connected, false);
 });
 
 test("edge-only skips credentials and connect", async () => {
