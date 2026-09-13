@@ -422,7 +422,8 @@ test("exact product lookup rejects invalid and unresolved IDs", async () => {
     ]),
   );
   await assert.rejects(client.getProduct(0), /Product ID must be positive/);
-  await assert.rejects(client.getProduct(7), /could not be resolved exactly/);
+  await assert.rejects(client.getProduct(7), (error) =>
+    error instanceof NemligError && error.status === 404 && /could not be resolved exactly/u.test(error.message));
   await assert.rejects(client.getFreshProduct(0), /Product ID must be positive/);
 });
 

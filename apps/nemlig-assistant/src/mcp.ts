@@ -638,10 +638,9 @@ export function createMcpServer(
         _meta: { ui: { resourceUri: PICKER_URI } },
       },
       ({ items, pantry_assumptions }, extra) => runAuthenticatedRead("review_proposed_basket", async () => {
-        const reviewed = proposedBasketInputSchema.parse({ items, pantry_assumptions });
-        const resolved = await resolveProposedBasketReview(client, reviewed.items, { signal: extra.signal });
+        const resolved = await resolveProposedBasketReview(client, items, { signal: extra.signal });
         return success({
-          pantry_assumptions: reviewed.pantry_assumptions,
+          pantry_assumptions,
           ...resolved,
         });
       }),

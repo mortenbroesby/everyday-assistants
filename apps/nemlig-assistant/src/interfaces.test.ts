@@ -898,6 +898,18 @@ test("MCP proposed basket resolves current products without reading or changing 
   assert.deepEqual(resolved, [7, 8]);
 });
 
+test("MCP proposed basket normalizes fractional confidence exactly once", async () => {
+  const client = fakeClient({ getProduct: async (id) => ({ ...product, id, name: "Tomatketchup" }) });
+  await withMcpClient(createMcpServer(client, testCredentials), async (mcp) => {
+    const result = await mcp.callTool({
+      name: "review_proposed_basket",
+      arguments: { items: [{ ingredient: "ketchup", product: 7, quantity: 1, confidence: 0.01 }] },
+    });
+    assert.notEqual(result.isError, true, toolText(result));
+    assert.equal((result.structuredContent as { items: Array<{ confidence: number }> }).items[0]?.confidence, 1);
+  });
+});
+
 test("Effect picker review settles an expired attempt before authenticated retry", async () => {
   let logins = 0;
   let active = 0;

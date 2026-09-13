@@ -328,7 +328,7 @@ export class NemligClient {
     const product = (await this.searchProducts(String(productId), 10, signal)).find(
       (candidate) => String(candidate.id) === String(productId),
     );
-    if (!product) throw new NemligError(`Product ${productId} could not be resolved exactly.`);
+    if (!product) throw new NemligError(`Product ${productId} could not be resolved exactly.`, 404);
     return product;
   }
 
