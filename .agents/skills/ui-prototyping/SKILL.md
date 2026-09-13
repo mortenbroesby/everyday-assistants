@@ -36,8 +36,11 @@ browser tab.
 4. Optimize the first render for the user's current device. For mobile review,
    use a single column, compact type, clear product islands, and touch-sized
    controls without oversized button chrome.
-5. Render the fragment directly in the conversation. Do not open a browser tab
-   unless the user explicitly asks for browser verification.
+5. Render the fragment directly in the conversation. When the user is on a
+   remote or mobile client, or an inline preview is not visible, render a
+   phone-sized PNG in a headless browser and attach the image directly to the
+   conversation. A local path or browser tab is not a substitute for the image.
+   Do not open a visible browser tab unless the user explicitly asks for one.
 6. Iterate on the same concept until the user approves it. Only then plan the
    separate production implementation.
 
