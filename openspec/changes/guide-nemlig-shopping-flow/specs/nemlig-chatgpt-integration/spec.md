@@ -14,6 +14,11 @@ The integration SHALL implement the approved mobile visual design as a four-stag
 - **WHEN** the user checks or unchecks shopping-list lines and activates the primary List action
 - **THEN** only checked lines are sent once through the host conversation for read-only Nemlig discovery, without changing the basket
 
+#### Scenario: User edits the list conversationally
+
+- **WHEN** the user adds, removes, or adjusts a requested line while viewing List
+- **THEN** the integration preserves every unaffected line and re-renders the complete updated List without changing the basket
+
 #### Scenario: Shopping list was settled conversationally
 
 - **WHEN** ChatGPT and the user advance from the settled List into product discovery
@@ -22,7 +27,7 @@ The integration SHALL implement the approved mobile visual design as a four-stag
 #### Scenario: Complete proposal is shown
 
 - **WHEN** a proposal contains resolved favourite and catalogue products
-- **THEN** every resolved selection appears once with exact product identity, package count, price, provenance, and confidence, without a status column, review checkbox, or search input, and the view tells the user to name challenged products conversationally or use the primary Continue control when satisfied
+- **THEN** every resolved selection appears once with exact product identity, package count, price, provenance, and confidence, without a status column, review checkbox, or search input, and the view offers an explicit alternative action for products with bounded candidates plus the primary Continue control when satisfied
 
 #### Scenario: User returns from Proposal
 
@@ -48,6 +53,16 @@ The integration SHALL implement the approved mobile visual design as a four-stag
 
 - **WHEN** challenged ingredients have relevant usable candidates
 - **THEN** the integration presents only those ingredients in a focused picker with one radio choice per ingredient, identifies Choices as current, and provides Back to Proposal plus `Use these choices` without browser-side provider access
+
+#### Scenario: User opens available alternatives
+
+- **WHEN** the user activates a product's alternative action in Proposal
+- **THEN** the current widget opens Choices from the already-carried bounded candidates without another ChatGPT turn or provider request
+
+#### Scenario: User refines choices conversationally
+
+- **WHEN** the user describes a preference, rejects a candidate, changes quantity, or requests another search while viewing Proposal or Choices
+- **THEN** the integration supplies the host-supported bounded local selection state to the next conversation turn, applies only that conversational delta, preserves every unaffected selection, and re-renders the complete affected view with current candidates
 
 #### Scenario: User accepts the initial proposal
 
@@ -94,10 +109,15 @@ The integration SHALL implement the approved mobile visual design as a four-stag
 - **WHEN** the user activates `Add to Nemlig basket`
 - **THEN** the integration treats that action as explicit approval of the exact recap and still uses `review_items_to_add` followed by `add_approved_items`, fresh validation, single use, cancellation, readback, and no automatic retry
 
+#### Scenario: User changes a final recap conversationally
+
+- **WHEN** the user adds, removes, adjusts, or replaces anything after Approve is rendered
+- **THEN** the existing recap is no longer approvable and the integration renders a fresh affected view followed by a new complete recap before exposing approval again
+
 #### Scenario: An independent view is opened
 
 - **WHEN** Proposal, Choices, or Approve is rendered without an earlier view remaining visible
-- **THEN** the view still communicates the shared journey, its current stage, and functional Back or Next controls as applicable without requiring the user to reconstruct prior UI state
+- **THEN** the view still communicates the shared journey, traverses every available carried stage in the current widget, and uses the guarded conversational fallback only when the required product snapshot is unavailable
 
 #### Scenario: Picker is unavailable
 

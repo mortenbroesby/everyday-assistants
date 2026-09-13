@@ -860,6 +860,8 @@ test("MCP routes recipe discovery through individual short searches and favourit
     assert.match(instructions, /current Nemlig products, prices, availability/);
     assert.match(instructions, /review_proposed_basket/);
     assert.match(instructions, /keep every unchallenged selection and search only the challenged ingredients/u);
+    assert.match(instructions, /At every stage, accept normal conversational additions, removals, quantity adjustments, preferences, and replacement requests/u);
+    assert.match(instructions, /Any change after recap invalidates that recap.*fresh complete recap before approval/u);
     assert.match(instructions, /choices mode/u);
     assert.match(instructions, /recap mode, marking only changed lines/u);
     assert.match(instructions, /Add to Nemlig basket action is explicit approval.*review_items_to_add followed by add_approved_items/u);
