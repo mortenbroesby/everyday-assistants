@@ -102,21 +102,26 @@ const proposedBasketItemInputSchema = z.object({
   quantity: z.number().int().positive(),
   confidence: confidenceInputSchema,
   favorite_match: z.boolean().default(false),
+  changed: z.boolean().default(false).describe("True only in a final recap when this product replaced the earlier proposal."),
 }).superRefine(({ product, alternatives }, context) => {
   if (alternatives.includes(product)) context.addIssue({ code: "custom", path: ["alternatives"], message: "Alternatives must differ from the proposed product." });
   if (new Set(alternatives).size !== alternatives.length) context.addIssue({ code: "custom", path: ["alternatives"], message: "Alternatives must be unique." });
 });
 const proposedBasketInputSchema = z.object({
+  presentation: z.enum(["proposal", "choices", "recap"]).default("proposal")
+    .describe("Use the initial view for the complete first review, choices only for challenged ingredients, and recap for the complete final review."),
   items: z.array(proposedBasketItemInputSchema).min(1).max(50).describe("Up to fifty ingredient choices, each with the proposed product, quantity, confidence, and optional alternatives."),
   pantry_assumptions: z.array(z.string().trim().min(1).max(120)).max(20).default([]).describe("Optional staples assumed to be available, such as salt or flour."),
 });
 const proposedBasketOutputSchema = z.object({
+  presentation: z.enum(["proposal", "choices", "recap"]),
   pantry_assumptions: z.array(z.string()),
   items: z.array(z.object({
     ingredient: z.string(),
     quantity: z.number().int().positive(),
     confidence: z.number().int().min(0).max(100),
     favorite_match: z.boolean(),
+    changed: z.boolean(),
     product: proposedCandidateSchema,
     alternatives: z.array(proposedCandidateSchema),
   })).max(50),
@@ -352,7 +357,7 @@ export function createMcpServer(
     },
     {
       instructions:
-        `Current release: ${NEMLIG_RELEASE_IDENTITY}. Use Nemlig Assistant for current Nemlig products, prices, availability, favourites, basket contents, recipes, conversation lists, or choosing and adding groceries. For ordinary recipe or shopping requests, search each ingredient with find_groceries using one short Danish catalogue phrase, such as 'cheddar' or 'ketchup'. Translate or normalize English, mixed-language, misspelled, and over-specific wording before the call: keep distinctive brand words, replace a foreign generic category with the intended Danish category, and omit conversational context. Refine an unsuitable result with another short phrase; do not treat the cheapest item as the best match. When match confidence is below 80%, call show_my_favorites for the ingredient and use matching favourites as evidence, without changing favourites. Do not inspect the current basket while planning a proposed shop. Before adding, present up to fifty ingredient decisions through one review_proposed_basket call: include a chosen product, requested quantity, 0–100 match confidence, and up to nine alternatives from the remainder of the normal ten-result search page. Keep the user's ingredient label for display, and pass the same short Danish phrase used for discovery as search_term whenever that label is not Danish. Below 80% confidence, include useful alternatives for the user to inspect; do not arbitrarily stop at two. Use plan_my_shopping only when the user explicitly asks for its batch planning mode. Without explicit approval, a plan, candidate choice, proposed basket, or exact review never authorizes mutation. For an approved add, use review_items_to_add followed by add_approved_items only for its unchanged proposal. For a batch run, pass only the plan's selected additions and never supplement them with unresolved candidates; do not ask for redundant approval. A same-run authorization covers only clear additions from its automatic batch run, never unresolved lines, removals, replacements, clearing, checkout, payment, ordering, or delivery slots. Every basket change revalidates exact data, is single-use, stops on uncertainty, and reads back the basket.`,
+        `Current release: ${NEMLIG_RELEASE_IDENTITY}. Use Nemlig Assistant for current Nemlig products, prices, availability, favourites, basket contents, recipes, conversation lists, or choosing and adding groceries. For ordinary recipe or shopping requests, search each ingredient with find_groceries using one short Danish catalogue phrase, such as 'cheddar' or 'ketchup'. Translate or normalize English, mixed-language, misspelled, and over-specific wording before the call: keep distinctive brand words, replace a foreign generic category with the intended Danish category, and omit conversational context. Refine an unsuitable result with another short phrase; do not treat the cheapest item as the best match. When match confidence is below 80%, call show_my_favorites for the ingredient and use matching favourites as evidence, without changing favourites. Do not inspect the current basket while planning a proposed shop. Before adding, show every resolved selection through one review_proposed_basket call in proposal mode: include a chosen product, requested quantity, 0–100 match confidence, favourite provenance, and useful alternatives from the remainder of the normal ten-result search page. Keep the user's ingredient label for display, and pass the same short Danish phrase used for discovery as search_term whenever that label is not Danish. If the user challenges products conversationally, keep every unchallenged selection and search only the challenged ingredients; show their useful candidates through review_proposed_basket in choices mode. After the user chooses, combine replacements with retained selections and show every final product in recap mode, marking only changed lines. The recap's Add to Nemlig basket action is explicit approval, but still requires review_items_to_add followed by add_approved_items for only that unchanged recap. If no useful candidate exists, explain why and suggest a more specific Danish product term, package, or substitute; do not invent a candidate or expose an inert retry control. Use plan_my_shopping only when the user explicitly asks for its batch planning mode. Without explicit approval, a plan, candidate choice, proposed basket, or exact review never authorizes mutation. For a batch run, pass only the plan's selected additions and never supplement them with unresolved candidates; do not ask for redundant approval. A same-run authorization covers only clear additions from its automatic batch run, never unresolved lines, removals, replacements, clearing, checkout, payment, ordering, or delivery slots. Every basket change revalidates exact data, is single-use, stops on uncertainty, and reads back the basket.`,
     },
   );
   if (requestContext?.kind === "service") {
@@ -633,15 +638,16 @@ export function createMcpServer(
       "review_proposed_basket",
       {
         title: "Review proposed basket",
-        description: "Show up to fifty proposed ingredient choices with current exact Nemlig product details, confidence, and up to nine catalogue-ordered alternatives per ingredient. Preserve the user's ingredient label and include the short Danish search_term used to find it. This does not read or change your basket.",
+        description: "Show a complete proposed basket, focused replacement choices, or a complete final recap with current exact Nemlig product details. Use choices only for challenged ingredients and retain all others; use recap before the protected basket review. This does not read or change your basket.",
         inputSchema: proposedBasketInputSchema.shape,
         outputSchema: proposedBasketOutputSchema,
         annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true },
         _meta: { ui: { resourceUri: PICKER_URI } },
       },
-      ({ items, pantry_assumptions }, extra) => runAuthenticatedRead("review_proposed_basket", async () => {
+      ({ presentation, items, pantry_assumptions }, extra) => runAuthenticatedRead("review_proposed_basket", async () => {
         const resolved = await resolveProposedBasketReview(client, items, { signal: extra.signal });
         return success({
+          presentation,
           pantry_assumptions,
           ...resolved,
         });

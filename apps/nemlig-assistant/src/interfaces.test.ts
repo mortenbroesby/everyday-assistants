@@ -356,7 +356,7 @@ const friendlyCatalog = [
   ["review_item_swap", "Review swapping an item", true, false, ["current_item", "replacement_item", "quantity"]],
   ["review_item_to_remove", "Review an item to remove", true, false, ["basket_item"]],
   ["review_items_to_add", "Review items to add", true, false, ["items", "authorization", "automatic_authorization"]],
-  ["review_proposed_basket", "Review proposed basket", true, false, ["items", "pantry_assumptions"]],
+  ["review_proposed_basket", "Review proposed basket", true, false, ["items", "pantry_assumptions", "presentation"]],
   ["show_grocery_sections", "Show grocery sections", true, false, []],
   ["show_my_basket", "Show my basket", true, false, []],
   ["show_my_favorites", "Show my favourites", true, false, ["search_term", "result_count", "page"]],
@@ -845,6 +845,10 @@ test("MCP routes recipe discovery through individual short searches and favourit
     assert.match(instructions, /Do not inspect the current basket while planning/u);
     assert.match(instructions, /current Nemlig products, prices, availability/);
     assert.match(instructions, /review_proposed_basket/);
+    assert.match(instructions, /keep every unchallenged selection and search only the challenged ingredients/u);
+    assert.match(instructions, /choices mode/u);
+    assert.match(instructions, /recap mode, marking only changed lines/u);
+    assert.match(instructions, /Add to Nemlig basket action is explicit approval.*review_items_to_add followed by add_approved_items/u);
     assert.match(instructions, /same short Danish phrase.*search_term/u);
     assert.doesNotMatch(instructions, /Suggest an improvement|GitHub issue/);
     assert.match(tools.get("plan_my_shopping") ?? "", /Resolve 1–50 groceries automatically by default/);
@@ -884,17 +888,19 @@ test("MCP proposed basket resolves current products without reading or changing 
     const result = await mcp.callTool({
       name: "review_proposed_basket",
       arguments: {
+        presentation: "recap",
         pantry_assumptions: ["salt", "mel"],
-        items: [{ ingredient: "ketchup", product: 7, alternatives: [8], quantity: 2, confidence: 0.75, favorite_match: true }],
+        items: [{ ingredient: "ketchup", product: 7, alternatives: [8], quantity: 2, confidence: 0.75, favorite_match: true, changed: true }],
       },
     });
     assert.notEqual(result.isError, true, toolText(result));
-    const view = result.structuredContent as { pantry_assumptions: string[]; rejected: Array<{ ingredient: string }>; items: Array<{ ingredient: string; confidence: number; favorite_match: boolean; product: { id: number; declaration?: string }; alternatives: Array<{ id: number }> }> };
+    const view = result.structuredContent as { presentation: string; pantry_assumptions: string[]; rejected: Array<{ ingredient: string }>; items: Array<{ ingredient: string; confidence: number; favorite_match: boolean; changed: boolean; product: { id: number; declaration?: string }; alternatives: Array<{ id: number }> }> };
+    assert.equal(view.presentation, "recap");
     assert.deepEqual(view.pantry_assumptions, ["salt", "mel"]);
     assert.deepEqual(view.rejected, []);
     assert.equal(view.items[0]?.favorite_match, true);
     assert.equal(view.items[0]?.product.declaration, "Tomater, eddike");
-    assert.deepEqual(view.items, [{ ingredient: "ketchup", confidence: 75, quantity: 2, favorite_match: true, product: { ...view.items[0]!.product, id: 7 }, alternatives: [{ ...view.items[0]!.alternatives[0], id: 8 }] }]);
+    assert.deepEqual(view.items, [{ ingredient: "ketchup", confidence: 75, quantity: 2, favorite_match: true, changed: true, product: { ...view.items[0]!.product, id: 7 }, alternatives: [{ ...view.items[0]!.alternatives[0], id: 8 }] }]);
   });
   assert.deepEqual(resolved, [7, 8]);
 });
@@ -1034,6 +1040,7 @@ test("MCP proposed basket reports pet food as a rejected line without failing th
     });
     assert.notEqual(result.isError, true, toolText(result));
     assert.deepEqual(result.structuredContent, {
+      presentation: "proposal",
       pantry_assumptions: [],
       items: [],
       rejected: [{ ingredient: "hakket oksekød", reason: "No proposed product matched this ingredient." }],
@@ -1101,14 +1108,16 @@ test("picker images use only the observed Nemlig HTTPS origin and keep a text-on
   assert.match(html, /color-scheme:light dark/u);
   assert.match(html, /loading:"lazy"/u);
   assert.match(html, /referrerPolicy:"no-referrer"/u);
-  assert.match(html, /Choose product \$\{[a-z]+\} for \$\{[a-z]+\} instead\./u);
-  assert.match(html, /Kunne ikke bekræfte/);
-  assert.match(html, /Forslaget kunne ikke vises/);
+  assert.match(html, /Use these replacement choices/);
+  assert.match(html, /I approve this exact final basket recap/);
+  assert.match(html, /Could not match/);
+  assert.match(html, /proposal could not be displayed/i);
   assert.match(html, /setupSizeChangedNotifications/);
   assert.match(html, /data-theme/);
   assert.match(html, /__mcp-host-fonts/);
   assert.match(html, /loading:/);
-  assert.match(html, /Valgt/);
+  assert.match(html, /Use these choices/);
+  assert.match(html, /Add to Nemlig basket/);
   for (const component of ["Button", "Badge"]) {
     const className = html.match(new RegExp(`_${component}_[a-z0-9_]+`))?.[0];
     assert.ok(className, `${component} class is bundled`);
@@ -1535,12 +1544,13 @@ test("picker gate hides proposed-basket tool and resource for every false spelli
   }
 });
 
-test("picker resource only renders reviewed proposals and returns alternative choices to chat", async () => {
+test("picker resource keeps review read-only and returns deliberate choices and approval to chat", async () => {
   const html = await pickerHtml();
   assert.match(html, /aria-live/);
   assert.match(html, /ui\/message/);
   assert.doesNotMatch(html, /review_items_to_add|add_approved_items|prepareBatch/u);
-  assert.match(html, /Choose product/);
+  assert.match(html, /Use these replacement choices/);
+  assert.match(html, /I approve this exact final basket recap/);
   await withMcpClient(createMcpServer(fakeClient(), testCredentials), async (mcp) => {
     const resources = await mcp.listResources();
     assert.equal(resources.resources.some((resource) => resource.uri === PICKER_URI), true);

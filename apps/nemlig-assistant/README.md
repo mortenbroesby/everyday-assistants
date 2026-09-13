@@ -74,12 +74,13 @@ preparatory, and exact reviews still wait for approval.
 - Show one recommended product per ingredient with package quantity and an
   evidence-based match-confidence judgment.
 - Consult existing favourites when match confidence is below 80%.
-- Keep up to nine catalogue-ordered alternatives collapsed by default and let
-  the user expand them per ingredient.
-- Present up to fifty actionable visual choices in one ordered review and show
-  the complete proposed basket before asking to add anything.
-- Give every product its own visual island, while labeling the collapsed
-  alternatives with the ingredient they belong to; expose product description,
+- Present every resolved product in one compact visual proposal before asking
+  to add anything.
+- Let the user describe incorrect choices naturally while keeping every
+  unchallenged selection unchanged.
+- Show only challenged ingredients in a focused radio-button picker, then show
+  one complete final recap with changed products marked.
+- Give every product its own visual island and expose product description,
   declaration, and supplied item details through compact disclosures.
 - State omitted pantry assumptions such as flour, salt, and pepper.
 - Apply hard constraints such as dietary, price, or frozen/non-frozen rules.
@@ -131,18 +132,23 @@ for one repeatable credential-free repository and CI check.
 ChatGPT searches each ingredient separately with short Danish catalogue terms.
 It can refine an empty or unsuitable result, then recommends one current product
 from the available evidence. Below 80% match confidence it checks favourites and
-includes useful alternatives. Alternatives stay folded until the user asks to
-compare them.
+includes useful alternatives.
 
 The read-only proposed-basket view hydrates exact product-view descriptions,
-declarations, and visible item details alongside package size, quantity, price,
-unit price, confidence, and up to nine current alternatives. One review
-accepts up to fifty ordered ingredient decisions. It keeps the user's ingredient label
-but validates each choice with the same short Danish term used for discovery. A
-mismatched or vanished catalogue item is identified without hiding the other
-valid choices or failing the whole group. Planning does not inspect the current
-basket; after choices settle, ChatGPT shows the complete proposed basket before
-preparing the separate exact basket-addition review.
+declarations, and visible item details alongside package size, package count,
+price, confidence, favourite provenance, and up to nine current alternatives.
+One review accepts up to fifty ordered ingredient decisions. It keeps the user's
+ingredient label but validates each choice with the same short Danish term used
+for discovery. A mismatched or vanished catalogue item is identified without
+hiding the other valid choices or failing the whole group.
+
+The visual flow shows the complete proposal first. Corrections stay
+conversational: name only the products that are wrong and ask to keep the rest.
+Only those challenged ingredients return in the focused product picker. After
+the replacement choices, ChatGPT shows the complete final recap. The final
+`Add to Nemlig basket` action is explicit approval, but it still goes through
+the separate exact basket-addition review, fresh validation, single-use apply,
+and basket readback.
 
 Provider descriptions, declarations, and item details are converted from HTML
 to bounded plain text, including Danish characters and entities. Scripts,
@@ -426,7 +432,8 @@ This README is the user-facing inventory of shipped feature sets:
 - fresh Nemlig authentication before every provider-backed MCP task
 - individual short-query ingredient discovery and refinement
 - favourites as read-only evidence for uncertain matches
-- confidence-aware grouped proposed-basket review
+- complete proposed-basket review with favourite and confidence context
+- conversational correction, focused product choices, and final basket recap
 - constrained product comparison and selection, with legacy batch planning
 - exact review/approve/complete basket operations
 - easy-to-understand ChatGPT tool names and descriptions
