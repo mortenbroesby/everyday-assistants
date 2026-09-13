@@ -898,14 +898,106 @@ test("MCP proposed basket resolves current products without reading or changing 
   assert.deepEqual(resolved, [7, 8]);
 });
 
-test("MCP proposed basket rejects malformed confidence, quantities, repeated alternatives, and groups over five", async () => {
-  await withMcpClient(createMcpServer(fakeClient(), testCredentials), async (mcp) => {
+test("Effect picker review settles an expired attempt before authenticated retry", async () => {
+  let logins = 0;
+  let active = 0;
+  let retryOverlapped = false;
+  let firstAttemptStartedQueued = false;
+  const client = fakeClient({
+    isLoggedIn: () => true,
+    login: async () => {
+      logins += 1;
+      if (logins === 2 && active > 0) retryOverlapped = true;
+    },
+    getProduct: async (id, signal) => {
+      const attempt = logins;
+      if (attempt === 1 && id === 4) firstAttemptStartedQueued = true;
+      if (attempt === 1 && id === 1) {
+        await new Promise((resolve) => setTimeout(resolve, 1));
+        throw new NemligError("Product read failed", 401);
+      }
+      if (attempt === 1) return new Promise((resolve, reject) => {
+        active += 1;
+        const timer = setTimeout(() => { active -= 1; resolve({ ...product, id, name: "Mælk" }); }, 40);
+        signal?.addEventListener("abort", () => {
+          clearTimeout(timer);
+          setTimeout(() => { active -= 1; reject(signal.reason); }, 5);
+        }, { once: true });
+      });
+      return { ...product, id, name: "Mælk" };
+    },
+  });
+  await withMcpClient(createMcpServer(client, testCredentials), async (mcp) => {
+    const result = await mcp.callTool({
+      name: "review_proposed_basket",
+      arguments: { items: [{ ingredient: "mælk", product: 1, alternatives: [2, 3, 4], quantity: 1, confidence: 80 }] },
+    });
+    assert.notEqual(result.isError, true, toolText(result));
+  });
+  assert.equal(logins, 2);
+  assert.equal(active, 0);
+  assert.equal(retryOverlapped, false);
+  assert.equal(firstAttemptStartedQueued, false);
+});
+
+test("Effect addition review settles an expired product batch before authenticated retry", async () => {
+  let logins = 0;
+  let active = 0;
+  let retryOverlapped = false;
+  let firstAttemptStartedQueued = false;
+  const client = fakeClient({
+    isLoggedIn: () => true,
+    login: async () => {
+      logins += 1;
+      if (logins === 2 && active > 0) retryOverlapped = true;
+    },
+    getCart: async () => ({ ...basket, items: [], productsPrice: 0, numberOfProducts: 0 }),
+    getProduct: async (id, signal) => {
+      const attempt = logins;
+      if (attempt === 1 && id === 4) firstAttemptStartedQueued = true;
+      if (attempt === 1 && id === 1) {
+        await new Promise((resolve) => setTimeout(resolve, 1));
+        throw new NemligError("Product read failed", 401);
+      }
+      if (attempt === 1) return new Promise((resolve, reject) => {
+        active += 1;
+        const timer = setTimeout(() => { active -= 1; resolve({ ...product, id, name: "Mælk" }); }, 40);
+        signal?.addEventListener("abort", () => {
+          clearTimeout(timer);
+          setTimeout(() => { active -= 1; reject(signal.reason); }, 5);
+        }, { once: true });
+      });
+      return { ...product, id, name: "Mælk" };
+    },
+  });
+  await withMcpClient(createMcpServer(client, testCredentials), async (mcp) => {
+    const result = await mcp.callTool({
+      name: "review_items_to_add",
+      arguments: {
+        items: [1, 2, 3, 4].map((id) => ({ product: id, quantity: 1 })),
+        authorization: "exact_review",
+      },
+    });
+    assert.notEqual(result.isError, true, toolText(result));
+  });
+  assert.equal(logins, 2);
+  assert.equal(active, 0);
+  assert.equal(retryOverlapped, false);
+  assert.equal(firstAttemptStartedQueued, false);
+});
+
+test("MCP proposed basket accepts fifty decisions and rejects malformed input or more than fifty", async () => {
+  const client = fakeClient({ getProduct: async (id) => ({ ...product, id, name: "Mælk" }) });
+  await withMcpClient(createMcpServer(client, testCredentials), async (mcp) => {
     const call = (items: unknown) => mcp.callTool({ name: "review_proposed_basket", arguments: { items } });
     assert.equal((await call([{ ingredient: "ketchup", product: 7, quantity: 1, confidence: 101 }])).isError, true);
     assert.equal((await call([{ ingredient: "ketchup", product: 7, quantity: 0, confidence: 80 }])).isError, true);
     assert.equal((await call([{ ingredient: "ketchup", product: 7, alternatives: [7], quantity: 1, confidence: 80 }])).isError, true);
     assert.equal((await call([{ ingredient: "ketchup", product: 7, quantity: 1, confidence: 80, favorite_match: "yes" }])).isError, true);
-    assert.equal((await call(Array.from({ length: 6 }, (_, index) => ({ ingredient: `vare ${index}`, product: index + 1, quantity: 1, confidence: 80 })))).isError, true);
+    const fifty = await call(Array.from({ length: 50 }, (_, index) => ({ ingredient: "mælk", product: index + 1, quantity: 1, confidence: 80 })));
+    assert.notEqual(fifty.isError, true, toolText(fifty));
+    assert.equal(((fifty.structuredContent as { items: unknown[] }).items).length, 50);
+    assert.equal((await call(Array.from({ length: 51 }, (_, index) => ({ ingredient: "mælk", product: index + 1, quantity: 1, confidence: 80 })))).isError, true);
   });
 });
 

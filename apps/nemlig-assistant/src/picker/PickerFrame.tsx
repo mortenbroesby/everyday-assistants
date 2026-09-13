@@ -11,6 +11,6 @@ export const safeAreaStyle = (insets: SafeAreaInsets): CSSProperties => insets ?
   "--safe-area-left": `${insets.left}px`,
 } as SafeAreaProperties : {};
 
-export function AppFrame({ children, safeAreaInsets }: PropsWithChildren<{ safeAreaInsets?: SafeAreaInsets }>) {
+export function PickerFrame({ children, safeAreaInsets }: PropsWithChildren<{ safeAreaInsets?: SafeAreaInsets }>) {
   return <div className="app-frame" style={safeAreaStyle(safeAreaInsets)}>{children}</div>;
 }

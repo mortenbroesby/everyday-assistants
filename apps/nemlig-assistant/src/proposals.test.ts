@@ -251,6 +251,31 @@ test("addition preparation accepts fifty unique lines and rejects fifty-one befo
   assert.equal(basketReads, 1);
 });
 
+test("addition preparation resolves fifty products through the bounded read pool", async () => {
+  let active = 0;
+  let maximum = 0;
+  const starts: number[] = [];
+  const service = new BasketProposalService(fakeClient({
+    getProduct: async (id, signal) => new Promise((resolve, reject) => {
+      starts.push(id);
+      active += 1;
+      maximum = Math.max(maximum, active);
+      const timer = setTimeout(() => { active -= 1; resolve({ ...product, id }); }, 1);
+      signal?.addEventListener("abort", () => {
+        clearTimeout(timer);
+        active -= 1;
+        reject(signal.reason);
+      }, { once: true });
+    }),
+  }));
+  const items = Array.from({ length: 50 }, (_, index) => ({ product_id: index + 1, quantity: 1 }));
+  const proposal = await service.prepareAdditions("connection", items, { kind: "exact_review" });
+  assert.equal((proposal.review.lines as unknown[]).length, 50);
+  assert.deepEqual(starts, items.map(({ product_id }) => product_id));
+  assert.equal(maximum, 3);
+  assert.equal(active, 0);
+});
+
 test("synthetic twenty- and fifty-line runs keep exact bounded call counts inside the existing deadline", async () => {
   const run = async (size: 20 | 50) => {
     const calls = { searches: 0, basketReads: 0, reusableReads: 0, freshReads: 0, mutations: 0, mutationReadbacks: 0 };

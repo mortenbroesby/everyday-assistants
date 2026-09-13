@@ -2,8 +2,8 @@ import type { App } from "@modelcontextprotocol/ext-apps";
 import { useApp, useAutoResize, useHostStyles } from "@modelcontextprotocol/ext-apps/react";
 import { StrictMode, useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { AppFrame } from "../ui/AppFrame.js";
-import "../ui/styles.css";
+import { PickerFrame } from "./PickerFrame.js";
+import "./styles.css";
 import { type PickerPayload, readPickerPayload } from "./contract.js";
 import { PickerView } from "./PickerView.js";
 import { bindPickerHost } from "./session.js";
@@ -66,9 +66,9 @@ function Picker() {
     });
   };
 
-  return <AppFrame safeAreaInsets={hostContext?.safeAreaInsets ?? app?.getHostContext()?.safeAreaInsets}>
+  return <PickerFrame safeAreaInsets={hostContext?.safeAreaInsets ?? app?.getHostContext()?.safeAreaInsets}>
     <PickerView payload={payload} failure={failure || (error ? "Forbindelsen kunne ikke oprettes. Prøv igen." : "")} pendingChoice={pendingChoice} selectedChoice={selectedChoice} onChoose={choose} />
-  </AppFrame>;
+  </PickerFrame>;
 }
 
 const root = document.getElementById("root");

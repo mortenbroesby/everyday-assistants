@@ -76,8 +76,8 @@ preparatory, and exact reviews still wait for approval.
 - Consult existing favourites when match confidence is below 80%.
 - Keep alternatives collapsed by default and let the user expand them per
   ingredient.
-- Present actionable visual choices in groups of at most five and show the
-  complete proposed basket before asking to add anything.
+- Present up to fifty actionable visual choices in one ordered review and show
+  the complete proposed basket before asking to add anything.
 - Give every product its own visual island, while labeling the collapsed
   alternatives with the ingredient they belong to; expose product description,
   declaration, and supplied item details through compact disclosures.
@@ -131,13 +131,13 @@ for one repeatable credential-free repository and CI check.
 ChatGPT searches each ingredient separately with short Danish catalogue terms.
 It can refine an empty or unsuitable result, then recommends one current product
 from the available evidence. Below 80% match confidence it checks favourites and
-opens useful alternatives automatically. Higher-confidence alternatives stay
-collapsed.
+includes useful alternatives. Alternatives stay folded until the user asks to
+compare them.
 
 The read-only proposed-basket view reports package size, quantity, product
-description, price, unit price, confidence, and current alternatives. Choices
-are handled in groups of at most five. It keeps the user's ingredient label but
-validates each choice with the same short Danish term used for discovery. A
+description, price, unit price, confidence, and current alternatives. One review
+accepts up to fifty ordered ingredient decisions. It keeps the user's ingredient label
+but validates each choice with the same short Danish term used for discovery. A
 mismatched or vanished catalogue item is identified without hiding the other
 valid choices or failing the whole group. Planning does not inspect the current
 basket; after choices settle, ChatGPT shows the complete proposed basket before

@@ -1,5 +1,6 @@
-import { Cause, Effect, Exit, Option } from "effect";
+import { Effect } from "effect";
 import { NemligError, type Basket, type Product } from "./client.js";
+import { createReadScope, runAbortableEffect, type SettledRead } from "./read-coordination.js";
 
 export interface ProductDiscoveryClient {
   searchProducts(query: string, limit?: number, signal?: AbortSignal): Promise<Product[]>;
@@ -61,23 +62,8 @@ export class PlanningDeadlineError extends Error {
   }
 }
 
-const abortReason = (signal: AbortSignal): unknown => signal.reason ?? new DOMException("Product discovery was cancelled.", "AbortError");
-
-const waitForAbort = (signal: AbortSignal): Effect.Effect<never, unknown> => Effect.async((resume) => {
-  const abort = () => resume(Effect.fail(abortReason(signal)));
-  if (signal.aborted) abort(); else signal.addEventListener("abort", abort, { once: true });
-  return Effect.sync(() => signal.removeEventListener("abort", abort));
-});
-
-/** Waits for an abort-aware Promise to settle when Effect interrupts its fiber. */
-const settledRead = <T>(operation: (signal: AbortSignal) => Promise<T>): Effect.Effect<T, unknown> => Effect.async((resume, signal) => {
-  const settled = Promise.resolve().then(() => operation(signal));
-  settled.then((value) => resume(Effect.succeed(value)), (error: unknown) => resume(Effect.fail(error)));
-  return Effect.promise(() => settled.then(() => undefined, () => undefined));
-});
-
-const discoveryRead = (client: ProductDiscoveryClient, retrieval: CatalogueRetrieval): Effect.Effect<Discovery, unknown> =>
-  settledRead((signal) => readCatalogue(client, retrieval, signal)).pipe(
+const discoveryRead = (client: ProductDiscoveryClient, retrieval: CatalogueRetrieval, read: SettledRead): Effect.Effect<Discovery, unknown> =>
+  read((signal) => readCatalogue(client, retrieval, signal)).pipe(
     Effect.map((products) => ({ products, unavailable: false }) satisfies Discovery),
     Effect.catchAll((error) => isAuthenticationFailure(error) ? Effect.fail(error) : Effect.succeed(unavailable)),
   );
@@ -88,24 +74,23 @@ export async function resolveProductDiscovery(
   retrievals: readonly CatalogueRetrieval[],
   options: ProductDiscoveryOptions = {},
 ): Promise<ProductDiscoveryResult> {
-  if (options.signal?.aborted) throw abortReason(options.signal);
   if (options.deadlineMs !== undefined && (!Number.isFinite(options.deadlineMs) || options.deadlineMs <= 0)) {
     throw new RangeError("Product discovery deadline must be a positive finite number.");
   }
   const { unique, positions } = uniqueCatalogueRetrievals(retrievals);
+  const reads = createReadScope();
   const program = Effect.all({
-    basket: settledRead((signal) => client.getCart(signal)),
-    uniqueDiscoveries: Effect.forEach(unique, (retrieval) => discoveryRead(client, retrieval), { concurrency: 3 }),
+    basket: reads.read((signal) => client.getCart(signal)),
+    uniqueDiscoveries: Effect.forEach(unique, (retrieval) => discoveryRead(client, retrieval, reads.read), { concurrency: 3 }),
   }, { concurrency: "unbounded" });
   const timed = options.deadlineMs === undefined ? program : program.pipe(Effect.timeoutFail({
     duration: options.deadlineMs,
     onTimeout: () => new PlanningDeadlineError(),
   }));
-  const scoped = options.signal === undefined ? timed : Effect.raceFirst(timed, waitForAbort(options.signal));
-  const exit = await Effect.runPromiseExit(scoped);
-  if (!Exit.isSuccess(exit)) {
-    const failure = Cause.failureOption(exit.cause);
-    throw (Option.isSome(failure) ? failure.value : Cause.squash(exit.cause));
+  try {
+    const result = await runAbortableEffect(timed, options.signal);
+    return { basket: result.basket, discoveries: positions.map((position) => result.uniqueDiscoveries[position]!) };
+  } finally {
+    await reads.awaitQuiescence();
   }
-  return { basket: exit.value.basket, discoveries: positions.map((position) => exit.value.uniqueDiscoveries[position]!) };
 }

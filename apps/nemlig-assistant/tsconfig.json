@@ -10,5 +10,5 @@
     "skipLibCheck": true
   },
   "include": ["src", "scripts", "release", "tsdown.config.ts"],
-  "exclude": ["src/picker", "src/ui"]
+  "exclude": ["src/picker"]
 }
