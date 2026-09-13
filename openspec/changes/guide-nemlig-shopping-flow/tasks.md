@@ -13,6 +13,6 @@
 
 ## 3. Verify and deliver
 
-- [ ] 3.1 Run the focused picker checks, TypeScript/build checks, and one final root `pnpm verify`; review the diff for unrelated changes, secret exposure, new provider access, and unjustified complexity.
+- [x] 3.1 Run the focused picker checks, TypeScript/build checks, and one final root `pnpm verify`; review the diff for unrelated changes, secret exposure, new provider access, and unjustified complexity.
 - [ ] 3.2 Run a fresh read-only ChatGPT acceptance through List → Proposal → Choices → Approve, exercise Back at each applicable stage plus the direct Proposal → Approve skip path, verify independent cards retain journey context, and stop before `Add to Nemlig basket`.
 - [ ] 3.3 Make the package-scoped version decision near merge, update release artifacts only if the change is release-bearing, then commit, push, open the single epic pull request, verify exact-head CI, merge through the repository ruleset, and verify the exact integrated `main` revision and production deployment when applicable.
