@@ -1,6 +1,6 @@
 {
   "name": "nemlig-assistant",
-  "version": "4.10.1",
+  "version": "4.11.0",
   "private": true,
   "description": "Safe local Nemlig Assistant CLI and MCP server",
   "type": "module",
@@ -30,6 +30,7 @@
   "scripts": {
     "build": "tsdown && vite build && tsx scripts/check-picker.ts",
     "benchmark:product-discovery": "tsx scripts/benchmark-product-discovery.ts",
+    "check:api": "node scripts/check-api-manifest.mjs",
     "check": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.ui.json --noEmit",
     "cloudflare:check": "wrangler deploy --dry-run --env production",
     "cloudflare:dev": "wrangler dev",
@@ -90,6 +91,6 @@
     "wrangler": "4.127.1"
   },
   "nemligRelease": {
-    "codename": "Compass"
+    "codename": "Lens"
   }
 }

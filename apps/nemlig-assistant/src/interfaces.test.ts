@@ -873,7 +873,7 @@ test("MCP proposed basket resolves current products without reading or changing 
   const client = fakeClient({
     getProduct: async (id) => {
       resolved.push(id);
-      return { ...product, id, name: id === 8 ? "Heinz Tomato Ketchup" : "Ketchup" };
+      return { ...product, id, name: id === 8 ? "Heinz Tomato Ketchup" : "Ketchup", description: "Tomat", declaration: "Tomater, eddike", details: [{ key: "Oprindelse", value: "Danmark" }] };
     },
     getCart: async () => { throw new Error("basket read"); },
     addToCart: async () => { throw new Error("basket mutation"); },
@@ -889,10 +889,11 @@ test("MCP proposed basket resolves current products without reading or changing 
       },
     });
     assert.notEqual(result.isError, true, toolText(result));
-    const view = result.structuredContent as { pantry_assumptions: string[]; rejected: Array<{ ingredient: string }>; items: Array<{ ingredient: string; confidence: number; favorite_match: boolean; product: { id: number }; alternatives: Array<{ id: number }> }> };
+    const view = result.structuredContent as { pantry_assumptions: string[]; rejected: Array<{ ingredient: string }>; items: Array<{ ingredient: string; confidence: number; favorite_match: boolean; product: { id: number; declaration?: string }; alternatives: Array<{ id: number }> }> };
     assert.deepEqual(view.pantry_assumptions, ["salt", "mel"]);
     assert.deepEqual(view.rejected, []);
     assert.equal(view.items[0]?.favorite_match, true);
+    assert.equal(view.items[0]?.product.declaration, "Tomater, eddike");
     assert.deepEqual(view.items, [{ ingredient: "ketchup", confidence: 75, quantity: 2, favorite_match: true, product: { ...view.items[0]!.product, id: 7 }, alternatives: [{ ...view.items[0]!.alternatives[0], id: 8 }] }]);
   });
   assert.deepEqual(resolved, [7, 8]);
@@ -999,17 +1000,25 @@ test("Effect addition review settles an expired product batch before authenticat
 });
 
 test("MCP proposed basket accepts fifty decisions and rejects malformed input or more than fifty", async () => {
-  const client = fakeClient({ getProduct: async (id) => ({ ...product, id, name: "Mælk" }) });
+  let reads = 0;
+  const client = fakeClient({ getProduct: async (id) => { reads += 1; return { ...product, id, name: "Mælk" }; } });
   await withMcpClient(createMcpServer(client, testCredentials), async (mcp) => {
     const call = (items: unknown) => mcp.callTool({ name: "review_proposed_basket", arguments: { items } });
     assert.equal((await call([{ ingredient: "ketchup", product: 7, quantity: 1, confidence: 101 }])).isError, true);
     assert.equal((await call([{ ingredient: "ketchup", product: 7, quantity: 0, confidence: 80 }])).isError, true);
     assert.equal((await call([{ ingredient: "ketchup", product: 7, alternatives: [7], quantity: 1, confidence: 80 }])).isError, true);
+    assert.equal((await call([{ ingredient: "ketchup", product: 7, alternatives: [8, 8], quantity: 1, confidence: 80 }])).isError, true);
     assert.equal((await call([{ ingredient: "ketchup", product: 7, quantity: 1, confidence: 80, favorite_match: "yes" }])).isError, true);
     const fifty = await call(Array.from({ length: 50 }, (_, index) => ({ ingredient: "mælk", product: index + 1, quantity: 1, confidence: 80 })));
     assert.notEqual(fifty.isError, true, toolText(fifty));
     assert.equal(((fifty.structuredContent as { items: unknown[] }).items).length, 50);
     assert.equal((await call(Array.from({ length: 51 }, (_, index) => ({ ingredient: "mælk", product: index + 1, quantity: 1, confidence: 80 })))).isError, true);
+    const nine = Array.from({ length: 9 }, (_, index) => index + 8);
+    const accepted = await call([{ ingredient: "mælk", product: 7, alternatives: nine, quantity: 1, confidence: 80 }]);
+    assert.notEqual(accepted.isError, true, toolText(accepted));
+    const beforeRejected = reads;
+    assert.equal((await call([{ ingredient: "mælk", product: 7, alternatives: [...nine, 17], quantity: 1, confidence: 80 }])).isError, true);
+    assert.equal(reads, beforeRejected, "ten alternatives fail before product reads");
   });
 });
 

@@ -4,6 +4,7 @@ import {
   matchFavorites,
   NemligClient,
   NemligError,
+  type Product,
   NEMLIG_READ_ATTEMPT_TIMEOUT_MS,
   SEARCH_GATEWAY_URL,
   normalizeDepartments,
@@ -44,7 +45,7 @@ const sessionRequests = (): ExpectedRequest[] => [
   { match: "/user/GetCurrentUser$", response: json({ DebitorId: 42 }) },
   {
     match: "/Order/DeliverySpot$",
-    response: json({ TimeslotUtc: "2026083115-60-240", TimeslotId: 7 }),
+    response: json({ TimeslotUtc: "2026083115-60-240", TimeslotId: 7, DeliveryZoneId: 9 }),
   },
 ];
 
@@ -231,7 +232,8 @@ test("product normalization covers upstream fields and classifications", () => {
         UnitPriceCalc: 14.95,
         Description: "1 liter",
         Text: "<p>Frisk dansk mælk</p>",
-        Attributes: [{ Key: "Fedt", Value: "0,4 %" }],
+        DeclarationLabel: "<p>MÆLK. Pasteuriseret.</p>",
+        Attributes: [{ Key: "Fedt", Value: ["0,4 %", "homogeniseret"] }],
         Brand: "Test",
         Category: "Køl",
         SubCategory: "Mejeri mælk",
@@ -251,7 +253,8 @@ test("product normalization covers upstream fields and classifications", () => {
     unitPrice: 14.95,
     unitSize: "1 liter",
     description: "Frisk dansk mælk",
-    details: [{ key: "Fedt", value: "0,4 %" }],
+    declaration: "MÆLK. Pasteuriseret.",
+    details: [{ key: "Fedt", value: "0,4 %, homogeniseret" }],
     brand: "Test",
     category: "Køl",
     subcategory: "Mejeri mælk",
@@ -275,15 +278,17 @@ test("product normalization turns provider HTML into bounded readable evidence",
       Id: 101,
       Name: "Mælk",
       Text: '<h1>Mælk</h1><p title="1 > 0">Mælk &amp; kakao&nbsp;&#160;1 l</p><a href="https://example.test/private">Læs mere</a><img alt="hemmelig" src="https://example.test/image"><script>tracking()</script><style>.hidden { display: none }</style><ul><li>Første</li><li>Anden</li></ul>',
+      DeclarationLabel: "<strong>MÆLK</strong><script>ignore()</script>",
       Attributes: [{
         Key: '<span title=">">Nærings&nbsp;værdi</span>',
-        Value: '<script>ignore()</script><p>God&nbsp;værdi</p>',
-      }],
+        Value: ['<script>ignore()</script><p>God&nbsp;værdi</p>', "Anden værdi"],
+      }, { Key: "Skjult", Value: ["hemmelig"], IsVisible: false }],
     }],
     1,
   );
   assert.equal(product?.description, "Mælk Mælk & kakao 1 l Læs mere Første Anden");
-  assert.deepEqual(product?.details, [{ key: "Nærings værdi", value: "God værdi" }]);
+  assert.equal(product?.declaration, "MÆLK");
+  assert.deepEqual(product?.details, [{ key: "Nærings værdi", value: "God værdi, Anden værdi" }]);
 });
 
 test("product normalization preserves meaningful malformed text and omits empty evidence", () => {
@@ -300,6 +305,10 @@ test("product normalization preserves meaningful malformed text and omits empty 
 });
 
 test("product normalization keeps existing evidence limits before and after conversion", () => {
+  const oversizedValues = Array.from({ length: 1_000 }, () => "værdi");
+  Object.defineProperty(oversizedValues, 20, {
+    get: () => { throw new Error("attribute value work exceeded its bound"); },
+  });
   const [product] = normalizeProducts(
     [{
       Id: 104,
@@ -317,6 +326,10 @@ test("product normalization keeps existing evidence limits before and after conv
     { key: "k".repeat(100), value: "v" },
     { key: "k", value: "v".repeat(300) },
   ]);
+  assert.equal(
+    normalizeProducts([{ Id: 108, Attributes: [{ Key: "varianter", Value: oversizedValues }] }], 1)[0]?.details?.[0]?.value,
+    Array.from({ length: 20 }, () => "værdi").join(", "),
+  );
 });
 
 test("product normalization bounds parser depth and child nodes without warnings", () => {
@@ -369,33 +382,37 @@ test("search accepts the upstream flat product response", async () => {
   assert.equal(products[0]?.id, 2);
 });
 
-test("exact product lookup returns only the matching numeric ID", async () => {
+test("exact product lookup uses current session context and returns only the requested product", async () => {
   const requests: ExpectedRequest[] = [
     ...sessionRequests(),
     {
-      match: `${SEARCH_GATEWAY_URL}/search`,
-      inspect: (url) => assert.equal(new URL(url).searchParams.get("query"), "424242"),
-      response: json({
-        Products: [
-          { Id: 1, Name: "Wrong" },
-          { Id: 424242, Name: "Test Product", Price: 12.34 },
-        ],
-      }),
+      match: "/webapi/product-stamp/2026083115-60-240/9/42/Products/Get\\?id=424242",
+      inspect: (_url, init) => {
+        const headers = new Headers(init?.headers);
+        assert.equal(init?.method, undefined);
+        assert.equal(headers.get("authorization"), "Bearer token-value");
+        assert.equal(headers.get("platform"), "web");
+      },
+      response: json({ Id: 424242, Name: "Test Product", Price: 12.34 }),
     },
   ];
   assert.equal((await new NemligClient(mockFetch(requests)).getProduct(424242)).name, "Test Product");
   assert.equal(requests.length, 0);
 });
 
-test("exact product lookup reuses the full previously observed product without another request", async () => {
-  const product = { Id: 424242, Name: "Test Product", Price: 12.34 };
+test("exact product lookup upgrades a shallow card, reuses detail, and cannot be downgraded", async () => {
   const requests: ExpectedRequest[] = [
     ...sessionRequests(),
-    { match: "/search\\?", response: json({ Products: [product] }) },
+    { match: "/search\\?", response: json({ Products: [{ Id: 424242, Name: "Shallow", Price: 12.34 }] }) },
+    { match: "/Products/Get\\?id=424242", response: json({ Id: 424242, Name: "Detailed", Price: 13.45, Text: "<p>Current detail</p>" }) },
+    { match: "/search\\?", response: json({ Products: [{ Id: 424242, Name: "Later shallow", Price: 10 }] }) },
   ];
   const client = new NemligClient(mockFetch(requests));
   await client.searchProducts("Test Product", 1);
-  assert.equal((await client.getProduct(424242)).name, "Test Product");
+  assert.equal((await client.getProduct(424242)).description, "Current detail");
+  assert.equal((await client.getProduct(424242)).name, "Detailed");
+  assert.equal((await client.searchProducts("Test Product", 1))[0]?.name, "Later shallow");
+  assert.equal((await client.getProduct(424242)).name, "Detailed");
   assert.equal(requests.length, 0);
 });
 
@@ -403,7 +420,7 @@ test("fresh exact product lookup bypasses a previously observed product", async 
   const requests: ExpectedRequest[] = [
     ...sessionRequests(),
     { match: "/search\\?", response: json({ Products: [{ Id: 424242, Name: "Observed", Price: 12.34 }] }) },
-    { match: "/search\\?", response: json({ Products: [{ Id: 424242, Name: "Current", Price: 13.45 }] }) },
+    { match: "/Products/Get\\?id=424242", response: json({ Id: 424242, Name: "Current", Price: 13.45 }) },
   ];
   const client = new NemligClient(mockFetch(requests));
   await client.searchProducts("Observed", 1);
@@ -413,12 +430,44 @@ test("fresh exact product lookup bypasses a previously observed product", async 
   assert.equal(requests.length, 0);
 });
 
+test("exact product reads retry network failure, preserve cancellation, and keep the cache bounded", async () => {
+  let attempts = 0;
+  const client = new NemligClient((async (_input, init) => {
+    attempts += 1;
+    assert.equal(init?.signal?.aborted, false);
+    if (attempts === 1) throw new TypeError("offline");
+    return json({ Id: 7, Name: "Recovered" });
+  }) as typeof fetch);
+  Object.assign(client, {
+    accessToken: "token",
+    productTimestamp: "stamp",
+    userId: "42",
+    timeslot: "slot",
+    deliveryZoneId: 9,
+  });
+  assert.equal((await client.getProduct(7)).name, "Recovered");
+  assert.equal(attempts, 2);
+
+  const cancelled = new AbortController();
+  const reason = new Error("stop exact read");
+  cancelled.abort(reason);
+  await assert.rejects(client.getProduct(8, cancelled.signal), (error) => error === reason);
+  assert.equal(attempts, 2);
+
+  const products = Array.from({ length: 1_001 }, (_, index) => normalizeProducts([{ Id: index + 1, Name: `Product ${index + 1}` }], 1)[0]!);
+  Reflect.get(client, "rememberProducts").call(client, products, true);
+  const known = Reflect.get(client, "knownProducts") as Map<number, Product>;
+  const hydrated = Reflect.get(client, "hydratedProductIds") as Set<number>;
+  assert.equal(known.size, 1_000);
+  assert.equal(known.has(1), false);
+  assert.equal(hydrated.has(1), false);
+});
+
 test("exact product lookup rejects invalid and unresolved IDs", async () => {
   const client = new NemligClient(
     mockFetch([
       ...sessionRequests(),
-      { match: "/search\\?", response: json({ Products: [] }) },
-      { match: "/quick\\?", response: json({ Categories: [] }) },
+      { match: "/Products/Get\\?id=7", response: json({}, { status: 404 }) },
     ]),
   );
   await assert.rejects(client.getProduct(0), /Product ID must be positive/);

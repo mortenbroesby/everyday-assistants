@@ -74,8 +74,8 @@ preparatory, and exact reviews still wait for approval.
 - Show one recommended product per ingredient with package quantity and an
   evidence-based match-confidence judgment.
 - Consult existing favourites when match confidence is below 80%.
-- Keep alternatives collapsed by default and let the user expand them per
-  ingredient.
+- Keep up to nine catalogue-ordered alternatives collapsed by default and let
+  the user expand them per ingredient.
 - Present up to fifty actionable visual choices in one ordered review and show
   the complete proposed basket before asking to add anything.
 - Give every product its own visual island, while labeling the collapsed
@@ -134,8 +134,9 @@ from the available evidence. Below 80% match confidence it checks favourites and
 includes useful alternatives. Alternatives stay folded until the user asks to
 compare them.
 
-The read-only proposed-basket view reports package size, quantity, product
-description, price, unit price, confidence, and current alternatives. One review
+The read-only proposed-basket view hydrates exact product-view descriptions,
+declarations, and visible item details alongside package size, quantity, price,
+unit price, confidence, and up to nine current alternatives. One review
 accepts up to fifty ordered ingredient decisions. It keeps the user's ingredient label
 but validates each choice with the same short Danish term used for discovery. A
 mismatched or vanished catalogue item is identified without hiding the other
@@ -143,9 +144,10 @@ valid choices or failing the whole group. Planning does not inspect the current
 basket; after choices settle, ChatGPT shows the complete proposed basket before
 preparing the separate exact basket-addition review.
 
-Provider descriptions and item details are converted from HTML to bounded plain
-text, including Danish characters and entities. Scripts, styles, images and link
-destinations are omitted; conversion does not fetch additional resources.
+Provider descriptions, declarations, and item details are converted from HTML
+to bounded plain text, including Danish characters and entities. Scripts,
+styles, images and link destinations are omitted; conversion does not fetch
+additional resources.
 Plan tool outputs publish explicit nested schemas while preserving optional
 product evidence. Supply groceries in the current conversation; the assistant
 does not save or reload plans or named lists.
@@ -346,6 +348,33 @@ pnpm --filter nemlig-assistant smoke:package
 
 Tests use synthetic HTTP responses and never access a real Nemlig account.
 
+### Reverse-engineered Nemlig API
+
+[`nemlig-api.openapi.json`](nemlig-api.openapi.json) is the canonical,
+OpenAPI-compatible inventory of the private Nemlig HTTP endpoints this app uses
+and the additional endpoints observed in the first-party website. It records
+parameters, partial response schemas, authentication, mutation risk,
+confidence, evidence, and whether an operation is `client-used` or only
+`observed-only`. It is intentionally permissive about unknown response fields
+and is not an official or exhaustive Nemlig contract.
+
+When an endpoint or consumed response field changes:
+
+1. Update the manifest without adding secrets, cookies, token values, account
+   data, or captured user payloads.
+2. Add dated evidence to the operation. Prefer client symbols, sanitized
+   synthetic fixtures, first-party bundle strings, or an anonymous read-only
+   browser trace.
+3. Mark inferred shapes as partial and keep `additionalProperties: true` until
+   repeated evidence supports a tighter contract.
+4. Run `pnpm --filter nemlig-assistant check:api` and the package tests. The
+   drift check fails when a client endpoint is added or removed without a
+   corresponding manifest change.
+
+The manifest documents mutation endpoints for completeness; it does not grant
+authority to call them or replace the review, explicit-approval, fresh
+validation, and basket-readback requirements above.
+
 The private npm-format package is named `nemlig-assistant`; it is installable
 from the smoke-tested tarball but remains `private: true` and unpublished to
 npm. Its binaries are `nemlig`, `nemlig-assistant`, `nemlig-mcp`, and
@@ -418,6 +447,7 @@ set is added, removed, or materially changed. Planned work belongs in
 .codex/skills/nemlig-basket/  Safe shopping workflow
 .codex/skills/nemlig-production/  Production-readiness workflow
 src/client.ts                 Nemlig HTTP, search, and basket client
+nemlig-api.openapi.json       Reverse-engineered private HTTP contract
 src/config.ts                 Local credential management
 src/cli.ts                    CLI entry point
 src/mcp.ts                    MCP server and picker resource
@@ -427,6 +457,7 @@ src/plans.ts                  Request-scoped guided resolution
 src/proposals.ts              Proposal store, revalidation, and mutation lock
 release/                      Version and publication policy
 scripts/smoke-package.ts      Installed-package interface proof
+scripts/check-api-manifest.mjs  Manifest and client drift check
 ```
 
 ## Upstream baseline

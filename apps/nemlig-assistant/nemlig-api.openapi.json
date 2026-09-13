@@ -1,0 +1,793 @@
+{
+  "openapi": "3.1.2",
+  "info": {
+    "title": "Nemlig private web API (reverse-engineered)",
+    "version": "2026-09-13",
+    "description": "A partial, unofficial description of the private first-party HTTP endpoints used by Nemlig Assistant or observed in nemlig.com's browser application. Nemlig does not publish or support this contract. Fields and endpoints may change without notice. Never generate mutation automation from this document without preserving the repository's approval and readback safeguards."
+  },
+  "externalDocs": {
+    "description": "Maintenance and evidence guide",
+    "url": "https://github.com/mortenbroesby/everyday-assistants/blob/main/apps/nemlig-assistant/README.md#reverse-engineered-nemlig-api"
+  },
+  "servers": [
+    {
+      "url": "https://www.nemlig.com",
+      "description": "Website and primary private web API"
+    },
+    {
+      "url": "https://webapi.prod.knl.nemlig.it",
+      "description": "Private search gateway"
+    }
+  ],
+  "tags": [
+    { "name": "Authentication" },
+    { "name": "Session" },
+    { "name": "Catalogue" },
+    { "name": "Basket" },
+    { "name": "Website" }
+  ],
+  "x-nemlig": {
+    "status": "reverse-engineered-private-contract",
+    "lastObserved": "2026-09-13",
+    "maintainer": "Nemlig Assistant contributors",
+    "clientSource": "apps/nemlig-assistant/src/client.ts",
+    "confidenceScale": {
+      "high": "Used by the client or observed live and corroborated by the first-party bundle.",
+      "medium": "Observed live once; semantics are inferred from names and response keys.",
+      "low": "Found statically but not exercised."
+    },
+    "scope": [
+      "Endpoints called by apps/nemlig-assistant/src/client.ts.",
+      "Additional JSON endpoints observed during an anonymous Playwright product-page trace.",
+      "Partial response fields required by the client or safely observed as top-level keys."
+    ],
+    "exclusions": [
+      "Rendered HTML documents and static assets.",
+      "Cloudflare /cdn-cgi/rum telemetry.",
+      "Endpoints not yet observed or referenced by this repository.",
+      "Secrets, token values, cookies, credentials, personal data, and payload examples derived from user accounts."
+    ]
+  },
+  "paths": {
+    "/webapi/login": {
+      "post": {
+        "operationId": "login",
+        "tags": ["Authentication"],
+        "summary": "Create a Nemlig website session",
+        "description": "Submits credentials to Nemlig. The request and response are sensitive and must never be logged.",
+        "security": [],
+        "x-nemlig": {
+          "usage": "client-used",
+          "confidence": "high",
+          "safety": "authentication-write",
+          "evidence": ["NemligClient.login", "NemligClient.validateCredentials"]
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/LoginRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Login result; success is inferred from RedirectUrl or MergeSuccessful.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/LoginResponse" }
+              }
+            }
+          },
+          "default": { "$ref": "#/components/responses/ProviderError" }
+        }
+      }
+    },
+    "/webapi/Token": {
+      "get": {
+        "operationId": "getToken",
+        "tags": ["Authentication", "Session"],
+        "summary": "Get the private web API access token",
+        "security": [{}, { "cookieAuth": [] }],
+        "x-nemlig": {
+          "usage": "client-used-and-observed",
+          "confidence": "high",
+          "safety": "sensitive-read",
+          "evidence": ["NemligClient.refreshSession", "anonymous Playwright trace 2026-09-13"]
+        },
+        "responses": {
+          "200": {
+            "description": "Bearer-token envelope. Values are secrets and must not be recorded.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/TokenResponse" }
+              }
+            }
+          },
+          "default": { "$ref": "#/components/responses/ProviderError" }
+        }
+      }
+    },
+    "/webapi/v2/AppSettings/Website": {
+      "get": {
+        "operationId": "getWebsiteSettings",
+        "tags": ["Session"],
+        "summary": "Get website build and catalogue context",
+        "security": [{}, { "bearerAuth": [] }],
+        "x-nemlig": {
+          "usage": "client-used-and-observed",
+          "confidence": "high",
+          "safety": "read-only",
+          "evidence": ["NemligClient.refreshSession", "anonymous Playwright trace 2026-09-13"]
+        },
+        "responses": {
+          "200": {
+            "description": "Website settings; only catalogue and correlation stamps are currently consumed.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/WebsiteSettings" }
+              }
+            }
+          },
+          "default": { "$ref": "#/components/responses/ProviderError" }
+        }
+      }
+    },
+    "/webapi/user/GetCurrentUser": {
+      "get": {
+        "operationId": "getCurrentUser",
+        "tags": ["Session"],
+        "summary": "Get current website user context",
+        "security": [{}, { "bearerAuth": [] }],
+        "x-nemlig": {
+          "usage": "client-used-and-observed",
+          "confidence": "high",
+          "safety": "personal-data-read",
+          "evidence": ["NemligClient.refreshSession", "anonymous Playwright trace 2026-09-13"]
+        },
+        "responses": {
+          "200": {
+            "description": "Current user. The client reads only DebitorId or Id; other fields may be personal data.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/CurrentUser" }
+              }
+            }
+          },
+          "default": { "$ref": "#/components/responses/ProviderError" }
+        }
+      }
+    },
+    "/webapi/Order/DeliverySpot": {
+      "get": {
+        "operationId": "getDeliverySpot",
+        "tags": ["Session"],
+        "summary": "Get current delivery and timeslot context",
+        "security": [{}, { "bearerAuth": [] }],
+        "x-nemlig": {
+          "usage": "client-used",
+          "confidence": "high",
+          "safety": "personal-data-read",
+          "evidence": ["NemligClient.refreshSession", "first-party main.js bundle 2026-09-13"]
+        },
+        "responses": {
+          "200": {
+            "description": "Current delivery context. Additional response fields may contain private account information.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/DeliverySpot" }
+              }
+            }
+          },
+          "default": { "$ref": "#/components/responses/ProviderError" }
+        }
+      }
+    },
+    "/searchgateway/api/search": {
+      "get": {
+        "operationId": "searchProducts",
+        "tags": ["Catalogue"],
+        "summary": "Search catalogue product cards",
+        "servers": [{ "url": "https://webapi.prod.knl.nemlig.it" }],
+        "security": [{ "bearerAuth": [] }],
+        "x-nemlig": {
+          "usage": "client-used",
+          "confidence": "high",
+          "safety": "read-only",
+          "evidence": ["NemligClient.searchGateway", "first-party main.js bundle 2026-09-13"]
+        },
+        "parameters": [
+          { "$ref": "#/components/parameters/SearchQuery" },
+          { "name": "take", "in": "query", "required": true, "schema": { "type": "integer", "minimum": 1 } },
+          { "name": "skip", "in": "query", "required": true, "schema": { "type": "integer", "minimum": 0 } },
+          { "name": "recipeCount", "in": "query", "required": true, "schema": { "type": "integer", "minimum": 0 } },
+          { "name": "timestamp", "in": "query", "required": true, "schema": { "type": "string" } },
+          { "name": "timeslotUtc", "in": "query", "required": true, "schema": { "type": "string" } },
+          { "name": "deliveryZoneId", "in": "query", "required": true, "schema": { "type": "integer" } },
+          { "name": "includeFavorites", "in": "query", "required": true, "schema": { "type": "string" } },
+          { "name": "TimeSlotId", "in": "query", "required": true, "schema": { "type": "integer" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Shallow product-card search results; rich product text is normally absent.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ProductCollection" }
+              }
+            }
+          },
+          "default": { "$ref": "#/components/responses/ProviderError" }
+        }
+      }
+    },
+    "/searchgateway/api/quick": {
+      "get": {
+        "operationId": "quickSearch",
+        "tags": ["Catalogue"],
+        "summary": "Get quick-search categories",
+        "servers": [{ "url": "https://webapi.prod.knl.nemlig.it" }],
+        "security": [{ "bearerAuth": [] }],
+        "x-nemlig": {
+          "usage": "client-used",
+          "confidence": "high",
+          "safety": "read-only",
+          "evidence": ["NemligClient.searchProducts"]
+        },
+        "parameters": [
+          { "$ref": "#/components/parameters/SearchQuery" },
+          { "name": "correlationId", "in": "query", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Quick-search response containing category links.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/QuickSearchResponse" }
+              }
+            }
+          },
+          "default": { "$ref": "#/components/responses/ProviderError" }
+        }
+      }
+    },
+    "/webapi/{productTimestamp}/{timeslotUtc}/{deliveryZoneId}/{userId}/Products/Get": {
+      "get": {
+        "operationId": "getProduct",
+        "tags": ["Catalogue"],
+        "summary": "Get one exact product with rich detail",
+        "security": [{ "bearerAuth": [] }],
+        "x-nemlig": {
+          "usage": "client-used",
+          "confidence": "high",
+          "safety": "read-only",
+          "evidence": ["NemligClient.fetchExactProduct", "first-party main.js bundle and read-only fixture 2026-09-13"]
+        },
+        "parameters": [
+          { "$ref": "#/components/parameters/ProductTimestamp" },
+          { "$ref": "#/components/parameters/TimeslotUtc" },
+          { "$ref": "#/components/parameters/DeliveryZoneId" },
+          { "$ref": "#/components/parameters/UserId" },
+          { "name": "id", "in": "query", "required": true, "schema": { "type": "integer", "minimum": 1 } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Exact product, either directly or under Product.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    { "$ref": "#/components/schemas/Product" },
+                    { "$ref": "#/components/schemas/ProductEnvelope" }
+                  ]
+                }
+              }
+            }
+          },
+          "default": { "$ref": "#/components/responses/ProviderError" }
+        }
+      }
+    },
+    "/webapi/{productTimestamp}/{timeslotUtc}/1/{userId}/Products/GetByProductGroupId": {
+      "get": {
+        "operationId": "getProductsByGroup",
+        "tags": ["Catalogue"],
+        "summary": "Get a page of products in one product group",
+        "security": [{ "bearerAuth": [] }],
+        "x-nemlig": {
+          "usage": "client-used",
+          "confidence": "high",
+          "safety": "read-only",
+          "evidence": ["NemligClient.productsByGroup"]
+        },
+        "parameters": [
+          { "$ref": "#/components/parameters/ProductTimestamp" },
+          { "$ref": "#/components/parameters/TimeslotUtc" },
+          { "$ref": "#/components/parameters/UserId" },
+          { "name": "productGroupId", "in": "query", "required": true, "schema": { "oneOf": [{ "type": "string" }, { "type": "integer" }] } },
+          { "name": "pageIndex", "in": "query", "required": true, "schema": { "type": "integer", "minimum": 0 } },
+          { "name": "pagesize", "in": "query", "required": true, "schema": { "type": "integer", "minimum": 1, "maximum": 50 } },
+          { "name": "sortorder", "in": "query", "required": true, "schema": { "type": "string", "const": "default" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Product page.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ProductCollection" }
+              }
+            }
+          },
+          "default": { "$ref": "#/components/responses/ProviderError" }
+        }
+      }
+    },
+    "/": {
+      "get": {
+        "operationId": "getDepartmentPageModel",
+        "tags": ["Catalogue", "Website"],
+        "summary": "Get the home-page JSON model used to discover departments",
+        "security": [],
+        "x-nemlig": {
+          "usage": "client-used",
+          "confidence": "high",
+          "safety": "read-only",
+          "evidence": ["NemligClient.listDepartments", "first-party main.js bundle 2026-09-13"]
+        },
+        "parameters": [{ "$ref": "#/components/parameters/GetAsJson" }],
+        "responses": {
+          "200": {
+            "description": "Sitecore-derived page model.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/PageModel" } }
+            }
+          },
+          "default": { "$ref": "#/components/responses/ProviderError" }
+        }
+      }
+    },
+    "/favoritter": {
+      "get": {
+        "operationId": "getFavoritesPageModel",
+        "tags": ["Catalogue", "Website"],
+        "summary": "Get the authenticated favourites page model",
+        "security": [{ "bearerAuth": [] }, { "cookieAuth": [] }],
+        "x-nemlig": {
+          "usage": "client-used",
+          "confidence": "high",
+          "safety": "personal-data-read",
+          "evidence": ["NemligClient.listFavorites"]
+        },
+        "parameters": [
+          { "$ref": "#/components/parameters/GetAsJson" },
+          { "name": "t", "in": "query", "required": true, "description": "Current timeslot UTC token.", "schema": { "type": "string" } },
+          { "name": "d", "in": "query", "required": true, "schema": { "type": "integer", "const": 1 } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Page model containing product group identifiers.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/PageModel" } }
+            }
+          },
+          "default": { "$ref": "#/components/responses/ProviderError" }
+        }
+      }
+    },
+    "/{cataloguePath}": {
+      "get": {
+        "operationId": "getCategoryPageModel",
+        "tags": ["Catalogue", "Website"],
+        "summary": "Get a category page as JSON",
+        "security": [],
+        "x-nemlig": {
+          "usage": "client-used",
+          "confidence": "high",
+          "safety": "read-only",
+          "evidence": ["NemligClient.productsByCategory"]
+        },
+        "parameters": [
+          { "name": "cataloguePath", "in": "path", "required": true, "description": "A same-origin path returned by the department or quick-search page model.", "schema": { "type": "string" } },
+          { "$ref": "#/components/parameters/GetAsJson" }
+        ],
+        "responses": {
+          "200": {
+            "description": "Page model containing a product group identifier.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/PageModel" } }
+            }
+          },
+          "default": { "$ref": "#/components/responses/ProviderError" }
+        }
+      }
+    },
+    "/webapi/basket/GetBasket": {
+      "get": {
+        "operationId": "getBasket",
+        "tags": ["Basket"],
+        "summary": "Get the current authenticated basket",
+        "security": [{ "bearerAuth": [] }, { "cookieAuth": [] }],
+        "x-nemlig": {
+          "usage": "client-used-and-observed",
+          "confidence": "high",
+          "safety": "personal-data-read",
+          "evidence": ["NemligClient.getCart", "blocked anonymous Playwright request 2026-09-13"]
+        },
+        "responses": {
+          "200": {
+            "description": "Current basket.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Basket" } }
+            }
+          },
+          "default": { "$ref": "#/components/responses/ProviderError" }
+        }
+      }
+    },
+    "/webapi/basket/AddToBasket": {
+      "post": {
+        "operationId": "setBasketProductQuantity",
+        "tags": ["Basket"],
+        "summary": "Set one product's basket quantity",
+        "description": "Despite its name, quantity zero is used by the client to remove one line. A successful HTTP response is indeterminate until GetBasket confirms the exact resulting state.",
+        "security": [{ "bearerAuth": [] }, { "cookieAuth": [] }],
+        "x-nemlig": {
+          "usage": "client-used",
+          "confidence": "high",
+          "safety": "basket-mutation-requires-explicit-approval-and-readback",
+          "evidence": ["NemligClient.writeBasket"]
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": { "schema": { "$ref": "#/components/schemas/BasketQuantityRequest" } }
+          }
+        },
+        "responses": {
+          "200": { "description": "Mutation accepted; exact basket state is not established by this response." },
+          "default": { "$ref": "#/components/responses/ProviderError" }
+        }
+      }
+    },
+    "/webapi/basket/ClearBasket": {
+      "post": {
+        "operationId": "clearBasket",
+        "tags": ["Basket"],
+        "summary": "Clear the entire current basket",
+        "security": [{ "bearerAuth": [] }, { "cookieAuth": [] }],
+        "x-nemlig": {
+          "usage": "client-used",
+          "confidence": "high",
+          "safety": "destructive-basket-mutation-requires-separate-explicit-approval-and-readback",
+          "evidence": ["NemligClient.clearCart"]
+        },
+        "responses": {
+          "200": { "description": "Clear accepted; exact basket state is not established until GetBasket readback." },
+          "default": { "$ref": "#/components/responses/ProviderError" }
+        }
+      }
+    },
+    "/webapi/AntiForgery": {
+      "get": {
+        "operationId": "getAntiForgery",
+        "tags": ["Session", "Website"],
+        "summary": "Get an anti-forgery header/value pair",
+        "security": [],
+        "x-nemlig": {
+          "usage": "observed-only",
+          "confidence": "medium",
+          "safety": "sensitive-read",
+          "evidence": ["anonymous Playwright trace 2026-09-13"]
+        },
+        "responses": {
+          "200": {
+            "description": "Observed top-level keys: Header and Value. Values must not be recorded.",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/AntiForgery" } } }
+          }
+        }
+      }
+    },
+    "/webapi/Information/GetInfoBars": {
+      "get": {
+        "operationId": "getInfoBars",
+        "tags": ["Website"],
+        "summary": "Get website information bars",
+        "security": [],
+        "x-nemlig": { "usage": "observed-only", "confidence": "medium", "safety": "read-only", "evidence": ["anonymous Playwright trace 2026-09-13"] },
+        "responses": { "200": { "description": "Observed JSON array.", "content": { "application/json": { "schema": { "type": "array", "items": {} } } } } }
+      }
+    },
+    "/webapi/Information/GetSocialAndContact": {
+      "get": {
+        "operationId": "getSocialAndContact",
+        "tags": ["Website"],
+        "summary": "Get public contact and social-link data",
+        "security": [],
+        "x-nemlig": { "usage": "observed-only", "confidence": "medium", "safety": "read-only", "evidence": ["anonymous Playwright trace 2026-09-13"] },
+        "responses": { "200": { "description": "Observed top-level keys: Contact and Social.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/UnknownObject" } } } } }
+      }
+    },
+    "/webapi/SCommerceLayoutData/footer": {
+      "get": {
+        "operationId": "getFooterLayout",
+        "tags": ["Website"],
+        "summary": "Get website footer layout data",
+        "security": [],
+        "x-nemlig": { "usage": "observed-only", "confidence": "medium", "safety": "read-only", "evidence": ["anonymous Playwright trace 2026-09-13"] },
+        "responses": { "200": { "description": "Footer layout JSON; shape is not yet mapped.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/UnknownObject" } } } } }
+      }
+    },
+    "/webapi/SCommerceLayoutData/MetaMenu": {
+      "get": {
+        "operationId": "getMetaMenu",
+        "tags": ["Website"],
+        "summary": "Get website account/menu layout data",
+        "security": [],
+        "x-nemlig": { "usage": "observed-only", "confidence": "medium", "safety": "read-only", "evidence": ["anonymous Playwright trace 2026-09-13"] },
+        "responses": { "200": { "description": "Meta-menu JSON; shape is not yet mapped.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/UnknownObject" } } } } }
+      }
+    },
+    "/webapi/translations": {
+      "get": {
+        "operationId": "getTranslations",
+        "tags": ["Website"],
+        "summary": "Get website translation bundles",
+        "security": [],
+        "x-nemlig": { "usage": "observed-only", "confidence": "medium", "safety": "read-only", "evidence": ["anonymous Playwright trace 2026-09-13"] },
+        "responses": { "200": { "description": "Translation groups keyed by website feature.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/UnknownObject" } } } } }
+      }
+    },
+    "/webapi/trustpilot/GetTrustPilotData": {
+      "get": {
+        "operationId": "getTrustPilotData",
+        "tags": ["Website"],
+        "summary": "Get Trustpilot summary data",
+        "security": [],
+        "x-nemlig": { "usage": "observed-only", "confidence": "medium", "safety": "read-only", "evidence": ["anonymous Playwright trace 2026-09-13"] },
+        "responses": { "200": { "description": "Observed keys: Label, Reviews, Stars, and TrustScore.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/TrustPilotData" } } } } }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": { "type": "http", "scheme": "bearer", "description": "Private token returned by /webapi/Token. Never record its value." },
+      "cookieAuth": { "type": "apiKey", "in": "cookie", "name": "Nemlig session cookies", "description": "Conceptual session-cookie requirement; actual cookie names are intentionally not recorded." }
+    },
+    "parameters": {
+      "SearchQuery": { "name": "query", "in": "query", "required": true, "schema": { "type": "string", "minLength": 1 } },
+      "ProductTimestamp": { "name": "productTimestamp", "in": "path", "required": true, "description": "The current CombinedProductsAndSitecoreTimestamp returned by website settings.", "schema": { "type": "string" } },
+      "TimeslotUtc": { "name": "timeslotUtc", "in": "path", "required": true, "schema": { "type": "string" } },
+      "DeliveryZoneId": { "name": "deliveryZoneId", "in": "path", "required": true, "schema": { "type": "integer", "minimum": 1 } },
+      "UserId": { "name": "userId", "in": "path", "required": true, "schema": { "type": "string" } },
+      "GetAsJson": { "name": "GetAsJson", "in": "query", "required": true, "schema": { "type": "string", "const": "1" } }
+    },
+    "responses": {
+      "ProviderError": {
+        "description": "Undocumented provider error. The client treats non-2xx status or invalid JSON as a sanitized NemligError."
+      }
+    },
+    "schemas": {
+      "UnknownObject": {
+        "type": "object",
+        "description": "Observed JSON object whose contract has not yet been mapped.",
+        "additionalProperties": true
+      },
+      "LoginRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["Username", "Password", "CheckForExistingProducts", "DoMerge", "AppInstalled", "SaveExistingBasket"],
+        "properties": {
+          "Username": { "type": "string", "writeOnly": true },
+          "Password": { "type": "string", "format": "password", "writeOnly": true },
+          "CheckForExistingProducts": { "type": "boolean" },
+          "DoMerge": { "type": "boolean" },
+          "AppInstalled": { "type": "boolean" },
+          "SaveExistingBasket": { "type": "boolean" }
+        }
+      },
+      "LoginResponse": {
+        "type": "object",
+        "properties": {
+          "RedirectUrl": { "type": "string" },
+          "MergeSuccessful": { "type": "boolean" },
+          "TimeslotUtc": { "type": "string" },
+          "ErrorMessage": { "type": "string" }
+        },
+        "additionalProperties": true
+      },
+      "TokenResponse": {
+        "type": "object",
+        "required": ["access_token"],
+        "properties": {
+          "access_token": { "type": "string", "writeOnly": true },
+          "token_type": { "type": "string" },
+          "expires_in": { "type": "integer" },
+          "refresh_expires_in": { "type": "integer" },
+          "not-before-policy": { "type": "integer" },
+          "upgraded": { "type": "boolean" }
+        },
+        "additionalProperties": true
+      },
+      "WebsiteSettings": {
+        "type": "object",
+        "properties": {
+          "CombinedProductsAndSitecoreTimestamp": { "type": "string" },
+          "SitecorePublishedStamp": { "type": "string" },
+          "BuildVersion": { "type": "string" }
+        },
+        "additionalProperties": true
+      },
+      "CurrentUser": {
+        "type": "object",
+        "properties": {
+          "DebitorId": { "oneOf": [{ "type": "string" }, { "type": "integer" }] },
+          "Id": { "oneOf": [{ "type": "string" }, { "type": "integer" }] }
+        },
+        "additionalProperties": true
+      },
+      "DeliverySpot": {
+        "type": "object",
+        "properties": {
+          "TimeslotUtc": { "type": "string" },
+          "TimeslotId": { "type": "integer" },
+          "DeliveryZoneId": { "oneOf": [{ "type": "integer" }, { "type": "string" }] }
+        },
+        "additionalProperties": true
+      },
+      "ProductAttribute": {
+        "type": "object",
+        "properties": {
+          "Key": { "type": "string" },
+          "Value": { "oneOf": [{ "type": "string" }, { "type": "array", "items": { "type": "string" } }] },
+          "IsVisible": { "type": "boolean" },
+          "Visible": { "type": "boolean" },
+          "DisplayVisible": { "type": "boolean" }
+        },
+        "additionalProperties": true
+      },
+      "Product": {
+        "type": "object",
+        "required": ["Id"],
+        "properties": {
+          "Id": { "oneOf": [{ "type": "integer" }, { "type": "string", "pattern": "^[0-9]+$" }] },
+          "Name": { "type": "string" },
+          "Price": { "type": "number" },
+          "UnitPrice": { "type": "string" },
+          "UnitPriceCalc": { "type": "number" },
+          "Description": { "type": "string" },
+          "Text": { "type": "string", "description": "HTML product description; sanitize before presentation." },
+          "DeclarationLabel": { "type": "string", "description": "HTML declaration text; sanitize before presentation." },
+          "Attributes": { "type": "array", "items": { "$ref": "#/components/schemas/ProductAttribute" } },
+          "Brand": { "type": "string" },
+          "Category": { "type": "string" },
+          "SubCategory": { "type": "string" },
+          "PrimaryImage": { "type": "string", "format": "uri" },
+          "Availability": { "$ref": "#/components/schemas/ProductAvailability" },
+          "Labels": { "type": "array", "items": { "type": "string" } },
+          "DiscountItem": { "type": "boolean" },
+          "IsDiscountItem": { "type": "boolean" }
+        },
+        "additionalProperties": true
+      },
+      "ProductAvailability": {
+        "type": "object",
+        "properties": {
+          "IsDeliveryAvailable": { "type": "boolean" },
+          "IsAvailableInStock": { "type": "boolean" }
+        },
+        "additionalProperties": true
+      },
+      "ProductEnvelope": {
+        "type": "object",
+        "required": ["Product"],
+        "properties": { "Product": { "$ref": "#/components/schemas/Product" } },
+        "additionalProperties": true
+      },
+      "ProductCollection": {
+        "type": "object",
+        "properties": {
+          "Products": {
+            "oneOf": [
+              { "type": "array", "items": { "$ref": "#/components/schemas/Product" } },
+              {
+                "type": "object",
+                "properties": { "Products": { "type": "array", "items": { "$ref": "#/components/schemas/Product" } } },
+                "additionalProperties": true
+              }
+            ]
+          }
+        },
+        "additionalProperties": true
+      },
+      "QuickSearchResponse": {
+        "type": "object",
+        "properties": {
+          "Categories": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": { "Url": { "type": "string" } },
+              "additionalProperties": true
+            }
+          }
+        },
+        "additionalProperties": true
+      },
+      "PageModel": {
+        "type": "object",
+        "properties": {
+          "content": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "Url": { "type": "string" },
+                "Name": { "type": "string" },
+                "Title": { "type": "string" },
+                "TemplateName": { "type": "string" },
+                "ProductGroupId": { "oneOf": [{ "type": "string" }, { "type": "integer" }] }
+              },
+              "additionalProperties": true
+            }
+          }
+        },
+        "additionalProperties": true
+      },
+      "Basket": {
+        "type": "object",
+        "properties": {
+          "Lines": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "Id": { "oneOf": [{ "type": "integer" }, { "type": "string" }] },
+                "ProductId": { "oneOf": [{ "type": "integer" }, { "type": "string" }] },
+                "ProductName": { "type": "string" },
+                "Name": { "type": "string" },
+                "Quantity": { "type": "number" },
+                "Total": { "type": "number" },
+                "Price": { "type": "number" }
+              },
+              "additionalProperties": true
+            }
+          },
+          "TotalProductsPrice": { "type": "number" },
+          "DeliveryPrice": { "type": "number" },
+          "NumberOfProducts": { "type": "number" },
+          "FormattedDeliveryTime": { "type": "string" }
+        },
+        "additionalProperties": true
+      },
+      "BasketQuantityRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["ProductId", "quantity", "AffectPartialQuantity", "disableQuantityValidation"],
+        "properties": {
+          "ProductId": { "type": "integer", "minimum": 1 },
+          "quantity": { "type": "integer", "minimum": 0 },
+          "AffectPartialQuantity": { "type": "boolean", "const": false },
+          "disableQuantityValidation": { "type": "boolean", "const": false }
+        }
+      },
+      "AntiForgery": {
+        "type": "object",
+        "required": ["Header", "Value"],
+        "properties": {
+          "Header": { "type": "string" },
+          "Value": { "type": "string", "writeOnly": true }
+        },
+        "additionalProperties": true
+      },
+      "TrustPilotData": {
+        "type": "object",
+        "properties": {
+          "Label": { "type": "string" },
+          "Reviews": { "type": "number" },
+          "Stars": { "type": "number" },
+          "TrustScore": { "type": "number" }
+        },
+        "additionalProperties": true
+      }
+    }
+  }
+}

@@ -16,11 +16,12 @@ const sample: PickerPayload = {
     product: {
       id: 1, name: "Letmælk 1,5%", brand: "Arla", unit_size: "1 l", price: 13.95, unit_price: 13.95, available: true,
       description: "Mild og frisk letmælk til morgenmad, kaffe og madlavning.",
-      details: [{ key: "Varedeklaration", value: "MÆLK. Pasteuriseret og homogeniseret." }, { key: "Opbevaring", value: "Højst 5 °C" }, { key: "Oprindelse", value: "Danmark" }],
+      declaration: "MÆLK. Pasteuriseret og homogeniseret.",
+      details: [{ key: "Opbevaring", value: "Højst 5 °C" }, { key: "Oprindelse", value: "Danmark" }],
     },
     alternatives: [
-      { id: 2, name: "Minimælk", brand: "Arla", unit_size: "1 l", price: 14.5, available: true, description: "Et lettere alternativ med en mild smag.", details: [{ key: "Varedeklaration", value: "MÆLK." }, { key: "Fedt", value: "0,4 %" }] },
-      { id: 3, name: "Økologisk letmælk", unit_size: "1 l", price: 16.95, available: false, description: "Dansk økologisk letmælk med en rund smag." },
+      { id: 2, name: "Minimælk", brand: "Arla", unit_size: "1 l", price: 14.5, available: true, description: "Et lettere alternativ med en mild smag.", declaration: "MÆLK.", details: [{ key: "Fedt", value: "0,4 %" }] },
+      ...Array.from({ length: 8 }, (_, index) => ({ id: index + 3, name: `Mælkealternativ ${index + 2}`, unit_size: "1 l", price: 15 + index, available: index % 3 !== 0 })),
     ],
   }],
   rejected: [{ ingredient: "sæsonvare", reason: "Ikke fundet" }],

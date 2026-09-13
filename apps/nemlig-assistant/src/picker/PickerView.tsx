@@ -1,6 +1,6 @@
 import { Badge } from "@openai/apps-sdk-ui/components/Badge";
 import { Button } from "@openai/apps-sdk-ui/components/Button";
-import { type PickerPayload, safePickerImageUrl } from "./contract.js";
+import { pickerProductEvidence, type PickerPayload, safePickerImageUrl } from "./contract.js";
 
 const kr = (value: number | undefined) => value === undefined ? "" : `${value.toFixed(2).replace(".", ",")} kr.`;
 
@@ -13,20 +13,13 @@ type ProductCardProps = {
   selected?: boolean;
 };
 
-const declarationDetails = /varedeklaration|ingrediens|nærings|allergen|indhold/iu;
-const declarationLabel = /^varedeklaration$/iu;
-const declarationDetail = ({ key }: { key: string }) => declarationDetails.test(key);
-
 function DetailList({ details }: { details: Array<{ key: string; value: string }> }) {
-  return details.length
-    ? <dl>{details.map(({ key, value }, index) => <div key={`${index}-${key}`}><dt>{declarationLabel.test(key) ? "Indhold" : key}</dt><dd>{value}</dd></div>)}</dl>
-    : <p>Ikke oplyst.</p>;
+  return <dl>{details.map(({ key, value }, index) => <div key={`${index}-${key}`}><dt>{key}</dt><dd>{value}</dd></div>)}</dl>;
 }
 
 function ProductCard({ product, proposed, choose, pending, selected, blocked }: ProductCardProps) {
   const image = safePickerImageUrl(product.image_url);
-  const declaration = product.details?.filter(declarationDetail) ?? [];
-  const details = product.details?.filter((detail) => !declarationDetail(detail)) ?? [];
+  const evidence = pickerProductEvidence(product);
   return <article className="picker-card picker-island">
     <div className="picker-product">
       <div className="picker-visual">
@@ -40,7 +33,6 @@ function ProductCard({ product, proposed, choose, pending, selected, blocked }: 
       <div className="picker-copy">
         <strong>{product.name ?? "Ukendt vare"}</strong>
         <small>{[product.brand, product.unit_size, product.available ? "Tilgængelig" : "Ikke tilgængelig"].filter(Boolean).join(" · ")}</small>
-        {product.description ? <p>{product.description}</p> : null}
         <div className="picker-price">
           <strong>{kr(product.price)}</strong>
           {product.unit_price === undefined ? null : <small>{kr(product.unit_price)}/enhed</small>}
@@ -48,9 +40,7 @@ function ProductCard({ product, proposed, choose, pending, selected, blocked }: 
       </div>
     </div>
     <div className="picker-product-info">
-      <details><summary>Varebeskrivelse</summary><p>{product.description ?? "Ikke oplyst."}</p></details>
-      <details><summary>Varedeklaration</summary><DetailList details={declaration} /></details>
-      <details><summary>Detaljer om varen</summary><DetailList details={details} /></details>
+      {evidence.map(({ label, text, details }) => <details key={label}><summary>{label}</summary>{text ? <p>{text}</p> : <DetailList details={details ?? []} />}</details>)}
     </div>
   </article>;
 }
