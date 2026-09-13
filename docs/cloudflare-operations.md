@@ -258,10 +258,17 @@ identity/scope and remaining expiry. Fixture checks prove runtime transport and
 isolation; they do not prove live Nemlig or ChatGPT behavior.
 It takes an exclusive lock shared by linked worktrees and atomically creates
 `refs/heads/codex-lock/nemlig-production` for a unique operation UUID, not the
-source SHA. The ref contains a bounded public-safe recovery journal. It records the
-starting version, builds and deploys once with `MCP_ENABLED=false`, verifies both
-routes and an inactive Container, enables the same revision with no Container
-rollout, and runs the existing bounded edge and authenticated read-only checks.
+source SHA. The ref contains a bounded public-safe recovery journal. Routine
+releases keep `MCP_ENABLED=true` while Wrangler activates the new Worker and
+rolls the Container image. The original disabled-first sequence is reserved for
+the initial supervised service cutover and explicit local owner mode. If a
+routine candidate fails bounded acceptance after rollout, recovery deploys the
+same image with `MCP_ENABLED=false` and no second Container rollout. A replaced
+Container also loses its in-memory MCP transport sessions; unknown session IDs
+return HTTP 404 so conforming clients initialize a fresh session automatically.
+The journal records the starting version, the exact enabled or supervised-
+cutover transition, the resulting Container image, and the bounded edge and
+authenticated read-only checks.
 It never prepares or applies a proposal and never mutates a basket, favorite, or
 saved list.
 

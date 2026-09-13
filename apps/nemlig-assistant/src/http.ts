@@ -184,7 +184,13 @@ export function createHttpApp(
           { principalKey: principal.principal_key, policyRevision: config.principalPolicy.revision, tier: principal.tier, ...(service ? { kind: "service" as const } : {}) },
         ).connect(transport);
       }
-      if (!transport) return res.status(400).json({ jsonrpc: "2.0", error: { code: -32_000, message: "Invalid or missing session." }, id: null });
+      if (!transport) return res.status(sessionId ? 404 : 400).json({
+        jsonrpc: "2.0",
+        error: sessionId
+          ? { code: -32_001, message: "Session not found." }
+          : { code: -32_000, message: "Session ID required." },
+        id: null,
+      });
       await transport.handleRequest(req, res, req.body);
     } catch {
       if (!res.headersSent) res.status(500).json({ jsonrpc: "2.0", error: { code: -32_603, message: "Internal server error" }, id: null });

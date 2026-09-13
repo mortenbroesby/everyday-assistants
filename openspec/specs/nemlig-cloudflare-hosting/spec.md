@@ -353,11 +353,13 @@ pending live acceptance. The journal commit, not the historical cutover
 ### Requirement: Automated releases are serialized and build once
 
 The release operation SHALL hold one exclusive repository-wide production lease,
-record and re-check the current Cloudflare deployment before each mutation, build
-and upload the candidate Container image once, deploy it with `MCP_ENABLED=false`,
-and enable the same revision without another Container build or rollout. It SHALL
-retain the existing Worker, one `lite` Container maximum, bindings, routes,
-timeouts, quotas, circuit breaker, and secrets.
+record and re-check the current Cloudflare deployment before each mutation, and
+build and upload the candidate Container image once. Routine releases SHALL keep
+`MCP_ENABLED=true` while Cloudflare rolls the candidate Container. The initial
+supervised cutover and explicit local owner mode SHALL retain the disabled-first
+verification path and enable the same revision without another Container build
+or rollout. Every mode SHALL retain the existing Worker, one `lite` Container
+maximum, bindings, routes, timeouts, quotas, circuit breaker, and secrets.
 
 #### Scenario: Another release holds the lease
 
@@ -365,13 +367,21 @@ timeouts, quotas, circuit breaker, and secrets.
 - **THEN** the new invocation fails before changing Cloudflare and reports the
   existing lease without replacing it
 
-#### Scenario: Disabled candidate is safe
+#### Scenario: Routine candidate rolls out
+
+- **WHEN** an accepted service cutover already exists and an exact descendant is
+  released routinely
+- **THEN** the operation deploys the candidate with `MCP_ENABLED=true` in one
+  Cloudflare rollout and never deliberately returns the disabled response during
+  a successful release
+
+#### Scenario: Supervised disabled candidate is safe
 
 - **WHEN** the candidate has been uploaded and deployed disabled
 - **THEN** both production routes return HTTP 503 with `MCP temporarily disabled`
   and the fixed Container is inactive before enablement begins
 
-#### Scenario: Candidate is enabled
+#### Scenario: Supervised candidate is enabled
 
 - **WHEN** the disabled checks pass and Cloudflare still identifies the expected
   disabled candidate as current
@@ -412,11 +422,27 @@ attempt, and last verified production state.
 #### Scenario: Acceptance fails after enablement
 
 - **WHEN** an enabled candidate fails any bounded acceptance check
-- **THEN** the operation attempts to restore the recorded starting deployment,
-  verifies the resulting state, and reports failure even if restoration succeeds
+- **THEN** the operation fails closed without rebuilding the image, verifies the
+  resulting disabled or unknown state, and reports failure even if recovery
+  succeeds
 
 #### Scenario: Release succeeds
 
-- **WHEN** the exact candidate passes every disabled and enabled acceptance check
+- **WHEN** the exact candidate passes every acceptance check required by its
+  routine or supervised deployment mode
 - **THEN** the operation reports the deployed commit and enabled version, releases
   its production lease, and records that rollback was unnecessary
+
+### Requirement: MCP sessions recover after a Container replacement
+
+The hosted MCP SHALL return HTTP 404 for a request that presents an unknown
+`Mcp-Session-Id`, while retaining HTTP 400 for a non-initialize request that omits
+the required session ID, so a conforming Streamable HTTP client can initialize a
+fresh session after a Container replacement.
+
+#### Scenario: Deployment replaces an in-memory session
+
+- **WHEN** a client sends a previously valid session ID after the Container has
+  been replaced
+- **THEN** the MCP returns HTTP 404 without accessing Nemlig or changing basket,
+  favourite, saved-list, account, or order state
