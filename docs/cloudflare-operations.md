@@ -581,6 +581,10 @@ authorization UI or Auth0's browser redirect before a request reaches it.
    exchange failure, or no event observed. Never copy credentials, access or
    refresh tokens, authorization codes, OAuth state, callback URLs with query
    values, or raw event payloads.
+   Use ChatGPT's **Reconnect** setting or the `Reconnect Nemlig Assistant`
+   action. The public gateway returns the OAuth resource challenge on missing
+   or invalid tokens so ChatGPT can prompt automatically instead of disabling
+   the app without a recovery path.
 4. Search Worker logs in that same time window. Record only terminal outcome,
    correlation ID, revision, route, status, and elapsed time. If there is no
    Worker event, the last completed boundary is before the Worker—ChatGPT app

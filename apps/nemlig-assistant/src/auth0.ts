@@ -1,5 +1,6 @@
 import { InvalidTokenError } from "@modelcontextprotocol/sdk/server/auth/errors.js";
 import type { OAuthTokenVerifier } from "@modelcontextprotocol/sdk/server/auth/provider.js";
+import { getOAuthProtectedResourceMetadataUrl } from "@modelcontextprotocol/sdk/server/auth/router.js";
 import { OpenIdProviderDiscoveryMetadataSchema, type OAuthMetadata } from "@modelcontextprotocol/sdk/shared/auth.js";
 import { createRemoteJWKSet, jwtVerify, type JWTVerifyGetKey } from "jose";
 import { parsePrincipalPolicy, type PrincipalPolicy } from "./principal-policy.js";
@@ -20,6 +21,9 @@ export interface Auth0Config {
 }
 
 export const SERVICE_ACCEPTANCE_SCOPE = "acceptance:nemlig-assistant";
+
+export const oauthReconnectChallenge = (publicUrl: URL): string =>
+  `Bearer resource_metadata="${getOAuthProtectedResourceMetadataUrl(publicUrl)}", error="invalid_token", error_description="Reconnect Nemlig Assistant to continue"`;
 
 const required = (env: NodeJS.ProcessEnv, name: string): string => {
   const value = env[name]?.trim();

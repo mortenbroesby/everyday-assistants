@@ -275,7 +275,9 @@ The MCP surface is organized around household actions:
 - Review proposed groceries without reading or changing the basket:
   `review_proposed_basket`.
 - Use basket-aware batch planning explicitly when needed: `plan_my_shopping`.
-- Check the connection: `check_nemlig_connection`.
+- Check the Nemlig account connection: `check_nemlig_connection`.
+- Reopen ChatGPT authorization after an expired or disabled app connection:
+  `reconnect_nemlig_assistant`.
 - See the basket: `show_my_basket`.
 - Review basket changes: `review_items_to_add`, `review_item_to_remove`,
   `review_item_swap`, and `review_emptying_basket`.
@@ -289,6 +291,9 @@ After an ordinary release, open the existing app named exactly `Nemlig Assistant
 and use **Refresh** so ChatGPT rediscovers tools, schemas, instructions,
 resources, and picker changes. Never create `Nemlig Assistant (new)`, a
 bracketed or numbered variant, or a parallel copy for a normal release.
+Use ChatGPT's **Reconnect** setting or the `Reconnect Nemlig Assistant` action
+when authorization has expired; invalid tokens also trigger that prompt
+automatically.
 
 Direct `add_to_cart`, `remove_from_cart`, `replace_cart_line`, and
 `clear_cart` MCP tools intentionally do not exist. Set `NEMLIG_MCP_APPS=0` to

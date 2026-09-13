@@ -351,6 +351,7 @@ const friendlyCatalog = [
   ["find_groceries", "Find groceries", true, false, ["search_term", "result_count"]],
   ["make_approved_item_swap", "Make the approved swap", false, true, ["approved_review"]],
   ["plan_my_shopping", "Plan my shopping", true, false, ["lines", "mode", "proceed"]],
+  ["reconnect_nemlig_assistant", "Reconnect Nemlig Assistant", true, false, []],
   ["remove_approved_item", "Remove the approved item", false, true, ["approved_review"]],
   ["review_emptying_basket", "Review emptying my basket", true, false, []],
   ["review_item_swap", "Review swapping an item", true, false, ["current_item", "replacement_item", "quantity"]],
@@ -397,6 +398,7 @@ test("MCP exposes the complete friendly catalog and clean missing-credential err
       assert.equal(tool?.title, title, name);
       assert.ok(tool?.description, `${name} needs a description`);
       assert.deepEqual(tool?.annotations, { readOnlyHint, destructiveHint, openWorldHint: true }, name);
+      assert.deepEqual(tool?._meta?.securitySchemes, [{ type: "oauth2", scopes: ["use:nemlig-assistant"] }], name);
       const properties = (tool?.inputSchema as { properties?: Record<string, { description?: string }> }).properties ?? {};
       assert.deepEqual(Object.keys(properties).sort(), [...inputs].sort(), `${name} inputs drifted`);
       for (const input of inputs) assert.ok(properties[input]?.description, `${name}.${input} needs plain-language guidance`);
@@ -507,6 +509,17 @@ test("connection guidance uses URL elicitation only when explicitly supported", 
     await client.close();
     await server.close();
   }
+});
+
+test("explicit reconnect asks ChatGPT to reopen OAuth", async () => {
+  await withMcpClient(createMcpServer(fakeClient(), testCredentials), async (mcp) => {
+    const result = await mcp.callTool({ name: "reconnect_nemlig_assistant", arguments: {} });
+    assert.equal(result.isError, true);
+    assert.equal(toolText(result), "Reconnect Nemlig Assistant to continue.");
+    assert.deepEqual(result._meta?.["mcp/www_authenticate"], [
+      'Bearer resource_metadata="https://nemlig-mcp.broesby.dk/.well-known/oauth-protected-resource/mcp", error="invalid_token", error_description="Reconnect Nemlig Assistant to continue"',
+    ]);
+  });
 });
 
 test("MCP favorites is read-only and returns listed, matched, or empty candidates", async () => {
@@ -860,7 +873,7 @@ test("MCP routes recipe discovery through individual short searches and favourit
     const plan = (await mcp.listTools()).tools.find((tool) => tool.name === "plan_my_shopping");
     const direct = (await mcp.listTools()).tools.find((tool) => tool.name === "find_groceries");
     const proposed = (await mcp.listTools()).tools.find((tool) => tool.name === "review_proposed_basket");
-    assert.equal(plan?._meta, undefined);
+    assert.deepEqual(plan?._meta?.securitySchemes, [{ type: "oauth2", scopes: ["use:nemlig-assistant"] }]);
     assert.equal((proposed?._meta as { ui?: { resourceUri?: string } } | undefined)?.ui?.resourceUri, PICKER_URI);
     assert.match(JSON.stringify(proposed?.inputSchema), /search_term.*same short Danish catalogue phrase/u);
     assert.match(JSON.stringify(plan?.inputSchema), /Prince biscuits.*prince kiks/);

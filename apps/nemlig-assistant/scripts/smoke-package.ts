@@ -103,6 +103,7 @@ try {
       "find_groceries",
       "make_approved_item_swap",
       "plan_my_shopping",
+      "reconnect_nemlig_assistant",
       "remove_approved_item",
       "review_emptying_basket",
       "review_item_swap",
