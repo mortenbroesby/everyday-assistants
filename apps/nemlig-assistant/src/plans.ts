@@ -87,7 +87,9 @@ const outcomes = (product: Product, constraints: ParsedShoppingPlanLine["constra
   max_unit_price: constraints.max_unit_price === undefined || (product.unitPrice !== undefined && product.unitPrice <= constraints.max_unit_price),
 });
 
-const words = (value: string): string[] => value.toLocaleLowerCase("da-DK").normalize("NFKD").replace(/\p{M}/gu, "").match(/[a-z0-9]+/gu) ?? [];
+const words = (value: string): string[] => value.toLocaleLowerCase("da-DK")
+  .replaceAll("æ", "ae").replaceAll("ø", "oe").replaceAll("å", "aa")
+  .normalize("NFKD").replace(/\p{M}/gu, "").match(/[a-z0-9]+/gu) ?? [];
 const petWords = new Set(["kat", "katte", "kattemad", "hund", "hunde", "hundemad", "kaeledyr", "dyrefoder"]);
 const quantityWords = new Set(["g", "kg", "ml", "cl", "l", "stk"]);
 export const relevantProduct = (product: Product, query: string): boolean => {
@@ -110,11 +112,15 @@ const normalizedAmount = (amount: number, unit: "g" | "kg" | "ml" | "cl" | "l" |
   return { amount, unit };
 };
 const packageAmount = (text: string): { amount: number; unit: BaseUnit } | undefined => {
-  const match = text.toLocaleLowerCase("da-DK").match(/(?<amount>\d+(?:[.,]\d+)?)\s*(?<unit>kilogram|kg|gram|g|milliliter|ml|centiliter|cl|liter|l|stk)\b/u);
+  const normalized = text.toLocaleLowerCase("da-DK");
+  const matches = [...normalized.matchAll(/(?:(?<count>\d+)\s*[x×]\s*)?(?<amount>\d+(?:[.,]\d+)?)\s*(?<unit>kilogram|kg|gram|g|milliliter|ml|centiliter|cl|liter|l|stk)\b/gu)];
+  const match = matches.length === 1 ? matches[0] : undefined;
   if (!match?.groups) return undefined;
+  if (/\d/u.test(normalized.replace(match[0], ""))) return undefined;
   const aliases: Record<string, "g" | "kg" | "ml" | "cl" | "l" | "stk"> = { kilogram: "kg", gram: "g", milliliter: "ml", centiliter: "cl", liter: "l" };
   const unit = aliases[match.groups.unit] ?? match.groups.unit;
-  return normalizedAmount(Number(match.groups.amount.replace(",", ".")), unit as "g" | "kg" | "ml" | "cl" | "l" | "stk");
+  const count = match.groups.count === undefined ? 1 : Number(match.groups.count);
+  return normalizedAmount(count * Number(match.groups.amount.replace(",", ".")), unit as "g" | "kg" | "ml" | "cl" | "l" | "stk");
 };
 
 /**
@@ -129,18 +135,18 @@ export function eligibleCandidates(
 ): PlanCandidate[] {
   const requestedWords = new Set(words(planning.name));
   const preferred = new Set([
-    ...planning.preferred_brands.map((brand) => brand.toLocaleLowerCase("da-DK")),
+    ...planning.preferred_brands.map((brand) => words(brand).join(" ")),
     ...products.map((product) => product.brand).filter((brand) => {
       const brandWords = words(brand);
       return brandWords.length > 0 && brandWords.every((word) => requestedWords.has(word));
-    }).map((brand) => brand.toLocaleLowerCase("da-DK")),
+    }).map((brand) => words(brand).join(" ")),
   ]);
   return products.flatMap((product) => {
     if (product.id === undefined || !product.name) return [];
     if (!relevantProduct(product, planning.name)) return [];
     const constraintOutcomes = outcomes(product, constraints);
     if (Object.values(constraintOutcomes).includes(false)) return [];
-    const preferredBrandMatch = preferred.has(product.brand.toLocaleLowerCase("da-DK"));
+    const preferredBrandMatch = preferred.has(words(product.brand).join(" "));
     const parsedPackage = packageAmount(product.unitSize);
     const requested = planning.requested_amount !== undefined && planning.requested_unit
       ? normalizedAmount(planning.requested_amount, planning.requested_unit) : undefined;

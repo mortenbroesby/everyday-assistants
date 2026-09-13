@@ -29,6 +29,35 @@ test("relevantProduct preserves query normalization, pet handling, compounds, an
   assert.equal(relevantProduct(chocolate, "choc"), false);
 });
 
+test("product matching treats Danish letters and their ASCII spellings consistently", () => {
+  assert.equal(relevantProduct(product(1, "Danske æbler"), "danske aebler"), true);
+  assert.equal(relevantProduct(product(2, "Danske aebler"), "danske æbler"), true);
+  assert.equal(relevantProduct(product(3, "Arla letmælk"), "arla letmaelk"), true);
+  assert.equal(relevantProduct(product(4, "Arla letmaelk"), "arla letmælk"), true);
+});
+
+test("package matching totals supported multipacks and leaves ambiguous sizes unknown", () => {
+  const candidates = eligibleCandidates([
+    product(1, "Hakket oksekød", { unitSize: "2 × 400 g" }),
+    product(2, "Hakket oksekød", { unitSize: "400-500 g" }),
+  ], "catalog", {}, [], { name: "hakket oksekød", requested_amount: 1, requested_unit: "kg", preferred_brands: [] });
+  const multipack = candidates.find(({ id }) => id === 1)!;
+  const ambiguous = candidates.find(({ id }) => id === 2)!;
+  assert.deepEqual({
+    unit_size: multipack.unit_size,
+    package_amount: multipack.package_amount,
+    package_unit: multipack.package_unit,
+    required_packages: multipack.required_packages,
+    covered_amount: multipack.covered_amount,
+    excess_amount: multipack.excess_amount,
+  }, {
+    unit_size: "2 × 400 g", package_amount: 800, package_unit: "g",
+    required_packages: 2, covered_amount: 1600, excess_amount: 600,
+  });
+  assert.equal(ambiguous.package_amount, undefined);
+  assert.equal(ambiguous.required_packages, undefined);
+});
+
 test("constraints exclude unknown or failing data and preferences rank deterministically", () => {
   const candidates = eligibleCandidates([
     product(1, "Cheap", { price: 5, unitPrice: undefined, isOrganic: true }),
