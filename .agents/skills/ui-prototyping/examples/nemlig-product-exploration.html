@@ -1,0 +1,206 @@
+<style>
+  #nemlig-exploration-demo {
+    color-scheme: light dark;
+    --explore-ink: light-dark(#1f2922, #edf5ef);
+    --explore-muted: light-dark(#687169, #aeb8b0);
+    --explore-canvas: light-dark(#f5f7f5, #111612);
+    --explore-product: light-dark(#ffffff, #1b211c);
+    --explore-line: light-dark(#dfe5e0, #333c35);
+    --explore-accent: light-dark(#176b3a, #70d498);
+    --explore-soft: light-dark(#e8f3eb, #183523);
+    width: 100%;
+    color: var(--explore-ink);
+    font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+  }
+
+  #nemlig-exploration-demo * { box-sizing: border-box; }
+
+  #nemlig-exploration-demo .explore-shell {
+    width: min(100%, 390px);
+    margin: 0 auto;
+    overflow: hidden;
+    border: 1px solid var(--explore-line);
+    border-radius: 22px;
+    background: var(--explore-canvas);
+  }
+
+  #nemlig-exploration-demo .explore-heading {
+    padding: 16px;
+    border-bottom: 1px solid var(--explore-line);
+    background: var(--explore-product);
+  }
+
+  #nemlig-exploration-demo h2,
+  #nemlig-exploration-demo h3,
+  #nemlig-exploration-demo p { margin: 0; }
+
+  #nemlig-exploration-demo .explore-query { margin-top: 8px; }
+
+  #nemlig-exploration-demo .explore-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 10px;
+  }
+
+  #nemlig-exploration-demo .explore-chip,
+  #nemlig-exploration-demo .explore-match {
+    padding: 4px 8px;
+    border-radius: 999px;
+    color: var(--explore-accent);
+    background: var(--explore-soft);
+  }
+
+  #nemlig-exploration-demo .explore-results {
+    display: grid;
+    gap: 12px;
+    padding: 12px;
+  }
+
+  #nemlig-exploration-demo .explore-product {
+    padding: 12px;
+    border: 1px solid var(--explore-line);
+    border-radius: 17px;
+    background: var(--explore-product);
+  }
+
+  #nemlig-exploration-demo .explore-summary {
+    display: grid;
+    grid-template-columns: 82px minmax(0, 1fr);
+    gap: 12px;
+  }
+
+  #nemlig-exploration-demo .explore-image {
+    display: grid;
+    width: 82px;
+    height: 82px;
+    place-items: center;
+    border-radius: 12px;
+    background: var(--explore-canvas);
+    font-size: 36px;
+  }
+
+  #nemlig-exploration-demo .explore-eyebrow,
+  #nemlig-exploration-demo .explore-meta,
+  #nemlig-exploration-demo .explore-unit,
+  #nemlig-exploration-demo details p { color: var(--explore-muted); }
+
+  #nemlig-exploration-demo .explore-eyebrow { color: var(--explore-accent); }
+  #nemlig-exploration-demo .explore-price { margin-top: 7px; }
+
+  #nemlig-exploration-demo .explore-reason {
+    margin: 10px 0;
+    padding: 9px 10px;
+    border-radius: 11px;
+    background: var(--explore-soft);
+  }
+
+  #nemlig-exploration-demo .explore-reason p { margin-top: 3px; }
+  #nemlig-exploration-demo .explore-evidence { border-top: 1px solid var(--explore-line); }
+  #nemlig-exploration-demo details + details { border-top: 1px solid var(--explore-line); }
+
+  #nemlig-exploration-demo summary {
+    min-height: 44px;
+    padding: 11px 2px;
+    cursor: pointer;
+  }
+
+  #nemlig-exploration-demo details p { padding: 0 2px 11px; }
+
+  #nemlig-exploration-demo .explore-more {
+    display: block;
+    width: calc(100% - 24px);
+    min-height: 44px;
+    margin: 0 12px 12px;
+    border: 1px solid var(--explore-line);
+    border-radius: 10px;
+    color: var(--explore-ink);
+    background: var(--explore-product);
+    font: inherit;
+    cursor: pointer;
+  }
+
+  #nemlig-exploration-demo [hidden] { display: none; }
+
+  @media (max-width: 350px) {
+    #nemlig-exploration-demo .explore-summary {
+      grid-template-columns: 72px minmax(0, 1fr);
+      gap: 9px;
+    }
+
+    #nemlig-exploration-demo .explore-image { width: 72px; height: 72px; }
+  }
+</style>
+
+<div id="nemlig-exploration-demo" aria-label="Nemlig product exploration concept">
+  <section class="explore-shell">
+    <header class="explore-heading">
+      <h2>Udforsk varer</h2>
+      <p class="explore-query">“Proteinrig morgenmad uden nødder, gerne under 30 kr.”</p>
+      <div class="explore-chips" aria-label="Fortolkede kriterier">
+        <span class="explore-chip">Proteinrig</span>
+        <span class="explore-chip">Uden nødder</span>
+        <span class="explore-chip">Under 30 kr.</span>
+      </div>
+    </header>
+
+    <div class="explore-results" aria-live="polite">
+      <article class="explore-product">
+        <div class="explore-summary">
+          <div class="explore-image" role="img" aria-label="Bæger med skyr">🥣</div>
+          <div>
+            <span class="explore-eyebrow">Meget relevant</span>
+            <h3>Skyr naturel 0,2%</h3>
+            <p class="explore-meta">800 g · Tilgængelig</p>
+            <p class="explore-price"><strong>24,95 kr.</strong> <span class="explore-unit">· 31,19 kr./kg</span></p>
+          </div>
+        </div>
+        <div class="explore-reason">
+          <strong>Hvorfor den passer</strong>
+          <p>Neutralt, proteinrigt og inden for prisønsket.</p>
+          <div class="explore-chips"><span class="explore-match">11 g protein</span><span class="explore-match">Under 30 kr.</span></div>
+        </div>
+        <div class="explore-evidence">
+          <details><summary>Varebeskrivelse</summary><p>Økologisk skyr naturel med frisk, let syrlig smag.</p></details>
+          <details><summary>Varedeklaration</summary><p>Pasteuriseret MÆLK og mælkesyrekultur.</p></details>
+          <details><summary>Detaljer om varen</summary><p>Protein 11 g/100 g · fedt 0,2% · Danmark.</p></details>
+        </div>
+      </article>
+
+      <article class="explore-product" data-extra hidden>
+        <div class="explore-summary">
+          <div class="explore-image" role="img" aria-label="Bæger med hytteost">🥛</div>
+          <div>
+            <span class="explore-eyebrow">Meget relevant</span>
+            <h3>Hytteost naturel</h3>
+            <p class="explore-meta">250 g · Tilgængelig</p>
+            <p class="explore-price"><strong>21,50 kr.</strong> <span class="explore-unit">· 86,00 kr./kg</span></p>
+          </div>
+        </div>
+        <div class="explore-reason"><strong>Hvorfor den passer</strong><p>Proteinrigt alternativ med mere struktur end yoghurt.</p></div>
+        <div class="explore-evidence">
+          <details><summary>Varebeskrivelse</summary><p>Mild hytteost til både sødt og salt tilbehør.</p></details>
+          <details><summary>Varedeklaration</summary><p>MÆLK, FLØDE, salt og mælkesyrekultur.</p></details>
+          <details><summary>Detaljer om varen</summary><p>Protein 12 g/100 g · fedt 1,5%.</p></details>
+        </div>
+      </article>
+    </div>
+
+    <button class="explore-more" type="button" aria-expanded="false">Vis flere resultater</button>
+  </section>
+</div>
+
+<script>
+  (() => {
+    const root = document.getElementById("nemlig-exploration-demo");
+    const button = root.querySelector(".explore-more");
+    const extra = root.querySelector("[data-extra]");
+
+    button.addEventListener("click", () => {
+      const willShow = extra.hidden;
+      extra.hidden = !willShow;
+      button.setAttribute("aria-expanded", String(willShow));
+      button.textContent = willShow ? "Vis færre resultater" : "Vis flere resultater";
+    });
+  })();
+</script>

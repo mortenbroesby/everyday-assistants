@@ -31,6 +31,7 @@ use this file, the lifecycle gates, and the nearest scoped `AGENTS.md`.
 | Simplify working code without behavior change | [Code simplification](.agents/skills/code-simplification/SKILL.md) |
 | Explicit functional refactor | [Functional refactoring](.agents/skills/functional-refactoring/SKILL.md) |
 | Explicit Gang of Four pattern question | [Design pattern](.agents/skills/design-pattern/SKILL.md) |
+| Mock up or compare a user interface before implementation | [UI prototyping](.agents/skills/ui-prototyping/SKILL.md) |
 | Any Nemlig app work | [Nemlig instructions](apps/nemlig-assistant/AGENTS.md) |
 | Nemlig product search, review, or basket operation | [Nemlig basket](apps/nemlig-assistant/.codex/skills/nemlig-basket/SKILL.md) |
 | Nemlig production, deployment, or provider work | [Nemlig production](apps/nemlig-assistant/.codex/skills/nemlig-production/SKILL.md) |
