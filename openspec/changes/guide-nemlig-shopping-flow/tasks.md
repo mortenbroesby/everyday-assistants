@@ -1,15 +1,15 @@
 ## 1. Characterize the guided journey
 
-- [ ] 1.1 Add focused component or rendered-contract tests for the approved four-screen visual structure, including List rows, the shared stepper, card hierarchy, mobile layout, and completed/current/upcoming semantics; verify the new tests fail against the current UI.
-- [ ] 1.2 Add focused host-session tests for List submit, Proposal Back/Continue, Choices Back/submit, and branch-aware Approve Back; verify duplicate sends are coalesced and no action before final approval can mutate the basket.
+- [x] 1.1 Add focused component or rendered-contract tests for the approved four-screen visual structure, including List rows, the shared stepper, card hierarchy, mobile layout, and completed/current/upcoming semantics; verify the new tests fail against the current UI.
+- [x] 1.2 Add focused host-session tests for List submit, Proposal Back/Continue, Choices Back/submit, and branch-aware Approve Back; verify duplicate sends are coalesced and no action before final approval can mutate the basket.
 
 ## 2. Implement the guidance
 
-- [ ] 2.1 Add the bounded read-only List-stage tool and extend the existing shared UI payload with list rows and navigation context; verify checked state and requested amounts round-trip without a provider or basket call.
-- [ ] 2.2 Implement the shared four-stage header and approved visual system using the existing Apps SDK UI and CSS; verify List, Proposal, Choices, and Approve match the supplied mobile design without a new dependency.
-- [ ] 2.3 Implement guarded bottom Back/Next controls through the existing host-message bridge, including direct Proposal → Approve and Proposal → Choices → Approve branches; verify pending controls disable and the preceding visited stage is restored.
-- [ ] 2.4 Preserve unresolved-item guidance, evidence accordions, alternatives, product imagery, exact approval, fresh validation, cancellation, readback, and no-retry behavior; verify existing focused safeguards remain green.
-- [ ] 2.5 Update the showcase to exercise all four screens and both navigation branches at mobile width; visually compare hierarchy, spacing, shapes, colors, imagery, and controls with the approved design.
+- [x] 2.1 Add the bounded read-only List-stage tool and extend the existing shared UI payload with list rows and navigation context; verify checked state and requested amounts round-trip without a provider or basket call.
+- [x] 2.2 Implement the shared four-stage header and approved visual system using the existing Apps SDK UI and CSS; verify List, Proposal, Choices, and Approve match the supplied mobile design without a new dependency.
+- [x] 2.3 Implement guarded bottom Back/Next controls through the existing host-message bridge, including direct Proposal → Approve and Proposal → Choices → Approve branches; verify pending controls disable and the preceding visited stage is restored.
+- [x] 2.4 Preserve unresolved-item guidance, evidence accordions, alternatives, product imagery, exact approval, fresh validation, cancellation, readback, and no-retry behavior; verify existing focused safeguards remain green.
+- [x] 2.5 Update the showcase to exercise all four screens and both navigation branches at mobile width; visually compare hierarchy, spacing, shapes, colors, imagery, and controls with the approved design.
 
 ## 3. Verify and deliver
 
