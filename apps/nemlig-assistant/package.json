@@ -30,6 +30,7 @@
   "scripts": {
     "build": "tsdown && vite build && tsx scripts/check-picker.ts",
     "benchmark:product-discovery": "tsx scripts/benchmark-product-discovery.ts",
+    "check:api": "node scripts/check-api-manifest.mjs",
     "check": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.ui.json --noEmit",
     "cloudflare:check": "wrangler deploy --dry-run --env production",
     "cloudflare:dev": "wrangler dev",

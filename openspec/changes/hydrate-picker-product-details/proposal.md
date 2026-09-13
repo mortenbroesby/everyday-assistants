@@ -13,6 +13,11 @@ precisely when they need evidence to compare a recommendation with alternatives.
   distinct bounded description, declaration, and product-detail evidence.
 - Normalize the exact-product attribute values that Nemlig returns as arrays,
   while retaining safe plain-text conversion and payload bounds.
+- Record the reverse-engineered Nemlig HTTP surface used or observed by this
+  work as an OpenAPI-compatible JSON manifest, including confidence, safety,
+  authentication, parameter, and partial response-shape metadata.
+- Validate that endpoint patterns referenced by the client remain represented
+  in the manifest so future provider discoveries can be added deliberately.
 - Accept and display up to nine alternatives per ingredient: one ordinary
   ten-result catalogue page including the selected item, rather than the
   current four-alternative schema ceiling or a demo-specific two-item choice.
@@ -41,6 +46,11 @@ catalogue alternatives are not truncated to two.
 
 - A live-shaped exact-product fixture maps `Text` to description,
   `DeclarationLabel` to declaration, and array-valued `Attributes` to details.
+- A checked-in API manifest distinguishes client-used endpoints from endpoints
+  observed only in Nemlig's first-party browser flow and states that the
+  private contract is reverse-engineered and may drift.
+- A focused check fails when a client endpoint pattern is missing from the
+  manifest or the manifest is not valid OpenAPI-compatible JSON.
 - Review performs one coalesced exact detail read for each unique proposed or
   alternative product under the existing concurrency-three read pool.
 - The picker preserves and renders the three evidence categories independently,
@@ -68,8 +78,8 @@ None.
 ## Impact
 
 - Primary code: `apps/nemlig-assistant/src/client.ts`, product presentation,
-  picker review/contract/view, MCP schemas and server guidance, plus focused
-  fixtures and checks.
+  picker review/contract/view, MCP schemas and server guidance, the Nemlig API
+  manifest and its focused drift check.
 - External read path: Nemlig's existing exact-product Web API endpoint using
   the already established authenticated session, product timestamp, delivery
   context, and user identifier.

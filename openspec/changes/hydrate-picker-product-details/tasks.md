@@ -23,3 +23,5 @@
 - [x] 4.2 Run focused client, review, MCP, contract, rendering, smoke, privacy, and package checks, then `openspec validate hydrate-picker-product-details --strict`; record exact passing commands in the pull request.
 - [x] 4.3 Refresh the jCodeMunch index for changed files, review the final diff for secrets, unintended basket access, unbounded reads, unsafe markup, or unjustified abstractions, then run the final `pnpm verify` once.
 - [x] 4.4 Apply the required Nemlig version and concise release note, reconcile current `origin/main`, commit and push the epic, open one pull request, and verify exact-head CI without merging or deploying before the existing checkpoints.
+- [x] 4.5 Add an OpenAPI-compatible JSON manifest for every client-used and currently observed first-party Nemlig endpoint, with partial schemas, evidence, confidence, authentication, and mutation metadata.
+- [x] 4.6 Add a dependency-free drift check and contributor instructions, prove the check fails for an omitted client endpoint, then run focused validation and the final repository gate before updating the pull request.

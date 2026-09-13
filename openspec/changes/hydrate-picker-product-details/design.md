@@ -88,6 +88,24 @@ arrays could create unbounded input, memory, output, and queued external reads.
 Simultaneous reads remain three; only total accepted work increases from 250 to
 500 references in the maximum request, with duplicate IDs coalesced.
 
+### Keep a partial OpenAPI contract with explicit evidence
+
+Add one OpenAPI 3.1 JSON document for the private Nemlig endpoints currently
+used by the client and the additional first-party endpoints observed during the
+2026-09-13 anonymous Playwright trace. Each operation records whether it is
+used, merely observed, read-only, authenticated, or mutating, plus a confidence
+level and source evidence. Schemas remain deliberately partial and permissive:
+unknown provider fields are expected, while fields on which our client depends
+are described explicitly.
+
+A dependency-free Node check parses the document and compares its declared
+client source patterns with endpoint expressions extracted from `client.ts`.
+This is a drift alarm, not a claim that the manifest exhaustively describes
+Nemlig's private API. Generating client code from the document was rejected
+because the upstream contract is undocumented and incomplete; introducing an
+OpenAPI package was also rejected because native JSON parsing and a small
+focused check cover the current maintenance need.
+
 ## Risks / Trade-offs
 
 - **Private upstream endpoint changes** -> Keep its URL construction in the
@@ -103,6 +121,11 @@ Simultaneous reads remain three; only total accepted work increases from 250 to
 - **More alternatives increase worst-case queued reads** -> Cap at one normal
   discovery page, retain cancellation/quiescence, and add a 500-reference
   concurrency fixture without promising provider latency.
+- **The reverse-engineered manifest looks more authoritative than it is** ->
+  Mark the document, operations, evidence date, and partial schemas clearly;
+  keep unknown fields permissive and never describe it as provider-supported.
+- **Endpoint code and documentation diverge** -> Run the source-pattern drift
+  check in the ordinary package test suite and document how to update evidence.
 
 ## Migration Plan
 
@@ -112,7 +135,9 @@ Simultaneous reads remain three; only total accepted work increases from 250 to
    categorized evidence through presentation and picker schemas.
 3. Update tool guidance and the synthetic showcase; verify folded mobile and
    desktop rendering without any live basket operation.
-4. Run focused tests, strict OpenSpec validation, package checks, and one final
+4. Add and validate the reverse-engineered API manifest without making a live
+   provider request or recording tokens, cookies, credentials, or payload data.
+5. Run focused tests, strict OpenSpec validation, package checks, and one final
    `pnpm verify`; apply the release version and note near the pull-request merge.
-5. Roll back by reverting the release commit. No persisted data or provider
+6. Roll back by reverting the release commit. No persisted data or provider
    migration is required.
