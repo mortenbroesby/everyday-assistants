@@ -357,7 +357,8 @@ const friendlyCatalog = [
   ["review_item_swap", "Review swapping an item", true, false, ["current_item", "replacement_item", "quantity"]],
   ["review_item_to_remove", "Review an item to remove", true, false, ["basket_item"]],
   ["review_items_to_add", "Review items to add", true, false, ["items", "authorization", "automatic_authorization"]],
-  ["review_proposed_basket", "Review proposed basket", true, false, ["items", "pantry_assumptions", "presentation"]],
+  ["review_proposed_basket", "Review proposed basket", true, false, ["items", "pantry_assumptions", "presentation", "journey"]],
+  ["review_shopping_list", "Review shopping list", true, false, ["list"]],
   ["show_grocery_sections", "Show grocery sections", true, false, []],
   ["show_my_basket", "Show my basket", true, false, []],
   ["show_my_favorites", "Show my favourites", true, false, ["search_term", "result_count", "page"]],
@@ -421,7 +422,7 @@ test("production MCP inventory is exact with Apps enabled and disabled", async (
   const expected = Object.values(productionToolInventory).flat().sort();
   for (const [apps, names] of [
     ["1", expected],
-    ["0", expected.filter((name) => name !== "review_proposed_basket")],
+    ["0", expected.filter((name) => name !== "review_proposed_basket" && name !== "review_shopping_list")],
   ] as const) {
     await withMcpClient(createMcpServer(fakeClient(), testCredentials, { NEMLIG_MCP_APPS: apps }), async (mcp) => {
       assert.deepEqual((await mcp.listTools()).tools.map((tool) => tool.name).sort(), names);
@@ -459,7 +460,7 @@ test("service acceptance exposes only its fixed read-only tool inventory", async
   for (const apps of ["1", "0"] as const) await withMcpClient(createMcpServer(client, testCredentials, { NEMLIG_MCP_APPS: apps }, undefined, {
     principalKey: "s".repeat(32), policyRevision: "service", tier: 2, kind: "service",
   }), async (mcp) => {
-    const expected = apps === "1" ? serviceAcceptanceToolInventory : serviceAcceptanceToolInventory.filter((name) => name !== "review_proposed_basket");
+    const expected = apps === "1" ? serviceAcceptanceToolInventory : serviceAcceptanceToolInventory.filter((name) => name !== "review_proposed_basket" && name !== "review_shopping_list");
     assert.deepEqual((await mcp.listTools()).tools.map(({ name }) => name).sort(), [...expected].sort());
     if (apps === "1") assert.deepEqual((await mcp.listResources()).resources.map(({ uri }) => uri), serviceAcceptanceResourceInventory);
     else await assert.rejects(mcp.listResources(), /Method not found/u);
@@ -885,6 +886,21 @@ test("MCP routes recipe discovery through individual short searches and favourit
   });
 });
 
+test("MCP shopping List preserves checked amounts without any provider call", async () => {
+  let calls = 0;
+  const unexpected = async (): Promise<never> => { calls += 1; throw new Error("unexpected provider call"); };
+  const client = fakeClient({ isLoggedIn: () => { calls += 1; return true; }, login: unexpected, getCart: unexpected, getProduct: unexpected, searchProducts: unexpected });
+  await withMcpClient(createMcpServer(client, testCredentials), async (mcp) => {
+    const list = [{ ingredient: "milk", amount: "2 l", included: true }, { ingredient: "salt", amount: "1 pinch", included: false }];
+    const result = await mcp.callTool({ name: "review_shopping_list", arguments: { list } });
+    assert.notEqual(result.isError, true);
+    assert.deepEqual(result.structuredContent, { presentation: "list", items: [], list });
+    assert.match(toolText(result), /List.*Search selected items with Nemlig/u);
+    assert.equal((await mcp.callTool({ name: "review_shopping_list", arguments: { list: Array(51).fill(list[0]) } })).isError, true);
+    assert.equal(calls, 0);
+  });
+});
+
 test("MCP proposed basket resolves current products without reading or changing the basket", async () => {
   const resolved: number[] = [];
   const client = fakeClient({
@@ -1057,6 +1073,10 @@ test("MCP proposed basket reports pet food as a rejected line without failing th
       pantry_assumptions: [],
       items: [],
       rejected: [{ ingredient: "hakket oksekød", reason: "No proposed product matched this ingredient." }],
+      journey: {
+        list: [{ ingredient: "hakket oksekød", amount: "1 packages", included: true }],
+        proposal: { items: [{ ingredient: "hakket oksekød", product: 9, alternatives: [], quantity: 1, confidence: 90, favorite_match: false, changed: false }], pantry_assumptions: [] },
+      },
     });
   });
 });

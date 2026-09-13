@@ -170,6 +170,10 @@ test("recipe discovery reaches a reviewed proposal and verified basket without u
       pantry_assumptions: [],
       items: [],
       rejected: [{ ingredient: "hakket oksekød", reason: "No proposed product matched this ingredient." }],
+      journey: {
+        list: [{ ingredient: "hakket oksekød", amount: "3 packages", included: true }],
+        proposal: { items: [{ ingredient: "hakket oksekød", product: 102, alternatives: [], quantity: 3, confidence: 90, favorite_match: false, changed: false }], pantry_assumptions: [] },
+      },
     });
     assert.equal(reads, 0);
 

@@ -1,3 +1,5 @@
+import { journeyFor, type PickerPayload } from "./contract.js";
+
 export type PickerHost<Result = unknown, Context = unknown> = {
   sendMessage(message: { role: "user"; content: Array<{ type: "text"; text: string }> }): Promise<unknown>;
   ontoolresult?: (result: Result) => void;
@@ -21,6 +23,36 @@ export const bindPickerHost = <Result, Context>(host: PickerHost<Result, Context
   host.ontoolresult = handleResult;
   if (onContext) host.onhostcontextchanged = handleContext;
   return {
+    sendNavigation: (payload: PickerPayload, direction: "back" | "next", choices: Record<number, number>, included: Record<number, boolean> = {}) => {
+      const boundary = " Do not read or change the basket. Preserve the journey context in the next view.";
+      if (payload.presentation === "list") {
+        if (direction === "back") return Promise.resolve();
+        const list = payload.list.map((row, index) => ({ ...row, included: included[index] ?? row.included }));
+        const selected = list.filter(({ included }) => included);
+        if (!selected.length) return Promise.resolve();
+        return send(`Search only these checked lines: ${JSON.stringify(selected)}. Use find_groceries with short Danish terms and render review_proposed_basket in proposal mode. Carry journey: ${JSON.stringify({ list })}.${boundary}`);
+      }
+      const journey = journeyFor(payload);
+      if (direction === "back" && payload.presentation === "proposal") {
+        return send(`Restore List with review_shopping_list using ${JSON.stringify({ list: journey.list })}.${boundary}`);
+      }
+      if (direction === "next" && payload.presentation === "recap") return Promise.resolve();
+      const target = direction === "next" ? "recap" : payload.presentation === "recap" && journey.previous === "choices" ? "choices" : "proposal";
+      let snapshot = target === "choices" ? journey.choices : journey.proposal;
+      if (!snapshot && direction === "back") return send(`Restore the complete preceding ${target === "choices" ? "Choices" : "Proposal"} from this conversation using review_proposed_basket. Keep every unchallenged selection and reconstruct the missing earlier review context. Current bounded journey: ${JSON.stringify(journey)}.${boundary}`);
+      if (direction === "next" && payload.presentation === "choices") {
+        const replacements = journey.choices!.items.map((item, index) => {
+          const chosen = choices[index] ?? item.product;
+          const product = chosen === item.product || item.alternatives.includes(chosen) ? chosen : item.product;
+          return { ...item, product, favorite_match: product === item.product && item.favorite_match, alternatives: [item.product, ...item.alternatives].filter((id) => id !== product), changed: product !== (journey.proposal?.items.find((line) => line.ingredient === item.ingredient)?.product ?? item.product) };
+        });
+        snapshot = { items: (journey.proposal?.items ?? journey.choices!.items).map((item) => replacements.find((line) => line.ingredient === item.ingredient) ?? item), pantry_assumptions: payload.pantry_assumptions ?? journey.proposal?.pantry_assumptions ?? [] };
+        journey.choices = { items: replacements, pantry_assumptions: journey.choices!.pantry_assumptions };
+      }
+      snapshot ??= { items: payload.items.map(({ product, alternatives, ...item }) => ({ ...item, favorite_match: item.favorite_match ?? false, product: product.id, alternatives: alternatives?.map(({ id }) => id) ?? [] })), pantry_assumptions: payload.pantry_assumptions ?? [] };
+      if (direction === "next") journey.previous = payload.presentation === "choices" ? "choices" : "proposal";
+      return send(`Render review_proposed_basket using ${JSON.stringify({ presentation: target, ...snapshot, items: snapshot.items.map((item) => ({ ...item, confidence: item.confidence / 100 })), journey })}. ${payload.presentation === "choices" && direction === "next" ? "Use these replacement choices and keep every unchallenged selection unchanged. " : ""}${boundary}`);
+    },
     sendSelections: (selections: readonly PickerSelection[]) => send(
       `Use these replacement choices and keep every unchallenged selection unchanged: ${JSON.stringify(selections)}. Show one complete final basket recap with review_proposed_basket in recap mode. Do not change the basket.`,
     ),

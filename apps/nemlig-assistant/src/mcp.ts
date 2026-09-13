@@ -30,7 +30,7 @@ import {
 } from "./proposals.js";
 import { rankProducts } from "./product-presentation.js";
 import { resolveShoppingPlan, shoppingPlanLineSchema, shoppingPlanSchema, type ShoppingPlan } from "./plans.js";
-import { IMAGE_ORIGINS, safePickerImageUrl } from "./picker/contract.js";
+import { IMAGE_ORIGINS, listPayload, shoppingListRows, shoppingJourney, safePickerImageUrl } from "./picker/contract.js";
 import { resolveProposedBasketReview } from "./picker/review.js";
 import { oauthReconnectChallenge } from "./auth0.js";
 
@@ -55,7 +55,7 @@ export interface McpRequestContext {
 }
 
 export const serviceAcceptanceToolInventory = [
-  "find_groceries", "show_my_favorites", "show_grocery_sections", "browse_grocery_section", "show_my_basket", "review_proposed_basket",
+  "find_groceries", "show_my_favorites", "show_grocery_sections", "browse_grocery_section", "show_my_basket", "review_proposed_basket", "review_shopping_list",
 ] as const;
 export const serviceAcceptanceResourceInventory = [PICKER_URI] as const;
 
@@ -109,16 +109,19 @@ const proposedBasketItemInputSchema = z.object({
   if (new Set(alternatives).size !== alternatives.length) context.addIssue({ code: "custom", path: ["alternatives"], message: "Alternatives must be unique." });
 });
 const proposedBasketInputSchema = z.object({
+  journey: shoppingJourney.optional().describe("Carry the list and earlier review context unchanged so Back restores the visited step. This context never authorizes a basket change."),
   presentation: z.enum(["proposal", "choices", "recap"]).default("proposal")
     .describe("Use the initial view for the complete first review, choices only for challenged ingredients, and recap for the complete final review."),
   items: z.array(proposedBasketItemInputSchema).min(1).max(50).describe("Up to fifty ingredient choices, each with the proposed product, quantity, confidence, and optional alternatives."),
   pantry_assumptions: z.array(z.string().trim().min(1).max(120)).max(20).default([]).describe("Optional staples assumed to be available, such as salt or flour."),
 });
 const proposedBasketOutputSchema = z.object({
+  journey: shoppingJourney.optional(),
   presentation: z.enum(["proposal", "choices", "recap"]),
   pantry_assumptions: z.array(z.string()),
   items: z.array(z.object({
     ingredient: z.string(),
+    search_term: z.string().optional(),
     quantity: z.number().int().positive(),
     confidence: z.number().int().min(0).max(100),
     favorite_match: z.boolean(),
@@ -358,7 +361,7 @@ export function createMcpServer(
     },
     {
       instructions:
-        `Current release: ${NEMLIG_RELEASE_IDENTITY}. Use Nemlig Assistant for current Nemlig products, prices, availability, favourites, basket contents, recipes, conversation lists, or choosing and adding groceries. For ordinary recipe or shopping requests, search each ingredient with find_groceries using one short Danish catalogue phrase, such as 'cheddar' or 'ketchup'. Translate or normalize English, mixed-language, misspelled, and over-specific wording before the call: keep distinctive brand words, replace a foreign generic category with the intended Danish category, and omit conversational context. Refine an unsuitable result with another short phrase; do not treat the cheapest item as the best match. When match confidence is below 80%, call show_my_favorites for the ingredient and use matching favourites as evidence, without changing favourites. Do not inspect the current basket while planning a proposed shop. Before adding, show every resolved selection through one review_proposed_basket call in proposal mode: include a chosen product, requested quantity, 0–100 match confidence, favourite provenance, and useful alternatives from the remainder of the normal ten-result search page. Keep the user's ingredient label for display, and pass the same short Danish phrase used for discovery as search_term whenever that label is not Danish. If the user challenges products conversationally, keep every unchallenged selection and search only the challenged ingredients; show their useful candidates through review_proposed_basket in choices mode. After the user chooses, combine replacements with retained selections and show every final product in recap mode, marking only changed lines. The recap's Add to Nemlig basket action is explicit approval, but still requires review_items_to_add followed by add_approved_items for only that unchanged recap. If no useful candidate exists, explain why and suggest a more specific Danish product term, package, or substitute; do not invent a candidate or expose an inert retry control. Use plan_my_shopping only when the user explicitly asks for its batch planning mode. Without explicit approval, a plan, candidate choice, proposed basket, or exact review never authorizes mutation. For a batch run, pass only the plan's selected additions and never supplement them with unresolved candidates; do not ask for redundant approval. A same-run authorization covers only clear additions from its automatic batch run, never unresolved lines, removals, replacements, clearing, checkout, payment, ordering, or delivery slots. Every basket change revalidates exact data, is single-use, stops on uncertainty, and reads back the basket.`,
+        `Current release: ${NEMLIG_RELEASE_IDENTITY}. Guide the user through List → Proposal → optional Choices → Approve. When a conversational shopping list is ready, render review_shopping_list before discovery, with requested amounts and checked or already-have rows. Search only checked rows. Carry the full journey object between review_proposed_basket calls, preserving its list, complete proposal, focused choices, and previous visited stage. Continue from Proposal directly to recap when satisfied; recap Back targets Choices only when visited. Re-render Back requests without basket access. When Apps are unavailable, provide the same stages, exact selections, alternatives, Back/Next guidance, and explicit final approval conversationally. Use Nemlig Assistant for current Nemlig products, prices, availability, favourites, basket contents, recipes, conversation lists, or choosing and adding groceries. For ordinary recipe or shopping requests, search each ingredient with find_groceries using one short Danish catalogue phrase, such as 'cheddar' or 'ketchup'. Translate or normalize English, mixed-language, misspelled, and over-specific wording before the call: keep distinctive brand words, replace a foreign generic category with the intended Danish category, and omit conversational context. Refine an unsuitable result with another short phrase; do not treat the cheapest item as the best match. When match confidence is below 80%, call show_my_favorites for the ingredient and use matching favourites as evidence, without changing favourites. Do not inspect the current basket while planning a proposed shop. Before adding, show every resolved selection through one review_proposed_basket call in proposal mode: include a chosen product, requested quantity, 0–100 match confidence, favourite provenance, and useful alternatives from the remainder of the normal ten-result search page. Keep the user's ingredient label for display, and pass the same short Danish phrase used for discovery as search_term whenever that label is not Danish. If the user challenges products conversationally, keep every unchallenged selection and search only the challenged ingredients; show their useful candidates through review_proposed_basket in choices mode. After the user chooses, combine replacements with retained selections and show every final product in recap mode, marking only changed lines. The recap's Add to Nemlig basket action is explicit approval, but still requires review_items_to_add followed by add_approved_items for only that unchanged recap. If no useful candidate exists, explain why and suggest a more specific Danish product term, package, or substitute; do not invent a candidate or expose an inert retry control. Use plan_my_shopping only when the user explicitly asks for its batch planning mode. Without explicit approval, a plan, candidate choice, proposed basket, or exact review never authorizes mutation. For a batch run, pass only the plan's selected additions and never supplement them with unresolved candidates; do not ask for redundant approval. A same-run authorization covers only clear additions from its automatic batch run, never unresolved lines, removals, replacements, clearing, checkout, payment, ordering, or delivery slots. Every basket change revalidates exact data, is single-use, stops on uncertainty, and reads back the basket.`,
     },
   );
   const rawRegisterTool = server.registerTool.bind(server);
@@ -661,6 +664,18 @@ export function createMcpServer(
 
   if (appsEnabled(env)) {
     server.registerTool(
+      "review_shopping_list",
+      {
+        title: "Review shopping list",
+        description: "Show up to fifty requested groceries with amounts and checked or already-have state before searching. This does not contact Nemlig or read or change your basket.",
+        inputSchema: { list: shoppingListRows.describe("One to fifty requested ingredient labels, amounts, and whether each should be searched.") },
+        outputSchema: listPayload,
+        annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true },
+        _meta: { ui: { resourceUri: PICKER_URI } },
+      },
+      ({ list }) => success({ presentation: "list", items: [], list }, `List · Choose what you need. ${list.map((row) => `${row.included ? "[x]" : "[ ]"} ${row.ingredient}: ${row.amount}`).join("; ")}. Next: Search selected items with Nemlig. Nothing has been added.`),
+    );
+    server.registerTool(
       "review_proposed_basket",
       {
         title: "Review proposed basket",
@@ -670,13 +685,20 @@ export function createMcpServer(
         annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true },
         _meta: { ui: { resourceUri: PICKER_URI } },
       },
-      ({ presentation, items, pantry_assumptions }, extra) => runAuthenticatedRead("review_proposed_basket", async () => {
+      ({ presentation, items, pantry_assumptions, journey }, extra) => runAuthenticatedRead("review_proposed_basket", async () => {
         const resolved = await resolveProposedBasketReview(client, items, { signal: extra.signal });
+        const navigation = {
+          list: items.map(({ ingredient, quantity }) => ({ ingredient, amount: `${quantity} packages`, included: true })),
+          ...journey,
+          ...(presentation === "proposal" ? { proposal: { items, pantry_assumptions } } : {}),
+          ...(presentation === "choices" ? { choices: { items, pantry_assumptions } } : {}),
+        };
         return success({
           presentation,
           pantry_assumptions,
           ...resolved,
-        });
+          journey: navigation,
+        }, `${presentation === "proposal" ? "Proposal · Name products to change, or Continue to final review. Choices is optional. Back to shopping list." : presentation === "choices" ? "Choices · Choose one replacement per challenged item, then Use these choices. Back to proposal." : `Approve · Nothing has been added yet. Back to ${journey?.previous === "choices" ? "Choices" : "Proposal"}, or explicitly approve with Add to Nemlig basket.`}\n${JSON.stringify(resolved)}`);
       }),
     );
     server.registerResource(

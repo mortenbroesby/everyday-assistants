@@ -69,6 +69,10 @@ preparatory, and exact reviews still wait for approval.
 
 ### Build a proposed shopping basket
 
+- Review a bounded shopping list with amounts and checked or already-have rows
+  before searching. Only checked rows enter product discovery.
+- Follow the shared List → Proposal → optional Choices → Approve progress
+  indicator. Back restores the previous visited step; Continue can skip Choices.
 - Search each ingredient separately with one- or two-word Danish catalogue terms.
 - Refine empty or unsuitable searches without a fixed product-level attempt count.
 - Show one recommended product per ingredient with package quantity and an
@@ -273,7 +277,7 @@ The MCP surface is organized around household actions:
 - Find groceries and favourites: `find_groceries`, `show_my_favorites`,
   `show_grocery_sections`, and `browse_grocery_section`.
 - Review proposed groceries without reading or changing the basket:
-  `review_proposed_basket`.
+  `review_shopping_list` for requested lines, then `review_proposed_basket` for products.
 - Use basket-aware batch planning explicitly when needed: `plan_my_shopping`.
 - Check the Nemlig account connection: `check_nemlig_connection`.
 - Reopen ChatGPT authorization after an expired or disabled app connection:

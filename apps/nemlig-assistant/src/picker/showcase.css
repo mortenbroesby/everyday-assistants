@@ -40,3 +40,11 @@
 .showcase-stage-narrow {
   max-width: 320px;
 }
+
+.showcase-stage pre { white-space: pre-wrap; overflow-wrap: anywhere; }
+.showcase-stage > section > .showcase-controls { margin-bottom: 12px; }
+
+/* Synthetic image wells match the reference without a catalogue request. */
+.showcase-stage .picker-image-fallback { font-size: 0; }
+.showcase-stage .picker-image-fallback::after { content: "🥛"; font-size: 34px; }
+.showcase-stage .picker-ingredient:nth-child(2) .picker-image-fallback::after { content: "🍞"; }
