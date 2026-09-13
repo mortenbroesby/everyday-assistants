@@ -1,0 +1,386 @@
+<style>
+  #nemlig-basket-review-mock {
+    color-scheme: light dark;
+    --nemlig-picker-ink: light-dark(#18221b, #eef7f0);
+    --nemlig-picker-muted: light-dark(#647068, #a8b5ac);
+    --nemlig-picker-surface: light-dark(#f6f8f6, #121713);
+    --nemlig-picker-card: light-dark(#ffffff, #1a211c);
+    --nemlig-picker-border: light-dark(#e3e9e4, #303a32);
+    --nemlig-picker-accent: light-dark(#176b3a, #69d394);
+    --nemlig-picker-accent-soft: light-dark(#e7f4eb, #183825);
+    --nemlig-picker-accent-ink: light-dark(#ffffff, #102016);
+    --nemlig-picker-shadow: light-dark(rgb(28 52 36 / 8%), rgb(0 0 0 / 24%));
+    width: min(100%, 390px);
+    margin-inline: auto;
+    overflow: hidden;
+    color: var(--nemlig-picker-ink);
+    border: 1px solid var(--nemlig-picker-border);
+    border-radius: 24px;
+    background: var(--nemlig-picker-surface);
+    box-shadow: 0 18px 48px var(--nemlig-picker-shadow);
+    font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    font-size: 13px;
+  }
+
+  #nemlig-basket-review-mock * { box-sizing: border-box; }
+  #nemlig-basket-review-mock h2,
+  #nemlig-basket-review-mock h3,
+  #nemlig-basket-review-mock p { margin: 0; }
+  #nemlig-basket-review-mock button,
+  #nemlig-basket-review-mock input { font: inherit; }
+
+  #nemlig-basket-review-mock .nemlig-picker-header {
+    display: flex;
+    gap: 12px;
+    padding: 15px 16px 12px;
+    align-items: center;
+    justify-content: space-between;
+    border-bottom: 1px solid var(--nemlig-picker-border);
+    background: var(--nemlig-picker-card);
+  }
+  #nemlig-basket-review-mock .nemlig-picker-header h2 { font-size: 15px; font-weight: 500; line-height: 1.3; }
+  #nemlig-basket-review-mock .nemlig-picker-header p,
+  #nemlig-basket-review-mock .nemlig-picker-small,
+  #nemlig-basket-review-mock .nemlig-picker-copy small { color: var(--nemlig-picker-muted); font-size: 11px; line-height: 1.4; }
+  #nemlig-basket-review-mock .nemlig-picker-header p { margin-top: 3px; }
+  #nemlig-basket-review-mock .nemlig-picker-count,
+  #nemlig-basket-review-mock .nemlig-picker-badge {
+    display: inline-flex;
+    flex: none;
+    padding: 4px 8px;
+    align-items: center;
+    color: var(--nemlig-picker-accent);
+    border-radius: 999px;
+    background: var(--nemlig-picker-accent-soft);
+    font-size: 11px;
+    font-weight: 500;
+  }
+
+  #nemlig-basket-review-mock .nemlig-picker-content { display: grid; gap: 12px; padding: 13px 12px 16px; }
+  #nemlig-basket-review-mock .nemlig-picker-note { color: var(--nemlig-picker-muted); font-size: 11px; line-height: 1.5; }
+  #nemlig-basket-review-mock .nemlig-picker-section-heading {
+    display: flex;
+    gap: 10px;
+    margin: 0 1px 10px;
+    align-items: baseline;
+    justify-content: space-between;
+  }
+  #nemlig-basket-review-mock .nemlig-picker-section-heading h3 { font-size: 13px; font-weight: 500; line-height: 1.4; }
+  #nemlig-basket-review-mock .nemlig-picker-section-heading > span { color: var(--nemlig-picker-muted); font-size: 11px; white-space: nowrap; }
+  #nemlig-basket-review-mock .nemlig-picker-section-heading .nemlig-picker-badge { margin-left: 4px; }
+
+  #nemlig-basket-review-mock .nemlig-picker-card {
+    min-width: 0;
+    padding: 12px;
+    border: 1px solid var(--nemlig-picker-border);
+    border-radius: 17px;
+    background: var(--nemlig-picker-card);
+    box-shadow: 0 7px 22px var(--nemlig-picker-shadow);
+  }
+  #nemlig-basket-review-mock .nemlig-picker-product {
+    display: grid;
+    grid-template-columns: 84px minmax(0, 1fr);
+    gap: 12px;
+    min-width: 0;
+    align-items: start;
+  }
+  #nemlig-basket-review-mock .nemlig-picker-visual { display: grid; min-width: 0; justify-items: center; }
+  #nemlig-basket-review-mock .nemlig-picker-image {
+    display: grid;
+    width: 84px;
+    height: 84px;
+    place-items: center;
+    overflow: hidden;
+    border-radius: 12px;
+    background: light-dark(#f1f4f1, #242c26);
+    font-size: 38px;
+  }
+  #nemlig-basket-review-mock .nemlig-picker-under-image {
+    display: flex;
+    width: 100%;
+    min-height: 44px;
+    margin-top: 4px;
+    align-items: center;
+    justify-content: center;
+  }
+  #nemlig-basket-review-mock .nemlig-picker-include {
+    display: flex;
+    gap: 6px;
+    min-height: 44px;
+    align-items: center;
+    color: var(--nemlig-picker-accent);
+    cursor: pointer;
+    font-size: 11px;
+    font-weight: 500;
+  }
+  #nemlig-basket-review-mock .nemlig-picker-include input {
+    width: 18px;
+    height: 18px;
+    margin: 0;
+    accent-color: var(--nemlig-picker-accent);
+  }
+  #nemlig-basket-review-mock .nemlig-picker-copy { min-width: 0; padding-top: 1px; }
+  #nemlig-basket-review-mock .nemlig-picker-copy > strong { display: block; font-size: 13px; font-weight: 500; line-height: 1.4; }
+  #nemlig-basket-review-mock .nemlig-picker-copy small { display: block; margin: 3px 0; }
+  #nemlig-basket-review-mock .nemlig-picker-price {
+    display: flex;
+    gap: 8px;
+    margin-top: 9px;
+    align-items: baseline;
+    justify-content: space-between;
+  }
+  #nemlig-basket-review-mock .nemlig-picker-price strong { font-size: 13px; font-weight: 500; }
+  #nemlig-basket-review-mock .nemlig-picker-price small { text-align: end; }
+
+  #nemlig-basket-review-mock .nemlig-picker-product-info { margin-top: 1px; border-top: 1px solid var(--nemlig-picker-border); }
+  #nemlig-basket-review-mock .nemlig-picker-product-info details + details { border-top: 1px solid var(--nemlig-picker-border); }
+  #nemlig-basket-review-mock .nemlig-picker-product-info summary,
+  #nemlig-basket-review-mock .nemlig-picker-alternatives > summary {
+    position: relative;
+    display: flex;
+    min-height: 44px;
+    padding: 9px 24px 9px 1px;
+    align-items: center;
+    color: var(--nemlig-picker-ink);
+    cursor: pointer;
+    font-size: 11px;
+    font-weight: 500;
+    line-height: 1.4;
+    list-style: none;
+  }
+  #nemlig-basket-review-mock summary::-webkit-details-marker { display: none; }
+  #nemlig-basket-review-mock .nemlig-picker-product-info summary::after,
+  #nemlig-basket-review-mock .nemlig-picker-alternatives > summary::after {
+    position: absolute;
+    right: 3px;
+    content: "+";
+    color: var(--nemlig-picker-muted);
+    font-size: 16px;
+    font-weight: 400;
+  }
+  #nemlig-basket-review-mock .nemlig-picker-product-info details[open] summary::after,
+  #nemlig-basket-review-mock .nemlig-picker-alternatives[open] > summary::after { content: "−"; }
+  #nemlig-basket-review-mock .nemlig-picker-product-info p {
+    margin: -1px 0 10px;
+    color: var(--nemlig-picker-muted);
+    font-size: 11px;
+    line-height: 1.5;
+  }
+  #nemlig-basket-review-mock .nemlig-picker-alternatives { margin-top: 8px; }
+  #nemlig-basket-review-mock .nemlig-picker-alternatives > summary { gap: 7px; padding-block: 4px; }
+  #nemlig-basket-review-mock .nemlig-picker-alternatives > summary span { color: var(--nemlig-picker-muted); font-weight: 400; }
+  #nemlig-basket-review-mock .nemlig-picker-alternative-list { display: grid; gap: 8px; padding-top: 7px; }
+
+  #nemlig-basket-review-mock .nemlig-picker-button {
+    min-height: 38px;
+    padding: 8px 10px;
+    color: var(--nemlig-picker-accent-ink);
+    border: 1px solid var(--nemlig-picker-accent);
+    border-radius: 9px;
+    background: var(--nemlig-picker-accent);
+    cursor: pointer;
+    font-size: 11px;
+    font-weight: 500;
+  }
+  #nemlig-basket-review-mock .nemlig-picker-select { width: 84px; }
+  #nemlig-basket-review-mock .nemlig-picker-button-secondary { color: var(--nemlig-picker-accent); background: var(--nemlig-picker-card); }
+  #nemlig-basket-review-mock .nemlig-picker-button:disabled { cursor: default; opacity: .65; }
+  #nemlig-basket-review-mock .nemlig-picker-button:focus-visible,
+  #nemlig-basket-review-mock summary:focus-visible { outline: 2px solid var(--nemlig-picker-accent); outline-offset: 2px; }
+
+  #nemlig-basket-review-mock .nemlig-picker-unresolved {
+    display: grid;
+    gap: 10px;
+    padding: 12px;
+    border-radius: 14px;
+    background: light-dark(#edf1ee, #242c26);
+  }
+  #nemlig-basket-review-mock .nemlig-picker-unresolved strong { display: block; color: var(--nemlig-picker-ink); }
+  #nemlig-basket-review-mock .nemlig-picker-search-label { color: var(--nemlig-picker-ink); font-size: 11px; font-weight: 500; }
+  #nemlig-basket-review-mock .nemlig-picker-search {
+    width: 100%;
+    min-height: 44px;
+    padding: 10px 11px;
+    color: var(--nemlig-picker-ink);
+    border: 1px solid var(--nemlig-picker-border);
+    border-radius: 9px;
+    background: var(--nemlig-picker-card);
+    font-size: 16px;
+  }
+  #nemlig-basket-review-mock .nemlig-picker-suggestions { display: flex; gap: 6px; flex-wrap: wrap; }
+  #nemlig-basket-review-mock .nemlig-picker-suggestion {
+    min-height: 36px;
+    padding: 7px 9px;
+    color: var(--nemlig-picker-accent);
+    border: 1px solid var(--nemlig-picker-border);
+    border-radius: 999px;
+    background: var(--nemlig-picker-card);
+    cursor: pointer;
+    font-size: 11px;
+  }
+  #nemlig-basket-review-mock .nemlig-picker-unresolved .nemlig-picker-button { justify-self: stretch; }
+  #nemlig-basket-review-mock .nemlig-picker-footer { display: grid; gap: 10px; padding-top: 2px; }
+  #nemlig-basket-review-mock .nemlig-picker-submit { width: 100%; min-height: 44px; font-size: 13px; }
+
+  @media (max-width: 350px) {
+    #nemlig-basket-review-mock .nemlig-picker-card { padding: 10px; }
+    #nemlig-basket-review-mock .nemlig-picker-product { grid-template-columns: 76px minmax(0, 1fr); gap: 9px; }
+    #nemlig-basket-review-mock .nemlig-picker-image { width: 76px; height: 76px; }
+    #nemlig-basket-review-mock .nemlig-picker-select { width: 76px; }
+  }
+</style>
+
+<main id="nemlig-basket-review-mock" aria-label="Review proposed Nemlig basket">
+  <header class="nemlig-picker-header">
+    <div><h2>Review proposed basket</h2><p>Keep the suggestions or choose another product</p></div>
+    <span class="nemlig-picker-count"><span id="nemlig-picker-selected-count">3</span>&nbsp;items</span>
+  </header>
+
+  <div class="nemlig-picker-content">
+    <p class="nemlig-picker-note">Already in the pantry: salt, pepper and olive oil</p>
+
+    <section class="nemlig-picker-ingredient">
+      <div class="nemlig-picker-section-heading">
+        <h3>Milk · 1 item</h3>
+        <span>96% match <span class="nemlig-picker-badge">favorite</span></span>
+      </div>
+      <article class="nemlig-picker-card">
+        <div class="nemlig-picker-product">
+          <div class="nemlig-picker-visual">
+            <div class="nemlig-picker-image" aria-hidden="true">🥛</div>
+            <div class="nemlig-picker-under-image"><label class="nemlig-picker-include"><input class="nemlig-picker-item-check" type="checkbox" checked /> Include</label></div>
+          </div>
+          <div class="nemlig-picker-copy">
+            <strong>Arla Letmælk 1.5%</strong>
+            <small>Arla · 1 litre · Available</small>
+            <div class="nemlig-picker-price"><strong>13.95 kr.</strong><small>13.95 kr./litre</small></div>
+          </div>
+        </div>
+        <div class="nemlig-picker-product-info">
+          <details><summary>Varebeskrivelse</summary><p>Fresh Danish milk with 1.5% fat for breakfast, coffee and cooking.</p></details>
+          <details><summary>Varedeklaration</summary><p>Milk. Pasteurized and homogenized.</p></details>
+          <details><summary>Detaljer om varen</summary><p>Keep refrigerated at no more than 5 °C. Origin: Denmark.</p></details>
+        </div>
+      </article>
+      <details class="nemlig-picker-alternatives">
+        <summary>Other options for milk <span>1 item</span></summary>
+        <div class="nemlig-picker-alternative-list">
+          <article class="nemlig-picker-card">
+            <div class="nemlig-picker-product">
+              <div class="nemlig-picker-visual"><div class="nemlig-picker-image" aria-hidden="true">🥛</div><div class="nemlig-picker-under-image"><button class="nemlig-picker-button nemlig-picker-select" type="button">Choose item</button></div></div>
+              <div class="nemlig-picker-copy"><strong>Organic Letmælk</strong><small>Øllingegaard · 1 litre · Available</small><div class="nemlig-picker-price"><strong>15.50 kr.</strong><small>15.50 kr./litre</small></div></div>
+            </div>
+            <div class="nemlig-picker-product-info"><details><summary>Varebeskrivelse</summary><p>Organic Danish semi-skimmed milk.</p></details><details><summary>Varedeklaration</summary><p>Organic milk.</p></details><details><summary>Detaljer om varen</summary><p>Keep refrigerated at no more than 5 °C.</p></details></div>
+          </article>
+        </div>
+      </details>
+    </section>
+
+    <section class="nemlig-picker-ingredient">
+      <div class="nemlig-picker-section-heading"><h3>Minced beef · 2 items</h3><span>82% match</span></div>
+      <article class="nemlig-picker-card">
+        <div class="nemlig-picker-product">
+          <div class="nemlig-picker-visual">
+            <div class="nemlig-picker-image" aria-hidden="true">🥩</div>
+            <div class="nemlig-picker-under-image"><label class="nemlig-picker-include"><input class="nemlig-picker-item-check" type="checkbox" checked /> Include</label></div>
+          </div>
+          <div class="nemlig-picker-copy"><strong>Minced beef 8–12%</strong><small>500 g · Available</small><div class="nemlig-picker-price"><strong>79.90 kr.</strong><small>2 × 39.95 kr.</small></div></div>
+        </div>
+        <div class="nemlig-picker-product-info">
+          <details open><summary>Varebeskrivelse</summary><p>Fresh minced Danish beef with 8–12% fat.</p></details>
+          <details><summary>Varedeklaration</summary><p>100% beef.</p></details>
+          <details><summary>Detaljer om varen</summary><p>Keep refrigerated at no more than 5 °C. Use on the day the package is opened.</p></details>
+        </div>
+      </article>
+      <details class="nemlig-picker-alternatives" open>
+        <summary>Other options for minced beef <span>2 items</span></summary>
+        <div class="nemlig-picker-alternative-list">
+          <article class="nemlig-picker-card">
+            <div class="nemlig-picker-product">
+              <div class="nemlig-picker-visual"><div class="nemlig-picker-image" aria-hidden="true">🥩</div><div class="nemlig-picker-under-image"><button class="nemlig-picker-button nemlig-picker-select" type="button">Choose item</button></div></div>
+              <div class="nemlig-picker-copy"><strong>Organic minced beef 4–7%</strong><small>400 g · Available</small><div class="nemlig-picker-price"><strong>45.95 kr.</strong><small>114.88 kr./kg</small></div></div>
+            </div>
+            <div class="nemlig-picker-product-info"><details><summary>Varebeskrivelse</summary><p>Organic minced Danish beef with 4–7% fat.</p></details><details><summary>Varedeklaration</summary><p>100% organic beef.</p></details><details><summary>Detaljer om varen</summary><p>Keep refrigerated at no more than 5 °C.</p></details></div>
+          </article>
+          <article class="nemlig-picker-card">
+            <div class="nemlig-picker-product">
+              <div class="nemlig-picker-visual"><div class="nemlig-picker-image" aria-hidden="true">🥩</div><div class="nemlig-picker-under-image"><button class="nemlig-picker-button nemlig-picker-button-secondary nemlig-picker-select" type="button">Choose item</button></div></div>
+              <div class="nemlig-picker-copy"><strong>Minced beef 14–18%</strong><small>500 g · Available</small><div class="nemlig-picker-price"><strong>34.95 kr.</strong><small>69.90 kr./kg</small></div></div>
+            </div>
+            <div class="nemlig-picker-product-info"><details><summary>Varebeskrivelse</summary><p>Fresh minced beef with a higher fat percentage.</p></details><details><summary>Varedeklaration</summary><p>100% beef.</p></details><details><summary>Detaljer om varen</summary><p>Keep refrigerated at no more than 5 °C.</p></details></div>
+          </article>
+        </div>
+      </details>
+    </section>
+
+    <section class="nemlig-picker-ingredient">
+      <div class="nemlig-picker-section-heading"><h3>Apples · 1 item</h3><span>61% match</span></div>
+      <article class="nemlig-picker-card">
+        <div class="nemlig-picker-product">
+          <div class="nemlig-picker-visual">
+            <div class="nemlig-picker-image" aria-hidden="true">🍎</div>
+            <div class="nemlig-picker-under-image"><label class="nemlig-picker-include"><input class="nemlig-picker-item-check" type="checkbox" checked /> Include</label></div>
+          </div>
+          <div class="nemlig-picker-copy"><strong>Danish apples, mixed varieties</strong><small>1.5 kg bag · Available</small><div class="nemlig-picker-price"><strong>24.00 kr.</strong><small>16.00 kr./kg</small></div></div>
+        </div>
+        <div class="nemlig-picker-product-info"><details><summary>Varebeskrivelse</summary><p>Mixed Danish apple varieties in a 1.5 kg bag.</p></details><details><summary>Varedeklaration</summary><p>Apples.</p></details><details><summary>Detaljer om varen</summary><p>Origin: Denmark. Store cool and dry.</p></details></div>
+      </article>
+    </section>
+
+    <section class="nemlig-picker-unresolved" aria-label="Unresolved ingredient">
+      <p class="nemlig-picker-small"><strong>Fresh basil was not matched</strong>The search for “fresh basil” returned no reliable product. Try a Danish term, specify a pot, or describe an acceptable substitute.</p>
+      <label class="nemlig-picker-search-label" for="nemlig-picker-search">What should the assistant search for?</label>
+      <input class="nemlig-picker-search" id="nemlig-picker-search" type="text" value="Basilikum i potte" />
+      <div class="nemlig-picker-suggestions" aria-label="Suggested searches">
+        <button class="nemlig-picker-suggestion" type="button">Basilikum i potte</button>
+        <button class="nemlig-picker-suggestion" type="button">Frisk basilikum</button>
+        <button class="nemlig-picker-suggestion" type="button">Økologisk basilikum</button>
+      </div>
+      <button class="nemlig-picker-button" id="nemlig-picker-retry" type="button">Ask assistant to search</button>
+    </section>
+
+    <footer class="nemlig-picker-footer">
+      <p class="nemlig-picker-small"><strong id="nemlig-picker-footer-count">3 products selected</strong><br />The shown products will be freshly validated before adding them.</p>
+      <button class="nemlig-picker-button nemlig-picker-submit" type="button">Put items in basket</button>
+    </footer>
+  </div>
+</main>
+
+<script>
+  (() => {
+    const root = document.getElementById("nemlig-basket-review-mock");
+    const checks = [...root.querySelectorAll(".nemlig-picker-item-check")];
+    const renderCount = () => {
+      const count = checks.filter((checkbox) => checkbox.checked).length;
+      root.querySelector("#nemlig-picker-selected-count").textContent = String(count);
+      root.querySelector("#nemlig-picker-footer-count").textContent = `${count} ${count === 1 ? "product" : "products"} selected`;
+    };
+    checks.forEach((checkbox) => checkbox.addEventListener("change", renderCount));
+    root.querySelectorAll(".nemlig-picker-select").forEach((button) => button.addEventListener("click", () => {
+      root.querySelectorAll(".nemlig-picker-select").forEach((candidate) => {
+        candidate.disabled = false;
+        candidate.textContent = "Choose item";
+      });
+      button.disabled = true;
+      button.textContent = "Selected";
+    }));
+    const search = root.querySelector("#nemlig-picker-search");
+    root.querySelectorAll(".nemlig-picker-suggestion").forEach((button) => button.addEventListener("click", () => {
+      search.value = button.textContent;
+      search.focus();
+    }));
+    root.querySelector("#nemlig-picker-retry").addEventListener("click", async () => {
+      const query = search.value.trim();
+      if (!query) {
+        search.focus();
+        return;
+      }
+      if (window.openai?.sendFollowUpMessage) {
+        await window.openai.sendFollowUpMessage({
+          title: "Ask the assistant to search?",
+          prompt: `Search for “${query}” as a replacement for unresolved fresh basil. Show the candidates and explain why they match. Do not change the basket.`
+        });
+      }
+    });
+  })();
+</script>
