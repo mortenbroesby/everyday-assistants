@@ -137,6 +137,26 @@ const defaultConnect = async (origin: URL, token: string, signal: AbortSignal): 
 
 const defaultDependencies: AcceptanceEntryDependencies = { fetcher: fetch, connect: defaultConnect };
 
+const verifyExpiredSessionRecovery = async (
+  origin: URL,
+  token: string,
+  fetcher: typeof fetch,
+  signal: AbortSignal,
+): Promise<void> => {
+  const response = await abortable("Expired MCP session recovery", fetcher(origin, {
+    method: "POST",
+    headers: {
+      accept: "application/json, text/event-stream",
+      authorization: `Bearer ${token}`,
+      "content-type": "application/json",
+      "mcp-session-id": "expired-production-acceptance-session",
+    },
+    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list", params: {} }),
+    signal,
+  }), signal);
+  if (response.status !== 404) throw new Error(`Expired MCP session must return 404, received ${response.status}`);
+};
+
 export interface AcceptanceReport {
   schema: 1;
   sourceSha?: string;
@@ -209,6 +229,9 @@ export async function main(
     }
 
     const accessToken = required(env, options.service ? "NEMLIG_MCP_SERVICE_ACCESS_TOKEN" : "NEMLIG_MCP_ACCESS_TOKEN");
+    if (options.service) {
+      await verifyExpiredSessionRecovery(origin, accessToken, dependencies.fetcher, controller.signal);
+    }
     const connected = await abortable("Authenticated MCP connect", dependencies.connect(origin, accessToken, controller.signal), controller.signal);
     const closeOnAbort = () => { void connected.close().catch(() => undefined); };
     controller.signal.addEventListener("abort", closeOnAbort, { once: true });

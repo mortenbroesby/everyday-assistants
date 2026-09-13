@@ -350,7 +350,7 @@ async function fixture(options: {
     }]);
     if (args.includes("containers") && args.includes("info")) {
       const candidate = current !== startingId;
-      if (current === disabledId) disabledContainerReads += 1;
+      if (candidate) disabledContainerReads += 1;
       const converged = disabledContainerReads > (options.candidateContainerDelay ?? 0);
       return JSON.stringify({
       id: options.disabledApplicationIdDrift && current === disabledId ? thirdPartyId : applicationId,
@@ -384,6 +384,9 @@ async function fixture(options: {
       return "rolled back";
     }
     if (args.includes("deploy") && args.includes("MCP_ENABLED:true")) {
+      if (current === startingId) {
+        applicationVersion = options.candidateApplicationVersion ?? (options.candidateMatchesStarting ? 25 : 26);
+      }
       current = enabledId;
       if (options.enableApplicationVersionDrift) applicationVersion += 1;
       return `Current Version ID: ${enabledId}`;
@@ -508,7 +511,7 @@ test("schema-2 recovery journals reject unknown, malformed, oversized, and exces
   assert.throws(() => parseDeploymentJournal(JSON.stringify({ ...journal, startingVersion: [startingId] })));
   assert.throws(() => parseDeploymentJournal(JSON.stringify({ ...journal, startingImage: [image] })));
   assert.throws(() => parseDeploymentJournal(JSON.stringify({ ...journal, transitions: [{ phase: "disabled_deploy", kind: "intent", at: journal.startedAt, token: "no" }] })));
-  assert.throws(() => parseDeploymentJournal(JSON.stringify({ ...journal, transitions: [{ phase: "enable_deploy", kind: "intent", at: journal.startedAt }] })));
+  assert.throws(() => parseDeploymentJournal(JSON.stringify({ ...journal, transitions: [{ phase: "enable_deploy", kind: "result", at: journal.startedAt }] })));
   assert.throws(() => parseDeploymentJournal(JSON.stringify({ ...journal, transitions: Array.from({ length: 33 }, () => ({ phase: "disabled_deploy", kind: "intent", at: journal.startedAt })) })));
   assert.throws(() => parseDeploymentJournal(JSON.stringify({ ...journal, checks: Array.from({ length: 2_000 }, () => "disabled_routes") })));
 });
@@ -1726,6 +1729,51 @@ test("routine service releases require one accepted cutover and then allow CI-gr
       assert.equal(calls.some(({ command }) => command === "pnpm"), Boolean(acceptedRevision));
     } finally { await rm(root, { recursive: true, force: true }); }
   }
+});
+
+test("routine service releases keep the public routes enabled during the Container rollout", async () => {
+  const { deps, calls, root } = await fixture();
+  deps.env = { CLOUDFLARE_ACCOUNT_ID: accountId, NEMLIG_CI_ACCEPTANCE_READY: "true", NEMLIG_MCP_SERVICE_CLIENT_ID: "service-client" };
+  deps.acceptanceMode = "service";
+  deps.issueServiceToken = async () => "machine-token";
+  await mkdir(join(root, "release"));
+  await writeFile(join(root, "release", "production-cutover.json"), JSON.stringify({ schema: 1, acceptedRevision: previousCommit }));
+  try {
+    const report = await deployProduction(commit, deps);
+    assert.equal(report.outcome, "success");
+    const deploys = calls.filter(({ args }) => args.includes("deploy"));
+    assert.equal(deploys.length, 1);
+    assert.ok(deploys[0]?.args.includes("MCP_ENABLED:true"));
+    assert.equal(deploys[0]?.args.includes("--containers-rollout"), false);
+    assert.equal(calls.some(({ args }) => args.includes("MCP_ENABLED:false")), false);
+    assert.deepEqual(report.transitions.map(({ phase, kind }) => `${phase}:${kind}`), [
+      "enable_deploy:intent", "enable_deploy:result",
+    ]);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test("a routine rollout that fails acceptance disables the unchanged candidate image", async () => {
+  const { deps, calls, root } = await fixture({ failFeatures: true });
+  deps.env = { CLOUDFLARE_ACCOUNT_ID: accountId, NEMLIG_CI_ACCEPTANCE_READY: "true", NEMLIG_MCP_SERVICE_CLIENT_ID: "service-client" };
+  deps.acceptanceMode = "service";
+  deps.issueServiceToken = async () => "machine-token";
+  await mkdir(join(root, "release"));
+  await writeFile(join(root, "release", "production-cutover.json"), JSON.stringify({ schema: 1, acceptedRevision: previousCommit }));
+  try {
+    const report = await deployProduction(commit, deps);
+    assert.equal(report.outcome, "failed");
+    assert.equal(report.lastVerifiedState, "disabled");
+    const deploys = calls.filter(({ args }) => args.includes("deploy"));
+    assert.equal(deploys.length, 2);
+    assert.ok(deploys[0]?.args.includes("MCP_ENABLED:true"));
+    const rollout = deploys[1]!.args.indexOf("--containers-rollout");
+    assert.deepEqual(deploys[1]?.args.slice(rollout, rollout + 2), ["--containers-rollout", "none"]);
+    assert.ok(deploys[1]?.args.includes("MCP_ENABLED:false"));
+    assert.equal(report.disabledImage, report.enabledImage);
+    assert.deepEqual(report.transitions.map(({ phase, kind }) => `${phase}:${kind}`), [
+      "enable_deploy:intent", "enable_deploy:result", "rollback:intent", "rollback:result",
+    ]);
+  } finally { await rm(root, { recursive: true, force: true }); }
 });
 
 test("supervised service cutover reports pending live acceptance and retains recovery ownership", async () => {

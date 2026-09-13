@@ -114,7 +114,7 @@ test("HTTP MCP advertises Auth0, rejects anonymous and foreign origins, and pres
       body: toolCall,
       headers: { authorization: "Bearer test", "content-type": "application/json", "mcp-session-id": "wrong-session" },
     });
-    assert.equal(wrongSession.status, 400);
+    assert.equal(wrongSession.status, 404);
     const malformed = await fetch(`${base}/mcp`, {
       method: "POST",
       body: "{}",
@@ -124,7 +124,7 @@ test("HTTP MCP advertises Auth0, rejects anonymous and foreign origins, and pres
     const invalidGet = await fetch(`${base}/mcp`, {
       headers: { accept: "text/event-stream", authorization: "Bearer test", "mcp-session-id": "wrong-session" },
     });
-    assert.equal(invalidGet.status, 400);
+    assert.equal(invalidGet.status, 404);
 
     await client.close();
   } finally {
