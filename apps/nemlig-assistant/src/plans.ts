@@ -45,7 +45,7 @@ const clarityReasonSchema = z.enum(["exact_product", "unique_candidate", "clear_
 export const planCandidateSchema = z.object({
   id: z.number().int().positive(), name: z.string(), price: z.number().optional(), unit_price: z.number().optional(),
   unit_size: z.string(), brand: z.string(), available: z.boolean(), source: z.enum(["favorite", "catalog"]),
-  description: z.string().optional(), details: z.array(z.object({ key: z.string(), value: z.string() }).strict()).optional(),
+  description: z.string().optional(), declaration: z.string().optional(), details: z.array(z.object({ key: z.string(), value: z.string() }).strict()).optional(),
   image_url: z.string().optional(),
   dietary: z.object({ organic: z.boolean(), vegan: z.boolean(), gluten_free: z.boolean(), lactose_free: z.boolean() }).strict(),
   is_frozen: z.boolean(), is_on_discount: z.boolean(), constraint_outcomes: z.record(z.string(), z.boolean()), tags: z.array(z.string()),
@@ -150,6 +150,7 @@ export function eligibleCandidates(
       id: product.id, name: product.name, price: product.price, unit_price: product.unitPrice,
       unit_size: product.unitSize, brand: product.brand, available: product.available, source,
       ...(product.description ? { description: product.description } : {}),
+      ...(product.declaration ? { declaration: product.declaration } : {}),
       ...(product.details?.length ? { details: product.details } : {}),
       image_url: product.imageUrl || undefined,
       dietary: { organic: product.isOrganic, vegan: product.isVegan, gluten_free: product.isGlutenFree, lactose_free: product.isLactoseFree },

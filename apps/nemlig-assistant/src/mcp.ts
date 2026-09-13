@@ -69,7 +69,8 @@ const candidateSchema = z.object({
   price: z.number().optional(),
   unit_price: z.number().optional(),
   unit_size: z.string().optional(),
-  description: z.string().optional(),
+  description: z.string().max(2_000).optional(),
+  declaration: z.string().max(4_000).optional(),
   details: z.array(z.object({ key: z.string(), value: z.string() })).optional(),
   brand: z.string().optional(),
   available: z.boolean(),
@@ -96,7 +97,8 @@ const proposedBasketItemInputSchema = z.object({
   search_term: z.string().trim().min(1).max(120).optional()
     .describe("The same short Danish catalogue phrase used to find this product. Supply it when the user-facing ingredient label is not Danish."),
   product: z.number().int().positive(),
-  alternatives: z.array(z.number().int().positive()).max(4).default([]),
+  alternatives: z.array(z.number().int().positive()).max(9).default([])
+    .describe("Up to nine alternatives in catalogue order: the remainder of the normal ten-result search page after the selected product."),
   quantity: z.number().int().positive(),
   confidence: confidenceInputSchema,
   favorite_match: z.boolean().default(false),
@@ -350,7 +352,7 @@ export function createMcpServer(
     },
     {
       instructions:
-        `Current release: ${NEMLIG_RELEASE_IDENTITY}. Use Nemlig Assistant for current Nemlig products, prices, availability, favourites, basket contents, recipes, conversation lists, or choosing and adding groceries. For ordinary recipe or shopping requests, search each ingredient with find_groceries using one short Danish catalogue phrase, such as 'cheddar' or 'ketchup'. Translate or normalize English, mixed-language, misspelled, and over-specific wording before the call: keep distinctive brand words, replace a foreign generic category with the intended Danish category, and omit conversational context. Refine an unsuitable result with another short phrase; do not treat the cheapest item as the best match. When match confidence is below 80%, call show_my_favorites for the ingredient and use matching favourites as evidence, without changing favourites. Do not inspect the current basket while planning a proposed shop. Before adding, present up to fifty ingredient decisions through one review_proposed_basket call: include a chosen product, requested quantity, 0–100 match confidence, and alternatives. Keep the user's ingredient label for display, and pass the same short Danish phrase used for discovery as search_term whenever that label is not Danish. Below 80% confidence, include alternatives for the user to inspect. Use plan_my_shopping only when the user explicitly asks for its batch planning mode. Without explicit approval, a plan, candidate choice, proposed basket, or exact review never authorizes mutation. For an approved add, use review_items_to_add followed by add_approved_items only for its unchanged proposal. For a batch run, pass only the plan's selected additions and never supplement them with unresolved candidates; do not ask for redundant approval. A same-run authorization covers only clear additions from its automatic batch run, never unresolved lines, removals, replacements, clearing, checkout, payment, ordering, or delivery slots. Every basket change revalidates exact data, is single-use, stops on uncertainty, and reads back the basket.`,
+        `Current release: ${NEMLIG_RELEASE_IDENTITY}. Use Nemlig Assistant for current Nemlig products, prices, availability, favourites, basket contents, recipes, conversation lists, or choosing and adding groceries. For ordinary recipe or shopping requests, search each ingredient with find_groceries using one short Danish catalogue phrase, such as 'cheddar' or 'ketchup'. Translate or normalize English, mixed-language, misspelled, and over-specific wording before the call: keep distinctive brand words, replace a foreign generic category with the intended Danish category, and omit conversational context. Refine an unsuitable result with another short phrase; do not treat the cheapest item as the best match. When match confidence is below 80%, call show_my_favorites for the ingredient and use matching favourites as evidence, without changing favourites. Do not inspect the current basket while planning a proposed shop. Before adding, present up to fifty ingredient decisions through one review_proposed_basket call: include a chosen product, requested quantity, 0–100 match confidence, and up to nine alternatives from the remainder of the normal ten-result search page. Keep the user's ingredient label for display, and pass the same short Danish phrase used for discovery as search_term whenever that label is not Danish. Below 80% confidence, include useful alternatives for the user to inspect; do not arbitrarily stop at two. Use plan_my_shopping only when the user explicitly asks for its batch planning mode. Without explicit approval, a plan, candidate choice, proposed basket, or exact review never authorizes mutation. For an approved add, use review_items_to_add followed by add_approved_items only for its unchanged proposal. For a batch run, pass only the plan's selected additions and never supplement them with unresolved candidates; do not ask for redundant approval. A same-run authorization covers only clear additions from its automatic batch run, never unresolved lines, removals, replacements, clearing, checkout, payment, ordering, or delivery slots. Every basket change revalidates exact data, is single-use, stops on uncertainty, and reads back the basket.`,
     },
   );
   if (requestContext?.kind === "service") {
@@ -631,7 +633,7 @@ export function createMcpServer(
       "review_proposed_basket",
       {
         title: "Review proposed basket",
-        description: "Show up to fifty proposed ingredient choices with current Nemlig product details, confidence, and alternatives. Preserve the user's ingredient label and include the short Danish search_term used to find it. This does not read or change your basket.",
+        description: "Show up to fifty proposed ingredient choices with current exact Nemlig product details, confidence, and up to nine catalogue-ordered alternatives per ingredient. Preserve the user's ingredient label and include the short Danish search_term used to find it. This does not read or change your basket.",
         inputSchema: proposedBasketInputSchema.shape,
         outputSchema: proposedBasketOutputSchema,
         annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true },

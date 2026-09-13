@@ -8,6 +8,7 @@ export interface ProductCandidate {
   unit_price: number | undefined;
   unit_size: string | undefined;
   description?: string;
+  declaration?: string;
   details?: Array<{ key: string; value: string }>;
   brand: string | undefined;
   available: boolean;
@@ -26,6 +27,7 @@ export function rankProducts(products: Product[], query: string): ProductCandida
     unit_price: product.unitPrice,
     unit_size: product.unitSize || undefined,
     ...(product.description ? { description: product.description } : {}),
+    ...(product.declaration ? { declaration: product.declaration } : {}),
     ...(product.details?.length ? { details: product.details } : {}),
     brand: product.brand || undefined,
     available: product.available,

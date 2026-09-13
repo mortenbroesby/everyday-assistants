@@ -30,6 +30,7 @@ export interface Product {
   unitPrice: number | undefined;
   unitSize: string;
   description?: string;
+  declaration?: string;
   details?: Array<{ key: string; value: string }>;
   brand: string;
   category: string;
@@ -129,6 +130,17 @@ const boundedText = (value: unknown, length: number): string | undefined => {
   return text ? text.slice(0, length) : undefined;
 };
 
+const boundedAttributeValue = (value: unknown): string | undefined => {
+  const values = Array.isArray(value) ? value : [value];
+  const text = values
+    .flatMap((entry) => {
+      const normalized = boundedText(entry, 300);
+      return normalized ? [normalized] : [];
+    })
+    .join(", ");
+  return text ? text.slice(0, 300) : undefined;
+};
+
 export function normalizeBasket(value: unknown): Basket {
   const cart = asRecord(value);
   return {
@@ -157,6 +169,7 @@ export function normalizeProducts(value: unknown, limit: number): Product[] {
       const category = asString(item.Category) ?? "";
       const subcategory = asString(item.SubCategory) ?? "";
       const description = boundedText(item.Text, 2_000);
+      const declaration = boundedText(item.DeclarationLabel, 4_000);
       const categoryLower = category.toLocaleLowerCase("da-DK");
       const subcategoryLower = subcategory.toLocaleLowerCase("da-DK");
       return {
@@ -167,9 +180,11 @@ export function normalizeProducts(value: unknown, limit: number): Product[] {
         unitPrice: asNumber(item.UnitPriceCalc),
         unitSize: asString(item.Description) ?? "",
         ...(description ? { description } : {}),
+        ...(declaration ? { declaration } : {}),
         ...(Array.isArray(item.Attributes) ? {
           details: asRecords(item.Attributes).slice(0, 20).flatMap((attribute) => {
-            const key = boundedText(attribute.Key, 100); const value = boundedText(attribute.Value, 300);
+            if (attribute.IsVisible === false || attribute.Visible === false || attribute.DisplayVisible === false) return [];
+            const key = boundedText(attribute.Key, 100); const value = boundedAttributeValue(attribute.Value);
             return key && value ? [{ key, value }] : [];
           }),
         } : {}),
@@ -208,7 +223,9 @@ export class NemligClient {
   private userId?: string;
   private productTimestamp?: string;
   private correlationId?: string;
+  private deliveryZoneId = 1;
   private readonly knownProducts = new Map<number, Product>();
+  private readonly hydratedProductIds = new Set<number>();
   private timeslot: string;
   private timeslotId = 0;
 
@@ -307,7 +324,7 @@ export class NemligClient {
     this.validateProductId(productId);
     throwIfAborted(signal);
     const known = this.knownProducts.get(productId);
-    if (known) return known;
+    if (known && this.hydratedProductIds.has(productId)) return known;
     return this.fetchExactProduct(productId, signal);
   }
 
@@ -325,11 +342,19 @@ export class NemligClient {
   }
 
   private async fetchExactProduct(productId: number, signal?: AbortSignal): Promise<Product> {
-    const product = (await this.searchProducts(String(productId), 10, signal)).find(
-      (candidate) => String(candidate.id) === String(productId),
-    );
+    throwIfAborted(signal);
+    if (!this.productTimestamp) await this.refreshSession(signal);
+    const endpoint = `${API_BASE_URL}/${this.productTimestamp ?? DEFAULT_PRODUCT_TIMESTAMP}/${this.timeslot}/${this.deliveryZoneId}/${this.userId ?? "0"}/Products/Get`;
+    const response = asRecord(await this.json(
+      `${endpoint}?${new URLSearchParams({ id: String(productId) })}`,
+      { signal },
+      `Get product ${productId}`,
+    ));
+    const payload = asRecord(response.Product).Id === undefined ? response : asRecord(response.Product);
+    const product = normalizeProducts([payload], 1)[0];
     if (!product) throw new NemligError(`Product ${productId} could not be resolved exactly.`);
-    return product;
+    if (product.id !== productId) throw new NemligError(`Product ${productId} could not be resolved exactly.`);
+    return this.rememberProducts([product], true)[0]!;
   }
 
   async listFavorites(limit = 10, page = 1): Promise<Product[]> {
@@ -483,6 +508,7 @@ export class NemligClient {
     );
     this.timeslot = asString(delivery.TimeslotUtc) ?? this.timeslot;
     this.timeslotId = asNumber(delivery.TimeslotId) ?? this.timeslotId;
+    this.deliveryZoneId = asId(delivery.DeliveryZoneId) ?? this.deliveryZoneId;
   }
 
   private async searchGateway(query: string, limit: number, signal?: AbortSignal): Promise<Product[]> {
@@ -505,15 +531,18 @@ export class NemligClient {
     return normalizeProducts(Array.isArray(products) ? products : asRecord(products).Products, limit);
   }
 
-  private rememberProducts(products: Product[]): Product[] {
+  private rememberProducts(products: Product[], hydrated = false): Product[] {
     for (const product of products) {
       if (product.id === undefined) continue;
+      if (!hydrated && this.hydratedProductIds.has(product.id)) continue;
       this.knownProducts.delete(product.id);
       this.knownProducts.set(product.id, product);
+      if (hydrated) this.hydratedProductIds.add(product.id);
       while (this.knownProducts.size > KNOWN_PRODUCT_LIMIT) {
         const oldest = this.knownProducts.keys().next().value as number | undefined;
         if (oldest === undefined) break;
         this.knownProducts.delete(oldest);
+        this.hydratedProductIds.delete(oldest);
       }
     }
     return products;

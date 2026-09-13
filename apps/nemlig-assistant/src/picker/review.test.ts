@@ -31,7 +31,7 @@ const abortableProducts = (options: FakeOptions = {}) => {
       done = true;
       active -= 1;
       events.push(`${error === undefined ? "complete" : "fail"}:${id}`);
-      if (error === undefined) resolve(product(options.productId?.(id) ?? id, options.name?.(id) ?? `item-${Math.floor((id - 1) / 5)}`));
+      if (error === undefined) resolve(product(options.productId?.(id) ?? id, options.name?.(id) ?? `item-${Math.floor((id - 1) / 10)}`));
       else reject(error);
     };
     const timer = setTimeout(() => finish(options.failure?.(id)), options.delay?.(id) ?? 1);
@@ -46,21 +46,21 @@ const abortableProducts = (options: FakeOptions = {}) => {
 
 const reviewItem = (index: number): ProposedBasketReviewItem => ({
   ingredient: `item-${index}`,
-  product: index * 5 + 1,
-  alternatives: [index * 5 + 2, index * 5 + 3, index * 5 + 4, index * 5 + 5],
+  product: index * 10 + 1,
+  alternatives: Array.from({ length: 9 }, (_, offset) => index * 10 + offset + 2),
   quantity: 1,
   confidence: 80,
   favorite_match: false,
 });
 
-test("picker review resolves fifty decisions and 250 unique references with concurrency three", async () => {
+test("picker review resolves fifty decisions and 500 unique references with concurrency three", async () => {
   const fake = abortableProducts();
   const input = Array.from({ length: 50 }, (_, index) => reviewItem(index));
   const result = await resolveProposedBasketReview(fake.client, input);
   assert.equal(result.items.length, 50);
   assert.equal(result.rejected.length, 0);
   assert.deepEqual(result.items.map(({ ingredient }) => ingredient), input.map(({ ingredient }) => ingredient));
-  assert.equal(fake.events.filter((event) => event.startsWith("start:")).length, 250);
+  assert.equal(fake.events.filter((event) => event.startsWith("start:")).length, 500);
   assert.ok(fake.state().maximum <= 3);
   assert.equal(fake.state().active, 0);
 });
