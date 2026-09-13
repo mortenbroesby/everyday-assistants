@@ -5,7 +5,7 @@ confirmed that Nemlig search-gateway products are shallow cards containing
 identity, package, price, image, category, and availability but no `Text`,
 `DeclarationLabel`, or `Attributes`. The product page separately calls:
 
-`/webapi/{ProductsImportedTimestamp}/{TimeslotUtc}/{DeliveryZoneId}/{UserId}/Products/Get?id={id}`
+`/webapi/{CombinedProductsAndSitecoreTimestamp}/{TimeslotUtc}/{DeliveryZoneId}/{UserId}/Products/Get?id={id}`
 
 That response uses `Text` for the product description, `DeclarationLabel` for
 the declaration, and array-valued `Attributes` for product details. The current
@@ -40,7 +40,7 @@ keeps that section folded.
 
 ### Call the product API used by the first-party product page
 
-Store `ProductsImportedTimestamp` and `DeliveryZoneId` beside the current
+Store `CombinedProductsAndSitecoreTimestamp` and `DeliveryZoneId` beside the current
 session values populated during authentication. Exact-product resolution uses
 those values, the current timeslot and user ID, and the existing authenticated
 JSON transport to call `Products/Get?id={id}`.

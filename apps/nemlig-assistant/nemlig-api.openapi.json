@@ -554,7 +554,7 @@
     },
     "parameters": {
       "SearchQuery": { "name": "query", "in": "query", "required": true, "schema": { "type": "string", "minLength": 1 } },
-      "ProductTimestamp": { "name": "productTimestamp", "in": "path", "required": true, "schema": { "type": "string" } },
+      "ProductTimestamp": { "name": "productTimestamp", "in": "path", "required": true, "description": "The current CombinedProductsAndSitecoreTimestamp returned by website settings.", "schema": { "type": "string" } },
       "TimeslotUtc": { "name": "timeslotUtc", "in": "path", "required": true, "schema": { "type": "string" } },
       "DeliveryZoneId": { "name": "deliveryZoneId", "in": "path", "required": true, "schema": { "type": "integer", "minimum": 1 } },
       "UserId": { "name": "userId", "in": "path", "required": true, "schema": { "type": "string" } },

@@ -131,13 +131,14 @@ const boundedText = (value: unknown, length: number): string | undefined => {
 };
 
 const boundedAttributeValue = (value: unknown): string | undefined => {
-  const values = Array.isArray(value) ? value : [value];
-  const text = values
-    .flatMap((entry) => {
-      const normalized = boundedText(entry, 300);
-      return normalized ? [normalized] : [];
-    })
-    .join(", ");
+  const values = (Array.isArray(value) ? value : [value]).slice(0, 20);
+  let text = "";
+  for (const entry of values) {
+    const normalized = boundedText(entry, 300);
+    if (!normalized) continue;
+    text = `${text}${text ? ", " : ""}${normalized}`.slice(0, 300);
+    if (text.length === 300) break;
+  }
   return text ? text.slice(0, 300) : undefined;
 };
 

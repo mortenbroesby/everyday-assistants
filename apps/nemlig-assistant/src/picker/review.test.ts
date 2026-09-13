@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { NemligError, type Product } from "../client.js";
+import { NemligClient, NemligError, type Product } from "../client.js";
 import { resolveProposedBasketReview, type ProposedBasketReviewItem } from "./review.js";
 
 const product = (id: number, name: string): Product => ({
@@ -89,6 +89,33 @@ test("picker review keeps 404 local to the missing proposed product or alternati
   assert.deepEqual(result.items.map(({ product, alternatives }) => ({ product: product.id, alternatives: alternatives.map(({ id }) => id) })), [
     { product: 2, alternatives: [4] },
   ]);
+});
+
+test("picker review keeps malformed exact-product responses local while retaining valid siblings", async () => {
+  const client = new NemligClient(async (input) => {
+    const id = Number(new URL(String(input)).searchParams.get("id"));
+    if (id === 1) return Response.json({});
+    if (id === 3) return Response.json({ Id: 99, Name: "mælk" });
+    return Response.json({ Id: id, Name: "mælk" });
+  });
+  Object.assign(client, {
+    accessToken: "synthetic-token",
+    productTimestamp: "stamp",
+    timeslot: "slot",
+    deliveryZoneId: 1,
+    userId: "0",
+  });
+
+  const result = await resolveProposedBasketReview(client, [
+    { ...reviewItem(0), ingredient: "mælk", product: 1, alternatives: [2] },
+    { ...reviewItem(1), ingredient: "mælk", product: 2, alternatives: [3, 4] },
+  ]);
+
+  assert.deepEqual(result.rejected, [{ ingredient: "mælk", reason: "No proposed product matched this ingredient." }]);
+  assert.deepEqual(result.items.map(({ product, alternatives }) => ({
+    product: product.id,
+    alternatives: alternatives.map(({ id }) => id),
+  })), [{ product: 2, alternatives: [4] }]);
 });
 
 test("picker review rejects a provider response for a different exact product ID", async () => {

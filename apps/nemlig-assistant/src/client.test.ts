@@ -305,6 +305,10 @@ test("product normalization preserves meaningful malformed text and omits empty 
 });
 
 test("product normalization keeps existing evidence limits before and after conversion", () => {
+  const oversizedValues = Array.from({ length: 1_000 }, () => "værdi");
+  Object.defineProperty(oversizedValues, 20, {
+    get: () => { throw new Error("attribute value work exceeded its bound"); },
+  });
   const [product] = normalizeProducts(
     [{
       Id: 104,
@@ -322,6 +326,10 @@ test("product normalization keeps existing evidence limits before and after conv
     { key: "k".repeat(100), value: "v" },
     { key: "k", value: "v".repeat(300) },
   ]);
+  assert.equal(
+    normalizeProducts([{ Id: 108, Attributes: [{ Key: "varianter", Value: oversizedValues }] }], 1)[0]?.details?.[0]?.value,
+    Array.from({ length: 20 }, () => "værdi").join(", "),
+  );
 });
 
 test("product normalization bounds parser depth and child nodes without warnings", () => {
