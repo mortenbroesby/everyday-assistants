@@ -22,4 +22,4 @@
 - [x] 4.1 Update the Nemlig README feature-set description and synthetic showcase to match implemented detail hydration and alternative capacity; verify package/UI checks remain self-contained and make no live Nemlig call.
 - [x] 4.2 Run focused client, review, MCP, contract, rendering, smoke, privacy, and package checks, then `openspec validate hydrate-picker-product-details --strict`; record exact passing commands in the pull request.
 - [x] 4.3 Refresh the jCodeMunch index for changed files, review the final diff for secrets, unintended basket access, unbounded reads, unsafe markup, or unjustified abstractions, then run the final `pnpm verify` once.
-- [ ] 4.4 Apply the required Nemlig version and concise release note, reconcile current `origin/main`, commit and push the epic, open one pull request, and verify exact-head CI without merging or deploying before the existing checkpoints.
+- [x] 4.4 Apply the required Nemlig version and concise release note, reconcile current `origin/main`, commit and push the epic, open one pull request, and verify exact-head CI without merging or deploying before the existing checkpoints.
