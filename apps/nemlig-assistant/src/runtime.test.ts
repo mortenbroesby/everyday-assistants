@@ -51,7 +51,7 @@ test("ensureLoggedIn preserves login failures and runtime keeps package identity
   assert.equal(NEMLIG_RELEASE_IDENTITY, `${manifest.version} - ${manifest.nemligRelease?.codename}`);
 });
 
-test("read operations authenticate before the task and retry once after a later expired session", async () => {
+test("read operations reuse a valid session and refresh once after a later 401", async () => {
   let calls = 0;
   let logins = 0;
   const client = {
@@ -73,16 +73,18 @@ test("read operations authenticate before the task and retry once after a later 
   );
   assert.equal(result, "result");
   assert.equal(calls, 2);
-  assert.equal(logins, 2);
+  assert.equal(logins, 1);
 });
 
 test("parallel read operations share one in-flight login", async () => {
+  let loggedIn = false;
   let logins = 0;
   const client = {
-    isLoggedIn: () => true,
+    isLoggedIn: () => loggedIn,
     login: async () => {
       logins += 1;
       await new Promise((resolve) => setImmediate(resolve));
+      loggedIn = true;
     },
   };
   const credentials = async () => ({ username: "owner@example.test", password: "secret" });
@@ -115,5 +117,5 @@ test("expired session failures surface when a second 401 is returned", async () 
     (error) => error instanceof NemligError && error.status === 401,
   );
   assert.equal(calls, 2);
-  assert.equal(logins, 2);
+  assert.equal(logins, 1);
 });
