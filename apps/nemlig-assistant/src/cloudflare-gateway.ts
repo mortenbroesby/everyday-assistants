@@ -9,7 +9,7 @@ import {
 } from "./cloudflare-observability.js";
 import { aggregateUsage, type AdmissionResult, type UsageState } from "./cloudflare-usage.js";
 import type { Principal } from "./principal-policy.js";
-import { SERVICE_ACCEPTANCE_SCOPE } from "./auth0.js";
+import { oauthReconnectChallenge, SERVICE_ACCEPTANCE_SCOPE } from "./auth0.js";
 
 export type OperationClass = "protocol" | "normal" | "expensive";
 export const INTERNAL_CREDENTIAL_HEADERS = [
@@ -58,6 +58,7 @@ class BoundaryTimeoutError extends Error {
 
 const normalTools = new Set([
   "check_nemlig_connection",
+  "reconnect_nemlig_assistant",
   "find_groceries",
   "show_my_favorites",
   "show_grocery_sections",
@@ -113,6 +114,11 @@ export function classifyMcpMessage(value: unknown): OperationClass {
 const json = (body: unknown, status = 200): Response => new Response(JSON.stringify(body), {
   status,
   headers: { "content-type": "application/json" },
+});
+
+const unauthorized = (config: GatewayConfig): Response => new Response("Unauthorized", {
+  status: 401,
+  headers: { "www-authenticate": oauthReconnectChallenge(config.publicUrl) },
 });
 
 const readBoundedBody = async (request: Request, signal: AbortSignal): Promise<string | Response> => {
@@ -299,7 +305,7 @@ export async function handleGatewayRequest(
     const match = authorization?.match(/^Bearer\s+([^\s]+)$/iu);
     if (!match?.[1]) {
       denialReason = "authentication_required";
-      return finish(new Response("Unauthorized", { status: 401 }), "authentication_rejected");
+      return finish(unauthorized(config), "authentication_rejected");
     }
     let principal: Principal;
     try {
@@ -316,7 +322,7 @@ export async function handleGatewayRequest(
     } catch (error) {
       if (error instanceof BoundaryTimeoutError) return finish(json({ error: error.outcome }, 504), error.outcome);
       denialReason = "authentication_failed";
-      return finish(new Response("Unauthorized", { status: 401 }), "authentication_rejected");
+      return finish(unauthorized(config), "authentication_rejected");
     }
     if (admin && principal.tier !== 0) {
       denialReason = "principal_not_allowed";

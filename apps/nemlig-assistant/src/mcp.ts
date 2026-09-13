@@ -32,6 +32,7 @@ import { rankProducts } from "./product-presentation.js";
 import { resolveShoppingPlan, shoppingPlanLineSchema, shoppingPlanSchema, type ShoppingPlan } from "./plans.js";
 import { IMAGE_ORIGINS, safePickerImageUrl } from "./picker/contract.js";
 import { resolveProposedBasketReview } from "./picker/review.js";
+import { oauthReconnectChallenge } from "./auth0.js";
 
 export const PICKER_URI = "ui://nemlig/picker.html";
 export const PICKER_MIME_TYPE = "text/html;profile=mcp-app";
@@ -360,13 +361,18 @@ export function createMcpServer(
         `Current release: ${NEMLIG_RELEASE_IDENTITY}. Use Nemlig Assistant for current Nemlig products, prices, availability, favourites, basket contents, recipes, conversation lists, or choosing and adding groceries. For ordinary recipe or shopping requests, search each ingredient with find_groceries using one short Danish catalogue phrase, such as 'cheddar' or 'ketchup'. Translate or normalize English, mixed-language, misspelled, and over-specific wording before the call: keep distinctive brand words, replace a foreign generic category with the intended Danish category, and omit conversational context. Refine an unsuitable result with another short phrase; do not treat the cheapest item as the best match. When match confidence is below 80%, call show_my_favorites for the ingredient and use matching favourites as evidence, without changing favourites. Do not inspect the current basket while planning a proposed shop. Before adding, show every resolved selection through one review_proposed_basket call in proposal mode: include a chosen product, requested quantity, 0–100 match confidence, favourite provenance, and useful alternatives from the remainder of the normal ten-result search page. Keep the user's ingredient label for display, and pass the same short Danish phrase used for discovery as search_term whenever that label is not Danish. If the user challenges products conversationally, keep every unchallenged selection and search only the challenged ingredients; show their useful candidates through review_proposed_basket in choices mode. After the user chooses, combine replacements with retained selections and show every final product in recap mode, marking only changed lines. The recap's Add to Nemlig basket action is explicit approval, but still requires review_items_to_add followed by add_approved_items for only that unchanged recap. If no useful candidate exists, explain why and suggest a more specific Danish product term, package, or substitute; do not invent a candidate or expose an inert retry control. Use plan_my_shopping only when the user explicitly asks for its batch planning mode. Without explicit approval, a plan, candidate choice, proposed basket, or exact review never authorizes mutation. For a batch run, pass only the plan's selected additions and never supplement them with unresolved candidates; do not ask for redundant approval. A same-run authorization covers only clear additions from its automatic batch run, never unresolved lines, removals, replacements, clearing, checkout, payment, ordering, or delivery slots. Every basket change revalidates exact data, is single-use, stops on uncertainty, and reads back the basket.`,
     },
   );
-  if (requestContext?.kind === "service") {
-    const registerTool = server.registerTool.bind(server);
-    const allowed = new Set<string>(serviceAcceptanceToolInventory);
-    server.registerTool = ((name: string, ...args: unknown[]) => allowed.has(name)
-      ? (registerTool as unknown as (...values: unknown[]) => unknown)(name, ...args)
-      : undefined) as typeof server.registerTool;
-  }
+  const rawRegisterTool = server.registerTool.bind(server);
+  const allowedTools = requestContext?.kind === "service" ? new Set<string>(serviceAcceptanceToolInventory) : undefined;
+  const securitySchemes = [{ type: "oauth2", scopes: [env.NEMLIG_MCP_REQUIRED_SCOPE?.trim() || "use:nemlig-assistant"] }];
+  server.registerTool = ((name: string, config: Record<string, unknown>, handler: unknown) => {
+    if (allowedTools && !allowedTools.has(name)) return undefined;
+    const meta = config._meta && typeof config._meta === "object" ? config._meta : {};
+    return (rawRegisterTool as unknown as (...values: unknown[]) => unknown)(
+      name,
+      { ...config, _meta: { ...meta, securitySchemes } },
+      handler,
+    );
+  }) as typeof server.registerTool;
   const localConnectionId = randomUUID();
   const connectionId = (sessionId: string | undefined): string =>
     requestContext ? `${requestContext.principalKey}\0${requestContext.policyRevision}` : sessionId ?? localConnectionId;
@@ -414,6 +420,26 @@ export function createMcpServer(
       const status = connected ? "connected" as const : "connection_required" as const;
       return success({ status, connection_url: NEMLIG_CONNECT_URL });
     },
+  );
+
+  server.registerTool(
+    "reconnect_nemlig_assistant",
+    {
+      title: "Reconnect Nemlig Assistant",
+      description: "Reconnect ChatGPT to Nemlig Assistant when the app connection has expired or stopped working. This does not change your Nemlig account or basket.",
+      inputSchema: {},
+      outputSchema: z.object({}),
+      annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true },
+    },
+    async () => ({
+      isError: true,
+      content: [{ type: "text", text: "Reconnect Nemlig Assistant to continue." }],
+      _meta: {
+        "mcp/www_authenticate": [oauthReconnectChallenge(
+          new URL(env.NEMLIG_MCP_PUBLIC_URL?.trim() || "/mcp", NEMLIG_CONNECT_URL),
+        )],
+      },
+    }),
   );
 
   server.registerTool(
