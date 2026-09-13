@@ -11,6 +11,7 @@ export interface ProposedBasketReviewItem {
   readonly quantity: number;
   readonly confidence: number;
   readonly favorite_match: boolean;
+  readonly changed?: boolean;
 }
 
 type ResolvedCandidate = ProductCandidate & { id: number };
@@ -21,6 +22,7 @@ export interface ProposedBasketReviewResult {
     quantity: number;
     confidence: number;
     favorite_match: boolean;
+    changed: boolean;
     product: ResolvedCandidate;
     alternatives: ResolvedCandidate[];
   }>;
@@ -53,7 +55,7 @@ const reconstructReview = (
   items: readonly ProposedBasketReviewItem[],
   products: ReadonlyMap<number, Product | undefined>,
 ): ProposedBasketReviewResult => {
-  const resolved = items.map(({ ingredient, search_term, quantity, confidence, favorite_match, product, alternatives }) => {
+  const resolved = items.map(({ ingredient, search_term, quantity, confidence, favorite_match, changed = false, product, alternatives }) => {
     const relevanceTerm = search_term ?? ingredient;
     const proposed = candidateFor(products.get(product), product, relevanceTerm);
     if (!proposed) return { rejected: { ingredient, reason: "No proposed product matched this ingredient." } };
@@ -63,6 +65,7 @@ const reconstructReview = (
         quantity,
         confidence,
         favorite_match,
+        changed,
         product: proposed,
         alternatives: alternatives.flatMap((id) => {
           const candidate = candidateFor(products.get(id), id, relevanceTerm);

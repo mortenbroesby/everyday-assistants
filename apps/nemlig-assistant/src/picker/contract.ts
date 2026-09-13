@@ -18,10 +18,11 @@ const product = z.object({
 });
 
 export const pickerPayload = z.object({
+  presentation: z.enum(["proposal", "choices", "recap"]).default("proposal"),
   pantry_assumptions: z.array(z.string().trim().min(1).max(120)).max(20).optional(),
   items: z.array(z.object({
     ingredient: z.string().trim().min(1).max(120), quantity: z.number().int().positive(), confidence: z.number().int().min(0).max(100), favorite_match: z.boolean().optional(),
-    product, alternatives: z.array(product).max(9).optional(),
+    changed: z.boolean().default(false), product, alternatives: z.array(product).max(9).optional(),
   })).max(50),
   rejected: z.array(z.object({ ingredient: z.string().trim().min(1).max(120), reason: z.string().optional() })).max(50).optional(),
 });

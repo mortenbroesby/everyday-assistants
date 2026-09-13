@@ -165,6 +165,7 @@ test("recipe discovery reaches a reviewed proposal and verified basket without u
     } });
     assert.notEqual(rejected.isError, true);
     assert.deepEqual(rejected.structuredContent, {
+      presentation: "proposal",
       pantry_assumptions: [],
       items: [],
       rejected: [{ ingredient: "hakket oksekød", reason: "No proposed product matched this ingredient." }],

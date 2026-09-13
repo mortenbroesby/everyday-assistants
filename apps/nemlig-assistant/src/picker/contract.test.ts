@@ -35,6 +35,19 @@ test("picker accepts nine alternatives and exposes only populated evidence secti
   assert.deepEqual(pickerProductEvidence(payload!.items[0]!.product), [{ label: "Varedeklaration", text: "MÆLK" }]);
 });
 
+test("picker accepts the three shopping-flow presentations and changed recap lines", () => {
+  const item = {
+    ingredient: "mælk", quantity: 1, confidence: 80, changed: true,
+    product: { id: 7, name: "Letmælk", available: true },
+  };
+  assert.equal(readPickerPayload({ structuredContent: { items: [item] } })?.presentation, "proposal");
+  assert.equal(readPickerPayload({ structuredContent: { presentation: "choices", items: [item] } })?.presentation, "choices");
+  const recap = readPickerPayload({ structuredContent: { presentation: "recap", items: [item] } });
+  assert.equal(recap?.presentation, "recap");
+  assert.equal(recap?.items[0]?.changed, true);
+  assert.equal(readPickerPayload({ structuredContent: { presentation: "search", items: [item] } }), undefined);
+});
+
 test("picker host binding disposes stale callbacks before a remount", async () => {
   const received: unknown[] = [];
   const contexts: unknown[] = [];
@@ -52,11 +65,46 @@ test("picker host binding disposes stale callbacks before a remount", async () =
   staleContextHandler?.({ theme: "dark" });
 
   const second = bindPickerHost(host, (result) => received.push(result));
-  await second.sendChoice(7, "mælk");
-  assert.deepEqual(messages, [{ role: "user", content: [{ type: "text", text: "Choose product 7 for mælk instead." }] }]);
+  const selections = [{ ingredient: "mælk", product: 7, quantity: 1 }];
+  await second.sendSelections(selections);
+  await second.sendApproval(selections);
+  assert.deepEqual(messages, [
+    { role: "user", content: [{ type: "text", text: 'Use these replacement choices and keep every unchallenged selection unchanged: [{"ingredient":"mælk","product":7,"quantity":1}]. Show one complete final basket recap with review_proposed_basket in recap mode. Do not change the basket.' }] },
+    { role: "user", content: [{ type: "text", text: 'I approve this exact final basket recap: [{"ingredient":"mælk","product":7,"quantity":1}]. Continue through the protected exact basket-addition review and apply only this unchanged selection. Freshly validate before writing, do not retry an uncertain write, and show the basket readback.' }] },
+  ]);
   assert.deepEqual(received, [{ structuredContent: { items: [] } }]);
   assert.deepEqual(contexts, [{ theme: "light" }]);
   second.dispose();
+});
+
+test("picker host sends one pending message and recovers after failure", async () => {
+  const messages: unknown[] = [];
+  let settle: ((value: unknown) => void) | undefined;
+  let fail = false;
+  const host: PickerHost = {
+    sendMessage: (message) => {
+      messages.push(message);
+      if (fail) return Promise.reject(new Error("send failed"));
+      return new Promise((resolve) => { settle = resolve; });
+    },
+  };
+  const binding = bindPickerHost(host, () => undefined);
+  const selection = [{ ingredient: "mælk", product: 7, quantity: 1 }];
+  const first = binding.sendSelections(selection);
+  await binding.sendSelections(selection);
+  assert.equal(messages.length, 1);
+  settle?.(undefined);
+  await first;
+  fail = true;
+  await assert.rejects(binding.sendApproval(selection), /send failed/);
+  fail = false;
+  const recovered = binding.sendApproval(selection);
+  assert.equal(messages.length, 3);
+  settle?.(undefined);
+  await recovered;
+  binding.dispose();
+  await binding.sendApproval(selection);
+  assert.equal(messages.length, 3);
 });
 
 test("picker frame translates host safe-area insets to CSS variables", () => {

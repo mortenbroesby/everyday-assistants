@@ -15,6 +15,7 @@ assert.doesNotMatch(html, /showcase-stage/u, "picker contains showcase-only styl
 assert.doesNotMatch(html, /Functional approach comparison/u, "picker contains the comparison showcase");
 assert.doesNotMatch(html, /effect-remeda/u, "picker contains the Effect and Remeda candidate");
 assert.doesNotMatch(html, /fp-ts/u, "picker contains the fp-ts candidate");
-for (const label of ["picker-island", "Varebeskrivelse", "Varedeklaration", "Detaljer om varen", "Andre muligheder", "Vælg varen"]) {
+for (const label of ["picker-island", "Varebeskrivelse", "Varedeklaration", "Detaljer om varen", "Proposed basket", "Choose replacements", "Use these choices", "Final basket review", "Add to Nemlig basket"]) {
   assert.match(html, new RegExp(label, "u"), `picker is missing ${label}`);
 }
+assert.doesNotMatch(html, /Review this item|Search the catalogue/u, "picker contains superseded review controls");

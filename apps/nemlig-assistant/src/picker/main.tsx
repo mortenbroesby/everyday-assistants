@@ -6,7 +6,7 @@ import { PickerFrame } from "./PickerFrame.js";
 import "./styles.css";
 import { type PickerPayload, readPickerPayload } from "./contract.js";
 import { PickerView } from "./PickerView.js";
-import { bindPickerHost } from "./session.js";
+import { bindPickerHost, type PickerSelection } from "./session.js";
 
 const APP_INFO = { name: "Nemlig Picker", version: "1.0.0" } as const;
 type HostContext = NonNullable<ReturnType<App["getHostContext"]>>;
@@ -15,8 +15,9 @@ function Picker() {
   const [payload, setPayload] = useState<PickerPayload>();
   const [failure, setFailure] = useState("");
   const [hostContext, setHostContext] = useState<HostContext>();
-  const [pendingChoice, setPendingChoice] = useState<string>();
-  const [selectedChoice, setSelectedChoice] = useState<string>();
+  const [choices, setChoices] = useState<Record<number, number>>({});
+  const [pendingAction, setPendingAction] = useState(false);
+  const [submittedAction, setSubmittedAction] = useState(false);
   const pending = useRef(false);
   const generation = useRef(0);
   const binding = useRef<ReturnType<typeof bindPickerHost> | undefined>(undefined);
@@ -29,11 +30,12 @@ function Picker() {
       binding.current = bindPickerHost(host, (result) => {
         generation.current += 1;
         pending.current = false;
-        setPendingChoice(undefined);
-        setSelectedChoice(undefined);
+        setPendingAction(false);
+        setSubmittedAction(false);
         const nextPayload = readPickerPayload(result);
         setPayload(nextPayload);
-        setFailure(nextPayload ? "" : "Forslaget kunne ikke vises.");
+        setChoices(Object.fromEntries(nextPayload?.items.map((item, index) => [index, item.product.id]) ?? []));
+        setFailure(nextPayload ? "" : "The proposal could not be displayed.");
       }, (context) => setHostContext((current) => ({ ...current, ...context })));
     },
   });
@@ -47,27 +49,43 @@ function Picker() {
     binding.current?.dispose();
   }, []);
 
-  const choose = (id: number, ingredient: string, choice: string) => {
-    if (pending.current || !binding.current) return;
+  const submit = () => {
+    if (pending.current || submittedAction || !binding.current || !payload || payload.presentation === "proposal") return;
+    const selections: PickerSelection[] = payload.items.map((item, index) => ({
+      ingredient: item.ingredient,
+      product: choices[index] ?? item.product.id,
+      quantity: item.quantity,
+    }));
     pending.current = true;
-    setPendingChoice(choice);
+    setPendingAction(true);
     setFailure("");
     const currentGeneration = generation.current;
-    void binding.current.sendChoice(id, ingredient).then(() => {
+    const action = payload.presentation === "choices"
+      ? binding.current.sendSelections(selections)
+      : binding.current.sendApproval(selections);
+    void action.then(() => {
       if (currentGeneration !== generation.current) return;
       pending.current = false;
-      setPendingChoice(undefined);
-      setSelectedChoice(choice);
+      setPendingAction(false);
+      setSubmittedAction(true);
     }).catch(() => {
       if (currentGeneration !== generation.current) return;
       pending.current = false;
-      setPendingChoice(undefined);
-      setFailure("Valget kunne ikke sendes. Prøv igen.");
+      setPendingAction(false);
+      setFailure("The request could not be sent. Try again.");
     });
   };
 
   return <PickerFrame safeAreaInsets={hostContext?.safeAreaInsets ?? app?.getHostContext()?.safeAreaInsets}>
-    <PickerView payload={payload} failure={failure || (error ? "Forbindelsen kunne ikke oprettes. Prøv igen." : "")} pendingChoice={pendingChoice} selectedChoice={selectedChoice} onChoose={choose} />
+    <PickerView
+      payload={payload}
+      failure={failure || (error ? "The connection could not be established. Try again." : "")}
+      choices={choices}
+      pending={pendingAction}
+      submitted={submittedAction}
+      onChoice={(itemIndex, productId) => setChoices((current) => ({ ...current, [itemIndex]: productId }))}
+      onSubmit={submit}
+    />
   </PickerFrame>;
 }
 
