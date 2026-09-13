@@ -70,7 +70,7 @@ test("picker host binding disposes stale callbacks before a remount", async () =
   await second.sendApproval(selections);
   assert.deepEqual(messages, [
     { role: "user", content: [{ type: "text", text: 'Use these replacement choices and keep every unchallenged selection unchanged: [{"ingredient":"mælk","product":7,"quantity":1}]. Show one complete final basket recap with review_proposed_basket in recap mode. Do not change the basket.' }] },
-    { role: "user", content: [{ type: "text", text: 'I approve this exact final basket recap: [{"ingredient":"mælk","product":7,"quantity":1}]. Continue through the protected exact basket-addition review and apply only this unchanged selection. Freshly validate before writing, do not retry an uncertain write, and show the basket readback.' }] },
+    { role: "user", content: [{ type: "text", text: 'I approve this exact final basket recap: [{"ingredient":"mælk","product":7,"quantity":1}]. If I requested any change after this recap was shown, treat this card as obsolete and render a fresh complete recap instead of applying it. Otherwise continue through the protected exact basket-addition review and apply only this unchanged selection. Freshly validate before writing, do not retry an uncertain write, and show the basket readback.' }] },
   ]);
   assert.deepEqual(received, [{ structuredContent: { items: [] } }]);
   assert.deepEqual(contexts, [{ theme: "light" }]);

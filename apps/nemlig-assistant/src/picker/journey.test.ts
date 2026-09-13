@@ -5,7 +5,7 @@ import { readFileSync } from "node:fs";
 import React, { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { readPickerPayload } from "./contract.js";
-import { bindPickerHost } from "./session.js";
+import { advancePicker, bindPickerHost, openPickerChoices, pickerModelContext } from "./session.js";
 
 // Node renders the component contract; Vite and the browser verify real styling.
 registerHooks({ load(url, context, nextLoad) {
@@ -45,10 +45,10 @@ test("all four independent screens render an accessible journey and guarded bott
     assert.match(html, /picker-flow/);
     assert.match(html, /picker-actions/);
     assert.match(html, /disabled=""/);
-    if (presentation === "list") { assert.match(html, /type="checkbox"/); assert.match(html, /2 l/); }
-    if (presentation === "proposal") { assert.match(html, /optional/i); assert.match(html, /Continue to final review/); }
-    if (presentation === "choices") { assert.match(html, /1 choice/); assert.match(html, /Use these choices/); }
-    if (presentation === "recap") assert.match(html, /Nothing has been added yet/);
+    if (presentation === "list") { assert.match(html, /type="checkbox"/); assert.match(html, /tell ChatGPT to add, remove, or adjust/); assert.match(html, /2 l/); }
+    if (presentation === "proposal") { assert.match(html, /tell ChatGPT what to change/); assert.match(html, /optional/i); assert.match(html, /Choose alternatives/); assert.match(html, /Continue to final review/); }
+    if (presentation === "choices") { assert.match(html, /tell ChatGPT what you need/); assert.match(html, /1 choice/); assert.match(html, /Use these choices/); }
+    if (presentation === "recap") assert.match(html, /tell ChatGPT what to adjust before a fresh recap/);
   }
   const direct = readPickerPayload({ structuredContent: { presentation: "recap", items: [item], journey: { ...journey, previous: "proposal" } } })!;
   const html = renderToStaticMarkup(createElement(PickerView, { payload: direct, choices: {}, onChoice() {}, onSubmit() {}, onBack() {} }));
@@ -64,7 +64,7 @@ test("separate picker instances use separate radio groups", () => {
   assert.equal(new Set(groups).size, 2);
 });
 
-test("navigation carries exact bounded state, skips Choices, and coalesces cross-direction sends", async () => {
+test("product-backed stages traverse locally while discovery remains a coalesced host message", async () => {
   const messages: string[] = [];
   let resolve: (() => void) | undefined;
   const binding = bindPickerHost({ sendMessage: ({ content }) => { messages.push(content[0]!.text); return new Promise<void>((done) => { resolve = done; }); } }, () => {});
@@ -75,28 +75,36 @@ test("navigation carries exact bounded state, skips Choices, and coalesces cross
   assert.match(messages[0]!, /Search only these checked lines: \[{"ingredient":"salt"/);
   assert.match(messages[0]!, /Do not read or change the basket/);
   resolve!(); await sent;
-  for (const [presentation, direction, previous, expected] of [
-    ["proposal", "back", "proposal", "review_shopping_list"],
-    ["proposal", "next", "proposal", '"presentation":"recap"'],
-    ["choices", "back", "proposal", '"presentation":"proposal"'],
-    ["choices", "next", "proposal", '"previous":"choices"'],
-    ["recap", "back", "proposal", '"presentation":"proposal"'],
-    ["recap", "back", "choices", '"presentation":"choices"'],
-  ] as const) {
-    const payload = readPickerPayload({ structuredContent: { presentation, items: [item], journey: { ...journey, previous } } })!;
-    const pending = binding.sendNavigation(payload, direction, { 0: 8 });
-    await binding.sendNavigation(payload, direction === "next" ? "back" : "next", {});
-    assert.ok(messages.at(-1)!.includes(expected), messages.at(-1));
-    assert.match(messages.at(-1)!, /Do not read or change the basket/);
-    assert.doesNotMatch(messages.at(-1)!, /I approve|add_approved_items/);
-    if (direction === "next") {
-      const text = messages.at(-1)!;
-      const args = JSON.parse(text.slice(text.indexOf("{"), text.lastIndexOf("}") + 1));
-      assert.deepEqual(args.items.map(({ ingredient, product }: { ingredient: string; product: number }) => ({ ingredient, product })), [{ ingredient: "milk", product: presentation === "choices" ? 8 : 7 }, { ingredient: "bread", product: 9 }]);
-      if (presentation === "proposal") assert.equal(args.items[0].confidence, 0.01, "normalized 1% must not become 100% when rendered again");
-      if (presentation === "choices") assert.equal(args.journey.choices.items[0].product, 8, "Approve Back must restore the radio choice that was submitted");
-      assert.equal(args.items[0].search_term, "mælk");
-    }
-    resolve!(); await pending;
-  }
+  const proposal = readPickerPayload({ structuredContent: { presentation: "proposal", items: [item, { ...item, ingredient: "bread", product: { id: 9, name: "Bread", available: true }, alternatives: [] }], rejected: [{ ingredient: "basil", reason: "No match" }], journey } })!;
+  assert.equal(proposal.presentation, "proposal");
+  if (proposal.presentation !== "proposal") return;
+  const choicesView = openPickerChoices(proposal, 0);
+  assert.equal(choicesView?.presentation, "choices");
+  const changedRecap = advancePicker(choicesView!, { 0: 8 }, proposal);
+  assert.equal(changedRecap?.presentation, "recap");
+  assert.deepEqual(changedRecap?.items.map(({ ingredient, product, changed }) => ({ ingredient, product: product.id, changed })), [
+    { ingredient: "milk", product: 8, changed: true },
+    { ingredient: "bread", product: 9, changed: false },
+  ]);
+  assert.deepEqual(changedRecap?.rejected, proposal.rejected);
+  assert.equal(changedRecap?.journey?.choices?.items[0]?.product, 8, "Back must restore the selected replacement");
+  assert.deepEqual(pickerModelContext(choicesView!, { 0: 8 }, {}), {
+    stage: "choices",
+    list: journey.list,
+    items: [
+      { ingredient: "milk", product: 8, quantity: 2, changed: true },
+      { ...journey.proposal!.items[1], favorite_match: false, changed: false },
+    ],
+    rejected: ["basil"],
+  });
+  const directRecap = advancePicker(proposal, {}, proposal);
+  assert.equal(directRecap?.presentation, "recap");
+  assert.equal(directRecap?.journey?.previous, "proposal");
+  assert.equal(directRecap?.items[0]?.confidence, 90);
+  const fallback = binding.sendNavigation(choicesView!, "next", { 0: 8 }, {});
+  assert.equal(messages.length, 2, "an independently rendered product stage must retain a conversational fallback");
+  assert.match(messages[1]!, /"presentation":"recap"/);
+  assert.match(messages[1]!, /"previous":"choices"/);
+  assert.match(messages[1]!, /Do not read or change the basket/);
+  resolve!(); await fallback;
 });

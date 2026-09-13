@@ -61,6 +61,7 @@ export type PickerViewProps = {
   onSubmit: () => void;
   onBack?: () => void;
   onInclude?: (index: number, included: boolean) => void;
+  onAlternatives?: (index: number) => void;
   included?: Record<number, boolean>;
   payload?: PickerPayload;
   pending?: boolean;
@@ -74,17 +75,17 @@ const copy = {
   recap: ["Final basket review", "One complete recap before approval"],
 } as const;
 
-export function PickerView({ payload, failure, choices, onChoice, onSubmit, onBack, onInclude, included = {}, pending, submitted }: PickerViewProps) {
+export function PickerView({ payload, failure, choices, onChoice, onSubmit, onBack, onInclude, onAlternatives, included = {}, pending, submitted }: PickerViewProps) {
   const choiceGroupPrefix = useId();
   const presentation = payload?.presentation ?? "proposal";
   const itemCount = payload?.presentation === "list" ? payload.list.filter((row, index) => included[index] ?? row.included).length : payload?.items.length;
   const [title, subtitle] = copy[presentation];
   const stageIndex = ["list", "proposal", "choices", "recap"].indexOf(presentation);
   const guidance = {
-    list: "Check the items you need. Already-have items can stay unchecked.",
-    proposal: "Name any products you want to change in ChatGPT and keep everything else. Happy with these? Continue to final review; Choices is optional.",
-    choices: "Select one replacement per item, then use these choices. All unchallenged products remain unchanged.",
-    recap: "Nothing has been added yet. Review every product before adding. Changed products are marked.",
+    list: "Check what you need, or tell ChatGPT to add, remove, or adjust an item.",
+    proposal: "Choose alternatives here or tell ChatGPT what to change. Happy with these? Continue; Choices is optional.",
+    choices: "Select a replacement or tell ChatGPT what you need. Unchallenged products stay unchanged.",
+    recap: "Nothing has been added. Review everything, or tell ChatGPT what to adjust before a fresh recap.",
   };
   return <main className="picker-root" aria-live="polite">
     <nav aria-label="Shopping journey"><ol className="picker-steps">{["List", "Proposal", "Choices", "Approve"].map((label, index) => {
@@ -127,7 +128,8 @@ export function PickerView({ payload, failure, choices, onChoice, onSubmit, onBa
                     }} showMatch={product.id === item.product.id} />)}
                     {!item.alternatives?.length ? <p className="picker-note">No other reliable candidate was found. Ask ChatGPT for a more specific Danish product term, package, or acceptable substitute.</p> : null}
                   </div>
-                  : <ProductCard item={item} product={item.product} />}
+                  : <><ProductCard item={item} product={item.product} />
+                    {presentation === "proposal" && item.alternatives?.length ? <Button className="picker-alternatives" color="secondary" variant="outline" size="md" pill={false} onClick={() => onAlternatives?.(itemIndex)} disabled={pending || submitted}>Choose alternatives</Button> : null}</>}
               </section>)}
             </div>
             {payload.rejected?.length ? <div className="picker-unresolved" role="status">

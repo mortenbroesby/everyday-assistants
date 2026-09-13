@@ -42,15 +42,19 @@ Proposal guidance offers two paths: name challenged products conversationally, o
 
 Alternative considered: always advance through an empty Choices screen. Rejected because it adds a meaningless step.
 
-### Use the existing host-message bridge for real navigation
+### Traverse carried snapshots inside the current widget
 
-Extend the existing guarded `sendMessage` path with explicit List submit, forward, and backward intents. Messages carry the bounded selections needed to re-render the target stage; they do not call provider APIs in the iframe. Disable both navigation controls while a message is pending and prevent duplicate sends. Proposal Continue renders recap directly when no correction branch is needed. Approve Back targets Choices only when that stage was actually visited; otherwise it targets Proposal.
+Use local component state to restore List, Proposal, Choices, and Approve whenever the current payload already carries the required bounded snapshot. Proposal exposes a per-product alternative action when candidates are present; that action opens a focused Choices view. Proposal Continue builds the recap locally, and Approve Back targets Choices only when that stage was visited. Keep the guarded `sendMessage` bridge for work that genuinely needs ChatGPT: initial discovery, final protected approval, and navigation fallback when an independently rendered card does not carry the required product snapshot.
 
-Alternative considered: maintain an in-widget history/router. Rejected because result iframes are independently mounted and ChatGPT already provides the supported host bridge.
+Alternative considered: send every Back and Next action through ChatGPT. Rejected after live acceptance because each message creates another conversation turn/widget and can leave the originating controls looking inert.
 
 ### Keep one primary action and one secondary Back action
 
 List has only `Search selected items with Nemlig`. Proposal has `Back to shopping list` and `Continue to final review`. Choices has `Back to proposal` and `Use these choices`. Approve has `Back` and `Add to Nemlig basket`. Supporting copy may explain conversational correction, but must not compete with these controls.
+
+### Keep conversation authoritative for refinements
+
+The widget is a current visual representation, not a closed form. At List, Proposal, Choices, and Approve, the user may add, remove, resize, constrain, or replace items through normal conversation. When supported by the host, publish the current bounded local selections through the Apps SDK model-context channel without starting another turn, so the next user message includes checkbox and replacement changes. ChatGPT applies only the requested delta, preserves unaffected state, and re-renders the complete affected stage. Any conversational change after a recap invalidates that recap; both server instructions and the approval handoff require a fresh recap before the protected write review.
 
 ### Use semantic HTML and existing styling primitives
 
@@ -58,7 +62,7 @@ Represent the journey as an ordered list with an accessible current-step marker 
 
 ## Risks / Trade-offs
 
-- [Host navigation is conversation-mediated rather than an in-place router] → Use the already-supported guarded message bridge, include exact bounded navigation context, and verify each transition in a fresh ChatGPT session.
+- [Local navigation could diverge from server data] → Navigate only among validated snapshots already carried by the tool result; keep discovery and final approval on the guarded host bridge.
 - [Back could reconstruct the wrong branch] → Carry the preceding visited stage explicitly and test Approve after both direct Proposal and Choices paths.
 - [A four-stage header may crowd narrow screens] → Use short labels, a responsive grid, and the existing mobile showcase gate.
 - [A user may read Choices as required] → Mark it optional in Proposal and completed/skipped in Approve semantics and copy.

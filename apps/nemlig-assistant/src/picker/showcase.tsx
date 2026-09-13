@@ -3,7 +3,7 @@ import { createRoot } from "react-dom/client";
 import { PickerFrame } from "./PickerFrame.js";
 import { PickerView } from "./PickerView.js";
 import { journeyFor, type PickerPayload } from "./contract.js";
-import { bindPickerHost } from "./session.js";
+import { advancePicker, openPickerChoices } from "./session.js";
 import "./styles.css";
 import "./showcase.css";
 
@@ -50,22 +50,8 @@ function Showcase() {
   const [choices, setChoices] = useState<Record<number, number>>({ 0: 1 });
   const [included, setIncluded] = useState<Record<number, boolean>>({});
   const [lastMessage, setLastMessage] = useState("");
-  const [host] = useState(() => bindPickerHost({ sendMessage: async ({ content }) => {
-    const text = content[0]!.text;
-    setLastMessage(text);
-    if (text.startsWith("I approve")) return;
-    if (text.startsWith("Search only")) {
-      const context = JSON.parse(text.slice(text.indexOf("Carry journey: ") + 15, text.lastIndexOf("}") + 1)) as typeof journey;
-      setActive({ ...initial, journey: context, items: initial.items.filter((item) => context.list.some((row) => row.ingredient === item.ingredient && row.included)) });
-    } else {
-      const args = JSON.parse(text.slice(text.indexOf("{"), text.lastIndexOf("}") + 1));
-      if (text.startsWith("Restore List")) { setActive({ ...list, list: args.list }); setIncluded({}); }
-      else {
-        const products = [sampleItem.product, ...sampleItem.alternatives!, bread.product];
-        setActive({ ...args, items: args.items.map((item: { product: number; alternatives: number[]; confidence: number }) => ({ ...item, confidence: Math.round(item.confidence * 100), product: products.find(({ id }) => id === item.product)!, alternatives: item.alternatives.map((id) => products.find((product) => product.id === id)!) })) });
-      }
-    }
-  } }, () => {}));
+  const [backStack, setBackStack] = useState<PickerPayload[]>([]);
+  const [forwardStack, setForwardStack] = useState<PickerPayload[]>([]);
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
     document.documentElement.style.colorScheme = theme;
@@ -83,9 +69,28 @@ function Showcase() {
     </header>
     <div className={narrow ? "showcase-stage showcase-stage-narrow" : "showcase-stage"}>
       <section><h2>Interactive journey</h2>
-        <div className="showcase-controls"><button type="button" onClick={() => { setActive(list); setIncluded({}); }}>Restart from List</button><button type="button" disabled={active.presentation !== "proposal"} onClick={() => setActive(sample("choices"))}>Challenge milk in ChatGPT</button></div>
-        <PickerView payload={active} choices={choices} included={included} onInclude={(index, value) => setIncluded((current) => ({ ...current, [index]: value }))} onChoice={(index, id) => setChoices((current) => ({ ...current, [index]: id }))} onBack={() => { void host.sendNavigation(active, "back", choices, included); }} onSubmit={() => { if (active.presentation === "recap") setLastMessage("Stopped before approval. This synthetic showcase never changes a basket."); else void host.sendNavigation(active, "next", choices, included); }} />
-        <details><summary>Last host message</summary><pre>{lastMessage || "Use the navigation controls."}</pre></details>
+        <div className="showcase-controls"><button type="button" onClick={() => { setActive(list); setIncluded({}); setBackStack([]); setForwardStack([]); }}>Restart from List</button></div>
+        <PickerView payload={active} choices={choices} included={included} onInclude={(index, value) => { setIncluded((current) => ({ ...current, [index]: value })); setForwardStack([]); }} onChoice={(index, id) => setChoices((current) => ({ ...current, [index]: id }))} onAlternatives={(index) => {
+          if (active.presentation === "list") return;
+          const next = openPickerChoices(active, index);
+          if (!next) return;
+          setBackStack((current) => [...current, active]); setForwardStack([]); setActive(next);
+        }} onBack={() => {
+          const previous = backStack.at(-1) ?? (active.presentation === "proposal" ? list : undefined);
+          if (!previous) return;
+          setBackStack((current) => current.slice(0, -1)); setForwardStack((current) => [active, ...current]); setActive(previous);
+        }} onSubmit={() => {
+          if (active.presentation === "recap") { setLastMessage("Stopped before approval. This synthetic showcase never changes a basket."); return; }
+          if (active.presentation === "list") {
+            const next = forwardStack[0] ?? initial;
+            setBackStack((current) => [...current, active]); setForwardStack((current) => current.slice(1)); setActive(next); return;
+          }
+          const proposal = [...backStack].reverse().find((view): view is Exclude<PickerPayload, { presentation: "list" }> => view.presentation === "proposal");
+          const next = advancePicker(active, choices, proposal);
+          if (!next) return;
+          setBackStack((current) => [...current, active]); setForwardStack([]); setActive(next);
+        }} />
+        <details><summary>Safety boundary</summary><pre>{lastMessage || "No host message is needed until discovery or final approval."}</pre></details>
       </section>
       <section><h2>Shopping list</h2><PickerView payload={list} {...common} /></section>
       <section><h2>Complete proposal</h2><PickerView payload={sample("proposal")} {...common} /></section>
