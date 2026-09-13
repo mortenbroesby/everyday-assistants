@@ -1,44 +1,48 @@
 ## MODIFIED Requirements
 
 ### Requirement: Complete proposed-basket review
-Before requesting approval to add products, the integration SHALL present every resolved proposed product in one complete compact visual basket review with requested package quantity, match confidence, favourite provenance, product evidence, useful available alternatives, and stated pantry assumptions. Every selected product SHALL remain visible with an unchecked `Review this item` checkbox. Unchecked items SHALL retain the assistant selection; checked items SHALL expose supplied alternatives and an ingredient-scoped catalogue-search request. The integration SHALL retain a complete conversational fallback when the client cannot render MCP Apps.
+Before requesting approval to add products, the integration SHALL present every resolved proposed product in one compact visual proposal with requested package quantity, confidence, favourite provenance, exact product information, product evidence, useful bounded alternatives, and stated pantry assumptions. The integration SHALL accept conversational correction of named ingredients while retaining every unchallenged selection, SHALL use a focused picker for exact replacement choices, and SHALL present a complete final recap before an explicit `Add to Nemlig basket` handoff. The handoff SHALL use the existing exact review and protected apply workflow. The integration SHALL retain a complete conversational fallback when MCP Apps cannot render.
 
-#### Scenario: Proposal contains favourite and non-favourite products
-- **WHEN** a proposed basket contains resolved products from favourites and general catalogue discovery
-- **THEN** every resolved selected product appears once in the compact review, begins unchecked, and each favourite-derived selection is visibly identified
+#### Scenario: Complete proposal is shown
+- **WHEN** a proposal contains resolved favourite and catalogue products
+- **THEN** every resolved selection appears once with exact product identity, package count, price, provenance, and confidence, without a status column, review checkbox, or search input
 
 #### Scenario: Proposal has fewer than twenty products
 - **WHEN** the proposal contains fewer than twenty resolved products
-- **THEN** the picker presents every selected product in one complete compact review rather than splitting or omitting confident decisions
+- **THEN** the integration presents every selection in one complete compact proposal
 
 #### Scenario: Proposal has twenty or more products
 - **WHEN** the proposal contains at least twenty resolved products within the fifty-item bound
-- **THEN** the picker keeps every selected product visible as a compact row while review controls remain collapsed until the corresponding item is checked
+- **THEN** the integration keeps every selection visible as a compact row using the host page's normal scrolling
 
-#### Scenario: Non-favourite product has useful alternatives
-- **WHEN** a selected product is not from favourites and discovery produced other relevant usable candidates
-- **THEN** checking that item exposes those alternatives for local deliberate choice without changing the basket
+#### Scenario: User corrects named ingredients
+- **WHEN** the user says that one or more named ingredients are wrong and asks to keep everything else
+- **THEN** the integration retains all unchallenged selections and searches only the challenged ingredients through the existing bounded read path
 
-#### Scenario: Non-favourite product has no useful alternative
-- **WHEN** a selected product is not from favourites and discovery produced no other relevant usable candidate
-- **THEN** the selected product remains visible with its confidence and a catalogue-search option when checked, without an invented candidate
+#### Scenario: Focused alternatives are available
+- **WHEN** challenged ingredients have relevant usable candidates
+- **THEN** the integration presents only those ingredients in a focused picker with one radio choice per ingredient and no browser-side provider access
 
-#### Scenario: User inspects product evidence
-- **WHEN** a checked selected product or alternative has description, declaration, or item details
-- **THEN** the user can reveal each populated evidence category without hiding the compact selected-product summary
+#### Scenario: No useful alternative is available
+- **WHEN** a challenged ingredient has no relevant usable candidate
+- **THEN** the integration explains the limitation conversationally and suggests useful query wording instead of fabricating a choice or showing an inert retry button
 
-#### Scenario: User settles an alternative
-- **WHEN** the user deliberately chooses a displayed alternative for a checked item
-- **THEN** the integration records that choice locally and updates no basket or proposal state
+#### Scenario: User settles replacements
+- **WHEN** the user submits focused radio choices
+- **THEN** the integration combines those choices with every retained selection and presents one complete final recap
 
 #### Scenario: User settles the alternatives
-- **WHEN** the user finishes reviewing checked items and activates final review
-- **THEN** the integration sends every retained and changed selection once and ChatGPT creates and shows the complete exact proposal before requesting basket-addition approval
+- **WHEN** the user finishes the focused alternative choices
+- **THEN** the integration sends the deliberate replacement selection once and requests the complete final recap without changing the basket
+
+#### Scenario: Final recap contains changes
+- **WHEN** one or more products were replaced
+- **THEN** the recap keeps every product visible and marks only replaced lines with a subtle changed label
+
+#### Scenario: User approves the final basket
+- **WHEN** the user activates `Add to Nemlig basket`
+- **THEN** the integration treats that action as explicit approval of the exact recap and still uses `review_items_to_add` followed by `add_approved_items`, fresh validation, single use, cancellation, readback, and no automatic retry
 
 #### Scenario: Picker is unavailable
-- **WHEN** the client cannot render the proposed-basket picker
-- **THEN** the integration presents the same complete proposed products, favourite provenance, confidence, useful alternatives, and pantry assumptions conversationally and accepts equivalent choices in conversation
-
-#### Scenario: User requests a catalogue search
-- **WHEN** the user checks an item, enters a bounded search term, and deliberately requests catalogue search
-- **THEN** the integration sends one ingredient-scoped conversational search request, performs no browser-side provider or basket call, and does not retry automatically
+- **WHEN** the client cannot render MCP Apps
+- **THEN** the integration presents the same complete proposal, correction guidance, exact alternatives, final recap, and approval boundary conversationally

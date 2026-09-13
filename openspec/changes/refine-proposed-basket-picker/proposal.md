@@ -1,34 +1,35 @@
 ## Why
 
-The proposal picker already carries every selected product plus favourite and confidence metadata, but the integration treats the picker as optional for ordinary planning and renders selected products as large cards. Users can therefore receive model-selected products without a compact visual overview or an obvious opportunity to inspect alternatives.
+The current picker can show proposed products and alternatives, but it asks the user to manage the review as a form. The approved shopping flow instead alternates conversation and UI: conversation handles broad corrections, while a focused picker handles exact product choices.
 
 ## What Changes
 
-- Present every resolved proposed product in one read-only proposed-basket picker before approval, including favourite matches and confident recommendations.
-- Render each assistant selection as a compact, always-visible row with image, name, package, price, quantity, favourite provenance, and confidence.
-- Add one unchecked-by-default `Review this item` checkbox per row. Unchecked rows retain the assistant selection; checked rows expose existing alternatives, local product selection, and an explicit bounded catalogue-search request.
-- Add one final review action that sends the complete retained and changed selections back to ChatGPT, which continues through the existing exact proposal, approval, fresh-validation, apply, and readback flow.
-- Reuse the current `review_proposed_basket` payload, React picker, host message, validation, and three-read coordinator instead of adding an endpoint, cache, state store, or dependency.
-- Preserve a conversational fallback when MCP Apps cannot render and preserve every proposal, approval, fresh-validation, cancellation, and no-retry safeguard.
+- Show the complete proposed basket as compact product rows with image, exact product identity, brand, package, package count, price, favourite provenance, and confidence.
+- Ask for corrections conversationally. A user can keep the rest of the proposal unchanged while naming only the products that need another attempt.
+- Reuse the existing picker for only the challenged products, using one radio choice per ingredient and the existing bounded alternatives.
+- Show a complete final recap after replacements, marking changed lines subtly and keeping every product visible.
+- Label the final action `Add to Nemlig basket`; it hands the exact recap into the existing review and approval path and never bypasses `review_items_to_add`, fresh validation, `add_approved_items`, readback, cancellation, or no-retry safeguards.
+- Preserve the complete conversational fallback when MCP Apps cannot render.
 
 ### Goal
 
-Give the user a complete, compact visual review of the proposed basket and a practical choice for non-favourite selections without changing the basket.
+Let a shopper understand, correct, and explicitly approve the assistant's complete proposed basket without turning the conversation into a large form.
 
 ### Non-goals
 
-- No direct basket mutation, approval inside the picker, checkout, payment, ordering, favourites mutation, or provider deployment during implementation.
-- No automatic extra provider search by the picker, editable quantities, new ranking policy, persistent UI state, new dependency, or separate picker resource.
-- No requirement to invent an alternative when catalogue discovery produced no relevant usable option.
+- No direct browser-side provider or basket calls, checkout, payment, ordering, favourites mutation, editable quantities, new ranking policy, endpoint, cache, state store, dependency, or resource URI.
+- No per-product search input, review checkbox, status column, hidden product rows, or persistent client-side workflow state.
+- No invented alternative when bounded discovery found no relevant candidate.
 
 ### Acceptance criteria
 
-- Every resolved proposed item appears once in the picker, including favourite and high-confidence items.
-- The compact row keeps product identity, image fallback, package, price, requested quantity, favourite provenance, and integer confidence visible without expansion.
-- Every row begins unchecked; an unchecked row keeps the assistant selection, while checking it reveals populated evidence, alternatives, and catalogue-search controls without hiding the row.
-- Alternative selection stays local until final review. Catalogue search and final review each send at most one deliberate conversational message, never call a basket tool, and never retry automatically.
-- The final message contains every retained or changed product selection and instructs ChatGPT to use the existing safe proposal workflow; missing alternatives remain an honest no-choice state.
-- Narrow and wide synthetic showcases remain readable without horizontal overflow, and the conversational fallback retains the complete proposal when UI is unavailable.
+- Every resolved proposed item appears once in a compact overview, including favourite and high-confidence selections.
+- Product image, name, brand, package, package count, price, favourite provenance, and integer confidence remain readable without opening details.
+- The overview tells the user to describe only incorrect items in chat and keeps all unchallenged items unchanged.
+- A correction produces a focused picker containing only challenged ingredients; each ingredient offers one radio selection from supplied candidates and no search field.
+- The final recap contains every retained or changed selection and labels changed lines without an ambiguous status column.
+- `Add to Nemlig basket` remains an explicit conversational approval handoff to the existing protected write flow; the picker itself performs no mutation and never retries automatically.
+- Narrow and wide layouts remain readable without horizontal or nested scrolling; unavailable UI retains the complete conversational proposal.
 
 ## Capabilities
 
@@ -38,12 +39,12 @@ None.
 
 ### Modified Capabilities
 
-- `nemlig-chatgpt-integration`: ordinary proposed-basket review becomes one complete compact, opt-in per-line review before the existing approval flow.
-- `nemlig-mcp`: the existing picker gains local review state plus conversational catalogue-search and final-review messages without changing its read-only authority.
+- `nemlig-chatgpt-integration`: the shopping flow becomes complete visual proposal, conversational correction, focused replacement choice, final recap, and explicit protected apply.
+- `nemlig-mcp`: the existing picker supports compact overview, focused choice, and recap presentations without changing its read-only authority.
 
 ## Impact
 
-- Primary paths: `apps/nemlig-assistant/src/mcp.ts`, `src/picker/PickerView.tsx`, `src/picker/main.tsx`, `src/picker/session.ts`, picker styles/showcase, and focused MCP/picker lifecycle tests.
-- Public MCP names, resource URI, schemas, product endpoints, dependencies, hosting, and basket proposal/apply interfaces remain unchanged.
-- Provider-read cost does not increase inside the picker. Existing discovery results may carry more alternatives, still bounded to nine per item and three concurrent exact-detail reads.
-- Epic boundary: branch `codex/compact-proposed-basket-picker`, this OpenSpec change, one pull request, one version decision near merge, and at most one production deployment.
+- Primary paths: `apps/nemlig-assistant/src/mcp.ts`, `src/picker/PickerView.tsx`, `src/picker/contract.ts`, picker styles/showcase, README, and focused MCP/picker tests.
+- Public MCP names, resource URI, provider-read coordination, dependencies, hosting, and basket proposal/apply interfaces remain unchanged.
+- No new provider read or operator cost is introduced by the UI. Discovery remains bounded to existing limits and concurrency.
+- Epic boundary: branch `codex/compact-proposed-basket-picker`, this OpenSpec change, one pull request, one version decision near merge, and at most one protected production deployment.

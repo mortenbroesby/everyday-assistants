@@ -1,21 +1,21 @@
-## 1. Characterize the Complete Review
+## 1. Characterize the Approved Flow
 
-- [ ] 1.1 Add a picker rendering fixture containing favourite, non-favourite, high-confidence, low-confidence, no-alternative, and rejected items; verify every selected row is compact, visible, and unchecked by default.
-- [ ] 1.2 Add MCP metadata and structured-result assertions that every supplied proposed item reaches one review payload and non-favourite guidance requests useful already-discovered alternatives when available.
-- [ ] 1.3 Add focused lifecycle tests for checked-line expansion, local alternative selection, one deliberate catalogue-search message, one consolidated final-review message, pending duplicate prevention, failure recovery, stale completion, and no provider or basket-tool invocation.
+- [ ] 1.1 Add strict picker contract fixtures for complete proposal, focused choices, and final recap payloads, including favourite, non-favourite, changed, no-alternative, and rejected lines.
+- [ ] 1.2 Add focused rendering and lifecycle tests for compact rows, native radio groups, one consolidated replacement message, one explicit basket-approval message, pending duplicate prevention, failure recovery, stale completion, and no provider or basket invocation.
+- [ ] 1.3 Add MCP assertions that the tool guidance preserves unchallenged selections, requests focused choices only for challenged ingredients, and routes final approval through `review_items_to_add` and `add_approved_items`.
 
-## 2. Implement the Compact Proposed Basket
+## 2. Implement the Conversational Shopping Flow
 
-- [ ] 2.1 Refactor the existing product card into a compact selected-row presentation without adding a second renderer, and verify image fallback, product identity, package, price, and requested quantity remain visible.
-- [ ] 2.2 Present confidence and favourite provenance as clear accessible badges on each selected row, and verify non-favourites are not mislabeled or hidden.
-- [ ] 2.3 Add one native unchecked review checkbox per row; when checked, expose populated evidence, local alternative choice, and a bounded ingredient-scoped catalogue-search input while leaving the summary visible.
-- [ ] 2.4 Initialize local choices from assistant selections and add one final action that sends every ingredient, chosen product ID, and quantity through the existing host message boundary.
-- [ ] 2.5 Preserve pending, duplicate-send, stale-completion, recoverable-failure, and no-automatic-retry behavior for catalogue search and final review.
-- [ ] 2.6 Update server and tool guidance to include every selected item in one review and retain useful discovered alternatives for non-favourites regardless of confidence, without adding provider reads or changing schemas.
+- [ ] 2.1 Extend the existing strict payload with minimal presentation and changed-line metadata without adding a tool, resource, endpoint, dependency, or client-owned workflow store.
+- [ ] 2.2 Refine the existing product card into one responsive compact row with larger image, exact identity, brand, package, package count, price, favourite provenance, confidence, and populated evidence disclosures.
+- [ ] 2.3 Render the complete proposal with conversational correction guidance and no review checkbox, search input, status column, or hidden selected product.
+- [ ] 2.4 Render challenged ingredients as native radio groups; keep replacements local and send one bounded consolidated host message while preserving pending, duplicate, stale-completion, failure recovery, cancellation, and no-retry behavior.
+- [ ] 2.5 Render the full final recap, mark only changed lines, and send one `Add to Nemlig basket` approval handoff into the existing protected write flow without direct mutation.
+- [ ] 2.6 Update server instructions and conversational fallback for the full stage sequence without changing ranking, provider reads, public tool names, or basket safeguards.
 
 ## 3. Verify and Deliver
 
-- [ ] 3.1 Update the synthetic showcase and README feature description, then verify narrow and wide layouts, native checkbox and keyboard operation, text resizing, contrast, and absence of horizontal or nested scrolling.
-- [ ] 3.2 Run focused picker, contract, MCP-interface, cancellation, package, and smoke checks plus strict OpenSpec validation; verify conversational fallback and every basket authorization/fresh-validation/no-retry safeguard remain green.
-- [ ] 3.3 Refresh affected jCodeMunch files, review the final diff for secrets, extra provider traffic, unsafe markup, hidden products, duplicated exploration abstractions, or unjustified dependencies, then run final `pnpm verify` once.
-- [ ] 3.4 Apply the required release identity near merge, reconcile latest `origin/main`, commit and push the epic, verify exact-head PR CI, squash merge through repository rules, and verify exact integrated-main CI and protected deployment evidence.
+- [ ] 3.1 Update the synthetic showcase and README feature description; verify narrow and wide layouts, keyboard radio operation, text resizing, contrast, image fallback, and absence of horizontal or nested scrolling.
+- [ ] 3.2 Run focused picker, contract, MCP-interface, cancellation, package, and smoke checks plus strict OpenSpec validation; verify every authorization, fresh-validation, single-use, readback, and no-retry safeguard remains green.
+- [ ] 3.3 Refresh affected jCodeMunch files, review the final diff for secrets, extra provider traffic, unsafe markup, hidden products, duplicated abstractions, or unjustified dependencies, then run final `pnpm verify` once.
+- [ ] 3.4 Apply the required release identity near merge, reconcile latest `origin/main`, commit and push the epic, verify exact-head PR CI, squash merge through repository rules, and verify exact integrated-main CI and any policy-selected protected deployment evidence.
