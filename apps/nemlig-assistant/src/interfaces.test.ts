@@ -907,16 +907,16 @@ test("Effect picker review settles an expired attempt before authenticated retry
     isLoggedIn: () => true,
     login: async () => {
       logins += 1;
-      if (logins === 2 && active > 0) retryOverlapped = true;
+      if (logins === 1 && active > 0) retryOverlapped = true;
     },
     getProduct: async (id, signal) => {
       const attempt = logins;
-      if (attempt === 1 && id === 4) firstAttemptStartedQueued = true;
-      if (attempt === 1 && id === 1) {
+      if (attempt === 0 && id === 4) firstAttemptStartedQueued = true;
+      if (attempt === 0 && id === 1) {
         await new Promise((resolve) => setTimeout(resolve, 1));
         throw new NemligError("Product read failed", 401);
       }
-      if (attempt === 1) return new Promise((resolve, reject) => {
+      if (attempt === 0) return new Promise((resolve, reject) => {
         active += 1;
         const timer = setTimeout(() => { active -= 1; resolve({ ...product, id, name: "Mælk" }); }, 40);
         signal?.addEventListener("abort", () => {
@@ -934,7 +934,7 @@ test("Effect picker review settles an expired attempt before authenticated retry
     });
     assert.notEqual(result.isError, true, toolText(result));
   });
-  assert.equal(logins, 2);
+  assert.equal(logins, 1);
   assert.equal(active, 0);
   assert.equal(retryOverlapped, false);
   assert.equal(firstAttemptStartedQueued, false);
@@ -949,17 +949,17 @@ test("Effect addition review settles an expired product batch before authenticat
     isLoggedIn: () => true,
     login: async () => {
       logins += 1;
-      if (logins === 2 && active > 0) retryOverlapped = true;
+      if (logins === 1 && active > 0) retryOverlapped = true;
     },
     getCart: async () => ({ ...basket, items: [], productsPrice: 0, numberOfProducts: 0 }),
     getProduct: async (id, signal) => {
       const attempt = logins;
-      if (attempt === 1 && id === 4) firstAttemptStartedQueued = true;
-      if (attempt === 1 && id === 1) {
+      if (attempt === 0 && id === 4) firstAttemptStartedQueued = true;
+      if (attempt === 0 && id === 1) {
         await new Promise((resolve) => setTimeout(resolve, 1));
         throw new NemligError("Product read failed", 401);
       }
-      if (attempt === 1) return new Promise((resolve, reject) => {
+      if (attempt === 0) return new Promise((resolve, reject) => {
         active += 1;
         const timer = setTimeout(() => { active -= 1; resolve({ ...product, id, name: "Mælk" }); }, 40);
         signal?.addEventListener("abort", () => {
@@ -980,7 +980,7 @@ test("Effect addition review settles an expired product batch before authenticat
     });
     assert.notEqual(result.isError, true, toolText(result));
   });
-  assert.equal(logins, 2);
+  assert.equal(logins, 1);
   assert.equal(active, 0);
   assert.equal(retryOverlapped, false);
   assert.equal(firstAttemptStartedQueued, false);

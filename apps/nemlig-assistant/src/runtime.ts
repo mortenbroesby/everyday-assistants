@@ -50,9 +50,8 @@ export async function withAuthenticatedReadRetry<T>(
   client: Pick<ShoppingClient, "isLoggedIn" | "login">,
   loadCredentials: () => Promise<Credentials | undefined>,
   action: () => Promise<T>,
-  fresh = true,
 ): Promise<T> {
-  await ensureLoggedIn(client, loadCredentials, fresh);
+  await ensureLoggedIn(client, loadCredentials);
   try {
     return await action();
   } catch (error) {

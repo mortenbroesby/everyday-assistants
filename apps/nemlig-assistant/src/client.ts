@@ -237,8 +237,8 @@ export class NemligClient {
         body: JSON.stringify({
           Username: username,
           Password: password,
-          CheckForExistingProducts: true,
-          DoMerge: true,
+          CheckForExistingProducts: false,
+          DoMerge: false,
           AppInstalled: false,
           SaveExistingBasket: false,
         }),

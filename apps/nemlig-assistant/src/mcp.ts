@@ -366,7 +366,7 @@ export function createMcpServer(
   const search = async (query: string, limit: number) =>
     rankProducts(await client.searchProducts(query, limit), query);
   const runAuthenticatedRead = async <Result>(operation: string, action: () => Promise<Result>) =>
-    runMcpOperation(operation, () => withAuthenticatedReadRetry(client, loadCredentials, action, requestContext?.kind !== "service"));
+    runMcpOperation(operation, () => withAuthenticatedReadRetry(client, loadCredentials, action));
   const resolveRun = async (
     input: z.infer<typeof shoppingRunToolInputSchema>,
     sessionId?: string,
