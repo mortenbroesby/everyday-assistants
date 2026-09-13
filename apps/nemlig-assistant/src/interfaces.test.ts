@@ -591,7 +591,7 @@ test("MCP find_groceries authenticates first and retries once on a later expired
     },
   );
   assert.equal(calls, 2);
-  assert.equal(logins, 2);
+  assert.equal(logins, 1);
 });
 
 test("MCP plan_my_shopping retries one expired session and returns recovered candidates", async () => {
@@ -615,7 +615,7 @@ test("MCP plan_my_shopping retries one expired session and returns recovered can
     assert.deepEqual(lines[0]?.candidates.map(({ id }) => id), [7]);
   });
   assert.equal(searches, 2);
-  assert.equal(logins, 2);
+  assert.equal(logins, 1);
   assert.equal(basketReads, 2);
 });
 
@@ -644,17 +644,17 @@ test("Effect planning settles the expired attempt before authenticated retry", a
     isLoggedIn: () => true,
     login: async () => {
       logins += 1;
-      if (logins === 2 && !firstAttemptSlowSettled) retryOverlappedFirstAttempt = true;
+      if (logins === 1 && !firstAttemptSlowSettled) retryOverlappedFirstAttempt = true;
     },
     searchProducts: async (query, _limit, signal) => {
       const attempt = logins;
       starts.push(`${attempt}:${query}`);
-      if (attempt === 1 && query === "queued") firstAttemptStartedQueued = true;
-      if (attempt === 1 && query === "expired") {
+      if (attempt === 0 && query === "queued") firstAttemptStartedQueued = true;
+      if (attempt === 0 && query === "expired") {
         await new Promise((resolve) => setTimeout(resolve, 1));
         throw new NemligError("Search failed", 401);
       }
-      if (attempt === 1) {
+      if (attempt === 0) {
         return new Promise((resolve, reject) => {
           const timer = setTimeout(() => resolve([{ ...product, name: query, description: query }]), 40);
           signal?.addEventListener("abort", () => {
@@ -679,11 +679,11 @@ test("Effect planning settles the expired attempt before authenticated retry", a
     });
     assert.notEqual(result.isError, true, toolText(result));
   });
-  assert.equal(logins, 2);
+  assert.equal(logins, 1);
   assert.equal(firstAttemptSlowSettled, true);
   assert.equal(retryOverlappedFirstAttempt, false);
   assert.equal(firstAttemptStartedQueued, false);
-  assert.ok(starts.includes("2:queued"));
+  assert.ok(starts.includes("1:queued"));
 });
 
 test("MCP plan_my_shopping surfaces a second 401 without looping", async () => {
@@ -701,7 +701,7 @@ test("MCP plan_my_shopping surfaces a second 401 without looping", async () => {
     assert.match(toolText(result), /Search failed/u);
   });
   assert.equal(searches, 2);
-  assert.equal(logins, 2);
+  assert.equal(logins, 1);
 });
 
 test("MCP plans whole lists without saved state", async () => {
@@ -873,7 +873,7 @@ test("MCP proposed basket resolves current products without reading or changing 
   const client = fakeClient({
     getProduct: async (id) => {
       resolved.push(id);
-      return { ...product, id, name: id === 8 ? "Heinz Tomato Ketchup" : "Tomatketchup" };
+      return { ...product, id, name: id === 8 ? "Heinz Tomato Ketchup" : "Ketchup" };
     },
     getCart: async () => { throw new Error("basket read"); },
     addToCart: async () => { throw new Error("basket mutation"); },
@@ -899,7 +899,7 @@ test("MCP proposed basket resolves current products without reading or changing 
 });
 
 test("MCP proposed basket normalizes fractional confidence exactly once", async () => {
-  const client = fakeClient({ getProduct: async (id) => ({ ...product, id, name: "Tomatketchup" }) });
+  const client = fakeClient({ getProduct: async (id) => ({ ...product, id, name: "Ketchup" }) });
   await withMcpClient(createMcpServer(client, testCredentials), async (mcp) => {
     const result = await mcp.callTool({
       name: "review_proposed_basket",
