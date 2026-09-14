@@ -4,7 +4,6 @@ import { ElicitRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import { AjvJsonSchemaValidator } from "@modelcontextprotocol/sdk/validation/ajv-provider.js";
 import type { JsonSchemaType } from "@modelcontextprotocol/sdk/validation/types.js";
 import assert from "node:assert/strict";
-import { createHash } from "node:crypto";
 import { EventEmitter } from "node:events";
 import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -822,11 +821,10 @@ test("every MCP tool has complete schemas, accurate annotations, and safe server
     assert.equal(byName.get("remove_approved_item")?.annotations?.destructiveHint, true);
     assert.equal(byName.get("make_approved_item_swap")?.annotations?.destructiveHint, true);
     assert.equal(byName.get("empty_approved_basket")?.annotations?.destructiveHint, true);
-    assert.match(mcp.getInstructions() ?? "", /exact review never authorizes mutation/);
+    assert.match(mcp.getInstructions() ?? "", /exact products and quantities in a review/);
     assert.equal(mcp.getInstructions()?.startsWith(`Current release: ${NEMLIG_RELEASE_IDENTITY}.`), true);
-    assert.match(mcp.getInstructions() ?? "", /do not ask for redundant approval/);
-    assert.match(mcp.getInstructions() ?? "", /pass only the plan's selected additions.*never supplement them with unresolved candidates/);
-    assert.match(mcp.getInstructions() ?? "", /never unresolved lines, removals, replacements, clearing, checkout, payment, ordering, or delivery slots/);
+    assert.match(mcp.getInstructions() ?? "", /Same-run automatic authorization covers only clear additions/);
+    assert.match(mcp.getInstructions() ?? "", /never removals, replacements, clearing, checkout, payment, ordering, or delivery slots/);
     assert.doesNotMatch(
       JSON.stringify({ tools, instructions: mcp.getInstructions() }),
       /password|cookie|bearer|access[_-]?token|api[_-]?key|session[_-]?id/iu,
@@ -851,21 +849,12 @@ test("MCP routes recipe discovery through individual short searches and favourit
   await withMcpClient(createMcpServer(fakeClient(), testCredentials), async (mcp) => {
     const tools = new Map((await mcp.listTools()).tools.map((tool) => [tool.name, tool.description ?? ""]));
     const instructions = mcp.getInstructions() ?? "";
-    assert.match(instructions, /ordinary recipe or shopping requests, search each ingredient with find_groceries/);
-    assert.match(instructions, /one short Danish catalogue phrase/);
-    assert.match(instructions, /English, mixed-language, misspelled, and over-specific wording/);
-    assert.match(instructions, /Refine an unsuitable result with another short phrase/);
-    assert.match(instructions, /confidence is below 80.*show_my_favorites/u);
-    assert.match(instructions, /Do not inspect the current basket while planning/u);
-    assert.match(instructions, /current Nemlig products, prices, availability/);
-    assert.match(instructions, /review_proposed_basket/);
-    assert.match(instructions, /keep every unchallenged selection and search only the challenged ingredients/u);
-    assert.match(instructions, /At every stage, accept normal conversational additions, removals, quantity adjustments, preferences, and replacement requests/u);
-    assert.match(instructions, /Any change after recap invalidates that recap.*fresh complete recap before approval/u);
-    assert.match(instructions, /choices mode/u);
-    assert.match(instructions, /recap mode, marking only changed lines/u);
-    assert.match(instructions, /Add to Nemlig basket action is explicit approval.*review_items_to_add followed by add_approved_items/u);
-    assert.match(instructions, /same short Danish phrase.*search_term/u);
+    assert.match(instructions, /Use Nemlig Assistant for current products, prices, availability/);
+    assert.match(instructions, /Normalize each search into one short Danish catalogue phrase/);
+    assert.match(instructions, /Guide shopping through List → Proposal → optional Choices → Approve/);
+    assert.match(instructions, /basket changes require explicit approval and the matching staged review\/apply tools/);
+    assert.match(instructions, /Same-run automatic authorization covers only clear additions/);
+    assert.match(instructions, /Never check out, pay, order, or select delivery slots/);
     assert.doesNotMatch(instructions, /Suggest an improvement|GitHub issue/);
     assert.match(tools.get("plan_my_shopping") ?? "", /Resolve 1–50 groceries automatically by default/);
     assert.match(tools.get("plan_my_shopping") ?? "", /discovery_unavailable.*find_groceries/u);
@@ -1176,12 +1165,7 @@ test("picker resource preserves its public presentation contract and isolates ho
   await withMcpClient(createMcpServer(fakeClient({ searchProducts: async () => [hostile] }), testCredentials), async (mcp) => {
     const info = mcp.getServerVersion();
     assert.ok(info);
-    const icon = info.icons?.[0];
-    assert.equal(icon?.mimeType, "image/png");
-    assert.deepEqual(icon?.sizes, ["1024x1024"]);
-    assert.match(icon?.src ?? "", /^data:image\/png;base64,iVBOR/);
-    assert.equal(Buffer.byteLength(icon?.src ?? ""), 17_690);
-    assert.equal(createHash("sha256").update(icon?.src ?? "").digest("hex"), "7969c1825e5fec052e55b5740cb0171f0dc7f8b71bb6812b76a51aaf755ff95f");
+    assert.equal(info.icons, undefined);
 
     const resource = await mcp.readResource({ uri: PICKER_URI });
     const content = resource.contents[0];
