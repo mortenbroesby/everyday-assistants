@@ -159,3 +159,33 @@ test("service acceptance is disabled by default and requires its fixed client ID
 test("Auth0 metadata failure is fail-closed", async () => {
   await assert.rejects(() => fetchAuth0Metadata(config, async () => new Response(null, { status: 503 })), /discovery failed/u);
 });
+
+test("Auth0 discovery requires HTTPS endpoints and PKCE S256", async () => {
+  const metadata = {
+    issuer: config.issuer.href,
+    authorization_endpoint: "https://tenant.example.test/authorize",
+    token_endpoint: "https://tenant.example.test/oauth/token",
+    jwks_uri: "https://tenant.example.test/.well-known/jwks.json",
+    response_types_supported: ["code"],
+    subject_types_supported: ["public"],
+    id_token_signing_alg_values_supported: ["RS256"],
+    code_challenge_methods_supported: ["S256"],
+  };
+  const fetcher = async () => Response.json(metadata);
+  const loaded = await fetchAuth0Metadata(config, fetcher);
+  assert.equal(loaded.jwksUrl.href, metadata.jwks_uri);
+  await assert.rejects(
+    () => fetchAuth0Metadata(config, async () => Response.json({
+      ...metadata,
+      authorization_endpoint: "http://tenant.example.test/authorize",
+    })),
+    /HTTPS/u,
+  );
+  await assert.rejects(
+    () => fetchAuth0Metadata(config, async () => Response.json({
+      ...metadata,
+      code_challenge_methods_supported: ["plain"],
+    })),
+    /PKCE S256/u,
+  );
+});

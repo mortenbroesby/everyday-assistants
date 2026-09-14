@@ -81,6 +81,17 @@ export async function fetchAuth0Metadata(
   if (!response.ok) throw new Error("Auth0 discovery failed.");
   const metadata = OpenIdProviderDiscoveryMetadataSchema.parse(await response.json());
   if (metadata.issuer !== config.issuer.href) throw new Error("Auth0 discovery issuer mismatch.");
+  const endpoints = [
+    ["authorization", metadata.authorization_endpoint],
+    ["token", metadata.token_endpoint],
+    ["JWKS", metadata.jwks_uri],
+  ] as const;
+  if (endpoints.some(([, endpoint]) => !endpoint.startsWith("https://"))) {
+    throw new Error("Auth0 discovery endpoints must use HTTPS.");
+  }
+  if (!metadata.code_challenge_methods_supported?.includes("S256")) {
+    throw new Error("Auth0 discovery must advertise PKCE S256.");
+  }
   return { oauth: metadata, jwksUrl: new URL(metadata.jwks_uri) };
 }
 
