@@ -6,6 +6,7 @@ import {
   shouldEmitGatewayRequestEvent,
   type GatewayOutcome,
   type GatewayRequestEvent,
+  type GatewayMcpMethod,
 } from "./cloudflare-observability.js";
 import { aggregateUsage, type AdmissionResult, type UsageState } from "./cloudflare-usage.js";
 import type { Principal } from "./principal-policy.js";
@@ -179,7 +180,14 @@ async function withinBoundary<T>(
   }
 }
 
-interface ClassifiedRequest { operation: OperationClass; request: Request }
+interface ClassifiedRequest { operation: OperationClass; request: Request; mcpMethod?: GatewayMcpMethod }
+
+const classifyMcpMethod = (value: unknown): GatewayMcpMethod => {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return "other";
+  const method = (value as { method?: unknown }).method;
+  return method === "initialize" || method === "tools/list" || method === "resources/list"
+    || method === "ping" || method === "notifications/initialized" ? method : "other";
+};
 
 const classifyRequest = async (request: Request, signal: AbortSignal): Promise<ClassifiedRequest | Response> => {
   if (request.method === "GET" || request.method === "DELETE") return { operation: "protocol", request };
@@ -192,9 +200,11 @@ const classifyRequest = async (request: Request, signal: AbortSignal): Promise<C
   try {
     const body = await readBoundedBody(request, signal);
     if (body instanceof Response) return body;
+    const message = JSON.parse(body);
     return {
-      operation: classifyMcpMessage(JSON.parse(body)),
+      operation: classifyMcpMessage(message),
       request: new Request(request, { body }),
+      mcpMethod: classifyMcpMethod(message),
     };
   } catch (error) {
     if (signal.aborted) throw error;
@@ -218,10 +228,20 @@ export async function handleGatewayRequest(
   let operation: GatewayRequestEvent["operation"] = "none";
   let tier: GatewayRequestEvent["tier"] = "none";
   let denialReason: GatewayRequestEvent["denial_reason"] = "none";
+  let mcpMethod: GatewayMcpMethod | undefined;
+  let authMs: number | undefined;
+  let controlMs: number | undefined;
+  let backendMs: number | undefined;
   let emitted = false;
+  const boundedElapsed = (started: number): number => Math.min(120_000, Math.max(0, Math.round(now() - started)));
+  const responseBytes = (response: Response): number | undefined => {
+    const length = Number(response.headers.get("content-length"));
+    return Number.isSafeInteger(length) && length >= 0 && length <= 10_485_760 ? length : undefined;
+  };
   const finish = (response: Response, outcome: GatewayOutcome): Response => {
     if (!emitted) {
       emitted = true;
+      const bytes = responseBytes(response);
       const event = parseGatewayRequestEvent({
         schema_version: 1,
         event: "gateway_request_terminal",
@@ -234,7 +254,12 @@ export async function handleGatewayRequest(
         denial_reason: denialReason,
         outcome,
         status: response.status,
-        elapsed_ms: Math.min(120_000, Math.max(0, Math.round(now() - startedAt))),
+        elapsed_ms: boundedElapsed(startedAt),
+        ...(mcpMethod ? { mcp_method: mcpMethod } : {}),
+        ...(authMs !== undefined ? { auth_ms: authMs } : {}),
+        ...(controlMs !== undefined ? { control_ms: controlMs } : {}),
+        ...(backendMs !== undefined ? { backend_ms: backendMs } : {}),
+        ...(bytes !== undefined ? { response_bytes: bytes } : {}),
       });
       if (shouldEmitGatewayRequestEvent(event)) dependencies.event?.(event);
     }
@@ -261,14 +286,17 @@ export async function handleGatewayRequest(
   const runAdminControl = async (
     work: (deadline: GatewayDeadline) => Promise<UsageState | undefined>,
   ): Promise<Response> => {
+    const controlStarted = now();
     try {
       const usage = await withinBoundary(work, config.controlTimeoutMs, remainingMs, totalController.signal, "control_timeout");
+      controlMs = boundedElapsed(controlStarted);
       return finish(json(aggregateUsage(usage, {
         revision: config.principalPolicy.revision,
         budgets: config.principalPolicy.budgets,
         principalKeys: config.principalPolicy.principals.map(({ principal_key }) => principal_key),
       })), "completed");
     } catch (error) {
+      controlMs = boundedElapsed(controlStarted);
       const outcome = error instanceof BoundaryTimeoutError ? error.outcome : "backend_failed";
       return finish(json({ error: outcome }, outcome.endsWith("timeout") ? 504 : 502), outcome);
     }
@@ -304,6 +332,7 @@ export async function handleGatewayRequest(
       return finish(classified, "request_rejected");
     }
     operation = classified.operation;
+    mcpMethod = classified.mcpMethod;
     const authorization = request.headers.get("authorization");
     const match = authorization?.match(/^Bearer\s+([^\s]+)$/iu);
     if (!match?.[1]) {
@@ -311,11 +340,13 @@ export async function handleGatewayRequest(
       return finish(unauthorized(config), "authentication_rejected");
     }
     let principal: Principal;
+    const authStarted = now();
     try {
       const authenticated = await withinBoundary(
         (deadline) => dependencies.authenticate(match[1] as string, config, deadline),
         config.authTimeoutMs, remainingMs, totalController.signal, "authentication_timeout",
       );
+      authMs = boundedElapsed(authStarted);
       if (!authenticated) {
         denialReason = "principal_not_allowed";
         return finish(json({ error: "principal_not_allowed" }, 403), "request_rejected");
@@ -323,6 +354,7 @@ export async function handleGatewayRequest(
       principal = authenticated;
       tier = String(principal.tier) as "0" | "1" | "2";
     } catch (error) {
+      authMs = boundedElapsed(authStarted);
       if (error instanceof BoundaryTimeoutError) return finish(json({ error: error.outcome }, 504), error.outcome);
       denialReason = "authentication_failed";
       return finish(unauthorized(config), "authentication_rejected");
@@ -345,9 +377,12 @@ export async function handleGatewayRequest(
       return runAdminControl((deadline) => dependencies.resetUsage!(config, deadline));
     }
     let admission: AdmissionResult;
+    const controlStarted = now();
     try {
       admission = await withinBoundary((deadline) => dependencies.admit(classified.operation, principal, config, deadline), config.controlTimeoutMs, remainingMs, totalController.signal, "control_timeout");
+      controlMs = boundedElapsed(controlStarted);
     } catch (error) {
+      controlMs = boundedElapsed(controlStarted);
       const outcome = error instanceof BoundaryTimeoutError ? error.outcome : "backend_failed";
       return finish(json({ error: outcome }, outcome.endsWith("timeout") ? 504 : 502), outcome);
     }
@@ -362,13 +397,16 @@ export async function handleGatewayRequest(
         ? { error: "connection_required", connection_url: "https://nemlig-mcp.broesby.dk/connect" }
         : { error: admission.reason }, admission.status), outcome);
     }
+    const backendStarted = now();
     try {
       const response = await withinBoundary(
         (deadline) => dependencies.forward(classified.request, classified.operation, config, deadline, admission),
         config.backendTimeoutMs, remainingMs, totalController.signal, "backend_timeout",
       );
+      backendMs = boundedElapsed(backendStarted);
       return finish(response, classified.operation === "protocol" ? "protocol_completed" : "completed");
     } catch (error) {
+      backendMs = boundedElapsed(backendStarted);
       const outcome = error instanceof BoundaryTimeoutError
         ? error.outcome
         : error instanceof DOMException && (error.name === "TimeoutError" || error.name === "AbortError")
