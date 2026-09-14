@@ -7,7 +7,6 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { createHash } from "node:crypto";
 
 const execute = promisify(execFile);
 const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -122,10 +121,7 @@ try {
   const presentation = new Client({ name: "package-presentation-smoke", version: "1.0.0" });
   try {
     await presentation.connect(new StdioClientTransport({ command: bin("nemlig-mcp"), env: { PATH: process.env.PATH ?? "", NEMLIG_MCP_APPS: "1" } }));
-    const icon = presentation.getServerVersion()?.icons?.[0];
-    assert.equal(icon?.mimeType, "image/png");
-    assert.deepEqual(icon?.sizes, ["1024x1024"]);
-    assert.equal(createHash("sha256").update(icon?.src ?? "").digest("hex"), "7969c1825e5fec052e55b5740cb0171f0dc7f8b71bb6812b76a51aaf755ff95f");
+    assert.equal(presentation.getServerVersion()?.icons, undefined);
     const resource = (await presentation.readResource({ uri: "ui://nemlig/picker.html" })).contents[0];
     assert.ok(resource && "text" in resource);
     assert.equal(resource.uri, "ui://nemlig/picker.html");
