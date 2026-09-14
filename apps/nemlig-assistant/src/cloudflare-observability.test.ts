@@ -19,6 +19,11 @@ const safeEvent: GatewayRequestEvent = {
   outcome: "completed",
   status: 200,
   elapsed_ms: 42,
+  mcp_method: "tools/list",
+  auth_ms: 8,
+  control_ms: 4,
+  backend_ms: 27,
+  response_bytes: 1234,
 };
 
 test("terminal request evidence accepts only the closed privacy-safe schema", () => {
@@ -28,6 +33,7 @@ test("terminal request evidence accepts only the closed privacy-safe schema", ()
   }
   assert.throws(() => parseGatewayRequestEvent({ ...safeEvent, revision: "" }));
   assert.throws(() => parseGatewayRequestEvent({ ...safeEvent, outcome: "private-provider-response" }));
+  assert.throws(() => parseGatewayRequestEvent({ ...safeEvent, response_bytes: 10_485_761 }));
 });
 
 test("ordinary protocol and authentication noise is deterministic one-percent sampling", () => {

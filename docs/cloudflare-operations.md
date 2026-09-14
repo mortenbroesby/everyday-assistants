@@ -549,14 +549,17 @@ bypassing admission.
 
 Each request can emit at most one allowlisted `gateway_request_terminal` event.
 It contains only schema version, server-generated request ID, revision, route,
-method, coarse operation class, terminal outcome, HTTP status, and elapsed
-milliseconds. Authenticated useful operations, timeouts, failures, breaker
-rejections, and disabled/configuration outcomes are always retained. Ordinary
-public protocol successes and authentication rejections are deterministically
-sampled at one percent. Sparse lifecycle events are limited to Container
-start/stop/error and breaker trip/reset. Logs contain no raw errors, headers,
-bodies, query strings, tokens, credentials, cookies, OAuth artifacts, prompts,
-tool arguments, shopping data, provider responses, or stacks.
+method, coarse operation class, terminal outcome, HTTP status, elapsed
+milliseconds, the recognized protocol method, bounded authentication/control/
+backend durations, and a response byte count when the upstream supplies a
+trusted `Content-Length`. Authenticated useful operations, timeouts, failures,
+breaker rejections, and disabled/configuration outcomes are always retained.
+Ordinary public protocol successes and authentication rejections are
+deterministically sampled at one percent. Sparse lifecycle events are limited
+to Container start/stop/error and breaker trip/reset. Logs contain no raw
+errors, headers, bodies, query strings, tokens, credentials, cookies, OAuth
+artifacts, prompts, tool arguments, shopping data, provider responses, or
+stacks.
 
 Workers Logs is enabled with 1% head sampling in Wrangler. Cloudflare includes
 20 million log events per month on Workers Paid, then charges $0.60 per

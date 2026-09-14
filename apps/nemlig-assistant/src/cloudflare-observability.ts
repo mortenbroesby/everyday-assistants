@@ -34,6 +34,14 @@ const outcomeSchema = z.enum([
   "request_timeout",
   "backend_failed",
 ]);
+const mcpMethodSchema = z.enum([
+  "initialize",
+  "tools/list",
+  "resources/list",
+  "ping",
+  "notifications/initialized",
+  "other",
+]);
 
 export const gatewayRequestEventSchema = z.object({
   schema_version: z.literal(1),
@@ -48,12 +56,18 @@ export const gatewayRequestEventSchema = z.object({
   outcome: outcomeSchema,
   status: z.number().int().min(100).max(599),
   elapsed_ms: z.number().int().min(0).max(120_000),
+  mcp_method: mcpMethodSchema.optional(),
+  auth_ms: z.number().int().min(0).max(120_000).optional(),
+  control_ms: z.number().int().min(0).max(120_000).optional(),
+  backend_ms: z.number().int().min(0).max(120_000).optional(),
+  response_bytes: z.number().int().min(0).max(10_485_760).optional(),
 }).strict();
 
 export type GatewayRequestEvent = z.infer<typeof gatewayRequestEventSchema>;
 export type GatewayRoute = GatewayRequestEvent["route"];
 export type GatewayMethod = GatewayRequestEvent["method"];
 export type GatewayOutcome = GatewayRequestEvent["outcome"];
+export type GatewayMcpMethod = NonNullable<GatewayRequestEvent["mcp_method"]>;
 
 export function parseGatewayRequestEvent(value: unknown): GatewayRequestEvent {
   return gatewayRequestEventSchema.parse(value);

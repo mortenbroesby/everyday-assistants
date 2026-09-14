@@ -146,6 +146,45 @@ test("authenticated normal requests forward once and unknown tools fail into the
   assert.equal(classifyMcpMessage({ method: "tools/call", params: { name: "add_approved_items" } }), "expensive");
 });
 
+test("terminal events expose MCP method and bounded startup boundary telemetry", async () => {
+  const events: GatewayRequestEvent[] = [];
+  let clock = 0;
+  const response = await handleGatewayRequest(mcpRequest({ method: "tools/list" }), {
+    ...env,
+    MCP_AUTH_TIMEOUT_MS: "50",
+    MCP_CONTROL_TIMEOUT_MS: "50",
+    MCP_BACKEND_TIMEOUT_MS: "50",
+  }, {
+    authenticate: async () => { clock += 8; return principal; },
+    admit: async () => { clock += 4; return { admitted: true, state: emptyUsageState(new Date()) }; },
+    forward: async () => { clock += 27; return new Response("ok", { headers: { "content-length": "2" } }); },
+    event: (event) => events.push(event),
+    requestId: () => "00000000-0000-4000-8000-000000000025",
+    now: () => clock,
+  });
+  assert.equal(response.status, 200);
+  assert.equal(events.length, 1);
+  assert.deepEqual(events[0], {
+    schema_version: 1,
+    event: "gateway_request_terminal",
+    request_id: "00000000-0000-4000-8000-000000000025",
+    revision: "development",
+    route: "mcp",
+    method: "POST",
+    operation: "protocol",
+    tier: "0",
+    denial_reason: "none",
+    outcome: "protocol_completed",
+    status: 200,
+    elapsed_ms: 39,
+    mcp_method: "tools/list",
+    auth_ms: 8,
+    control_ms: 4,
+    backend_ms: 27,
+    response_bytes: 2,
+  });
+});
+
 test("retired saved-shopping tools are unsupported and never classified as normal", () => {
   for (const name of [
     "save_my_shopping_plan",
@@ -372,9 +411,9 @@ test("stalled authentication, control, and backend boundaries fail with one sani
     assert.deepEqual(await response.json(), { error: expected });
     assert.equal(events.length, 1);
     assert.equal(events[0]?.outcome, expected);
-    assert.deepEqual(Object.keys(events[0] ?? {}).sort(), [
-      "denial_reason", "elapsed_ms", "event", "method", "operation", "outcome", "request_id", "revision", "route", "schema_version", "status", "tier",
-    ]);
+    assert.equal(typeof events[0]?.auth_ms, "number");
+    if (boundary !== "authentication") assert.equal(typeof events[0]?.control_ms, "number");
+    if (boundary === "backend") assert.equal(typeof events[0]?.backend_ms, "number");
   }
 });
 
