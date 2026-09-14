@@ -279,6 +279,7 @@ export async function handleGatewayRequest(
     if (url.pathname === `/.well-known/oauth-protected-resource${config.publicUrl.pathname}`) {
       return finish(json({
         resource: config.publicUrl.href,
+        resource_name: "Nemlig Assistant",
         authorization_servers: [config.issuer.href],
         scopes_supported: [config.requiredScope, ...(config.serviceAcceptance ? [SERVICE_ACCEPTANCE_SCOPE] : [])],
         bearer_methods_supported: ["header"],
