@@ -80,6 +80,7 @@ test("local CLI help and MCP surface need no credentials or network", async () =
         "check_nemlig_connection",
         "empty_approved_basket",
         "find_groceries",
+        "get_profile",
         "make_approved_item_swap",
         "plan_my_shopping",
         "reconnect_nemlig_assistant",

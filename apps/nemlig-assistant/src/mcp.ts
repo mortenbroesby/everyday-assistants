@@ -378,6 +378,24 @@ export function createMcpServer(
   const localConnectionId = randomUUID();
   const connectionId = (sessionId: string | undefined): string =>
     requestContext ? `${requestContext.principalKey}\0${requestContext.policyRevision}` : sessionId ?? localConnectionId;
+
+  server.registerTool(
+    "get_profile",
+    {
+      title: "Get my Nemlig profile",
+      description: "Return the stable profile represented by this authenticated Nemlig connection.",
+      inputSchema: {},
+      outputSchema: z.object({ id: z.string().trim().min(1) }).strict(),
+      annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
+      _meta: { "openai/profile": true },
+    },
+    async () => {
+      const id = requestContext?.principalKey;
+      if (!id) return { isError: true, content: [{ type: "text" as const, text: "Authenticated profile unavailable." }] };
+      return success({ id });
+    },
+  );
+
   const search = async (query: string, limit: number) =>
     rankProducts(await client.searchProducts(query, limit), query);
   const runAuthenticatedRead = async <Result>(operation: string, action: () => Promise<Result>) =>
