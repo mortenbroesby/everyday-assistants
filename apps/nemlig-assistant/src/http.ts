@@ -72,7 +72,7 @@ export function createHttpApp(
   app.use(mcpAuthMetadataRouter({
     oauthMetadata: oauth,
     resourceServerUrl: config.publicUrl,
-    scopesSupported: [config.requiredScope, ...(config.serviceAcceptance ? [SERVICE_ACCEPTANCE_SCOPE] : [])],
+    scopesSupported: [config.requiredScope],
     resourceName: "Nemlig Assistant",
   }));
   app.get("/healthz", (_req: Request, res: Response) => res.json({ status: "ok" }));

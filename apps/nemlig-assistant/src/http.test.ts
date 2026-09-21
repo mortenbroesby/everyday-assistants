@@ -40,6 +40,7 @@ const config: Auth0Config = {
   revision: "test-revision",
   host: "127.0.0.1",
   port: 3333,
+  serviceAcceptance: { clientId: "service-client" },
 };
 const oauth: OAuthMetadata = {
   issuer: config.issuer.href,
