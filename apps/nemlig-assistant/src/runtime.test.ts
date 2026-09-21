@@ -119,3 +119,29 @@ test("expired session failures surface when a second 401 is returned", async () 
   assert.equal(calls, 2);
   assert.equal(logins, 1);
 });
+
+test("a late 401 does not reauthenticate after another read refreshed the session", async () => {
+  let calls = 0;
+  let logins = 0;
+  let generation = 0;
+  const client = {
+    isLoggedIn: () => true,
+    getSessionGeneration: () => generation,
+    login: async () => { logins += 1; generation += 1; },
+  };
+  const result = await withAuthenticatedReadRetry(
+    client,
+    async () => ({ username: "owner@example.test", password: "secret" }),
+    async () => {
+      calls += 1;
+      if (calls === 1) {
+        generation += 1;
+        throw new NemligError("Old session failed", 401);
+      }
+      return "result";
+    },
+  );
+  assert.equal(result, "result");
+  assert.equal(calls, 2);
+  assert.equal(logins, 0);
+});

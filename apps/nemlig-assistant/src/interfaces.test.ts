@@ -511,6 +511,21 @@ test("connection guidance uses URL elicitation only when explicitly supported", 
   }
 });
 
+test("connection status verifies Nemlig and does not trust OAuth context alone", async () => {
+  const client = fakeClient({ getCart: async () => { throw new NemligError("Nemlig unavailable"); } });
+  await withMcpClient(createMcpServer(client, testCredentials, undefined, undefined, {
+    principalKey: "p".repeat(32), policyRevision: "test", tier: 0,
+  }), async (mcp) => {
+    const result = await mcp.callTool({ name: "check_nemlig_connection", arguments: {} });
+    assert.deepEqual(result.structuredContent, { status: "provider_unavailable", connection_url: NEMLIG_CONNECT_URL });
+  });
+
+  await withMcpClient(createMcpServer(fakeClient(), async () => ({ username: "owner@example.test", password: "secret" })), async (mcp) => {
+    const result = await mcp.callTool({ name: "check_nemlig_connection", arguments: {} });
+    assert.deepEqual(result.structuredContent, { status: "connected", connection_url: NEMLIG_CONNECT_URL });
+  });
+});
+
 test("explicit reconnect asks ChatGPT to reopen OAuth", async () => {
   await withMcpClient(createMcpServer(fakeClient(), testCredentials), async (mcp) => {
     const result = await mcp.callTool({ name: "reconnect_nemlig_assistant", arguments: {} });

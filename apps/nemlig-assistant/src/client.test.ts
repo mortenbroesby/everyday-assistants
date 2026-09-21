@@ -103,6 +103,61 @@ test("login rejects provider errors without exposing the supplied secret", async
   });
 });
 
+test("login does not carry the previous session into reauthentication", async () => {
+  const requests: ExpectedRequest[] = [
+    { match: "/login$", response: () => {
+      const headers = new Headers(); headers.append("set-cookie", "session=old; Path=/");
+      return new Response(JSON.stringify({ RedirectUrl: "/" }), { headers });
+    } },
+    ...sessionRequests(),
+    {
+      match: "/login$",
+      inspect: (_url, init) => {
+        const headers = new Headers(init?.headers);
+        assert.equal(headers.has("authorization"), false);
+        assert.equal(headers.has("cookie"), false);
+      },
+      response: () => {
+        const headers = new Headers(); headers.append("set-cookie", "session=new; Path=/");
+        return new Response(JSON.stringify({ RedirectUrl: "/" }), { headers });
+      },
+    },
+    ...sessionRequests(),
+  ];
+  const client = new NemligClient(mockFetch(requests));
+  await client.login("person@example.test", "secret");
+  await client.login("person@example.test", "secret");
+  assert.equal(client.isLoggedIn(), true);
+  assert.equal(requests.length, 0);
+});
+
+test("failed session bootstrap clears a previously authenticated client", async () => {
+  const requests: ExpectedRequest[] = [
+    { match: "/login$", response: json({ RedirectUrl: "/" }) },
+    ...sessionRequests(),
+    { match: "/login$", response: json({ RedirectUrl: "/" }) },
+    { match: "/Token$", response: json({}, { status: 503 }) },
+  ];
+  const client = new NemligClient(mockFetch(requests));
+  await client.login("person@example.test", "secret");
+  await assert.rejects(client.login("person@example.test", "secret"), /Get token failed|HTTP 503/);
+  assert.equal(client.isLoggedIn(), false);
+  await assert.rejects(client.getCart(), /Must be logged in/);
+  assert.equal(requests.length, 0);
+});
+
+test("login error fields never expose hostile provider text", async () => {
+  const secret = "synthetic-token-and-password";
+  const client = new NemligClient(mockFetch([
+    { match: "/login$", response: json({ ErrorMessage: secret }) },
+  ]));
+  await assert.rejects(client.login("person@example.test", "secret"), (error) => {
+    assert.ok(error instanceof NemligError);
+    assert.doesNotMatch(error.message, new RegExp(secret));
+    return true;
+  });
+});
+
 test("credential validation performs one login and one authenticated read with no retry or mutation", async () => {
   const requests: ExpectedRequest[] = [
     {

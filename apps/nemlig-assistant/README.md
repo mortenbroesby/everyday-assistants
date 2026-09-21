@@ -279,7 +279,9 @@ The MCP surface is organized around household actions:
 - Review proposed groceries without reading or changing the basket:
   `review_shopping_list` for requested lines, then `review_proposed_basket` for products.
 - Use basket-aware batch planning explicitly when needed: `plan_my_shopping`.
-- Check the Nemlig account connection: `check_nemlig_connection`.
+- Verify the Nemlig account connection: `check_nemlig_connection` performs a
+  bounded read-only provider check and reports missing credentials, provider
+  reauthentication, or provider unavailability separately.
 - Reopen ChatGPT authorization after an expired or disabled app connection:
   `reconnect_nemlig_assistant`.
 - See the basket: `show_my_basket`.

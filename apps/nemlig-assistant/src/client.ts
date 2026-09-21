@@ -219,7 +219,9 @@ const throwIfAborted = (signal: AbortSignal | null | undefined): void => {
 
 export class NemligClient {
   private readonly cookies = new Map<string, Map<string, string>>();
+  private readonly defaultTimeslot: string;
   private loggedIn = false;
+  private sessionGeneration = 0;
   private accessToken?: string;
   private userId?: string;
   private productTimestamp?: string;
@@ -239,39 +241,53 @@ export class NemligClient {
     const date = [tomorrow.getFullYear(), tomorrow.getMonth() + 1, tomorrow.getDate()]
       .map((part) => String(part).padStart(part === tomorrow.getFullYear() ? 4 : 2, "0"))
       .join("");
-    this.timeslot = `${date}15-60-240`;
+    this.defaultTimeslot = `${date}15-60-240`;
+    this.timeslot = this.defaultTimeslot;
   }
 
   isLoggedIn(): boolean {
     return this.loggedIn;
   }
 
+  getSessionGeneration(): number {
+    return this.sessionGeneration;
+  }
+
   async login(username: string, password: string): Promise<void> {
+    this.resetSessionState();
     if (!username || !password) throw new NemligError("Nemlig username and password are required.");
-    const response = await this.json(
-      `${API_BASE_URL}/login`,
-      {
-        method: "POST",
-        body: JSON.stringify({
-          Username: username,
-          Password: password,
-          CheckForExistingProducts: false,
-          DoMerge: false,
-          AppInstalled: false,
-          SaveExistingBasket: false,
-        }),
-      },
-      "Login",
-    );
-    const data = asRecord(response);
-    if (data.RedirectUrl || data.MergeSuccessful) {
-      this.loggedIn = true;
-      this.timeslot = asString(data.TimeslotUtc) ?? this.timeslot;
+    try {
+      const response = await this.json(
+        `${API_BASE_URL}/login`,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            Username: username,
+            Password: password,
+            CheckForExistingProducts: false,
+            DoMerge: false,
+            AppInstalled: false,
+            SaveExistingBasket: false,
+          }),
+        },
+        "Login",
+        false,
+        false,
+        false,
+      );
+      const data = asRecord(response);
+      if (!data.RedirectUrl && !data.MergeSuccessful) {
+        throw new NemligError("Login failed: invalid credentials");
+      }
+      const timeslot = asString(data.TimeslotUtc);
       await this.refreshSession();
-      return;
+      if (timeslot) this.timeslot = timeslot;
+      this.loggedIn = true;
+      this.sessionGeneration += 1;
+    } catch (error) {
+      this.resetSessionState();
+      throw error instanceof NemligError ? error : new NemligError("Login failed: session bootstrap unavailable.");
     }
-    const message = asString(data.ErrorMessage) ?? "Invalid credentials";
-    throw new NemligError(`Login failed: ${message}`);
   }
 
   async validateCredentials(username: string, password: string, signal?: AbortSignal): Promise<void> {
@@ -283,9 +299,9 @@ export class NemligClient {
         Username: username, Password: password, CheckForExistingProducts: false,
         DoMerge: false, AppInstalled: false, SaveExistingBasket: false,
       }),
-    }, "Validate login", false));
+    }, "Validate login", false, false, false));
     if (!response.RedirectUrl && !response.MergeSuccessful) throw new NemligError("Login failed: invalid credentials");
-    const token = asRecord(await this.json(`${API_BASE_URL}/Token`, { signal }, "Validate account", false));
+    const token = asRecord(await this.json(`${API_BASE_URL}/Token`, { signal }, "Validate account", false, false, false));
     if (!asString(token.access_token)) throw new NemligError("Validate account failed: invalid response data.");
   }
 
@@ -497,6 +513,19 @@ export class NemligClient {
     if (!this.loggedIn) throw new NemligError(`Must be logged in to ${operation}.`);
   }
 
+  private resetSessionState(): void {
+    this.loggedIn = false;
+    this.accessToken = undefined;
+    this.userId = undefined;
+    this.productTimestamp = undefined;
+    this.correlationId = undefined;
+    this.timeslot = this.defaultTimeslot;
+    this.timeslotId = 0;
+    this.deliveryZoneId = 1;
+    this.knownProducts.clear();
+    this.hydratedProductIds.clear();
+  }
+
   private async refreshSession(signal?: AbortSignal): Promise<void> {
     throwIfAborted(signal);
     const token = asRecord(await this.json(`${API_BASE_URL}/Token`, { signal }, "Get token", true));
@@ -603,6 +632,7 @@ export class NemligClient {
     operation: string,
     retry = true,
     gateway = false,
+    includeSession = true,
   ): Promise<unknown> {
     throwIfAborted(init.signal);
     for (let attempt = 0; attempt <= (retry ? NEMLIG_READ_MAX_RETRIES : 0); attempt += 1) {
@@ -626,10 +656,10 @@ export class NemligClient {
           headers.set("platform", "web");
           headers.set("device-size", "desktop");
         }
-        if (this.accessToken) headers.set("Authorization", `Bearer ${this.accessToken}`);
+        if (includeSession && this.accessToken) headers.set("Authorization", `Bearer ${this.accessToken}`);
         const host = requestUrl.host;
         const cookies = this.cookies.get(host);
-        if (cookies?.size) {
+        if (includeSession && cookies?.size) {
           headers.set("Cookie", [...cookies].map(([name, value]) => `${name}=${value}`).join("; "));
         }
 

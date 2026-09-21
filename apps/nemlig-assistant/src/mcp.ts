@@ -404,14 +404,14 @@ export function createMcpServer(
       description: "Check whether your Nemlig account is connected. If needed, open the secure connection page; never send login details in chat.",
       inputSchema: {},
       outputSchema: z.object({
-        status: z.enum(["connected", "connection_required", "reconnect_required"]),
+        status: z.enum(["connected", "connection_required", "reconnect_required", "provider_unavailable"]),
         connection_url: z.literal(NEMLIG_CONNECT_URL),
       }),
       annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true },
     },
     async () => {
-      const connected = Boolean(requestContext || await loadCredentials());
-      if (!connected && server.server.getClientCapabilities()?.elicitation?.url) {
+      const credentials = await loadCredentials();
+      if (!credentials && server.server.getClientCapabilities()?.elicitation?.url) {
         await server.server.elicitInput({
           mode: "url",
           message: "Open the secure Nemlig connection page. Do not enter your password in chat.",
@@ -419,8 +419,19 @@ export function createMcpServer(
           url: NEMLIG_CONNECT_URL,
         });
       }
-      const status = connected ? "connected" as const : "connection_required" as const;
-      return success({ status, connection_url: NEMLIG_CONNECT_URL });
+      if (!credentials) return success({ status: "connection_required", connection_url: NEMLIG_CONNECT_URL });
+      try {
+        await withAuthenticatedReadRetry(client, async () => credentials, () => client.getCart());
+        return success({ status: "connected", connection_url: NEMLIG_CONNECT_URL });
+      } catch (error) {
+        if (error instanceof NemligError && error.status === 401) {
+          return success({ status: "reconnect_required", connection_url: NEMLIG_CONNECT_URL });
+        }
+        if (error instanceof NemligError) {
+          return success({ status: "provider_unavailable", connection_url: NEMLIG_CONNECT_URL });
+        }
+        throw error;
+      }
     },
   );
 

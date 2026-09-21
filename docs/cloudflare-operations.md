@@ -151,8 +151,11 @@ activates that principal. Failed replacement preserves the last known-good
 generation. Users can replace or revoke only their own connection; the owner
 portal can disable or revoke invitee access. Rotation invalidates old MCP
 sessions on their next request, and revocation removes the current generation.
-Status exposes only `connected`, `connection_required`, or
-`reconnect_required` plus the fixed connection URL.
+Status verifies a bounded read-only Nemlig request before returning `connected`.
+It otherwise exposes `connection_required`, `reconnect_required`, or
+`provider_unavailable` plus the fixed connection URL. A hosted OAuth/request
+context alone is not evidence that Nemlig credentials work; provider failures
+must not be presented as a ChatGPT/Auth0 reconnect challenge.
 
 For rollout, keep both `MCP_ENABLED` and onboarding false, deploy the exact
 CI-green revision, and verify both surfaces fail closed without Container
