@@ -177,48 +177,48 @@ responses.
 
 ## Automated production release
 
-Routine releases use the **Nemlig production** workflow with the exact green
-`main` SHA. After exact-main CI passes, the workflow checks out the merged
-commit and its merge base, then reuses the package-scoped Nemlig version policy.
-Only a merge that changes the Nemlig runtime and carries the required forward
-package version, reviewed `nemligRelease.codename`, matching unique entry in
-`apps/nemlig-assistant/release/codenames.csv`, and committed
-`apps/nemlig-assistant/release/notes/<version>.md` becomes release-bearing. The
-maintainer chooses a short, single-word codename matching the release theme;
-validation rejects reuse case-insensitively. The coding agent writes that
-reviewed epic summary, beginning with an `In plain language` section, and copies
-it into the pull request. Use the [release glossary](release-glossary.md) for
-aliases, acronyms, and difficult release terms; deployment CI does
-not generate prose from commits or call an LLM. Documentation, specifications, agent
-instructions, workflow changes, other assistants, malformed ranges, and stale
-or ineligible versions stop before production credentials or provider access.
-CI never requests an owner access token, password or browser session.
+Routine releases use the **Nemlig production** workflow with the exact current
+`main` SHA and the successful exact-head CI run for that SHA. The workflow does
+not require a semantic-version bump, codename allocation, release-note file, or
+GitHub prerelease. The package's human-facing codename metadata remains part of
+the runtime identity for now, but it is not deployment eligibility or provider
+authority.
 
-One-time setup is complete: the `nemlig-production` environment permits only
-`main` and contains the two scoped secrets and three non-secret variables
-required by the workflow. It has no post-merge reviewer gate. The owner approves
-the release-bearing pull request before merge; that merge is the human release
-decision.
+The owner approves the pull request before merge. A successful push to `main`
+then enters the protected production environment automatically; that merge is
+the routine human release decision. The workflow keeps the safety boundary in
+the privileged job: exact-SHA checkout, frozen install, pinned actions,
+serialized execution, bounded timeouts, protected credentials, one-Container
+limits, effective configuration checks, revision readback, and read-only edge
+and service acceptance. It never requests an owner access token, password, or
+browser session.
+
+The latest routine technical acceptance completed for repository SHA
+`d5e62e6d5259e50ff668d26652a977009add565d` in [protected workflow
+35664402066](https://github.com/mortenbroesby/everyday-assistants/actions/runs/35664402066).
+Read-only provider verification found enabled Worker version
+`3c0a0cef-e011-4c09-9ed8-4c34e3da8b8a`, application version `74`, and image
+`sha256:c6280f16f769c88dfcadbf731d2e514cdbb0aedc290e0b3f66b0d1b8f45e0d3b`.
+The edge probe passed health, revision, OAuth metadata, anonymous rejection,
+and foreign-origin rejection. This is synthetic technical and edge acceptance,
+not a fresh real-family Nemlig or ChatGPT acceptance claim.
 
 ### Repeatable release
 
-1. Open a release-bearing pull request, verify its version and committed release
-   note, and obtain the owner's explicit approval before merging. Merge only
-   after required CI passes. Exact-main **CI** then starts the production
-   workflow for the merge commit.
-2. The workflow selects the release-bearing result from the exact merged range;
-   an ineligible merge ends successfully before credentials are available.
-3. For an eligible merge, deployment proceeds automatically without a second
-   human checkpoint. A successful routine run saves its artifact and removes its exact lease
-   automatically. A downstream job validates that deployment journal, then
-   publishes or confirms the exact `nemlig-assistant-v<version>` GitHub
-   prerelease titled `Nemlig Assistant <version> - <codename>`. Verify its tag
-   resolves to the deployed SHA and its body matches the committed note. Ask the
-   connected app “Which version and codename are running?” to confirm that its
-   model-visible initialization instructions report the same pair. Non-release
-   merges and failed deployments publish no codename. A publication retry reuses
-   the candidate pair. The historical cutover `acceptedRevision` is not the
-   deployed revision; the journal's `commit` is authoritative.
+1. Merge an approved change only after its required CI is green. The workflow
+   selects the exact successful `main` commit; a superseded candidate stops
+   before credentials or provider access.
+2. Credential-free preflight rechecks the repository, exact CI provenance,
+   current `main`, and protected environment before the privileged job.
+3. The protected job builds and deploys the exact SHA, records the bounded
+   report and journal, runs the configured edge/service acceptance, and
+   automatically finalizes a known terminal routine run after the artifact is
+   saved. A cutover, uncertain state, failed artifact, or provider drift keeps
+   recovery ownership for explicit inspection.
+4. Use the manual dispatch form only for an exact `main` deployment or a
+   separately supervised recovery/cutover operation. The journal's `commit` is
+   the deployed source identity; the historical cutover record is not a routine
+   eligibility gate.
 
 Manual dispatch remains available for recovery or an intentionally selected
 merge:
@@ -233,12 +233,6 @@ merge:
    run `inspect-recovery` with that artifact's operation UUID. Continue only
    when inspection proves a terminal matching state; never retry the deployment
    or delete the lease based on its age.
-
-If deployment succeeds but only GitHub publication fails, rerun the failed
-publication job within the seven-day artifact-retention window. It reconciles a
-matching tag or partial release and fails rather than retargeting or overwriting
-a conflict. Do not repeat or roll back a healthy deployment merely to repair
-release notes.
 
 The shared command also supports supervised terminal execution with those same scoped CI credentials:
 
