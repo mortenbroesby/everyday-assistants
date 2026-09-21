@@ -6,7 +6,7 @@ Provide trusted CI-driven Nemlig production releases with durable recovery and a
 
 ### Requirement: CI releases execute only trusted exact source
 
-The delivery operation SHALL accept only an explicitly dispatched full commit matching the current default-branch head, the checked-out source, and a successful completed trusted default-branch push verification run for the same repository and workflow identity. It SHALL revalidate after approvals and before mutation. Untrusted PR workflows, artifacts, dispatch content and stale source MUST NOT acquire production credentials or mutate production.
+Routine delivery SHALL accept only an explicitly dispatched full commit matching the current default-branch head, the checked-out source, and a successful completed trusted default-branch push verification run for the same repository and workflow identity. A separately selected protected recovery mode MAY accept a previously green full commit that is an ancestor of current default-branch head, with the same exact checked-out source and CI provenance checks. Both modes SHALL revalidate after approvals and before mutation. Untrusted PR workflows, artifacts, dispatch content and stale source MUST NOT acquire production credentials or mutate production.
 
 #### Scenario: PR verification shares a source revision
 - **WHEN** a successful PR run exists for a candidate but no successful trusted default-branch push run exists
@@ -15,6 +15,14 @@ The delivery operation SHALL accept only an explicitly dispatched full commit ma
 #### Scenario: Main advances during approval
 - **WHEN** an approved candidate no longer equals current remote main
 - **THEN** deployment fails without automatically substituting a newer revision
+
+#### Scenario: Protected recovery selects a known-green ancestor
+- **WHEN** an explicitly selected recovery candidate has a successful trusted default-branch push verification run and is an ancestor of current remote main
+- **THEN** recovery may proceed through the protected environment and records recovery provenance separately from routine delivery
+
+#### Scenario: Recovery selects unrelated history
+- **WHEN** a recovery candidate is not an ancestor of current remote main or lacks exact-head trusted CI
+- **THEN** recovery fails before deployment credentials or provider mutation are used
 
 #### Scenario: Environment protection is missing
 - **WHEN** the configured production environment, branch restriction, readiness or required approval is unavailable

@@ -66,7 +66,7 @@ Execute one reviewable slice at a time. Sol coordinates/integrates, Terra implem
 - [x] 8.2 Move acceptance dispatch into an import-safe main with direct-entry guard. Verify importing performs zero network calls, server starts or process exits.
 - [x] 8.3 Test missing credentials, edge-only, default read-only, malformed flags/envelopes and mutation/restoration confirmation with fake clients; verify mutation never becomes a default.
 - [x] 8.4 Include acceptance-entry tests in the app test/coverage scripts and preserve explicit live acceptance commands; do not run credentialed or basket-mutating tests as part of this cleanup.
-- [x] 8.5 Wire the existing version checker into CI with documented comparison inputs and docs-only handling; fixture-test patch/minor/major/no-release and unavailable-base failure without Git/provider writes.
+- [x] 8.5 Characterize the existing version checker with documented comparison inputs and docs-only handling; reconcile it with #75 so version/codename/release-note metadata is not a CI or deployment prerequisite, while retaining explicit legacy tooling until separately cleaned up.
 - [x] 8.6 Run focused release/acceptance tests, pnpm verify and credential-free readiness checks; record policy/command evidence, review and commit.
 
 ## 9. Story — Compiler hygiene, contract documentation and backlog truth
@@ -85,3 +85,8 @@ Execute one reviewable slice at a time. Sol coordinates/integrates, Terra implem
 - [ ] 10.4 For runtime changes verify current explicit deployment authority and coordinate before the existing rollout/read-only acceptance procedure; this plan grants no new provider authority. Retain human checkpoints for destructive/external-user-data actions, new costs, secrets, unresolved authority or conflicting scope. Never mutate a basket under cleanup authority.
 - [x] 10.5 Record delivered code/dependency/package/check-time deltas, remaining risks and separate follow-up owners; verify evidence supports each completed checkbox.
 - [ ] 10.6 Sync only this change's requirements and archive after applicable acceptance; push the final documentation commit and verify remote main/CI.
+
+### Issue #75 reconciliation
+
+- [x] 10.7 Preserve human-facing codename metadata and the runtime codename dependency; defer ledger/runtime removal until a separate identity migration is approved.
+- [x] 10.8 Record that automatic production publication is removed from the canonical workflow, while remaining publication scripts are legacy-only pending a later cleanup or explicit guard.

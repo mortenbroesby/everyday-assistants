@@ -86,6 +86,10 @@ Existing characterization anchors: `client.test.ts` covers read retry versus mut
 - Story 9 inventory proved all installed dependencies and three package entrypoints are used; no deletion is justified. Existing prefix/issue-window ceilings remain unchanged. Added positional discovery TSDoc; retained existing lazy login, freshness, non-retry and ownership contracts. Updated stale P2 backlog status and labeled old readiness evidence historical without closing any P0/P1 owner/live tasks.
 - No new dependencies in this batch, provider requests/retries/storage/capacity remain unchanged, and no plausible material operating-cost increase is expected. Extra CI work is bounded local Git validation and one local packed-resource process. Metadata is 2.5.5-alpha.14; emitted CLI/MCP/HTTP sizes are 36,240 / 133,718 / 152,082 bytes. Provider deployment, secrets and real basket data were untouched.
 
+## Issue #75 reconciliation
+
+- The SHA-based Phase A deployment change removes version-bump/release-note checks from CI and deployment eligibility while retaining the explicit legacy release tooling for later cleanup. Human-facing codename metadata and the runtime codename dependency remain intentionally retained; codename-ledger/runtime removal is deferred until a separate identity migration is reviewed.
+
 ## Repository integration checkpoint
 
 - Exact remote main and feature branch were verified at `c139b4cd6d6678dd7d38fcb98aab2f0b5445443e`. [Exact-head CI](https://github.com/mortenbroesby/everyday-assistants/actions/runs/34277682331) passed the committed-version gate, credential-free production readiness, packed-resource checks and coverage upload. All nine repository stories are complete, including documented no-op decisions; live rollout/read-only acceptance and final sync/archive remain open.

@@ -23,6 +23,7 @@ test("production workflow accepts manual dispatch or an exact CI-green main comm
   assert.match(trigger, /commit:\n\s+description:.*commit/m);
   assert.match(trigger, /commit:[\s\S]*?required: true[\s\S]*?type: string/m);
   assert.match(trigger, /cutover:[\s\S]*?default: false[\s\S]*?type: boolean/m);
+  assert.match(trigger, /recovery:[\s\S]*?description:.*previously green main ancestor[\s\S]*?default: false[\s\S]*?type: boolean/m);
   assert.match(source, /^concurrency:\n\x20{2}group: nemlig-production\n\x20{2}cancel-in-progress: false$/m);
 
   const gate = section(source, "  release-gate:");
@@ -34,7 +35,9 @@ test("production workflow accepts manual dispatch or an exact CI-green main comm
   assert.match(gate, /persist-credentials: false/u);
   assert.match(gate, /fetch-depth: 0/u);
   assert.match(gate, /git fetch origin refs\/heads\/main:refs\/remotes\/origin\/main/u);
-  assert.match(gate, /\[\[ "\$\(git rev-parse origin\/main\)" == "\$CANDIDATE_SHA" \]\]/u);
+  assert.match(gate, /\[\[ "\$\(git rev-parse origin\/main\)" != "\$CANDIDATE_SHA" \]\]/u);
+  assert.match(gate, /git merge-base --is-ancestor "\$CANDIDATE_SHA" origin\/main/u);
+  assert.match(gate, /Candidate is no longer current main/u);
   assert.match(gate, /\[\[ "\$CANDIDATE_SHA" =~ \^\[0-9a-f\]\{40\}\$ \]\]/u);
   assert.doesNotMatch(gate, /check:version-bump|check:release-note|CANDIDATE_PARENT|policy\.eligible/u);
   assert.match(gate, /echo "deploy=true" >> "\$GITHUB_OUTPUT"/u);
@@ -48,6 +51,7 @@ test("production workflow accepts manual dispatch or an exact CI-green main comm
   assert.match(preflight, /persist-credentials: false/u);
   assert.match(preflight, /pnpm install --frozen-lockfile/u);
   assert.match(preflight, /production:deploy -- preflight "\$CANDIDATE_SHA"/u);
+  assert.match(preflight, /production:deploy -- preflight --recovery "\$CANDIDATE_SHA"/u);
   assert.match(preflight, /env:\n\s+GH_TOKEN:/u);
 
   assert.match(deploy, /needs: \[release-gate, preflight\]/u);
@@ -63,6 +67,7 @@ test("production workflow accepts manual dispatch or an exact CI-green main comm
   assert.match(deploy, /NEMLIG_MCP_PUBLIC_URL: https:\/\/nemlig-mcp\.broesby\.dk\/mcp/u);
   assert.match(deploy, /RUNNER_TEMP\/nemlig-release\.json/u);
   assert.match(deploy, /pnpm --silent --filter nemlig-assistant production:deploy/u);
+  assert.match(deploy, /production:deploy -- --recovery "\$CANDIDATE_SHA"/u);
   assert.match(deploy, /\.git\/nemlig-production-deploy\/latest\.json/u);
   assert.match(deploy, /actions\/upload-artifact@[0-9a-f]{40}/u);
   assert.match(deploy, /id: release-artifact/u);
