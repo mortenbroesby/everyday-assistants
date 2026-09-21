@@ -7,7 +7,6 @@ import test from "node:test";
 import { createHttpApp } from "./http.js";
 import { createLocalJWKSet, exportJWK, generateKeyPair, SignJWT } from "jose";
 import { Auth0InfrastructureError, createAuth0Verifier, SERVICE_ACCEPTANCE_SCOPE, type Auth0Config } from "./auth0.js";
-import { serviceAcceptanceToolInventory } from "./mcp.js";
 import { verifyServiceAcceptanceFeatures } from "./production-acceptance.js";
 import { handleGatewayRequest } from "./cloudflare-gateway.js";
 import { emptyUsageState } from "./cloudflare-usage.js";
@@ -160,8 +159,8 @@ test("HTTP service acceptance uses signed machine identity and its fixed fixture
   const token = await new SignJWT({ scope: SERVICE_ACCEPTANCE_SCOPE, azp: "service-client" })
     .setProtectedHeader({ alg: "RS256", kid: "service" }).setIssuer(config.issuer.href).setAudience(config.audience)
     .setSubject("service-client@clients").setExpirationTime("5m").sign(privateKey);
-  for (const apps of ["1", "0"] as const) {
-    const app = createHttpApp(serviceConfig, oauth, verifier, () => { throw new Error("service must not resolve a human context"); }, undefined, { NEMLIG_MCP_APPS: apps });
+  for (const throughGateway of [true, false] as const) {
+    const app = createHttpApp(serviceConfig, oauth, verifier, () => { throw new Error("service must not resolve a human context"); });
     const server = app.listen(0, config.host);
     await new Promise<void>((resolve, reject) => { server.once("listening", resolve); server.once("error", reject); });
     try {
@@ -178,20 +177,14 @@ test("HTTP service acceptance uses signed machine identity and its fixed fixture
         forward: async (request) => fetch(request),
       });
       const client = new Client({ name: "service-test", version: "1.0.0" });
-      const transport = new StreamableHTTPClientTransport(endpoint, { requestInit: { headers: { authorization: `Bearer ${token}` } }, ...(apps === "1" ? { fetch: edgeFetch } : {}) });
+      const transport = new StreamableHTTPClientTransport(endpoint, { requestInit: { headers: { authorization: `Bearer ${token}` } }, ...(throughGateway ? { fetch: edgeFetch } : {}) });
       await client.connect(transport);
-      if (apps === "1") {
-        const report = await verifyServiceAcceptanceFeatures({
-          listTools: async () => client.listTools(),
-          callTool: async (request) => await client.callTool(request) as { isError?: boolean; structuredContent?: unknown },
-          listResources: async () => client.listResources(),
-          readResource: async (request) => client.readResource(request),
-        });
-        assert.equal(report.requestCount, 12);
-      } else {
-        assert.deepEqual((await client.listTools()).tools.map(({ name }) => name).sort(), serviceAcceptanceToolInventory.filter((name) => name !== "review_proposed_basket" && name !== "review_shopping_list").sort());
-        await assert.rejects(client.listResources(), /Method not found/u);
-      }
+      const report = await verifyServiceAcceptanceFeatures({
+        listTools: async () => client.listTools(),
+        callTool: async (request) => await client.callTool(request) as { isError?: boolean; structuredContent?: unknown },
+        listResources: async () => client.listResources(),
+      });
+      assert.equal(report.requestCount, 11);
       await client.close();
     } finally {
       server.closeAllConnections();

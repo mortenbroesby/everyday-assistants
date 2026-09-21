@@ -60,9 +60,7 @@ test("local CLI help and MCP surface need no credentials or network", async () =
     removeFromCart: unavailable,
     clearCart: unavailable,
   };
-  const server = createMcpServer(shoppingClient, async () => undefined, {
-    NEMLIG_MCP_APPS: "0",
-  });
+  const server = createMcpServer(shoppingClient, async () => undefined);
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   const client = new Client({ name: "smoke", version: "1.0.0" });
   await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
@@ -80,6 +78,7 @@ test("local CLI help and MCP surface need no credentials or network", async () =
         "check_nemlig_connection",
         "empty_approved_basket",
         "find_groceries",
+        "get_grocery_details",
         "make_approved_item_swap",
         "plan_my_shopping",
         "reconnect_nemlig_assistant",
@@ -145,7 +144,7 @@ test("recipe discovery reaches a reviewed proposal and verified basket without u
     removeFromCart: async () => { throw new Error("unexpected removal"); },
     clearCart: async () => { throw new Error("unexpected clear"); },
   };
-  const server = createMcpServer(client, async () => ({ username: "smoke@example.test", password: "synthetic" }), { NEMLIG_MCP_APPS: "1" });
+  const server = createMcpServer(client, async () => ({ username: "smoke@example.test", password: "synthetic" }));
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   const mcp = new Client({ name: "recipe-smoke", version: "1.0.0" });
   await Promise.all([server.connect(serverTransport), mcp.connect(clientTransport)]);
@@ -156,44 +155,9 @@ test("recipe discovery reaches a reviewed proposal and verified basket without u
     const favourites = await mcp.callTool({ name: "show_my_favorites", arguments: { search_term: "ketchup", result_count: 5, page: 1 } });
     assert.equal((favourites.structuredContent as { result: Array<{ id: number }> }).result[0]?.id, 201);
 
-    const rejected = await mcp.callTool({ name: "review_proposed_basket", arguments: {
-      items: [{ ingredient: "hakket oksekød", product: 102, quantity: 3, confidence: 90 }],
-    } });
-    assert.notEqual(rejected.isError, true);
-    assert.deepEqual(rejected.structuredContent, {
-      presentation: "proposal",
-      pantry_assumptions: [],
-      items: [],
-      rejected: [{ ingredient: "hakket oksekød", reason: "No proposed product matched this ingredient." }],
-      journey: {
-        list: [{ ingredient: "hakket oksekød", amount: "3 packages", included: true }],
-        proposal: { items: [{ ingredient: "hakket oksekød", product: 102, alternatives: [], quantity: 3, confidence: 90, favorite_match: false, changed: false }], pantry_assumptions: [] },
-      },
-    });
-    assert.equal(reads, 0);
-
-    const partiallyAvailable = await mcp.callTool({ name: "review_proposed_basket", arguments: {
-      items: [
-        { ingredient: "forsvundet vare", product: 103, quantity: 1, confidence: 90 },
-        { ingredient: "ketchup", product: 201, quantity: 1, confidence: 90 },
-      ],
-    } });
-    assert.notEqual(partiallyAvailable.isError, true);
-    const partial = partiallyAvailable.structuredContent as { items: Array<{ ingredient: string }>; rejected: Array<{ ingredient: string }> };
-    assert.deepEqual(partial.items.map(({ ingredient }) => ingredient), ["ketchup"]);
-    assert.deepEqual(partial.rejected.map(({ ingredient }) => ingredient), ["forsvundet vare"]);
-    assert.equal(reads, 0);
-
-    const proposed = await mcp.callTool({ name: "review_proposed_basket", arguments: {
-      pantry_assumptions: ["mel", "salt", "peber"],
-      items: [
-        { ingredient: "minced beef", search_term: "hakket oksekød", product: 101, quantity: 3, confidence: 92 },
-        { ingredient: "ketchup", product: 201, alternatives: [202], quantity: 1, confidence: 72, favorite_match: true },
-        { ingredient: "cheddar", product: 301, quantity: 2, confidence: 85 },
-      ],
-    } });
-    assert.notEqual(proposed.isError, true);
-    assert.deepEqual((proposed.structuredContent as { pantry_assumptions: string[] }).pantry_assumptions, ["mel", "salt", "peber"]);
+    const details = await mcp.callTool({ name: "get_grocery_details", arguments: { product_id: 101 } });
+    assert.notEqual(details.isError, true, JSON.stringify(details));
+    assert.equal((details.structuredContent as { result: { id: number } }).result.id, 101);
     assert.equal(reads, 0);
 
     const scoped = await mcp.callTool({ name: "plan_my_shopping", arguments: {
@@ -250,7 +214,7 @@ test("an indeterminate recipe write is attempted once", async () => {
     addToCart: async () => { writes += 1; throw new Error("indeterminate write"); },
     removeFromCart: unavailable, clearCart: unavailable,
   };
-  const server = createMcpServer(client, async () => ({ username: "smoke@example.test", password: "synthetic" }), { NEMLIG_MCP_APPS: "0" });
+  const server = createMcpServer(client, async () => ({ username: "smoke@example.test", password: "synthetic" }));
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   const mcp = new Client({ name: "write-smoke", version: "1.0.0" });
   await Promise.all([server.connect(serverTransport), mcp.connect(clientTransport)]);

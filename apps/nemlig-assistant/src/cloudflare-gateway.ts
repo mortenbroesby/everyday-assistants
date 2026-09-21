@@ -60,6 +60,7 @@ const normalTools = new Set([
   "check_nemlig_connection",
   "reconnect_nemlig_assistant",
   "find_groceries",
+  "get_grocery_details",
   "show_my_favorites",
   "show_grocery_sections",
   "browse_grocery_section",
@@ -68,18 +69,15 @@ const normalTools = new Set([
   "review_item_to_remove",
   "review_item_swap",
   "review_emptying_basket",
-  "review_proposed_basket",
-  "review_shopping_list",
 ]);
 
 const serviceTools = new Set([
   "find_groceries",
+  "get_grocery_details",
   "show_my_favorites",
   "show_grocery_sections",
   "browse_grocery_section",
   "show_my_basket",
-  "review_proposed_basket",
-  "review_shopping_list",
 ]);
 
 const isServiceRequestAllowed = async (request: Request): Promise<boolean> => {
@@ -91,10 +89,6 @@ const isServiceRequestAllowed = async (request: Request): Promise<boolean> => {
     if (message.method === "tools/call") {
       const name = message.params && typeof message.params === "object" ? (message.params as { name?: unknown }).name : undefined;
       return typeof name === "string" && serviceTools.has(name);
-    }
-    if (message.method === "resources/read") {
-      const uri = message.params && typeof message.params === "object" ? (message.params as { uri?: unknown }).uri : undefined;
-      return uri === "ui://nemlig/picker.html";
     }
   } catch {
     // Request parsing already succeeded in classifyRequest; retain fail-closed behavior if it cannot be read again.

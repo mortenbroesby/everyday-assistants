@@ -67,33 +67,17 @@ preparatory, and exact reviews still wait for approval.
   status, availability, product description, item details, and other known
   classifications when Nemlig supplies them.
 
-### Build a proposed shopping basket
+### Plan shopping without hidden state
 
-- Review a bounded shopping list with amounts and checked or already-have rows
-  before searching. Only checked rows enter product discovery.
-- Follow the shared List → Proposal → optional Choices → Approve progress
-  indicator. Back restores the previous visited step; Continue can skip Choices.
-- Search each ingredient separately with one- or two-word Danish catalogue terms.
-- Refine empty or unsuitable searches without a fixed product-level attempt count.
-- Show one recommended product per ingredient with package quantity and an
-  evidence-based match-confidence judgment.
-- Consult existing favourites when match confidence is below 80%.
-- Present every resolved product in one compact visual proposal before asking
-  to add anything.
-- Let the user describe incorrect choices naturally while keeping every
-  unchallenged selection unchanged.
-- Show only challenged ingredients in a focused radio-button picker, then show
-  one complete final recap with changed products marked.
-- Give every product its own visual island and expose product description,
-  declaration, and supplied item details through compact disclosures.
-- State omitted pantry assumptions such as flour, salt, and pepper.
-- Apply hard constraints such as dietary, price, or frozen/non-frozen rules.
-- Preserve requested weights, volumes, or counts and compare the package combinations needed to cover them.
-- Treat catalogue results as options rather than assuming every result suits the ingredient.
-- See direct Nemlig product images when the verified image host is available;
-  every choice remains usable as text when an image is absent or fails.
-- Use the basket-aware `plan_my_shopping` only when explicitly requesting the
-  legacy batch-planning behavior.
+- Use `plan_my_shopping` for request-scoped planning of up to fifty grocery lines.
+- Use `find_groceries` for direct current catalogue searches and
+  `get_grocery_details` for one exact product returned by search or planning.
+- Consult authenticated favourites when the user asks for them or when planning
+  needs bounded read-only evidence.
+- Preserve package, price, availability, dietary, and supplied product-detail
+  evidence as structured data with a readable text fallback.
+- Keep product images optional and accept only the observed HTTPS Nemlig origins;
+  text details remain available when an image is absent or rejected.
 
 ### Review the basket safely
 
@@ -111,8 +95,8 @@ preparatory, and exact reviews still wait for approval.
 - Use the stdio MCP server with a local MCP client.
 - Use the HTTP MCP server behind Auth0.
 - Connect ChatGPT to the private hosted Cloudflare deployment.
-- Optionally expose the self-contained MCP Apps proposed-basket review, rendered
-  with React and OpenAI Apps SDK UI without runtime CDN dependencies.
+  - Keep catalogue discovery and exact product details conversational; no custom
+  MCP UI resource is required.
 
 ### Hosted family alpha
 
@@ -134,25 +118,9 @@ for one repeatable credential-free repository and CI check.
 ## 🧭 How guided shopping works
 
 ChatGPT searches each ingredient separately with short Danish catalogue terms.
-It can refine an empty or unsuitable result, then recommends one current product
-from the available evidence. Below 80% match confidence it checks favourites and
-includes useful alternatives.
-
-The read-only proposed-basket view hydrates exact product-view descriptions,
-declarations, and visible item details alongside package size, package count,
-price, confidence, favourite provenance, and up to nine current alternatives.
-One review accepts up to fifty ordered ingredient decisions. It keeps the user's
-ingredient label but validates each choice with the same short Danish term used
-for discovery. A mismatched or vanished catalogue item is identified without
-hiding the other valid choices or failing the whole group.
-
-The visual flow shows the complete proposal first. Corrections stay
-conversational: name only the products that are wrong and ask to keep the rest.
-Only those challenged ingredients return in the focused product picker. After
-the replacement choices, ChatGPT shows the complete final recap. The final
-`Add to Nemlig basket` action is explicit approval, but it still goes through
-the separate exact basket-addition review, fresh validation, single-use apply,
-and basket readback.
+It can refine an empty or unsuitable result, then recommends current products
+from the available evidence. Exact product details remain a separate read-only
+lookup, and basket changes stay behind the existing exact review/apply flow.
 
 Provider descriptions, declarations, and item details are converted from HTML
 to bounded plain text, including Danish characters and entities. Scripts,
@@ -274,10 +242,9 @@ pnpm --filter nemlig-assistant mcp
 
 The MCP surface is organized around household actions:
 
-- Find groceries and favourites: `find_groceries`, `show_my_favorites`,
-  `show_grocery_sections`, and `browse_grocery_section`.
-- Review proposed groceries without reading or changing the basket:
-  `review_shopping_list` for requested lines, then `review_proposed_basket` for products.
+- Find groceries, favourites, sections, and exact product details with
+  `find_groceries`, `show_my_favorites`, `show_grocery_sections`,
+  `browse_grocery_section`, and `get_grocery_details`.
 - Use basket-aware batch planning explicitly when needed: `plan_my_shopping`.
 - Verify the Nemlig account connection: `check_nemlig_connection` performs a
   bounded read-only provider check and reports missing credentials, provider
@@ -289,21 +256,21 @@ The MCP surface is organized around household actions:
   `review_item_swap`, and `review_emptying_basket`.
 - Complete an approved change: `add_approved_items`, `remove_approved_item`,
   `make_approved_item_swap`, and `empty_approved_basket`.
-- Review proposed groups with `review_proposed_basket`, which uses
-  `ui://nemlig/picker.html`. Raw catalogue searches remain conversational so
-  unrelated search results cannot appear as selectable proposal choices.
+- Exact product details are read-only and returned as structured catalogue data;
+  there is no custom picker or MCP UI resource. Raw catalogue searches remain
+  conversational so unrelated search results cannot appear as selectable basket choices.
 
 After an ordinary release, open the existing app named exactly `Nemlig Assistant`
 and use **Refresh** so ChatGPT rediscovers tools, schemas, instructions,
-resources, and picker changes. Never create `Nemlig Assistant (new)`, a
+resources and instruction changes. Never create `Nemlig Assistant (new)`, a
 bracketed or numbered variant, or a parallel copy for a normal release.
 Use ChatGPT's **Reconnect** setting or the `Reconnect Nemlig Assistant` action
 when authorization has expired; invalid tokens also trigger that prompt
 automatically.
 
 Direct `add_to_cart`, `remove_from_cart`, `replace_cart_line`, and
-`clear_cart` MCP tools intentionally do not exist. Set `NEMLIG_MCP_APPS=0` to
-disable the visual proposed-basket review while keeping conversational tools.
+`clear_cart` MCP tools intentionally do not exist. Basket changes continue to
+require the matching staged review/apply tools and explicit approval.
 
 ### Auth0 and hosted MCP
 
@@ -443,14 +410,14 @@ This README is the user-facing inventory of shipped feature sets:
 - fresh Nemlig authentication before every provider-backed MCP task
 - individual short-query ingredient discovery and refinement
 - favourites as read-only evidence for uncertain matches
-- complete proposed-basket review with favourite and confidence context
-- conversational correction, focused product choices, and final basket recap
-- constrained product comparison and selection, with legacy batch planning
+- composable catalogue search, favourites, sections, browsing, and exact details
+- request-scoped planning with bounded product evidence
+- constrained product comparison and selection, with staged basket review/apply
 - exact review/approve/complete basket operations
 - easy-to-understand ChatGPT tool names and descriptions
 - human-friendly basket reviews and verified results
 - replacement and savings review
-- CLI, MCP, MCP Apps, Auth0, and bounded Cloudflare hosting
+- CLI, MCP, Auth0, and bounded Cloudflare hosting
 - credential-free production-readiness gate
 - private package and guarded SemVer release policy
 - deployed version and codename identity
@@ -468,7 +435,7 @@ src/client.ts                 Nemlig HTTP, search, and basket client
 nemlig-api.openapi.json       Reverse-engineered private HTTP contract
 src/config.ts                 Local credential management
 src/cli.ts                    CLI entry point
-src/mcp.ts                    MCP server and picker resource
+src/mcp.ts                    MCP server and composable tool surface
 src/http.ts                   Authenticated HTTP MCP transport
 src/cloudflare-worker.ts      Gateway, Container, and Durable Objects
 src/plans.ts                  Request-scoped guided resolution
