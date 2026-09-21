@@ -65,7 +65,7 @@ This recommendation is **selected for the proposed implementation**, disabled by
 | Real owner session / existing ChatGPT app | Actual user's OAuth and product experience | Keep bounded, explicitly requested owner acceptance; no CI password, browser-cookie export, or owner refresh token |
 | Anonymous edge probes only | Availability, metadata, revision and cheap rejection | Insufficient as authenticated acceptance; cannot replace it by renaming the result |
 
-The selected release policy eliminates an owner token from routine CI deployment after an accepted cutover. Sol classifies the release from its actual diff, not an unchecked dispatch switch:
+The selected release policy eliminates an owner token from routine CI deployment. The exact current-main SHA and completed trusted CI run are authoritative; release-class evidence still determines when separate live-user/provider acceptance is required:
 
 | Release class | Required promotion evidence | Separate completion obligation |
 | --- | --- | --- |
@@ -73,7 +73,7 @@ The selected release policy eliminates an owner token from routine CI deployment
 | Routine behavior-preserving release after cutover | Exact trusted CI, disabled/inactive checks, same image, edge and machine-authenticated service-fixture checks | No owner token or fresh ChatGPT login per release; report last real-user evidence date/SHA without claiming freshness |
 | Auth, principal isolation, onboarding, OAuth metadata, MCP client contract, credential/provider integration change | Routine gates plus approved real-user/provider checks for affected boundary | Actual existing-app OAuth/ChatGPT check for client-facing auth changes; no synthetic substitution |
 
-Repository tooling must enforce the class through reviewed release policy/changed-path evidence and fail closed on unknown scope. Until cutover evidence is recorded, selecting routine mode is rejected. This is an explicit new policy, not a retrospective waiver of predecessor acceptance. If D1 rejects this separation, Sol revises affected packets before enabling CI. The supervised `--service-cutover` path also uses only the machine token. It records `live_acceptance_pending` and retains recovery ownership until the externally verified revision is recorded in `release/production-cutover.json`; synthetic success alone cannot finalize it. Routine mode requires that accepted revision to be an ancestor and allows only documentation, tests and version-only package edits since that revision. Unknown paths and runtime changes require the stronger supervised path. This flag adds a live-evidence obligation; it cannot select owner credentials or waive source and environment checks.
+Repository tooling must enforce the evidence boundary without rebuilding the removed release classifier: every exact current-main candidate may use routine service acceptance, while changes that affect authentication, provider integration, or another real-user boundary retain a separate live-evidence obligation. The supervised `--service-cutover` path also uses only the machine token. It records `live_acceptance_pending` and retains recovery ownership until the externally verified revision is recorded in `release/production-cutover.json`; synthetic success alone cannot finalize it. The historical cutover record is therefore a finalization/recovery artifact, not a routine deployment eligibility gate. No mode can select owner credentials or waive source and environment checks.
 
 ### 2. Minimal synthetic runtime boundary, only after readiness
 
@@ -130,7 +130,7 @@ Acceptance failure while our known candidate owns production permits bounded rol
 ## Risks / Trade-offs
 
 - [A production fixture path becomes an auth bypass] → exact signed machine identity, default off, real validation/admission, dual-boundary denial, immutable fixtures, no real credentials/provider access, negative isolation tests.
-- [Passing fixtures hides live account/provider or ChatGPT failure] → separate required evidence policy and historical rollout checkboxes; first cutover/live obligations remain required and routine service promotion remains disabled pending D1.
+- [Passing fixtures hides live account/provider or ChatGPT failure] → separate required evidence policy and historical rollout checkboxes; first cutover/live obligations remain required even though routine service promotion uses the bounded synthetic path.
 - [CI secret compromise grants account-wide Worker access] → smallest supported account/zone permissions, expiry, protected workflow/environment, no owner secrets, explicit residual scope accepted at setup. Do not claim provider token is Worker-specific without proof.
 - [Hosted runner disappears] → remote intent before mutation, retained lease, no TTL stealing; artifact upload is supplemental.
 - [Refresh token rotation races or successor loss] → reject static-secret refresh loop. Alternative needs one serialized secure writer, atomic encrypted successor persistence before success, ambiguous exchange fail-stop and interactive recovery [S2]; defer rather than add a token service speculatively.

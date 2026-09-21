@@ -48,9 +48,10 @@ An enabled synthetic acceptance identity SHALL use genuine signed authentication
 
 The operation SHALL distinguish repository contracts, edge, authenticated synthetic service, live provider/user, owner-admin and real ChatGPT OAuth evidence. Required checks that fail, time out or are unavailable SHALL fail their release gate. Fixture, machine-token or alternate-client success MUST NOT be reported as user login, live provider or ChatGPT acceptance. All reports SHALL be bounded and exclude credentials, raw requests/responses, identities and private shopping data.
 
-#### Scenario: A routine release follows an accepted cutover
-- **WHEN** a reviewed behavior-preserving release satisfies its exact-source, disabled, image, edge and synthetic service gates
+#### Scenario: A routine release follows the exact trusted source contract
+- **WHEN** a reviewed release satisfies its exact-source, disabled, image, edge and synthetic service gates
 - **THEN** routine CI promotion requires no owner access token and reports its service evidence distinctly from historical real-user evidence
+- **AND** deployment eligibility does not depend on a historical cutover artifact
 
 #### Scenario: Cutover or an authentication boundary changes
 - **WHEN** the first CI cutover or a release changes authentication, credentials, principal isolation, provider integration or the client contract

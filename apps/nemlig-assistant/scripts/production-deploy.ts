@@ -1016,14 +1016,6 @@ const readAcceptedRevision = async (deps: DeployDependencies): Promise<string | 
   } catch { return null; }
 };
 
-/** Routine releases must descend from the accepted service cutover. */
-const verifyRoutineRelease = async (deps: DeployDependencies, commit: string): Promise<void> => {
-  const accepted = await readAcceptedRevision(deps);
-  if (!accepted) fail("service_cutover_required");
-  try { await runAt(deps, deps.repoRoot, "git", ["merge-base", "--is-ancestor", accepted!, commit]); }
-  catch { fail("service_cutover_required"); }
-};
-
 export async function deployProduction(commit: string, inputDeps: DeployDependencies): Promise<DeploymentJournal> {
   if (!fullSha.test(commit)) fail("invalid_commit");
   const runIdText = inputDeps.env.GITHUB_RUN_ID;
@@ -1080,7 +1072,6 @@ export async function deployProduction(commit: string, inputDeps: DeployDependen
     journal.ciRunId = await verifySource(deps, commit, repo, recovery ? "recovery" : "routine");
     if (service) {
       if (deps.env.NEMLIG_CI_ACCEPTANCE_READY !== "true") fail("service_acceptance_not_ready");
-      if (inputDeps.acceptanceMode !== "service-cutover" && !recovery) await verifyRoutineRelease(deps, commit);
       await verifyGithubEnvironment(deps, repository);
       try { serviceToken = await (deps.issueServiceToken ?? issueServiceToken)(inputDeps.env, { fetcher: inputDeps.fetcher, signal: deps.signal }); }
       catch { fail("service_token_unavailable"); }
