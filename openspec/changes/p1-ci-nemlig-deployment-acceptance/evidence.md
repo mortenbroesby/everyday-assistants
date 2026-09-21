@@ -399,3 +399,18 @@ inventory was inspected through the available browser connection.
 [Protected deployment run 34369271232](https://github.com/mortenbroesby/everyday-assistants/actions/runs/34369271232) deployed application source `095ef33072b1290a1b316c4fb45c334669d08736`. The deployment command ran from `2026-09-09T15:19:09.191Z` to `2026-09-09T15:22:19.770Z`, changed Container application version 34 to 35, reused one candidate image for disabled and enabled states, and finished enabled at Worker version `44bc88b7-5424-427e-ab73-fd1c8ada57dd`. The bounded journal recorded disabled-route, inactive-Container, edge and service-fixture acceptance with live acceptance pending; no rollback ran.
 
 At `2026-09-09T15:57:18Z`, the owner-approved reconnect of the existing ChatGPT app completed and one read-only `show_my_favorites` request succeeded without an OAuth error. No duplicate app, basket mutation, prepare/apply call or shopping-data write occurred. `apps/nemlig-assistant/release/production-cutover.json` records the accepted deployed revision; repository closure commits remain separate from that application source revision.
+
+## 2026-09-21 SHA eligibility follow-up
+
+PR #80 was merged as `32e16815bca3758050fce372bb42614fe79ec948` on `main`.
+The follow-up preserves the explicit service-cutover diagnostic and its
+live-acceptance finalization record, but removes the historical cutover
+ancestry check from routine deployment eligibility. A routine candidate now
+needs the exact current-main and completed trusted-CI contract; it does not
+need `release/production-cutover.json` merely to become deployable. Recovery
+still requires a previously green main ancestor and retains conservative
+service-only acceptance.
+
+The focused deployment/workflow suites pass 90/90, strict OpenSpec validation
+passes, and the full repository verification had already passed before this
+small follow-up. No provider mutation or production deployment was performed.

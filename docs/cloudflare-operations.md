@@ -250,9 +250,10 @@ pnpm --filter nemlig-assistant production:deploy -- --service EXACT_MAIN_COMMIT
 The initial service-identity cutover requires `--service-cutover`. It performs
 machine acceptance, records `live_acceptance_pending`, and retains recovery
 ownership until actual live acceptance is recorded in
-`apps/nemlig-assistant/release/production-cutover.json`. After that accepted
-baseline, routine mode accepts only descendants with exact-main green CI. Legacy
-explicit local owner mode remains available but is never CI's fallback.
+`apps/nemlig-assistant/release/production-cutover.json`. Routine mode is
+eligible from the exact current-main and completed-CI source contract and does
+not require that historical cutover record. Legacy explicit local owner mode
+remains available but is never CI's fallback.
 
 The command verifies local HEAD, refreshed remote `main`, exact-head CI, and the
 required main-only environment before issuing one bounded machine token or

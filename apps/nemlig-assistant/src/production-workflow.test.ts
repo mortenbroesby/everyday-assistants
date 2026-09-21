@@ -76,6 +76,14 @@ test("production workflow accepts manual dispatch or an exact CI-green main comm
   assert.doesNotMatch(source, /setup-.*provider|activate|cloudflare\/workers/u);
 });
 
+test("routine deployment does not require a historical cutover artifact", async () => {
+  const source = await readFile(workflowPath, "utf8");
+  assert.doesNotMatch(source, /verifyRoutineRelease|service_cutover_required/u);
+  assert.match(source, /production:deploy -- --service "\$CANDIDATE_SHA"/u);
+  assert.match(source, /production:deploy -- --service-cutover "\$CANDIDATE_SHA"/u);
+  assert.match(source, /production:deploy -- finalize "\$FINALIZE_OPERATION"/u);
+});
+
 test("CI does not gate verification on release metadata", async () => {
   const source = await readFile(ciWorkflowPath, "utf8");
   assert.doesNotMatch(source, /check:version-bump|check:release-note/u);

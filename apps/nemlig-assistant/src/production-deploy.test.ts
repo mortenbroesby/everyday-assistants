@@ -1737,23 +1737,18 @@ test("CI never falls back to owner authentication or issues a service token befo
   }
 });
 
-test("routine service releases require one accepted cutover and then allow CI-green descendants", async () => {
-  for (const acceptedRevision of [null, previousCommit]) {
-    const { deps, calls, root } = await fixture();
-    deps.env = { CLOUDFLARE_ACCOUNT_ID: accountId, NEMLIG_CI_ACCEPTANCE_READY: "true", NEMLIG_MCP_SERVICE_CLIENT_ID: "service-client" };
-    deps.acceptanceMode = "service";
-    await mkdir(join(root, "release"));
-    await writeFile(join(root, "release", "production-cutover.json"), JSON.stringify({ schema: 1, acceptedRevision }));
-    let issued = false;
-    deps.issueServiceToken = async () => { issued = true; return "machine-token"; };
-    try {
-      const report = await deployProduction(commit, deps);
-      assert.equal(report.outcome, acceptedRevision ? "success" : "failed");
-      assert.equal(report.failure, acceptedRevision ? undefined : "service_cutover_required");
-      assert.equal(issued, Boolean(acceptedRevision));
-      assert.equal(calls.some(({ command }) => command === "pnpm"), Boolean(acceptedRevision));
-    } finally { await rm(root, { recursive: true, force: true }); }
-  }
+test("routine service releases do not require historical cutover state", async () => {
+  const { deps, calls, root } = await fixture();
+  deps.env = { CLOUDFLARE_ACCOUNT_ID: accountId, NEMLIG_CI_ACCEPTANCE_READY: "true", NEMLIG_MCP_SERVICE_CLIENT_ID: "service-client" };
+  deps.acceptanceMode = "service";
+  let issued = false;
+  deps.issueServiceToken = async () => { issued = true; return "machine-token"; };
+  try {
+    const report = await deployProduction(commit, deps);
+    assert.equal(report.outcome, "success");
+    assert.equal(issued, true);
+    assert.equal(calls.some(({ command }) => command === "pnpm"), true);
+  } finally { await rm(root, { recursive: true, force: true }); }
 });
 
 test("routine service releases keep the public routes enabled during the Container rollout", async () => {
@@ -1761,8 +1756,6 @@ test("routine service releases keep the public routes enabled during the Contain
   deps.env = { CLOUDFLARE_ACCOUNT_ID: accountId, NEMLIG_CI_ACCEPTANCE_READY: "true", NEMLIG_MCP_SERVICE_CLIENT_ID: "service-client" };
   deps.acceptanceMode = "service";
   deps.issueServiceToken = async () => "machine-token";
-  await mkdir(join(root, "release"));
-  await writeFile(join(root, "release", "production-cutover.json"), JSON.stringify({ schema: 1, acceptedRevision: previousCommit }));
   try {
     const report = await deployProduction(commit, deps);
     assert.equal(report.outcome, "success");

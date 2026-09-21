@@ -47,7 +47,7 @@ Readiness: after S1/S3, D1/D2 selection and local cryptographic test contract; p
 
 - [x] 4.1 Add one bounded M2M token request with exact issuer/audience/service scope and in-memory response validation; verify signature/expiry/client/scope checks, invalid/expired credentials and token errors expose no values and trigger no automatic retries.
 - [x] 4.2 Add the closed service-fixture acceptance profile, reuse bounded report/deadline helpers, and keep owner-admin/live-user evidence separate; verify expected synthetic inventory and forbidden-operation tests run through the real local MCP transport.
-- [x] 4.3 Implement reviewed release-class evidence gating: initial cutover and affected auth/provider/client changes require additional live evidence, routine releases after cutover need no owner token; verify unknown diff scope/cutover status fails closed and cannot be overridden by arbitrary dispatch input.
+- [x] 4.3 Implement reviewed release-class evidence gating: affected auth/provider/client changes retain additional live evidence, while every exact trusted current-main candidate may use routine service acceptance without an owner token; verify evidence boundaries cannot be overridden by arbitrary dispatch input.
 - [x] 4.4 Integrate class-specific valid authentication preflight with deploy without weakening existing explicit local owner mode; verify missing/short-lived/invalid required credentials stop before first provider mutation and routine service mode never reads owner-token state.
 - [x] 4.5 Luna verifies one-token/request budget and no refresh-token persistence path; Sol reviews complete credential flow, redacted report and scoped checks before integration.
 
@@ -96,9 +96,10 @@ Readiness: all applicable live and repository gates complete, no retained unknow
 - [x] 9.3 Reconcile P2's release-policy language and evidence with the SHA-based deployment contract; version-bump and release-note checks are no longer CI/deployment prerequisites.
 - [x] 9.4 Defer codename-ledger and runtime-codename removal completely; preserve human-facing codename metadata and document the runtime dependency before any future removal.
 - [x] 9.5 Keep legacy publication tooling out of the canonical workflow and mark its removal or explicit legacy-only guard as a later cleanup step.
+- [x] 9.6 Remove the historical cutover-ancestry check from routine deployment eligibility while retaining the cutover diagnostic and finalization evidence needed for supervised recovery.
 
 Implementation evidence: protected workflow dispatch and deploy-script recovery
-paths are covered by the workflow and production-deploy tests (89/89 focused
+paths are covered by the workflow and production-deploy tests (90/90 focused
 tests passed). Recovery requires an ancestor of current `origin/main`, keeps
 exact completed `verify` provenance and protected environment gating, records
 recovery delivery mode, and uses service-only acceptance. Routine head drift
