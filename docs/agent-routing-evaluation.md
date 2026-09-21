@@ -24,19 +24,35 @@ Two primary references support the durable parts of that direction:
 
 ## Static comparison
 
-Measurements use UTF-8 bytes and physical lines. The shared Definition of Ready
-and Definition of Done total 84 lines and 5,351 bytes; they are excluded from
-all three rows because each design requires the same gates.
+Measurements use UTF-8 bytes and physical lines. At issue #64's implementation
+baseline, root `AGENTS.md` was 6,078 bytes and the two lifecycle files were
+5,351 bytes. The current measurements include the reduced lifecycle files.
 
 | Design | Routing entry set | Lines | Bytes | Result |
 | --- | --- | ---: | ---: | --- |
-| `origin/main` baseline | root `AGENTS.md` | 86 | 5,723 | Compact, but no direct route to OpenSpec stages, roadmap triage, or specialized refactoring guidance |
+| `origin/main` baseline | root `AGENTS.md` | 96 | 6,078 | Direct routes, but repeated global policy and large selected skills |
 | First PR #38 design | root + mandatory workflow + JSON manifest | 495 | 21,753 | Explicit coverage, but four hops and a validator that proves catalog consistency rather than navigation quality |
-| Revised PR #38 design | root `AGENTS.md` | 96 | 6,078 | Twelve direct intent rows and fifteen valid links with no parser or manifest |
+| Issue #64 compact design | root + lifecycle + nearest app router | measured below | measured below | Direct routes, narrow scoped contracts, compact skills, no parser or manifest |
 
-The revision adds 355 bytes (6.2%) to the baseline root while cutting the first
-PR design's routing entry by 399 lines (81%) and 15,675 bytes (72%). The removed
-manifest checker and its tests eliminate another 423 lines of maintenance code.
+Current UTF-8 byte measurements for the recurring entry set:
+
+| Entry set | Bytes |
+| --- | ---: |
+| Root router | 4,361 |
+| Definition of Ready + Done | 3,170 |
+| Nemlig app router | 1,512 |
+| Compact generic skills | 2,360 |
+| Compact OpenSpec skills and shared adapter note | 4,407 |
+| Total before task-specific context | 15,810 |
+
+The compact generic/OpenSpec skills replace 88,983 bytes of selected static
+prose at the previous measured sizes; the exact aggregate depends on which
+single route is selected. The total above is a worst-case routing inventory,
+not a claim that every task loads every skill.
+
+Issue #64 keeps the direct routing model and removes repeated global policy and
+static textbook/workflow prose. The compact selected guidance is measured below;
+the old files are not reachable from the routing table.
 
 ## Representative route check
 
@@ -46,12 +62,12 @@ table lists only the additional file an agent should load for each example.
 | Representative task | Expected additional guidance | Unrelated skills required |
 | --- | --- | ---: |
 | Edit ordinary repository documentation | nearest scoped `AGENTS.md`, if any | 0 |
-| Explore a feature before committing to it | `.agents/skills/openspec-explore/SKILL.md` | 0 |
-| Propose a non-trivial feature | `.agents/skills/openspec-propose/SKILL.md` | 0 |
-| Revise an existing OpenSpec plan | `.agents/skills/openspec-update-change/SKILL.md` | 0 |
-| Implement an approved OpenSpec change | `.agents/skills/openspec-apply-change/SKILL.md` | 0 |
+| Explore a feature before committing to it | `.agents/skills/openspec-compact/explore/SKILL.md` | 0 |
+| Propose a non-trivial feature | `.agents/skills/openspec-compact/propose/SKILL.md` | 0 |
+| Revise an existing OpenSpec plan | `.agents/skills/openspec-compact/update-change/SKILL.md` | 0 |
+| Implement an approved OpenSpec change | `.agents/skills/openspec-compact/apply-change/SKILL.md` | 0 |
 | Identify parked work and recommend the next epic | `.agents/skills/roadmap-triage/SKILL.md` | 0 |
-| Simplify working code without changing behavior | `.agents/skills/code-simplification/SKILL.md` | 0 |
+| Simplify working code without changing behavior | `.agents/skills/code-simplification-compact/SKILL.md` | 0 |
 | Work on Nemlig production readiness | `apps/nemlig-assistant/AGENTS.md` and its `nemlig-production` skill | 0 |
 | Search or change a Nemlig basket | `apps/nemlig-assistant/AGENTS.md` and its `nemlig-basket` skill | 0 |
 
