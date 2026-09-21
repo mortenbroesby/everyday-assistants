@@ -3,7 +3,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { randomUUID } from "node:crypto";
-import { readFileSync, realpathSync } from "node:fs";
+import { realpathSync } from "node:fs";
 import { basename } from "node:path";
 import { z } from "zod";
 import {
@@ -28,20 +28,12 @@ import {
   type ProposalOperation,
   type ProposalView,
 } from "./proposals.js";
-import { rankProducts } from "./product-presentation.js";
+import { IMAGE_ORIGINS, rankProducts, safeNemligImageUrl } from "./product-presentation.js";
 import { resolveShoppingPlan, shoppingPlanLineSchema, shoppingPlanSchema, type ShoppingPlan } from "./plans.js";
-import { IMAGE_ORIGINS, listPayload, shoppingListRows, shoppingJourney, safePickerImageUrl } from "./picker/contract.js";
-import { resolveProposedBasketReview } from "./picker/review.js";
 import { oauthReconnectChallenge } from "./auth0.js";
 
-export const PICKER_URI = "ui://nemlig/picker.html";
-export const PICKER_MIME_TYPE = "text/html;profile=mcp-app";
 export const NEMLIG_CONNECT_URL = "https://nemlig-mcp.broesby.dk/connect";
 export const NEMLIG_IMAGE_ORIGINS = IMAGE_ORIGINS;
-export const NEMLIG_RESOURCE_ORIGINS = [...NEMLIG_IMAGE_ORIGINS, "https://cdn.openai.com"] as const;
-export const safeNemligImageUrl = safePickerImageUrl;
-
-const pickerHtml = (): string => readFileSync(new URL("../dist/picker.html", import.meta.url), "utf8");
 
 /**
  * Server-derived request identity that scopes private state and invalidates it
@@ -55,14 +47,9 @@ export interface McpRequestContext {
 }
 
 export const serviceAcceptanceToolInventory = [
-  "find_groceries", "show_my_favorites", "show_grocery_sections", "browse_grocery_section", "show_my_basket", "review_proposed_basket", "review_shopping_list",
+  "find_groceries", "get_grocery_details", "show_my_favorites", "show_grocery_sections", "browse_grocery_section", "show_my_basket",
 ] as const;
-export const serviceAcceptanceResourceInventory = [PICKER_URI] as const;
-
-const falseValues = new Set(["0", "false", "no", "off"]);
-
-export const appsEnabled = (env: NodeJS.ProcessEnv = process.env): boolean =>
-  !falseValues.has((env.NEMLIG_MCP_APPS ?? "1").trim().toLowerCase());
+export const serviceAcceptanceResourceInventory = [] as const;
 
 const candidateSchema = z.object({
   id: z.number().int().positive().optional(),
@@ -88,49 +75,6 @@ const candidateSchema = z.object({
 });
 
 export type Candidate = z.infer<typeof candidateSchema>;
-
-const proposedCandidateSchema = candidateSchema.extend({ id: z.number().int().positive() });
-const confidenceInputSchema = z.number().min(0).max(100)
-  .describe("Match confidence as either 0–100 percent or a 0–1 fraction.")
-  .transform((value) => Math.round(value <= 1 ? value * 100 : value));
-const proposedBasketItemInputSchema = z.object({
-  ingredient: z.string().trim().min(1).max(120),
-  search_term: z.string().trim().min(1).max(120).optional()
-    .describe("The same short Danish catalogue phrase used to find this product. Supply it when the user-facing ingredient label is not Danish."),
-  product: z.number().int().positive(),
-  alternatives: z.array(z.number().int().positive()).max(9).default([])
-    .describe("Up to nine alternatives in catalogue order: the remainder of the normal ten-result search page after the selected product."),
-  quantity: z.number().int().positive(),
-  confidence: confidenceInputSchema,
-  favorite_match: z.boolean().default(false),
-  changed: z.boolean().default(false).describe("True only in a final recap when this product replaced the earlier proposal."),
-}).superRefine(({ product, alternatives }, context) => {
-  if (alternatives.includes(product)) context.addIssue({ code: "custom", path: ["alternatives"], message: "Alternatives must differ from the proposed product." });
-  if (new Set(alternatives).size !== alternatives.length) context.addIssue({ code: "custom", path: ["alternatives"], message: "Alternatives must be unique." });
-});
-const proposedBasketInputSchema = z.object({
-  journey: shoppingJourney.optional().describe("Carry the list and earlier review context unchanged so Back restores the visited step. This context never authorizes a basket change."),
-  presentation: z.enum(["proposal", "choices", "recap"]).default("proposal")
-    .describe("Use the initial view for the complete first review, choices only for challenged ingredients, and recap for the complete final review."),
-  items: z.array(proposedBasketItemInputSchema).min(1).max(50).describe("Up to fifty ingredient choices, each with the proposed product, quantity, confidence, and optional alternatives."),
-  pantry_assumptions: z.array(z.string().trim().min(1).max(120)).max(20).default([]).describe("Optional staples assumed to be available, such as salt or flour."),
-});
-const proposedBasketOutputSchema = z.object({
-  journey: shoppingJourney.optional(),
-  presentation: z.enum(["proposal", "choices", "recap"]),
-  pantry_assumptions: z.array(z.string()),
-  items: z.array(z.object({
-    ingredient: z.string(),
-    search_term: z.string().optional(),
-    quantity: z.number().int().positive(),
-    confidence: z.number().int().min(0).max(100),
-    favorite_match: z.boolean(),
-    changed: z.boolean(),
-    product: proposedCandidateSchema,
-    alternatives: z.array(proposedCandidateSchema),
-  })).max(50),
-  rejected: z.array(z.object({ ingredient: z.string(), reason: z.string() })).max(50),
-});
 
 const basketItemSchema = z.object({
   id: z.number().int().positive().optional(),
@@ -281,7 +225,7 @@ const safePlanImages = (plan: ShoppingPlan): ShoppingPlan => ({
   })),
 });
 
-export { rankProducts } from "./product-presentation.js";
+export { rankProducts, safeNemligImageUrl } from "./product-presentation.js";
 
 const currency = new Intl.NumberFormat("da-DK", { style: "currency", currency: "DKK" });
 const kr = (value: unknown): string =>
@@ -360,7 +304,7 @@ export function createMcpServer(
     },
     {
       instructions:
-        `Current release: ${NEMLIG_RELEASE_IDENTITY}. Use Nemlig Assistant for current products, prices, availability, favourites, basket contents, and grocery planning. Guide shopping through List → Proposal → optional Choices → Approve, preserving unaffected lines and refreshing the complete review after any change. Normalize each search into one short Danish catalogue phrase. Before adding, show exact products and quantities in a review; basket changes require explicit approval and the matching staged review/apply tools. Same-run automatic authorization covers only clear additions from that run, never removals, replacements, clearing, checkout, payment, ordering, or delivery slots. Revalidate every basket change, stop on uncertainty, and read the basket back. Never check out, pay, order, or select delivery slots.`,
+        `Current release: ${NEMLIG_RELEASE_IDENTITY}. Use Nemlig Assistant as independent capabilities for current products, exact product details, prices, availability, favourites, basket contents, grocery sections, and optional request-scoped planning. Normalize each search into one short Danish catalogue phrase. Basket changes require the matching staged review/apply tools and explicit approval; revalidate every change, stop on uncertainty, and read the basket back. Never check out, pay, order, or select delivery slots.`,
     },
   );
   const rawRegisterTool = server.registerTool.bind(server);
@@ -486,6 +430,25 @@ export function createMcpServer(
       annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true },
     },
     ({ search_term, result_count }) => runAuthenticatedRead("find_groceries", async () => success(await search(search_term, result_count))),
+  );
+
+  server.registerTool(
+    "get_grocery_details",
+    {
+      title: "Get grocery details",
+      description: "Fetch current details for one exact Nemlig product reference returned by a search or plan. This is read-only and does not read or change your basket.",
+      inputSchema: {
+        product_id: z.number().int().positive().describe("The exact positive product reference returned by Nemlig Assistant."),
+      },
+      outputSchema: z.object({ result: candidateSchema }),
+      annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true },
+    },
+    ({ product_id }, extra) => runAuthenticatedRead("get_grocery_details", async () => {
+      const product = await client.getProduct(product_id, extra.signal);
+      const details = rankProducts([product], product.name ?? "")[0];
+      if (!details) throw new NemligError("The requested product was unavailable.");
+      return success({ result: details });
+    }),
   );
 
   server.registerTool(
@@ -690,64 +653,6 @@ export function createMcpServer(
 
   registerAction("empty_approved_basket", "clear", "Empty my approved basket", "Empty exactly the approved unchanged basket, then verify that it is empty. This changes your basket.", true);
 
-  if (appsEnabled(env)) {
-    server.registerTool(
-      "review_shopping_list",
-      {
-        title: "Review shopping list",
-        description: "Show up to fifty requested groceries with amounts and checked or already-have state before searching. This does not contact Nemlig or read or change your basket.",
-        inputSchema: { list: shoppingListRows.describe("One to fifty requested ingredient labels, amounts, and whether each should be searched.") },
-        outputSchema: listPayload,
-        annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true },
-        _meta: { ui: { resourceUri: PICKER_URI } },
-      },
-      ({ list }) => success({ presentation: "list", items: [], list }, `List · Choose what you need here, or tell ChatGPT to add, remove, or adjust an item. ${list.map((row) => `${row.included ? "[x]" : "[ ]"} ${row.ingredient}: ${row.amount}`).join("; ")}. Next: Search selected items with Nemlig. Nothing has been added.`),
-    );
-    server.registerTool(
-      "review_proposed_basket",
-      {
-        title: "Review proposed basket",
-        description: "Show a complete proposed basket, focused replacement choices, or a complete final recap with current exact Nemlig product details. Use choices only for challenged ingredients and retain all others; use recap before the protected basket review. This does not read or change your basket.",
-        inputSchema: proposedBasketInputSchema.shape,
-        outputSchema: proposedBasketOutputSchema,
-        annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true },
-        _meta: { ui: { resourceUri: PICKER_URI } },
-      },
-      ({ presentation, items, pantry_assumptions, journey }, extra) => runAuthenticatedRead("review_proposed_basket", async () => {
-        const resolved = await resolveProposedBasketReview(client, items, { signal: extra.signal });
-        const navigation = {
-          list: items.map(({ ingredient, quantity }) => ({ ingredient, amount: `${quantity} packages`, included: true })),
-          ...journey,
-          ...(presentation === "proposal" ? { proposal: { items, pantry_assumptions } } : {}),
-          ...(presentation === "choices" ? { choices: { items, pantry_assumptions } } : {}),
-        };
-        return success({
-          presentation,
-          pantry_assumptions,
-          ...resolved,
-          journey: navigation,
-        }, `${presentation === "proposal" ? "Proposal · Choose alternatives here or tell ChatGPT what to change. Continue to final review when satisfied; Choices is optional. Back to shopping list." : presentation === "choices" ? "Choices · Choose a replacement here or tell ChatGPT what you need. Use these choices when satisfied. Back to proposal." : `Approve · Nothing has been added yet. Tell ChatGPT about any adjustment and review the refreshed recap, go Back to ${journey?.previous === "choices" ? "Choices" : "Proposal"}, or explicitly approve with Add to Nemlig basket.`}\n${JSON.stringify(resolved)}`);
-      }),
-    );
-    server.registerResource(
-      "Nemlig product picker",
-      PICKER_URI,
-      {
-        mimeType: PICKER_MIME_TYPE,
-        _meta: { ui: { csp: { resourceDomains: NEMLIG_RESOURCE_ORIGINS } } },
-      },
-      async () => ({
-        contents: [
-          {
-            uri: PICKER_URI,
-            mimeType: PICKER_MIME_TYPE,
-            text: pickerHtml(),
-            _meta: { ui: { csp: { resourceDomains: NEMLIG_RESOURCE_ORIGINS } } },
-          },
-        ],
-      }),
-    );
-  }
   return server;
 }
 

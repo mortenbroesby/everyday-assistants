@@ -33,7 +33,7 @@ test("production inventory fails closed for missing and unknown entries", () => 
   const resources = productionResourceInventory.map((uri) => ({ uri }));
   assert.throws(() => assertProductionInventory(allTools.slice(1), resources), /inventory drifted/u);
   assert.throws(() => assertProductionInventory([...allTools, { name: "unknown_tool" }], resources), /inventory drifted/u);
-  assert.throws(() => assertProductionInventory(allTools, []), /resource inventory drifted/u);
+  assert.throws(() => assertProductionInventory(allTools, [{ uri: "ui://stale" }]), /resource inventory drifted/u);
 });
 
 test("production acceptance omits removed saved-storage tools while retaining safe planning", async () => {
@@ -41,13 +41,12 @@ test("production acceptance omits removed saved-storage tools while retaining sa
   const client: AcceptanceClient = {
     listTools: async () => ({ tools: retainedTools }),
     listResources: async () => ({ resources: productionResourceInventory.map((uri) => ({ uri })) }),
-    readResource: async () => ({ contents: [{ text: "picker" }] }),
     callTool: async ({ name, arguments: args }) => {
       calls.push(name);
       if (name === "find_groceries") {
         return { structuredContent: { result: [{ id: 7 }, { id: 8 }] } };
       }
-      if (name === "review_proposed_basket") return { structuredContent: { items: [] } };
+      if (name === "get_grocery_details") return { structuredContent: { result: { id: args.product_id, name: "Milk" } } };
       if (name === "show_my_favorites") {
         assert.equal(args.result_count, 1);
         return { structuredContent: { result: [] } };
@@ -65,8 +64,8 @@ test("production acceptance omits removed saved-storage tools while retaining sa
 
   const report = await verifyReadOnlyProductionFeatures(client);
   assert.deepEqual(calls, [
-    "find_groceries", "show_my_favorites", "plan_my_shopping", "plan_my_shopping", "show_grocery_sections",
-    "browse_grocery_section", "show_my_basket", "review_proposed_basket",
+    "find_groceries", "get_grocery_details", "show_my_favorites", "plan_my_shopping", "plan_my_shopping", "show_grocery_sections",
+    "browse_grocery_section", "show_my_basket",
   ]);
   for (const forbidden of [
     ...productionToolInventory.prepareOnly,
@@ -81,12 +80,11 @@ test("service acceptance has a closed read-only fixture inventory and proves pla
   const client: AcceptanceClient = {
     listTools: async () => ({ tools: serviceAcceptanceToolInventory.map((name) => ({ name })) }),
     listResources: async () => ({ resources: serviceAcceptanceResourceInventory.map((uri) => ({ uri })) }),
-    readResource: async () => ({ contents: [{ text: "picker" }] }),
     callTool: async ({ name }) => {
       calls.push(name);
       if (["plan_my_shopping", "review_items_to_add", "add_approved_items"].includes(name)) return { isError: true };
       if (name === "find_groceries") return { structuredContent: { result: [{ id: 7 }] } };
-      if (name === "review_proposed_basket") return { structuredContent: { items: [] } };
+      if (name === "get_grocery_details") return { structuredContent: { result: { id: 7, name: "Milk" } } };
       if (name === "show_grocery_sections") return { structuredContent: { departments: [{ id: "fruit" }] } };
       if (name === "show_my_basket") return { structuredContent: { items: [] } };
       return { structuredContent: { result: [] } };
@@ -94,19 +92,18 @@ test("service acceptance has a closed read-only fixture inventory and proves pla
   };
   const report = await verifyServiceAcceptanceFeatures(client);
   assert.deepEqual(calls, [
-    "find_groceries", "show_my_favorites", "show_grocery_sections", "browse_grocery_section", "show_my_basket",
-    "review_proposed_basket", "plan_my_shopping", "review_items_to_add", "add_approved_items",
+    "find_groceries", "get_grocery_details", "show_my_favorites", "show_grocery_sections", "browse_grocery_section", "show_my_basket",
+    "plan_my_shopping", "review_items_to_add", "add_approved_items",
   ]);
   assert.deepEqual(report.denied, ["plan_my_shopping", "review_items_to_add", "add_approved_items"]);
-  assert.equal(report.requestCount, 12);
+  assert.equal(report.requestCount, 11);
 });
 
 test("service acceptance closes its inventory when Apps are disabled", async () => {
   const calls: string[] = [];
   const client: AcceptanceClient = {
-    listTools: async () => ({ tools: serviceAcceptanceToolInventory.filter((name) => name !== "review_proposed_basket" && name !== "review_shopping_list").map((name) => ({ name })) }),
+    listTools: async () => ({ tools: serviceAcceptanceToolInventory.map((name) => ({ name })) }),
     listResources: async () => ({ resources: [] }),
-    readResource: async () => { throw new Error("Apps-disabled acceptance must not read a picker resource"); },
     callTool: async ({ name }) => {
       calls.push(name);
       if (["plan_my_shopping", "review_items_to_add", "add_approved_items"].includes(name)) return { isError: true };
@@ -117,13 +114,13 @@ test("service acceptance closes its inventory when Apps are disabled", async () 
     },
   };
   const report = await verifyServiceAcceptanceFeatures(client);
-  assert.equal(calls.includes("review_proposed_basket"), false);
-  assert.equal(report.requestCount, 10);
+  assert.equal(calls.includes("get_grocery_details"), true);
+  assert.equal(report.requestCount, 11);
 });
 
 test("service acceptance accepts only explicit HTTP 403 transport denials", async () => {
   const client = {
-    listTools: async () => ({ tools: serviceAcceptanceToolInventory.filter((name) => name !== "review_proposed_basket" && name !== "review_shopping_list").map((name) => ({ name })) }),
+    listTools: async () => ({ tools: serviceAcceptanceToolInventory.map((name) => ({ name })) }),
     listResources: async () => ({ resources: [] }),
     readResource: async () => ({ contents: [] }),
     callTool: async ({ name }: { name: string }) => {

@@ -1,5 +1,15 @@
 import type { Product } from "./client.js";
-import { safePickerImageUrl } from "./picker/contract.js";
+
+export const IMAGE_ORIGINS = ["https://nemlig.com", "https://www.nemlig.com"] as const;
+
+/** Keep provider-hosted images safe for model-visible product output. */
+export const safeNemligImageUrl = (value: unknown): string | undefined => {
+  if (typeof value !== "string") return undefined;
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" && IMAGE_ORIGINS.includes(url.origin as typeof IMAGE_ORIGINS[number]) ? url.href : undefined;
+  } catch { return undefined; }
+};
 
 export interface ProductCandidate {
   id: number | undefined;
@@ -34,7 +44,7 @@ export function rankProducts(products: Product[], query: string): ProductCandida
     is_organic: product.isOrganic,
     is_frozen: product.isFrozen,
     is_on_discount: product.isOnDiscount,
-    image_url: safePickerImageUrl(product.imageUrl),
+    image_url: safeNemligImageUrl(product.imageUrl),
     tags: [] as string[],
   }));
   const available = candidates.filter((product) => product.available);

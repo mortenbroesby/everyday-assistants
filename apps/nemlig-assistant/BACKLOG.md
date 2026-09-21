@@ -39,7 +39,7 @@ Current checked outcomes and no-op decisions are recorded in the
 - Evaluate `html-to-text` to replace regex HTML stripping for product evidence.
 - Keep explicit public planning output schemas; saved-list schemas are retired by `remove-saved-shopping`.
 - Decouple CLI/server composition and isolate testable planning responsibilities.
-- Separate picker presentation where packaging tests justify it, without rebuilding the UI.
+- Keep presentation work out of the MCP server unless a concrete client need justifies it.
 - Make acceptance entry points import-safe and enforce existing release-version policy in CI.
 - Enable native unused-code checks and document safety/public contracts.
 - Reconcile backlog/documentation status with implementation and acceptance evidence.
@@ -349,7 +349,7 @@ fallback, speculative request amplification, or basket changes.
 [remove-saved-shopping](../../openspec/changes/remove-saved-shopping/proposal.md).
 
 Remove all eight persistence tools and their application/storage adapters. Keep
-same-conversation planning, picker and exact basket operations. Existing saved
+same-conversation planning and exact basket operations. Existing saved
 records and the retained inactive storage namespace remain untouched; cleanup
 would be a separate data decision. Future native Nemlig-list support is deferred.
 This supersedes the earlier named-list and saved-plan retirement/migration plan.
@@ -384,10 +384,10 @@ link their own Nemlig account. Do not share the owner's credentials, basket,
 sessions, proposals, or approvals, and do not build multi-user infrastructure
 until a second real user is ready to onboard.
 
-## Optional picker polish
+## Custom presentation
 
-**Status:** Deferred until family use identifies a concrete problem.
+**Status:** Removed from the MCP surface by the composable workflow reset.
 
-The explicit visual chooser now has clean product cards with title, description,
-image, package, price, availability, and no controls for empty results. Revisit
-layout or richer comparison only when real use shows which details are missing.
+Keep product discovery and exact details conversational. Revisit a custom client
+presentation only when a concrete family-use problem and a separate approved
+interface contract justify it.

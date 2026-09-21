@@ -1,6 +1,6 @@
 ## Purpose
 
-Defines a local MCP server and optional picker that expose the TypeScript shopper's safe non-recipe product and basket capabilities to compatible clients.
+Defines a local MCP server that exposes the TypeScript shopper's safe non-recipe product and basket capabilities to compatible clients.
 
 ## Requirements
 
@@ -16,11 +16,11 @@ The system SHALL expose a `nemlig-assistant` MCP server over stdio through the l
 - **THEN** the tool returns a concise sanitized MCP error without a stack trace
 
 ### Requirement: Non-recipe tool surface
-The server SHALL expose product search, favorites, guided planning, department browsing, plan snapshot, basket view, feature-request, and proposal-based basket tools; SHALL conditionally expose the picker; and SHALL NOT expose direct model-visible basket mutation, recipe, checkout, order, payment, purchase, or delivery-slot tools.
+The server SHALL expose product search, favourites, exact product details, guided planning, department browsing, basket view, and staged basket review/apply tools; and SHALL NOT expose custom UI resources, direct model-visible basket mutation, recipe, checkout, order, payment, purchase, or delivery-slot tools.
 
 #### Scenario: Enumerate base tools
-- **WHEN** a client lists tools with picker support disabled
-- **THEN** the read-only discovery and planning tools, local snapshot tools, basket view, feature request, and prepare/apply proposal pairs remain available
+- **WHEN** a client lists tools
+- **THEN** the read-only discovery, exact-details, planning, section, basket-view, and prepare/apply proposal pairs remain available
 
 #### Scenario: Inspect prohibited tools
 - **WHEN** a client enumerates all tools
@@ -111,67 +111,16 @@ The replacement preparation tool SHALL report the exact current line total, prop
 - **WHEN** the proposed replacement line total is equal to or greater than the current line total
 - **THEN** the review reports the signed price difference without labeling it as savings or suppressing the candidate
 
-### Requirement: Optional interactive picker
-The server SHALL keep `plan_my_shopping` conversational without a UI resource association, SHALL enable the explicit `choose_products_visually` tool and shared `ui://nemlig/picker.html` resource by default, SHALL disable that picker tool and resource when `NEMLIG_MCP_APPS` is `0`, `false`, `no`, or `off` ignoring case and surrounding whitespace, and SHALL leave every conversational tool enabled.
+### Requirement: Composable catalogue and planning surface
+The server SHALL expose current catalogue search, favourites, grocery sections, browsing, exact product details, basket reads, and optional request-scoped planning as independent conversational capabilities. Exact product details SHALL resolve one current product by its positive catalogue ID and SHALL remain read-only. The server SHALL not advertise a custom UI tool or resource.
 
 #### Scenario: Ordinary planning runs
 - **WHEN** a client invokes `plan_my_shopping` in automatic or manual mode
 - **THEN** the client receives the complete structured result without automatically opening an interactive resource
 
-#### Scenario: Picker enabled
-- **WHEN** the picker setting is unset or enabled and the client calls `choose_products_visually`
-- **THEN** the client can render the returned single-query candidates from the shared resource
-
-#### Scenario: Picker disabled
-- **WHEN** the picker setting has a recognized false value
-- **THEN** the picker tool and resource are absent while guided planning and all other conversational tools remain available
-
-### Requirement: Picker approval interaction
-The picker SHALL display usable candidate identity, title, concise factual description when available, direct product image when available, package, price, and availability. It SHALL render selection and preparation controls only when at least one real candidate can be selected, and SHALL use the existing separate prepare and apply tools for an exact proposal.
-
-#### Scenario: Automatic run is fully clear
-- **WHEN** every line in an automatic run is covered or has a deterministic clear match
-- **THEN** no choice interface is shown and the unchanged additions remain available to the conversational prepare and apply flow
-
-#### Scenario: Explicit visual choice has candidates
-- **WHEN** the user explicitly requests visual choice and the catalogue returns usable candidates
-- **THEN** the picker shows bounded candidate cards with factual product evidence and an obvious exact selection action without changing the basket
-
-#### Scenario: Manual choice is needed
-- **WHEN** the user explicitly requests visual manual choice and usable candidates exist
-- **THEN** the picker shows those candidates and updates only local choice state without changing the basket
-
-#### Scenario: Explicit visual choice is empty
-- **WHEN** the direct catalogue search succeeds with no usable candidate
-- **THEN** the picker explains that no matching product was found and renders no quantity, selection, or basket-preparation control
-
-#### Scenario: Discovery fails
-- **WHEN** an explicit visual-choice request cannot complete catalogue discovery
-- **THEN** the client receives a concise failure result and no interactive choice or basket-preparation control is offered
-
-#### Scenario: User adds from a card
-- **WHEN** the user chooses an available candidate and a positive quantity
-- **THEN** the picker updates local review state without changing the basket or silently selecting another product
-
-#### Scenario: User prepares a manual batch
-- **WHEN** the user activates prepare with an available selected product and positive quantity
-- **THEN** the picker calls `review_items_to_add` once and displays the exact line, price, total, and expiry without mutation
-
-#### Scenario: User prepares the selected batch
-- **WHEN** the user activates prepare with at least one selected positive quantity
-- **THEN** the picker creates one exact additions proposal without mutation
-
-#### Scenario: User applies the displayed manual proposal
-- **WHEN** the user explicitly activates apply and the host authorizes the unchanged proposal
-- **THEN** the picker calls `add_approved_items` and displays verified basket readback or a sanitized refusal
-
-#### Scenario: User applies the displayed proposal
-- **WHEN** the displayed proposal has exact approval and the host authorizes the write tool
-- **THEN** the picker calls `add_approved_items` and displays verified basket readback or a sanitized refusal
-
-#### Scenario: Client cannot render MCP Apps
-- **WHEN** a client does not support the interactive resource
-- **THEN** the same product discovery and manual selection behavior remains available conversationally
+#### Scenario: Exact product details are requested
+- **WHEN** a client supplies a positive product ID returned by a current search or plan
+- **THEN** the server returns bounded current product facts without reading or changing the basket
 
 ### Requirement: Guided shopping MCP tools
 The server SHALL expose read-only `plan_shopping_list`, `list_departments`, `browse_department`, and `load_shopping_plan` tools plus a local-state `save_shopping_plan` tool, with schemas and annotations matching their actual behavior.
@@ -191,8 +140,8 @@ The server SHALL expose read-only `plan_shopping_list`, `list_departments`, `bro
 ### Requirement: Planning candidate metadata
 The planning and browsing tools SHALL return source, normalized dietary and discount flags, item price, unit price, package size, brand, description and approved direct HTTPS image URL when available, constraint outcomes, deterministic preference and clarity tags, current basket quantity, remaining quantity when selected, resolution state, and automatic coverage fields.
 
-#### Scenario: Client cannot render MCP Apps
-- **WHEN** a client does not support the interactive resource
+#### Scenario: Client consumes structured results
+- **WHEN** a client reads a planning or browsing result
 - **THEN** the conversational tool result contains every factual field required to select a clear candidate automatically or present an unresolved choice
 
 #### Scenario: Candidate is a clear automatic match
@@ -224,12 +173,12 @@ The `list_favorites` tool SHALL accept optional non-empty search text, SHALL ret
 
 ### Requirement: Intent-directed product discovery
 
-The MCP server SHALL guide clients to use `plan_my_shopping` for ordinary product planning and automatic or manual grocery runs without UI, SHALL use `find_groceries` for direct catalogue searches and as the per-line read-only recovery when a plan reports `discovery_unavailable`, SHALL use `choose_products_visually` only for an explicit visual-choice request, and SHALL reserve `show_my_favorites` for explicit favourite browsing. Before either catalogue tool is called, the client SHALL translate or normalize English, mixed-language, misspelled, or over-specific wording into one short Danish catalogue phrase per line, preserving a distinctive brand with the intended Danish product category. The client SHALL carry explicit proceed intent and requested mode separately from the normalized search phrase.
+The MCP server SHALL guide clients to use `plan_my_shopping` for ordinary product planning, `find_groceries` for direct catalogue searches and per-line read-only recovery when a plan reports `discovery_unavailable`, `get_grocery_details` for one exact current product, and `show_my_favorites` for explicit favourite browsing. Before catalogue tools are called, the client SHALL translate or normalize English, mixed-language, misspelled, or over-specific wording into one short Danish catalogue phrase per line, preserving a distinctive brand with the intended Danish product category. The client SHALL carry explicit proceed intent and requested mode separately from the normalized search phrase.
 
 #### Scenario: Ordinary product request
 
 - **WHEN** the user asks to find one or more products without requesting a specific search source or visual choice
-- **THEN** the server guidance directs the client to `plan_my_shopping` in automatic mode with one normalized Danish phrase per line and does not attach a picker
+- **THEN** the server guidance directs the client to `plan_my_shopping` in automatic mode with one normalized Danish phrase per line and does not attach a custom UI resource
 
 #### Scenario: Planning discovery fallback
 
@@ -245,11 +194,6 @@ The MCP server SHALL guide clients to use `plan_my_shopping` for ordinary produc
 
 - **WHEN** the user explicitly asks to search the general Nemlig catalog
 - **THEN** the server guidance permits `find_groceries` with the same normalized Danish catalogue-phrase rule
-
-#### Scenario: Explicit visual-choice request
-
-- **WHEN** the user explicitly asks to choose products visually
-- **THEN** the server guidance permits `choose_products_visually` and no picker is attached to ordinary planning or fallback searches
 
 #### Scenario: Explicit favorites request
 
@@ -277,48 +221,23 @@ The MCP surface SHALL support one user-visible flow for up to fifty grocery line
 - **WHEN** some lines resolve clearly and others remain unresolved
 - **THEN** the clear authorized additions may complete while unresolved lines remain unchanged and are returned for optional manual follow-up
 
-### Requirement: Conversational proposed-basket picker
+### Requirement: Conversational reviewed basket changes
 
-The `review_proposed_basket` tool SHALL reuse one read-only Apps resource to render complete proposal, focused replacement choice, and final recap presentations. It SHALL keep product summaries visible, distinguish favourite-derived selections, keep choices local until one deliberate host message, and perform no automatic provider search, basket read, or basket mutation.
+The server SHALL keep catalogue results and exact product details conversational, while basket changes SHALL remain behind the existing matching staged review/apply tools and explicit approval. Review and apply responses SHALL retain structured data plus a readable text fallback; no custom UI resource is required.
 
-#### Scenario: Complete proposal is visible
+#### Scenario: Exact review is submitted
 
-- **WHEN** the tool receives a proposal presentation
-- **THEN** it renders every resolved item as a compact responsive row with ingredient, requested quantity, image fallback, exact product name, brand, package, package count, price, favourite provenance, and integer confidence
+- **WHEN** the user requests a basket change
+- **THEN** the server returns the matching factual review without mutating the basket
 
-#### Scenario: Rich evidence is available
+#### Scenario: Exact approval is submitted
 
-- **WHEN** a product supplies description, declaration, or item details
-- **THEN** the row exposes only populated evidence sections through accessible controls without hiding the product summary
-
-#### Scenario: Focused choices are rendered
-
-- **WHEN** the tool receives a choices presentation for challenged ingredients
-- **THEN** it renders one native radio group per ingredient from the selected product and supplied alternatives, with no search input or direct provider call
-
-#### Scenario: Choice is submitted
-
-- **WHEN** the user deliberately submits focused replacements
-- **THEN** the picker sends one bounded host message containing each challenged ingredient, chosen product ID, and requested quantity, and neither prepares nor applies a basket proposal
-
-#### Scenario: Final recap is rendered
-
-- **WHEN** the tool receives a recap presentation
-- **THEN** it renders every retained and replaced item, marks only supplied changed lines, and labels the single final action `Add to Nemlig basket`
-
-#### Scenario: Final approval is submitted
-
-- **WHEN** the user activates `Add to Nemlig basket`
-- **THEN** the picker sends one exact conversational approval handoff, disables duplicate submission while pending, performs no direct basket call, and never retries automatically
-
-#### Scenario: Host message fails
-
-- **WHEN** a replacement or approval host message fails or a stale completion arrives
-- **THEN** the picker ignores stale completion, restores a recoverable control state, and never sends a duplicate automatically
+- **WHEN** the user explicitly approves an unchanged review
+- **THEN** the matching apply tool performs the bounded mutation, verifies basket readback, and returns structured data plus a readable fallback
 
 ### Requirement: Complete production feature acceptance
 
-The system SHALL provide an automated production acceptance workflow that verifies the complete advertised MCP tool and resource surface against the hosted service. The workflow SHALL cover authentication, discovery, product search, favorites, guided planning, department browsing, plan snapshot save/load when supported in production, basket view, feature-request contract without submitting a real issue, picker metadata, and every proposal preparation path.
+The system SHALL provide an automated production acceptance workflow that verifies the complete advertised MCP tool and resource surface against the hosted service. The workflow SHALL cover authentication, discovery, product search, exact product details, favourites, guided planning, department browsing, basket view, and every proposal preparation path without submitting a real issue or applying a real basket mutation.
 
 #### Scenario: Read-only production acceptance runs
 
@@ -396,76 +315,18 @@ The guided planning tool SHALL accept an optional requested amount and supported
 
 #### Scenario: Meaningful choice is requested
 - **WHEN** the client marks a line as requiring explicit choice and no preferred brand produces one clear result
-- **THEN** the result remains unresolved with a bounded set of usable candidates and no picker is attached unless the user explicitly asks for visual choice
+- **THEN** the result remains unresolved with a bounded set of usable candidates and no custom UI resource is attached
 
 #### Scenario: Legacy package-count line
 - **WHEN** a client supplies only the existing positive quantity
 - **THEN** the tool preserves package-count planning behavior and remains backward compatible
 
-### Requirement: Self-contained picker resource
-The server SHALL serve the optional picker as a locally built, self-contained HTML resource whose executable JavaScript and application styles require no network origin, SHALL preserve `ui://nemlig/picker.html` and `text/html;profile=mcp-app`, SHALL retain the default-on feature gate and all recognized false spellings, and SHALL preserve conversational results when the resource is disabled or unsupported.
+### Requirement: No custom presentation resource
+The server SHALL not serve a custom picker HTML resource or register a visual product-choice tool. Product image URLs included in model-visible catalogue data SHALL be retained only for the observed HTTPS Nemlig origins; hostile, non-HTTPS, and unrelated origins SHALL be omitted while text details remain available.
 
-#### Scenario: Render without executable network access
-- **WHEN** a compatible client loads the enabled picker while executable network access is unavailable
-- **THEN** the picker renders and handles tool results using only the served resource while approved product images remain optional
-
-#### Scenario: Disable the picker
-- **WHEN** `NEMLIG_MCP_APPS` is `0`, `false`, `no`, or `off` ignoring case and surrounding whitespace
-- **THEN** the picker tool and resource are absent while every conversational tool remains available
-
-#### Scenario: Inspect resource policy
-- **WHEN** a client receives the picker resource metadata and built HTML
-- **THEN** the artifact contains no external application script, stylesheet, dynamic JavaScript chunk, or API fetch and `resourceDomains` contains only the approved Nemlig product-image origins plus the exact optional OpenAI font origin
-
-### Requirement: Safe reviewed-proposal presentation
-The picker SHALL use the shared Nemlig React and OpenAI Apps SDK UI foundation, SHALL prefer structured content over the JSON-text fallback, SHALL preserve loading, malformed, rejected, empty, ingredient, quantity, confidence, favorite, pantry, proposed-product, alternative, price, description, availability, and alternative-disclosure presentation, and SHALL render all untrusted product content without executable interpretation.
-
-#### Scenario: Render a complete reviewed proposal
-- **WHEN** a valid structured tool result contains proposed products, alternatives, rejected items, favorite matches, or pantry assumptions
-- **THEN** the picker displays the existing factual fields, expands the existing low-confidence detail state, and offers actions only for available non-proposed alternatives
-
-#### Scenario: Use text fallback
-- **WHEN** structured content is absent and the text result contains the same valid JSON payload
-- **THEN** the picker displays the same reviewed proposal without changing its authority or selection behavior
-
-#### Scenario: Render hostile content
-- **WHEN** product text or image URLs attempt markup, script execution, or an unapproved origin
-- **THEN** text remains inert, the unapproved image is omitted, and approved images retain useful alt text, lazy loading, `no-referrer`, and broken-image fallback
-
-#### Scenario: Reuse the component system
-- **WHEN** proposed and alternative product cards render shared content or an enabled alternative action
-- **THEN** both use one shared card implementation and the action/status styling comes from Apps SDK UI rather than a duplicated local component system
-
-#### Scenario: Showcase intended visual states
-- **WHEN** a developer opens the local Nemlig UI showcase
-- **THEN** it uses the production presentation and foundational styles with clearly synthetic state, makes no Nemlig call, and demonstrates the reviewed design across representative success, progress, empty, error, light/dark, and narrow/wide states
-
-#### Scenario: Follow the host theme
-- **WHEN** the host supplies or changes supported theme, style variables, fonts, or safe-area insets, or no host context is available yet
-- **THEN** official SDK hooks apply the authenticated host context, the picker uses operating-system appearance and system fonts as fallbacks, its layout respects safe areas, and blocked optional fonts do not prevent rendering or choosing
-
-#### Scenario: Use an accessible narrow layout
-- **WHEN** the picker is used with a keyboard at a 320 px viewport or 200% text zoom
-- **THEN** disclosures and enabled actions remain operable with visible focus, action targets are at least 44 px, text meets WCAG AA contrast, and content does not require horizontal or nested scrolling
-
-### Requirement: Bounded alternative-choice lifecycle
-The picker SHALL have one host-session owner per mounted resource, register result handling before connecting, dispose or invalidate that session on unmount, and send the exact existing conversational alternative-choice message at most once per deliberate activation. It SHALL perform no automatic retry, reconnect, polling, repeated send, proposal application, or basket mutation.
-
-#### Scenario: Result arrives during connection
-- **WHEN** the host delivers a tool result while the initial connection is being established
-- **THEN** the picker receives and renders the result without opening another connection
-
-#### Scenario: User chooses an alternative
-- **WHEN** the user activates an available non-proposed candidate for an ingredient
-- **THEN** the picker sends `Choose product <id> for <ingredient> instead.` exactly once and disables duplicate activation while the send is pending
-
-#### Scenario: Choice send fails
-- **WHEN** the host rejects or fails the choice message
-- **THEN** the picker reports a concise failure, performs no automatic resend, and permits one new deliberate activation
-
-#### Scenario: Result changes or picker unmounts during pending work
-- **WHEN** a newer result replaces the view or the resource unmounts while connection or message work remains pending
-- **THEN** stale completion cannot alter the current view or trigger another message, and the old session no longer remains active
+#### Scenario: Resource inventory is inspected
+- **WHEN** a client requests the MCP resource inventory
+- **THEN** no Nemlig Assistant custom resource is advertised, and clients can continue with the conversational tools
 
 ### Requirement: Parallel reads share pre-authentication
 

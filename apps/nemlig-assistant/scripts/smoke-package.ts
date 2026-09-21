@@ -37,7 +37,6 @@ try {
     "dist/http.js.map",
     "dist/mcp.js",
     "dist/mcp.js.map",
-    "dist/picker.html",
     "package.json",
   ]);
   assert.doesNotMatch(packedPaths.join("\n"), /test|credential|token|cookie|\.auth|python/i);
@@ -85,7 +84,7 @@ try {
 
   const transport = new StdioClientTransport({
     command: bin("nemlig-mcp"),
-    env: { ...process.env, NEMLIG_MCP_APPS: "0" },
+    env: { ...process.env },
   });
   const client = new Client({ name: "package-smoke", version: "1.0.0" });
   await client.connect(transport);
@@ -100,6 +99,7 @@ try {
       "check_nemlig_connection",
       "empty_approved_basket",
       "find_groceries",
+      "get_grocery_details",
       "get_profile",
       "make_approved_item_swap",
       "plan_my_shopping",
@@ -118,18 +118,6 @@ try {
   } finally {
     await client.close();
   }
-
-  const presentation = new Client({ name: "package-presentation-smoke", version: "1.0.0" });
-  try {
-    await presentation.connect(new StdioClientTransport({ command: bin("nemlig-mcp"), env: { PATH: process.env.PATH ?? "", NEMLIG_MCP_APPS: "1" } }));
-    assert.equal(presentation.getServerVersion()?.icons, undefined);
-    const resource = (await presentation.readResource({ uri: "ui://nemlig/picker.html" })).contents[0];
-    assert.ok(resource && "text" in resource);
-    assert.equal(resource.uri, "ui://nemlig/picker.html");
-    assert.equal(resource.mimeType, "text/html;profile=mcp-app");
-    assert.equal(resource.text, await readFile(path.join(installed, "picker.html"), "utf8"));
-    assert.deepEqual(resource._meta, { ui: { csp: { resourceDomains: ["https://nemlig.com", "https://www.nemlig.com", "https://cdn.openai.com"] } } });
-  } finally { await presentation.close(); }
 
   console.log("Packed Nemlig Assistant interfaces verified.");
 } finally {

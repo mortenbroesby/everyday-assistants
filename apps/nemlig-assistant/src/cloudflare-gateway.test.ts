@@ -196,7 +196,7 @@ test("service acceptance denies forbidden calls before admission and Container f
   assert.equal(forwarded, 0);
 });
 
-test("service acceptance permits reviewed proposals and rejects the legacy raw chooser", async () => {
+test("service acceptance permits retained read-only tools and rejects the legacy raw chooser", async () => {
   let admitted = 0;
   let forwarded = 0;
   const service = { subject: "service-client@clients", principal_key: "s".repeat(32), tier: 2 as const, enabled: true };
@@ -210,9 +210,9 @@ test("service acceptance permits reviewed proposals and rejects the legacy raw c
     admit: async () => { admitted += 1; return { admitted: true, state: emptyUsageState(new Date()) }; },
     forward: async () => { forwarded += 1; return new Response("ok"); },
   };
-  const reviewed = await handleGatewayRequest(mcpRequest({ method: "tools/call", params: { name: "review_proposed_basket" } }), serviceEnv, dependencies);
+  const details = await handleGatewayRequest(mcpRequest({ method: "tools/call", params: { name: "get_grocery_details" } }), serviceEnv, dependencies);
   const legacy = await handleGatewayRequest(mcpRequest({ method: "tools/call", params: { name: "choose_products_visually" } }), serviceEnv, dependencies);
-  assert.equal(reviewed.status, 200);
+  assert.equal(details.status, 200);
   assert.equal(legacy.status, 403);
   assert.equal(admitted, 1);
   assert.equal(forwarded, 1);

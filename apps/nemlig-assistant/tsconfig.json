@@ -9,6 +9,5 @@
     "noUnusedParameters": true,
     "skipLibCheck": true
   },
-  "include": ["src", "scripts", "release", "tsdown.config.ts"],
-  "exclude": ["src/picker"]
+  "include": ["src", "scripts", "release", "tsdown.config.ts"]
 }

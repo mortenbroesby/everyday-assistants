@@ -10,7 +10,7 @@ interface ToolResult {
 export const productionToolInventory = {
   readOnly: [
     "find_groceries", "get_profile", "show_my_favorites", "plan_my_shopping", "show_grocery_sections",
-    "browse_grocery_section", "check_nemlig_connection", "reconnect_nemlig_assistant", "show_my_basket", "review_proposed_basket", "review_shopping_list",
+    "browse_grocery_section", "check_nemlig_connection", "reconnect_nemlig_assistant", "show_my_basket", "get_grocery_details",
   ],
   prepareOnly: [
     "review_items_to_add", "review_item_to_remove", "review_item_swap", "review_emptying_basket",
@@ -21,7 +21,7 @@ export const productionToolInventory = {
   ],
 } as const;
 
-export const productionResourceInventory = ["ui://nemlig/picker.html"] as const;
+export const productionResourceInventory = [] as const;
 export const prohibitedProductionTools = ["checkout", "place_order", "pay", "change_delivery_slot"] as const;
 
 type ToolName = typeof productionToolInventory[keyof typeof productionToolInventory][number];
@@ -67,6 +67,20 @@ const isServiceForbiddenResponse = (error: unknown): boolean =>
   !!error && typeof error === "object"
   && (("status" in error && (error as { status?: unknown }).status === 403)
     || ("code" in error && (error as { code?: unknown }).code === 403));
+
+const listResourcesOrEmpty = async (
+  client: AcceptanceClient,
+  withinTotalDeadline: <T>(label: string, work: () => Promise<T>) => Promise<T>,
+  label: string,
+): Promise<Array<{ uri: string }>> => {
+  assert.ok(client.listResources, `${label} resource inventory client is required`);
+  try {
+    return (await withinTotalDeadline("resource inventory", () => client.listResources!())).resources;
+  } catch (error) {
+    if (error && typeof error === "object" && "code" in error && (error as { code?: unknown }).code === -32601) return [];
+    throw error;
+  }
+};
 
 const expectedTools = Object.values(productionToolInventory).flat();
 
@@ -168,10 +182,9 @@ export async function verifyReadOnlyProductionFeatures(
     "Production read-only acceptance",
     options.signal,
   );
-  assert.ok(client.listResources && client.readResource, "Production resource client is required");
   assertProductionInventory(
     (await withinTotalDeadline("tool inventory", () => client.listTools())).tools,
-    (await withinTotalDeadline("resource inventory", () => client.listResources!())).resources,
+    await listResourcesOrEmpty(client, withinTotalDeadline, "Production"),
   );
   const exercised: string[] = [];
   const unavailable: string[] = [];
@@ -185,6 +198,7 @@ export async function verifyReadOnlyProductionFeatures(
   const searched = await call<{ result?: Array<{ id?: number }> }>("find_groceries", { search_term: "banan", result_count: 3 });
   const productIds = (searched.result ?? []).flatMap(({ id }) => typeof id === "number" && Number.isInteger(id) && id > 0 ? [id] : []);
   assert.ok(productIds.length, "Production product search returned no usable product");
+  await call("get_grocery_details", { product_id: productIds[0] });
   const favorites = await call<{ result?: unknown[] }>("show_my_favorites", { search_term: "banan", result_count: 1, page: 1 });
   assert.ok(Array.isArray(favorites.result) && favorites.result.length <= 1, "Favorites acceptance exceeded one result");
   await call("plan_my_shopping", { lines: [{ id: "acceptance-banan", name: "banan", quantity: 1, constraints: {}, preferences: [] }] });
@@ -198,14 +212,6 @@ export async function verifyReadOnlyProductionFeatures(
 
   const current = await call<Basket>("show_my_basket");
   assert.ok(Array.isArray(current.items), "show_my_basket returned no basket items");
-  await call("review_proposed_basket", {
-    items: [{ ingredient: "banan", product: productIds[0], quantity: 1, confidence: 90 }],
-    pantry_assumptions: [],
-  });
-  const resource = await withinTotalDeadline("picker resource", () => client.readResource!({ uri: productionResourceInventory[0] }));
-  assert.ok(resource.contents.length, "Production picker resource is empty");
-  exercised.push(productionResourceInventory[0]);
-
   return { exercised, unavailable };
 }
 
@@ -219,14 +225,11 @@ export async function verifyServiceAcceptanceFeatures(
     "Service acceptance",
     options.signal,
   );
-  assert.ok(client.listResources && client.readResource, "Service resource client is required");
   const tools = (await withinTotalDeadline("tool inventory", () => client.listTools())).tools;
-  const resources = (await withinTotalDeadline("resource inventory", () => client.listResources!())).resources;
+  const resources = await listResourcesOrEmpty(client, withinTotalDeadline, "Service");
   const names = tools.map(({ name }) => name).sort();
-  const baseTools = serviceAcceptanceToolInventory.filter((name) => name !== "review_proposed_basket" && name !== "review_shopping_list");
-  const pickerEnabled = names.includes("review_proposed_basket");
-  assert.deepEqual(names, [...baseTools, ...(pickerEnabled ? ["review_proposed_basket", "review_shopping_list"] : [])].sort(), "Service MCP tool inventory drifted");
-  assert.deepEqual(resources.map(({ uri }) => uri).sort(), pickerEnabled ? [...serviceAcceptanceResourceInventory] : [], "Service MCP resource inventory drifted");
+  assert.deepEqual(names, [...serviceAcceptanceToolInventory].sort(), "Service MCP tool inventory drifted");
+  assert.deepEqual(resources.map(({ uri }) => uri).sort(), [...serviceAcceptanceResourceInventory].sort(), "Service MCP resource inventory drifted");
 
   const exercised: string[] = [];
   let requestCount = 2;
@@ -239,22 +242,13 @@ export async function verifyServiceAcceptanceFeatures(
   const searched = content<{ result?: Array<{ id?: number }> }>(await call("find_groceries", { search_term: "banan", result_count: 1 }), "find_groceries");
   const productId = searched.result?.find(({ id }) => typeof id === "number")?.id;
   assert.ok(productId, "Service product search returned no usable product");
+  content(await call("get_grocery_details", { product_id: productId }), "get_grocery_details");
   content(await call("show_my_favorites", { search_term: "banan", result_count: 1, page: 1 }), "show_my_favorites");
   const sections = content<{ departments?: Array<{ id?: string }> }>(await call("show_grocery_sections"), "show_grocery_sections");
   const section = sections.departments?.find(({ id }) => id)?.id;
   assert.ok(section, "Service grocery sections returned no usable section");
   content(await call("browse_grocery_section", { section, result_count: 1, page: 1 }), "browse_grocery_section");
   basket(await call("show_my_basket"), "show_my_basket");
-  if (pickerEnabled) {
-    content(await call("review_proposed_basket", {
-      items: [{ ingredient: "banan", product: productId, quantity: 1, confidence: 90 }],
-      pantry_assumptions: [],
-    }), "review_proposed_basket");
-    const resource = await withinTotalDeadline("picker resource", () => client.readResource!({ uri: serviceAcceptanceResourceInventory[0] }));
-    assert.ok(resource.contents.length, "Service picker resource is empty");
-    exercised.push(serviceAcceptanceResourceInventory[0]);
-    requestCount += 1;
-  }
   const denied: string[] = [];
   for (const name of ["plan_my_shopping", "review_items_to_add", "add_approved_items"]) {
     try {
