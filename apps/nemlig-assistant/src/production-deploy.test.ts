@@ -825,6 +825,15 @@ test("reordered bindings and explicit self targets preserve legacy and arbitrary
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
+test("Cloudflare null self-target metadata is treated as an unset target", async () => {
+  const { deps, calls, root } = await fixture({ versionBindings: (values) => values.map((value) =>
+    value.type === "durable_object_namespace" ? { ...value, script_name: null, environment: null } : value) });
+  try {
+    assert.equal((await deployProduction(commit, deps)).outcome, "success");
+    assert.equal(calls.filter(({ args }) => args.includes("deploy")).length, 2);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
 test("malformed bindings and starting safety or DO drift stop before deployment", async () => {
   const transforms: Array<(values: Record<string, unknown>[]) => Record<string, unknown>[]> = [
     (values) => [...values, { ...values[0] }],
