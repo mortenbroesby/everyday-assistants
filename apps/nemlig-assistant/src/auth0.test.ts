@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createLocalJWKSet, exportJWK, generateKeyPair, SignJWT } from "jose";
-import { createAuth0Verifier, fetchAuth0Metadata, loadAuth0Config, SERVICE_ACCEPTANCE_SCOPE, verifyAuth0BrowserIdToken, type Auth0Config } from "./auth0.js";
+import { Auth0InfrastructureError, createAuth0Verifier, fetchAuth0Metadata, loadAuth0Config, SERVICE_ACCEPTANCE_SCOPE, verifyAuth0BrowserIdToken, type Auth0Config } from "./auth0.js";
 import { parsePrincipalPolicy } from "./principal-policy.js";
 
 const ownerSubject = "auth0|owner";
@@ -59,6 +59,21 @@ test("Auth0 verifier returns the validated subject and enforces audience, issuer
   const expired = await new SignJWT({ scope: config.requiredScope }).setProtectedHeader({ alg: "RS256", kid: "test" })
     .setIssuer(config.issuer.href).setAudience(config.audience).setSubject(ownerSubject).setExpirationTime(1).sign(privateKey);
   await assert.rejects(() => verifier.verifyAccessToken(expired), /Invalid access token/u);
+});
+
+test("Auth0 verifier separates token rejection from JWKS transport and timeout failures", async () => {
+  const keyPair = await generateKeyPair("RS256");
+  const token = await new SignJWT({ scope: config.requiredScope })
+    .setProtectedHeader({ alg: "RS256", kid: "test" }).setIssuer(config.issuer.href)
+    .setAudience(config.audience).setSubject(ownerSubject).setExpirationTime("5m").sign(keyPair.privateKey);
+  const unavailable = createAuth0Verifier(config, new URL("https://tenant.example.test/.well-known/jwks.json"), async () => {
+    throw new TypeError("network unavailable");
+  });
+  await assert.rejects(() => unavailable.verifyAccessToken(token), (error: unknown) => error instanceof Auth0InfrastructureError && error.kind === "unavailable");
+  const timedOut = createAuth0Verifier(config, new URL("https://tenant.example.test/.well-known/jwks.json"), async () => {
+    throw new DOMException("timed out", "TimeoutError");
+  });
+  await assert.rejects(() => timedOut.verifyAccessToken(token), (error: unknown) => error instanceof Auth0InfrastructureError && error.kind === "timeout");
 });
 
 test("service acceptance requires the exact signed client, subject, and scope", async () => {

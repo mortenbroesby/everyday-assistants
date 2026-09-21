@@ -5,6 +5,7 @@ import { attachAdmissionCredential, classifyMcpMessage, handleGatewayRequest, ty
 import type { GatewayRequestEvent } from "./cloudflare-observability.js";
 import { emptyUsageState } from "./cloudflare-usage.js";
 import { parsePrincipalPolicy } from "./principal-policy.js";
+import { Auth0InfrastructureError } from "./auth0.js";
 
 const policy = parsePrincipalPolicy(JSON.stringify({
   schema_version: 1, revision: "family-v1",
@@ -375,6 +376,27 @@ test("stalled authentication, control, and backend boundaries fail with one sani
     assert.deepEqual(Object.keys(events[0] ?? {}).sort(), [
       "denial_reason", "elapsed_ms", "event", "method", "operation", "outcome", "request_id", "revision", "route", "schema_version", "status", "tier",
     ]);
+  }
+});
+
+test("Auth0 verifier infrastructure failures do not return a reconnect challenge or wake the Container", async () => {
+  for (const [kind, status, outcome] of [
+    ["unavailable", 503, "authentication_unavailable"],
+    ["timeout", 504, "authentication_timeout"],
+  ] as const) {
+    let forwarded = 0;
+    const events: GatewayRequestEvent[] = [];
+    const response = await handleGatewayRequest(mcpRequest({ method: "ping" }), env, {
+      authenticate: async () => { throw new Auth0InfrastructureError(kind); },
+      admit: async () => { throw new Error("unexpected"); },
+      forward: async () => { forwarded += 1; return new Response("unexpected"); },
+      event: (event) => events.push(event),
+    });
+    assert.equal(response.status, status);
+    assert.deepEqual(await response.json(), { error: outcome });
+    assert.equal(response.headers.get("www-authenticate"), null);
+    assert.equal(forwarded, 0);
+    assert.equal(events[0]?.outcome, outcome);
   }
 });
 

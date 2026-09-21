@@ -26,6 +26,7 @@ const outcomeSchema = z.enum([
   "request_rejected",
   "authentication_rejected",
   "authentication_timeout",
+  "authentication_unavailable",
   "control_timeout",
   "rate_limited",
   "capacity_rejected",

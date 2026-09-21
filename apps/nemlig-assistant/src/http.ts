@@ -9,7 +9,8 @@ import { randomUUID } from "node:crypto";
 import { realpathSync } from "node:fs";
 import { basename } from "node:path";
 import type { IncomingMessage, Server, ServerResponse } from "node:http";
-import { createAuth0Verifier, fetchAuth0Metadata, loadAuth0Config, SERVICE_ACCEPTANCE_SCOPE, type Auth0Config } from "./auth0.js";
+import { Auth0InfrastructureError, createAuth0Verifier, fetchAuth0Metadata, loadAuth0Config, SERVICE_ACCEPTANCE_SCOPE, type Auth0Config } from "./auth0.js";
+import { ServerError } from "@modelcontextprotocol/sdk/server/auth/errors.js";
 import { NemligClient, type ShoppingClient } from "./client.js";
 import { createMcpServer } from "./mcp.js";
 import { BasketProposalService } from "./proposals.js";
@@ -97,7 +98,16 @@ export function createHttpApp(
   });
 
   const authenticate = requireBearerAuth({
-    verifier,
+    verifier: {
+      async verifyAccessToken(token) {
+        try {
+          return await verifier.verifyAccessToken(token);
+        } catch (error) {
+          if (error instanceof Auth0InfrastructureError) throw new ServerError(error.kind === "timeout" ? "Authentication timeout." : "Authentication unavailable.");
+          throw error;
+        }
+      },
+    },
     requiredScopes: [],
     resourceMetadataUrl: getOAuthProtectedResourceMetadataUrl(config.publicUrl),
   });
@@ -153,6 +163,15 @@ export function createHttpApp(
       const session = sessionId ? sessions.get(sessionId) : undefined;
       if (session && (session.principalKey !== principal.principal_key
         || session.policyRevision !== config.principalPolicy.revision || session.generation !== generation)) {
+        const samePrincipal = session.principalKey === principal.principal_key;
+        if (samePrincipal) {
+          sessions.delete(sessionId!);
+          try {
+            await session.transport.close();
+          } catch {
+            // The session is already invalidated; cleanup remains best effort.
+          }
+        }
         return res.status(403).json({ error: "reconnect_required", connection_url: "https://nemlig-mcp.broesby.dk/connect" });
       }
       let transport = session?.transport;

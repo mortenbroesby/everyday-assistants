@@ -592,6 +592,10 @@ authorization UI or Auth0's browser redirect before a request reaches it.
    correlation ID, revision, route, status, and elapsed time. If there is no
    Worker event, the last completed boundary is before the Worker—ChatGPT app
    state, browser authorization, or Auth0—not the Container or Nemlig.
+   An `authentication_rejected` outcome is a token or principal decision and
+   may justify reconnect investigation. `authentication_timeout` or
+   `authentication_unavailable` is an Auth0 discovery/JWKS infrastructure
+   failure; it must not be reported as a request to replace credentials.
 5. After reconnect succeeds, open two fresh normal ChatGPT conversations. In
    each, check the connection and request at most one favorite. Record only pass
    or fail, timestamps, and Worker correlation IDs; do not record returned

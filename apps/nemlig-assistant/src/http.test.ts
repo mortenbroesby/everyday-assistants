@@ -6,7 +6,7 @@ import type { AddressInfo } from "node:net";
 import test from "node:test";
 import { createHttpApp } from "./http.js";
 import { createLocalJWKSet, exportJWK, generateKeyPair, SignJWT } from "jose";
-import { createAuth0Verifier, SERVICE_ACCEPTANCE_SCOPE, type Auth0Config } from "./auth0.js";
+import { Auth0InfrastructureError, createAuth0Verifier, SERVICE_ACCEPTANCE_SCOPE, type Auth0Config } from "./auth0.js";
 import { serviceAcceptanceToolInventory } from "./mcp.js";
 import { verifyServiceAcceptanceFeatures } from "./production-acceptance.js";
 import { handleGatewayRequest } from "./cloudflare-gateway.js";
@@ -127,6 +127,24 @@ test("HTTP MCP advertises Auth0, rejects anonymous and foreign origins, and pres
     assert.equal(invalidGet.status, 404);
 
     await client.close();
+  } finally {
+    server.closeAllConnections();
+    await new Promise<void>((resolve, reject) => server.close((error?: Error) => error ? reject(error) : resolve()));
+  }
+});
+
+test("HTTP Auth0 verifier infrastructure failures return a sanitized server error instead of an OAuth challenge", async () => {
+  const app = createHttpApp(config, oauth, {
+    verifyAccessToken: async () => { throw new Auth0InfrastructureError("unavailable"); },
+  });
+  const server = app.listen(0, config.host);
+  await new Promise<void>((resolve, reject) => { server.once("listening", resolve); server.once("error", reject); });
+  try {
+    const endpoint = `http://${config.host}:${(server.address() as AddressInfo).port}/mcp`;
+    const response = await fetch(endpoint, { method: "POST", body: "{}", headers: { authorization: "Bearer token", "content-type": "application/json" } });
+    assert.equal(response.status, 500);
+    assert.deepEqual(await response.json(), { error: "server_error", error_description: "Authentication unavailable." });
+    assert.equal(response.headers.get("www-authenticate"), null);
   } finally {
     server.closeAllConnections();
     await new Promise<void>((resolve, reject) => server.close((error?: Error) => error ? reject(error) : resolve()));
@@ -403,6 +421,12 @@ test("schema-v2 sessions decrypt controller credentials and reject stale generat
     });
     assert.equal(stale.status, 403);
     assert.deepEqual(await stale.json(), { error: "reconnect_required", connection_url: "https://nemlig-mcp.broesby.dk/connect" });
+    const closed = await fetch(endpoint, {
+      method: "POST",
+      body: JSON.stringify({ jsonrpc: "2.0", id: 3, method: "ping" }),
+      headers: { ...internalHeaders(next), "content-type": "application/json", "mcp-session-id": transport.sessionId! },
+    });
+    assert.equal(closed.status, 404);
     const wrong = await fetch(endpoint, {
       method: "POST",
       body: JSON.stringify({ jsonrpc: "2.0", id: 2, method: "initialize", params: {} }),
