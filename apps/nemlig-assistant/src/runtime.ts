@@ -47,18 +47,21 @@ export async function ensureLoggedIn(
 }
 
 export async function withAuthenticatedReadRetry<T>(
-  client: Pick<ShoppingClient, "isLoggedIn" | "login">,
+  client: Pick<ShoppingClient, "isLoggedIn" | "login"> & { getSessionGeneration?: () => number },
   loadCredentials: () => Promise<Credentials | undefined>,
   action: () => Promise<T>,
 ): Promise<T> {
   await ensureLoggedIn(client, loadCredentials);
+  const sessionGeneration = client.getSessionGeneration?.();
   try {
     return await action();
   } catch (error) {
     if (!(error instanceof NemligError) || error.status !== 401) {
       throw error;
     }
-    await login(client, loadCredentials);
+    if (sessionGeneration === undefined || client.getSessionGeneration?.() === sessionGeneration) {
+      await login(client, loadCredentials);
+    }
     return await action();
   }
 }
