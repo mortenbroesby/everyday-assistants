@@ -100,7 +100,7 @@ Readiness: all applicable live and repository gates complete, no retained unknow
 - [x] 9.7 Accept a bounded legacy starting revision from the already deployed provider state while preserving exact full-SHA identity for new candidates; ensure routine recovery finalization runs only after a successful provider deployment step.
 
 Implementation evidence: protected workflow dispatch and deploy-script recovery
-paths are covered by the workflow and production-deploy tests (93/93 focused
+paths are covered by the workflow and production-deploy tests (95/95 focused
 tests passed). A 2026-09-22
 read-only provider readback found Cloudflare's nullable Durable Object target
 metadata shape; the validator now accepts `null` as unset while retaining

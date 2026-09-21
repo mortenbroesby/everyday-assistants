@@ -426,3 +426,17 @@ Read-only Wrangler inspection confirmed the active Worker version carried `NEMLI
 The automatic protected workflow run [35660354070](https://github.com/mortenbroesby/everyday-assistants/actions/runs/35660354070) for merge SHA `8b92bd7d1c49826a54f34c4400d6a79d477cc2f4` passed exact-main CI and credential-free preflight, then stopped before provider mutation with `cloudflare_runtime_safety_mismatch`. Its bounded report recorded `lastVerifiedState: unchanged`, `transitions: []`, and `rollback: not_needed`; the finalizer was correctly skipped because the provider deployment step failed.
 
 Read-only Wrangler inspection showed the active Worker version represents unset Durable Object `script_name` and `environment` metadata as JSON `null`. The safety validator previously treated those API values as invalid targets, despite the local and live effective safety digests matching exactly. The validator now accepts `null` as unset while continuing to reject non-null cross-worker or non-production targets; a focused regression covers the real response shape. No provider mutation or recovery action was performed while correcting this boundary.
+
+## 2026-09-22 legacy binding follow-up
+
+Read-only inspection of the newest active Cloudflare deployment found the
+actual starting version `a6170344-7250-4696-96e9-6ca5332092bd` still carries
+`NEMLIG_MCP_AUTH_CANARY=false` from a reverted authentication-canary change.
+The previous validator rejected every unknown plain binding before provider
+mutation, so the protected workflow stopped with
+`cloudflare_runtime_safety_mismatch` even though the effective production
+configuration matched. The validator now accepts only this known legacy
+binding when it is explicitly disabled and still rejects `true`; the binding
+is ignored for candidate configuration and is not copied into deploy args.
+The focused deployment/workflow suites pass 95/95. No provider mutation or
+legacy-binding cleanup was performed.

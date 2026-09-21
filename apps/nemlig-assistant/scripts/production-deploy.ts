@@ -270,6 +270,7 @@ const configPlainSet = new Set<string>(configPlainNames);
 const requiredSecrets = new Set(["NEMLIG_MCP_PRINCIPALS"]);
 const expectedDo = new Map([["NEMLIG_MCP_CONTAINER", "NemligMcpContainer"], ["NEMLIG_PLAN_STORAGE", "PlanStorage"]]);
 const productionWorker = "nemlig-mcp-cloudflare-production";
+const legacyDisabledPlainBindings = new Map([["NEMLIG_MCP_AUTH_CANARY", "false"]]);
 
 const bindings = (resource: Record<string, unknown>): Map<string, Record<string, unknown>> => {
   const resources = object(resource.resources);
@@ -351,6 +352,8 @@ const versionConfig = (raw: string): EffectiveConfig => {
       if (value.type !== "plain_text") fail("cloudflare_runtime_safety_mismatch");
       const text = typeof value.text === "string" ? value.text : fail("cloudflare_runtime_safety_mismatch");
       vars.set(name, text);
+    } else if (legacyDisabledPlainBindings.has(name)) {
+      if (value.type !== "plain_text" || value.text !== legacyDisabledPlainBindings.get(name)) fail("cloudflare_runtime_safety_mismatch");
     } else if (value.type === "secret_text") {
       secrets.push(name);
     } else if (value.type !== "durable_object_namespace") fail("cloudflare_runtime_safety_mismatch");

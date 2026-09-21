@@ -834,6 +834,30 @@ test("Cloudflare null self-target metadata is treated as an unset target", async
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
+test("a disabled legacy auth canary binding is ignored during deployment readback", async () => {
+  const { deps, calls, root } = await fixture({ versionBindings: (values) => [
+    ...values,
+    { name: "NEMLIG_MCP_AUTH_CANARY", type: "plain_text", text: "false" },
+  ] });
+  try {
+    assert.equal((await deployProduction(commit, deps)).outcome, "success");
+    assert.equal(calls.filter(({ args }) => args.includes("deploy")).length, 2);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test("an enabled legacy auth canary binding remains unsafe", async () => {
+  const { deps, calls, root } = await fixture({ versionBindings: (values) => [
+    ...values,
+    { name: "NEMLIG_MCP_AUTH_CANARY", type: "plain_text", text: "true" },
+  ] });
+  try {
+    const report = await deployProduction(commit, deps);
+    assert.equal(report.outcome, "failed");
+    assert.equal(report.failure, "cloudflare_runtime_safety_mismatch");
+    assert.equal(calls.some(({ args }) => args.includes("deploy")), false);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
 test("malformed bindings and starting safety or DO drift stop before deployment", async () => {
   const transforms: Array<(values: Record<string, unknown>[]) => Record<string, unknown>[]> = [
     (values) => [...values, { ...values[0] }],
