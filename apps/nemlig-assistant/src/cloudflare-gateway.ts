@@ -9,7 +9,7 @@ import {
 } from "./cloudflare-observability.js";
 import { aggregateUsage, type AdmissionResult, type UsageState } from "./cloudflare-usage.js";
 import type { Principal } from "./principal-policy.js";
-import { Auth0InfrastructureError, oauthReconnectChallenge, SERVICE_ACCEPTANCE_SCOPE } from "./auth0.js";
+import { Auth0InfrastructureError, oauthReconnectChallenge } from "./auth0.js";
 
 export type OperationClass = "protocol" | "normal" | "expensive";
 export const INTERNAL_CREDENTIAL_HEADERS = [
@@ -281,7 +281,7 @@ export async function handleGatewayRequest(
         resource: config.publicUrl.href,
         resource_name: "Nemlig Assistant",
         authorization_servers: [config.issuer.href],
-        scopes_supported: [config.requiredScope, ...(config.serviceAcceptance ? [SERVICE_ACCEPTANCE_SCOPE] : [])],
+        scopes_supported: [config.requiredScope],
         bearer_methods_supported: ["header"],
       }), "protocol_completed");
     }

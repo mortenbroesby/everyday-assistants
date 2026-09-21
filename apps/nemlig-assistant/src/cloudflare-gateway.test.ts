@@ -96,6 +96,21 @@ test("unauthenticated requests never reach authentication backends or the Contai
   assert.equal(calls, 0);
 });
 
+test("public OAuth metadata advertises only the human connector scope", async () => {
+  const response = await handleGatewayRequest(new Request("https://mcp.example.test/.well-known/oauth-protected-resource/mcp"), {
+    ...env,
+    NEMLIG_MCP_SERVICE_ACCEPTANCE_ENABLED: "true",
+    NEMLIG_MCP_SERVICE_CLIENT_ID: "service-client",
+  }, {
+    authenticate: async () => undefined,
+    admit: async () => { throw new Error("unexpected admission"); },
+    forward: async () => new Response("unexpected"),
+  });
+  assert.equal(response.status, 200);
+  const metadata = await response.json() as { scopes_supported: string[] };
+  assert.deepEqual(metadata.scopes_supported, ["use:nemlig-assistant"]);
+});
+
 test("unknown, disabled, and malformed principals fail before admission or Container access", async () => {
   let admissionCalls = 0;
   let forwardCalls = 0;
