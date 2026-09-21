@@ -4,13 +4,13 @@ Owner clarification (2026-09-09): this is one-time restricted CI setup, not an o
 
 Status: PROVIDER SETUP COMPLETE. On 2026-09-09 the protected `nemlig-production` environment was verified with the owner reviewer, exact `main` branch policy, two required secrets, three required variables, and readiness enabled. The owner accepted the routine synthetic / first-cutover-and-relevant-change live evidence matrix. Secret values remain outside repository evidence.
 
-## Decisions to approve together after repository readiness
+## Recorded decisions and boundaries
 
-1. Accept the proposed release-class matrix: first cutover/changed authentication requires real-user/ChatGPT evidence; routine releases afterwards use machine-authenticated isolated fixtures and exact deployment checks, with no owner token.
-2. Accept one default-off production synthetic service identity. It runs real auth/admission/HTTP/MCP code but cannot load credentials, call Nemlig, reach family data/admin tools or write any state. This adds a production trust boundary; local tests must prove its isolation before activation.
-3. Accept one scoped Auth0 M2M application and token allowance within the existing plan, and an expiring Cloudflare deployment token with the smallest supported account/zone scope. Exact permissions and any account-wide residual authority must be supplied by Sol before approval; no plan upgrade is implicit.
-4. Confirm production environment review: proposed manual dispatch from main, owner reviewer, owner self-review permitted for solo operation, no administrator bypass. If independent review is required, identify an available second reviewer first.
-5. Confirm the first release window and initial maximum four supervised attempts/day; no automatic retries or scheduled runs. Additional attempts after recurring failures require cost/incident review.
+1. The release-class matrix is accepted: first cutover/changed authentication requires real-user/ChatGPT evidence; routine releases use machine-authenticated isolated fixtures and exact deployment checks, with no owner token.
+2. One default-off production synthetic service identity is accepted. It runs real auth/admission/HTTP/MCP code but cannot load credentials, call Nemlig, reach family data/admin tools or write any state.
+3. One scoped Auth0 M2M application and bounded token use are accepted within the existing plan, together with an expiring Cloudflare deployment token. No plan upgrade is implicit; the account-wide residual of the supported Cloudflare scope remains explicit.
+4. Production environment review is accepted for the recorded manual-dispatch/main policy, owner reviewer/self-review policy, and no administrator bypass. Automatic routine runs still enter that protected environment after successful main CI.
+5. The initial release ceiling remains four supervised attempts per day, with no schedule or automatic retry. Additional attempts after recurring failures require cost/incident review.
 
 ## Read-only evidence Sol must prepare first
 

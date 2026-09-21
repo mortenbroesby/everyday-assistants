@@ -440,3 +440,37 @@ binding when it is explicitly disabled and still rejects `true`; the binding
 is ignored for candidate configuration and is not copied into deploy args.
 The focused deployment/workflow suites pass 95/95. No provider mutation or
 legacy-binding cleanup was performed.
+
+## 2026-09-22 routine deployment and closeout evidence
+
+The protected workflow [35664402066](https://github.com/mortenbroesby/everyday-assistants/actions/runs/35664402066) completed successfully for exact main SHA `d5e62e6d5259e50ff668d26652a977009add565d` after PR #85. Release-gate and credential-free preflight passed, the protected deploy job ran on `ubuntu-latest`, and routine finalization removed the exact known terminal lease only after the artifact was saved. The bounded report recorded one `enable_deploy` transition, `outcome: success`, `rollback: not_needed`, and no basket or Nemlig data mutation.
+
+Read-only Cloudflare readback identified enabled Worker version
+`3c0a0cef-e011-4c09-9ed8-4c34e3da8b8a`, application version `74`, image
+`sha256:c6280f16f769c88dfcadbf731d2e514cdbb0aedc290e0b3f66b0d1b8f45e0d3b`,
+and `NEMLIG_MCP_REVISION` equal to the exact repository SHA. Durable Object
+target metadata had no non-null cross-worker or environment target. The
+read-only edge probe passed health/enabled state, exact revision, OAuth
+metadata, anonymous rejection, and foreign-origin rejection.
+
+The release job ran from `2026-09-21T22:47:28Z` to `22:50:28Z`; the deploy
+command ran from `22:47:53Z` to `22:50:09Z`. The service path issued one
+bounded machine token and one isolated service-fixture acceptance. The edge
+probe emitted five correlation IDs. The run used one candidate image and one
+Container application; it did not add a schedule, retry, Container, or
+capacity. These are observed run counts, not a claim of provider billing or
+tenant quota entitlement. The initial cost controls and the account-wide token
+scope residual remain documented in `design.md` and `owner-setup.md`.
+
+The credential-free Linux rehearsal is covered by exact-head CI run
+`35664217966`: `ubuntu-latest` executed the real `pnpm nemlig:production:ready`
+orchestration, including the 95 focused deployment/workflow tests. Those tests
+exercise fake provider/token seams and successful deployment, cancellation,
+same-SHA competition, source drift, rollback failure, late provider success,
+journal failure, and retained-ownership terminal states. No production
+credentials or provider mutation are involved in this rehearsal.
+
+The remaining live rollback rehearsal is intentionally not claimed. It would
+be a provider mutation requiring a separately authorized recovery window; the
+repository has instead verified the corresponding recovery and uncertainty
+paths with bounded fake traces and the successful routine readback above.
