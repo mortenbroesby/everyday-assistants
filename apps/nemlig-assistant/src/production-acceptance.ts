@@ -9,7 +9,7 @@ interface ToolResult {
 
 export const productionToolInventory = {
   readOnly: [
-    "find_groceries", "show_my_favorites", "plan_my_shopping", "show_grocery_sections",
+    "find_groceries", "get_profile", "show_my_favorites", "plan_my_shopping", "show_grocery_sections",
     "browse_grocery_section", "check_nemlig_connection", "reconnect_nemlig_assistant", "show_my_basket", "get_grocery_details",
   ],
   prepareOnly: [

@@ -100,6 +100,7 @@ try {
       "empty_approved_basket",
       "find_groceries",
       "get_grocery_details",
+      "get_profile",
       "make_approved_item_swap",
       "plan_my_shopping",
       "reconnect_nemlig_assistant",
