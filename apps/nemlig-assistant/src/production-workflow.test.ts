@@ -14,7 +14,7 @@ const section = (source: string, heading: string): string => {
   return next === -1 ? rest : rest.slice(0, next);
 };
 
-test("production workflow accepts manual dispatch or a version-policy-eligible CI-green merge", async () => {
+test("production workflow accepts manual dispatch or an exact CI-green main commit", async () => {
   const source = await readFile(workflowPath, "utf8");
   const trigger = section(source, "on:");
   assert.match(trigger, /^\x20{2}workflow_dispatch:\n/m);
@@ -23,6 +23,7 @@ test("production workflow accepts manual dispatch or a version-policy-eligible C
   assert.match(trigger, /commit:\n\s+description:.*commit/m);
   assert.match(trigger, /commit:[\s\S]*?required: true[\s\S]*?type: string/m);
   assert.match(trigger, /cutover:[\s\S]*?default: false[\s\S]*?type: boolean/m);
+  assert.match(trigger, /recovery:[\s\S]*?description:.*previously green main ancestor[\s\S]*?default: false[\s\S]*?type: boolean/m);
   assert.match(source, /^concurrency:\n\x20{2}group: nemlig-production\n\x20{2}cancel-in-progress: false$/m);
 
   const gate = section(source, "  release-gate:");
@@ -33,17 +34,14 @@ test("production workflow accepts manual dispatch or a version-policy-eligible C
   assert.match(gate, /ref: "\$\{\{ env\.CANDIDATE_SHA \}\}"/u);
   assert.match(gate, /persist-credentials: false/u);
   assert.match(gate, /fetch-depth: 0/u);
-  assert.match(gate, /pnpm install --frozen-lockfile/u);
-  assert.match(gate, /CANDIDATE_PARENT=\$\(git rev-parse "\$CANDIDATE_SHA\^1"\)/u);
   assert.match(gate, /git fetch origin refs\/heads\/main:refs\/remotes\/origin\/main/u);
-  assert.match(gate, /\[\[ "\$\(git rev-parse origin\/main\)" == "\$CANDIDATE_SHA" \]\]/u);
-  assert.match(gate, /pnpm --silent --filter nemlig-assistant check:version-bump --base "\$CANDIDATE_PARENT" --head "\$CANDIDATE_SHA" --json/u);
-  assert.match(gate, /policy\.eligible === true/u);
+  assert.match(gate, /\[\[ "\$\(git rev-parse origin\/main\)" != "\$CANDIDATE_SHA" \]\]/u);
+  assert.match(gate, /git merge-base --is-ancestor "\$CANDIDATE_SHA" origin\/main/u);
+  assert.match(gate, /Candidate is no longer current main/u);
+  assert.match(gate, /\[\[ "\$CANDIDATE_SHA" =~ \^\[0-9a-f\]\{40\}\$ \]\]/u);
+  assert.doesNotMatch(gate, /check:version-bump|check:release-note|CANDIDATE_PARENT|policy\.eligible/u);
   assert.match(gate, /echo "deploy=true" >> "\$GITHUB_OUTPUT"/u);
-  assert.match(gate, /\[\[ "\$EVENT_NAME" == "workflow_dispatch" \]\]/u);
   assert.match(gate, /FINALIZE_OPERATION/u);
-  assert.match(gate, /\[\[ "\$CUTOVER" == "true" \]\]/u);
-  assert.match(gate, /publish: "\$\{\{ steps\.approval\.outputs\.publish \}\}"/u);
   assert.doesNotMatch(gate, /CLOUDFLARE|NEMLIG_MCP|secrets\./u);
   assert.match(preflight, /needs: release-gate/u);
   assert.match(preflight, /needs\.release-gate\.outputs\.deploy == 'true'/u);
@@ -53,6 +51,7 @@ test("production workflow accepts manual dispatch or a version-policy-eligible C
   assert.match(preflight, /persist-credentials: false/u);
   assert.match(preflight, /pnpm install --frozen-lockfile/u);
   assert.match(preflight, /production:deploy -- preflight "\$CANDIDATE_SHA"/u);
+  assert.match(preflight, /production:deploy -- preflight --recovery "\$CANDIDATE_SHA"/u);
   assert.match(preflight, /env:\n\s+GH_TOKEN:/u);
 
   assert.match(deploy, /needs: \[release-gate, preflight\]/u);
@@ -68,6 +67,7 @@ test("production workflow accepts manual dispatch or a version-policy-eligible C
   assert.match(deploy, /NEMLIG_MCP_PUBLIC_URL: https:\/\/nemlig-mcp\.broesby\.dk\/mcp/u);
   assert.match(deploy, /RUNNER_TEMP\/nemlig-release\.json/u);
   assert.match(deploy, /pnpm --silent --filter nemlig-assistant production:deploy/u);
+  assert.match(deploy, /production:deploy -- --recovery "\$CANDIDATE_SHA"/u);
   assert.match(deploy, /\.git\/nemlig-production-deploy\/latest\.json/u);
   assert.match(deploy, /actions\/upload-artifact@[0-9a-f]{40}/u);
   assert.match(deploy, /id: release-artifact/u);
@@ -76,53 +76,29 @@ test("production workflow accepts manual dispatch or a version-policy-eligible C
   assert.doesNotMatch(source, /setup-.*provider|activate|cloudflare\/workers/u);
 });
 
-test("CI validates the reviewed release note over the same immutable range", async () => {
+test("CI does not gate verification on release metadata", async () => {
   const source = await readFile(ciWorkflowPath, "utf8");
-  const versionCheck = source.indexOf("check:version-bump --base \"$base\" --head \"$head\"");
-  const noteCheck = source.indexOf("check:release-note --base \"$base\" --head \"$head\"");
-  assert.ok(versionCheck >= 0 && noteCheck > versionCheck);
+  assert.doesNotMatch(source, /check:version-bump|check:release-note/u);
   assert.match(source, /actions\/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7\.0\.1/u);
 });
 
-test("release-bearing candidates validate reviewed notes before automatic deployment", async () => {
+test("deployment eligibility does not depend on release metadata", async () => {
   const source = await readFile(workflowPath, "utf8");
   const gate = section(source, "  release-gate:");
-  assert.match(gate, /check:release-note/u);
-  assert.match(gate, /--base "\$CANDIDATE_PARENT" --head "\$CANDIDATE_SHA"/u);
-  assert.ok(
-    gate.indexOf("check:version-bump") < gate.indexOf("check:release-note"),
-    "version eligibility must be established before note validation",
-  );
+  assert.doesNotMatch(gate, /check:version-bump|check:release-note|nemligRelease|codename/u);
+  assert.doesNotMatch(gate, /publish=true|outputs\.publish/u);
   assert.doesNotMatch(gate, /GH_TOKEN|pull-requests: read|\/pulls/u);
 });
 
-test("verified routine deployments publish an exact immutable GitHub prerelease downstream", async () => {
+test("deployment evidence remains artifact-backed without a publication side effect", async () => {
   const source = await readFile(workflowPath, "utf8");
   const deploy = section(source, "  deploy:");
-  const publish = section(source, "  publish-release:");
 
-  assert.match(deploy, /outputs:\n\s+artifact-id: "\$\{\{ steps\.release-artifact\.outputs\.artifact-id \}\}"/u);
   assert.match(deploy, /actions\/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7\.0\.1/u);
-  assert.match(publish, /needs: \[release-gate, deploy\]/u);
-  assert.match(publish, /needs\.release-gate\.outputs\.deploy == 'true'/u);
-  assert.match(publish, /needs\.release-gate\.outputs\.publish == 'true'/u);
-  assert.match(publish, /inputs\.finalize_operation == ''/u);
-  assert.match(publish, /permissions:\n\s+contents: write/u);
-  assert.doesNotMatch(publish, /environment:|CLOUDFLARE|NEMLIG_MCP|secrets\./u);
-  assert.match(publish, /actions\/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8\.0\.1/u);
-  assert.match(publish, /artifact-ids: "\$\{\{ needs\.deploy\.outputs\.artifact-id \}\}"/u);
-  assert.match(publish, /actions\/checkout@[0-9a-f]{40}/u);
-  assert.match(publish, /ref: "\$\{\{ env\.CANDIDATE_SHA \}\}"/u);
-  assert.match(publish, /persist-credentials: false/u);
-  assert.match(publish, /pnpm install --frozen-lockfile/u);
-  assert.match(publish, /publish:deployment-release/u);
-  assert.doesNotMatch(
-    publish,
-    /publish:deployment-release --\s*\\/u,
-    "the package script must not receive a literal argument separator",
-  );
-  assert.match(publish, /GITHUB_RUN_ID/u);
-  assert.match(publish, /GITHUB_TOKEN: "\$\{\{ github\.token \}\}"/u);
+  assert.match(deploy, /id: release-artifact/u);
+  assert.match(deploy, /retention-days: 7/u);
+  assert.doesNotMatch(source, /^\x20{2}publish-release:/m);
+  assert.doesNotMatch(source, /publish:deployment-release/u);
 });
 
 test("cutover recovery can be finalized through the protected environment", async () => {

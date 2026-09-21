@@ -15,9 +15,11 @@ Epic: **Make the Nemlig assistant easier to change without weakening grocery saf
 - P2: characterize and separate pure planning calculations from snapshot I/O only where this removes real dependency coupling; retain current matching, ordering and concurrency.
 - P2: extend concrete public schemas to plan lines/summary and characterize proposal result variants without changing valid wire payloads.
 - P2: separate embedded picker presentation from tool orchestration where packaging/browser tests prove the boundary; no UI framework or generated tool registry.
-- P2: make production-acceptance dispatch import-safe and enforce existing package-version policy in CI with explicit base/head inputs.
+- P2: make production-acceptance dispatch import-safe and characterize the existing package-version policy with explicit base/head inputs; issue #75 now owns the SHA-based deployment contract, so version/codename/release-note metadata is not a CI or deployment prerequisite.
 - P2: enable native unused-code checks after resolving the observed finding; document public/safety contracts and record code, dependency, package and verification deltas.
 - Record P0 lifecycle/spec mismatches and P1 reliability investigations under their existing owners, and P3/P4 improvements as separate follow-up epics. These are not hidden implementation tasks in this change.
+
+Issue #75 reconciliation: human-facing codename metadata and the runtime codename dependency remain deliberately retained. Codename-ledger/runtime removal is deferred until a separately reviewed runtime identity migration exists. The automatic production publication job is removed by #75, while the remaining release/publication scripts are legacy tooling pending an explicit later cleanup or guard.
 
 ## Capabilities
 

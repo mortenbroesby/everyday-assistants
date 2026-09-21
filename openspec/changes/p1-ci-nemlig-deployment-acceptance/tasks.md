@@ -89,6 +89,25 @@ Readiness: all applicable live and repository gates complete, no retained unknow
 - [ ] 8.1 Reconcile older hosting deltas and their remaining live tasks, sync/archive completed predecessors in order, then this capability; verify strict validation and no conflicting, duplicated or silently waived requirement.
 - [ ] 8.2 Run required final repository gates, commit/push archival changes, verify exact remote main/CI and state last deployed application SHA separately from archival SHA; deliver durable evidence links, remaining owner operations if any, and jCodeMunch usage without invented savings.
 
+## 9. Issue #75 Phase A recovery and plan reconciliation
+
+- [x] 9.1 Add a protected recovery mode for a previously green main ancestor, preserving exact-head CI provenance, protected environment approval, service-only acceptance, unique journal ownership and explicit recovery provenance.
+- [x] 9.2 Handle a main-head race explicitly: routine delivery fails with actionable guidance when its triggering candidate is superseded, while approved recovery can select a known-green ancestor without silently substituting a newer revision.
+- [x] 9.3 Reconcile P2's release-policy language and evidence with the SHA-based deployment contract; version-bump and release-note checks are no longer CI/deployment prerequisites.
+- [x] 9.4 Defer codename-ledger and runtime-codename removal completely; preserve human-facing codename metadata and document the runtime dependency before any future removal.
+- [x] 9.5 Keep legacy publication tooling out of the canonical workflow and mark its removal or explicit legacy-only guard as a later cleanup step.
+
+Implementation evidence: protected workflow dispatch and deploy-script recovery
+paths are covered by the workflow and production-deploy tests (89/89 focused
+tests passed). Recovery requires an ancestor of current `origin/main`, keeps
+exact completed `verify` provenance and protected environment gating, records
+recovery delivery mode, and uses service-only acceptance. Routine head drift
+fails with actionable guidance. P2 planning/evidence and this README now
+describe SHA-based deployment eligibility, retain codename identity, and keep
+publication helpers outside the canonical deployment path. Full `pnpm verify`,
+`git diff --check`, and strict OpenSpec validation passed; no provider action
+was performed.
+
 ## 2026-09-09 repository integration evidence
 
 Default-off S3/S4 and protected S5 workflow are implemented. Focused deployment tests pass 71/71. Real local signed edge-to-HTTP acceptance exercises six Apps tools/picker and five tools without Apps; exact HTTP 403 rejection is distinguished from transport failures. Guest admission still runs for the service identity, while schema-v2 human credential lookup is excluded for that verified identity. Missing/extra scope and missing expiry reject; cache policy changes invalidate the verifier.

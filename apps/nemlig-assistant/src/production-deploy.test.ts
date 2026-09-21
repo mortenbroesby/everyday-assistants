@@ -154,6 +154,8 @@ interface SharedLeaseStore {
 
 async function fixture(options: {
   head?: string;
+  remoteMain?: string;
+  recoveryAncestor?: boolean;
   remoteAfterPreflight?: boolean;
   remoteLeaseBlocked?: boolean;
   remoteLeaseChanges?: boolean;
@@ -309,9 +311,10 @@ async function fixture(options: {
     if (commandName === "git" && args[0] === "rev-parse" && args[1] === "HEAD") return options.head ?? commit;
     if (commandName === "git" && args[0] === "rev-parse" && args[1] === "origin/main") {
       remoteReads += 1;
-      return options.remoteAfterPreflight && remoteReads > 1 ? previousCommit : commit;
+      return options.remoteAfterPreflight && remoteReads > 1 ? previousCommit : options.remoteMain ?? commit;
     }
     if (commandName === "git" && args[0] === "status") return "";
+    if (commandName === "git" && args[0] === "merge-base" && options.recoveryAncestor === false) throw new Error("not an ancestor");
     if (commandName === "git") return "";
     if (commandName !== "pnpm") throw new Error("unexpected command");
     if (args[0] === "production:probe") {
@@ -449,6 +452,22 @@ test("preflight requires the exact main-only production environment before any p
     assert.deepEqual(await preflightProductionDeploy(commit, deps), { commit, ciRunId: 456 });
     assert.equal(calls.some(({ command }) => command === "pnpm"), false);
     assert.ok(calls.some(({ args }) => args.some((value) => value.endsWith("/environments/nemlig-production"))));
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test("recovery preflight accepts a previously green main ancestor and records the distinct source check", async () => {
+  const newerMain = "b".repeat(40);
+  const { deps, calls, root } = await fixture({ remoteMain: newerMain });
+  try {
+    assert.deepEqual(await preflightProductionDeploy(commit, deps, "recovery"), { commit, ciRunId: 456 });
+    assert.ok(calls.some(({ command, args }) => command === "git" && args[0] === "merge-base" && args[1] === "--is-ancestor"));
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test("recovery preflight rejects a SHA outside main history", async () => {
+  const { deps, root } = await fixture({ remoteMain: "b".repeat(40), recoveryAncestor: false });
+  try {
+    await assert.rejects(preflightProductionDeploy(commit, deps, "recovery"), /recovery_source_invalid/u);
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
@@ -1397,6 +1416,12 @@ test("recovery commands reject forged arguments before I/O", () => {
   assert.deepEqual(parseProductionDeployCli(["inspect-recovery", "44444444-4444-4444-8444-444444444444"]), {
     help: false, command: "inspect-recovery", operation: "44444444-4444-4444-8444-444444444444", originalRunnerStopped: false,
   });
+  assert.deepEqual(parseProductionDeployCli(["preflight", "--recovery", commit]), {
+    help: false, command: "preflight", commit, recovery: true,
+  });
+  assert.deepEqual(parseProductionDeployCli(["--recovery", commit]), {
+    help: false, command: "deploy", commit, acceptanceMode: "recovery",
+  });
   for (const argv of [["finalize", "44444444-4444-4444-8444-444444444444"], ["finalize", commit, "--evidence-saved"], ["inspect-recovery", commit]]) {
     assert.throws(() => parseProductionDeployCli(argv));
   }
@@ -1749,6 +1774,20 @@ test("routine service releases keep the public routes enabled during the Contain
     assert.deepEqual(report.transitions.map(({ phase, kind }) => `${phase}:${kind}`), [
       "enable_deploy:intent", "enable_deploy:result",
     ]);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test("recovery service releases can deploy a green main ancestor without cutover state", async () => {
+  const { deps, root } = await fixture({ remoteMain: "b".repeat(40) });
+  deps.env = { CLOUDFLARE_ACCOUNT_ID: accountId, NEMLIG_CI_ACCEPTANCE_READY: "true", NEMLIG_MCP_SERVICE_CLIENT_ID: "service-client" };
+  deps.acceptanceMode = "recovery";
+  deps.issueServiceToken = async () => "machine-token";
+  try {
+    const report = await deployProduction(commit, deps);
+    assert.equal(report.outcome, "success");
+    assert.equal(report.deliveryMode, "recovery");
+    assert.ok(report.checks.includes("recovery_source"));
+    assert.equal(report.checks.includes("service_fixture_acceptance"), true);
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 

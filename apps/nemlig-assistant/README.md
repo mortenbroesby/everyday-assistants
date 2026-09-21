@@ -365,7 +365,8 @@ npm. Its binaries are `nemlig`, `nemlig-assistant`, `nemlig-mcp`, and
 `nemlig-mcp-http`. npm publication requires a separate approved change and is
 not a deployment shortcut.
 
-Inspect or apply the repository's release version decision with:
+Maintainers can use the release tools when a change needs a new application
+identity:
 
 ```sh
 pnpm nemlig:release:plan --codename Callsign
@@ -374,25 +375,24 @@ pnpm --filter nemlig-assistant check:version-bump --base origin/main --head HEAD
 ```
 
 The version check compares committed revisions, not uncommitted manifest edits.
-CI checks the entire main push from its previous SHA, or the PR merge base through
-the tested SHA; missing or invalid comparison revisions fail closed.
+It supports release planning, but it does not decide whether a deployment is
+safe. Production delivery is tied to the exact Git commit that passed the
+required checks, so release metadata can evolve independently of deployment
+eligibility.
 
-For a release-bearing epic, the maintainer chooses a short, single-word codename
-that reflects the release's main theme; the example above uses `Callsign` for
-the release-identity feature. The planner advances the semantic version and
-records the reviewed codename in `release/codenames.csv`, whose validation
-rejects reused names case-insensitively. The coding agent also writes
-`release/notes/<version>.md` after the final version decision and copies its
-concise summary into the pull request. Every new note starts with an
-`In plain language` section for non-technical readers; unfamiliar aliases,
-acronyms, and release terms belong in the shared
-[release glossary](../../docs/release-glossary.md). CI validates that reviewed,
-bounded note against the same exact base and head. A successful protected routine deployment
-publishes it as a GitHub prerelease tagged `nemlig-assistant-v<version>` at the
-exact deployed commit and titled `Nemlig Assistant <version> - <codename>`.
-Non-release merges allocate no codename. The deployed MCP instructions expose
-the same pair so ChatGPT can answer the question above without a tool call. This
-application release does not publish the npm package.
+For a release-bearing change, the maintainer chooses a short, single-word
+codename and records it alongside the semantic version in
+`release/codenames.csv`. Names are checked case-insensitively to avoid reuse.
+Release notes live in `release/notes/<version>.md`; each begins with an
+`In plain language` summary, with unfamiliar aliases and release terms linked
+to the shared [release glossary](../../docs/release-glossary.md).
+
+Version and codename are human-facing identity metadata. They remain available
+to the deployed MCP instructions, while the codename ledger and runtime
+dependency remain supported until a separate identity migration is reviewed.
+Production deployment does not publish the npm package or depend on a release
+publication step; any publication helper is maintained as separate legacy
+tooling.
 
 Nemlig runtime fixes require a patch, features a minor, and breaking changes a
 major. New releases use plain `major.minor.patch`; their codename is stored and

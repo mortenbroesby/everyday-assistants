@@ -15,7 +15,7 @@ const ciWorkflowPath = ".github/workflows/ci.yml";
 const customMcp = new URL("https://nemlig-mcp.broesby.dk/mcp");
 const workersMcp = new URL("https://nemlig-mcp-cloudflare-production.mortenbroesby.workers.dev/mcp");
 const containerApplication = "nemlig-mcp-cloudflare-production-nemligmcpcontainer-production";
-export const productionDeployUsage = "pnpm --filter nemlig-assistant production:deploy -- preflight <40-character-main-commit> | [--service|--service-cutover] <40-character-main-commit> | finalize <operation-id> --evidence-saved --original-runner-stopped | inspect-recovery <operation-id> [--original-runner-stopped]";
+export const productionDeployUsage = "pnpm --filter nemlig-assistant production:deploy -- preflight [--recovery] <40-character-main-commit> | [--service|--service-cutover|--recovery] <40-character-main-commit> | finalize <operation-id> --evidence-saved --original-runner-stopped | inspect-recovery <operation-id> [--original-runner-stopped]";
 
 export type VerifiedState = "unchanged" | "disabled" | "enabled" | "restored" | "unknown";
 
@@ -43,6 +43,7 @@ export interface DeploymentJournal {
   checks: string[];
   lastVerifiedState: VerifiedState;
   rollback: "not_needed" | "attempted" | "restored" | "failed";
+  deliveryMode?: "routine" | "recovery";
   outcome: "running" | "success" | "failed";
   failure?: string;
   remoteCommit?: string;
@@ -79,7 +80,7 @@ export interface DeployDependencies {
   operationId?: () => string;
   operationDeadlineMs?: number;
   stateRoot?: string;
-  acceptanceMode?: "owner" | "service" | "service-cutover";
+  acceptanceMode?: "owner" | "service" | "service-cutover" | "recovery";
   issueServiceToken?: typeof issueServiceToken;
   signal?: AbortSignal;
   configReader?: (options: { config: string; env: "production" }) => Promise<unknown> | unknown;
@@ -144,13 +145,14 @@ const isoTime = (value: unknown): value is string => {
   return Number.isFinite(date.getTime()) && date.toISOString() === value;
 };
 const imageDigest = /^sha256:[0-9a-f]{64}$/u;
-const journalChecks = new Set(["source_and_auth_preflight", "exclusive_lease", "starting_state_recorded", "disabled_version", "disabled_routes", "container_inactive", "enabled_version", "image_reused", "container_rollout", "edge_acceptance", "authenticated_read_only_acceptance", "service_fixture_acceptance", "live_acceptance_pending", "starting_version_restored"]);
-const journalFailures = new Set(["service_cutover_required", "live_acceptance_required", "service_acceptance_not_ready", "service_token_unavailable", "owner_access_token_required", "github_repository_invalid", "source_revision_mismatch", "github_ci_workflow_invalid", "github_ci_invalid", "exact_head_ci_not_green", "github_environment_not_ready", "local_deployment_lease_unavailable", "remote_deployment_lease_unavailable", "remote_journal_invalid", "remote_journal_append_failed", "remote_journal_parent_invalid", "remote_deployment_lease_changed", "deployment_journal_invalid", "deployment_journal_oversized", "deployment_journal_write_failed", "cloudflare_deployment_drift", "cloudflare_upload_version_missing", "cloudflare_registry_manifest_invalid", "cloudflare_config_invalid", "cloudflare_runtime_safety_mismatch", "cloudflare_instances_invalid", "disabled_route_unavailable", "disabled_route_mismatch", "container_inactive_timeout", "container_instance_timeout", "container_image_changed_during_enable", "recovery_finalize_denied", "command_failed", "command_cancelled", "unexpected_failure"]);
+const journalChecks = new Set(["source_and_auth_preflight", "recovery_source", "exclusive_lease", "starting_state_recorded", "disabled_version", "disabled_routes", "container_inactive", "enabled_version", "image_reused", "container_rollout", "edge_acceptance", "authenticated_read_only_acceptance", "service_fixture_acceptance", "live_acceptance_pending", "starting_version_restored"]);
+const journalFailures = new Set(["service_cutover_required", "live_acceptance_required", "service_acceptance_not_ready", "service_token_unavailable", "owner_access_token_required", "github_repository_invalid", "source_revision_mismatch", "recovery_source_invalid", "github_ci_workflow_invalid", "github_ci_invalid", "exact_head_ci_not_green", "github_environment_not_ready", "local_deployment_lease_unavailable", "remote_deployment_lease_unavailable", "remote_journal_invalid", "remote_journal_append_failed", "remote_journal_parent_invalid", "remote_deployment_lease_changed", "deployment_journal_invalid", "deployment_journal_oversized", "deployment_journal_write_failed", "cloudflare_deployment_drift", "cloudflare_upload_version_missing", "cloudflare_registry_manifest_invalid", "cloudflare_config_invalid", "cloudflare_runtime_safety_mismatch", "cloudflare_instances_invalid", "disabled_route_unavailable", "disabled_route_mismatch", "container_inactive_timeout", "container_instance_timeout", "container_image_changed_during_enable", "recovery_finalize_denied", "command_failed", "command_cancelled", "unexpected_failure"]);
 
 const journalJson = (journal: DeploymentJournal): string => {
   if (!journal || typeof journal !== "object" || !Array.isArray(journal.checks) || !Array.isArray(journal.transitions)
     || !operationId.test(journal.operationId) || !fullSha.test(journal.commit) || !Number.isSafeInteger(journal.ciRunId) || journal.ciRunId < 1
     || !isoTime(journal.startedAt) || (journal.completedAt !== undefined && !isoTime(journal.completedAt))
+    || (journal.deliveryMode !== undefined && !["routine", "recovery"].includes(journal.deliveryMode))
     || !validReleaseRun(journal.releaseRunId) || !validReleaseRun(journal.releaseRunAttempt)
     || ((journal.releaseRunId === "local") !== (journal.releaseRunAttempt === "local"))
     || journal.transitions.length > 32
@@ -187,7 +189,7 @@ const journalJson = (journal: DeploymentJournal): string => {
 
 export function parseDeploymentJournal(raw: string): DeploymentJournal {
   const value = object(json(raw, "deployment_journal_invalid"));
-  const allowed = new Set(["schema", "operationId", "commit", "ciRunId", "releaseRunId", "releaseRunAttempt", "startedAt", "completedAt", "startingVersion", "disabledVersion", "enabledVersion", "startingApplicationVersion", "disabledApplicationVersion", "enabledApplicationVersion", "startingConfigDigest", "startingEnabled", "startingContainerId", "startingImage", "disabledImage", "enabledImage", "checks", "lastVerifiedState", "rollback", "outcome", "failure", "remoteCommit", "transitions"]);
+  const allowed = new Set(["schema", "operationId", "commit", "ciRunId", "releaseRunId", "releaseRunAttempt", "startedAt", "completedAt", "startingVersion", "disabledVersion", "enabledVersion", "startingApplicationVersion", "disabledApplicationVersion", "enabledApplicationVersion", "startingConfigDigest", "startingEnabled", "startingContainerId", "startingImage", "disabledImage", "enabledImage", "checks", "lastVerifiedState", "rollback", "deliveryMode", "outcome", "failure", "remoteCommit", "transitions"]);
   if (!value || Object.keys(value).some((key) => !allowed.has(key)) || value.schema !== 2
     || typeof value.operationId !== "string" || typeof value.commit !== "string" || typeof value.ciRunId !== "number" || typeof value.startedAt !== "string"
     || (value.releaseRunId !== "local" && typeof value.releaseRunId !== "number") || (value.releaseRunAttempt !== "local" && typeof value.releaseRunAttempt !== "number")
@@ -217,8 +219,8 @@ export function parseDeployCli(argv: readonly string[]): { help: true } | { help
 
 export type RecoveryCli =
   | { help: true }
-  | { help: false; command: "preflight"; commit: string }
-  | { help: false; command: "deploy"; commit: string; acceptanceMode?: "service" | "service-cutover" }
+  | { help: false; command: "preflight"; commit: string; recovery: boolean }
+  | { help: false; command: "deploy"; commit: string; acceptanceMode?: "service" | "service-cutover" | "recovery" }
   | { help: false; command: "finalize"; operation: string; evidenceSaved: true; originalRunnerStopped: true }
   | { help: false; command: "inspect-recovery"; operation: string; originalRunnerStopped: boolean };
 
@@ -233,9 +235,13 @@ export function parseProductionDeployCli(argv: readonly string[]): RecoveryCli {
     && (values.length === 2 || (values.length === 3 && values[2] === "--original-runner-stopped"))) {
     return { help: false, command: "inspect-recovery", operation: values[1]!, originalRunnerStopped: values[2] === "--original-runner-stopped" };
   }
-  if (values[0] === "preflight") return { help: false, command: "preflight", commit: parseDeployArgs(values.slice(1)) };
+  if (values[0] === "preflight") {
+    const recovery = values[1] === "--recovery";
+    return { help: false, command: "preflight", commit: parseDeployArgs(values.slice(recovery ? 2 : 1)), recovery };
+  }
   if (values[0] === "--service-cutover") return { help: false, command: "deploy", commit: parseDeployArgs(values.slice(1)), acceptanceMode: "service-cutover" };
   if (values[0] === "--service") return { help: false, command: "deploy", commit: parseDeployArgs(values.slice(1)), acceptanceMode: "service" };
+  if (values[0] === "--recovery") return { help: false, command: "deploy", commit: parseDeployArgs(values.slice(1)), acceptanceMode: "recovery" };
   return { help: false, command: "deploy", commit: parseDeployArgs(values) };
 }
 
@@ -803,7 +809,9 @@ export async function finalizeDeploymentRecovery(operation: string, deps: Deploy
   return releaseDeploymentLeases(deps, repo.nameWithOwner, remote.head, operation);
 }
 
-const verifySource = async (deps: DeployDependencies, commit: string, repo: { nameWithOwner: string; url: string }): Promise<number> => {
+type SourceMode = "routine" | "recovery";
+
+const verifySource = async (deps: DeployDependencies, commit: string, repo: { nameWithOwner: string; url: string }, sourceMode: SourceMode = "routine"): Promise<number> => {
   await runAt(deps, deps.repoRoot, "gh", ["auth", "status", "-h", "github.com"]);
   await runAt(deps, deps.repoRoot, "git", ["-c", "credential.helper=!gh auth git-credential", "fetch", repo.url, "main:refs/remotes/origin/main"]);
   const [head, remote, status] = await Promise.all([
@@ -811,7 +819,12 @@ const verifySource = async (deps: DeployDependencies, commit: string, repo: { na
     runAt(deps, deps.repoRoot, "git", ["rev-parse", "origin/main"]),
     runAt(deps, deps.repoRoot, "git", ["status", "--porcelain"]),
   ]);
-  if (head !== commit || remote !== commit || status !== "") fail("source_revision_mismatch");
+  if (head !== commit || status !== "") fail("source_revision_mismatch");
+  if (sourceMode === "routine" && remote !== commit) fail("source_revision_mismatch");
+  if (sourceMode === "recovery") {
+    try { await runAt(deps, deps.repoRoot, "git", ["merge-base", "--is-ancestor", commit, "origin/main"]); }
+    catch { fail("recovery_source_invalid"); }
+  }
   const workflows = json(await runAt(deps, deps.repoRoot, "gh", [
     "workflow", "list", "--repo", repo.nameWithOwner, "--all", "--limit", "100", "--json", "id,name,path,state",
   ]), "github_ci_workflow_invalid");
@@ -866,10 +879,10 @@ const verifyGithubEnvironment = async (deps: DeployDependencies, repository: str
 };
 
 /** Read-only exact-main CI and main-only environment proof for the deployment workflow. */
-export async function preflightProductionDeploy(commit: string, deps: DeployDependencies): Promise<{ commit: string; ciRunId: number }> {
+export async function preflightProductionDeploy(commit: string, deps: DeployDependencies, sourceMode: SourceMode = "routine"): Promise<{ commit: string; ciRunId: number }> {
   if (!fullSha.test(commit)) fail("invalid_commit");
   const repo = await repoIdentity(deps);
-  const ciRunId = await verifySource(deps, commit, repo);
+  const ciRunId = await verifySource(deps, commit, repo, sourceMode);
   await verifyGithubEnvironment(deps, repo.nameWithOwner);
   return { commit, ciRunId };
 }
@@ -1025,7 +1038,8 @@ export async function deployProduction(commit: string, inputDeps: DeployDependen
   if (inheritedSignal?.aborted) abortOperation();
   else inheritedSignal?.addEventListener("abort", abortOperation, { once: true });
   const operationDeadline = setTimeout(abortOperation, Math.min(inputDeps.operationDeadlineMs ?? 25 * 60_000, 25 * 60_000));
-  const service = inputDeps.env.GITHUB_ACTIONS === "true" || inputDeps.acceptanceMode === "service" || inputDeps.acceptanceMode === "service-cutover";
+  const recovery = inputDeps.acceptanceMode === "recovery";
+  const service = inputDeps.env.GITHUB_ACTIONS === "true" || inputDeps.acceptanceMode === "service" || inputDeps.acceptanceMode === "service-cutover" || recovery;
   // Do not read owner credentials or pass the machine secret to child commands.
   const env = service ? Object.fromEntries(Object.keys(inputDeps.env)
     .filter((name) => !["NEMLIG_MCP_ACCESS_TOKEN", "NEMLIG_MCP_SERVICE_CLIENT_SECRET", "NEMLIG_MCP_SERVICE_ACCESS_TOKEN"].includes(name))
@@ -1040,6 +1054,7 @@ export async function deployProduction(commit: string, inputDeps: DeployDependen
     releaseRunId,
     releaseRunAttempt,
     startedAt: deps.now().toISOString(),
+    deliveryMode: recovery ? "recovery" : "routine",
     checks: [],
     lastVerifiedState: "unchanged",
     rollback: "not_needed",
@@ -1062,10 +1077,10 @@ export async function deployProduction(commit: string, inputDeps: DeployDependen
     if (!service && !deps.env.NEMLIG_MCP_ACCESS_TOKEN?.trim()) fail("owner_access_token_required");
     const repo = await repoIdentity(deps);
     repository = repo.nameWithOwner;
-    journal.ciRunId = await verifySource(deps, commit, repo);
+    journal.ciRunId = await verifySource(deps, commit, repo, recovery ? "recovery" : "routine");
     if (service) {
       if (deps.env.NEMLIG_CI_ACCEPTANCE_READY !== "true") fail("service_acceptance_not_ready");
-      if (inputDeps.acceptanceMode !== "service-cutover") await verifyRoutineRelease(deps, commit);
+      if (inputDeps.acceptanceMode !== "service-cutover" && !recovery) await verifyRoutineRelease(deps, commit);
       await verifyGithubEnvironment(deps, repository);
       try { serviceToken = await (deps.issueServiceToken ?? issueServiceToken)(inputDeps.env, { fetcher: inputDeps.fetcher, signal: deps.signal }); }
       catch { fail("service_token_unavailable"); }
@@ -1079,7 +1094,7 @@ export async function deployProduction(commit: string, inputDeps: DeployDependen
     journal.remoteCommit = await acquireRemoteJournal(deps, repository, journal);
     try { await writeJournal(journalPath, journal); } catch { fail("deployment_journal_write_failed"); }
 
-    if (await verifySource(deps, commit, repo) !== journal.ciRunId) fail("github_ci_invalid");
+    if (await verifySource(deps, commit, repo, recovery ? "recovery" : "routine") !== journal.ciRunId) fail("github_ci_invalid");
     const start = await readCurrent(deps);
     const startingRaw = await readVersion(deps, start.version);
     starting = parseVersionState(startingRaw, start.version);
@@ -1099,7 +1114,7 @@ export async function deployProduction(commit: string, inputDeps: DeployDependen
     journal.startingApplicationVersion = startingContainer.version;
     journal.startingConfigDigest = startingConfig.digest;
     journal.startingEnabled = starting.enabled;
-    journal.checks.push("source_and_auth_preflight", "exclusive_lease", "starting_state_recorded");
+    journal.checks.push("source_and_auth_preflight", ...(recovery ? ["recovery_source"] : []), "exclusive_lease", "starting_state_recorded");
     try { await writeJournal(journalPath, journal); } catch { fail("deployment_journal_write_failed"); }
 
     transition = async (phase: JournalPhase, kind: JournalKind, version?: string): Promise<void> => {
@@ -1112,7 +1127,7 @@ export async function deployProduction(commit: string, inputDeps: DeployDependen
       try { await writeJournal(journalPath, journal); } catch { if (kind === "result") mutationUncertain = true; fail("deployment_journal_write_failed"); }
     };
 
-    routine = service && inputDeps.acceptanceMode !== "service-cutover";
+    routine = service && inputDeps.acceptanceMode !== "service-cutover" && !recovery;
     let enabledId: string;
     let candidateImage: string;
     let enabledContainer: ContainerState;
@@ -1346,7 +1361,7 @@ async function main(): Promise<void> {
     return;
   }
   if (input.command === "preflight") {
-    console.log(JSON.stringify(await preflightProductionDeploy(input.commit, deps)));
+    console.log(JSON.stringify(await preflightProductionDeploy(input.commit, deps, input.recovery ? "recovery" : "routine")));
     process.removeListener("SIGINT", abort);
     process.removeListener("SIGTERM", abort);
     return;
