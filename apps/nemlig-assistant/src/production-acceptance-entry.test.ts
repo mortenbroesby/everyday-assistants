@@ -15,7 +15,7 @@ const removedStorageTools = [
 ];
 const retainedTools = allTools.filter(({ name }) => !removedStorageTools.includes(name));
 
-function edgeFetcher(calls: string[], origin = "https://nemlig-mcp.example.test/mcp", scopes = ["use:nemlig-assistant", "acceptance:nemlig-assistant"]): typeof fetch {
+function edgeFetcher(calls: string[], origin = "https://nemlig-mcp.example.test/mcp", scopes = ["use:nemlig-assistant"]): typeof fetch {
   return async (input, init) => {
     const request = new Request(input, init);
     calls.push(new URL(request.url).pathname);
@@ -133,7 +133,7 @@ test("service acceptance uses only its in-memory token, closes the MCP session, 
     NEMLIG_MCP_SERVICE_ACCESS_TOKEN: "service-token",
     NEMLIG_MCP_ACCESS_TOKEN: "owner-token-must-not-be-used",
   }, {
-    fetcher: edgeFetcher(calls, "https://nemlig-mcp.example.test/mcp", ["use:nemlig-assistant", "acceptance:nemlig-assistant"]),
+    fetcher: edgeFetcher(calls, "https://nemlig-mcp.example.test/mcp", ["use:nemlig-assistant"]),
     connect: async (_origin, token) => {
       tokens.push(token);
       events.push("connect");
