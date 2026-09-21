@@ -3,37 +3,25 @@
 Apply this gate before reporting repository work complete. A task is done only
 when every applicable criterion below is satisfied with current evidence.
 
-- **Outcome and acceptance:** The requested outcome and all acceptance criteria
-  are met. Intended failure behavior, safety boundaries, and state readback are
-  verified where applicable.
-- **Quality:** Relevant focused checks pass. For behavior changes, run one
-  representative end-to-end smoke test. Run the final `pnpm verify` once on
-  the final candidate; repeat it only after a relevant diff or a diagnosed
-  failure. Resolve failures caused by the work and review the final diff for
-  accidental edits, sensitive data, and unjustified complexity.
-- **Documentation:** Update affected instructions, documentation, backlog, and
-  OpenSpec artifacts. Complete and archive an implemented OpenSpec change when
-  its workflow requires it; do not leave planning or task state misleading.
-- **Integration:** Commit the complete scoped change, reconcile the latest
-  `origin/main` without overwriting concurrent work, integrate it into remote
-  `main`, and verify the remote ref contains the exact intended commit. A
-  feature branch alone is not done. After required evidence, remove the local
-  worktree only when it is clean, inactive, and its commits remain recoverable;
-  preserve unresolved or deliberately parked worktrees.
-- **CI:** Verify required CI for the exact integrated `main` revision succeeds.
-  Do not infer success from an older run or only from local checks.
-- **Production:** When the task changes hosted behavior or configuration, deploy
-  the exact verified `main` revision through the repository's approved,
-  fail-closed procedure, then run proportionate health and read-only acceptance
-  checks. Record the deployed revision and resulting state. Repository-only work
-  does not require a production deployment.
-- **Coordination:** Notify affected sibling work before integration or production
-  mutation, and leave unrelated worktrees and user changes untouched.
-- **Handoff:** Report the outcome, relevant tests, `main` commit, CI evidence,
-  production evidence or why production was inapplicable, and any remaining
-  risks or follow-up work.
+- **Implementation complete:** Acceptance, intended failure behavior, safety
+  boundaries, and state readback are verified where applicable.
+- **Quality:** Focused checks, one representative end-to-end smoke test for
+  behavior changes, and one final `pnpm verify` pass on the final diff are
+  green. Review the diff for secrets, accidental edits, and unjustified
+  complexity.
+- **Documentation:** Update affected instructions, docs, backlog, and OpenSpec
+  artifacts; do not leave planning or task state misleading.
+- **Implementation handoff:** Commit and push the scoped change, report the
+  branch/PR, checks, and remaining uncertainty. A verified PR is implementation
+  complete; merge, exact-main CI, release, and deployment are not implied.
+- **Delivery (only when explicitly in scope):** Reconcile current `origin/main`
+  without overwriting concurrent work and verify exact-head CI/ruleset. Hosted
+  changes require approved fail-closed deployment and health/read-only evidence.
+  Keep production, provider, secret, and external-user-data gates.
+- **Coordination/cleanup:** Notify affected sibling work before integration or
+  production mutation. Leave unrelated changes untouched; remove a worktree
+  only when clean, inactive, and recoverable.
 
-If integration, CI, or an applicable production deployment cannot be completed,
-the task is not done. Keep it active or report the evidenced blocker. An explicit
-user decision may narrow the requested outcome or defer deployment, but Codex
-must record that exception and must not describe the deferred scope as delivered.
+If an applicable implementation check cannot be completed, keep the task active
+or report the evidenced blocker. If explicitly scoped delivery cannot be
+completed, report delivery as pending; do not describe it as delivered.
