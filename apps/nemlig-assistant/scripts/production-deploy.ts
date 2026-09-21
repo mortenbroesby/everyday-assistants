@@ -294,9 +294,9 @@ const validateDo = (bindings: Iterable<Record<string, unknown>>): void => {
     const name = typeof value.name === "string" ? value.name : fail("cloudflare_runtime_safety_mismatch");
     const className = typeof value.class_name === "string" ? value.class_name : fail("cloudflare_runtime_safety_mismatch");
     if (found.has(name)
-      || (value.script_name !== undefined && value.script_name !== productionWorker)
-      || (value.environment !== undefined && value.environment !== "production")
-      || (value.environment !== undefined && value.script_name === undefined)) fail("cloudflare_runtime_safety_mismatch");
+      || (value.script_name !== undefined && value.script_name !== null && value.script_name !== productionWorker)
+      || (value.environment !== undefined && value.environment !== null && value.environment !== "production")
+      || (value.environment !== undefined && value.environment !== null && value.script_name == null)) fail("cloudflare_runtime_safety_mismatch");
     found.set(name, className);
   }
   if (found.size !== expectedDo.size || [...expectedDo].some(([name, className]) => found.get(name) !== className)) fail("cloudflare_runtime_safety_mismatch");
