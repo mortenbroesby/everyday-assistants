@@ -9,7 +9,7 @@ import {
 } from "./cloudflare-observability.js";
 import { aggregateUsage, type AdmissionResult, type UsageState } from "./cloudflare-usage.js";
 import type { Principal } from "./principal-policy.js";
-import { oauthReconnectChallenge, SERVICE_ACCEPTANCE_SCOPE } from "./auth0.js";
+import { Auth0InfrastructureError, oauthReconnectChallenge, SERVICE_ACCEPTANCE_SCOPE } from "./auth0.js";
 
 export type OperationClass = "protocol" | "normal" | "expensive";
 export const INTERNAL_CREDENTIAL_HEADERS = [
@@ -324,6 +324,10 @@ export async function handleGatewayRequest(
       tier = String(principal.tier) as "0" | "1" | "2";
     } catch (error) {
       if (error instanceof BoundaryTimeoutError) return finish(json({ error: error.outcome }, 504), error.outcome);
+      if (error instanceof Auth0InfrastructureError) {
+        const outcome = error.kind === "timeout" ? "authentication_timeout" : "authentication_unavailable";
+        return finish(json({ error: outcome }, error.kind === "timeout" ? 504 : 503), outcome);
+      }
       denialReason = "authentication_failed";
       return finish(unauthorized(config), "authentication_rejected");
     }

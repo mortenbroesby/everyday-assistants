@@ -22,6 +22,36 @@ export interface Auth0Config {
 
 export const SERVICE_ACCEPTANCE_SCOPE = "acceptance:nemlig-assistant";
 
+export type Auth0InfrastructureKind = "unavailable" | "timeout";
+
+/** A verifier or discovery dependency failed; this is not a token rejection. */
+export class Auth0InfrastructureError extends Error {
+  constructor(readonly kind: Auth0InfrastructureKind, message?: string) {
+    super(message ?? (kind === "timeout" ? "Auth0 verification timed out." : "Auth0 verification unavailable."));
+    this.name = "Auth0InfrastructureError";
+  }
+}
+
+const errorCode = (error: unknown): string | undefined => {
+  if (!error || typeof error !== "object") return undefined;
+  const code = (error as { code?: unknown }).code;
+  return typeof code === "string" ? code : undefined;
+};
+
+const errorName = (error: unknown): string | undefined => error instanceof Error ? error.name : undefined;
+
+const isAuth0Timeout = (error: unknown): boolean => {
+  const code = errorCode(error);
+  const name = errorName(error);
+  return name === "JWKSTimeout" || code === "ERR_JWKS_TIMEOUT"
+    || error instanceof DOMException && (error.name === "AbortError" || error.name === "TimeoutError");
+};
+
+const isJoseValidationError = (error: unknown): boolean => {
+  const code = errorCode(error);
+  return typeof code === "string" && code.startsWith("ERR_") && !code.startsWith("ERR_JWKS_");
+};
+
 export const oauthReconnectChallenge = (publicUrl: URL): string =>
   `Bearer resource_metadata="${getOAuthProtectedResourceMetadataUrl(publicUrl)}", error="invalid_token", error_description="Reconnect Nemlig Assistant to continue"`;
 
@@ -75,24 +105,29 @@ export async function fetchAuth0Metadata(
   fetcher: typeof fetch = fetch,
   timeoutMs = 5_000,
 ): Promise<{ oauth: OAuthMetadata; jwksUrl: URL }> {
-  const response = await fetcher(new URL(".well-known/openid-configuration", config.issuer), {
-    signal: AbortSignal.timeout(timeoutMs),
-  });
-  if (!response.ok) throw new Error("Auth0 discovery failed.");
-  const metadata = OpenIdProviderDiscoveryMetadataSchema.parse(await response.json());
-  if (metadata.issuer !== config.issuer.href) throw new Error("Auth0 discovery issuer mismatch.");
-  const endpoints = [
-    ["authorization", metadata.authorization_endpoint],
-    ["token", metadata.token_endpoint],
-    ["JWKS", metadata.jwks_uri],
-  ] as const;
-  if (endpoints.some(([, endpoint]) => !endpoint.startsWith("https://"))) {
-    throw new Error("Auth0 discovery endpoints must use HTTPS.");
+  try {
+    const response = await fetcher(new URL(".well-known/openid-configuration", config.issuer), {
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    if (!response.ok) throw new Auth0InfrastructureError("unavailable", "Auth0 discovery failed.");
+    const metadata = OpenIdProviderDiscoveryMetadataSchema.parse(await response.json());
+    if (metadata.issuer !== config.issuer.href) throw new Auth0InfrastructureError("unavailable", "Auth0 discovery issuer mismatch.");
+    const endpoints = [
+      ["authorization", metadata.authorization_endpoint],
+      ["token", metadata.token_endpoint],
+      ["JWKS", metadata.jwks_uri],
+    ] as const;
+    if (endpoints.some(([, endpoint]) => !endpoint.startsWith("https://"))) {
+      throw new Auth0InfrastructureError("unavailable", "Auth0 discovery endpoints must use HTTPS.");
+    }
+    if (!metadata.code_challenge_methods_supported?.includes("S256")) {
+      throw new Auth0InfrastructureError("unavailable", "Auth0 discovery must advertise PKCE S256.");
+    }
+    return { oauth: metadata, jwksUrl: new URL(metadata.jwks_uri) };
+  } catch (error) {
+    if (error instanceof Auth0InfrastructureError) throw error;
+    throw new Auth0InfrastructureError(error instanceof DOMException && (error.name === "AbortError" || error.name === "TimeoutError") ? "timeout" : "unavailable", "Auth0 discovery failed.");
   }
-  if (!metadata.code_challenge_methods_supported?.includes("S256")) {
-    throw new Error("Auth0 discovery must advertise PKCE S256.");
-  }
-  return { oauth: metadata, jwksUrl: new URL(metadata.jwks_uri) };
 }
 
 export function createAuth0Verifier(
@@ -118,9 +153,7 @@ export function createAuth0Verifier(
           && typeof payload.exp === "number" && Number.isFinite(payload.exp);
         const claimsServiceIdentity = !!service && (payload.sub === serviceSubject || payload.azp === service.clientId);
         if (typeof payload.sub !== "string" || !payload.sub
-          || (claimsServiceIdentity ? !serviceToken : !scopes.includes(config.requiredScope))) {
-          throw new Error("required claims missing");
-        }
+          || (claimsServiceIdentity ? !serviceToken : !scopes.includes(config.requiredScope))) throw new InvalidTokenError("Invalid access token");
         return {
           token,
           clientId: typeof payload.azp === "string" ? payload.azp : "unknown",
@@ -128,7 +161,16 @@ export function createAuth0Verifier(
           expiresAt: payload.exp,
           extra: { subject: payload.sub },
         };
-      } catch {
+      } catch (error) {
+        if (error instanceof InvalidTokenError) throw error;
+        if (isAuth0Timeout(error)) {
+          throw new Auth0InfrastructureError("timeout");
+        }
+        if (errorCode(error) === "ERR_JWKS_NO_MATCHING_KEY") throw new InvalidTokenError("Invalid access token");
+        if (errorName(error) === "JWKSInvalid" || errorName(error) === "JWKSMultipleMatchingKeys"
+          || errorCode(error)?.startsWith("ERR_JWKS_") || !isJoseValidationError(error)) {
+          throw new Auth0InfrastructureError("unavailable");
+        }
         throw new InvalidTokenError("Invalid access token");
       }
     },
