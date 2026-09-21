@@ -411,6 +411,12 @@ need `release/production-cutover.json` merely to become deployable. Recovery
 still requires a previously green main ancestor and retains conservative
 service-only acceptance.
 
-The focused deployment/workflow suites pass 90/90, strict OpenSpec validation
+The focused deployment/workflow suites pass 92/92, strict OpenSpec validation
 passes, and the full repository verification had already passed before this
 small follow-up. No provider mutation or production deployment was performed.
+
+## 2026-09-21 failed-closed deployment readback follow-up
+
+The automatic protected workflow run [35659056879](https://github.com/mortenbroesby/everyday-assistants/actions/runs/35659056879) for merged main SHA `6e66976cfb8c646845a30461c7a6936860f031ec` passed the exact-main release gate and credential-free preflight, then stopped in `production-deploy.ts` with `cloudflare_version_state_invalid`. Its bounded report recorded no transitions, `lastVerifiedState: unchanged`, `rollback: not_needed`, and no provider mutation result. The subsequent automatic routine finalizer also attempted to read a lease that the unchanged pre-mutation failure had already released, producing `remote_journal_invalid`; the workflow now gates that finalizer on successful completion of the provider deployment step as well as successful artifact upload.
+
+Read-only Wrangler inspection confirmed the active Worker version carried `NEMLIG_MCP_REVISION` as a legacy 7-character hexadecimal revision. The coordinator now accepts only bounded 7–40-character hexadecimal revisions for existing starting-state inspection while continuing to require the exact full candidate SHA for deployment variables and candidate readback. Focused deployment/workflow tests pass 92/92, strict OpenSpec validation passes 20/20, and no recovery or provider mutation was performed while correcting this boundary.

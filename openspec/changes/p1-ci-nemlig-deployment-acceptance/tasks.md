@@ -97,9 +97,10 @@ Readiness: all applicable live and repository gates complete, no retained unknow
 - [x] 9.4 Defer codename-ledger and runtime-codename removal completely; preserve human-facing codename metadata and document the runtime dependency before any future removal.
 - [x] 9.5 Keep legacy publication tooling out of the canonical workflow and mark its removal or explicit legacy-only guard as a later cleanup step.
 - [x] 9.6 Remove the historical cutover-ancestry check from routine deployment eligibility while retaining the cutover diagnostic and finalization evidence needed for supervised recovery.
+- [x] 9.7 Accept a bounded legacy starting revision from the already deployed provider state while preserving exact full-SHA identity for new candidates; ensure routine recovery finalization runs only after a successful provider deployment step.
 
 Implementation evidence: protected workflow dispatch and deploy-script recovery
-paths are covered by the workflow and production-deploy tests (90/90 focused
+paths are covered by the workflow and production-deploy tests (92/92 focused
 tests passed). Recovery requires an ancestor of current `origin/main`, keeps
 exact completed `verify` provenance and protected environment gating, records
 recovery delivery mode, and uses service-only acceptance. Routine head drift

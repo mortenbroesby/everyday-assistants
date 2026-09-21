@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 import { issueServiceToken } from "./service-token.js";
 
 const fullSha = /^[0-9a-f]{40}$/u;
+const revisionSha = /^[0-9a-f]{7,40}$/u;
 const versionId = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/u;
 const remoteLeaseRef = "refs/heads/codex-lock/nemlig-production";
 const productionRepository = "mortenbroesby/everyday-assistants";
@@ -367,7 +368,7 @@ export function parseVersionState(raw: string, expectedId?: string): VersionStat
   const values = bindings(parsed);
   const enabled = values.get("MCP_ENABLED")?.text;
   const revision = values.get("NEMLIG_MCP_REVISION")?.text;
-  if ((enabled !== "true" && enabled !== "false") || typeof revision !== "string" || !fullSha.test(revision)) {
+  if ((enabled !== "true" && enabled !== "false") || typeof revision !== "string" || !revisionSha.test(revision)) {
     throw new DeployFailure("cloudflare_version_state_invalid");
   }
   return { id, enabled: enabled === "true", revision };

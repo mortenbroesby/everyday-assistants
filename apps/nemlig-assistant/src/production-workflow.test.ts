@@ -84,6 +84,12 @@ test("routine deployment does not require a historical cutover artifact", async 
   assert.match(source, /production:deploy -- finalize "\$FINALIZE_OPERATION"/u);
 });
 
+test("routine recovery finalization only runs after a successful provider deployment", async () => {
+  const source = await readFile(workflowPath, "utf8");
+  assert.match(source, /- name: Deploy exact approved merge\n\s+id: deploy/u);
+  assert.match(source, /if: \$\{\{ always\(\) && steps\.deploy\.outcome == 'success' && steps\.release-artifact\.outcome == 'success' && env\.CUTOVER != 'true' \}\}/u);
+});
+
 test("CI does not gate verification on release metadata", async () => {
   const source = await readFile(ciWorkflowPath, "utf8");
   assert.doesNotMatch(source, /check:version-bump|check:release-note/u);
@@ -131,7 +137,7 @@ test("routine recovery finalizes only after its artifact is saved", async () => 
   const upload = deploy.indexOf("uses: actions/upload-artifact@");
   const finalize = deploy.indexOf("production:deploy -- finalize");
   assert.ok(upload >= 0 && finalize > upload);
-  assert.match(deploy, /if: \$\{\{ always\(\) && steps\.release-artifact\.outcome == 'success' && env\.CUTOVER != 'true' \}\}/u);
+  assert.match(deploy, /if: \$\{\{ always\(\) && steps\.deploy\.outcome == 'success' && steps\.release-artifact\.outcome == 'success' && env\.CUTOVER != 'true' \}\}/u);
   assert.match(deploy, /JSON\.parse\(readFileSync\(process\.argv\[1\], "utf8"\)\)/u);
   assert.match(deploy, /GITHUB_WORKSPACE\/\.git\/nemlig-production-deploy\/latest\.json/u);
   assert.doesNotMatch(deploy, /readFileSync\([^\n]*RUNNER_TEMP\/nemlig-release\.json/u);
