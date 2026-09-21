@@ -164,6 +164,7 @@ jobs:
           pnpm --filter nemlig-assistant exec wrangler deployments list --env production --json >/dev/null
           pnpm --filter nemlig-assistant exec wrangler containers list --env production --json >/dev/null
       - name: Deploy exact approved merge
+        id: deploy
         env:
           GH_TOKEN: "${{ github.token }}"
           CLOUDFLARE_API_TOKEN: "${{ secrets.CLOUDFLARE_API_TOKEN }}"
@@ -195,7 +196,7 @@ jobs:
           retention-days: 7
           include-hidden-files: true
       - name: Finalize routine deployment recovery
-        if: ${{ always() && steps.release-artifact.outcome == 'success' && env.CUTOVER != 'true' }}
+        if: ${{ always() && steps.deploy.outcome == 'success' && steps.release-artifact.outcome == 'success' && env.CUTOVER != 'true' }}
         env:
           GH_TOKEN: "${{ github.token }}"
           CLOUDFLARE_API_TOKEN: "${{ secrets.CLOUDFLARE_API_TOKEN }}"

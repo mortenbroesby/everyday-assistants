@@ -17,6 +17,7 @@ import {
   parseCurrentDeployment,
   parseDeployArgs,
   parseDeploymentJournal,
+  parseVersionState,
   preflightProductionDeploy,
   productionDeployUsage,
   verifyCandidateVersion,
@@ -442,6 +443,8 @@ test("deployment arguments and provider JSON fail closed", () => {
   assert.throws(() => parseContainer("[]"));
   assert.equal(instancesInactive(JSON.stringify([{ id: "durable-object", name: "nemlig-production", state: "inactive", version: null }])), true);
   assert.equal(instancesInactive(JSON.stringify([{ state: "running" }])), false);
+  assert.equal(parseVersionState(version(enabledId, commit.slice(0, 7), true), enabledId).revision, commit.slice(0, 7));
+  assert.throws(() => parseVersionState(version(enabledId, "development", true), enabledId));
   assert.equal(verifyCandidateVersion(version(enabledId, commit, true), enabledId, commit, true).enabled, true);
   assert.throws(() => verifyCandidateVersion(version(enabledId, commit, false), enabledId, commit, true));
 });
@@ -1718,6 +1721,23 @@ test("service deployment never reads owner credentials and issues one token befo
       if (call !== acceptance) assert.equal(call.env?.NEMLIG_MCP_SERVICE_ACCESS_TOKEN, undefined);
     }
     assert.doesNotMatch(JSON.stringify(report), /machine-token|machine-secret/);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test("routine deployment accepts a legacy short starting revision and upgrades to the exact candidate SHA", async () => {
+  const { deps, calls, root } = await fixture({
+    versionBindings: (values, id) => id === startingId
+      ? values.map((value) => value.name === "NEMLIG_MCP_REVISION" ? { ...value, text: commit.slice(0, 7) } : value)
+      : values,
+  });
+  deps.acceptanceMode = "service";
+  deps.env.NEMLIG_CI_ACCEPTANCE_READY = "true";
+  deps.env.NEMLIG_MCP_SERVICE_CLIENT_ID = "service-client";
+  deps.issueServiceToken = async () => "machine-token";
+  try {
+    const report = await deployProduction(commit, deps);
+    assert.equal(report.outcome, "success", JSON.stringify(report));
+    assert.ok(calls.some(({ args }) => args.includes("MCP_ENABLED:true") && args.includes(`NEMLIG_MCP_REVISION:${commit}`)));
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
