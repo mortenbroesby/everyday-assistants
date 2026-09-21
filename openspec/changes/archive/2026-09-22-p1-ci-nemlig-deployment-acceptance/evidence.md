@@ -474,3 +474,16 @@ The remaining live rollback rehearsal is intentionally not claimed. It would
 be a provider mutation requiring a separately authorized recovery window; the
 repository has instead verified the corresponding recovery and uncertainty
 paths with bounded fake traces and the successful routine readback above.
+
+The closeout documentation was merged at main SHA
+`a27c001327e3518a204d116ae01e1a242f46152c`; exact-main CI
+[35666106170](https://github.com/mortenbroesby/everyday-assistants/actions/runs/35666106170)
+passed the complete readiness gate. The last deployed application source SHA
+is deliberately recorded separately as
+`d5e62e6d5259e50ff668d26652a977009add565d`, delivered by protected run
+[35664402066](https://github.com/mortenbroesby/everyday-assistants/actions/runs/35664402066).
+The documentation-only closeout merge did not trigger provider mutation.
+
+jCodeMunch was used during the initial repository investigation to identify
+deployment, acceptance, authentication, and workflow boundaries. No token
+savings or performance claim is inferred from that use.
