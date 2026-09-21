@@ -348,6 +348,7 @@ const friendlyCatalog = [
   ["check_nemlig_connection", "Check my Nemlig connection", true, false, []],
   ["empty_approved_basket", "Empty my approved basket", false, true, ["approved_review"]],
   ["find_groceries", "Find groceries", true, false, ["search_term", "result_count"]],
+  ["get_profile", "Get my Nemlig profile", true, false, []],
   ["make_approved_item_swap", "Make the approved swap", false, true, ["approved_review"]],
   ["plan_my_shopping", "Plan my shopping", true, false, ["lines", "mode", "proceed"]],
   ["reconnect_nemlig_assistant", "Reconnect Nemlig Assistant", true, false, []],
@@ -397,7 +398,7 @@ test("MCP exposes the complete friendly catalog and clean missing-credential err
       const tool = tools.find((candidate) => candidate.name === name);
       assert.equal(tool?.title, title, name);
       assert.ok(tool?.description, `${name} needs a description`);
-      assert.deepEqual(tool?.annotations, { readOnlyHint, destructiveHint, openWorldHint: true }, name);
+      assert.deepEqual(tool?.annotations, { readOnlyHint, destructiveHint, openWorldHint: name === "get_profile" ? false : true }, name);
       assert.deepEqual(tool?._meta?.securitySchemes, [{ type: "oauth2", scopes: ["use:nemlig-assistant"] }], name);
       const properties = (tool?.inputSchema as { properties?: Record<string, { description?: string }> }).properties ?? {};
       assert.deepEqual(Object.keys(properties).sort(), [...inputs].sort(), `${name} inputs drifted`);
@@ -415,6 +416,35 @@ test("MCP exposes the complete friendly catalog and clean missing-credential err
     const content = result.content as Array<{ type: string; text?: string }>;
     assert.match(content[0]?.text ?? "", /credentials configured/);
   });
+});
+
+test("MCP profile tool exposes the authenticated principal as a stable read-only identity", async () => {
+  await withMcpClient(
+    createMcpServer(fakeClient(), testCredentials, undefined, undefined, {
+      principalKey: "auth0|profile-owner",
+      policyRevision: "test-v1",
+      tier: 0,
+    }),
+    async (mcp) => {
+      const tool = (await mcp.listTools()).tools.find(({ name }) => name === "get_profile");
+      assert.deepEqual(tool?._meta, {
+        "openai/profile": true,
+        securitySchemes: [{ type: "oauth2", scopes: ["use:nemlig-assistant"] }],
+      });
+      assert.deepEqual(tool?.outputSchema, {
+        $schema: "http://json-schema.org/draft-07/schema#",
+        additionalProperties: false,
+        properties: { id: { minLength: 1, type: "string" } },
+        required: ["id"],
+        type: "object",
+      });
+      const result = await mcp.callTool({ name: "get_profile", arguments: {} });
+      assert.equal(result.isError, undefined);
+      assert.deepEqual(result.structuredContent, { id: "auth0|profile-owner" });
+      assert.equal(tool?.annotations?.readOnlyHint, true);
+      assert.equal(tool?.annotations?.destructiveHint, false);
+    },
+  );
 });
 
 test("production MCP inventory is exact with Apps enabled and disabled", async () => {
