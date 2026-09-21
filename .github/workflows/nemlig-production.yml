@@ -192,7 +192,7 @@ jobs:
           path: |
             ${{ runner.temp }}/nemlig-release.json
             .git/nemlig-production-deploy/latest.json
-          if-no-files-found: warn
+          if-no-files-found: error
           retention-days: 7
           include-hidden-files: true
       - name: Finalize routine deployment recovery
