@@ -62,7 +62,23 @@ pnpm --filter nemlig-assistant auth:local:start
 This uses the normal `wrangler dev` Worker entry point, local Durable Object
 state under `.codex/local-auth/wrangler-state`, the real Container binding, and
 the app `Dockerfile`. It listens only on `127.0.0.1:8787`; Container port 8080
-is internal and is never an OAuth resource URL.
+is internal and is never an OAuth resource URL. For local simulation only, the
+Worker selects the ordinary local DO binding instead of the production EU
+jurisdictional subnamespace; production keeps the EU placement constraint.
+The Container image binds its HTTP listener before Auth0 discovery completes so
+Wrangler's local proxy can retry startup without changing production behavior.
+
+When using a trusted mkcert certificate, start Wrangler with the task-local
+certificate and Colima socket explicitly:
+
+```sh
+DOCKER_HOST=unix:///Users/macbook/.colima/default/docker.sock \
+NODE_EXTRA_CA_CERTS="$(mkcert -CAROOT)/rootCA.pem" \
+pnpm exec wrangler dev --local --local-protocol https --ip 127.0.0.1 --port 8787 \
+  --https-key-path .codex/local-auth/tls/local-key.pem \
+  --https-cert-path .codex/local-auth/tls/local.pem \
+  --persist-to .codex/local-auth/wrangler-state
+```
 
 In another terminal, run:
 

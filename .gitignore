@@ -7,6 +7,7 @@
 **/.dev.vars.*
 **/.env
 **/.env.*
+**/.codex/local-auth/
 **/*.pem
 **/*.key
 /.env
