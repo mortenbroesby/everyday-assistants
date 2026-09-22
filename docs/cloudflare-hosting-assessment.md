@@ -151,8 +151,9 @@ staging infrastructure for this family-only service.
   working data while awake. Its disk is not a persistence boundary.
 - Cloudflare logs receive at most one closed-schema terminal event per request,
   plus sparse Container/breaker lifecycle events. Public protocol/auth noise is
-  sampled at one percent. Never log raw errors, headers, bodies, query strings,
-  tokens, credentials, cookies, OAuth artifacts, prompts, arguments, shopping
+  retained during the bounded authentication investigation. Never log raw
+  errors, headers, bodies, query strings, tokens, credentials, cookies, OAuth
+  artifacts, prompts, arguments, shopping
   data, provider responses, or stacks.
 - The Worker executes at Cloudflare's edge and sees request/token data in transit,
   but it should not persist those values.

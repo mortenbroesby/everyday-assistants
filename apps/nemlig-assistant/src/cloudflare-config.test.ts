@@ -103,7 +103,7 @@ test("Wrangler configuration fixes both environments to one disabled EU lite Con
     limits: { cpu_ms: number; subrequests: number };
   };
   for (const deployment of [wrangler, wrangler.env.production]) {
-    assert.deepEqual(deployment.observability, { enabled: true, head_sampling_rate: 0.01 });
+    assert.deepEqual(deployment.observability, { enabled: true, head_sampling_rate: 1 });
     assert.equal(deployment.vars.MCP_ENABLED, "false");
     assert.equal(deployment.vars.MCP_CREDENTIAL_ONBOARDING_ENABLED, "false");
     assert.equal(deployment.vars.MCP_CREDENTIAL_RATE_LIMIT, "3");

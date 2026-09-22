@@ -7,7 +7,7 @@
   "keep_vars": true,
   "observability": {
     "enabled": true,
-    "head_sampling_rate": 0.01
+    "head_sampling_rate": 1
   },
   "limits": {
     "cpu_ms": 100,
@@ -65,7 +65,7 @@
       "workers_dev": true,
       "observability": {
         "enabled": true,
-        "head_sampling_rate": 0.01
+        "head_sampling_rate": 1
       },
       "routes": [
         {
