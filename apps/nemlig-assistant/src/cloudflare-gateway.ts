@@ -81,10 +81,9 @@ const serviceTools = new Set([
 ]);
 
 const isServiceRequestAllowed = async (request: Request): Promise<boolean> => {
-  if (request.method === "GET" || request.method === "DELETE") return true;
   try {
     const message = await request.clone().json() as { method?: unknown; params?: unknown };
-    if (message.method === "initialize" || message.method === "ping" || message.method === "notifications/initialized"
+    if (message.method === "server/discover" || message.method === "ping"
       || message.method === "tools/list" || message.method === "resources/list") return true;
     if (message.method === "tools/call") {
       const name = message.params && typeof message.params === "object" ? (message.params as { name?: unknown }).name : undefined;

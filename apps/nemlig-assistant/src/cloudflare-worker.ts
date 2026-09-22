@@ -1,8 +1,8 @@
 /// <reference types="@cloudflare/workers-types" />
 
 import { Container, getContainer } from "@cloudflare/containers";
+import type { OAuthTokenVerifier } from "@modelcontextprotocol/express";
 import { DurableObject } from "cloudflare:workers";
-import type { OAuthTokenVerifier } from "@modelcontextprotocol/sdk/server/auth/provider.js";
 import { createAuth0Verifier, fetchAuth0Metadata, SERVICE_ACCEPTANCE_SCOPE, type Auth0Config } from "./auth0.js";
 import { FIXED_CONTAINER_NAME, loadGatewayConfig, type CloudflareEnv, type GatewayConfig } from "./cloudflare-config.js";
 import { attachAdmissionCredential, handleGatewayRequest, type GatewayDeadline, type OperationClass } from "./cloudflare-gateway.js";

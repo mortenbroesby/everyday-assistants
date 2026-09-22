@@ -1,7 +1,7 @@
-import { InvalidTokenError } from "@modelcontextprotocol/sdk/server/auth/errors.js";
-import type { OAuthTokenVerifier } from "@modelcontextprotocol/sdk/server/auth/provider.js";
-import { getOAuthProtectedResourceMetadataUrl } from "@modelcontextprotocol/sdk/server/auth/router.js";
-import { OpenIdProviderDiscoveryMetadataSchema, type OAuthMetadata } from "@modelcontextprotocol/sdk/shared/auth.js";
+import type { OAuthMetadata } from "@modelcontextprotocol/server";
+import { OpenIdProviderDiscoveryMetadataSchema } from "@modelcontextprotocol/core";
+import { OAuthError, getOAuthProtectedResourceMetadataUrl } from "@modelcontextprotocol/server";
+import type { OAuthTokenVerifier } from "@modelcontextprotocol/express";
 import { createRemoteJWKSet, jwtVerify, type JWTVerifyGetKey } from "jose";
 import { parsePrincipalPolicy, type PrincipalPolicy } from "./principal-policy.js";
 
@@ -54,6 +54,8 @@ const isJoseValidationError = (error: unknown): boolean => {
 
 export const oauthReconnectChallenge = (publicUrl: URL): string =>
   `Bearer resource_metadata="${getOAuthProtectedResourceMetadataUrl(publicUrl)}", error="invalid_token", error_description="Reconnect Nemlig Assistant to continue"`;
+
+const invalidAccessToken = (): OAuthError => new OAuthError("invalid_token", "Invalid access token");
 
 const required = (env: NodeJS.ProcessEnv, name: string): string => {
   const value = env[name]?.trim();
@@ -153,7 +155,7 @@ export function createAuth0Verifier(
           && typeof payload.exp === "number" && Number.isFinite(payload.exp);
         const claimsServiceIdentity = !!service && (payload.sub === serviceSubject || payload.azp === service.clientId);
         if (typeof payload.sub !== "string" || !payload.sub
-          || (claimsServiceIdentity ? !serviceToken : !scopes.includes(config.requiredScope))) throw new InvalidTokenError("Invalid access token");
+          || (claimsServiceIdentity ? !serviceToken : !scopes.includes(config.requiredScope))) throw invalidAccessToken();
         return {
           token,
           clientId: typeof payload.azp === "string" ? payload.azp : "unknown",
@@ -162,16 +164,16 @@ export function createAuth0Verifier(
           extra: { subject: payload.sub },
         };
       } catch (error) {
-        if (error instanceof InvalidTokenError) throw error;
+        if (error instanceof OAuthError) throw error;
         if (isAuth0Timeout(error)) {
           throw new Auth0InfrastructureError("timeout");
         }
-        if (errorCode(error) === "ERR_JWKS_NO_MATCHING_KEY") throw new InvalidTokenError("Invalid access token");
+        if (errorCode(error) === "ERR_JWKS_NO_MATCHING_KEY") throw invalidAccessToken();
         if (errorName(error) === "JWKSInvalid" || errorName(error) === "JWKSMultipleMatchingKeys"
           || errorCode(error)?.startsWith("ERR_JWKS_") || !isJoseValidationError(error)) {
           throw new Auth0InfrastructureError("unavailable");
         }
-        throw new InvalidTokenError("Invalid access token");
+        throw invalidAccessToken();
       }
     },
   };

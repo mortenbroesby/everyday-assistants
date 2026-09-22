@@ -1,10 +1,12 @@
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
-import { ElicitRequestSchema } from "@modelcontextprotocol/sdk/types.js";
-import { AjvJsonSchemaValidator } from "@modelcontextprotocol/sdk/validation/ajv-provider.js";
-import type { JsonSchemaType } from "@modelcontextprotocol/sdk/validation/types.js";
+import { AjvJsonSchemaValidator } from "@modelcontextprotocol/server/validators/ajv";
+import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
+import { createMcpHandler } from "@modelcontextprotocol/server";
+import { toNodeHandler } from "@modelcontextprotocol/node";
+import type { JsonSchemaType } from "@modelcontextprotocol/server";
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
 import { mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import test from "node:test";
@@ -310,15 +312,30 @@ test("CLI plan reports ordinary discovery failures and drains reads after SIGINT
 const withMcpClient = async <T>(
   server: ReturnType<typeof createMcpServer>,
   action: (client: Client) => Promise<T>,
+  capabilities?: { elicitation?: { url?: Record<string, never> } },
 ): Promise<T> => {
-  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
-  const client = new Client({ name: "test", version: "1.0.0" });
-  await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
+  const handler = createMcpHandler(() => server, { legacy: "reject" });
+  const nodeHandler = toNodeHandler(handler);
+  const httpServer = createServer((req, res) => { void nodeHandler(req, res); });
+  httpServer.listen(0, "127.0.0.1");
+  await new Promise<void>((resolve, reject) => {
+    httpServer.once("listening", resolve);
+    httpServer.once("error", reject);
+  });
+  const endpoint = new URL(`http://127.0.0.1:${(httpServer.address() as AddressInfo).port}/mcp`);
+  const client = new Client({ name: "test", version: "1.0.0" }, {
+    versionNegotiation: { mode: { pin: "2026-07-28" } },
+    ...(capabilities ? { capabilities } : {}),
+  });
+  const transport = new StreamableHTTPClientTransport(endpoint);
+  await client.connect(transport);
   try {
     return await action(client);
   } finally {
     await client.close();
-    await server.close();
+    await handler.close();
+    httpServer.closeAllConnections();
+    await new Promise<void>((resolve, reject) => httpServer.close((error) => error ? reject(error) : resolve()));
   }
 };
 
@@ -424,8 +441,9 @@ test("MCP profile tool exposes the authenticated principal as a stable read-only
         "openai/profile": true,
         securitySchemes: [{ type: "oauth2", scopes: ["use:nemlig-assistant"] }],
       });
-      assert.deepEqual(tool?.outputSchema, {
-        $schema: "http://json-schema.org/draft-07/schema#",
+      const outputSchema = { ...tool?.outputSchema };
+      delete outputSchema.$schema;
+      assert.deepEqual(outputSchema, {
         additionalProperties: false,
         properties: { id: { minLength: 1, type: "string" } },
         required: ["id"],
@@ -459,7 +477,7 @@ test("retired saved-shopping MCP calls reject before the Nemlig client", async (
     for (const name of [
       "save_my_shopping_plan", "continue_my_shopping_plan", "show_my_shopping_lists", "save_my_shopping_list",
       "copy_my_shopping_list", "set_my_shopping_list_status", "shop_from_my_list", "migrate_my_saved_plan",
-    ]) assert.equal((await mcp.callTool({ name, arguments: {} })).isError, true, name);
+    ]) await assert.rejects(mcp.callTool({ name, arguments: {} }), /not found/iu, name);
   });
   assert.equal(calls, 0);
 });
@@ -479,8 +497,8 @@ test("service acceptance exposes only its fixed read-only tool inventory", async
   }), async (mcp) => {
     const expected = expectedVariant;
     assert.deepEqual((await mcp.listTools()).tools.map(({ name }) => name).sort(), [...expected].sort());
-    await assert.rejects(mcp.listResources(), /Method not found/u);
-    assert.equal((await mcp.callTool({ name: "add_approved_items", arguments: { approved_review: "00000000-0000-4000-8000-000000000000" } })).isError, true);
+    assert.deepEqual(await mcp.listResources(), { resources: [] });
+    await assert.rejects(mcp.callTool({ name: "add_approved_items", arguments: { approved_review: "00000000-0000-4000-8000-000000000000" } }), /not found/iu);
   });
   assert.equal(calls, 0);
 });
@@ -501,31 +519,23 @@ test("MCP hides generic provider failure details", async () => {
 test("connection guidance uses URL elicitation only when explicitly supported", async () => {
   await withMcpClient(createMcpServer(fakeClient(), async () => undefined), async (mcp) => {
     const result = await mcp.callTool({ name: "check_nemlig_connection", arguments: {} });
-    assert.deepEqual(result.structuredContent, { status: "connection_required", connection_url: NEMLIG_CONNECT_URL });
+    assert.deepEqual(result.structuredContent, { status: "connection_required", connection_url: NEMLIG_CONNECT_URL }, JSON.stringify(result));
   });
 
-  const server = createMcpServer(fakeClient(), async () => undefined);
-  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
-  const client = new Client({ name: "url-test", version: "1.0.0" }, { capabilities: { elicitation: { url: {} } } });
   let elicitation: unknown;
-  client.setRequestHandler(ElicitRequestSchema, async (request) => {
-    elicitation = request.params;
-    return { action: "accept" };
-  });
-  await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
-  try {
+  await withMcpClient(createMcpServer(fakeClient(), async () => undefined), async (client) => {
+    client.setRequestHandler("elicitation/create", async (request) => {
+      elicitation = request.params;
+      return { action: "accept" };
+    });
     const result = await client.callTool({ name: "check_nemlig_connection", arguments: {} });
-    assert.deepEqual(result.structuredContent, { status: "connection_required", connection_url: NEMLIG_CONNECT_URL });
+    assert.deepEqual(result.structuredContent, { status: "connection_required", connection_url: NEMLIG_CONNECT_URL }, JSON.stringify(result));
     assert.deepEqual(elicitation, {
       mode: "url",
       message: "Open the secure Nemlig connection page. Do not enter your password in chat.",
-      elicitationId: (elicitation as { elicitationId: string }).elicitationId,
       url: NEMLIG_CONNECT_URL,
     });
-  } finally {
-    await client.close();
-    await server.close();
-  }
+  }, { elicitation: { url: {} } });
 });
 
 test("connection status verifies Nemlig and does not trust OAuth context alone", async () => {
@@ -870,8 +880,8 @@ test("authenticated HTTP request context preserves stdio tool and resource metad
       createMcpServer(fakeClient(), testCredentials, undefined, undefined, { principalKey: "auth0|owner", policyRevision: "test-v1", tier: 0 }),
       async (http) => {
         assert.deepEqual(await http.listTools(), await stdio.listTools());
-        await assert.rejects(stdio.listResources(), /Method not found/u);
-        await assert.rejects(http.listResources(), /Method not found/u);
+        assert.deepEqual(await stdio.listResources(), { resources: [] });
+        assert.deepEqual(await http.listResources(), { resources: [] });
         assert.equal(http.getInstructions(), stdio.getInstructions());
       },
     );
@@ -995,24 +1005,21 @@ test("retired MCP feature request is unavailable and has no Nemlig side effect",
     createMcpServer(client, async () => undefined, undefined, new BasketProposalService(client)),
     async (mcp) => {
       assert.equal((await mcp.listTools()).tools.some((tool) => tool.name === "suggest_an_improvement"), false);
-      const result = await mcp.callTool({
+      await assert.rejects(mcp.callTool({
         name: "suggest_an_improvement",
         arguments: {
           title: "Prefer discounted favorites",
           summary: "Choose discounted favorites first.",
           acceptance_criteria: ["Search favorites first"],
         },
-      });
-      assert.equal(result.isError, true);
-      assert.match(toolText(result), /method not found|unknown tool|suggest_an_improvement/iu);
+      }), /not found/iu);
     },
   );
 });
 
 test("legacy raw visual chooser is unavailable", async () => {
   await withMcpClient(createMcpServer(fakeClient(), testCredentials), async (mcp) => {
-    const pick = await mcp.callTool({ name: "choose_products_visually", arguments: { search_term: "mælk", result_count: 5 } });
-    assert.equal(pick.isError, true);
+    await assert.rejects(mcp.callTool({ name: "choose_products_visually", arguments: { search_term: "mælk", result_count: 5 } }), /not found/iu);
   });
 });
 
@@ -1072,11 +1079,10 @@ test("MCP additions require prepare then apply and direct mutation tools are una
       ((result.structuredContent as { basket: { number_of_products: number } }).basket).number_of_products,
       2,
     );
-    const direct = await mcp.callTool({
+    await assert.rejects(mcp.callTool({
       name: "add_to_cart",
       arguments: { product_id: 7, quantity: 2 },
-    });
-    assert.equal(direct.isError, true);
+    }), /not found/iu);
   });
 });
 
@@ -1163,6 +1169,15 @@ test("hosted proposals survive a principal reconnect but remain isolated by prin
         arguments: { items: [{ product: 7, quantity: 1 }], authorization: "exact_review" },
       });
       proposalId = (prepared.structuredContent as { proposal_id: string }).proposal_id;
+    },
+  );
+
+  await withMcpClient(
+    createMcpServer(client, testCredentials, undefined, new BasketProposalService(client), { principalKey: "auth0|owner", policyRevision: "test-v1", tier: 0 }),
+    async (mcp) => {
+      const unavailable = await mcp.callTool({ name: "add_approved_items", arguments: { approved_review: proposalId } });
+      assert.equal(unavailable.isError, true);
+      assert.equal(added, undefined);
     },
   );
 
@@ -1272,11 +1287,10 @@ test("MCP replacement prepares factual savings and applies only the approved sta
     assert.equal((replayed.structuredContent as { replayed: boolean }).replayed, true);
     assert.deepEqual(writes, ["add:8:1", "remove:7"]);
 
-    const direct = await mcp.callTool({
+    await assert.rejects(mcp.callTool({
       name: "replace_cart_line",
       arguments: { current_product_id: 7, replacement_product_id: 8, replacement_quantity: 1 },
-    });
-    assert.equal(direct.isError, true);
+    }), /not found/iu);
   });
 
   const uncertainClient = fakeClient({

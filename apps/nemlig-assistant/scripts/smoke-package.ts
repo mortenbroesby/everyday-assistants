@@ -1,5 +1,5 @@
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+import { StdioClientTransport } from "@modelcontextprotocol/client/stdio";
+import { Client } from "@modelcontextprotocol/client";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
@@ -86,7 +86,9 @@ try {
     command: bin("nemlig-mcp"),
     env: { ...process.env },
   });
-  const client = new Client({ name: "package-smoke", version: "1.0.0" });
+  const client = new Client({ name: "package-smoke", version: "1.0.0" }, {
+    versionNegotiation: { mode: { pin: "2026-07-28" } },
+  });
   await client.connect(transport);
   try {
     assert.equal(client.getServerVersion()?.name, "nemlig-assistant");
