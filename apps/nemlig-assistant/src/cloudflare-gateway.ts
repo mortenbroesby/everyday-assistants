@@ -11,7 +11,7 @@ import { aggregateUsage, type AdmissionResult, type UsageState } from "./cloudfl
 import type { Principal } from "./principal-policy.js";
 import { Auth0InfrastructureError, oauthReconnectChallenge } from "./auth0.js";
 
-export type OperationClass = "protocol" | "normal" | "expensive";
+export type OperationClass = "protocol" | "profile" | "normal" | "expensive";
 export const INTERNAL_CREDENTIAL_HEADERS = [
   "x-nemlig-credential-envelope",
   "x-nemlig-principal-key",
@@ -104,6 +104,7 @@ export function classifyMcpMessage(value: unknown): OperationClass {
   if (message.method !== "tools/call") return "protocol";
   const params = message.params;
   const name = params && typeof params === "object" && "name" in params ? (params as { name?: unknown }).name : undefined;
+  if (name === "get_profile") return "profile";
   return typeof name === "string" && normalTools.has(name) ? "normal" : "expensive";
 }
 

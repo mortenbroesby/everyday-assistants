@@ -15,7 +15,6 @@ const validEnv: CloudflareEnv = {
   MCP_BACKEND_TIMEOUT_MS: "85000",
   NEMLIG_MCP_AUTH0_ISSUER: "https://tenant.example.test",
   NEMLIG_MCP_AUTH0_AUDIENCE: "https://mcp.example.test/mcp",
-  NEMLIG_MCP_AUTH0_OWNER_SUBJECT: "auth0|owner",
   NEMLIG_MCP_PRINCIPALS: JSON.stringify({
     schema_version: 1,
     revision: "family-v1",
@@ -62,8 +61,6 @@ test("Cloudflare safety configuration is explicit, bounded, and internally consi
   assert.throws(() => loadGatewayConfig({ ...validEnv, MCP_CONTROL_TIMEOUT_MS: "30000" }), /MCP_CONTROL_TIMEOUT_MS/u);
   assert.throws(() => loadGatewayConfig({ ...validEnv, NEMLIG_MCP_PUBLIC_URL: "http://mcp.example.test/mcp" }), /HTTPS/u);
   assert.throws(() => loadGatewayConfig({ ...validEnv, NEMLIG_MCP_PRINCIPALS: undefined }), /NEMLIG_MCP_PRINCIPALS/u);
-  assert.throws(() => loadGatewayConfig({ ...validEnv, NEMLIG_MCP_AUTH0_OWNER_SUBJECT: "auth0|other" }), /Legacy owner/u);
-  assert.throws(() => loadGatewayConfig({ ...validEnv, NEMLIG_USERNAME: "other@example.test", NEMLIG_PASSWORD: "secret" }), /Legacy owner credentials/u);
   const policy = JSON.parse(validEnv.NEMLIG_MCP_PRINCIPALS!) as { budgets: Record<string, { minute: number; month: number } | Record<string, number>> };
   assert.throws(() => loadGatewayConfig({
     ...validEnv,
@@ -78,7 +75,7 @@ test("Cloudflare safety configuration is explicit, bounded, and internally consi
   }), /global safety limits/u);
 });
 
-test("schema-v2 requires only the versioned encryption secret and rejects legacy credential fallback", () => {
+test("schema-v2 requires only the versioned encryption secret", () => {
   const legacy = JSON.parse(validEnv.NEMLIG_MCP_PRINCIPALS!) as { budgets: unknown };
   const v2 = {
     schema_version: 2, revision: "family-v2", budgets: legacy.budgets,
@@ -93,7 +90,6 @@ test("schema-v2 requires only the versioned encryption secret and rejects legacy
   };
   assert.equal(loadGatewayConfig(configured).principalPolicy.schema_version, 2);
   assert.throws(() => loadGatewayConfig({ ...configured, NEMLIG_MCP_CREDENTIAL_KEY: undefined }), /encryption configuration/u);
-  assert.throws(() => loadGatewayConfig({ ...configured, NEMLIG_USERNAME: "owner@example.test", NEMLIG_PASSWORD: "secret" }), /Legacy owner credentials/u);
 });
 
 test("Wrangler configuration fixes both environments to one disabled EU lite Container", async () => {

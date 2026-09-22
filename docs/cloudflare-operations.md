@@ -20,7 +20,10 @@ placed, sleeps after 10 minutes, and is capped at one instance. The currently
 deployed owner-only policy is the schema-v1 migration source. Schema v2 keeps
 only the static owner identity, tier budgets, and legacy invitation metadata in
 `NEMLIG_MCP_PRINCIPALS`; accepted users' sealed credential records
-live in the existing fixed controller Durable Object. This document records
+live in the existing fixed controller Durable Object. The authenticated
+`get_profile` operation is intentionally provider-independent and does not
+require a Nemlig credential; provider-backed operations remain credential-gated.
+This document records
 field names only, never values.
 
 ## Production shape and defaults
@@ -82,11 +85,11 @@ disabled endpoint and no-running-Container state were verified.
    `NEMLIG_MCP_REQUIRED_SCOPE`, and `NEMLIG_MCP_REVISION` remain optional.
 
 5. The runtime no longer submits GitHub issues and does not forward `GH_TOKEN`.
-   Do not provision a GitHub token for the assistant. Existing provider-held
-   secrets are unchanged by this source removal; any cleanup is a separate
-   owner credential operation. The three legacy owner secrets are accepted only
-   as exact migration checks against policy, not runtime fallbacks, and must
-   never be reused for an invitee.
+   Do not provision a GitHub token for the assistant. The hosted runtime no
+   longer reads the legacy owner-subject, username, or password bindings. Keep
+   the existing provider-held secrets only until the credential-free schema-v2
+   deployment is verified; then remove them as a separate owner-controlled
+   secret cleanup. They must never be reused for an invitee.
 
 6. Keep `MCP_ENABLED=false`, validate, then deploy:
 

@@ -45,6 +45,18 @@ const serviceContext = (): PrincipalContext => {
   return { client, proposals: new BasketProposalService(client) };
 };
 
+const isCredentialFreeRequest = (request: Request): boolean => {
+  // Schema-v2 profile discovery must work before provider credential onboarding.
+  if (request.method === "GET" || request.method === "DELETE") return true;
+  const body = request.body;
+  if (!body || typeof body !== "object" || Array.isArray(body)) return false;
+  const method = (body as { method?: unknown }).method;
+  if (method === "initialize" || method === "notifications/initialized" || method === "tools/list" || method === "resources/list") return true;
+  if (method !== "tools/call") return false;
+  const params = (body as { params?: unknown }).params;
+  return !!params && typeof params === "object" && !Array.isArray(params) && (params as { name?: unknown }).name === "get_profile";
+};
+
 type Request = IncomingMessage & { auth?: AuthInfo; body?: unknown; get(name: string): string | undefined };
 type Response = ServerResponse & {
   headersSent: boolean;
@@ -132,7 +144,8 @@ export function createHttpApp(
       if (service) {
         principal = servicePrincipal;
         credentials = undefined;
-      } else if (config.principalPolicy.schema_version === 2 && typeof subject === "string") {
+      } else if (config.principalPolicy.schema_version === 2 && typeof subject === "string"
+        && (!isCredentialFreeRequest(req) || req.get("x-nemlig-credential-envelope"))) {
         const principalKey = req.get("x-nemlig-principal-key");
         const policyRevision = req.get("x-nemlig-policy-revision");
         const generationValue = Number(req.get("x-nemlig-credential-generation"));
