@@ -25,6 +25,7 @@ test("production workflow accepts manual dispatch or an exact CI-green main comm
   assert.match(trigger, /cutover:[\s\S]*?default: false[\s\S]*?type: boolean/m);
   assert.match(trigger, /recovery:[\s\S]*?description:.*previously green main ancestor[\s\S]*?default: false[\s\S]*?type: boolean/m);
   assert.match(source, /^concurrency:\n\x20{2}group: nemlig-production\n\x20{2}cancel-in-progress: false$/m);
+  assert.match(source, /^permissions:\n(?:\x20{2}#.*\n)*\x20{2}contents: write$/m);
 
   const gate = section(source, "  release-gate:");
   const preflight = section(source, "  preflight:");
