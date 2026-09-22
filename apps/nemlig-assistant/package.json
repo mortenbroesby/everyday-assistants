@@ -1,6 +1,6 @@
 {
   "name": "nemlig-assistant",
-  "version": "4.13.8",
+  "version": "4.14.0",
   "private": true,
   "description": "Safe local Nemlig Assistant CLI and MCP server",
   "type": "module",
@@ -29,7 +29,6 @@
   },
   "scripts": {
     "build": "tsdown",
-    "benchmark:product-discovery": "tsx scripts/benchmark-product-discovery.ts",
     "check:api": "node scripts/check-api-manifest.mjs",
     "check": "tsc -p tsconfig.json --noEmit",
     "cloudflare:check": "wrangler deploy --dry-run --env production",
@@ -38,7 +37,6 @@
     "auth:local:start": "wrangler dev --local --local-protocol https --ip 127.0.0.1 --port 8787 --persist-to .codex/local-auth/wrangler-state",
     "auth:local:test": "tsx scripts/auth-local.ts test",
     "cli": "pnpm build && node dist/cli.js",
-    "demo:product-discovery": "tsx scripts/demo-product-discovery.ts",
     "check:version-bump": "tsx release/check-version-bump.ts",
     "check:release-note": "tsx release/release-note.ts",
     "lint": "eslint src scripts release tsdown.config.ts --max-warnings=0",
@@ -60,9 +58,14 @@
   "dependencies": {
     "@cloudflare/containers": "0.3.7",
     "@inquirer/password": "^5.2.0",
-    "@modelcontextprotocol/sdk": "^1.30.0",
+    "@modelcontextprotocol/core": "2.0.0",
+    "@modelcontextprotocol/express": "2.0.0",
+    "@modelcontextprotocol/node": "2.0.0",
+    "@modelcontextprotocol/server": "2.0.0",
     "commander": "^15.0.0",
     "effect": "3.22.2",
+    "express": "5.2.1",
+    "hono": "4.13.8",
     "html-to-text": "10.0.1",
     "jose": "^6.2.10",
     "zod": "^4.5.4"
@@ -70,6 +73,7 @@
   "devDependencies": {
     "@cloudflare/workers-types": "5.20260831.1",
     "@eslint/js": "^10.0.1",
+    "@modelcontextprotocol/client": "2.0.0",
     "@types/html-to-text": "9.0.4",
     "@types/node": "22.20.1",
     "@types/semver": "7.8.0",
@@ -82,6 +86,6 @@
     "wrangler": "4.127.1"
   },
   "nemligRelease": {
-    "codename": "Profile"
+    "codename": "Showcase"
   }
 }

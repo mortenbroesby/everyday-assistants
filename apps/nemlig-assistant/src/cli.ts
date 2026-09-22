@@ -2,12 +2,9 @@
 
 import { Command, InvalidArgumentError } from "commander";
 import { realpathSync } from "node:fs";
-import { readFile } from "node:fs/promises";
 import { basename } from "node:path";
 import {
-  FAVORITES_SEARCH_POOL,
   matchFavorites,
-  NemligError,
   type ShoppingClient,
   type Basket,
   type Product,
@@ -19,7 +16,6 @@ import {
   saveCredentials,
   type Credentials,
 } from "./config.js";
-import { resolveShoppingPlan, shoppingPlanInputSchema, type ShoppingPlan } from "./plans.js";
 import { ensureLoggedIn, getClient, NEMLIG_VERSION } from "./runtime.js";
 
 export { ensureLoggedIn, getClient, NEMLIG_VERSION } from "./runtime.js";
@@ -46,12 +42,6 @@ const positiveInteger = (value: string): number => {
   return parsed;
 };
 
-const timeoutMilliseconds = (value: string): number => {
-  const parsed = positiveInteger(value);
-  if (parsed > 60_000) throw new InvalidArgumentError("must be between 1 and 60000 milliseconds");
-  return parsed;
-};
-
 export const formatBasket = (basket: Basket): string => {
   if (!basket.items.length) return "Your basket is empty.\nTotal: 0.00 DKK";
   const lines = basket.items.map(
@@ -67,24 +57,6 @@ export const formatBasket = (basket: Basket): string => {
     `Delivery: ${delivery.toFixed(2)} DKK`,
     `Total: ${(products + delivery).toFixed(2)} DKK`,
     ...(basket.deliveryTime ? [`Delivery: ${basket.deliveryTime}`] : []),
-  ].join("\n");
-};
-
-export const formatShoppingPlan = (plan: ShoppingPlan): string => {
-  const lines = plan.lines.map((line) => {
-    const selected = line.selected_product_id === undefined ? undefined : line.candidates.find((candidate) => candidate.id === line.selected_product_id);
-    const status = line.clarity_reason === "discovery_unavailable"
-      ? "Discovery unavailable"
-      : line.resolution === "covered" ? "Covered"
-      : line.resolution === "selected" ? "Selected"
-      : "Unresolved";
-    return `  ${status}: ${line.name}${selected ? ` — ${selected.name}` : ""}`;
-  });
-  return [
-    "SHOPPING PLAN",
-    ...lines,
-    `Summary: ${plan.summary.automatically_selected} selected, ${plan.summary.covered} covered, ${plan.summary.unresolved} unresolved.`,
-    "The planner called no basket mutation.",
   ].join("\n");
 };
 
@@ -152,8 +124,8 @@ export function createProgram(overrides: Partial<CliDependencies> = {}): Command
     .command("search")
     .description("Search Nemlig products using Danish terms.")
     .argument("<query>", "Product query")
-    .option("-l, --limit <number>", "Maximum results", positiveInteger, 10)
-    .action(async (query: string, options: { limit: number }) => {
+    .option("-l, --limit <number>", "Ask Nemlig for this many results", positiveInteger)
+    .action(async (query: string, options: { limit?: number }) => {
       const products = await dependencies.client.searchProducts(query, options.limit);
       dependencies.out(
         products.length
@@ -174,44 +146,21 @@ export function createProgram(overrides: Partial<CliDependencies> = {}): Command
     .command("favorites")
     .description("List or search current Nemlig favorites without changing favorites or the basket.")
     .argument("[query]", "Danish product name")
-    .option("-l, --limit <number>", "Maximum results", positiveInteger, 10)
+    .option("-l, --limit <number>", "Maximum results per requested page", positiveInteger, 10)
     .option("-p, --page <number>", "Results page", positiveInteger, 1)
     .action(async (query: string | undefined, options: { limit: number; page: number }) => {
-      if (options.limit > 50) throw new NemligError("Favorites page size cannot exceed 50.");
       await ensureLoggedIn(dependencies.client, dependencies.credentials);
       const favorites = await dependencies.client.listFavorites(
-        query === undefined ? options.limit : FAVORITES_SEARCH_POOL,
+        query === undefined ? options.limit : undefined,
         query === undefined ? options.page : 1,
       );
-      const products = query === undefined ? favorites : matchFavorites(favorites, query, options.page * options.limit).slice((options.page - 1) * options.limit);
+      const matches = query === undefined ? favorites : matchFavorites(favorites, query);
+      const products = matches.slice((options.page - 1) * options.limit, options.page * options.limit);
       dependencies.out(
         products.length
           ? ["ID       Name                          Price    Size       Status", ...products.map(formatProduct)].join("\n")
           : "No favorites found.",
       );
-    });
-
-  program
-    .command("plan")
-    .description("Resolve a local JSON shopping plan without applying basket changes.")
-    .argument("<input-file>", "JSON file with 1–50 shopping-plan lines")
-    .option("--json", "Print the resolved plan as JSON", false)
-    .option("--timeout-ms <number>", "Stop planning after 1–60000 milliseconds", timeoutMilliseconds)
-    .action(async (inputFile: string, options: { json: boolean; timeoutMs?: number }) => {
-      const input = shoppingPlanInputSchema.parse(JSON.parse(await readFile(inputFile, "utf8")));
-      const controller = new AbortController();
-      const interrupt = () => controller.abort(new DOMException("Planning cancelled.", "AbortError"));
-      dependencies.signals.once("SIGINT", interrupt);
-      try {
-        await ensureLoggedIn(dependencies.client, dependencies.credentials);
-        const plan = await resolveShoppingPlan(dependencies.client, input, {
-          signal: controller.signal,
-          deadlineMs: options.timeoutMs,
-        });
-        dependencies.out(options.json ? JSON.stringify(plan, null, 2) : formatShoppingPlan(plan));
-      } finally {
-        dependencies.signals.removeListener("SIGINT", interrupt);
-      }
     });
 
   program.command("departments").description("List current Nemlig department IDs.").action(async () => {
@@ -220,7 +169,7 @@ export function createProgram(overrides: Partial<CliDependencies> = {}): Command
   });
 
   program.command("browse").description("Browse one freshly validated Nemlig department.")
-    .argument("<department-id>").option("-l, --limit <number>", "Page size (max 50)", positiveInteger, 20)
+    .argument("<department-id>").option("-l, --limit <number>", "Page size", positiveInteger, 20)
     .option("-p, --page <number>", "Results page", positiveInteger, 1)
     .action(async (departmentId: string, options: { limit: number; page: number }) => {
       const result = await dependencies.client.browseDepartment(departmentId, options.limit, options.page);

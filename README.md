@@ -24,12 +24,12 @@
 
 Everyday Assistants is a home for small, focused tools that let AI help with
 real tasks while keeping the important decisions with the user. Assistants can
-research, compare, plan, and prepare an action. Anything that changes external
+research, compare, and prepare an action. Anything that changes external
 state requires a clear approval boundary and a readback of what happened.
 
-The first assistant makes grocery shopping through Nemlig easier: ask for
-favorites, compare products, plan a whole list, inspect the basket, or prepare
-an exact basket change for approval.
+The first assistant makes grocery shopping through Nemlig easier: search and
+compare current products, inspect the basket, or prepare an exact basket
+change for approval.
 
 <a id="start-here"></a>
 ## 🚀 Start here
@@ -55,11 +55,9 @@ An unofficial TypeScript CLI and MCP server for safer, more useful grocery
 shopping. It can:
 
 - search Nemlig and browse departments
+- show richly detailed product results with one display-only presentation
 - find and filter your favorites
-- turn a grocery list into a structured shopping plan
-- compare candidates by price, unit price, discount, package, and preferences
-- show what is already covered by your basket
-- save and continue plans without trusting stale prices
+- compare products by price, unit price, discount, package, and availability
 - inspect the basket and review exact additions, removals, replacements, or emptying it
 - expose household-language tools in ChatGPT instead of protocol-oriented names
 - support invited users connecting their own Nemlig account through a separately authenticated browser page when the operator enables it
@@ -71,7 +69,7 @@ review/approve/complete flow and are verified afterward.
 <a id="design-principles"></a>
 ## 🛡️ Design principles
 
-- **Useful before powerful** — read, compare, and plan without changing anything.
+- **Useful before powerful** — read and compare without changing anything.
 - **Approval is specific** — preparing an action is not permission to perform it.
 - **Verify the result** — external changes are immediately read back.
 - **Keep secrets out of Git** — credentials, tokens, cookies, profiles, and real account data stay local or in encrypted provider secrets.

@@ -36,16 +36,16 @@ export interface Product {
   category: string;
   subcategory: string;
   imageUrl: string;
-  available: boolean;
+  available: boolean | undefined;
   labels: string[];
-  isOrganic: boolean;
-  isFrozen: boolean;
+  isOrganic: boolean | undefined;
+  isFrozen: boolean | undefined;
   isRefrigerated: boolean;
   isDairy: boolean;
   isLactoseFree: boolean;
   isGlutenFree: boolean;
   isVegan: boolean;
-  isOnDiscount: boolean;
+  isOnDiscount: boolean | undefined;
 }
 
 export interface Department { id: string; name: string }
@@ -61,16 +61,12 @@ export function normalizeDepartments(value: unknown): Department[] {
   });
 }
 
-// ponytail: bounded prefix; add upstream cursors if real accounts exceed this ceiling.
-export const FAVORITES_SEARCH_POOL = 1000;
-
-export function matchFavorites(products: Product[], query: string, limit: number): Product[] {
+export function matchFavorites(products: Product[], query: string, limit?: number): Product[] {
   const needle = query.trim().toLocaleLowerCase("da-DK");
   if (!needle) throw new NemligError("Favorites query is required.");
-  if (!Number.isInteger(limit) || limit < 1) throw new NemligError("Favorites limit must be positive.");
-  return products
-    .filter((product) => product.name?.toLocaleLowerCase("da-DK").includes(needle))
-    .slice(0, limit);
+  if (limit !== undefined && (!Number.isInteger(limit) || limit < 1)) throw new NemligError("Favorites limit must be positive.");
+  const matches = products.filter((product) => product.name?.toLocaleLowerCase("da-DK").includes(needle));
+  return limit === undefined ? matches : matches.slice(0, limit);
 }
 
 export interface Basket {
@@ -158,9 +154,9 @@ export function normalizeBasket(value: unknown): Basket {
   };
 }
 
-export function normalizeProducts(value: unknown, limit: number): Product[] {
-  return asRecords(value)
-    .slice(0, limit)
+export function normalizeProducts(value: unknown, limit?: number): Product[] {
+  const records = limit === undefined ? asRecords(value) : asRecords(value).slice(0, limit);
+  return records
     .map((item) => {
       const availability = asRecord(item.Availability);
       const labels = Array.isArray(item.Labels)
@@ -194,10 +190,14 @@ export function normalizeProducts(value: unknown, limit: number): Product[] {
         subcategory,
         imageUrl: asString(item.PrimaryImage) ?? "",
         available:
-          availability.IsDeliveryAvailable !== false && availability.IsAvailableInStock !== false,
+          availability.IsDeliveryAvailable === false || availability.IsAvailableInStock === false
+            ? false
+            : availability.IsDeliveryAvailable === true && availability.IsAvailableInStock === true
+              ? true
+              : undefined,
         labels,
-        isOrganic: labelsLower.some((label) => label.includes("øko")),
-        isFrozen: categoryLower === "frost",
+        isOrganic: labelsLower.some((label) => label.includes("øko")) || undefined,
+        isFrozen: categoryLower ? categoryLower === "frost" : undefined,
         isRefrigerated: categoryLower === "køl",
         isDairy:
           categoryLower.includes("mejeri") ||
@@ -205,7 +205,9 @@ export function normalizeProducts(value: unknown, limit: number): Product[] {
         isLactoseFree: labelsLower.some((label) => label.includes("laktosefri")),
         isGlutenFree: labelsLower.some((label) => label.includes("glutenfri")),
         isVegan: labelsLower.some((label) => label.includes("vegan")),
-        isOnDiscount: item.DiscountItem === true || item.IsDiscountItem === true,
+        isOnDiscount: typeof item.DiscountItem === "boolean"
+          ? item.DiscountItem
+          : typeof item.IsDiscountItem === "boolean" ? item.IsDiscountItem : undefined,
       };
     });
 }
@@ -305,9 +307,9 @@ export class NemligClient {
     if (!asString(token.access_token)) throw new NemligError("Validate account failed: invalid response data.");
   }
 
-  async searchProducts(query: string, limit = 10, signal?: AbortSignal): Promise<Product[]> {
+  async searchProducts(query: string, limit?: number, signal?: AbortSignal): Promise<Product[]> {
     if (!query.trim()) throw new NemligError("Search query is required.");
-    if (!Number.isInteger(limit) || limit < 1) throw new NemligError("Search limit must be positive.");
+    if (limit !== undefined && (!Number.isInteger(limit) || limit < 1)) throw new NemligError("Search limit must be positive.");
     throwIfAborted(signal);
     if (!this.productTimestamp) await this.refreshSession(signal);
 
@@ -383,32 +385,36 @@ export class NemligClient {
     return this.rememberProducts([product], true)[0]!;
   }
 
-  async listFavorites(limit = 10, page = 1): Promise<Product[]> {
+  async listFavorites(limit?: number, page = 1, signal?: AbortSignal): Promise<Product[]> {
     this.requireLogin("view favorites");
-    if (!Number.isInteger(limit) || limit < 1) throw new NemligError("Favorites limit must be positive.");
+    throwIfAborted(signal);
+    if (limit !== undefined && (!Number.isInteger(limit) || limit < 1)) throw new NemligError("Favorites limit must be positive.");
     if (!Number.isInteger(page) || page < 1) throw new NemligError("Favorites page must be positive.");
-    if (limit > 1000) throw new NemligError("Favorites result limit cannot exceed 1000.");
-    const offset = (page - 1) * limit;
-    if (offset >= 1000) throw new NemligError("Favorites paging is limited to the first 1000 products.");
-    if (!this.productTimestamp) await this.refreshSession();
+    const offset = limit === undefined ? 0 : (page - 1) * limit;
+    if (!this.productTimestamp) await this.refreshSession(signal);
 
     const pageUrl = new URL("/favoritter", "https://www.nemlig.com");
     pageUrl.searchParams.set("GetAsJson", "1");
     pageUrl.searchParams.set("t", this.timeslot);
     pageUrl.searchParams.set("d", "1");
-    const favoritesPage = asRecord(await this.json(pageUrl.toString(), {}, "Get favorites page"));
+    const favoritesPage = asRecord(await this.json(pageUrl.toString(), { signal }, "Get favorites page"));
     const groups = asRecords(favoritesPage.content)
       .filter((entry) => entry.TemplateName === "productlistshowallspot")
       .map((entry) => entry.ProductGroupId)
       .filter((id): id is string | number => typeof id === "string" || typeof id === "number");
     const products: Product[] = [];
     const seen = new Set<number | string>();
-    const target = Math.min(1000, offset + limit);
+    const target = limit === undefined ? Number.POSITIVE_INFINITY : offset + limit;
     for (const group of groups) {
       let groupPage = 1;
-      while (products.length < target && groupPage <= 20) {
-        const pageSize = Math.min(50, target - products.length);
-        const batch = await this.productsByGroup(group, pageSize, "Get favorite products", groupPage);
+      const seenPageSignatures = new Set<string>();
+      while (products.length < target) {
+        throwIfAborted(signal);
+        const pageSize = limit === undefined ? 50 : Math.min(50, target - products.length);
+        const batch = await this.productsByGroup(group, pageSize, "Get favorite products", groupPage, signal);
+        const pageSignature = JSON.stringify(batch.map((product) => product.id ?? null));
+        if (seenPageSignatures.has(pageSignature)) break;
+        seenPageSignatures.add(pageSignature);
         for (const product of batch) {
           if (product.id === undefined || seen.has(product.id)) continue;
           seen.add(product.id); products.push(product);
@@ -418,7 +424,6 @@ export class NemligClient {
       }
       if (products.length === target) break;
     }
-    // ponytail: bounded 1,000-product prefix; add upstream cursors if a real account exceeds it.
     return this.rememberProducts(products.slice(offset, target));
   }
 
@@ -428,10 +433,8 @@ export class NemligClient {
   }
 
   async browseDepartment(departmentId: string, limit = 20, page = 1): Promise<ProductPage> {
-    if (!Number.isInteger(limit) || limit < 1 || limit > 50) throw new NemligError("Department page size must be between 1 and 50.");
+    if (!Number.isInteger(limit) || limit < 1) throw new NemligError("Department page size must be positive.");
     if (!Number.isInteger(page) || page < 1) throw new NemligError("Department page must be positive.");
-    const offset = (page - 1) * limit;
-    if (offset >= 1000) throw new NemligError("Department paging is limited to the first 1000 products.");
     const department = (await this.listDepartments()).find((item) => item.id === departmentId);
     if (!department) throw new NemligError("Unknown department ID; list departments again.");
     const products = this.rememberProducts(await this.productsByCategory(department.id, limit, page));
@@ -441,7 +444,7 @@ export class NemligClient {
       if (seen.has(product.id)) return false;
       seen.add(product.id); return true;
     });
-    return { products: unique, page, hasNext: products.length === limit && offset + products.length < 1000 };
+    return { products: unique, page, hasNext: products.length === limit };
   }
 
   async getCart(signal?: AbortSignal): Promise<Basket> {
@@ -550,11 +553,10 @@ export class NemligClient {
     this.deliveryZoneId = asId(delivery.DeliveryZoneId) ?? this.deliveryZoneId;
   }
 
-  private async searchGateway(query: string, limit: number, signal?: AbortSignal): Promise<Product[]> {
+  private async searchGateway(query: string, limit: number | undefined, signal?: AbortSignal): Promise<Product[]> {
     if (!this.accessToken || !this.productTimestamp) return [];
     const params = new URLSearchParams({
       query,
-      take: String(limit),
       skip: "0",
       recipeCount: "0",
       timestamp: this.productTimestamp,
@@ -563,6 +565,7 @@ export class NemligClient {
       includeFavorites: this.userId ?? "0",
       TimeSlotId: String(this.timeslotId),
     });
+    if (limit !== undefined) params.set("take", String(limit));
     const response = asRecord(
       await this.json(`${SEARCH_GATEWAY_URL}/search?${params}`, { signal }, "Search products", true, true),
     );
@@ -587,7 +590,7 @@ export class NemligClient {
     return products;
   }
 
-  private async productsByCategory(path: string, limit: number, page = 1, signal?: AbortSignal): Promise<Product[]> {
+  private async productsByCategory(path: string, limit: number | undefined, page = 1, signal?: AbortSignal): Promise<Product[]> {
     const pageUrl = new URL(path, "https://www.nemlig.com");
     if (pageUrl.origin !== "https://www.nemlig.com") return [];
     pageUrl.searchParams.set("GetAsJson", "1");
@@ -600,7 +603,7 @@ export class NemligClient {
 
   private async productsByGroup(
     group: string | number,
-    limit: number,
+    limit: number | undefined,
     operation: string,
     page = 1,
     signal?: AbortSignal,
@@ -609,9 +612,9 @@ export class NemligClient {
     const params = new URLSearchParams({
       productGroupId: String(group),
       pageIndex: String(page - 1),
-      pagesize: String(limit),
       sortorder: "default",
     });
+    if (limit !== undefined) params.set("pagesize", String(limit));
     const response = asRecord(await this.optionalJson(`${endpoint}?${params}`, operation, false, signal));
     return normalizeProducts(response.Products, limit);
   }

@@ -77,7 +77,7 @@ test("disabled Cloudflare MCP rejects before configuration, authentication, and 
     admit: async () => { calls += 1; throw new Error("unexpected"); },
     forward: async () => { calls += 1; return new Response("unexpected"); },
   };
-  const response = await handleGatewayRequest(mcpRequest({ method: "initialize" }), { MCP_ENABLED: "false" }, dependencies);
+  const response = await handleGatewayRequest(mcpRequest({ method: "server/discover" }), { MCP_ENABLED: "false" }, dependencies);
   assert.equal(response.status, 503);
   assert.equal(await response.text(), "MCP temporarily disabled");
   assert.equal(calls, 0);
@@ -85,7 +85,7 @@ test("disabled Cloudflare MCP rejects before configuration, authentication, and 
 
 test("unauthenticated requests never reach authentication backends or the Container", async () => {
   let calls = 0;
-  const response = await handleGatewayRequest(mcpRequest({ method: "initialize" }, ""), env, {
+  const response = await handleGatewayRequest(mcpRequest({ method: "server/discover" }, ""), env, {
     authenticate: async () => { calls += 1; return undefined; },
     admit: async () => { calls += 1; throw new Error("unexpected"); },
     forward: async () => { calls += 1; return new Response("unexpected"); },
@@ -119,11 +119,11 @@ test("unknown, disabled, and malformed principals fail before admission or Conta
     forward: async () => { forwardCalls += 1; return new Response("unexpected"); },
   };
   for (const token of ["unknown", "disabled"]) {
-    const response = await handleGatewayRequest(mcpRequest({ method: "initialize" }, token), env, dependencies);
+    const response = await handleGatewayRequest(mcpRequest({ method: "server/discover" }, token), env, dependencies);
     assert.equal(response.status, 403);
     assert.deepEqual(await response.json(), { error: "principal_not_allowed" });
   }
-  const malformed = await handleGatewayRequest(mcpRequest({ method: "initialize" }), {
+  const malformed = await handleGatewayRequest(mcpRequest({ method: "server/discover" }), {
     ...env,
     NEMLIG_MCP_PRINCIPALS: "not-json",
   }, dependencies);
@@ -156,7 +156,7 @@ test("authenticated normal requests forward once and unknown tools fail into the
   assert.equal(events.length, 2);
   assert.deepEqual(events.map((event) => event.outcome), ["completed", "completed"]);
   assert.equal(normal.headers.get("x-nemlig-request-id"), "10000000-0000-4000-8000-000000000000");
-  assert.equal(classifyMcpMessage({ method: "notifications/initialized" }), "protocol");
+  assert.equal(classifyMcpMessage({ method: "server/discover" }), "protocol");
   assert.equal(classifyMcpMessage({ method: "future/protocol-method" }), "protocol");
   assert.equal(classifyMcpMessage({ method: "tools/call", params: { name: "get_profile" } }), "profile");
   assert.equal(classifyMcpMessage({ method: "tools/call", params: { name: "add_approved_items" } }), "expensive");
@@ -210,11 +210,40 @@ test("service acceptance permits retained read-only tools and rejects the legacy
     admit: async () => { admitted += 1; return { admitted: true, state: emptyUsageState(new Date()) }; },
     forward: async () => { forwarded += 1; return new Response("ok"); },
   };
+  const discovery = await handleGatewayRequest(mcpRequest({ method: "server/discover" }), serviceEnv, dependencies);
   const details = await handleGatewayRequest(mcpRequest({ method: "tools/call", params: { name: "get_grocery_details" } }), serviceEnv, dependencies);
   const legacy = await handleGatewayRequest(mcpRequest({ method: "tools/call", params: { name: "choose_products_visually" } }), serviceEnv, dependencies);
+  assert.equal(discovery.status, 200);
   assert.equal(details.status, 200);
   assert.equal(legacy.status, 403);
-  assert.equal(admitted, 1);
+  assert.equal(admitted, 2);
+  assert.equal(forwarded, 2);
+});
+
+test("service acceptance may read only the registered product viewer resource", async () => {
+  let forwarded = 0;
+  const service = { subject: "service-client@clients", principal_key: "s".repeat(32), tier: 2 as const, enabled: true };
+  const serviceEnv = {
+    ...env,
+    NEMLIG_MCP_SERVICE_ACCEPTANCE_ENABLED: "true",
+    NEMLIG_MCP_SERVICE_CLIENT_ID: "service-client",
+  };
+  const dependencies: GatewayDependencies = {
+    authenticate: async () => service,
+    admit: async () => ({ admitted: true, state: emptyUsageState(new Date()) }),
+    forward: async () => { forwarded += 1; return new Response("ok"); },
+  };
+  const allowed = await handleGatewayRequest(mcpRequest({
+    method: "resources/read",
+    params: { uri: "ui://nemlig/product-viewer.html" },
+  }), serviceEnv, dependencies);
+  const forbidden = await handleGatewayRequest(mcpRequest({
+    method: "resources/read",
+    params: { uri: "file:///etc/passwd" },
+  }), serviceEnv, dependencies);
+
+  assert.equal(allowed.status, 200);
+  assert.equal(forbidden.status, 403);
   assert.equal(forwarded, 1);
 });
 
@@ -253,12 +282,12 @@ test("unauthorized, rate-limited, and open-breaker requests never reach the Cont
     authenticate: async () => principal,
     admit: async () => ({ admitted: false, status: 429, reason: "rate_limit", state: emptyUsageState(new Date()) }),
   });
-  const tripped = await handleGatewayRequest(mcpRequest({ method: "initialize" }), env, {
+  const tripped = await handleGatewayRequest(mcpRequest({ method: "server/discover" }), env, {
     ...base,
     authenticate: async () => principal,
     admit: async () => ({ admitted: false, status: 503, reason: "breaker_open", state: emptyUsageState(new Date()) }),
   });
-  const connectionRequired = await handleGatewayRequest(mcpRequest({ method: "initialize" }), env, {
+  const connectionRequired = await handleGatewayRequest(mcpRequest({ method: "server/discover" }), env, {
     ...base,
     authenticate: async () => principal,
     admit: async () => ({ admitted: false, status: 409, reason: "credential_required", state: emptyUsageState(new Date()) }),

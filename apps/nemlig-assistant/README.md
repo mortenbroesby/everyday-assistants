@@ -1,11 +1,11 @@
 # Nemlig Assistant
 
 <p align="center">
-  Turn a grocery list into a safer, smarter Nemlig shopping plan.
+  Search current Nemlig products and prepare safer, explicitly approved basket changes.
 </p>
 
 <p align="center">
-  Search, compare, plan, and shop in conversation. Nothing changes your basket without explicit approval, including a clear same-run “go ahead.”
+  Search and compare in conversation. Nothing changes your basket without an exact review and explicit approval.
 </p>
 
 <p align="center">
@@ -41,43 +41,35 @@ with or endorsed by nemlig.com or OpenAI.
 Once connected, try prompts like:
 
 - “Show five of my favorite products.”
-- “Find organic milk and compare the best options by unit price.”
-- “Find the ingredients for burgers and lasagna, then show me the proposed basket.”
-- “For uncertain choices, check whether I already have a suitable favourite.”
-- “Show one recommendation per ingredient and expand alternatives below 80% match confidence.”
+- “Find organic milk and show the current detailed results, compared by unit price.”
+- “Show the exact details for product 701015.”
+- “Which of these exact products should I review before adding two?”
 - “Compare the cheese in my basket with this cheaper alternative.”
 - “Add these selected products after showing me a clear summary.”
 - “Which Nemlig Assistant version and codename are running?”
 
-The “go ahead” example uses automatic mode and adds only deterministic clear
-matches. Requests without that explicit proceed intent remain read-only or
-preparatory, and exact reviews still wait for approval.
+Search and product details remain read-only. Basket changes use the matching
+exact review and apply boundary and remain subject to final revalidation.
 
 <a id="what-you-can-do"></a>
 ## ✨ What you can do
 
-### Discover products
+### Search and inspect products
 
 - Translate or normalize ordinary product wording into one short Danish
   catalogue phrase before searching; preserve distinctive brands and include
   the Danish category (`Prince cookies` becomes `prince kiks`).
+- Enrich every provider- or caller-selected search result with exact current
+  product details in provider order; no application result cap is invented.
+- Mark an individual detail failure as unavailable instead of presenting a
+  shallow row as complete, while preserving other successful results.
 - List or search authenticated favorites.
 - Browse departments with pagination.
 - Compare product name, ID, package, price, unit price, discount, organic
   status, availability, product description, item details, and other known
   classifications when Nemlig supplies them.
-
-### Plan shopping without hidden state
-
-- Use `plan_my_shopping` for request-scoped planning of up to fifty grocery lines.
-- Use `find_groceries` for direct current catalogue searches and
-  `get_grocery_details` for one exact product returned by search or planning.
-- Consult authenticated favourites when the user asks for them or when planning
-  needs bounded read-only evidence.
-- Preserve package, price, availability, dietary, and supplied product-detail
-  evidence as structured data with a readable text fallback.
-- Keep product images optional and accept only the observed HTTPS Nemlig origins;
-  text details remain available when an image is absent or rejected.
+- Use one display-only product presentation when the host supports it, with a
+  structured and plain-text fallback for headless clients.
 
 ### Review the basket safely
 
@@ -95,8 +87,8 @@ preparatory, and exact reviews still wait for approval.
 - Use the stdio MCP server with a local MCP client.
 - Use the HTTP MCP server behind Auth0.
 - Connect ChatGPT to the private hosted Cloudflare deployment.
-  - Keep catalogue discovery and exact product details conversational; no custom
-  MCP UI resource is required.
+  - Rich product results may use the shared display-only MCP Apps resource;
+    structured and plain-text results remain available without UI support.
 
 ### Hosted family alpha
 
@@ -115,34 +107,36 @@ architecture, cost controls, deployment, rollback, and emergency procedures.
 Use the [production-readiness gate](../../docs/nemlig-production-readiness.md)
 for one repeatable credential-free repository and CI check.
 
-## 🧭 How guided shopping works
+## 🧭 How product search works
 
-ChatGPT searches each ingredient separately with short Danish catalogue terms.
-It can refine an empty or unsuitable result, then recommends current products
-from the available evidence. Exact product details remain a separate read-only
-lookup, and basket changes stay behind the existing exact review/apply flow.
+ChatGPT searches with short Danish catalogue terms and receives current exact
+details for every selected result. Results retain provider order and identify
+partial or unavailable detail reads explicitly. Exact product lookup remains a
+separate read-only capability, and basket changes stay behind the existing
+exact review/apply flow.
 
 Provider descriptions, declarations, and item details are converted from HTML
 to bounded plain text, including Danish characters and entities. Scripts,
 styles, images and link destinations are omitted; conversion does not fetch
 additional resources.
-Plan tool outputs publish explicit nested schemas while preserving optional
-product evidence. Supply groceries in the current conversation; the assistant
-does not save or reload plans or named lists.
+The shared product presentation is display-only: it does not fetch the provider,
+create a proposal, change the basket, or store a product selection. Supply any
+shopping intent in the current conversation; the assistant does not save or
+reload shopping plans or named lists.
 
 <a id="how-basket-changes-work"></a>
 ## 🛡️ How basket changes work
 
 ```text
-Read or plan → resolve only clear matches → bind explicit proceed or exact approval → complete once → read back the basket
+Read → review the exact intended change → receive explicit approval → complete once → read back the basket
 ```
 
 - Search, favourites, browsing, proposed-basket review and basket inspection
   are read-only; they never authorize or change the Nemlig basket.
 - Every basket change starts with the matching `review_*` tool.
-- Approval is requested once. “Go ahead” may authorize only clear additions
-  resolved from that same run; unresolved lines remain unchanged. Removals,
-  replacements, and clearing always require their own exact approval.
+- Approval is requested for the exact reviewed products and quantities.
+  Removals, replacements, and clearing always require their own exact review
+  and approval.
 - Ordinary summaries show names, quantities, useful package distinctions, and
   prices without internal IDs, expiry times, or protocol status fields. Ask for
   “technical details” when those internals are useful for troubleshooting.
@@ -160,7 +154,7 @@ Read or plan → resolve only clear matches → bind explicit proceed or exact a
 - Repeated completed actions return the stored sanitized result without writing again.
 - The assistant never orders, checks out, or pays.
 
-Repository work, a specification, a plan, product selection, or review
+Repository work, product selection, or review
 preparation never authorizes a basket mutation. Operators must read
 [`AGENTS.md`](AGENTS.md) and the
 [`nemlig-basket` skill](.codex/skills/nemlig-basket/SKILL.md).
@@ -196,43 +190,6 @@ pnpm nemlig remove 701015
 
 They remain subject to the exact-product approval and readback contract above.
 
-### Local plan command
-
-`plan` resolves a strict JSON file with one to fifty shopping lines using the
-same planner as `plan_my_shopping`. It reads the current catalogue and basket to
-calculate coverage, but it never creates a proposal or calls a basket mutation
-method.
-
-```json
-{
-  "lines": [
-    { "id": "milk", "name": "mælk", "quantity": 2 },
-    { "id": "coffee", "name": "kaffe", "quantity": 1 }
-  ]
-}
-```
-
-```sh
-pnpm nemlig plan ./shopping.json --timeout-ms 30000
-pnpm nemlig plan ./shopping.json --json
-```
-
-The file is parsed and validated before login or any provider request. Press
-`Ctrl-C` to cancel; the command waits for its active reads to finish unwinding.
-
-The credential-free acceptance below starts a real HTTP server on `127.0.0.1`,
-drives this CLI command with real Node fetch, and proves success, cancellation,
-socket closure, and fatal-failure quiescence outside ChatGPT:
-
-```sh
-pnpm --filter nemlig-assistant demo:product-discovery
-```
-
-Account-backed acceptance is intentionally not performed: the current Nemlig
-login request can ask the provider to merge a pre-login basket. The command's
-planner never invokes a basket mutation, but an authenticated terminal run
-still inherits that login behavior until it is separately redesigned.
-
 ### Local MCP server
 
 ```sh
@@ -245,7 +202,6 @@ The MCP surface is organized around household actions:
 - Find groceries, favourites, sections, and exact product details with
   `find_groceries`, `show_my_favorites`, `show_grocery_sections`,
   `browse_grocery_section`, and `get_grocery_details`.
-- Use basket-aware batch planning explicitly when needed: `plan_my_shopping`.
 - Verify the Nemlig account connection: `check_nemlig_connection` performs a
   bounded read-only provider check and reports missing credentials, provider
   reauthentication, or provider unavailability separately.
@@ -256,9 +212,10 @@ The MCP surface is organized around household actions:
   `review_item_swap`, and `review_emptying_basket`.
 - Complete an approved change: `add_approved_items`, `remove_approved_item`,
   `make_approved_item_swap`, and `empty_approved_basket`.
-- Exact product details are read-only and returned as structured catalogue data;
-  there is no custom picker or MCP UI resource. Raw catalogue searches remain
-  conversational so unrelated search results cannot appear as selectable basket choices.
+- Search and exact product details return the same supported detailed product
+  facts. Product-bearing results use one display-only viewer resource when the
+  host supports it, with complete structured and text fallbacks otherwise.
+  The viewer never fetches, selects, approves, or changes the basket.
 
 After an ordinary release, open the existing app named exactly `Nemlig Assistant`
 and use **Refresh** so ChatGPT rediscovers tools, schemas, instructions,
@@ -310,15 +267,15 @@ of the repository.
 
 ## 🧪 Owner alpha exercise
 
-1. Ask for a recipe proposal containing one favourite, one ambiguous item, and
-   one constrained item. Confirm each ingredient uses a short individual search.
-2. Confirm alternatives expand below 80% match confidence and remain collapsed
-   at or above 80%.
+1. Search for a product phrase that needs Danish normalization and inspect all
+   returned detailed results.
+2. Confirm a partial detail failure is labeled unavailable while other results
+   remain in provider order.
 3. Browse a department's second page and inspect deal and unit-price metadata.
-4. Review the complete proposed basket and its stated pantry assumptions without
-   reading or changing the current basket.
-5. Adjust a selection, then inspect the separate exact batch review.
-   Stop unless you separately approve that unchanged review.
+4. Inspect the same product facts in search, exact details, basket, and review
+   contexts without creating a second selection model.
+5. Prepare an exact batch review and stop unless you separately approve that
+   unchanged review.
 6. Prepare one cheaper and one non-cheaper replacement. Verify both product
    IDs, packages, unit prices, final quantity, signed price difference, and
    expected basket total before considering approval.
@@ -413,11 +370,11 @@ This README is the user-facing inventory of shipped feature sets:
 - account access
 - product and department discovery
 - fresh Nemlig authentication before every provider-backed MCP task
-- individual short-query ingredient discovery and refinement
+- rich individual short-query product discovery and refinement
+- one display-only product presentation with a headless fallback
 - favourites as read-only evidence for uncertain matches
 - composable catalogue search, favourites, sections, browsing, and exact details
-- request-scoped planning with bounded product evidence
-- constrained product comparison and selection, with staged basket review/apply
+- product comparison with staged basket review/apply
 - exact review/approve/complete basket operations
 - easy-to-understand ChatGPT tool names and descriptions
 - human-friendly basket reviews and verified results
@@ -443,7 +400,9 @@ src/cli.ts                    CLI entry point
 src/mcp.ts                    MCP server and composable tool surface
 src/http.ts                   Authenticated HTTP MCP transport
 src/cloudflare-worker.ts      Gateway, Container, and Durable Objects
-src/plans.ts                  Request-scoped guided resolution
+src/product-discovery.ts      Request-scoped detailed product hydration
+src/product-presentation.ts  Shared display-only product projection
+src/product-viewer.ts         Packaged product viewer and headless fallback
 src/proposals.ts              Proposal store, revalidation, and mutation lock
 release/                      Version and publication policy
 scripts/smoke-package.ts      Installed-package interface proof

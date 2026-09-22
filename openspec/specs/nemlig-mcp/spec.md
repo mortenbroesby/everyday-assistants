@@ -16,22 +16,22 @@ The system SHALL expose a `nemlig-assistant` MCP server over stdio through the l
 - **THEN** the tool returns a concise sanitized MCP error without a stack trace
 
 ### Requirement: Non-recipe tool surface
-The server SHALL expose product search, favourites, exact product details, guided planning, department browsing, basket view, and staged basket review/apply tools; and SHALL NOT expose custom UI resources, direct model-visible basket mutation, recipe, checkout, order, payment, purchase, or delivery-slot tools.
+The server SHALL expose independent product search, favourites, exact product details, department browsing, basket view, and staged basket review/apply tools. Product-bearing tools MAY reference one shared display-only product viewer resource. The server SHALL NOT expose direct model-visible basket mutation, recipe, checkout, order, payment, purchase, or delivery-slot tools.
 
 #### Scenario: Enumerate base tools
 - **WHEN** a client lists tools
-- **THEN** the read-only discovery, exact-details, planning, section, basket-view, and prepare/apply proposal pairs remain available
+- **THEN** the read-only discovery, exact-details, section, basket-view, and prepare/apply proposal pairs remain available
 
 #### Scenario: Inspect prohibited tools
 - **WHEN** a client enumerates all tools
 - **THEN** no tool name or description offers direct basket mutation, recipe parsing, checkout, order placement, payment, purchase, or delivery-slot changes
 
-### Requirement: Ranked product candidates
-The search tools SHALL return normalized product candidates, tag the lowest-priced available candidate as `cheapest`, tag the first available non-frozen name match as `recommended`, and tag every organic candidate as `organic`.
+### Requirement: Product candidates preserve provider facts
+The search tools SHALL return normalized product candidates and SHALL NOT infer comparative recommendation or price-ranking labels. They MAY expose provider-supplied labels and positively established classifications such as organic status; unknown classifications SHALL remain unknown.
 
-#### Scenario: Rank mixed candidates
-- **WHEN** a search returns available, unavailable, frozen, and organic products
-- **THEN** ranking applies all tags deterministically while never marking an unavailable product as cheapest or recommended
+#### Scenario: Preserve labels without heuristic rankings
+- **WHEN** a search returns available, unavailable, frozen, and organically labelled products
+- **THEN** the output preserves provider labels and does not claim a product is cheapest or recommended based only on returned candidates
 
 #### Scenario: Search has no candidates
 - **WHEN** a search returns no products
@@ -57,10 +57,10 @@ Every provider-backed MCP tool SHALL load configured credentials and establish a
 - **THEN** the tool does not retry the mutation
 
 ### Requirement: MCP basket tools
-The view tool SHALL return normalized basket data, and every model-visible add, remove, replace, or clear operation SHALL use the matching read-only prepare tool followed by its apply tool only after either explicit approval of the unchanged proposal or, for additions only, explicit same-run automatic authorization that covers the resolved lines.
+The view tool SHALL return normalized basket data, and every model-visible add, remove, replace, or clear operation SHALL use the matching read-only prepare tool followed by its apply tool only after explicit approval of the unchanged proposal.
 
 #### Scenario: Prepare additions
-- **WHEN** `review_items_to_add` receives between one and fifty exact positive product quantities plus its authorization scope
+- **WHEN** `review_items_to_add` receives exact positive product quantities plus its explicit exact-review authorization
 - **THEN** it returns an exact proposal without changing the basket
 
 #### Scenario: Invalid add quantity
@@ -68,7 +68,7 @@ The view tool SHALL return normalized basket data, and every model-visible add, 
 - **THEN** it returns a validation error without calling Nemlig or creating a proposal
 
 #### Scenario: Apply approved additions
-- **WHEN** `add_approved_items` receives the still-valid proposal after exact approval or covered same-run automatic authorization
+- **WHEN** `add_approved_items` receives the still-valid proposal after exact approval
 - **THEN** it applies only those unchanged lines and returns verified basket readback
 
 #### Scenario: Prepare a replacement
@@ -81,12 +81,8 @@ The view tool SHALL return normalized basket data, and every model-visible add, 
 - **WHEN** `make_approved_item_swap` receives the still-valid proposal ID after explicit approval
 - **THEN** it applies only the unchanged staged replacement and returns verified basket readback or sanitized inspection guidance for a consumed partial or uncertain result
 
-#### Scenario: Successful automatic add
-- **WHEN** an unchanged addition proposal is covered by the explicit same-run automatic authorization and applied
-- **THEN** the server adds only its exact sufficiently clear lines and returns verified basket readback
-
 #### Scenario: Successful add
-- **WHEN** an unchanged addition proposal is covered by exact approval or same-run automatic authorization and applied
+- **WHEN** an unchanged addition proposal is covered by exact approval and applied
 - **THEN** the server adds only its exact lines and returns verified basket readback
 
 #### Scenario: Successful clear
@@ -111,46 +107,16 @@ The replacement preparation tool SHALL report the exact current line total, prop
 - **WHEN** the proposed replacement line total is equal to or greater than the current line total
 - **THEN** the review reports the signed price difference without labeling it as savings or suppressing the candidate
 
-### Requirement: Composable catalogue and planning surface
-The server SHALL expose current catalogue search, favourites, grocery sections, browsing, exact product details, basket reads, and optional request-scoped planning as independent conversational capabilities. Exact product details SHALL resolve one current product by its positive catalogue ID and SHALL remain read-only. The server SHALL not advertise a custom UI tool or resource.
-
-#### Scenario: Ordinary planning runs
-- **WHEN** a client invokes `plan_my_shopping` in automatic or manual mode
-- **THEN** the client receives the complete structured result without automatically opening an interactive resource
+### Requirement: Composable catalogue and product viewer surface
+The server SHALL expose current catalogue search, favourites, grocery sections, browsing, exact product details, and basket reads as independent conversational capabilities. Exact product details SHALL resolve one current product by its positive catalogue ID and SHALL remain read-only. Product search SHALL hydrate returned candidates through the existing exact-product loader and use the same supported public product projection as exact lookup. The server SHALL register one display-only product viewer resource for product-bearing results and SHALL preserve complete structured and text fallbacks.
 
 #### Scenario: Exact product details are requested
 - **WHEN** a client supplies a positive product ID returned by a current search or plan
-- **THEN** the server returns bounded current product facts without reading or changing the basket
+- **THEN** the server returns current product facts without reading or changing the basket
 
-### Requirement: Guided shopping MCP tools
-The server SHALL expose read-only `plan_shopping_list`, `list_departments`, `browse_department`, and `load_shopping_plan` tools plus a local-state `save_shopping_plan` tool, with schemas and annotations matching their actual behavior.
-
-#### Scenario: Plan a whole list
-- **WHEN** a client calls `plan_shopping_list` with valid structured grocery lines
-- **THEN** it returns the guided plan, candidates, basket gaps, and selected estimate without preparing or applying a basket mutation
-
-#### Scenario: Browse through MCP
-- **WHEN** a client lists departments or browses a returned department identifier
-- **THEN** it receives normalized paginated candidates through read-only tools
-
-#### Scenario: Save and load through MCP
-- **WHEN** a client explicitly saves a valid plan and later loads its returned ID
-- **THEN** save is advertised as a non-destructive local state change and load is advertised as read-only, with neither tool changing Nemlig state
-
-### Requirement: Planning candidate metadata
-The planning and browsing tools SHALL return source, normalized dietary and discount flags, item price, unit price, package size, brand, description and approved direct HTTPS image URL when available, constraint outcomes, deterministic preference and clarity tags, current basket quantity, remaining quantity when selected, resolution state, and automatic coverage fields.
-
-#### Scenario: Client consumes structured results
-- **WHEN** a client reads a planning or browsing result
-- **THEN** the conversational tool result contains every factual field required to select a clear candidate automatically or present an unresolved choice
-
-#### Scenario: Candidate is a clear automatic match
-- **WHEN** one eligible candidate satisfies the deterministic clarity rule in automatic mode
-- **THEN** the result marks that exact candidate selected without describing the clarity grade as a probability
-
-#### Scenario: Candidate is ambiguous
-- **WHEN** no eligible candidate satisfies the deterministic clarity rule
-- **THEN** the result marks the line unresolved and returns bounded evidence for optional user choice without treating any candidate as authorized
+#### Scenario: Rich product search is requested
+- **WHEN** a client supplies a search phrase and an optional provider-selected result count
+- **THEN** the server returns unique detailed products in provider order, labels unavailable or invalid rows explicitly, and performs no second lookup when the viewer expands a successful result
 
 ### Requirement: Read-only MCP favorites search
 The `list_favorites` tool SHALL accept optional non-empty search text, SHALL return only matching authenticated favorites as normalized ranked candidates up to the requested positive limit, and SHALL remain read-only and non-destructive.
@@ -171,59 +137,25 @@ The `list_favorites` tool SHALL accept optional non-empty search text, SHALL ret
 - **WHEN** no favorite matches the supplied query
 - **THEN** the tool returns an empty structured candidate list without calling general Nemlig search or mutating favorites or the basket
 
-### Requirement: Intent-directed product discovery
+### Requirement: Independent product discovery
 
-The MCP server SHALL guide clients to use `plan_my_shopping` for ordinary product planning, `find_groceries` for direct catalogue searches and per-line read-only recovery when a plan reports `discovery_unavailable`, `get_grocery_details` for one exact current product, and `show_my_favorites` for explicit favourite browsing. Before catalogue tools are called, the client SHALL translate or normalize English, mixed-language, misspelled, or over-specific wording into one short Danish catalogue phrase per line, preserving a distinctive brand with the intended Danish product category. The client SHALL carry explicit proceed intent and requested mode separately from the normalized search phrase.
+The MCP server SHALL guide clients to use `find_groceries` for search, `get_grocery_details` for one exact current product, and `show_my_favorites` for explicit favourite browsing. Search and exact lookup SHALL be independent operations: neither creates a plan, selection store, proposal, or saved journey. Clients MAY normalize a user phrase into a concise Danish catalogue term while preserving distinctive brands and product categories.
 
-#### Scenario: Ordinary product request
+#### Scenario: Product request
+- **WHEN** the user asks to find products
+- **THEN** the client invokes direct search and may present the returned detailed products through the shared viewer without creating shopping state
 
-- **WHEN** the user asks to find one or more products without requesting a specific search source or visual choice
-- **THEN** the server guidance directs the client to `plan_my_shopping` in automatic mode with one normalized Danish phrase per line and does not attach a custom UI resource
-
-#### Scenario: Planning discovery fallback
-
-- **WHEN** one or more plan lines report `discovery_unavailable` after bounded authentication recovery
-- **THEN** the server guidance directs the client to call `find_groceries` once for each affected normalized line and continue with its structured candidates without UI or favourites fallback
-
-#### Scenario: User says to proceed
-
-- **WHEN** the user explicitly asks to use a recipe or conversation list and says to go ahead
-- **THEN** the server guidance preserves that authorization separately from product wording and continues the sufficiently clear additions through proposal and apply without a redundant question
-
-#### Scenario: Explicit catalog request
-
-- **WHEN** the user explicitly asks to search the general Nemlig catalog
-- **THEN** the server guidance permits `find_groceries` with the same normalized Danish catalogue-phrase rule
-
-#### Scenario: Explicit favorites request
-
-- **WHEN** the user explicitly asks to list or search saved favorites
-- **THEN** the server guidance directs the client to `show_my_favorites` and no catalogue fallback occurs
+#### Scenario: Explicit exact lookup
+- **WHEN** the user supplies a positive product ID returned by a current search
+- **THEN** the server returns the same supported detailed product facts without reading or changing the basket
 
 #### Scenario: Product discovery remains non-mutating
-
-- **WHEN** any intent-directed discovery tool returns candidates or an unresolved choice without explicit proceed authorization
-- **THEN** no basket proposal is applied and ambiguous candidates remain available for manual choice
-
-#### Scenario: Unclear product intent
-
-- **WHEN** automatic planning cannot establish a deterministic clear match
-- **THEN** no addition is applied for that line and its candidates remain available for conversational or explicitly requested visual choice
-
-### Requirement: One-flow grocery-run result
-The MCP surface SHALL support one user-visible flow for up to fifty grocery lines that plans current products, prepares and applies sufficiently clear authorized additions, verifies basket readback, and returns exact coverage counts without exposing a direct unvalidated mutation tool.
-
-#### Scenario: Authorized automatic run completes
-- **WHEN** the client supplies valid lines, automatic mode, and explicit same-run proceed authorization
-- **THEN** the tool sequence completes sufficiently clear additions and returns verified basket data plus covered, selected, added, unresolved, and failed counts
-
-#### Scenario: Automatic run has unclear lines
-- **WHEN** some lines resolve clearly and others remain unresolved
-- **THEN** the clear authorized additions may complete while unresolved lines remain unchanged and are returned for optional manual follow-up
+- **WHEN** a discovery tool returns products or unavailable/invalid outcomes
+- **THEN** no basket proposal is created or applied and product choice remains in the conversation
 
 ### Requirement: Conversational reviewed basket changes
 
-The server SHALL keep catalogue results and exact product details conversational, while basket changes SHALL remain behind the existing matching staged review/apply tools and explicit approval. Review and apply responses SHALL retain structured data plus a readable text fallback; no custom UI resource is required.
+The server SHALL keep catalogue results and exact product details independent from basket operations, while basket changes SHALL remain behind the existing matching staged review/apply tools and explicit approval. Review and apply responses SHALL retain structured data plus a readable text fallback. Product-bearing results MAY attach the one shared display-only viewer resource; the viewer never owns shopping state or invokes provider calls.
 
 #### Scenario: Exact review is submitted
 
@@ -237,7 +169,7 @@ The server SHALL keep catalogue results and exact product details conversational
 
 ### Requirement: Complete production feature acceptance
 
-The system SHALL provide an automated production acceptance workflow that verifies the complete advertised MCP tool and resource surface against the hosted service. The workflow SHALL cover authentication, discovery, product search, exact product details, favourites, guided planning, department browsing, basket view, and every proposal preparation path without submitting a real issue or applying a real basket mutation.
+The system SHALL provide an automated production acceptance workflow that verifies the complete advertised MCP tool and resource surface against the hosted service. The workflow SHALL cover authentication, discovery, rich product search, exact product details, favourites, department browsing, basket view, the shared viewer resource when advertised, and every proposal preparation path without applying a real basket mutation.
 
 #### Scenario: Read-only production acceptance runs
 
@@ -302,31 +234,20 @@ answer an explicit request.
 - **WHEN** products are ambiguous, a replacement comparison is material, a safe apply fails, or the user explicitly asks for technical detail
 - **THEN** the presentation includes only the additional package, price, identifier, timing, or diagnostic detail needed for the user to understand or resolve that case
 
-### Requirement: Quantity-aware and preference-aware planning contract
-The guided planning tool SHALL accept an optional requested amount and supported unit, optional preferred brands, and an optional per-line explicit-choice signal. Its structured result SHALL expose each candidate's relevance, parsed package amount when available, required package count, covered amount, excess amount, preferred-brand match, and the deterministic reason for automatic selection or unresolved choice.
-
-#### Scenario: Client supplies conversational preference
-- **WHEN** ChatGPT has an explicit user preference such as Heinz tomato ketchup in conversation or memory
-- **THEN** it can pass that brand on the applicable grocery line without creating or updating assistant-side preference storage
-
-#### Scenario: Client supplies a requested amount
-- **WHEN** the user asks for 1 kg and the catalogue contains relevant 500 g and 800 g packages
-- **THEN** the tool returns both with their required package counts, total covered mass, and excess mass so the client can explain the trade-off
-
-#### Scenario: Meaningful choice is requested
-- **WHEN** the client marks a line as requiring explicit choice and no preferred brand produces one clear result
-- **THEN** the result remains unresolved with a bounded set of usable candidates and no custom UI resource is attached
-
-#### Scenario: Legacy package-count line
-- **WHEN** a client supplies only the existing positive quantity
-- **THEN** the tool preserves package-count planning behavior and remains backward compatible
-
-### Requirement: No custom presentation resource
-The server SHALL not serve a custom picker HTML resource or register a visual product-choice tool. Product image URLs included in model-visible catalogue data SHALL be retained only for the observed HTTPS Nemlig origins; hostile, non-HTTPS, and unrelated origins SHALL be omitted while text details remain available.
+### Requirement: Shared product viewer resource
+The server SHALL register one reusable display-only product viewer resource for appropriate product-bearing tools. The viewer SHALL render already-returned structured data, SHALL perform no provider or network fetch, SHALL expose no basket mutation or approval controls, and SHALL retain a complete structured/text fallback when a host cannot render the resource. Product image URLs SHALL be retained only for observed HTTPS Nemlig origins; hostile, non-HTTPS, and unrelated origins SHALL be omitted while text details remain available.
 
 #### Scenario: Resource inventory is inspected
 - **WHEN** a client requests the MCP resource inventory
-- **THEN** no Nemlig Assistant custom resource is advertised, and clients can continue with the conversational tools
+- **THEN** the single viewer resource is advertised once with its supported MCP Apps MIME type and clients can continue with structured/text tools
+
+#### Scenario: Viewer expands a search result
+- **WHEN** a host renders a successfully hydrated search result
+- **THEN** the viewer displays the returned detailed fields without another provider/tool call
+
+#### Scenario: Viewer receives partial or unavailable data
+- **WHEN** a result is unavailable, invalid, or missing an image or optional field
+- **THEN** the viewer remains accessible, labels the state honestly, and does not invent data
 
 ### Requirement: Parallel reads share pre-authentication
 
@@ -336,29 +257,6 @@ The MCP runtime SHALL authenticate before every provider-backed task and SHALL c
 
 - **WHEN** multiple read-only tools begin while a fresh login for their shared principal client is in flight
 - **THEN** they await that login and continue without starting competing login sessions
-
-### Requirement: Read-only proposed-basket tool
-
-The MCP server SHALL provide a read-only proposed-basket tool that accepts no more than five actionable entries per invocation. It SHALL validate match confidence, product identifiers, quantities, and alternative identifiers, then return current image, description, package size, price, unit price, confidence, and favourite evidence for display. It SHALL NOT read or mutate the basket.
-
-#### Scenario: Valid proposal group
-
-- **WHEN** ChatGPT supplies up to five valid proposed entries
-- **THEN** the server resolves current product metadata and returns a displayable proposed-basket group without basket access
-
-#### Scenario: Invalid proposal group
-
-- **WHEN** confidence is outside 0 to 100, quantity is invalid, a product identifier cannot be resolved, or more than five actionable entries are supplied
-- **THEN** the server rejects the proposal without displaying misleading choices
-
-### Requirement: Stateless alternative selection
-
-The proposed-basket view SHALL return an alternative selection to the conversation and SHALL NOT call `review_items_to_add`, `add_approved_items`, or store proposal state.
-
-#### Scenario: User selects an alternative
-
-- **WHEN** the user chooses another product in the view
-- **THEN** the view sends the requested ingredient and chosen product identifier back to ChatGPT for a revised proposal
 
 ### Requirement: Representative recipe-scale smoke verification
 

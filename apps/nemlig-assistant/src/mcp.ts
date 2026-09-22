@@ -1,13 +1,12 @@
 #!/usr/bin/env node
 
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { inputRequired, McpServer, type StandardSchemaWithJSON, type ToolAnnotations, type ToolCallback } from "@modelcontextprotocol/server";
+import { serveStdio } from "@modelcontextprotocol/server/stdio";
 import { randomUUID } from "node:crypto";
 import { realpathSync } from "node:fs";
 import { basename } from "node:path";
 import { z } from "zod";
 import {
-  FAVORITES_SEARCH_POOL,
   matchFavorites,
   NemligError,
   type ShoppingClient,
@@ -28,8 +27,9 @@ import {
   type ProposalOperation,
   type ProposalView,
 } from "./proposals.js";
-import { IMAGE_ORIGINS, rankProducts, safeNemligImageUrl } from "./product-presentation.js";
-import { resolveShoppingPlan, shoppingPlanLineSchema, shoppingPlanSchema, type ShoppingPlan } from "./plans.js";
+import { IMAGE_ORIGINS, createProductView, createProductViewFromSummary, createProductViews, rankProducts, type ProductSummaryFacts, type ProductView } from "./product-presentation.js";
+import { PRODUCT_VIEWER_MIME_TYPE, PRODUCT_VIEWER_RESOURCE_METADATA, PRODUCT_VIEWER_RESOURCE_URI, productViewsToText, renderProductViewerHtml } from "./product-viewer.js";
+import { resolveDetailedProductSearch } from "./product-discovery.js";
 import { oauthReconnectChallenge } from "./auth0.js";
 
 export const NEMLIG_CONNECT_URL = "https://nemlig-mcp.broesby.dk/connect";
@@ -49,23 +49,28 @@ export interface McpRequestContext {
 export const serviceAcceptanceToolInventory = [
   "find_groceries", "get_grocery_details", "show_my_favorites", "show_grocery_sections", "browse_grocery_section", "show_my_basket",
 ] as const;
-export const serviceAcceptanceResourceInventory = [] as const;
+export const serviceAcceptanceResourceInventory = [PRODUCT_VIEWER_RESOURCE_URI] as const;
 
 const candidateSchema = z.object({
   id: z.number().int().positive().optional(),
   name: z.string().optional(),
   price: z.number().optional(),
   unit_price: z.number().optional(),
+  unit: z.string().optional(),
   unit_size: z.string().optional(),
+  category: z.string().optional(),
+  subcategory: z.string().optional(),
+  currency: z.literal("DKK").optional(),
   description: z.string().max(2_000).optional(),
   declaration: z.string().max(4_000).optional(),
   details: z.array(z.object({ key: z.string(), value: z.string() })).optional(),
   brand: z.string().optional(),
-  available: z.boolean(),
-  is_organic: z.boolean(),
-  is_frozen: z.boolean(),
-  is_on_discount: z.boolean(),
+  available: z.boolean().optional(),
+  is_organic: z.boolean().optional(),
+  is_frozen: z.boolean().optional(),
+  is_on_discount: z.boolean().optional(),
   image_url: z.string().optional(),
+  labels: z.array(z.string()),
   tags: z.array(z.string()),
   source: z.enum(["favorite", "catalog"]).optional(),
   dietary: z.object({ organic: z.boolean(), vegan: z.boolean(), gluten_free: z.boolean(), lactose_free: z.boolean() }).optional(),
@@ -73,6 +78,21 @@ const candidateSchema = z.object({
   basket_quantity: z.number().nonnegative().optional(),
   remaining_quantity: z.number().int().nonnegative().optional(),
 });
+
+const productViewSchema = z.discriminatedUnion("status", [
+  z.object({
+    context: z.enum(["search", "details", "result", "basket", "review"]),
+    status: z.literal("complete"),
+    product: candidateSchema,
+    basket: z.object({ quantity: z.number().optional(), line_total: z.number().optional() }).optional(),
+    review: z.object({ quantity: z.number().int().positive().optional(), line_total: z.number().optional(), approved: z.boolean() }).optional(),
+  }),
+  z.object({
+    context: z.enum(["search", "details", "result", "basket", "review"]),
+    status: z.literal("unavailable"),
+    product_id: z.number().int().positive().optional(),
+  }),
+]);
 
 export type Candidate = z.infer<typeof candidateSchema>;
 
@@ -90,6 +110,7 @@ const basketSchema = z.object({
   number_of_products: z.number().optional(),
   delivery_time: z.string().optional(),
 });
+const basketResultSchema = basketSchema.extend({ views: z.array(productViewSchema) });
 
 const proposalBase = {
   applicable: z.literal(true),
@@ -104,9 +125,14 @@ const proposalLineSchema = z.object({
   product_id: z.number().int().positive(),
   name: z.string(),
   unit_size: z.string(),
+  category: z.string(),
+  subcategory: z.string(),
   quantity: z.number().int().positive(),
   available: z.boolean(),
-  unit_price: z.number(),
+  item_price: z.number(),
+  unit_price: z.number().optional(),
+  unit: z.string(),
+  currency: z.literal("DKK"),
   line_total: z.number(),
   labels: z.array(z.string()),
 });
@@ -114,12 +140,13 @@ const proposalLineSchema = z.object({
 const additionsProposalSchema = z.object({
   ...proposalBase,
   operation: z.literal("additions"),
-  authorization: z.enum(["exact_review", "same_run_automatic"]),
+  authorization: z.literal("exact_review"),
   review: z.object({
     lines: z.array(proposalLineSchema).min(1),
     expected_products_price: z.number(),
     expected_number_of_products: z.number(),
   }),
+  views: z.array(productViewSchema).min(1),
 });
 
 const removalProposalSchema = z.object({
@@ -132,6 +159,7 @@ const removalProposalSchema = z.object({
   basket_fingerprint: z.string().regex(/^[a-f0-9]{64}$/u).optional(),
   review: z.object({ line: basketItemSchema }).optional(),
   reason: z.string().optional(),
+  views: z.array(productViewSchema).optional(),
 });
 
 const clearProposalSchema = z.object({
@@ -144,6 +172,7 @@ const clearProposalSchema = z.object({
   basket_fingerprint: z.string().regex(/^[a-f0-9]{64}$/u).optional(),
   review: z.object({ basket: basketSchema }).optional(),
   reason: z.string().optional(),
+  views: z.array(productViewSchema).optional(),
 });
 
 const replacementLineSchema = z.object({
@@ -151,10 +180,13 @@ const replacementLineSchema = z.object({
   name: z.string(),
   unit: z.string(),
   unit_size: z.string(),
+  category: z.string(),
+  subcategory: z.string(),
   quantity: z.number().int().positive(),
   available: z.boolean(),
   item_price: z.number(),
   unit_price: z.number().optional(),
+  currency: z.literal("DKK"),
   line_total: z.number(),
   labels: z.array(z.string()),
 });
@@ -178,6 +210,7 @@ const replacementProposalSchema = z.object({
     potential_savings: z.number().positive().optional(),
   }).optional(),
   reason: z.string().optional(),
+  views: z.array(productViewSchema).optional(),
 });
 
 const applyResultSchema = z.object({
@@ -185,44 +218,7 @@ const applyResultSchema = z.object({
   operation: z.enum(["additions", "removal", "replacement", "clear"]),
   replayed: z.boolean(),
   basket: basketSchema,
-});
-
-const shoppingPlanToolBaseSchema = z.object({
-  lines: z.array(shoppingPlanLineSchema.omit({ selected_product_id: true }).extend({
-    selected_product: z.number().int().positive().optional().describe("The exact product selected from an earlier result."),
-  })).min(1).max(50).describe("The groceries to plan, with quantities and any requirements or preferences."),
-  mode: z.enum(["automatic", "manual"]).default("automatic").describe("Automatic selects only deterministic clear matches; manual leaves candidates for choice."),
-}).strict();
-const validateRequestedAmounts = (input: { lines: Array<{ requested_amount?: number; requested_unit?: string }> }, context: z.RefinementCtx): void => {
-  for (const [index, line] of input.lines.entries()) if ((line.requested_amount === undefined) !== (line.requested_unit === undefined)) {
-    context.addIssue({ code: "custom", path: ["lines", index], message: "requested_amount and requested_unit must be supplied together." });
-  }
-};
-const shoppingRunToolInputSchema = shoppingPlanToolBaseSchema.extend({
-  proceed: z.boolean().default(false).describe("True only when the user explicitly asked to add sufficiently clear products in this same run."),
-}).strict().superRefine(validateRequestedAmounts);
-
-const internalShoppingPlan = (input: z.infer<typeof shoppingPlanToolBaseSchema>) => ({
-  lines: input.lines.map(({ selected_product, ...line }) => ({ ...line, selected_product_id: selected_product })),
-  mode: input.mode,
-});
-
-const planOutputSchema = shoppingPlanSchema.extend({ automatic_authorization: z.string().uuid().optional() }).strict();
-
-const selectedAdditions = (plan: ShoppingPlan): Array<{ product_id: number; quantity: number }> => {
-  const quantities = new Map<number, number>();
-  for (const line of plan.lines) if (line.resolution === "selected" && line.selected_product_id && line.remaining_quantity > 0) {
-    quantities.set(line.selected_product_id, (quantities.get(line.selected_product_id) ?? 0) + line.remaining_quantity);
-  }
-  return [...quantities].map(([product_id, quantity]) => ({ product_id, quantity }));
-};
-
-const safePlanImages = (plan: ShoppingPlan): ShoppingPlan => ({
-  ...plan,
-  lines: plan.lines.map((line) => ({
-    ...line,
-    candidates: line.candidates.map((candidate) => ({ ...candidate, image_url: safeNemligImageUrl(candidate.image_url) })),
-  })),
+  views: z.array(productViewSchema).optional(),
 });
 
 export { rankProducts, safeNemligImageUrl } from "./product-presentation.js";
@@ -235,7 +231,8 @@ const record = (value: unknown): Record<string, unknown> =>
 const lineText = (value: unknown, showSize = false): string => {
   const line = record(value);
   const size = showSize && typeof line.unit_size === "string" && line.unit_size ? ` (${line.unit_size})` : "";
-  return `${typeof line.quantity === "number" ? line.quantity : 0} × ${typeof line.name === "string" ? line.name : "Ukendt vare"}${size} · ${kr(line.line_total ?? line.total)}`;
+  const quantity = typeof line.quantity === "number" ? String(line.quantity) : "Ukendt antal";
+  return `${quantity} × ${typeof line.name === "string" ? line.name : "Ukendt vare"}${size} · ${kr(line.line_total ?? line.total)}`;
 };
 const basketText = (value: unknown, applied = false): string => {
   const basket = record(value);
@@ -243,12 +240,54 @@ const basketText = (value: unknown, applied = false): string => {
   if (!items.length) return applied ? "Kurven er nu tom." : "Kurven er tom.";
   return `Kurven indeholder nu:\n${items.map((item) => lineText(item)).join("\n")}\nVarer i alt: ${kr(basket.products_price)}`;
 };
+const summaryFacts = (value: unknown): ProductSummaryFacts => {
+  const item = record(value);
+  const id = typeof item.product_id === "number" ? item.product_id : typeof item.id === "number" ? item.id : undefined;
+  const labels = Array.isArray(item.labels) ? item.labels.filter((label): label is string => typeof label === "string") : undefined;
+  return {
+    ...(id === undefined ? {} : { id }),
+    ...(typeof item.name === "string" ? { name: item.name } : {}),
+    ...(typeof item.item_price === "number" ? { price: item.item_price } : typeof item.price === "number" ? { price: item.price } : {}),
+    ...(typeof item.unit_price === "number" ? { unit_price: item.unit_price } : {}),
+    ...(typeof item.unit === "string" ? { unit: item.unit } : {}),
+    ...(typeof item.unit_size === "string" ? { unit_size: item.unit_size } : {}),
+    ...(typeof item.category === "string" ? { category: item.category } : {}),
+    ...(typeof item.subcategory === "string" ? { subcategory: item.subcategory } : {}),
+    ...(typeof item.quantity === "number" ? { quantity: item.quantity } : {}),
+    ...(typeof item.line_total === "number" ? { line_total: item.line_total } : typeof item.total === "number" ? { line_total: item.total } : {}),
+    ...(typeof item.available === "boolean" ? { available: item.available } : {}),
+    ...(labels === undefined ? {} : { labels }),
+  };
+};
+const basketProductViews = (basket: unknown): ProductView[] => {
+  const items = record(basket).items;
+  if (!Array.isArray(items)) return [];
+  return items.map((item) => {
+    const facts = summaryFacts(item);
+    return createProductViewFromSummary(facts, { kind: "basket", quantity: facts.quantity, line_total: facts.line_total });
+  });
+};
+const proposalProductViews = (proposal: ProposalView | NoopProposalView): ProductView[] => {
+  if (!proposal.applicable) return [];
+  const review = record(proposal.review);
+  const reviewView = (line: unknown): ProductView => {
+    const facts = summaryFacts(line);
+    return createProductViewFromSummary(facts, {
+      kind: "review", quantity: facts.quantity, line_total: facts.line_total, approved: false,
+    });
+  };
+  if (proposal.operation === "additions") return (Array.isArray(review.lines) ? review.lines : []).map(reviewView);
+  if (proposal.operation === "removal") return review.line ? [reviewView(review.line)] : [];
+  if (proposal.operation === "replacement") return [review.current_line, review.replacement_line].filter(Boolean).map(reviewView);
+  const items = record(review.basket).items;
+  return Array.isArray(items) ? items.map(reviewView) : [];
+};
 const proposalText = (proposal: ProposalView | NoopProposalView): string => {
   if (!proposal.applicable) return "Der er ikke noget at ændre i kurven.";
   const review = record(proposal.review);
   if (proposal.operation === "additions") {
     const lines = Array.isArray(review.lines) ? review.lines : [];
-    return `Tilføj til kurven:\n${lines.map((line) => lineText(line, true)).join("\n")}\nForventet varetotal: ${kr(review.expected_products_price)}${proposal.authorization === "same_run_automatic" ? "\nGodkendt af den aktuelle automatiske kørsel." : "\nSkal jeg tilføje det?"}`;
+    return `Tilføj til kurven:\n${lines.map((line) => lineText(line, true)).join("\n")}\nForventet varetotal: ${kr(review.expected_products_price)}\nSkal jeg tilføje det?`;
   }
   if (proposal.operation === "removal") return `Fjern ${lineText(review.line)} fra kurven?`;
   if (proposal.operation === "replacement") {
@@ -304,31 +343,46 @@ export function createMcpServer(
     },
     {
       instructions:
-        `Current release: ${NEMLIG_RELEASE_IDENTITY}. Use Nemlig Assistant as independent capabilities for current products, exact product details, prices, availability, favourites, basket contents, grocery sections, and optional request-scoped planning. Normalize each search into one short Danish catalogue phrase. Basket changes require the matching staged review/apply tools and explicit approval; revalidate every change, stop on uncertainty, and read the basket back. Never check out, pay, order, or select delivery slots.`,
+        `Current release: ${NEMLIG_RELEASE_IDENTITY}. Use Nemlig Assistant as independent capabilities for current products, rich exact product details, prices, availability, favourites, basket contents, and grocery sections. Normalize each search into one short Danish catalogue phrase. Basket changes require the matching staged review/apply tools and explicit approval; revalidate every change, stop on uncertainty, and read the basket back. Never check out, pay, order, or select delivery slots.`,
+      supportedProtocolVersions: ["2026-07-28"],
     },
   );
-  const rawRegisterTool = server.registerTool.bind(server);
   const allowedTools = requestContext?.kind === "service" ? new Set<string>(serviceAcceptanceToolInventory) : undefined;
   const securitySchemes = [{ type: "oauth2", scopes: [env.NEMLIG_MCP_REQUIRED_SCOPE?.trim() || "use:nemlig-assistant"] }];
-  server.registerTool = ((name: string, config: Record<string, unknown>, handler: unknown) => {
+  const registerTool = <InputArgs extends StandardSchemaWithJSON | undefined>(
+    name: string,
+    config: {
+      title?: string;
+      description?: string;
+      inputSchema?: InputArgs;
+      outputSchema?: StandardSchemaWithJSON;
+      annotations?: ToolAnnotations;
+      _meta?: Record<string, unknown>;
+    },
+    handler: ToolCallback<InputArgs>,
+  ) => {
     if (allowedTools && !allowedTools.has(name)) return undefined;
-    const meta = config._meta && typeof config._meta === "object" ? config._meta : {};
-    return (rawRegisterTool as unknown as (...values: unknown[]) => unknown)(
-      name,
-      { ...config, _meta: { ...meta, securitySchemes } },
-      handler,
-    );
-  }) as typeof server.registerTool;
+    return server.registerTool(name, {
+      ...config,
+      _meta: { ...config._meta, securitySchemes },
+    }, handler);
+  };
+  server.registerResource(
+    "nemlig-product-viewer",
+    PRODUCT_VIEWER_RESOURCE_URI,
+    { title: "Nemlig product viewer", description: "Display-only product results supplied by Nemlig Assistant.", mimeType: PRODUCT_VIEWER_MIME_TYPE },
+    async (uri) => ({ contents: [{ uri: uri.href, mimeType: PRODUCT_VIEWER_MIME_TYPE, text: renderProductViewerHtml() }] }),
+  );
   const localConnectionId = randomUUID();
   const connectionId = (sessionId: string | undefined): string =>
     requestContext ? `${requestContext.principalKey}\0${requestContext.policyRevision}` : sessionId ?? localConnectionId;
 
-  server.registerTool(
+  registerTool(
     "get_profile",
     {
       title: "Get my Nemlig profile",
       description: "Return the stable profile represented by this authenticated Nemlig connection.",
-      inputSchema: {},
+      inputSchema: z.object({}),
       outputSchema: z.object({ id: z.string().trim().min(1) }).strict(),
       annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
       _meta: { "openai/profile": true },
@@ -340,46 +394,34 @@ export function createMcpServer(
     },
   );
 
-  const search = async (query: string, limit: number) =>
-    rankProducts(await client.searchProducts(query, limit), query);
   const runAuthenticatedRead = async <Result>(operation: string, action: () => Promise<Result>) =>
     runMcpOperation(operation, () => withAuthenticatedReadRetry(client, loadCredentials, action));
-  const resolveRun = async (
-    input: z.infer<typeof shoppingRunToolInputSchema>,
-    sessionId?: string,
-    signal?: AbortSignal,
-  ) => {
-    const plan = safePlanImages(await resolveShoppingPlan(client, internalShoppingPlan(input), { signal }));
-    const items = selectedAdditions(plan);
-    return {
-      ...plan,
-      ...(input.proceed && input.mode === "automatic" && items.length ? {
-        automatic_authorization: proposals.createAutomaticAuthorization(connectionId(sessionId), items),
-      } : {}),
-    };
-  };
 
-  server.registerTool(
+  registerTool(
     "check_nemlig_connection",
     {
       title: "Check my Nemlig connection",
       description: "Check whether your Nemlig account is connected. If needed, open the secure connection page; never send login details in chat.",
-      inputSchema: {},
+      inputSchema: z.object({}),
       outputSchema: z.object({
         status: z.enum(["connected", "connection_required", "reconnect_required", "provider_unavailable"]),
         connection_url: z.literal(NEMLIG_CONNECT_URL),
       }),
       annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true },
     },
-    async () => {
+    async (_args, ctx) => {
       const credentials = await loadCredentials();
       if (!credentials && server.server.getClientCapabilities()?.elicitation?.url) {
-        await server.server.elicitInput({
-          mode: "url",
-          message: "Open the secure Nemlig connection page. Do not enter your password in chat.",
-          elicitationId: randomUUID(),
-          url: NEMLIG_CONNECT_URL,
-        });
+        if (!ctx.mcpReq.inputResponses?.connect) {
+          return inputRequired({
+            inputRequests: {
+              connect: inputRequired.elicitUrl({
+                message: "Open the secure Nemlig connection page. Do not enter your password in chat.",
+                url: NEMLIG_CONNECT_URL,
+              }),
+            },
+          });
+        }
       }
       if (!credentials) return success({ status: "connection_required", connection_url: NEMLIG_CONNECT_URL });
       try {
@@ -397,12 +439,12 @@ export function createMcpServer(
     },
   );
 
-  server.registerTool(
+  registerTool(
     "reconnect_nemlig_assistant",
     {
       title: "Reconnect Nemlig Assistant",
       description: "Reconnect ChatGPT to Nemlig Assistant when the app connection has expired or stopped working. This does not change your Nemlig account or basket.",
-      inputSchema: {},
+      inputSchema: z.object({}),
       outputSchema: z.object({}),
       annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true },
     },
@@ -417,78 +459,77 @@ export function createMcpServer(
     }),
   );
 
-  server.registerTool(
+  registerTool(
     "find_groceries",
     {
       title: "Find groceries",
       description: "Search the current Nemlig catalogue directly with one short Danish grocery phrase translated or normalized before the call. Keep a distinctive brand plus its Danish category, for example 'Prince biscuits' becomes 'prince kiks'. This does not change your basket.",
-      inputSchema: {
+      inputSchema: z.object({
         search_term: z.string().min(1).describe("One short Danish catalogue phrase, translated or normalized from the request before this call. Preserve a distinctive brand and add the Danish category; use 'prince kiks', not 'Prince biscuits' or a full sentence."),
-        result_count: z.number().int().positive().default(8).describe("The maximum number of products to show."),
-      },
-      outputSchema: z.object({ result: z.array(candidateSchema) }),
+        result_count: z.number().int().positive().optional().describe("Optional provider result count. If omitted, do not impose an application limit."),
+      }),
+      outputSchema: z.object({ result: z.array(candidateSchema), views: z.array(productViewSchema) }),
       annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true },
+      _meta: PRODUCT_VIEWER_RESOURCE_METADATA,
     },
-    ({ search_term, result_count }) => runAuthenticatedRead("find_groceries", async () => success(await search(search_term, result_count))),
-  );
-
-  server.registerTool(
-    "get_grocery_details",
-    {
-      title: "Get grocery details",
-      description: "Fetch current details for one exact Nemlig product reference returned by a search or plan. This is read-only and does not read or change your basket.",
-      inputSchema: {
-        product_id: z.number().int().positive().describe("The exact positive product reference returned by Nemlig Assistant."),
-      },
-      outputSchema: z.object({ result: candidateSchema }),
-      annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true },
-    },
-    ({ product_id }, extra) => runAuthenticatedRead("get_grocery_details", async () => {
-      const product = await client.getProduct(product_id, extra.signal);
-      const details = rankProducts([product], product.name ?? "")[0];
-      if (!details) throw new NemligError("The requested product was unavailable.");
-      return success({ result: details });
+    ({ search_term, result_count }, ctx) => runAuthenticatedRead("find_groceries", async () => {
+      const detailed = await resolveDetailedProductSearch(client, search_term, result_count, { signal: ctx.mcpReq.signal });
+      const views = createProductViews(detailed.items, { kind: "search" });
+      const result = views.flatMap((view) => view.status === "complete" ? [view.product] : []);
+      return success({ result, views }, productViewsToText(views));
     }),
   );
 
-  server.registerTool(
+  registerTool(
+    "get_grocery_details",
+    {
+      title: "Get grocery details",
+      description: "Fetch current details for one exact Nemlig product reference returned by a search. This is read-only and does not read or change your basket.",
+      inputSchema: z.object({
+        product_id: z.number().int().positive().describe("The exact positive product reference returned by Nemlig Assistant."),
+      }),
+      outputSchema: z.object({ result: candidateSchema, views: z.array(productViewSchema) }),
+      annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true },
+      _meta: PRODUCT_VIEWER_RESOURCE_METADATA,
+    },
+    ({ product_id }, ctx) => runAuthenticatedRead("get_grocery_details", async () => {
+      const product = await client.getProduct(product_id, ctx.mcpReq.signal);
+      const view = createProductView(product, { kind: "details" });
+      if (view.status !== "complete") throw new NemligError("The requested product was unavailable.");
+      return success({ result: view.product, views: [view] }, productViewsToText([view]));
+    }),
+  );
+
+  registerTool(
     "show_my_favorites",
     {
       title: "Show my favourites",
       description: "Show or search your saved Nemlig favourites. This does not change your favourites or basket.",
-      inputSchema: {
-        search_term: z.string().trim().min(1).optional().describe("Optional text for narrowing your saved favourites."),
-        result_count: z.number().int().positive().max(50).default(8).describe("The maximum number of favourites to show."),
-        page: z.number().int().positive().default(1).describe("Which page of favourites to show, starting at 1."),
-      },
-      outputSchema: z.object({ result: z.array(candidateSchema) }),
+      inputSchema: z.object({
+              search_term: z.string().trim().min(1).optional().describe("Optional text for narrowing your saved favourites."),
+              result_count: z.number().int().positive().optional().describe("Optional caller-requested result count; when omitted, use the provider's available results."),
+              page: z.number().int().positive().default(1).describe("Which page of favourites to show, starting at 1."),
+            }).superRefine(({ page, result_count }, context) => {
+              if ((page ?? 1) > 1 && result_count === undefined) context.addIssue({ code: "custom", message: "result_count is required when requesting a page after the first." });
+            }),
+      outputSchema: z.object({ result: z.array(candidateSchema), views: z.array(productViewSchema) }),
       annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true },
+      _meta: PRODUCT_VIEWER_RESOURCE_METADATA,
     },
-    ({ search_term, result_count, page }) => runAuthenticatedRead("show_my_favorites", async () => {
-      const favorites = await client.listFavorites(
-        search_term === undefined ? result_count : FAVORITES_SEARCH_POOL,
+      ({ search_term, result_count, page = 1 }, ctx) => runAuthenticatedRead("show_my_favorites", async () => {
+        const favorites = await client.listFavorites(
+        search_term === undefined ? result_count : undefined,
         search_term === undefined ? page : 1,
+        ctx.mcpReq.signal,
       );
-      const products = search_term === undefined ? favorites : matchFavorites(favorites, search_term, page * result_count).slice((page - 1) * result_count);
-      return success(rankProducts(products, search_term ?? ""));
+      const matches = search_term === undefined ? favorites : matchFavorites(favorites, search_term);
+      const products = result_count === undefined ? matches : matches.slice((page - 1) * result_count, page * result_count);
+      const views = createProductViews(products, { kind: "result" });
+      return success({ result: rankProducts(products, search_term ?? ""), views }, productViewsToText(views));
     }),
   );
 
-  server.registerTool(
-    "plan_my_shopping",
-    {
-      title: "Plan my shopping",
-      description: "Resolve 1–50 groceries automatically by default, or leave choices open in manual mode. If a line reports discovery_unavailable, call find_groceries once for that normalized line. Set proceed only for the user's explicit same-run instruction to add clear results. Planning itself never changes the basket.",
-      inputSchema: shoppingRunToolInputSchema.shape,
-      outputSchema: planOutputSchema,
-      annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true },
-    },
-    (input, extra) => runAuthenticatedRead("plan_my_shopping", async () => {
-      return success(await resolveRun(input, extra.sessionId, extra.signal));
-    }),
-  );
-
-  server.registerTool(
+  registerTool(
     "show_grocery_sections",
     {
       title: "Show grocery sections", description: "Show the grocery sections currently available at Nemlig. This does not change your account or basket.",
@@ -498,72 +539,72 @@ export function createMcpServer(
     () => runAuthenticatedRead("show_grocery_sections", async () => success({ departments: await client.listDepartments() })),
   );
 
-  server.registerTool(
+  registerTool(
     "browse_grocery_section",
     {
       title: "Browse a grocery section", description: "Browse current products in one Nemlig grocery section. This does not change your basket.",
-      inputSchema: {
-        section: z.string().min(1).describe("The exact section reference returned by Show grocery sections."),
-        result_count: z.number().int().positive().max(50).default(20).describe("The maximum number of products to show."),
-        page: z.number().int().positive().default(1).describe("Which page of products to show, starting at 1."),
-      },
-      outputSchema: z.object({ result: z.array(candidateSchema), page: z.number().int().positive(), has_next: z.boolean() }),
+      inputSchema: z.object({
+              section: z.string().min(1).describe("The exact section reference returned by Show grocery sections."),
+              result_count: z.number().int().positive().default(20).describe("Optional page size requested from Nemlig; results can be paged without an application ceiling."),
+              page: z.number().int().positive().default(1).describe("Which page of products to show, starting at 1."),
+            }),
+      outputSchema: z.object({ result: z.array(candidateSchema), views: z.array(productViewSchema), page: z.number().int().positive(), has_next: z.boolean() }),
       annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true },
+      _meta: PRODUCT_VIEWER_RESOURCE_METADATA,
     },
     ({ section, result_count, page }) => runAuthenticatedRead("browse_grocery_section", async () => {
       const result = await client.browseDepartment(section, result_count, page);
-      return success({ result: rankProducts(result.products, ""), page: result.page, has_next: result.hasNext });
+      const views = createProductViews(result.products, { kind: "result" });
+      return success({ result: rankProducts(result.products, ""), views, page: result.page, has_next: result.hasNext }, productViewsToText(views));
     }),
   );
 
-  server.registerTool(
+  registerTool(
     "show_my_basket",
     {
       title: "Show my basket",
       description: "Show the current items and totals in your Nemlig basket. This does not change your basket.",
-      outputSchema: basketSchema,
+      outputSchema: basketResultSchema,
       annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true },
+      _meta: PRODUCT_VIEWER_RESOURCE_METADATA,
     },
     () => runAuthenticatedRead("show_my_basket", async () => {
       const basket = basketPayload(await client.getCart());
-      return success(basket, basketText(basket));
+      const views = basketProductViews(basket);
+      return success({ ...basket, views }, `${basketText(basket)}\n${productViewsToText(views)}`);
     }),
   );
 
-  server.registerTool(
+  registerTool(
     "review_items_to_add",
     {
       title: "Review items to add",
       description: "Review exact products and quantities before adding them. This does not change your basket.",
-      inputSchema: {
-        items: z
-          .array(
-            z.object({
-              product: z.number().int().positive().describe("The exact product reference returned by a grocery search or plan."),
-              quantity: z.number().int().positive().describe("How many of this product to add."),
+      inputSchema: z.object({
+              items: z
+                .array(
+                  z.object({
+                    product: z.number().int().positive().describe("The exact product reference returned by a grocery search."),
+                    quantity: z.number().int().positive().describe("How many of this product to add."),
+                  }),
+                )
+                .min(1)
+                .describe("The exact products and quantities to review together."),
+              authorization: z.literal("exact_review").describe("Explicitly review these exact products before adding them."),
             }),
-          )
-          .min(1)
-          .max(50)
-          .describe("The exact products and quantities to review together."),
-        authorization: z.enum(["exact_review", "same_run_automatic"]).describe("Use same_run_automatic only with the token from an explicitly authorized current run."),
-        automatic_authorization: z.string().uuid().optional().describe("The same-run token returned by automatic planning."),
-      },
       outputSchema: additionsProposalSchema,
       annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true },
+      _meta: PRODUCT_VIEWER_RESOURCE_METADATA,
     },
-    ({ items, authorization, automatic_authorization }, extra) => runAuthenticatedRead("review_items_to_add", async () => {
-      if (authorization === "same_run_automatic" && !automatic_authorization) throw new NemligError("The current automatic authorization is required.");
-      if (authorization === "exact_review" && automatic_authorization) throw new NemligError("Automatic authorization cannot be attached to an exact review.");
+    ({ items }, ctx) => runAuthenticatedRead("review_items_to_add", async () => {
       const proposal = await proposals.prepareAdditions(
-        connectionId(extra.sessionId),
+        connectionId(ctx.sessionId),
         items.map(({ product, quantity }) => ({ product_id: product, quantity })),
-        authorization === "same_run_automatic"
-          ? { kind: authorization, token: automatic_authorization! }
-          : { kind: authorization },
-        { signal: extra.signal },
+        { kind: "exact_review" },
+        { signal: ctx.mcpReq.signal },
       );
-      return success(proposal, proposalText(proposal));
+      const views = proposalProductViews(proposal);
+      return success({ ...proposal, views }, `${proposalText(proposal)}\n${productViewsToText(views)}`);
     }),
   );
 
@@ -574,80 +615,89 @@ export function createMcpServer(
     description: string,
     destructiveHint: boolean,
   ): void => {
-    server.registerTool(
+    registerTool(
       name,
       {
         title,
         description,
-        inputSchema: { approved_review: z.string().uuid().describe("The private reference returned by the matching unchanged review.") },
+        inputSchema: z.object({ approved_review: z.string().uuid().describe("The private reference returned by the matching unchanged review.") }),
         outputSchema: applyResultSchema,
         annotations: { readOnlyHint: false, destructiveHint, openWorldHint: true },
+        _meta: PRODUCT_VIEWER_RESOURCE_METADATA,
       },
-      ({ approved_review }, extra) => runMcpOperation(name, async () => {
+      ({ approved_review }, ctx) => runMcpOperation(name, async () => {
           await ensureLoggedIn(client, loadCredentials, true);
-          const result: ApplyResult = await proposals.apply(connectionId(extra.sessionId), approved_review, operation);
-          return success(result, basketText(result.basket, true));
+          const result: ApplyResult = await proposals.apply(connectionId(ctx.sessionId), approved_review, operation);
+          const views = basketProductViews(result.basket);
+          return success({ ...result, views }, `${basketText(result.basket, true)}\n${productViewsToText(views)}`);
         }),
     );
   };
 
   registerAction("add_approved_items", "additions", "Add the approved items", "Add exactly the items from the approved unchanged review, then show the verified basket. This changes your basket.", false);
 
-  server.registerTool(
+  registerTool(
     "review_item_to_remove",
     {
       title: "Review an item to remove",
       description: "Review one exact basket item before removing it. This does not change your basket.",
-      inputSchema: { basket_item: z.number().int().positive().describe("The exact item reference shown in your current basket.") },
+      inputSchema: z.object({ basket_item: z.number().int().positive().describe("The exact item reference shown in your current basket.") }),
       outputSchema: removalProposalSchema,
       annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true },
+      _meta: PRODUCT_VIEWER_RESOURCE_METADATA,
     },
-    ({ basket_item }, extra) => runAuthenticatedRead("review_item_to_remove", async () => {
-      const proposal = await proposals.prepareRemoval(connectionId(extra.sessionId), basket_item, { signal: extra.signal });
-      return success(proposal, proposalText(proposal));
+    ({ basket_item }, ctx) => runAuthenticatedRead("review_item_to_remove", async () => {
+      const proposal = await proposals.prepareRemoval(connectionId(ctx.sessionId), basket_item, { signal: ctx.mcpReq.signal });
+      const views = proposalProductViews(proposal);
+      return success({ ...proposal, views }, `${proposalText(proposal)}\n${productViewsToText(views)}`);
     }),
   );
 
   registerAction("remove_approved_item", "removal", "Remove the approved item", "Remove exactly the item from the approved unchanged review, then show the verified basket. This changes your basket.", true);
 
-  server.registerTool(
+  registerTool(
     "review_item_swap",
     {
       title: "Review swapping an item",
       description: "Compare swapping one basket item for one exact product, including the basket-price difference. This does not change your basket or claim the products are equivalent.",
-      inputSchema: {
-        current_item: z.number().int().positive().describe("The exact item reference shown in your current basket."),
-        replacement_item: z.number().int().positive().describe("The exact replacement product reference returned by a search or plan."),
-        quantity: z.number().int().positive().describe("The final quantity of the replacement product."),
-      },
+      inputSchema: z.object({
+              current_item: z.number().int().positive().describe("The exact item reference shown in your current basket."),
+              replacement_item: z.number().int().positive().describe("The exact replacement product reference returned by a search."),
+              quantity: z.number().int().positive().describe("The final quantity of the replacement product."),
+            }),
       outputSchema: replacementProposalSchema,
       annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true },
+      _meta: PRODUCT_VIEWER_RESOURCE_METADATA,
     },
-    ({ current_item, replacement_item, quantity }, extra) => runAuthenticatedRead("review_item_swap", async () => {
+    ({ current_item, replacement_item, quantity }, ctx) => runAuthenticatedRead("review_item_swap", async () => {
       const proposal = await proposals.prepareReplacement(
-        connectionId(extra.sessionId),
+        connectionId(ctx.sessionId),
         current_item,
         replacement_item,
         quantity,
-        { signal: extra.signal },
+        { signal: ctx.mcpReq.signal },
       );
-      return success(proposal, proposalText(proposal));
+      const views = proposalProductViews(proposal);
+      return success({ ...proposal, views }, `${proposalText(proposal)}\n${productViewsToText(views)}`);
     }),
   );
 
   registerAction("make_approved_item_swap", "replacement", "Make the approved swap", "Make exactly the swap from the approved unchanged review, then show the verified basket. This changes your basket.", true);
 
-  server.registerTool(
+  registerTool(
     "review_emptying_basket",
     {
       title: "Review emptying my basket",
       description: "Review every current basket item before emptying the basket. This does not change your basket.",
+      inputSchema: z.object({}),
       outputSchema: clearProposalSchema,
       annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true },
+      _meta: PRODUCT_VIEWER_RESOURCE_METADATA,
     },
-    (extra) => runAuthenticatedRead("review_emptying_basket", async () => {
-      const proposal = await proposals.prepareClear(connectionId(extra.sessionId), { signal: extra.signal });
-      return success(proposal, proposalText(proposal));
+    (_input, ctx) => runAuthenticatedRead("review_emptying_basket", async () => {
+      const proposal = await proposals.prepareClear(connectionId(ctx.sessionId), { signal: ctx.mcpReq.signal });
+      const views = proposalProductViews(proposal);
+      return success({ ...proposal, views }, `${proposalText(proposal)}\n${productViewsToText(views)}`);
     }),
   );
 
@@ -657,7 +707,7 @@ export function createMcpServer(
 }
 
 export async function main(): Promise<void> {
-  await createMcpServer().connect(new StdioServerTransport());
+  serveStdio(() => createMcpServer(), { legacy: "reject" });
 }
 
 if (process.argv[1] && ["mcp.js", "mcp.ts"].includes(basename(realpathSync(process.argv[1])))) {

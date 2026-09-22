@@ -6,7 +6,6 @@ import {
   BasketProposalService,
   type ProposalAuditEvent,
 } from "./proposals.js";
-import { resolveShoppingPlan } from "./plans.js";
 
 const product: Product = {
   id: 7,
@@ -128,9 +127,14 @@ test("addition preparation stores exact review data without mutation or connecti
       product_id: 7,
       name: "Banan",
       unit_size: "1 stk.",
+      category: "Grønt",
+      subcategory: "",
       quantity: 2,
       available: true,
+      item_price: 2.5,
       unit_price: 2.5,
+      unit: "2,50 kr/stk.",
+      currency: "DKK",
       line_total: 5,
       labels: ["Frugt"],
     }],
@@ -142,38 +146,14 @@ test("addition preparation stores exact review data without mutation or connecti
   assert.doesNotMatch(JSON.stringify(audits), /Banan|private-connection|00000000/);
 });
 
-test("same-run automatic authorization is connection-bound, exact, expiring, and single-use", async () => {
-  let reads = 0; let now = new Date("2026-09-06T10:00:00Z"); let id = 0;
-  const service = new BasketProposalService(fakeClient({ getCart: async () => { reads += 1; return emptyBasket(); } }), {
-    now: () => now, ttlMs: 1_000, id: () => `00000000-0000-4000-8000-${String(++id).padStart(12, "0")}`,
-  });
+test("addition preparation rejects missing or planner-issued authorization", async () => {
+  const service = new BasketProposalService(fakeClient({ getCart: async () => emptyBasket() }));
   const items = [{ product_id: 7, quantity: 1 }];
   await assert.rejects(service.prepareAdditions("connection", items, undefined as never), /authorization is required/);
-  const wrongConnection = service.createAutomaticAuthorization("connection", items);
-  await assert.rejects(service.prepareAdditions("other", items, { kind: "same_run_automatic", token: wrongConnection }), /invalid, expired, or does not match/);
-  const mismatch = service.createAutomaticAuthorization("connection", items);
-  await assert.rejects(service.prepareAdditions("connection", [{ product_id: 7, quantity: 2 }], { kind: "same_run_automatic", token: mismatch }), /does not match/);
-  const expired = service.createAutomaticAuthorization("connection", items); now = new Date("2026-09-06T10:00:02Z");
-  await assert.rejects(service.prepareAdditions("connection", items, { kind: "same_run_automatic", token: expired }), /expired/);
-  now = new Date("2026-09-06T10:00:00Z");
-  const token = service.createAutomaticAuthorization("connection", items);
-  const proposal = await service.prepareAdditions("connection", items, { kind: "same_run_automatic", token });
-  assert.equal(proposal.authorization, "same_run_automatic");
-  await assert.rejects(service.prepareAdditions("connection", items, { kind: "same_run_automatic", token }), /invalid/);
-  assert.equal(reads, 1);
-});
-
-test("same-run automatic authorization matches additions regardless of item order", async () => {
-  const service = new BasketProposalService(fakeClient({ getCart: async () => emptyBasket() }));
-  const items = [{ product_id: 8, quantity: 1 }, { product_id: 7, quantity: 2 }];
-  const token = service.createAutomaticAuthorization("connection", items);
-
-  const proposal = await service.prepareAdditions("connection", [items[1], items[0]], {
-    kind: "same_run_automatic",
-    token,
-  });
-
-  assert.equal(proposal.authorization, "same_run_automatic");
+  await assert.rejects(
+    service.prepareAdditions("connection", items, { kind: "same_run_automatic", token: "not-supported" } as never),
+    /authorization is required/,
+  );
 });
 
 test("proposal audits preserve terminal state order and provider sequencing", async () => {
@@ -238,20 +218,25 @@ test("proposal audits preserve terminal state order and provider sequencing", as
   ]);
 });
 
-test("addition preparation accepts fifty unique lines and rejects fifty-one before basket access", async () => {
+test("addition preparation accepts caller-selected line counts and rejects unknown availability", async () => {
   let basketReads = 0;
   const service = new BasketProposalService(fakeClient({
     getProduct: async (id) => ({ ...product, id, name: `Product ${id}` }),
     getCart: async () => { basketReads += 1; return emptyBasket(); },
   }));
-  const fifty = Array.from({ length: 50 }, (_, index) => ({ product_id: index + 1, quantity: 1 }));
-  assert.equal((await service.prepareAdditions("connection", fifty, { kind: "exact_review" })).review.lines instanceof Array, true);
+  const items = Array.from({ length: 51 }, (_, index) => ({ product_id: index + 1, quantity: 1 }));
+  assert.equal((await service.prepareAdditions("connection", items, { kind: "exact_review" })).review.lines instanceof Array, true);
   assert.equal(basketReads, 1);
-  await assert.rejects(service.prepareAdditions("connection", [...fifty, { product_id: 51, quantity: 1 }], { kind: "exact_review" }), /At most 50/);
-  assert.equal(basketReads, 1);
+  const unknownAvailability = new BasketProposalService(fakeClient({
+    getProduct: async () => ({ ...product, available: undefined }),
+  }));
+  await assert.rejects(
+    unknownAvailability.prepareAdditions("connection", [{ product_id: 7, quantity: 1 }], { kind: "exact_review" }),
+    /availability could not be confirmed/u,
+  );
 });
 
-test("addition preparation resolves fifty products through the bounded read pool", async () => {
+test("addition preparation resolves every requested product through the bounded read pool", async () => {
   let active = 0;
   let maximum = 0;
   const starts: number[] = [];
@@ -268,49 +253,12 @@ test("addition preparation resolves fifty products through the bounded read pool
       }, { once: true });
     }),
   }));
-  const items = Array.from({ length: 50 }, (_, index) => ({ product_id: index + 1, quantity: 1 }));
+  const items = Array.from({ length: 51 }, (_, index) => ({ product_id: index + 1, quantity: 1 }));
   const proposal = await service.prepareAdditions("connection", items, { kind: "exact_review" });
-  assert.equal((proposal.review.lines as unknown[]).length, 50);
+  assert.equal((proposal.review.lines as unknown[]).length, 51);
   assert.deepEqual(starts, items.map(({ product_id }) => product_id));
   assert.equal(maximum, 3);
   assert.equal(active, 0);
-});
-
-test("synthetic twenty- and fifty-line runs keep exact bounded call counts inside the existing deadline", async () => {
-  const run = async (size: 20 | 50) => {
-    const calls = { searches: 0, basketReads: 0, reusableReads: 0, freshReads: 0, mutations: 0, mutationReadbacks: 0 };
-    let current = emptyBasket();
-    const exact = (id: number): Product => ({ ...product, id, name: `Product ${id}`, price: 1, unitPrice: 1 });
-    const client = fakeClient({
-      searchProducts: async (query) => { calls.searches += 1; return [exact(Number(query))]; },
-      getProduct: async (id) => { calls.reusableReads += 1; return exact(id); },
-      getFreshProduct: async (id) => { calls.freshReads += 1; return exact(id); },
-      getCart: async () => { calls.basketReads += 1; return current; },
-      addToCart: async (id, quantity = 1) => {
-        calls.mutations += 1; calls.mutationReadbacks += 1;
-        current = {
-          ...current,
-          items: [...current.items.filter((item) => item.id !== id), { id, name: `Product ${id}`, quantity, total: quantity }],
-          productsPrice: current.items.filter((item) => item.id !== id).reduce((sum, item) => sum + (item.total ?? 0), 0) + quantity,
-          numberOfProducts: current.items.filter((item) => item.id !== id).reduce((sum, item) => sum + (item.quantity ?? 0), 0) + quantity,
-        };
-        return current;
-      },
-    });
-    const started = performance.now();
-    const lines = Array.from({ length: size }, (_, index) => ({ id: `line-${index}`, name: String(index + 1), quantity: 1 }));
-    const plan = await resolveShoppingPlan(client, { lines });
-    const items = plan.lines.map((line) => ({ product_id: line.selected_product_id!, quantity: line.remaining_quantity }));
-    const service = new BasketProposalService(client);
-    const proposal = await service.prepareAdditions("connection", items, { kind: "exact_review" });
-    await service.apply("connection", proposal.proposal_id, "additions");
-    return { calls, elapsedMs: performance.now() - started };
-  };
-  for (const size of [20, 50] as const) {
-    const result = await run(size);
-    assert.deepEqual(result.calls, { searches: size, basketReads: 3, reusableReads: size, freshReads: size, mutations: size, mutationReadbacks: size });
-    assert.ok(result.elapsedMs < 85_000, `${size}-line synthetic run exceeded the existing backend deadline`);
-  }
 });
 
 test("application revalidates basket and product details before any mutation", async () => {
@@ -392,12 +340,12 @@ test("replacement preparation reviews exact net basket savings without mutation"
   assert.equal(proposal.operation, "replacement");
   assert.deepEqual(proposal.review, {
     current_line: {
-      product_id: 7, name: "Banan", unit: "2,50 kr/stk.", unit_size: "1 stk.", quantity: 1,
-      available: true, item_price: 2.5, unit_price: 2.5, line_total: 2.5, labels: ["Frugt"],
+      product_id: 7, name: "Banan", unit: "2,50 kr/stk.", unit_size: "1 stk.", category: "Grønt", subcategory: "", quantity: 1,
+      available: true, item_price: 2.5, unit_price: 2.5, currency: "DKK", line_total: 2.5, labels: ["Frugt"],
     },
     replacement_line: {
-      product_id: 8, name: "Økologisk banan", unit: "2,00 kr/stk.", unit_size: "1 stk.", quantity: 1,
-      available: true, item_price: 2, unit_price: 2, line_total: 2, labels: ["Frugt", "Øko"],
+      product_id: 8, name: "Økologisk banan", unit: "2,00 kr/stk.", unit_size: "1 stk.", category: "Grønt", subcategory: "", quantity: 1,
+      available: true, item_price: 2, unit_price: 2, currency: "DKK", line_total: 2, labels: ["Frugt", "Øko"],
     },
     existing_replacement_line: null,
     current_products_price: 2.5,

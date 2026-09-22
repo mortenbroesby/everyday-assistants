@@ -1,5 +1,5 @@
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+import { StdioClientTransport } from "@modelcontextprotocol/client/stdio";
+import { Client } from "@modelcontextprotocol/client";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
@@ -75,7 +75,7 @@ try {
   assert.match(help.stdout, /favorites/);
   assert.match(help.stdout, /departments/);
   assert.match(help.stdout, /browse/);
-  assert.match(help.stdout, /plan/);
+  assert.doesNotMatch(help.stdout, /plan_my_shopping|\bplan\b/u);
   assert.doesNotMatch(help.stdout, /feature-request/);
   assert.match(help.stdout, /cart/);
   assert.match(help.stdout, /add/);
@@ -86,7 +86,9 @@ try {
     command: bin("nemlig-mcp"),
     env: { ...process.env },
   });
-  const client = new Client({ name: "package-smoke", version: "1.0.0" });
+  const client = new Client({ name: "package-smoke", version: "1.0.0" }, {
+    versionNegotiation: { mode: { pin: "2026-07-28" } },
+  });
   await client.connect(transport);
   try {
     assert.equal(client.getServerVersion()?.name, "nemlig-assistant");
@@ -102,7 +104,6 @@ try {
       "get_grocery_details",
       "get_profile",
       "make_approved_item_swap",
-      "plan_my_shopping",
       "reconnect_nemlig_assistant",
       "remove_approved_item",
       "review_emptying_basket",
@@ -115,6 +116,13 @@ try {
     ]);
     assert.doesNotMatch(tools.join("\n"), /add_to_cart|remove_from_cart|replace_cart_line|clear_cart/);
     assert.doesNotMatch(tools.join("\n"), /recipe|checkout|order|payment/i);
+    const viewer = await client.readResource({ uri: "ui://nemlig/product-viewer.html" });
+    assert.equal(viewer.contents.length, 1);
+    const resource = viewer.contents[0];
+    assert.ok(resource && "text" in resource);
+    assert.equal(resource.mimeType, "text/html;profile=mcp-app");
+    assert.match(resource.text, /createElement\("details"\)/u);
+    assert.match(resource.text, /window\.openai\.toolOutput/u);
   } finally {
     await client.close();
   }
