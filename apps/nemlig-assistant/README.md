@@ -289,6 +289,11 @@ the same per-principal allowances without reserved capacity or ordered
 shedding. The global kill switch, breaker, quotas, deadlines, and one-Container
 ceiling still override every tier.
 
+The authenticated `get_profile` tool is provider-independent: Auth0 validation,
+principal authorization, MCP initialization, and profile discovery do not need a
+Nemlig login. Provider-backed tools remain credential-gated and return the
+existing connection-required result until a Nemlig connection is provisioned.
+
 When the provider portal is enabled by the operator, it accepts a standard
 resource bearer token and then uses a short-lived signed portal cookie. Enter
 only your own Nemlig login in that separately authenticated page. Never send it

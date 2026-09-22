@@ -440,6 +440,38 @@ test("schema-v2 sessions decrypt controller credentials and reject stale generat
   }
 });
 
+test("schema-v2 authenticated profile works without a provider credential", async () => {
+  const key = Buffer.alloc(32, 7).toString("base64url");
+  const v2Policy = parsePrincipalPolicy(JSON.stringify({
+    schema_version: 2,
+    revision: "profile-v2",
+    budgets: principalPolicy.budgets,
+    organization: { id: "org_abcdefgh" },
+    invitation: { default_tier: 1 },
+    owner: { subject: ownerSubject, principal_key: "a".repeat(32), tier: 0, enabled: true },
+  }));
+  const app = createHttpApp({ ...config, principalPolicy: v2Policy, credentialKey: key, credentialKeyVersion: "one" }, oauth, {
+    verifyAccessToken: async (token) => ({
+      token, clientId: "chatgpt", scopes: [config.requiredScope], expiresAt: Date.now() / 1000 + 300, extra: { subject: ownerSubject },
+    }),
+  });
+  const server = app.listen(0, config.host);
+  await new Promise<void>((resolve, reject) => { server.once("listening", resolve); server.once("error", reject); });
+  const endpoint = new URL(`http://${config.host}:${(server.address() as AddressInfo).port}/mcp`);
+  try {
+    const mcp = new Client({ name: "profile-without-provider", version: "1.0.0" });
+    const transport = new StreamableHTTPClientTransport(endpoint, { requestInit: { headers: { authorization: "Bearer owner" } } });
+    await mcp.connect(transport);
+    const result = await mcp.callTool({ name: "get_profile", arguments: {} });
+    assert.deepEqual(result.structuredContent, { id: "a".repeat(32) });
+    assert.equal(result.isError, undefined);
+    await mcp.close();
+  } finally {
+    server.closeAllConnections();
+    await new Promise<void>((resolve, reject) => server.close((error?: Error) => error ? reject(error) : resolve()));
+  }
+});
+
 test("private validation route decrypts once and exposes no MCP or credential data", async () => {
   const key = Buffer.alloc(32, 4).toString("base64url");
   const v2Policy = parsePrincipalPolicy(JSON.stringify({

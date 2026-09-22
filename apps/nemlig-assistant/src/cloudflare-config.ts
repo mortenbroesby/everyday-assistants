@@ -17,7 +17,6 @@ export interface CloudflareEnv {
   MCP_CREDENTIAL_GLOBAL_RATE_LIMIT?: string;
   NEMLIG_MCP_AUTH0_ISSUER?: string;
   NEMLIG_MCP_AUTH0_AUDIENCE?: string;
-  NEMLIG_MCP_AUTH0_OWNER_SUBJECT?: string;
   NEMLIG_MCP_PRINCIPALS?: string;
   NEMLIG_MCP_REQUIRED_SCOPE?: string;
   NEMLIG_MCP_PUBLIC_URL?: string;
@@ -28,8 +27,6 @@ export interface CloudflareEnv {
   NEMLIG_MCP_SERVICE_ACCEPTANCE_ENABLED?: string;
   NEMLIG_MCP_SERVICE_CLIENT_ID?: string;
   NEMLIG_MCP_ONBOARDING_SESSION_KEY?: string;
-  NEMLIG_USERNAME?: string;
-  NEMLIG_PASSWORD?: string;
 }
 
 export interface GatewayConfig {
@@ -96,15 +93,6 @@ export function loadGatewayConfig(env: CloudflareEnv): GatewayConfig {
     || budgets.guest_limit.month > maximumMonthlyOperations
     || Object.values(budgets.principal_minute_limits).some((limit) => limit > rateLimit)) {
     throw new Error("Principal policy exceeds global safety limits.");
-  }
-  const owner = principalPolicy.principals.find(({ enabled, tier }) => enabled && tier === 0)!;
-  const legacyOwner = env.NEMLIG_MCP_AUTH0_OWNER_SUBJECT?.trim();
-  if (legacyOwner && legacyOwner !== owner.subject) throw new Error("Legacy owner configuration does not match principal policy.");
-  const legacyUsername = env.NEMLIG_USERNAME?.trim();
-  const legacyPassword = env.NEMLIG_PASSWORD;
-  if ((legacyUsername || legacyPassword)
-    && (!owner.nemlig || legacyUsername !== owner.nemlig.username || legacyPassword !== owner.nemlig.password)) {
-    throw new Error("Legacy owner credentials do not match principal policy.");
   }
   if (issuer.protocol !== "https:" || issuer.search || issuer.hash) throw new Error("NEMLIG_MCP_AUTH0_ISSUER must be an HTTPS URL without query or fragment.");
   if (!issuer.pathname.endsWith("/")) issuer.pathname += "/";

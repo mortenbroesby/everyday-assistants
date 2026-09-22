@@ -5,7 +5,7 @@ import { DurableObject } from "cloudflare:workers";
 import type { OAuthTokenVerifier } from "@modelcontextprotocol/sdk/server/auth/provider.js";
 import { createAuth0Verifier, fetchAuth0Metadata, SERVICE_ACCEPTANCE_SCOPE, type Auth0Config } from "./auth0.js";
 import { FIXED_CONTAINER_NAME, loadGatewayConfig, type CloudflareEnv, type GatewayConfig } from "./cloudflare-config.js";
-import { attachAdmissionCredential, handleGatewayRequest, type GatewayDeadline } from "./cloudflare-gateway.js";
+import { attachAdmissionCredential, handleGatewayRequest, type GatewayDeadline, type OperationClass } from "./cloudflare-gateway.js";
 import { parseGatewayRequestEvent, type GatewayRequestEvent } from "./cloudflare-observability.js";
 import { resetUsage, type AdmissionLimits, type AdmissionPrincipal, type AdmissionResult, type TierAdmissionPolicy, type UsageState } from "./cloudflare-usage.js";
 import { findEnabledPrincipal, type Principal } from "./principal-policy.js";
@@ -113,7 +113,7 @@ export class NemligMcpContainer extends Container<Env> {
   }
 
   async admit(
-    operation: "protocol" | "normal" | "expensive",
+    operation: OperationClass,
     limits: AdmissionLimits,
     principal: AdmissionPrincipal,
     policy: TierAdmissionPolicy,
@@ -310,7 +310,8 @@ export default {
           revision: config.principalPolicy.revision,
           budgets: config.principalPolicy.budgets,
           principalKeys: config.principalPolicy.principals.map(({ principal_key }) => principal_key),
-        }, operation !== "protocol" && config.principalPolicy.schema_version === 2 && !isVerifiedServicePrincipal(principal, config));
+        }, operation !== "protocol" && operation !== "profile"
+          && config.principalPolicy.schema_version === 2 && !isVerifiedServicePrincipal(principal, config));
       },
       async usage() {
         return getContainer(containerNamespace(env), FIXED_CONTAINER_NAME).usage();

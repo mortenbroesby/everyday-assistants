@@ -30,7 +30,6 @@ const env: CloudflareEnv = {
   MCP_BACKEND_TIMEOUT_MS: "25000",
   NEMLIG_MCP_AUTH0_ISSUER: "https://tenant.example.test",
   NEMLIG_MCP_AUTH0_AUDIENCE: "https://mcp.example.test/mcp",
-  NEMLIG_MCP_AUTH0_OWNER_SUBJECT: "auth0|owner",
   NEMLIG_MCP_PRINCIPALS: JSON.stringify(policy),
   NEMLIG_MCP_PUBLIC_URL: "https://mcp.example.test/mcp",
 };
@@ -159,6 +158,7 @@ test("authenticated normal requests forward once and unknown tools fail into the
   assert.equal(normal.headers.get("x-nemlig-request-id"), "10000000-0000-4000-8000-000000000000");
   assert.equal(classifyMcpMessage({ method: "notifications/initialized" }), "protocol");
   assert.equal(classifyMcpMessage({ method: "future/protocol-method" }), "protocol");
+  assert.equal(classifyMcpMessage({ method: "tools/call", params: { name: "get_profile" } }), "profile");
   assert.equal(classifyMcpMessage({ method: "tools/call", params: { name: "add_approved_items" } }), "expensive");
 });
 
