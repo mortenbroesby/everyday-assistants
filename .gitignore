@@ -3,6 +3,12 @@
 /apps/*/node_modules/
 /apps/*/dist/
 /apps/*/coverage/
+**/.dev.vars
+**/.dev.vars.*
+**/.env
+**/.env.*
+**/*.pem
+**/*.key
 /.env
 /.env.*
 !.env.example

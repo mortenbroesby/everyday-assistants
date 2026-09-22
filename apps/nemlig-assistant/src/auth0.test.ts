@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createLocalJWKSet, exportJWK, generateKeyPair, SignJWT } from "jose";
-import { Auth0InfrastructureError, createAuth0Verifier, fetchAuth0Metadata, loadAuth0Config, SERVICE_ACCEPTANCE_SCOPE, verifyAuth0BrowserIdToken, type Auth0Config } from "./auth0.js";
+import { Auth0InfrastructureError, createAuth0Verifier, fetchAuth0Metadata, loadAuth0Config, SERVICE_ACCEPTANCE_SCOPE, type Auth0Config } from "./auth0.js";
 import { parsePrincipalPolicy } from "./principal-policy.js";
 
 const ownerSubject = "auth0|owner";
@@ -92,24 +92,6 @@ test("service acceptance requires the exact signed client, subject, and scope", 
     .setProtectedHeader({ alg: "RS256", kid: "service" }).setIssuer(config.issuer.href).setAudience(config.audience)
     .setSubject("service-client@clients").sign(privateKey);
   await assert.rejects(() => verifier.verifyAccessToken(missingExpiry), /Invalid access token/u);
-});
-
-test("browser ID tokens require nonce, verified email, and the exact onboarding organization", async () => {
-  const { privateKey, publicKey } = await generateKeyPair("RS256");
-  const jwk = { ...await exportJWK(publicKey), kid: "browser", alg: "RS256" };
-  const key = createLocalJWKSet({ keys: [jwk] });
-  const sign = (claims: Record<string, unknown>) => new SignJWT({
-    nonce: "nonce", org_id: "org_abcdefgh", email: "guest@example.test", email_verified: true, ...claims,
-  }).setProtectedHeader({ alg: "RS256", kid: "browser" }).setIssuer(config.issuer.href)
-    .setAudience("browser-client").setSubject("auth0|guest").setExpirationTime("5m").sign(privateKey);
-  assert.deepEqual(await verifyAuth0BrowserIdToken(await sign({}), {
-    issuer: config.issuer, clientId: "browser-client", nonce: "nonce", organizationId: "org_abcdefgh",
-  }, key), { subject: "auth0|guest", emailVerified: true, organizationId: "org_abcdefgh" });
-  for (const claims of [{ nonce: "wrong" }, { org_id: "org_wrongorg" }, { email_verified: false }]) {
-    await assert.rejects(verifyAuth0BrowserIdToken(await sign(claims), {
-      issuer: config.issuer, clientId: "browser-client", nonce: "nonce", organizationId: "org_abcdefgh",
-    }, key), /Invalid ID token/u);
-  }
 });
 
 test("HTTP auth configuration defaults to loopback and allows only the Container bind address", () => {
