@@ -19,6 +19,7 @@ const complete: ProductView = {
     unit_price: 12,
     unit_size: "1 l",
     brand: "Test",
+    description: "Fresh product details.",
     available: true,
     is_organic: false,
     is_frozen: false,
@@ -37,6 +38,7 @@ test("viewer exposes one MCP Apps resource identity and a complete headless fall
     "openai/outputTemplate": PRODUCT_VIEWER_RESOURCE_URI,
   });
   assert.match(productViewsToText([complete]), /Mælk/u);
+  assert.match(productViewsToText([complete]), /Fresh product details/u);
   assert.match(productViewsToText([complete]), /approved no/u);
   assert.match(productViewsToText([{ context: "search", status: "unavailable", product_id: 9 }]), /9/u);
   assert.equal(productViewsToText([]), "No products found.");
@@ -50,6 +52,7 @@ test("viewer resource is accessible, self-contained, and display-only", () => {
   assert.match(html, /aria-live="polite"/u);
   assert.match(html, /aria-label="Product results"/u);
   assert.match(html, /ui\/notifications\/tool-result/u);
+  assert.match(html, /Array\.isArray\(value\.result\)/u);
   assert.match(html, /window\.openai\.toolOutput/u);
   assert.doesNotMatch(html, /\b(fetch|XMLHttpRequest|WebSocket|callTool)\b/u);
   assert.doesNotMatch(html, /Add to basket|Approve|Select product/u);

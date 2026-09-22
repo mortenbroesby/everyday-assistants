@@ -223,3 +223,40 @@ test("detailed search does not impose an application result cap", async () => {
   assert.equal(calls.length, products.length);
   assert.deepEqual(result.items.map((item) => item.productId), products.map((item) => item.id));
 });
+
+test("detailed search propagates cancellation and does not start queued detail reads", async () => {
+  const products = Array.from({ length: 6 }, (_, index) => product(index + 1, `Product ${index + 1}`));
+  const started: number[] = [];
+  let active = 0;
+  let maximum = 0;
+  const client: ProductDiscoveryClient = {
+    searchProducts: async () => products,
+    getProduct: async (id, signal) => {
+      started.push(id);
+      active += 1;
+      maximum = Math.max(maximum, active);
+      try {
+        await new Promise<void>((resolve, reject) => {
+          const timer = setTimeout(resolve, 40);
+          signal?.addEventListener("abort", () => {
+            clearTimeout(timer);
+            reject(signal.reason);
+          }, { once: true });
+        });
+      } finally {
+        active -= 1;
+      }
+      return product(id, `Detailed ${id}`);
+    },
+    getCart: async () => basket(),
+  };
+  const reason = new Error("caller stopped detailed search");
+  const controller = new AbortController();
+  const pending = resolveDetailedProductSearch(client, "product", undefined, { signal: controller.signal, concurrency: 2 });
+  setTimeout(() => controller.abort(reason), 2);
+
+  await assert.rejects(pending, (error) => error === reason);
+  assert.ok(started.length <= 2);
+  assert.ok(maximum <= 2);
+  assert.equal(active, 0);
+});

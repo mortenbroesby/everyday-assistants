@@ -32,6 +32,7 @@ const formatProduct = (view: ProductView): string => {
   const product = view.product;
   const facts = [
     product.name ?? "Unnamed product",
+    product.brand,
     formatMoney(product.price),
     product.unit_size,
     product.available ? "available" : "unavailable",
@@ -42,7 +43,11 @@ const formatProduct = (view: ProductView): string => {
     : view.context === "review"
       ? `, approved ${view.review?.approved === true ? "yes" : "no"}`
       : "";
-  return `${facts.join(" — ")}${tags}${context}.`;
+  const detail = product.description ?? product.declaration;
+  const details = product.details?.length
+    ? `; ${product.details.map(({ key, value }) => `${key}: ${value}`).join(", ")}`
+    : "";
+  return `${facts.join(" — ")}${tags}${context}${detail ? `: ${detail}` : ""}${details}.`;
 };
 
 /** Headless fallback used when the host does not support the presentation resource. */
@@ -113,6 +118,7 @@ export function renderProductViewerHtml(): string {
           if (!value || typeof value !== "object") return undefined;
           if (Array.isArray(value.views)) return value.views;
           if (Array.isArray(value.products)) return value.products;
+          if (Array.isArray(value.result)) return value.result;
           return undefined;
         };
 
