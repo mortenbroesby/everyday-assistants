@@ -30,7 +30,9 @@ concurrency:
   cancel-in-progress: false
 
 permissions:
-  contents: read
+  # The protected deploy/finalize jobs create and delete the bounded recovery
+  # ref. Jobs that do not need that capability keep their narrower permissions.
+  contents: write
 
 env:
   CANDIDATE_SHA: "${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || inputs.commit }}"
