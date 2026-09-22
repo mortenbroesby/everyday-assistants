@@ -17,6 +17,20 @@ export interface ProductDiscoveryOptions {
   readonly deadlineMs?: number;
 }
 
+export interface DetailedProductSearchOptions extends ProductDiscoveryOptions {
+  readonly concurrency?: number;
+}
+
+export type DetailedProductSearchItem =
+  | { readonly status: "hydrated"; readonly productId: number; readonly product: Product }
+  | { readonly status: "unavailable"; readonly productId: number }
+  | { readonly status: "invalid"; readonly productId: undefined };
+
+export interface DetailedProductSearchResult {
+  readonly query: string;
+  readonly items: ReadonlyArray<DetailedProductSearchItem>;
+}
+
 export interface ProductDiscoveryResult {
   readonly basket: Basket;
   readonly discoveries: ReadonlyArray<{ readonly products: Product[]; readonly unavailable: boolean }>;
@@ -34,6 +48,74 @@ export const catalogueRetrievalKey = (retrieval: CatalogueRetrieval): string =>
 export const isAuthenticationFailure = (error: unknown): boolean => error instanceof NemligError && error.status === 401;
 type Discovery = { readonly products: Product[]; readonly unavailable: boolean };
 const unavailable: Discovery = { products: [], unavailable: true };
+
+const detailedSearchRead = (
+  client: ProductDiscoveryClient,
+  productId: number,
+  read: SettledRead,
+): Effect.Effect<DetailedProductSearchItem, unknown> => read(async (signal) => {
+  const product = await client.getProduct(productId, signal);
+  if (product.id !== productId) throw new Error("Exact product identity did not match the search result.");
+  return { status: "hydrated", productId, product } satisfies DetailedProductSearchItem;
+}).pipe(
+  Effect.catchAll((error) => isAuthenticationFailure(error)
+    ? Effect.fail(error)
+    : Effect.succeed({ status: "unavailable", productId } satisfies DetailedProductSearchItem)),
+);
+
+/**
+ * Hydrates the bounded, ordered result set returned by catalogue search.
+ * Shallow search rows are never returned as successful products: each
+ * addressable row is either exactly resolved or explicitly unavailable.
+ */
+export async function resolveDetailedProductSearch(
+  client: ProductDiscoveryClient,
+  query: string,
+  limit = 8,
+  options: DetailedProductSearchOptions = {},
+): Promise<DetailedProductSearchResult> {
+  if (!query.trim()) throw new NemligError("Search query is required.");
+  if (!Number.isInteger(limit) || limit < 1 || limit > 50) throw new NemligError("Search limit must be between 1 and 50.");
+  const concurrency = options.concurrency ?? 3;
+  if (!Number.isInteger(concurrency) || concurrency < 1) throw new RangeError("Read concurrency must be a positive integer.");
+  if (options.deadlineMs !== undefined && (!Number.isFinite(options.deadlineMs) || options.deadlineMs <= 0)) {
+    throw new RangeError("Product discovery deadline must be a positive finite number.");
+  }
+
+  const shallow = (await client.searchProducts(query, limit, options.signal)).slice(0, limit);
+  const uniqueIds: number[] = [];
+  const seenIds = new Set<number>();
+  for (const candidate of shallow) {
+    if (candidate.id === undefined || seenIds.has(candidate.id)) continue;
+    seenIds.add(candidate.id);
+    uniqueIds.push(candidate.id);
+  }
+
+  const reads = createReadScope();
+  const program = Effect.forEach(uniqueIds, (productId) => detailedSearchRead(client, productId, reads.read), { concurrency });
+  const timed = options.deadlineMs === undefined ? program : program.pipe(Effect.timeoutFail({
+    duration: options.deadlineMs,
+    onTimeout: () => new PlanningDeadlineError(),
+  }));
+  try {
+    const hydrated = await runAbortableEffect(timed, options.signal);
+    const byId = new Map(hydrated.map((item) => [item.productId, item]));
+    const emitted = new Set<number>();
+    const items: DetailedProductSearchItem[] = [];
+    for (const candidate of shallow) {
+      if (candidate.id === undefined) {
+        items.push({ status: "invalid", productId: undefined });
+        continue;
+      }
+      if (emitted.has(candidate.id)) continue;
+      emitted.add(candidate.id);
+      items.push(byId.get(candidate.id)!);
+    }
+    return { query, items };
+  } finally {
+    await reads.awaitQuiescence();
+  }
+}
 
 export const readCatalogue = (client: ProductDiscoveryClient, retrieval: CatalogueRetrieval, signal?: AbortSignal): Promise<Product[]> =>
   retrieval.kind === "search"

@@ -1,4 +1,5 @@
 import type { Product } from "./client.js";
+import type { DetailedProductSearchItem } from "./product-discovery.js";
 
 export const IMAGE_ORIGINS = ["https://nemlig.com", "https://www.nemlig.com"] as const;
 
@@ -28,6 +29,23 @@ export interface ProductCandidate {
   image_url: string | undefined;
   tags: string[];
 }
+
+export type ProductViewContext =
+  | { readonly kind: "search" | "details" | "result" }
+  | { readonly kind: "basket"; readonly quantity?: number; readonly line_total?: number }
+  | { readonly kind: "review"; readonly quantity: number; readonly line_total?: number; readonly approved: boolean };
+
+export type ProductView = {
+  readonly context: ProductViewContext["kind"];
+  readonly status: "complete";
+  readonly product: ProductCandidate;
+  readonly basket?: Extract<ProductViewContext, { readonly kind: "basket" }>;
+  readonly review?: Extract<ProductViewContext, { readonly kind: "review" }>;
+} | {
+  readonly context: ProductViewContext["kind"];
+  readonly status: "unavailable";
+  readonly product_id?: number;
+};
 
 export function rankProducts(products: Product[], query: string): ProductCandidate[] {
   const candidates = products.map((product) => ({
@@ -63,4 +81,35 @@ export function rankProducts(products: Product[], query: string): ProductCandida
     ...product,
     tags: product.is_organic ? [...product.tags, "organic"] : product.tags,
   }));
+}
+
+/**
+ * Builds the one display model used by product-bearing contexts. It only
+ * projects returned data; rendering this value cannot fetch or mutate state.
+ */
+export function createProductView(
+  item: DetailedProductSearchItem | Product,
+  context: ProductViewContext,
+): ProductView {
+  if ("status" in item) {
+    if (item.status !== "hydrated") return { context: context.kind, status: "unavailable", ...(item.productId === undefined ? {} : { product_id: item.productId }) };
+    const candidate = rankProducts([item.product], item.product.name ?? "")[0];
+    if (!candidate) return { context: context.kind, status: "unavailable", product_id: item.productId };
+    return {
+      context: context.kind,
+      status: "complete",
+      product: candidate,
+      ...(context.kind === "basket" ? { basket: context } : {}),
+      ...(context.kind === "review" ? { review: context } : {}),
+    };
+  }
+  const candidate = rankProducts([item], item.name ?? "")[0];
+  if (!candidate) return { context: context.kind, status: "unavailable" };
+  return {
+    context: context.kind,
+    status: "complete",
+    product: candidate,
+    ...(context.kind === "basket" ? { basket: context } : {}),
+    ...(context.kind === "review" ? { review: context } : {}),
+  };
 }

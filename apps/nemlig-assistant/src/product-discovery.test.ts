@@ -4,6 +4,7 @@ import { NemligError, type Basket, type Product } from "./client.js";
 import {
   type ProductDiscoveryClient,
   PlanningDeadlineError,
+  resolveDetailedProductSearch,
   resolveProductDiscovery,
   type CatalogueRetrieval,
 } from "./product-discovery.js";
@@ -154,4 +155,52 @@ test("invalid deadlines are rejected before basket or catalogue work", async () 
     );
     assert.deepEqual(fake.events, []);
   }
+});
+
+test("detailed search hydrates unique results in source order and exposes partial detail failures", async () => {
+  const shallow = [product(1, "Mælk"), product(2, "Havremælk"), product(1, "Mælk"), product(3, "Soyamælk")];
+  let active = 0;
+  let maximum = 0;
+  const calls: number[] = [];
+  const client: ProductDiscoveryClient = {
+    searchProducts: async () => shallow,
+    getProduct: async (id, signal) => {
+      calls.push(id);
+      active += 1;
+      maximum = Math.max(maximum, active);
+      await new Promise((resolve, reject) => {
+        const timer = setTimeout(resolve, id === 1 ? 8 : 2);
+        signal?.addEventListener("abort", () => { clearTimeout(timer); reject(signal.reason); }, { once: true });
+      });
+      active -= 1;
+      if (id === 2) throw new Error("detail unavailable");
+      return product(id, `Detailed ${id}`);
+    },
+    getCart: async () => basket(),
+  };
+
+  const result = await resolveDetailedProductSearch(client, "mælk", 4, { concurrency: 2 });
+
+  assert.deepEqual(calls, [1, 2, 3]);
+  assert.ok(maximum <= 2);
+  assert.deepEqual(result.items.map((item) => ({
+    productId: item.productId,
+    status: item.status,
+    name: item.status === "hydrated" ? item.product.name : undefined,
+  })), [
+    { productId: 1, status: "hydrated", name: "Detailed 1" },
+    { productId: 2, status: "unavailable", name: undefined },
+    { productId: 3, status: "hydrated", name: "Detailed 3" },
+  ]);
+});
+
+test("detailed search propagates authentication failures instead of hiding them", async () => {
+  const expired = new NemligError("expired", 401);
+  const client: ProductDiscoveryClient = {
+    searchProducts: async () => [product(1, "Mælk")],
+    getProduct: async () => { throw expired; },
+    getCart: async () => basket(),
+  };
+
+  await assert.rejects(resolveDetailedProductSearch(client, "mælk", 1), (error) => error === expired);
 });
