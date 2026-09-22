@@ -113,3 +113,11 @@ export function createProductView(
     ...(context.kind === "review" ? { review: context } : {}),
   };
 }
+
+/** Maps a product-bearing result set without introducing UI-owned state. */
+export function createProductViews(
+  items: readonly (DetailedProductSearchItem | Product)[],
+  context: ProductViewContext,
+): ProductView[] {
+  return items.map((item) => createProductView(item, context));
+}

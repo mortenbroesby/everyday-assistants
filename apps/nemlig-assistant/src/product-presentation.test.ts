@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { Product } from "./client.js";
-import { createProductView } from "./product-presentation.js";
+import { createProductView, createProductViews } from "./product-presentation.js";
 
 const product = (overrides: Partial<Product> = {}): Product => ({
   id: 7, name: "Mælk", price: 12, unit: "12 kr/l", unitPrice: 12, unitSize: "1 l", brand: "Test",
@@ -33,4 +33,15 @@ test("shared product view sanitizes images and represents detail failures explic
 test("shared product view never needs a provider client for rendering", () => {
   const invalid = createProductView({ status: "invalid", productId: undefined }, { kind: "result" });
   assert.deepEqual(invalid, { context: "result", status: "unavailable" });
+});
+
+test("plural product presentation preserves order and context without shared selection state", () => {
+  const views = createProductViews(
+    [product({ id: 7 }), { status: "unavailable", productId: 8 }],
+    { kind: "search" },
+  );
+
+  assert.equal(views.length, 2);
+  assert.equal(views[0]?.status, "complete");
+  assert.deepEqual(views[1], { context: "search", status: "unavailable", product_id: 8 });
 });
