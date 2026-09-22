@@ -30,14 +30,13 @@ test("terminal request evidence accepts only the closed privacy-safe schema", ()
   assert.throws(() => parseGatewayRequestEvent({ ...safeEvent, outcome: "private-provider-response" }));
 });
 
-test("ordinary protocol and authentication noise is deterministic one-percent sampling", () => {
-  const sampled = Array.from({ length: 10_000 }, (_, index) => ({
+test("every privacy-safe terminal event is emitted for bounded diagnosis", () => {
+  const events = Array.from({ length: 10_000 }, (_, index) => ({
     ...safeEvent,
     request_id: `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
     outcome: "protocol_completed" as const,
-  })).filter(shouldEmitGatewayRequestEvent);
-  assert.ok(sampled.length >= 80 && sampled.length <= 120, `sampled ${sampled.length} of 10000`);
-  assert.equal(shouldEmitGatewayRequestEvent({ ...safeEvent, outcome: "authentication_rejected" }),
-    shouldEmitGatewayRequestEvent({ ...safeEvent, outcome: "authentication_rejected" }));
+  }));
+  assert.equal(events.every(shouldEmitGatewayRequestEvent), true);
+  assert.equal(shouldEmitGatewayRequestEvent({ ...safeEvent, outcome: "authentication_rejected" }), true);
   assert.equal(shouldEmitGatewayRequestEvent({ ...safeEvent, outcome: "backend_timeout" }), true);
 });

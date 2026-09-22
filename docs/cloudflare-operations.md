@@ -549,17 +549,19 @@ Each request can emit at most one allowlisted `gateway_request_terminal` event.
 It contains only schema version, server-generated request ID, revision, route,
 method, coarse operation class, terminal outcome, HTTP status, and elapsed
 milliseconds. Authenticated useful operations, timeouts, failures, breaker
-rejections, and disabled/configuration outcomes are always retained. Ordinary
-public protocol successes and authentication rejections are deterministically
-sampled at one percent. Sparse lifecycle events are limited to Container
-start/stop/error and breaker trip/reset. Logs contain no raw errors, headers,
+rejections, and disabled/configuration outcomes are always retained. Public
+protocol successes and authentication rejections are retained during the
+bounded authentication investigation. Sparse lifecycle events are limited to
+Container start/stop/error and breaker trip/reset. Logs contain no raw errors, headers,
 bodies, query strings, tokens, credentials, cookies, OAuth artifacts, prompts,
 tool arguments, shopping data, provider responses, or stacks.
 
-Workers Logs is enabled with 1% head sampling in Wrangler. Cloudflare includes
-20 million log events per month on Workers Paid, then charges $0.60 per
+Workers Logs is enabled with 100% head sampling in Wrangler for this bounded
+investigation. Cloudflare includes 20 million log events per month on Workers
+Paid, then charges $0.60 per
 additional million; the existing 5,000-per-day useful-operation breaker and
-sampling of public discovery and invalid-auth noise keep expected volume low.
+closed event schema keep event shape and useful-operation volume bounded, but
+public traffic can increase log volume and cost during this diagnostic period.
 The one `lite` Container, one-instance ceiling, quotas, rate limits, ten-minute
 sleep, and dynamic `MCP_ENABLED` kill switch remain unchanged.
 

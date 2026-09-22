@@ -68,8 +68,9 @@ OAuth boundary without weakening cost or basket safeguards.
   switch, authorization, Durable Object dispatch, upstream calls,
   circuit-breaker changes, timeouts, and deployment identity.
 - [x] Bound useful-operation evidence by the existing 5,000-per-day breaker,
-  sample ordinary public noise at one percent, add no paid log drain, and reject
-  sensitive or unbounded fields in tests.
+  retain the closed privacy-safe event for each request during the bounded
+  authentication investigation, add no paid log drain, and reject sensitive or
+  unbounded fields in tests.
 - [x] Publish a reconnect runbook that separates ChatGPT, Auth0, and Worker
   evidence without collecting credentials, tokens, codes, OAuth state, raw
   payloads, or private shopping data.
@@ -209,7 +210,8 @@ reports the last verified production state.
 - Compare live configuration with the repository contract: one `lite`
   Container, sleep policy, useful and expensive quotas, per-minute limits,
   circuit-breaker threshold, CPU/subrequest limits, retry bounds, deadlines,
-  and bounded log sampling/retention.
+  and bounded log retention; the current authentication investigation
+  temporarily uses 100% head sampling without changing those safety limits.
 - Add regression tests that fail if authentication no longer precedes wake, the
   kill switch permits backend dispatch, retries amplify, capacity increases,
   quotas disappear, or terminal safety evidence is absent.

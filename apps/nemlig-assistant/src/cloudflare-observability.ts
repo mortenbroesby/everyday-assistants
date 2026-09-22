@@ -75,11 +75,6 @@ export function classifyGatewayMethod(method: string): GatewayMethod {
 }
 
 export function shouldEmitGatewayRequestEvent(event: GatewayRequestEvent): boolean {
-  if (event.outcome !== "protocol_completed" && event.outcome !== "authentication_rejected") return true;
-  let hash = 2_166_136_261;
-  for (const character of event.request_id) {
-    hash ^= character.charCodeAt(0);
-    hash = Math.imul(hash, 16_777_619);
-  }
-  return (hash >>> 0) % 100 === 0;
+  void event;
+  return true;
 }
