@@ -36,6 +36,7 @@ function serviceClient(): AcceptanceClient {
   return {
     listTools: async () => ({ tools: serviceAcceptanceToolInventory.map((name) => ({ name })) }),
     listResources: async () => ({ resources: serviceAcceptanceResourceInventory.map((uri) => ({ uri })) }),
+    readResource: async ({ uri }) => ({ contents: [{ uri, mimeType: "text/html;profile=mcp-app", text: "<!doctype html><html><body><details><summary>Product details</summary></details></body></html>" }] }),
     callTool: async ({ name }) => {
       if (["review_items_to_add", "add_approved_items"].includes(name)) return { isError: true };
       if (name === "find_groceries") return { structuredContent: { result: [{ id: 7 }] } };

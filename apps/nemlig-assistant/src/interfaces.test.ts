@@ -117,7 +117,7 @@ test("CLI favorites searches Danish names without touching the basket", async ()
     "--limit",
     "1",
   ]);
-  assert.equal(requestedLimit, 1000);
+  assert.equal(requestedLimit, undefined);
   assert.match(output.join("\n"), /Økologiske bananer/);
   assert.doesNotMatch(output.join("\n"), /Økologisk mælk/);
 });
@@ -273,16 +273,16 @@ const formerToolNames = [
   "copy_my_shopping_list", "set_my_shopping_list_status", "shop_from_my_list", "migrate_my_saved_plan",
 ] as const;
 
-test("ranking tags cheapest, recommended, and organic deterministically", () => {
+test("product tags retain only positively supported organic facts", () => {
   const ranked = rankProducts(
     [
       { ...product, id: 1, price: 20, name: "Frossen mælk", isFrozen: true },
-      { ...product, id: 2, price: 12, name: "Frisk mælk", isOrganic: false },
+      { ...product, id: 2, price: 12, name: "Frisk mælk", isOrganic: false, labels: [] },
       { ...product, id: 3, price: 5, name: "Udsolgt mælk", available: false },
     ],
     "mælk",
   );
-  assert.deepEqual(ranked.find((item) => item.id === 2)?.tags, ["cheapest", "recommended"]);
+  assert.deepEqual(ranked.find((item) => item.id === 2)?.tags, []);
   assert.deepEqual(ranked.find((item) => item.id === 1)?.tags, ["organic"]);
   assert.deepEqual(ranked.find((item) => item.id === 3)?.tags, ["organic"]);
   assert.deepEqual(rankProducts([], "mælk"), []);
@@ -454,16 +454,16 @@ test("explicit reconnect asks ChatGPT to reopen OAuth", async () => {
 });
 
 test("MCP favorites is read-only and returns listed, matched, or empty candidates", async () => {
-  const requestedLimits: number[] = [];
+  const requestedLimits: Array<number | undefined> = [];
   const favoriteProducts = [
-    { ...product, id: 8, name: "Banan mini", price: 15, isOrganic: false },
+    { ...product, id: 8, name: "Banan mini", price: 15, isOrganic: false, labels: [] },
     { ...product, id: 9, name: "Økologisk mælk", price: 12 },
     { ...product, id: 10, name: "Økologiske bananer", price: 10 },
   ];
   const client = fakeClient({
     listFavorites: async (limit) => {
-      const resolvedLimit = limit ?? 10;
-      requestedLimits.push(resolvedLimit);
+      requestedLimits.push(limit);
+      const resolvedLimit = limit ?? favoriteProducts.length;
       return favoriteProducts.slice(0, resolvedLimit);
     },
     searchProducts: async () => {
@@ -499,15 +499,15 @@ test("MCP favorites is read-only and returns listed, matched, or empty candidate
     });
     const candidates = (matched.structuredContent as { result: Array<{ id: number; tags: string[] }> }).result;
     assert.deepEqual(candidates.map(({ id }) => id), [8, 10]);
-    assert.deepEqual(candidates[0]?.tags, ["recommended"]);
-    assert.deepEqual(candidates[1]?.tags, ["cheapest", "organic"]);
+    assert.deepEqual(candidates[0]?.tags, []);
+    assert.deepEqual(candidates[1]?.tags, ["organic"]);
 
     const empty = await mcp.callTool({
       name: "show_my_favorites",
       arguments: { search_term: "pære", result_count: 2 },
     });
     assert.deepEqual((empty.structuredContent as { result: unknown[] }).result, []);
-    assert.deepEqual(requestedLimits, [1, 1000, 1000]);
+    assert.deepEqual(requestedLimits, [1, undefined, undefined]);
   });
 });
 
@@ -609,11 +609,38 @@ test("MCP exposes independent discovery, exact details, and one shared display-o
     const direct = (await mcp.listTools()).tools.find((tool) => tool.name === "find_groceries");
     const details = (await mcp.listTools()).tools.find((tool) => tool.name === "get_grocery_details");
     assert.equal((await mcp.listResources()).resources[0]?.uri, "ui://nemlig/product-viewer.html");
+    const viewer = await mcp.readResource({ uri: "ui://nemlig/product-viewer.html" });
+    assert.equal(viewer.contents[0]?.mimeType, "text/html;profile=mcp-app");
+    assert.ok(viewer.contents[0] && "text" in viewer.contents[0]);
+    if (viewer.contents[0] && "text" in viewer.contents[0]) assert.match(viewer.contents[0].text, /createElement\("details"\)/u);
     assert.equal((direct?._meta as { ui?: { resourceUri?: string } } | undefined)?.ui?.resourceUri, "ui://nemlig/product-viewer.html");
     assert.equal((details?._meta as { ui?: { resourceUri?: string } } | undefined)?.ui?.resourceUri, "ui://nemlig/product-viewer.html");
     assert.match(JSON.stringify(details?.inputSchema), /product_id/u);
     assert.match(JSON.stringify(direct?.inputSchema), /prince kiks.*Prince biscuits/);
   });
+});
+
+test("MCP basket viewer uses basket summaries without fetching product details", async () => {
+  let productReads = 0;
+  const client = fakeClient({
+    getCart: async () => ({
+      ...basket,
+      items: [{ id: 44, name: "Banan", quantity: 3, total: 7.5 }],
+    }),
+    getProduct: async () => { productReads += 1; throw new Error("product lookup must not run while rendering a basket"); },
+  });
+  await withMcpClient(createMcpServer(client, testCredentials), async (mcp) => {
+    const result = await mcp.callTool({ name: "show_my_basket", arguments: {} });
+    assert.notEqual(result.isError, true, toolText(result));
+    const views = (result.structuredContent as { views: Array<{ context: string; product: { id: number; price?: number; available?: boolean }; basket: { quantity: number; line_total: number } }> }).views;
+    assert.equal(views[0]?.context, "basket");
+    assert.equal(views[0]?.product.id, 44);
+    assert.equal(views[0]?.product.price, undefined);
+    assert.equal(views[0]?.product.available, undefined);
+    assert.equal(views[0]?.basket.quantity, 3);
+    assert.equal(views[0]?.basket.line_total, 7.5);
+  });
+  assert.equal(productReads, 0);
 });
 
 test("MCP exact product details are read-only and retain bounded factual fields", async () => {
@@ -723,6 +750,7 @@ test("legacy raw visual chooser is unavailable", async () => {
 
 test("MCP additions require prepare then apply and direct mutation tools are unavailable", async () => {
   let added: [number, number] | undefined;
+  let productReads = 0;
   const empty = { ...basket, items: [], productsPrice: 0, numberOfProducts: 0 };
   const applied = {
     ...basket,
@@ -731,7 +759,7 @@ test("MCP additions require prepare then apply and direct mutation tools are una
     numberOfProducts: 2,
   };
   const client = fakeClient({
-    getProduct: async (id) => ({ ...product, id, unitSize: id === 8 ? "2 liter" : "1 liter" }),
+    getProduct: async (id) => { productReads += 1; return { ...product, id, unitSize: id === 8 ? "2 liter" : "1 liter" }; },
     getCart: async () => empty,
     addToCart: async (id, quantity) => {
       added = [id, quantity ?? 1];
@@ -742,7 +770,7 @@ test("MCP additions require prepare then apply and direct mutation tools are una
     const viewed = await mcp.callTool({ name: "show_my_basket", arguments: {} });
     assert.match(assertFriendlyBasketText(viewed), /Kurven er tom/u);
     assert.deepEqual(viewed.structuredContent, {
-      items: [], products_price: 0, delivery_price: 5, number_of_products: 0, delivery_time: "Tomorrow",
+      items: [], products_price: 0, delivery_price: 5, number_of_products: 0, delivery_time: "Tomorrow", views: [],
     });
     const invalid = await mcp.callTool({
       name: "review_items_to_add",
@@ -750,16 +778,22 @@ test("MCP additions require prepare then apply and direct mutation tools are una
     });
     assert.equal(invalid.isError, true);
     assert.equal(added, undefined);
+    const readsBeforeReview = productReads;
     const prepared = await mcp.callTool({
       name: "review_items_to_add",
       arguments: { items: [{ product: 7, quantity: 2 }], authorization: "exact_review" },
     });
     assert.equal(added, undefined);
+    assert.equal(productReads - readsBeforeReview, 1, "building the review viewer must reuse the review's exact product facts");
     assert.match(assertFriendlyBasketText(prepared), /2 × Økologisk mælk/u);
     assert.match(toolText(prepared), /25,00 kr\./u);
     assert.deepEqual(Object.keys(prepared.structuredContent ?? {}).sort(), [
-      "applicable", "authorization", "basket_fingerprint", "connection_bound", "expires_at", "issued_at", "operation", "proposal_id", "review",
+      "applicable", "authorization", "basket_fingerprint", "connection_bound", "expires_at", "issued_at", "operation", "proposal_id", "review", "views",
     ]);
+    const reviewViews = (prepared.structuredContent as { views: Array<{ context: string; product: { category: string; price: number; unit_price?: number }; review: { quantity: number } }> }).views;
+    assert.equal(reviewViews[0]?.context, "review");
+    assert.equal(reviewViews[0]?.product.category, "Køl");
+    assert.equal(reviewViews[0]?.review.quantity, 2);
     const sameName = await mcp.callTool({
       name: "review_items_to_add",
       arguments: { items: [{ product: 7, quantity: 1 }, { product: 8, quantity: 1 }], authorization: "exact_review" },
@@ -772,7 +806,11 @@ test("MCP additions require prepare then apply and direct mutation tools are una
     });
     assert.deepEqual(added, [7, 2]);
     assert.match(assertFriendlyBasketText(result), /Kurven indeholder nu/u);
-    assert.deepEqual(Object.keys(result.structuredContent ?? {}).sort(), ["basket", "operation", "replayed", "status"]);
+    assert.deepEqual(Object.keys(result.structuredContent ?? {}).sort(), ["basket", "operation", "replayed", "status", "views"]);
+    const appliedViews = (result.structuredContent as { views: Array<{ context: string; product: { available?: boolean }; basket: { quantity: number } }> }).views;
+    assert.equal(appliedViews[0]?.context, "basket");
+    assert.equal(appliedViews[0]?.product.available, undefined);
+    assert.equal(appliedViews[0]?.basket.quantity, 2);
     assert.equal(
       ((result.structuredContent as { basket: { number_of_products: number } }).basket).number_of_products,
       2,
@@ -1036,7 +1074,7 @@ test("MCP removal and clear keep exact structured data behind friendly shopping 
     const removal = await mcp.callTool({ name: "review_item_to_remove", arguments: { basket_item: 7 } });
     assert.match(assertFriendlyBasketText(removal), /Fjern 1 × Mælk · 12,50 kr\./u);
     assert.deepEqual(Object.keys(removal.structuredContent ?? {}).sort(), [
-      "applicable", "basket_fingerprint", "connection_bound", "expires_at", "issued_at", "operation", "proposal_id", "review",
+      "applicable", "basket_fingerprint", "connection_bound", "expires_at", "issued_at", "operation", "proposal_id", "review", "views",
     ]);
     const removed = await mcp.callTool({
       name: "remove_approved_item",
@@ -1047,8 +1085,11 @@ test("MCP removal and clear keep exact structured data behind friendly shopping 
     const clear = await mcp.callTool({ name: "review_emptying_basket", arguments: {} });
     assert.match(assertFriendlyBasketText(clear), /Tøm kurven/u);
     assert.match(toolText(clear), /2 × Banan · 5,00 kr\./u);
+    const clearViews = (clear.structuredContent as { views: Array<{ context: string; review?: { quantity?: number; approved: boolean } }> }).views;
+    assert.deepEqual(clearViews.map((view) => view.context), ["review"]);
+    assert.ok(clearViews.every((view) => view.review?.approved === false));
     assert.deepEqual(Object.keys(clear.structuredContent ?? {}).sort(), [
-      "applicable", "basket_fingerprint", "connection_bound", "expires_at", "issued_at", "operation", "proposal_id", "review",
+      "applicable", "basket_fingerprint", "connection_bound", "expires_at", "issued_at", "operation", "proposal_id", "review", "views",
     ]);
     const cleared = await mcp.callTool({
       name: "empty_approved_basket",
@@ -1056,5 +1097,18 @@ test("MCP removal and clear keep exact structured data behind friendly shopping 
     });
     assert.match(assertFriendlyBasketText(cleared), /Kurven er nu tom/u);
     assert.deepEqual((cleared.structuredContent as { basket: { items: unknown[] } }).basket.items, []);
+  });
+});
+
+test("MCP removal review preserves unknown basket quantity", async () => {
+  const client = fakeClient({
+    getCart: async () => ({ ...basket, items: [{ id: 7, name: "Mælk", quantity: undefined, total: undefined }] }),
+  });
+  await withMcpClient(createMcpServer(client, testCredentials), async (mcp) => {
+    const review = await mcp.callTool({ name: "review_item_to_remove", arguments: { basket_item: 7 } });
+    assert.notEqual(review.isError, true, toolText(review));
+    assert.match(toolText(review), /Ukendt antal × Mælk/u);
+    const views = (review.structuredContent as { views: Array<{ review?: { quantity?: number } }> }).views;
+    assert.equal(views[0]?.review?.quantity, undefined);
   });
 });

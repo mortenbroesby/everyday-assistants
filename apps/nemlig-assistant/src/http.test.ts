@@ -158,8 +158,9 @@ test("HTTP service acceptance uses signed machine identity and its fixed fixture
         listTools: async () => client.listTools(),
         callTool: async (request) => await client.callTool(request) as { isError?: boolean; structuredContent?: unknown },
         listResources: async () => client.listResources(),
+        readResource: async (request) => client.readResource(request),
       });
-      assert.equal(report.requestCount, 10);
+      assert.equal(report.requestCount, 11);
       await client.close();
     } finally {
       server.closeAllConnections();

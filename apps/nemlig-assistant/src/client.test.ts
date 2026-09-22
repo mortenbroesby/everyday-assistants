@@ -359,6 +359,17 @@ test("product normalization preserves meaningful malformed text and omits empty 
   assert.deepEqual(empty?.details, []);
 });
 
+test("product normalization keeps missing availability unknown and explicit rejection false", () => {
+  const [unknown, confirmed, unavailable] = normalizeProducts([
+    { Id: 109, Name: "Unknown stock" },
+    { Id: 110, Name: "Confirmed stock", Availability: { IsDeliveryAvailable: true, IsAvailableInStock: true } },
+    { Id: 111, Name: "Unavailable", Availability: { IsAvailableInStock: false } },
+  ], 3);
+  assert.equal(unknown?.available, undefined);
+  assert.equal(confirmed?.available, true);
+  assert.equal(unavailable?.available, false);
+});
+
 test("product normalization keeps existing evidence limits before and after conversion", () => {
   const oversizedValues = Array.from({ length: 1_000 }, () => "værdi");
   Object.defineProperty(oversizedValues, 20, {
@@ -679,6 +690,60 @@ test("favorites paging applies one global offset across groups", async () => {
   assert.equal(requests.length, 0);
 });
 
+test("favorites continue after a full page duplicated from a preceding group", async () => {
+  const firstGroup = Array.from({ length: 50 }, (_, index) => ({ Id: index + 1, Name: `Favorite ${index + 1}` }));
+  const requests: ExpectedRequest[] = [
+    { match: "/login$", response: json({ MergeSuccessful: true }) }, ...sessionRequests(),
+    { match: "https://www.nemlig.com/favoritter\\?", response: json({ content: [
+      { TemplateName: "productlistshowallspot", ProductGroupId: "first" },
+      { TemplateName: "productlistshowallspot", ProductGroupId: "overlapping" },
+    ] }) },
+    { match: "/Products/GetByProductGroupId\\?", inspect: (url) => {
+      const query = new URL(url).searchParams;
+      assert.equal(query.get("productGroupId"), "first"); assert.equal(query.get("pageIndex"), "0");
+    }, response: json({ Products: firstGroup }) },
+    { match: "/Products/GetByProductGroupId\\?", inspect: (url) => {
+      const query = new URL(url).searchParams;
+      assert.equal(query.get("productGroupId"), "first"); assert.equal(query.get("pageIndex"), "1");
+    }, response: json({ Products: [] }) },
+    { match: "/Products/GetByProductGroupId\\?", inspect: (url) => {
+      const query = new URL(url).searchParams;
+      assert.equal(query.get("productGroupId"), "overlapping"); assert.equal(query.get("pageIndex"), "0");
+    }, response: json({ Products: firstGroup }) },
+    { match: "/Products/GetByProductGroupId\\?", inspect: (url) => {
+      const query = new URL(url).searchParams;
+      assert.equal(query.get("productGroupId"), "overlapping"); assert.equal(query.get("pageIndex"), "1");
+    }, response: json({ Products: [{ Id: 51, Name: "New favorite" }] }) },
+  ];
+  const client = new NemligClient(mockFetch(requests));
+  await client.login("person@example.test", "secret");
+  const favorites = await client.listFavorites();
+  assert.equal(favorites.length, 51);
+  assert.equal(favorites.at(-1)?.id, 51);
+  assert.equal(requests.length, 0);
+});
+
+test("favorites stop before starting another provider page after cancellation", async () => {
+  const controller = new AbortController();
+  const reason = new Error("favorites cancelled");
+  const products = Array.from({ length: 50 }, (_, index) => ({ Id: index + 1, Name: `Favorite ${index + 1}` }));
+  const requests: ExpectedRequest[] = [
+    { match: "/login$", response: json({ MergeSuccessful: true }) }, ...sessionRequests(),
+    { match: "https://www.nemlig.com/favoritter\\?", response: json({ content: [
+      { TemplateName: "productlistshowallspot", ProductGroupId: "many-pages" },
+    ] }) },
+    { match: "/Products/GetByProductGroupId\\?", inspect: (_url, init) => {
+      assert.ok(init?.signal);
+      controller.abort(reason);
+    }, response: json({ Products: products }) },
+  ];
+  const client = new NemligClient(mockFetch(requests));
+  await client.login("person@example.test", "secret");
+
+  await assert.rejects(client.listFavorites(undefined, 1, controller.signal), (error) => error === reason);
+  assert.equal(requests.length, 0, "no subsequent page request may start after cancellation");
+});
+
 test("basket add sends the exact payload and returns normalized readback", async () => {
   const requests: ExpectedRequest[] = [
     { match: "/login$", response: json({ RedirectUrl: "/" }) },
@@ -846,5 +911,17 @@ test("unknown departments and invalid pages fail before product browsing", async
   ];
   const client = new NemligClient(mockFetch(requests));
   await assert.rejects(client.browseDepartment("/missing", 20, 1), /Unknown department/);
-  await assert.rejects(client.browseDepartment("/missing", 51, 1), /between 1 and 50/);
+});
+
+test("department browsing honors caller counts above 50 without truncation", async () => {
+  const products = Array.from({ length: 55 }, (_, index) => ({ Id: index + 1, Name: `Product ${index + 1}` }));
+  const requests: ExpectedRequest[] = [
+    { match: "https://www.nemlig.com/\\?GetAsJson=1", response: json({ content: [{ Url: "/produce", Name: "Produce" }] }) },
+    { match: "https://www.nemlig.com/produce\\?GetAsJson=1", response: json({ content: [{ ProductGroupId: "produce" }] }) },
+    { match: "/Products/GetByProductGroupId\\?", inspect: (url) => assert.equal(new URL(url).searchParams.get("pagesize"), "55"), response: json({ Products: products }) },
+  ];
+  const result = await new NemligClient(mockFetch(requests)).browseDepartment("/produce", 55, 1);
+  assert.equal(result.products.length, 55);
+  assert.equal(result.hasNext, true);
+  assert.equal(requests.length, 0);
 });

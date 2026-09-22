@@ -7,7 +7,6 @@ import { realpathSync } from "node:fs";
 import { basename } from "node:path";
 import { z } from "zod";
 import {
-  FAVORITES_SEARCH_POOL,
   matchFavorites,
   NemligError,
   type ShoppingClient,
@@ -28,7 +27,7 @@ import {
   type ProposalOperation,
   type ProposalView,
 } from "./proposals.js";
-import { IMAGE_ORIGINS, createProductView, createProductViews, rankProducts } from "./product-presentation.js";
+import { IMAGE_ORIGINS, createProductView, createProductViewFromSummary, createProductViews, rankProducts, type ProductSummaryFacts, type ProductView } from "./product-presentation.js";
 import { PRODUCT_VIEWER_MIME_TYPE, PRODUCT_VIEWER_RESOURCE_METADATA, PRODUCT_VIEWER_RESOURCE_URI, productViewsToText, renderProductViewerHtml } from "./product-viewer.js";
 import { resolveDetailedProductSearch } from "./product-discovery.js";
 import { oauthReconnectChallenge } from "./auth0.js";
@@ -57,16 +56,21 @@ const candidateSchema = z.object({
   name: z.string().optional(),
   price: z.number().optional(),
   unit_price: z.number().optional(),
+  unit: z.string().optional(),
   unit_size: z.string().optional(),
+  category: z.string().optional(),
+  subcategory: z.string().optional(),
+  currency: z.literal("DKK").optional(),
   description: z.string().max(2_000).optional(),
   declaration: z.string().max(4_000).optional(),
   details: z.array(z.object({ key: z.string(), value: z.string() })).optional(),
   brand: z.string().optional(),
-  available: z.boolean(),
-  is_organic: z.boolean(),
-  is_frozen: z.boolean(),
-  is_on_discount: z.boolean(),
+  available: z.boolean().optional(),
+  is_organic: z.boolean().optional(),
+  is_frozen: z.boolean().optional(),
+  is_on_discount: z.boolean().optional(),
   image_url: z.string().optional(),
+  labels: z.array(z.string()),
   tags: z.array(z.string()),
   source: z.enum(["favorite", "catalog"]).optional(),
   dietary: z.object({ organic: z.boolean(), vegan: z.boolean(), gluten_free: z.boolean(), lactose_free: z.boolean() }).optional(),
@@ -81,7 +85,7 @@ const productViewSchema = z.discriminatedUnion("status", [
     status: z.literal("complete"),
     product: candidateSchema,
     basket: z.object({ quantity: z.number().optional(), line_total: z.number().optional() }).optional(),
-    review: z.object({ quantity: z.number().int().positive(), line_total: z.number().optional(), approved: z.boolean() }).optional(),
+    review: z.object({ quantity: z.number().int().positive().optional(), line_total: z.number().optional(), approved: z.boolean() }).optional(),
   }),
   z.object({
     context: z.enum(["search", "details", "result", "basket", "review"]),
@@ -106,6 +110,7 @@ const basketSchema = z.object({
   number_of_products: z.number().optional(),
   delivery_time: z.string().optional(),
 });
+const basketResultSchema = basketSchema.extend({ views: z.array(productViewSchema) });
 
 const proposalBase = {
   applicable: z.literal(true),
@@ -120,9 +125,14 @@ const proposalLineSchema = z.object({
   product_id: z.number().int().positive(),
   name: z.string(),
   unit_size: z.string(),
+  category: z.string(),
+  subcategory: z.string(),
   quantity: z.number().int().positive(),
   available: z.boolean(),
-  unit_price: z.number(),
+  item_price: z.number(),
+  unit_price: z.number().optional(),
+  unit: z.string(),
+  currency: z.literal("DKK"),
   line_total: z.number(),
   labels: z.array(z.string()),
 });
@@ -136,6 +146,7 @@ const additionsProposalSchema = z.object({
     expected_products_price: z.number(),
     expected_number_of_products: z.number(),
   }),
+  views: z.array(productViewSchema).min(1),
 });
 
 const removalProposalSchema = z.object({
@@ -148,6 +159,7 @@ const removalProposalSchema = z.object({
   basket_fingerprint: z.string().regex(/^[a-f0-9]{64}$/u).optional(),
   review: z.object({ line: basketItemSchema }).optional(),
   reason: z.string().optional(),
+  views: z.array(productViewSchema).optional(),
 });
 
 const clearProposalSchema = z.object({
@@ -160,6 +172,7 @@ const clearProposalSchema = z.object({
   basket_fingerprint: z.string().regex(/^[a-f0-9]{64}$/u).optional(),
   review: z.object({ basket: basketSchema }).optional(),
   reason: z.string().optional(),
+  views: z.array(productViewSchema).optional(),
 });
 
 const replacementLineSchema = z.object({
@@ -167,10 +180,13 @@ const replacementLineSchema = z.object({
   name: z.string(),
   unit: z.string(),
   unit_size: z.string(),
+  category: z.string(),
+  subcategory: z.string(),
   quantity: z.number().int().positive(),
   available: z.boolean(),
   item_price: z.number(),
   unit_price: z.number().optional(),
+  currency: z.literal("DKK"),
   line_total: z.number(),
   labels: z.array(z.string()),
 });
@@ -194,6 +210,7 @@ const replacementProposalSchema = z.object({
     potential_savings: z.number().positive().optional(),
   }).optional(),
   reason: z.string().optional(),
+  views: z.array(productViewSchema).optional(),
 });
 
 const applyResultSchema = z.object({
@@ -201,6 +218,7 @@ const applyResultSchema = z.object({
   operation: z.enum(["additions", "removal", "replacement", "clear"]),
   replayed: z.boolean(),
   basket: basketSchema,
+  views: z.array(productViewSchema).optional(),
 });
 
 export { rankProducts, safeNemligImageUrl } from "./product-presentation.js";
@@ -213,13 +231,56 @@ const record = (value: unknown): Record<string, unknown> =>
 const lineText = (value: unknown, showSize = false): string => {
   const line = record(value);
   const size = showSize && typeof line.unit_size === "string" && line.unit_size ? ` (${line.unit_size})` : "";
-  return `${typeof line.quantity === "number" ? line.quantity : 0} × ${typeof line.name === "string" ? line.name : "Ukendt vare"}${size} · ${kr(line.line_total ?? line.total)}`;
+  const quantity = typeof line.quantity === "number" ? String(line.quantity) : "Ukendt antal";
+  return `${quantity} × ${typeof line.name === "string" ? line.name : "Ukendt vare"}${size} · ${kr(line.line_total ?? line.total)}`;
 };
 const basketText = (value: unknown, applied = false): string => {
   const basket = record(value);
   const items = Array.isArray(basket.items) ? basket.items : [];
   if (!items.length) return applied ? "Kurven er nu tom." : "Kurven er tom.";
   return `Kurven indeholder nu:\n${items.map((item) => lineText(item)).join("\n")}\nVarer i alt: ${kr(basket.products_price)}`;
+};
+const summaryFacts = (value: unknown): ProductSummaryFacts => {
+  const item = record(value);
+  const id = typeof item.product_id === "number" ? item.product_id : typeof item.id === "number" ? item.id : undefined;
+  const labels = Array.isArray(item.labels) ? item.labels.filter((label): label is string => typeof label === "string") : undefined;
+  return {
+    ...(id === undefined ? {} : { id }),
+    ...(typeof item.name === "string" ? { name: item.name } : {}),
+    ...(typeof item.item_price === "number" ? { price: item.item_price } : typeof item.price === "number" ? { price: item.price } : {}),
+    ...(typeof item.unit_price === "number" ? { unit_price: item.unit_price } : {}),
+    ...(typeof item.unit === "string" ? { unit: item.unit } : {}),
+    ...(typeof item.unit_size === "string" ? { unit_size: item.unit_size } : {}),
+    ...(typeof item.category === "string" ? { category: item.category } : {}),
+    ...(typeof item.subcategory === "string" ? { subcategory: item.subcategory } : {}),
+    ...(typeof item.quantity === "number" ? { quantity: item.quantity } : {}),
+    ...(typeof item.line_total === "number" ? { line_total: item.line_total } : typeof item.total === "number" ? { line_total: item.total } : {}),
+    ...(typeof item.available === "boolean" ? { available: item.available } : {}),
+    ...(labels === undefined ? {} : { labels }),
+  };
+};
+const basketProductViews = (basket: unknown): ProductView[] => {
+  const items = record(basket).items;
+  if (!Array.isArray(items)) return [];
+  return items.map((item) => {
+    const facts = summaryFacts(item);
+    return createProductViewFromSummary(facts, { kind: "basket", quantity: facts.quantity, line_total: facts.line_total });
+  });
+};
+const proposalProductViews = (proposal: ProposalView | NoopProposalView): ProductView[] => {
+  if (!proposal.applicable) return [];
+  const review = record(proposal.review);
+  const reviewView = (line: unknown): ProductView => {
+    const facts = summaryFacts(line);
+    return createProductViewFromSummary(facts, {
+      kind: "review", quantity: facts.quantity, line_total: facts.line_total, approved: false,
+    });
+  };
+  if (proposal.operation === "additions") return (Array.isArray(review.lines) ? review.lines : []).map(reviewView);
+  if (proposal.operation === "removal") return review.line ? [reviewView(review.line)] : [];
+  if (proposal.operation === "replacement") return [review.current_line, review.replacement_line].filter(Boolean).map(reviewView);
+  const items = record(review.basket).items;
+  return Array.isArray(items) ? items.map(reviewView) : [];
 };
 const proposalText = (proposal: ProposalView | NoopProposalView): string => {
   if (!proposal.applicable) return "Der er ikke noget at ændre i kurven.";
@@ -446,19 +507,23 @@ export function createMcpServer(
       description: "Show or search your saved Nemlig favourites. This does not change your favourites or basket.",
       inputSchema: z.object({
               search_term: z.string().trim().min(1).optional().describe("Optional text for narrowing your saved favourites."),
-              result_count: z.number().int().positive().max(50).default(8).describe("The maximum number of favourites to show."),
+              result_count: z.number().int().positive().optional().describe("Optional caller-requested result count; when omitted, use the provider's available results."),
               page: z.number().int().positive().default(1).describe("Which page of favourites to show, starting at 1."),
+            }).superRefine(({ page, result_count }, context) => {
+              if ((page ?? 1) > 1 && result_count === undefined) context.addIssue({ code: "custom", message: "result_count is required when requesting a page after the first." });
             }),
       outputSchema: z.object({ result: z.array(candidateSchema), views: z.array(productViewSchema) }),
       annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true },
       _meta: PRODUCT_VIEWER_RESOURCE_METADATA,
     },
-    ({ search_term, result_count, page }) => runAuthenticatedRead("show_my_favorites", async () => {
-      const favorites = await client.listFavorites(
-        search_term === undefined ? result_count : FAVORITES_SEARCH_POOL,
+      ({ search_term, result_count, page = 1 }, ctx) => runAuthenticatedRead("show_my_favorites", async () => {
+        const favorites = await client.listFavorites(
+        search_term === undefined ? result_count : undefined,
         search_term === undefined ? page : 1,
+        ctx.mcpReq.signal,
       );
-      const products = search_term === undefined ? favorites : matchFavorites(favorites, search_term, page * result_count).slice((page - 1) * result_count);
+      const matches = search_term === undefined ? favorites : matchFavorites(favorites, search_term);
+      const products = result_count === undefined ? matches : matches.slice((page - 1) * result_count, page * result_count);
       const views = createProductViews(products, { kind: "result" });
       return success({ result: rankProducts(products, search_term ?? ""), views }, productViewsToText(views));
     }),
@@ -480,7 +545,7 @@ export function createMcpServer(
       title: "Browse a grocery section", description: "Browse current products in one Nemlig grocery section. This does not change your basket.",
       inputSchema: z.object({
               section: z.string().min(1).describe("The exact section reference returned by Show grocery sections."),
-              result_count: z.number().int().positive().max(50).default(20).describe("The maximum number of products to show."),
+              result_count: z.number().int().positive().default(20).describe("Optional page size requested from Nemlig; results can be paged without an application ceiling."),
               page: z.number().int().positive().default(1).describe("Which page of products to show, starting at 1."),
             }),
       outputSchema: z.object({ result: z.array(candidateSchema), views: z.array(productViewSchema), page: z.number().int().positive(), has_next: z.boolean() }),
@@ -499,12 +564,14 @@ export function createMcpServer(
     {
       title: "Show my basket",
       description: "Show the current items and totals in your Nemlig basket. This does not change your basket.",
-      outputSchema: basketSchema,
+      outputSchema: basketResultSchema,
       annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true },
+      _meta: PRODUCT_VIEWER_RESOURCE_METADATA,
     },
     () => runAuthenticatedRead("show_my_basket", async () => {
       const basket = basketPayload(await client.getCart());
-      return success(basket, basketText(basket));
+      const views = basketProductViews(basket);
+      return success({ ...basket, views }, `${basketText(basket)}\n${productViewsToText(views)}`);
     }),
   );
 
@@ -522,7 +589,6 @@ export function createMcpServer(
                   }),
                 )
                 .min(1)
-                .max(50)
                 .describe("The exact products and quantities to review together."),
               authorization: z.literal("exact_review").describe("Explicitly review these exact products before adding them."),
             }),
@@ -537,7 +603,8 @@ export function createMcpServer(
         { kind: "exact_review" },
         { signal: ctx.mcpReq.signal },
       );
-      return success(proposal, proposalText(proposal));
+      const views = proposalProductViews(proposal);
+      return success({ ...proposal, views }, `${proposalText(proposal)}\n${productViewsToText(views)}`);
     }),
   );
 
@@ -556,11 +623,13 @@ export function createMcpServer(
         inputSchema: z.object({ approved_review: z.string().uuid().describe("The private reference returned by the matching unchanged review.") }),
         outputSchema: applyResultSchema,
         annotations: { readOnlyHint: false, destructiveHint, openWorldHint: true },
+        _meta: PRODUCT_VIEWER_RESOURCE_METADATA,
       },
       ({ approved_review }, ctx) => runMcpOperation(name, async () => {
           await ensureLoggedIn(client, loadCredentials, true);
           const result: ApplyResult = await proposals.apply(connectionId(ctx.sessionId), approved_review, operation);
-          return success(result, basketText(result.basket, true));
+          const views = basketProductViews(result.basket);
+          return success({ ...result, views }, `${basketText(result.basket, true)}\n${productViewsToText(views)}`);
         }),
     );
   };
@@ -575,10 +644,12 @@ export function createMcpServer(
       inputSchema: z.object({ basket_item: z.number().int().positive().describe("The exact item reference shown in your current basket.") }),
       outputSchema: removalProposalSchema,
       annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true },
+      _meta: PRODUCT_VIEWER_RESOURCE_METADATA,
     },
     ({ basket_item }, ctx) => runAuthenticatedRead("review_item_to_remove", async () => {
       const proposal = await proposals.prepareRemoval(connectionId(ctx.sessionId), basket_item, { signal: ctx.mcpReq.signal });
-      return success(proposal, proposalText(proposal));
+      const views = proposalProductViews(proposal);
+      return success({ ...proposal, views }, `${proposalText(proposal)}\n${productViewsToText(views)}`);
     }),
   );
 
@@ -596,6 +667,7 @@ export function createMcpServer(
             }),
       outputSchema: replacementProposalSchema,
       annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true },
+      _meta: PRODUCT_VIEWER_RESOURCE_METADATA,
     },
     ({ current_item, replacement_item, quantity }, ctx) => runAuthenticatedRead("review_item_swap", async () => {
       const proposal = await proposals.prepareReplacement(
@@ -605,7 +677,8 @@ export function createMcpServer(
         quantity,
         { signal: ctx.mcpReq.signal },
       );
-      return success(proposal, proposalText(proposal));
+      const views = proposalProductViews(proposal);
+      return success({ ...proposal, views }, `${proposalText(proposal)}\n${productViewsToText(views)}`);
     }),
   );
 
@@ -619,10 +692,12 @@ export function createMcpServer(
       inputSchema: z.object({}),
       outputSchema: clearProposalSchema,
       annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true },
+      _meta: PRODUCT_VIEWER_RESOURCE_METADATA,
     },
     (_input, ctx) => runAuthenticatedRead("review_emptying_basket", async () => {
       const proposal = await proposals.prepareClear(connectionId(ctx.sessionId), { signal: ctx.mcpReq.signal });
-      return success(proposal, proposalText(proposal));
+      const views = proposalProductViews(proposal);
+      return success({ ...proposal, views }, `${proposalText(proposal)}\n${productViewsToText(views)}`);
     }),
   );
 

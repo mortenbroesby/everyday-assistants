@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { serviceAcceptanceResourceInventory, serviceAcceptanceToolInventory } from "./mcp.js";
-import { PRODUCT_VIEWER_RESOURCE_URI } from "./product-viewer.js";
+import { PRODUCT_VIEWER_MIME_TYPE, PRODUCT_VIEWER_RESOURCE_URI } from "./product-viewer.js";
 
 interface ToolResult {
   isError?: boolean;
@@ -228,8 +228,20 @@ export async function verifyServiceAcceptanceFeatures(
   assert.deepEqual(names, [...serviceAcceptanceToolInventory].sort(), "Service MCP tool inventory drifted");
   assert.deepEqual(resources.map(({ uri }) => uri).sort(), [...serviceAcceptanceResourceInventory].sort(), "Service MCP resource inventory drifted");
 
+  assert.ok(client.readResource, "Service product-viewer resource reader is required");
+  const viewer = await withinTotalDeadline("product viewer resource", () => client.readResource!({ uri: PRODUCT_VIEWER_RESOURCE_URI }));
+  assert.equal(viewer.contents.length, 1, "Service product-viewer resource returned an unexpected content count");
+  const viewerContent = viewer.contents[0];
+  assert.ok(viewerContent && typeof viewerContent === "object", "Service product-viewer resource returned no content object");
+  const viewerRecord = viewerContent as { uri?: unknown; mimeType?: unknown; text?: unknown };
+  assert.equal(viewerRecord.uri, PRODUCT_VIEWER_RESOURCE_URI, "Service product-viewer URI did not match the inventory");
+  assert.equal(viewerRecord.mimeType, PRODUCT_VIEWER_MIME_TYPE, "Service product-viewer MIME type drifted");
+  assert.equal(typeof viewerRecord.text, "string", "Service product-viewer resource returned no HTML");
+  assert.match(viewerRecord.text as string, /<html[\s\S]*<\/html>/u, "Service product-viewer resource was not fetchable HTML");
+
   const exercised: string[] = [];
-  let requestCount = 2;
+  let requestCount = 3;
+  exercised.push("read product viewer resource");
   const call = async (name: string, args: Record<string, unknown> = {}): Promise<ToolResult> => {
     requestCount += 1;
     const result = await withinTotalDeadline(name, () => client.callTool({ name, arguments: args }));
@@ -258,7 +270,7 @@ export async function verifyServiceAcceptanceFeatures(
     }
     denied.push(name);
   }
-  assert.ok(requestCount <= 10, "Service MCP acceptance exceeded its request budget");
+  assert.ok(requestCount <= 11, "Service MCP acceptance exceeded its request budget");
   return { exercised, denied, requestCount };
 }
 

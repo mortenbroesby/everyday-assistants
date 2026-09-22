@@ -4,9 +4,7 @@ import { Command, InvalidArgumentError } from "commander";
 import { realpathSync } from "node:fs";
 import { basename } from "node:path";
 import {
-  FAVORITES_SEARCH_POOL,
   matchFavorites,
-  NemligError,
   type ShoppingClient,
   type Basket,
   type Product,
@@ -148,16 +146,16 @@ export function createProgram(overrides: Partial<CliDependencies> = {}): Command
     .command("favorites")
     .description("List or search current Nemlig favorites without changing favorites or the basket.")
     .argument("[query]", "Danish product name")
-    .option("-l, --limit <number>", "Maximum results", positiveInteger, 10)
+    .option("-l, --limit <number>", "Maximum results per requested page", positiveInteger, 10)
     .option("-p, --page <number>", "Results page", positiveInteger, 1)
     .action(async (query: string | undefined, options: { limit: number; page: number }) => {
-      if (options.limit > 50) throw new NemligError("Favorites page size cannot exceed 50.");
       await ensureLoggedIn(dependencies.client, dependencies.credentials);
       const favorites = await dependencies.client.listFavorites(
-        query === undefined ? options.limit : FAVORITES_SEARCH_POOL,
+        query === undefined ? options.limit : undefined,
         query === undefined ? options.page : 1,
       );
-      const products = query === undefined ? favorites : matchFavorites(favorites, query, options.page * options.limit).slice((options.page - 1) * options.limit);
+      const matches = query === undefined ? favorites : matchFavorites(favorites, query);
+      const products = matches.slice((options.page - 1) * options.limit, options.page * options.limit);
       dependencies.out(
         products.length
           ? ["ID       Name                          Price    Size       Status", ...products.map(formatProduct)].join("\n")
@@ -171,7 +169,7 @@ export function createProgram(overrides: Partial<CliDependencies> = {}): Command
   });
 
   program.command("browse").description("Browse one freshly validated Nemlig department.")
-    .argument("<department-id>").option("-l, --limit <number>", "Page size (max 50)", positiveInteger, 20)
+    .argument("<department-id>").option("-l, --limit <number>", "Page size", positiveInteger, 20)
     .option("-p, --page <number>", "Results page", positiveInteger, 1)
     .action(async (departmentId: string, options: { limit: number; page: number }) => {
       const result = await dependencies.client.browseDepartment(departmentId, options.limit, options.page);

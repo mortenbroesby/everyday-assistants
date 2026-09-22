@@ -127,9 +127,14 @@ test("addition preparation stores exact review data without mutation or connecti
       product_id: 7,
       name: "Banan",
       unit_size: "1 stk.",
+      category: "Grønt",
+      subcategory: "",
       quantity: 2,
       available: true,
+      item_price: 2.5,
       unit_price: 2.5,
+      unit: "2,50 kr/stk.",
+      currency: "DKK",
       line_total: 5,
       labels: ["Frugt"],
     }],
@@ -213,20 +218,25 @@ test("proposal audits preserve terminal state order and provider sequencing", as
   ]);
 });
 
-test("addition preparation accepts fifty unique lines and rejects fifty-one before basket access", async () => {
+test("addition preparation accepts caller-selected line counts and rejects unknown availability", async () => {
   let basketReads = 0;
   const service = new BasketProposalService(fakeClient({
     getProduct: async (id) => ({ ...product, id, name: `Product ${id}` }),
     getCart: async () => { basketReads += 1; return emptyBasket(); },
   }));
-  const fifty = Array.from({ length: 50 }, (_, index) => ({ product_id: index + 1, quantity: 1 }));
-  assert.equal((await service.prepareAdditions("connection", fifty, { kind: "exact_review" })).review.lines instanceof Array, true);
+  const items = Array.from({ length: 51 }, (_, index) => ({ product_id: index + 1, quantity: 1 }));
+  assert.equal((await service.prepareAdditions("connection", items, { kind: "exact_review" })).review.lines instanceof Array, true);
   assert.equal(basketReads, 1);
-  await assert.rejects(service.prepareAdditions("connection", [...fifty, { product_id: 51, quantity: 1 }], { kind: "exact_review" }), /At most 50/);
-  assert.equal(basketReads, 1);
+  const unknownAvailability = new BasketProposalService(fakeClient({
+    getProduct: async () => ({ ...product, available: undefined }),
+  }));
+  await assert.rejects(
+    unknownAvailability.prepareAdditions("connection", [{ product_id: 7, quantity: 1 }], { kind: "exact_review" }),
+    /availability could not be confirmed/u,
+  );
 });
 
-test("addition preparation resolves fifty products through the bounded read pool", async () => {
+test("addition preparation resolves every requested product through the bounded read pool", async () => {
   let active = 0;
   let maximum = 0;
   const starts: number[] = [];
@@ -243,9 +253,9 @@ test("addition preparation resolves fifty products through the bounded read pool
       }, { once: true });
     }),
   }));
-  const items = Array.from({ length: 50 }, (_, index) => ({ product_id: index + 1, quantity: 1 }));
+  const items = Array.from({ length: 51 }, (_, index) => ({ product_id: index + 1, quantity: 1 }));
   const proposal = await service.prepareAdditions("connection", items, { kind: "exact_review" });
-  assert.equal((proposal.review.lines as unknown[]).length, 50);
+  assert.equal((proposal.review.lines as unknown[]).length, 51);
   assert.deepEqual(starts, items.map(({ product_id }) => product_id));
   assert.equal(maximum, 3);
   assert.equal(active, 0);
@@ -330,12 +340,12 @@ test("replacement preparation reviews exact net basket savings without mutation"
   assert.equal(proposal.operation, "replacement");
   assert.deepEqual(proposal.review, {
     current_line: {
-      product_id: 7, name: "Banan", unit: "2,50 kr/stk.", unit_size: "1 stk.", quantity: 1,
-      available: true, item_price: 2.5, unit_price: 2.5, line_total: 2.5, labels: ["Frugt"],
+      product_id: 7, name: "Banan", unit: "2,50 kr/stk.", unit_size: "1 stk.", category: "Grønt", subcategory: "", quantity: 1,
+      available: true, item_price: 2.5, unit_price: 2.5, currency: "DKK", line_total: 2.5, labels: ["Frugt"],
     },
     replacement_line: {
-      product_id: 8, name: "Økologisk banan", unit: "2,00 kr/stk.", unit_size: "1 stk.", quantity: 1,
-      available: true, item_price: 2, unit_price: 2, line_total: 2, labels: ["Frugt", "Øko"],
+      product_id: 8, name: "Økologisk banan", unit: "2,00 kr/stk.", unit_size: "1 stk.", category: "Grønt", subcategory: "", quantity: 1,
+      available: true, item_price: 2, unit_price: 2, currency: "DKK", line_total: 2, labels: ["Frugt", "Øko"],
     },
     existing_replacement_line: null,
     current_products_price: 2.5,

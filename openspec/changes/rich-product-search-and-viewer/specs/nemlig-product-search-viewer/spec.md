@@ -46,6 +46,8 @@ The system SHALL deduplicate selected product identifiers, preserve search order
 
 The system SHALL provide one reusable product presentation for product-bearing search, exact lookup, basket, review, and result contexts, while retaining structured and text results for clients without UI support.
 
+The visual presentation SHALL expose the supplied product image, name, brand, package size, package price, unit price, availability, and relevant labels. It SHALL provide an accessible, keyboard-operable disclosure for supplied description, declaration, and structured details. Missing or unknown facts SHALL remain explicitly unknown rather than being invented or silently omitted when material to the comparison.
+
 #### Scenario: Shared product facts
 
 - **WHEN** any supported product-bearing tool returns a product
@@ -55,6 +57,11 @@ The system SHALL provide one reusable product presentation for product-bearing s
 
 - **WHEN** a product has missing fields, a failed image, partial detail status, or provider-supplied text
 - **THEN** the presentation remains readable, uses safe text/image handling, labels unknown values honestly, and does not execute provider markup
+
+#### Scenario: Product comparison facts and expandable details
+
+- **WHEN** a product-bearing result includes image, name, brand, package size, package and unit prices, availability, labels, description, declaration, or structured details
+- **THEN** the shared card exposes the comparison facts and relevant labels, and offers an accessible disclosure for the supplied long-form and structured details without another provider request
 
 #### Scenario: Headless fallback
 

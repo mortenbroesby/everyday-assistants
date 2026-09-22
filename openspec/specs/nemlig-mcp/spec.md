@@ -26,12 +26,12 @@ The server SHALL expose independent product search, favourites, exact product de
 - **WHEN** a client enumerates all tools
 - **THEN** no tool name or description offers direct basket mutation, recipe parsing, checkout, order placement, payment, purchase, or delivery-slot changes
 
-### Requirement: Ranked product candidates
-The search tools SHALL return normalized product candidates, tag the lowest-priced available candidate as `cheapest`, tag the first available non-frozen name match as `recommended`, and tag every organic candidate as `organic`.
+### Requirement: Product candidates preserve provider facts
+The search tools SHALL return normalized product candidates and SHALL NOT infer comparative recommendation or price-ranking labels. They MAY expose provider-supplied labels and positively established classifications such as organic status; unknown classifications SHALL remain unknown.
 
-#### Scenario: Rank mixed candidates
-- **WHEN** a search returns available, unavailable, frozen, and organic products
-- **THEN** ranking applies all tags deterministically while never marking an unavailable product as cheapest or recommended
+#### Scenario: Preserve labels without heuristic rankings
+- **WHEN** a search returns available, unavailable, frozen, and organically labelled products
+- **THEN** the output preserves provider labels and does not claim a product is cheapest or recommended based only on returned candidates
 
 #### Scenario: Search has no candidates
 - **WHEN** a search returns no products

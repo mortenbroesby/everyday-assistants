@@ -116,6 +116,13 @@ try {
     ]);
     assert.doesNotMatch(tools.join("\n"), /add_to_cart|remove_from_cart|replace_cart_line|clear_cart/);
     assert.doesNotMatch(tools.join("\n"), /recipe|checkout|order|payment/i);
+    const viewer = await client.readResource({ uri: "ui://nemlig/product-viewer.html" });
+    assert.equal(viewer.contents.length, 1);
+    const resource = viewer.contents[0];
+    assert.ok(resource && "text" in resource);
+    assert.equal(resource.mimeType, "text/html;profile=mcp-app");
+    assert.match(resource.text, /createElement\("details"\)/u);
+    assert.match(resource.text, /window\.openai\.toolOutput/u);
   } finally {
     await client.close();
   }

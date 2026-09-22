@@ -220,6 +220,33 @@ test("service acceptance permits retained read-only tools and rejects the legacy
   assert.equal(forwarded, 2);
 });
 
+test("service acceptance may read only the registered product viewer resource", async () => {
+  let forwarded = 0;
+  const service = { subject: "service-client@clients", principal_key: "s".repeat(32), tier: 2 as const, enabled: true };
+  const serviceEnv = {
+    ...env,
+    NEMLIG_MCP_SERVICE_ACCEPTANCE_ENABLED: "true",
+    NEMLIG_MCP_SERVICE_CLIENT_ID: "service-client",
+  };
+  const dependencies: GatewayDependencies = {
+    authenticate: async () => service,
+    admit: async () => ({ admitted: true, state: emptyUsageState(new Date()) }),
+    forward: async () => { forwarded += 1; return new Response("ok"); },
+  };
+  const allowed = await handleGatewayRequest(mcpRequest({
+    method: "resources/read",
+    params: { uri: "ui://nemlig/product-viewer.html" },
+  }), serviceEnv, dependencies);
+  const forbidden = await handleGatewayRequest(mcpRequest({
+    method: "resources/read",
+    params: { uri: "file:///etc/passwd" },
+  }), serviceEnv, dependencies);
+
+  assert.equal(allowed.status, 200);
+  assert.equal(forbidden.status, 403);
+  assert.equal(forwarded, 1);
+});
+
 test("service acceptance cannot access edge administration", async () => {
   let admitted = 0;
   let forwarded = 0;

@@ -15,9 +15,14 @@ export interface ProposalLine {
   product_id: number;
   name: string;
   unit_size: string;
+  category: string;
+  subcategory: string;
   quantity: number;
   available: boolean;
-  unit_price: number;
+  item_price: number;
+  unit_price: number | undefined;
+  unit: string;
+  currency: "DKK";
   line_total: number;
   labels: string[];
 }
@@ -27,10 +32,13 @@ export interface ReplacementLine {
   name: string;
   unit: string;
   unit_size: string;
+  category: string;
+  subcategory: string;
   quantity: number;
   available: boolean;
   item_price: number;
   unit_price: number | undefined;
+  currency: "DKK";
   line_total: number;
   labels: string[];
 }
@@ -154,13 +162,21 @@ const productLine = (product: Product, quantity: number): ProposalLine => {
   if (typeof product.id !== "number" || !product.name || product.price === undefined) {
     throw new NemligError("Product data is incomplete; no proposal was created.");
   }
+  if (product.available === undefined) {
+    throw new NemligError("Product availability could not be confirmed; no proposal was created.");
+  }
   return {
     product_id: product.id,
     name: product.name,
     unit_size: product.unitSize,
+    category: product.category,
+    subcategory: product.subcategory,
     quantity,
     available: product.available,
-    unit_price: product.price,
+    item_price: product.price,
+    unit_price: product.unitPrice,
+    unit: product.unit,
+    currency: "DKK",
     line_total: money(product.price * quantity),
     labels: [...product.labels],
   };
@@ -173,15 +189,21 @@ const replacementLine = (product: Product, quantity: number, lineTotal?: number)
   if (typeof product.id !== "number" || !product.name || product.price === undefined) {
     throw new NemligError("Product data is incomplete; no proposal was created.");
   }
+  if (product.available === undefined) {
+    throw new NemligError("Product availability could not be confirmed; no proposal was created.");
+  }
   return {
     product_id: product.id,
     name: product.name,
     unit: product.unit,
     unit_size: product.unitSize,
+    category: product.category,
+    subcategory: product.subcategory,
     quantity,
     available: product.available,
     item_price: product.price,
     unit_price: product.unitPrice,
+    currency: "DKK",
     line_total: money(lineTotal ?? product.price * quantity),
     labels: [...product.labels],
   };
@@ -265,7 +287,6 @@ export class BasketProposalService {
 
   private validateAdditionItems(items: Array<{ product_id: number; quantity: number }>): void {
     if (!items.length) throw new NemligError("At least one product is required.");
-    if (items.length > 50) throw new NemligError("At most 50 products may be added at once.");
     if (items.some((item) => !Number.isInteger(item.product_id) || item.product_id < 1)) {
       throw new NemligError("Product IDs must be positive integers.");
     }

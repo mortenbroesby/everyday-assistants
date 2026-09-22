@@ -16,6 +16,8 @@ import {
 } from "./production-acceptance.js";
 import { serviceAcceptanceResourceInventory, serviceAcceptanceToolInventory } from "./mcp.js";
 
+const viewerResource = (uri: string) => ({ contents: [{ uri, mimeType: "text/html;profile=mcp-app", text: "<!doctype html><html><body><details><summary>Product details</summary></details></body></html>" }] });
+
 const allTools = Object.values(productionToolInventory).flat().map((name) => ({ name }));
 const removedStorageTools = [
   "save_my_shopping_plan", "continue_my_shopping_plan", "show_my_shopping_lists", "save_my_shopping_list",
@@ -41,6 +43,7 @@ test("production acceptance omits removed saved-storage tools while retaining di
   const client: AcceptanceClient = {
     listTools: async () => ({ tools: retainedTools }),
     listResources: async () => ({ resources: productionResourceInventory.map((uri) => ({ uri })) }),
+    readResource: async ({ uri }) => viewerResource(uri),
     callTool: async ({ name, arguments: args }) => {
       calls.push(name);
       if (name === "find_groceries") {
@@ -73,9 +76,14 @@ test("production acceptance omits removed saved-storage tools while retaining di
 
 test("service acceptance has a closed read-only fixture inventory and denies basket preparation and mutation", async () => {
   const calls: string[] = [];
+  const resourceReads: string[] = [];
   const client: AcceptanceClient = {
     listTools: async () => ({ tools: serviceAcceptanceToolInventory.map((name) => ({ name })) }),
     listResources: async () => ({ resources: serviceAcceptanceResourceInventory.map((uri) => ({ uri })) }),
+    readResource: async ({ uri }) => {
+      resourceReads.push(uri);
+      return viewerResource(uri);
+    },
     callTool: async ({ name }) => {
       calls.push(name);
       if (["review_items_to_add", "add_approved_items"].includes(name)) return { isError: true };
@@ -92,7 +100,8 @@ test("service acceptance has a closed read-only fixture inventory and denies bas
     "review_items_to_add", "add_approved_items",
   ]);
   assert.deepEqual(report.denied, ["review_items_to_add", "add_approved_items"]);
-  assert.equal(report.requestCount, 10);
+  assert.deepEqual(resourceReads, ["ui://nemlig/product-viewer.html"]);
+  assert.equal(report.requestCount, 11);
 });
 
 test("service acceptance closes its inventory when Apps are disabled", async () => {
@@ -100,6 +109,7 @@ test("service acceptance closes its inventory when Apps are disabled", async () 
   const client: AcceptanceClient = {
     listTools: async () => ({ tools: serviceAcceptanceToolInventory.map((name) => ({ name })) }),
     listResources: async () => ({ resources: serviceAcceptanceResourceInventory.map((uri) => ({ uri })) }),
+    readResource: async ({ uri }) => viewerResource(uri),
     callTool: async ({ name }) => {
       calls.push(name);
       if (["review_items_to_add", "add_approved_items"].includes(name)) return { isError: true };
@@ -111,14 +121,14 @@ test("service acceptance closes its inventory when Apps are disabled", async () 
   };
   const report = await verifyServiceAcceptanceFeatures(client);
   assert.equal(calls.includes("get_grocery_details"), true);
-  assert.equal(report.requestCount, 10);
+  assert.equal(report.requestCount, 11);
 });
 
 test("service acceptance accepts only explicit HTTP 403 transport denials", async () => {
   const client = {
     listTools: async () => ({ tools: serviceAcceptanceToolInventory.map((name) => ({ name })) }),
     listResources: async () => ({ resources: serviceAcceptanceResourceInventory.map((uri) => ({ uri })) }),
-    readResource: async () => ({ contents: [] }),
+    readResource: async ({ uri }: { uri: string }) => viewerResource(uri),
     callTool: async ({ name }: { name: string }) => {
       if (["review_items_to_add", "add_approved_items"].includes(name)) throw { status: 403 };
       if (name === "find_groceries") return { structuredContent: { result: [{ id: 7 }] } };
