@@ -13,8 +13,10 @@ import { admitPrincipalRequest, consumePortalCsrf, consumeValidationRate, findPr
 import { encryptCredentials } from "./credential-envelope.js";
 import type { Credentials } from "./config.js";
 import { handleOnboardingRequest, loadOnboardingConfig } from "./onboarding.js";
+import { handleMinimalMcpRequest, loadMinimalConfig, minimalPrincipal, type MinimalConfig } from "./cloudflare-minimal.js";
 
 interface Env extends CloudflareEnv {
+  MCP_MINIMAL_AUTH_ENABLED?: string;
   NEMLIG_MCP_CONTAINER: DurableObjectNamespace<NemligMcpContainer>;
   NEMLIG_PLAN_STORAGE: DurableObjectNamespace<PlanStorage>;
 }
@@ -30,7 +32,9 @@ const containerNamespace = (env: Env): DurableObjectNamespace<NemligMcpContainer
 
 let cachedVerifier: { key: string; verifier: OAuthTokenVerifier } | undefined;
 
-const auth0Config = (config: GatewayConfig): Auth0Config => ({
+type AuthConfigInput = Pick<GatewayConfig, "issuer" | "audience" | "principalPolicy" | "requiredScope" | "publicUrl" | "allowedOrigins" | "revision" | "serviceAcceptance"> & { authTimeoutMs: number };
+
+const auth0Config = (config: AuthConfigInput): Auth0Config => ({
   issuer: config.issuer,
   audience: config.audience,
   principalPolicy: config.principalPolicy,
@@ -49,7 +53,7 @@ interface VerifiedSubject {
   scopes: string[];
 }
 
-const authenticateSubject = async (token: string, config: GatewayConfig, deadline: GatewayDeadline): Promise<VerifiedSubject | undefined> => {
+const authenticateSubject = async (token: string, config: AuthConfigInput, deadline: GatewayDeadline): Promise<VerifiedSubject | undefined> => {
   const key = `${config.issuer.href}\0${config.audience}\0${config.requiredScope}\0${config.serviceAcceptance?.clientId ?? ""}`;
   if (cachedVerifier?.key !== key) {
     const auth = auth0Config(config);
@@ -229,6 +233,22 @@ export { ContainerProxy } from "@cloudflare/containers";
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
+    if (env.MCP_MINIMAL_AUTH_ENABLED === "true" && !new URL(request.url).pathname.startsWith("/connect")) {
+      try {
+        const config = loadMinimalConfig(env);
+        return handleMinimalMcpRequest(request, config, {
+          async authenticate(token: string, minimalConfig: MinimalConfig, signal: AbortSignal) {
+            const identity = await authenticateSubject(token, minimalConfig, { signal, remainingMs: minimalConfig.authTimeoutMs });
+            return identity ? minimalPrincipal(minimalConfig, identity.subject) : undefined;
+          },
+          event(entry) {
+            console.log(JSON.stringify({ schema_version: 1, event: "minimal_auth_boundary", ...entry }));
+          },
+        });
+      } catch {
+        return new Response("MCP configuration invalid", { status: 503 });
+      }
+    }
     if (new URL(request.url).pathname.startsWith("/connect")) {
       return handleOnboardingRequest(request, env, {
         async authenticate(token) {

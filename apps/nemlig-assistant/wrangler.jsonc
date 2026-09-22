@@ -15,6 +15,7 @@
   },
   "vars": {
     "MCP_ENABLED": "false",
+    "MCP_MINIMAL_AUTH_ENABLED": "false",
     "MCP_DAILY_LIMIT": "5000",
     "MCP_EXPENSIVE_DAILY_LIMIT": "500",
     "MCP_RATE_LIMIT": "60",
@@ -75,6 +76,7 @@
       ],
       "vars": {
         "MCP_ENABLED": "false",
+        "MCP_MINIMAL_AUTH_ENABLED": "false",
         "MCP_DAILY_LIMIT": "5000",
         "MCP_EXPENSIVE_DAILY_LIMIT": "500",
         "MCP_RATE_LIMIT": "60",

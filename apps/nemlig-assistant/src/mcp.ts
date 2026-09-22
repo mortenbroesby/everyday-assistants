@@ -31,6 +31,7 @@ import {
 import { IMAGE_ORIGINS, rankProducts, safeNemligImageUrl } from "./product-presentation.js";
 import { resolveShoppingPlan, shoppingPlanLineSchema, shoppingPlanSchema, type ShoppingPlan } from "./plans.js";
 import { oauthReconnectChallenge } from "./auth0.js";
+import { registerProfileTool, type ProfileRequestContext } from "./profile-mcp.js";
 
 export const NEMLIG_CONNECT_URL = "https://nemlig-mcp.broesby.dk/connect";
 export const NEMLIG_IMAGE_ORIGINS = IMAGE_ORIGINS;
@@ -39,12 +40,7 @@ export const NEMLIG_IMAGE_ORIGINS = IMAGE_ORIGINS;
  * Server-derived request identity that scopes private state and invalidates it
  * when policy changes; it is never a user credential.
  */
-export interface McpRequestContext {
-  principalKey: string;
-  policyRevision: string;
-  tier: 0 | 1 | 2;
-  kind?: "service";
-}
+export type McpRequestContext = ProfileRequestContext;
 
 export const serviceAcceptanceToolInventory = [
   "find_groceries", "get_grocery_details", "show_my_favorites", "show_grocery_sections", "browse_grocery_section", "show_my_basket",
@@ -323,22 +319,7 @@ export function createMcpServer(
   const connectionId = (sessionId: string | undefined): string =>
     requestContext ? `${requestContext.principalKey}\0${requestContext.policyRevision}` : sessionId ?? localConnectionId;
 
-  server.registerTool(
-    "get_profile",
-    {
-      title: "Get my Nemlig profile",
-      description: "Return the stable profile represented by this authenticated Nemlig connection.",
-      inputSchema: {},
-      outputSchema: z.object({ id: z.string().trim().min(1) }).strict(),
-      annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
-      _meta: { "openai/profile": true },
-    },
-    async () => {
-      const id = requestContext?.principalKey;
-      if (!id) return { isError: true, content: [{ type: "text" as const, text: "Authenticated profile unavailable." }] };
-      return success({ id });
-    },
-  );
+  registerProfileTool(server, requestContext);
 
   const search = async (query: string, limit: number) =>
     rankProducts(await client.searchProducts(query, limit), query);
