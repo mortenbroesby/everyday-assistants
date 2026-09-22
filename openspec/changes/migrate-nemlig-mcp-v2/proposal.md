@@ -26,4 +26,4 @@ None.
 
 ## Impact
 
-This is one issue #72 epic, branch `codex/issue-72-mcp-v2`, and one reviewable pull request. It affects the Nemlig SDK dependencies and lockfile, MCP server/client call sites, HTTP lifecycle, Worker/gateway protocol handling, tests, and the three listed OpenSpec capabilities. The PR covers implementation and synthetic verification; any hosted rollout remains subject to the repository's deployment gate and explicit approval.
+This migration is integrated with issue #93's rich product search and shared viewer on the dedicated branch `codex/issue-93-rich-search-viewer` and its single shared PR #95. The combined epic affects the Nemlig SDK dependencies and lockfile, MCP server/client call sites, HTTP lifecycle, Worker/gateway protocol handling, product presentation, tests, and the listed OpenSpec capabilities from both issues. The PR covers implementation and synthetic verification; any hosted rollout remains subject to the repository's deployment gate and explicit approval.

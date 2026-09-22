@@ -4,7 +4,7 @@ At issue #72's verified source base (`68f00137664d706ee0e5f0245b06efb7633f98c2`)
 
 ## Goals / Non-Goals
 
-**Goals:** use the selected SDK v2 standard request handler for both current protocol eras, remove protocol-session lifecycle code, and retain security-sensitive application state across requests only within its authenticated principal and current policy/credential generation.
+**Goals:** use the selected SDK v2 standard request handler for protocol `2026-07-28` only, remove protocol-session lifecycle code, and retain security-sensitive application state across requests only within its authenticated principal and current policy/credential generation.
 
 **Non-Goals:** redesign Nemlig authentication or the hosting topology; add a durable store, endpoint, framework, or protocol parser; alter product features owned by #93; or perform live provider/basket acceptance.
 
