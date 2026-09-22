@@ -176,23 +176,3 @@ export function createAuth0Verifier(
     },
   };
 }
-
-export async function verifyAuth0BrowserIdToken(
-  token: string,
-  input: { issuer: URL; clientId: string; nonce: string; organizationId: string },
-  key: JWTVerifyGetKey,
-): Promise<{ subject: string; emailVerified: true; organizationId: string }> {
-  try {
-    const { payload } = await jwtVerify(token, key, {
-      issuer: input.issuer.href,
-      audience: input.clientId,
-      algorithms: ["RS256"],
-    });
-    if (typeof payload.sub !== "string" || !payload.sub || payload.nonce !== input.nonce
-      || payload.org_id !== input.organizationId || payload.email_verified !== true
-      || typeof payload.email !== "string" || !payload.email) throw new Error("required claims missing");
-    return { subject: payload.sub, emailVerified: true, organizationId: input.organizationId };
-  } catch {
-    throw new InvalidTokenError("Invalid ID token");
-  }
-}

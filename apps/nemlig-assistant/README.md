@@ -281,19 +281,19 @@ direct local development and use; they are not a ChatGPT hosting fallback.
 
 Hosted identity is resolved from the validated Auth0 subject. Schema v2 keeps
 the static Tier 0 owner and tier budgets in the encrypted
-`NEMLIG_MCP_PRINCIPALS` policy while accepted native Auth0 Organization
-invitations create bounded Tier 1 records in the existing controller. Each user
+`NEMLIG_MCP_PRINCIPALS` policy while legacy invitation records remain a separate
+capability; this application no longer performs that Auth0 flow. Each user
 has independent sealed credentials, sessions and basket proposals; unknown or disabled identities are rejected before Container
 wake. Tier labels remain for identity and reporting, but all three tiers use
 the same per-principal allowances without reserved capacity or ordered
 shedding. The global kill switch, breaker, quotas, deadlines, and one-Container
 ceiling still override every tier.
 
-When onboarding is enabled by the operator, use `check_nemlig_connection` or
-open `https://nemlig-mcp.broesby.dk/connect` and enter only your own Nemlig login
-in that separately authenticated page. Never send it through ChatGPT or a tool
-argument. The page can replace or revoke your connection; the owner can disable
-or revoke invitee access. Follow the disabled-first
+When the provider portal is enabled by the operator, it accepts a standard
+resource bearer token and then uses a short-lived signed portal cookie. Enter
+only your own Nemlig login in that separately authenticated page. Never send it
+through ChatGPT or a tool argument. The page can replace or revoke your
+connection; the owner can disable or revoke invitee access. Follow the disabled-first
 [self-service procedure](../../docs/cloudflare-operations.md#self-service-credential-onboarding).
 
 The MCP server advertises the original orange bitten-dot icon and the display

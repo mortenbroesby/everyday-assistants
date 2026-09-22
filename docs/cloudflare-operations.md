@@ -18,8 +18,8 @@ MCP initialization with HTTP 401 without starting the Container. The Worker is
 `nemlig-mcp-cloudflare-production`; the configured Container is `lite`, EU
 placed, sleeps after 10 minutes, and is capped at one instance. The currently
 deployed owner-only policy is the schema-v1 migration source. Schema v2 keeps
-only the static owner identity, tier budgets, Auth0 Organization, and invitation
-default in `NEMLIG_MCP_PRINCIPALS`; accepted users' sealed credential records
+only the static owner identity, tier budgets, and legacy invitation metadata in
+`NEMLIG_MCP_PRINCIPALS`; accepted users' sealed credential records
 live in the existing fixed controller Durable Object. This document records
 field names only, never values.
 
@@ -110,40 +110,29 @@ disabled endpoint and no-running-Container state were verified.
 ## Self-service credential onboarding
 
 The onboarding implementation is disabled by default with
-`MCP_CREDENTIAL_ONBOARDING_ENABLED=false`. It reuses the current Auth0 tenant,
-Worker, fixed controller Durable Object, and one-Container ceiling. It adds no
-polling, scheduler, queue, database, email provider, Management API client, or
-automatic retry. At most fifteen invited principals can be stored. Validation
-is limited to three attempts per principal and ten total attempts per minute;
-each attempt performs one Nemlig login and one authenticated read.
+`MCP_CREDENTIAL_ONBOARDING_ENABLED=false`. It reuses the Worker, fixed
+controller Durable Object, existing encrypted credential records and
+one-Container ceiling, but it no longer implements an Auth0 browser flow. An
+already-authenticated standard resource bearer token establishes a short-lived
+portal cookie; the portal then handles only the Nemlig credential form and
+provider validation. There is no application-owned authorization-code exchange,
+refresh, Organization, invitation, or ID-token verifier.
 
-Before enabling it, use the Auth0 Dashboard to confirm Organizations and native
-invitations are available on the current plan without a plan or payment change.
-Create exactly one Organization and one confidential Regular Web Application.
-Configure only this callback:
+At most fifteen invited principals can be stored. Validation is limited to
+three attempts per principal and ten total attempts per minute; each attempt
+performs one Nemlig login and one authenticated read. Invitation registration
+and the owner recovery UX remain a separate #69 decision because removing the
+old invitation dependency without a replacement would strand existing users.
+Do not enable this surface until that dependency has an approved operator or
+client-supported recovery procedure. No Auth0 client, API, callback, tenant,
+identity, or existing credential record is deleted by this source change.
 
-```text
-https://nemlig-mcp.broesby.dk/connect/callback
-```
-
-Record the non-secret Organization and client identifiers in production
-configuration. Keep the existing ChatGPT-created third-party client and API/DCR
-settings unchanged and organization-unaware. Through Wrangler's hidden prompt,
-store the web-client secret, a random 32-byte base64url browser-session key, and
-a separate 32-byte base64url credential-encryption key as
-`NEMLIG_MCP_ONBOARDING_CLIENT_SECRET`, `NEMLIG_MCP_ONBOARDING_SESSION_KEY`, and
-`NEMLIG_MCP_CREDENTIAL_KEY`. Set a non-secret key-version label in
-`NEMLIG_MCP_CREDENTIAL_KEY_VERSION`. Never place these values in a command
-argument, repository file, issue, chat, log, screenshot, or temporary file.
-
-Issue invitations only through the Auth0 Organization Dashboard or its native
-generated invitation link delivered through an existing secure channel. The
-invitee follows the Auth0 link, signs in with the exact invited email, and enters
-their own Nemlig login only at `https://nemlig-mcp.broesby.dk/connect`. The page
-does not accept credentials in a ChatGPT message, MCP argument, or elicitation
-form. URL-mode elicitation is used only when a client advertises it; otherwise
-the MCP result gives the same fixed page manually. Real ChatGPT URL-elicitation
-support remains an acceptance observation, not a deployment assumption.
+The existing `NEMLIG_MCP_CREDENTIAL_KEY` Worker secret and fixed Durable Object
+are the current secure storage design. Envelopes are AES-GCM protected and
+bound to principal, policy revision, key version, and generation. Cloudflare
+Secret Store was not selected as a competing store: a migration would need
+separate approval for access control, provisioning, local development,
+rotation, revocation, ciphertext compatibility, and rollback.
 
 An accepted invitation creates a pending Tier 1 principal. One successful,
 rate-limited read-only validation atomically stores the sealed generation and
@@ -605,8 +594,8 @@ authorization UI or Auth0's browser redirect before a request reaches it.
 
 Schema v1 is the bounded single-owner migration format and contains the owner's
 credential. Schema v2 contains a non-secret revision, tier budgets, one enabled
-Tier 0 owner identity/key, the exact Auth0 Organization ID, and a fixed Tier 1
-invitation default; it contains no Nemlig credential or dynamic invitee. Do not
+Tier 0 owner identity/key, and legacy invitation metadata; it contains no
+Nemlig credential or dynamic invitee. Do not
 put either real policy in a command argument, environment file, repository file,
 issue, chat, log, or test.
 

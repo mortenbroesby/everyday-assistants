@@ -8,7 +8,7 @@ import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
 import { randomUUID } from "node:crypto";
 import { realpathSync } from "node:fs";
 import { basename } from "node:path";
-import type { IncomingMessage, Server, ServerResponse } from "node:http";
+import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { Auth0InfrastructureError, createAuth0Verifier, fetchAuth0Metadata, loadAuth0Config, SERVICE_ACCEPTANCE_SCOPE, type Auth0Config } from "./auth0.js";
 import { ServerError } from "@modelcontextprotocol/sdk/server/auth/errors.js";
 import { NemligClient, type ShoppingClient } from "./client.js";
@@ -137,28 +137,30 @@ export function createHttpApp(
         const policyRevision = req.get("x-nemlig-policy-revision");
         const generationValue = Number(req.get("x-nemlig-credential-generation"));
         const encodedEnvelope = req.get("x-nemlig-credential-envelope");
-        if (!principalKey || policyRevision !== config.principalPolicy.revision
+        if (!principalKey && !policyRevision && !req.get("x-nemlig-credential-generation") && !encodedEnvelope) {
+          principal = configured ?? { subject, principal_key: "p".repeat(32), tier: 1, enabled: true };
+        } else if (!principalKey || policyRevision !== config.principalPolicy.revision
           || !Number.isSafeInteger(generationValue) || generationValue < 1 || !encodedEnvelope
           || !config.credentialKey || !config.credentialKeyVersion) {
           return res.status(403).json({ error: "principal_not_allowed" });
-        }
-        try {
-          const envelope = JSON.parse(atob(encodedEnvelope)) as CredentialEnvelope;
-          if (configured && configured.principal_key !== principalKey) return res.status(403).json({ error: "principal_not_allowed" });
-          principal = configured ?? { subject, principal_key: principalKey, tier: 1, enabled: true };
-          generation = generationValue;
-          credentials = await decryptCredentials(envelope, {
-            principalKey,
-            policyRevision,
-            keyVersion: config.credentialKeyVersion,
-            generation,
-          }, config.credentialKey);
-        } catch {
-          return res.status(403).json({ error: "principal_not_allowed" });
+        } else {
+          try {
+            const envelope = JSON.parse(atob(encodedEnvelope)) as CredentialEnvelope;
+            if (configured && configured.principal_key !== principalKey) return res.status(403).json({ error: "principal_not_allowed" });
+            principal = configured ?? { subject, principal_key: principalKey, tier: 1, enabled: true };
+            generation = generationValue;
+            credentials = await decryptCredentials(envelope, {
+              principalKey,
+              policyRevision,
+              keyVersion: config.credentialKeyVersion,
+              generation,
+            }, config.credentialKey);
+          } catch {
+            return res.status(403).json({ error: "principal_not_allowed" });
+          }
         }
       }
       if (!principal) return res.status(403).json({ error: "principal_not_allowed" });
-      if (!service && !credentials) return res.status(409).json({ error: "connection_required", connection_url: "https://nemlig-mcp.broesby.dk/connect" });
       const sessionId = req.get("mcp-session-id");
       const session = sessionId ? sessions.get(sessionId) : undefined;
       if (session && (session.principalKey !== principal.principal_key
@@ -220,12 +222,25 @@ export function createHttpApp(
 
 export async function startHttpServer(env: NodeJS.ProcessEnv = process.env): Promise<Server> {
   const config = loadAuth0Config(env);
-  const { oauth, jwksUrl } = await fetchAuth0Metadata(config);
-  const app = createHttpApp(config, oauth, createAuth0Verifier(config, jwksUrl));
-  return await new Promise((resolve, reject) => {
-    const server = app.listen(config.port, config.host, () => resolve(server));
+  let app: ReturnType<typeof createHttpApp> | undefined;
+  let startupError = false;
+  const server = createServer((request, response) => {
+    if (app) return app(request, response);
+    response.statusCode = 503;
+    response.setHeader("content-type", "application/json");
+    response.end(JSON.stringify({ error: startupError ? "server_unavailable" : "server_starting" }));
+  });
+  await new Promise<void>((resolve, reject) => {
+    server.listen(config.port, config.host, () => resolve());
     server.once("error", reject);
   });
+  void fetchAuth0Metadata(config).then(({ oauth, jwksUrl }) => {
+    app = createHttpApp(config, oauth, createAuth0Verifier(config, jwksUrl));
+  }).catch((error) => {
+    startupError = true;
+    console.error(error instanceof Auth0InfrastructureError ? error.message : "MCP server startup failed.");
+  });
+  return server;
 }
 
 if (process.argv[1] && ["http.js", "http.ts"].includes(basename(realpathSync(process.argv[1])))) {

@@ -3,6 +3,13 @@
 /apps/*/node_modules/
 /apps/*/dist/
 /apps/*/coverage/
+**/.dev.vars
+**/.dev.vars.*
+**/.env
+**/.env.*
+**/.codex/local-auth/
+**/*.pem
+**/*.key
 /.env
 /.env.*
 !.env.example

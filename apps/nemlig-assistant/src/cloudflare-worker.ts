@@ -2,9 +2,8 @@
 
 import { Container, getContainer } from "@cloudflare/containers";
 import { DurableObject } from "cloudflare:workers";
-import { createRemoteJWKSet } from "jose";
 import type { OAuthTokenVerifier } from "@modelcontextprotocol/sdk/server/auth/provider.js";
-import { createAuth0Verifier, fetchAuth0Metadata, SERVICE_ACCEPTANCE_SCOPE, verifyAuth0BrowserIdToken, type Auth0Config } from "./auth0.js";
+import { createAuth0Verifier, fetchAuth0Metadata, SERVICE_ACCEPTANCE_SCOPE, type Auth0Config } from "./auth0.js";
 import { FIXED_CONTAINER_NAME, loadGatewayConfig, type CloudflareEnv, type GatewayConfig } from "./cloudflare-config.js";
 import { attachAdmissionCredential, handleGatewayRequest, type GatewayDeadline } from "./cloudflare-gateway.js";
 import { parseGatewayRequestEvent, type GatewayRequestEvent } from "./cloudflare-observability.js";
@@ -13,15 +12,23 @@ import { findEnabledPrincipal, type Principal } from "./principal-policy.js";
 import { admitPrincipalRequest, consumePortalCsrf, consumeValidationRate, findPrincipalRecord, getCredentialRecord, listPrincipalRecords, registerInvitedPrincipal, replaceCredentialRecord, revokeCredentialRecord, setPrincipalStatus } from "./principal-records.js";
 import { encryptCredentials } from "./credential-envelope.js";
 import type { Credentials } from "./config.js";
-import { handleOnboardingRequest, loadOnboardingConfig, type BrowserIdentity, type OnboardingConfig } from "./onboarding.js";
+import { handleOnboardingRequest, loadOnboardingConfig } from "./onboarding.js";
 
 interface Env extends CloudflareEnv {
   NEMLIG_MCP_CONTAINER: DurableObjectNamespace<NemligMcpContainer>;
   NEMLIG_PLAN_STORAGE: DurableObjectNamespace<PlanStorage>;
 }
 
+/**
+ * Wrangler's local Container simulator does not execute jurisdictional
+ * subnamespaces. Production keeps the EU-restricted namespace; local runs
+ * use the same binding without the placement selector so Colima can launch
+ * the actual configured Container image.
+ */
+const containerNamespace = (env: Env): DurableObjectNamespace<NemligMcpContainer> =>
+  env.NEMLIG_MCP_REVISION === "local" ? env.NEMLIG_MCP_CONTAINER : env.NEMLIG_MCP_CONTAINER.jurisdiction("eu");
+
 let cachedVerifier: { key: string; verifier: OAuthTokenVerifier } | undefined;
-let cachedBrowserJwks: { url: string; key: ReturnType<typeof createRemoteJWKSet> } | undefined;
 
 const auth0Config = (config: GatewayConfig): Auth0Config => ({
   issuer: config.issuer,
@@ -220,53 +227,41 @@ export class PlanStorage extends DurableObject<Env> {
 
 export { ContainerProxy } from "@cloudflare/containers";
 
-const exchangeBrowserCode = async (
-  input: { code: string; verifier: string; nonce: string; organizationId: string },
-  config: OnboardingConfig,
-  signal: AbortSignal,
-): Promise<BrowserIdentity> => {
-  const { oauth, jwksUrl } = await fetchAuth0Metadata({
-    issuer: config.issuer, audience: config.clientId, principalPolicy: config.principalPolicy,
-    requiredScope: "openid", publicUrl: new URL("/mcp", config.origin), allowedOrigins: [], revision: "browser", host: "0.0.0.0", port: 8080,
-  }, fetch, 5_000);
-  if (!oauth.token_endpoint) throw new Error("Auth0 token endpoint missing");
-  const body = new URLSearchParams({
-    grant_type: "authorization_code", client_id: config.clientId, client_secret: config.clientSecret,
-    code: input.code, code_verifier: input.verifier, redirect_uri: config.callbackUrl.href,
-  });
-  const tokenResponse = await fetch(oauth.token_endpoint, { method: "POST", signal, headers: { "content-type": "application/x-www-form-urlencoded" }, body });
-  if (!tokenResponse.ok) throw new Error("Auth0 code exchange failed");
-  const token = await tokenResponse.json() as { id_token?: unknown };
-  if (typeof token.id_token !== "string" || token.id_token.length > 16_384) throw new Error("Auth0 ID token missing");
-  if (cachedBrowserJwks?.url !== jwksUrl.href) cachedBrowserJwks = { url: jwksUrl.href, key: createRemoteJWKSet(jwksUrl, { timeoutDuration: 5_000 }) };
-  return verifyAuth0BrowserIdToken(token.id_token, {
-    issuer: config.issuer, clientId: config.clientId, nonce: input.nonce, organizationId: input.organizationId,
-  }, cachedBrowserJwks.key);
-};
-
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     if (new URL(request.url).pathname.startsWith("/connect")) {
       return handleOnboardingRequest(request, env, {
-        exchangeCode: exchangeBrowserCode,
+        async authenticate(token) {
+          const config = loadGatewayConfig(env);
+          const deadline: GatewayDeadline = { signal: AbortSignal.timeout(config.authTimeoutMs), remainingMs: config.authTimeoutMs };
+          const identity = await authenticateSubject(token, config, deadline);
+          if (!identity) return undefined;
+          const service = config.serviceAcceptance
+            && identity.clientId === config.serviceAcceptance.clientId
+            && identity.subject === `${config.serviceAcceptance.clientId}@clients`
+            && identity.scopes.length === 1 && identity.scopes[0] === SERVICE_ACCEPTANCE_SCOPE;
+          if (service) return undefined;
+          const configured = findEnabledPrincipal(config.principalPolicy, identity.subject);
+          if (configured) return configured.subject;
+          if (config.principalPolicy.schema_version !== 2) return undefined;
+          const principal = await getContainer(containerNamespace(env), FIXED_CONTAINER_NAME).principal(identity.subject);
+          return principal?.subject;
+        },
         async principalStatus(subject) {
           const config = loadGatewayConfig(env);
           const owner = config.principalPolicy.principals.find(({ tier }) => tier === 0)!;
-          return getContainer(env.NEMLIG_MCP_CONTAINER.jurisdiction("eu"), FIXED_CONTAINER_NAME).principalStatus(subject, owner.subject);
-        },
-        async register(input) {
-          return getContainer(env.NEMLIG_MCP_CONTAINER.jurisdiction("eu"), FIXED_CONTAINER_NAME).register(input);
+          return getContainer(containerNamespace(env), FIXED_CONTAINER_NAME).principalStatus(subject, owner.subject);
         },
         async connectionStatus(subject) {
           const config = loadGatewayConfig(env);
           const owner = config.principalPolicy.principals.find(({ tier }) => tier === 0)!;
-          return getContainer(env.NEMLIG_MCP_CONTAINER.jurisdiction("eu"), FIXED_CONTAINER_NAME).connectionStatus(subject, owner);
+          return getContainer(containerNamespace(env), FIXED_CONTAINER_NAME).connectionStatus(subject, owner);
         },
         async replace(subject, credentials) {
           const config = loadGatewayConfig(env);
           const onboarding = loadOnboardingConfig(env);
           const owner = config.principalPolicy.principals.find(({ tier }) => tier === 0)!;
-          return getContainer(env.NEMLIG_MCP_CONTAINER.jurisdiction("eu"), FIXED_CONTAINER_NAME).replaceCredential(subject, owner, credentials, {
+          return getContainer(containerNamespace(env), FIXED_CONTAINER_NAME).replaceCredential(subject, owner, credentials, {
             policyRevision: config.principalPolicy.revision,
             keyVersion: onboarding.credentialKeyVersion,
             perPrincipalRate: onboarding.perPrincipalRate,
@@ -276,10 +271,10 @@ export default {
         async revoke(subject) {
           const config = loadGatewayConfig(env);
           const owner = config.principalPolicy.principals.find(({ tier }) => tier === 0)!;
-          return getContainer(env.NEMLIG_MCP_CONTAINER.jurisdiction("eu"), FIXED_CONTAINER_NAME).revokeCredential(subject, owner);
+          return getContainer(containerNamespace(env), FIXED_CONTAINER_NAME).revokeCredential(subject, owner);
         },
         async listPrincipals() {
-          return getContainer(env.NEMLIG_MCP_CONTAINER.jurisdiction("eu"), FIXED_CONTAINER_NAME).listInvitees();
+          return getContainer(containerNamespace(env), FIXED_CONTAINER_NAME).listInvitees();
         },
         async setPrincipalStatus(subject, status) {
           return getContainer(env.NEMLIG_MCP_CONTAINER.jurisdiction("eu"), FIXED_CONTAINER_NAME).setInviteeStatus(subject, status);
@@ -301,11 +296,11 @@ export default {
         const configured = findEnabledPrincipal(config.principalPolicy, identity.subject);
         if (configured) return configured;
         if (config.principalPolicy.schema_version !== 2) return undefined;
-        return getContainer(env.NEMLIG_MCP_CONTAINER.jurisdiction("eu"), FIXED_CONTAINER_NAME).principal(identity.subject);
+        return getContainer(containerNamespace(env), FIXED_CONTAINER_NAME).principal(identity.subject);
       },
       event: requestEvent,
       async admit(operation, principal, config) {
-        const container = getContainer(env.NEMLIG_MCP_CONTAINER.jurisdiction("eu"), FIXED_CONTAINER_NAME);
+        const container = getContainer(containerNamespace(env), FIXED_CONTAINER_NAME);
         return container.admit(operation, {
           dailyLimit: config.dailyLimit,
           expensiveDailyLimit: config.expensiveDailyLimit,
@@ -315,16 +310,16 @@ export default {
           revision: config.principalPolicy.revision,
           budgets: config.principalPolicy.budgets,
           principalKeys: config.principalPolicy.principals.map(({ principal_key }) => principal_key),
-        }, config.principalPolicy.schema_version === 2 && !isVerifiedServicePrincipal(principal, config));
+        }, operation !== "protocol" && config.principalPolicy.schema_version === 2 && !isVerifiedServicePrincipal(principal, config));
       },
       async usage() {
-        return getContainer(env.NEMLIG_MCP_CONTAINER.jurisdiction("eu"), FIXED_CONTAINER_NAME).usage();
+        return getContainer(containerNamespace(env), FIXED_CONTAINER_NAME).usage();
       },
       async resetUsage(config) {
-        return getContainer(env.NEMLIG_MCP_CONTAINER.jurisdiction("eu"), FIXED_CONTAINER_NAME).resetUsage(config.principalPolicy.revision);
+        return getContainer(containerNamespace(env), FIXED_CONTAINER_NAME).resetUsage(config.principalPolicy.revision);
       },
       async forward(original, _operation, _config, deadline, admission) {
-        const namespace = env.NEMLIG_MCP_CONTAINER.jurisdiction("eu");
+        const namespace = containerNamespace(env);
         const container = getContainer(namespace, FIXED_CONTAINER_NAME);
         const request = attachAdmissionCredential(original, admission, deadline.signal);
         return container.fetch(request);
