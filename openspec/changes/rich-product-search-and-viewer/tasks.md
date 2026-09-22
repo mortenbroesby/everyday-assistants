@@ -8,7 +8,7 @@
 
 - [x] 2.1 Define a display-only product view model and adapters for product, basket, review, and partial-result contexts; verify unknown fields and unsafe images/text are handled safely.
 - [ ] 2.2 Add one packaged reusable product presentation resource and headless structured/text fallback after the issue-72 adapter boundary is available; verify resource inventory and zero render-triggered provider calls.
-- [ ] 2.3 Add accessibility, missing-image, partial/error, and context-isolation tests; verify no proposal, basket, or durable selection state is created by rendering.
+- [x] 2.3 Add accessibility, missing-image, partial/error, and context-isolation tests; verify no proposal, basket, or durable selection state is created by rendering.
 
 ## 3. Planner retirement and MCP integration
 
