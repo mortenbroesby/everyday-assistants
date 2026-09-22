@@ -72,7 +72,7 @@ When using a trusted mkcert certificate, start Wrangler with the task-local
 certificate and Colima socket explicitly:
 
 ```sh
-DOCKER_HOST=unix:///Users/macbook/.colima/default/docker.sock \
+DOCKER_HOST=unix://${COLIMA_HOME:-$HOME/.colima}/default/docker.sock \
 NODE_EXTRA_CA_CERTS="$(mkcert -CAROOT)/rootCA.pem" \
 pnpm exec wrangler dev --local --local-protocol https --ip 127.0.0.1 --port 8787 \
   --https-key-path .codex/local-auth/tls/local-key.pem \
