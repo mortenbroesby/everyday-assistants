@@ -1,22 +1,15 @@
 #!/usr/bin/env node
 
-import { getOAuthProtectedResourceMetadataUrl, mcpAuthMetadataRouter } from "@modelcontextprotocol/sdk/server/auth/router.js";
-import { requireBearerAuth } from "@modelcontextprotocol/sdk/server/auth/middleware/bearerAuth.js";
-import { createMcpExpressApp } from "@modelcontextprotocol/sdk/server/express.js";
-import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
-import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
-import { randomUUID } from "node:crypto";
+import { createMcpHandler, OAuthError, type AuthInfo, type OAuthMetadata } from "@modelcontextprotocol/server";
+import { createMcpExpressApp, getOAuthProtectedResourceMetadataUrl, mcpAuthMetadataRouter, requireBearerAuth, type OAuthTokenVerifier } from "@modelcontextprotocol/express";
+import { toNodeHandler } from "@modelcontextprotocol/node";
 import { realpathSync } from "node:fs";
 import { basename } from "node:path";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { Auth0InfrastructureError, createAuth0Verifier, fetchAuth0Metadata, loadAuth0Config, SERVICE_ACCEPTANCE_SCOPE, type Auth0Config } from "./auth0.js";
-import { ServerError } from "@modelcontextprotocol/sdk/server/auth/errors.js";
 import { NemligClient, type ShoppingClient } from "./client.js";
-import { createMcpServer } from "./mcp.js";
+import { createMcpServer, serviceAcceptanceToolInventory } from "./mcp.js";
 import { BasketProposalService } from "./proposals.js";
-import type { OAuthMetadata } from "@modelcontextprotocol/sdk/shared/auth.js";
-import type { OAuthTokenVerifier } from "@modelcontextprotocol/sdk/server/auth/provider.js";
-import type { AuthInfo } from "@modelcontextprotocol/sdk/server/auth/types.js";
 import { findEnabledPrincipal, MAX_PRINCIPALS, type Principal } from "./principal-policy.js";
 import { decryptCredentials, type CredentialEnvelope } from "./credential-envelope.js";
 import type { Credentials } from "./config.js";
@@ -47,11 +40,10 @@ const serviceContext = (): PrincipalContext => {
 
 const isCredentialFreeRequest = (request: Request): boolean => {
   // Schema-v2 profile discovery must work before provider credential onboarding.
-  if (request.method === "GET" || request.method === "DELETE") return true;
   const body = request.body;
   if (!body || typeof body !== "object" || Array.isArray(body)) return false;
   const method = (body as { method?: unknown }).method;
-  if (method === "initialize" || method === "notifications/initialized" || method === "tools/list" || method === "resources/list") return true;
+  if (method === "server/discover") return true;
   if (method !== "tools/call") return false;
   const params = (body as { params?: unknown }).params;
   return !!params && typeof params === "object" && !Array.isArray(params) && (params as { name?: unknown }).name === "get_profile";
@@ -80,7 +72,27 @@ export function createHttpApp(
 ) {
   const app = createMcpExpressApp({ host: config.host });
   const contexts = new Map<string, PrincipalContext>();
-  const sessions = new Map<string, { principalKey: string; policyRevision: string; generation: number; transport: StreamableHTTPServerTransport }>();
+  const requestContexts = new WeakMap<AuthInfo, {
+    context: PrincipalContext;
+    principal: Principal;
+    credentials: Credentials | undefined;
+    service: boolean;
+  }>();
+  const handler = createMcpHandler(({ authInfo }) => {
+    if (!authInfo) throw new Error("Authenticated request context is missing");
+    const requestContext = requestContexts.get(authInfo);
+    if (!requestContext) throw new Error("Validated principal context is missing");
+    const { context, principal, credentials, service } = requestContext;
+    return createMcpServer(
+      context.client,
+      async () => credentials,
+      mcpEnv,
+      context.proposals,
+      { principalKey: principal.principal_key, policyRevision: config.principalPolicy.revision, tier: principal.tier, ...(service ? { kind: "service" as const } : {}) },
+    );
+  }, { legacy: "reject" });
+  const nodeHandler = toNodeHandler(handler, { onerror: () => undefined });
+  app.locals.mcpHandler = handler;
   app.use(mcpAuthMetadataRouter({
     oauthMetadata: oauth,
     resourceServerUrl: config.publicUrl,
@@ -115,7 +127,7 @@ export function createHttpApp(
         try {
           return await verifier.verifyAccessToken(token);
         } catch (error) {
-          if (error instanceof Auth0InfrastructureError) throw new ServerError(error.kind === "timeout" ? "Authentication timeout." : "Authentication unavailable.");
+          if (error instanceof Auth0InfrastructureError) throw new OAuthError("server_error", error.kind === "timeout" ? "Authentication timeout." : "Authentication unavailable.");
           throw error;
         }
       },
@@ -136,6 +148,17 @@ export function createHttpApp(
         && req.auth?.clientId === config.serviceAcceptance.clientId
         && subject === `${config.serviceAcceptance.clientId}@clients`
         && req.auth.scopes.length === 1 && req.auth.scopes[0] === SERVICE_ACCEPTANCE_SCOPE;
+      if (service && req.method === "POST" && req.body && typeof req.body === "object" && !Array.isArray(req.body)) {
+        const message = req.body as { method?: unknown; params?: unknown };
+        if (message.method === "tools/call") {
+          const name = message.params && typeof message.params === "object" && !Array.isArray(message.params)
+            ? (message.params as { name?: unknown }).name
+            : undefined;
+          if (typeof name !== "string" || !serviceAcceptanceToolInventory.includes(name as typeof serviceAcceptanceToolInventory[number])) {
+            return res.status(403).json({ error: "principal_not_allowed" });
+          }
+        }
+      }
       if (!service && !req.auth?.scopes.includes(config.requiredScope)) return res.status(403).json({ error: "principal_not_allowed" });
       const configured = !service && typeof subject === "string" ? findEnabledPrincipal(config.principalPolicy, subject) : undefined;
       let principal = configured;
@@ -174,58 +197,22 @@ export function createHttpApp(
         }
       }
       if (!principal) return res.status(403).json({ error: "principal_not_allowed" });
-      const sessionId = req.get("mcp-session-id");
-      const session = sessionId ? sessions.get(sessionId) : undefined;
-      if (session && (session.principalKey !== principal.principal_key
-        || session.policyRevision !== config.principalPolicy.revision || session.generation !== generation)) {
-        const samePrincipal = session.principalKey === principal.principal_key;
-        if (samePrincipal) {
-          sessions.delete(sessionId!);
-          try {
-            await session.transport.close();
-          } catch {
-            // The session is already invalidated; cleanup remains best effort.
-          }
-        }
-        return res.status(403).json({ error: "reconnect_required", connection_url: "https://nemlig-mcp.broesby.dk/connect" });
+      const contextKey = `${principal.principal_key}:${config.principalPolicy.revision}:${generation}`;
+      let context = service ? serviceContext() : contexts.get(contextKey);
+      if (!context) {
+        for (const key of contexts.keys()) if (key.startsWith(`${principal.principal_key}:`)) contexts.delete(key);
+        if (contexts.size >= MAX_PRINCIPALS) return res.status(503).json({ error: "principal_capacity_unavailable" });
+        context = createContext(principal);
+        contexts.set(contextKey, context);
       }
-      let transport = session?.transport;
-      if (!transport && req.method === "POST" && isInitializeRequest(req.body)) {
-        const contextKey = `${principal.principal_key}:${generation}`;
-        let context = service ? serviceContext() : contexts.get(contextKey);
-        if (!context) {
-          for (const key of contexts.keys()) if (key.startsWith(`${principal.principal_key}:`)) contexts.delete(key);
-          if (contexts.size >= MAX_PRINCIPALS) {
-            return res.status(503).json({ error: "principal_capacity_unavailable" });
-          }
-          context = createContext(principal);
-          contexts.set(contextKey, context);
-        }
-        const createdTransport = new StreamableHTTPServerTransport({
-          sessionIdGenerator: randomUUID,
-          onsessioninitialized: (id) => { sessions.set(id, { principalKey: principal.principal_key, policyRevision: config.principalPolicy.revision, generation, transport: createdTransport }); },
-          onsessionclosed: (id) => { sessions.delete(id); },
-        });
-        transport = createdTransport;
-        transport.onclose = () => {
-          if (transport?.sessionId) sessions.delete(transport.sessionId);
-        };
-        await createMcpServer(
-          context.client,
-          async () => credentials,
-          mcpEnv,
-          context.proposals,
-          { principalKey: principal.principal_key, policyRevision: config.principalPolicy.revision, tier: principal.tier, ...(service ? { kind: "service" as const } : {}) },
-        ).connect(transport);
+      const authInfo = req.auth;
+      if (!authInfo) return res.status(403).json({ error: "principal_not_allowed" });
+      requestContexts.set(authInfo, { context, principal, credentials, service: Boolean(service) });
+      try {
+        await nodeHandler(req, res, req.body);
+      } finally {
+        requestContexts.delete(authInfo);
       }
-      if (!transport) return res.status(sessionId ? 404 : 400).json({
-        jsonrpc: "2.0",
-        error: sessionId
-          ? { code: -32_001, message: "Session not found." }
-          : { code: -32_000, message: "Session ID required." },
-        id: null,
-      });
-      await transport.handleRequest(req, res, req.body);
     } catch {
       if (!res.headersSent) res.status(500).json({ jsonrpc: "2.0", error: { code: -32_603, message: "Internal server error" }, id: null });
     }
@@ -243,6 +230,7 @@ export async function startHttpServer(env: NodeJS.ProcessEnv = process.env): Pro
     response.setHeader("content-type", "application/json");
     response.end(JSON.stringify({ error: startupError ? "server_unavailable" : "server_starting" }));
   });
+  server.once("close", () => { void app?.locals.mcpHandler?.close(); });
   await new Promise<void>((resolve, reject) => {
     server.listen(config.port, config.host, () => resolve());
     server.once("error", reject);

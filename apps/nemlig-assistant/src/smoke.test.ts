@@ -1,5 +1,8 @@
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
+import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
+import { createMcpHandler } from "@modelcontextprotocol/server";
+import { toNodeHandler } from "@modelcontextprotocol/node";
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { readFile } from "node:fs/promises";
@@ -9,6 +12,25 @@ import { NemligError, type Basket, type Product, type ShoppingClient } from "./c
 import { createMcpServer } from "./mcp.js";
 
 const execute = promisify(execFile);
+const modernClient = (name: string) => new Client({ name, version: "1.0.0" }, {
+  versionNegotiation: { mode: { pin: "2026-07-28" } },
+});
+
+const connectModern = async (server: ReturnType<typeof createMcpServer>, client: Client): Promise<() => Promise<void>> => {
+  const handler = createMcpHandler(() => server, { legacy: "reject" });
+  const nodeHandler = toNodeHandler(handler);
+  const httpServer = createServer((req, res) => { void nodeHandler(req, res); });
+  httpServer.listen(0, "127.0.0.1");
+  await new Promise<void>((resolve, reject) => { httpServer.once("listening", resolve); httpServer.once("error", reject); });
+  const endpoint = new URL(`http://127.0.0.1:${(httpServer.address() as AddressInfo).port}/mcp`);
+  await client.connect(new StreamableHTTPClientTransport(endpoint));
+  return async () => {
+    await client.close();
+    await handler.close();
+    httpServer.closeAllConnections();
+    await new Promise<void>((resolve, reject) => httpServer.close((error) => error ? reject(error) : resolve()));
+  };
+};
 
 test("server modules do not depend on the executable CLI entry point", async () => {
   for (const file of ["mcp.ts", "http.ts", "proposals.ts"]) {
@@ -61,9 +83,8 @@ test("local CLI help and MCP surface need no credentials or network", async () =
     clearCart: unavailable,
   };
   const server = createMcpServer(shoppingClient, async () => undefined);
-  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
-  const client = new Client({ name: "smoke", version: "1.0.0" });
-  await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
+  const client = modernClient("smoke");
+  const close = await connectModern(server, client);
   try {
     const serverInfo = client.getServerVersion();
     assert.ok(serverInfo);
@@ -94,8 +115,7 @@ test("local CLI help and MCP surface need no credentials or network", async () =
       ],
     );
   } finally {
-    await client.close();
-    await server.close();
+    await close();
   }
 });
 
@@ -146,9 +166,8 @@ test("recipe discovery reaches a reviewed proposal and verified basket without u
     clearCart: async () => { throw new Error("unexpected clear"); },
   };
   const server = createMcpServer(client, async () => ({ username: "smoke@example.test", password: "synthetic" }));
-  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
-  const mcp = new Client({ name: "recipe-smoke", version: "1.0.0" });
-  await Promise.all([server.connect(serverTransport), mcp.connect(clientTransport)]);
+  const mcp = modernClient("recipe-smoke");
+  const close = await connectModern(server, mcp);
   try {
     const beef = await mcp.callTool({ name: "find_groceries", arguments: { search_term: "hakket oksekød", result_count: 5 } });
     assert.notEqual(beef.isError, true, JSON.stringify(beef));
@@ -191,8 +210,7 @@ test("recipe discovery reaches a reviewed proposal and verified basket without u
     assert.equal((replay.structuredContent as { replayed: boolean }).replayed, true);
     assert.equal(writes, 3);
   } finally {
-    await mcp.close();
-    await server.close();
+    await close();
   }
 });
 
@@ -216,9 +234,8 @@ test("an indeterminate recipe write is attempted once", async () => {
     removeFromCart: unavailable, clearCart: unavailable,
   };
   const server = createMcpServer(client, async () => ({ username: "smoke@example.test", password: "synthetic" }));
-  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
-  const mcp = new Client({ name: "write-smoke", version: "1.0.0" });
-  await Promise.all([server.connect(serverTransport), mcp.connect(clientTransport)]);
+  const mcp = modernClient("write-smoke");
+  const close = await connectModern(server, mcp);
   try {
     const review = await mcp.callTool({ name: "review_items_to_add", arguments: {
       authorization: "exact_review", items: [{ product: 401, quantity: 1 }],
@@ -228,7 +245,6 @@ test("an indeterminate recipe write is attempted once", async () => {
     assert.equal((await mcp.callTool({ name: "add_approved_items", arguments: { approved_review: proposalId } })).isError, true);
     assert.equal(writes, 1);
   } finally {
-    await mcp.close();
-    await server.close();
+    await close();
   }
 });

@@ -424,6 +424,22 @@ test("search accepts nested products and sends the current session values", asyn
   assert.equal(requests.length, 0);
 });
 
+test("search without an explicit count returns every product provided by Nemlig", async () => {
+  const products = Array.from({ length: 12 }, (_, index) => ({ Id: index + 1, Name: `Product ${index + 1}` }));
+  const requests: ExpectedRequest[] = [
+    ...sessionRequests(),
+    {
+      match: `${SEARCH_GATEWAY_URL}/search`,
+      inspect: (url) => assert.equal(new URL(url).searchParams.has("take"), false),
+      response: json({ Products: products }),
+    },
+  ];
+  const results = await new NemligClient(mockFetch(requests)).searchProducts("products");
+  assert.equal(results.length, products.length);
+  assert.equal(results.at(-1)?.name, "Product 12");
+  assert.equal(requests.length, 0);
+});
+
 test("search accepts the upstream flat product response", async () => {
   const requests: ExpectedRequest[] = [
     ...sessionRequests(),

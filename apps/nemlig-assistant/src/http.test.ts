@@ -1,7 +1,5 @@
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
-import type { OAuthMetadata } from "@modelcontextprotocol/sdk/shared/auth.js";
 import assert from "node:assert/strict";
+import type { OAuthMetadata } from "@modelcontextprotocol/server";
 import type { AddressInfo } from "node:net";
 import test from "node:test";
 import { createHttpApp } from "./http.js";
@@ -14,6 +12,7 @@ import { BasketProposalService } from "./proposals.js";
 import { parsePrincipalPolicy } from "./principal-policy.js";
 import type { ShoppingClient } from "./client.js";
 import { encryptCredentials, type CredentialEnvelope } from "./credential-envelope.js";
+import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
 
 const ownerSubject = "auth0|owner";
 const principalPolicy = parsePrincipalPolicy(JSON.stringify({
@@ -48,6 +47,10 @@ const oauth: OAuthMetadata = {
   registration_endpoint: new URL("oidc/register", config.issuer).href,
   response_types_supported: ["code"],
 };
+
+const modernClient = (name: string) => new Client({ name, version: "1.0.0" }, {
+  versionNegotiation: { mode: { pin: "2026-07-28" } },
+});
 
 test("HTTP MCP advertises Auth0, rejects anonymous and foreign origins, and preserves the MCP surface", async () => {
   const app = createHttpApp(config, oauth, {
@@ -88,7 +91,7 @@ test("HTTP MCP advertises Auth0, rejects anonymous and foreign origins, and pres
     const foreign = await fetch(`${base}/mcp`, { method: "POST", headers: { authorization: "Bearer test", origin: "https://evil.example" } });
     assert.equal(foreign.status, 403);
 
-    const client = new Client({ name: "http-test", version: "1.0.0" });
+    const client = modernClient("http-test");
     const transport = new StreamableHTTPClientTransport(new URL(`${base}/mcp`), {
       requestInit: { headers: { authorization: "Bearer test" } },
     });
@@ -96,35 +99,7 @@ test("HTTP MCP advertises Auth0, rejects anonymous and foreign origins, and pres
     assert.equal(client.getServerVersion()?.name, "nemlig-assistant");
     const httpTools = await client.listTools();
     assert.ok(httpTools.tools.some((tool) => tool.name === "show_my_basket"));
-    assert.ok(transport.sessionId);
-    const toolCall = JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "show_my_basket", arguments: {} } });
-    const wrongOwner = await fetch(`${base}/mcp`, {
-      method: "POST",
-      body: toolCall,
-      headers: {
-        authorization: "Bearer guest",
-        "content-type": "application/json",
-        "mcp-session-id": transport.sessionId,
-        "x-nemlig-principal": principalPolicy.principals[0]!.principal_key,
-      },
-    });
-    assert.equal(wrongOwner.status, 403);
-    const wrongSession = await fetch(`${base}/mcp`, {
-      method: "POST",
-      body: toolCall,
-      headers: { authorization: "Bearer test", "content-type": "application/json", "mcp-session-id": "wrong-session" },
-    });
-    assert.equal(wrongSession.status, 404);
-    const malformed = await fetch(`${base}/mcp`, {
-      method: "POST",
-      body: "{}",
-      headers: { authorization: "Bearer test", "content-type": "application/json" },
-    });
-    assert.equal(malformed.status, 400);
-    const invalidGet = await fetch(`${base}/mcp`, {
-      headers: { accept: "text/event-stream", authorization: "Bearer test", "mcp-session-id": "wrong-session" },
-    });
-    assert.equal(invalidGet.status, 404);
+    assert.equal(transport.sessionId, undefined);
 
     await client.close();
   } finally {
@@ -176,7 +151,7 @@ test("HTTP service acceptance uses signed machine identity and its fixed fixture
         admit: async () => ({ admitted: true, state: emptyUsageState(new Date()) }),
         forward: async (request) => fetch(request),
       });
-      const client = new Client({ name: "service-test", version: "1.0.0" });
+    const client = modernClient("service-test");
       const transport = new StreamableHTTPClientTransport(endpoint, { requestInit: { headers: { authorization: `Bearer ${token}` } }, ...(throughGateway ? { fetch: edgeFetch } : {}) });
       await client.connect(transport);
       const report = await verifyServiceAcceptanceFeatures({
@@ -241,7 +216,7 @@ test("HTTP MCP preserves an owner proposal across authenticated transport reconn
   });
   const endpoint = new URL(`http://${config.host}:${(server.address() as AddressInfo).port}/mcp`);
   const connect = async (token = "test") => {
-    const client = new Client({ name: "reconnect-test", version: "1.0.0" });
+    const client = modernClient("reconnect-test");
     const transport = new StreamableHTTPClientTransport(endpoint, {
       requestInit: { headers: { authorization: `Bearer ${token}` } },
     });
@@ -270,6 +245,92 @@ test("HTTP MCP preserves an owner proposal across authenticated transport reconn
     assert.equal((result.structuredContent as { basket: { items: unknown[] } }).basket.items.length, 1);
     assert.equal(proposalStores.size, 2);
     await second.close();
+  } finally {
+    server.closeAllConnections();
+    await new Promise<void>((resolve, reject) => server.close((error?: Error) => error ? reject(error) : resolve()));
+  }
+});
+
+test("modern HTTP requests preserve a basket review across fresh clients and server instances", async () => {
+  const product = {
+    id: 17, name: "Havregryn", price: 18, unit: "18,00 kr/stk.", unitPrice: 18,
+    unitSize: "1 kg", brand: "Test", category: "Kolonial", subcategory: "Morgenmad",
+    imageUrl: "", available: true, labels: [], isOrganic: false, isFrozen: false,
+    isRefrigerated: false, isDairy: false, isLactoseFree: true, isGlutenFree: false,
+    isVegan: true, isOnDiscount: false,
+  };
+  const empty = { items: [], productsPrice: 0, deliveryPrice: 39, numberOfProducts: 0, deliveryTime: "Tomorrow" };
+  const applied = {
+    ...empty,
+    items: [{ id: 17, name: product.name, quantity: 1, total: 18 }],
+    productsPrice: 18,
+    numberOfProducts: 1,
+  };
+  let addCalls = 0;
+  const shopper: ShoppingClient = {
+    isLoggedIn: () => true,
+    login: async () => undefined,
+    searchProducts: async () => [product],
+    getProduct: async () => product,
+    getFreshProduct: async () => product,
+    listFavorites: async () => [],
+    listDepartments: async () => [],
+    browseDepartment: async () => ({ products: [], page: 1, hasNext: false }),
+    getCart: async () => addCalls ? applied : empty,
+    addToCart: async () => { addCalls += 1; return applied; },
+    removeFromCart: async () => empty,
+    clearCart: async () => empty,
+  };
+  const contexts = new Map<string, { client: ShoppingClient; proposals: BasketProposalService }>();
+  let contextCreates = 0;
+  const app = createHttpApp(config, oauth, {
+    verifyAccessToken: async (token) => ({
+      token, clientId: "chatgpt", scopes: [config.requiredScope], expiresAt: Date.now() / 1000 + 300,
+      extra: { subject: token === "guest" ? "auth0|guest" : ownerSubject },
+    }),
+  }, (principal) => {
+    contextCreates += 1;
+    const context = { client: shopper, proposals: new BasketProposalService(shopper) };
+    contexts.set(principal.principal_key, context);
+    return context;
+  });
+  const server = app.listen(0, config.host);
+  await new Promise<void>((resolve, reject) => {
+    server.once("listening", resolve);
+    server.once("error", reject);
+  });
+  const endpoint = new URL(`http://${config.host}:${(server.address() as AddressInfo).port}/mcp`);
+  const connect = async (token: string) => {
+    const client = modernClient("modern-review-test");
+    await client.connect(new StreamableHTTPClientTransport(endpoint, {
+      requestInit: { headers: { authorization: `Bearer ${token}` } },
+    }));
+    assert.equal(client.getNegotiatedProtocolVersion(), "2026-07-28");
+    return client;
+  };
+  try {
+    const reviewer = await connect("owner");
+    const prepared = await reviewer.callTool({
+      name: "review_items_to_add",
+      arguments: { items: [{ product: 17, quantity: 1 }], authorization: "exact_review" },
+    });
+    const proposalId = (prepared.structuredContent as { proposal_id: string }).proposal_id;
+    await reviewer.close();
+
+    const otherPrincipal = await connect("guest");
+    const refused = await otherPrincipal.callTool({ name: "add_approved_items", arguments: { approved_review: proposalId } });
+    assert.equal(refused.isError, true);
+    assert.equal(addCalls, 0);
+    await otherPrincipal.close();
+
+    const approver = await connect("owner");
+    const result = await approver.callTool({ name: "add_approved_items", arguments: { approved_review: proposalId } });
+    assert.equal(result.isError, undefined);
+    assert.equal(addCalls, 1);
+    assert.deepEqual((result.structuredContent as { basket: { items: unknown[] } }).basket.items, applied.items);
+    assert.equal(contextCreates, 2);
+    assert.equal(contexts.size, 2);
+    await approver.close();
   } finally {
     server.closeAllConnections();
     await new Promise<void>((resolve, reject) => server.close((error?: Error) => error ? reject(error) : resolve()));
@@ -322,7 +383,7 @@ test("HTTP MCP creates bounded isolated clients, credentials, baskets, favourite
   });
   const endpoint = new URL(`http://${config.host}:${(server.address() as AddressInfo).port}/mcp`);
   const connect = async (token: string) => {
-    const client = new Client({ name: `${token}-test`, version: "1.0.0" });
+    const client = modernClient(`${token}-test`);
     await client.connect(new StreamableHTTPClientTransport(endpoint, { requestInit: { headers: { authorization: `Bearer ${token}` } } }));
     return client;
   };
@@ -351,7 +412,7 @@ test("HTTP MCP creates bounded isolated clients, credentials, baskets, favourite
   }
 });
 
-test("schema-v2 sessions decrypt controller credentials and reject stale generations or wrong principals", async () => {
+test("schema-v2 stateless requests decrypt credentials and isolate credential generations and principals", async () => {
   const key = Buffer.alloc(32, 9).toString("base64url");
   const guestKey = "c".repeat(32);
   const v2Policy = parsePrincipalPolicy(JSON.stringify({
@@ -398,7 +459,7 @@ test("schema-v2 sessions decrypt controller credentials and reject stale generat
   await new Promise<void>((resolve, reject) => { server.once("listening", resolve); server.once("error", reject); });
   const endpoint = new URL(`http://${config.host}:${(server.address() as AddressInfo).port}/mcp`);
   try {
-    const mcp = new Client({ name: "v2-test", version: "1.0.0" });
+    const mcp = modernClient("v2-test");
     const transport = new StreamableHTTPClientTransport(endpoint, { requestInit: { headers: internalHeaders(envelope) } });
     await mcp.connect(transport);
     await mcp.callTool({ name: "show_my_basket", arguments: {} });
@@ -408,26 +469,13 @@ test("schema-v2 sessions decrypt controller credentials and reject stale generat
       { principalKey: guestKey, policyRevision: v2Policy.revision, keyVersion: "one", generation: 2 },
       key,
     );
-    const stale = await fetch(endpoint, {
+    const wrongPrincipal = await fetch(endpoint, {
       method: "POST",
-      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "ping" }),
-      headers: { ...internalHeaders(next), "content-type": "application/json", "mcp-session-id": transport.sessionId! },
-    });
-    assert.equal(stale.status, 403);
-    assert.deepEqual(await stale.json(), { error: "reconnect_required", connection_url: "https://nemlig-mcp.broesby.dk/connect" });
-    const closed = await fetch(endpoint, {
-      method: "POST",
-      body: JSON.stringify({ jsonrpc: "2.0", id: 3, method: "ping" }),
-      headers: { ...internalHeaders(next), "content-type": "application/json", "mcp-session-id": transport.sessionId! },
-    });
-    assert.equal(closed.status, 404);
-    const wrong = await fetch(endpoint, {
-      method: "POST",
-      body: JSON.stringify({ jsonrpc: "2.0", id: 2, method: "initialize", params: {} }),
+      body: "{}",
       headers: { ...internalHeaders({ ...envelope, principal_key: "d".repeat(32) }), "content-type": "application/json" },
     });
-    assert.equal(wrong.status, 403);
-    const rotated = new Client({ name: "v2-rotated-test", version: "1.0.0" });
+    assert.equal(wrongPrincipal.status, 403);
+    const rotated = modernClient("v2-rotated-test");
     const rotatedTransport = new StreamableHTTPClientTransport(endpoint, { requestInit: { headers: internalHeaders(next) } });
     await rotated.connect(rotatedTransport);
     await rotated.callTool({ name: "show_my_basket", arguments: {} });
@@ -459,7 +507,7 @@ test("schema-v2 authenticated profile works without a provider credential", asyn
   await new Promise<void>((resolve, reject) => { server.once("listening", resolve); server.once("error", reject); });
   const endpoint = new URL(`http://${config.host}:${(server.address() as AddressInfo).port}/mcp`);
   try {
-    const mcp = new Client({ name: "profile-without-provider", version: "1.0.0" });
+    const mcp = modernClient("profile-without-provider");
     const transport = new StreamableHTTPClientTransport(endpoint, { requestInit: { headers: { authorization: "Bearer owner" } } });
     await mcp.connect(transport);
     const result = await mcp.callTool({ name: "get_profile", arguments: {} });

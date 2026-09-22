@@ -1,5 +1,4 @@
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
 import { resolve } from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
@@ -95,7 +94,9 @@ const abortable = async <T>(label: string, work: Promise<T>, signal: AbortSignal
 };
 
 const defaultConnect = async (origin: URL, token: string, signal: AbortSignal): Promise<ConnectedAcceptanceClient> => {
-  const client = new Client({ name: "nemlig-production-acceptance", version: "1.0.0" });
+  const client = new Client({ name: "nemlig-production-acceptance", version: "1.0.0" }, {
+    versionNegotiation: { mode: { pin: "2026-07-28" } },
+  });
   const transport = new StreamableHTTPClientTransport(origin, {
     requestInit: { headers: { authorization: `Bearer ${token}` } },
   });

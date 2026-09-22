@@ -158,10 +158,9 @@ export function normalizeBasket(value: unknown): Basket {
   };
 }
 
-export function normalizeProducts(value: unknown, limit: number): Product[] {
-  return asRecords(value)
-    .slice(0, limit)
-    .map((item) => {
+export function normalizeProducts(value: unknown, limit?: number): Product[] {
+  const products = asRecords(value);
+  return (limit === undefined ? products : products.slice(0, limit)).map((item) => {
       const availability = asRecord(item.Availability);
       const labels = Array.isArray(item.Labels)
         ? item.Labels.filter((label): label is string => typeof label === "string")
@@ -305,9 +304,9 @@ export class NemligClient {
     if (!asString(token.access_token)) throw new NemligError("Validate account failed: invalid response data.");
   }
 
-  async searchProducts(query: string, limit = 10, signal?: AbortSignal): Promise<Product[]> {
+  async searchProducts(query: string, limit?: number, signal?: AbortSignal): Promise<Product[]> {
     if (!query.trim()) throw new NemligError("Search query is required.");
-    if (!Number.isInteger(limit) || limit < 1) throw new NemligError("Search limit must be positive.");
+    if (limit !== undefined && (!Number.isInteger(limit) || limit < 1)) throw new NemligError("Search limit must be positive.");
     throwIfAborted(signal);
     if (!this.productTimestamp) await this.refreshSession(signal);
 
@@ -550,11 +549,10 @@ export class NemligClient {
     this.deliveryZoneId = asId(delivery.DeliveryZoneId) ?? this.deliveryZoneId;
   }
 
-  private async searchGateway(query: string, limit: number, signal?: AbortSignal): Promise<Product[]> {
+  private async searchGateway(query: string, limit: number | undefined, signal?: AbortSignal): Promise<Product[]> {
     if (!this.accessToken || !this.productTimestamp) return [];
     const params = new URLSearchParams({
       query,
-      take: String(limit),
       skip: "0",
       recipeCount: "0",
       timestamp: this.productTimestamp,
@@ -563,6 +561,7 @@ export class NemligClient {
       includeFavorites: this.userId ?? "0",
       TimeSlotId: String(this.timeslotId),
     });
+    if (limit !== undefined) params.set("take", String(limit));
     const response = asRecord(
       await this.json(`${SEARCH_GATEWAY_URL}/search?${params}`, { signal }, "Search products", true, true),
     );
@@ -587,7 +586,7 @@ export class NemligClient {
     return products;
   }
 
-  private async productsByCategory(path: string, limit: number, page = 1, signal?: AbortSignal): Promise<Product[]> {
+  private async productsByCategory(path: string, limit: number | undefined, page = 1, signal?: AbortSignal): Promise<Product[]> {
     const pageUrl = new URL(path, "https://www.nemlig.com");
     if (pageUrl.origin !== "https://www.nemlig.com") return [];
     pageUrl.searchParams.set("GetAsJson", "1");
@@ -600,18 +599,14 @@ export class NemligClient {
 
   private async productsByGroup(
     group: string | number,
-    limit: number,
+    limit: number | undefined,
     operation: string,
     page = 1,
     signal?: AbortSignal,
   ): Promise<Product[]> {
     const endpoint = `${API_BASE_URL}/${this.productTimestamp ?? DEFAULT_PRODUCT_TIMESTAMP}/${this.timeslot}/1/${this.userId ?? "0"}/Products/GetByProductGroupId`;
-    const params = new URLSearchParams({
-      productGroupId: String(group),
-      pageIndex: String(page - 1),
-      pagesize: String(limit),
-      sortorder: "default",
-    });
+    const params = new URLSearchParams({ productGroupId: String(group), pageIndex: String(page - 1), sortorder: "default" });
+    if (limit !== undefined) params.set("pagesize", String(limit));
     const response = asRecord(await this.optionalJson(`${endpoint}?${params}`, operation, false, signal));
     return normalizeProducts(response.Products, limit);
   }
