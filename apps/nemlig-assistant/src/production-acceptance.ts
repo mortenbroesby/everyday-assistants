@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { serviceAcceptanceResourceInventory, serviceAcceptanceToolInventory } from "./mcp.js";
+import { PRODUCT_VIEWER_RESOURCE_URI } from "./product-viewer.js";
 
 interface ToolResult {
   isError?: boolean;
@@ -9,7 +10,7 @@ interface ToolResult {
 
 export const productionToolInventory = {
   readOnly: [
-    "find_groceries", "get_profile", "show_my_favorites", "plan_my_shopping", "show_grocery_sections",
+    "find_groceries", "get_profile", "show_my_favorites", "show_grocery_sections",
     "browse_grocery_section", "check_nemlig_connection", "reconnect_nemlig_assistant", "show_my_basket", "get_grocery_details",
   ],
   prepareOnly: [
@@ -21,7 +22,7 @@ export const productionToolInventory = {
   ],
 } as const;
 
-export const productionResourceInventory = [] as const;
+export const productionResourceInventory = [PRODUCT_VIEWER_RESOURCE_URI] as const;
 export const prohibitedProductionTools = ["checkout", "place_order", "pay", "change_delivery_slot"] as const;
 
 type ToolName = typeof productionToolInventory[keyof typeof productionToolInventory][number];
@@ -201,10 +202,6 @@ export async function verifyReadOnlyProductionFeatures(
   await call("get_grocery_details", { product_id: productIds[0] });
   const favorites = await call<{ result?: unknown[] }>("show_my_favorites", { search_term: "banan", result_count: 1, page: 1 });
   assert.ok(Array.isArray(favorites.result) && favorites.result.length <= 1, "Favorites acceptance exceeded one result");
-  await call("plan_my_shopping", { lines: [{ id: "acceptance-banan", name: "banan", quantity: 1, constraints: {}, preferences: [] }] });
-  const exact = await call<{ lines?: Array<{ selected_product_id?: number }> }>("plan_my_shopping", { lines: [{ id: "acceptance-exact", name: "selected catalogue product", quantity: 1, selected_product: productIds[0], constraints: {}, preferences: [] }] });
-  assert.equal(exact.lines?.[0]?.selected_product_id, productIds[0], "Previously discovered product was not reused exactly");
-
   const departments = await call<{ departments?: Array<{ id?: string }> }>("show_grocery_sections");
   const departmentId = departments.departments?.find(({ id }) => id)?.id;
   if (departmentId) await call("browse_grocery_section", { section: departmentId, result_count: 3, page: 1 });
@@ -250,16 +247,18 @@ export async function verifyServiceAcceptanceFeatures(
   content(await call("browse_grocery_section", { section, result_count: 1, page: 1 }), "browse_grocery_section");
   basket(await call("show_my_basket"), "show_my_basket");
   const denied: string[] = [];
-  for (const name of ["plan_my_shopping", "review_items_to_add", "add_approved_items"]) {
+  for (const name of ["review_items_to_add", "add_approved_items"]) {
     try {
-      const result = await call(name);
+      requestCount += 1;
+      const result = await withinTotalDeadline(name, () => client.callTool({ name, arguments: {} }));
+      exercised.push(name);
       assert.equal(result.isError, true, `Service acceptance allowed forbidden ${name}`);
     } catch (error) {
       assert.ok(isServiceForbiddenResponse(error), `Service acceptance failed ${name} without a precise HTTP 403 denial`);
     }
     denied.push(name);
   }
-  assert.ok(requestCount <= 12, "Service MCP acceptance exceeded its 12-request budget");
+  assert.ok(requestCount <= 10, "Service MCP acceptance exceeded its request budget");
   return { exercised, denied, requestCount };
 }
 

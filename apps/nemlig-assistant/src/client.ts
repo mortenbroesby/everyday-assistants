@@ -159,8 +159,9 @@ export function normalizeBasket(value: unknown): Basket {
 }
 
 export function normalizeProducts(value: unknown, limit?: number): Product[] {
-  const products = asRecords(value);
-  return (limit === undefined ? products : products.slice(0, limit)).map((item) => {
+  const records = limit === undefined ? asRecords(value) : asRecords(value).slice(0, limit);
+  return records
+    .map((item) => {
       const availability = asRecord(item.Availability);
       const labels = Array.isArray(item.Labels)
         ? item.Labels.filter((label): label is string => typeof label === "string")
@@ -605,7 +606,11 @@ export class NemligClient {
     signal?: AbortSignal,
   ): Promise<Product[]> {
     const endpoint = `${API_BASE_URL}/${this.productTimestamp ?? DEFAULT_PRODUCT_TIMESTAMP}/${this.timeslot}/1/${this.userId ?? "0"}/Products/GetByProductGroupId`;
-    const params = new URLSearchParams({ productGroupId: String(group), pageIndex: String(page - 1), sortorder: "default" });
+    const params = new URLSearchParams({
+      productGroupId: String(group),
+      pageIndex: String(page - 1),
+      sortorder: "default",
+    });
     if (limit !== undefined) params.set("pagesize", String(limit));
     const response = asRecord(await this.optionalJson(`${endpoint}?${params}`, operation, false, signal));
     return normalizeProducts(response.Products, limit);

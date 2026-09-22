@@ -1,22 +1,15 @@
-import { AjvJsonSchemaValidator } from "@modelcontextprotocol/server/validators/ajv";
 import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
 import { createMcpHandler } from "@modelcontextprotocol/server";
 import { toNodeHandler } from "@modelcontextprotocol/node";
-import type { JsonSchemaType } from "@modelcontextprotocol/server";
 import assert from "node:assert/strict";
-import { EventEmitter } from "node:events";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
-import { mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
 import test from "node:test";
 import { NemligError, type Basket, type Product, type ShoppingClient } from "./client.js";
 import { createProgram } from "./cli.js";
 import { createMcpServer, NEMLIG_CONNECT_URL, rankProducts, safeNemligImageUrl, serviceAcceptanceToolInventory } from "./mcp.js";
 import { productionToolInventory } from "./production-acceptance.js";
 import { BasketProposalService } from "./proposals.js";
-import { PlanningDeadlineError } from "./product-discovery.js";
-import { resolveShoppingPlan } from "./plans.js";
 import { NEMLIG_RELEASE_IDENTITY } from "./runtime.js";
 
 const basket: Basket = {
@@ -70,7 +63,8 @@ const testCredentials = async () => ({ username: "person@example.test", password
 
 test("CLI exposes only supported commands and never accepts a password option", () => {
   const help = createProgram({ client: fakeClient() }).helpInformation();
-  for (const command of ["login", "logout", "search", "favorites", "add", "remove", "cart", "plan"]) assert.match(help, new RegExp(command));
+  for (const command of ["login", "logout", "search", "favorites", "add", "remove", "cart"]) assert.match(help, new RegExp(command));
+  assert.doesNotMatch(help, /plan_my_shopping|\bplan\b/u);
   for (const forbidden of ["feature-request", "parse", "checkout", "--password"]) assert.doesNotMatch(help, new RegExp(forbidden));
 });
 
@@ -205,110 +199,6 @@ test("retired CLI feature request is rejected without a side effect", async () =
   ]), /unknown command|feature-request/iu);
 });
 
-const withPlanFile = async <T>(input: unknown, action: (file: string) => Promise<T>): Promise<T> => {
-  const directory = await mkdtemp(`${tmpdir()}/nemlig-cli-plan-`);
-  const file = `${directory}/plan.json`;
-  await writeFile(file, JSON.stringify(input));
-  try {
-    return await action(file);
-  } finally {
-    await rm(directory, { recursive: true, force: true });
-  }
-};
-
-test("CLI plan validates malformed and over-limit files before login or provider reads", async () => {
-  for (const input of [{ lines: [] }, { lines: Array.from({ length: 51 }, (_, index) => ({ id: `line-${index}`, name: "mælk" })) }]) {
-    await withPlanFile(input, async (file) => {
-      let logins = 0;
-      let reads = 0;
-      const client = fakeClient({
-        isLoggedIn: () => false,
-        login: async () => { logins += 1; },
-        searchProducts: async () => { reads += 1; return [product]; },
-        getCart: async () => { reads += 1; return basket; },
-      });
-      await assert.rejects(createProgram({ client, credentials: testCredentials, out: () => {} }).parseAsync([
-        "node", "nemlig", "plan", file,
-      ]));
-      assert.equal(logins, 0);
-      assert.equal(reads, 0);
-    });
-  }
-});
-
-test("CLI plan formats or serializes a read-only plan without basket mutations", async () => {
-  await withPlanFile({ lines: [{ id: "milk", name: "mælk", quantity: 2 }] }, async (file) => {
-    const output: string[] = [];
-    let logins = 0;
-    const client = fakeClient({
-      isLoggedIn: () => false,
-      login: async () => { logins += 1; },
-      addToCart: async () => { throw new Error("basket mutation called"); },
-      removeFromCart: async () => { throw new Error("basket mutation called"); },
-      clearCart: async () => { throw new Error("basket mutation called"); },
-    });
-    await createProgram({ client, credentials: testCredentials, out: (message) => output.push(message) }).parseAsync([
-      "node", "nemlig", "plan", file,
-    ]);
-    assert.equal(logins, 1);
-    assert.match(output.join("\n"), /SHOPPING PLAN/u);
-    assert.match(output.join("\n"), /Økologisk mælk/u);
-    assert.match(output.join("\n"), /no basket mutation/u);
-
-    output.length = 0;
-    await createProgram({ client, credentials: testCredentials, out: (message) => output.push(message) }).parseAsync([
-      "node", "nemlig", "plan", file, "--json",
-    ]);
-    const plan = JSON.parse(output.join("\n")) as { lines: Array<{ id: string }>; summary: { added: number } };
-    assert.deepEqual(plan.lines.map(({ id }) => id), ["milk"]);
-    assert.equal(plan.summary.added, 0);
-  });
-});
-
-test("CLI plan reports ordinary discovery failures and drains reads after SIGINT", async () => {
-  await withPlanFile({ lines: [{ id: "milk", name: "mælk", quantity: 1 }] }, async (file) => {
-    const unavailable: string[] = [];
-    await createProgram({
-      client: fakeClient({ searchProducts: async () => { throw new Error("catalogue unavailable"); } }),
-      out: (message) => unavailable.push(message),
-    }).parseAsync(["node", "nemlig", "plan", file]);
-    assert.match(unavailable.join("\n"), /discovery unavailable/iu);
-
-    const signals = new EventEmitter();
-    let started: (() => void) | undefined;
-    const startedRead = new Promise<void>((resolve) => { started = resolve; });
-    let settled = 0;
-    const waitForAbort = <T>(_value: T, signal?: AbortSignal): Promise<T> => new Promise((_resolve, reject) => {
-      started?.();
-      signal?.addEventListener("abort", () => setTimeout(() => {
-        settled += 1;
-        reject(signal.reason);
-      }, 3), { once: true });
-    });
-    const client = fakeClient({
-      searchProducts: (_query, _limit, signal) => waitForAbort([product], signal),
-      getCart: (signal) => waitForAbort(basket, signal),
-      addToCart: async () => { throw new Error("basket mutation called"); },
-      removeFromCart: async () => { throw new Error("basket mutation called"); },
-      clearCart: async () => { throw new Error("basket mutation called"); },
-    });
-    const pending = createProgram({ client, signals, out: () => {} }).parseAsync(["node", "nemlig", "plan", file]);
-    await startedRead;
-    signals.emit("SIGINT");
-    await assert.rejects(pending, (error) => error instanceof DOMException && error.name === "AbortError" && error.message === "Planning cancelled.");
-    assert.equal(settled, 2);
-    assert.equal(signals.listenerCount("SIGINT"), 0);
-
-    settled = 0;
-    await assert.rejects(
-      createProgram({ client, signals, out: () => {} }).parseAsync(["node", "nemlig", "plan", file, "--timeout-ms", "1"]),
-      PlanningDeadlineError,
-    );
-    assert.equal(settled, 2);
-    assert.equal(signals.listenerCount("SIGINT"), 0);
-  });
-});
-
 const withMcpClient = async <T>(
   server: ReturnType<typeof createMcpServer>,
   action: (client: Client) => Promise<T>,
@@ -362,13 +252,12 @@ const friendlyCatalog = [
   ["get_grocery_details", "Get grocery details", true, false, ["product_id"]],
   ["get_profile", "Get my Nemlig profile", true, false, []],
   ["make_approved_item_swap", "Make the approved swap", false, true, ["approved_review"]],
-  ["plan_my_shopping", "Plan my shopping", true, false, ["lines", "mode", "proceed"]],
   ["reconnect_nemlig_assistant", "Reconnect Nemlig Assistant", true, false, []],
   ["remove_approved_item", "Remove the approved item", false, true, ["approved_review"]],
   ["review_emptying_basket", "Review emptying my basket", true, false, []],
   ["review_item_swap", "Review swapping an item", true, false, ["current_item", "replacement_item", "quantity"]],
   ["review_item_to_remove", "Review an item to remove", true, false, ["basket_item"]],
-  ["review_items_to_add", "Review items to add", true, false, ["items", "authorization", "automatic_authorization"]],
+  ["review_items_to_add", "Review items to add", true, false, ["items", "authorization"]],
   ["show_grocery_sections", "Show grocery sections", true, false, []],
   ["show_my_basket", "Show my basket", true, false, []],
   ["show_my_favorites", "Show my favourites", true, false, ["search_term", "result_count", "page"]],
@@ -497,7 +386,7 @@ test("service acceptance exposes only its fixed read-only tool inventory", async
   }), async (mcp) => {
     const expected = expectedVariant;
     assert.deepEqual((await mcp.listTools()).tools.map(({ name }) => name).sort(), [...expected].sort());
-    assert.deepEqual(await mcp.listResources(), { resources: [] });
+    assert.deepEqual((await mcp.listResources()).resources, [{ uri: "ui://nemlig/product-viewer.html", name: "nemlig-product-viewer", title: "Nemlig product viewer", description: "Display-only product results supplied by Nemlig Assistant.", mimeType: "text/html;profile=mcp-app" }]);
     await assert.rejects(mcp.callTool({ name: "add_approved_items", arguments: { approved_review: "00000000-0000-4000-8000-000000000000" } }), /not found/iu);
   });
   assert.equal(calls, 0);
@@ -649,192 +538,6 @@ test("MCP find_groceries authenticates first and retries once on a later expired
   assert.equal(logins, 1);
 });
 
-test("MCP plan_my_shopping retries one expired session and returns recovered candidates", async () => {
-  let searches = 0;
-  let logins = 0;
-  let basketReads = 0;
-  const client = fakeClient({
-    isLoggedIn: () => true,
-    login: async () => { logins += 1; },
-    searchProducts: async () => {
-      searches += 1;
-      if (searches === 1) throw new NemligError("Search failed", 401);
-      return [product];
-    },
-    getCart: async () => { basketReads += 1; return { ...basket, items: [] }; },
-  });
-  await withMcpClient(createMcpServer(client, testCredentials), async (mcp) => {
-    const result = await mcp.callTool({ name: "plan_my_shopping", arguments: { lines: [{ id: "milk", name: "mælk", quantity: 1 }] } });
-    assert.notEqual(result.isError, true, toolText(result));
-    const lines = (result.structuredContent as { lines: Array<{ candidates: Array<{ id: number }> }> }).lines;
-    assert.deepEqual(lines[0]?.candidates.map(({ id }) => id), [7]);
-  });
-  assert.equal(searches, 2);
-  assert.equal(logins, 1);
-  assert.equal(basketReads, 2);
-});
-
-test("default planning starts no reads when its request is already aborted", async () => {
-  const controller = new AbortController();
-  const reason = new Error("caller stopped before planning");
-  controller.abort(reason);
-  let reads = 0;
-  await assert.rejects(resolveShoppingPlan({
-    searchProducts: async () => { reads += 1; return [product]; },
-    getProduct: async () => { reads += 1; return product; },
-    getCart: async () => { reads += 1; return { ...basket, items: [] }; },
-  }, {
-    lines: [{ id: "milk", name: "mælk", quantity: 1 }],
-  }, { signal: controller.signal }), (error) => error === reason);
-  assert.equal(reads, 0);
-});
-
-test("Effect planning settles the expired attempt before authenticated retry", async () => {
-  let logins = 0;
-  let firstAttemptSlowSettled = false;
-  let retryOverlappedFirstAttempt = false;
-  let firstAttemptStartedQueued = false;
-  const starts: string[] = [];
-  const client = fakeClient({
-    isLoggedIn: () => true,
-    login: async () => {
-      logins += 1;
-      if (logins === 1 && !firstAttemptSlowSettled) retryOverlappedFirstAttempt = true;
-    },
-    searchProducts: async (query, _limit, signal) => {
-      const attempt = logins;
-      starts.push(`${attempt}:${query}`);
-      if (attempt === 0 && query === "queued") firstAttemptStartedQueued = true;
-      if (attempt === 0 && query === "expired") {
-        await new Promise((resolve) => setTimeout(resolve, 1));
-        throw new NemligError("Search failed", 401);
-      }
-      if (attempt === 0) {
-        return new Promise((resolve, reject) => {
-          const timer = setTimeout(() => resolve([{ ...product, name: query, description: query }]), 40);
-          signal?.addEventListener("abort", () => {
-            clearTimeout(timer);
-            setTimeout(() => {
-              firstAttemptSlowSettled = true;
-              reject(signal.reason);
-            }, 5);
-          }, { once: true });
-        });
-      }
-      return [{ ...product, name: query, description: query }];
-    },
-    getCart: async () => ({ ...basket, items: [] }),
-  });
-  await withMcpClient(createMcpServer(client, testCredentials), async (mcp) => {
-    const result = await mcp.callTool({
-      name: "plan_my_shopping",
-      arguments: {
-        lines: ["expired", "slow-a", "slow-b", "queued"].map((name) => ({ id: name, name, quantity: 1 })),
-      },
-    });
-    assert.notEqual(result.isError, true, toolText(result));
-  });
-  assert.equal(logins, 1);
-  assert.equal(firstAttemptSlowSettled, true);
-  assert.equal(retryOverlappedFirstAttempt, false);
-  assert.equal(firstAttemptStartedQueued, false);
-  assert.ok(starts.includes("1:queued"));
-});
-
-test("MCP plan_my_shopping surfaces a second 401 without looping", async () => {
-  let searches = 0;
-  let logins = 0;
-  const client = fakeClient({
-    isLoggedIn: () => true,
-    login: async () => { logins += 1; },
-    searchProducts: async () => { searches += 1; throw new NemligError("Search failed", 401); },
-    getCart: async () => ({ ...basket, items: [] }),
-  });
-  await withMcpClient(createMcpServer(client, testCredentials), async (mcp) => {
-    const result = await mcp.callTool({ name: "plan_my_shopping", arguments: { lines: [{ id: "milk", name: "mælk", quantity: 1 }] } });
-    assert.equal(result.isError, true);
-    assert.match(toolText(result), /Search failed/u);
-  });
-  assert.equal(searches, 2);
-  assert.equal(logins, 1);
-});
-
-test("MCP plans whole lists without saved state", async () => {
-  const directory = await mkdtemp(`${tmpdir()}/nemlig-mcp-plan-`);
-  let reads = 0;
-  const client = fakeClient({
-    searchProducts: async () => { reads += 1; return [product]; }, getCart: async () => { reads += 1; return { ...basket, items: [{ ...basket.items[0]!, id: 7 }] }; },
-    addToCart: async () => { throw new Error("mutation called"); }, removeFromCart: async () => { throw new Error("mutation called"); }, clearCart: async () => { throw new Error("mutation called"); },
-  });
-  try {
-    await withMcpClient(createMcpServer(client, testCredentials, { NEMLIG_CONFIG_DIR: directory }), async (mcp) => {
-      const planned = await mcp.callTool({ name: "plan_my_shopping", arguments: { lines: [{ id: "milk", name: "mælk", quantity: 2 }] } });
-      const plan = planned.structuredContent as { lines: Array<{ candidates: Array<{ source: string }>; remaining_quantity: number }> };
-      assert.equal(plan.lines[0]?.candidates[0]?.source, "catalog"); assert.equal(plan.lines[0]?.remaining_quantity, 1);
-      assert.equal((await mcp.callTool({ name: "plan_my_shopping", arguments: { lines: [] } })).isError, true);
-    });
-    assert.equal(reads, 2);
-    assert.deepEqual(await readdir(directory), []);
-  } finally { await rm(directory, { recursive: true, force: true }); }
-});
-
-test("published plan schemas validate real outputs and reject malformed data", async () => {
-  const client = fakeClient({
-    getCart: async () => ({ ...basket, items: [{ ...basket.items[0]!, id: 7, quantity: 0.5 }] }),
-    searchProducts: async (query) => query === "missing" ? [] : [{ ...product, description: "Mælk", details: [{ key: "Indhold", value: "Mælk" }] }],
-    addToCart: async () => { throw new Error("unexpected mutation"); },
-    removeFromCart: async () => { throw new Error("unexpected mutation"); },
-    clearCart: async () => { throw new Error("unexpected mutation"); },
-  });
-  await withMcpClient(createMcpServer(client, testCredentials), async (mcp) => {
-    const tools = new Map((await mcp.listTools()).tools.map((tool) => [tool.name, tool]));
-    const provider = new AjvJsonSchemaValidator();
-    const validator = (name: string) => provider.getValidator<Record<string, unknown>>(tools.get(name)!.outputSchema as JsonSchemaType);
-    const call = async (name: string, args: Record<string, unknown>) => {
-      const result = await mcp.callTool({ name, arguments: args });
-      assert.notEqual(result.isError, true, `${name}: ${toolText(result)}`);
-      const data = result.structuredContent as Record<string, unknown>;
-      assert.equal(validator(name)(data).valid, true, name);
-      if (name === "plan_my_shopping") {
-        assert.deepEqual(JSON.parse(toolText(result)), JSON.parse(JSON.stringify(data)));
-      }
-      return data;
-    };
-    const lines = [{ id: "milk", name: "mælk", quantity: 2 }];
-    const plan = await call("plan_my_shopping", { lines });
-    const planLines = plan.lines as Array<Record<string, unknown>>;
-    assert.equal(planLines[0]!.basket_quantity, 0.5);
-    assert.equal(planLines[0]!.remaining_quantity, 1.5);
-    const amountPlan = await call("plan_my_shopping", { lines: [{ id: "milk", name: "mælk", requested_amount: 2, requested_unit: "l", preferred_brands: ["Test"] }] });
-    const amountLine = (amountPlan.lines as Array<Record<string, unknown>>)[0]!;
-    const amountCandidate = (amountLine.candidates as Array<Record<string, unknown>>)[0]!;
-    assert.equal(amountLine.requested_amount, 2);
-    assert.equal(amountCandidate.preferred_brand_match, true);
-    assert.equal(amountCandidate.required_packages, 2);
-    assert.equal(amountCandidate.covered_amount, 2000);
-    const manual = await call("plan_my_shopping", { lines, mode: "manual" });
-    assert.equal((manual.lines as Array<Record<string, unknown>>)[0]!.clarity_reason, "manual_choice");
-    const empty = await call("plan_my_shopping", { lines: [{ id: "missing", name: "missing", quantity: 1 }] });
-    assert.equal((empty.lines as Array<Record<string, unknown>>)[0]!.resolution, "unresolved");
-    const candidate = (planLines[0]!.candidates as Array<Record<string, unknown>>)[0]!;
-    const sparseCandidate = { ...candidate };
-    for (const key of ["price", "unit_price", "description", "details", "image_url"]) delete sparseCandidate[key];
-    assert.equal(validator("plan_my_shopping")({ ...plan, lines: [{ ...planLines[0], candidates: [sparseCandidate] }] }).valid, true);
-    for (const badCandidate of [
-      { ...candidate, owner_scope: "private" },
-      { ...candidate, description: null },
-      { ...candidate, details: [{ key: "Indhold", value: 42 }] },
-      { ...candidate, dietary: { ...(candidate.dietary as object), private: true } },
-    ]) {
-      assert.equal(validator("plan_my_shopping")({ ...plan, lines: [{ ...planLines[0], candidates: [badCandidate] }] }).valid, false);
-    }
-    assert.equal(validator("plan_my_shopping")({ ...plan, owner_scope: "private" }).valid, false);
-    assert.equal(validator("plan_my_shopping")({ ...plan, summary: { ...(plan.summary as object), failed: "zero" } }).valid, false);
-    const notApplicable = await call("review_item_to_remove", { basket_item: 999 });
-    assert.equal(notApplicable.applicable, false);
-  });
-});
-
 test("every MCP tool has complete schemas, accurate annotations, and safe server instructions", async () => {
   await withMcpClient(createMcpServer(fakeClient(), testCredentials), async (mcp) => {
     const tools = (await mcp.listTools()).tools;
@@ -880,15 +583,16 @@ test("authenticated HTTP request context preserves stdio tool and resource metad
       createMcpServer(fakeClient(), testCredentials, undefined, undefined, { principalKey: "auth0|owner", policyRevision: "test-v1", tier: 0 }),
       async (http) => {
         assert.deepEqual(await http.listTools(), await stdio.listTools());
-        assert.deepEqual(await stdio.listResources(), { resources: [] });
-        assert.deepEqual(await http.listResources(), { resources: [] });
+        const expectedResources = [{ uri: "ui://nemlig/product-viewer.html", name: "nemlig-product-viewer", title: "Nemlig product viewer", description: "Display-only product results supplied by Nemlig Assistant.", mimeType: "text/html;profile=mcp-app" }];
+        assert.deepEqual((await stdio.listResources()).resources, expectedResources);
+        assert.deepEqual((await http.listResources()).resources, expectedResources);
         assert.equal(http.getInstructions(), stdio.getInstructions());
       },
     );
   });
 });
 
-test("MCP routes recipe discovery through individual short searches and favourites for uncertainty", async () => {
+test("MCP exposes independent discovery, exact details, and one shared display-only viewer", async () => {
   await withMcpClient(createMcpServer(fakeClient(), testCredentials), async (mcp) => {
     const tools = new Map((await mcp.listTools()).tools.map((tool) => [tool.name, tool.description ?? ""]));
     const instructions = mcp.getInstructions() ?? "";
@@ -898,23 +602,17 @@ test("MCP routes recipe discovery through individual short searches and favourit
     assert.match(instructions, /Basket changes require the matching staged review\/apply tools and explicit approval/);
     assert.match(instructions, /Never check out, pay, order, or select delivery slots/);
     assert.doesNotMatch(instructions, /Suggest an improvement|GitHub issue/);
-    assert.match(tools.get("plan_my_shopping") ?? "", /Resolve 1–50 groceries automatically by default/);
-    assert.match(tools.get("plan_my_shopping") ?? "", /discovery_unavailable.*find_groceries/u);
     assert.match(tools.get("find_groceries") ?? "", /current Nemlig catalogue directly/);
     assert.match(tools.get("find_groceries") ?? "", /'Prince biscuits' becomes 'prince kiks'/);
     assert.match(tools.get("show_my_favorites") ?? "", /saved Nemlig favourites/);
 
-    const plan = (await mcp.listTools()).tools.find((tool) => tool.name === "plan_my_shopping");
     const direct = (await mcp.listTools()).tools.find((tool) => tool.name === "find_groceries");
     const details = (await mcp.listTools()).tools.find((tool) => tool.name === "get_grocery_details");
-    assert.deepEqual(plan?._meta?.securitySchemes, [{ type: "oauth2", scopes: ["use:nemlig-assistant"] }]);
+    assert.equal((await mcp.listResources()).resources[0]?.uri, "ui://nemlig/product-viewer.html");
+    assert.equal((direct?._meta as { ui?: { resourceUri?: string } } | undefined)?.ui?.resourceUri, "ui://nemlig/product-viewer.html");
+    assert.equal((details?._meta as { ui?: { resourceUri?: string } } | undefined)?.ui?.resourceUri, "ui://nemlig/product-viewer.html");
     assert.match(JSON.stringify(details?.inputSchema), /product_id/u);
-    assert.match(JSON.stringify(plan?.inputSchema), /Prince biscuits.*prince kiks/);
     assert.match(JSON.stringify(direct?.inputSchema), /prince kiks.*Prince biscuits/);
-    for (const name of ["plan_my_shopping"]) {
-      const tool = (await mcp.listTools()).tools.find((entry) => entry.name === name);
-      assert.doesNotMatch(JSON.stringify(tool?.outputSchema), /"(?:items|summary|list)":\{\}/u, `${name} must not publish an unconstrained result schema`);
-    }
   });
 });
 
@@ -1113,7 +811,7 @@ test("approved MCP writes authenticate before the task and never retry an indete
   assert.equal(writes, 1);
 });
 
-test("an explicitly authorized clear grocery run reaches verified readback without a second question", async () => {
+test("an explicitly reviewed grocery addition reaches verified readback", async () => {
   let basketState: Basket = { ...basket, items: [], productsPrice: 0, numberOfProducts: 0 };
   const client = fakeClient({
     getCart: async () => basketState,
@@ -1123,22 +821,13 @@ test("an explicitly authorized clear grocery run reaches verified readback witho
     },
   });
   await withMcpClient(createMcpServer(client, testCredentials), async (mcp) => {
-    const planned = await mcp.callTool({ name: "plan_my_shopping", arguments: { proceed: true, lines: [{ id: "milk", name: "mælk", quantity: 2 }] } });
-    const plan = planned.structuredContent as { automatic_authorization: string; lines: Array<{ selected_product_id: number; remaining_quantity: number }> };
-    assert.ok(plan.automatic_authorization);
     const prepared = await mcp.callTool({ name: "review_items_to_add", arguments: {
-      items: [{ product: plan.lines[0]!.selected_product_id, quantity: plan.lines[0]!.remaining_quantity }],
-      authorization: "same_run_automatic", automatic_authorization: plan.automatic_authorization,
+      items: [{ product: 7, quantity: 2 }],
+      authorization: "exact_review",
     } });
-    assert.doesNotMatch(toolText(prepared), /Skal jeg/iu);
+    assert.match(toolText(prepared), /Skal jeg/iu);
     const applied = await mcp.callTool({ name: "add_approved_items", arguments: { approved_review: (prepared.structuredContent as { proposal_id: string }).proposal_id } });
     assert.equal((applied.structuredContent as { basket: { number_of_products: number } }).basket.number_of_products, 2);
-
-    const planOnly = await mcp.callTool({ name: "plan_my_shopping", arguments: { lines: [{ id: "milk", name: "mælk", quantity: 1 }] } });
-    assert.equal(
-      "automatic_authorization" in ((planOnly.structuredContent ?? {}) as Record<string, unknown>),
-      false,
-    );
   });
 });
 

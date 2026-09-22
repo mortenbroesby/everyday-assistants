@@ -180,30 +180,6 @@ The system SHALL advertise annotations that match each tool's actual behavior an
 - **WHEN** apply_cart_replacement is enumerated
 - **THEN** it is marked state-changing, destructive, and open-world
 
-### Requirement: Picker proposal interaction
-
-The picker SHALL display exact product details for one or more selected lines and SHALL prepare, display, and separately apply one batch additions proposal rather than mutating on candidate selection or the first review action.
-
-#### Scenario: User chooses a product card
-
-- **WHEN** the user selects available product IDs and positive quantities from one or more product cards
-- **THEN** the picker records only local review state and performs no basket mutation
-
-#### Scenario: User prepares a batch
-
-- **WHEN** the user activates prepare for selected lines with positive remaining quantities
-- **THEN** the picker prepares one additions proposal and displays every exact item, quantity, price, line total, expected basket effect, and expiry without mutation
-
-#### Scenario: User applies the displayed proposal
-
-- **WHEN** the user explicitly activates the separate apply action and the host authorizes the write tool
-- **THEN** the server applies only the still-valid proposal and the picker displays verified basket readback or a sanitized refusal
-
-#### Scenario: Host approval input is pending
-
-- **WHEN** an approval-gated tool has not received approved input from the host
-- **THEN** the picker waits for the MCP Apps approval lifecycle and does not infer hidden arguments
-
 ### Requirement: Redacted proposal audit
 
 The system SHALL record sanitized proposal creation, invalidation, application, replay, expiry, and indeterminate transitions and SHALL NOT audit raw prompts, secrets, session identifiers, or complete basket contents.
@@ -215,37 +191,17 @@ The system SHALL record sanitized proposal creation, invalidation, application, 
 
 ### Requirement: Approval remains explicit
 
-Tunnel access, app creation, proposal preparation, this OpenSpec, implementation work, planning alone, and candidate visibility SHALL NOT count as approval to apply a basket change. Approval MAY be either an explicit approval of an exact unchanged proposal or an authenticated user’s explicit instruction to proceed with automatic additions resolved within the same request’s lines, quantities, hard constraints, and preferences. The automatic authorization SHALL NOT cover removals, replacements, clearing, checkout, payment, ordering, delivery slots, unresolved candidates, or a later resumed run.
+Tunnel access, app creation, proposal preparation, this OpenSpec, implementation work, product search, and candidate visibility SHALL NOT count as approval to apply a basket change. Approval SHALL be an explicit approval of the exact unchanged proposal. The viewer remains display-only and cannot approve or apply a proposal.
 
 #### Scenario: Exact proposal is approved
 
 - **WHEN** the user explicitly approves an exact unchanged proposal
-- **THEN** the model or picker may invoke its apply tool once subject to every proposal invariant
-
-#### Scenario: Automatic additions were authorized initially
-
-- **WHEN** the user explicitly instructed the assistant to proceed, the same run deterministically resolved sufficiently clear additions within the supplied scope, and the proposal remains unchanged
-- **THEN** the model may invoke the additions apply tool without asking the user to approve the resolved SKU and price details again
-
-#### Scenario: Automatic scope is exceeded
-
-- **WHEN** an addition changes a requested quantity or hard constraint, uses an unresolved candidate, or belongs to a later or different run
-- **THEN** the initial automatic authorization does not cover it and no such addition is applied
-
-#### Scenario: Destructive operation is requested
-
-- **WHEN** the system prepares removal, replacement, or clearing
-- **THEN** the automatic-additions authorization does not apply and the exact unchanged proposal still requires separate explicit approval
-
-#### Scenario: Proposal exists without either approval form
-
-- **WHEN** a valid proposal exists but neither its exact details nor its same-run automatic additions scope was explicitly approved by the user
-- **THEN** the model and picker do not invoke its apply tool
+- **THEN** the model may invoke its apply tool once subject to every proposal invariant
 
 #### Scenario: Proposal exists without explicit approval
 
-- **WHEN** a valid proposal exists but the user has neither approved that exact proposal nor explicitly authorized the same run's automatic additions
-- **THEN** the model and picker do not invoke its apply tool
+- **WHEN** a valid proposal exists but the user has not approved that exact proposal
+- **THEN** the model does not invoke its apply tool
 
 ### Requirement: No autonomous checkout
 

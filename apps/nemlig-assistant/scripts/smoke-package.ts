@@ -75,7 +75,7 @@ try {
   assert.match(help.stdout, /favorites/);
   assert.match(help.stdout, /departments/);
   assert.match(help.stdout, /browse/);
-  assert.match(help.stdout, /plan/);
+  assert.doesNotMatch(help.stdout, /plan_my_shopping|\bplan\b/u);
   assert.doesNotMatch(help.stdout, /feature-request/);
   assert.match(help.stdout, /cart/);
   assert.match(help.stdout, /add/);
@@ -104,7 +104,6 @@ try {
       "get_grocery_details",
       "get_profile",
       "make_approved_item_swap",
-      "plan_my_shopping",
       "reconnect_nemlig_assistant",
       "remove_approved_item",
       "review_emptying_basket",

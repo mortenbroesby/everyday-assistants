@@ -29,7 +29,6 @@
   },
   "scripts": {
     "build": "tsdown",
-    "benchmark:product-discovery": "tsx scripts/benchmark-product-discovery.ts",
     "check:api": "node scripts/check-api-manifest.mjs",
     "check": "tsc -p tsconfig.json --noEmit",
     "cloudflare:check": "wrangler deploy --dry-run --env production",
@@ -38,7 +37,6 @@
     "auth:local:start": "wrangler dev --local --local-protocol https --ip 127.0.0.1 --port 8787 --persist-to .codex/local-auth/wrangler-state",
     "auth:local:test": "tsx scripts/auth-local.ts test",
     "cli": "pnpm build && node dist/cli.js",
-    "demo:product-discovery": "tsx scripts/demo-product-discovery.ts",
     "check:version-bump": "tsx release/check-version-bump.ts",
     "check:release-note": "tsx release/release-note.ts",
     "lint": "eslint src scripts release tsdown.config.ts --max-warnings=0",

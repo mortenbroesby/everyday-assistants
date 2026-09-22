@@ -8,7 +8,7 @@ Defines the private allowlisted ChatGPT integration that reaches isolated Nemlig
 
 ### Requirement: Rewrite prerequisite
 
-The system SHALL apply this capability only after PR #8 is merged, the TypeScript rewrite change is complete and archived, and the merged Nemlig client, CLI, stdio MCP, tests, and picker pass focused verification.
+The system SHALL apply this capability only after PR #8 is merged, the TypeScript rewrite change is complete and archived, and the merged Nemlig client, CLI, stdio MCP, tests, and shared product viewer pass focused verification.
 
 #### Scenario: Apply begins before the rewrite is complete
 
@@ -17,37 +17,29 @@ The system SHALL apply this capability only after PR #8 is merged, the TypeScrip
 
 ### Requirement: Direct normal ChatGPT use
 
-The system SHALL support the complete recipe or conversation-list interpretation, current product resolution, automatic or manual selection, basket view, proposal, apply, verification, and coverage-summary workflow in normal ChatGPT Chat and Work conversations without requiring Codex, a packaged personal plugin, or an interactive picker for ordinary planning.
+The system SHALL support independent product search, exact product lookup,
+basket inspection, exact basket review, and explicitly approved apply in normal
+ChatGPT conversations without requiring Codex, a saved planner, or a picker.
+Product-bearing results MAY render through one shared display-only viewer, with
+complete conversational structured/text fallbacks.
 
-#### Scenario: User delegates a grocery run
+#### Scenario: User searches for products
 
-- **WHEN** the private app is available and the user asks ChatGPT to use a recipe or current conversation list and explicitly says to proceed
-- **THEN** ChatGPT can use the MCP tools conversationally to complete sufficiently clear additions in automatic mode without another approval question
+- **WHEN** the private app is available and the user asks for products
+- **THEN** ChatGPT receives richly detailed products in provider order and may
+  present them through the shared viewer without creating shopping state
 
-#### Scenario: User starts a normal conversation
+#### Scenario: Viewer is unavailable
 
-- **WHEN** the private app is available and the user asks ChatGPT to compile or carry out a Nemlig shopping list
-- **THEN** ChatGPT uses conversational structured results without automatically rendering a picker and returns either a read-only plan or a verified authorized result without invoking Codex
+- **WHEN** the client cannot render the optional shared viewer
+- **THEN** ChatGPT continues with the same structured and readable product data
+  without requiring UI
 
-#### Scenario: Batch discovery is unavailable for a line
+#### Scenario: User approves an exact addition
 
-- **WHEN** ordinary planning reports discovery unavailable after its bounded authentication recovery
-- **THEN** ChatGPT can use the advertised direct catalogue-search tool for each affected normalized line and continue the read-only conversation without requiring UI
-
-#### Scenario: User asks for choices
-
-- **WHEN** the user explicitly requests visual choice or comparison and usable current candidates exist
-- **THEN** ChatGPT may present the bounded candidates through the interactive picker and does not apply an addition before the user chooses and authorizes it
-
-#### Scenario: Visual choice has no usable candidate
-
-- **WHEN** an explicit visual-choice request returns no usable current candidate
-- **THEN** the integration presents a clear non-actionable status without quantity or basket-preparation controls
-
-#### Scenario: Picker is unavailable
-
-- **WHEN** the client cannot render the optional picker
-- **THEN** the same automatic and manual workflows remain available through conversational tools and structured results
+- **WHEN** the user explicitly approves an unchanged exact review
+- **THEN** ChatGPT can invoke the protected apply tool and receive verified
+  basket readback
 
 ### Requirement: Authenticated favorites lookup
 
@@ -171,46 +163,37 @@ users, checkout, payment, ordering, or delivery-slot mutation.
 
 ### Requirement: Human-friendly shopping conversation
 
-The direct ChatGPT integration SHALL describe choices, basket changes, verified results, and automatic coverage like a household shopping assistant rather than a transaction log. It SHALL show choices only when the user requests them or a line cannot be resolved clearly, SHALL not ask a redundant approval question when same-run automatic additions were explicitly authorized, and SHALL NOT repeat model-visible protocol fields in ordinary user-facing replies when they add no shopping value.
-
-#### Scenario: Initial request authorizes automatic additions
-
-- **WHEN** the user explicitly says to proceed with a recipe, conversation list, or named list and sufficiently clear additions resolve within that request
-- **THEN** ChatGPT prepares and applies the unchanged authorized additions without displaying every candidate or asking another approval question
+The direct ChatGPT integration SHALL describe products, basket changes, and
+verified results like a household shopping assistant rather than a transaction
+log. It SHALL keep product presentation display-only and SHALL require explicit
+approval of the exact unchanged proposal before applying a basket change.
 
 #### Scenario: ChatGPT reviews a prepared change
 
-- **WHEN** ChatGPT receives a valid basket proposal that is not covered by same-run automatic authorization or exact earlier approval
-- **THEN** it presents a clean summary of what would change and asks one simple approval question without showing UUIDs, expiry language, internal statuses, or product IDs by default
+- **WHEN** ChatGPT receives a valid basket proposal without exact approval
+- **THEN** it presents a clean summary of what would change and asks one simple
+  approval question without showing opaque protocol fields by default
 
-#### Scenario: Earlier approval covers the unchanged change
+#### Scenario: User requests product comparison
 
-- **WHEN** the user already explicitly approved either every exact shopping detail or the same run's automatic additions scope and the prepared proposal remains unchanged
-- **THEN** ChatGPT does not ask for approval again and may apply using the opaque proposal data without displaying it
-
-#### Scenario: A line is genuinely unclear
-
-- **WHEN** no candidate is a deterministic clear match or a hard requirement cannot be proved
-- **THEN** ChatGPT leaves that line unchanged and presents only the useful product evidence needed for the user to choose or refine it
-
-#### Scenario: User requests manual mode
-
-- **WHEN** the user asks to see, compare, or choose products
-- **THEN** ChatGPT presents current names, brands, package sizes, prices, descriptions and images when available, and does not apply an addition until the user chooses and authorizes it
+- **WHEN** the user asks to see or compare products
+- **THEN** ChatGPT presents current names, brands, package sizes, prices,
+  descriptions, supported facts, and safe images when available without
+  changing the basket
 
 #### Scenario: ChatGPT confirms a verified result
 
-- **WHEN** authorized basket additions succeed and fresh readback matches
-- **THEN** ChatGPT confirms what was added, reports automatic coverage and any unresolved lines concisely, and does not narrate proposal lifecycle or protocol mechanics
+- **WHEN** explicitly approved basket additions succeed and fresh readback
+  matches
+- **THEN** ChatGPT confirms the resulting shopping outcome without narrating
+  proposal lifecycle or protocol mechanics
 
-#### Scenario: User requests the underlying detail
+### Requirement: Independent product discovery
 
-- **WHEN** the user asks for identifiers, exact price calculations, expiry information, scoring detail, or troubleshooting data
-- **THEN** ChatGPT may present the requested non-secret details without weakening authorization scope, revalidation, single-use, or readback enforcement
-
-### Requirement: Individual recipe discovery
-
-For ordinary recipe and meal-prep requests, the integration SHALL search for each needed ingredient separately with a short Danish term and SHALL allow ChatGPT to refine empty or unsuitable results through additional bounded search calls. It SHALL NOT require `plan_my_shopping` before individual discovery and SHALL NOT inspect the current basket to determine the proposed shop.
+For ordinary product requests, the integration SHALL search independently with a
+concise catalogue term and SHALL allow ChatGPT to refine empty or unsuitable
+results through additional searches. It SHALL NOT require a planner or inspect
+the current basket to determine product search results.
 
 #### Scenario: A long search phrase is unsuitable
 
@@ -222,61 +205,29 @@ For ordinary recipe and meal-prep requests, the integration SHALL search for eac
 - **WHEN** ChatGPT creates a recipe proposal
 - **THEN** discovery neither reads nor subtracts current basket contents and proposes the products requested in the current conversation
 
-### Requirement: Complete proposed-basket review
+### Requirement: Shared product viewer and exact basket review
 
-Before requesting approval to add products, the integration SHALL present every resolved proposed product in one compact visual proposal with requested package quantity, confidence, favourite provenance, exact product information, product evidence, useful bounded alternatives, and stated pantry assumptions. The integration SHALL accept conversational correction of named ingredients while retaining every unchallenged selection, SHALL use a focused picker for exact replacement choices, and SHALL present a complete final recap before an explicit `Add to Nemlig basket` handoff. The handoff SHALL use the existing exact review and protected apply workflow. The integration SHALL retain a complete conversational fallback when MCP Apps cannot render.
+Before requesting approval to add products, the integration SHALL present every
+resolved product through the shared display-only viewer when supported, while
+retaining complete structured and conversational fallbacks. The viewer SHALL
+not own selection, approval, provider access, or basket state. The handoff SHALL
+use the existing exact review and protected apply workflow.
 
-#### Scenario: Complete proposal is shown
+#### Scenario: Complete product result is shown
 
-- **WHEN** a proposal contains resolved favourite and catalogue products
-- **THEN** every resolved selection appears once with exact product identity, package count, price, provenance, and confidence, without a status column, review checkbox, or search input
+- **WHEN** a search or exact lookup contains resolved products
+- **THEN** every product appears once with its supported exact facts and context,
+  without a browser-side search, approval, or mutation control
 
-#### Scenario: Proposal has fewer than twenty products
+#### Scenario: User approves the exact basket review
 
-- **WHEN** the proposal contains fewer than twenty resolved products
-- **THEN** the integration presents every selection in one complete compact proposal
+- **WHEN** the user explicitly approves the unchanged review
+- **THEN** the integration uses `review_items_to_add` followed by
+  `add_approved_items`, fresh validation, single use, cancellation, readback,
+  and no automatic retry
 
-#### Scenario: Proposal has twenty or more products
-
-- **WHEN** the proposal contains at least twenty resolved products within the fifty-item bound
-- **THEN** the integration keeps every selection visible as a compact row using the host page's normal scrolling
-
-#### Scenario: User corrects named ingredients
-
-- **WHEN** the user says that one or more named ingredients are wrong and asks to keep everything else
-- **THEN** the integration retains all unchallenged selections and searches only the challenged ingredients through the existing bounded read path
-
-#### Scenario: Focused alternatives are available
-
-- **WHEN** challenged ingredients have relevant usable candidates
-- **THEN** the integration presents only those ingredients in a focused picker with one radio choice per ingredient and no browser-side provider access
-
-#### Scenario: No useful alternative is available
-
-- **WHEN** a challenged ingredient has no relevant usable candidate
-- **THEN** the integration explains the limitation conversationally and suggests useful query wording instead of fabricating a choice or showing an inert retry button
-
-#### Scenario: User settles replacements
-
-- **WHEN** the user submits focused radio choices
-- **THEN** the integration combines those choices with every retained selection and presents one complete final recap
-
-#### Scenario: User settles the alternatives
-
-- **WHEN** the user finishes the focused alternative choices
-- **THEN** the integration sends the deliberate replacement selection once and requests the complete final recap without changing the basket
-
-#### Scenario: Final recap contains changes
-
-- **WHEN** one or more products were replaced
-- **THEN** the recap keeps every product visible and marks only replaced lines with a subtle changed label
-
-#### Scenario: User approves the final basket
-
-- **WHEN** the user activates `Add to Nemlig basket`
-- **THEN** the integration treats that action as explicit approval of the exact recap and still uses `review_items_to_add` followed by `add_approved_items`, fresh validation, single use, cancellation, readback, and no automatic retry
-
-#### Scenario: Picker is unavailable
+#### Scenario: Viewer is unavailable
 
 - **WHEN** the client cannot render MCP Apps
-- **THEN** the integration presents the same complete proposal, correction guidance, exact alternatives, final recap, and approval boundary conversationally
+- **THEN** the integration presents the same complete product facts and exact
+  approval boundary conversationally

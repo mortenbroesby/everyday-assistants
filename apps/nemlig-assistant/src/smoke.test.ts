@@ -102,7 +102,6 @@ test("local CLI help and MCP surface need no credentials or network", async () =
         "get_grocery_details",
         "get_profile",
         "make_approved_item_swap",
-        "plan_my_shopping",
         "reconnect_nemlig_assistant",
         "remove_approved_item",
         "review_emptying_basket",
@@ -119,7 +118,7 @@ test("local CLI help and MCP surface need no credentials or network", async () =
   }
 });
 
-test("recipe discovery reaches a reviewed proposal and verified basket without unsafe shortcuts", async () => {
+test("direct discovery reaches a reviewed proposal and verified basket without unsafe shortcuts", async () => {
   const product = (id: number, name: string, unitSize: string, price: number, category = "Dagligvarer"): Product => ({
     id, name, price, unit: `${price.toFixed(2)} kr./stk.`, unitPrice: price, unitSize,
     brand: name.startsWith("Heinz") ? "Heinz" : "Test", category, subcategory: category,
@@ -179,19 +178,6 @@ test("recipe discovery reaches a reviewed proposal and verified basket without u
     assert.notEqual(details.isError, true, JSON.stringify(details));
     assert.equal((details.structuredContent as { result: { id: number } }).result.id, 101);
     assert.equal(reads, 0);
-
-    const scoped = await mcp.callTool({ name: "plan_my_shopping", arguments: {
-      proceed: true,
-      lines: [{ id: "cheddar", name: "cheddar", quantity: 2 }],
-    } });
-    assert.notEqual(scoped.isError, true, JSON.stringify(scoped));
-    const authorization = (scoped.structuredContent as { automatic_authorization: string }).automatic_authorization;
-    const drifted = await mcp.callTool({ name: "review_items_to_add", arguments: {
-      authorization: "same_run_automatic", automatic_authorization: authorization,
-      items: [{ product: 201, quantity: 1 }],
-    } });
-    assert.equal(drifted.isError, true);
-    assert.equal(writes, 0);
 
     const reviewed = await mcp.callTool({ name: "review_items_to_add", arguments: {
       authorization: "exact_review",

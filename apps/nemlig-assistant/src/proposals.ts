@@ -3,9 +3,7 @@ import { NemligError, type Basket, type Product, type ShoppingClient } from "./c
 import { runReadPool } from "./read-coordination.js";
 
 export type ProposalOperation = "additions" | "removal" | "replacement" | "clear";
-export type AdditionAuthorization =
-  | { kind: "exact_review" }
-  | { kind: "same_run_automatic"; token: string };
+export type AdditionAuthorization = { kind: "exact_review" };
 
 export interface ProposalAuditEvent {
   event: "created" | "invalidated" | "applying" | "completed" | "replayed" | "expired" | "indeterminate";
@@ -74,7 +72,7 @@ export interface ProposalView extends Record<string, unknown> {
   expires_at: string;
   basket_fingerprint: string;
   review: Record<string, unknown>;
-  authorization?: "exact_review" | "same_run_automatic";
+  authorization?: "exact_review";
 }
 
 export interface NoopProposalView extends Record<string, unknown> {
@@ -106,7 +104,7 @@ interface StoredProposal {
   expiresAt: Date;
   operation: Operation;
   review: Record<string, unknown>;
-  authorization?: "exact_review" | "same_run_automatic";
+  authorization?: "exact_review";
   state: ProposalState;
   result?: ApplyResult;
 }
@@ -192,9 +190,6 @@ const replacementLine = (product: Product, quantity: number, lineTotal?: number)
 const sameReplacementLine = (left: ReplacementLine, right: ReplacementLine): boolean =>
   JSON.stringify(left) === JSON.stringify(right);
 
-const canonicalAdditionItems = (items: Array<{ product_id: number; quantity: number }>): string =>
-  JSON.stringify([...items].sort((left, right) => left.product_id - right.product_id));
-
 class Mutex {
   private tail: Promise<void> = Promise.resolve();
 
@@ -215,7 +210,6 @@ class Mutex {
 
 export class BasketProposalService {
   private readonly proposals = new Map<string, StoredProposal>();
-  private readonly automaticAuthorizations = new Map<string, { connectionId: string; items: string; expiresAt: Date }>();
   private readonly now: () => Date;
   private readonly createId: () => string;
   private readonly ttlMs: number;
@@ -236,11 +230,7 @@ export class BasketProposalService {
     if (!Number.isFinite(this.ttlMs) || this.ttlMs < 1) throw new NemligError("Proposal TTL must be positive.");
   }
 
-  /**
-   * Builds an additions review without mutation. A same-run authorization is
-   * consumed before catalogue or basket work, so it is exact, connection-bound,
-   * short-lived, and single-use even when preparation fails.
-   */
+  /** Builds an additions review without mutation. */
   async prepareAdditions(
     connectionId: string,
     items: Array<{ product_id: number; quantity: number }>,
@@ -248,17 +238,9 @@ export class BasketProposalService {
     options: ProposalReadOptions = {},
   ): Promise<ProposalView> {
     this.validateAdditionItems(items);
-    if (!authorization || !["exact_review", "same_run_automatic"].includes(authorization.kind)) {
+    if (!authorization || authorization.kind !== "exact_review") {
       throw new NemligError("A valid additions authorization is required.");
     }
-    if (authorization.kind === "same_run_automatic") {
-      const stored = this.automaticAuthorizations.get(authorization.token);
-      this.automaticAuthorizations.delete(authorization.token);
-      if (!stored || stored.connectionId !== connectionId || stored.expiresAt <= this.now() || stored.items !== canonicalAdditionItems(items)) {
-        throw new NemligError("Automatic authorization is invalid, expired, or does not match these additions.");
-      }
-    }
-    const authorizationKind = authorization.kind;
     const basket = await this.client.getCart(options.signal);
     const lines = await runReadPool(items, async (item, signal) =>
       productLine(await this.client.getProduct(item.product_id, signal), item.quantity), options);
@@ -278,18 +260,7 @@ export class BasketProposalService {
       lines,
       expected_products_price: money(totals.price),
       expected_number_of_products: totals.count,
-    }, authorizationKind);
-  }
-
-  createAutomaticAuthorization(connectionId: string, items: Array<{ product_id: number; quantity: number }>): string {
-    this.validateAdditionItems(items);
-    const token = this.createId();
-    this.automaticAuthorizations.set(token, {
-      connectionId,
-      items: canonicalAdditionItems(items),
-      expiresAt: new Date(this.now().getTime() + this.ttlMs),
-    });
-    return token;
+    }, authorization.kind);
   }
 
   private validateAdditionItems(items: Array<{ product_id: number; quantity: number }>): void {
@@ -559,7 +530,7 @@ export class BasketProposalService {
     basket: Basket,
     operation: Operation,
     review: Record<string, unknown>,
-    authorization?: "exact_review" | "same_run_automatic",
+    authorization?: "exact_review",
   ): ProposalView {
     const issuedAt = this.now();
     const proposal: StoredProposal = {
