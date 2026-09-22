@@ -86,6 +86,7 @@
         "MCP_CREDENTIAL_ONBOARDING_ENABLED": "false",
         "MCP_CREDENTIAL_RATE_LIMIT": "3",
         "MCP_CREDENTIAL_GLOBAL_RATE_LIMIT": "10",
+        "NEMLIG_MCP_CREDENTIAL_KEY_VERSION": "one",
         "NEMLIG_MCP_HTTP_HOST": "0.0.0.0",
         "NEMLIG_MCP_HTTP_PORT": "8080",
         "NEMLIG_MCP_AUTH0_ISSUER": "https://everyday-assistants.eu.auth0.com/",
