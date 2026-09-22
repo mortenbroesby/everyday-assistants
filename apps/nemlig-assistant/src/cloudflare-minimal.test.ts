@@ -55,6 +55,12 @@ test("minimal path challenges anonymous MCP requests without waking application 
   assert.deepEqual(events.slice(0, 3), ["request_received:started", "bearer:missing"]);
 });
 
+test("minimal local configuration permits only loopback HTTP as the development TLS exception", () => {
+  const config = loadMinimalConfig({ ...env, NEMLIG_MCP_PUBLIC_URL: "http://127.0.0.1:8789/mcp", NEMLIG_MCP_AUTH0_AUDIENCE: "http://127.0.0.1:8789/mcp" });
+  assert.equal(config.publicUrl.protocol, "http:");
+  assert.throws(() => loadMinimalConfig({ ...env, NEMLIG_MCP_PUBLIC_URL: "http://mcp.example.test/mcp", NEMLIG_MCP_AUTH0_AUDIENCE: "http://mcp.example.test/mcp" }), /Invalid MCP resource URL/u);
+});
+
 test("minimal authenticated MCP reaches only the shared stable get_profile", async () => {
   const events: string[] = [];
   const config = loadMinimalConfig(env);

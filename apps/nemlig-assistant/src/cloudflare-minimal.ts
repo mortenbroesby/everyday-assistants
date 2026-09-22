@@ -47,7 +47,8 @@ export function loadMinimalConfig(env: CloudflareEnv): MinimalConfig {
   const publicUrl = new URL(env.NEMLIG_MCP_PUBLIC_URL?.trim() || "");
   if (issuer.protocol !== "https:" || issuer.search || issuer.hash) throw new Error("Invalid Auth0 issuer.");
   if (!issuer.pathname.endsWith("/")) issuer.pathname += "/";
-  if (publicUrl.protocol !== "https:" || publicUrl.pathname !== "/mcp" || publicUrl.search || publicUrl.hash) {
+  const loopback = publicUrl.protocol === "http:" && ["127.0.0.1", "localhost"].includes(publicUrl.hostname);
+  if ((!loopback && publicUrl.protocol !== "https:") || publicUrl.pathname !== "/mcp" || publicUrl.search || publicUrl.hash) {
     throw new Error("Invalid MCP resource URL.");
   }
   const authTimeoutMs = Number(env.MCP_AUTH_TIMEOUT_MS ?? "5000");
