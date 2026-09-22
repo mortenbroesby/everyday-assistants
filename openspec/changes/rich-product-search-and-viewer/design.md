@@ -6,7 +6,7 @@ The current client keeps a bounded observed-product cache, but search returns no
 
 **Goals:**
 
-- Make detailed search a request-local, bounded composition over the existing search and exact-product client methods.
+- Make detailed search a request-local composition over the existing search and exact-product client methods, without an invented result-count ceiling.
 - Preserve order, cancellation, cache semantics, explicit failures, and authentication propagation.
 - Keep product facts and context-specific basket/review facts separate.
 - Remove planner-specific domain code once the shared adapter can stop importing it.
@@ -21,7 +21,7 @@ The current client keeps a bounded observed-product cache, but search returns no
 
 ## Decisions
 
-1. **Hydrate through a pure product-discovery seam.** Add a typed enrichment operation around the existing `searchProducts` and `getProduct` methods. It will deduplicate IDs, retain positions, use the existing request-local read coordinator, and return a typed item status so failures cannot masquerade as complete products. A new provider endpoint or client cache policy is unnecessary.
+1. **Hydrate through a pure product-discovery seam.** Add a typed enrichment operation around the existing `searchProducts` and `getProduct` methods. It will deduplicate IDs, retain positions, use the existing request-local read coordinator as an active chunking window, and return a typed item status so failures cannot masquerade as complete products. It will not impose an application result-count ceiling; provider or caller counts pass through unchanged. A new provider endpoint or client cache policy is unnecessary.
 
 2. **Keep exact lookup authoritative.** Search rows are candidates only; exact lookup supplies the supported detail projection. Existing `getProduct` hydrated-cache behavior is reused, while pre-write freshness remains the separate `getFreshProduct` path owned by proposal code.
 
@@ -33,7 +33,7 @@ The current client keeps a bounded observed-product cache, but search returns no
 
 ## Risks / Trade-offs
 
-- **More exact reads per search** → cap unique enrichment IDs, concurrency, input/result sizes, and deadlines; reuse hydrated cache entries and record request-count evidence.
+- **More exact reads per search** → preserve provider/caller result counts, use active chunking so work is not launched without bound, reuse hydrated cache entries, and record request-count evidence. No returned result is discarded by an application ceiling.
 - **Provider detail gaps** → expose a per-item status and omit unknown values; never silently downgrade to a shallow-looking success.
 - **Transport overlap with #72** → keep adapter and package changes out of the first slice; rebase once the v2 migration is tested and coordinate the minimal integration diff.
 - **UI resource drift** → test the packaged resource inventory and headless fallback; keep the resource single-purpose and self-contained.
@@ -41,7 +41,7 @@ The current client keeps a bounded observed-product cache, but search returns no
 
 ## Migration Plan
 
-1. Add the product hydration result model and failing focused tests, then implement the bounded ordered enrichment.
+1. Add the product hydration result model and failing focused tests, then implement the ordered enrichment without an application result cap.
 2. Extend product projection tests and add the shared display-only representation/resource contract without provider calls.
 3. After issue #72's tested integration point, update MCP registrations and policies, remove planner-only callers/modules, and reconcile docs/specs/package assets.
 4. Run focused app tests, package/resource smoke tests, the final repository verification gate, and exact-head CI.

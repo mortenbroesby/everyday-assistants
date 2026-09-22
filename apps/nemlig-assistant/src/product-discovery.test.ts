@@ -204,3 +204,22 @@ test("detailed search propagates authentication failures instead of hiding them"
 
   await assert.rejects(resolveDetailedProductSearch(client, "mælk", 1), (error) => error === expired);
 });
+
+test("detailed search does not impose an application result cap", async () => {
+  const products = Array.from({ length: 12 }, (_, index) => product(index + 1, `Product ${index + 1}`));
+  const calls: number[] = [];
+  const client: ProductDiscoveryClient = {
+    searchProducts: async (_query, limit) => {
+      assert.equal(limit, undefined);
+      return products;
+    },
+    getProduct: async (id) => { calls.push(id); return product(id, `Detailed ${id}`); },
+    getCart: async () => basket(),
+  };
+
+  const result = await resolveDetailedProductSearch(client, "product");
+
+  assert.equal(result.items.length, products.length);
+  assert.equal(calls.length, products.length);
+  assert.deepEqual(result.items.map((item) => item.productId), products.map((item) => item.id));
+});

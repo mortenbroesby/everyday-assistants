@@ -6,7 +6,7 @@ Provide trustworthy, richly detailed Nemlig product facts and one consistent dis
 
 ### Requirement: Search results are richly detailed by default
 
-The system SHALL return each bounded search result with the supported product facts available from exact lookup, preserving provider order and representing a detail failure explicitly rather than silently returning a shallow or substituted product.
+The system SHALL return every result selected by the caller or returned by the provider with the supported product facts available from exact lookup, preserving provider order and representing a detail failure explicitly rather than silently returning a shallow or substituted product. It SHALL NOT impose an application result-count ceiling that is not required by Nemlig or the caller.
 
 #### Scenario: Hydrated search parity
 
@@ -23,14 +23,14 @@ The system SHALL return each bounded search result with the supported product fa
 - **WHEN** detail retrieval reports an authentication failure
 - **THEN** the authentication failure is propagated to the existing authenticated-read recovery boundary and is not converted into an empty or apparently partial search
 
-### Requirement: Product retrieval is bounded and request-local
+### Requirement: Product retrieval is request-local and chunked only for active work
 
-The system SHALL deduplicate selected product identifiers, preserve search order, enforce bounded detail concurrency and result limits, honor cancellation and deadlines, and reuse a valid hydrated cache entry without redundant provider calls.
+The system SHALL deduplicate selected product identifiers, preserve search order, process detail reads in an active concurrency window without dropping returned results, honor cancellation and deadlines, and reuse a valid hydrated cache entry without redundant provider calls. Any result-count limit MUST come from Nemlig or the caller rather than an invented application ceiling.
 
-#### Scenario: Bounded ordered hydration
+#### Scenario: Ordered hydration without an application cap
 
-- **WHEN** a search returns repeated or more-than-bounded product identifiers
-- **THEN** only unique selected identifiers within the configured limit are hydrated, at most the configured concurrency is active, and the final result follows the original search order
+- **WHEN** a search returns repeated or more-than-eight product identifiers
+- **THEN** unique identifiers are hydrated in a chunked active window, no returned result is discarded because of an application cap, and the final result follows the original search order
 
 #### Scenario: Hydrated cache reuse
 

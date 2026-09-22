@@ -4,7 +4,7 @@ Nemlig search currently returns shallow catalogue rows while exact lookup, baske
 
 ## What Changes
 
-- Enrich bounded search results by default with the same supported product facts as exact lookup, with explicit per-result partial or unavailable outcomes.
+- Enrich every caller/provider-selected search result by default with the same supported product facts as exact lookup, with explicit per-result partial or unavailable outcomes; do not add an application result-count ceiling.
 - Reuse one ordered, cancellable, cache-aware product retrieval path for search and exact lookup; do not add a mandatory follow-up tool call or shallow/full mode flag.
 - Remove planner-only orchestration, planner-issued automatic authority, and picker-specific workflow state while retaining direct product reads, basket reads, exact review, and approved additions.
 - Add one small shared product presentation resource for product-bearing results; keep it display-only, headless-compatible, accessible, and free of browser-side provider calls or write controls.

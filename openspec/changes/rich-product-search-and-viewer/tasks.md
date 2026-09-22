@@ -1,7 +1,7 @@
 ## 1. Product hydration
 
-- [x] 1.1 Add failing tests for ordered unique search-result enrichment, detail parity, bounded concurrency, and explicit per-item failure status; verify the focused product-discovery test fails for the current shallow path.
-- [x] 1.2 Implement request-local detailed search enrichment using existing search/exact lookup/cache/cancellation seams; verify focused product-discovery tests pass without real credentials.
+- [x] 1.1 Add failing tests for ordered unique search-result enrichment, active chunking, no application result cap, and explicit per-item failure status; verify the focused product-discovery test fails for the current shallow path.
+- [x] 1.2 Implement request-local detailed search enrichment using existing search/exact lookup/cache/cancellation seams without an invented result ceiling; verify focused product-discovery tests pass without real credentials.
 - [x] 1.3 Add cache, authentication, cancellation, deadline, limit, and missing-field regression coverage; verify request counts and failure outcomes are explicit.
 
 ## 2. Shared product presentation

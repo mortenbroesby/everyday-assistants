@@ -64,25 +64,25 @@ const detailedSearchRead = (
 );
 
 /**
- * Hydrates the bounded, ordered result set returned by catalogue search.
+ * Hydrates the ordered result set returned by catalogue search.
  * Shallow search rows are never returned as successful products: each
  * addressable row is either exactly resolved or explicitly unavailable.
  */
 export async function resolveDetailedProductSearch(
   client: ProductDiscoveryClient,
   query: string,
-  limit = 8,
+  limit?: number,
   options: DetailedProductSearchOptions = {},
 ): Promise<DetailedProductSearchResult> {
   if (!query.trim()) throw new NemligError("Search query is required.");
-  if (!Number.isInteger(limit) || limit < 1 || limit > 50) throw new NemligError("Search limit must be between 1 and 50.");
+  if (limit !== undefined && (!Number.isInteger(limit) || limit < 1)) throw new NemligError("Search limit must be positive.");
   const concurrency = options.concurrency ?? 3;
   if (!Number.isInteger(concurrency) || concurrency < 1) throw new RangeError("Read concurrency must be a positive integer.");
   if (options.deadlineMs !== undefined && (!Number.isFinite(options.deadlineMs) || options.deadlineMs <= 0)) {
     throw new RangeError("Product discovery deadline must be a positive finite number.");
   }
 
-  const shallow = (await client.searchProducts(query, limit, options.signal)).slice(0, limit);
+  const shallow = await client.searchProducts(query, limit, options.signal);
   const uniqueIds: number[] = [];
   const seenIds = new Set<number>();
   for (const candidate of shallow) {
