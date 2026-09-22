@@ -8,6 +8,12 @@ repository and privacy-safe runtime facts. It does not contain credentials,
 tokens, authorization codes, OAuth state, private Nemlig data, or provider
 support output.
 
+The later connector recovery is recorded in
+[ChatGPT connector recovery](chatgpt-connector-recovery.md). That record
+supersedes the earlier “native acceptance unverified” wording where it says
+native proof was subsequently owner-confirmed; the historical failed native
+attempts remain useful evidence of the original availability boundary.
+
 ## Incident findings
 
 The Worker was not missing. The protected deployment created and enabled the
