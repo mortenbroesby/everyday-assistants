@@ -54,9 +54,12 @@ saved-shopping removal is now owned by `remove-saved-shopping`; matching improve
 
 ## P0 — restore reliable ChatGPT reconnect and add bounded observability
 
-**Status:** Active incident. Track and complete
-[GitHub issue #6](https://github.com/mortenbroesby/everyday-assistants/issues/6)
-before further demo-dependent feature work.
+**Status:** Resolved for the authenticated `get_profile` recovery path on
+2026-09-22. See the [connector recovery record](../../docs/chatgpt-connector-recovery.md)
+and [issue #81](https://github.com/mortenbroesby/everyday-assistants/issues/81)
+for the root cause, external correction, and sanitized production evidence.
+Provider-backed functionality and longer-term reliability remain separate
+work; do not infer them from this acceptance.
 
 **Epic outcome:** Restore a repeatably reconnectable, cloud-only ChatGPT app and
 close the incident with privacy-safe evidence that identifies the last completed
@@ -74,10 +77,10 @@ OAuth boundary without weakening cost or basket safeguards.
 - [x] Publish a reconnect runbook that separates ChatGPT, Auth0, and Worker
   evidence without collecting credentials, tokens, codes, OAuth state, raw
   payloads, or private shopping data.
-- [ ] Run one bounded reconnect attempt and record only the privacy-safe Auth0
+- [x] Run one bounded reconnect attempt and record only the privacy-safe Auth0
   category plus matching Worker terminal evidence or a confirmed absence.
-- [ ] Identify and document the exact last completed boundary and either the
-  incident root cause or the evidenced external blocker.
+- [x] Identify and document the exact last completed boundary and the
+  evidenced external connector-registration root cause.
 
 ### Story P0.2 — terminate stalls without amplifying work
 
@@ -96,12 +99,12 @@ OAuth boundary without weakening cost or basket safeguards.
   closed with the fixed Container inactive, then enable the same revision.
 - [x] Pass the anonymous edge probe and authenticated read-only shopping-list
   and one-result favourite checks without any basket or saved-list mutation.
-- [ ] Refresh the one existing app named exactly `Nemlig Assistant`; do not
-  create a suffixed, bracketed, numbered, or parallel app.
-- [ ] Have the owner complete a fresh Auth0 login through that existing app.
-- [ ] Complete two fresh normal ChatGPT conversations that each check the connection
-  and at most one favourite without creating, editing, preparing,
-  approving, applying, submitting, or mutating anything.
+- [x] Restore exactly one canonical `Nemlig Assistant` connector after
+  removing the demonstrated stale registration; do not retain a parallel app.
+- [x] Have the owner complete the one required Auth0 consent flow for the
+  canonical CIMD client.
+- [x] Complete fresh ChatGPT conversations that invoke only authenticated
+  `get_profile`; no provider or business operation was performed.
 
 ### Story P0.4 — retire the legacy Mac tunnel after cloud-only acceptance
 
