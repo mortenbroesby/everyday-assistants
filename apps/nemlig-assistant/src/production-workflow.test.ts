@@ -71,6 +71,7 @@ test("production workflow accepts manual dispatch or an exact CI-green main comm
   assert.match(deploy, /\.git\/nemlig-production-deploy\/latest\.json/u);
   assert.match(deploy, /actions\/upload-artifact@[0-9a-f]{40}/u);
   assert.match(deploy, /id: release-artifact/u);
+  assert.match(deploy, /if-no-files-found: error/u);
   assert.match(deploy, /retention-days: 7/u);
   assert.match(deploy, /include-hidden-files: true/u);
   assert.doesNotMatch(source, /setup-.*provider|activate|cloudflare\/workers/u);
@@ -110,6 +111,7 @@ test("deployment evidence remains artifact-backed without a publication side eff
 
   assert.match(deploy, /actions\/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7\.0\.1/u);
   assert.match(deploy, /id: release-artifact/u);
+  assert.match(deploy, /if-no-files-found: error/u);
   assert.match(deploy, /retention-days: 7/u);
   assert.doesNotMatch(source, /^\x20{2}publish-release:/m);
   assert.doesNotMatch(source, /publish:deployment-release/u);
