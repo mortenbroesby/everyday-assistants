@@ -15,9 +15,9 @@ Issue #96 has an automatic main-to-production workflow, but a real green main me
 
 **Goal:** an eligible approved green PR follows merge → exact-SHA deploy → read-only acceptance → safe image retention without routine manual dispatch/finalization.
 
-**Non-goals:** basket, order, payment, or delivery mutation; deleting Worker history, secrets, Durable Objects, Container applications, or foreign repositories; new hosted services, external schedules, or Containers; custom queue-overflow recovery; preserving obsolete clients or unused runtime flags. The approved one-time image reset intentionally removes rollback images for pre-reset Worker versions after a fresh accepted release.
+**Non-goals:** basket, order, payment, or delivery mutation; deleting Worker history, secrets, Durable Objects, Container applications, or foreign repositories; new hosted services, external schedules, or Containers; custom queue-overflow recovery; preserving obsolete clients or unused runtime flags. Images without proven accepted-release age remain protected rather than being treated as legacy by default.
 
-**Acceptance:** all child issues #97–#101 are resolved; eligible green main merges use the native serialized deployment path; failed/uncertain deployments cannot trigger cleanup; no PR job gets production credentials; exact candidate revision and safety boundaries pass; images outside the exact owned repository and active/recovery/uncertain references are never deleted; the one-time legacy image reset is explicit; each accepted release retains the latest ten distinct images; recovery remains safe under runner loss and provider drift; final exact-main CI and production read-only checks pass.
+**Acceptance:** all child issues #97–#101 are resolved; eligible green main merges use the native serialized deployment path; failed/uncertain deployments cannot trigger cleanup; no PR job gets production credentials; exact candidate revision and safety boundaries pass; images outside the exact owned repository and active/recovery/uncertain references are never deleted; only images with proven accepted-release order are deleted; each accepted release retains the latest ten distinct images, while unknown images are reported as holds; recovery remains safe under runner loss and provider drift; final exact-main CI and production read-only checks pass.
 
 ## Capabilities
 

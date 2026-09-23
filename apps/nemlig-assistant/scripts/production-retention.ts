@@ -133,6 +133,22 @@ export function parseAcceptedReleaseJournal(raw: string, expectedCommit: string)
   return { commit: expectedCommit, digest: journal!.enabledImage as string, acceptedAt: journal!.completedAt as string };
 }
 
+export type ProductionRetentionCli =
+  | { mode: "accept"; commit: string; acceptancePath: string }
+  | { mode: "plan" | "resume"; commit: string };
+
+export function parseProductionRetentionCli(argv: readonly string[]): ProductionRetentionCli {
+  const values = argv[0] === "--" ? argv.slice(1) : argv;
+  const mode = values[0];
+  const commit = values[1];
+  if (!commit || !fullSha.test(commit)) fail("input_invalid");
+  if (mode === "accept" && values.length === 3 && values[2]) {
+    return { mode, commit, acceptancePath: values[2] };
+  }
+  if ((mode === "plan" || mode === "resume") && values.length === 2) return { mode, commit };
+  return fail("input_invalid");
+}
+
 const run = async (command: string, args: string[], cwd: string, env: NodeJS.ProcessEnv, signal: AbortSignal): Promise<string> =>
   await new Promise<string>((resolvePromise, reject) => {
     if (signal.aborted) { reject(new Error("production_retention_deadline_exceeded")); return; }
@@ -177,13 +193,9 @@ const responseObject = async (response: Response): Promise<Record<string, unknow
 };
 
 const main = async (): Promise<void> => {
-  const args = process.argv.slice(2);
-  const mode = args[0];
-  const commit = args[1];
-  const acceptancePath = args[2];
-  if (!((mode === "accept" && args.length === 3) || ((mode === "resume" || mode === "plan") && args.length === 2)) || !commit || !fullSha.test(commit)) {
-    fail("input_invalid");
-  }
+  const input = parseProductionRetentionCli(process.argv.slice(2));
+  const { mode, commit } = input;
+  const acceptancePath = input.mode === "accept" ? input.acceptancePath : undefined;
 
   const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
   const packageRoot = resolve(repoRoot, "apps/nemlig-assistant");
@@ -432,7 +444,6 @@ const main = async (): Promise<void> => {
         acceptedDigests: acceptedImageDigests(ledger),
         holds,
         retainAccepted,
-        resetLegacy: ledger.legacyResetCompletedAt === undefined,
       });
       const fingerprint = retentionDryRunFingerprint({ repository, inventory, holds, plan });
       return { inventory, holds, plan, fingerprint };
@@ -444,45 +455,41 @@ const main = async (): Promise<void> => {
       return;
     }
 
-    if (mode !== "plan") {
-      await acquireRetentionLease();
-      if (ledger.cleanup?.inFlight) {
-        await assertRetentionLease();
-        const recoveryInventory = await readInventory(signal);
-        const tagStillPresent = recoveryInventory.tags.some(({ tag }) => tag === ledger.cleanup?.inFlight?.tag);
-        ledger = resolveRetentionDeleteIntent(ledger, tagStillPresent);
-        await saveLedger(ledger);
-      }
-      if (mode === "resume" && ledger.cleanup?.completedAt) {
-        await releaseRetentionLease();
-        console.log(JSON.stringify({ commit, cleanupComplete: true, recoveredLease: true, skipped: true }));
-        return;
-      }
-      if (acceptedRelease) {
-        ledger = recordAcceptedImageRelease(ledger, acceptedRelease);
-        const cleanup = ledger.cleanup;
-        if (!cleanup || cleanup.commit !== commit || cleanup.completedAt) fail("cleanup_checkpoint_invalid");
-        await saveLedger(ledger);
-      }
+    await acquireRetentionLease();
+    if (ledger.cleanup?.inFlight) {
+      await assertRetentionLease();
+      const recoveryInventory = await readInventory(signal);
+      const tagStillPresent = recoveryInventory.tags.some(({ tag }) => tag === ledger.cleanup?.inFlight?.tag);
+      ledger = resolveRetentionDeleteIntent(ledger, tagStillPresent);
+      await saveLedger(ledger);
+    }
+    if (mode === "resume" && ledger.cleanup?.completedAt) {
+      await releaseRetentionLease();
+      console.log(JSON.stringify({ commit, cleanupComplete: true, recoveredLease: true, skipped: true }));
+      return;
+    }
+    if (acceptedRelease) {
+      ledger = recordAcceptedImageRelease(ledger, acceptedRelease);
+      const cleanup = ledger.cleanup;
+      if (!cleanup || cleanup.commit !== commit || cleanup.completedAt) fail("cleanup_checkpoint_invalid");
+      await saveLedger(ledger);
     }
 
-    if (mode !== "plan") {
-      const first = await readDryRunSnapshot();
-      const second = await readDryRunSnapshot();
-      if (first.fingerprint !== second.fingerprint) {
-        await releaseRetentionLease();
-        console.log(JSON.stringify({
-          commit,
-          dryRun: true,
-          stable: false,
-          firstFingerprint: first.fingerprint,
-          secondFingerprint: second.fingerprint,
-          firstPlan: first.plan,
-          secondPlan: second.plan,
-          cleanupStarted: false,
-        }));
-        return;
-      }
+    const first = await readDryRunSnapshot();
+    const second = await readDryRunSnapshot();
+    if (first.fingerprint !== second.fingerprint) {
+      await releaseRetentionLease();
+      console.log(JSON.stringify({
+        commit,
+        dryRun: true,
+        stable: false,
+        firstFingerprint: first.fingerprint,
+        secondFingerprint: second.fingerprint,
+        firstPlan: first.plan,
+        secondPlan: second.plan,
+        cleanupStarted: false,
+      }));
+      return;
     }
 
     const deleteTag = async (tag: string, expectedDigest: string, deleteSignal: AbortSignal): Promise<void> => {
