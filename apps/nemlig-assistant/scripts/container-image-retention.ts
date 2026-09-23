@@ -27,13 +27,12 @@ export interface RetentionPlanInput {
   acceptedDigests: readonly string[];
   holds?: readonly ImageHold[];
   retainAccepted?: number;
-  resetLegacy?: boolean;
 }
 
 export interface PlannedImage {
   digest: string;
   tags: string[];
-  reason: "retained_window" | "active" | "recovery" | "uncertain" | "explicit" | "accepted_surplus" | "legacy_reset" | "untracked";
+  reason: "retained_window" | "active" | "recovery" | "uncertain" | "explicit" | "accepted_surplus" | "untracked";
 }
 
 export interface RetentionPlan {
@@ -60,8 +59,6 @@ export interface AcceptedImageRelease {
 export interface ImageRetentionLedger {
   schema: 1;
   repository: string;
-  /** Set only after the explicitly approved one-time legacy reset finishes. */
-  legacyResetCompletedAt?: string;
   /** Newest first; every accepted commit supports idempotent replay detection. */
   accepted: AcceptedImageRelease[];
   /** Current accepted commit's cleanup checkpoint; absent until the first accepted release. */
@@ -78,11 +75,9 @@ const validTimestamp = (value: unknown): value is string => typeof value === "st
 export function parseImageRetentionLedger(value: unknown, expectedRepository: string): ImageRetentionLedger {
   if (!value || typeof value !== "object" || Array.isArray(value)) fail("ledger_invalid");
   const record = value as Record<string, unknown>;
-  if (Object.keys(record).some((key) => !["schema", "repository", "legacyResetCompletedAt", "accepted", "cleanup"].includes(key))
-    || record.schema !== 1 || record.repository !== expectedRepository || !Array.isArray(record.accepted)
-    || (record.legacyResetCompletedAt !== undefined && !validTimestamp(record.legacyResetCompletedAt))) fail("ledger_invalid");
+  if (Object.keys(record).some((key) => !["schema", "repository", "accepted", "cleanup"].includes(key))
+    || record.schema !== 1 || record.repository !== expectedRepository || !Array.isArray(record.accepted)) fail("ledger_invalid");
   const rows = record.accepted as unknown[];
-  const resetCompletedAt = record.legacyResetCompletedAt;
   const parseAcceptedRows = (items: unknown[]): AcceptedImageRelease[] => {
     const seen = new Set<string>();
     const parsed: AcceptedImageRelease[] = [];
@@ -131,7 +126,6 @@ export function parseImageRetentionLedger(value: unknown, expectedRepository: st
   return {
     schema: 1,
     repository: expectedRepository,
-    ...(resetCompletedAt ? { legacyResetCompletedAt: resetCompletedAt as string } : {}),
     accepted,
     ...(cleanup ? { cleanup } : {}),
   };
@@ -143,7 +137,7 @@ export function acceptedImageDigests(ledgerInput: ImageRetentionLedger): string[
   return [...new Set(ledger.accepted.map(({ digest }) => digest))];
 }
 
-/** Adds exact successful runtime acceptance evidence without changing reset state. */
+/** Adds exact successful runtime acceptance evidence. */
 export function recordAcceptedImageRelease(
   ledgerInput: ImageRetentionLedger,
   release: AcceptedImageRelease,
@@ -160,16 +154,6 @@ export function recordAcceptedImageRelease(
     cleanup: { commit: release.commit },
   }, ledger.repository);
   return next;
-}
-
-/** Marks the one-time approved reset complete only after its deletion loop and readback finish. */
-export function markLegacyImageResetComplete(
-  ledgerInput: ImageRetentionLedger,
-  completedAt: string,
-): ImageRetentionLedger {
-  const ledger = parseImageRetentionLedger(ledgerInput, ledgerInput.repository);
-  if (!validTimestamp(completedAt)) fail("ledger_invalid");
-  return ledger.legacyResetCompletedAt ? ledger : { ...ledger, legacyResetCompletedAt: completedAt };
 }
 
 export function markImageRetentionComplete(ledgerInput: ImageRetentionLedger, completedAt: string): ImageRetentionLedger {
@@ -397,8 +381,6 @@ export function planImageRetention(input: RetentionPlanInput): RetentionPlan {
       protectedImages.push({ digest, tags, reason: "retained_window" });
     } else if (accepted.has(digest)) {
       candidates.push({ digest, tags, reason: "accepted_surplus" });
-    } else if (input.resetLegacy === true) {
-      candidates.push({ digest, tags, reason: "legacy_reset" });
     } else {
       protectedImages.push({ digest, tags, reason: "untracked" });
     }
@@ -441,7 +423,6 @@ export interface RetentionExecutionReport {
   deletedTags: number;
   inventoryReads: number;
   protected: PlannedImage[];
-  legacyResetCompleted: boolean;
   cleanupComplete: boolean;
 }
 
@@ -465,7 +446,6 @@ export async function executeImageRetention(input: {
   const retainAccepted = positiveInteger(input.retainAccepted, defaultRetainedImages, Number.MAX_SAFE_INTEGER);
   const deadline = AbortSignal.timeout(timeoutMs);
   const signal = input.signal ? AbortSignal.any([input.signal, deadline]) : deadline;
-  const resetLegacy = ledger.legacyResetCompletedAt === undefined;
   const deletedDigests = new Set<string>();
   let deletedTags = 0;
   let inventoryReads = 0;
@@ -487,7 +467,6 @@ export async function executeImageRetention(input: {
     acceptedDigests: acceptedImageDigests(ledger),
     holds,
     retainAccepted,
-    resetLegacy,
   });
 
   const priorIntent = ledger.cleanup?.inFlight;
@@ -536,30 +515,22 @@ export async function executeImageRetention(input: {
   const acceptedDigests = acceptedImageDigests(ledger);
   const acceptedSet = new Set(acceptedDigests);
   const retainedWindow = new Set(acceptedDigests.slice(0, retainAccepted));
-  const legacyImagesStillHeld = resetLegacy && finalPlan.protected.some((entry) => entry.tags.length > 0
-    && !acceptedSet.has(entry.digest) && ["active", "recovery", "uncertain", "explicit"].includes(entry.reason));
+  const untrackedImagesStillHeld = finalPlan.protected.some((entry) => entry.tags.length > 0 && entry.reason === "untracked");
   const acceptedImagesStillHeld = finalPlan.protected.some((entry) => entry.tags.length > 0
     && acceptedSet.has(entry.digest) && !retainedWindow.has(entry.digest)
     && ["active", "recovery", "uncertain", "explicit"].includes(entry.reason));
-  if (legacyImagesStillHeld || acceptedImagesStillHeld) {
+  if (untrackedImagesStillHeld || acceptedImagesStillHeld) {
     return {
       repository: input.repository,
       deletedDigests: [...deletedDigests].sort((left, right) => left.localeCompare(right)),
       deletedTags,
       inventoryReads,
       protected: finalPlan.protected,
-      legacyResetCompleted: false,
       cleanupComplete: false,
     };
   }
   await dependencies.collectGarbage(signal);
-  let resetCompleted = !resetLegacy;
-  let updatedLedger = ledger;
-  if (resetLegacy) {
-    updatedLedger = markLegacyImageResetComplete(updatedLedger, dependencies.now().toISOString());
-    resetCompleted = true;
-  }
-  updatedLedger = markImageRetentionComplete(updatedLedger, dependencies.now().toISOString());
+  const updatedLedger = markImageRetentionComplete(ledger, dependencies.now().toISOString());
   await dependencies.persistLedger(updatedLedger, signal);
   return {
     repository: input.repository,
@@ -567,7 +538,6 @@ export async function executeImageRetention(input: {
     deletedTags,
     inventoryReads,
     protected: finalPlan.protected,
-    legacyResetCompleted: resetCompleted,
     cleanupComplete: true,
   };
 }

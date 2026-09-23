@@ -16,12 +16,12 @@ Routine deploys SHALL apply only validated variables declared by the production 
 
 ### Requirement: Accepted production releases retain a bounded Container image history
 
-After exact deployment acceptance and durable evidence recording, the initial approved reset SHALL remove pre-reset images from the exact Nemlig production image repository except images required by active, rolling, unresolved-recovery, or uncertain state. This intentionally removes image-based rollback for pre-reset Worker versions but SHALL preserve Worker version/deployment records. After each accepted release, retain the ten most recent distinct accepted image digests by default, plus every additional active, rolling, unresolved-recovery, or uncertain image reference. Ten is the default configurable target, not a hard cap. Cleanup SHALL never delete foreign-repository images, Container applications, secrets, or Durable Object data.
+After exact deployment acceptance and durable evidence recording, cleanup SHALL retain the ten most recent distinct accepted image digests by default, plus every additional active, rolling, unresolved-recovery, or uncertain image reference. Ten is the default configurable target, not a hard cap. An image without proven accepted-release order SHALL remain protected and be reported; the system SHALL NOT infer that an untracked image is old based on digest, tag, catalog, or deployment-page ordering. Cleanup SHALL never delete foreign-repository images, Container applications, secrets, or Durable Object data.
 
-#### Scenario: First clean release resets the legacy image backlog
+#### Scenario: First accepted release encounters images without ledger history
 
-- **WHEN** the exact new production release passes runtime acceptance, its durable record is saved, and two same-run registry/reference snapshots match
-- **THEN** the post-acceptance job immediately deletes eligible pre-reset images and records when pre-reset rollback images are no longer available
+- **WHEN** the exact new production release passes runtime acceptance but existing inventory digests have no matching accepted-release evidence
+- **THEN** those images remain protected, the report identifies them as untracked and indicates retention is incomplete, and no image is deleted based on guessed age
 
 #### Scenario: More than ten safe accepted images exist
 
@@ -36,7 +36,7 @@ After exact deployment acceptance and durable evidence recording, the initial ap
 #### Scenario: Provenance or reference state is incomplete
 
 - **WHEN** inventory, timestamps/order, tag-to-digest mapping, provider references, or durable accepted-release history is uncertain
-- **THEN** the image is held and no ambiguous candidate is deleted, except that pre-reset images in the exact user-approved repository are eligible for the one-time reset only after exact acceptance and complete active/recovery-reference proof
+- **THEN** the image is held and no ambiguous candidate is deleted; historical order may be added only from exact durable acceptance evidence matching its commit and digest
 
 ### Requirement: Container image deletion is bounded, oldest-first, and revalidated
 

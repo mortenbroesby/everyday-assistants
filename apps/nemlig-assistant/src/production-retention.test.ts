@@ -1,9 +1,23 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { assertNoContainerRollout, assertRetentionLeaseForMutation, parseAcceptedReleaseJournal, parseRegistryCredentialOutput, parseRetentionLease, retentionLeaseCanBeReclaimed, retentionLeaseMatchesOperation } from "../scripts/production-retention.js";
+import { assertNoContainerRollout, assertRetentionLeaseForMutation, parseAcceptedReleaseJournal, parseProductionRetentionCli, parseRegistryCredentialOutput, parseRetentionLease, retentionLeaseCanBeReclaimed, retentionLeaseMatchesOperation } from "../scripts/production-retention.js";
 
 const commit = "a".repeat(40);
 const image = `sha256:${"b".repeat(64)}`;
+
+test("retention CLI accepts direct and pnpm-forwarded argument forms", () => {
+  const acceptancePath = "/tmp/latest.json";
+  assert.deepEqual(parseProductionRetentionCli(["accept", commit, acceptancePath]), {
+    mode: "accept", commit, acceptancePath,
+  });
+  assert.deepEqual(parseProductionRetentionCli(["--", "accept", commit, acceptancePath]), {
+    mode: "accept", commit, acceptancePath,
+  });
+  assert.deepEqual(parseProductionRetentionCli(["--", "resume", commit]), { mode: "resume", commit });
+  assert.deepEqual(parseProductionRetentionCli(["--", "plan", commit]), { mode: "plan", commit });
+  assert.throws(() => parseProductionRetentionCli(["--", "accept", commit]), /production_retention_input_invalid/u);
+  assert.throws(() => parseProductionRetentionCli(["--", "unknown", commit]), /production_retention_input_invalid/u);
+});
 
 test("registry credential output becomes Basic auth without surfacing its secret", () => {
   const authorization = parseRegistryCredentialOutput(JSON.stringify({ username: "v1", password: "credential-value-long-enough" })).authorization;

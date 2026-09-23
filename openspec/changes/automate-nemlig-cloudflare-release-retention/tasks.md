@@ -16,7 +16,7 @@
 
 - [x] 3.1 Establish authoritative repository/tag/digest/order/age/reference/deletion semantics for Wrangler 4.127.1; revalidate PR #48 evidence and document fields the provider does not supply.
 - [x] 3.2 Implement complete exact-repository inventory with pagination/alias checks and deterministic failure on incomplete or unknown responses.
-- [x] 3.3 Add accepted-image order ledger and pure planner: explicit one-time reset of pre-reset images in the exact approved repository after accepted baseline; then ten distinct accepted digests by default, with active/recovery/uncertain references preserved.
+- [x] 3.3 Add accepted-image order ledger and pure planner: retain ten distinct accepted digests by default; preserve active/recovery/uncertain and untracked images unless exact accepted-release order is proven.
 - [x] 3.4 Test malformed, duplicate, stale, missing, reordered and uncertain ledger/inventory states; prove stable read-only reports and exact reason categories.
 
 ## 4. Accepted-release cleanup (#100)
