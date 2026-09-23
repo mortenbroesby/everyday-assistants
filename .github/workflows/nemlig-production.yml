@@ -16,6 +16,11 @@ on:
         description: Confirm this is an incident recovery deployment
         required: true
         type: boolean
+      resume_retention:
+        description: Resume interrupted image cleanup without deploying
+        required: false
+        type: boolean
+        default: false
 
 concurrency:
   group: nemlig-production
@@ -30,11 +35,12 @@ permissions:
 env:
   CANDIDATE_SHA: "${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || (github.event_name == 'workflow_dispatch' && inputs.commit) || github.sha }}"
   RECOVERY: "${{ github.event_name == 'workflow_dispatch' && inputs.recovery || false }}"
+  RESUME_RETENTION: "${{ github.event_name == 'workflow_dispatch' && inputs.resume_retention || false }}"
 
 jobs:
   release-gate:
     if: >-
-      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.recovery == true) ||
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && (inputs.recovery == true || inputs.resume_retention == true)) ||
       (github.event_name == 'schedule' && github.ref == 'refs/heads/main') ||
       (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' &&
       github.event.workflow_run.event == 'push' && github.event.workflow_run.head_branch == 'main')
@@ -45,8 +51,8 @@ jobs:
       actions: read
     outputs:
       deploy: "${{ steps.approval.outputs.deploy || steps.catch-up.outputs.deploy }}"
-      retention: "${{ steps.approval.outputs.retention || steps.catch-up.outputs.retention || 'false' }}"
-      retention_commit: "${{ steps.catch-up.outputs.retention_commit }}"
+      retention: "${{ steps.approval.outputs.retention || 'false' }}"
+      retention_commit: "${{ steps.approval.outputs.retention_commit }}"
     steps:
       - name: Checkout exact main candidate
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6.0.1
@@ -60,58 +66,22 @@ jobs:
         env:
           GH_TOKEN: "${{ github.token }}"
           CANDIDATE_SHA: "${{ env.CANDIDATE_SHA }}"
-          RETENTION_ENABLED: "${{ vars.NEMLIG_CONTAINER_IMAGE_RETENTION_ENABLED }}"
         run: |
           set -euo pipefail
           if ledger="$(gh api "repos/$GITHUB_REPOSITORY/contents/retention-ledger.json?ref=codex-retention/nemlig-production" --jq .content 2>"$RUNNER_TEMP/ledger-error")"; then
             ledger_json="$(printf '%s' "$ledger" | base64 --decode)"
-            jq -e 'type == "object" and .schema == 1 and (.accepted | type == "array") and (.accepted | length > 0) and (.accepted[0].commit | type == "string") and (.cleanup | type == "object") and (.cleanup.commit == .accepted[0].commit) and ((.cleanup | has("completedAt") | not) or (.cleanup.completedAt | type == "string"))' <<<"$ledger_json" >/dev/null
+            jq -e 'type == "object" and .schema == 1 and (.accepted | type == "array") and (.accepted | length > 0) and (.accepted[0].commit | type == "string")' <<<"$ledger_json" >/dev/null
             deployed_sha="$(jq -r '.accepted[0].commit' <<<"$ledger_json")"
-            cleanup_timestamp="$(jq -r '.cleanup.completedAt // ""' <<<"$ledger_json")"
-            dry_run_fingerprint="$(jq -r '.cleanup.dryRunFingerprint // ""' <<<"$ledger_json")"
-            dry_run_ready="false"
-            if [[ "$dry_run_fingerprint" =~ ^[0-9a-f]{64}$ ]]; then dry_run_ready="true"; fi
-            cleanup_complete="false"
-            if [[ "$cleanup_timestamp" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]{3}Z$ ]]; then
-              canonical_timestamp="$(date -u -d "$cleanup_timestamp" '+%Y-%m-%dT%H:%M:%S.%3NZ' 2>/dev/null || true)"
-              if [[ "$canonical_timestamp" == "$cleanup_timestamp" ]]; then cleanup_complete="true"; fi
-            fi
           elif rg -q 'HTTP 404' "$RUNNER_TEMP/ledger-error"; then
             deployed_sha=""
-            cleanup_complete="false"
           else
             cat "$RUNNER_TEMP/ledger-error" >&2
             exit 1
           fi
-          retention_lock="false"
-          if gh api "repos/$GITHUB_REPOSITORY/contents/retention-lease.json?ref=codex-lock/nemlig-production" --jq .content > /dev/null 2>"$RUNNER_TEMP/retention-lease-error"; then
-            retention_lock="true"
-          elif ! rg -q 'HTTP 404' "$RUNNER_TEMP/retention-lease-error"; then
-            cat "$RUNNER_TEMP/retention-lease-error" >&2
-            exit 1
-          fi
-          if [[ -n "$deployed_sha" && "$retention_lock" == "true" ]]; then
+          if [[ "$deployed_sha" == "$CANDIDATE_SHA" ]]; then
             echo "deploy=false" >> "$GITHUB_OUTPUT"
-            echo "retention=true" >> "$GITHUB_OUTPUT"
-            echo "retention_commit=$deployed_sha" >> "$GITHUB_OUTPUT"
-          elif [[ -n "$deployed_sha" && "$cleanup_complete" != "true" && "$RETENTION_ENABLED" != "true" && "$dry_run_ready" == "true" ]]; then
-            if [[ "$deployed_sha" == "$CANDIDATE_SHA" ]]; then
-              echo "deploy=false" >> "$GITHUB_OUTPUT"
-              echo "retention=false" >> "$GITHUB_OUTPUT"
-            else
-              echo "deploy=true" >> "$GITHUB_OUTPUT"
-              echo "retention=false" >> "$GITHUB_OUTPUT"
-            fi
-          elif [[ -n "$deployed_sha" && "$cleanup_complete" != "true" ]]; then
-            echo "deploy=false" >> "$GITHUB_OUTPUT"
-            echo "retention=true" >> "$GITHUB_OUTPUT"
-            echo "retention_commit=$deployed_sha" >> "$GITHUB_OUTPUT"
-          elif [[ "$deployed_sha" == "$CANDIDATE_SHA" ]]; then
-            echo "deploy=false" >> "$GITHUB_OUTPUT"
-            echo "retention=false" >> "$GITHUB_OUTPUT"
           else
             echo "deploy=true" >> "$GITHUB_OUTPUT"
-            echo "retention=false" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Check exact main candidate
@@ -122,19 +92,27 @@ jobs:
         run: |
           set -euo pipefail
           [[ "$CANDIDATE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          if [[ "$RECOVERY" == "true" && "$RESUME_RETENTION" == "true" ]]; then
+            echo "Recovery deployment and retention resume are mutually exclusive." >&2
+            exit 1
+          fi
           git fetch origin refs/heads/main:refs/remotes/origin/main
-          if [[ "$RECOVERY" == "true" ]]; then
+          if [[ "$RECOVERY" == "true" || "$RESUME_RETENTION" == "true" ]]; then
             if ! git merge-base --is-ancestor "$CANDIDATE_SHA" origin/main; then
-              echo "Recovery candidate must be an ancestor of current main." >&2
+              echo "Recovery/retention candidate must be an ancestor of current main." >&2
               exit 1
             fi
           elif [[ "$CANDIDATE_SHA" != "$(git rev-parse origin/main)" ]]; then
             echo "Routine candidate must equal current main." >&2
             exit 1
           fi
-          if [[ "${{ steps.catch-up.outputs.retention }}" == "true" ]]; then
+          if [[ "$RESUME_RETENTION" == "true" ]]; then
             echo "deploy=false" >> "$GITHUB_OUTPUT"
             echo "retention=true" >> "$GITHUB_OUTPUT"
+            echo "retention_commit=$CANDIDATE_SHA" >> "$GITHUB_OUTPUT"
+          elif [[ "${{ steps.catch-up.outputs.deploy }}" == "false" ]]; then
+            echo "deploy=false" >> "$GITHUB_OUTPUT"
+            echo "retention=false" >> "$GITHUB_OUTPUT"
           else
             echo "deploy=true" >> "$GITHUB_OUTPUT"
             echo "retention=false" >> "$GITHUB_OUTPUT"
@@ -183,16 +161,18 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: "${{ vars.CLOUDFLARE_ACCOUNT_ID }}"
           DEPLOY_RESULT: "${{ needs.deploy.result }}"
           CANDIDATE_SHA: "${{ env.CANDIDATE_SHA }}"
-          NEMLIG_CONTAINER_IMAGE_RETENTION_COUNT: "${{ vars.NEMLIG_CONTAINER_IMAGE_RETENTION_COUNT || '10' }}"
-          NEMLIG_CONTAINER_IMAGE_RETENTION_ENABLED: "${{ vars.NEMLIG_CONTAINER_IMAGE_RETENTION_ENABLED }}"
+          NEMLIG_CONTAINER_IMAGE_RETENTION_COUNT: "${{ vars.NEMLIG_CONTAINER_IMAGE_RETENTION_COUNT || '50' }}"
         run: |
           set -euo pipefail
           if [[ "$DEPLOY_RESULT" == "success" ]]; then
             mapfile -t journals < <(find "$RUNNER_TEMP/nemlig-production-release" -type f -name latest.json -print)
             [[ "${#journals[@]}" -eq 1 ]]
             pnpm --silent --filter nemlig-assistant production:retention -- accept "$CANDIDATE_SHA" "${journals[0]}"
-          else
+          elif [[ "${{ needs.release-gate.outputs.retention }}" == "true" ]]; then
             pnpm --silent --filter nemlig-assistant production:retention -- resume "${{ needs.release-gate.outputs.retention_commit }}"
+          else
+            echo "Retention job was scheduled without accepted deployment or explicit resume." >&2
+            exit 1
           fi
 
   preflight:

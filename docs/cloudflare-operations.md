@@ -318,22 +318,22 @@ application ID, then use `wrangler containers info APPLICATION_ID --env producti
 for authoritative image and application-version reads. Match that version to
 the single accepted instance before reporting convergence.
 
-The production workflow now includes a separate protected image-retention job
-and an hourly catch-up for pending retention work. The first accepted release
-only records a dry-run fingerprint; a later run must produce two identical
-complete inventory/reference plans matching that durable fingerprint before
-deletion can begin. Each deletion is limited to the exact production registry
-repository, rechecks the active/recovery references and tag-to-digest mapping,
-deletes one tag at a time, and requires fresh inventory readback. Registry layer
-garbage collection and ledger completion happen only after the plan is
-satisfied. Uncertain results stop for a new operation; they do not trigger a
-blind retry, deployment rollback, or kill-switch change.
+The production workflow runs image retention immediately after exact runtime
+acceptance. It requires two identical complete inventory/reference snapshots in
+that run, then deletes safe surplus tags from the exact production registry
+repository one at a time, rechecking active/recovery references and the
+tag-to-digest mapping before each delete and requiring fresh inventory readback
+afterward. Registry layer garbage collection and ledger completion happen only
+after the plan is satisfied. Uncertain results stop for an explicit resume; they
+do not trigger a blind retry, deployment rollback, or kill-switch change. The
+hourly workflow schedule only catches up a dropped deployment run; it does not
+run image cleanup.
 The operation also inspects Container instance versions before planning: active
 instances must match the current application version, and provisioning,
 stopping, mixed-version, or otherwise unknown states hold cleanup.
 
 Cleanup claims the same `codex-lock/nemlig-production` ref used by production
-deployments, so local supervised deploys and scheduled pruning cannot overlap.
+deployments, so local supervised deploys and post-deploy pruning cannot overlap.
 Each tag deletion first records a durable in-flight tag/digest intent. If a
 runner disappears, the next operation may reclaim only a retention-owned lock
 whose prior GitHub run is complete; it reads the registry before continuing.
@@ -341,19 +341,17 @@ An absent tag resolves the old intent, while a still-present tag remains
 uncertain and is never blindly deleted again. A deployment-owned or malformed
 lock is not taken over.
 
-The retention job uses short-lived pull credentials for inventory and separately
-requests push credentials only when a bounded deletion is eligible. A small
-GitHub ledger branch records accepted images and cleanup checkpoints. The
-repository variable `NEMLIG_CONTAINER_IMAGE_RETENTION_COUNT` defaults to ten and
-accepts a bounded target from one to one hundred distinct accepted images. This
-job does not delete images until the GitHub repository variable
-`NEMLIG_CONTAINER_IMAGE_RETENTION_ENABLED` is exactly `true`; it is off when
-unset. Review the first stable dry-run's full protected/candidate plan before
-enabling it. Once enabled, accepted-release cleanup runs automatically. This job
-does not remove Worker deployments/versions, secrets, Durable Object state,
-Container applications, or any other registry repository. Deployment still
-keeps the existing one `lite` Container and cost ceilings; image pruning does
-not add runtime capacity or perform basket/order/payment/delivery operations.
+The retention job uses short-lived pull credentials for inventory and requests
+push credentials only after the two snapshots match and deletion begins. A
+small GitHub ledger branch records accepted images and cleanup checkpoints.
+`NEMLIG_CONTAINER_IMAGE_RETENTION_COUNT` defaults to 50 distinct accepted
+images. If cleanup is interrupted or uncertain, use the protected workflow's
+`resume_retention` input with the accepted commit SHA after the previous run has
+finished; the operation re-reads current state before continuing. The job does
+not remove Worker deployments/versions, secrets, Durable Object state, Container
+applications, or any other registry repository. Deployment still keeps the
+existing one `lite` Container and cost ceilings; image pruning does not add
+runtime capacity or perform basket/order/payment/delivery operations.
 
 ## Emergency disable and re-enable
 

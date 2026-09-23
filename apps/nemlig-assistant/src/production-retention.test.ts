@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { assertNoContainerRollout, assertRetentionLeaseForMutation, parseAcceptedReleaseJournal, parseRegistryCredentialOutput, parseRetentionDeletionEnabled, parseRetentionLease, retentionLeaseCanBeReclaimed } from "../scripts/production-retention.js";
+import { assertNoContainerRollout, assertRetentionLeaseForMutation, parseAcceptedReleaseJournal, parseRegistryCredentialOutput, parseRetentionLease, retentionLeaseCanBeReclaimed, retentionLeaseMatchesOperation } from "../scripts/production-retention.js";
 
 const commit = "a".repeat(40);
 const image = `sha256:${"b".repeat(64)}`;
@@ -50,25 +50,28 @@ test("running image references must match the active application version before 
   ]) assert.throws(() => assertNoContainerRollout(raw, 84), /production_retention_active_container_/u);
 });
 
-test("retention readbacks under an owned lease do not mistake that lease for a competing deployment", async () => {
+test("only read-only plans run without a retention lease", async () => {
   const calls: string[] = [];
   const guards = {
     assertUnowned: async () => { calls.push("unowned"); },
     assertOwned: async () => { calls.push("owned"); },
   };
   await assertRetentionLeaseForMutation("resume", guards);
-  assert.deepEqual(calls, ["owned"]);
   await assertRetentionLeaseForMutation("accept", guards);
   await assertRetentionLeaseForMutation("plan", guards);
-  assert.deepEqual(calls, ["owned", "unowned", "unowned"]);
+  assert.deepEqual(calls, ["owned", "owned", "unowned"]);
 });
 
-test("image deletion stays disabled until the one-time dry-run review gate is enabled", () => {
-  assert.equal(parseRetentionDeletionEnabled(undefined), false);
-  assert.equal(parseRetentionDeletionEnabled(""), false);
-  assert.equal(parseRetentionDeletionEnabled("false"), false);
-  assert.equal(parseRetentionDeletionEnabled("true"), true);
-  assert.throws(() => parseRetentionDeletionEnabled("yes"), /production_retention_policy_invalid/u);
+test("accept can reclaim its own interrupted lease without replacing a prior cleanup checkpoint first", () => {
+  const priorCommit = "a".repeat(40);
+  const acceptedCommit = "b".repeat(40);
+  assert.equal(retentionLeaseMatchesOperation(priorCommit, priorCommit, acceptedCommit, "accept"), true,
+    "an older completed retention run can be reconciled before accepting a new release");
+  assert.equal(retentionLeaseMatchesOperation(acceptedCommit, priorCommit, acceptedCommit, "accept"), true,
+    "a retry can reclaim a lease created before its acceptance checkpoint was persisted");
+  assert.equal(retentionLeaseMatchesOperation(acceptedCommit, priorCommit, acceptedCommit, "resume"), false,
+    "resume must still be tied to the latest accepted release");
+  assert.equal(retentionLeaseMatchesOperation("c".repeat(40), priorCommit, acceptedCommit, "accept"), false);
 });
 
 test("only exact successful read-only runtime acceptance can seed the cleanup ledger", () => {

@@ -192,11 +192,12 @@ Manual dispatch is reserved for exceptional recovery.
 - [x] Use one hourly gate-only reconciliation for GitHub's bounded pending-run
   queue; it exits before provider access if exact-main deployment already passed.
 - [x] Add exact-repository image inventory, accepted-image ordering, dry-run
-  review, and fail-closed cleanup with durable delete intent/readback.
+  reporting, and fail-closed cleanup with durable delete intent/readback; prune
+  to fifty accepted images immediately after deployment acceptance.
 - [x] Pass focused failure-path tests, strict specs, privacy, `pnpm verify`,
   package smoke, and credential-free production readiness.
-- [ ] Review the initial live dry-run, enable bounded deletion, and prove the
-  retained image target or explain protected/uncertain holds.
+- [ ] After the unresolved production journal is reconciled, prove post-
+  acceptance cleanup reaches fifty images or explain protected/uncertain holds.
 - [ ] Integrate exact-head green `main`, prove production acceptance and
   retention, then sync and archive the OpenSpec change.
 

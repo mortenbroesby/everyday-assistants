@@ -6,8 +6,7 @@ export const registryOrigin = "https://registry.cloudflare.com";
 export const productionImageName = "nemlig-mcp-cloudflare-production-nemligmcpcontainer-production";
 const pageSize = 100;
 const maximumPageBytes = 1024 * 1024;
-const manifestConcurrency = 8;
-export const defaultRetainedImages = 10;
+export const defaultRetainedImages = 50;
 
 export interface RegistryImageTag {
   tag: string;
@@ -28,7 +27,6 @@ export interface RetentionPlanInput {
   acceptedDigests: readonly string[];
   holds?: readonly ImageHold[];
   retainAccepted?: number;
-  maxDeletes?: number;
   resetLegacy?: boolean;
 }
 
@@ -43,8 +41,6 @@ export interface RetentionPlan {
   retainedAcceptedCount: number;
   protected: PlannedImage[];
   candidates: PlannedImage[];
-  deleteBatch: PlannedImage[];
-  deferredDeleteCount: number;
 }
 
 export interface RegistryInventory {
@@ -71,7 +67,7 @@ export interface ImageRetentionLedger {
   /** Newest first, unique by image digest; independent from commit-history truncation. */
   images: AcceptedImageRelease[];
   /** Current accepted commit's cleanup checkpoint; absent until the first accepted release. */
-  cleanup?: { commit: string; dryRunFingerprint?: string; inFlight?: { digest: string; tag: string }; completedAt?: string };
+  cleanup?: { commit: string; inFlight?: { digest: string; tag: string }; completedAt?: string };
 }
 
 const fail = (reason: string): never => { throw new Error(`image_retention_${reason}`); };
@@ -127,14 +123,12 @@ export function parseImageRetentionLedger(value: unknown, expectedRepository: st
         || typeof flight.tag !== "string" || !tagPattern.test(flight.tag)) fail("ledger_invalid");
       inFlight = { digest: flight.digest as string, tag: flight.tag as string };
     }
-    if (Object.keys(checkpoint).some((key) => !["commit", "dryRunFingerprint", "inFlight", "completedAt"].includes(key))
+    if (Object.keys(checkpoint).some((key) => !["commit", "inFlight", "completedAt"].includes(key))
       || Object.keys(checkpoint).length < 1 || typeof checkpoint.commit !== "string" || !/^[0-9a-f]{40}$/u.test(checkpoint.commit)
       || !accepted.some(({ commit }) => commit === checkpoint.commit)
-      || (checkpoint.dryRunFingerprint !== undefined && (typeof checkpoint.dryRunFingerprint !== "string" || !/^[0-9a-f]{64}$/u.test(checkpoint.dryRunFingerprint)))
       || (checkpoint.completedAt !== undefined && !validTimestamp(checkpoint.completedAt))) fail("ledger_invalid");
     cleanup = {
       commit: checkpoint.commit as string,
-      ...(checkpoint.dryRunFingerprint ? { dryRunFingerprint: checkpoint.dryRunFingerprint as string } : {}),
       ...(inFlight ? { inFlight } : {}),
       ...(checkpoint.completedAt ? { completedAt: checkpoint.completedAt as string } : {}),
     };
@@ -192,17 +186,6 @@ export function markImageRetentionComplete(ledgerInput: ImageRetentionLedger, co
   return { ...ledger, cleanup: { commit: cleanup!.commit, completedAt } };
 }
 
-export function recordRetentionDryRun(ledgerInput: ImageRetentionLedger, fingerprint?: string): ImageRetentionLedger {
-  const ledger = parseImageRetentionLedger(ledgerInput, ledgerInput.repository);
-  const cleanup = ledger.cleanup;
-  if (!cleanup || cleanup.commit !== ledger.accepted[0]?.commit || cleanup.completedAt || cleanup.inFlight
-    || (fingerprint !== undefined && !/^[0-9a-f]{64}$/u.test(fingerprint))) fail("cleanup_checkpoint_invalid");
-  return {
-    ...ledger,
-    cleanup: { commit: cleanup!.commit, ...(fingerprint ? { dryRunFingerprint: fingerprint } : {}) },
-  };
-}
-
 export function recordRetentionDeleteIntent(ledgerInput: ImageRetentionLedger, digest: string, tag: string): ImageRetentionLedger {
   const ledger = parseImageRetentionLedger(ledgerInput, ledgerInput.repository);
   const cleanup = ledger.cleanup;
@@ -218,7 +201,7 @@ export function resolveRetentionDeleteIntent(ledgerInput: ImageRetentionLedger, 
   if (tagStillPresent) fail("delete_outcome_uncertain");
   return {
     ...ledger,
-    cleanup: { commit: checkpoint!.commit, ...(checkpoint!.dryRunFingerprint ? { dryRunFingerprint: checkpoint!.dryRunFingerprint } : {}) },
+    cleanup: { commit: checkpoint!.commit },
   };
 }
 
@@ -243,22 +226,6 @@ export function retentionDryRunFingerprint(input: {
       .sort((left, right) => left.digest.localeCompare(right.digest)),
   };
   return createHash("sha256").update(JSON.stringify(canonical)).digest("hex");
-}
-
-export function retentionDryRunMatches(ledgerInput: ImageRetentionLedger, fingerprint: string): boolean {
-  const ledger = parseImageRetentionLedger(ledgerInput, ledgerInput.repository);
-  return /^[0-9a-f]{64}$/u.test(fingerprint) && ledger.cleanup?.dryRunFingerprint === fingerprint;
-}
-
-export function retentionCleanupEligible(input: {
-  mode: "accept" | "resume";
-  ledger: ImageRetentionLedger;
-  firstFingerprint: string;
-  secondFingerprint: string;
-}): boolean {
-  return input.mode === "resume"
-    && input.firstFingerprint === input.secondFingerprint
-    && retentionDryRunMatches(input.ledger, input.firstFingerprint);
 }
 
 const parsedPage = async (response: Response): Promise<Record<string, unknown>> => {
@@ -362,17 +329,14 @@ export async function readRegistryInventory(input: {
   const manifestAccept = "application/vnd.oci.image.manifest.v1+json, application/vnd.docker.distribution.manifest.v2+json";
   const tags: RegistryImageTag[] = [];
   const sortedTags = [...tagSet].sort((left, right) => left.localeCompare(right));
-  for (let offset = 0; offset < sortedTags.length; offset += manifestConcurrency) {
-    const batch = await Promise.all(sortedTags.slice(offset, offset + manifestConcurrency).map(async (tag) => {
-      const url = new URL(`${registryOrigin}/v2/${repositoryPath}/manifests/${encodeURIComponent(tag)}`);
-      const response = await request(url, { method: "HEAD", headers: { Authorization: input.authorization, Accept: manifestAccept } });
-      if (!response.ok) fail(`registry_manifest_http_${response.status}`);
-      const digest = response.headers.get("docker-content-digest");
-      if (!digestPattern.test(digest ?? "")) fail("registry_manifest_digest_invalid");
-      return { tag, digest: digest! };
-    }));
-    tags.push(...batch);
-  }
+  tags.push(...await Promise.all(sortedTags.map(async (tag) => {
+    const url = new URL(`${registryOrigin}/v2/${repositoryPath}/manifests/${encodeURIComponent(tag)}`);
+    const response = await request(url, { method: "HEAD", headers: { Authorization: input.authorization, Accept: manifestAccept } });
+    if (!response.ok) fail(`registry_manifest_http_${response.status}`);
+    const digest = response.headers.get("docker-content-digest");
+    if (!digestPattern.test(digest ?? "")) fail("registry_manifest_digest_invalid");
+    return { tag, digest: digest! };
+  })));
   return { repository: input.repository, tags, inventoryComplete: true, catalogPages, tagPages };
 }
 
@@ -385,15 +349,14 @@ const positiveInteger = (value: number | undefined, fallback: number, maximum: n
 export function parseRetentionCount(raw: string | undefined): number {
   if (raw === undefined) return defaultRetainedImages;
   if (!/^[1-9][0-9]*$/u.test(raw)) fail("policy_invalid");
-  return positiveInteger(Number(raw), defaultRetainedImages, 100);
+  return positiveInteger(Number(raw), defaultRetainedImages, Number.MAX_SAFE_INTEGER);
 }
 
 /** Pure, deterministic policy. All provider/reference reads must be complete before calling. */
 export function planImageRetention(input: RetentionPlanInput): RetentionPlan {
   if (typeof input.repository !== "string" || input.repository.length === 0 || input.repository !== input.expectedRepository) fail("repository_mismatch");
   if (input.inventoryComplete !== true) fail("inventory_incomplete");
-  const retainAccepted = positiveInteger(input.retainAccepted, defaultRetainedImages, 100);
-  const maxDeletes = positiveInteger(input.maxDeletes, 10, 10);
+  const retainAccepted = positiveInteger(input.retainAccepted, defaultRetainedImages, Number.MAX_SAFE_INTEGER);
 
   const accepted = new Set<string>();
   for (const digest of input.acceptedDigests) {
@@ -467,8 +430,6 @@ export function planImageRetention(input: RetentionPlanInput): RetentionPlan {
     retainedAcceptedCount: [...protectedDigests].filter((digest) => accepted.has(digest)).length,
     protected: protectedImages,
     candidates,
-    deleteBatch: candidates.slice(0, maxDeletes),
-    deferredDeleteCount: Math.max(0, candidates.length - maxDeletes),
   };
 }
 
@@ -492,9 +453,8 @@ export interface RetentionExecutionReport {
 }
 
 /**
- * Drains cleanup in <=10-digest batches. Before each tag deletion it takes fresh
- * complete inventory/reference snapshots; an ambiguous delete or readback fails
- * immediately and is never retried by this operation.
+ * Deletes safe surplus tags sequentially, rechecking complete inventory and
+ * protected references before each delete; uncertainty stops the operation.
  */
 export async function executeImageRetention(input: {
   repository: string;
@@ -509,7 +469,7 @@ export async function executeImageRetention(input: {
   if (ledger.accepted.length === 0) fail("accepted_baseline_missing");
   if (!ledger.cleanup || ledger.cleanup.commit !== ledger.accepted[0]?.commit || ledger.cleanup.completedAt) fail("cleanup_checkpoint_invalid");
   const timeoutMs = positiveInteger(input.timeoutMs, 600_000, 600_000);
-  const retainAccepted = positiveInteger(input.retainAccepted, defaultRetainedImages, 100);
+  const retainAccepted = positiveInteger(input.retainAccepted, defaultRetainedImages, Number.MAX_SAFE_INTEGER);
   const deadline = AbortSignal.timeout(timeoutMs);
   const signal = input.signal ? AbortSignal.any([input.signal, deadline]) : deadline;
   const resetLegacy = ledger.legacyResetCompletedAt === undefined;
@@ -517,7 +477,6 @@ export async function executeImageRetention(input: {
   let deletedTags = 0;
   let inventoryReads = 0;
   let finalPlan: RetentionPlan | undefined;
-  let batches = 0;
 
   const snapshot = async (): Promise<{ inventory: RegistryInventory; holds: readonly ImageHold[] }> => {
     if (signal.aborted) fail("deadline_exceeded");
@@ -550,12 +509,8 @@ export async function executeImageRetention(input: {
     const current = await snapshot();
     finalPlan = plan(current.inventory, current.holds);
     if (finalPlan.candidates.length === 0) break;
-    if (batches >= 100) fail("batch_limit");
-    batches += 1;
-    const batchDigests = finalPlan.deleteBatch.map(({ digest }) => digest);
-    if (batchDigests.length > 10) fail("batch_limit");
 
-    for (const digest of batchDigests) {
+    for (const { digest } of finalPlan.candidates) {
       let digestAbsent = false;
       while (true) {
         const fresh = await snapshot();

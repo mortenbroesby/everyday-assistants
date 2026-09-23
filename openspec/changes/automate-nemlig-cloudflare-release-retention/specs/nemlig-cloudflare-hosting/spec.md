@@ -16,22 +16,22 @@ Routine deploys SHALL apply only validated variables declared by the production 
 
 ### Requirement: Accepted production releases retain a bounded Container image history
 
-After exact deployment acceptance and durable evidence recording, the initial approved reset SHALL remove pre-reset images from the exact Nemlig production image repository except images required by active, rolling, unresolved-recovery, or uncertain state. This intentionally removes image-based rollback for pre-reset Worker versions but SHALL preserve Worker version/deployment records. Thereafter, releases SHALL retain the current Container image and the nine most recent distinct accepted image digests, plus every additional active, rolling, unresolved-recovery, or uncertain image reference. Ten is a configurable steady-state target, not a hard cap. Cleanup SHALL never delete foreign-repository images, Container applications, secrets, or Durable Object data.
+After exact deployment acceptance and durable evidence recording, the initial approved reset SHALL remove pre-reset images from the exact Nemlig production image repository except images required by active, rolling, unresolved-recovery, or uncertain state. This intentionally removes image-based rollback for pre-reset Worker versions but SHALL preserve Worker version/deployment records. Thereafter, releases SHALL retain the fifty most recent distinct accepted image digests, plus every additional active, rolling, unresolved-recovery, or uncertain image reference. Fifty is the default configurable target, not a hard cap. Cleanup SHALL never delete foreign-repository images, Container applications, secrets, or Durable Object data.
 
 #### Scenario: First clean release resets the legacy image backlog
 
-- **WHEN** the exact new production release passes runtime acceptance and its durable record is saved
-- **THEN** the first pass records two matching read-only plans without deleting images; a later pass must repeat the same fingerprint before the one-time reset can remove eligible old images, and the ledger records when pre-reset rollback images are no longer available
+- **WHEN** the exact new production release passes runtime acceptance, its durable record is saved, and two same-run registry/reference snapshots match
+- **THEN** the post-acceptance job immediately deletes eligible pre-reset images and records when pre-reset rollback images are no longer available
 
-#### Scenario: More than ten safe accepted images exist
+#### Scenario: More than fifty safe accepted images exist
 
-- **WHEN** at least eleven distinct accepted production images are available and older images have complete trustworthy provenance
-- **THEN** the current image and nine most recent distinct prior accepted images remain protected, and only oldest safe surplus images are deletion candidates
+- **WHEN** more than fifty distinct accepted production images are available and older images have complete trustworthy provenance
+- **THEN** the fifty most recent distinct accepted images remain protected, and only oldest safe surplus images are deletion candidates
 
 #### Scenario: Active or recovery state needs an older image
 
 - **WHEN** a current deployment, running/rolling application, unresolved release journal, or explicit hold references an image outside the nominal window
-- **THEN** that image remains protected and total retention may exceed ten
+- **THEN** that image remains protected and total retention may exceed fifty
 
 #### Scenario: Provenance or reference state is incomplete
 
@@ -40,7 +40,7 @@ After exact deployment acceptance and durable evidence recording, the initial ap
 
 ### Requirement: Container image deletion is bounded, oldest-first, and revalidated
 
-Cleanup SHALL execute sequentially only after acceptance and a matching durable dry-run fingerprint, under the same atomically claimed production exclusion lease as deployment, with a fixed operation deadline and batches of at most ten distinct image digests. A run with more candidates SHALL continue in bounded batches, taking a fresh inventory and rereading protected references before each batch. Before each delete it SHALL durably record the exact tag/digest intent and revalidate lease ownership, production references, and registry tag/digest mapping. An indeterminate delete or failed readback SHALL stop the operation without blind retry. A later operation may reclaim only a retention-owned lease after the prior GitHub run is complete; it must read fresh registry state, resolving an absent tag or keeping a still-present tag uncertain.
+Cleanup SHALL start in the post-acceptance job only after two same-run inventory/reference snapshots match, under the same atomically claimed production exclusion lease as deployment. It SHALL have no count-based per-run deletion cap. Before each sequential delete it SHALL durably record the exact tag/digest intent and revalidate lease ownership, production references, and registry tag/digest mapping. An indeterminate delete or failed readback SHALL stop the operation without blind retry. An operator may explicitly resume only after the prior GitHub run is complete; it must read fresh registry state, resolving an absent tag or keeping a still-present tag uncertain.
 
 #### Scenario: A deletion candidate remains safe
 
@@ -59,17 +59,17 @@ Cleanup SHALL execute sequentially only after acceptance and a matching durable 
 
 ### Requirement: Retention reports are reproducible and distinguish estimates
 
-The repository SHALL provide a read-only retention report containing bounded non-secret inventory counts, digests, creation/order evidence, protected/candidate reasons, proposed actions, and cleanup result. Registry byte totals SHALL be labeled as estimates unless Cloudflare provides an authoritative usage figure. Initial rollout SHALL prove stable dry-run behavior before production image deletion is enabled.
+The repository SHALL provide a read-only retention report containing non-secret inventory counts, digests, accepted-order evidence, protected/candidate reasons, proposed actions, and cleanup result. Registry byte totals SHALL be labeled as estimates unless Cloudflare provides an authoritative usage figure. The production path SHALL require matching same-run inventory/reference snapshots before deletion.
 
 #### Scenario: Dry-run sees an unchanged registry
 
 - **WHEN** inventory is read twice without a deployment or registry mutation
 - **THEN** the report has the same protected set and oldest-first candidate plan
 
-#### Scenario: Initial cleanup evidence has not been reviewed
+#### Scenario: Same-run inventory/reference snapshots differ
 
-- **WHEN** the initial accepted release records a stable dry-run but the repository deletion-enable variable is unset or false
-- **THEN** the full plan is reported and no image is deleted; deletion starts only after the reviewed gate is enabled
+- **WHEN** registry contents or active/recovery references change between the two pre-cleanup snapshots
+- **THEN** no image is deleted, the cleanup lease is released, and an explicit later resume must re-read the current state
 
 #### Scenario: Shared layers or multiple tags exist
 

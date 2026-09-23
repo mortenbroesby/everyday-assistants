@@ -10,11 +10,9 @@ import {
   parseImageRetentionLedger,
   recordAcceptedImageRelease,
   resolveRetentionDeleteIntent,
-  recordRetentionDryRun,
   planImageRetention,
   parseRetentionCount,
   retentionDryRunFingerprint,
-  retentionCleanupEligible,
   readRegistryInventory,
   registryOrigin,
   productionImageName,
@@ -91,19 +89,16 @@ export function retentionLeaseCanBeReclaimed(lease: RetentionLease, run: {
     && run.path === ".github/workflows/nemlig-production.yml";
 }
 
-export function parseRetentionDeletionEnabled(raw: string | undefined): boolean {
-  if (raw === undefined || raw === "") return false;
-  if (raw === "true") return true;
-  if (raw === "false") return false;
-  return fail("policy_invalid");
+export function retentionLeaseMatchesOperation(leaseCommit: string, latestAcceptedCommit: string | undefined, requestedCommit: string, mode: "accept" | "resume"): boolean {
+  return leaseCommit === latestAcceptedCommit || (mode === "accept" && leaseCommit === requestedCommit);
 }
 
 export async function assertRetentionLeaseForMutation(
   mode: "plan" | "accept" | "resume",
   guards: { assertUnowned(): Promise<void>; assertOwned(): Promise<void> },
 ): Promise<void> {
-  if (mode === "resume") await guards.assertOwned();
-  else await guards.assertUnowned();
+  if (mode === "plan") await guards.assertUnowned();
+  else await guards.assertOwned();
 }
 
 export function assertNoContainerRollout(raw: string, expectedApplicationVersion: number): void {
@@ -200,7 +195,6 @@ const main = async (): Promise<void> => {
     || !apiToken || !githubToken) fail("environment_invalid");
   const repository = `${accountId}/${productionImageName}`;
   const retainAccepted = parseRetentionCount(env.NEMLIG_CONTAINER_IMAGE_RETENTION_COUNT);
-  const deletionEnabled = parseRetentionDeletionEnabled(env.NEMLIG_CONTAINER_IMAGE_RETENTION_ENABLED);
   const controller = new AbortController();
   const overallTimeout = setTimeout(() => controller.abort(), 600_000);
   const signal = controller.signal;
@@ -275,7 +269,7 @@ const main = async (): Promise<void> => {
       const priorHead = await readLeaseHead();
       if (priorHead) {
         const prior = await readExistingRetentionLease(priorHead);
-        if (prior.commit !== ledger.accepted[0]?.commit) fail("lease_commit_mismatch");
+        if (!retentionLeaseMatchesOperation(prior.commit, ledger.accepted[0]?.commit, commit, mode === "accept" ? "accept" : "resume")) fail("lease_commit_mismatch");
       }
       const lease = parseRetentionLease(JSON.stringify({
         schema: 1, kind: "image-retention", operationId: randomUUID(), runId, runAttempt, commit,
@@ -353,18 +347,15 @@ const main = async (): Promise<void> => {
     };
 
     let ledger = fileState.ledger;
+    let acceptedRelease: ReturnType<typeof parseAcceptedReleaseJournal> | undefined;
     if (mode === "accept") {
       let raw: string;
       try { raw = await readFile(acceptancePath!, "utf8"); } catch { fail("acceptance_evidence_missing"); }
-      const release = parseAcceptedReleaseJournal(raw!, commit);
+      acceptedRelease = parseAcceptedReleaseJournal(raw!, commit);
       if (ledger.accepted[0]?.commit === commit && ledger.cleanup?.completedAt) {
         console.log(JSON.stringify({ commit, cleanupComplete: true, skipped: true }));
         return;
       }
-      ledger = recordAcceptedImageRelease(ledger, release);
-      const cleanup = ledger.cleanup;
-      if (!cleanup || cleanup.commit !== commit || cleanup.completedAt) fail("cleanup_checkpoint_invalid");
-      await saveLedger(ledger);
     } else {
       const cleanup = ledger.cleanup;
       if (ledger.accepted[0]?.commit !== commit || !cleanup || cleanup.commit !== commit || (mode === "plan" && cleanup.completedAt)) fail("cleanup_checkpoint_invalid");
@@ -453,7 +444,7 @@ const main = async (): Promise<void> => {
       return;
     }
 
-    if (mode === "resume") {
+    if (mode !== "plan") {
       await acquireRetentionLease();
       if (ledger.cleanup?.inFlight) {
         await assertRetentionLease();
@@ -462,41 +453,34 @@ const main = async (): Promise<void> => {
         ledger = resolveRetentionDeleteIntent(ledger, tagStillPresent);
         await saveLedger(ledger);
       }
-      if (ledger.cleanup?.completedAt) {
+      if (mode === "resume" && ledger.cleanup?.completedAt) {
         await releaseRetentionLease();
         console.log(JSON.stringify({ commit, cleanupComplete: true, recoveredLease: true, skipped: true }));
         return;
       }
+      if (acceptedRelease) {
+        ledger = recordAcceptedImageRelease(ledger, acceptedRelease);
+        const cleanup = ledger.cleanup;
+        if (!cleanup || cleanup.commit !== commit || cleanup.completedAt) fail("cleanup_checkpoint_invalid");
+        await saveLedger(ledger);
+      }
     }
 
-    if (mode === "accept" || mode === "resume") {
+    if (mode !== "plan") {
       const first = await readDryRunSnapshot();
       const second = await readDryRunSnapshot();
-      const stable = first.fingerprint === second.fingerprint;
-      const fingerprint = stable ? first.fingerprint : undefined;
-      const eligible = fingerprint !== undefined && retentionCleanupEligible({
-        mode,
-        ledger,
-        firstFingerprint: first.fingerprint,
-        secondFingerprint: second.fingerprint,
-      });
-      if (!eligible) {
-        ledger = recordRetentionDryRun(ledger, fingerprint);
-        await saveLedger(ledger);
-        if (mode === "resume") await releaseRetentionLease();
+      if (first.fingerprint !== second.fingerprint) {
+        await releaseRetentionLease();
         console.log(JSON.stringify({
           commit,
           dryRun: true,
-          stable,
-          fingerprint: fingerprint ?? null,
-          ...(stable ? { plan: first.plan } : { firstPlan: first.plan, secondPlan: second.plan }),
+          stable: false,
+          firstFingerprint: first.fingerprint,
+          secondFingerprint: second.fingerprint,
+          firstPlan: first.plan,
+          secondPlan: second.plan,
           cleanupStarted: false,
         }));
-        return;
-      }
-      if (mode === "resume" && !deletionEnabled) {
-        await releaseRetentionLease();
-        console.log(JSON.stringify({ commit, dryRun: true, stable: true, fingerprint, plan: first.plan, deletionEnabled: false, cleanupStarted: false }));
         return;
       }
     }

@@ -8,13 +8,10 @@ import {
   parseRetentionCount,
   planImageRetention,
   readRegistryInventory,
-  recordRetentionDryRun,
   recordAcceptedImageRelease,
   recordRetentionDeleteIntent,
   resolveRetentionDeleteIntent,
-  retentionCleanupEligible,
   retentionDryRunFingerprint,
-  retentionDryRunMatches,
   type ImageRetentionLedger,
   type RegistryImageTag,
 } from "../scripts/container-image-retention.js";
@@ -24,35 +21,24 @@ const repository = `${accountId}/nemlig-mcp-cloudflare-production-nemligmcpconta
 const digest = (number: number): string => `sha256:${number.toString(16).padStart(64, "0")}`;
 const image = (number: number, tag = `release-${number}`): RegistryImageTag => ({ tag, digest: digest(number) });
 
-test("retention count is configurable within a bounded positive range", () => {
-  assert.equal(parseRetentionCount(undefined), 10);
+test("retention count defaults to fifty and accepts any positive safe integer", () => {
+  assert.equal(parseRetentionCount(undefined), 50);
   assert.equal(parseRetentionCount("1"), 1);
+  assert.equal(parseRetentionCount("50"), 50);
   assert.equal(parseRetentionCount("25"), 25);
-  for (const value of ["0", "-1", "01", "1.5", "101", "NaN"]) {
+  assert.equal(parseRetentionCount("101"), 101);
+  assert.equal(parseRetentionCount(String(Number.MAX_SAFE_INTEGER)), Number.MAX_SAFE_INTEGER);
+  for (const value of ["0", "-1", "01", "1.5", "9007199254740992", "NaN"]) {
     assert.throws(() => parseRetentionCount(value), /image_retention_policy_invalid/u);
   }
 });
 
-test("image cleanup requires stable dry-run evidence and detects reference drift", () => {
+test("retention fingerprint is stable and changes when production references change", () => {
   const accepted = { commit: "a".repeat(40), digest: digest(1), acceptedAt: "2026-09-23T08:00:00.000Z" };
-  const ledger: ImageRetentionLedger = {
-    schema: 1, repository, accepted: [accepted], images: [accepted], cleanup: { commit: accepted.commit },
-  };
   const inventory = { repository, tags: [image(1, accepted.commit)], inventoryComplete: true as const, catalogPages: 1, tagPages: 1 };
   const plan = planImageRetention({ repository, expectedRepository: repository, inventoryComplete: true, tags: inventory.tags, acceptedDigests: [accepted.digest] });
   const fingerprint = retentionDryRunFingerprint({ repository, inventory, holds: [], plan });
   assert.match(fingerprint, /^[0-9a-f]{64}$/u);
-  assert.equal(retentionDryRunMatches(ledger, fingerprint), false);
-  const checkpointed = recordRetentionDryRun(ledger, fingerprint);
-  assert.equal(retentionDryRunMatches(checkpointed, fingerprint), true);
-  assert.equal(retentionDryRunMatches(checkpointed, "f".repeat(64)), false);
-  assert.equal(retentionCleanupEligible({ mode: "accept", ledger: checkpointed, firstFingerprint: fingerprint, secondFingerprint: fingerprint }), false,
-    "acceptance is always dry-run only");
-  assert.equal(retentionCleanupEligible({ mode: "resume", ledger, firstFingerprint: fingerprint, secondFingerprint: fingerprint }), false,
-    "a matching pair cannot delete until a prior durable dry-run checkpoint exists");
-  assert.equal(retentionCleanupEligible({ mode: "resume", ledger: checkpointed, firstFingerprint: fingerprint, secondFingerprint: "f".repeat(64) }), false,
-    "unstable repeated inventories cannot delete");
-  assert.equal(retentionCleanupEligible({ mode: "resume", ledger: checkpointed, firstFingerprint: fingerprint, secondFingerprint: fingerprint }), true);
 
   const reordered = retentionDryRunFingerprint({ repository, inventory: { ...inventory, tags: [...inventory.tags].reverse() }, holds: [], plan });
   assert.equal(reordered, fingerprint, "provider ordering should not create false drift");
@@ -60,11 +46,12 @@ test("image cleanup requires stable dry-run evidence and detects reference drift
   assert.notEqual(held, fingerprint, "changed live references invalidate prior evidence");
 });
 
-test("retains ten accepted digests newest-first and proposes distinct oldest surplus first", () => {
+test("retains the configured accepted digest window newest-first and proposes oldest surplus first", () => {
   const acceptedDigests = Array.from({ length: 12 }, (_, index) => digest(index + 1));
   const plan = planImageRetention({
     repository, expectedRepository: repository, inventoryComplete: true,
     acceptedDigests,
+    retainAccepted: 10,
     tags: [...acceptedDigests.map((value, index) => image(index + 1, `release-${value.slice(-2)}`)), image(1, "alias-current")],
   });
 
@@ -73,14 +60,13 @@ test("retains ten accepted digests newest-first and proposes distinct oldest sur
   assert.deepEqual(plan.candidates.map(({ digest: value }) => value), [digest(12), digest(11)]);
   assert.deepEqual(plan.candidates[1]?.tags, ["release-0b"]);
   assert.deepEqual(plan.protected[0]?.tags, ["alias-current", "release-01"]);
-  assert.equal(plan.deferredDeleteCount, 0);
 });
 
 test("active, recovery, uncertain, explicit and untracked images remain protected beyond the window", () => {
   const acceptedDigests = Array.from({ length: 12 }, (_, index) => digest(index + 1));
   const tags = [...acceptedDigests.map((_, index) => image(index + 1)), image(20), image(21), image(22), image(23)];
   const plan = planImageRetention({
-    repository, expectedRepository: repository, inventoryComplete: true, acceptedDigests, tags,
+    repository, expectedRepository: repository, inventoryComplete: true, acceptedDigests, tags, retainAccepted: 10,
     holds: [
       { digest: digest(11), reason: "active" },
       { digest: digest(12), reason: "recovery" },
@@ -156,21 +142,19 @@ test("durable delete intents never replay a tag whose outcome remains uncertain"
   assert.throws(() => recordRetentionDeleteIntent(intent, digest(3), "another-image"), /image_retention_delete_intent_invalid/u);
 });
 
-test("proven historical releases use the bounded oldest-first batch while unknown images stay held", () => {
+test("the plan includes every safe oldest-first candidate while unknown images stay held", () => {
   const acceptedDigests = Array.from({ length: 23 }, (_, index) => digest(index + 1));
   const tags = Array.from({ length: 25 }, (_, index) => image(index + 1));
   const plan = planImageRetention({
     repository, expectedRepository: repository, inventoryComplete: true,
-    acceptedDigests, tags,
+    acceptedDigests, tags, retainAccepted: 10,
   });
 
   assert.deepEqual(plan.candidates.map(({ digest: value }) => value), [digest(23), digest(22), digest(21), digest(20), digest(19), digest(18), digest(17), digest(16), digest(15), digest(14), digest(13), digest(12), digest(11)]);
-  assert.equal(plan.deleteBatch.length, 10);
-  assert.ok(plan.deleteBatch.every(({ reason }) => reason === "accepted_surplus"));
-  assert.equal(plan.deferredDeleteCount, 3);
+  assert.ok(plan.candidates.every(({ reason }) => reason === "accepted_surplus"));
   assert.equal(plan.protected.find(({ digest: value }) => value === digest(24))?.reason, "untracked");
   assert.deepEqual(plan, planImageRetention({
-    repository, expectedRepository: repository, inventoryComplete: true, acceptedDigests, tags,
+    repository, expectedRepository: repository, inventoryComplete: true, acceptedDigests, tags, retainAccepted: 10,
   }), "an unchanged registry and ledger produce a stable report");
 });
 
@@ -178,6 +162,7 @@ test("a long-lived held accepted image does not cap or discard larger accepted-i
   const acceptedDigests = Array.from({ length: 125 }, (_, index) => digest(index + 1));
   const plan = planImageRetention({
     repository, expectedRepository: repository, inventoryComplete: true, acceptedDigests,
+    retainAccepted: 10,
     tags: Array.from({ length: acceptedDigests.length }, (_, index) => image(index + 1)),
     holds: [{ digest: digest(125), reason: "recovery" }],
   });
@@ -187,7 +172,7 @@ test("a long-lived held accepted image does not cap or discard larger accepted-i
   assert.equal(plan.protected.find(({ digest: value }) => value === digest(125))?.reason, "recovery");
 });
 
-test("retention drains more than one ten-image batch with fresh references and readback after each tag", async () => {
+test("retention processes every safe candidate with fresh references and readback after each tag", async () => {
   let tags = Array.from({ length: 23 }, (_, index) => image(index + 1, `legacy-${index + 1}`));
   const ledger: ImageRetentionLedger = {
     schema: 1, repository,
@@ -198,7 +183,7 @@ test("retention drains more than one ten-image batch with fresh references and r
   let holdReads = 0;
   let deleteCalls = 0;
   const savedLedgers: ImageRetentionLedger[] = [];
-  const result = await executeImageRetention({ repository, expectedRepository: repository, ledger }, {
+  const result = await executeImageRetention({ repository, expectedRepository: repository, ledger, retainAccepted: 10 }, {
     readInventory: async () => ({ repository, tags: [...tags], inventoryComplete: true, catalogPages: 1, tagPages: 1 }),
     readHolds: async () => {
       holdReads += 1;
@@ -281,7 +266,7 @@ test("accepted-surplus cleanup continues after readback and can resume from its 
   }));
   const ledger: ImageRetentionLedger = { schema: 1, repository, accepted: releases.slice(0, 10), images: releases, cleanup: { commit: releases[0]!.commit } };
   let tags = releases.map(({ digest: value }) => ({ tag: `release-${value.slice(-2)}`, digest: value }));
-  const result = await executeImageRetention({ repository, expectedRepository: repository, ledger }, {
+  const result = await executeImageRetention({ repository, expectedRepository: repository, ledger, retainAccepted: 10 }, {
     readInventory: async () => ({ repository, tags: [...tags], inventoryComplete: true, catalogPages: 1, tagPages: 1 }),
     readHolds: async () => [],
     deleteTag: async (tag, expectedDigest) => {
@@ -350,8 +335,8 @@ test("runner loss after tag deletion resumes from fresh inventory without replay
     now: () => new Date("2026-09-23T08:00:00.000Z"),
   };
 
-  await assert.rejects(executeImageRetention({ repository, expectedRepository: repository, ledger }, dependencies), /runner lost after provider delete/u);
-  const resumed = await executeImageRetention({ repository, expectedRepository: repository, ledger }, dependencies);
+  await assert.rejects(executeImageRetention({ repository, expectedRepository: repository, ledger, retainAccepted: 10 }, dependencies), /runner lost after provider delete/u);
+  const resumed = await executeImageRetention({ repository, expectedRepository: repository, ledger, retainAccepted: 10 }, dependencies);
   assert.equal(deleteAttempts.length, 2, "the fresh-inventory retry deletes only the still-present surplus digest");
   assert.equal(new Set(deleteAttempts).size, 2, "a successfully removed tag is never blindly retried");
   assert.equal(resumed.cleanupComplete, true);
@@ -432,7 +417,7 @@ test("registry inventory rejects incomplete catalogs, cross-origin pagination, a
   await assert.rejects(readRegistryInventory({ ...input, fetcher: duplicate }), /image_retention_registry_tag_duplicate/u);
 });
 
-test("registry inventory does not drop repositories above the former thousand-tag ceiling", async () => {
+test("registry inventory resolves every repository tag without an arbitrary concurrency cap", async () => {
   const tags = Array.from({ length: 1_001 }, (_, index) => `tag-${index}`);
   let inFlight = 0;
   let peak = 0;
@@ -450,5 +435,5 @@ test("registry inventory does not drop repositories above the former thousand-ta
   const inventory = await readRegistryInventory({ accountId, repository, authorization: "Basic dGVzdA==", fetcher });
 
   assert.equal(inventory.tags.length, 1_001);
-  assert.ok(peak <= 8);
+  assert.equal(peak, 1_001);
 });
