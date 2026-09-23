@@ -147,7 +147,7 @@ const isoTime = (value: unknown): value is string => {
 };
 const imageDigest = /^sha256:[0-9a-f]{64}$/u;
 const journalChecks = new Set(["source_and_auth_preflight", "recovery_source", "exclusive_lease", "starting_state_recorded", "disabled_version", "disabled_routes", "container_inactive", "enabled_version", "image_reused", "container_rollout", "edge_acceptance", "authenticated_read_only_acceptance", "service_fixture_acceptance", "live_acceptance_pending", "starting_version_restored"]);
-const journalFailures = new Set(["service_cutover_required", "live_acceptance_required", "service_acceptance_not_ready", "service_token_unavailable", "owner_access_token_required", "github_repository_invalid", "source_revision_mismatch", "recovery_source_invalid", "github_ci_workflow_invalid", "github_ci_invalid", "exact_head_ci_not_green", "github_environment_not_ready", "local_deployment_lease_unavailable", "remote_deployment_lease_unavailable", "remote_journal_invalid", "remote_journal_append_failed", "remote_journal_parent_invalid", "remote_deployment_lease_changed", "deployment_journal_invalid", "deployment_journal_oversized", "deployment_journal_write_failed", "cloudflare_deployment_drift", "cloudflare_upload_version_missing", "cloudflare_registry_manifest_invalid", "cloudflare_config_invalid", "cloudflare_runtime_safety_mismatch", "cloudflare_instances_invalid", "disabled_route_unavailable", "disabled_route_mismatch", "container_inactive_timeout", "container_instance_timeout", "container_image_changed_during_enable", "recovery_finalize_denied", "command_failed", "command_cancelled", "unexpected_failure"]);
+const journalFailures = new Set(["service_cutover_required", "live_acceptance_required", "service_acceptance_not_ready", "service_token_unavailable", "owner_access_token_required", "github_repository_invalid", "source_revision_mismatch", "recovery_source_invalid", "github_ci_workflow_invalid", "github_ci_invalid", "exact_head_ci_not_green", "github_environment_not_ready", "local_deployment_lease_unavailable", "remote_deployment_lease_unavailable", "remote_journal_invalid", "remote_journal_append_failed", "remote_journal_parent_invalid", "remote_deployment_lease_changed", "deployment_journal_invalid", "deployment_journal_oversized", "deployment_journal_write_failed", "cloudflare_deployment_drift", "cloudflare_upload_version_missing", "cloudflare_registry_manifest_invalid", "cloudflare_config_invalid", "cloudflare_runtime_binding_unsupported", "cloudflare_runtime_safety_mismatch", "cloudflare_instances_invalid", "disabled_route_unavailable", "disabled_route_mismatch", "container_inactive_timeout", "container_instance_timeout", "container_image_changed_during_enable", "recovery_finalize_denied", "command_failed", "command_cancelled", "unexpected_failure"]);
 
 const journalJson = (journal: DeploymentJournal): string => {
   if (!journal || typeof journal !== "object" || !Array.isArray(journal.checks) || !Array.isArray(journal.transitions)
@@ -265,12 +265,18 @@ export function parseCurrentDeployment(raw: string): CurrentDeployment {
   return { id, version: deployedId };
 }
 
-const configPlainNames = ["MCP_DAILY_LIMIT", "MCP_EXPENSIVE_DAILY_LIMIT", "MCP_RATE_LIMIT", "MCP_EXPENSIVE_RATE_LIMIT", "MCP_AUTH_TIMEOUT_MS", "MCP_CONTROL_TIMEOUT_MS", "MCP_TOTAL_TIMEOUT_MS", "MCP_BACKEND_TIMEOUT_MS", "MCP_CREDENTIAL_ONBOARDING_ENABLED", "MCP_CREDENTIAL_RATE_LIMIT", "MCP_CREDENTIAL_GLOBAL_RATE_LIMIT", "NEMLIG_MCP_HTTP_HOST", "NEMLIG_MCP_HTTP_PORT", "NEMLIG_MCP_AUTH0_ISSUER", "NEMLIG_MCP_AUTH0_AUDIENCE", "NEMLIG_MCP_PUBLIC_URL", "NEMLIG_MCP_SERVICE_ACCEPTANCE_ENABLED", "NEMLIG_MCP_SERVICE_CLIENT_ID"] as const;
+const configPlainNames = ["MCP_DAILY_LIMIT", "MCP_EXPENSIVE_DAILY_LIMIT", "MCP_RATE_LIMIT", "MCP_EXPENSIVE_RATE_LIMIT", "MCP_AUTH_TIMEOUT_MS", "MCP_CONTROL_TIMEOUT_MS", "MCP_TOTAL_TIMEOUT_MS", "MCP_BACKEND_TIMEOUT_MS", "MCP_CREDENTIAL_ONBOARDING_ENABLED", "MCP_CREDENTIAL_RATE_LIMIT", "MCP_CREDENTIAL_GLOBAL_RATE_LIMIT", "NEMLIG_MCP_CREDENTIAL_KEY_VERSION", "NEMLIG_MCP_HTTP_HOST", "NEMLIG_MCP_HTTP_PORT", "NEMLIG_MCP_AUTH0_ISSUER", "NEMLIG_MCP_AUTH0_AUDIENCE", "NEMLIG_MCP_PUBLIC_URL", "NEMLIG_MCP_SERVICE_ACCEPTANCE_ENABLED", "NEMLIG_MCP_SERVICE_CLIENT_ID"] as const;
 const configPlainSet = new Set<string>(configPlainNames);
 const requiredSecrets = new Set(["NEMLIG_MCP_PRINCIPALS"]);
 const expectedDo = new Map([["NEMLIG_MCP_CONTAINER", "NemligMcpContainer"], ["NEMLIG_PLAN_STORAGE", "PlanStorage"]]);
 const productionWorker = "nemlig-mcp-cloudflare-production";
-const legacyDisabledPlainBindings = new Map([["NEMLIG_MCP_AUTH_CANARY", "false"]]);
+const legacyPlainBindings = new Map([
+  ["NEMLIG_MCP_AUTH_CANARY", "false"],
+  // Retained by keep_vars from the superseded minimal-auth worker. Neither the
+  // active revision nor its supported starting-version rollback reads it.
+  // Remove this exact compatibility entry after the live binding is cleaned up.
+  ["MCP_MINIMAL_AUTH_ENABLED", "true"],
+]);
 
 const bindings = (resource: Record<string, unknown>): Map<string, Record<string, unknown>> => {
   const resources = object(resource.resources);
@@ -314,6 +320,7 @@ const effectiveConfig = (vars: Map<string, string>, secrets: Iterable<string>, r
     return typeof value !== "string" || value.length === 0 || value.length > 2048;
   }) || serviceClientId.length > 2048) fail("cloudflare_runtime_safety_mismatch");
   if (!["true", "false"].includes(normalized.get("MCP_CREDENTIAL_ONBOARDING_ENABLED") ?? "")) fail("cloudflare_runtime_safety_mismatch");
+  if (!/^[A-Za-z0-9._-]{1,32}$/u.test(normalized.get("NEMLIG_MCP_CREDENTIAL_KEY_VERSION") ?? "")) fail("cloudflare_runtime_safety_mismatch");
   if (!["true", "false"].includes(serviceEnabled ?? "")
     || (serviceEnabled === "true" && !/^[A-Za-z0-9_-]{1,128}$/u.test(serviceClientId))) fail("cloudflare_runtime_safety_mismatch");
   for (const name of ["MCP_DAILY_LIMIT", "MCP_EXPENSIVE_DAILY_LIMIT", "MCP_RATE_LIMIT", "MCP_EXPENSIVE_RATE_LIMIT", "MCP_AUTH_TIMEOUT_MS", "MCP_CONTROL_TIMEOUT_MS", "MCP_TOTAL_TIMEOUT_MS", "MCP_BACKEND_TIMEOUT_MS", "MCP_CREDENTIAL_RATE_LIMIT", "MCP_CREDENTIAL_GLOBAL_RATE_LIMIT"]) {
@@ -352,11 +359,11 @@ const versionConfig = (raw: string): EffectiveConfig => {
       if (value.type !== "plain_text") fail("cloudflare_runtime_safety_mismatch");
       const text = typeof value.text === "string" ? value.text : fail("cloudflare_runtime_safety_mismatch");
       vars.set(name, text);
-    } else if (legacyDisabledPlainBindings.has(name)) {
-      if (value.type !== "plain_text" || value.text !== legacyDisabledPlainBindings.get(name)) fail("cloudflare_runtime_safety_mismatch");
+    } else if (legacyPlainBindings.has(name)) {
+      if (value.type !== "plain_text" || value.text !== legacyPlainBindings.get(name)) fail("cloudflare_runtime_safety_mismatch");
     } else if (value.type === "secret_text") {
       secrets.push(name);
-    } else if (value.type !== "durable_object_namespace") fail("cloudflare_runtime_safety_mismatch");
+    } else if (value.type !== "durable_object_namespace") fail("cloudflare_runtime_binding_unsupported");
   }
   return effectiveConfig(vars, secrets);
 };
@@ -675,7 +682,7 @@ const appendRemoteJournal = async (deps: DeployDependencies, repository: string,
 
 const readRemoteJournal = async (deps: DeployDependencies, repository: string): Promise<{ head: string; journal: DeploymentJournal }> => {
   const head = await readRemoteHead(deps, repository);
-  if (!head) fail("remote_journal_invalid");
+  if (!head) fail("remote_journal_missing");
   const commit = await ghJson(deps, repository, "GET", `git/commits/${head}`);
   const tree = object(commit.tree);
   if (typeof tree?.sha !== "string" || !fullSha.test(tree.sha)) fail("remote_journal_invalid");
@@ -699,7 +706,7 @@ const readRemoteJournal = async (deps: DeployDependencies, repository: string): 
   return { head: head as string, journal: parseDeploymentJournal(decoded.toString("utf8")) };
 };
 
-type RecoveryReason = "eligible" | "operation_mismatch" | "runner_not_stopped" | "pending_or_unknown" | "provider_drift" | "journal_invalid";
+type RecoveryReason = "eligible" | "operation_mismatch" | "runner_not_stopped" | "pending_or_unknown" | "provider_drift" | "journal_missing" | "journal_invalid";
 export interface RecoveryInspection {
   operation: string;
   originalRunnerStopped: boolean;
@@ -774,8 +781,9 @@ export async function inspectDeploymentRecovery(operation: string, deps: DeployD
     }
     if (!originalRunnerStopped) return { operation, originalRunnerStopped, cleanupEligible: false, reason: "runner_not_stopped", state: expected.state };
     return { operation, originalRunnerStopped, cleanupEligible: true, reason: "eligible", state: expected.state };
-  } catch {
-    return { operation, originalRunnerStopped, cleanupEligible: false, reason: "journal_invalid", state: "unknown" };
+  } catch (error) {
+    const reason = error instanceof DeployFailure && error.code === "remote_journal_missing" ? "journal_missing" : "journal_invalid";
+    return { operation, originalRunnerStopped, cleanupEligible: false, reason, state: "unknown" };
   }
 }
 

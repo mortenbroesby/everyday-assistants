@@ -35,7 +35,7 @@ const applicationId = "a03ce8c9-3543-4505-866e-14d2e66007ca";
 const image = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 const candidateImage = "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
 const accountId = "0123456789abcdef0123456789abcdef";
-const configDigest = "c84479ec8eb4749a359bb2e3ea00853233987d202a116d16a24ec3f5152a0c0c";
+const configDigest = "d4b4577ee1f478b3194a42d2257890b4820a82465017e1b3bc1b8ccb60a6718e";
 const execFileAsync = promisify(execFile);
 
 const version = (id: string, revision: string, enabled: boolean) => JSON.stringify({
@@ -61,6 +61,7 @@ const version = (id: string, revision: string, enabled: boolean) => JSON.stringi
       ["MCP_TOTAL_TIMEOUT_MS", "90000"],
       ["NEMLIG_MCP_AUTH0_AUDIENCE", "https://nemlig-mcp.broesby.dk/mcp"],
       ["NEMLIG_MCP_AUTH0_ISSUER", "https://everyday-assistants.eu.auth0.com/"],
+      ["NEMLIG_MCP_CREDENTIAL_KEY_VERSION", "one"],
       ["NEMLIG_MCP_HTTP_HOST", "0.0.0.0"],
       ["NEMLIG_MCP_HTTP_PORT", "8080"],
       ["NEMLIG_MCP_PUBLIC_URL", "https://nemlig-mcp.broesby.dk/mcp"],
@@ -88,6 +89,7 @@ const config = (path: string) => ({
     MCP_ENABLED: "false", MCP_DAILY_LIMIT: "5000", MCP_EXPENSIVE_DAILY_LIMIT: "500", MCP_RATE_LIMIT: "60", MCP_EXPENSIVE_RATE_LIMIT: "10",
     MCP_AUTH_TIMEOUT_MS: "5000", MCP_CONTROL_TIMEOUT_MS: "3000", MCP_TOTAL_TIMEOUT_MS: "90000", MCP_BACKEND_TIMEOUT_MS: "85000",
     MCP_CREDENTIAL_ONBOARDING_ENABLED: "false", MCP_CREDENTIAL_RATE_LIMIT: "3", MCP_CREDENTIAL_GLOBAL_RATE_LIMIT: "10",
+    NEMLIG_MCP_CREDENTIAL_KEY_VERSION: "one",
     NEMLIG_MCP_HTTP_HOST: "0.0.0.0", NEMLIG_MCP_HTTP_PORT: "8080", NEMLIG_MCP_AUTH0_ISSUER: "https://everyday-assistants.eu.auth0.com/",
     NEMLIG_MCP_AUTH0_AUDIENCE: "https://nemlig-mcp.broesby.dk/mcp", NEMLIG_MCP_PUBLIC_URL: "https://nemlig-mcp.broesby.dk/mcp",
     NEMLIG_MCP_SERVICE_ACCEPTANCE_ENABLED: "true", NEMLIG_MCP_SERVICE_CLIENT_ID: "service-client",
@@ -845,6 +847,39 @@ test("a disabled legacy auth canary binding is ignored during deployment readbac
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
+test("the exact inert legacy minimal-auth binding is tolerated without weakening unknown bindings", async () => {
+  const { deps, calls, root } = await fixture({ versionBindings: (values) => [
+    ...values,
+    { name: "MCP_MINIMAL_AUTH_ENABLED", type: "plain_text", text: "true" },
+  ] });
+  try {
+    assert.equal((await deployProduction(commit, deps)).outcome, "success");
+    assert.equal(calls.filter(({ args }) => args.includes("deploy")).length, 2);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test("wrong legacy minimal-auth values and arbitrary unknown live plain bindings fail closed", async () => {
+  const cases = [
+    {
+      versionBindings: (values: Record<string, unknown>[]) => [...values, { name: "MCP_MINIMAL_AUTH_ENABLED", type: "plain_text", text: "false" }],
+      failure: "cloudflare_runtime_safety_mismatch",
+    },
+    {
+      versionBindings: (values: Record<string, unknown>[]) => [...values, { name: "UNRECOGNIZED_BINDING", type: "plain_text", text: "true" }],
+      failure: "cloudflare_runtime_binding_unsupported",
+    },
+  ];
+  for (const { versionBindings, failure } of cases) {
+    const { deps, calls, root } = await fixture({ versionBindings });
+    try {
+      const report = await deployProduction(commit, deps);
+      assert.equal(report.outcome, "failed");
+      assert.equal(report.failure, failure);
+      assert.equal(calls.some(({ args }) => args.includes("deploy")), false);
+    } finally { await rm(root, { recursive: true, force: true }); }
+  }
+});
+
 test("an enabled legacy auth canary binding remains unsafe", async () => {
   const { deps, calls, root } = await fixture({ versionBindings: (values) => [
     ...values,
@@ -862,6 +897,7 @@ test("malformed bindings and starting safety or DO drift stop before deployment"
   const transforms: Array<(values: Record<string, unknown>[]) => Record<string, unknown>[]> = [
     (values) => [...values, { ...values[0] }],
     (values) => [...values, {}],
+    (values) => [...values, { name: "UNRECOGNIZED_BINDING", type: "plain_text", text: "true" }],
     (values) => values.map((value) => value.name === "MCP_RATE_LIMIT" ? { ...value, type: "json" } : value),
     (values) => values.map((value) => value.name === "MCP_RATE_LIMIT" ? { ...value, text: "61" } : value),
     (values) => values.map((value) => value.name === "NEMLIG_MCP_CONTAINER" ? { ...value, class_name: "Other" } : value),
@@ -943,6 +979,7 @@ test("invalid plain values cannot become matching config proof even when local a
     ["NEMLIG_MCP_AUTH0_ISSUER", "https://user:password@example.com/"], ["NEMLIG_MCP_HTTP_PORT", "8.08e3"],
     ["MCP_CREDENTIAL_RATE_LIMIT", "0"], ["MCP_CREDENTIAL_GLOBAL_RATE_LIMIT", "9007199254740992"],
     ["MCP_CREDENTIAL_ONBOARDING_ENABLED", "yes"], ["NEMLIG_MCP_HTTP_PORT", "65536"],
+    ["NEMLIG_MCP_CREDENTIAL_KEY_VERSION", "not/valid"], ["NEMLIG_MCP_CREDENTIAL_KEY_VERSION", ""],
     ["NEMLIG_MCP_AUTH0_ISSUER", "http://insecure.example/"], ["NEMLIG_MCP_PUBLIC_URL", ""],
   ] as const) {
     const { deps, calls, root } = await fixture({
@@ -1610,6 +1647,17 @@ test("inspection denies wrong operation, pending work, and recognizes known disa
   const operation = "44444444-4444-4444-8444-444444444444";
   assert.equal((await inspectDeploymentRecovery("55555555-5555-4555-8555-555555555555", recoveryDeps(terminalJournal(), startingId, true), true)).reason, "operation_mismatch");
   assert.equal((await inspectDeploymentRecovery(operation, recoveryDeps(terminalJournal({ outcome: "running", lastVerifiedState: "unknown", transitions: [] }), startingId, true), true)).reason, "pending_or_unknown");
+  const missingJournalDeps = recoveryDeps(terminalJournal(), startingId, true);
+  const runWithJournal = missingJournalDeps.run;
+  missingJournalDeps.run = async (command, args, options) => {
+    if (command === "gh" && args.some((arg) => arg.includes("git/ref/heads/codex-lock/nemlig-production"))) {
+      throw Object.assign(new Error("missing remote lease"), { status: 404 });
+    }
+    return runWithJournal(command, args, options);
+  };
+  assert.deepEqual(await inspectDeploymentRecovery(operation, missingJournalDeps, true), {
+    operation, originalRunnerStopped: true, cleanupEligible: false, reason: "journal_missing", state: "unknown",
+  });
   const disabled = terminalJournal({
     rollback: "not_needed", lastVerifiedState: "disabled", disabledVersion: disabledId, disabledImage: image, disabledApplicationVersion: 25, checks: ["disabled_routes", "container_inactive"],
     transitions: [
