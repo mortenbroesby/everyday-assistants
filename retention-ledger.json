@@ -1,0 +1,64 @@
+{
+  "schema": 1,
+  "repository": "927b9cdf24a2faa1149c208f1073ad8a/nemlig-mcp-cloudflare-production-nemligmcpcontainer-production",
+  "accepted": [
+    {
+      "commit": "9ca396533f0172e450e0e357d3cd822f9dd3ba71",
+      "digest": "sha256:17de7fa53f6e6ec02f7478e690968bf6b28f4deb8285ce560753ce2f9f706cdd",
+      "acceptedAt": "2026-09-23T20:49:14.156Z"
+    },
+    {
+      "commit": "5d9c06120baa49d30f642ee5644e9335514abe2f",
+      "digest": "sha256:fc4cb1b6d2d9681f11f3a9c0d14afced265a34e1686071e169c8303463efeb32",
+      "acceptedAt": "2026-09-22T09:14:04.382Z"
+    },
+    {
+      "commit": "9ae7b8f3ea045f5218814fab65a548811ecd948b",
+      "digest": "sha256:ee53090f990e9492be5271558f4333a55eaf4a479755067baaac7933838931b9",
+      "acceptedAt": "2026-09-22T06:06:13.610Z"
+    },
+    {
+      "commit": "60c740abf71b1711d5c4b281d90647e77adaee8d",
+      "digest": "sha256:0a600e628c45349de0513465f1057576907f38f67a4fbbe8d7693f0e25562530",
+      "acceptedAt": "2026-09-22T05:42:24.355Z"
+    },
+    {
+      "commit": "ae22d717d11180a6a0d21e46fbedd818be0698e6",
+      "digest": "sha256:a5e24a6e5ee9c0605ea10e8c2c55907c239151315a7cc5fca974f7d0ce31a6fd",
+      "acceptedAt": "2026-09-21T23:19:52.724Z"
+    },
+    {
+      "commit": "a27c001327e3518a204d116ae01e1a242f46152c",
+      "digest": "sha256:5e23e4236a6885d38a6c0d8ec92d685b75e20393da85257c611c17f1e88593dd",
+      "acceptedAt": "2026-09-21T23:12:51.144Z"
+    },
+    {
+      "commit": "d5e62e6d5259e50ff668d26652a977009add565d",
+      "digest": "sha256:c6280f16f769c88dfcadbf731d2e514cdbb0aedc290e0b3f66b0d1b8f45e0d3b",
+      "acceptedAt": "2026-09-21T22:50:09.068Z"
+    },
+    {
+      "commit": "6a555333783fd77f87d451301b696d67ed0b7b8a",
+      "digest": "sha256:b1527d6d2202e5cad32ad8f5d7822049b5de6ab29c95c1bbac293f9e6b2ef2d3",
+      "acceptedAt": "2026-09-21T19:30:29.190Z"
+    },
+    {
+      "commit": "be4da5d0d48e866a90399cac8cda22139b8a170d",
+      "digest": "sha256:ed810363baa861117f4da5678121fa05d2dd9572b7fb82f8cb0f4810da39b4f6",
+      "acceptedAt": "2026-09-21T18:07:49.660Z"
+    },
+    {
+      "commit": "d7cad986b09241aaea3380f7b10537522ae5f365",
+      "digest": "sha256:f50e1c11282093c1d33d72699d6db64fe96a83623fb17bc0f37ce372103f54c5",
+      "acceptedAt": "2026-09-21T15:51:33.915Z"
+    },
+    {
+      "commit": "aae809bed83cfeb38b4ade68d1687fc5af704e3c",
+      "digest": "sha256:f885f4fb229003e68fc335c15f295789b9fb44ae8daf1fcb67cd3675f0c0d57c",
+      "acceptedAt": "2026-09-21T15:41:01.037Z"
+    }
+  ],
+  "cleanup": {
+    "commit": "9ca396533f0172e450e0e357d3cd822f9dd3ba71"
+  }
+}
