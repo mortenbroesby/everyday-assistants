@@ -313,7 +313,7 @@ const main = async (): Promise<void> => {
     const readLedgerFile = async (): Promise<{ ledger: ImageRetentionLedger; sha?: string }> => {
       await ensureLedgerBranch();
       const response = await github("GET", `contents/retention-ledger.json?ref=${encodeURIComponent(ledgerBranch)}`);
-      if (response.status === 404) return { ledger: { schema: 1, repository, accepted: [], images: [] } };
+      if (response.status === 404) return { ledger: { schema: 1, repository, accepted: [] } };
       const file = requireGithub(response, "ledger_read_failed");
       if (typeof file.content !== "string" || typeof file.sha !== "string" || !/^[0-9a-f]{40}$/u.test(file.sha)) fail("ledger_read_failed");
       let raw: string;

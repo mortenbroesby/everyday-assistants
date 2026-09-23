@@ -21,8 +21,8 @@ const repository = `${accountId}/nemlig-mcp-cloudflare-production-nemligmcpconta
 const digest = (number: number): string => `sha256:${number.toString(16).padStart(64, "0")}`;
 const image = (number: number, tag = `release-${number}`): RegistryImageTag => ({ tag, digest: digest(number) });
 
-test("retention count defaults to fifty and accepts any positive safe integer", () => {
-  assert.equal(parseRetentionCount(undefined), 50);
+test("retention count defaults to ten and accepts any positive safe integer", () => {
+  assert.equal(parseRetentionCount(undefined), 10);
   assert.equal(parseRetentionCount("1"), 1);
   assert.equal(parseRetentionCount("50"), 50);
   assert.equal(parseRetentionCount("25"), 25);
@@ -104,7 +104,7 @@ test("the approved legacy reset selects every untracked digest but preserves liv
 });
 
 test("accepted-image ledger is exact, newest-first, idempotent, and records reset only after completion", () => {
-  const empty: ImageRetentionLedger = { schema: 1, repository, accepted: [], images: [] };
+  const empty: ImageRetentionLedger = { schema: 1, repository, accepted: [] };
   const first = { commit: "a".repeat(40), digest: digest(1), acceptedAt: "2026-09-23T06:00:00.000Z" };
   const second = { commit: "b".repeat(40), digest: digest(1), acceptedAt: "2026-09-23T07:00:00.000Z" };
   const ledger = recordAcceptedImageRelease(recordAcceptedImageRelease(empty, first), second);
@@ -127,13 +127,26 @@ test("accepted-image ledger is exact, newest-first, idempotent, and records rese
       acceptedAt: new Date(Date.parse("2026-09-23T08:00:00.000Z") + index * 1_000).toISOString(),
     });
   }
-  assert.equal(longHistory.accepted.length, 10);
-  assert.deepEqual(acceptedImageDigests(longHistory), [digest(1), digest(2)], "commit-history truncation cannot lose a prior distinct image");
+  assert.equal(longHistory.accepted.length, 101, "accepted commit evidence is not silently truncated");
+  assert.equal(longHistory.accepted.at(-1)?.commit, first.commit, "older accepted releases remain available for replay detection");
+  assert.deepEqual(recordAcceptedImageRelease(longHistory, { ...first, digest: digest(2) }), longHistory, "replaying an old accepted commit stays idempotent");
+  assert.deepEqual(acceptedImageDigests(longHistory), [digest(1), digest(2)], "each digest appears once in newest-accepted order");
+});
+
+test("accepted image order derives from commit evidence without a duplicate digest ledger", () => {
+  const accepted = [
+    { commit: "c".repeat(40), digest: digest(3), acceptedAt: "2026-09-23T08:00:00.000Z" },
+    { commit: "b".repeat(40), digest: digest(2), acceptedAt: "2026-09-23T07:00:00.000Z" },
+    { commit: "a".repeat(40), digest: digest(2), acceptedAt: "2026-09-23T06:00:00.000Z" },
+  ];
+  const ledger = { schema: 1 as const, repository, accepted, cleanup: { commit: accepted[0]!.commit } };
+  assert.deepEqual(acceptedImageDigests(ledger as ImageRetentionLedger), [digest(3), digest(2)]);
+  assert.equal("images" in ledger, false);
 });
 
 test("durable delete intents never replay a tag whose outcome remains uncertain", () => {
   const accepted = { commit: "a".repeat(40), digest: digest(1), acceptedAt: "2026-09-23T08:00:00.000Z" };
-  const ledger: ImageRetentionLedger = { schema: 1, repository, accepted: [accepted], images: [accepted], cleanup: { commit: accepted.commit } };
+  const ledger: ImageRetentionLedger = { schema: 1, repository, accepted: [accepted], cleanup: { commit: accepted.commit } };
   const intent = recordRetentionDeleteIntent(ledger, digest(2), "old-image");
   assert.deepEqual(intent.cleanup?.inFlight, { digest: digest(2), tag: "old-image" });
   assert.throws(() => resolveRetentionDeleteIntent(intent, true), /image_retention_delete_outcome_uncertain/u);
@@ -177,7 +190,6 @@ test("retention processes every safe candidate with fresh references and readbac
   const ledger: ImageRetentionLedger = {
     schema: 1, repository,
     accepted: [{ commit: "a".repeat(40), digest: digest(1), acceptedAt: "2026-09-23T07:00:00.000Z" }],
-    images: [{ commit: "a".repeat(40), digest: digest(1), acceptedAt: "2026-09-23T07:00:00.000Z" }],
     cleanup: { commit: "a".repeat(40) },
   };
   let holdReads = 0;
@@ -233,7 +245,6 @@ test("ambiguous deletion stops without a second attempt or reset completion", as
   const ledger: ImageRetentionLedger = {
     schema: 1, repository,
     accepted: [{ commit: "a".repeat(40), digest: digest(1), acceptedAt: "2026-09-23T07:00:00.000Z" }],
-    images: [{ commit: "a".repeat(40), digest: digest(1), acceptedAt: "2026-09-23T07:00:00.000Z" }],
     cleanup: { commit: "a".repeat(40) },
   };
   let deletes = 0;
@@ -264,7 +275,7 @@ test("accepted-surplus cleanup continues after readback and can resume from its 
     commit: (index + 1).toString(16).padStart(40, "0"), digest: digest(12 - index),
     acceptedAt: new Date(Date.parse("2026-09-23T07:00:00.000Z") - index * 1_000).toISOString(),
   }));
-  const ledger: ImageRetentionLedger = { schema: 1, repository, accepted: releases.slice(0, 10), images: releases, cleanup: { commit: releases[0]!.commit } };
+  const ledger: ImageRetentionLedger = { schema: 1, repository, accepted: releases, cleanup: { commit: releases[0]!.commit } };
   let tags = releases.map(({ digest: value }) => ({ tag: `release-${value.slice(-2)}`, digest: value }));
   const result = await executeImageRetention({ repository, expectedRepository: repository, ledger, retainAccepted: 10 }, {
     readInventory: async () => ({ repository, tags: [...tags], inventoryComplete: true, catalogPages: 1, tagPages: 1 }),
@@ -286,7 +297,7 @@ test("accepted-surplus cleanup continues after readback and can resume from its 
 
 test("a newly observed recovery hold stops alias deletion and does not report the digest deleted", async () => {
   const accepted = { commit: "a".repeat(40), digest: digest(1), acceptedAt: "2026-09-23T07:00:00.000Z" };
-  const ledger: ImageRetentionLedger = { schema: 1, repository, accepted: [accepted], images: [accepted], cleanup: { commit: accepted.commit } };
+  const ledger: ImageRetentionLedger = { schema: 1, repository, accepted: [accepted], cleanup: { commit: accepted.commit } };
   let tags = [image(1), image(2, "first-alias"), image(2, "second-alias")];
   let deleteCalls = 0;
   const report = await executeImageRetention({ repository, expectedRepository: repository, ledger }, {
@@ -317,7 +328,7 @@ test("runner loss after tag deletion resumes from fresh inventory without replay
   }));
   const latestCommit = releases[0]!.commit;
   const ledger: ImageRetentionLedger = {
-    schema: 1, repository, accepted: releases.slice(0, 10), images: releases,
+    schema: 1, repository, accepted: releases,
     cleanup: { commit: latestCommit }, legacyResetCompletedAt: "2026-09-23T06:00:00.000Z",
   };
   let tags = releases.map(({ digest: value }) => ({ tag: `release-${value.slice(-2)}`, digest: value }));
@@ -348,7 +359,7 @@ test("incomplete or wrong-repository inventory fails closed", () => {
   assert.throws(() => planImageRetention({ repository: "foreign", expectedRepository: repository, inventoryComplete: true, tags: [], acceptedDigests: [] }), /image_retention_repository_mismatch/u);
 });
 
-test("malformed, duplicate, oversized or missing accepted ledger entries fail closed", () => {
+test("malformed, duplicate or missing accepted ledger entries fail closed", () => {
   const base = { repository, expectedRepository: repository, inventoryComplete: true, tags: [image(1)], acceptedDigests: [digest(1)] };
   assert.throws(() => planImageRetention({ ...base, acceptedDigests: [digest(1), digest(1)] }), /image_retention_ledger_invalid/u);
   assert.throws(() => planImageRetention({ ...base, acceptedDigests: ["bad"] }), /image_retention_ledger_invalid/u);

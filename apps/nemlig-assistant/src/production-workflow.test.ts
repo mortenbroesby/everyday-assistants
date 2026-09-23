@@ -20,8 +20,7 @@ test("routine releases queue exact-CI candidates; manual dispatch is recovery or
   const trigger = section(source, "on:");
   assert.match(trigger, /^\x20{2}workflow_dispatch:\n/m);
   assert.match(trigger, /^\x20{2}workflow_run:\n\s+workflows: \[CI\]\n\s+types: \[completed\]/m);
-  assert.match(trigger, /^\x20{2}schedule:\n\s+- cron: '17 \* \* \* \*'$/m);
-  assert.doesNotMatch(trigger, /^\x20{2}(?:push|pull_request):/m);
+  assert.doesNotMatch(trigger, /^\x20{2}(?:schedule|push|pull_request):/m);
   assert.match(trigger, /commit:\n\s+description:.*recovery/m);
   assert.match(trigger, /commit:[\s\S]*?required: true[\s\S]*?type: string/m);
   assert.match(trigger, /recovery:[\s\S]*?required: true[\s\S]*?type: boolean/m);
@@ -36,10 +35,8 @@ test("routine releases queue exact-CI candidates; manual dispatch is recovery or
   const retention = section(source, "  retention:");
   assert.match(gate, /inputs\.recovery == true/u);
   assert.match(gate, /inputs\.resume_retention == true/u);
-  assert.match(gate, /github\.event_name == 'schedule' && github\.ref == 'refs\/heads\/main'/u);
   assert.match(gate, /permissions:\n\s+contents: read\n\s+actions: read/u);
-  assert.match(gate, /contents\/retention-ledger\.json\?ref=codex-retention\/nemlig-production/u);
-  assert.match(gate, /\.accepted\[0\]\.commit/u);
+  assert.doesNotMatch(gate, /catch-up|retention-ledger|gh api/u);
   assert.doesNotMatch(gate, /\.cleanup|retention-lease|RETENTION_ENABLED|dryRunFingerprint/u);
   assert.match(gate, /retention_commit=\$CANDIDATE_SHA/u);
   assert.match(gate, /RESUME_RETENTION/u);
@@ -48,9 +45,8 @@ test("routine releases queue exact-CI candidates; manual dispatch is recovery or
   assert.match(gate, /git merge-base --is-ancestor "\$CANDIDATE_SHA" origin\/main/u);
   assert.ok(gate.includes('if [[ "$RECOVERY" == "true" || "$RESUME_RETENTION" == "true" ]]; then\n            if ! git merge-base --is-ancestor "$CANDIDATE_SHA" origin/main;')
     && gate.includes('elif [[ "$CANDIDATE_SHA" != "$(git rev-parse origin/main)" ]]; then'),
-    "only an explicitly confirmed recovery may deploy an ancestor; routine and scheduled runs must target current main exactly");
+    "only an explicitly confirmed recovery may deploy an ancestor; routine runs must target current main exactly");
   assert.doesNotMatch(gate, /production:retention|CLOUDFLARE|secrets\./u);
-  assert.match(gate, /\[\[ "\$deployed_sha" == "\$CANDIDATE_SHA" \]\]/u);
   assert.doesNotMatch(gate, /gh run list|headSha/u);
   assert.match(gate, /echo "deploy=false" >> "\$GITHUB_OUTPUT"/u);
   assert.doesNotMatch(gate, /pull-requests: read|deploy:nemlig-production|\/pulls|merge_commit_sha/u);
@@ -107,7 +103,7 @@ test("routine releases queue exact-CI candidates; manual dispatch is recovery or
   assert.match(retention, /production:retention -- accept "\$CANDIDATE_SHA"/u);
   assert.match(retention, /production:retention -- resume "\$\{\{ needs\.release-gate\.outputs\.retention_commit \}\}"/u);
   assert.match(retention, /CLOUDFLARE_API_TOKEN:/u);
-  assert.match(retention, /NEMLIG_CONTAINER_IMAGE_RETENTION_COUNT: "\$\{\{ vars\.NEMLIG_CONTAINER_IMAGE_RETENTION_COUNT \|\| '50' \}\}"/u);
+  assert.match(retention, /NEMLIG_CONTAINER_IMAGE_RETENTION_COUNT: "\$\{\{ vars\.NEMLIG_CONTAINER_IMAGE_RETENTION_COUNT \|\| '10' \}\}"/u);
   assert.doesNotMatch(retention, /NEMLIG_CONTAINER_IMAGE_RETENTION_ENABLED/u);
   assert.match(retention, /scheduled without accepted deployment or explicit resume/u);
   assert.doesNotMatch(preflight, /CLOUDFLARE|secrets\./u);
@@ -153,7 +149,7 @@ test("deployment eligibility does not depend on release metadata", async () => {
   const gate = section(source, "  release-gate:");
   assert.doesNotMatch(gate, /check:version-bump|check:release-note|nemligRelease|codename/u);
   assert.doesNotMatch(gate, /publish=true|outputs\.publish/u);
-  assert.match(gate, /GH_TOKEN: "\$\{\{ github\.token \}\}"/u);
+  assert.doesNotMatch(gate, /GH_TOKEN:|github\.token/u);
   assert.doesNotMatch(gate, /CLOUDFLARE|secrets\.|pull-requests: read|\/pulls/u);
 });
 

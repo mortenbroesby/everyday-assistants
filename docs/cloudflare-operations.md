@@ -215,15 +215,11 @@ not a fresh real-family Nemlig or ChatGPT acceptance claim.
 4. Routine delivery starts automatically after successful CI. Manual dispatch
    is reserved for recovery to a previously green `main` ancestor. GitHub's
    native concurrency queue retains at most 100 pending runs and orders them by
-   when they began waiting, not by source-event dispatch time. If the queue is
-   full, GitHub can cancel additional pending work; an hourly main-only
-   reconciliation checks whether the latest main SHA has a successful exact-
-   SHA production run and, if not, sends it through the same exact-CI,
-   serialized, protected deploy path. It exits before provider access when the
-   latest SHA already succeeded. The queue is ordered by when runs began
-   waiting, not source-event dispatch time, so this is not strict FIFO for
-   intermediate SHAs; it guarantees eventual convergence to the latest green
-   main revision, not a deployment for every transient main SHA.
+   when they began waiting, not by source-event dispatch time. There is no
+   hourly catch-up job, durable delivery queue, or automatic replay layer; this
+   rare platform queue limit is accepted rather than adding custom machinery.
+   If GitHub rejects a run at that limit, use the protected recovery workflow
+   for the current green `main` SHA after confirming the queued deploy state.
 
    ```sh
    git fetch origin main
@@ -257,10 +253,10 @@ It takes an exclusive lock shared by linked worktrees and atomically creates
 source SHA. The ref contains a bounded public-safe recovery journal. Releases
 keep `MCP_ENABLED=true` while Wrangler activates the new Worker and rolls the
 Container image. If a candidate fails bounded acceptance after rollout,
-recovery deploys the same image with `MCP_ENABLED=false` and no second Container rollout. A replaced
-Container also loses its in-memory MCP transport sessions; unknown session IDs
-return HTTP 404 so conforming clients initialize a fresh session automatically.
-The journal records the starting version, the exact enabled transition, the resulting Container image, and the bounded edge and
+recovery deploys the same image with `MCP_ENABLED=false` and no second Container
+rollout. The MCP HTTP transport is stateless: modern clients do not depend on
+session IDs, and production acceptance does not probe obsolete session-recovery
+behavior. The journal records the starting version, the exact enabled transition, the resulting Container image, and the bounded edge and
 authenticated read-only checks.
 It never prepares or applies a proposal and never mutates a basket, favorite, or
 saved list.
@@ -326,8 +322,6 @@ tag-to-digest mapping before each delete and requiring fresh inventory readback
 afterward. Registry layer garbage collection and ledger completion happen only
 after the plan is satisfied. Uncertain results stop for an explicit resume; they
 do not trigger a blind retry, deployment rollback, or kill-switch change. The
-hourly workflow schedule only catches up a dropped deployment run; it does not
-run image cleanup.
 The operation also inspects Container instance versions before planning: active
 instances must match the current application version, and provisioning,
 stopping, mixed-version, or otherwise unknown states hold cleanup.
@@ -343,8 +337,8 @@ lock is not taken over.
 
 The retention job uses short-lived pull credentials for inventory and requests
 push credentials only after the two snapshots match and deletion begins. A
-small GitHub ledger branch records accepted images and cleanup checkpoints.
-`NEMLIG_CONTAINER_IMAGE_RETENTION_COUNT` defaults to 50 distinct accepted
+GitHub ledger branch records accepted releases and cleanup checkpoints.
+`NEMLIG_CONTAINER_IMAGE_RETENTION_COUNT` defaults to 10 distinct accepted
 images. If cleanup is interrupted or uncertain, use the protected workflow's
 `resume_retention` input with the accepted commit SHA after the previous run has
 finished; the operation re-reads current state before continuing. The job does

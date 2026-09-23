@@ -162,7 +162,7 @@ This item does not authorize a live proposal apply or any basket mutation.
 
 ## P1 — predictable automated production deployment
 
-**Status:** Being completed by GitHub issue #96; code/readiness gates are in progress, while live recovery and retention proof are blocked on the unresolved production journal recorded in `docs/cloudflare-operations.md`.
+**Status:** Being completed by GitHub issue #96; code/readiness gates are in progress, with live acceptance and retention proof pending the next exact-main release after recovery-lease reconciliation.
 
 **Epic outcome:** An approved green merge to `main` is the routine deploy action.
 The protected workflow deploys and verifies the exact SHA, records bounded
@@ -189,15 +189,15 @@ Manual dispatch is reserved for exceptional recovery.
 
 ### Story P1.D3 — retain images safely and make evidence recoverable
 
-- [x] Use one hourly gate-only reconciliation for GitHub's bounded pending-run
-  queue; it exits before provider access if exact-main deployment already passed.
+- [x] Use only the native serialized GitHub Actions queue; do not add custom
+  queue-overflow or catch-up machinery.
 - [x] Add exact-repository image inventory, accepted-image ordering, dry-run
   reporting, and fail-closed cleanup with durable delete intent/readback; prune
-  to fifty accepted images immediately after deployment acceptance.
+  to ten accepted images immediately after deployment acceptance.
 - [x] Pass focused failure-path tests, strict specs, privacy, `pnpm verify`,
   package smoke, and credential-free production readiness.
 - [ ] After the unresolved production journal is reconciled, prove post-
-  acceptance cleanup reaches fifty images or explain protected/uncertain holds.
+  acceptance cleanup reaches ten images or explain protected/uncertain holds.
 - [ ] Integrate exact-head green `main`, prove production acceptance and
   retention, then sync and archive the OpenSpec change.
 

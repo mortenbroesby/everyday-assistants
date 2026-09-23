@@ -4,8 +4,6 @@ on:
   workflow_run:
     workflows: [CI]
     types: [completed]
-  schedule:
-    - cron: '17 * * * *'
   workflow_dispatch:
     inputs:
       commit:
@@ -41,7 +39,6 @@ jobs:
   release-gate:
     if: >-
       (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && (inputs.recovery == true || inputs.resume_retention == true)) ||
-      (github.event_name == 'schedule' && github.ref == 'refs/heads/main') ||
       (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' &&
       github.event.workflow_run.event == 'push' && github.event.workflow_run.head_branch == 'main')
     runs-on: ubuntu-latest
@@ -50,7 +47,7 @@ jobs:
       contents: read
       actions: read
     outputs:
-      deploy: "${{ steps.approval.outputs.deploy || steps.catch-up.outputs.deploy }}"
+      deploy: "${{ steps.approval.outputs.deploy }}"
       retention: "${{ steps.approval.outputs.retention || 'false' }}"
       retention_commit: "${{ steps.approval.outputs.retention_commit }}"
     steps:
@@ -60,32 +57,7 @@ jobs:
           ref: "${{ env.CANDIDATE_SHA }}"
           persist-credentials: false
           fetch-depth: 0
-      - name: Skip hourly reconciliation when this exact SHA already succeeded
-        id: catch-up
-        if: github.event_name == 'schedule'
-        env:
-          GH_TOKEN: "${{ github.token }}"
-          CANDIDATE_SHA: "${{ env.CANDIDATE_SHA }}"
-        run: |
-          set -euo pipefail
-          if ledger="$(gh api "repos/$GITHUB_REPOSITORY/contents/retention-ledger.json?ref=codex-retention/nemlig-production" --jq .content 2>"$RUNNER_TEMP/ledger-error")"; then
-            ledger_json="$(printf '%s' "$ledger" | base64 --decode)"
-            jq -e 'type == "object" and .schema == 1 and (.accepted | type == "array") and (.accepted | length > 0) and (.accepted[0].commit | type == "string")' <<<"$ledger_json" >/dev/null
-            deployed_sha="$(jq -r '.accepted[0].commit' <<<"$ledger_json")"
-          elif rg -q 'HTTP 404' "$RUNNER_TEMP/ledger-error"; then
-            deployed_sha=""
-          else
-            cat "$RUNNER_TEMP/ledger-error" >&2
-            exit 1
-          fi
-          if [[ "$deployed_sha" == "$CANDIDATE_SHA" ]]; then
-            echo "deploy=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "deploy=true" >> "$GITHUB_OUTPUT"
-          fi
-
       - name: Check exact main candidate
-        if: steps.catch-up.outputs.deploy != 'false' || steps.catch-up.outputs.retention == 'true'
         id: approval
         env:
           CANDIDATE_SHA: "${{ env.CANDIDATE_SHA }}"
@@ -110,9 +82,6 @@ jobs:
             echo "deploy=false" >> "$GITHUB_OUTPUT"
             echo "retention=true" >> "$GITHUB_OUTPUT"
             echo "retention_commit=$CANDIDATE_SHA" >> "$GITHUB_OUTPUT"
-          elif [[ "${{ steps.catch-up.outputs.deploy }}" == "false" ]]; then
-            echo "deploy=false" >> "$GITHUB_OUTPUT"
-            echo "retention=false" >> "$GITHUB_OUTPUT"
           else
             echo "deploy=true" >> "$GITHUB_OUTPUT"
             echo "retention=false" >> "$GITHUB_OUTPUT"
@@ -161,7 +130,7 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: "${{ vars.CLOUDFLARE_ACCOUNT_ID }}"
           DEPLOY_RESULT: "${{ needs.deploy.result }}"
           CANDIDATE_SHA: "${{ env.CANDIDATE_SHA }}"
-          NEMLIG_CONTAINER_IMAGE_RETENTION_COUNT: "${{ vars.NEMLIG_CONTAINER_IMAGE_RETENTION_COUNT || '50' }}"
+          NEMLIG_CONTAINER_IMAGE_RETENTION_COUNT: "${{ vars.NEMLIG_CONTAINER_IMAGE_RETENTION_COUNT || '10' }}"
         run: |
           set -euo pipefail
           if [[ "$DEPLOY_RESULT" == "success" ]]; then

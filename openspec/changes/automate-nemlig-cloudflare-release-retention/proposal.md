@@ -5,9 +5,9 @@ Issue #96 has an automatic main-to-production workflow, but a real green main me
 ## What Changes
 
 - Diagnose and correct the exact production configuration mismatch without weakening safety validation.
-- Make eligible exact-main merges deploy serially and automatically while keeping PR jobs credential-free; reconcile the latest green main SHA hourly if GitHub drops a run at its pending-queue cap.
+- Make eligible exact-main merges deploy serially and automatically while keeping PR jobs credential-free. Use the native Actions queue without custom queue-overflow reconciliation.
 - Verify the deployed SHA, health, OAuth boundary, anonymous rejection, and bounded authenticated read-only functionality.
-- Add a durable accepted-image ledger and deterministic retention plan; after each accepted release, prune the exact production repository to the latest fifty distinct accepted digests plus every active, recovery, or uncertain hold.
+- Add a durable accepted-image ledger and deterministic retention plan; after each accepted release, prune the exact production repository to the latest ten distinct accepted digests plus every active, recovery, or uncertain hold.
 - After successful acceptance, delete only oldest proven-surplus images, sequentially, with per-action revalidation and bounded readback.
 - Simplify recovery only where native GitHub/Cloudflare evidence provides the same failure protection; document the final runbook.
 
@@ -15,9 +15,9 @@ Issue #96 has an automatic main-to-production workflow, but a real green main me
 
 **Goal:** an eligible approved green PR follows merge → exact-SHA deploy → read-only acceptance → safe image retention without routine manual dispatch/finalization.
 
-**Non-goals:** basket, order, payment, or delivery mutation; deleting Worker history, secrets, Durable Objects, Container applications, or foreign repositories; new hosted services, external schedules, or Containers; preserving obsolete clients or unused runtime flags. The hourly reconciliation is an idle-safe job in the existing workflow. The approved one-time image reset intentionally removes rollback images for pre-reset Worker versions after a fresh accepted release.
+**Non-goals:** basket, order, payment, or delivery mutation; deleting Worker history, secrets, Durable Objects, Container applications, or foreign repositories; new hosted services, external schedules, or Containers; custom queue-overflow recovery; preserving obsolete clients or unused runtime flags. The approved one-time image reset intentionally removes rollback images for pre-reset Worker versions after a fresh accepted release.
 
-**Acceptance:** all child issues #97–#101 are resolved; the latest green main SHA eventually reaches accepted production even if a run is dropped at GitHub's queue cap; failed/uncertain deployments cannot trigger cleanup; no PR job gets production credentials; exact candidate revision and safety boundaries pass; images outside the exact owned repository and active/recovery/uncertain references are never deleted; the one-time legacy image reset is explicit; accepted releases retain the latest fifty distinct images; recovery remains safe under runner loss and provider drift; final exact-main CI and production read-only checks pass.
+**Acceptance:** all child issues #97–#101 are resolved; eligible green main merges use the native serialized deployment path; failed/uncertain deployments cannot trigger cleanup; no PR job gets production credentials; exact candidate revision and safety boundaries pass; images outside the exact owned repository and active/recovery/uncertain references are never deleted; the one-time legacy image reset is explicit; each accepted release retains the latest ten distinct images; recovery remains safe under runner loss and provider drift; final exact-main CI and production read-only checks pass.
 
 ## Capabilities
 

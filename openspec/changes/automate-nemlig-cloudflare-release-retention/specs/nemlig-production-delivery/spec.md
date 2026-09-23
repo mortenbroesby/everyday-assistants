@@ -2,17 +2,12 @@
 
 ### Requirement: Routine releases follow an eligible main merge automatically
 
-An eligible successful trusted CI run for a commit still in default-branch history SHALL trigger routine production delivery without workflow dispatch or manual finalization. Production mutations SHALL be serialized with the native bounded Actions queue. The deploy job SHALL revalidate the exact source and trusted CI provenance immediately before mutation, and a queued candidate SHALL NOT replace a runtime revision that is not its ancestor. Pull-request jobs SHALL NOT receive production credentials.
+An eligible successful trusted CI run for a commit still in default-branch history SHALL trigger routine production delivery without workflow dispatch or manual finalization. Production mutations SHALL be serialized with the native Actions queue; the workflow SHALL NOT add custom queue-overflow catch-up machinery. The deploy job SHALL revalidate the exact source and trusted CI provenance immediately before mutation, and a queued candidate SHALL NOT replace a runtime revision that is not its ancestor. Pull-request jobs SHALL NOT receive production credentials.
 
 #### Scenario: An eligible merge remains in current main history
 
 - **WHEN** trusted CI succeeds for a full main SHA that remains an ancestor of current `main`
 - **THEN** one protected routine release runs automatically for that SHA without a manual commit selection
-
-#### Scenario: GitHub drops a run after its pending queue is full
-
-- **WHEN** the latest main SHA does not have an exact successful production run because the native queue reached its platform limit
-- **THEN** the existing production workflow's hourly main-only reconciliation selects that exact SHA, verifies its exact green CI and ancestry, and deploys it through the same serialized protected path; if already successful, it exits before provider access
 
 #### Scenario: Main advances or another release owns production
 

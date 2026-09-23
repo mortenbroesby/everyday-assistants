@@ -6,7 +6,7 @@ export const registryOrigin = "https://registry.cloudflare.com";
 export const productionImageName = "nemlig-mcp-cloudflare-production-nemligmcpcontainer-production";
 const pageSize = 100;
 const maximumPageBytes = 1024 * 1024;
-export const defaultRetainedImages = 50;
+export const defaultRetainedImages = 10;
 
 export interface RegistryImageTag {
   tag: string;
@@ -62,10 +62,8 @@ export interface ImageRetentionLedger {
   repository: string;
   /** Set only after the explicitly approved one-time legacy reset finishes. */
   legacyResetCompletedAt?: string;
-  /** Newest first; bounded recent commit history for exact catch-up. */
+  /** Newest first; every accepted commit supports idempotent replay detection. */
   accepted: AcceptedImageRelease[];
-  /** Newest first, unique by image digest; independent from commit-history truncation. */
-  images: AcceptedImageRelease[];
   /** Current accepted commit's cleanup checkpoint; absent until the first accepted release. */
   cleanup?: { commit: string; inFlight?: { digest: string; tag: string }; completedAt?: string };
 }
@@ -76,17 +74,16 @@ const validTimestamp = (value: unknown): value is string => typeof value === "st
   && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/u.test(value)
   && Number.isFinite(Date.parse(value)) && new Date(value).toISOString() === value;
 
-/** Strictly parses the small durable ledger; unknown fields are rejected rather than ignored. */
+/** Strictly parses the durable ledger; unknown fields are rejected rather than ignored. */
 export function parseImageRetentionLedger(value: unknown, expectedRepository: string): ImageRetentionLedger {
   if (!value || typeof value !== "object" || Array.isArray(value)) fail("ledger_invalid");
   const record = value as Record<string, unknown>;
-  if (Object.keys(record).some((key) => !["schema", "repository", "legacyResetCompletedAt", "accepted", "images", "cleanup"].includes(key))
-    || record.schema !== 1 || record.repository !== expectedRepository || !Array.isArray(record.accepted) || !Array.isArray(record.images)
-    || record.accepted.length > 10
+  if (Object.keys(record).some((key) => !["schema", "repository", "legacyResetCompletedAt", "accepted", "cleanup"].includes(key))
+    || record.schema !== 1 || record.repository !== expectedRepository || !Array.isArray(record.accepted)
     || (record.legacyResetCompletedAt !== undefined && !validTimestamp(record.legacyResetCompletedAt))) fail("ledger_invalid");
   const rows = record.accepted as unknown[];
   const resetCompletedAt = record.legacyResetCompletedAt;
-  const parseRows = (items: unknown[], uniqueBy: "commit" | "digest"): AcceptedImageRelease[] => {
+  const parseAcceptedRows = (items: unknown[]): AcceptedImageRelease[] => {
     const seen = new Set<string>();
     const parsed: AcceptedImageRelease[] = [];
     let previousTime = Number.POSITIVE_INFINITY;
@@ -101,16 +98,14 @@ export function parseImageRetentionLedger(value: unknown, expectedRepository: st
       const imageDigest = entry.digest as string;
       const acceptedAt = entry.acceptedAt as string;
       const acceptedTime = Date.parse(acceptedAt);
-      const uniqueValue = uniqueBy === "commit" ? commit : imageDigest;
-      if (seen.has(uniqueValue) || acceptedTime > previousTime) fail("ledger_invalid");
-      seen.add(uniqueValue);
+      if (seen.has(commit) || acceptedTime > previousTime) fail("ledger_invalid");
+      seen.add(commit);
       previousTime = acceptedTime;
       parsed.push({ commit, digest: imageDigest, acceptedAt });
     }
     return parsed;
   };
-  const accepted = parseRows(rows, "commit");
-  const images = parseRows(record.images as unknown[], "digest");
+  const accepted = parseAcceptedRows(rows);
   let cleanup: ImageRetentionLedger["cleanup"];
   if (record.cleanup !== undefined) {
     if (!record.cleanup || typeof record.cleanup !== "object" || Array.isArray(record.cleanup)) fail("ledger_invalid");
@@ -138,7 +133,6 @@ export function parseImageRetentionLedger(value: unknown, expectedRepository: st
     repository: expectedRepository,
     ...(resetCompletedAt ? { legacyResetCompletedAt: resetCompletedAt as string } : {}),
     accepted,
-    images,
     ...(cleanup ? { cleanup } : {}),
   };
 }
@@ -146,7 +140,7 @@ export function parseImageRetentionLedger(value: unknown, expectedRepository: st
 /** Projects accepted commit history into the unique image order used by retention. */
 export function acceptedImageDigests(ledgerInput: ImageRetentionLedger): string[] {
   const ledger = parseImageRetentionLedger(ledgerInput, ledgerInput.repository);
-  return ledger.images.map(({ digest }) => digest);
+  return [...new Set(ledger.accepted.map(({ digest }) => digest))];
 }
 
 /** Adds exact successful runtime acceptance evidence without changing reset state. */
@@ -162,8 +156,7 @@ export function recordAcceptedImageRelease(
   }
   const next = parseImageRetentionLedger({
     ...ledger,
-    accepted: [release, ...ledger.accepted].slice(0, 10),
-    images: [release, ...ledger.images.filter(({ digest }) => digest !== release.digest)],
+    accepted: [release, ...ledger.accepted],
     cleanup: { commit: release.commit },
   }, ledger.repository);
   return next;
@@ -540,20 +533,15 @@ export async function executeImageRetention(input: {
   }
 
   if (!finalPlan) fail("inventory_incomplete");
-  const acceptedSet = new Set(acceptedImageDigests(ledger));
-  const retainedWindow = new Set(acceptedImageDigests(ledger).slice(0, retainAccepted));
-  const protectedDigests = new Set(finalPlan.protected.filter(({ tags }) => tags.length > 0).map(({ digest }) => digest));
-  const compactedLedger: ImageRetentionLedger = {
-    ...ledger,
-    images: ledger.images.filter(({ digest }) => protectedDigests.has(digest)),
-  };
+  const acceptedDigests = acceptedImageDigests(ledger);
+  const acceptedSet = new Set(acceptedDigests);
+  const retainedWindow = new Set(acceptedDigests.slice(0, retainAccepted));
   const legacyImagesStillHeld = resetLegacy && finalPlan.protected.some((entry) => entry.tags.length > 0
     && !acceptedSet.has(entry.digest) && ["active", "recovery", "uncertain", "explicit"].includes(entry.reason));
   const acceptedImagesStillHeld = finalPlan.protected.some((entry) => entry.tags.length > 0
     && acceptedSet.has(entry.digest) && !retainedWindow.has(entry.digest)
     && ["active", "recovery", "uncertain", "explicit"].includes(entry.reason));
   if (legacyImagesStillHeld || acceptedImagesStillHeld) {
-    await dependencies.persistLedger(compactedLedger, signal);
     return {
       repository: input.repository,
       deletedDigests: [...deletedDigests].sort((left, right) => left.localeCompare(right)),
@@ -566,7 +554,7 @@ export async function executeImageRetention(input: {
   }
   await dependencies.collectGarbage(signal);
   let resetCompleted = !resetLegacy;
-  let updatedLedger = compactedLedger;
+  let updatedLedger = ledger;
   if (resetLegacy) {
     updatedLedger = markLegacyImageResetComplete(updatedLedger, dependencies.now().toISOString());
     resetCompleted = true;

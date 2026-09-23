@@ -16,22 +16,22 @@ Routine deploys SHALL apply only validated variables declared by the production 
 
 ### Requirement: Accepted production releases retain a bounded Container image history
 
-After exact deployment acceptance and durable evidence recording, the initial approved reset SHALL remove pre-reset images from the exact Nemlig production image repository except images required by active, rolling, unresolved-recovery, or uncertain state. This intentionally removes image-based rollback for pre-reset Worker versions but SHALL preserve Worker version/deployment records. Thereafter, releases SHALL retain the fifty most recent distinct accepted image digests, plus every additional active, rolling, unresolved-recovery, or uncertain image reference. Fifty is the default configurable target, not a hard cap. Cleanup SHALL never delete foreign-repository images, Container applications, secrets, or Durable Object data.
+After exact deployment acceptance and durable evidence recording, the initial approved reset SHALL remove pre-reset images from the exact Nemlig production image repository except images required by active, rolling, unresolved-recovery, or uncertain state. This intentionally removes image-based rollback for pre-reset Worker versions but SHALL preserve Worker version/deployment records. After each accepted release, retain the ten most recent distinct accepted image digests by default, plus every additional active, rolling, unresolved-recovery, or uncertain image reference. Ten is the default configurable target, not a hard cap. Cleanup SHALL never delete foreign-repository images, Container applications, secrets, or Durable Object data.
 
 #### Scenario: First clean release resets the legacy image backlog
 
 - **WHEN** the exact new production release passes runtime acceptance, its durable record is saved, and two same-run registry/reference snapshots match
 - **THEN** the post-acceptance job immediately deletes eligible pre-reset images and records when pre-reset rollback images are no longer available
 
-#### Scenario: More than fifty safe accepted images exist
+#### Scenario: More than ten safe accepted images exist
 
-- **WHEN** more than fifty distinct accepted production images are available and older images have complete trustworthy provenance
-- **THEN** the fifty most recent distinct accepted images remain protected, and only oldest safe surplus images are deletion candidates
+- **WHEN** more than ten distinct accepted production images are available and older images have complete trustworthy provenance
+- **THEN** the ten most recent distinct accepted images remain protected, and only oldest safe surplus images are deletion candidates
 
 #### Scenario: Active or recovery state needs an older image
 
 - **WHEN** a current deployment, running/rolling application, unresolved release journal, or explicit hold references an image outside the nominal window
-- **THEN** that image remains protected and total retention may exceed fifty
+- **THEN** that image remains protected and total retention may exceed ten
 
 #### Scenario: Provenance or reference state is incomplete
 
