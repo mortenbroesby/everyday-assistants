@@ -4,6 +4,7 @@ import test from "node:test";
 
 const workflowPath = new URL("../../../.github/workflows/nemlig-production.yml", import.meta.url);
 const ciWorkflowPath = new URL("../../../.github/workflows/ci.yml", import.meta.url);
+const retentionScriptPath = new URL("../scripts/production-retention.ts", import.meta.url);
 
 const section = (source: string, heading: string): string => {
   const start = source.indexOf(`${heading}\n`);
@@ -14,35 +15,52 @@ const section = (source: string, heading: string): string => {
   return next === -1 ? rest : rest.slice(0, next);
 };
 
-test("production workflow accepts manual dispatch or an exact CI-green main commit", async () => {
+test("routine releases queue exact-CI candidates; manual dispatch is recovery or retention recovery only", async () => {
   const source = await readFile(workflowPath, "utf8");
   const trigger = section(source, "on:");
   assert.match(trigger, /^\x20{2}workflow_dispatch:\n/m);
   assert.match(trigger, /^\x20{2}workflow_run:\n\s+workflows: \[CI\]\n\s+types: \[completed\]/m);
-  assert.doesNotMatch(trigger, /^\x20{2}(?:push|pull_request|schedule):/m);
-  assert.match(trigger, /commit:\n\s+description:.*commit/m);
+  assert.doesNotMatch(trigger, /^\x20{2}(?:schedule|push|pull_request):/m);
+  assert.match(trigger, /commit:\n\s+description:.*recovery/m);
   assert.match(trigger, /commit:[\s\S]*?required: true[\s\S]*?type: string/m);
-  assert.match(trigger, /cutover:[\s\S]*?default: false[\s\S]*?type: boolean/m);
-  assert.match(trigger, /recovery:[\s\S]*?description:.*previously green main ancestor[\s\S]*?default: false[\s\S]*?type: boolean/m);
-  assert.match(source, /^concurrency:\n\x20{2}group: nemlig-production\n\x20{2}cancel-in-progress: false$/m);
+  assert.match(trigger, /recovery:[\s\S]*?required: true[\s\S]*?type: boolean/m);
+  assert.match(trigger, /resume_retention:[\s\S]*?required: false[\s\S]*?type: boolean/m);
+  assert.doesNotMatch(trigger, /cutover:|finalize_operation:/u);
+  assert.match(source, /^concurrency:\n\x20{2}group: nemlig-production\n\x20{2}cancel-in-progress: false\n\x20{2}queue: max$/m);
   assert.match(source, /^permissions:\n(?:\x20{2}#.*\n)*\x20{2}contents: write$/m);
 
   const gate = section(source, "  release-gate:");
   const preflight = section(source, "  preflight:");
   const deploy = section(source, "  deploy:");
+  const retention = section(source, "  retention:");
+  assert.match(gate, /inputs\.recovery == true/u);
+  assert.match(gate, /inputs\.resume_retention == true/u);
+  assert.match(gate, /permissions:\n\s+contents: read\n\s+actions: read/u);
+  assert.doesNotMatch(gate, /catch-up|retention-ledger|gh api/u);
+  assert.doesNotMatch(gate, /\.cleanup|retention-lease|RETENTION_ENABLED|dryRunFingerprint/u);
+  assert.match(gate, /retention_commit=\$CANDIDATE_SHA/u);
+  assert.match(gate, /RESUME_RETENTION/u);
+  assert.match(gate, /Recovery deployment and retention resume are mutually exclusive/u);
+  assert.match(gate, /Check exact main candidate/u);
+  assert.match(gate, /git merge-base --is-ancestor "\$CANDIDATE_SHA" origin\/main/u);
+  assert.ok(gate.includes('if [[ "$RECOVERY" == "true" || "$RESUME_RETENTION" == "true" ]]; then\n            if ! git merge-base --is-ancestor "$CANDIDATE_SHA" origin/main;')
+    && gate.includes('elif [[ "$CANDIDATE_SHA" != "$(git rev-parse origin/main)" ]]; then'),
+    "only an explicitly confirmed recovery may deploy an ancestor; routine runs must target current main exactly");
+  assert.doesNotMatch(gate, /production:retention|CLOUDFLARE|secrets\./u);
+  assert.doesNotMatch(gate, /gh run list|headSha/u);
+  assert.match(gate, /echo "deploy=false" >> "\$GITHUB_OUTPUT"/u);
   assert.doesNotMatch(gate, /pull-requests: read|deploy:nemlig-production|\/pulls|merge_commit_sha/u);
   assert.match(gate, /actions\/checkout@[0-9a-f]{40}/u);
   assert.match(gate, /ref: "\$\{\{ env\.CANDIDATE_SHA \}\}"/u);
   assert.match(gate, /persist-credentials: false/u);
   assert.match(gate, /fetch-depth: 0/u);
   assert.match(gate, /git fetch origin refs\/heads\/main:refs\/remotes\/origin\/main/u);
-  assert.match(gate, /\[\[ "\$\(git rev-parse origin\/main\)" != "\$CANDIDATE_SHA" \]\]/u);
   assert.match(gate, /git merge-base --is-ancestor "\$CANDIDATE_SHA" origin\/main/u);
-  assert.match(gate, /Candidate is no longer current main/u);
+  assert.match(gate, /\[\[ "\$CANDIDATE_SHA" != "\$\(git rev-parse origin\/main\)" \]\]/u);
   assert.match(gate, /\[\[ "\$CANDIDATE_SHA" =~ \^\[0-9a-f\]\{40\}\$ \]\]/u);
   assert.doesNotMatch(gate, /check:version-bump|check:release-note|CANDIDATE_PARENT|policy\.eligible/u);
   assert.match(gate, /echo "deploy=true" >> "\$GITHUB_OUTPUT"/u);
-  assert.match(gate, /FINALIZE_OPERATION/u);
+  assert.doesNotMatch(gate, /FINALIZE_OPERATION|CUTOVER/u);
   assert.doesNotMatch(gate, /CLOUDFLARE|NEMLIG_MCP|secrets\./u);
   assert.match(preflight, /needs: release-gate/u);
   assert.match(preflight, /needs\.release-gate\.outputs\.deploy == 'true'/u);
@@ -76,20 +94,48 @@ test("production workflow accepts manual dispatch or an exact CI-green main comm
   assert.match(deploy, /retention-days: 7/u);
   assert.match(deploy, /include-hidden-files: true/u);
   assert.doesNotMatch(source, /setup-.*provider|activate|cloudflare\/workers/u);
+
+  assert.match(retention, /needs: \[release-gate, preflight, deploy\]/u);
+  assert.match(retention, /needs\.deploy\.result == 'success' \|\| needs\.release-gate\.outputs\.retention == 'true'/u);
+  assert.match(retention, /environment:\n\s+name: nemlig-production/u);
+  assert.match(retention, /permissions:\n\s+contents: write\n\s+actions: read/u);
+  assert.match(retention, /actions\/download-artifact@[0-9a-f]{40}/u);
+  assert.match(retention, /production:retention -- accept "\$CANDIDATE_SHA"/u);
+  assert.match(retention, /production:retention -- resume "\$\{\{ needs\.release-gate\.outputs\.retention_commit \}\}"/u);
+  assert.match(retention, /CLOUDFLARE_API_TOKEN:/u);
+  assert.match(retention, /NEMLIG_CONTAINER_IMAGE_RETENTION_COUNT: "\$\{\{ vars\.NEMLIG_CONTAINER_IMAGE_RETENTION_COUNT \|\| '10' \}\}"/u);
+  assert.doesNotMatch(retention, /NEMLIG_CONTAINER_IMAGE_RETENTION_ENABLED/u);
+  assert.match(retention, /scheduled without accepted deployment or explicit resume/u);
+  assert.doesNotMatch(preflight, /CLOUDFLARE|secrets\./u);
+});
+
+test("image pruning takes and fences the shared deployment lease", async () => {
+  const [workflow, script] = await Promise.all([readFile(workflowPath, "utf8"), readFile(retentionScriptPath, "utf8")]);
+  const retention = section(workflow, "  retention:");
+  assert.match(retention, /permissions:\n\s+contents: write\n\s+actions: read/u);
+  assert.match(script, /const lockBranch = "codex-lock\/nemlig-production"/u);
+  assert.match(script, /POST", "git\/refs", \{ ref: "refs\/" \+ lockBranch/u);
+  assert.match(script, /PATCH", "git\/refs\/heads\/" \+ lockBranch, \{ sha: newHead, force: false \}/u);
+  assert.match(script, /actions\/runs\/" \+ prior\.runId/u);
+  assert.match(script, /retentionLeaseCanBeReclaimed\(prior/u);
+  assert.match(script, /"containers", "instances", current\.id, "--json"/u);
+  assert.match(script, /assertNoContainerRollout\(instances, current\.version\)/u);
+  assert.match(script, /readHolds: async[\s\S]*?assertRetentionLeaseForMutation\(mode,[\s\S]*?assertOwned: assertRetentionLease/u);
+  assert.match(script, /const deleteTag = async[\s\S]*?await assertRetentionLease\(\)/u);
+  assert.match(script, /await releaseRetentionLease\(\);\n\s+console\.log\(JSON\.stringify\(\{ \.\.\.report/u);
 });
 
 test("routine deployment does not require a historical cutover artifact", async () => {
   const source = await readFile(workflowPath, "utf8");
-  assert.doesNotMatch(source, /verifyRoutineRelease|service_cutover_required/u);
+  assert.doesNotMatch(source, /verifyRoutineRelease|service_cutover_required|service-cutover|finalize_operation|CUTOVER/u);
   assert.match(source, /production:deploy -- --service "\$CANDIDATE_SHA"/u);
-  assert.match(source, /production:deploy -- --service-cutover "\$CANDIDATE_SHA"/u);
-  assert.match(source, /production:deploy -- finalize "\$FINALIZE_OPERATION"/u);
+  assert.match(source, /production:deploy -- finalize "\$operation_id" --evidence-saved --original-runner-stopped/u);
 });
 
 test("routine recovery finalization only runs after a successful provider deployment", async () => {
   const source = await readFile(workflowPath, "utf8");
   assert.match(source, /- name: Deploy exact approved merge\n\s+id: deploy/u);
-  assert.match(source, /if: \$\{\{ always\(\) && steps\.deploy\.outcome == 'success' && steps\.release-artifact\.outcome == 'success' && env\.CUTOVER != 'true' \}\}/u);
+  assert.match(source, /if: \$\{\{ always\(\) && steps\.deploy\.outcome == 'success' && steps\.release-artifact\.outcome == 'success' \}\}/u);
 });
 
 test("CI does not gate verification on release metadata", async () => {
@@ -103,7 +149,8 @@ test("deployment eligibility does not depend on release metadata", async () => {
   const gate = section(source, "  release-gate:");
   assert.doesNotMatch(gate, /check:version-bump|check:release-note|nemligRelease|codename/u);
   assert.doesNotMatch(gate, /publish=true|outputs\.publish/u);
-  assert.doesNotMatch(gate, /GH_TOKEN|pull-requests: read|\/pulls/u);
+  assert.doesNotMatch(gate, /GH_TOKEN:|github\.token/u);
+  assert.doesNotMatch(gate, /CLOUDFLARE|secrets\.|pull-requests: read|\/pulls/u);
 });
 
 test("deployment evidence remains artifact-backed without a publication side effect", async () => {
@@ -118,21 +165,14 @@ test("deployment evidence remains artifact-backed without a publication side eff
   assert.doesNotMatch(source, /publish:deployment-release/u);
 });
 
-test("cutover recovery can be finalized through the protected environment", async () => {
+test("manual dispatch requires recovery intent and cannot finalize operations", async () => {
   const source = await readFile(workflowPath, "utf8");
   const trigger = section(source, "on:");
-  const finalize = section(source, "  finalize:");
-  assert.match(trigger, /finalize_operation:[\s\S]*?required: false[\s\S]*?type: string/m);
-  assert.match(finalize, /needs: release-gate/u);
-  assert.match(finalize, /needs\.release-gate\.outputs\.deploy == 'true' && inputs\.finalize_operation != ''/u);
-  assert.match(finalize, /environment:\n\s+name: nemlig-production/u);
-  assert.match(finalize, /permissions:\n\s+contents: write\n\s+actions: read/u);
-  assert.match(finalize, /persist-credentials: false/u);
-  assert.match(finalize, /pnpm install --frozen-lockfile/u);
-  assert.match(finalize, /GH_TOKEN:/u);
-  assert.match(finalize, /CLOUDFLARE_API_TOKEN:/u);
-  assert.match(finalize, /CLOUDFLARE_ACCOUNT_ID:/u);
-  assert.match(finalize, /production:deploy -- finalize "\$FINALIZE_OPERATION" --evidence-saved --original-runner-stopped/u);
+  const gate = section(source, "  release-gate:");
+  assert.match(trigger, /recovery:[\s\S]*?required: true[\s\S]*?type: boolean/m);
+  assert.match(trigger, /resume_retention:[\s\S]*?required: false[\s\S]*?type: boolean/m);
+  assert.match(gate, /inputs\.(recovery|resume_retention) == true/u);
+  assert.doesNotMatch(source, /finalize_operation:|^ {2}finalize:/m);
 });
 
 test("routine recovery finalizes only after its artifact is saved", async () => {
@@ -140,7 +180,7 @@ test("routine recovery finalizes only after its artifact is saved", async () => 
   const upload = deploy.indexOf("uses: actions/upload-artifact@");
   const finalize = deploy.indexOf("production:deploy -- finalize");
   assert.ok(upload >= 0 && finalize > upload);
-  assert.match(deploy, /if: \$\{\{ always\(\) && steps\.deploy\.outcome == 'success' && steps\.release-artifact\.outcome == 'success' && env\.CUTOVER != 'true' \}\}/u);
+  assert.match(deploy, /if: \$\{\{ always\(\) && steps\.deploy\.outcome == 'success' && steps\.release-artifact\.outcome == 'success' \}\}/u);
   assert.match(deploy, /JSON\.parse\(readFileSync\(process\.argv\[1\], "utf8"\)\)/u);
   assert.match(deploy, /GITHUB_WORKSPACE\/\.git\/nemlig-production-deploy\/latest\.json/u);
   assert.doesNotMatch(deploy, /readFileSync\([^\n]*RUNNER_TEMP\/nemlig-release\.json/u);

@@ -4,7 +4,7 @@
   "main": "src/cloudflare-worker.ts",
   "compatibility_date": "2026-08-31",
   "workers_dev": true,
-  "keep_vars": true,
+  "keep_vars": false,
   "observability": {
     "enabled": true,
     "head_sampling_rate": 1

@@ -80,7 +80,6 @@ test("publication journal requires exact successful routine deployment evidence"
     { failure: "command_failed" },
     { completedAt: undefined },
     { checks: ["edge_acceptance"] },
-    { checks: ["edge_acceptance", "service_fixture_acceptance", "live_acceptance_pending"] },
   ]) {
     assert.throws(() => validatePublicationJournal(journal(changes), { candidate: sha, expectedRunId: 202 }), /journal|deployment|acceptance/i);
   }

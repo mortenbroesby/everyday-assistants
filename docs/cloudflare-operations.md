@@ -1,20 +1,21 @@
 # Cloudflare operations for Nemlig MCP
 
-Historical production checkpoint (not a current deployment claim): version `1e088bde-55ff-429a-a6dc-09d7e88360d3` is enabled
-for private family use. Health, OAuth metadata, anonymous rejection, Auth0
-authorization through the existing hosted app, authenticated basket and
-shopping-list reads, and no unauthorized Container wake are verified. The
-deployed application revision is `7566d1eec1b435b86ef86afc50c45c14ffd8c9cd`.
+Production state is time-sensitive. Verify the current workflow journal,
+Worker, routes and Container before any operation; historical version IDs and
+acceptance below are not current-state proof. On 2026-09-23, the failed release
+run left the Worker intentionally disabled and both public routes returned
+HTTP 503. The Container application remained running but unhealthy. Do not
+retry deployment, reconcile the pending journal, stop the Container, or prune
+images until exact recovery evidence proves the prior runner is stopped and
+the provider state is safe.
 
-Current production endpoints:
+Production endpoints:
 
 - `https://nemlig-mcp.broesby.dk/mcp`
 - `https://nemlig-mcp-cloudflare-production.mortenbroesby.workers.dev/mcp`
 
-Both returned HTTP 503 with `MCP temporarily disabled` during the initial gate
-and again on live kill-switch version `fd5696b7-d2ea-4f3c-9a1a-88cf22d29caa`.
-The current enabled endpoint returns healthy OAuth metadata and rejects anonymous
-MCP initialization with HTTP 401 without starting the Container. The Worker is
+Both returned HTTP 503 with `MCP temporarily disabled` during the latest
+read-only incident verification. The Worker is
 `nemlig-mcp-cloudflare-production`; the configured Container is `lite`, EU
 placed, sleeps after 10 minutes, and is capped at one instance. The currently
 deployed owner-only policy is the schema-v1 migration source. Schema v2 keeps
@@ -80,8 +81,9 @@ disabled endpoint and no-running-Container state were verified.
 
 4. Keep the production issuer, audience, public URL, custom domain, and safety
    thresholds in `wrangler.jsonc`. Store `NEMLIG_MCP_PRINCIPALS` as one
-   encrypted Worker secret using the owner-only procedure below. Production
-   uses `keep_vars`, so repository deploys retain separately managed secrets. `NEMLIG_MCP_ALLOWED_ORIGINS`,
+   encrypted Worker secret using the owner-only procedure below. Checked-in
+   config is the source of truth for plain variables (`keep_vars: false`);
+   encrypted Worker secrets remain preserved by deploys. `NEMLIG_MCP_ALLOWED_ORIGINS`,
    `NEMLIG_MCP_REQUIRED_SCOPE`, and `NEMLIG_MCP_REVISION` remain optional.
 
 5. The runtime no longer submits GitHub issues and does not forward `GH_TOKEN`.
@@ -169,8 +171,9 @@ responses.
 
 ## Automated production release
 
-Routine releases use the **Nemlig production** workflow with the exact current
-`main` SHA and the successful exact-head CI run for that SHA. The workflow does
+Routine releases use the **Nemlig production** workflow with the exact SHA from
+a successful trusted CI run, provided that SHA remains in current `main`
+history. The workflow does
 not require a semantic-version bump, codename allocation, release-note file, or
 GitHub prerelease. The package's human-facing codename metadata remains part of
 the runtime identity for now, but it is not deployment eligibility or provider
@@ -180,7 +183,7 @@ The owner approves the pull request before merge. A successful push to `main`
 then enters the protected production environment automatically; that merge is
 the routine human release decision. The workflow keeps the safety boundary in
 the privileged job: exact-SHA checkout, frozen install, pinned actions,
-serialized execution, bounded timeouts, protected credentials, one-Container
+queued serialized execution, bounded timeouts, protected credentials, one-Container
 limits, effective configuration checks, revision readback, and read-only edge
 and service acceptance. It never requests an owner access token, password, or
 browser session.
@@ -197,31 +200,34 @@ not a fresh real-family Nemlig or ChatGPT acceptance claim.
 
 ### Repeatable release
 
-1. Merge an approved change only after its required CI is green. The workflow
-   selects the exact successful `main` commit; a superseded candidate stops
-   before credentials or provider access.
+1. Merge an approved change only after its required CI is green. Each eligible
+   successful main-CI run queues the exact tested SHA; it does not substitute a
+   later tip SHA.
 2. Credential-free preflight rechecks the repository, exact CI provenance,
-   current `main`, and protected environment before the privileged job.
+   that the candidate is still an ancestor of current `main`, and the protected
+   environment before the privileged job. A candidate already superseded by a
+   deployed descendant stops before provider mutation.
 3. The protected job builds and deploys the exact SHA, records the bounded
    report and journal, runs the configured edge/service acceptance, and
    automatically finalizes a known terminal routine run after the artifact is
-   saved. A cutover, uncertain state, failed artifact, or provider drift keeps
+   saved. An uncertain state, failed artifact, or provider drift keeps
    recovery ownership for explicit inspection.
-4. Use the manual dispatch form only for an exact `main` deployment or a
-   separately supervised recovery/cutover operation. The journal's `commit` is
-   the deployed source identity; the historical cutover record is not a routine
-   eligibility gate.
-
-Manual dispatch remains available for recovery or an intentionally selected
-merge:
+4. Routine delivery starts automatically after successful CI. Manual dispatch
+   is reserved for recovery to a previously green `main` ancestor. GitHub's
+   native concurrency queue retains at most 100 pending runs and orders them by
+   when they began waiting, not by source-event dispatch time. There is no
+   hourly catch-up job, durable delivery queue, or automatic replay layer; this
+   rare platform queue limit is accepted rather than adding custom machinery.
+   If GitHub rejects a run at that limit, use the protected recovery workflow
+   for the current green `main` SHA after confirming the queued deploy state.
 
    ```sh
    git fetch origin main
    sha=$(git rev-parse origin/main)
-   gh workflow run nemlig-production.yml --ref main -f commit="$sha" -f cutover=false
+   gh workflow run nemlig-production.yml --ref main -f commit="$sha" -f recovery=true
    ```
 
-4. If the run is canceled, fails, or leaves a lease, download its artifact and
+5. If the run is canceled, fails, or leaves a lease, download its artifact and
    run `inspect-recovery` with that artifact's operation UUID. Continue only
    when inspection proves a terminal matching state; never retry the deployment
    or delete the lease based on its age.
@@ -233,31 +239,24 @@ pnpm --filter nemlig-assistant production:deploy -- preflight EXACT_MAIN_COMMIT
 pnpm --filter nemlig-assistant production:deploy -- --service EXACT_MAIN_COMMIT
 ```
 
-The initial service-identity cutover requires `--service-cutover`. It performs
-machine acceptance, records `live_acceptance_pending`, and retains recovery
-ownership until actual live acceptance is recorded in
-`apps/nemlig-assistant/release/production-cutover.json`. Routine mode is
-eligible from the exact current-main and completed-CI source contract and does
-not require that historical cutover record. Legacy explicit local owner mode
-remains available but is never CI's fallback.
+Routine service acceptance is part of the automatic workflow; there is no
+manual cutover or finalization mode. Recovery remains explicit and accepts only
+a previously green ancestor of current `main`.
 
-The command verifies local HEAD, refreshed remote `main`, exact-head CI, and the
+The command verifies local HEAD, refreshed remote `main` ancestry, exact-head CI, and the
 required main-only environment before issuing one bounded machine token or
 changing Cloudflare. Token validation checks signature, issuer, audience, exact
 identity/scope and remaining expiry. Fixture checks prove runtime transport and
 isolation; they do not prove live Nemlig or ChatGPT behavior.
 It takes an exclusive lock shared by linked worktrees and atomically creates
 `refs/heads/codex-lock/nemlig-production` for a unique operation UUID, not the
-source SHA. The ref contains a bounded public-safe recovery journal. Routine
-releases keep `MCP_ENABLED=true` while Wrangler activates the new Worker and
-rolls the Container image. The original disabled-first sequence is reserved for
-the initial supervised service cutover and explicit local owner mode. If a
-routine candidate fails bounded acceptance after rollout, recovery deploys the
-same image with `MCP_ENABLED=false` and no second Container rollout. A replaced
-Container also loses its in-memory MCP transport sessions; unknown session IDs
-return HTTP 404 so conforming clients initialize a fresh session automatically.
-The journal records the starting version, the exact enabled or supervised-
-cutover transition, the resulting Container image, and the bounded edge and
+source SHA. The ref contains a bounded public-safe recovery journal. Releases
+keep `MCP_ENABLED=true` while Wrangler activates the new Worker and rolls the
+Container image. If a candidate fails bounded acceptance after rollout,
+recovery deploys the same image with `MCP_ENABLED=false` and no second Container
+rollout. The MCP HTTP transport is stateless: modern clients do not depend on
+session IDs, and production acceptance does not probe obsolete session-recovery
+behavior. The journal records the starting version, the exact enabled transition, the resulting Container image, and the bounded edge and
 authenticated read-only checks.
 It never prepares or applies a proposal and never mutates a basket, favorite, or
 saved list.
@@ -273,8 +272,8 @@ The operation has a 25-minute deadline; cancellation terminates the command's
 process group before returning.
 
 After the deployment command stops and the bounded report artifact is saved, a
-known terminal routine run invokes exact-state finalization automatically. A
-cutover, failed artifact upload, pending intent, unknown state or drift retains
+known terminal run invokes exact-state finalization automatically. An uncertain
+operation, failed artifact upload, pending intent, unknown state or drift retains
 both leases for explicit inspection and finalization. Finalization requires the exact operation UUID,
 complete terminal evidence, matching current Worker/configuration/application/instance and unchanged remote
 journal head. Missing evidence, pending intent, unknown state or drift blocks
@@ -289,9 +288,10 @@ pnpm --filter nemlig-assistant production:deploy -- inspect-recovery OPERATION_U
 pnpm --filter nemlig-assistant production:deploy -- finalize OPERATION_UUID --evidence-saved --original-runner-stopped
 ```
 
-Inspection is read-only and uses at most four provider reads; a stopped-runner
-attestation cannot make pending or unknown work cleanup-eligible. Do not rerun an
-uncertain release or manually continue its upload steps. GitHub ref deletion has
+Inspection is read-only and uses four bounded Worker/Container metadata reads;
+for a disabled target it also confirms both public routes still return the fixed
+503 response. A stopped-runner attestation cannot make pending or unknown work
+cleanup-eligible. Do not rerun an uncertain release or manually continue its upload steps. GitHub ref deletion has
 no compare-and-swap parameter: the final read/delete pair cannot fence an
 out-of-protocol actor replacing the ref in that interval. All release clients
 must honor the no-steal rule.
@@ -299,13 +299,14 @@ must honor the no-steal rule.
 Both inspection and finalization require the applicable recorded application
 version, configuration digest and starting enabled flag. Old or incomplete journals remain readable but
 cannot authorize cleanup. Enabled recovery permits the fixed inactive assignment
-or one matching running instance; disabled recovery requires inactive. Neither
+or one matching running instance; disabled recovery requires both public routes
+to remain disabled and the Container instance to be inactive. Neither
 operation wakes or polls a Container. Finalization independently requires both
 evidence-saved and stopped-runner attestations, then rechecks the remote head.
 Rollback and failure recovery also verify configuration, image, application
 version and instance state before claiming a known result. A Worker-only rollback
-is not proof of image restoration. These local safeguards do not substitute for
-approved live cutover/recovery evidence or authorize a production mutation.
+is not proof of image restoration. These local safeguards do not authorize a
+production mutation.
 
 Wrangler's Container list can lag an active rollout. Use
 `wrangler containers list --env production --json` only to discover the single
@@ -313,14 +314,38 @@ application ID, then use `wrangler containers info APPLICATION_ID --env producti
 for authoritative image and application-version reads. Match that version to
 the single accepted instance before reporting convergence.
 
-This automation adds no workflow, CI job, hosted secret, service, dependency,
-schedule, or runtime capacity. It adds bounded Git journal objects, with at most
-32 snapshots and approximately 164 GitHub API calls plus finalization; ordinary
-runs use fewer. The current CI workflow only runs on main pushes and pull
-requests, not journal-ref pushes. Each approved release retains the existing one
-`lite` Container and cost ceilings and performs one image build/upload, one
-no-rollout enable upload, two disabled-route probes, bounded acceptance, and
-small GitHub and Cloudflare state reads.
+The production workflow runs image retention immediately after exact runtime
+acceptance. It requires two identical complete inventory/reference snapshots in
+that run, then deletes safe surplus tags from the exact production registry
+repository one at a time, rechecking active/recovery references and the
+tag-to-digest mapping before each delete and requiring fresh inventory readback
+afterward. Registry layer garbage collection and ledger completion happen only
+after the plan is satisfied. Uncertain results stop for an explicit resume; they
+do not trigger a blind retry, deployment rollback, or kill-switch change. The
+The operation also inspects Container instance versions before planning: active
+instances must match the current application version, and provisioning,
+stopping, mixed-version, or otherwise unknown states hold cleanup.
+
+Cleanup claims the same `codex-lock/nemlig-production` ref used by production
+deployments, so local supervised deploys and post-deploy pruning cannot overlap.
+Each tag deletion first records a durable in-flight tag/digest intent. If a
+runner disappears, the next operation may reclaim only a retention-owned lock
+whose prior GitHub run is complete; it reads the registry before continuing.
+An absent tag resolves the old intent, while a still-present tag remains
+uncertain and is never blindly deleted again. A deployment-owned or malformed
+lock is not taken over.
+
+The retention job uses short-lived pull credentials for inventory and requests
+push credentials only after the two snapshots match and deletion begins. A
+GitHub ledger branch records accepted releases and cleanup checkpoints.
+`NEMLIG_CONTAINER_IMAGE_RETENTION_COUNT` defaults to 10 distinct accepted
+images. If cleanup is interrupted or uncertain, use the protected workflow's
+`resume_retention` input with the accepted commit SHA after the previous run has
+finished; the operation re-reads current state before continuing. The job does
+not remove Worker deployments/versions, secrets, Durable Object state, Container
+applications, or any other registry repository. Deployment still keeps the
+existing one `lite` Container and cost ceilings; image pruning does not add
+runtime capacity or perform basket/order/payment/delivery operations.
 
 ## Emergency disable and re-enable
 

@@ -114,7 +114,7 @@ test("Wrangler configuration fixes both environments to one disabled EU lite Con
     assert.equal(deployment.containers[0].constraints.jurisdiction, "eu");
     assert.equal(deployment.durable_objects.bindings.length, 2);
   }
-  assert.equal(wrangler.keep_vars, true);
+  assert.equal(wrangler.keep_vars, false);
   assert.equal(wrangler.limits.cpu_ms, 100);
   assert.equal(wrangler.limits.subrequests, 8);
   assert.doesNotMatch(raw, /getRandom|autoscal|NEMLIG_(?:USERNAME|PASSWORD)|GH_TOKEN/u);

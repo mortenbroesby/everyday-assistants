@@ -10,6 +10,7 @@ import {
   defaultRunner,
   finalizeDeploymentRecovery,
   inspectDeploymentRecovery,
+  reconcilePendingRollback,
   instancesInactive,
   parseContainer,
   parseDeployCli,
@@ -59,9 +60,9 @@ const version = (id: string, revision: string, enabled: boolean) => JSON.stringi
       ["MCP_EXPENSIVE_RATE_LIMIT", "10"],
       ["MCP_RATE_LIMIT", "60"],
       ["MCP_TOTAL_TIMEOUT_MS", "90000"],
+      ["NEMLIG_MCP_CREDENTIAL_KEY_VERSION", "one"],
       ["NEMLIG_MCP_AUTH0_AUDIENCE", "https://nemlig-mcp.broesby.dk/mcp"],
       ["NEMLIG_MCP_AUTH0_ISSUER", "https://everyday-assistants.eu.auth0.com/"],
-      ["NEMLIG_MCP_CREDENTIAL_KEY_VERSION", "one"],
       ["NEMLIG_MCP_HTTP_HOST", "0.0.0.0"],
       ["NEMLIG_MCP_HTTP_PORT", "8080"],
       ["NEMLIG_MCP_PUBLIC_URL", "https://nemlig-mcp.broesby.dk/mcp"],
@@ -83,7 +84,7 @@ const deployment = (id: string) => JSON.stringify([{
 }]);
 
 const config = (path: string) => ({
-  configPath: path, userConfigPath: path, name: "nemlig-mcp-cloudflare-production", keep_vars: true,
+  configPath: path, userConfigPath: path, name: "nemlig-mcp-cloudflare-production", keep_vars: false,
   limits: { cpu_ms: 100, subrequests: 8 },
   vars: {
     MCP_ENABLED: "false", MCP_DAILY_LIMIT: "5000", MCP_EXPENSIVE_DAILY_LIMIT: "500", MCP_RATE_LIMIT: "60", MCP_EXPENSIVE_RATE_LIMIT: "10",
@@ -98,32 +99,47 @@ const config = (path: string) => ({
   durable_objects: { bindings: [{ name: "NEMLIG_MCP_CONTAINER", class_name: "NemligMcpContainer" }, { name: "NEMLIG_PLAN_STORAGE", class_name: "PlanStorage" }] },
 });
 
-const recoveryDeps = (journal: Record<string, unknown>, currentVersion: string, currentEnabled: boolean): DeployDependencies => {
-  const remoteCommit = "cccccccccccccccccccccccccccccccccccccccc";
+const recoveryDeps = (journal: Record<string, unknown>, currentVersion: string, currentEnabled: boolean, options: { image?: string; applicationVersion?: number; active?: boolean } = {}): DeployDependencies => {
+  let remoteParent = typeof journal.remoteCommit === "string" ? journal.remoteCommit : "cccccccccccccccccccccccccccccccccccccccc";
+  let remoteHead = "dddddddddddddddddddddddddddddddddddddddd";
+  let currentJournal = JSON.stringify(journal);
   const tree = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
   const blob = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
-  const encoded = Buffer.from(JSON.stringify(journal)).toString("base64");
-  const run: CommandRunner = async (command, args) => {
+  const run: CommandRunner = async (command, args, runOptions) => {
     if (command === "pnpm" && args.includes("deployments")) return deployment(currentVersion);
     if (command === "pnpm" && args.includes("versions")) return version(currentVersion, commit, currentEnabled);
-    if (command === "pnpm" && args.includes("instances")) return JSON.stringify([{ id: "durable-object", name: "nemlig-production", state: "inactive", version: null }]);
+    if (command === "pnpm" && args.includes("instances")) return JSON.stringify([{ id: "durable-object", name: "nemlig-production", state: options.active ? "running" : "inactive", version: options.active ? options.applicationVersion ?? 25 : null }]);
     if (command === "pnpm" && args.includes("info")) return JSON.stringify({
       id: applicationId, name: "nemlig-mcp-cloudflare-production-nemligmcpcontainer-production", instances: 1,
-      configuration: { image }, version: 25,
+      configuration: { image: options.image ?? image }, version: options.applicationVersion ?? 25,
     });
     if (command === "pnpm" && args.includes("containers")) return JSON.stringify([{
-      id: applicationId, name: "nemlig-mcp-cloudflare-production-nemligmcpcontainer-production", instances: 1, image, version: 25,
+      id: applicationId, name: "nemlig-mcp-cloudflare-production-nemligmcpcontainer-production", instances: 1, image: options.image ?? image, version: options.applicationVersion ?? 25,
     }]);
     if (command !== "gh") throw new Error("unexpected command");
     if (args[0] === "repo") return JSON.stringify({ nameWithOwner: "mortenbroesby/everyday-assistants", url: "https://github.com/mortenbroesby/everyday-assistants" });
+    if (args[0] === "api" && args[1] === "--method" && args[2] === "DELETE") { remoteHead = ""; return ""; }
     const path = args.find((value) => value.startsWith("repos/")) ?? "";
-    if (path.includes("git/ref/")) return remoteCommit;
-    if (path.includes("git/commits/")) return JSON.stringify({ tree: { sha: tree } });
+    if (path.includes("git/ref/")) return remoteHead;
+    if (path.includes("git/commits/")) return JSON.stringify({ tree: { sha: tree }, parents: remoteParent ? [{ sha: remoteParent }] : [] });
     if (path.includes("git/trees/")) return JSON.stringify({ tree: [{ path: "journal.json", type: "blob", mode: "100644", sha: blob }] });
-    if (path.includes("git/blobs/")) return JSON.stringify({ encoding: "base64", content: encoded });
+    if (path.includes("git/blobs/")) return JSON.stringify({ encoding: "base64", content: Buffer.from(currentJournal).toString("base64") });
+    if (args[0] === "api" && args[1] === "--method" && args[2] === "POST" && path.endsWith("git/blobs")) {
+      currentJournal = Buffer.from(JSON.parse(runOptions?.input ?? "{}").content, "base64").toString("utf8");
+      return JSON.stringify({ sha: blob });
+    }
+    if (args[0] === "api" && args[1] === "--method" && args[2] === "POST" && path.endsWith("git/trees")) return JSON.stringify({ sha: tree });
+    if (args[0] === "api" && args[1] === "--method" && args[2] === "POST" && path.endsWith("git/commits")) return JSON.stringify({ sha: "dddddddddddddddddddddddddddddddddddddddd" });
+    if (args[0] === "api" && args[1] === "--method" && args[2] === "PATCH" && path.includes("git/refs/heads/codex-lock/nemlig-production")) {
+      remoteParent = remoteHead;
+      remoteHead = JSON.parse(runOptions?.input ?? "{}").sha;
+      return JSON.stringify({ object: { sha: remoteHead } });
+    }
     throw new Error("unexpected gh api");
   };
-  return { repoRoot: ".", packageRoot: ".", env: {}, run, fetcher: fetch, sleep: async () => undefined, now: () => new Date() };
+  return { repoRoot: ".", packageRoot: ".", env: {}, run,
+    fetcher: async () => new Response("MCP temporarily disabled", { status: 503 }),
+    sleep: async () => undefined, now: () => new Date() };
 };
 
 const terminalJournal = (extra: Record<string, unknown> = {}) => ({
@@ -159,6 +175,8 @@ async function fixture(options: {
   head?: string;
   remoteMain?: string;
   recoveryAncestor?: boolean;
+  startingRevision?: string;
+  deployedRevisionNotAncestor?: boolean;
   remoteAfterPreflight?: boolean;
   remoteLeaseBlocked?: boolean;
   remoteLeaseChanges?: boolean;
@@ -174,6 +192,7 @@ async function fixture(options: {
   failDisabledDeploy?: boolean;
   failFeatures?: boolean;
   failFeaturesOnce?: boolean;
+  failProbe?: boolean;
   failProbeOnce?: boolean;
   failCurrentRead?: boolean;
   externalEnabledDriftDuringRecovery?: boolean;
@@ -228,6 +247,7 @@ async function fixture(options: {
   };
   let disabledReads = 0;
   let remoteReads = 0;
+  let sourceAncestryReads = 0;
   const run: CommandRunner = async (commandName, args, runOptions) => {
     calls.push({ command: commandName, args: [...args], env: runOptions?.env, input: runOptions?.input });
     if (commandName === "gh" && args[0] === "repo") {
@@ -299,7 +319,10 @@ async function fixture(options: {
         appended = true; return "{}";
       }
       const commitSha = path.match(/git\/commits\/([0-9a-f]{40})$/u)?.[1];
-      if (commitSha) return JSON.stringify({ tree: { sha: commits.get(commitSha)?.tree } });
+      if (commitSha) return JSON.stringify({
+        tree: { sha: commits.get(commitSha)?.tree },
+        parents: commits.get(commitSha)?.parents.map((sha) => ({ sha })) ?? [],
+      });
       const treeSha = path.match(/git\/trees\/([0-9a-f]{40})$/u)?.[1];
       if (treeSha) return JSON.stringify({ tree: [{ path: "journal.json", type: "blob", mode: "100644", sha: trees.get(treeSha) }] });
       const blobSha = path.match(/git\/blobs\/([0-9a-f]{40})$/u)?.[1];
@@ -317,11 +340,18 @@ async function fixture(options: {
       return options.remoteAfterPreflight && remoteReads > 1 ? previousCommit : options.remoteMain ?? commit;
     }
     if (commandName === "git" && args[0] === "status") return "";
-    if (commandName === "git" && args[0] === "merge-base" && options.recoveryAncestor === false) throw new Error("not an ancestor");
+    if (commandName === "git" && args[0] === "merge-base") {
+      if (args[3] === "origin/main") {
+        sourceAncestryReads += 1;
+        if (options.recoveryAncestor === false || (options.remoteAfterPreflight && sourceAncestryReads > 1)) throw new Error("candidate is not on main");
+      }
+      if (args[3] === commit && options.deployedRevisionNotAncestor) throw new Error("deployed revision is newer than candidate");
+    }
     if (commandName === "git") return "";
     if (commandName !== "pnpm") throw new Error("unexpected command");
     if (args[0] === "production:probe") {
       probeReads += 1;
+      if (options.failProbe) throw new Error("private edge failure detail");
       if (options.failProbeOnce && probeReads === 1) throw new Error("edge not converged");
       return "edge ok";
     }
@@ -346,7 +376,8 @@ async function fixture(options: {
     if (args.includes("versions") && args.includes("view")) {
       const id = args[args.indexOf("view") + 1];
       if (id && [startingId, disabledId, enabledId, thirdPartyId].includes(id)) {
-        const parsed = JSON.parse(version(id, id === startingId || id === thirdPartyId ? previousCommit : commit, id !== disabledId)) as { resources: { bindings: Record<string, unknown>[] } };
+        const revision = id === startingId ? options.startingRevision ?? previousCommit : id === thirdPartyId ? previousCommit : commit;
+        const parsed = JSON.parse(version(id, revision, id !== disabledId)) as { resources: { bindings: Record<string, unknown>[] } };
         if (options.versionBindings) parsed.resources.bindings = options.versionBindings(parsed.resources.bindings, id);
         return JSON.stringify(parsed);
       }
@@ -469,6 +500,15 @@ test("recovery preflight accepts a previously green main ancestor and records th
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
+test("routine preflight accepts an exact-green candidate that remains in current main history", async () => {
+  const newerMain = "b".repeat(40);
+  const { deps, calls, root } = await fixture({ remoteMain: newerMain });
+  try {
+    assert.deepEqual(await preflightProductionDeploy(commit, deps), { commit, ciRunId: 456 });
+    assert.ok(calls.some(({ command, args }) => command === "git" && args[0] === "merge-base" && args[2] === commit && args[3] === "origin/main"));
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
 test("recovery preflight rejects a SHA outside main history", async () => {
   const { deps, root } = await fixture({ remoteMain: "b".repeat(40), recoveryAncestor: false });
   try {
@@ -520,8 +560,9 @@ test("schema-2 recovery journals reject unknown, malformed, oversized, and exces
   assert.equal(parseDeploymentJournal(JSON.stringify(journal)).operationId, journal.operationId);
   const snapshot = { ...journal, startingApplicationVersion: 25, disabledApplicationVersion: 26, enabledApplicationVersion: 26, startingConfigDigest: "a".repeat(64) };
   assert.deepEqual(parseDeploymentJournal(JSON.stringify(snapshot)), snapshot);
+  assert.equal(parseDeploymentJournal(JSON.stringify({ ...journal, disabledVersion: null, disabledImage: null, disabledApplicationVersion: null })).disabledVersion, undefined);
   for (const field of ["startingApplicationVersion", "disabledApplicationVersion", "enabledApplicationVersion"]) {
-    for (const value of [0, -1, 1.5, Number.MAX_SAFE_INTEGER + 1, "25", null]) assert.throws(() => parseDeploymentJournal(JSON.stringify({ ...journal, [field]: value })));
+    for (const value of [0, -1, 1.5, Number.MAX_SAFE_INTEGER + 1, "25", ...(field === "disabledApplicationVersion" ? [] : [null])]) assert.throws(() => parseDeploymentJournal(JSON.stringify({ ...journal, [field]: value })));
   }
   for (const value of ["A".repeat(64), "a".repeat(63), 12, null]) assert.throws(() => parseDeploymentJournal(JSON.stringify({ ...journal, startingConfigDigest: value })));
   for (const value of ["true", 1, null]) assert.throws(() => parseDeploymentJournal(JSON.stringify({ ...journal, startingEnabled: value })));
@@ -668,6 +709,16 @@ test("main advancing after initial approval stops before provider mutation", asy
   }
 });
 
+test("a merged queued candidate cannot overwrite a newer deployed runtime revision", async () => {
+  const { deps, calls, root } = await fixture({ startingRevision: "b".repeat(40), deployedRevisionNotAncestor: true });
+  try {
+    const report = await deployProduction(commit, deps);
+    assert.equal(report.outcome, "failed");
+    assert.equal(report.failure, "candidate_does_not_supersede_runtime");
+    assert.equal(calls.some(({ args }) => args.some((argument) => argument === "deploy" || argument === "rollback")), false);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
 test("successful deployment builds once, reuses the image, and journals only redacted state", async () => {
   const { deps, calls, root } = await fixture();
   try {
@@ -727,7 +778,7 @@ test("enabled acceptance retries while the edge deployment converges", async () 
 
 test("enabled acceptance retries while the Container service converges", async () => {
   const { deps, calls, root } = await fixture({ failFeaturesOnce: true });
-  deps.acceptanceMode = "service-cutover";
+  deps.acceptanceMode = "service";
   deps.env = { CLOUDFLARE_ACCOUNT_ID: accountId, NEMLIG_MCP_SERVICE_CLIENT_ID: "service-client", NEMLIG_MCP_SERVICE_CLIENT_SECRET: "machine-secret", NEMLIG_CI_ACCEPTANCE_READY: "true" };
   deps.issueServiceToken = async () => "machine-token";
   try {
@@ -837,47 +888,33 @@ test("Cloudflare null self-target metadata is treated as an unset target", async
 });
 
 test("a disabled legacy auth canary binding is ignored during deployment readback", async () => {
-  const { deps, calls, root } = await fixture({ versionBindings: (values) => [
+  const { deps, calls, root } = await fixture({ versionBindings: (values, id) => id === startingId ? [
     ...values,
     { name: "NEMLIG_MCP_AUTH_CANARY", type: "plain_text", text: "false" },
-  ] });
-  try {
-    assert.equal((await deployProduction(commit, deps)).outcome, "success");
-    assert.equal(calls.filter(({ args }) => args.includes("deploy")).length, 2);
-  } finally { await rm(root, { recursive: true, force: true }); }
-});
-
-test("the exact inert legacy minimal-auth binding is tolerated without weakening unknown bindings", async () => {
-  const { deps, calls, root } = await fixture({ versionBindings: (values) => [
-    ...values,
     { name: "MCP_MINIMAL_AUTH_ENABLED", type: "plain_text", text: "true" },
-  ] });
+  ] : values });
   try {
     assert.equal((await deployProduction(commit, deps)).outcome, "success");
-    assert.equal(calls.filter(({ args }) => args.includes("deploy")).length, 2);
+    const deploys = calls.filter(({ args }) => args.includes("deploy"));
+    assert.equal(deploys.length, 2);
+    assert.ok(deploys.every(({ args }) => args.includes("NEMLIG_MCP_CREDENTIAL_KEY_VERSION:one")));
+    assert.ok(deploys.every(({ args }) => !args.some((arg) => arg.startsWith("MCP_MINIMAL_AUTH_ENABLED:"))));
+    assert.ok(deploys.every(({ args }) => !args.some((arg) => arg.startsWith("NEMLIG_MCP_AUTH_CANARY:"))));
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
-test("wrong legacy minimal-auth values and arbitrary unknown live plain bindings fail closed", async () => {
-  const cases = [
-    {
-      versionBindings: (values: Record<string, unknown>[]) => [...values, { name: "MCP_MINIMAL_AUTH_ENABLED", type: "plain_text", text: "false" }],
-      failure: "cloudflare_runtime_safety_mismatch",
-    },
-    {
-      versionBindings: (values: Record<string, unknown>[]) => [...values, { name: "UNRECOGNIZED_BINDING", type: "plain_text", text: "true" }],
-      failure: "cloudflare_runtime_binding_unsupported",
-    },
-  ];
-  for (const { versionBindings, failure } of cases) {
-    const { deps, calls, root } = await fixture({ versionBindings });
-    try {
-      const report = await deployProduction(commit, deps);
-      assert.equal(report.outcome, "failed");
-      assert.equal(report.failure, failure);
-      assert.equal(calls.some(({ args }) => args.includes("deploy")), false);
-    } finally { await rm(root, { recursive: true, force: true }); }
-  }
+test("unrecognized starting plaintext bindings fail closed with a bounded category", async () => {
+  const privateValue = "never-log-this-value";
+  const { deps, calls, root } = await fixture({ versionBindings: (values, id) => id === startingId
+    ? [...values, { name: "UNRECOGNIZED_RUNTIME_VALUE", type: "plain_text", text: privateValue }]
+    : values });
+  try {
+    const report = await deployProduction(commit, deps);
+    assert.equal(report.outcome, "failed");
+    assert.equal(report.failure, "cloudflare_runtime_unexpected_binding");
+    assert.equal(JSON.stringify(report).includes(privateValue), false);
+    assert.equal(calls.some(({ args }) => args.includes("deploy")), false);
+  } finally { await rm(root, { recursive: true, force: true }); }
 });
 
 test("an enabled legacy auth canary binding remains unsafe", async () => {
@@ -888,7 +925,7 @@ test("an enabled legacy auth canary binding remains unsafe", async () => {
   try {
     const report = await deployProduction(commit, deps);
     assert.equal(report.outcome, "failed");
-    assert.equal(report.failure, "cloudflare_runtime_safety_mismatch");
+    assert.equal(report.failure, "cloudflare_runtime_legacy_binding_invalid");
     assert.equal(calls.some(({ args }) => args.includes("deploy")), false);
   } finally { await rm(root, { recursive: true, force: true }); }
 });
@@ -897,9 +934,9 @@ test("malformed bindings and starting safety or DO drift stop before deployment"
   const transforms: Array<(values: Record<string, unknown>[]) => Record<string, unknown>[]> = [
     (values) => [...values, { ...values[0] }],
     (values) => [...values, {}],
-    (values) => [...values, { name: "UNRECOGNIZED_BINDING", type: "plain_text", text: "true" }],
     (values) => values.map((value) => value.name === "MCP_RATE_LIMIT" ? { ...value, type: "json" } : value),
     (values) => values.map((value) => value.name === "MCP_RATE_LIMIT" ? { ...value, text: "61" } : value),
+    (values) => values.map((value) => value.name === "NEMLIG_MCP_CREDENTIAL_KEY_VERSION" ? { ...value, text: "invalid version!" } : value),
     (values) => values.map((value) => value.name === "NEMLIG_MCP_CONTAINER" ? { ...value, class_name: "Other" } : value),
     (values) => values.map((value) => value.type === "durable_object_namespace" ? { ...value, script_name: "other-worker" } : value),
     (values) => values.map((value) => value.type === "durable_object_namespace" ? { ...value, environment: "staging" } : value),
@@ -944,7 +981,7 @@ test("redirected paths and local safety changes fail without leaking reader erro
       if (field === "reader-error") throw new Error("never-print-this-private-value");
       const local = config(path);
       if (field === "configPath" || field === "userConfigPath") return { ...local, [field]: `${path}.redirected` };
-      if (field === "keep_vars") return { ...local, keep_vars: false };
+      if (field === "keep_vars") return { ...local, keep_vars: true };
       if (field === "limits") return { ...local, limits: { cpu_ms: 200, subrequests: 8 } };
       return { ...local, vars: { ...local.vars, MCP_CREDENTIAL_RATE_LIMIT: "4" } };
     } });
@@ -962,7 +999,7 @@ test("the default pinned Wrangler reader handles the real production environment
   try {
     const local = config(join(root, "wrangler.jsonc"));
     await writeFile(join(root, "wrangler.jsonc"), JSON.stringify({
-      name: "test-local", compatibility_date: "2026-08-31", keep_vars: true,
+      name: "test-local", compatibility_date: "2026-08-31", keep_vars: false,
       limits: local.limits,
       env: { production: { name: local.name, vars: local.vars, durable_objects: local.durable_objects,
         containers: [{ ...local.containers[0], image: "./Dockerfile" }] } },
@@ -1175,6 +1212,7 @@ test("enabled acceptance failure returns to the proven disabled candidate", asyn
   try {
     const report = await deployProduction(commit, deps);
     assert.equal(report.outcome, "failed");
+    assert.equal(report.failure, "authenticated_read_only_acceptance_failed");
     assert.equal(report.rollback, "restored");
     assert.equal(report.lastVerifiedState, "disabled");
     const rollbackCall = calls.find(({ args }) => args.includes("rollback"));
@@ -1182,6 +1220,39 @@ test("enabled acceptance failure returns to the proven disabled candidate", asyn
   } finally {
     await rm(root, { recursive: true, force: true });
   }
+});
+
+test("edge acceptance failure has a bounded stage category and retains only proven rollback evidence", async () => {
+  const { deps, calls, root } = await fixture({ failProbe: true });
+  const run = deps.run;
+  deps.run = async (command, args, options) => {
+    if (command === "pnpm" && args[0] === "production:probe") {
+      const report = {
+        schema: 1, profile: "edge", failed: ["authentication_failed"], failureCategory: "authentication_failed",
+        lastCompletedBoundary: "oauth_metadata", correlationIds: ["req_0123456789"],
+      };
+      const stdout = `pnpm banner\n${JSON.stringify(report)}\nprivate token-like marker`;
+      throw Object.assign(new Error("private edge failure detail"), { acceptanceFailure: options?.captureFailureStdout?.(stdout) });
+    }
+    return await run(command, args, options);
+  };
+  try {
+    const report = await deployProduction(commit, deps);
+    assert.equal(report.outcome, "failed");
+    assert.equal(report.failure, "edge_acceptance_failed");
+    assert.equal(report.lastVerifiedState, "disabled");
+    assert.equal(report.rollback, "restored");
+    assert.deepEqual(report.acceptanceFailure, {
+      stage: "edge", profile: "edge", category: "authentication_failed",
+      lastCompletedBoundary: "oauth_metadata", correlationIds: ["req_0123456789"],
+    });
+    assert.equal(JSON.stringify(report).includes("private edge failure detail"), false);
+    assert.equal(JSON.stringify(report).includes("private token-like marker"), false);
+    const latestBlob = calls.filter(({ command, args }) => command === "gh" && args.some((arg) => arg.endsWith("git/blobs"))).at(-1);
+    const persisted = JSON.parse(Buffer.from((JSON.parse(latestBlob?.input ?? "{}") as { content: string }).content, "base64").toString("utf8")) as { acceptanceFailure?: unknown };
+    assert.deepEqual(persisted.acceptanceFailure, report.acceptanceFailure);
+    assert.equal(calls.some(({ args }) => args.includes("DELETE")), false);
+  } finally { await rm(root, { recursive: true, force: true }); }
 });
 
 test("Worker rollback with changed Container metadata remains unknown", async () => {
@@ -1452,7 +1523,7 @@ test("finalize accepts GitHub's empty successful DELETE only after the exact rem
     if (args.includes("DELETE")) { head = ""; return ""; }
     const path = args.find((value) => value.startsWith("repos/")) ?? "";
     if (path.includes("git/ref/")) return head;
-    if (path.includes("git/commits/")) return JSON.stringify({ tree: { sha: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" } });
+    if (path.includes("git/commits/")) return JSON.stringify({ tree: { sha: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" }, parents: [{ sha: "dddddddddddddddddddddddddddddddddddddddd" }] });
     if (path.includes("git/trees/")) return JSON.stringify({ tree: [{ path: "journal.json", type: "blob", mode: "100644", sha: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" }] });
     if (path.includes("git/blobs/")) {
       const encoded = Buffer.from(journal).toString("base64");
@@ -1485,6 +1556,9 @@ test("recovery commands reject forged arguments before I/O", () => {
   assert.deepEqual(parseProductionDeployCli(["finalize", operation, "--evidence-saved", "--original-runner-stopped"]), {
     help: false, command: "finalize", operation, evidenceSaved: true, originalRunnerStopped: true,
   });
+  assert.deepEqual(parseProductionDeployCli(["reconcile-recovery", operation, "--evidence-saved", "--original-runner-stopped"]), {
+    help: false, command: "reconcile-recovery", operation, evidenceSaved: true, originalRunnerStopped: true,
+  });
   assert.throws(() => parseProductionDeployCli(["finalize", operation, "--evidence-saved"]));
   assert.deepEqual(parseProductionDeployCli(["inspect-recovery", "44444444-4444-4444-8444-444444444444"]), {
     help: false, command: "inspect-recovery", operation: "44444444-4444-4444-8444-444444444444", originalRunnerStopped: false,
@@ -1495,7 +1569,7 @@ test("recovery commands reject forged arguments before I/O", () => {
   assert.deepEqual(parseProductionDeployCli(["--recovery", commit]), {
     help: false, command: "deploy", commit, acceptanceMode: "recovery",
   });
-  for (const argv of [["finalize", "44444444-4444-4444-8444-444444444444"], ["finalize", commit, "--evidence-saved"], ["inspect-recovery", commit]]) {
+  for (const argv of [["finalize", "44444444-4444-4444-8444-444444444444"], ["finalize", commit, "--evidence-saved"], ["reconcile-recovery", operation, "--evidence-saved"], ["inspect-recovery", commit], ["--service-cutover", commit]]) {
     assert.throws(() => parseProductionDeployCli(argv));
   }
 });
@@ -1577,6 +1651,28 @@ test("four-read recovery proof rejects every provider drift dimension without de
     assert.equal(await finalizeDeploymentRecovery(journal.operationId, deps, true, true).catch(() => false), false, drift);
     assert.ok(reads <= 4);
     assert.equal(deletes, 0);
+  }
+});
+
+test("disabled recovery requires both exact public routes to remain disabled", async () => {
+  const journal = terminalJournal({
+    rollback: "not_needed", lastVerifiedState: "disabled", disabledVersion: disabledId, disabledImage: image,
+    disabledApplicationVersion: 25, checks: ["disabled_routes", "container_inactive"],
+    transitions: [
+      { phase: "disabled_deploy", kind: "intent", at: "2026-09-05T12:00:00.000Z", version: startingId },
+      { phase: "disabled_deploy", kind: "result", at: "2026-09-05T12:00:01.000Z", version: disabledId },
+    ],
+  });
+  for (const bad of [new Response("enabled", { status: 200 }), new Response("wrong body", { status: 503 })]) {
+    const deps = recoveryDeps(journal, disabledId, false);
+    let routeReads = 0;
+    deps.fetcher = async () => { routeReads += 1; return bad; };
+    const result = await inspectDeploymentRecovery(journal.operationId, deps, true);
+    assert.equal(result.cleanupEligible, false);
+    assert.equal(result.reason, "provider_drift");
+    assert.equal(routeReads, 1);
+    assert.equal(await finalizeDeploymentRecovery(journal.operationId, deps, true, true), false);
+    assert.equal(routeReads, 2);
   }
 });
 
@@ -1668,6 +1764,97 @@ test("inspection denies wrong operation, pending work, and recognizes known disa
   assert.deepEqual(await inspectDeploymentRecovery(operation, recoveryDeps(disabled, disabledId, false), true), {
     operation, originalRunnerStopped: true, cleanupEligible: true, reason: "eligible", state: "disabled",
   });
+});
+
+test("pending rollback reconciliation records only the observed exact disabled candidate", async () => {
+  const terminal = terminalJournal();
+  const pending = terminalJournal({
+    outcome: "failed", rollback: "attempted", lastVerifiedState: "unknown", failure: "edge_acceptance_failed",
+    remoteCommit: "cccccccccccccccccccccccccccccccccccccccc",
+    disabledVersion: null, disabledImage: null, disabledApplicationVersion: null,
+    enabledVersion: enabledId, enabledImage: candidateImage, enabledApplicationVersion: 25,
+    transitions: [...terminal.transitions.slice(0, -2), { ...terminal.transitions.at(-2), version: enabledId }],
+  });
+  assert.equal((pending as Record<string, unknown>).disabledVersion, null);
+  assert.equal((pending as Record<string, unknown>).disabledImage, null);
+  assert.equal((pending as Record<string, unknown>).disabledApplicationVersion, null);
+  const deps = recoveryDeps(pending, thirdPartyId, false, { image: candidateImage, applicationVersion: 25 });
+  const calls: string[] = [];
+  const run = deps.run;
+  deps.run = async (command, args, options) => {
+    calls.push(`${command} ${args.join(" ")}`);
+    return await run(command, args, options);
+  };
+  assert.equal((await inspectDeploymentRecovery(pending.operationId, deps, true)).reason, "pending_or_unknown");
+  assert.equal((await reconcilePendingRollback(pending.operationId, deps, true, false)).reason, "runner_not_stopped");
+  const result = await reconcilePendingRollback(pending.operationId, deps, true, true);
+  assert.deepEqual(result, { operation: pending.operationId, originalRunnerStopped: true, reconciled: true, reason: "eligible", state: "disabled" });
+  assert.ok(calls.some((call) => call.includes("versions view " + thirdPartyId)));
+  assert.equal(calls.some((call) => /wrangler deploy(?: |$)/u.test(call)), false);
+  assert.equal(calls.some((call) => call.includes("containers delete")), false);
+  assert.equal((await inspectDeploymentRecovery(pending.operationId, deps, true)).cleanupEligible, true);
+});
+
+test("pending rollback reconciliation denies drift, a running Container, and a changed journal head", async () => {
+  const terminal = terminalJournal();
+  const pending = terminalJournal({
+    outcome: "failed", rollback: "attempted", lastVerifiedState: "unknown", failure: "edge_acceptance_failed",
+    remoteCommit: "cccccccccccccccccccccccccccccccccccccccc",
+    disabledVersion: null, disabledImage: null, disabledApplicationVersion: null,
+    enabledVersion: enabledId, enabledImage: candidateImage, enabledApplicationVersion: 25,
+    transitions: [...terminal.transitions.slice(0, -2), { ...terminal.transitions.at(-2), version: enabledId }],
+  });
+  for (const drift of ["worker_revision", "config", "image", "application_version", "active_instance", "route", "journal_head"]) {
+    const deps = recoveryDeps(pending, thirdPartyId, false, {
+      image: drift === "image" ? image : candidateImage,
+      applicationVersion: drift === "application_version" ? 26 : 25,
+      active: drift === "active_instance",
+    });
+    const run = deps.run;
+    let refReads = 0;
+    let journalWrites = 0;
+    deps.run = async (command, args, options) => {
+      if (command === "gh" && args[0] === "api" && args[1] === "--method" && ["POST", "PATCH"].includes(args[2] ?? "")) journalWrites += 1;
+      if (drift === "journal_head" && command === "gh" && args.some((arg) => arg.includes("git/ref/heads/codex-lock/nemlig-production"))) {
+        refReads += 1;
+        return refReads === 1 ? "dddddddddddddddddddddddddddddddddddddddd" : "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee";
+      }
+      const raw = await run(command, args, options);
+      if (drift === "worker_revision" && command === "pnpm" && args.includes("versions")) return raw.replace(commit, previousCommit);
+      if (drift === "config" && command === "pnpm" && args.includes("versions")) return raw.replace('"text":"3"', '"text":"4"');
+      if (drift === "route" && command === "pnpm") return raw;
+      return raw;
+    };
+    if (drift === "route") deps.fetcher = async () => new Response("enabled", { status: 200 });
+    const result = await reconcilePendingRollback(pending.operationId, deps, true, true);
+    assert.equal(result.reconciled, false, drift);
+    assert.equal(result.reason, drift === "journal_head" ? "journal_head_changed" : "provider_drift", drift);
+    assert.equal(journalWrites, 0, drift);
+    assert.equal((await inspectDeploymentRecovery(pending.operationId, recoveryDeps(pending, thirdPartyId, false, {
+      image: drift === "image" ? image : candidateImage,
+      applicationVersion: drift === "application_version" ? 26 : 25,
+      active: drift === "active_instance",
+    }))).reason, "pending_or_unknown", drift);
+  }
+});
+
+test("finalization refuses to delete a lease whose remote head changes during proof", async () => {
+  const journal = terminalJournal({ startingEnabled: true });
+  const deps = recoveryDeps(journal, startingId, true);
+  const run = deps.run;
+  let refReads = 0;
+  let deletes = 0;
+  deps.run = async (command, args, options) => {
+    if (command === "gh" && args[0] === "api" && args.some((arg) => arg.includes("git/ref/heads/codex-lock/nemlig-production"))) {
+      refReads += 1;
+      return refReads === 1 ? "c".repeat(40) : "d".repeat(40);
+    }
+    if (command === "gh" && args.includes("DELETE")) deletes += 1;
+    return await run(command, args, options);
+  };
+  assert.equal(await finalizeDeploymentRecovery(journal.operationId, deps, true, true), false);
+  assert.equal(refReads, 2);
+  assert.equal(deletes, 0);
 });
 
 test("incomplete or contradictory terminal journals never become cleanup-eligible", async () => {
@@ -1778,8 +1965,6 @@ test("a bounded operation deadline aborts an in-flight command and suppresses la
 
 test("service deployment never reads owner credentials and issues one token before provider mutation", async () => {
   const { deps, calls, root } = await fixture();
-  await mkdir(join(root, "release"));
-  await writeFile(join(root, "release", "production-cutover.json"), JSON.stringify({ schema: 1, acceptedRevision: previousCommit }));
   let issues = 0;
   const serviceEnv: NodeJS.ProcessEnv = { CLOUDFLARE_ACCOUNT_ID: accountId, NEMLIG_MCP_SERVICE_CLIENT_ID: "service-client", NEMLIG_MCP_SERVICE_CLIENT_SECRET: "machine-secret", NEMLIG_CI_ACCEPTANCE_READY: "true" };
   Object.defineProperty(serviceEnv, "NEMLIG_MCP_ACCESS_TOKEN", { enumerable: true, get() { throw new Error("owner credential read"); } });
@@ -1891,7 +2076,6 @@ test("a routine rollout that fails acceptance disables the unchanged candidate i
   deps.acceptanceMode = "service";
   deps.issueServiceToken = async () => "machine-token";
   await mkdir(join(root, "release"));
-  await writeFile(join(root, "release", "production-cutover.json"), JSON.stringify({ schema: 1, acceptedRevision: previousCommit }));
   try {
     const report = await deployProduction(commit, deps);
     assert.equal(report.outcome, "failed");
@@ -1906,21 +2090,5 @@ test("a routine rollout that fails acceptance disables the unchanged candidate i
     assert.deepEqual(report.transitions.map(({ phase, kind }) => `${phase}:${kind}`), [
       "enable_deploy:intent", "enable_deploy:result", "rollback:intent", "rollback:result",
     ]);
-  } finally { await rm(root, { recursive: true, force: true }); }
-});
-
-test("supervised service cutover reports pending live acceptance and retains recovery ownership", async () => {
-  const { deps, root } = await fixture();
-  deps.env = { CLOUDFLARE_ACCOUNT_ID: accountId, NEMLIG_CI_ACCEPTANCE_READY: "true", NEMLIG_MCP_SERVICE_CLIENT_ID: "service-client" };
-  deps.acceptanceMode = "service-cutover";
-  deps.issueServiceToken = async () => "service-token";
-  try {
-    const report = await deployProduction(commit, deps);
-    assert.equal(report.outcome, "success");
-    assert.ok(report.checks.includes("live_acceptance_pending"));
-    assert.equal(await finalizeDeploymentRecovery(report.operationId, deps, true, true), false);
-    await mkdir(join(root, "release"));
-    await writeFile(join(root, "release", "production-cutover.json"), JSON.stringify({ schema: 1, acceptedRevision: commit }));
-    assert.equal(await finalizeDeploymentRecovery(report.operationId, deps, true, true), true);
   } finally { await rm(root, { recursive: true, force: true }); }
 });

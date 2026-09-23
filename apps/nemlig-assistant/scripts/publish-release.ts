@@ -49,8 +49,8 @@ export function validatePublicationJournal(raw: string, evidence: PublicationEvi
     throw new Error("Deployment journal contains failure or rollback evidence.");
   }
   const checks = new Set(journal.checks);
-  if (!checks.has("edge_acceptance") || !checks.has("service_fixture_acceptance") || checks.has("live_acceptance_pending")) {
-    throw new Error("Deployment journal is missing routine acceptance evidence or still has live acceptance pending.");
+  if (!checks.has("edge_acceptance") || !checks.has("service_fixture_acceptance")) {
+    throw new Error("Deployment journal is missing required acceptance evidence.");
   }
   return journal;
 }
