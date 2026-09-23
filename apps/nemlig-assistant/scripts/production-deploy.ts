@@ -16,7 +16,7 @@ const ciWorkflowPath = ".github/workflows/ci.yml";
 const customMcp = new URL("https://nemlig-mcp.broesby.dk/mcp");
 const workersMcp = new URL("https://nemlig-mcp-cloudflare-production.mortenbroesby.workers.dev/mcp");
 const containerApplication = "nemlig-mcp-cloudflare-production-nemligmcpcontainer-production";
-export const productionDeployUsage = "pnpm --filter nemlig-assistant production:deploy -- preflight [--recovery] <40-character-main-commit> | [--service|--service-cutover|--recovery] <40-character-main-commit> | finalize <operation-id> --evidence-saved --original-runner-stopped | inspect-recovery <operation-id> [--original-runner-stopped]";
+export const productionDeployUsage = "pnpm --filter nemlig-assistant production:deploy -- preflight [--recovery] <40-character-main-commit> | [--service|--recovery] <40-character-main-commit> | reconcile-recovery <operation-id> --evidence-saved --original-runner-stopped | finalize <operation-id> --evidence-saved --original-runner-stopped | inspect-recovery <operation-id> [--original-runner-stopped]";
 
 export type VerifiedState = "unchanged" | "disabled" | "enabled" | "restored" | "unknown";
 
@@ -47,8 +47,17 @@ export interface DeploymentJournal {
   deliveryMode?: "routine" | "recovery";
   outcome: "running" | "success" | "failed";
   failure?: string;
+  acceptanceFailure?: AcceptanceFailureEvidence;
   remoteCommit?: string;
   transitions: JournalTransition[];
+}
+
+interface AcceptanceFailureEvidence {
+  stage: "edge" | "read_only";
+  profile: "edge" | "service" | "live-user";
+  category: "input_invalid" | "deadline_exceeded" | "edge_failed" | "authentication_failed" | "transport_failed" | "feature_failed" | "owner_admin_failed" | "mutation_failed" | "unknown_failure";
+  lastCompletedBoundary: string;
+  correlationIds: string[];
 }
 
 type JournalPhase = "disabled_deploy" | "enable_deploy" | "rollback";
@@ -65,6 +74,7 @@ interface RunOptions {
   env?: NodeJS.ProcessEnv;
   timeoutMs?: number;
   input?: string;
+  captureFailureStdout?: (stdout: string) => AcceptanceFailureEvidence | undefined;
   signal?: AbortSignal;
 }
 
@@ -81,7 +91,7 @@ export interface DeployDependencies {
   operationId?: () => string;
   operationDeadlineMs?: number;
   stateRoot?: string;
-  acceptanceMode?: "owner" | "service" | "service-cutover" | "recovery";
+  acceptanceMode?: "owner" | "service" | "recovery";
   issueServiceToken?: typeof issueServiceToken;
   signal?: AbortSignal;
   configReader?: (options: { config: string; env: "production" }) => Promise<unknown> | unknown;
@@ -117,7 +127,13 @@ class DeployFailure extends Error {
 }
 
 class CommandFailure extends DeployFailure {
-  constructor(code: string, readonly status?: number) {
+  constructor(code: string, readonly status?: number, readonly acceptanceFailure?: AcceptanceFailureEvidence) {
+    super(code);
+  }
+}
+
+class AcceptanceFailure extends DeployFailure {
+  constructor(code: string, readonly evidence?: AcceptanceFailureEvidence) {
     super(code);
   }
 }
@@ -146,8 +162,21 @@ const isoTime = (value: unknown): value is string => {
   return Number.isFinite(date.getTime()) && date.toISOString() === value;
 };
 const imageDigest = /^sha256:[0-9a-f]{64}$/u;
-const journalChecks = new Set(["source_and_auth_preflight", "recovery_source", "exclusive_lease", "starting_state_recorded", "disabled_version", "disabled_routes", "container_inactive", "enabled_version", "image_reused", "container_rollout", "edge_acceptance", "authenticated_read_only_acceptance", "service_fixture_acceptance", "live_acceptance_pending", "starting_version_restored"]);
-const journalFailures = new Set(["service_cutover_required", "live_acceptance_required", "service_acceptance_not_ready", "service_token_unavailable", "owner_access_token_required", "github_repository_invalid", "source_revision_mismatch", "recovery_source_invalid", "github_ci_workflow_invalid", "github_ci_invalid", "exact_head_ci_not_green", "github_environment_not_ready", "local_deployment_lease_unavailable", "remote_deployment_lease_unavailable", "remote_journal_invalid", "remote_journal_append_failed", "remote_journal_parent_invalid", "remote_deployment_lease_changed", "deployment_journal_invalid", "deployment_journal_oversized", "deployment_journal_write_failed", "cloudflare_deployment_drift", "cloudflare_upload_version_missing", "cloudflare_registry_manifest_invalid", "cloudflare_config_invalid", "cloudflare_runtime_binding_unsupported", "cloudflare_runtime_safety_mismatch", "cloudflare_instances_invalid", "disabled_route_unavailable", "disabled_route_mismatch", "container_inactive_timeout", "container_instance_timeout", "container_image_changed_during_enable", "recovery_finalize_denied", "command_failed", "command_cancelled", "unexpected_failure"]);
+const journalChecks = new Set(["source_and_auth_preflight", "recovery_source", "exclusive_lease", "starting_state_recorded", "disabled_version", "disabled_routes", "container_inactive", "enabled_version", "image_reused", "container_rollout", "edge_acceptance", "authenticated_read_only_acceptance", "service_fixture_acceptance", "starting_version_restored"]);
+const journalFailures = new Set(["service_acceptance_not_ready", "service_token_unavailable", "edge_acceptance_failed", "service_fixture_acceptance_failed", "authenticated_read_only_acceptance_failed", "owner_access_token_required", "github_repository_invalid", "source_revision_mismatch", "candidate_does_not_supersede_runtime", "recovery_source_invalid", "github_ci_workflow_invalid", "github_ci_invalid", "exact_head_ci_not_green", "github_environment_not_ready", "local_deployment_lease_unavailable", "remote_deployment_lease_unavailable", "remote_journal_invalid", "remote_journal_append_failed", "remote_journal_parent_invalid", "remote_deployment_lease_changed", "deployment_journal_invalid", "deployment_journal_oversized", "deployment_journal_write_failed", "cloudflare_deployment_drift", "cloudflare_upload_version_missing", "cloudflare_registry_manifest_invalid", "cloudflare_config_invalid", "cloudflare_runtime_binding_unsupported", "cloudflare_runtime_safety_mismatch", "cloudflare_runtime_unexpected_binding", "cloudflare_runtime_legacy_binding_invalid", "cloudflare_instances_invalid", "disabled_route_unavailable", "disabled_route_mismatch", "container_inactive_timeout", "container_instance_timeout", "container_image_changed_during_enable", "recovery_finalize_denied", "command_failed", "command_cancelled", "unexpected_failure"]);
+const acceptanceFailureCategories = new Set(["input_invalid", "deadline_exceeded", "edge_failed", "authentication_failed", "transport_failed", "feature_failed", "owner_admin_failed", "mutation_failed", "unknown_failure"]);
+
+const validAcceptanceFailure = (value: unknown): value is AcceptanceFailureEvidence => {
+  const evidence = object(value);
+  return Boolean(evidence && Object.keys(evidence).every((key) => ["stage", "profile", "category", "lastCompletedBoundary", "correlationIds"].includes(key))
+    && (evidence.stage === "edge" || evidence.stage === "read_only")
+    && (evidence.profile === "edge" || evidence.profile === "service" || evidence.profile === "live-user")
+    && ((evidence.stage === "edge") === (evidence.profile === "edge"))
+    && typeof evidence.category === "string" && acceptanceFailureCategories.has(evidence.category)
+    && typeof evidence.lastCompletedBoundary === "string" && /^[A-Za-z0-9_:-]{1,64}$/u.test(evidence.lastCompletedBoundary)
+    && Array.isArray(evidence.correlationIds) && evidence.correlationIds.length <= 16
+    && evidence.correlationIds.every((id) => typeof id === "string" && /^[A-Za-z0-9_-]{1,128}$/u.test(id)));
+};
 
 const journalJson = (journal: DeploymentJournal): string => {
   if (!journal || typeof journal !== "object" || !Array.isArray(journal.checks) || !Array.isArray(journal.transitions)
@@ -167,7 +196,8 @@ const journalJson = (journal: DeploymentJournal): string => {
     || (journal.startingContainerId !== undefined && (typeof journal.startingContainerId !== "string" || !versionId.test(journal.startingContainerId)))
     || (journal.startingImage !== undefined && (typeof journal.startingImage !== "string" || !imageDigest.test(journal.startingImage)))
     || (journal.disabledImage !== undefined && (typeof journal.disabledImage !== "string" || !imageDigest.test(journal.disabledImage)))
-    || (journal.enabledImage !== undefined && (typeof journal.enabledImage !== "string" || !imageDigest.test(journal.enabledImage)))) fail("deployment_journal_invalid");
+    || (journal.enabledImage !== undefined && (typeof journal.enabledImage !== "string" || !imageDigest.test(journal.enabledImage)))
+    || (journal.acceptanceFailure !== undefined && (!validAcceptanceFailure(journal.acceptanceFailure) || journal.outcome !== "failed"))) fail("deployment_journal_invalid");
   if (journal.checks.some((check) => !journalChecks.has(check)) || (journal.failure !== undefined && !journalFailures.has(journal.failure))) fail("deployment_journal_invalid");
   const phaseOrder: JournalPhase[] = journal.transitions[0]?.phase === "enable_deploy"
     ? ["enable_deploy", "rollback"]
@@ -190,7 +220,7 @@ const journalJson = (journal: DeploymentJournal): string => {
 
 export function parseDeploymentJournal(raw: string): DeploymentJournal {
   const value = object(json(raw, "deployment_journal_invalid"));
-  const allowed = new Set(["schema", "operationId", "commit", "ciRunId", "releaseRunId", "releaseRunAttempt", "startedAt", "completedAt", "startingVersion", "disabledVersion", "enabledVersion", "startingApplicationVersion", "disabledApplicationVersion", "enabledApplicationVersion", "startingConfigDigest", "startingEnabled", "startingContainerId", "startingImage", "disabledImage", "enabledImage", "checks", "lastVerifiedState", "rollback", "deliveryMode", "outcome", "failure", "remoteCommit", "transitions"]);
+  const allowed = new Set(["schema", "operationId", "commit", "ciRunId", "releaseRunId", "releaseRunAttempt", "startedAt", "completedAt", "startingVersion", "disabledVersion", "enabledVersion", "startingApplicationVersion", "disabledApplicationVersion", "enabledApplicationVersion", "startingConfigDigest", "startingEnabled", "startingContainerId", "startingImage", "disabledImage", "enabledImage", "checks", "lastVerifiedState", "rollback", "deliveryMode", "outcome", "failure", "acceptanceFailure", "remoteCommit", "transitions"]);
   if (!value || Object.keys(value).some((key) => !allowed.has(key)) || value.schema !== 2
     || typeof value.operationId !== "string" || typeof value.commit !== "string" || typeof value.ciRunId !== "number" || typeof value.startedAt !== "string"
     || (value.releaseRunId !== "local" && typeof value.releaseRunId !== "number") || (value.releaseRunAttempt !== "local" && typeof value.releaseRunAttempt !== "number")
@@ -198,7 +228,11 @@ export function parseDeploymentJournal(raw: string): DeploymentJournal {
     || !["unchanged", "disabled", "enabled", "restored", "unknown"].includes(value.lastVerifiedState as string)
     || !["not_needed", "attempted", "restored", "failed"].includes(value.rollback as string)
     || !["running", "success", "failed"].includes(value.outcome as string)) fail("deployment_journal_invalid");
-  const journal = value as unknown as DeploymentJournal;
+  const normalized = { ...value };
+  for (const field of ["disabledVersion", "disabledApplicationVersion", "disabledImage"] as const) {
+    if (normalized[field] === null) delete normalized[field];
+  }
+  const journal = normalized as unknown as DeploymentJournal;
   journalJson(journal);
   return journal;
 }
@@ -221,7 +255,8 @@ export function parseDeployCli(argv: readonly string[]): { help: true } | { help
 export type RecoveryCli =
   | { help: true }
   | { help: false; command: "preflight"; commit: string; recovery: boolean }
-  | { help: false; command: "deploy"; commit: string; acceptanceMode?: "service" | "service-cutover" | "recovery" }
+  | { help: false; command: "deploy"; commit: string; acceptanceMode?: "service" | "recovery" }
+  | { help: false; command: "reconcile-recovery"; operation: string; evidenceSaved: true; originalRunnerStopped: true }
   | { help: false; command: "finalize"; operation: string; evidenceSaved: true; originalRunnerStopped: true }
   | { help: false; command: "inspect-recovery"; operation: string; originalRunnerStopped: boolean };
 
@@ -232,6 +267,9 @@ export function parseProductionDeployCli(argv: readonly string[]): RecoveryCli {
   if (values[0] === "finalize" && values.length === 4 && operationId.test(values[1] ?? "") && values[2] === "--evidence-saved" && values[3] === "--original-runner-stopped") {
     return { help: false, command: "finalize", operation: values[1]!, evidenceSaved: true, originalRunnerStopped: true };
   }
+  if (values[0] === "reconcile-recovery" && values.length === 4 && operationId.test(values[1] ?? "") && values[2] === "--evidence-saved" && values[3] === "--original-runner-stopped") {
+    return { help: false, command: "reconcile-recovery", operation: values[1]!, evidenceSaved: true, originalRunnerStopped: true };
+  }
   if (values[0] === "inspect-recovery" && operationId.test(values[1] ?? "")
     && (values.length === 2 || (values.length === 3 && values[2] === "--original-runner-stopped"))) {
     return { help: false, command: "inspect-recovery", operation: values[1]!, originalRunnerStopped: values[2] === "--original-runner-stopped" };
@@ -240,7 +278,6 @@ export function parseProductionDeployCli(argv: readonly string[]): RecoveryCli {
     const recovery = values[1] === "--recovery";
     return { help: false, command: "preflight", commit: parseDeployArgs(values.slice(recovery ? 2 : 1)), recovery };
   }
-  if (values[0] === "--service-cutover") return { help: false, command: "deploy", commit: parseDeployArgs(values.slice(1)), acceptanceMode: "service-cutover" };
   if (values[0] === "--service") return { help: false, command: "deploy", commit: parseDeployArgs(values.slice(1)), acceptanceMode: "service" };
   if (values[0] === "--recovery") return { help: false, command: "deploy", commit: parseDeployArgs(values.slice(1)), acceptanceMode: "recovery" };
   return { help: false, command: "deploy", commit: parseDeployArgs(values) };
@@ -270,12 +307,9 @@ const configPlainSet = new Set<string>(configPlainNames);
 const requiredSecrets = new Set(["NEMLIG_MCP_PRINCIPALS"]);
 const expectedDo = new Map([["NEMLIG_MCP_CONTAINER", "NemligMcpContainer"], ["NEMLIG_PLAN_STORAGE", "PlanStorage"]]);
 const productionWorker = "nemlig-mcp-cloudflare-production";
-const legacyPlainBindings = new Map([
-  ["NEMLIG_MCP_AUTH_CANARY", "false"],
-  // Retained by keep_vars from the superseded minimal-auth worker. Neither the
-  // active revision nor its supported starting-version rollback reads it.
-  // Remove this exact compatibility entry after the live binding is cleaned up.
+const knownStartingBindingsToRemove = new Map([
   ["MCP_MINIMAL_AUTH_ENABLED", "true"],
+  ["NEMLIG_MCP_AUTH_CANARY", "false"],
 ]);
 
 const bindings = (resource: Record<string, unknown>): Map<string, Record<string, unknown>> => {
@@ -320,9 +354,11 @@ const effectiveConfig = (vars: Map<string, string>, secrets: Iterable<string>, r
     return typeof value !== "string" || value.length === 0 || value.length > 2048;
   }) || serviceClientId.length > 2048) fail("cloudflare_runtime_safety_mismatch");
   if (!["true", "false"].includes(normalized.get("MCP_CREDENTIAL_ONBOARDING_ENABLED") ?? "")) fail("cloudflare_runtime_safety_mismatch");
-  if (!/^[A-Za-z0-9._-]{1,32}$/u.test(normalized.get("NEMLIG_MCP_CREDENTIAL_KEY_VERSION") ?? "")) fail("cloudflare_runtime_safety_mismatch");
   if (!["true", "false"].includes(serviceEnabled ?? "")
     || (serviceEnabled === "true" && !/^[A-Za-z0-9_-]{1,128}$/u.test(serviceClientId))) fail("cloudflare_runtime_safety_mismatch");
+  if (!/^[A-Za-z0-9._-]{1,32}$/u.test(normalized.get("NEMLIG_MCP_CREDENTIAL_KEY_VERSION") ?? "")) {
+    fail("cloudflare_runtime_safety_mismatch");
+  }
   for (const name of ["MCP_DAILY_LIMIT", "MCP_EXPENSIVE_DAILY_LIMIT", "MCP_RATE_LIMIT", "MCP_EXPENSIVE_RATE_LIMIT", "MCP_AUTH_TIMEOUT_MS", "MCP_CONTROL_TIMEOUT_MS", "MCP_TOTAL_TIMEOUT_MS", "MCP_BACKEND_TIMEOUT_MS", "MCP_CREDENTIAL_RATE_LIMIT", "MCP_CREDENTIAL_GLOBAL_RATE_LIMIT"]) {
     const value = vars.get(name) ?? "";
     if (!/^[1-9]\d*$/u.test(value) || !Number.isSafeInteger(Number(value))) fail("cloudflare_runtime_safety_mismatch");
@@ -344,7 +380,7 @@ const effectiveConfig = (vars: Map<string, string>, secrets: Iterable<string>, r
   return { vars, secrets: secretNames, digest: createHash("sha256").update(canonical).digest("hex") };
 };
 
-const versionConfig = (raw: string): EffectiveConfig => {
+const versionConfig = (raw: string, allowKnownStartingBindingsToRemove = false): EffectiveConfig => {
   const parsed = object(json(raw, "cloudflare_version_invalid")) ?? fail("cloudflare_version_invalid");
   const resources = object(parsed.resources);
   const runtime = object(resources?.script_runtime);
@@ -359,11 +395,11 @@ const versionConfig = (raw: string): EffectiveConfig => {
       if (value.type !== "plain_text") fail("cloudflare_runtime_safety_mismatch");
       const text = typeof value.text === "string" ? value.text : fail("cloudflare_runtime_safety_mismatch");
       vars.set(name, text);
-    } else if (legacyPlainBindings.has(name)) {
-      if (value.type !== "plain_text" || value.text !== legacyPlainBindings.get(name)) fail("cloudflare_runtime_safety_mismatch");
+    } else if (allowKnownStartingBindingsToRemove && knownStartingBindingsToRemove.has(name)) {
+      if (value.type !== "plain_text" || value.text !== knownStartingBindingsToRemove.get(name)) fail("cloudflare_runtime_legacy_binding_invalid");
     } else if (value.type === "secret_text") {
       secrets.push(name);
-    } else if (value.type !== "durable_object_namespace") fail("cloudflare_runtime_binding_unsupported");
+    } else if (value.type !== "durable_object_namespace") fail("cloudflare_runtime_unexpected_binding");
   }
   return effectiveConfig(vars, secrets);
 };
@@ -504,7 +540,8 @@ export const defaultRunner: CommandRunner = async (command, args, options = {}) 
       void (terminatedGroup ?? Promise.resolve()).then(() => done(new DeployFailure(overflow ? "command_failed" : "command_cancelled")));
     }
     else if (code === 0) done();
-    else done(new CommandFailure("command_failed", /HTTP 404\b/u.test(stderr) ? 404 : undefined));
+    else done(new CommandFailure("command_failed", /HTTP 404\b/u.test(stderr) ? 404 : undefined,
+      options.captureFailureStdout?.(output.slice(-16 * 1024).trim())));
   });
   if (options.input !== undefined) child.stdin.end(options.input);
   else child.stdin.end();
@@ -552,7 +589,7 @@ const readLocalConfig = async (deps: DeployDependencies): Promise<EffectiveConfi
   const value = object(config) ?? fail("cloudflare_config_invalid");
   if (typeof value.configPath !== "string" || typeof value.userConfigPath !== "string"
     || await realpath(value.configPath).catch(() => "") !== trusted || await realpath(value.userConfigPath).catch(() => "") !== trusted
-    || value.name !== productionWorker || value.keep_vars !== true) fail("cloudflare_config_invalid");
+    || value.name !== productionWorker || value.keep_vars !== false) fail("cloudflare_config_invalid");
   const limits = object(value.limits);
   const containers = value.containers;
   if (limits?.cpu_ms !== 100 || limits.subrequests !== 8 || !Array.isArray(containers) || containers.length !== 1) fail("cloudflare_config_invalid");
@@ -680,12 +717,16 @@ const appendRemoteJournal = async (deps: DeployDependencies, repository: string,
   journal.remoteCommit = child;
 };
 
-const readRemoteJournal = async (deps: DeployDependencies, repository: string): Promise<{ head: string; journal: DeploymentJournal }> => {
+const readRemoteJournal = async (deps: DeployDependencies, repository: string): Promise<{ head: string; parent?: string; journal: DeploymentJournal }> => {
   const head = await readRemoteHead(deps, repository);
   if (!head) fail("remote_journal_missing");
   const commit = await ghJson(deps, repository, "GET", `git/commits/${head}`);
   const tree = object(commit.tree);
   if (typeof tree?.sha !== "string" || !fullSha.test(tree.sha)) fail("remote_journal_invalid");
+  if (!Array.isArray(commit.parents)) fail("remote_journal_invalid");
+  const parents = (commit.parents as unknown[]).map(object);
+  if (parents.length > 1 || parents.some((parent) => typeof parent?.sha !== "string" || !fullSha.test(parent.sha))) fail("remote_journal_invalid");
+  const parent = parents[0]?.sha as string | undefined;
   const treeSha = (tree as Record<string, unknown>).sha as string;
   const entries = await ghJson(deps, repository, "GET", `git/trees/${treeSha}`);
   const entriesList = Array.isArray(entries.tree) ? entries.tree.map(object) : undefined;
@@ -703,10 +744,10 @@ const readRemoteJournal = async (deps: DeployDependencies, repository: string): 
   if (encoded.length > encodedLimit || !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/u.test(encoded)) fail("remote_journal_invalid");
   const decoded = Buffer.from(encoded, "base64");
   if (decoded.length > journalLimit || decoded.toString("base64") !== encoded) fail("remote_journal_invalid");
-  return { head: head as string, journal: parseDeploymentJournal(decoded.toString("utf8")) };
+  return { head: head as string, parent, journal: parseDeploymentJournal(decoded.toString("utf8")) };
 };
 
-type RecoveryReason = "eligible" | "operation_mismatch" | "runner_not_stopped" | "pending_or_unknown" | "provider_drift" | "journal_missing" | "journal_invalid";
+type RecoveryReason = "eligible" | "operation_mismatch" | "runner_not_stopped" | "pending_or_unknown" | "provider_drift" | "journal_head_changed" | "journal_missing" | "journal_invalid";
 export interface RecoveryInspection {
   operation: string;
   originalRunnerStopped: boolean;
@@ -715,12 +756,21 @@ export interface RecoveryInspection {
   state: "enabled" | "disabled" | "restored" | "unknown";
 }
 
+export interface RecoveryReconciliation {
+  operation: string;
+  originalRunnerStopped: boolean;
+  reconciled: boolean;
+  reason: RecoveryReason;
+  state: "disabled" | "unknown";
+}
+
 interface RecoveryTarget {
-  version: string;
+  version?: string;
   containerId: string;
   image: string;
   applicationVersion: number;
   configDigest: string;
+  sourceRevision?: string;
   enabled?: boolean;
   state: "enabled" | "disabled" | "restored";
 }
@@ -729,30 +779,108 @@ const expectedRecovery = (journal: DeploymentJournal): RecoveryTarget | undefine
   if (!journal.startingConfigDigest || !journal.startingContainerId || typeof journal.startingEnabled !== "boolean") return undefined;
   const common = { containerId: journal.startingContainerId, configDigest: journal.startingConfigDigest };
   if (journal.outcome === "success" && journal.enabledVersion && journal.enabledImage && journal.enabledApplicationVersion) {
-    return { ...common, version: journal.enabledVersion, image: journal.enabledImage, applicationVersion: journal.enabledApplicationVersion, enabled: true, state: "enabled" };
+    return { ...common, version: journal.enabledVersion, image: journal.enabledImage, applicationVersion: journal.enabledApplicationVersion, enabled: true, sourceRevision: journal.commit, state: "enabled" };
   }
   if (journal.lastVerifiedState === "restored" && journal.startingVersion && journal.startingImage && journal.startingApplicationVersion) {
     return { ...common, version: journal.startingVersion, image: journal.startingImage, applicationVersion: journal.startingApplicationVersion, enabled: journal.startingEnabled, state: "restored" };
   }
   if (journal.outcome === "failed" && journal.lastVerifiedState === "disabled" && journal.disabledVersion && journal.disabledImage && journal.disabledApplicationVersion) {
-    return { ...common, version: journal.disabledVersion, image: journal.disabledImage, applicationVersion: journal.disabledApplicationVersion, enabled: false, state: "disabled" };
+    return { ...common, version: journal.disabledVersion, image: journal.disabledImage, applicationVersion: journal.disabledApplicationVersion, enabled: false, sourceRevision: journal.commit, state: "disabled" };
   }
   return undefined;
 };
 
 /** Metadata-only proof: four bounded reads, no instance wake or convergence retry. */
-const verifyRecoveryTarget = async (deps: DeployDependencies, expected: RecoveryTarget): Promise<boolean> => {
+const verifyRecoveryTarget = async (deps: DeployDependencies, expected: RecoveryTarget): Promise<string | undefined> => {
   const current = await readCurrent(deps);
   const raw = await readVersion(deps, current.version);
   const state = parseVersionState(raw, current.version);
-  verifyCandidateVersion(raw, current.version, state.revision, state.enabled);
+  verifyCandidateVersion(raw, current.version, expected.sourceRevision ?? state.revision, expected.enabled ?? state.enabled);
   const container = await readContainer(deps, expected.containerId);
   const instances = await wrangler(deps, ["containers", "instances", container.id, "--json"]);
-  return current.version === expected.version && (expected.enabled === undefined || state.enabled === expected.enabled)
+  const exactMetadata = (expected.version === undefined || current.version === expected.version) && (expected.enabled === undefined || state.enabled === expected.enabled)
     && container.id === expected.containerId && container.image === expected.image && container.version === expected.applicationVersion
-    && versionConfig(raw).digest === expected.configDigest
+    && versionConfig(raw, true).digest === expected.configDigest
     && (instancesInactive(instances) || (state.enabled && runningInstanceMatches(instances, expected.applicationVersion)));
+  if (!exactMetadata) return undefined;
+  if (expected.enabled === false) {
+    try { await verifyDisabledRoutes(deps); } catch { return undefined; }
+  }
+  return current.version;
 };
+
+const pendingRollbackTarget = (journal: DeploymentJournal): RecoveryTarget | undefined => {
+  const intent = journal.transitions.at(-1);
+  if (journal.outcome !== "failed" || journal.lastVerifiedState !== "unknown"
+    || !["attempted", "failed"].includes(journal.rollback)
+    || intent?.phase !== "rollback" || intent.kind !== "intent"
+    || !journal.enabledVersion || intent.version !== journal.enabledVersion
+    || !journal.enabledImage || !journal.enabledApplicationVersion
+    || !journal.startingContainerId || !journal.startingConfigDigest) return undefined;
+  return {
+    image: journal.enabledImage,
+    applicationVersion: journal.enabledApplicationVersion,
+    containerId: journal.startingContainerId,
+    configDigest: journal.startingConfigDigest,
+    sourceRevision: journal.commit,
+    enabled: false,
+    state: "disabled",
+  };
+};
+
+/** Reconciles only an already-journaled rollback intent; it never mutates Cloudflare. */
+export async function reconcilePendingRollback(
+  operation: string,
+  deps: DeployDependencies,
+  evidenceSaved: boolean,
+  originalRunnerStopped: boolean,
+): Promise<RecoveryReconciliation> {
+  const denied = (reason: RecoveryReason): RecoveryReconciliation => ({
+    operation, originalRunnerStopped, reconciled: false, reason, state: "unknown",
+  });
+  if (!operationId.test(operation) || !evidenceSaved) return denied("operation_mismatch");
+  if (!originalRunnerStopped) return denied("runner_not_stopped");
+  try {
+    const repo = await repoIdentity(deps);
+    const remote = await readRemoteJournal(deps, repo.nameWithOwner);
+    const journal = remote.journal;
+    if (journal.operationId !== operation) return denied("operation_mismatch");
+    // Each remote snapshot stores its parent before the new ref is advanced.
+    // Verify that exact relationship, then advance the in-memory parent to the
+    // current head before appending the reconciled result.
+    if (!journal.remoteCommit || journal.remoteCommit !== remote.parent) return denied("journal_head_changed");
+    const target = pendingRollbackTarget(journal);
+    if (!target) return denied("pending_or_unknown");
+    let observedVersion: string | undefined;
+    try { observedVersion = await verifyRecoveryTarget(deps, target); } catch { observedVersion = undefined; }
+    if (!observedVersion) return denied("provider_drift");
+    if (await readRemoteHead(deps, repo.nameWithOwner) !== remote.head) return denied("journal_head_changed");
+
+    const reconciled: DeploymentJournal = {
+      ...journal,
+      remoteCommit: remote.head,
+      disabledVersion: observedVersion,
+      disabledImage: target.image,
+      disabledApplicationVersion: target.applicationVersion,
+      checks: [...new Set([...journal.checks, "disabled_routes", "container_inactive"])],
+      lastVerifiedState: "disabled",
+      rollback: "restored",
+      transitions: [...journal.transitions, {
+        phase: "rollback", kind: "result", at: deps.now().toISOString(), version: observedVersion,
+      }],
+    };
+    journalJson(reconciled);
+    try { await appendRemoteJournal(deps, repo.nameWithOwner, reconciled); }
+    catch (error) {
+      if (error instanceof DeployFailure && error.code === "remote_journal_parent_invalid") return denied("journal_head_changed");
+      return denied("journal_invalid");
+    }
+    return { operation, originalRunnerStopped, reconciled: true, reason: "eligible", state: "disabled" };
+  } catch (error) {
+    const reason = error instanceof DeployFailure && error.code === "remote_journal_missing" ? "journal_missing" : "journal_invalid";
+    return denied(reason);
+  }
+}
 
 const knownTerminal = (journal: DeploymentJournal): boolean => {
   if (!journal.completedAt || journal.outcome === "running" || journal.lastVerifiedState === "unknown") return false;
@@ -775,7 +903,7 @@ export async function inspectDeploymentRecovery(operation: string, deps: DeployD
     const { journal } = await readRemoteJournal(deps, repo.nameWithOwner);
     const expected = expectedRecovery(journal);
     if (journal.operationId !== operation) return { operation, originalRunnerStopped, cleanupEligible: false, reason: "operation_mismatch", state: "unknown" };
-    if ((journal.checks.includes("live_acceptance_pending") && await readAcceptedRevision(deps) !== journal.commit) || !knownTerminal(journal) || !expected) return { operation, originalRunnerStopped, cleanupEligible: false, reason: "pending_or_unknown", state: "unknown" };
+    if (!knownTerminal(journal) || !expected) return { operation, originalRunnerStopped, cleanupEligible: false, reason: "pending_or_unknown", state: "unknown" };
     if (!await verifyRecoveryTarget(deps, expected)) {
       return { operation, originalRunnerStopped, cleanupEligible: false, reason: "provider_drift", state: "unknown" };
     }
@@ -814,8 +942,7 @@ export async function finalizeDeploymentRecovery(operation: string, deps: Deploy
   const remote = await readRemoteJournal(deps, repo.nameWithOwner);
   const { journal } = remote;
   const expected = expectedRecovery(journal);
-  if (journal.operationId !== operation || !knownTerminal(journal) || !expected
-    || (journal.checks.includes("live_acceptance_pending") && await readAcceptedRevision(deps) !== journal.commit)) return false;
+  if (journal.operationId !== operation || !knownTerminal(journal) || !expected) return false;
   if (!await verifyRecoveryTarget(deps, expected)) return false;
   // Compare the containing ref head, never journal.remoteCommit supplied by the blob.
   return releaseDeploymentLeases(deps, repo.nameWithOwner, remote.head, operation);
@@ -826,17 +953,13 @@ type SourceMode = "routine" | "recovery";
 const verifySource = async (deps: DeployDependencies, commit: string, repo: { nameWithOwner: string; url: string }, sourceMode: SourceMode = "routine"): Promise<number> => {
   await runAt(deps, deps.repoRoot, "gh", ["auth", "status", "-h", "github.com"]);
   await runAt(deps, deps.repoRoot, "git", ["-c", "credential.helper=!gh auth git-credential", "fetch", repo.url, "main:refs/remotes/origin/main"]);
-  const [head, remote, status] = await Promise.all([
+  const [head, status] = await Promise.all([
     runAt(deps, deps.repoRoot, "git", ["rev-parse", "HEAD"]),
-    runAt(deps, deps.repoRoot, "git", ["rev-parse", "origin/main"]),
     runAt(deps, deps.repoRoot, "git", ["status", "--porcelain"]),
   ]);
   if (head !== commit || status !== "") fail("source_revision_mismatch");
-  if (sourceMode === "routine" && remote !== commit) fail("source_revision_mismatch");
-  if (sourceMode === "recovery") {
-    try { await runAt(deps, deps.repoRoot, "git", ["merge-base", "--is-ancestor", commit, "origin/main"]); }
-    catch { fail("recovery_source_invalid"); }
-  }
+  try { await runAt(deps, deps.repoRoot, "git", ["merge-base", "--is-ancestor", commit, "origin/main"]); }
+  catch { fail(sourceMode === "recovery" ? "recovery_source_invalid" : "source_revision_mismatch"); }
   const workflows = json(await runAt(deps, deps.repoRoot, "gh", [
     "workflow", "list", "--repo", repo.nameWithOwner, "--all", "--limit", "100", "--json", "id,name,path,state",
   ]), "github_ci_workflow_invalid");
@@ -980,14 +1103,50 @@ const waitForCandidateContainer = async (deps: DeployDependencies, workerVersion
   return fail("container_instance_timeout");
 };
 
-const retryAcceptance = async (deps: DeployDependencies, args: readonly string[], env: NodeJS.ProcessEnv, attempts: number): Promise<void> => {
+const parseAcceptanceFailure = (stdout: string | undefined, profile: AcceptanceFailureEvidence["profile"], stage: AcceptanceFailureEvidence["stage"]): AcceptanceFailureEvidence | undefined => {
+  if (!stdout) return undefined;
+  for (const line of stdout.split(/\r?\n/u).reverse()) {
+    if (!line.startsWith("{")) continue;
+    let value: Record<string, unknown> | undefined;
+    try { value = object(JSON.parse(line)); } catch { continue; }
+    if (!value || value.schema !== 1 || value.profile !== profile
+      || typeof value.failureCategory !== "string" || !acceptanceFailureCategories.has(value.failureCategory)
+      || !Array.isArray(value.failed) || !value.failed.includes(value.failureCategory)
+      || typeof value.lastCompletedBoundary !== "string"
+      || !/^[A-Za-z0-9_:-]{1,64}$/u.test(value.lastCompletedBoundary)
+      || !Array.isArray(value.correlationIds) || value.correlationIds.length > 16
+      || !value.correlationIds.every((id) => typeof id === "string" && /^[A-Za-z0-9_-]{1,128}$/u.test(id))) continue;
+    const evidence: AcceptanceFailureEvidence = {
+      stage, profile, category: value.failureCategory as AcceptanceFailureEvidence["category"],
+      lastCompletedBoundary: value.lastCompletedBoundary, correlationIds: value.correlationIds as string[],
+    };
+    return validAcceptanceFailure(evidence) ? evidence : undefined;
+  }
+  return undefined;
+};
+
+const retryAcceptance = async (
+  deps: DeployDependencies,
+  args: readonly string[],
+  env: NodeJS.ProcessEnv,
+  attempts: number,
+  stage: AcceptanceFailureEvidence["stage"],
+  profile: AcceptanceFailureEvidence["profile"],
+  failure: "edge_acceptance_failed" | "service_fixture_acceptance_failed" | "authenticated_read_only_acceptance_failed",
+): Promise<void> => {
   for (let attempt = 0; attempt < attempts; attempt += 1) {
     try {
-      await runAt(deps, deps.packageRoot, "pnpm", args, { timeoutMs: 120_000, env });
+      await runAt(deps, deps.packageRoot, "pnpm", args, {
+        timeoutMs: 120_000, env, captureFailureStdout: (stdout) => parseAcceptanceFailure(stdout, profile, stage),
+      });
       return;
     } catch (error) {
       deps.signal?.throwIfAborted();
-      if (attempt === attempts - 1) throw error;
+      if (deps.signal?.aborted) throw new DeployFailure("command_cancelled");
+      if (attempt === attempts - 1) {
+        const evidence = object(error)?.acceptanceFailure;
+        throw new AcceptanceFailure(failure, validAcceptanceFailure(evidence) ? evidence : undefined);
+      }
       await sleepAbortably(deps);
     }
   }
@@ -1020,14 +1179,6 @@ const rollbackToDisabled = async (deps: DeployDependencies, journal: DeploymentJ
   journal.lastVerifiedState = "disabled";
 };
 
-const readAcceptedRevision = async (deps: DeployDependencies): Promise<string | null> => {
-  try {
-    const value = object(JSON.parse(await readFile(join(deps.packageRoot, "release", "production-cutover.json"), "utf8")));
-    if (value?.schema !== 1 || Object.keys(value).some((key) => !["schema", "acceptedRevision"].includes(key))) return null;
-    return typeof value.acceptedRevision === "string" && fullSha.test(value.acceptedRevision) ? value.acceptedRevision : null;
-  } catch { return null; }
-};
-
 export async function deployProduction(commit: string, inputDeps: DeployDependencies): Promise<DeploymentJournal> {
   if (!fullSha.test(commit)) fail("invalid_commit");
   const runIdText = inputDeps.env.GITHUB_RUN_ID;
@@ -1043,7 +1194,7 @@ export async function deployProduction(commit: string, inputDeps: DeployDependen
   else inheritedSignal?.addEventListener("abort", abortOperation, { once: true });
   const operationDeadline = setTimeout(abortOperation, Math.min(inputDeps.operationDeadlineMs ?? 25 * 60_000, 25 * 60_000));
   const recovery = inputDeps.acceptanceMode === "recovery";
-  const service = inputDeps.env.GITHUB_ACTIONS === "true" || inputDeps.acceptanceMode === "service" || inputDeps.acceptanceMode === "service-cutover" || recovery;
+  const service = inputDeps.env.GITHUB_ACTIONS === "true" || inputDeps.acceptanceMode === "service" || recovery;
   // Do not read owner credentials or pass the machine secret to child commands.
   const env = service ? Object.fromEntries(Object.keys(inputDeps.env)
     .filter((name) => !["NEMLIG_MCP_ACCESS_TOKEN", "NEMLIG_MCP_SERVICE_CLIENT_SECRET", "NEMLIG_MCP_SERVICE_ACCESS_TOKEN"].includes(name))
@@ -1102,7 +1253,11 @@ export async function deployProduction(commit: string, inputDeps: DeployDependen
     const startingRaw = await readVersion(deps, start.version);
     starting = parseVersionState(startingRaw, start.version);
     verifyCandidateVersion(startingRaw, starting.id, starting.revision, starting.enabled);
-    const startingConfig = versionConfig(startingRaw);
+    if (!recovery) {
+      try { await runAt(deps, deps.repoRoot, "git", ["merge-base", "--is-ancestor", starting.revision, commit]); }
+      catch { fail("candidate_does_not_supersede_runtime"); }
+    }
+    const startingConfig = versionConfig(startingRaw, true);
     configured = candidateConfig(await readLocalConfig(deps), startingConfig);
     if (configured.digest !== startingConfig.digest) fail("cloudflare_runtime_safety_mismatch");
     if (service) {
@@ -1130,7 +1285,7 @@ export async function deployProduction(commit: string, inputDeps: DeployDependen
       try { await writeJournal(journalPath, journal); } catch { if (kind === "result") mutationUncertain = true; fail("deployment_journal_write_failed"); }
     };
 
-    routine = service && inputDeps.acceptanceMode !== "service-cutover" && !recovery;
+    routine = service && !recovery;
     let enabledId: string;
     let candidateImage: string;
     let enabledContainer: ContainerState;
@@ -1209,9 +1364,11 @@ export async function deployProduction(commit: string, inputDeps: DeployDependen
       journal.checks.push("enabled_version", "image_reused");
       await transition("enable_deploy", "result", enabledId);
     }
-    await retryAcceptance(deps, ["production:probe"], { NEMLIG_EXPECTED_REVISION: commit }, 12);
+    await retryAcceptance(deps, ["production:probe"], { NEMLIG_EXPECTED_REVISION: commit }, 12, "edge", "edge", "edge_acceptance_failed");
     await retryAcceptance(deps, ["production:test:features", ...(service ? ["--service"] : [])],
-      service ? { NEMLIG_MCP_SERVICE_ACCESS_TOKEN: serviceToken, NEMLIG_EXPECTED_REVISION: commit } : {}, service ? 12 : 1);
+      service ? { NEMLIG_MCP_SERVICE_ACCESS_TOKEN: serviceToken, NEMLIG_EXPECTED_REVISION: commit } : {}, service ? 12 : 1,
+      "read_only", service ? "service" : "live-user",
+      service ? "service_fixture_acceptance_failed" : "authenticated_read_only_acceptance_failed");
     const runningVersion = await waitForAcceptedInstance(deps, enabledContainer.id, enabledContainer.version);
     await verifyCurrent(deps, enabledId);
     await verifyLeaseHead(deps, repository, journal);
@@ -1222,12 +1379,12 @@ export async function deployProduction(commit: string, inputDeps: DeployDependen
     }
     journal.enabledVersion = enabledId;
     journal.checks.push("edge_acceptance", service ? "service_fixture_acceptance" : "authenticated_read_only_acceptance");
-    if (inputDeps.acceptanceMode === "service-cutover") journal.checks.push("live_acceptance_pending");
     journal.outcome = "success";
   } catch (error) {
     console.error(error instanceof Error ? error.message : "unexpected deployment failure");
     journal.outcome = "failed";
     journal.failure = error instanceof DeployFailure && journalFailures.has(error.code) ? error.code : "unexpected_failure";
+    if (error instanceof AcceptanceFailure && error.evidence) journal.acceptanceFailure = error.evidence;
     if (mutationUncertain) {
       journal.lastVerifiedState = "unknown";
     } else if (providerMutation && starting) {
@@ -1349,6 +1506,14 @@ async function main(): Promise<void> {
     repoRoot, packageRoot, env: process.env, run: defaultRunner, fetcher: fetch, signal: controller.signal,
     sleep: async (milliseconds) => await new Promise((resolvePromise) => setTimeout(resolvePromise, milliseconds)), now: () => new Date(),
   };
+  if (input.command === "reconcile-recovery") {
+    const result = await reconcilePendingRollback(input.operation, deps, input.evidenceSaved, input.originalRunnerStopped);
+    process.removeListener("SIGINT", abort);
+    process.removeListener("SIGTERM", abort);
+    if (!result.reconciled) process.exitCode = 1;
+    console.log(JSON.stringify(result));
+    return;
+  }
   if (input.command === "inspect-recovery") {
     console.log(JSON.stringify(await inspectDeploymentRecovery(input.operation, deps, input.originalRunnerStopped)));
     process.removeListener("SIGINT", abort);

@@ -162,44 +162,43 @@ This item does not authorize a live proposal apply or any basket mutation.
 
 ## P1 — predictable automated production deployment
 
-**Status:** Implementation in progress; production proof pending.
+**Status:** Being completed by GitHub issue #96; code/readiness gates are in progress, while live recovery and retention proof are blocked on the unresolved production journal recorded in `docs/cloudflare-operations.md`.
 
-**Epic outcome:** Replace the error-prone manual release sequence with one
-explicit, serialized repository command that deploys an exact CI-green `main`
-revision disabled first, reuses its Container image when enabling, and always
-reports the last verified production state.
+**Epic outcome:** An approved green merge to `main` is the routine deploy action.
+The protected workflow deploys and verifies the exact SHA, records bounded
+evidence, and prunes only verified surplus Container images after acceptance.
+Manual dispatch is reserved for exceptional recovery.
 
-### Story P1.D1 — admit only one exact approved release
+### Story P1.D1 — automatically admit and serialize approved releases
 
-- [x] Choose an owner-run command instead of a hosted workflow so the current
-  Keychain-backed GitHub and Cloudflare sessions remain the credential boundary.
-- [x] Require one full commit equal to local HEAD and refreshed remote `main`,
-  plus successful exact-head CI, before any Cloudflare mutation.
-- [x] Serialize local worktrees and other machines with exclusive local and
-  atomic remote leases; never steal an interrupted lease automatically.
+- [x] Use successful exact-main CI to trigger routine delivery; keep production
+  credentials out of pull-request jobs and inside the protected environment.
+- [x] Revalidate exact SHA provenance and prevent stale or queued candidates
+  from overwriting newer production.
+- [x] Serialize hosted deploy and retention work with the shared remote lease;
+  never take over an active or unknown operation.
 
-### Story P1.D2 — automate the proven fail-closed sequence
+### Story P1.D2 — automate deploy and read-only acceptance
 
-- [x] Record and re-check current Cloudflare state, build and upload once with
-  `MCP_ENABLED=false`, and prove both routes reject while the Container is
-  inactive.
-- [x] Enable the same source and image with no Container rollout, preserve one
-  `lite` instance and every existing quota, timeout, breaker, route, and binding,
-  then run bounded edge and authenticated read-only acceptance.
-- [x] On failure, leave the candidate disabled or restore and verify the exact
-  starting version; never run a proposal or Nemlig mutation command.
+- [x] Replace historical cutover inputs with one routine workflow path and an
+  explicit recovery-only dispatch.
+- [x] Preserve bounded runtime acceptance and the kill switch, quotas, breaker,
+  authentication-before-wake, EU `lite` placement and one-Container ceiling.
+- [ ] Prove the exact merged SHA reaches live read-only acceptance after the
+  unresolved production journal is safely reconciled.
 
-### Story P1.D3 — make evidence recoverable and cost-bounded
+### Story P1.D3 — retain images safely and make evidence recoverable
 
-- [x] Document the pre-implementation cost model: no new service, dependency,
-  hosted secret, scheduled run, CI job, storage, or capacity; each approved
-  release uses one image build/upload, one no-rollout enable upload, two disabled
-  route probes, bounded acceptance, and small GitHub/Cloudflare state reads.
-- [x] Journal only redacted commit, version, timing, check, rollback, and
-  last-state evidence beneath the shared Git directory.
-- [ ] Pass focused failure-path tests, strict specs, privacy, `pnpm verify`,
-  package smoke, and production readiness; integrate exact-head green `main`,
-  prove one real approved release, then sync and archive its OpenSpec change.
+- [x] Use one hourly gate-only reconciliation for GitHub's bounded pending-run
+  queue; it exits before provider access if exact-main deployment already passed.
+- [x] Add exact-repository image inventory, accepted-image ordering, dry-run
+  review, and fail-closed cleanup with durable delete intent/readback.
+- [x] Pass focused failure-path tests, strict specs, privacy, `pnpm verify`,
+  package smoke, and credential-free production readiness.
+- [ ] Review the initial live dry-run, enable bounded deletion, and prove the
+  retained image target or explain protected/uncertain holds.
+- [ ] Integrate exact-head green `main`, prove production acceptance and
+  retention, then sync and archive the OpenSpec change.
 
 ## P1 — prove the kill switch and cost-containment safety net
 
