@@ -54,7 +54,7 @@ from the viewer. Existing discovery and actual basket tools remain independent.
   never retry automatically; inspect the actual basket before a new review.
 - Hydration fan-out → max 50 selected IDs/start and explicit alternative limit,
   existing three-read pool and request deadlines; no navigation/expansion reads,
-  polling, new storage, service or capacity. Existing quotas remain unchanged.
+  polling, new storage, service or capacity. Existing quota limits remain unchanged. Start/update use normal admission like existing search and preparation; actual submission remains expensive.
 - Existing open historical deltas forbid controls → coordinate #114 and reconcile
   only viewer requirements; do not reopen old planners or deployment policy.
 

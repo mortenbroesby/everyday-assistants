@@ -111,6 +111,9 @@ test("local CLI help and MCP surface need no credentials or network", async () =
         "show_grocery_sections",
         "show_my_basket",
         "show_my_favorites",
+        "start_product_review",
+        "submit_product_review",
+        "update_product_review",
       ],
     );
   } finally {

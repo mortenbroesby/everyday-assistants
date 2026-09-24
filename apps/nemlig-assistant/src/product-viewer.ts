@@ -132,17 +132,25 @@ footer { border-top: 1px solid var(--line); padding-top: 12px; margin-top: 12px;
   const nameOf = item => item.view.status === "complete" ? text(item.view.product.name) : "Product " + item.product_id;
   const button = (label, action, primary = false) => { const node = el("button", label, primary ? "primary" : ""); node.type = "button"; node.disabled = busy; node.addEventListener("click", action); return node; };
   const explain = message => { fallback.hidden = false; fallback.textContent = message; };
-  const followUp = async prompt => {
+  const followUp = async (prompt, guidance = "Continue in conversation to review the exact submission. Nothing has been sent to Nemlig.") => {
     if (window.openai && typeof window.openai.sendFollowUpMessage === "function") {
       try { await window.openai.sendFollowUpMessage({ prompt }); return; } catch { /* Keep the exact request available if the host fails. */ }
     }
-    explain("Continue in conversation: " + prompt);
+    explain(guidance);
   };
   const update = async action => {
     if (!review || busy) return;
     const args = { review_id: review.review_id, revision: review.revision, action };
     if (!window.openai || typeof window.openai.callTool !== "function") {
-      await followUp("Please use update_product_review with " + JSON.stringify(args) + ". This is a local review action, not approval to submit to Nemlig.");
+      const descriptions = {
+        show: "refresh your local review", accept: "accept the selected products into your local Basket",
+        remove: "remove the selected products locally", quantity: "change this product's local quantity",
+        alternatives: "find alternatives for this product", replace: "use the selected alternative",
+        navigate: "open " + (action.destination === "basket" ? "your local Basket" : action.destination === "alternatives" ? "the current alternatives" : "Needs review"),
+        prepare_submission: "review your local Basket before submitting it to Nemlig"
+      };
+      await followUp("Please use update_product_review with " + JSON.stringify(args) + ". This is a local review action, not approval to submit to Nemlig.",
+        "Continue in conversation: ask to " + descriptions[action.kind] + ". No change has been confirmed here.");
       return;
     }
     busy = true;
@@ -230,7 +238,7 @@ footer { border-top: 1px solid var(--line); padding-top: 12px; margin-top: 12px;
       body.append(form);
       const actions = el("div", undefined, "actions");
       actions.append(button(item.state === "basket" ? "Change product" : "Find alternatives", () => {
-        if (review.alternatives && review.alternatives.product_id === id) void update({ kind: "navigate", destination: "alternatives" });
+        if (review.alternatives && review.alternatives.product_id === id && review.alternatives.origin === item.state) void update({ kind: "navigate", destination: "alternatives" });
         else void update({ kind: "alternatives", product_id: id, query: text(product.name, String(id)).slice(0, 200) });
       }), button("Remove", () => void update({ kind: "remove", product_ids: [id] })));
       if (item.state === "needs-review") {
