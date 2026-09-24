@@ -151,13 +151,24 @@ status SHALL remain authoritative.
 - **THEN** the summary reports owner acceptance as not run and traffic as not
   measured rather than inferring either from configured state
 
+#### Scenario: Deployment mutation occurs before evidence upload fails
+
+- **WHEN** the deployment job fails after provider mutation or its release
+  artifact cannot be downloaded
+- **THEN** the retention job records deployment acceptance as unknown or not
+  accepted, does not clean up images or Worker versions, and preserves any
+  recoverable journal as reconciliation evidence
+
 ### Requirement: Worker-version retention remains separate from image retention
 
 The protected post-acceptance path SHALL treat Worker versions, deployment
-records, and Container images as separate resources. It SHALL use complete
-pagination, a fixed UTC 48-hour cutoff, active and explicit recovery
-protections, fresh revalidation before each deletion, and absence readback.
-Uncertain deletion SHALL stop without blind retry.
+records, and Container images as separate resources. It SHALL acquire the
+shared production lease, use complete pagination with cardinality validation,
+a fixed UTC 48-hour cutoff, active and journal-derived recovery protections,
+fresh revalidation before each deletion, durable progress evidence, and
+absence readback. Uncertain deletion SHALL retain the lease and stop without
+blind retry; an explicit reviewed resume SHALL reconcile the pending version
+before continuing.
 
 #### Scenario: Worker history has an eligible old version
 

@@ -8,6 +8,7 @@ const tagPattern = /^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$/u;
 const holdReasons = new Set(["active", "recovery", "uncertain", "explicit", "retained_window", "untracked"]);
 const failureReasons = new Set([
   "ledger_missing", "ledger_invalid", "acceptance_evidence_missing", "acceptance_evidence_invalid", "retention_not_authorized",
+  "deployment_not_accepted",
   "cleanup_checkpoint_invalid", "inventory_incomplete", "active_image_missing", "active_container_invalid",
   "active_container_rollout_uncertain", "registry_unavailable", "registry_delete_uncertain", "registry_gc_uncertain",
   "registry_tag_mapping_changed", "delete_readback_still_present", "delete_readback_changed", "lease_lost",
@@ -18,6 +19,7 @@ const uncertainReasons = new Set([
   "registry_delete_uncertain", "registry_gc_uncertain", "delete_readback_still_present", "delete_readback_changed",
   "lease_lost", "lease_release_uncertain", "deadline_exceeded", "command_failed", "github_unavailable",
   "retention_commit_mismatch", "retention_report_invalid", "retention_report_missing", "retention_report_contradictory",
+  "retention_report_incomplete", "unknown_failure", "deployment_not_accepted",
 ]);
 const summaryFailureReasons = new Set([...failureReasons, "retention_commit_mismatch", "retention_report_invalid", "retention_report_missing", "retention_report_contradictory"]);
 
@@ -128,7 +130,8 @@ export function projectProductionSummary(input: ProductionSummaryInput): Product
   } else if (!retentionCommitMatches) {
     cleanupStatus = "uncertain";
     reasons = ["retention_commit_mismatch"];
-  } else if (retention.cleanupComplete === true && retention.outcome === "failed") {
+  } else if (retention.cleanupComplete === true && (retention.outcome === "failed" || typeof retention.failure === "string"
+    || (retention.outcome !== undefined && retention.outcome !== "success" && retention.skipped !== true))) {
     cleanupStatus = "uncertain";
     reasons = ["retention_report_contradictory"];
   } else if (retention.cleanupComplete === true && retention.skipped !== true && !holdInventory.known) {
@@ -155,7 +158,7 @@ export function projectProductionSummary(input: ProductionSummaryInput): Product
     cleanupStatus = "not_run";
     reasons = [safeFailure(retention.failure ?? retention.reason ?? "retention_report_missing")];
   } else {
-    cleanupStatus = "not_run";
+    cleanupStatus = "uncertain";
     reasons = ["retention_report_incomplete"];
   }
   return {
@@ -224,7 +227,10 @@ export function parseProductionSummaryCli(argv: readonly string[]): { commit: st
 const readJson = async (path: string | undefined): Promise<{ state: "missing" | "invalid" | "valid"; value?: unknown }> => {
   if (!path) return { state: "missing" };
   try { return { state: "valid", value: JSON.parse(await readFile(path, "utf8")) }; }
-  catch { return { state: "invalid" }; }
+  catch (error: unknown) {
+    return error && typeof error === "object" && "code" in error && error.code === "ENOENT"
+      ? { state: "missing" } : { state: "invalid" };
+  }
 };
 
 const main = async (): Promise<void> => {

@@ -61,6 +61,14 @@ status SHALL remain authoritative.
 - **THEN** the summary reports owner acceptance as not run and traffic as not
   measured rather than inferring either from configured state
 
+#### Scenario: Deployment mutation occurs before evidence upload fails
+
+- **WHEN** the deployment job fails after provider mutation or its release
+  artifact cannot be downloaded
+- **THEN** the retention job records deployment acceptance as unknown or not
+  accepted, does not clean up images or Worker versions, and preserves any
+  recoverable journal as reconciliation evidence
+
 ### Requirement: Recovery preserves uncertainty and provider ownership
 
 Recovery SHALL retain only state required to distinguish runner loss before mutation, uncertain provider mutation, verified terminal state, and interrupted cleanup. It SHALL NOT repeat an uncertain mutation or remove an image required by unresolved recovery. Redundant locks, journals, artifacts, or manual finalization MAY be removed only when tests prove equivalent exact-state recovery from remaining durable provider and workflow evidence.

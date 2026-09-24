@@ -94,6 +94,7 @@ test("summary covers unstable, dry-run, skipped, failed, uncertain, and missing 
     [{ commit, release: acceptedRelease, retention: { commit, cleanupComplete: true, skipped: true } }, "complete", "already_complete"],
     [{ commit, release: acceptedRelease, retention: { commit, outcome: "failed", failure: "ledger_missing" } }, "failed", "ledger_missing"],
     [{ commit, release: acceptedRelease, retention: { commit, outcome: "failed", failure: "registry_delete_uncertain" } }, "uncertain", "registry_delete_uncertain"],
+    [{ commit, release: acceptedRelease, retention: { commit, outcome: "failed", failure: "deployment_not_accepted" } }, "uncertain", "deployment_not_accepted"],
     [{ commit, release: undefined, retention: undefined }, "uncertain", "retention_report_missing"],
   ] as const;
   for (const [input, status, reason] of cases) {
@@ -105,6 +106,16 @@ test("summary covers unstable, dry-run, skipped, failed, uncertain, and missing 
   assert.equal(missing.deployment, "unknown");
   assert.equal(missing.technicalAcceptance, "unknown");
   assert.equal(missing.ownerAcceptance, "not_run");
+});
+
+test("summary treats contradictory or partial same-commit retention evidence as uncertain", () => {
+  for (const retention of [
+    { ...completeCleanup, failure: "registry_delete_uncertain" },
+    { commit },
+  ]) {
+    const summary = projectProductionSummary({ commit, release: acceptedRelease, retention });
+    assert.equal(summary.cleanup.status, "uncertain");
+  }
 });
 
 test("summary rejects untrusted multiline fields and wrong source commits", () => {

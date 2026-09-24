@@ -188,7 +188,8 @@ limits, effective configuration checks, revision readback, and read-only edge
 and service acceptance. It never requests an owner access token, password, or
 browser session.
 
-The latest routine technical acceptance completed for repository SHA
+Historical observation (not current delivery evidence): the latest routine
+technical acceptance recorded at the time of this note completed for repository SHA
 `d5e62e6d5259e50ff668d26652a977009add565d` in [protected workflow
 35664402066](https://github.com/mortenbroesby/everyday-assistants/actions/runs/35664402066).
 Read-only provider verification found enabled Worker version
@@ -378,14 +379,20 @@ missing `retention-ledger.json` fails closed when the ledger branch already
 exists; only a branch created by the current run may initialize an empty ledger.
 
 Worker-version retention is a separate policy from Container-image retention.
-After a successful image-retention stage, the protected workflow lists every
-production Worker version through the paginated Cloudflare API, calculates a
-fixed UTC cutoff of 48 hours, and considers only older versions for deletion.
-The currently serving version and explicitly recorded recovery references are
-always protected. Each deletion is revalidated against a fresh complete list
-and must be absent on readback; an uncertain response stops the run without a
-blind retry. The one-time historical cleanup is not evidence that this policy
-has run, and no Worker-version deletion is authorized by local tests alone.
+After a successful image-retention stage, the protected workflow takes the
+same `codex-lock/nemlig-production` lease, lists every production Worker
+version through the paginated Cloudflare API, calculates a fixed UTC cutoff of
+48 hours, and considers only older versions for deletion. The current serving
+version and recovery references derived from the exact deployment journal are
+always protected; operator-supplied recovery IDs require explicit reviewed
+resume evidence. Each deletion records a bounded durable Worker report before
+and after the provider request, is revalidated against a fresh complete list,
+and must be absent on readback. An uncertain response holds the lease and
+stops without a blind retry; use the protected workflow's
+`resume_worker_retention` input only after reconciling the durable report and
+provider state. The one-time historical cleanup is not evidence that this
+policy has run, and no Worker-version deletion is authorized by local tests
+alone.
 
 ### Configuration and recovery disposition
 

@@ -18,8 +18,9 @@
 - [x] 3.2 Implement complete exact-repository inventory with pagination/alias checks and deterministic failure on incomplete or unknown responses.
 - [x] 3.3 Add accepted-image order ledger and pure planner: retain ten distinct accepted digests by default; preserve active/recovery/uncertain and untracked images unless exact accepted-release order is proven.
 - [x] 3.4 Test malformed, duplicate, stale, missing, reordered and uncertain ledger/inventory states; prove stable read-only reports and exact reason categories.
-- [x] 3.5 Implement the separate Worker-version policy with complete paginated inventory, fixed UTC 48-hour cutoff, active/recovery protection, fresh revalidation, and delete readback tests; no live deletion is claimed.
+- [x] 3.5 Implement the separate Worker-version policy with complete paginated inventory and cardinality validation, fixed UTC 48-hour cutoff, journal-derived active/recovery protection, fresh revalidation, delete readback, shared lease fencing, bounded durable evidence, explicit reviewed resume, and timeout tests; no live deletion is claimed.
 - [ ] 3.6 Run the protected Worker-version policy against the live production inventory and verify the remaining history without deleting a required recovery reference.
+- [x] 3.7 Correct audit findings in Worker retention, release summarization, failed-deploy evidence handling, workflow tests, and operations/spec documentation; no provider mutation is claimed.
 
 ## 4. Accepted-release cleanup (#100)
 

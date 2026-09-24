@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { collectWorkerVersions, executeWorkerVersionRetention, parseProtectedVersionIds, parseWorkerVersionsPage, planWorkerVersionRetention } from "../scripts/worker-version-retention.js";
+import { collectWorkerVersions, executeWorkerVersionRetention, parseProtectedVersionIds, parseWorkerVersionsPage, planWorkerVersionRetention, recoveryVersionIdsFromJournal, runWranglerCommand } from "../scripts/worker-version-retention.js";
 
 const ids = [
   "11111111-1111-4111-8111-111111111111",
@@ -18,6 +18,37 @@ test("Worker version listing requires complete, strict pagination", async () => 
   ]);
   await assert.rejects(() => collectWorkerVersions(async () => page(1)), /worker_version_retention_pagination_changed/u);
   assert.throws(() => parseWorkerVersionsPage({ success: true, result: [], result_info: { page: 2, total_pages: 1 } }), /worker_version_retention_pagination_invalid/u);
+  assert.throws(() => parseWorkerVersionsPage({
+    success: true,
+    result_info: { page: 1, total_pages: 1, count: 2, total_count: 2, per_page: 100 },
+    result: [{ id: ids[0], created_on: "2026-09-20T11:59:59.000Z" }],
+  }), /worker_version_retention_cardinality_invalid/u);
+});
+
+test("Worker recovery references come from the deployment journal", () => {
+  const journal = JSON.stringify({
+    schema: 2,
+    operationId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    commit: "a".repeat(40),
+    ciRunId: 1,
+    releaseRunId: 1,
+    releaseRunAttempt: 1,
+    startedAt: "2026-09-24T12:00:00.000Z",
+    lastVerifiedState: "enabled",
+    rollback: "not_needed",
+    outcome: "success",
+    checks: [],
+    transitions: [],
+    startingVersion: ids[0],
+    disabledVersion: ids[1],
+    enabledVersion: ids[2],
+  });
+  assert.deepEqual(recoveryVersionIdsFromJournal(journal), ids);
+});
+
+test("Wrangler runs from the package root where its dependency is installed", async () => {
+  const output = await runWranglerCommand(["--version"], process.env, AbortSignal.timeout(10_000), 10_000);
+  assert.match(output, /^\d+\.\d+\.\d+/u);
 });
 
 test("Worker version policy uses a fixed UTC 48-hour cutoff and protects active/recovery versions", () => {
