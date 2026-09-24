@@ -188,7 +188,8 @@ limits, effective configuration checks, revision readback, and read-only edge
 and service acceptance. It never requests an owner access token, password, or
 browser session.
 
-The latest routine technical acceptance completed for repository SHA
+Historical observation (not current delivery evidence): the latest routine
+technical acceptance recorded at the time of this note completed for repository SHA
 `d5e62e6d5259e50ff668d26652a977009add565d` in [protected workflow
 35664402066](https://github.com/mortenbroesby/everyday-assistants/actions/runs/35664402066).
 Read-only provider verification found enabled Worker version
@@ -202,7 +203,8 @@ not a fresh real-family Nemlig or ChatGPT acceptance claim.
 
 1. Merge an approved change only after its required CI is green. Each eligible
    successful main-CI run queues the exact tested SHA; it does not substitute a
-   later tip SHA.
+   later tip SHA. A later unaccepted main tip does not strand that candidate
+   while it remains in current main history.
 2. Credential-free preflight rechecks the repository, exact CI provenance,
    that the candidate is still an ancestor of current `main`, and the protected
    environment before the privileged job. A candidate already superseded by a
@@ -246,8 +248,8 @@ not a fresh real-family Nemlig or ChatGPT acceptance claim.
 The shared command also supports supervised terminal execution with those same scoped CI credentials:
 
 ```sh
-pnpm --filter nemlig-assistant production:deploy -- preflight EXACT_MAIN_COMMIT
-pnpm --filter nemlig-assistant production:deploy -- --service EXACT_MAIN_COMMIT
+pnpm --filter nemlig-assistant production:deploy -- preflight CANDIDATE_COMMIT
+pnpm --filter nemlig-assistant production:deploy -- --service CANDIDATE_COMMIT
 ```
 
 Routine service acceptance is part of the automatic workflow; there is no
@@ -365,6 +367,54 @@ applications, or any other registry repository. Deployment still keeps the
 existing one `lite` Container and cost ceilings; image pruning does not add
 runtime capacity or perform basket/order/payment/delivery operations.
 
+The workflow summary separates deployment, technical acceptance, owner
+acceptance, retention cleanup, and traffic measurement. Owner acceptance is
+always reported as not run by CI, and configured routing is not presented as
+measured request traffic. Cleanup is `complete` only when the retention report
+proves completion; protected or untracked images are reported as
+`held/incomplete` with their safe reasons and digests. A missing retention
+report, dry run, unstable inventory, failed operation, or uncertain delete is
+reported separately and preserves the non-zero retention exit status. A
+missing `retention-ledger.json` fails closed when the ledger branch already
+exists; only a branch created by the current run may initialize an empty ledger.
+
+Worker-version retention is a separate policy from Container-image retention.
+After a successful image-retention stage, the protected workflow takes the
+same `codex-lock/nemlig-production` lease, lists every production Worker
+version through the paginated Cloudflare API, calculates a fixed UTC cutoff of
+48 hours, and considers only older versions for deletion. The current serving
+version and recovery references derived from the exact deployment journal are
+always protected; operator-supplied recovery IDs require explicit reviewed
+resume evidence. Each deletion records a bounded durable Worker report before
+and after the provider request, is revalidated against a fresh complete list,
+and must be absent on readback. An uncertain response holds the lease and
+stops without a blind retry; use the protected workflow's
+`resume_worker_retention` input only after reconciling the durable report and
+provider state. The one-time historical cleanup is not evidence that this
+policy has run, and no Worker-version deletion is authorized by local tests
+alone.
+
+### Configuration and recovery disposition
+
+The current production binding inventory is intentionally small. Active
+runtime consumers are `MCP_ENABLED`, the quota/timeout variables, the Auth0
+issuer/audience and public URL, the service-acceptance identity, the credential
+key version, `NEMLIG_MCP_PRINCIPALS`, and the `NEMLIG_MCP_CONTAINER` and
+`NEMLIG_PLAN_STORAGE` Durable Object bindings. The HTTP host/port values are
+consumed by the Container auth bootstrap and are validated even though the
+Worker supplies the fixed production values. `PlanStorage` is dormant for
+current shopping behavior but retained for schema/tombstone compatibility and
+rollback; its removal is not part of deployment cleanup.
+
+`MCP_MINIMAL_AUTH_ENABLED` and `NEMLIG_MCP_AUTH_CANARY` are legacy dashboard
+bindings: the exact production deploy removes them from the active plaintext
+configuration and tests reject their redeployment. Encrypted principal data,
+the credential-key binding, Durable Object migrations, and rollback material
+remain required. The deployment lease, remote journal, local artifact mirror,
+and retention lease are all still consumed by runner-loss recovery; their
+ownership and readback checks are not redundant and must not be replaced by
+age or TTL decisions.
+
 ## Emergency disable and re-enable
 
 In Cloudflare, open the production Worker, edit the plain production variable
@@ -394,6 +444,12 @@ A subsequent `wrangler rollback` rehearsal moved 100% of traffic back to the
 same disabled version, reverified HTTP 503 and no running Container, then restored
 100% of traffic to the enabled version. The restored deployment returned HTTP
 200 health and still had no running Container instance.
+
+The dated deployment and acceptance observations below are historical evidence,
+not current incident instructions or permanent live-state claims. For current
+state use the exact-SHA workflow summary, fresh read-only provider inventory,
+and the recovery procedures above; do not repeat an old rollback, credential
+repair, or cleanup action merely because it appears in this archive.
 
 The 2026-09-01 hosted-app acceptance deployed disabled version
 `3e24b2b8-596c-4494-b338-593ba9478fa0`, observed HTTP 503 on both routes and an

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { assertNoContainerRollout, assertRetentionLeaseForMutation, parseAcceptedReleaseJournal, parseAuthoritativeActiveContainer, parseProductionRetentionCli, parseRegistryCredentialOutput, parseRetentionLease, registryCredentialCommand, retentionLeaseCanBeReclaimed, retentionLeaseMatchesOperation } from "../scripts/production-retention.js";
+import { assertNoContainerRollout, assertRetentionLeaseForMutation, initialRetentionLedger, parseAcceptedReleaseJournal, parseAuthoritativeActiveContainer, parseProductionRetentionCli, parseRegistryCredentialOutput, parseRetentionLease, registryCredentialCommand, retentionLeaseCanBeReclaimed, retentionLeaseMatchesOperation } from "../scripts/production-retention.js";
 
 const commit = "a".repeat(40);
 const image = `sha256:${"b".repeat(64)}`;
@@ -122,4 +122,13 @@ test("only exact successful read-only runtime acceptance can seed the cleanup le
   assert.throws(() => parseAcceptedReleaseJournal(JSON.stringify({ ...journal, outcome: "failed" }), commit), /production_retention_acceptance_evidence_invalid/u);
   assert.throws(() => parseAcceptedReleaseJournal(JSON.stringify({ ...journal, checks: ["edge_acceptance"] }), commit), /production_retention_acceptance_evidence_invalid/u);
   assert.throws(() => parseAcceptedReleaseJournal(JSON.stringify(journal), "c".repeat(40)), /production_retention_acceptance_evidence_invalid/u);
+});
+
+test("a missing retention ledger only initializes on a newly-created ledger branch", () => {
+  assert.deepEqual(initialRetentionLedger("0123456789abcdef0123456789abcdef/nemlig-production", true), {
+    schema: 1,
+    repository: "0123456789abcdef0123456789abcdef/nemlig-production",
+    accepted: [],
+  });
+  assert.throws(() => initialRetentionLedger("0123456789abcdef0123456789abcdef/nemlig-production", false), /production_retention_ledger_missing/u);
 });

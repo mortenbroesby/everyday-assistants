@@ -7,15 +7,19 @@ Provide trusted CI-driven Nemlig production releases with durable recovery and a
 
 ### Requirement: CI releases execute only trusted exact source
 
-Routine delivery SHALL accept only an explicitly dispatched full commit matching the current default-branch head, the checked-out source, and a successful completed trusted default-branch push verification run for the same repository and workflow identity. A separately selected protected recovery mode MAY accept a previously green full commit that is an ancestor of current default-branch head, with the same exact checked-out source and CI provenance checks. Both modes SHALL revalidate after approvals and before mutation. Untrusted PR workflows, artifacts, dispatch content and stale source MUST NOT acquire production credentials or mutate production.
+Routine delivery SHALL accept only a full commit that remains an ancestor of the current default-branch head, the checked-out source, and a successful completed trusted default-branch push verification run for the same repository and workflow identity. A separately selected protected recovery mode MAY accept a previously green full commit that is an ancestor of current default-branch head, with the same exact checked-out source and CI provenance checks. Both modes SHALL revalidate after approvals and before mutation. Untrusted PR workflows, artifacts, dispatch content and stale source MUST NOT acquire production credentials or mutate production.
 
 #### Scenario: PR verification shares a source revision
 - **WHEN** a successful PR run exists for a candidate but no successful trusted default-branch push run exists
 - **THEN** release preflight fails before provider mutation
 
-#### Scenario: Main advances during approval
-- **WHEN** an approved candidate no longer equals current remote main
-- **THEN** deployment fails without automatically substituting a newer revision
+#### Scenario: A trusted queued candidate remains eligible after main advances
+- **WHEN** an approved candidate remains an ancestor of current remote main and no newer deployed descendant has superseded it
+- **THEN** routine delivery deploys that exact candidate without automatically substituting a newer revision
+
+#### Scenario: A newer deployed descendant supersedes a queued candidate
+- **WHEN** a newer deployed revision is not an ancestor of the queued candidate
+- **THEN** the queued operation fails before provider mutation
 
 #### Scenario: Protected recovery selects a known-green ancestor
 - **WHEN** an explicitly selected recovery candidate has a successful trusted default-branch push verification run and is an ancestor of current remote main
@@ -123,3 +127,52 @@ Production delivery SHALL use protected short-lived job credentials and the leas
 #### Scenario: A release reaches its deadline
 - **WHEN** the bounded release or acceptance deadline expires
 - **THEN** work is aborted where possible, uncertainty is recorded, and no automatic repeat or false completion occurs
+
+### Requirement: Release summaries distinguish evidence and cleanup state
+
+The protected workflow SHALL publish a bounded summary that distinguishes
+deployment, technical acceptance, owner acceptance, cleanup, and traffic
+measurement. CI synthetic acceptance MUST NOT be presented as owner or live-user
+proof. Cleanup SHALL be `complete` only when the retention report proves
+completion; protected, untracked, unstable, failed, uncertain, dry-run, and
+missing-evidence states SHALL remain distinct and the retention command's exit
+status SHALL remain authoritative.
+
+#### Scenario: Retention reports protected holds
+
+- **WHEN** accepted deployment evidence exists but active, recovery, uncertain,
+  or untracked images remain protected
+- **THEN** the summary reports cleanup as held/incomplete with bounded reasons
+  and does not claim cleanup completion
+
+#### Scenario: CI has no owner or traffic evidence
+
+- **WHEN** the protected workflow completes its synthetic technical checks
+- **THEN** the summary reports owner acceptance as not run and traffic as not
+  measured rather than inferring either from configured state
+
+#### Scenario: Deployment mutation occurs before evidence upload fails
+
+- **WHEN** the deployment job fails after provider mutation or its release
+  artifact cannot be downloaded
+- **THEN** the retention job records deployment acceptance as unknown or not
+  accepted, does not clean up images or Worker versions, and preserves any
+  recoverable journal as reconciliation evidence
+
+### Requirement: Worker-version retention remains separate from image retention
+
+The protected post-acceptance path SHALL treat Worker versions, deployment
+records, and Container images as separate resources. It SHALL acquire the
+shared production lease, use complete pagination with cardinality validation,
+a fixed UTC 48-hour cutoff, active and journal-derived recovery protections,
+fresh revalidation before each deletion, durable progress evidence, and
+absence readback. Uncertain deletion SHALL retain the lease and stop without
+blind retry; an explicit reviewed resume SHALL reconcile the pending version
+before continuing.
+
+#### Scenario: Worker history has an eligible old version
+
+- **WHEN** a complete inventory proves a version is older than the cutoff and
+  neither serving nor required for recovery
+- **THEN** the version is an oldest-first deletion candidate and its absence is
+  verified after deletion

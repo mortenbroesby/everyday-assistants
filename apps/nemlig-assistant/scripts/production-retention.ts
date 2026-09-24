@@ -155,6 +155,11 @@ export function parseAcceptedReleaseJournal(raw: string, expectedCommit: string)
   return { commit: expectedCommit, digest: journal!.enabledImage as string, acceptedAt: journal!.completedAt as string };
 }
 
+export function initialRetentionLedger(repository: string, branchCreated: boolean): ImageRetentionLedger {
+  if (!branchCreated) fail("ledger_missing");
+  return { schema: 1, repository, accepted: [] };
+}
+
 export type ProductionRetentionCli =
   | { mode: "accept"; commit: string; acceptancePath: string }
   | { mode: "plan" | "resume"; commit: string };
@@ -331,6 +336,7 @@ const main = async (): Promise<void> => {
     };
 
     let branchExists = false;
+    let ledgerBranchCreated = false;
     const ensureLedgerBranch = async (): Promise<void> => {
       if (branchExists) return;
       const refPath = `git/ref/heads/${ledgerBranch}`;
@@ -338,7 +344,7 @@ const main = async (): Promise<void> => {
       if (ref.status === 200) { branchExists = true; return; }
       if (ref.status !== 404 || mode !== "accept") fail("ledger_branch_unavailable");
       const create = await github("POST", "git/refs", { ref: `refs/heads/${ledgerBranch}`, sha: commit });
-      if (create.status >= 200 && create.status < 300) { branchExists = true; return; }
+      if (create.status >= 200 && create.status < 300) { branchExists = true; ledgerBranchCreated = true; return; }
       const reconcile = await github("GET", refPath);
       if (reconcile.status === 200) { branchExists = true; return; }
       fail("ledger_branch_create_failed");
@@ -347,7 +353,7 @@ const main = async (): Promise<void> => {
     const readLedgerFile = async (): Promise<{ ledger: ImageRetentionLedger; sha?: string }> => {
       await ensureLedgerBranch();
       const response = await github("GET", `contents/retention-ledger.json?ref=${encodeURIComponent(ledgerBranch)}`);
-      if (response.status === 404) return { ledger: { schema: 1, repository, accepted: [] } };
+      if (response.status === 404) return { ledger: initialRetentionLedger(repository, ledgerBranchCreated) };
       const file = requireGithub(response, "ledger_read_failed");
       if (typeof file.content !== "string" || typeof file.sha !== "string" || !/^[0-9a-f]{40}$/u.test(file.sha)) fail("ledger_read_failed");
       let raw: string;
@@ -556,9 +562,17 @@ const main = async (): Promise<void> => {
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   main().catch((error: unknown) => {
-    console.error(error instanceof Error && /^production_retention_[a-z0-9_]+$/u.test(error.message)
+    const message = error instanceof Error && /^production_retention_[a-z0-9_]+$/u.test(error.message)
       ? error.message
-      : "production_retention_failed");
+      : "production_retention_failed";
+    const reason = message.replace(/^production_retention_/u, "");
+    const commit = process.argv.slice(2).find((value: string) => /^[0-9a-f]{40}$/u.test(value));
+    console.error(message);
+    console.log(JSON.stringify({
+      ...(commit ? { commit } : {}),
+      outcome: "failed",
+      failure: /^[a-z0-9_]+$/u.test(reason) ? reason : "unknown_failure",
+    }));
     process.exitCode = 1;
   });
 }
