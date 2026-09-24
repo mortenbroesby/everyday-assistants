@@ -3,6 +3,11 @@
   "repository": "927b9cdf24a2faa1149c208f1073ad8a/nemlig-mcp-cloudflare-production-nemligmcpcontainer-production",
   "accepted": [
     {
+      "commit": "2669a6fb56cd704f8af2670e5466e51a7262e02d",
+      "digest": "sha256:e174820581ef5eb4c16f6382859a180f248ac22b17634859ebe69398f21e476e",
+      "acceptedAt": "2026-09-24T22:39:26.012Z"
+    },
+    {
       "commit": "7b870a8382c1001251ebff3af5408abd08a7857a",
       "digest": "sha256:c8b17a8b198d9451018bc333a58de43300abb95c4ecaacd300e61821fe6742ba",
       "acceptedAt": "2026-09-24T20:38:30.161Z"
@@ -84,6 +89,6 @@
     }
   ],
   "cleanup": {
-    "commit": "7b870a8382c1001251ebff3af5408abd08a7857a"
+    "commit": "2669a6fb56cd704f8af2670e5466e51a7262e02d"
   }
 }
