@@ -15,7 +15,7 @@ const section = (source: string, heading: string): string => {
   return next === -1 ? rest : rest.slice(0, next);
 };
 
-test("routine releases queue exact-CI candidates; manual dispatch is recovery or retention recovery only", async () => {
+test("routine releases queue exact-CI candidates; manual dispatch is recovery, reconciliation, or retention recovery only", async () => {
   const source = await readFile(workflowPath, "utf8");
   const trigger = section(source, "on:");
   assert.match(trigger, /^\x20{2}workflow_dispatch:\n/m);
@@ -25,6 +25,7 @@ test("routine releases queue exact-CI candidates; manual dispatch is recovery or
   assert.match(trigger, /commit:[\s\S]*?required: true[\s\S]*?type: string/m);
   assert.match(trigger, /recovery:[\s\S]*?required: true[\s\S]*?type: boolean/m);
   assert.match(trigger, /resume_retention:[\s\S]*?required: false[\s\S]*?type: boolean/m);
+  assert.match(trigger, /reconcile_operation:[\s\S]*?required: false[\s\S]*?type: string/m);
   assert.doesNotMatch(trigger, /cutover:|finalize_operation:/u);
   assert.match(source, /^concurrency:\n\x20{2}group: nemlig-production\n\x20{2}cancel-in-progress: false\n\x20{2}queue: max$/m);
   assert.match(source, /^permissions:\n(?:\x20{2}#.*\n)*\x20{2}contents: write$/m);
@@ -35,6 +36,7 @@ test("routine releases queue exact-CI candidates; manual dispatch is recovery or
   const retention = section(source, "  retention:");
   assert.match(gate, /inputs\.recovery == true/u);
   assert.match(gate, /inputs\.resume_retention == true/u);
+  assert.match(gate, /inputs\.reconcile_operation != ''/u);
   assert.match(gate, /permissions:\n\s+contents: read\n\s+actions: read/u);
   assert.doesNotMatch(gate, /catch-up|retention-ledger|gh api/u);
   assert.doesNotMatch(gate, /\.cleanup|retention-lease|RETENTION_ENABLED|dryRunFingerprint/u);
@@ -43,7 +45,7 @@ test("routine releases queue exact-CI candidates; manual dispatch is recovery or
   assert.match(gate, /Recovery deployment and retention resume are mutually exclusive/u);
   assert.match(gate, /Check exact main candidate/u);
   assert.match(gate, /git merge-base --is-ancestor "\$CANDIDATE_SHA" origin\/main/u);
-  assert.ok(gate.includes('if [[ "$RECOVERY" == "true" || "$RESUME_RETENTION" == "true" ]]; then\n            if ! git merge-base --is-ancestor "$CANDIDATE_SHA" origin/main;')
+  assert.ok(gate.includes('if [[ "$RECOVERY" == "true" || "$RESUME_RETENTION" == "true" || -n "$RECONCILE_OPERATION" ]]; then\n            if ! git merge-base --is-ancestor "$CANDIDATE_SHA" origin/main;')
     && gate.includes('elif [[ "$CANDIDATE_SHA" != "$(git rev-parse origin/main)" ]]; then'),
     "only an explicitly confirmed recovery may deploy an ancestor; routine runs must target current main exactly");
   assert.doesNotMatch(gate, /production:retention|CLOUDFLARE|secrets\./u);
@@ -60,6 +62,7 @@ test("routine releases queue exact-CI candidates; manual dispatch is recovery or
   assert.match(gate, /\[\[ "\$CANDIDATE_SHA" =~ \^\[0-9a-f\]\{40\}\$ \]\]/u);
   assert.doesNotMatch(gate, /check:version-bump|check:release-note|CANDIDATE_PARENT|policy\.eligible/u);
   assert.match(gate, /echo "deploy=true" >> "\$GITHUB_OUTPUT"/u);
+  assert.match(gate, /echo "reconcile=true" >> "\$GITHUB_OUTPUT"/u);
   assert.doesNotMatch(gate, /FINALIZE_OPERATION|CUTOVER/u);
   assert.doesNotMatch(gate, /CLOUDFLARE|NEMLIG_MCP|secrets\./u);
   assert.match(preflight, /needs: release-gate/u);
@@ -165,14 +168,32 @@ test("deployment evidence remains artifact-backed without a publication side eff
   assert.doesNotMatch(source, /publish:deployment-release/u);
 });
 
-test("manual dispatch requires recovery intent and cannot finalize operations", async () => {
+test("manual dispatch requires recovery intent and cannot finalize arbitrary operations", async () => {
   const source = await readFile(workflowPath, "utf8");
   const trigger = section(source, "on:");
   const gate = section(source, "  release-gate:");
   assert.match(trigger, /recovery:[\s\S]*?required: true[\s\S]*?type: boolean/m);
   assert.match(trigger, /resume_retention:[\s\S]*?required: false[\s\S]*?type: boolean/m);
+  assert.match(trigger, /reconcile_operation:[\s\S]*?required: false[\s\S]*?type: string/m);
   assert.match(gate, /inputs\.(recovery|resume_retention) == true/u);
+  assert.match(gate, /inputs\.reconcile_operation != ''/u);
   assert.doesNotMatch(source, /finalize_operation:|^ {2}finalize:/m);
+});
+
+test("manual recovery can reconcile an exact pending rollback and release its lease", async () => {
+  const source = await readFile(workflowPath, "utf8");
+  const reconcile = section(source, "  reconcile:");
+  assert.match(reconcile, /needs: release-gate/u);
+  assert.match(reconcile, /needs\.release-gate\.outputs\.reconcile == 'true'/u);
+  assert.match(reconcile, /environment:\n\s+name: nemlig-production/u);
+  assert.match(reconcile, /permissions:\n\s+contents: write\n\s+actions: read/u);
+  assert.match(reconcile, /actions\/checkout@[0-9a-f]{40}/u);
+  assert.match(reconcile, /pnpm install --frozen-lockfile/u);
+  assert.match(reconcile, /production:deploy -- reconcile-recovery "\$RECONCILE_OPERATION" --evidence-saved --original-runner-stopped/u);
+  assert.match(reconcile, /production:deploy -- finalize "\$RECONCILE_OPERATION" --evidence-saved --original-runner-stopped/u);
+  assert.match(reconcile, /CLOUDFLARE_API_TOKEN:/u);
+  assert.match(reconcile, /GH_TOKEN:/u);
+  assert.doesNotMatch(reconcile, /NEMLIG_MCP_SERVICE_CLIENT_SECRET/u);
 });
 
 test("routine recovery finalizes only after its artifact is saved", async () => {
