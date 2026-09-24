@@ -10,5 +10,12 @@
 
 ## 3. Integration
 
-- [ ] 3.1 Reconcile contracts and documentation; run strict OpenSpec validation, focused checks and final pnpm verify.
-- [ ] 3.2 Review the final scoped diff, commit, push and open a PR; verify remote head and applicable CI evidence.
+- [x] 3.1 Reconcile contracts and documentation; run strict OpenSpec validation, focused checks and final pnpm verify.
+- [x] 3.2 Review the final scoped diff, commit, push and open PR #120; verify the remote head. Exact-head CI and handoff status are tracked on PR #120.
+
+Implementation verification: focused service/protocol tests, a deterministic
+loopback browser/MCP smoke at 375px and 320px, strict OpenSpec validation,
+public-tree privacy checks, full `pnpm verify`, and packed-package smoke passed.
+Local Docker is stopped, so the complete Cloudflare dry run is delegated to PR CI.
+No live Nemlig or production operation was performed. Do not infer deployment
+from this implementation checklist.

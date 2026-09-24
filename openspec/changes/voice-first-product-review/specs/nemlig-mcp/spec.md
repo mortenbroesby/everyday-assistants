@@ -63,4 +63,3 @@ The server SHALL keep catalogue results and exact product details independent fr
 
 - **WHEN** the user explicitly approves an unchanged review
 - **THEN** the matching apply tool performs the bounded mutation, verifies basket readback, and returns structured data plus a readable fallback
-
