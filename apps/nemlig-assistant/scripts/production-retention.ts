@@ -57,6 +57,10 @@ export function parseRegistryCredentialOutput(raw: string): { authorization: str
   return { authorization: `Basic ${Buffer.from(`v1:${password as string}`).toString("base64")}` };
 }
 
+export function registryCredentialCommand(permission: "pull" | "push"): string[] {
+  return ["exec", "wrangler", "containers", "registries", "credentials", new URL(registryOrigin).host, `--${permission}`, "--expiration-minutes", "5", "--json", "--env", "production"];
+}
+
 export function parseRetentionLease(raw: string): RetentionLease {
   let value: unknown;
   try { value = JSON.parse(raw); } catch { return fail("lease_invalid"); }
@@ -380,7 +384,7 @@ const main = async (): Promise<void> => {
     const registryAuthorization = async (permission: "pull" | "push"): Promise<string> => {
       if (permission === "pull" && Date.now() < pullExpires) return pullAuthorization;
       if (permission === "push" && Date.now() < pushExpires) return pushAuthorization;
-      const output = await run("pnpm", ["exec", "wrangler", "containers", "registries", "credentials", `--${permission}`, "--expiration-minutes", "5", "--json", "--env", "production"], packageRoot, env, signal);
+      const output = await run("pnpm", registryCredentialCommand(permission), packageRoot, env, signal);
       const generated = parseRegistryCredentialOutput(output).authorization;
       if (permission === "pull") { pullAuthorization = generated; pullExpires = Date.now() + 240_000; }
       else { pushAuthorization = generated; pushExpires = Date.now() + 240_000; }
