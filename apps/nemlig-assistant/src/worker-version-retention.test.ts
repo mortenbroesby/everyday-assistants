@@ -28,6 +28,11 @@ test("Worker version listing requires complete, strict pagination", async () => 
     result: [],
     result_info: { page: 0, per_page: 0, count: 0, total_count: 0, total_pages: 0 },
   }), { versions: [], page: 1, totalPages: 1 });
+  assert.equal(parseWorkerVersionsPage({
+    success: true,
+    result: [{ id: ids[0], created_on: "2026-09-20T11:59:59.000Z" }],
+    result_info: { page: 0, total_pages: 0 },
+  }).versions[0]?.id, ids[0]);
   assert.throws(() => parseWorkerVersionsPage({
     success: true,
     result_info: { page: 1, total_pages: 1, count: 2, total_count: 2, per_page: 100 },
