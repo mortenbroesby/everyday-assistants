@@ -118,6 +118,24 @@ export function assertNoContainerRollout(raw: string, expectedApplicationVersion
   }
 }
 
+/** Cloudflare's list endpoint can temporarily lag an application detail read after deployment. */
+export function parseAuthoritativeActiveContainer(listed: string, infoRaw: string): ReturnType<typeof parseContainer> {
+  const initial = parseContainer(listed);
+  let info: unknown;
+  try { info = JSON.parse(infoRaw); } catch { return fail("active_container_invalid"); }
+  const app = jsonObject(info);
+  const configuration = jsonObject(app?.configuration);
+  const current = parseContainer(JSON.stringify([{
+    id: app?.id,
+    name: app?.name,
+    instances: app?.instances,
+    image: configuration?.image,
+    version: app?.version,
+  }]));
+  if (current.id !== initial.id) fail("active_container_changed");
+  return current;
+}
+
 export function parseAcceptedReleaseJournal(raw: string, expectedCommit: string): {
   commit: string;
   digest: string;
@@ -409,18 +427,7 @@ const main = async (): Promise<void> => {
       const listed = await run("pnpm", ["exec", "wrangler", "containers", "list", "--json", "--env", "production"], packageRoot, env, signal);
       const initial = parseContainer(listed);
       const infoRaw = await run("pnpm", ["exec", "wrangler", "containers", "info", initial.id, "--json", "--env", "production"], packageRoot, env, signal);
-      let info: unknown;
-      try { info = JSON.parse(infoRaw); } catch { return fail("active_container_invalid"); }
-      const app = jsonObject(info);
-      const configuration = jsonObject(app?.configuration);
-      const current = parseContainer(JSON.stringify([{
-        id: app?.id,
-        name: app?.name,
-        instances: app?.instances,
-        image: configuration?.image,
-        version: app?.version,
-      }]));
-      if (current.id !== initial.id || current.image !== initial.image || current.version !== initial.version) fail("active_container_changed");
+      const current = parseAuthoritativeActiveContainer(listed, infoRaw);
       const instances = await run("pnpm", ["exec", "wrangler", "containers", "instances", current.id, "--json", "--env", "production"], packageRoot, env, signal);
       assertNoContainerRollout(instances, current.version);
       return current.image;
