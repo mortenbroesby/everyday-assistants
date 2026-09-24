@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { assertNoContainerRollout, assertRetentionLeaseForMutation, parseAcceptedReleaseJournal, parseProductionRetentionCli, parseRegistryCredentialOutput, parseRetentionLease, retentionLeaseCanBeReclaimed, retentionLeaseMatchesOperation } from "../scripts/production-retention.js";
+import { assertNoContainerRollout, assertRetentionLeaseForMutation, parseAcceptedReleaseJournal, parseProductionRetentionCli, parseRegistryCredentialOutput, parseRetentionLease, registryCredentialCommand, retentionLeaseCanBeReclaimed, retentionLeaseMatchesOperation } from "../scripts/production-retention.js";
 
 const commit = "a".repeat(40);
 const image = `sha256:${"b".repeat(64)}`;
@@ -25,6 +25,11 @@ test("registry credential output becomes Basic auth without surfacing its secret
   assert.throws(() => parseRegistryCredentialOutput("not-json"), /production_retention_credentials_invalid/u);
   assert.throws(() => parseRegistryCredentialOutput(JSON.stringify({ username: "other", password: "credential-value-long-enough" })), /production_retention_credentials_invalid/u);
   assert.throws(() => parseRegistryCredentialOutput(JSON.stringify({ password: "" })), /production_retention_credentials_invalid/u);
+});
+
+test("registry credential requests name the Cloudflare registry domain", () => {
+  assert.deepEqual(registryCredentialCommand("pull"), ["exec", "wrangler", "containers", "registries", "credentials", "registry.cloudflare.com", "--pull", "--expiration-minutes", "5", "--json", "--env", "production"]);
+  assert.deepEqual(registryCredentialCommand("push"), ["exec", "wrangler", "containers", "registries", "credentials", "registry.cloudflare.com", "--push", "--expiration-minutes", "5", "--json", "--env", "production"]);
 });
 
 test("retention lease is a strict, run-bound owner marker", () => {
