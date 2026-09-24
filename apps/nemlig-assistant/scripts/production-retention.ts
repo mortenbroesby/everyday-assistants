@@ -290,7 +290,7 @@ const main = async (): Promise<void> => {
       const newHead = await retentionLeaseCommit(lease, priorHead);
       const response = priorHead
         ? await github("PATCH", "git/refs/heads/" + lockBranch, { sha: newHead, force: false })
-        : await github("POST", "git/refs", { ref: "refs/" + lockBranch, sha: newHead });
+        : await github("POST", "git/refs", { ref: "refs/heads/" + lockBranch, sha: newHead });
       if (response.status < 200 || response.status >= 300) {
         if (await readLeaseHead() !== newHead) fail("lease_acquire_failed");
       }
