@@ -110,7 +110,6 @@ export function parseWorkerVersionsPage(raw: unknown): { versions: WorkerVersion
     if (typeof item.id !== "string" || !versionId.test(item.id) || !validTimestamp(item.created_on)) return fail("version_invalid");
     return { id: item.id, createdOn: new Date(item.created_on).toISOString() };
   });
-  if (emptyPage && versions.length !== 0) return fail("pagination_invalid");
   return { versions, page: emptyPage ? 1 : info.page as number, totalPages };
 }
 
