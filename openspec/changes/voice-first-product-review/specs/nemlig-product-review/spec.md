@@ -1,0 +1,65 @@
+## Purpose
+
+Provide a temporary product review and local basket shared by conversation and
+touch, with an explicit, safely approved later transfer to the Nemlig basket.
+
+## ADDED Requirements
+
+### Requirement: Shared private product review
+The system SHALL maintain the same principal-bound temporary review snapshot for
+voice and touch. Needs review SHALL contain unresolved products; Basket SHALL
+contain only locally accepted products. Local acceptance, quantity change,
+replacement, removal and navigation SHALL NOT modify the Nemlig basket.
+
+#### Scenario: Accept some products
+- **WHEN** the user accepts selected exact products by voice or touch
+- **THEN** those products move to the local Basket and unresolved products remain
+  in Needs review, with no provider mutation
+
+#### Scenario: Conflicting or foreign state
+- **WHEN** a caller changes a stale revision or accesses another principal's draft
+- **THEN** the action fails without changing state and a stale authorized caller
+  can refresh the latest snapshot
+
+#### Scenario: Draft lifetime ends
+- **WHEN** a draft expires or its process restarts
+- **THEN** the system reports that the temporary draft is unavailable without
+  recreating it silently or changing the provider basket
+
+### Requirement: Contextual alternatives and reversible navigation
+The system SHALL show alternatives for one identified local product, reuse the
+same expandable product presentation, allow keeping or replacing the product,
+and allow returning to either list without resolving it. Replacing or keeping an
+unresolved product SHALL move it to the local Basket. Removing a product SHALL
+remove it locally, without provider writes. Alternative results SHALL survive
+temporary list navigation within the current draft when its target still exists.
+
+#### Scenario: Cancel a basket change
+- **WHEN** the user opens alternatives for a local Basket product then cancels
+- **THEN** the unchanged local product remains in Basket
+
+#### Scenario: Inspect alternatives and return
+- **WHEN** the user inspects Basket while considering alternatives and returns
+- **THEN** the same target and returned alternatives remain available
+
+### Requirement: Explicit protected submission
+The system SHALL submit only the local resolved lines through an exact provider
+review and subsequent explicit approval. Editing the draft SHALL invalidate its
+pending submission. Unresolved lines SHALL never be submitted implicitly. All
+existing freshness, single-use, principal, mutation-lock and readback safeguards
+SHALL remain effective. Unrelated real basket lines SHALL remain unchanged.
+
+#### Scenario: Local selection is complete
+- **WHEN** the user requests submission of the local Basket
+- **THEN** the system prepares exact current quantities, prices and effects for
+  approval without applying them
+
+#### Scenario: Approved submission succeeds
+- **WHEN** the user approves the unchanged current submission review
+- **THEN** the system applies it once, returns verified Nemlig basket readback,
+  retains the local draft and marks the submission outcome truthfully
+
+#### Scenario: Submission fails or becomes uncertain
+- **WHEN** application or readback fails
+- **THEN** the local draft remains intact, the outcome is explicitly uncertain or
+  failed, and the system does not automatically retry the submission
