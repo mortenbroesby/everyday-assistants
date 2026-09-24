@@ -117,7 +117,7 @@ test("image pruning takes and fences the shared deployment lease", async () => {
   const retention = section(workflow, "  retention:");
   assert.match(retention, /permissions:\n\s+contents: write\n\s+actions: read/u);
   assert.match(script, /const lockBranch = "codex-lock\/nemlig-production"/u);
-  assert.match(script, /POST", "git\/refs", \{ ref: "refs\/" \+ lockBranch/u);
+  assert.match(script, /POST", "git\/refs", \{ ref: "refs\/heads\/" \+ lockBranch/u);
   assert.match(script, /PATCH", "git\/refs\/heads\/" \+ lockBranch, \{ sha: newHead, force: false \}/u);
   assert.match(script, /actions\/runs\/" \+ prior\.runId/u);
   assert.match(script, /retentionLeaseCanBeReclaimed\(prior/u);
