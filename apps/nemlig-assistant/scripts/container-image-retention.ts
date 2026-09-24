@@ -236,6 +236,37 @@ const pageUrl = (first: URL, previous: Response | undefined, path: string): URL 
   return next ?? first;
 };
 
+const validRegistryReference = (value: unknown): value is string => typeof value === "string" && (tagPattern.test(value) || digestPattern.test(value));
+
+const nextTagPage = (response: Response, references: string[], expectedPath: string): URL | undefined => {
+  const link = response.headers.get("link");
+  if (link === null) return undefined;
+
+  const strict = /^\s*<([^<>]+)>\s*;\s*rel="?next"?\s*$/iu.exec(link);
+  if (strict?.[1]) {
+    let url: URL;
+    try { url = new URL(strict[1], registryOrigin); } catch { return fail("registry_pagination_invalid"); }
+    if (url.origin !== registryOrigin || url.pathname !== expectedPath || url.username || url.password
+      || url.searchParams.size !== 2 || [...url.searchParams.keys()].some((key) => !["n", "last"].includes(key))
+      || url.searchParams.get("n") !== String(pageSize) || !url.searchParams.get("last")) fail("registry_pagination_invalid");
+    return url;
+  }
+
+  if (references.length === 0) return undefined;
+  const cloudflare = /^\s*([^;<>]+)\s*;\s*rel="?next"?\s*$/iu.exec(link);
+  const cloudflareUrl = cloudflare?.[1];
+  if (!cloudflareUrl) return fail("registry_pagination_invalid");
+  let source: URL;
+  try { source = new URL(cloudflareUrl); } catch { return fail("registry_pagination_invalid"); }
+  const cursor = source.searchParams.getAll("last").at(-1);
+  if (source.origin !== registryOrigin || source.pathname !== expectedPath || source.username || source.password
+    || typeof cursor !== "string" || cursor !== references.at(-1) || !validRegistryReference(cursor)) return fail("registry_pagination_invalid");
+  const next = new URL(`${registryOrigin}${expectedPath}`);
+  next.searchParams.set("n", String(pageSize));
+  next.searchParams.set("last", cursor);
+  return next;
+};
+
 /** Lists one exact Cloudflare registry repository and resolves every tag to an immutable digest. */
 export async function readRegistryInventory(input: {
   accountId: string;
@@ -284,23 +315,24 @@ export async function readRegistryInventory(input: {
   const tagsFirst = new URL(`${registryOrigin}${tagsPath}?n=${pageSize}`);
   const seenTagPages = new Set<string>();
   const tagSet = new Set<string>();
-  let tagsResponse: Response | undefined;
+  let nextTagsUrl: URL | undefined = tagsFirst;
   let tagPages = 0;
-  do {
-    const url = pageUrl(tagsFirst, tagsResponse, tagsPath);
+  while (nextTagsUrl) {
+    const url = nextTagsUrl;
     if (seenTagPages.has(url.href)) fail("registry_pagination_invalid");
     tagPages += 1;
     seenTagPages.add(url.href);
     const response = await request(url, { headers: { Authorization: input.authorization } });
     const body = await parsedPage(response);
     if (body.name !== input.repository || !Array.isArray(body.tags)
-      || !body.tags.every((tag) => typeof tag === "string" && tagPattern.test(tag))) fail("registry_tags_invalid");
-    for (const tag of body.tags as string[]) {
+      || !body.tags.every(validRegistryReference)) fail("registry_tags_invalid");
+    const references = body.tags as string[];
+    for (const tag of references.filter((reference) => tagPattern.test(reference))) {
       if (tagSet.has(tag)) fail("registry_tag_duplicate");
       tagSet.add(tag);
     }
-    tagsResponse = response;
-  } while (nextPage(tagsResponse, tagsPath));
+    nextTagsUrl = nextTagPage(response, references, tagsPath);
+  }
   if (tagSet.size === 0) fail("registry_tags_missing");
 
   const manifestAccept = "application/vnd.oci.image.manifest.v1+json, application/vnd.docker.distribution.manifest.v2+json";
