@@ -23,6 +23,11 @@ test("Worker version listing requires complete, strict pagination", async () => 
     result: [],
     result_info: { page: 1, total_pages: 0 },
   }), { versions: [], page: 1, totalPages: 1 });
+  assert.deepEqual(parseWorkerVersionsPage({
+    success: true,
+    result: [],
+    result_info: { page: 0, per_page: 0, count: 0, total_count: 0, total_pages: 0 },
+  }), { versions: [], page: 1, totalPages: 1 });
   assert.throws(() => parseWorkerVersionsPage({
     success: true,
     result_info: { page: 1, total_pages: 1, count: 2, total_count: 2, per_page: 100 },
