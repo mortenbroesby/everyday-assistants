@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { inputRequired, McpServer, type StandardSchemaWithJSON, type ToolAnnotations, type ToolCallback } from "@modelcontextprotocol/server";
+import { inputRequired, McpServer, SUPPORTED_PROTOCOL_VERSIONS, type StandardSchemaWithJSON, type ToolAnnotations, type ToolCallback } from "@modelcontextprotocol/server";
 import { serveStdio } from "@modelcontextprotocol/server/stdio";
 import { randomUUID } from "node:crypto";
 import { realpathSync } from "node:fs";
@@ -344,7 +344,7 @@ export function createMcpServer(
     {
       instructions:
         `Current release: ${NEMLIG_RELEASE_IDENTITY}. Use Nemlig Assistant as independent capabilities for current products, rich exact product details, prices, availability, favourites, basket contents, and grocery sections. Normalize each search into one short Danish catalogue phrase. Basket changes require the matching staged review/apply tools and explicit approval; revalidate every change, stop on uncertainty, and read the basket back. Never check out, pay, order, or select delivery slots.`,
-      supportedProtocolVersions: ["2026-07-28"],
+      supportedProtocolVersions: SUPPORTED_PROTOCOL_VERSIONS,
     },
   );
   const allowedTools = requestContext?.kind === "service" ? new Set<string>(serviceAcceptanceToolInventory) : undefined;

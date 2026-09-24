@@ -33,8 +33,9 @@ Live checks remain separate from the automatic gate:
   list writes, proposal preparation/application, feature requests, or basket
   mutation. It also verifies that `/admin/usage` returns only bounded aggregate
   Tier 0/1/2 counts and headroom without identity or credential fields.
-- After deployment, refresh the one existing app named exactly `Nemlig Assistant`
-  in place. Do not create a suffixed, bracketed, numbered, or parallel app.
+- For the Rejoin connection recovery, verify the new app named
+  `Nemlig Assistant (Rejoin)` with an authenticated `get_profile` read before
+  retiring the previous Nemlig app. Refresh that one app for later releases.
 - `pnpm --filter nemlig-assistant production:test:mutation` requires separate
   exact approvals for a mutation and its inverse restoration.
 

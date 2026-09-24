@@ -52,6 +52,39 @@ const modernClient = (name: string) => new Client({ name, version: "1.0.0" }, {
   versionNegotiation: { mode: { pin: "2026-07-28" } },
 });
 
+test("HTTP MCP accepts a 2025-era ChatGPT initialize handshake", async () => {
+  const app = createHttpApp(config, oauth, {
+    verifyAccessToken: async (token) => ({
+      token, clientId: "chatgpt", scopes: [config.requiredScope],
+      expiresAt: Date.now() / 1000 + 300, extra: { subject: ownerSubject },
+    }),
+  });
+  const server = app.listen(0, config.host);
+  await new Promise<void>((resolve, reject) => { server.once("listening", resolve); server.once("error", reject); });
+  try {
+    const response = await fetch(`http://${config.host}:${(server.address() as AddressInfo).port}/mcp`, {
+      method: "POST",
+      headers: {
+        authorization: "Bearer test",
+        "content-type": "application/json",
+        accept: "application/json, text/event-stream",
+      },
+      body: JSON.stringify({
+        jsonrpc: "2.0", id: 1, method: "initialize",
+        params: {
+          protocolVersion: "2025-06-18",
+          capabilities: {},
+          clientInfo: { name: "chatgpt-legacy", version: "1.0.0" },
+        },
+      }),
+    });
+    assert.equal(response.status, 200, await response.text());
+  } finally {
+    server.closeAllConnections();
+    await new Promise<void>((resolve, reject) => server.close((error?: Error) => error ? reject(error) : resolve()));
+  }
+});
+
 test("HTTP MCP advertises Auth0, rejects anonymous and foreign origins, and preserves the MCP surface", async () => {
   const app = createHttpApp(config, oauth, {
     verifyAccessToken: async (token) => ({
@@ -508,13 +541,17 @@ test("schema-v2 authenticated profile works without a provider credential", asyn
   await new Promise<void>((resolve, reject) => { server.once("listening", resolve); server.once("error", reject); });
   const endpoint = new URL(`http://${config.host}:${(server.address() as AddressInfo).port}/mcp`);
   try {
-    const mcp = modernClient("profile-without-provider");
-    const transport = new StreamableHTTPClientTransport(endpoint, { requestInit: { headers: { authorization: "Bearer owner" } } });
-    await mcp.connect(transport);
-    const result = await mcp.callTool({ name: "get_profile", arguments: {} });
-    assert.deepEqual(result.structuredContent, { id: "a".repeat(32) });
-    assert.equal(result.isError, undefined);
-    await mcp.close();
+    for (const protocolVersion of ["2025-06-18", "2026-07-28"] as const) {
+      const mcp = new Client({ name: "profile-without-provider", version: "1.0.0" }, {
+        versionNegotiation: { mode: protocolVersion === "2025-06-18" ? "legacy" : { pin: protocolVersion } },
+      });
+      const transport = new StreamableHTTPClientTransport(endpoint, { requestInit: { headers: { authorization: "Bearer owner" } } });
+      await mcp.connect(transport);
+      const result = await mcp.callTool({ name: "get_profile", arguments: {} });
+      assert.deepEqual(result.structuredContent, { id: "a".repeat(32) });
+      assert.equal(result.isError, undefined);
+      await mcp.close();
+    }
   } finally {
     server.closeAllConnections();
     await new Promise<void>((resolve, reject) => server.close((error?: Error) => error ? reject(error) : resolve()));

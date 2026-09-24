@@ -106,11 +106,11 @@ disabled endpoint and no-running-Container state were verified.
    test health, Auth0 rejection, one authenticated MCP handshake, usage
    inspection, and one read-only tool call.
 
-   Configure the private ChatGPT app named exactly `Nemlig Assistant` with the production
-   `/mcp` URL, OAuth with Dynamic Client Registration, and the default
-   `use:nemlig-assistant` scope. Confirm its connection reports OAuth. Ordinary
-   releases update this app in place with **Refresh**; never create a `(new)`,
-   bracketed, numbered, or parallel Nemlig app.
+   Configure the private ChatGPT app with the production `/mcp` URL, OAuth with
+   Dynamic Client Registration, and the default `use:nemlig-assistant` scope.
+   The current recovery app is `Nemlig Assistant (Rejoin)`. Confirm its
+   connection reports OAuth and returns an authenticated `get_profile` result.
+   Ordinary later releases update that app in place with **Refresh**.
 
 ## Self-service credential onboarding
 
@@ -605,10 +605,10 @@ sleep, and dynamic `MCP_ENABLED` kill switch remain unchanged.
 Use the three evidence planes separately; the Worker cannot observe ChatGPT's
 authorization UI or Auth0's browser redirect before a request reaches it.
 
-1. Record the UTC start time, the existing ChatGPT app identity (exactly
-   `Nemlig Assistant`), and its configured production `/mcp` URL. Do not create
-   a duplicate app.
-2. Refresh the existing app's metadata in place. Record only completion time and
+1. Record the UTC start time, the ChatGPT app identity and its configured
+   production `/mcp` URL. During the Rejoin reset, use
+   `Nemlig Assistant (Rejoin)` and record the prior app separately.
+2. Refresh the current app's metadata in place. Record only completion time and
    whether `/healthz`, `/revision`, and OAuth protected-resource metadata passed,
    including revision and per-step latency from `production:probe`.
 3. Start one bounded OAuth reconnect. In Auth0, record only timestamp and a
@@ -628,6 +628,9 @@ authorization UI or Auth0's browser redirect before a request reaches it.
    may justify reconnect investigation. `authentication_timeout` or
    `authentication_unavailable` is an Auth0 discovery/JWKS infrastructure
    failure; it must not be reported as a request to replace credentials.
+   `backend_rejected` with HTTP 400 means an authenticated request reached the
+   Container but its MCP handshake or request was rejected. Inspect the MCP
+   protocol version and supported transport before changing Auth0 credentials.
 5. After reconnect succeeds, open two fresh normal ChatGPT conversations. In
    each, check the connection and request at most one favorite. Record only pass
    or fail, timestamps, and Worker correlation IDs; do not record returned

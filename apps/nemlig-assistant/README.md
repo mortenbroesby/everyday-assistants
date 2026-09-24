@@ -217,10 +217,11 @@ The MCP surface is organized around household actions:
   host supports it, with complete structured and text fallbacks otherwise.
   The viewer never fetches, selects, approves, or changes the basket.
 
-After an ordinary release, open the existing app named exactly `Nemlig Assistant`
-and use **Refresh** so ChatGPT rediscovers tools, schemas, instructions,
-resources and instruction changes. Never create `Nemlig Assistant (new)`, a
-bracketed or numbered variant, or a parallel copy for a normal release.
+After this connection recovery, use the app named `Nemlig Assistant (Rejoin)`.
+For ordinary later releases, use **Refresh** on that app so ChatGPT rediscovers
+tools, schemas, instructions, and resources. Create a replacement only for a
+deliberate integration reset, then retire the previous Nemlig app after the
+replacement passes authenticated read-only acceptance.
 Use ChatGPT's **Reconnect** setting or the `Reconnect Nemlig Assistant` action
 when authorization has expired; invalid tokens also trigger that prompt
 automatically.

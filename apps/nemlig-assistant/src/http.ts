@@ -90,7 +90,7 @@ export function createHttpApp(
       context.proposals,
       { principalKey: principal.principal_key, policyRevision: config.principalPolicy.revision, tier: principal.tier, ...(service ? { kind: "service" as const } : {}) },
     );
-  }, { legacy: "reject" });
+  }, { legacy: "stateless" });
   const nodeHandler = toNodeHandler(handler, { onerror: () => undefined });
   app.locals.mcpHandler = handler;
   app.use(mcpAuthMetadataRouter({

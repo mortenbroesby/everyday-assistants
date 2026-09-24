@@ -32,6 +32,7 @@ const outcomeSchema = z.enum([
   "capacity_rejected",
   "breaker_rejected",
   "backend_timeout",
+  "backend_rejected",
   "request_timeout",
   "backend_failed",
 ]);

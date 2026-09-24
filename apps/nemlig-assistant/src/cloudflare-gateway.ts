@@ -372,7 +372,8 @@ export async function handleGatewayRequest(
         (deadline) => dependencies.forward(classified.request, classified.operation, config, deadline, admission),
         config.backendTimeoutMs, remainingMs, totalController.signal, "backend_timeout",
       );
-      return finish(response, classified.operation === "protocol" ? "protocol_completed" : "completed");
+      return finish(response, response.status >= 400 ? "backend_rejected"
+        : classified.operation === "protocol" ? "protocol_completed" : "completed");
     } catch (error) {
       const outcome = error instanceof BoundaryTimeoutError
         ? error.outcome
