@@ -84,10 +84,6 @@
     }
   ],
   "cleanup": {
-    "commit": "7b870a8382c1001251ebff3af5408abd08a7857a",
-    "inFlight": {
-      "digest": "sha256:b1527d6d2202e5cad32ad8f5d7822049b5de6ab29c95c1bbac293f9e6b2ef2d3",
-      "tag": "9989a12b"
-    }
+    "commit": "7b870a8382c1001251ebff3af5408abd08a7857a"
   }
 }
