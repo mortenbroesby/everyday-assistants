@@ -216,6 +216,15 @@ jobs:
           NEMLIG_WORKER_VERSION_RECOVERY_REVIEWED: "${{ vars.NEMLIG_WORKER_VERSION_RECOVERY_REVIEWED }}"
         run: |
           set -euo pipefail
+          if [[ "${{ needs.release-gate.outputs.worker_retention }}" == "true" ]]; then
+            lock_content=$(gh api "repos/${GITHUB_REPOSITORY}/contents/worker-version-retention.json?ref=codex-lock%2Fnemlig-production" --jq '.content' 2>/dev/null || true)
+            if [[ -n "$lock_content" ]]; then
+              retention_run_id=$(printf '%s' "$lock_content" | base64 -d 2>/dev/null | jq -r '.runId // empty' 2>/dev/null || true)
+              if [[ "$retention_run_id" =~ ^[1-9][0-9]*$ ]]; then
+                gh run download "$retention_run_id" --name nemlig-production-release --dir "$RUNNER_TEMP/nemlig-production-release" >/dev/null 2>&1 || true
+              fi
+            fi
+          fi
           worker_report="$RUNNER_TEMP/nemlig-worker-retention.json"
           worker_status=0
           worker_args=(--commit "$CANDIDATE_SHA")

@@ -122,6 +122,8 @@ test("routine releases queue trusted main ancestors; manual dispatch is recovery
   assert.match(retention, /GH_TOKEN:/u);
   assert.match(retention, /NEMLIG_WORKER_VERSION_RECOVERY_REVIEWED:/u);
   assert.match(retention, /--resume/u);
+  assert.match(retention, /contents\/worker-version-retention\.json\?ref=codex-lock%2Fnemlig-production/u);
+  assert.match(retention, /gh run download "\$retention_run_id" --name nemlig-production-release --dir/u);
   assert.match(retention, /Upload Worker retention evidence/u);
   assert.match(retention, /fixed UTC 48-hour cutoff/u);
   assert.match(retention, /CLOUDFLARE_API_TOKEN:/u);
