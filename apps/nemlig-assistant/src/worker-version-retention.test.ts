@@ -18,6 +18,11 @@ test("Worker version listing requires complete, strict pagination", async () => 
   ]);
   await assert.rejects(() => collectWorkerVersions(async () => page(1)), /worker_version_retention_pagination_changed/u);
   assert.throws(() => parseWorkerVersionsPage({ success: true, result: [], result_info: { page: 2, total_pages: 1 } }), /worker_version_retention_pagination_invalid/u);
+  assert.deepEqual(parseWorkerVersionsPage({
+    success: true,
+    result: [],
+    result_info: { page: 1, total_pages: 0 },
+  }), { versions: [], page: 1, totalPages: 1 });
   assert.throws(() => parseWorkerVersionsPage({
     success: true,
     result_info: { page: 1, total_pages: 1, count: 2, total_count: 2, per_page: 100 },
