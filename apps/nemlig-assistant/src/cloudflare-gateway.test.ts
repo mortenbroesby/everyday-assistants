@@ -162,6 +162,20 @@ test("authenticated normal requests forward once and unknown tools fail into the
   assert.equal(classifyMcpMessage({ method: "tools/call", params: { name: "add_approved_items" } }), "expensive");
 });
 
+test("forwarded MCP handshake failures are logged as backend rejections", async () => {
+  const events: GatewayRequestEvent[] = [];
+  const response = await handleGatewayRequest(mcpRequest({ method: "initialize" }), env, {
+    authenticate: async () => principal,
+    admit: async () => ({ admitted: true, state: emptyUsageState(new Date()) }),
+    forward: async () => new Response("Unsupported protocol version", { status: 400 }),
+    event: (event) => events.push(event),
+  });
+  assert.equal(response.status, 400);
+  assert.equal(events[0]?.outcome, "backend_rejected");
+  assert.equal(events[0]?.status, 400);
+  assert.equal(events[0]?.denial_reason, "none");
+});
+
 test("retired saved-shopping tools are unsupported and never classified as normal", () => {
   for (const name of [
     "save_my_shopping_plan",
