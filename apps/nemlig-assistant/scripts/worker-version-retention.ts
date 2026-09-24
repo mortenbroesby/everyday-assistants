@@ -82,7 +82,9 @@ export function parseWorkerVersionsPage(raw: unknown): { versions: WorkerVersion
     || typeof root.result_info !== "object" || Array.isArray(root.result_info)) return fail("page_invalid");
   const info = root.result_info as Record<string, unknown>;
   if (!Number.isSafeInteger(info.page) || !Number.isSafeInteger(info.total_pages)
-    || (info.page as number) < 1 || (info.total_pages as number) < (info.page as number)) return fail("pagination_invalid");
+    || (info.page as number) < 1 || (info.total_pages as number) < 0
+    || ((info.total_pages as number) !== 0 && (info.total_pages as number) < (info.page as number))) return fail("pagination_invalid");
+  const totalPages = (info.total_pages as number) === 0 ? 1 : info.total_pages as number;
   const optionalCount = (key: string): number | undefined => {
     const value = info[key];
     if (value === undefined) return undefined;
@@ -95,14 +97,14 @@ export function parseWorkerVersionsPage(raw: unknown): { versions: WorkerVersion
   if (count !== undefined && count !== root.result.length) return fail("cardinality_invalid");
   if (perPage !== undefined && perPage < 1) return fail("cardinality_invalid");
   if (totalCount !== undefined && perPage !== undefined
-    && (info.total_pages as number) !== Math.max(1, Math.ceil(totalCount / perPage))) return fail("cardinality_invalid");
+    && totalPages !== Math.max(1, Math.ceil(totalCount / perPage))) return fail("cardinality_invalid");
   const versions = (root.result as unknown[]).map((value) => {
     if (!value || typeof value !== "object" || Array.isArray(value)) return fail("version_invalid");
     const item = value as Record<string, unknown>;
     if (typeof item.id !== "string" || !versionId.test(item.id) || !validTimestamp(item.created_on)) return fail("version_invalid");
     return { id: item.id, createdOn: new Date(item.created_on).toISOString() };
   });
-  return { versions, page: info.page as number, totalPages: info.total_pages as number };
+  return { versions, page: info.page as number, totalPages };
 }
 
 export function parseProtectedVersionIds(raw: string | undefined): string[] {
@@ -449,6 +451,7 @@ const main = async (): Promise<void> => {
     const readActive = async (): Promise<string> => parseCurrentDeployment(await runWranglerCommand(["deployments", "list", "--env", "production", "--json"], process.env, controller.signal)).version;
     const versions = await list();
     const active = await readActive();
+    if (!versions.some(({ id }) => id === active)) return fail("active_version_missing");
     const plan = planWorkerVersionRetention(versions, new Date().toISOString(), [active, ...recoveryIds]);
     if (durable.pending && versions.some(({ id }) => id === durable!.pending)) return fail("pending_delete_requires_reconciliation");
     durable = {
