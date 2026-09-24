@@ -171,7 +171,7 @@ Manual dispatch is reserved for exceptional recovery.
 
 ### Story P1.D1 — automatically admit and serialize approved releases
 
-- [x] Use successful exact-main CI to trigger routine delivery; keep production
+- [x] Use successful trusted main-CI runs to trigger routine delivery; keep production
   credentials out of pull-request jobs and inside the protected environment.
 - [x] Revalidate exact SHA provenance and prevent stale or queued candidates
   from overwriting newer production.

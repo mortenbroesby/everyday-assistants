@@ -23,6 +23,11 @@ After exact deployment acceptance and durable evidence recording, cleanup SHALL 
 - **WHEN** the exact new production release passes runtime acceptance but existing inventory digests have no matching accepted-release evidence
 - **THEN** those images remain protected, the report identifies them as untracked and indicates retention is incomplete, and no image is deleted based on guessed age
 
+#### Scenario: An existing ledger branch loses its ledger file
+
+- **WHEN** the retention branch already exists but `retention-ledger.json` is missing or unreadable
+- **THEN** retention fails closed before inventory mutation and does not treat the missing file as an empty history; only a branch created by the current run may initialize an empty ledger
+
 #### Scenario: More than ten safe accepted images exist
 
 - **WHEN** more than ten distinct accepted production images are available and older images have complete trustworthy provenance
@@ -75,3 +80,24 @@ The repository SHALL provide a read-only retention report containing non-secret 
 
 - **WHEN** tags alias the same digest or manifests share layers
 - **THEN** retention counts distinct digests, preserves remaining aliases, and does not overstate reclaimed bytes as provider billing data
+
+### Requirement: Worker version retention is separate and age-bounded
+
+The protected post-acceptance path SHALL treat Worker versions, deployments,
+and Container images as separate resources. It SHALL list all Worker versions
+with complete pagination, use a fixed UTC 48-hour cutoff, protect the currently
+serving version and explicit recovery references, and delete eligible versions
+oldest-first only after fresh revalidation and successful absence readback. An
+uncertain delete SHALL stop without blind retry.
+
+#### Scenario: An old Worker version is safe to remove
+
+- **WHEN** a complete paginated inventory proves a version is older than the
+  cutoff and it is neither serving nor a recovery reference
+- **THEN** the version is deleted once and a fresh inventory proves it absent
+
+#### Scenario: Worker version state changes during cleanup
+
+- **WHEN** the serving or recovery references change, pagination is incomplete,
+  or deletion readback is uncertain
+- **THEN** cleanup stops without deleting the changed or subsequent version

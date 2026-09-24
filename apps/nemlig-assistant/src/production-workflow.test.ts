@@ -15,7 +15,7 @@ const section = (source: string, heading: string): string => {
   return next === -1 ? rest : rest.slice(0, next);
 };
 
-test("routine releases queue exact-CI candidates; manual dispatch is recovery, reconciliation, or retention recovery only", async () => {
+test("routine releases queue trusted main ancestors; manual dispatch is recovery, reconciliation, or retention recovery only", async () => {
   const source = await readFile(workflowPath, "utf8");
   const trigger = section(source, "on:");
   assert.match(trigger, /^\x20{2}workflow_dispatch:\n/m);
@@ -43,11 +43,10 @@ test("routine releases queue exact-CI candidates; manual dispatch is recovery, r
   assert.match(gate, /retention_commit=\$CANDIDATE_SHA/u);
   assert.match(gate, /RESUME_RETENTION/u);
   assert.match(gate, /Recovery deployment and retention resume are mutually exclusive/u);
-  assert.match(gate, /Check exact main candidate/u);
+  assert.match(gate, /Check main candidate ancestry/u);
   assert.match(gate, /git merge-base --is-ancestor "\$CANDIDATE_SHA" origin\/main/u);
-  assert.ok(gate.includes('if [[ "$RECOVERY" == "true" || "$RESUME_RETENTION" == "true" || -n "$RECONCILE_OPERATION" ]]; then\n            if ! git merge-base --is-ancestor "$CANDIDATE_SHA" origin/main;')
-    && gate.includes('elif [[ "$CANDIDATE_SHA" != "$(git rev-parse origin/main)" ]]; then'),
-    "only an explicitly confirmed recovery may deploy an ancestor; routine runs must target current main exactly");
+  assert.match(gate, /if ! git merge-base --is-ancestor "\$CANDIDATE_SHA" origin\/main;[\s\S]*?Candidate must remain in current main history/u);
+  assert.doesNotMatch(gate, /Routine candidate must equal current main|\[\[ "\$CANDIDATE_SHA" != "\$\(git rev-parse origin\/main\)" \]\]/u);
   assert.doesNotMatch(gate, /production:retention|CLOUDFLARE|secrets\./u);
   assert.doesNotMatch(gate, /gh run list|headSha/u);
   assert.match(gate, /echo "deploy=false" >> "\$GITHUB_OUTPUT"/u);
@@ -58,7 +57,6 @@ test("routine releases queue exact-CI candidates; manual dispatch is recovery, r
   assert.match(gate, /fetch-depth: 0/u);
   assert.match(gate, /git fetch origin refs\/heads\/main:refs\/remotes\/origin\/main/u);
   assert.match(gate, /git merge-base --is-ancestor "\$CANDIDATE_SHA" origin\/main/u);
-  assert.match(gate, /\[\[ "\$CANDIDATE_SHA" != "\$\(git rev-parse origin\/main\)" \]\]/u);
   assert.match(gate, /\[\[ "\$CANDIDATE_SHA" =~ \^\[0-9a-f\]\{40\}\$ \]\]/u);
   assert.doesNotMatch(gate, /check:version-bump|check:release-note|CANDIDATE_PARENT|policy\.eligible/u);
   assert.match(gate, /echo "deploy=true" >> "\$GITHUB_OUTPUT"/u);
@@ -99,12 +97,25 @@ test("routine releases queue exact-CI candidates; manual dispatch is recovery, r
   assert.doesNotMatch(source, /setup-.*provider|activate|cloudflare\/workers/u);
 
   assert.match(retention, /needs: \[release-gate, preflight, deploy\]/u);
-  assert.match(retention, /needs\.deploy\.result == 'success' \|\| needs\.release-gate\.outputs\.retention == 'true'/u);
+  assert.match(retention, /needs\.deploy\.result != 'skipped' \|\| needs\.release-gate\.outputs\.retention == 'true'/u);
   assert.match(retention, /environment:\n\s+name: nemlig-production/u);
   assert.match(retention, /permissions:\n\s+contents: write\n\s+actions: read/u);
   assert.match(retention, /actions\/download-artifact@[0-9a-f]{40}/u);
   assert.match(retention, /production:retention -- accept "\$CANDIDATE_SHA"/u);
   assert.match(retention, /production:retention -- resume "\$\{\{ needs\.release-gate\.outputs\.retention_commit \}\}"/u);
+  assert.match(retention, /retention_report="\$RUNNER_TEMP\/nemlig-retention\.json"/u);
+  assert.match(retention, /exec tsx scripts\/production-summary\.ts -- "\$\{summary_args\[@\]\}" >> "\$GITHUB_STEP_SUMMARY"/u);
+  assert.match(retention, /exit "\$retention_status"/u);
+  assert.match(retention, /retention_status=\$\?/u);
+  assert.match(retention, /id: retention_summary/u);
+  assert.match(retention, /if: \$\{\{ needs\.deploy\.result == 'success' \|\| needs\.release-gate\.outputs\.retention == 'true' \}\}/u);
+  assert.match(retention, /if: \$\{\{ always\(\) && steps\.retention_summary\.outcome == 'skipped' \}\}/u);
+  assert.match(retention, /Cleanup: uncertain \(retention evidence step did not run\)/u);
+  assert.match(retention, /Protected holds: unknown\/invalid hold inventory/u);
+  assert.match(retention, /id: worker_version_retention/u);
+  assert.match(retention, /needs\.deploy\.result == 'success' && steps\.retention_summary\.outcome == 'success'/u);
+  assert.match(retention, /exec tsx scripts\/worker-version-retention\.ts/u);
+  assert.match(retention, /fixed UTC 48-hour cutoff/u);
   assert.match(retention, /CLOUDFLARE_API_TOKEN:/u);
   assert.match(retention, /NEMLIG_CONTAINER_IMAGE_RETENTION_COUNT: "\$\{\{ vars\.NEMLIG_CONTAINER_IMAGE_RETENTION_COUNT \|\| '10' \}\}"/u);
   assert.doesNotMatch(retention, /NEMLIG_CONTAINER_IMAGE_RETENTION_ENABLED/u);

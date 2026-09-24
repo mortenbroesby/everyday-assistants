@@ -500,12 +500,19 @@ test("recovery preflight accepts a previously green main ancestor and records th
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
-test("routine preflight accepts an exact-green candidate that remains in current main history", async () => {
+test("routine preflight accepts a trusted green ancestor that remains in current main history", async () => {
   const newerMain = "b".repeat(40);
   const { deps, calls, root } = await fixture({ remoteMain: newerMain });
   try {
     assert.deepEqual(await preflightProductionDeploy(commit, deps), { commit, ciRunId: 456 });
     assert.ok(calls.some(({ command, args }) => command === "git" && args[0] === "merge-base" && args[2] === commit && args[3] === "origin/main"));
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test("routine preflight rejects a trusted SHA outside current main history", async () => {
+  const { deps, root } = await fixture({ remoteMain: "b".repeat(40), recoveryAncestor: false });
+  try {
+    await assert.rejects(preflightProductionDeploy(commit, deps), /source_revision_mismatch/u);
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 

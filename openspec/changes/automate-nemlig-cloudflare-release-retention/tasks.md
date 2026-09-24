@@ -8,7 +8,7 @@
 ## 2. Automatic exact-main delivery (#98)
 
 - [x] 2.1 Characterize workflow_run and workflow_dispatch eligibility, exact SHA revalidation, concurrent/pending runs, PR credential boundary, cancellation, and finalization.
-- [x] 2.2 Make the smallest safe workflow change so every eligible current-main merge automatically reaches deploy and required read-only acceptance through the native queue; no custom queue-overflow catch-up, routine dispatch, or manual finalization.
+- [x] 2.2 Make the smallest safe workflow change so every eligible trusted main-CI candidate that remains in main history automatically reaches deploy and required read-only acceptance through the native queue; preserve exact candidate checkout and deployed-descendant protection, with no custom queue-overflow catch-up, routine dispatch, or manual finalization.
 - [x] 2.3 Prove production credentials are available only to protected trusted deploy jobs and stale/superseded/concurrent candidates cannot mutate production.
 - [x] 2.4 Record fixed stage-specific acceptance failure categories without raw command output, credentials, or response data; prove cleanup and recovery remain gated.
 
@@ -18,6 +18,8 @@
 - [x] 3.2 Implement complete exact-repository inventory with pagination/alias checks and deterministic failure on incomplete or unknown responses.
 - [x] 3.3 Add accepted-image order ledger and pure planner: retain ten distinct accepted digests by default; preserve active/recovery/uncertain and untracked images unless exact accepted-release order is proven.
 - [x] 3.4 Test malformed, duplicate, stale, missing, reordered and uncertain ledger/inventory states; prove stable read-only reports and exact reason categories.
+- [x] 3.5 Implement the separate Worker-version policy with complete paginated inventory, fixed UTC 48-hour cutoff, active/recovery protection, fresh revalidation, and delete readback tests; no live deletion is claimed.
+- [ ] 3.6 Run the protected Worker-version policy against the live production inventory and verify the remaining history without deleting a required recovery reference.
 
 ## 4. Accepted-release cleanup (#100)
 

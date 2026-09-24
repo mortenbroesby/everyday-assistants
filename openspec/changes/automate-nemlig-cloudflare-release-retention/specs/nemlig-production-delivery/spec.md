@@ -4,12 +4,12 @@
 
 An eligible successful trusted CI run for a commit still in default-branch history SHALL trigger routine production delivery without workflow dispatch or manual finalization. Production mutations SHALL be serialized with the native Actions queue; the workflow SHALL NOT add custom queue-overflow catch-up machinery. The deploy job SHALL revalidate the exact source and trusted CI provenance immediately before mutation, and a queued candidate SHALL NOT replace a runtime revision that is not its ancestor. Pull-request jobs SHALL NOT receive production credentials.
 
-#### Scenario: An eligible merge remains in current main history
+#### Scenario: An eligible trusted merge remains in current main history
 
 - **WHEN** trusted CI succeeds for a full main SHA that remains an ancestor of current `main`
 - **THEN** one protected routine release runs automatically for that SHA without a manual commit selection
 
-#### Scenario: Main advances or another release owns production
+#### Scenario: Main advances, a newer release is deployed, or another release owns production
 
 - **WHEN** the candidate is no longer in current main history, a newer revision is already deployed, or another production operation owns the lease
 - **THEN** the stale or concurrent operation does not mutate production or replace the owner's recovery state
@@ -37,6 +37,29 @@ Routine delivery SHALL verify the exact deployed source revision, health, OAuth 
 
 - **WHEN** edge/OAuth checks or authenticated read-only useful-work acceptance exhaust their bounded retries
 - **THEN** the journal reports a fixed stage-specific failure category without command output, response bodies, tokens, or user data, and cleanup remains ineligible
+
+### Requirement: Release summaries distinguish evidence and cleanup state
+
+The protected workflow SHALL publish a bounded summary that distinguishes
+deployment, technical acceptance, owner acceptance, cleanup, and traffic
+measurement. CI synthetic acceptance MUST NOT be presented as owner or live-user
+proof. Cleanup SHALL be `complete` only when the retention report proves
+completion; protected, untracked, unstable, failed, uncertain, dry-run, and
+missing-evidence states SHALL remain distinct and the retention command's exit
+status SHALL remain authoritative.
+
+#### Scenario: Retention reports protected holds
+
+- **WHEN** accepted deployment evidence exists but active, recovery, uncertain,
+  or untracked images remain protected
+- **THEN** the summary reports cleanup as held/incomplete with bounded reasons
+  and does not claim cleanup completion
+
+#### Scenario: CI has no owner or traffic evidence
+
+- **WHEN** the protected workflow completes its synthetic technical checks
+- **THEN** the summary reports owner acceptance as not run and traffic as not
+  measured rather than inferring either from configured state
 
 ### Requirement: Recovery preserves uncertainty and provider ownership
 

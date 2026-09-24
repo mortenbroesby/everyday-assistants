@@ -63,7 +63,7 @@ jobs:
           ref: "${{ env.CANDIDATE_SHA }}"
           persist-credentials: false
           fetch-depth: 0
-      - name: Check exact main candidate
+      - name: Check main candidate ancestry
         id: approval
         env:
           CANDIDATE_SHA: "${{ env.CANDIDATE_SHA }}"
@@ -87,13 +87,8 @@ jobs:
             exit 1
           fi
           git fetch origin refs/heads/main:refs/remotes/origin/main
-          if [[ "$RECOVERY" == "true" || "$RESUME_RETENTION" == "true" || -n "$RECONCILE_OPERATION" ]]; then
-            if ! git merge-base --is-ancestor "$CANDIDATE_SHA" origin/main; then
-              echo "Recovery/retention candidate must be an ancestor of current main." >&2
-              exit 1
-            fi
-          elif [[ "$CANDIDATE_SHA" != "$(git rev-parse origin/main)" ]]; then
-            echo "Routine candidate must equal current main." >&2
+          if ! git merge-base --is-ancestor "$CANDIDATE_SHA" origin/main; then
+            echo "Candidate must remain in current main history." >&2
             exit 1
           fi
           if [[ "$RESUME_RETENTION" == "true" ]]; then
@@ -115,7 +110,7 @@ jobs:
     needs: [release-gate, preflight, deploy]
     if: >-
       always() &&
-      (needs.deploy.result == 'success' || needs.release-gate.outputs.retention == 'true')
+      (needs.deploy.result != 'skipped' || needs.release-gate.outputs.retention == 'true')
     runs-on: ubuntu-latest
     timeout-minutes: 20
     environment:
@@ -148,6 +143,8 @@ jobs:
           name: nemlig-production-release
           path: ${{ runner.temp }}/nemlig-production-release
       - name: Retain accepted production images
+        id: retention_summary
+        if: ${{ needs.deploy.result == 'success' || needs.release-gate.outputs.retention == 'true' }}
         env:
           GH_TOKEN: "${{ github.token }}"
           CLOUDFLARE_API_TOKEN: "${{ secrets.CLOUDFLARE_API_TOKEN }}"
@@ -157,16 +154,67 @@ jobs:
           NEMLIG_CONTAINER_IMAGE_RETENTION_COUNT: "${{ vars.NEMLIG_CONTAINER_IMAGE_RETENTION_COUNT || '10' }}"
         run: |
           set -euo pipefail
+          retention_report="$RUNNER_TEMP/nemlig-retention.json"
+          retention_status=0
           if [[ "$DEPLOY_RESULT" == "success" ]]; then
             mapfile -t journals < <(find "$RUNNER_TEMP/nemlig-production-release" -type f -name latest.json -print)
-            [[ "${#journals[@]}" -eq 1 ]]
-            pnpm --silent --filter nemlig-assistant production:retention -- accept "$CANDIDATE_SHA" "${journals[0]}"
+            if [[ "${#journals[@]}" -ne 1 ]]; then
+              printf '%s\n' '{"outcome":"failed","failure":"acceptance_evidence_missing"}' > "$retention_report"
+              retention_status=1
+            else
+              pnpm --silent --filter nemlig-assistant production:retention -- accept "$CANDIDATE_SHA" "${journals[0]}" > "$retention_report" || retention_status=$?
+            fi
           elif [[ "${{ needs.release-gate.outputs.retention }}" == "true" ]]; then
-            pnpm --silent --filter nemlig-assistant production:retention -- resume "${{ needs.release-gate.outputs.retention_commit }}"
+            pnpm --silent --filter nemlig-assistant production:retention -- resume "${{ needs.release-gate.outputs.retention_commit }}" > "$retention_report" || retention_status=$?
           else
             echo "Retention job was scheduled without accepted deployment or explicit resume." >&2
-            exit 1
+            printf '%s\n' '{"outcome":"failed","failure":"retention_not_authorized"}' > "$retention_report"
+            retention_status=1
           fi
+          release_journal=""
+          if [[ -d "$RUNNER_TEMP/nemlig-production-release" ]]; then
+            mapfile -t release_journals < <(find "$RUNNER_TEMP/nemlig-production-release" -type f -name latest.json -print)
+            if [[ "${#release_journals[@]}" -eq 1 ]]; then release_journal="${release_journals[0]}"; fi
+          fi
+          summary_args=(--commit "$CANDIDATE_SHA" --retention "$retention_report")
+          if [[ -n "$release_journal" ]]; then summary_args+=(--release "$release_journal"); fi
+          pnpm --silent --filter nemlig-assistant exec tsx scripts/production-summary.ts -- "${summary_args[@]}" >> "$GITHUB_STEP_SUMMARY" || true
+          exit "$retention_status"
+      - name: Retain old Worker versions
+        id: worker_version_retention
+        if: ${{ always() && needs.deploy.result == 'success' && steps.retention_summary.outcome == 'success' }}
+        env:
+          CLOUDFLARE_API_TOKEN: "${{ secrets.CLOUDFLARE_API_TOKEN }}"
+          CLOUDFLARE_ACCOUNT_ID: "${{ vars.CLOUDFLARE_ACCOUNT_ID }}"
+          NEMLIG_WORKER_VERSION_RECOVERY_IDS: "${{ vars.NEMLIG_WORKER_VERSION_RECOVERY_IDS || '' }}"
+        run: |
+          set -euo pipefail
+          worker_report="$RUNNER_TEMP/nemlig-worker-retention.json"
+          worker_status=0
+          pnpm --silent --filter nemlig-assistant exec tsx scripts/worker-version-retention.ts > "$worker_report" || worker_status=$?
+          if jq -e '.cleanupComplete == true' "$worker_report" >/dev/null 2>&1; then
+            echo "### Worker version retention" >> "$GITHUB_STEP_SUMMARY"
+            echo "- Policy: fixed UTC 48-hour cutoff" >> "$GITHUB_STEP_SUMMARY"
+            echo "- Cleanup: complete" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "### Worker version retention" >> "$GITHUB_STEP_SUMMARY"
+            echo "- Policy: fixed UTC 48-hour cutoff" >> "$GITHUB_STEP_SUMMARY"
+            echo "- Cleanup: uncertain or incomplete; preserve the active/recovery references and reconcile before retrying" >> "$GITHUB_STEP_SUMMARY"
+          fi
+          exit "$worker_status"
+      - name: Report retention precondition failure
+        if: ${{ always() && steps.retention_summary.outcome == 'skipped' }}
+        run: |
+          {
+            echo "## Nemlig production release summary"
+            echo "- Deployment: unknown (deployment evidence job did not complete)"
+            echo "- Technical acceptance: unknown (not proven)"
+            echo "- Owner acceptance: not run (CI synthetic acceptance is not owner proof)"
+            echo "- Cleanup: uncertain (retention evidence step did not run)"
+            echo "- Cleanup next action: hold cleanup and reconcile the exact prior operation and provider state before retrying."
+            echo "- Traffic allocation: configured state is not measured by this summary; request rate is not inferred"
+            echo "- Protected holds: unknown/invalid hold inventory"
+          } >> "$GITHUB_STEP_SUMMARY"
 
   reconcile:
     needs: release-gate
