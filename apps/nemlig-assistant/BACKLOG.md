@@ -182,6 +182,9 @@ Manual dispatch is reserved for exceptional recovery.
 
 - [x] Replace historical cutover inputs with one routine workflow path and an
   explicit recovery-only dispatch.
+- [x] Expose a protected reconciliation dispatch for a saved pending rollback;
+  it proves the exact disabled state before releasing the recovery lease and
+  never redeploys the candidate.
 - [x] Preserve bounded runtime acceptance and the kill switch, quotas, breaker,
   authentication-before-wake, EU `lite` placement and one-Container ceiling.
 - [ ] Prove the exact merged SHA reaches live read-only acceptance after the

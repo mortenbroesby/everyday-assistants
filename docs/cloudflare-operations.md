@@ -213,7 +213,8 @@ not a fresh real-family Nemlig or ChatGPT acceptance claim.
    saved. An uncertain state, failed artifact, or provider drift keeps
    recovery ownership for explicit inspection.
 4. Routine delivery starts automatically after successful CI. Manual dispatch
-   is reserved for recovery to a previously green `main` ancestor. GitHub's
+   is reserved for recovery to a previously green `main` ancestor or for
+   reconciling one explicitly identified pending rollback. GitHub's
    native concurrency queue retains at most 100 pending runs and orders them by
    when they began waiting, not by source-event dispatch time. There is no
    hourly catch-up job, durable delivery queue, or automatic replay layer; this
@@ -225,6 +226,16 @@ not a fresh real-family Nemlig or ChatGPT acceptance claim.
    git fetch origin main
    sha=$(git rev-parse origin/main)
    gh workflow run nemlig-production.yml --ref main -f commit="$sha" -f recovery=true
+   ```
+
+   If the saved release artifact and original-runner-stopped evidence are
+   available, a protected reconciliation dispatch can prove the exact disabled
+   Worker/Container state, append the missing rollback result, and then release
+   the lease without deploying again:
+
+   ```sh
+   gh workflow run nemlig-production.yml --ref main \
+     -f commit="$sha" -f recovery=true -f reconcile_operation="$operation"
    ```
 
 5. If the run is canceled, fails, or leaves a lease, download its artifact and
@@ -284,9 +295,16 @@ delete it on an age/TTL assumption.
 pnpm --filter nemlig-assistant production:deploy -- inspect-recovery OPERATION_UUID
 # Only after independently confirming the original runner has stopped:
 pnpm --filter nemlig-assistant production:deploy -- inspect-recovery OPERATION_UUID --original-runner-stopped
+# Only after saving the complete artifact and confirming the original runner stopped:
+pnpm --filter nemlig-assistant production:deploy -- reconcile-recovery OPERATION_UUID --evidence-saved --original-runner-stopped
 # Only after saving complete final evidence and reconciling the exact state:
 pnpm --filter nemlig-assistant production:deploy -- finalize OPERATION_UUID --evidence-saved --original-runner-stopped
 ```
+
+Reconciliation is narrower than deployment: it only accepts a journaled rollback
+intent when the current Worker, configuration, image, application version,
+inactive instance and both disabled routes match exactly. It appends the
+observed disabled version to the remote journal; it never changes Cloudflare.
 
 Inspection is read-only and uses four bounded Worker/Container metadata reads;
 for a disabled target it also confirms both public routes still return the fixed
