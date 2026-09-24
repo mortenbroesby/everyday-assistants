@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { Script } from "node:vm";
 import type { ProductView } from "./product-presentation.js";
 import {
   PRODUCT_VIEWER_MIME_TYPE,
@@ -54,13 +55,14 @@ test("viewer exposes one MCP Apps resource identity and a complete headless fall
   assert.equal(productViewsToText([]), "No products found.");
 });
 
-test("viewer resource is accessible, self-contained, and display-only", () => {
+test("viewer resource is accessible, self-contained, and limited to local review actions", () => {
   const html = renderProductViewerHtml();
 
   assert.match(html, /<html lang="en">/u);
   assert.match(html, /role="status"/u);
   assert.match(html, /aria-live="polite"/u);
   assert.match(html, /aria-label="Product results"/u);
+  assert.match(html, /event.source !== window.parent/u);
   assert.match(html, /ui\/notifications\/tool-result/u);
   assert.match(html, /Array\.isArray\(value\.result\)/u);
   assert.match(html, /window\.openai\.toolOutput/u);
@@ -71,13 +73,16 @@ test("viewer resource is accessible, self-contained, and display-only", () => {
   assert.match(html, /product\.labels/u);
   assert.match(html, /product\.declaration/u);
   assert.match(html, /product\.details/u);
-  assert.match(html, /createElement\("details"\)/u);
-  assert.match(html, /createElement\("summary"\)/u);
+  assert.match(html, /el\("details"/u);
+  assert.match(html, /el\("summary"/u);
   assert.match(html, /product\.declaration/u);
   assert.match(html, /product\.details/u);
   assert.match(html, /Review quantity: /u);
-  assert.doesNotMatch(html, /\b(fetch|XMLHttpRequest|WebSocket|callTool)\b/u);
-  assert.doesNotMatch(html, /Add to basket|Select product|createElement\("button"\)/u);
+  assert.doesNotMatch(html, /\b(fetch|XMLHttpRequest|WebSocket)\b/u);
+  assert.match(html, /callTool\("update_product_review"/u);
+  assert.doesNotMatch(html, /callTool\("(?:submit_product_review|add_approved_items|remove_approved_item|make_approved_item_swap|empty_approved_basket)"/u);
+  assert.match(html, /Add selected to local Basket/u);
+  assert.match(html, /Review in conversation/u);
   assert.doesNotMatch(html, /<script\s+src=/u);
 });
 
@@ -92,4 +97,10 @@ test("viewer handles missing and unsafe images through text and safe-origin chec
   assert.match(html, /Product details unavailable/u);
   assert.match(html, /https:\/\/nemlig\.com/u);
   assert.doesNotMatch(html, /tracking\.example/u);
+});
+
+
+test("the self-contained browser program is valid JavaScript", () => {
+  const script = renderProductViewerHtml().split("<script>")[1]!.split("</script>")[0]!;
+  assert.doesNotThrow(() => new Script(script));
 });

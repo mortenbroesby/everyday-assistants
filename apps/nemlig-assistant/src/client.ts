@@ -351,9 +351,9 @@ export class NemligClient {
    * Resolves the exact product from the current catalogue, bypassing this
    * client's observed-product cache for final pre-mutation revalidation.
    */
-  async getFreshProduct(productId: number): Promise<Product> {
+  async getFreshProduct(productId: number, signal?: AbortSignal): Promise<Product> {
     this.validateProductId(productId);
-    return this.fetchExactProduct(productId);
+    return this.fetchExactProduct(productId, signal);
   }
 
   private validateProductId(productId: number): void {

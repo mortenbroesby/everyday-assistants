@@ -582,3 +582,14 @@ test("one-line removal and clear prepare no-ops or apply only their exact review
   assert.equal(cleared.operation, "clear");
   assert.equal(clears, 1);
 });
+
+test("local basket submission preparation bypasses cached product facts", async () => {
+  let freshReads = 0;
+  const proposals = new BasketProposalService(fakeClient({
+    getProduct: async () => { throw new Error("Cached facts must not prepare local basket submission"); },
+    getFreshProduct: async () => { freshReads++; return { ...product, price: 3 }; },
+  }));
+  const review = await proposals.prepareAdditions("owner", [{ product_id: 7, quantity: 2 }], { kind: "exact_review" }, { freshProducts: true });
+  assert.equal(freshReads, 1);
+  assert.equal((review.review.lines as Array<{ item_price: number }>)[0]?.item_price, 3);
+});

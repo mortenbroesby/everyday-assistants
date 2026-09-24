@@ -183,7 +183,7 @@ export class ProductReviewService {
       if (previous && previous.status !== "prepared") throw new NemligError("Inspect the actual Nemlig basket before deliberately editing and reviewing a new submission.");
       const items = stored.snapshot.items.filter(item => item.state === "basket");
       if (!items.length) throw new NemligError("Local Basket is empty. Accept products before preparing submission.");
-      const proposal = await this.proposals.prepareAdditions(owner, items.map(({ product_id, quantity }) => ({ product_id, quantity })), { kind: "exact_review" }, { signal });
+      const proposal = await this.proposals.prepareAdditions(owner, items.map(({ product_id, quantity }) => ({ product_id, quantity })), { kind: "exact_review" }, { signal, freshProducts: true });
       this.get(owner, id);
       stored.proposalId = proposal.proposal_id;
       stored.snapshot.submission = { submission_id: randomUUID(), status: "prepared", expires_at: proposal.expires_at, review: structuredClone(proposal.review) };

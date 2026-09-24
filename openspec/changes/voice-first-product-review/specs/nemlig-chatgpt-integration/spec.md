@@ -27,3 +27,57 @@ after explicit approval of an unchanged submission review.
 - **WHEN** a search or exact lookup contains resolved products
 - **THEN** every product appears once with its supported exact facts and context;
   local draft controls never apply provider mutations or imply approval
+
+### Requirement: Direct normal ChatGPT use
+
+The system SHALL support independent product search, exact product lookup,
+basket inspection, exact basket review, and explicitly approved apply in normal
+ChatGPT conversations without requiring Codex, a saved planner, or a picker.
+Product-bearing results MAY render through one shared product viewer, with
+complete conversational structured/text fallbacks.
+
+#### Scenario: User searches for products
+
+- **WHEN** the private app is available and the user asks for products
+- **THEN** ChatGPT receives richly detailed products in provider order and may
+  present them through the shared viewer without creating shopping state
+
+#### Scenario: Viewer is unavailable
+
+- **WHEN** the client cannot render the optional shared viewer
+- **THEN** ChatGPT continues with the same structured and readable product data
+  without requiring UI
+
+#### Scenario: User approves an exact addition
+
+- **WHEN** the user explicitly approves an unchanged exact review
+- **THEN** ChatGPT can invoke the protected apply tool and receive verified
+  basket readback
+
+
+### Requirement: Human-friendly shopping conversation
+
+The direct ChatGPT integration SHALL describe products, basket changes, and
+verified results like a household shopping assistant rather than a transaction
+log. It SHALL distinguish local review changes from Nemlig changes and SHALL require explicit
+approval of the exact unchanged proposal before applying a basket change.
+
+#### Scenario: ChatGPT reviews a prepared change
+
+- **WHEN** ChatGPT receives a valid basket proposal without exact approval
+- **THEN** it presents a clean summary of what would change and asks one simple
+  approval question without showing opaque protocol fields by default
+
+#### Scenario: User requests product comparison
+
+- **WHEN** the user asks to see or compare products
+- **THEN** ChatGPT presents current names, brands, package sizes, prices,
+  descriptions, supported facts, and safe images when available without
+  changing the basket
+
+#### Scenario: ChatGPT confirms a verified result
+
+- **WHEN** explicitly approved basket additions succeed and fresh readback
+  matches
+- **THEN** ChatGPT confirms the resulting shopping outcome without narrating
+  proposal lifecycle or protocol mechanics

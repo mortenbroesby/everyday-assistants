@@ -29,6 +29,7 @@ import {
 } from "./proposals.js";
 import { IMAGE_ORIGINS, createProductView, createProductViewFromSummary, createProductViews, rankProducts, type ProductSummaryFacts, type ProductView } from "./product-presentation.js";
 import { PRODUCT_VIEWER_MIME_TYPE, PRODUCT_VIEWER_RESOURCE_METADATA, PRODUCT_VIEWER_RESOURCE_URI, productViewsToText, renderProductViewerHtml } from "./product-viewer.js";
+import { ProductReviewService } from "./product-review.js";
 import { resolveDetailedProductSearch } from "./product-discovery.js";
 import { oauthReconnectChallenge } from "./auth0.js";
 
@@ -92,6 +93,24 @@ const productViewSchema = z.discriminatedUnion("status", [
     status: z.literal("unavailable"),
     product_id: z.number().int().positive().optional(),
   }),
+]);
+
+const reviewSnapshotSchema = z.object({
+  review_id: z.string().uuid(), revision: z.number().int().positive(), expires_at: z.string(),
+  destination: z.enum(["needs-review", "basket", "alternatives"]),
+  items: z.array(z.object({ product_id: z.number().int().positive(), quantity: z.number().int().positive(), state: z.enum(["needs-review", "basket"]), view: productViewSchema })),
+  alternatives: z.object({ product_id: z.number().int().positive(), origin: z.enum(["needs-review", "basket"]), query: z.string(), views: z.array(productViewSchema) }).optional(),
+  submission: z.object({ submission_id: z.string().uuid(), status: z.enum(["prepared", "submitted", "uncertain"]), expires_at: z.string(), review: z.record(z.string(), z.unknown()) }).optional(),
+});
+const reviewActionSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("show") }),
+  z.object({ kind: z.literal("prepare_submission") }),
+  z.object({ kind: z.literal("accept"), product_ids: z.array(z.number().int().positive()).min(1).max(50) }),
+  z.object({ kind: z.literal("remove"), product_ids: z.array(z.number().int().positive()).min(1).max(50) }),
+  z.object({ kind: z.literal("quantity"), product_id: z.number().int().positive(), quantity: z.number().int().positive() }),
+  z.object({ kind: z.literal("navigate"), destination: z.enum(["needs-review", "basket", "alternatives"]) }),
+  z.object({ kind: z.literal("alternatives"), product_id: z.number().int().positive(), query: z.string().trim().min(1).max(200), limit: z.number().int().min(1).max(10).optional() }),
+  z.object({ kind: z.literal("replace"), product_id: z.number().int().positive(), replacement_id: z.number().int().positive() }),
 ]);
 
 export type Candidate = z.infer<typeof candidateSchema>;
@@ -334,6 +353,7 @@ export function createMcpServer(
   env: NodeJS.ProcessEnv = process.env,
   proposals: BasketProposalService = new BasketProposalService(client),
   requestContext?: McpRequestContext,
+  reviews: ProductReviewService = new ProductReviewService(client, { proposals }),
 ): McpServer {
   const server = new McpServer(
     {
@@ -343,7 +363,7 @@ export function createMcpServer(
     },
     {
       instructions:
-        `Current release: ${NEMLIG_RELEASE_IDENTITY}. Use Nemlig Assistant as independent capabilities for current products, rich exact product details, prices, availability, favourites, basket contents, and grocery sections. Normalize each search into one short Danish catalogue phrase. Basket changes require the matching staged review/apply tools and explicit approval; revalidate every change, stop on uncertainty, and read the basket back. Never check out, pay, order, or select delivery slots.`,
+        `Current release: ${NEMLIG_RELEASE_IDENTITY}. Use Nemlig Assistant as independent capabilities for current products, rich exact product details, prices, availability, favourites, basket contents, and grocery sections. Normalize each search into one short Danish catalogue phrase. Use start_product_review and update_product_review for shared voice/touch choices and a LOCAL basket. Accept/keep or replace unresolved exact products into the local basket; remove deletes them locally. For everything except X/Y, pass the exact remaining product_ids from the current snapshot. Refresh with show after stale state. Use prepare_submission only when the user wants to send the local Basket, then ask approval of its exact quantities, current prices, and effects; only call submit_product_review after explicit approval of that unchanged submission. Never treat local acceptance as provider approval. A submitted or uncertain draft remains inspectable; never retry blindly. Basket changes require the matching staged review/apply tools and explicit approval; revalidate every change, stop on uncertainty, and read the basket back. Never check out, pay, order, or select delivery slots.`,
       supportedProtocolVersions: SUPPORTED_PROTOCOL_VERSIONS,
     },
   );
@@ -370,7 +390,7 @@ export function createMcpServer(
   server.registerResource(
     "nemlig-product-viewer",
     PRODUCT_VIEWER_RESOURCE_URI,
-    { title: "Nemlig product viewer", description: "Display-only product results supplied by Nemlig Assistant.", mimeType: PRODUCT_VIEWER_MIME_TYPE },
+    { title: "Nemlig product viewer", description: "Product results and shared local review supplied by Nemlig Assistant.", mimeType: PRODUCT_VIEWER_MIME_TYPE },
     async (uri) => ({ contents: [{ uri: uri.href, mimeType: PRODUCT_VIEWER_MIME_TYPE, text: renderProductViewerHtml() }] }),
   );
   const localConnectionId = randomUUID();
@@ -574,6 +594,49 @@ export function createMcpServer(
       return success({ ...basket, views }, `${basketText(basket)}\n${productViewsToText(views)}`);
     }),
   );
+
+  registerTool("start_product_review", {
+    title: "Start a local product review",
+    description: "Start a temporary private review from exact returned product IDs and quantities. All items initially need review. Acceptance and edits are local; nothing is sent to Nemlig. The draft expires after one hour or a server restart.",
+    inputSchema: z.object({ items: z.array(z.object({ product_id: z.number().int().positive(), quantity: z.number().int().positive() })).min(1).max(50).describe("Exact returned products and intended package quantities to review locally.") }),
+    outputSchema: z.object({ review: reviewSnapshotSchema }),
+    annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true },
+    _meta: { ...PRODUCT_VIEWER_RESOURCE_METADATA, "openai/widgetAccessible": true },
+  }, ({ items }, ctx) => runAuthenticatedRead("start_product_review", async () => success({ review: await reviews.start(connectionId(ctx.sessionId), items, ctx.mcpReq.signal) })));
+
+  registerTool("update_product_review", {
+    title: "Update the local product review",
+    description: "Show/refresh or edit the shared temporary local review using its exact product IDs. Accept selected products (including everything except explicitly excluded IDs), remove, change quantity, find alternatives, replace, or navigate. Keeping an unresolved product means accept. Navigation preserves alternatives. None of these actions writes to Nemlig. prepare_submission reviews only resolved local Basket lines at exact current prices, sets their Nemlig quantities while preserving unrelated lines, and requires a subsequent explicit approval. After errors show the current state; never repeat a stale edit blindly.",
+    inputSchema: z.object({ review_id: z.string().uuid().describe("The private reference of the shared local review."), revision: z.number().int().positive().optional().describe("Current revision required for every action except show."), action: reviewActionSchema.describe("The local change, navigation, refresh, or preparation requested by the user.") }),
+    outputSchema: z.object({ review: reviewSnapshotSchema }),
+    annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true },
+    _meta: { ...PRODUCT_VIEWER_RESOURCE_METADATA, "openai/widgetAccessible": true },
+  }, ({ review_id, revision, action }, ctx) => {
+    const perform = async () => {
+      const owner = connectionId(ctx.sessionId);
+      if (action.kind === "show") return success({ review: reviews.show(owner, review_id) });
+      if (revision === undefined) throw new NemligError("Current review revision is required. Show the review first.");
+      const review = action.kind === "prepare_submission"
+        ? await reviews.prepare(owner, review_id, revision, ctx.mcpReq.signal)
+        : await reviews.update(owner, review_id, revision, action, ctx.mcpReq.signal);
+      return success({ review });
+    };
+    return action.kind === "alternatives" || action.kind === "prepare_submission"
+      ? runAuthenticatedRead("update_product_review", perform)
+      : runMcpOperation("update_product_review", perform);
+  });
+
+  registerTool("submit_product_review", {
+    title: "Submit the approved local Basket",
+    description: "Only after the user explicitly approves the exact unchanged prepared submission, set those resolved product quantities in the real Nemlig basket and verify readback. Local acceptance is NOT approval. Requires current review revision and its submission_id. No automatic retry; on any error inspect the draft and actual basket first.",
+    inputSchema: z.object({ review_id: z.string().uuid().describe("The private local review reference."), revision: z.number().int().positive().describe("The latest unchanged review revision."), submission_id: z.string().uuid().describe("The exact prepared submission reference explicitly approved by the user.") }),
+    outputSchema: z.object({ review: reviewSnapshotSchema, result: applyResultSchema }),
+    annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true },
+    _meta: { ...PRODUCT_VIEWER_RESOURCE_METADATA, ui: { resourceUri: PRODUCT_VIEWER_RESOURCE_URI, visibility: ["model"] } },
+  }, ({ review_id, revision, submission_id }, ctx) => runMcpOperation("submit_product_review", async () => {
+    await ensureLoggedIn(client, loadCredentials, true);
+    return success(await reviews.submit(connectionId(ctx.sessionId), review_id, revision, submission_id));
+  }));
 
   registerTool(
     "review_items_to_add",

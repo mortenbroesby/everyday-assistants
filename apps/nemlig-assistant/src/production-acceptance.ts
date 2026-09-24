@@ -16,7 +16,9 @@ export const productionToolInventory = {
   prepareOnly: [
     "review_items_to_add", "review_item_to_remove", "review_item_swap", "review_emptying_basket",
   ],
+  localState: ["start_product_review", "update_product_review"],
   externalState: [
+    "submit_product_review",
     "add_approved_items",
     "remove_approved_item", "make_approved_item_swap", "empty_approved_basket",
   ],
