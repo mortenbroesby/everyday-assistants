@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { assertNoContainerRollout, assertRetentionLeaseForMutation, parseAcceptedReleaseJournal, parseProductionRetentionCli, parseRegistryCredentialOutput, parseRetentionLease, registryCredentialCommand, retentionLeaseCanBeReclaimed, retentionLeaseMatchesOperation } from "../scripts/production-retention.js";
+import { assertNoContainerRollout, assertRetentionLeaseForMutation, parseAcceptedReleaseJournal, parseAuthoritativeActiveContainer, parseProductionRetentionCli, parseRegistryCredentialOutput, parseRetentionLease, registryCredentialCommand, retentionLeaseCanBeReclaimed, retentionLeaseMatchesOperation } from "../scripts/production-retention.js";
 
 const commit = "a".repeat(40);
 const image = `sha256:${"b".repeat(64)}`;
@@ -67,6 +67,19 @@ test("running image references must match the active application version before 
     JSON.stringify([{ id: "one", state: "running", version: 84 }, { id: "two", state: "running", version: 83 }]),
     "not-json",
   ]) assert.throws(() => assertNoContainerRollout(raw, 84), /production_retention_active_container_/u);
+});
+
+test("container info is authoritative when list lags behind a completed deployment", () => {
+  const id = "11111111-2222-4333-8444-555555555555";
+  const name = "nemlig-mcp-cloudflare-production-nemligmcpcontainer-production";
+  const listed = JSON.stringify([{ id, name, instances: 1, image: `registry.cloudflare.com/example/${name}@sha256:${"a".repeat(64)}`, version: 90 }]);
+  const info = JSON.stringify({ id, name, instances: 1, configuration: { image: `registry.cloudflare.com/example/${name}@sha256:${"b".repeat(64)}` }, version: 91 });
+  assert.deepEqual(parseAuthoritativeActiveContainer(listed, info), {
+    id,
+    image: `sha256:${"b".repeat(64)}`,
+    version: 91,
+  });
+  assert.throws(() => parseAuthoritativeActiveContainer(listed, JSON.stringify({ ...JSON.parse(info), id: "22222222-2222-4333-8444-555555555555" })), /production_retention_active_container_changed/u);
 });
 
 test("only read-only plans run without a retention lease", async () => {
