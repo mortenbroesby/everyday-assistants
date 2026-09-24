@@ -423,6 +423,34 @@ test("registry inventory follows bounded pagination and resolves every exact-rep
   assert.equal(seen.filter((request) => request.startsWith("HEAD ")).length, 3);
 });
 
+test("registry inventory ignores Cloudflare immutable references and canonicalizes its malformed next cursor", async () => {
+  const releaseTags = Array.from({ length: 99 }, (_, index) => `release-${index}`);
+  const immutableReference = digest(999);
+  const fetcher: typeof fetch = async (input) => {
+    const url = new URL(String(input));
+    if (url.pathname === "/v2/_catalog") return new Response(JSON.stringify({ repositories: [repository] }));
+    if (url.pathname === `/v2/${repository}/tags/list`) {
+      const last = url.searchParams.get("last");
+      if (last === null) return new Response(JSON.stringify({ name: repository, tags: [...releaseTags, immutableReference] }), {
+        headers: { Link: `${url.origin}${url.pathname}?n=100?n=100&last=${immutableReference}; rel=next` },
+      });
+      if (last === immutableReference) return new Response(JSON.stringify({ name: repository, tags: ["release-final"] }), {
+        headers: { Link: `${url.origin}${url.pathname}?n=100&last=${encodeURIComponent(immutableReference)}?n=100&last=release-final; rel=next` },
+      });
+      assert.equal(last, "release-final");
+      return new Response(JSON.stringify({ name: repository, tags: [] }), {
+        headers: { Link: `${url.origin}${url.pathname}?n=100&last=release-final?n=100&last=; rel=next` },
+      });
+    }
+    if (url.pathname.startsWith(`/v2/${repository}/manifests/`)) return new Response(null, { status: 200, headers: { "Docker-Content-Digest": digest(1) } });
+    throw new Error(`unexpected registry request ${url.pathname}`);
+  };
+
+  const inventory = await readRegistryInventory({ accountId, repository, authorization: "Basic dGVzdA==", fetcher });
+  assert.equal(inventory.tagPages, 3);
+  assert.deepEqual(inventory.tags.map(({ tag }) => tag), [...releaseTags, "release-final"].sort());
+});
+
 test("registry inventory rejects incomplete catalogs, cross-origin pagination, and changing tags", async () => {
   const input = { accountId, repository, authorization: "Basic dGVzdA==", fetcher: (async () => new Response(JSON.stringify({ repositories: [] }))) as typeof fetch };
   await assert.rejects(readRegistryInventory(input), /image_retention_registry_repository_missing/u);
