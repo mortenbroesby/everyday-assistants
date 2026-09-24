@@ -82,9 +82,12 @@ export function parseWorkerVersionsPage(raw: unknown): { versions: WorkerVersion
     || typeof root.result_info !== "object" || Array.isArray(root.result_info)) return fail("page_invalid");
   const info = root.result_info as Record<string, unknown>;
   if (!Number.isSafeInteger(info.page) || !Number.isSafeInteger(info.total_pages)
-    || (info.page as number) < 1 || (info.total_pages as number) < 0
+    || (info.page as number) < 0 || (info.total_pages as number) < 0
+    || ((info.total_pages as number) === 0 && ((info.page as number) !== 0 && (info.page as number) !== 1))
+    || ((info.total_pages as number) !== 0 && (info.page as number) < 1)
     || ((info.total_pages as number) !== 0 && (info.total_pages as number) < (info.page as number))) return fail("pagination_invalid");
-  const totalPages = (info.total_pages as number) === 0 ? 1 : info.total_pages as number;
+  const emptyPage = (info.total_pages as number) === 0;
+  const totalPages = emptyPage ? 1 : info.total_pages as number;
   const optionalCount = (key: string): number | undefined => {
     const value = info[key];
     if (value === undefined) return undefined;
@@ -95,16 +98,20 @@ export function parseWorkerVersionsPage(raw: unknown): { versions: WorkerVersion
   const perPage = optionalCount("per_page");
   const totalCount = optionalCount("total_count");
   if (count !== undefined && count !== root.result.length) return fail("cardinality_invalid");
-  if (perPage !== undefined && perPage < 1) return fail("cardinality_invalid");
-  if (totalCount !== undefined && perPage !== undefined
-    && totalPages !== Math.max(1, Math.ceil(totalCount / perPage))) return fail("cardinality_invalid");
+  if (perPage !== undefined && perPage < 1 && !(emptyPage && perPage === 0)) return fail("cardinality_invalid");
+  if (totalCount !== undefined && perPage !== undefined) {
+    if (perPage === 0) {
+      if (!(emptyPage && totalCount === 0)) return fail("cardinality_invalid");
+    } else if (totalPages !== Math.max(1, Math.ceil(totalCount / perPage))) return fail("cardinality_invalid");
+  }
   const versions = (root.result as unknown[]).map((value) => {
     if (!value || typeof value !== "object" || Array.isArray(value)) return fail("version_invalid");
     const item = value as Record<string, unknown>;
     if (typeof item.id !== "string" || !versionId.test(item.id) || !validTimestamp(item.created_on)) return fail("version_invalid");
     return { id: item.id, createdOn: new Date(item.created_on).toISOString() };
   });
-  return { versions, page: info.page as number, totalPages };
+  if (emptyPage && versions.length !== 0) return fail("pagination_invalid");
+  return { versions, page: emptyPage ? 1 : info.page as number, totalPages };
 }
 
 export function parseProtectedVersionIds(raw: string | undefined): string[] {
