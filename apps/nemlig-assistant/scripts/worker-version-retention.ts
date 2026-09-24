@@ -81,11 +81,16 @@ export function parseWorkerVersionsPage(raw: unknown): { versions: WorkerVersion
   if (root.success !== true || !Array.isArray(root.result) || !root.result_info
     || typeof root.result_info !== "object" || Array.isArray(root.result_info)) return fail("page_invalid");
   const info = root.result_info as Record<string, unknown>;
+  const paginationFailure = (): never => {
+    const describe = (value: unknown): string => typeof value === "number" || typeof value === "string" ? String(value) : typeof value;
+    console.error(`worker_version_retention_pagination_shape page=${describe(info.page)} total_pages=${describe(info.total_pages)}`);
+    return fail("pagination_invalid");
+  };
   if (!Number.isSafeInteger(info.page) || !Number.isSafeInteger(info.total_pages)
     || (info.page as number) < 0 || (info.total_pages as number) < 0
     || ((info.total_pages as number) === 0 && ((info.page as number) !== 0 && (info.page as number) !== 1))
     || ((info.total_pages as number) !== 0 && (info.page as number) < 1)
-    || ((info.total_pages as number) !== 0 && (info.total_pages as number) < (info.page as number))) return fail("pagination_invalid");
+    || ((info.total_pages as number) !== 0 && (info.total_pages as number) < (info.page as number))) return paginationFailure();
   const emptyPage = (info.total_pages as number) === 0;
   const totalPages = emptyPage ? 1 : info.total_pages as number;
   const optionalCount = (key: string): number | undefined => {
