@@ -191,6 +191,8 @@ jobs:
             fi
           elif [[ "${{ needs.release-gate.outputs.retention }}" == "true" ]]; then
             pnpm --silent --filter nemlig-assistant production:retention -- resume "${{ needs.release-gate.outputs.retention_commit }}" > "$retention_report" || retention_status=$?
+          elif [[ "${{ needs.release-gate.outputs.worker_retention }}" == "true" ]]; then
+            printf '{"commit":"%s","outcome":"skipped","failure":"worker_retention_resume"}\n' "$CANDIDATE_SHA" > "$retention_report"
           else
             echo "Retention job was scheduled without accepted deployment or explicit image-retention resume." >&2
             printf '{"commit":"%s","outcome":"failed","failure":"deployment_not_accepted"}\n' "$CANDIDATE_SHA" > "$retention_report"
@@ -216,9 +218,22 @@ jobs:
           NEMLIG_WORKER_VERSION_RECOVERY_REVIEWED: "${{ vars.NEMLIG_WORKER_VERSION_RECOVERY_REVIEWED }}"
         run: |
           set -euo pipefail
+          worker_commit="$CANDIDATE_SHA"
+          if [[ "${{ needs.release-gate.outputs.worker_retention }}" == "true" ]]; then
+            lock_content=$(gh api "repos/${GITHUB_REPOSITORY}/contents/worker-version-retention.json?ref=codex-lock%2Fnemlig-production" --jq '.content' 2>/dev/null || true)
+            if [[ -n "$lock_content" ]]; then
+              durable_report=$(printf '%s' "$lock_content" | base64 -d 2>/dev/null || true)
+              retention_run_id=$(printf '%s' "$durable_report" | jq -r '.runId // empty' 2>/dev/null || true)
+              durable_commit=$(printf '%s' "$durable_report" | jq -r '.commit // empty' 2>/dev/null || true)
+              if [[ "$durable_commit" =~ ^[0-9a-f]{40}$ ]]; then worker_commit="$durable_commit"; fi
+              if [[ "$retention_run_id" =~ ^[1-9][0-9]*$ ]]; then
+                gh run download "$retention_run_id" --name nemlig-production-release --dir "$RUNNER_TEMP/nemlig-production-release" >/dev/null 2>&1 || true
+              fi
+            fi
+          fi
           worker_report="$RUNNER_TEMP/nemlig-worker-retention.json"
           worker_status=0
-          worker_args=(--commit "$CANDIDATE_SHA")
+          worker_args=(--commit "$worker_commit")
           if [[ "${{ needs.release-gate.outputs.worker_retention }}" == "true" ]]; then worker_args+=(--resume); fi
           if [[ -d "$RUNNER_TEMP/nemlig-production-release" ]]; then
             mapfile -t worker_journals < <(find "$RUNNER_TEMP/nemlig-production-release" -type f -name latest.json -print)

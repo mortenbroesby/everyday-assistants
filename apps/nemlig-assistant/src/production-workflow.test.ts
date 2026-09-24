@@ -107,6 +107,7 @@ test("routine releases queue trusted main ancestors; manual dispatch is recovery
   assert.match(retention, /production:retention -- resume "\$\{\{ needs\.release-gate\.outputs\.retention_commit \}\}"/u);
   assert.match(retention, /retention_report="\$RUNNER_TEMP\/nemlig-retention\.json"/u);
   assert.match(retention, /acceptance_evidence_missing.*CANDIDATE_SHA|CANDIDATE_SHA.*acceptance_evidence_missing/u);
+  assert.match(retention, /worker_retention_resume.*CANDIDATE_SHA|CANDIDATE_SHA.*worker_retention_resume/u);
   assert.match(retention, /deployment_not_accepted.*CANDIDATE_SHA|CANDIDATE_SHA.*deployment_not_accepted/u);
   assert.match(retention, /exec tsx scripts\/production-summary\.ts -- "\$\{summary_args\[@\]\}" >> "\$GITHUB_STEP_SUMMARY"/u);
   assert.match(retention, /exit "\$retention_status"/u);
@@ -122,6 +123,10 @@ test("routine releases queue trusted main ancestors; manual dispatch is recovery
   assert.match(retention, /GH_TOKEN:/u);
   assert.match(retention, /NEMLIG_WORKER_VERSION_RECOVERY_REVIEWED:/u);
   assert.match(retention, /--resume/u);
+  assert.match(retention, /contents\/worker-version-retention\.json\?ref=codex-lock%2Fnemlig-production/u);
+  assert.match(retention, /worker_commit="\$CANDIDATE_SHA"/u);
+  assert.match(retention, /worker_args=\(--commit "\$worker_commit"\)/u);
+  assert.match(retention, /gh run download "\$retention_run_id" --name nemlig-production-release --dir/u);
   assert.match(retention, /Upload Worker retention evidence/u);
   assert.match(retention, /fixed UTC 48-hour cutoff/u);
   assert.match(retention, /CLOUDFLARE_API_TOKEN:/u);
