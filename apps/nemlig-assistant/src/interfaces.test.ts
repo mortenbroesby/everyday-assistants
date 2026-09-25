@@ -1159,3 +1159,34 @@ test("MCP local review and explicit submission share exact state without prematu
     assert.equal(writes, 1);
   });
 });
+
+test("lost and ended review recovery reports absence, finds the current draft, and never replays edits", async () => {
+  const noWrite = async (): Promise<never> => { throw new Error("Recovery must not touch the provider basket"); };
+  const provider = fakeClient({ getCart: noWrite, addToCart: noWrite, removeFromCart: noWrite, clearCart: noWrite });
+  let stale: ProductReviewSnapshot;
+  await withMcpClient(createMcpServer(provider, testCredentials), async mcp => {
+    const started = await mcp.callTool({ name: "start_product_review", arguments: { items: [{ product_id: 7, quantity: 2 }] } });
+    stale = (started.structuredContent as { review: ProductReviewSnapshot }).review;
+  });
+  // A new server models loss of the in-memory draft while the host keeps its old card.
+  await withMcpClient(createMcpServer(provider, testCredentials), async mcp => {
+    const edit = await mcp.callTool({ name: "update_product_review", arguments: { review_id: stale.review_id, revision: stale.revision, action: { kind: "accept", product_ids: [7] } } });
+    assert.equal(edit.isError, true);
+    const show = () => mcp.callTool({ name: "update_product_review", arguments: { action: { kind: "show" } } });
+    const absent = await show();
+    assert.equal(absent.isError, undefined, toolText(absent));
+    assert.deepEqual(absent.structuredContent, { unavailable: true });
+    const restarted = await mcp.callTool({ name: "start_product_review", arguments: { items: stale.items.map(({ product_id, quantity }) => ({ product_id, quantity })) } });
+    const current = (restarted.structuredContent as { review: ProductReviewSnapshot }).review;
+    assert.notEqual(current.review_id, stale.review_id);
+    assert.equal(current.items[0]?.quantity, 2);
+    assert.equal(current.items[0]?.state, "needs-review");
+    assert.equal(current.submission, undefined);
+    assert.deepEqual((await show()).structuredContent, { review: current });
+    const oldEdit = await mcp.callTool({ name: "update_product_review", arguments: { review_id: stale.review_id, revision: stale.revision, action: { kind: "accept", product_ids: [7] } } });
+    assert.equal(oldEdit.isError, true);
+    assert.deepEqual((await show()).structuredContent, { review: current });
+    await mcp.callTool({ name: "update_product_review", arguments: { review_id: current.review_id, revision: current.revision, action: { kind: "end" } } });
+    assert.deepEqual((await show()).structuredContent, { unavailable: true });
+  });
+});

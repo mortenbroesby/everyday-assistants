@@ -99,3 +99,16 @@ refresh the connected app, verify the changed tool catalog, and exercise local
 acceptance and forward/back navigation in ChatGPT. Record failure as UI delivery
 pending, even when the deployment workflow is green. This adds no polling,
 storage, provider write, or new service.
+
+## Stale card recovery
+
+A visible host card can outlive its in-memory draft. Refresh omits the old opaque
+reference and reads only the active conversation. Absence is a typed
+`unavailable: true` result. An unavailable-action error triggers at most one
+read-only lookup, never a replay. The viewer offers an explicit Start new review
+using the old exact product IDs/quantities only when no submitted/uncertain
+outcome needs inspection. New starts hydrate current facts and reset local
+acceptance and submission authority; an existing active review remains unchanged.
+Version the viewer URI for this browser behavior change. Smoke the real MCP
+adapter with a retained browser card across simulated process state loss, and
+verify local recovery/navigation before the actual ChatGPT release smoke.

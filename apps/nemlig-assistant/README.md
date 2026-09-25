@@ -134,7 +134,19 @@ Each principal retains at most eight conversation drafts of 50 products. Hosts
 without conversation context cannot access a hosted draft. ChatGPT does not
 provide a reliable notification when a conversation is closed.
 They are not saved shopping plans or named lists. Refresh a stale view before
-making another change. Product disclosures, navigation and ordinary local edits do not fetch Nemlig;
+making another change. Refresh looks up the current conversation draft instead of
+retrying an obsolete reference. If it is gone, **Start new review** rechecks the
+shown products and quantities; it does not restore accepted selections or approval.
+A failed edit is never replayed. Submitted or uncertain cards instead direct you
+to inspect the actual basket.
+
+Run `pnpm --filter nemlig-assistant smoke:review-ui` for a loopback browser smoke
+using the real MCP adapter and a fake catalogue. Start a review, select a product,
+simulate a server restart, then click the stale acceptance button. Verify explicit
+recovery, unchecked selections after restart, working basket/navigation/quantity
+controls, and zero `providerBasketCalls` at `/stats`. No credentials are required.
+
+Product disclosures, navigation and ordinary local edits do not fetch Nemlig;
 adding new exact products hydrates only those products, and
 explicit alternatives searches hydrate up to ten results with three concurrent
 reads and existing request limits.

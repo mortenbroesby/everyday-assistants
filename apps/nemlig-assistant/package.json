@@ -1,6 +1,6 @@
 {
   "name": "nemlig-assistant",
-  "version": "4.16.2",
+  "version": "4.16.3",
   "private": true,
   "description": "Safe local Nemlig Assistant CLI and MCP server",
   "type": "module",
@@ -52,6 +52,7 @@
     "release:plan": "tsx release/agent.ts",
     "release:retry:check": "tsx release/retry.ts",
     "smoke": "tsx --test src/smoke.test.ts",
+    "smoke:review-ui": "tsx scripts/smoke-review-ui.ts",
     "smoke:package": "tsx scripts/smoke-package.ts",
     "test": "tsx --test src/*.test.ts release/*.test.ts scripts/*.test.mjs",
     "coverage": "node scripts/coverage.mjs"
@@ -87,6 +88,6 @@
     "wrangler": "4.127.1"
   },
   "nemligRelease": {
-    "codename": "Isolated"
+    "codename": "Recovery"
   }
 }

@@ -40,8 +40,8 @@ const complete: ProductView = {
 };
 
 test("viewer exposes one MCP Apps resource identity and a complete headless fallback", () => {
-  assert.equal(PRODUCT_VIEWER_RESOURCE_VERSION, "2");
-  assert.equal(PRODUCT_VIEWER_RESOURCE_URI, "ui://nemlig/product-viewer-v2.html");
+  assert.equal(PRODUCT_VIEWER_RESOURCE_VERSION, "3");
+  assert.equal(PRODUCT_VIEWER_RESOURCE_URI, "ui://nemlig/product-viewer-v3.html");
   assert.equal(PRODUCT_VIEWER_MIME_TYPE, "text/html;profile=mcp-app");
   assert.deepEqual(PRODUCT_VIEWER_RESOURCE_METADATA, {
     ui: { resourceUri: PRODUCT_VIEWER_RESOURCE_URI },
