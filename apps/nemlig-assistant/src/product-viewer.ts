@@ -73,36 +73,41 @@ export function renderProductViewerHtml(): string {
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Nemlig product review</title>
 <style>
-:root { color-scheme: light dark; font: 15px/1.45 system-ui, sans-serif; --line: #8885; --accent: #23774b; }
+:root { color-scheme: light dark; font: 14px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; --line: #e7eae5; --accent: #426744; --soft: #f1f5ee; --muted: #6b736b; }
 * { box-sizing: border-box; }
-body { margin: 0; padding: 12px; background: Canvas; color: CanvasText; }
-main { max-width: 680px; margin: auto; }
-h1 { font-size: 1.4rem; margin: 12px 0 4px; } h2 { font-size: 1rem; margin: 16px 0 8px; }
-p { margin: 6px 0; } .muted { opacity: .72; font-size: .88rem; }
+body { margin: 0; padding: 12px; background: #fff; color: #252c25; }
+main { max-width: 560px; margin: auto; }
+h1 { font-size: 1.15rem; font-weight: 650; text-align: center; letter-spacing: -.025em; margin: 8px 0 5px; } h2 { font-size: .8rem; font-weight: 600; margin: 18px 0 7px; color: var(--muted); }
+p { margin: 6px 0; } .muted { color: var(--muted); font-size: .8rem; }
+#intro { text-align: center; max-width: 35ch; margin: 0 auto 14px; }
 button, input { font: inherit; } button, summary { cursor: pointer; }
-button { min-height: 44px; padding: 8px 12px; color: inherit; background: Canvas; border: 1px solid var(--line); border-radius: 8px; }
+button { min-height: 44px; padding: 8px 12px; color: inherit; background: var(--soft); border: 1px solid transparent; border-radius: 9px; font-size: .86rem; }
 button:disabled { opacity: .45; cursor: default; }
-button.primary { background: var(--accent); color: white; border-color: var(--accent); }
-button[aria-current="page"] { border-color: var(--accent); box-shadow: inset 0 -2px var(--accent); }
+button.primary { background: var(--accent); color: white; }
+button[aria-current="page"] { background: var(--accent); color: white; }
 button:focus-visible, summary:focus-visible, input:focus-visible { outline: 3px solid #4b94dd; outline-offset: 2px; }
-nav, .actions, form { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-nav button { flex: 1; } .actions { margin-top: 10px; } .actions > button { flex: 1; }
-#status { min-height: 1.5em; margin: 10px 0; } #fallback { white-space: pre-wrap; overflow-wrap: anywhere; }
-article { border-top: 1px solid var(--line); padding: 10px 0; display: flex; align-items: flex-start; gap: 4px; }
-article > details { flex: 1; min-width: 0; } article > label { display: flex; min-width: 38px; min-height: 52px; align-items: center; justify-content: center; }
-input[type="checkbox"], input[type="radio"] { width: 20px; height: 20px; accent-color: var(--accent); }
-summary.row { list-style: none; display: grid; grid-template-columns: 48px minmax(0, 1fr); gap: 10px; min-height: 58px; align-items: center; }
+nav, .actions, form { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+nav { margin-bottom: 10px; padding: 4px; background: var(--soft); border-radius: 12px; } nav button { flex: 1; background: transparent; }
+.actions { margin-top: 10px; } .actions > button { flex: 1; }
+#status { margin: 6px 0; font-size: .8rem; color: var(--muted); } #status:empty { display: none; } #fallback { white-space: pre-wrap; overflow-wrap: anywhere; }
+article { border-bottom: 1px solid var(--line); padding: 9px 0; display: flex; align-items: flex-start; gap: 3px; }
+article > details { flex: 1; min-width: 0; } article > label { display: flex; min-width: 30px; min-height: 54px; align-items: center; justify-content: center; }
+input[type="checkbox"], input[type="radio"] { width: 17px; height: 17px; accent-color: var(--accent); }
+summary.row { list-style: none; display: grid; grid-template-columns: 44px minmax(0, 1fr) 12px; gap: 8px; min-height: 54px; align-items: center; }
 summary.row::-webkit-details-marker { display: none; }
-summary.row::after { content: "Details ⌄"; grid-column: 2; font-size: .8rem; opacity: .7; }
-details[open] > summary.row::after { content: "Close details ⌃"; }
-.photo { width: 48px; height: 52px; object-fit: contain; font-size: .65rem; display: grid; place-items: center; background: #8881; border-radius: 6px; text-align: center; }
-.headline { display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; } .name { font-weight: 650; overflow-wrap: anywhere; } .price { white-space: nowrap; }
-.meta { font-size: .82rem; opacity: .78; overflow-wrap: anywhere; } .badge { font-size: .75rem; border: 1px solid var(--line); border-radius: 5px; padding: 1px 5px; margin-right: 4px; }
-.detail-body { padding: 10px 0 4px; overflow-wrap: anywhere; } .fact { border-top: 1px solid var(--line); padding: 8px 0; } .fact > summary { min-height: 32px; }
-input[type="search"] { min-width: 0; flex: 1; width: 100%; } input[type="search"], input[type="number"] { min-height: 44px; border: 1px solid var(--line); border-radius: 6px; padding: 8px; color: inherit; background: Canvas; }
+summary.row::after { content: "⌄"; font-size: 1rem; color: var(--muted); }
+details[open] > summary.row::after { content: "⌃"; }
+.photo { width: 44px; height: 48px; object-fit: contain; font-size: .6rem; display: grid; place-items: center; background: var(--soft); border-radius: 6px; text-align: center; color: var(--muted); }
+.headline { display: flex; justify-content: space-between; gap: 8px; } .name { font-weight: 550; overflow-wrap: anywhere; } .price { white-space: nowrap; font-size: .85rem; font-variant-numeric: tabular-nums; }
+.meta { font-size: .75rem; color: var(--muted); overflow-wrap: anywhere; } .badge { font-size: .67rem; color: var(--accent); background: var(--soft); border-radius: 4px; padding: 1px 4px; margin-right: 4px; }
+.detail-body { padding: 12px 0 4px; overflow-wrap: anywhere; } .fact { border-top: 1px solid var(--line); padding: 8px 0; } .fact > summary { min-height: 32px; }
+input[type="search"] { min-width: 0; flex: 1; width: 100%; } input[type="search"], input[type="number"] { min-height: 44px; border: 1px solid var(--line); border-radius: 8px; padding: 8px; color: inherit; background: transparent; }
 input[type="number"] { width: 76px; } form { margin: 10px 0; } form label { width: 100%; }
-footer { border-top: 1px solid var(--line); padding-top: 12px; margin-top: 12px; } footer > button { width: 100%; margin-top: 8px; }
-#submission { border: 1px solid var(--line); border-radius: 8px; padding: 12px; margin-top: 12px; }
+footer { padding-top: 12px; margin-top: 4px; } footer > button { width: 100%; margin-top: 6px; }
+footer > button.quiet { background: transparent; color: var(--muted); font-size: .78rem; }
+#submission { background: var(--soft); border-radius: 12px; padding: 14px; margin-top: 12px; }
+#context > article { background: var(--soft); border: 0; padding: 8px; border-radius: 10px; }
+@media (prefers-color-scheme: dark) { :root { --line: #394238; --accent: #52794f; --soft: #252e25; --muted: #acb6aa; } body { background: #191e19; color: #f1f4ee; } .badge { color: #bdd7b5; } }
 [hidden] { display: none !important; }
 </style>
 </head>
@@ -110,7 +115,7 @@ footer { border-top: 1px solid var(--line); padding-top: 12px; margin-top: 12px;
 <nav id="navigation" aria-label="Product review destinations" hidden></nav>
 <h1 id="title" tabindex="-1">Nemlig products</h1>
 <p id="intro" class="muted">Inspect products here or continue in conversation.</p>
-<p id="status" role="status" aria-live="polite">Waiting for product results.</p>
+<p id="status" role="status" aria-live="polite">Loading your shopping review…</p>
 <div id="context"></div>
 <section id="products" aria-label="Product results"></section>
 <footer id="actions" hidden></footer>
@@ -124,6 +129,16 @@ footer { border-top: 1px solid var(--line); padding-top: 12px; margin-top: 12px;
   const footer = document.getElementById("actions"), submissionRoot = document.getElementById("submission"), fallback = document.getElementById("fallback");
   const safeImageOrigins = new Set(["https://nemlig.com", "https://www.nemlig.com"]);
   let review, busy = false, selected = new Set(), replacement;
+  let bridgeReady = false, received = false, requestId = 0;
+  const pending = new Map();
+  const notify = (method, params) => window.parent.postMessage({ jsonrpc: "2.0", method, params }, "*");
+  const rpc = (method, params) => new Promise((resolve, reject) => {
+    const id = "nemlig-" + ++requestId;
+    const timer = setTimeout(() => { pending.delete(id); reject(new Error("The host has not confirmed the action. Refresh before trying again.")); }, 20000);
+    pending.set(id, { resolve, reject, timer });
+    window.parent.postMessage({ jsonrpc: "2.0", id, method, params }, "*");
+  });
+  const callTool = (name, args) => bridgeReady ? rpc("tools/call", { name, arguments: args }) : window.openai.callTool(name, args);
   const text = (value, empty = "Unknown") => typeof value === "string" && value.trim() ? value : empty;
   const money = value => typeof value === "number" && Number.isFinite(value) ? value.toFixed(2) + " kr" : "Unknown price";
   const el = (tag, value, className) => { const node = document.createElement(tag); if (value !== undefined) node.textContent = value; if (className) node.className = className; return node; };
@@ -133,6 +148,9 @@ footer { border-top: 1px solid var(--line); padding-top: 12px; margin-top: 12px;
   const button = (label, action, primary = false) => { const node = el("button", label, primary ? "primary" : ""); node.type = "button"; node.disabled = busy; node.addEventListener("click", action); return node; };
   const explain = message => { fallback.hidden = false; fallback.textContent = message; };
   const followUp = async (prompt, guidance = "Continue in conversation to review the exact submission. Nothing has been sent to Nemlig.") => {
+    if (bridgeReady) {
+      try { await rpc("ui/message", { role: "user", content: [{ type: "text", text: prompt }] }); return; } catch { /* Show conversational fallback. */ }
+    }
     if (window.openai && typeof window.openai.sendFollowUpMessage === "function") {
       try { await window.openai.sendFollowUpMessage({ prompt }); return; } catch { /* Keep the exact request available if the host fails. */ }
     }
@@ -141,9 +159,9 @@ footer { border-top: 1px solid var(--line); padding-top: 12px; margin-top: 12px;
   const update = async action => {
     if (!review || busy) return;
     const args = { review_id: review.review_id, revision: review.revision, action };
-    if (!window.openai || typeof window.openai.callTool !== "function") {
+    if (!bridgeReady && (!window.openai || typeof window.openai.callTool !== "function")) {
       const descriptions = {
-        show: "refresh your local review", accept: "accept the selected products into your local Basket",
+        show: "refresh your local review", end: "finish shopping and discard the temporary local basket", revisit: "move selected products back to Needs review", accept: "accept the selected products into your local Basket",
         remove: "remove the selected products locally", quantity: "change this product's local quantity",
         alternatives: "find alternatives for this product", replace: "use the selected alternative",
         navigate: "open " + (action.destination === "basket" ? "your local Basket" : action.destination === "alternatives" ? "the current alternatives" : "Needs review"),
@@ -159,12 +177,12 @@ footer { border-top: 1px solid var(--line); padding-top: 12px; margin-top: 12px;
     try {
       let timer;
       const result = await Promise.race([
-        window.openai.callTool("update_product_review", args),
+        callTool("update_product_review", args),
         new Promise((_, reject) => { timer = setTimeout(() => reject(new Error("The host has not confirmed the update.")), 20000); })
       ]).finally(() => clearTimeout(timer));
       if (result && result.isError) throw new Error((result.content || []).filter(c => c.type === "text").map(c => c.text).join(" ") || "Update failed.");
       if (!receive(result)) throw new Error("No updated review was returned. Refresh before trying again.");
-      if (typeof window.openai.setWidgetState === "function") {
+      if (review && window.openai && typeof window.openai.setWidgetState === "function") {
         window.openai.setWidgetState({ review_id: review.review_id, revision: review.revision, destination: review.destination });
       }
     } catch (error) {
@@ -210,7 +228,7 @@ footer { border-top: 1px solid var(--line); padding-top: 12px; margin-top: 12px;
     headline.append(el("span", text(product.name, "Product " + (id || "details unavailable")), "name"), el("span", money(product.price), "price"));
     info.append(headline, el("div", [product.brand, product.unit_size].filter(Boolean).join(" · ") || "Package details unavailable", "meta"));
     info.append(el("div", product.unit_price === undefined ? text(product.unit, "Unit price unavailable") : money(product.unit_price) + (product.unit ? " · " + product.unit : ""), "meta"));
-    if (item) info.append(el("div", "Quantity: " + item.quantity, "meta"));
+    if (item && item.quantity !== 1) info.append(el("div", item.quantity + " packages", "meta"));
     for (const [label, value] of [["Organic", product.is_organic], ["Frozen", product.is_frozen], ["Offer", product.is_on_discount]]) if (value === true) info.append(el("span", label, "badge"));
     if (product.available !== true) info.append(el("div", product.available === undefined ? "Availability unknown" : "Unavailable", "meta"));
     summary.append(info); details.append(summary);
@@ -245,6 +263,7 @@ footer { border-top: 1px solid var(--line); padding-top: 12px; margin-top: 12px;
         const accept = button("Add to local Basket", () => void update({ kind: "accept", product_ids: [id] }), true);
         accept.disabled = busy || !canUse(view); actions.append(accept);
       }
+      if (item.state === "basket") actions.append(button("Move to Needs review", () => void update({ kind: "revisit", product_ids: [id] })));
       body.append(actions);
     }
     details.append(body); article.append(details); return article;
@@ -272,7 +291,12 @@ footer { border-top: 1px solid var(--line); padding-top: 12px; margin-top: 12px;
       keep.disabled = busy || !canUse(target.view);
       footer.append(keep, button("Cancel · back to " + (review.alternatives.origin === "basket" ? "Basket" : "Needs review"), () => void update({ kind: "navigate", destination: review.alternatives.origin })));
     }
-    footer.append(button("Refresh review", () => void update({ kind: "show" })));
+    const refresh = button("Refresh review", () => void update({ kind: "show" })); refresh.className = "quiet";
+    const finish = button("Finish shopping", () => {
+      footer.replaceChildren(el("p", "Discard this temporary local basket? Your Nemlig basket will not change."),
+        button("Discard local basket", () => void update({ kind: "end" })), button("Keep shopping", renderFooter));
+    }); finish.className = "quiet";
+    footer.append(refresh, finish);
   };
   const renderSubmission = () => {
     submissionRoot.replaceChildren(); submissionRoot.hidden = !review.submission; if (!review.submission) return;
@@ -293,7 +317,7 @@ footer { border-top: 1px solid var(--line); padding-top: 12px; margin-top: 12px;
       const control = button(label + " (" + review.items.filter(i => i.state === destination).length + ")", () => void update({ kind: "navigate", destination }));
       if (review.destination === destination) control.setAttribute("aria-current", "page"); nav.append(control);
     }
-    intro.textContent = "Your Basket is local. Send it to Nemlig only when you are happy with it. This temporary review expires " + new Date(review.expires_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) + ".";
+    intro.textContent = review.destination === "basket" ? "The products you’ve chosen. Send to Nemlig when you’re ready." : review.destination === "alternatives" ? "Compare options and choose a replacement, or keep the current product." : "Keep the products you like. Find alternatives for the rest.";
     if (review.destination === "alternatives" && review.alternatives) {
       const alternatives = review.alternatives, target = review.items.find(i => i.product_id === alternatives.product_id);
       title.textContent = "Alternatives for " + nameOf(target);
@@ -306,37 +330,79 @@ footer { border-top: 1px solid var(--line); padding-top: 12px; margin-top: 12px;
       alternatives.views.forEach(view => root.append(row(view, undefined, "alternative")));
       if (!alternatives.views.length) root.append(el("p", "No alternatives returned. Refine the search, keep the current product, or go back."));
     } else {
-      title.textContent = review.destination === "basket" ? "Local Basket" : "Needs review";
+      title.textContent = review.destination === "basket" ? "Basket" : "Needs review";
       if (review.alternatives) context.append(button("Return to alternatives for " + nameOf(review.items.find(i => i.product_id === review.alternatives.product_id)), () => void update({ kind: "navigate", destination: "alternatives" })));
       const items = review.items.filter(i => i.state === review.destination);
       items.forEach(item => root.append(row(item.view, item, item.state === "needs-review" ? "select" : "basket")));
       if (!items.length) root.append(el("p", review.destination === "basket" ? "Your local Basket is empty. Accept products from Needs review." : "All products are resolved. Your local Basket is ready to inspect."));
     }
-    status.textContent = "Local review updated.";
+    status.textContent = "";
     renderFooter(); renderSubmission();
   };
   const receive = payload => {
+    if (payload && payload.isError) {
+      received = true;
+      status.textContent = (payload.content || []).filter(item => item.type === "text").map(item => item.text).join(" ") || "Could not load products. Continue in conversation.";
+      return false;
+    }
     const value = payload && payload.structuredContent || payload;
     if (!value || typeof value !== "object") return false;
+    if (value.ended) {
+      received = true; review = undefined;
+      nav.hidden = true; footer.hidden = true; submissionRoot.hidden = true;
+      context.replaceChildren(); root.replaceChildren();
+      title.textContent = "Shopping finished"; intro.textContent = "Your temporary local basket has been discarded.";
+      status.textContent = "Nothing was changed in Nemlig."; return true;
+    }
     if (value.review && Array.isArray(value.review.items) && value.review.review_id) {
       if (review && review.review_id === value.review.review_id && value.review.revision < review.revision) return true;
-      review = value.review; selected = new Set(); replacement = undefined; fallback.hidden = true; renderReview(); return true;
+      received = true; review = value.review; selected = new Set(); replacement = undefined; fallback.hidden = true; renderReview(); return true;
     }
     const views = Array.isArray(value.views) ? value.views : Array.isArray(value.products) ? value.products : Array.isArray(value.result) ? value.result : Array.isArray(value) ? value : undefined;
     if (!views) return false;
-    review = undefined; nav.hidden = true; footer.hidden = true; submissionRoot.hidden = true; context.replaceChildren(); root.replaceChildren();
+    received = true; review = undefined; nav.hidden = true; footer.hidden = true; submissionRoot.hidden = true; context.replaceChildren(); root.replaceChildren();
     title.textContent = "Nemlig products"; intro.textContent = "Inspect product details here or continue in conversation.";
     views.forEach(view => root.append(row(view, undefined, "result"))); status.textContent = views.length + " products shown."; return true;
   };
   window.addEventListener("message", event => {
     if (event.source !== window.parent || window.parent === window) return;
     const message = event.data;
-    if (message && message.method === "ui/notifications/tool-result") receive(message.params && (message.params.result || message.params));
+    if (!message || message.jsonrpc !== "2.0") return;
+    const request = pending.get(message.id);
+    if (request && ("result" in message || "error" in message)) {
+      pending.delete(message.id); clearTimeout(request.timer);
+      if (message.error) request.reject(new Error(message.error.message || "Host request failed."));
+      else request.resolve(message.result);
+    }
+    if (message.method === "ping" && message.id !== undefined) window.parent.postMessage({ jsonrpc: "2.0", id: message.id, result: {} }, "*");
+    if (message.method === "ui/notifications/tool-result") {
+      const payload = message.params && (message.params.result || message.params);
+      if (!receive(payload) && !(payload && payload.isError)) {
+        received = true; status.textContent = "No product review was returned. Ask to show your current shopping review.";
+      }
+    }
+    if (message.method === "ui/notifications/tool-cancelled") {
+      received = true; status.textContent = "Request cancelled. Continue in conversation when you are ready.";
+    }
   });
   window.addEventListener("openai:set_globals", event => {
     if (event.detail && event.detail.globals && event.detail.globals.toolOutput) receive(event.detail.globals.toolOutput);
   });
-  if (window.openai && "toolOutput" in window.openai) receive(window.openai.toolOutput);
+  if (window.openai && window.openai.toolOutput) receive(window.openai.toolOutput);
+  if (window.parent !== window) {
+    rpc("ui/initialize", { protocolVersion: "2026-01-26", appInfo: { name: "nemlig-product-review", version: "1.0.0" }, appCapabilities: {} }).then(result => {
+      if (!result || result.protocolVersion !== "2026-01-26") throw new Error("Unsupported host UI protocol.");
+      bridgeReady = true; notify("ui/notifications/initialized", {});
+      if (typeof ResizeObserver !== "undefined") {
+        let lastHeight;
+        new ResizeObserver(() => {
+          const height = Math.ceil(document.querySelector("main").getBoundingClientRect().height + 24);
+          if (height !== lastHeight) { lastHeight = height; notify("ui/notifications/size-changed", { height }); }
+        }).observe(document.querySelector("main"));
+      }
+    }).catch(() => { if (!received) status.textContent = "The review could not connect. Continue in conversation or reopen the review."; });
+  }
+  setTimeout(() => { if (!received) status.textContent = "Products have not arrived. Ask to show your current review, or reconnect Nemlig if needed."; }, 25000);
 })();
 </script></body></html>`;
 }

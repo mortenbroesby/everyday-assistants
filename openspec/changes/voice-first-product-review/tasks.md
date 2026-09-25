@@ -19,3 +19,46 @@ public-tree privacy checks, full `pnpm verify`, and packed-package smoke passed.
 Local Docker is stopped, so the complete Cloudflare dry run is delegated to PR CI.
 No live Nemlig or production operation was performed. Do not infer deployment
 from this implementation checklist.
+
+## 4. Owner feedback after PR #120
+
+- [x] 4.1 Re-run the original mobile flow and reproduce missing host initialization.
+- [x] 4.2 Scope drafts to conversations without hourly expiry; add append, revisit and end with service and protocol tests.
+- [x] 4.3 Match the mockup, initialize the real host protocol, and verify mobile navigation through a standards-only parent iframe.
+- [x] 4.4 Verify, commit and push follow-up PR #127; record baseline deployment separately from follow-up delivery. Exact-head CI is tracked on the PR.
+
+Follow-up evidence: 437 tests and five package smoke checks passed in the full
+`pnpm verify` push gate. The local mobile fixture also exercised a standard
+MCP Apps parent iframe without `window.openai`, including initialize, accept,
+revisit, alternatives, free list navigation, replacement and finish/cancel.
+No real Nemlig basket was mutated. Baseline PR #120 is merged at
+`c0048d11267e04b96904c3b6352618d39f7cbf6f`; production deploy job 36096394361
+succeeded and the live edge probe verified that exact revision. PR #127 remains
+a separate, undeployed follow-up for feedback and review.
+
+## 5. Visible release requirement
+
+- [x] 5.1 Reject stale viewer HTML/resource metadata in release acceptance and verify regular-user review tool metadata.
+- [x] 5.2 Make verified ChatGPT metadata refresh and live local UI checks mandatory before claiming UI delivery; record the September 25 incident evidence.
+- [ ] 5.3 Run focused checks and final verification, push PR #127, then verify its release in ChatGPT after integration.
+
+
+Live baseline evidence, 25 September 2026: Cloudflare run 36096394361 rolled out
+c0048d1 and Container application version 94. The existing ChatGPT app initially
+advertised the old catalog after two refresh attempts. A third instrumented
+Refresh returned HTTP 200 from refresh_actions, and the UI then listed all three
+review tools. The exact cause of the earlier unsuccessful refreshes is unproven.
+The same conversation successfully rendered the review, accepted one of three
+products locally, displayed Basket (1) with only that product, and returned to
+Needs review (2). No real Nemlig basket write or submission was performed. This
+is baseline 4.15.0 evidence, not acceptance of the still-unreleased 4.16.0 follow-up.
+
+Alternatives opened for Pingvin Sweet Salmiak Soft, rendered current product and
+selectable results, and exposed a cancel route. Search relevance remains a
+separate observed defect: the full product-name query returned sweet chilli
+sauce among the candidates. No replacement was selected.
+
+Release-acceptance regression checks: 34 focused tests passed; typecheck passed.
+The exact UI resource check uses the same read already made by machine acceptance.
+Regular-user read-only acceptance adds one resource read and validates review-tool
+metadata. No tool allowlist, provider mutation, quota or capacity changes.

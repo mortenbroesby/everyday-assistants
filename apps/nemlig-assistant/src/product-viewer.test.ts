@@ -104,3 +104,32 @@ test("the self-contained browser program is valid JavaScript", () => {
   const script = renderProductViewerHtml().split("<script>")[1]!.split("</script>")[0]!;
   assert.doesNotThrow(() => new Script(script));
 });
+
+test("viewer initializes the standard host bridge and reports failed results instead of waiting forever", async () => {
+  const nodes = new Map<string, { textContent: string; hidden: boolean }>();
+  const listeners = new Map<string, (event: unknown) => void>();
+  const sent: Array<{ id?: string; method?: string; params?: unknown }> = [];
+  const timers = new Map<number, () => void>();
+  const parent = { postMessage: (message: typeof sent[number]) => sent.push(message) };
+  const node = (id: string) => { if (!nodes.has(id)) nodes.set(id, { textContent: "", hidden: false }); return nodes.get(id)!; };
+  const context = {
+    document: { getElementById: node },
+    window: { parent, addEventListener: (name: string, fn: (event: unknown) => void) => listeners.set(name, fn) },
+    setTimeout: (fn: () => void) => { const id = timers.size + 1; timers.set(id, fn); return id; },
+    clearTimeout: (id: number) => timers.delete(id),
+    Map, Set, URL,
+  };
+  new Script(renderProductViewerHtml().split("<script>")[1]!.split("</script>")[0]!).runInNewContext(context);
+  const initialize = sent.find(message => message.method === "ui/initialize");
+  assert.ok(initialize, "standards-only hosts wait for the app handshake before sending results");
+  const message = listeners.get("message")!;
+  message({ source: {}, data: { jsonrpc: "2.0", id: initialize.id, result: { protocolVersion: "2026-01-26" } } });
+  assert.equal(sent.some(m => m.method === "ui/notifications/initialized"), false, "ignore foreign frames");
+  message({ source: parent, data: { jsonrpc: "2.0", id: initialize.id, result: { protocolVersion: "2026-01-26", hostCapabilities: {} } } });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.ok(sent.some(m => m.method === "ui/notifications/initialized"));
+  message({ source: parent, data: { jsonrpc: "2.0", method: "ui/notifications/tool-result", params: { isError: true, content: [{ type: "text", text: "Reconnect Nemlig to continue." }] } } });
+  assert.match(node("status").textContent, /Reconnect Nemlig/u);
+  for (const timer of timers.values()) timer();
+  assert.match(node("status").textContent, /Reconnect Nemlig/u, "late loading timeout must not overwrite the actual error");
+});

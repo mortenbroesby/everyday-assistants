@@ -7,6 +7,17 @@ import {
   type ApprovedProductionMutation,
 } from "./production-acceptance.js";
 import { serviceAcceptanceResourceInventory, serviceAcceptanceToolInventory } from "./mcp.js";
+import { PRODUCT_VIEWER_MIME_TYPE, PRODUCT_VIEWER_RESOURCE_URI, renderProductViewerHtml } from "./product-viewer.js";
+
+const userToolMetadata = {
+  start_product_review: { ui: { resourceUri: PRODUCT_VIEWER_RESOURCE_URI }, "openai/outputTemplate": PRODUCT_VIEWER_RESOURCE_URI, "openai/widgetAccessible": true },
+  update_product_review: { ui: { resourceUri: PRODUCT_VIEWER_RESOURCE_URI }, "openai/outputTemplate": PRODUCT_VIEWER_RESOURCE_URI, "openai/widgetAccessible": true },
+  submit_product_review: { ui: { resourceUri: PRODUCT_VIEWER_RESOURCE_URI, visibility: ["model"] }, "openai/outputTemplate": PRODUCT_VIEWER_RESOURCE_URI },
+};
+const withUserToolMetadata = (tools: Array<{ name: string }>) => tools.map((tool) => ({
+  ...tool,
+  ...(tool.name in userToolMetadata ? { _meta: userToolMetadata[tool.name as keyof typeof userToolMetadata] } : {}),
+}));
 
 const allTools = Object.values(productionToolInventory).flat().map((name) => ({ name }));
 const removedStorageTools = [
@@ -35,7 +46,7 @@ function serviceClient(): AcceptanceClient {
   return {
     listTools: async () => ({ tools: serviceAcceptanceToolInventory.map((name) => ({ name })) }),
     listResources: async () => ({ resources: serviceAcceptanceResourceInventory.map((uri) => ({ uri })) }),
-    readResource: async ({ uri }) => ({ contents: [{ uri, mimeType: "text/html;profile=mcp-app", text: "<!doctype html><html><body><details><summary>Product details</summary></details></body></html>" }] }),
+    readResource: async ({ uri }) => ({ contents: [{ uri, mimeType: PRODUCT_VIEWER_MIME_TYPE, text: renderProductViewerHtml(), _meta: { ui: { csp: { connectDomains: [], resourceDomains: ["https://nemlig.com", "https://www.nemlig.com"] }, prefersBorder: true } } }] }),
     callTool: async ({ name }) => {
       if (["review_items_to_add", "add_approved_items"].includes(name)) return { isError: true };
       if (name === "find_groceries") return { structuredContent: { result: [{ id: 7 }] } };
@@ -49,8 +60,9 @@ function serviceClient(): AcceptanceClient {
 
 function readonlyClient(): AcceptanceClient {
   return {
-    listTools: async () => ({ tools: retainedTools }),
+    listTools: async () => ({ tools: withUserToolMetadata(retainedTools) }),
     listResources: async () => ({ resources: productionResourceInventory.map((uri) => ({ uri })) }),
+    readResource: async ({ uri }) => ({ contents: [{ uri, mimeType: PRODUCT_VIEWER_MIME_TYPE, text: renderProductViewerHtml(), _meta: { ui: { csp: { connectDomains: [], resourceDomains: ["https://nemlig.com", "https://www.nemlig.com"] }, prefersBorder: true } } }] }),
     callTool: async ({ name }) => {
       if (name === "find_groceries") return { structuredContent: { result: [{ id: 7 }] } };
       if (name === "get_grocery_details") return { structuredContent: { result: { id: 7, name: "Milk" } } };

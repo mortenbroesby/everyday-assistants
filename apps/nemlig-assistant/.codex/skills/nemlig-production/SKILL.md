@@ -46,3 +46,8 @@ authority from repository work or a passing readiness gate.
 Report the branch, commit, remote-ref match, CI result, automated gate result,
 and any live evidence that was explicitly run. Clearly label unrun owner actions
 as pending; never claim deployment or basket verification without readback.
+
+For UI-bearing releases, complete the required ChatGPT UI acceptance in
+`docs/nemlig-production-readiness.md`: verified metadata refresh, rendered review,
+local acceptance and forward/back navigation. A green deployment alone must be
+reported as server rollout success with UI delivery pending.

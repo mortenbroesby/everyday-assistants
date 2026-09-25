@@ -27,14 +27,37 @@ test("voice and touch share exact local edits, reject stale/foreign references, 
   assert.equal(service.show("owner", initial.review_id).items.length, 1);
 });
 
-test("drafts expire honestly and invalid bulk actions are atomic", async () => {
+test("session drafts survive an hour, repeated starts preserve them, and explicit end clears them", async () => {
   let now = 0;
   const service = new ProductReviewService(client, { now: () => now });
   const draft = await service.start("owner", [{ product_id: 1, quantity: 1 }]);
-  await assert.rejects(service.update("owner", draft.review_id, draft.revision, { kind: "accept", product_ids: [1, 99] }), /product/i);
-  assert.equal(service.show("owner", draft.review_id).items[0]?.state, "needs-review");
+  assert.equal(service.active("another-session-owner"), undefined);
+  assert.throws(() => service.show("another-session-owner", draft.review_id), /unavailable/i);
+  const edited = await service.update("owner", draft.review_id, draft.revision, { kind: "accept", product_ids: [1] });
+  await assert.rejects(service.update("owner", draft.review_id, edited.revision, { kind: "accept", product_ids: [1, 99] }), /product/i);
   now = 3_600_001;
+  assert.deepEqual(await service.start("owner", [{ product_id: 2, quantity: 1 }]), edited);
+  assert.deepEqual(service.active("owner"), edited);
+  assert.equal(service.show("owner", draft.review_id).items[0]?.state, "basket");
+  assert.throws(() => service.end("owner", draft.review_id, draft.revision), /stale/i);
+  service.end("owner", draft.review_id, edited.revision);
+  assert.equal(service.active("owner"), undefined);
   assert.throws(() => service.show("owner", draft.review_id), /unavailable/i);
+  const restarted = await service.start("owner", [{ product_id: 2, quantity: 1 }]);
+  assert.notEqual(restarted.review_id, draft.review_id);
+});
+
+test("adding exact products is atomic, reviewable, and bounded; older idle sessions are evicted", async () => {
+  const service = new ProductReviewService(client);
+  const draft = await service.start("owner-1", [{ product_id: 1, quantity: 1 }]);
+  await assert.rejects(service.update("owner-1", draft.review_id, draft.revision, { kind: "add", items: [{ product_id: 1, quantity: 2 }] }), /unique exact/i);
+  assert.deepEqual(service.show("owner-1", draft.review_id), draft);
+  const added = await service.update("owner-1", draft.review_id, draft.revision, { kind: "add", items: [{ product_id: 2, quantity: 3 }] });
+  assert.deepEqual(added.items.map(item => [item.product_id, item.quantity, item.state]), [[1, 1, "needs-review"], [2, 3, "needs-review"]]);
+  for (let index = 2; index <= 8; index++) await service.start(`owner-${index}`, [{ product_id: index, quantity: 1 }]);
+  await service.start("owner-9", [{ product_id: 9, quantity: 1 }]);
+  assert.equal(service.active("owner-1"), undefined);
+  assert.equal(service.active("owner-9")?.items[0]?.product_id, 9);
 });
 
 test("submission hides provider references, invalidates edits, and retains verified or uncertain outcomes", async () => {
@@ -56,8 +79,14 @@ test("submission hides provider references, invalidates edits, and retains verif
   assert.equal(writes, 0);
   assert.ok(!JSON.stringify(draft).includes("private-provider-reference"));
   const invalidated = draft.submission!.submission_id;
-  draft = await service.update("owner", draft.review_id, draft.revision, { kind: "quantity", product_id: 1, quantity: 2 });
+  draft = await service.update("owner", draft.review_id, draft.revision, { kind: "revisit", product_ids: [1] });
+  assert.equal(draft.items[0]?.state, "needs-review");
   await assert.rejects(service.submit("owner", draft.review_id, draft.revision, invalidated), /submission/i);
+  draft = await service.update("owner", draft.review_id, draft.revision, { kind: "accept", product_ids: [1] });
+  draft = await service.prepare("owner", draft.review_id, draft.revision);
+  const changedQuantitySubmission = draft.submission!.submission_id;
+  draft = await service.update("owner", draft.review_id, draft.revision, { kind: "quantity", product_id: 1, quantity: 2 });
+  await assert.rejects(service.submit("owner", draft.review_id, draft.revision, changedQuantitySubmission), /submission/i);
   assert.equal(writes, 0);
   draft = await service.prepare("owner", draft.review_id, draft.revision);
   const reference = draft.submission!.submission_id;

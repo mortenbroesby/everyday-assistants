@@ -260,7 +260,7 @@ const friendlyCatalog = [
   ["review_item_to_remove", "Review an item to remove", true, false, ["basket_item"]],
   ["review_items_to_add", "Review items to add", true, false, ["items", "authorization"]],
   ["show_grocery_sections", "Show grocery sections", true, false, []],
-  ["show_my_basket", "Show my basket", true, false, []],
+  ["show_my_basket", "Show my Nemlig basket", true, false, []],
   ["show_my_favorites", "Show my favourites", true, false, ["search_term", "result_count", "page"]],
   ["start_product_review", "Start a local product review", false, false, ["items"]],
   ["submit_product_review", "Submit the approved local Basket", false, false, ["review_id", "revision", "submission_id"]],
@@ -617,8 +617,8 @@ test("MCP exposes independent discovery, exact details, and one shared product v
     assert.equal(viewer.contents[0]?.mimeType, "text/html;profile=mcp-app");
     assert.ok(viewer.contents[0] && "text" in viewer.contents[0]);
     if (viewer.contents[0] && "text" in viewer.contents[0]) assert.match(viewer.contents[0].text, /el\("details"/u);
-    assert.equal((direct?._meta as { ui?: { resourceUri?: string } } | undefined)?.ui?.resourceUri, "ui://nemlig/product-viewer.html");
-    assert.equal((details?._meta as { ui?: { resourceUri?: string } } | undefined)?.ui?.resourceUri, "ui://nemlig/product-viewer.html");
+    assert.equal((direct?._meta as { ui?: { resourceUri?: string } } | undefined)?.ui?.resourceUri, undefined);
+    assert.equal((details?._meta as { ui?: { resourceUri?: string } } | undefined)?.ui?.resourceUri, undefined);
     assert.match(JSON.stringify(details?.inputSchema), /product_id/u);
     assert.match(JSON.stringify(direct?.inputSchema), /prince kiks.*Prince biscuits/);
   });

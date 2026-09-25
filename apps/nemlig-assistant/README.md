@@ -126,10 +126,16 @@ Alternatives remain available while you inspect Basket, and every view has a saf
 exit. All of these operations also work through conversation, including “everything
 except the ricotta and cucumbers is fine.” Local acceptance never changes Nemlig.
 
-Voice and touch use the same private temporary server draft. Each connection can
-hold up to eight drafts of 50 products, expiring after one hour or a server restart.
+Voice and touch use one private temporary draft per ChatGPT conversation, identified
+by the host session metadata and authenticated principal. There is no hourly expiry.
+**Finish shopping** discards the local draft. A restart or bounded memory eviction
+can also discard it; missing state is reported rather than silently recreated.
+Each principal retains at most eight conversation drafts of 50 products. Hosts
+without conversation context cannot access a hosted draft. ChatGPT does not
+provide a reliable notification when a conversation is closed.
 They are not saved shopping plans or named lists. Refresh a stale view before
-making another change. Product disclosures and local edits do not fetch Nemlig;
+making another change. Product disclosures, navigation and ordinary local edits do not fetch Nemlig;
+adding new exact products hydrates only those products, and
 explicit alternatives searches hydrate up to ten results with three concurrent
 reads and existing request limits.
 
@@ -231,7 +237,9 @@ The MCP surface is organized around household actions:
   `reconnect_nemlig_assistant`.
 - See the actual Nemlig basket: `show_my_basket`.
 - Build a local review: `start_product_review`; refresh, accept, change, remove,
-  navigate, or prepare submission with `update_product_review`.
+  reconsider accepted products, append new products, navigate, finish shopping, or
+  prepare submission with `update_product_review`. Show can recover the active
+  conversation review without its opaque reference. Repeated starts preserve it.
 - Submit that exact local Basket after explicit approval: `submit_product_review`.
   This tool is model-only; visual controls cannot apply a provider mutation.
 - Review basket changes: `review_items_to_add`, `review_item_to_remove`,
@@ -239,8 +247,10 @@ The MCP surface is organized around household actions:
 - Complete an approved change: `add_approved_items`, `remove_approved_item`,
   `make_approved_item_swap`, and `empty_approved_basket`.
 - Search and exact product details return the same supported detailed product
-  facts. Product-bearing results use one shared viewer resource when the
-  host supports it, with complete structured and text fallbacks otherwise.
+  facts without mounting a widget for every search. Only local review tools attach
+  the shared viewer, with complete structured and text fallbacks. The viewer
+  initializes the MCP Apps bridge and shows actionable errors or cancelled states
+  instead of waiting indefinitely.
   The viewer can edit the server-owned local review; it never calls Nemlig directly or applies a provider change.
 
 After this connection recovery, use the app named `Nemlig Assistant (Rejoin)`.

@@ -6,7 +6,7 @@ touch, with an explicit, safely approved later transfer to the Nemlig basket.
 ## ADDED Requirements
 
 ### Requirement: Shared private product review
-The system SHALL maintain the same principal-bound temporary review snapshot for
+The system SHALL maintain the same principal-and-conversation-bound temporary review snapshot for
 voice and touch. Needs review SHALL contain unresolved products; Basket SHALL
 contain only locally accepted products. Local acceptance, quantity change,
 replacement, removal and navigation SHALL NOT modify the Nemlig basket.
@@ -22,7 +22,7 @@ replacement, removal and navigation SHALL NOT modify the Nemlig basket.
   can refresh the latest snapshot
 
 #### Scenario: Draft lifetime ends
-- **WHEN** a draft expires or its process restarts
+- **WHEN** the user finishes shopping, its process restarts, or bounded memory eviction removes it
 - **THEN** the system reports that the temporary draft is unavailable without
   recreating it silently or changing the provider basket
 
@@ -63,3 +63,24 @@ SHALL remain effective. Unrelated real basket lines SHALL remain unchanged.
 - **WHEN** application or readback fails
 - **THEN** the local draft remains intact, the outcome is explicitly uncertain or
   failed, and the system does not automatically retry the submission
+
+### Requirement: Active conversation basket
+The system SHALL retain one active temporary draft per authenticated conversation
+without a fixed time expiry. New conversations SHALL NOT access another
+conversation's draft. Hosted requests without conversation context SHALL fail
+closed. Repeated starts SHALL preserve the active draft; explicit additions SHALL
+append unresolved products without resetting resolved products. Finish shopping
+SHALL discard only the local draft. Reconsidering an accepted product SHALL move
+it back to Needs review and invalidate pending submission approval.
+
+#### Scenario: Continue a long shopping conversation
+- **WHEN** the user returns to the active draft more than an hour after starting
+- **THEN** time alone has not removed the basket
+
+#### Scenario: Two conversations share an account
+- **WHEN** one conversation supplies the other conversation's review reference
+- **THEN** the system refuses access without modifying either basket
+
+#### Scenario: Finish and start again
+- **WHEN** the user ends a review and later begins another
+- **THEN** the old reference is unavailable and the new draft starts independently

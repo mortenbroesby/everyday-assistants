@@ -27,7 +27,7 @@ Nemlig directly, apply provider writes, or treat local acceptance as submission.
   conversational action without fabricating an action result
 
 ### Requirement: Non-recipe tool surface
-The server SHALL expose independent product search, favourites, exact product details, department browsing, basket view, and staged basket review/apply tools. Product-bearing tools MAY reference one shared product viewer resource. The server SHALL NOT expose direct model-visible basket mutation, recipe, checkout, order, payment, purchase, or delivery-slot tools.
+The server SHALL expose independent product search, favourites, exact product details, department browsing, basket view, and staged basket review/apply tools. Only local review tools SHALL reference the shared viewer; discovery and legacy provider tools SHALL return data without mounting widgets. The server SHALL NOT expose direct model-visible basket mutation, recipe, checkout, order, payment, purchase, or delivery-slot tools.
 
 #### Scenario: Enumerate base tools
 - **WHEN** a client lists tools
@@ -52,7 +52,7 @@ The server SHALL expose current catalogue search, favourites, grocery sections, 
 
 ### Requirement: Conversational reviewed basket changes
 
-The server SHALL keep catalogue results and exact product details independent from basket operations, while basket changes SHALL remain behind the existing matching staged review/apply tools and explicit approval. Review and apply responses SHALL retain structured data plus a readable text fallback. Product-bearing results MAY attach the one shared viewer resource; the viewer renders server-owned temporary review state and invokes only local-draft tools. Actual provider changes require a separate unchanged exact submission review and explicit approval.
+The server SHALL keep catalogue results and exact product details independent from basket operations, while basket changes SHALL remain behind the existing matching staged review/apply tools and explicit approval. Review and apply responses SHALL retain structured data plus a readable text fallback. Local review results SHALL attach the shared viewer resource; the viewer renders server-owned temporary review state and invokes only local-draft tools. Actual provider changes require a separate unchanged exact submission review and explicit approval.
 
 #### Scenario: Exact review is submitted
 
@@ -63,3 +63,8 @@ The server SHALL keep catalogue results and exact product details independent fr
 
 - **WHEN** the user explicitly approves an unchanged review
 - **THEN** the matching apply tool performs the bounded mutation, verifies basket readback, and returns structured data plus a readable fallback
+
+#### Scenario: Host initializes or fails
+- **WHEN** the host supports the standard MCP Apps bridge
+- **THEN** the viewer initializes before receiving results, renders explicit tool
+  errors or cancellation, and offers a conversational fallback after loading times out

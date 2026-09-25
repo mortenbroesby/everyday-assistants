@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { serviceAcceptanceResourceInventory, serviceAcceptanceToolInventory } from "./mcp.js";
-import { PRODUCT_VIEWER_MIME_TYPE, PRODUCT_VIEWER_RESOURCE_URI } from "./product-viewer.js";
+import { PRODUCT_VIEWER_MIME_TYPE, PRODUCT_VIEWER_RESOURCE_METADATA, PRODUCT_VIEWER_RESOURCE_URI, renderProductViewerHtml } from "./product-viewer.js";
 
 interface ToolResult {
   isError?: boolean;
@@ -30,7 +30,7 @@ export const prohibitedProductionTools = ["checkout", "place_order", "pay", "cha
 type ToolName = typeof productionToolInventory[keyof typeof productionToolInventory][number];
 
 export interface AcceptanceClient {
-  listTools(): Promise<{ tools: Array<{ name: string }> }>;
+  listTools(): Promise<{ tools: Array<{ name: string; _meta?: unknown }> }>;
   callTool(request: {
     name: string;
     arguments: Record<string, unknown>;
@@ -88,13 +88,46 @@ const listResourcesOrEmpty = async (
 const expectedTools = Object.values(productionToolInventory).flat();
 
 export function assertProductionInventory(
-  tools: Array<{ name: string }>,
+  tools: Array<{ name: string; _meta?: unknown }>,
   resources: Array<{ uri: string }>,
 ): void {
   assert.deepEqual(tools.map(({ name }) => name).sort(), [...expectedTools].sort(), "Production MCP tool inventory drifted");
   assert.deepEqual(resources.map(({ uri }) => uri).sort(), [...productionResourceInventory].sort(), "Production MCP resource inventory drifted");
   for (const name of prohibitedProductionTools) assert.equal(tools.some((tool) => tool.name === name), false, `Prohibited production capability advertised: ${name}`);
+  const metadata = new Map(tools.map(({ name, _meta }) => [name, _meta]));
+  for (const name of ["start_product_review", "update_product_review", "submit_product_review"] as const) {
+    const actual = metadata.get(name);
+    assert.ok(actual && typeof actual === "object", `Production ${name} metadata drifted`);
+    const value = actual as Record<string, unknown>;
+    const expectedUi = name === "submit_product_review"
+      ? { resourceUri: PRODUCT_VIEWER_RESOURCE_URI, visibility: ["model"] }
+      : PRODUCT_VIEWER_RESOURCE_METADATA.ui;
+    assert.deepEqual(value.ui, expectedUi, `Production ${name} UI metadata drifted`);
+    assert.equal(value["openai/outputTemplate"], PRODUCT_VIEWER_RESOURCE_URI, `Production ${name} output template metadata drifted`);
+    if (name === "submit_product_review") {
+      assert.equal(value["openai/widgetAccessible"], undefined, `Production ${name} widget accessibility metadata drifted`);
+    } else {
+      assert.equal(value["openai/widgetAccessible"], true, `Production ${name} widget accessibility metadata drifted`);
+    }
+  }
 }
+
+const assertProductViewerResource = (viewer: { contents: unknown[] }, label: string): void => {
+  assert.equal(viewer.contents.length, 1, `${label} product-viewer resource returned an unexpected content count`);
+  const viewerContent = viewer.contents[0];
+  assert.ok(viewerContent && typeof viewerContent === "object", `${label} product-viewer resource returned no content object`);
+  const viewerRecord = viewerContent as { uri?: unknown; mimeType?: unknown; text?: unknown; _meta?: unknown };
+  assert.equal(viewerRecord.uri, PRODUCT_VIEWER_RESOURCE_URI, `${label} product-viewer URI did not match the inventory`);
+  assert.equal(viewerRecord.mimeType, PRODUCT_VIEWER_MIME_TYPE, `${label} product-viewer MIME type drifted`);
+  assert.equal(viewerRecord.text, renderProductViewerHtml(), `${label} product-viewer HTML drifted from the released renderer`);
+  assert.match(viewerRecord.text as string, /<html[\s\S]*<\/html>/u, `${label} product-viewer resource was not fetchable HTML`);
+  assert.ok(viewerRecord._meta && typeof viewerRecord._meta === "object", `${label} product-viewer resource metadata is missing`);
+  const ui = (viewerRecord._meta as Record<string, unknown>).ui;
+  assert.ok(ui && typeof ui === "object", `${label} product-viewer UI metadata is missing`);
+  const metadata = ui as Record<string, unknown>;
+  assert.deepEqual(metadata.csp, { connectDomains: [], resourceDomains: ["https://nemlig.com", "https://www.nemlig.com"] }, `${label} product-viewer CSP metadata drifted`);
+  assert.equal(metadata.prefersBorder, true, `${label} product-viewer border metadata drifted`);
+};
 
 export interface ProductionFeatureReport {
   exercised: string[];
@@ -189,8 +222,12 @@ export async function verifyReadOnlyProductionFeatures(
     (await withinTotalDeadline("tool inventory", () => client.listTools())).tools,
     await listResourcesOrEmpty(client, withinTotalDeadline, "Production"),
   );
+  assert.ok(client.readResource, "Production product-viewer resource reader is required");
+  const viewer = await withinTotalDeadline("product viewer resource", () => client.readResource!({ uri: PRODUCT_VIEWER_RESOURCE_URI }));
+  assertProductViewerResource(viewer, "Production");
   const exercised: string[] = [];
   const unavailable: string[] = [];
+  exercised.push("read product viewer resource");
   const call = async <T>(name: ToolName, args: Record<string, unknown> = {}): Promise<T> => {
     assert.ok((productionToolInventory.readOnly as readonly string[]).includes(name), `Read-only acceptance prohibited ${name}`);
     const result = await withinTotalDeadline(name, () => client.callTool({ name, arguments: args }));
@@ -232,14 +269,7 @@ export async function verifyServiceAcceptanceFeatures(
 
   assert.ok(client.readResource, "Service product-viewer resource reader is required");
   const viewer = await withinTotalDeadline("product viewer resource", () => client.readResource!({ uri: PRODUCT_VIEWER_RESOURCE_URI }));
-  assert.equal(viewer.contents.length, 1, "Service product-viewer resource returned an unexpected content count");
-  const viewerContent = viewer.contents[0];
-  assert.ok(viewerContent && typeof viewerContent === "object", "Service product-viewer resource returned no content object");
-  const viewerRecord = viewerContent as { uri?: unknown; mimeType?: unknown; text?: unknown };
-  assert.equal(viewerRecord.uri, PRODUCT_VIEWER_RESOURCE_URI, "Service product-viewer URI did not match the inventory");
-  assert.equal(viewerRecord.mimeType, PRODUCT_VIEWER_MIME_TYPE, "Service product-viewer MIME type drifted");
-  assert.equal(typeof viewerRecord.text, "string", "Service product-viewer resource returned no HTML");
-  assert.match(viewerRecord.text as string, /<html[\s\S]*<\/html>/u, "Service product-viewer resource was not fetchable HTML");
+  assertProductViewerResource(viewer, "Service");
 
   const exercised: string[] = [];
   let requestCount = 3;

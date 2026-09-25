@@ -436,16 +436,20 @@ test("HTTP MCP creates bounded isolated clients, credentials, baskets, favourite
       "guest@example.test:guest-secret",
       "owner@example.test:owner-secret",
     ]);
-    const started = await owner.callTool({ name: "start_product_review", arguments: { items: [{ product_id: 1, quantity: 2 }] } });
+    const started = await owner.callTool({ _meta: { "openai/session": "shop-a" }, name: "start_product_review", arguments: { items: [{ product_id: 1, quantity: 2 }] } });
     assert.equal(started.isError, undefined);
     const review = (started.structuredContent as { review: { review_id: string; revision: number } }).review;
     const secondOwner = await connect("owner");
     try {
-      const accepted = await secondOwner.callTool({ name: "update_product_review", arguments: { ...review, action: { kind: "accept", product_ids: [1] } } });
+      const otherChat = await secondOwner.callTool({ _meta: { "openai/session": "shop-b" }, name: "update_product_review", arguments: { ...review, action: { kind: "show" } } });
+      assert.equal(otherChat.isError, true, "same authenticated account in a different chat cannot access the local basket");
+      const noSession = await secondOwner.callTool({ name: "update_product_review", arguments: { ...review, action: { kind: "show" } } });
+      assert.equal(noSession.isError, true, "stateless requests without conversation context must fail closed");
+      const accepted = await secondOwner.callTool({ _meta: { "openai/session": "shop-a" }, name: "update_product_review", arguments: { ...review, action: { kind: "accept", product_ids: [1] } } });
       assert.equal(accepted.isError, undefined);
-      const shown = await owner.callTool({ name: "update_product_review", arguments: { review_id: review.review_id, action: { kind: "show" } } });
+      const shown = await owner.callTool({ _meta: { "openai/session": "shop-a" }, name: "update_product_review", arguments: { review_id: review.review_id, action: { kind: "show" } } });
       assert.equal((shown.structuredContent as { review: { items: Array<{ state: string }> } }).review.items[0]?.state, "basket");
-      const denied = await guest.callTool({ name: "update_product_review", arguments: { review_id: review.review_id, action: { kind: "show" } } });
+      const denied = await guest.callTool({ _meta: { "openai/session": "shop-a" }, name: "update_product_review", arguments: { review_id: review.review_id, action: { kind: "show" } } });
       assert.equal(denied.isError, true);
     } finally { await secondOwner.close(); }
     assert.equal(clients.size, 2);
