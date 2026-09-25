@@ -27,6 +27,18 @@ test("voice and touch share exact local edits, reject stale/foreign references, 
   assert.equal(service.show("owner", initial.review_id).items.length, 1);
 });
 
+test("alternatives omit products already present in the local review", async () => {
+  const service = new ProductReviewService({
+    ...client,
+    searchProducts: async () => [product(2), product(3)],
+  });
+  const initial = await service.start("owner", [{ product_id: 1, quantity: 1 }, { product_id: 2, quantity: 1 }]);
+  const alternatives = await service.update("owner", initial.review_id, initial.revision, {
+    kind: "alternatives", product_id: 1, query: "alternative",
+  });
+  assert.deepEqual(alternatives.alternatives?.views.map(view => view.status === "complete" ? view.product.id : view.product_id), [3]);
+});
+
 test("session drafts survive an hour, repeated starts preserve them, and explicit end clears them", async () => {
   let now = 0;
   const service = new ProductReviewService(client, { now: () => now });
