@@ -19,3 +19,10 @@ public-tree privacy checks, full `pnpm verify`, and packed-package smoke passed.
 Local Docker is stopped, so the complete Cloudflare dry run is delegated to PR CI.
 No live Nemlig or production operation was performed. Do not infer deployment
 from this implementation checklist.
+
+## 4. Owner feedback after PR #120
+
+- [x] 4.1 Re-run the original mobile flow and reproduce missing host initialization.
+- [x] 4.2 Scope drafts to conversations without hourly expiry; add append, revisit and end with service and protocol tests.
+- [x] 4.3 Match the mockup, initialize the real host protocol, and verify mobile navigation through a standards-only parent iframe.
+- [ ] 4.4 Verify, commit and push the follow-up PR; record baseline deployment separately from follow-up delivery.

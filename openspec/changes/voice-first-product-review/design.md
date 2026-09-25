@@ -16,8 +16,13 @@ from the viewer. Existing discovery and actual basket tools remain independent.
 - Add a bounded in-memory review service to the existing principal context; local
   stdio holds it for that server. Opaque review IDs, principal/policy binding and
   optimistic revisions prevent cross-principal access and lost voice/touch edits.
-  Keep at most eight one-hour drafts of at most 50 products per principal context;
-  report expiry/restart honestly. No database, filesystem or browser persistence
+  Scope one active draft to the authenticated principal/policy and host-provided
+  `openai/session` conversation key. Do not treat that metadata as authentication.
+  Require it for hosted operations; local MCP uses its transport/process scope.
+  No time-based expiry. Finish shopping removes the draft. Keep at most eight
+  conversation drafts of 50 products per principal context, evicting the least
+  recently used idle draft when necessary. Do not evict uncertain/submitted
+  outcomes automatically. Report restart/eviction loss honestly. No database, filesystem or browser persistence
   of business state. View-only browser state may retain disclosure/selection.
 - Start a draft from exact selected product IDs and quantities. Hydrate once via
   the existing request-local read pool, concurrency three, cancellation and
@@ -46,7 +51,7 @@ from the viewer. Existing discovery and actual basket tools remain independent.
 
 ## Risks / Trade-offs
 
-- Drafts are temporary → expose expiry and restart loss, preserve conversational
+- Drafts are temporary → expose restart and eviction loss, preserve conversational
   exact references for recreation, do not claim durable shopping-list support.
 - Voice or another widget changes state → reject stale revisions without effects;
   allow refresh, keep failed-action feedback and safe navigation.
@@ -64,3 +69,21 @@ Additive MCP tools and reuse of the existing resource. A normal verified package
 release updates viewer and server together; old tools remain supported. Rollback
 uses the previous reviewed artifact and discards temporary draft state. No stored
 records, provider configuration, secrets or account migration is needed.
+
+## Conversation and presentation refinement
+
+Repeated starts return the existing active snapshot unchanged. Use `add` to
+append new exact products, `revisit` to return accepted products to Needs review,
+and revision-checked `end` to discard the local session without touching Nemlig.
+Show can recover the active draft when its opaque ID is absent. No chat-close
+notification is documented, so no automatic close-tab deletion is promised.
+
+Discovery and legacy provider tools return data only. Start/update/submit review
+tools attach the shared review resource. Initialize the standard MCP Apps bridge
+before receiving results; use tools/call and ui/message with compatibility aliases
+only as fallback. Render explicit errors, cancelled results and bounded loading
+timeouts. Declare only the supported Nemlig image origins in resource CSP.
+
+Match the approved mockup with compact thumbnail rows, aligned prices, native
+inline details, muted green navigation/actions and contextual alternatives.
+Retain accessible target sizes, phone layouts, dark mode and safe text rendering.

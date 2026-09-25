@@ -33,14 +33,14 @@ after explicit approval of an unchanged submission review.
 The system SHALL support independent product search, exact product lookup,
 basket inspection, exact basket review, and explicitly approved apply in normal
 ChatGPT conversations without requiring Codex, a saved planner, or a picker.
-Product-bearing results MAY render through one shared product viewer, with
+Selected local review results render through one shared product viewer, with
 complete conversational structured/text fallbacks.
 
 #### Scenario: User searches for products
 
 - **WHEN** the private app is available and the user asks for products
 - **THEN** ChatGPT receives richly detailed products in provider order and may
-  present them through the shared viewer without creating shopping state
+  summarize them without mounting a viewer, then open one local review for selected products
 
 #### Scenario: Viewer is unavailable
 
@@ -81,3 +81,8 @@ approval of the exact unchanged proposal before applying a basket change.
   matches
 - **THEN** ChatGPT confirms the resulting shopping outcome without narrating
   proposal lifecycle or protocol mechanics
+
+#### Scenario: Host initializes or fails
+- **WHEN** the host supports the standard MCP Apps bridge
+- **THEN** the viewer initializes before receiving results, renders explicit tool
+  errors or cancellation, and offers a conversational fallback after loading times out
