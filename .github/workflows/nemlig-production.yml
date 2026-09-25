@@ -308,11 +308,18 @@ jobs:
           RECONCILE_OPERATION: "${{ env.RECONCILE_OPERATION }}"
         run: |
           set -euo pipefail
-          result=$(pnpm --silent --filter nemlig-assistant production:deploy -- reconcile-recovery "$RECONCILE_OPERATION" --evidence-saved --original-runner-stopped)
-          node --input-type=module -e '
-            const result = JSON.parse(process.argv[1]);
-            if (result.reconciled !== true || result.state !== "disabled") process.exit(1);
-          ' "$result"
+          if result=$(pnpm --silent --filter nemlig-assistant production:deploy -- reconcile-recovery "$RECONCILE_OPERATION" --evidence-saved --original-runner-stopped); then
+            node --input-type=module -e '
+              const result = JSON.parse(process.argv[1]);
+              if (result.reconciled !== true || result.state !== "disabled") process.exit(1);
+            ' "$result"
+          else
+            inspection=$(pnpm --silent --filter nemlig-assistant production:deploy -- inspect-recovery "$RECONCILE_OPERATION" --original-runner-stopped)
+            node --input-type=module -e '
+              const inspection = JSON.parse(process.argv[1]);
+              if (inspection.cleanupEligible !== true || inspection.state !== "disabled") process.exit(1);
+            ' "$inspection"
+          fi
           pnpm --filter nemlig-assistant production:deploy -- finalize "$RECONCILE_OPERATION" --evidence-saved --original-runner-stopped
 
   preflight:
