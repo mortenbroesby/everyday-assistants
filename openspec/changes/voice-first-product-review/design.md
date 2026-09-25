@@ -112,3 +112,20 @@ acceptance and submission authority; an existing active review remains unchanged
 Version the viewer URI for this browser behavior change. Smoke the real MCP
 adapter with a retained browser card across simulated process state loss, and
 verify local recovery/navigation before the actual ChatGPT release smoke.
+
+## Historical cards and conflicting revisions (#137)
+
+No reliable historical-message signal is available. Every host-supplied review
+snapshot therefore starts as a compact inactive card, without product rows,
+images, or shopping controls. Explicit Open current review performs one
+conversation-scoped read, then enables the returned current state. Remounts do
+not trust the transcript snapshot or persisted widget state. No automatic
+polling, hydration, or age inference is added.
+
+A rejected stale revision or missing draft permits one read-only recovery; it
+never replays the failed edit. Other failures hide shopping controls, normalize
+the message, and require explicit current-state inspection before retry. Known
+retired resource URIs resolve to inert notices with a conversational route to
+the current review, not missing resources or old shopping code. Host-cached
+pre-change documents cannot be rewritten by the server; test and report that
+platform limit. Release acceptance includes these actual historical-card cases.

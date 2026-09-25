@@ -10,7 +10,7 @@ import {
 import { aggregateUsage, type AdmissionResult, type UsageState } from "./cloudflare-usage.js";
 import type { Principal } from "./principal-policy.js";
 import { Auth0InfrastructureError, oauthReconnectChallenge } from "./auth0.js";
-import { PRODUCT_VIEWER_RESOURCE_URI } from "./product-viewer-identity.js";
+import { PRODUCT_VIEWER_RESOURCE_URI, RETIRED_PRODUCT_VIEWER_RESOURCE_URIS } from "./product-viewer-identity.js";
 
 export type OperationClass = "protocol" | "profile" | "normal" | "expensive";
 export const INTERNAL_CREDENTIAL_HEADERS = [
@@ -82,7 +82,7 @@ const serviceTools = new Set([
   "browse_grocery_section",
   "show_my_basket",
 ]);
-const serviceResources = new Set([PRODUCT_VIEWER_RESOURCE_URI]);
+const serviceResources = new Set([PRODUCT_VIEWER_RESOURCE_URI, ...RETIRED_PRODUCT_VIEWER_RESOURCE_URIS]);
 
 const isServiceRequestAllowed = async (request: Request): Promise<boolean> => {
   try {

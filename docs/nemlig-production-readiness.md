@@ -70,7 +70,14 @@ completes these steps before handing the release to the owner for testing:
    containing only accepted products, and navigation back to Needs review. Test
    contextual alternatives with a bounded search. Do not prepare or submit to
    Nemlig as part of this UI check.
-5. Record deployed SHA, refresh readback, rendered behavior and any failure in
+5. Reopen/remount a historical card: products and shopping controls must remain
+   inactive until **Open current review** reads current state. Advance a review
+   through conversation, then exercise an older already-open card: it must refresh
+   once without replay or raw protocol errors. Verify known retired resources
+   resolve to inert notices; report cached pre-change documents separately.
+   Run the loopback **Run regression smoke** for outages and process restart;
+   it complements the native ChatGPT check and never accesses a real basket.
+6. Record deployed SHA, refresh readback, rendered behavior and any failure in
    the PR delivery evidence. Report **UI delivery pending** if any required
    behavior is missing. Do not claim the user can test the new UI yet.
 

@@ -105,3 +105,28 @@ recorded release steps; they SHALL NOT be inferred from healthy edge endpoints.
 - **WHEN** the operator verifies a released review UI
 - **THEN** selecting and accepting an exact product changes only the local Basket,
   and navigation back to Needs review preserves both lists without provider writes
+
+### Requirement: Inactive historical shopping cards
+Host-supplied review snapshots SHALL start inactive without product hydration or
+shopping controls. Explicit activation SHALL read the active conversation before
+rendering controls. Retired known viewer resources SHALL resolve to inert notices
+without backend shopping calls and offer a conversational route to the current
+review. The app SHALL NOT infer message age from time or shared browser storage.
+
+#### Scenario: Reopen or remount a transcript card
+- **WHEN** the host supplies a retained review snapshot
+- **THEN** the card shows an explicit Open current review action instead of historical products or mutations
+- **AND** activation reads current state without replaying or restoring prior acceptance
+
+#### Scenario: Old revision is edited
+- **WHEN** another card or conversation action has advanced the revision
+- **THEN** the rejected action triggers at most one read-only refresh, clears transient selection, and reports the conflict in plain language without raw protocol errors or mutation replay
+
+#### Scenario: Service cannot confirm the action
+- **WHEN** a tool fails or times out without a known stale-state result
+- **THEN** the card hides shopping controls and offers explicit read-only recovery without automatic mutation retries
+
+#### Scenario: Retired resource is requested
+- **WHEN** the host requests a known retired viewer URI
+- **THEN** it receives an inactive notice, not obsolete shopping controls or a missing-template response
+- **AND** server changes make no claim to remove documents already cached by the host

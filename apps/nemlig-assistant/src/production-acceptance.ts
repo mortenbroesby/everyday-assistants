@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { serviceAcceptanceResourceInventory, serviceAcceptanceToolInventory } from "./mcp.js";
 import { PRODUCT_VIEWER_MIME_TYPE, PRODUCT_VIEWER_RESOURCE_METADATA, PRODUCT_VIEWER_RESOURCE_URI, renderProductViewerHtml } from "./product-viewer.js";
+import { RETIRED_PRODUCT_VIEWER_RESOURCE_URIS } from "./product-viewer-identity.js";
 
 interface ToolResult {
   isError?: boolean;
@@ -24,7 +25,7 @@ export const productionToolInventory = {
   ],
 } as const;
 
-export const productionResourceInventory = [PRODUCT_VIEWER_RESOURCE_URI] as const;
+export const productionResourceInventory = [PRODUCT_VIEWER_RESOURCE_URI, ...RETIRED_PRODUCT_VIEWER_RESOURCE_URIS] as const;
 export const prohibitedProductionTools = ["checkout", "place_order", "pay", "change_delivery_slot"] as const;
 
 type ToolName = typeof productionToolInventory[keyof typeof productionToolInventory][number];

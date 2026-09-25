@@ -133,18 +133,25 @@ can also discard it; missing state is reported rather than silently recreated.
 Each principal retains at most eight conversation drafts of 50 products. Hosts
 without conversation context cannot access a hosted draft. ChatGPT does not
 provide a reliable notification when a conversation is closed.
-They are not saved shopping plans or named lists. Refresh a stale view before
-making another change. Refresh looks up the current conversation draft instead of
-retrying an obsolete reference. If it is gone, **Start new review** rechecks the
-shown products and quantities; it does not restore accepted selections or approval.
-A failed edit is never replayed. Submitted or uncertain cards instead direct you
-to inspect the actual basket.
+They are not saved shopping plans or named lists. Transcript cards start inactive:
+**Open current review** reads this conversation’s current draft before showing
+products or shopping controls. Reloading an old message does not restore its
+historical basket. A stale edit refreshes once without replaying it; connection
+failures hide editing controls until you explicitly reopen current state.
+If the draft is gone, **Start new review** rechecks the original products and
+quantities without restoring acceptance or submission approval. Submitted or
+uncertain snapshots instead direct you to inspect the actual basket.
+Known retired viewer addresses serve inactive notices, not obsolete controls.
+ChatGPT may retain previously cached documents; the server cannot remove those
+transcript cards. Refresh app metadata and explicitly open the current review.
 
-Run `pnpm --filter nemlig-assistant smoke:review-ui` for a loopback browser smoke
-using the real MCP adapter and a fake catalogue. Start a review, select a product,
-simulate a server restart, then click the stale acceptance button. Verify explicit
-recovery, unchecked selections after restart, working basket/navigation/quantity
-controls, and zero `providerBasketCalls` at `/stats`. No credentials are required.
+Run `pnpm --filter nemlig-assistant smoke:review-ui`, open its loopback URL,
+and click **Run regression smoke**. The real MCP adapter and fake catalogue
+exercise inactive mount/remount, conflicting revisions, a failed connection,
+process restart, explicit recovery and Finish shopping. The page reports PASS
+only when the stale edit was not replayed, restart cleared acceptance while
+preserving quantities, and provider basket calls remained zero. No credentials
+are required; provider basket access is denied by the fixture.
 
 Product disclosures, navigation and ordinary local edits do not fetch Nemlig;
 adding new exact products hydrates only those products, and

@@ -12,7 +12,13 @@ import { productionToolInventory } from "./production-acceptance.js";
 import type { ProductReviewSnapshot } from "./product-review.js";
 import { BasketProposalService } from "./proposals.js";
 import { PRODUCT_VIEWER_RESOURCE_URI } from "./product-viewer.js";
+import { RETIRED_PRODUCT_VIEWER_RESOURCE_URIS } from "./product-viewer-identity.js";
 import { NEMLIG_RELEASE_IDENTITY } from "./runtime.js";
+
+const expectedProductViewerResources = [
+  { uri: PRODUCT_VIEWER_RESOURCE_URI, name: "nemlig-product-viewer", title: "Nemlig product viewer", description: "Product results and shared local review supplied by Nemlig Assistant.", mimeType: "text/html;profile=mcp-app" },
+  ...RETIRED_PRODUCT_VIEWER_RESOURCE_URIS.map((uri, index) => ({ uri, name: `nemlig-retired-product-viewer-v${index}`, title: "Updated Nemlig review card", description: "This retired review card contains no shopping data. Use its button to open the current conversation review.", mimeType: "text/html;profile=mcp-app" })),
+];
 
 const basket: Basket = {
   items: [{ name: "Milk", quantity: 1, total: 12.5 }],
@@ -391,7 +397,16 @@ test("service acceptance exposes only its fixed read-only tool inventory", async
   }), async (mcp) => {
     const expected = expectedVariant;
     assert.deepEqual((await mcp.listTools()).tools.map(({ name }) => name).sort(), [...expected].sort());
-    assert.deepEqual((await mcp.listResources()).resources, [{ uri: PRODUCT_VIEWER_RESOURCE_URI, name: "nemlig-product-viewer", title: "Nemlig product viewer", description: "Product results and shared local review supplied by Nemlig Assistant.", mimeType: "text/html;profile=mcp-app" }]);
+    assert.deepEqual((await mcp.listResources()).resources, expectedProductViewerResources);
+    for (const uri of RETIRED_PRODUCT_VIEWER_RESOURCE_URIS) {
+      const retired = await mcp.readResource({ uri });
+      const body = retired.contents[0];
+      assert.ok(body && "text" in body);
+      if (body && "text" in body) {
+        assert.match(body.text, /This review card is retired/u);
+        assert.doesNotMatch(body.text, /tools\/call|callTool|hydrate|fetch\(/u);
+      }
+    }
     await assert.rejects(mcp.callTool({ name: "add_approved_items", arguments: { approved_review: "00000000-0000-4000-8000-000000000000" } }), /not found/iu);
   });
   assert.equal(calls, 0);
@@ -588,7 +603,7 @@ test("authenticated HTTP request context preserves stdio tool and resource metad
       createMcpServer(fakeClient(), testCredentials, undefined, undefined, { principalKey: "auth0|owner", policyRevision: "test-v1", tier: 0 }),
       async (http) => {
         assert.deepEqual(await http.listTools(), await stdio.listTools());
-        const expectedResources = [{ uri: PRODUCT_VIEWER_RESOURCE_URI, name: "nemlig-product-viewer", title: "Nemlig product viewer", description: "Product results and shared local review supplied by Nemlig Assistant.", mimeType: "text/html;profile=mcp-app" }];
+        const expectedResources = expectedProductViewerResources;
         assert.deepEqual((await stdio.listResources()).resources, expectedResources);
         assert.deepEqual((await http.listResources()).resources, expectedResources);
         assert.equal(http.getInstructions(), stdio.getInstructions());

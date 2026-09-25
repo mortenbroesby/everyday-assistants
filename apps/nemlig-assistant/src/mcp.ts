@@ -29,6 +29,8 @@ import {
 } from "./proposals.js";
 import { IMAGE_ORIGINS, createProductView, createProductViewFromSummary, createProductViews, rankProducts, type ProductSummaryFacts, type ProductView } from "./product-presentation.js";
 import { PRODUCT_VIEWER_MIME_TYPE, PRODUCT_VIEWER_RESOURCE_METADATA, PRODUCT_VIEWER_RESOURCE_URI, productViewsToText, renderProductViewerHtml } from "./product-viewer.js";
+import { RETIRED_PRODUCT_VIEWER_RESOURCE_URIS } from "./product-viewer-identity.js";
+import { renderRetiredProductViewerHtml } from "./retired-product-viewer.js";
 import { ProductReviewService } from "./product-review.js";
 import { resolveDetailedProductSearch } from "./product-discovery.js";
 import { oauthReconnectChallenge } from "./auth0.js";
@@ -50,7 +52,7 @@ export interface McpRequestContext {
 export const serviceAcceptanceToolInventory = [
   "find_groceries", "get_grocery_details", "show_my_favorites", "show_grocery_sections", "browse_grocery_section", "show_my_basket",
 ] as const;
-export const serviceAcceptanceResourceInventory = [PRODUCT_VIEWER_RESOURCE_URI] as const;
+export const serviceAcceptanceResourceInventory = [PRODUCT_VIEWER_RESOURCE_URI, ...RETIRED_PRODUCT_VIEWER_RESOURCE_URIS] as const;
 
 const candidateSchema = z.object({
   id: z.number().int().positive().optional(),
@@ -396,6 +398,14 @@ export function createMcpServer(
     { title: "Nemlig product viewer", description: "Product results and shared local review supplied by Nemlig Assistant.", mimeType: PRODUCT_VIEWER_MIME_TYPE },
     async (uri) => ({ contents: [{ uri: uri.href, mimeType: PRODUCT_VIEWER_MIME_TYPE, text: renderProductViewerHtml(), _meta: { ui: { csp: { connectDomains: [], resourceDomains: ["https://nemlig.com", "https://www.nemlig.com"] }, prefersBorder: true } } }] }),
   );
+  for (const [index, uri] of RETIRED_PRODUCT_VIEWER_RESOURCE_URIS.entries()) {
+    server.registerResource(
+      `nemlig-retired-product-viewer-v${index}`,
+      uri,
+      { title: "Updated Nemlig review card", description: "This retired review card contains no shopping data. Use its button to open the current conversation review.", mimeType: PRODUCT_VIEWER_MIME_TYPE },
+      async (resourceUri) => ({ contents: [{ uri: resourceUri.href, mimeType: PRODUCT_VIEWER_MIME_TYPE, text: renderRetiredProductViewerHtml(), _meta: { ui: { csp: { connectDomains: [], resourceDomains: [] }, prefersBorder: true } } }] }),
+    );
+  }
   const localConnectionId = randomUUID();
   const connectionId = (sessionId: string | undefined): string =>
     requestContext ? `${requestContext.principalKey}\0${requestContext.policyRevision}` : sessionId ?? localConnectionId;
@@ -603,7 +613,7 @@ export function createMcpServer(
 
   registerTool("start_product_review", {
     title: "Start a local product review",
-    description: "Start a temporary private review from exact returned product IDs and quantities. All items initially need review. Acceptance and edits are local; nothing is sent to Nemlig. One active review belongs to this conversation, without a time limit. If a review already exists, return it unchanged; use update action add to include more products. Finish shopping explicitly with end. Temporary state can be lost on a server restart or memory eviction.",
+    description: "Start a temporary private review from exact returned product IDs and quantities. All items initially need review. Acceptance and edits are local; nothing is sent to Nemlig. One active review belongs to this conversation, without a time limit. If a review already exists, return it unchanged; use update action add to include more products. Finish shopping explicitly with end. Temporary state can be lost on a server restart or memory eviction. The review card may be attached to the conversation even when the text result does not show it; do not start another review solely because the text omits the card.",
     inputSchema: z.object({ items: z.array(z.object({ product_id: z.number().int().positive(), quantity: z.number().int().positive() })).min(1).max(50).describe("Exact returned products and intended package quantities to review locally.") }),
     outputSchema: z.object({ review: reviewSnapshotSchema }),
     annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true },
@@ -612,7 +622,7 @@ export function createMcpServer(
 
   registerTool("update_product_review", {
     title: "Update the local product review",
-    description: "Show/refresh or edit the shared temporary local review using its exact product IDs. Add newly found exact products; accept selected products (including everything except explicitly excluded IDs), revisit accepted products, remove, change quantity, find alternatives, replace, navigate, or end shopping. End discards this conversation’s local basket, never the real Nemlig basket. Keeping an unresolved product means accept. Navigation preserves alternatives. None of these actions writes to Nemlig. prepare_submission reviews only resolved local Basket lines at exact current prices, sets their Nemlig quantities while preserving unrelated lines, and requires a subsequent explicit approval. After errors show the current state; never repeat a stale edit blindly.",
+    description: "Show/refresh or edit the shared temporary local review using its exact product IDs. Add newly found exact products; accept selected products (including everything except explicitly excluded IDs), revisit accepted products, remove, change quantity, find alternatives, replace, navigate, or end shopping. End discards this conversation’s local basket, never the real Nemlig basket. Keeping an unresolved product means accept. Navigation preserves alternatives. None of these actions writes to Nemlig. The review card may be attached to the conversation even when the text result does not show it. prepare_submission reviews only resolved local Basket lines at exact current prices, sets their Nemlig quantities while preserving unrelated lines, and requires a subsequent explicit approval. After errors show the current state; never repeat a stale edit blindly.",
     inputSchema: z.object({ review_id: z.string().uuid().optional().describe("The current local review reference. May be omitted for show to recover this conversation’s active review."), revision: z.number().int().positive().optional().describe("Current revision required for every action except show."), action: reviewActionSchema.describe("The local change, navigation, refresh, or preparation requested by the user.") }),
     outputSchema: z.union([z.object({ review: reviewSnapshotSchema }), z.object({ ended: z.literal(true) }), z.object({ unavailable: z.literal(true) })]),
     annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true },
