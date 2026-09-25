@@ -191,7 +191,16 @@ export class ProductReviewService {
           const limit = action.limit ?? 5;
           if (!validPositive(limit) || limit > 10) throw new NemligError("Alternative limit must be between 1 and 10.");
           const results = await resolveDetailedProductSearch(this.client, action.query, limit, { signal });
-          draft.alternatives = { product_id: target.product_id, origin: target.state, query: action.query, views: results.items.slice(0, limit).map(item => createProductView(item, { kind: "details" })) };
+          const existingIds = new Set(draft.items.map(item => item.product_id));
+          draft.alternatives = {
+            product_id: target.product_id,
+            origin: target.state,
+            query: action.query,
+            views: results.items
+              .filter(item => item.productId === undefined || !existingIds.has(item.productId))
+              .slice(0, limit)
+              .map(item => createProductView(item, { kind: "details" })),
+          };
           draft.destination = "alternatives";
           break;
         }
