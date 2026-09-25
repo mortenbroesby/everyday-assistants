@@ -114,6 +114,10 @@
     }
   ],
   "cleanup": {
-    "commit": "02d66c9c1477ffe01dea4b4f53c1ee0f99054cdb"
+    "commit": "02d66c9c1477ffe01dea4b4f53c1ee0f99054cdb",
+    "inFlight": {
+      "digest": "sha256:f5c023d7b6bed9810712c1dd6d1913b5f022cbd8c2b6134a2aabc104a6e2389f",
+      "tag": "6f7651ee"
+    }
   }
 }
