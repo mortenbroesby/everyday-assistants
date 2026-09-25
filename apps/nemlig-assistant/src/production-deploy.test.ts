@@ -1042,7 +1042,10 @@ test("enabled acceptance waits for one matching running Container instance", asy
   try {
     const report = await deployProduction(commit, deps);
     assert.equal(report.outcome, "success");
-    assert.equal(calls.filter(({ args }) => args.includes("containers") && args.includes("instances")).length, 2);
+    assert.equal(calls.filter(({ args }) => args.includes("containers") && args.includes("instances")).length, 3);
+    const firstInstanceRead = calls.findIndex(({ args }) => args.includes("containers") && args.includes("instances"));
+    const firstFeatureAcceptance = calls.findIndex(({ args }) => args[0] === "production:test:features");
+    assert.ok(firstInstanceRead >= 0 && firstInstanceRead < firstFeatureAcceptance, "feature acceptance ran before the candidate instance was running");
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
@@ -1055,7 +1058,7 @@ test("enabled acceptance converges from provisioning and an older running Contai
   ] });
   try {
     assert.equal((await deployProduction(commit, deps)).outcome, "success");
-    assert.equal(calls.filter(({ args }) => args.includes("containers") && args.includes("instances")).length, 5);
+    assert.equal(calls.filter(({ args }) => args.includes("containers") && args.includes("instances")).length, 6);
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
@@ -1125,6 +1128,17 @@ test("accepts the short-lived Container becoming inactive after service acceptan
   }]] });
   try {
     assert.equal((await deployProduction(commit, deps)).outcome, "success");
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test("post-acceptance proof observes a Container instance awakened by acceptance", async () => {
+  const { deps, calls, root } = await fixture({ enabledInstanceRows: [
+    [{ id: "durable-object", name: "nemlig-production", state: "inactive", version: null }],
+    [{ id: "instance", name: "nemlig-production", state: "running", version: 26 }],
+  ] });
+  try {
+    assert.equal((await deployProduction(commit, deps)).outcome, "success");
+    assert.equal(calls.filter(({ args }) => args.includes("containers") && args.includes("instances")).length, 3);
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
