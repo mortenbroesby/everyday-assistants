@@ -40,7 +40,7 @@ a separate, undeployed follow-up for feedback and review.
 
 - [x] 5.1 Reject stale viewer HTML/resource metadata in release acceptance and verify regular-user review tool metadata.
 - [x] 5.2 Make verified ChatGPT metadata refresh and live local UI checks mandatory before claiming UI delivery; record the September 25 incident evidence.
-- [ ] 5.3 Run focused checks and final verification, push PR #127, then verify its release in ChatGPT after integration.
+- [x] 5.3 Run focused checks and final verification, merge the UI delivery fixes through PRs #127, #131, and #132, then verify the production release in ChatGPT after integration.
 
 
 Live baseline evidence, 25 September 2026: Cloudflare run 36096394361 rolled out
@@ -62,3 +62,18 @@ Release-acceptance regression checks: 34 focused tests passed; typecheck passed.
 The exact UI resource check uses the same read already made by machine acceptance.
 Regular-user read-only acceptance adds one resource read and validates review-tool
 metadata. No tool allowlist, provider mutation, quota or capacity changes.
+
+Final follow-up evidence, 25 September 2026: PR #132 merged at
+`174d461444c8b98f75525d4d2f2f104e9201045e`. Protected production run
+`36105335638` passed source/auth preflight, edge acceptance, and service fixture
+acceptance, leaving the Worker enabled at application version 98. Native Refresh
+readback reported `ui://nemlig/product-viewer-v2.html` for all three review
+tools. In the existing shopping conversation, without a page reload, the fresh
+viewer rendered three products and exercised start review, select/add, local
+Basket (one accepted product), inline details, Move to Needs review, contextual
+alternatives, back to Needs review, Return to alternatives, and Cancel. The
+final state returned to Needs review with an empty local Basket. No
+`prepare_submission`, `submit_product_review`, provider basket write, checkout,
+payment, or ordering call was made. The earlier failed rollout
+`36103722265` was rolled back and its pending operation was reconciled by
+`36105133533` before the successful deployment.
