@@ -47,6 +47,21 @@ test("session drafts survive an hour, repeated starts preserve them, and explici
   assert.notEqual(restarted.review_id, draft.review_id);
 });
 
+test("a restarted service rejects stale cards but an explicit fresh start recovers exact products", async () => {
+  const first = new ProductReviewService(client);
+  const stale = await first.start("owner", [{ product_id: 1, quantity: 2 }, { product_id: 2, quantity: 1 }]);
+  const restarted = new ProductReviewService(client);
+
+  assert.throws(() => restarted.show("owner", stale.review_id), /unavailable/i);
+  const fresh = await restarted.start("owner", stale.items.map(({ product_id, quantity }) => ({ product_id, quantity })));
+
+  assert.notEqual(fresh.review_id, stale.review_id);
+  assert.deepEqual(
+    fresh.items.map(({ product_id, quantity, state }) => [product_id, quantity, state]),
+    [[1, 2, "needs-review"], [2, 1, "needs-review"]],
+  );
+});
+
 test("adding exact products is atomic, reviewable, and bounded; older idle sessions are evicted", async () => {
   const service = new ProductReviewService(client);
   const draft = await service.start("owner-1", [{ product_id: 1, quantity: 1 }]);

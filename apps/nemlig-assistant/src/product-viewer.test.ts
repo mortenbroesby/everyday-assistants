@@ -82,6 +82,9 @@ test("viewer resource is accessible, self-contained, and limited to local review
   assert.match(html, /Review quantity: /u);
   assert.doesNotMatch(html, /\b(fetch|XMLHttpRequest|WebSocket)\b/u);
   assert.match(html, /callTool\("update_product_review"/u);
+  assert.match(html, /callTool\("start_product_review"/u);
+  assert.match(html, /Start a new review/u);
+  assert.match(html, /temporary review was lost after a restart/u);
   assert.doesNotMatch(html, /callTool\("(?:submit_product_review|add_approved_items|remove_approved_item|make_approved_item_swap|empty_approved_basket)"/u);
   assert.match(html, /Add selected to local Basket/u);
   assert.match(html, /Review in conversation/u);

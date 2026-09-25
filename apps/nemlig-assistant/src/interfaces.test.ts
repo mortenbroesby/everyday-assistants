@@ -1159,3 +1159,41 @@ test("MCP local review and explicit submission share exact state without prematu
     assert.equal(writes, 1);
   });
 });
+
+test("a restarted MCP service rejects stale review edits but supports an explicit fresh start", async () => {
+  let stale!: ProductReviewSnapshot;
+  const sessionMeta = { "openai/session": "restart-review" };
+  const provider = fakeClient({
+    addToCart: async () => { throw new Error("provider basket must not be touched"); },
+  });
+
+  await withMcpClient(createMcpServer(provider), async mcp => {
+    const started = await mcp.callTool({
+      _meta: sessionMeta,
+      name: "start_product_review",
+      arguments: { items: [{ product_id: 7, quantity: 2 }] },
+    });
+    assert.equal(started.isError, undefined, toolText(started));
+    stale = (started.structuredContent as { review: ProductReviewSnapshot }).review;
+  });
+
+  await withMcpClient(createMcpServer(provider), async mcp => {
+    const failed = await mcp.callTool({
+      _meta: sessionMeta,
+      name: "update_product_review",
+      arguments: { review_id: stale.review_id, revision: stale.revision, action: { kind: "show" } },
+    });
+    assert.equal(failed.isError, true);
+    assert.match(toolText(failed), /unavailable|start a new review/iu);
+
+    const fresh = await mcp.callTool({
+      _meta: sessionMeta,
+      name: "start_product_review",
+      arguments: { items: stale.items.map(({ product_id, quantity }) => ({ product_id, quantity })) },
+    });
+    assert.equal(fresh.isError, undefined, toolText(fresh));
+    const recovered = (fresh.structuredContent as { review: ProductReviewSnapshot }).review;
+    assert.notEqual(recovered.review_id, stale.review_id);
+    assert.deepEqual(recovered.items.map(({ product_id, quantity, state }) => [product_id, quantity, state]), [[7, 2, "needs-review"]]);
+  });
+});

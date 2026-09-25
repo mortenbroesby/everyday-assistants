@@ -120,7 +120,7 @@ footer > button.quiet { background: transparent; color: var(--muted); font-size:
 <section id="products" aria-label="Product results"></section>
 <footer id="actions" hidden></footer>
 <section id="submission" aria-label="Exact Nemlig submission review" hidden></section>
-<p id="fallback" class="muted" hidden></p>
+<div id="fallback" class="muted" hidden></div>
 </main><script>
 (() => {
   "use strict";
@@ -146,7 +146,7 @@ footer > button.quiet { background: transparent; color: var(--muted); font-size:
   const canUse = view => view && view.status === "complete" && view.product.available === true;
   const nameOf = item => item.view.status === "complete" ? text(item.view.product.name) : "Product " + item.product_id;
   const button = (label, action, primary = false) => { const node = el("button", label, primary ? "primary" : ""); node.type = "button"; node.disabled = busy; node.addEventListener("click", action); return node; };
-  const explain = message => { fallback.hidden = false; fallback.textContent = message; };
+  const explain = message => { fallback.hidden = false; fallback.replaceChildren(el("span", message)); };
   const followUp = async (prompt, guidance = "Continue in conversation to review the exact submission. Nothing has been sent to Nemlig.") => {
     if (bridgeReady) {
       try { await rpc("ui/message", { role: "user", content: [{ type: "text", text: prompt }] }); return; } catch { /* Show conversational fallback. */ }
@@ -155,6 +155,35 @@ footer > button.quiet { background: transparent; color: var(--muted); font-size:
       try { await window.openai.sendFollowUpMessage({ prompt }); return; } catch { /* Keep the exact request available if the host fails. */ }
     }
     explain(guidance);
+  };
+  const showFreshReviewRecovery = message => {
+    fallback.hidden = false;
+    fallback.replaceChildren(el("span", message));
+    if (!review || !review.items.length) return;
+    const start = button("Start a new review", () => void startFreshReview(), true);
+    start.disabled = false;
+    fallback.append(el("br"), start);
+  };
+  const startFreshReview = async () => {
+    if (!review || busy) return;
+    const items = review.items.map(item => ({ product_id: item.product_id, quantity: item.quantity }));
+    if (!bridgeReady && (!window.openai || typeof window.openai.callTool !== "function")) {
+      await followUp("Please start_product_review with " + JSON.stringify({ items }) + ". The previous temporary review was lost; start a fresh local review and do not submit to Nemlig.", "Continue in conversation and ask to start a new local review. Nothing has been sent to Nemlig.");
+      return;
+    }
+    busy = true;
+    document.querySelectorAll("button").forEach(node => { node.disabled = true; });
+    status.textContent = "Starting a fresh review…";
+    try {
+      const result = await callTool("start_product_review", { items });
+      if (result && result.isError) throw new Error((result.content || []).filter(c => c.type === "text").map(c => c.text).join(" ") || "Could not start a new review.");
+      if (!receive(result)) throw new Error("No fresh review was returned.");
+    } catch (error) {
+      showFreshReviewRecovery(error && error.message ? error.message : "Could not start a new review. Continue in conversation.");
+    } finally {
+      busy = false;
+      if (review) renderReview();
+    }
   };
   const update = async action => {
     if (!review || busy) return;
@@ -186,7 +215,11 @@ footer > button.quiet { background: transparent; color: var(--muted); font-size:
         window.openai.setWidgetState({ review_id: review.review_id, revision: review.revision, destination: review.destination });
       }
     } catch (error) {
-      status.textContent = (error && error.message ? error.message : "Update failed.") + " Refresh the review before trying again.";
+      const message = error && error.message ? error.message : "Update failed.";
+      if (/Product review unavailable|No active shopping review/u.test(message)) {
+        status.textContent = "This temporary review was lost after a restart. Start a fresh review from the same products.";
+        showFreshReviewRecovery("This temporary review is no longer available. Start a fresh review from the same products.");
+      } else status.textContent = message + " Refresh the review before trying again.";
     } finally {
       busy = false;
       // Preserve selection-specific disabled states by rendering the last confirmed snapshot.
