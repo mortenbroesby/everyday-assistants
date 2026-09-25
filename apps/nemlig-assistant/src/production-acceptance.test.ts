@@ -15,10 +15,26 @@ import {
   type ApprovedProductionMutation,
 } from "./production-acceptance.js";
 import { serviceAcceptanceResourceInventory, serviceAcceptanceToolInventory } from "./mcp.js";
+import { PRODUCT_VIEWER_MIME_TYPE, PRODUCT_VIEWER_RESOURCE_URI, renderProductViewerHtml } from "./product-viewer.js";
 
-const viewerResource = (uri: string) => ({ contents: [{ uri, mimeType: "text/html;profile=mcp-app", text: "<!doctype html><html><body><details><summary>Product details</summary></details></body></html>" }] });
+const viewerResource = (uri: string) => ({ contents: [{
+  uri,
+  mimeType: PRODUCT_VIEWER_MIME_TYPE,
+  text: renderProductViewerHtml(),
+  _meta: { ui: { csp: { connectDomains: [], resourceDomains: ["https://nemlig.com", "https://www.nemlig.com"] }, prefersBorder: true } },
+}] });
 
-const allTools = Object.values(productionToolInventory).flat().map((name) => ({ name }));
+const userToolMetadata = {
+  start_product_review: { ui: { resourceUri: PRODUCT_VIEWER_RESOURCE_URI }, "openai/outputTemplate": PRODUCT_VIEWER_RESOURCE_URI, "openai/widgetAccessible": true },
+  update_product_review: { ui: { resourceUri: PRODUCT_VIEWER_RESOURCE_URI }, "openai/outputTemplate": PRODUCT_VIEWER_RESOURCE_URI, "openai/widgetAccessible": true },
+  submit_product_review: { ui: { resourceUri: PRODUCT_VIEWER_RESOURCE_URI, visibility: ["model"] }, "openai/outputTemplate": PRODUCT_VIEWER_RESOURCE_URI },
+};
+const withUserToolMetadata = (tools: Array<{ name: string }>) => tools.map((tool) => ({
+  ...tool,
+  ...(tool.name in userToolMetadata ? { _meta: userToolMetadata[tool.name as keyof typeof userToolMetadata] } : {}),
+}));
+
+const allTools = withUserToolMetadata(Object.values(productionToolInventory).flat().map((name) => ({ name })));
 const removedStorageTools = [
   "save_my_shopping_plan", "continue_my_shopping_plan", "show_my_shopping_lists", "save_my_shopping_list",
   "copy_my_shopping_list", "set_my_shopping_list_status", "shop_from_my_list", "migrate_my_saved_plan",
@@ -41,7 +57,7 @@ test("production inventory fails closed for missing and unknown entries", () => 
 test("production acceptance omits removed saved-storage tools while retaining direct discovery", async () => {
   const calls: string[] = [];
   const client: AcceptanceClient = {
-    listTools: async () => ({ tools: retainedTools }),
+    listTools: async () => ({ tools: withUserToolMetadata(retainedTools) }),
     listResources: async () => ({ resources: productionResourceInventory.map((uri) => ({ uri })) }),
     readResource: async ({ uri }) => viewerResource(uri),
     callTool: async ({ name, arguments: args }) => {
@@ -102,6 +118,40 @@ test("service acceptance has a closed read-only fixture inventory and denies bas
   assert.deepEqual(report.denied, ["review_items_to_add", "add_approved_items"]);
   assert.deepEqual(resourceReads, ["ui://nemlig/product-viewer.html"]);
   assert.equal(report.requestCount, 11);
+});
+
+test("regular read-only acceptance verifies the exact viewer resource and user tool metadata", async () => {
+  const client: AcceptanceClient = {
+    listTools: async () => ({ tools: withUserToolMetadata(retainedTools) }),
+    listResources: async () => ({ resources: productionResourceInventory.map((uri) => ({ uri })) }),
+    readResource: async ({ uri }) => viewerResource(uri),
+    callTool: async ({ name, arguments: args }) => {
+      if (name === "find_groceries") return { structuredContent: { result: [{ id: 7 }] } };
+      if (name === "show_grocery_sections") return { structuredContent: { departments: [{ id: "fruit" }] } };
+      if (name === "show_my_favorites") return { structuredContent: { result: [] } };
+      if (name === "browse_grocery_section") return { structuredContent: { result: [] } };
+      if (name === "get_grocery_details") return { structuredContent: { result: { id: args.product_id } } };
+      return { structuredContent: { items: [] } };
+    },
+  };
+  const report = await verifyReadOnlyProductionFeatures(client);
+  assert.ok(report.exercised.includes("read product viewer resource"));
+
+  await assert.rejects(verifyReadOnlyProductionFeatures({
+    ...client,
+    readResource: async ({ uri }) => ({ contents: [{ ...viewerResource(uri).contents[0], text: "<html>stale</html>" }] }),
+  }), /HTML drifted/u);
+  await assert.rejects(verifyReadOnlyProductionFeatures({
+    ...client,
+    readResource: async ({ uri }) => ({ contents: [{
+      ...viewerResource(uri).contents[0],
+      _meta: { ui: { csp: { connectDomains: [], resourceDomains: [] }, prefersBorder: true } },
+    }] }),
+  }), /CSP metadata drifted/u);
+  await assert.rejects(verifyReadOnlyProductionFeatures({
+    ...client,
+    listTools: async () => ({ tools: withUserToolMetadata(retainedTools).map((tool) => tool.name === "start_product_review" ? { ...tool, _meta: {} } : tool) }),
+  }), /metadata drifted/u);
 });
 
 test("service acceptance closes its inventory when Apps are disabled", async () => {

@@ -35,13 +35,49 @@ Live checks remain separate from the automatic gate:
   Tier 0/1/2 counts and headroom without identity or credential fields.
 - For the Rejoin connection recovery, verify the new app named
   `Nemlig Assistant (Rejoin)` with an authenticated `get_profile` read before
-  retiring the previous Nemlig app. Refresh that one app for later releases.
+  retiring the previous Nemlig app. Complete the UI release acceptance below for later releases.
 - `pnpm --filter nemlig-assistant production:test:mutation` requires separate
   exact approvals for a mutation and its inverse restoration.
 
 Follow [Verify production features and approved reversible
 mutations](cloudflare-operations.md#verify-production-features-and-approved-reversible-mutations).
 Repository readiness never authorizes a live check or basket mutation.
+
+## UI release acceptance (required for UI delivery)
+
+A green deployment means the server rollout passed, not that ChatGPT has refreshed
+its installed tool catalog or rendered the new interface. The release operator
+completes these steps before handing the release to the owner for testing:
+
+1. Verify the exact deployed SHA and automated service acceptance, including the
+   candidate's exact viewer HTML and resource CSP. The machine fixture catalog
+   deliberately excludes local-review and provider-write tools.
+2. In ChatGPT Settings → Plugins → Nemlig Assistant (Rejoin), select Refresh and
+   wait for completion. Read back the actual actions: `start_product_review`,
+   `update_product_review`, and `submit_product_review` must exist, with the
+   current schemas and resource metadata. Clicking Refresh or seeing an unchanged
+   app Version Id is not evidence of completion.
+3. In the intended shopping conversation, open a local review using exact IDs
+   from a read-only product result. If the conversation retains the old catalog,
+   reload it; if necessary use a fresh conversation as prescribed by OpenAI.
+4. Verify the rendered review, images, inline details, local acceptance, Basket
+   containing only accepted products, and navigation back to Needs review. Test
+   contextual alternatives with a bounded search. Do not prepare or submit to
+   Nemlig as part of this UI check.
+5. Record deployed SHA, refresh readback, rendered behavior and any failure in
+   the PR delivery evidence. Report **UI delivery pending** if any required
+   behavior is missing. Do not claim the user can test the new UI yet.
+
+If refresh returns an old catalog, inspect one bounded refresh response and server
+release evidence before retrying. Do not replace the app, change credentials,
+weaken CSP, or repeatedly redeploy to fix unproven cache problems. Local unit tests
+and the standards-only iframe smoke remain complementary; neither substitutes
+for this ChatGPT check.
+
+ChatGPT developer-mode metadata updates require the native Refresh step. The
+release operator owns that step and verification; automatic propagation into
+already-open conversations is not guaranteed. See OpenAI's
+[refresh procedure](https://developers.openai.com/plugins/deploy/connect-chatgpt#refresh-metadata).
 
 ## Manual operator actions
 

@@ -87,3 +87,15 @@ timeouts. Declare only the supported Nemlig image origins in resource CSP.
 Match the approved mockup with compact thumbnail rows, aligned prices, native
 inline details, muted green navigation/actions and contextual alternatives.
 Retain accessible target sizes, phone layouts, dark mode and safe text rendering.
+
+## Release UI acceptance
+
+Keep the existing single viewer URI and native developer-mode Refresh flow.
+Automated service acceptance compares the fetched viewer against the candidate
+HTML and checks its CSP metadata; regular-user acceptance also checks review-tool
+resource metadata. Do not widen the machine service tool allowlist. A successful
+Cloudflare rollout does not refresh ChatGPT metadata. The release operator must
+refresh the connected app, verify the changed tool catalog, and exercise local
+acceptance and forward/back navigation in ChatGPT. Record failure as UI delivery
+pending, even when the deployment workflow is green. This adds no polling,
+storage, provider write, or new service.

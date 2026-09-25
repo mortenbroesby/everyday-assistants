@@ -60,3 +60,8 @@ conversation-scoped ephemeral Basket state without a one-hour expiry, freely
 reversible resolution, and discovery tools that do not create repeated widgets.
 The owner approved conversation lifetime with explicit Finish shopping; chat-close
 cleanup is not claimed because the host exposes no reliable end-session signal.
+
+The owner also requires release completion to include visible, interactive UI in
+the connected ChatGPT app. Deployment health alone is insufficient. Refresh and
+verify the app metadata, check the exact viewer artifact, and exercise local
+review controls before reporting a UI release delivered.

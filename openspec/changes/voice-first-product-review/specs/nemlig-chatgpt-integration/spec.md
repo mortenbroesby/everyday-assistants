@@ -86,3 +86,22 @@ approval of the exact unchanged proposal before applying a basket change.
 - **WHEN** the host supports the standard MCP Apps bridge
 - **THEN** the viewer initializes before receiving results, renders explicit tool
   errors or cancellation, and offers a conversational fallback after loading times out
+
+## ADDED Requirements
+
+### Requirement: Visible UI release acceptance
+A UI release SHALL be reported delivered only after the connected ChatGPT app
+advertises the intended review tools and renders an interactive review. Server
+deployment acceptance SHALL verify the expected viewer HTML and resource
+metadata. ChatGPT metadata refresh and live UI acceptance SHALL be separate
+recorded release steps; they SHALL NOT be inferred from healthy edge endpoints.
+
+#### Scenario: Deployment succeeds but the app catalog is stale
+- **WHEN** Cloudflare accepts a release but ChatGPT still advertises old tools
+- **THEN** UI delivery remains pending until app refresh readback confirms the
+  intended catalog and a local review renders and supports navigation
+
+#### Scenario: Local UI release test
+- **WHEN** the operator verifies a released review UI
+- **THEN** selecting and accepting an exact product changes only the local Basket,
+  and navigation back to Needs review preserves both lists without provider writes

@@ -213,7 +213,10 @@ not a fresh real-family Nemlig or ChatGPT acceptance claim.
    report and journal, runs the configured edge/service acceptance, and
    automatically finalizes a known terminal routine run after the artifact is
    saved. An uncertain state, failed artifact, or provider drift keeps
-   recovery ownership for explicit inspection.
+   recovery ownership for explicit inspection. UI-bearing releases also require
+   [ChatGPT UI acceptance](nemlig-production-readiness.md#ui-release-acceptance-required-for-ui-delivery)
+   before being reported delivered; the workflow cannot refresh the owner's
+   installed ChatGPT app metadata.
 4. Routine delivery starts automatically after successful CI. Manual dispatch
    is reserved for recovery to a previously green `main` ancestor or for
    reconciling one explicitly identified pending rollback. GitHub's
