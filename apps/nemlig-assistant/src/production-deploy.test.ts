@@ -1043,6 +1043,9 @@ test("enabled acceptance waits for one matching running Container instance", asy
     const report = await deployProduction(commit, deps);
     assert.equal(report.outcome, "success");
     assert.equal(calls.filter(({ args }) => args.includes("containers") && args.includes("instances")).length, 2);
+    const firstInstanceRead = calls.findIndex(({ args }) => args.includes("containers") && args.includes("instances"));
+    const firstFeatureAcceptance = calls.findIndex(({ args }) => args[0] === "production:test:features");
+    assert.ok(firstInstanceRead >= 0 && firstInstanceRead < firstFeatureAcceptance, "feature acceptance ran before the candidate instance was running");
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
