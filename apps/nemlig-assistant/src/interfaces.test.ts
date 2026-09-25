@@ -9,6 +9,7 @@ import { NemligError, type Basket, type Product, type ShoppingClient } from "./c
 import { createProgram } from "./cli.js";
 import { createMcpServer, NEMLIG_CONNECT_URL, rankProducts, safeNemligImageUrl, serviceAcceptanceToolInventory } from "./mcp.js";
 import { productionToolInventory } from "./production-acceptance.js";
+import type { ProductReviewSnapshot } from "./product-review.js";
 import { BasketProposalService } from "./proposals.js";
 import { NEMLIG_RELEASE_IDENTITY } from "./runtime.js";
 
@@ -261,6 +262,9 @@ const friendlyCatalog = [
   ["show_grocery_sections", "Show grocery sections", true, false, []],
   ["show_my_basket", "Show my basket", true, false, []],
   ["show_my_favorites", "Show my favourites", true, false, ["search_term", "result_count", "page"]],
+  ["start_product_review", "Start a local product review", false, false, ["items"]],
+  ["submit_product_review", "Submit the approved local Basket", false, false, ["review_id", "revision", "submission_id"]],
+  ["update_product_review", "Update the local product review", false, false, ["review_id", "revision", "action"]],
 ] as const;
 
 const formerToolNames = [
@@ -386,7 +390,7 @@ test("service acceptance exposes only its fixed read-only tool inventory", async
   }), async (mcp) => {
     const expected = expectedVariant;
     assert.deepEqual((await mcp.listTools()).tools.map(({ name }) => name).sort(), [...expected].sort());
-    assert.deepEqual((await mcp.listResources()).resources, [{ uri: "ui://nemlig/product-viewer.html", name: "nemlig-product-viewer", title: "Nemlig product viewer", description: "Display-only product results supplied by Nemlig Assistant.", mimeType: "text/html;profile=mcp-app" }]);
+    assert.deepEqual((await mcp.listResources()).resources, [{ uri: "ui://nemlig/product-viewer.html", name: "nemlig-product-viewer", title: "Nemlig product viewer", description: "Product results and shared local review supplied by Nemlig Assistant.", mimeType: "text/html;profile=mcp-app" }]);
     await assert.rejects(mcp.callTool({ name: "add_approved_items", arguments: { approved_review: "00000000-0000-4000-8000-000000000000" } }), /not found/iu);
   });
   assert.equal(calls, 0);
@@ -583,7 +587,7 @@ test("authenticated HTTP request context preserves stdio tool and resource metad
       createMcpServer(fakeClient(), testCredentials, undefined, undefined, { principalKey: "auth0|owner", policyRevision: "test-v1", tier: 0 }),
       async (http) => {
         assert.deepEqual(await http.listTools(), await stdio.listTools());
-        const expectedResources = [{ uri: "ui://nemlig/product-viewer.html", name: "nemlig-product-viewer", title: "Nemlig product viewer", description: "Display-only product results supplied by Nemlig Assistant.", mimeType: "text/html;profile=mcp-app" }];
+        const expectedResources = [{ uri: "ui://nemlig/product-viewer.html", name: "nemlig-product-viewer", title: "Nemlig product viewer", description: "Product results and shared local review supplied by Nemlig Assistant.", mimeType: "text/html;profile=mcp-app" }];
         assert.deepEqual((await stdio.listResources()).resources, expectedResources);
         assert.deepEqual((await http.listResources()).resources, expectedResources);
         assert.equal(http.getInstructions(), stdio.getInstructions());
@@ -592,7 +596,7 @@ test("authenticated HTTP request context preserves stdio tool and resource metad
   });
 });
 
-test("MCP exposes independent discovery, exact details, and one shared display-only viewer", async () => {
+test("MCP exposes independent discovery, exact details, and one shared product viewer", async () => {
   await withMcpClient(createMcpServer(fakeClient(), testCredentials), async (mcp) => {
     const tools = new Map((await mcp.listTools()).tools.map((tool) => [tool.name, tool.description ?? ""]));
     const instructions = mcp.getInstructions() ?? "";
@@ -612,7 +616,7 @@ test("MCP exposes independent discovery, exact details, and one shared display-o
     const viewer = await mcp.readResource({ uri: "ui://nemlig/product-viewer.html" });
     assert.equal(viewer.contents[0]?.mimeType, "text/html;profile=mcp-app");
     assert.ok(viewer.contents[0] && "text" in viewer.contents[0]);
-    if (viewer.contents[0] && "text" in viewer.contents[0]) assert.match(viewer.contents[0].text, /createElement\("details"\)/u);
+    if (viewer.contents[0] && "text" in viewer.contents[0]) assert.match(viewer.contents[0].text, /el\("details"/u);
     assert.equal((direct?._meta as { ui?: { resourceUri?: string } } | undefined)?.ui?.resourceUri, "ui://nemlig/product-viewer.html");
     assert.equal((details?._meta as { ui?: { resourceUri?: string } } | undefined)?.ui?.resourceUri, "ui://nemlig/product-viewer.html");
     assert.match(JSON.stringify(details?.inputSchema), /product_id/u);
@@ -1110,5 +1114,47 @@ test("MCP removal review preserves unknown basket quantity", async () => {
     assert.match(toolText(review), /Ukendt antal × Mælk/u);
     const views = (review.structuredContent as { views: Array<{ review?: { quantity?: number } }> }).views;
     assert.equal(views[0]?.review?.quantity, undefined);
+  });
+});
+
+
+test("MCP local review and explicit submission share exact state without premature provider writes", async () => {
+  let writes = 0;
+  let current: Basket = { items: [{ id: 99, name: "Existing", quantity: 1, total: 2 }], productsPrice: 2, deliveryPrice: 0, numberOfProducts: 1, deliveryTime: undefined };
+  const provider = fakeClient({
+    getCart: async () => structuredClone(current),
+    addToCart: async (id, quantity = 1) => {
+      writes++;
+      current = { ...current, items: [{ id: 99, name: "Existing", quantity: 1, total: 2 }, { id, name: product.name, quantity, total: quantity * product.price! }], productsPrice: 2 + quantity * product.price!, numberOfProducts: 1 + quantity };
+      return structuredClone(current);
+    },
+  });
+  await withMcpClient(createMcpServer(provider, testCredentials), async mcp => {
+    const started = await mcp.callTool({ name: "start_product_review", arguments: { items: [{ product_id: 7, quantity: 2 }] } });
+    assert.equal(started.isError, undefined);
+    let review = (started.structuredContent as { review: ProductReviewSnapshot }).review;
+    const update = async (action: Record<string, unknown>) => {
+      const result = await mcp.callTool({ name: "update_product_review", arguments: { review_id: review.review_id, revision: review.revision, action } });
+      assert.equal(result.isError, undefined, toolText(result));
+      review = (result.structuredContent as { review: typeof review }).review;
+    };
+    await update({ kind: "accept", product_ids: [7] });
+    assert.equal(review.items[0]?.state, "basket");
+    await update({ kind: "prepare_submission" });
+    assert.equal(writes, 0);
+    assert.ok(review.submission);
+    assert.equal(JSON.stringify(review).includes("proposal_id"), false);
+    const tool = (await mcp.listTools()).tools.find(t => t.name === "submit_product_review");
+    assert.deepEqual((tool?._meta?.ui as { visibility: string[] }).visibility, ["model"]);
+    assert.notEqual(tool?._meta?.["openai/widgetAccessible"], true);
+    const args = { review_id: review.review_id, revision: review.revision, submission_id: review.submission.submission_id };
+    const submitted = await mcp.callTool({ name: "submit_product_review", arguments: args });
+    assert.equal(submitted.isError, undefined, toolText(submitted));
+    const data = submitted.structuredContent as { review: typeof review; result: { basket: { items: Array<{ id: number; quantity: number }> } } };
+    assert.equal(data.review.submission?.status, "submitted");
+    assert.equal(data.review.items.length, 1);
+    assert.deepEqual(data.result.basket.items.map(i => [i.id, i.quantity]), [[99, 1], [7, 2]]);
+    assert.equal((await mcp.callTool({ name: "submit_product_review", arguments: args })).isError, true);
+    assert.equal(writes, 1);
   });
 });

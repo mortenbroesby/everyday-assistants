@@ -257,7 +257,7 @@ export class BasketProposalService {
     connectionId: string,
     items: Array<{ product_id: number; quantity: number }>,
     authorization: AdditionAuthorization,
-    options: ProposalReadOptions = {},
+    options: ProposalReadOptions & { freshProducts?: boolean } = {},
   ): Promise<ProposalView> {
     this.validateAdditionItems(items);
     if (!authorization || authorization.kind !== "exact_review") {
@@ -265,7 +265,7 @@ export class BasketProposalService {
     }
     const basket = await this.client.getCart(options.signal);
     const lines = await runReadPool(items, async (item, signal) =>
-      productLine(await this.client.getProduct(item.product_id, signal), item.quantity), options);
+      productLine(await (options.freshProducts ? this.client.getFreshProduct(item.product_id, signal) : this.client.getProduct(item.product_id, signal)), item.quantity), options);
     if (lines.some((line) => !line.available)) throw new NemligError("An exact product is unavailable; no proposal was created.");
     const basketLines = new Map<string, Basket["items"][number]>();
     for (const line of basket.items) if (line.id !== undefined && !basketLines.has(String(line.id))) {

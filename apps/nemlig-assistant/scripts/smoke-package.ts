@@ -113,6 +113,9 @@ try {
       "show_grocery_sections",
       "show_my_basket",
       "show_my_favorites",
+      "start_product_review",
+      "submit_product_review",
+      "update_product_review",
     ]);
     assert.doesNotMatch(tools.join("\n"), /add_to_cart|remove_from_cart|replace_cart_line|clear_cart/);
     assert.doesNotMatch(tools.join("\n"), /recipe|checkout|order|payment/i);
@@ -121,7 +124,7 @@ try {
     const resource = viewer.contents[0];
     assert.ok(resource && "text" in resource);
     assert.equal(resource.mimeType, "text/html;profile=mcp-app");
-    assert.match(resource.text, /createElement\("details"\)/u);
+    assert.match(resource.text, /el\("details"/u);
     assert.match(resource.text, /window\.openai\.toolOutput/u);
   } finally {
     await client.close();

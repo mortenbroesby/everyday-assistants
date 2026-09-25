@@ -68,7 +68,7 @@ exact review and apply boundary and remain subject to final revalidation.
 - Compare product name, ID, package, price, unit price, discount, organic
   status, availability, product description, item details, and other known
   classifications when Nemlig supplies them.
-- Use one display-only product presentation when the host supports it, with a
+- Use one shared product presentation when the host supports it, with a
   structured and plain-text fallback for headless clients.
 
 ### Review the basket safely
@@ -87,7 +87,7 @@ exact review and apply boundary and remain subject to final revalidation.
 - Use the stdio MCP server with a local MCP client.
 - Use the HTTP MCP server behind Auth0.
 - Connect ChatGPT to the private hosted Cloudflare deployment.
-  - Rich product results may use the shared display-only MCP Apps resource;
+  - Rich product results may use the shared MCP Apps resource;
     structured and plain-text results remain available without UI support.
 
 ### Hosted family alpha
@@ -119,10 +119,32 @@ Provider descriptions, declarations, and item details are converted from HTML
 to bounded plain text, including Danish characters and entities. Scripts,
 styles, images and link destinations are omitted; conversion does not fetch
 additional resources.
-The shared product presentation is display-only: it does not fetch the provider,
-create a proposal, change the basket, or store a product selection. Supply any
-shopping intent in the current conversation; the assistant does not save or
-reload shopping plans or named lists.
+The shared product viewer has compact, expandable rows. Needs review contains
+unresolved products; local Basket contains accepted products. Accept selected
+products, adjust quantities, remove them, or inspect alternatives for one product.
+Alternatives remain available while you inspect Basket, and every view has a safe
+exit. All of these operations also work through conversation, including “everything
+except the ricotta and cucumbers is fine.” Local acceptance never changes Nemlig.
+
+Voice and touch use the same private temporary server draft. Each connection can
+hold up to eight drafts of 50 products, expiring after one hour or a server restart.
+They are not saved shopping plans or named lists. Refresh a stale view before
+making another change. Product disclosures and local edits do not fetch Nemlig;
+explicit alternatives searches hydrate up to ten results with three concurrent
+reads and existing request limits.
+
+When you are happy with the local Basket, choose **Review submission to Nemlig**.
+This prepares fresh exact product prices and quantities, then asks for approval in
+conversation. Only explicit approval of that unchanged review allows submission.
+The quantities of those products are set in Nemlig; unrelated basket lines stay
+unchanged and unresolved draft items are excluded. Editing the draft invalidates
+the pending submission. The local Basket remains visible after success or failure;
+if the result is uncertain, inspect the actual Nemlig basket before any deliberate
+new review. There is no automatic retry.
+
+Interactive ChatGPT hosts use their tool bridge. Other hosts retain the complete
+structured/text results and equivalent conversational requests; the viewer never
+pretends a local action succeeded when no bridge is available.
 
 <a id="how-basket-changes-work"></a>
 ## 🛡️ How basket changes work
@@ -207,15 +229,19 @@ The MCP surface is organized around household actions:
   reauthentication, or provider unavailability separately.
 - Reopen ChatGPT authorization after an expired or disabled app connection:
   `reconnect_nemlig_assistant`.
-- See the basket: `show_my_basket`.
+- See the actual Nemlig basket: `show_my_basket`.
+- Build a local review: `start_product_review`; refresh, accept, change, remove,
+  navigate, or prepare submission with `update_product_review`.
+- Submit that exact local Basket after explicit approval: `submit_product_review`.
+  This tool is model-only; visual controls cannot apply a provider mutation.
 - Review basket changes: `review_items_to_add`, `review_item_to_remove`,
   `review_item_swap`, and `review_emptying_basket`.
 - Complete an approved change: `add_approved_items`, `remove_approved_item`,
   `make_approved_item_swap`, and `empty_approved_basket`.
 - Search and exact product details return the same supported detailed product
-  facts. Product-bearing results use one display-only viewer resource when the
+  facts. Product-bearing results use one shared viewer resource when the
   host supports it, with complete structured and text fallbacks otherwise.
-  The viewer never fetches, selects, approves, or changes the basket.
+  The viewer can edit the server-owned local review; it never calls Nemlig directly or applies a provider change.
 
 After this connection recovery, use the app named `Nemlig Assistant (Rejoin)`.
 For ordinary later releases, use **Refresh** on that app so ChatGPT rediscovers
@@ -372,7 +398,9 @@ This README is the user-facing inventory of shipped feature sets:
 - product and department discovery
 - fresh Nemlig authentication before every provider-backed MCP task
 - rich individual short-query product discovery and refinement
-- one display-only product presentation with a headless fallback
+- one shared product presentation with a headless fallback
+- voice/touch local review, editable Basket, and contextual alternatives
+- explicit protected submission of resolved local products
 - favourites as read-only evidence for uncertain matches
 - composable catalogue search, favourites, sections, browsing, and exact details
 - product comparison with staged basket review/apply
@@ -402,7 +430,8 @@ src/mcp.ts                    MCP server and composable tool surface
 src/http.ts                   Authenticated HTTP MCP transport
 src/cloudflare-worker.ts      Gateway, Container, and Durable Objects
 src/product-discovery.ts      Request-scoped detailed product hydration
-src/product-presentation.ts  Shared display-only product projection
+src/product-presentation.ts  Shared factual product projection
+src/product-review.ts        Private temporary voice/touch review drafts
 src/product-viewer.ts         Packaged product viewer and headless fallback
 src/proposals.ts              Proposal store, revalidation, and mutation lock
 release/                      Version and publication policy

@@ -529,3 +529,10 @@ test("a stalled request body is cancelled at the total deadline", async () => {
   assert.equal(events[0]?.outcome, "request_timeout");
   assert.equal(cancelled, true);
 });
+
+test("local review uses normal admission while actual submission remains expensive", () => {
+  for (const name of ["start_product_review", "update_product_review"]) {
+    assert.equal(classifyMcpMessage({ method: "tools/call", params: { name } }), "normal");
+  }
+  assert.equal(classifyMcpMessage({ method: "tools/call", params: { name: "submit_product_review" } }), "expensive");
+});

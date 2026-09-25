@@ -9,6 +9,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { Auth0InfrastructureError, createAuth0Verifier, fetchAuth0Metadata, loadAuth0Config, SERVICE_ACCEPTANCE_SCOPE, type Auth0Config } from "./auth0.js";
 import { NemligClient, type ShoppingClient } from "./client.js";
 import { createMcpServer, serviceAcceptanceToolInventory } from "./mcp.js";
+import { ProductReviewService } from "./product-review.js";
 import { BasketProposalService } from "./proposals.js";
 import { findEnabledPrincipal, MAX_PRINCIPALS, type Principal } from "./principal-policy.js";
 import { decryptCredentials, type CredentialEnvelope } from "./credential-envelope.js";
@@ -17,6 +18,7 @@ import type { Credentials } from "./config.js";
 export interface PrincipalContext {
   client: ShoppingClient;
   proposals: BasketProposalService;
+  reviews?: ProductReviewService;
 }
 
 export type PrincipalContextFactory = (principal: Principal) => PrincipalContext;
@@ -89,6 +91,7 @@ export function createHttpApp(
       mcpEnv,
       context.proposals,
       { principalKey: principal.principal_key, policyRevision: config.principalPolicy.revision, tier: principal.tier, ...(service ? { kind: "service" as const } : {}) },
+      context.reviews ??= new ProductReviewService(context.client, { proposals: context.proposals }),
     );
   }, { legacy: "stateless" });
   const nodeHandler = toNodeHandler(handler, { onerror: () => undefined });

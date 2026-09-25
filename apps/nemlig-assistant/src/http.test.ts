@@ -392,7 +392,7 @@ test("HTTP MCP creates bounded isolated clients, credentials, baskets, favourite
       isLoggedIn: () => loggedIn,
       login: async (username, password) => { loggedIn = true; logins.push(`${username}:${password}`); },
       searchProducts: async () => [],
-      getProduct: async () => { throw new Error("unused"); },
+      getProduct: async () => product,
       getFreshProduct: async () => { throw new Error("unused"); },
       listFavorites: async () => [product],
       listDepartments: async () => [],
@@ -436,6 +436,18 @@ test("HTTP MCP creates bounded isolated clients, credentials, baskets, favourite
       "guest@example.test:guest-secret",
       "owner@example.test:owner-secret",
     ]);
+    const started = await owner.callTool({ name: "start_product_review", arguments: { items: [{ product_id: 1, quantity: 2 }] } });
+    assert.equal(started.isError, undefined);
+    const review = (started.structuredContent as { review: { review_id: string; revision: number } }).review;
+    const secondOwner = await connect("owner");
+    try {
+      const accepted = await secondOwner.callTool({ name: "update_product_review", arguments: { ...review, action: { kind: "accept", product_ids: [1] } } });
+      assert.equal(accepted.isError, undefined);
+      const shown = await owner.callTool({ name: "update_product_review", arguments: { review_id: review.review_id, action: { kind: "show" } } });
+      assert.equal((shown.structuredContent as { review: { items: Array<{ state: string }> } }).review.items[0]?.state, "basket");
+      const denied = await guest.callTool({ name: "update_product_review", arguments: { review_id: review.review_id, action: { kind: "show" } } });
+      assert.equal(denied.isError, true);
+    } finally { await secondOwner.close(); }
     assert.equal(clients.size, 2);
     assert.equal(proposalStores.size, 2);
     await owner.close();

@@ -65,6 +65,8 @@ const normalTools = new Set([
   "show_grocery_sections",
   "browse_grocery_section",
   "show_my_basket",
+  "start_product_review",
+  "update_product_review",
   "review_items_to_add",
   "review_item_to_remove",
   "review_item_swap",
