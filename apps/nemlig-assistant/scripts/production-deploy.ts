@@ -1364,17 +1364,20 @@ export async function deployProduction(commit: string, inputDeps: DeployDependen
       journal.checks.push("enabled_version", "image_reused");
       await transition("enable_deploy", "result", enabledId);
     }
-    const runningVersion = await waitForAcceptedInstance(deps, enabledContainer.id, enabledContainer.version);
+    const preAcceptanceRunningVersion = await waitForAcceptedInstance(deps, enabledContainer.id, enabledContainer.version);
     await retryAcceptance(deps, ["production:probe"], { NEMLIG_EXPECTED_REVISION: commit }, 12, "edge", "edge", "edge_acceptance_failed");
     await retryAcceptance(deps, ["production:test:features", ...(service ? ["--service"] : [])],
       service ? { NEMLIG_MCP_SERVICE_ACCESS_TOKEN: serviceToken, NEMLIG_EXPECTED_REVISION: commit } : {}, service ? 12 : 1,
       "read_only", service ? "service" : "live-user",
       service ? "service_fixture_acceptance_failed" : "authenticated_read_only_acceptance_failed");
+    const runningVersion = await waitForAcceptedInstance(deps, enabledContainer.id, enabledContainer.version);
     await verifyCurrent(deps, enabledId);
     await verifyLeaseHead(deps, repository, journal);
     const provenContainer = await readContainer(deps, enabledContainer.id);
     if (provenContainer.id !== enabledContainer.id || provenContainer.image !== candidateImage
-      || provenContainer.version !== enabledContainer.version || (runningVersion !== null && runningVersion !== provenContainer.version)) {
+      || provenContainer.version !== enabledContainer.version
+      || (preAcceptanceRunningVersion !== null && preAcceptanceRunningVersion !== provenContainer.version)
+      || (runningVersion !== null && runningVersion !== provenContainer.version)) {
       fail("cloudflare_deployment_drift");
     }
     journal.enabledVersion = enabledId;
