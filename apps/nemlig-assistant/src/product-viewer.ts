@@ -1,15 +1,7 @@
 import type { ProductView } from "./product-presentation.js";
+import { PRODUCT_VIEWER_RESOURCE_URI } from "./product-viewer-identity.js";
 
-/**
- * MCP Apps resource identity; registration belongs to the MCP adapter.
- *
- * Keep the resource URI versioned. Hosts may cache an MCP Apps resource by
- * URI across an already-open conversation, so reusing the old stable URI can
- * pair a fresh tool result with stale viewer JavaScript after a deployment.
- * Bump this version whenever the self-contained viewer changes.
- */
-export const PRODUCT_VIEWER_RESOURCE_VERSION = "2";
-export const PRODUCT_VIEWER_RESOURCE_URI = `ui://nemlig/product-viewer-v${PRODUCT_VIEWER_RESOURCE_VERSION}.html`;
+export { PRODUCT_VIEWER_RESOURCE_URI, PRODUCT_VIEWER_RESOURCE_VERSION } from "./product-viewer-identity.js";
 export const PRODUCT_VIEWER_MIME_TYPE = "text/html;profile=mcp-app";
 
 /**
