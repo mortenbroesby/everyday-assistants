@@ -396,3 +396,27 @@ test("CLI report is allowlisted when a hostile provider failure occurs", async (
     console.log = originalLog;
   }
 });
+
+test("stale viewer HTML produces bounded feature evidence instead of parsing HTML as an input error", async () => {
+  const output: string[] = [];
+  const originalLog = console.log;
+  console.log = (value: string) => output.push(value);
+  try {
+    const entry = await import("../scripts/production-acceptance.js");
+    const client = serviceClient();
+    client.readResource = async ({ uri }) => ({ contents: [{
+      uri, mimeType: PRODUCT_VIEWER_MIME_TYPE,
+      text: "<html>required arguments private-viewer-content</html>",
+    }] });
+    const report = await entry.run(["--service"], {
+      NEMLIG_PRODUCTION_MCP_URL: "https://nemlig-mcp.example.test/mcp",
+      NEMLIG_MCP_SERVICE_ACCESS_TOKEN: "test-token",
+    }, { fetcher: edgeFetcher([]), connect: async () => ({ client, close: async () => undefined }) });
+    assert.equal(report.failureCategory, "feature_failed");
+    assert.equal(report.lastCompletedBoundary, "product_viewer_resource_read");
+    assert.deepEqual(report.failed, ["product_viewer_html_mismatch"]);
+    assert.doesNotMatch(output.join(""), /private-viewer-content|<html>|test-token/u);
+  } finally {
+    console.log = originalLog;
+  }
+});

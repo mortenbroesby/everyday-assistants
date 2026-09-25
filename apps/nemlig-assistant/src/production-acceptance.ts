@@ -112,6 +112,15 @@ export function assertProductionInventory(
   }
 }
 
+/** Bounded evidence: never classify or report an assertion's complete HTML diff. */
+export class ProductViewerHtmlMismatchError extends Error {
+  readonly code = "product_viewer_html_mismatch";
+  readonly lastCompletedBoundary = "product_viewer_resource_read";
+  constructor() {
+    super("Product-viewer resource HTML drifted from the released renderer");
+  }
+}
+
 const assertProductViewerResource = (viewer: { contents: unknown[] }, label: string): void => {
   assert.equal(viewer.contents.length, 1, `${label} product-viewer resource returned an unexpected content count`);
   const viewerContent = viewer.contents[0];
@@ -119,7 +128,7 @@ const assertProductViewerResource = (viewer: { contents: unknown[] }, label: str
   const viewerRecord = viewerContent as { uri?: unknown; mimeType?: unknown; text?: unknown; _meta?: unknown };
   assert.equal(viewerRecord.uri, PRODUCT_VIEWER_RESOURCE_URI, `${label} product-viewer URI did not match the inventory`);
   assert.equal(viewerRecord.mimeType, PRODUCT_VIEWER_MIME_TYPE, `${label} product-viewer MIME type drifted`);
-  assert.equal(viewerRecord.text, renderProductViewerHtml(), `${label} product-viewer HTML drifted from the released renderer`);
+  if (viewerRecord.text !== renderProductViewerHtml()) throw new ProductViewerHtmlMismatchError();
   assert.match(viewerRecord.text as string, /<html[\s\S]*<\/html>/u, `${label} product-viewer resource was not fetchable HTML`);
   assert.ok(viewerRecord._meta && typeof viewerRecord._meta === "object", `${label} product-viewer resource metadata is missing`);
   const ui = (viewerRecord._meta as Record<string, unknown>).ui;
