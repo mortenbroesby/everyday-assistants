@@ -116,7 +116,7 @@ test("service acceptance has a closed read-only fixture inventory and denies bas
     "review_items_to_add", "add_approved_items",
   ]);
   assert.deepEqual(report.denied, ["review_items_to_add", "add_approved_items"]);
-  assert.deepEqual(resourceReads, ["ui://nemlig/product-viewer.html"]);
+  assert.deepEqual(resourceReads, [PRODUCT_VIEWER_RESOURCE_URI]);
   assert.equal(report.requestCount, 11);
 });
 

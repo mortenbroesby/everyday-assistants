@@ -7,6 +7,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { PRODUCT_VIEWER_RESOURCE_URI } from "../src/product-viewer.js";
 
 const execute = promisify(execFile);
 const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -119,7 +120,7 @@ try {
     ]);
     assert.doesNotMatch(tools.join("\n"), /add_to_cart|remove_from_cart|replace_cart_line|clear_cart/);
     assert.doesNotMatch(tools.join("\n"), /recipe|checkout|order|payment/i);
-    const viewer = await client.readResource({ uri: "ui://nemlig/product-viewer.html" });
+    const viewer = await client.readResource({ uri: PRODUCT_VIEWER_RESOURCE_URI });
     assert.equal(viewer.contents.length, 1);
     const resource = viewer.contents[0];
     assert.ok(resource && "text" in resource);
