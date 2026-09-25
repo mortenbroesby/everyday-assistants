@@ -6,6 +6,7 @@ import type { GatewayRequestEvent } from "./cloudflare-observability.js";
 import { emptyUsageState } from "./cloudflare-usage.js";
 import { parsePrincipalPolicy } from "./principal-policy.js";
 import { Auth0InfrastructureError } from "./auth0.js";
+import { PRODUCT_VIEWER_RESOURCE_URI } from "./product-viewer.js";
 
 const policy = parsePrincipalPolicy(JSON.stringify({
   schema_version: 1, revision: "family-v1",
@@ -249,15 +250,20 @@ test("service acceptance may read only the registered product viewer resource", 
   };
   const allowed = await handleGatewayRequest(mcpRequest({
     method: "resources/read",
-    params: { uri: "ui://nemlig/product-viewer.html" },
+    params: { uri: PRODUCT_VIEWER_RESOURCE_URI },
   }), serviceEnv, dependencies);
   const forbidden = await handleGatewayRequest(mcpRequest({
     method: "resources/read",
     params: { uri: "file:///etc/passwd" },
   }), serviceEnv, dependencies);
+  const stale = await handleGatewayRequest(mcpRequest({
+    method: "resources/read",
+    params: { uri: "ui://nemlig/product-viewer.html" },
+  }), serviceEnv, dependencies);
 
   assert.equal(allowed.status, 200);
   assert.equal(forbidden.status, 403);
+  assert.equal(stale.status, 403);
   assert.equal(forwarded, 1);
 });
 

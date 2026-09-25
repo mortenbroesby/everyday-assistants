@@ -5,6 +5,7 @@ import type { ProductView } from "./product-presentation.js";
 import {
   PRODUCT_VIEWER_MIME_TYPE,
   PRODUCT_VIEWER_RESOURCE_METADATA,
+  PRODUCT_VIEWER_RESOURCE_VERSION,
   PRODUCT_VIEWER_RESOURCE_URI,
   productViewsToText,
   renderProductViewerHtml,
@@ -39,7 +40,8 @@ const complete: ProductView = {
 };
 
 test("viewer exposes one MCP Apps resource identity and a complete headless fallback", () => {
-  assert.equal(PRODUCT_VIEWER_RESOURCE_URI, "ui://nemlig/product-viewer.html");
+  assert.equal(PRODUCT_VIEWER_RESOURCE_VERSION, "2");
+  assert.equal(PRODUCT_VIEWER_RESOURCE_URI, "ui://nemlig/product-viewer-v2.html");
   assert.equal(PRODUCT_VIEWER_MIME_TYPE, "text/html;profile=mcp-app");
   assert.deepEqual(PRODUCT_VIEWER_RESOURCE_METADATA, {
     ui: { resourceUri: PRODUCT_VIEWER_RESOURCE_URI },

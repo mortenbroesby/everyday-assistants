@@ -11,6 +11,7 @@ import { createMcpServer, NEMLIG_CONNECT_URL, rankProducts, safeNemligImageUrl, 
 import { productionToolInventory } from "./production-acceptance.js";
 import type { ProductReviewSnapshot } from "./product-review.js";
 import { BasketProposalService } from "./proposals.js";
+import { PRODUCT_VIEWER_RESOURCE_URI } from "./product-viewer.js";
 import { NEMLIG_RELEASE_IDENTITY } from "./runtime.js";
 
 const basket: Basket = {
@@ -390,7 +391,7 @@ test("service acceptance exposes only its fixed read-only tool inventory", async
   }), async (mcp) => {
     const expected = expectedVariant;
     assert.deepEqual((await mcp.listTools()).tools.map(({ name }) => name).sort(), [...expected].sort());
-    assert.deepEqual((await mcp.listResources()).resources, [{ uri: "ui://nemlig/product-viewer.html", name: "nemlig-product-viewer", title: "Nemlig product viewer", description: "Product results and shared local review supplied by Nemlig Assistant.", mimeType: "text/html;profile=mcp-app" }]);
+    assert.deepEqual((await mcp.listResources()).resources, [{ uri: PRODUCT_VIEWER_RESOURCE_URI, name: "nemlig-product-viewer", title: "Nemlig product viewer", description: "Product results and shared local review supplied by Nemlig Assistant.", mimeType: "text/html;profile=mcp-app" }]);
     await assert.rejects(mcp.callTool({ name: "add_approved_items", arguments: { approved_review: "00000000-0000-4000-8000-000000000000" } }), /not found/iu);
   });
   assert.equal(calls, 0);
@@ -587,7 +588,7 @@ test("authenticated HTTP request context preserves stdio tool and resource metad
       createMcpServer(fakeClient(), testCredentials, undefined, undefined, { principalKey: "auth0|owner", policyRevision: "test-v1", tier: 0 }),
       async (http) => {
         assert.deepEqual(await http.listTools(), await stdio.listTools());
-        const expectedResources = [{ uri: "ui://nemlig/product-viewer.html", name: "nemlig-product-viewer", title: "Nemlig product viewer", description: "Product results and shared local review supplied by Nemlig Assistant.", mimeType: "text/html;profile=mcp-app" }];
+        const expectedResources = [{ uri: PRODUCT_VIEWER_RESOURCE_URI, name: "nemlig-product-viewer", title: "Nemlig product viewer", description: "Product results and shared local review supplied by Nemlig Assistant.", mimeType: "text/html;profile=mcp-app" }];
         assert.deepEqual((await stdio.listResources()).resources, expectedResources);
         assert.deepEqual((await http.listResources()).resources, expectedResources);
         assert.equal(http.getInstructions(), stdio.getInstructions());
@@ -612,8 +613,8 @@ test("MCP exposes independent discovery, exact details, and one shared product v
 
     const direct = (await mcp.listTools()).tools.find((tool) => tool.name === "find_groceries");
     const details = (await mcp.listTools()).tools.find((tool) => tool.name === "get_grocery_details");
-    assert.equal((await mcp.listResources()).resources[0]?.uri, "ui://nemlig/product-viewer.html");
-    const viewer = await mcp.readResource({ uri: "ui://nemlig/product-viewer.html" });
+    assert.equal((await mcp.listResources()).resources[0]?.uri, PRODUCT_VIEWER_RESOURCE_URI);
+    const viewer = await mcp.readResource({ uri: PRODUCT_VIEWER_RESOURCE_URI });
     assert.equal(viewer.contents[0]?.mimeType, "text/html;profile=mcp-app");
     assert.ok(viewer.contents[0] && "text" in viewer.contents[0]);
     if (viewer.contents[0] && "text" in viewer.contents[0]) assert.match(viewer.contents[0].text, /el\("details"/u);
