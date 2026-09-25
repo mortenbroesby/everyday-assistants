@@ -77,3 +77,12 @@ final state returned to Needs review with an empty local Basket. No
 payment, or ordering call was made. The earlier failed rollout
 `36103722265` was rolled back and its pending operation was reconciled by
 `36105133533` before the successful deployment.
+
+## 6. Stale card recovery regression
+
+- [x] 6.1 Reproduce retained-card failure across review service restart; make refresh find the current conversation and explicitly report absence.
+- [x] 6.2 Provide explicit safe restart in the viewer without replaying edits or restoring submission authority; bump the viewer resource version.
+- [x] 6.3 Smoke the rendered UI across reset, explicit restart, normal controls, and replaced/ended drafts; verify zero provider basket calls.
+- [ ] 6.4 Run focused checks and final verification, release, then exercise recovery and normal controls in ChatGPT before claiming delivery.
+
+Local recovery evidence: real MCP HTTP regression passes across a fresh service and explicit end. Browser smoke reproduced the wrapped INVALID_ARGUMENT error, missing-state refresh, explicit restart with unchecked selections, accepted basket, quantity 3, alternatives/cancel, and recovery to a different current draft without replay. Provider basket calls: 0.

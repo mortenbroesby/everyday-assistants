@@ -84,3 +84,9 @@ it back to Needs review and invalidate pending submission approval.
 #### Scenario: Finish and start again
 - **WHEN** the user ends a review and later begins another
 - **THEN** the old reference is unavailable and the new draft starts independently
+
+#### Scenario: A host retains a card after the draft is lost
+- **WHEN** an old card sends an action after restart, eviction, or explicit end
+- **THEN** the action is not replayed; a bounded read can find this conversation's current draft
+- **AND** if no active draft remains, the viewer offers an explicit fresh review of the displayed exact products and quantities, with refreshed product data and no restored acceptance or submission authority
+- **AND** a previously submitted or uncertain snapshot directs the user to inspect the actual basket instead of offering automatic recovery
