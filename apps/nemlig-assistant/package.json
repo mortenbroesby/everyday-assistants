@@ -1,6 +1,6 @@
 {
   "name": "nemlig-assistant",
-  "version": "4.16.3",
+  "version": "4.16.4",
   "private": true,
   "description": "Safe local Nemlig Assistant CLI and MCP server",
   "type": "module",
@@ -88,6 +88,6 @@
     "wrangler": "4.127.1"
   },
   "nemligRelease": {
-    "codename": "Recovery"
+    "codename": "Reopen"
   }
 }

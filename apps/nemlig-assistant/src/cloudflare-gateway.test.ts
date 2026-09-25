@@ -7,6 +7,7 @@ import { emptyUsageState } from "./cloudflare-usage.js";
 import { parsePrincipalPolicy } from "./principal-policy.js";
 import { Auth0InfrastructureError } from "./auth0.js";
 import { PRODUCT_VIEWER_RESOURCE_URI } from "./product-viewer.js";
+import { RETIRED_PRODUCT_VIEWER_RESOURCE_URIS } from "./product-viewer-identity.js";
 
 const policy = parsePrincipalPolicy(JSON.stringify({
   schema_version: 1, revision: "family-v1",
@@ -235,7 +236,7 @@ test("service acceptance permits retained read-only tools and rejects the legacy
   assert.equal(forwarded, 2);
 });
 
-test("service acceptance may read only the registered product viewer resource", async () => {
+test("service acceptance may read current and inert retired product viewer resources only", async () => {
   let forwarded = 0;
   const service = { subject: "service-client@clients", principal_key: "s".repeat(32), tier: 2 as const, enabled: true };
   const serviceEnv = {
@@ -258,13 +259,17 @@ test("service acceptance may read only the registered product viewer resource", 
   }), serviceEnv, dependencies);
   const stale = await handleGatewayRequest(mcpRequest({
     method: "resources/read",
-    params: { uri: "ui://nemlig/product-viewer.html" },
+    params: { uri: "ui://nemlig/product-viewer-v99.html" },
   }), serviceEnv, dependencies);
+  const retired = await Promise.all(RETIRED_PRODUCT_VIEWER_RESOURCE_URIS.map((uri) => handleGatewayRequest(mcpRequest({
+    method: "resources/read", params: { uri },
+  }), serviceEnv, dependencies)));
 
   assert.equal(allowed.status, 200);
+  assert.deepEqual(retired.map(({ status }) => status), RETIRED_PRODUCT_VIEWER_RESOURCE_URIS.map(() => 200));
   assert.equal(forbidden.status, 403);
   assert.equal(stale.status, 403);
-  assert.equal(forwarded, 1);
+  assert.equal(forwarded, 1 + RETIRED_PRODUCT_VIEWER_RESOURCE_URIS.length);
 });
 
 test("service acceptance cannot access edge administration", async () => {

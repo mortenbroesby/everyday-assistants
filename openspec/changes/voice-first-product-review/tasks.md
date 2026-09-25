@@ -86,3 +86,21 @@ payment, or ordering call was made. The earlier failed rollout
 - [ ] 6.4 Run focused checks and final verification, release, then exercise recovery and normal controls in ChatGPT before claiming delivery.
 
 Local recovery evidence: real MCP HTTP regression passes across a fresh service and explicit end. Browser smoke reproduced the wrapped INVALID_ARGUMENT error, missing-state refresh, explicit restart with unchecked selections, accepted basket, quantity 3, alternatives/cancel, and recovery to a different current draft without replay. Provider basket calls: 0.
+
+## 7. Historical and conflicting card regression (#137)
+
+- [x] 7.1 Add executable failing browser-program checks for inactive activation, stale revision, generic failure and safe restart.
+- [x] 7.2 Gate host snapshots, normalize recovery, and retain inert retired resources with bounded explicit activation.
+- [ ] 7.3 Run real MCP browser smoke and final gates; merge one reviewed release PR.
+- [ ] 7.4 Deploy exact merged SHA and verify refreshed v4 UI plus historical cards in ChatGPT.
+
+Regression baseline: 4.16.3 / 02d66c9 rendered stale active revisions with raw
+INVALID_ARGUMENT; reload/remount restored actionable historical snapshots.
+Ended-review recovery passed. This follow-up completes the failed 6.4 criterion.
+
+Implementation evidence: executable viewer tests first failed then passed; the
+real-MCP browser smoke passed inactive mount/remount, rejected stale edit plus
+one read, connection failure, process restart, quantity-preserving unchecked
+recovery, finish, and zero provider basket calls. A separate real-MCP submission
+smoke uses the real proposal service and a fake basket to verify the exact
+accepted lines, protected submit, readback and rejection of duplicate submission.

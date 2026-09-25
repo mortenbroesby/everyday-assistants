@@ -128,7 +128,7 @@ footer > button.quiet { background: transparent; color: var(--muted); font-size:
   const status = document.getElementById("status"), title = document.getElementById("title"), intro = document.getElementById("intro");
   const footer = document.getElementById("actions"), submissionRoot = document.getElementById("submission"), fallback = document.getElementById("fallback");
   const safeImageOrigins = new Set(["https://nemlig.com", "https://www.nemlig.com"]);
-  let review, unavailable = false, busy = false, selected = new Set(), replacement;
+  let review, active = false, unavailable = false, busy = false, selected = new Set(), replacement;
   let bridgeReady = false, received = false, requestId = 0;
   const pending = new Map();
   const notify = (method, params) => window.parent.postMessage({ jsonrpc: "2.0", method, params }, "*");
@@ -189,23 +189,23 @@ footer > button.quiet { background: transparent; color: var(--muted); font-size:
     try {
       const result = await callTool(tool, args);
       if (result && result.isError) throw new Error((result.content || []).filter(c => c.type === "text").map(c => c.text).join(" ") || "Update failed.");
-      if (!receive(result)) throw new Error("No updated review was returned. Refresh before trying again.");
+      if (!receive(result, true)) throw new Error("No updated review was returned. Refresh before trying again.");
       if (review && window.openai && typeof window.openai.setWidgetState === "function") {
         window.openai.setWidgetState({ review_id: review.review_id, revision: review.revision, destination: review.destination });
       }
     } catch (error) {
       const message = error && error.message ? error.message : "Update failed.";
-      if (/Product review unavailable|No active shopping review/.test(message)) {
+      active = false; selected = new Set(); replacement = undefined;
+      if (/Product review unavailable|No active shopping review|Review revision is stale/.test(message)) {
         // Read only: recover the active conversation, never replay the failed edit.
-        unavailable = true;
         try {
           const current = await callTool("update_product_review", { action: { kind: "show" } });
-          if (!receive(current)) throw new Error("Could not refresh the local review.");
+          if (!receive(current, true)) throw new Error("Could not refresh the local review.");
           status.textContent = unavailable ? "" : "Loaded the current review. Your last action was not applied; choose again.";
         } catch {
-          status.textContent = "The previous review is unavailable. Refresh to check for a current review, or start a new one.";
+          status.textContent = "We could not load the current review. Open it again when the connection is available.";
         }
-      } else status.textContent = message + " Refresh the review before trying again.";
+      } else status.textContent = "We could not confirm this action. Open the current review to check its state before trying again.";
     } finally {
       busy = false;
       // Preserve selection-specific disabled states by rendering the last confirmed snapshot.
@@ -331,6 +331,14 @@ footer > button.quiet { background: transparent; color: var(--muted); font-size:
   };
   const renderReview = () => {
     if (!review) return;
+    if (!active) {
+      nav.hidden = true; context.replaceChildren(); root.replaceChildren(); submissionRoot.hidden = true;
+      title.textContent = "Shopping review";
+      intro.textContent = "Open the current review to continue shopping.";
+      footer.hidden = false;
+      footer.replaceChildren(button("Open current review", () => void update({ kind: "show" }), true));
+      return;
+    }
     if (unavailable) {
       nav.hidden = true; context.replaceChildren(); root.replaceChildren(); submissionRoot.hidden = true;
       title.textContent = "Start a new review";
@@ -372,16 +380,17 @@ footer > button.quiet { background: transparent; color: var(--muted); font-size:
     status.textContent = "";
     renderFooter(); renderSubmission();
   };
-  const receive = payload => {
+  const receive = (payload, current = false) => {
     if (payload && payload.isError) {
       received = true;
-      status.textContent = (payload.content || []).filter(item => item.type === "text").map(item => item.text).join(" ") || "Could not load products. Continue in conversation.";
+      active = false; selected = new Set(); replacement = undefined; renderReview();
+      status.textContent = "Could not load the review. Reconnect Nemlig or try again in conversation.";
       return false;
     }
     const value = payload && payload.structuredContent || payload;
     if (!value || typeof value !== "object") return false;
     if (value.unavailable === true) {
-      received = true; unavailable = true; selected = new Set(); replacement = undefined;
+      received = true; active = current; unavailable = true; selected = new Set(); replacement = undefined;
       status.textContent = "";
       if (review) renderReview();
       else {
@@ -392,19 +401,19 @@ footer > button.quiet { background: transparent; color: var(--muted); font-size:
       return true;
     }
     if (value.ended) {
-      received = true; unavailable = false; review = undefined;
+      received = true; active = false; unavailable = false; review = undefined;
       nav.hidden = true; footer.hidden = true; submissionRoot.hidden = true;
       context.replaceChildren(); root.replaceChildren();
       title.textContent = "Shopping finished"; intro.textContent = "Your temporary local basket has been discarded.";
       status.textContent = "Nothing was changed in Nemlig."; return true;
     }
     if (value.review && Array.isArray(value.review.items) && value.review.review_id) {
-      if (review && review.review_id === value.review.review_id && value.review.revision < review.revision) return true;
-      received = true; unavailable = false; review = value.review; selected = new Set(); replacement = undefined; fallback.hidden = true; renderReview(); return true;
+      if (current && review && review.review_id === value.review.review_id && value.review.revision < review.revision) return false;
+      received = true; active = current; unavailable = false; review = value.review; selected = new Set(); replacement = undefined; fallback.hidden = true; renderReview(); return true;
     }
     const views = Array.isArray(value.views) ? value.views : Array.isArray(value.products) ? value.products : Array.isArray(value.result) ? value.result : Array.isArray(value) ? value : undefined;
     if (!views) return false;
-    received = true; unavailable = false; review = undefined; nav.hidden = true; footer.hidden = true; submissionRoot.hidden = true; context.replaceChildren(); root.replaceChildren();
+    received = true; active = false; unavailable = false; review = undefined; nav.hidden = true; footer.hidden = true; submissionRoot.hidden = true; context.replaceChildren(); root.replaceChildren();
     title.textContent = "Nemlig products"; intro.textContent = "Inspect product details here or continue in conversation.";
     views.forEach(view => root.append(row(view, undefined, "result"))); status.textContent = views.length + " products shown."; return true;
   };
@@ -426,7 +435,7 @@ footer > button.quiet { background: transparent; color: var(--muted); font-size:
       }
     }
     if (message.method === "ui/notifications/tool-cancelled") {
-      received = true; status.textContent = "Request cancelled. Continue in conversation when you are ready.";
+      received = true; active = false; renderReview(); status.textContent = "Request cancelled. Continue in conversation when you are ready.";
     }
   });
   window.addEventListener("openai:set_globals", event => {
