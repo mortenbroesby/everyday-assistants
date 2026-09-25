@@ -212,6 +212,7 @@ test("manual recovery can reconcile an exact pending rollback and release its le
   assert.match(reconcile, /environment:\n\s+name: nemlig-production/u);
   assert.match(reconcile, /permissions:\n\s+contents: write\n\s+actions: read/u);
   assert.match(reconcile, /actions\/checkout@[0-9a-f]{40}/u);
+  assert.match(reconcile, /actions\/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6\.0\.0/u);
   assert.match(reconcile, /pnpm install --frozen-lockfile/u);
   assert.match(reconcile, /production:deploy -- reconcile-recovery "\$RECONCILE_OPERATION" --evidence-saved --original-runner-stopped/u);
   assert.match(reconcile, /production:deploy -- finalize "\$RECONCILE_OPERATION" --evidence-saved --original-runner-stopped/u);
