@@ -25,4 +25,13 @@ from this implementation checklist.
 - [x] 4.1 Re-run the original mobile flow and reproduce missing host initialization.
 - [x] 4.2 Scope drafts to conversations without hourly expiry; add append, revisit and end with service and protocol tests.
 - [x] 4.3 Match the mockup, initialize the real host protocol, and verify mobile navigation through a standards-only parent iframe.
-- [ ] 4.4 Verify, commit and push the follow-up PR; record baseline deployment separately from follow-up delivery.
+- [x] 4.4 Verify, commit and push follow-up PR #127; record baseline deployment separately from follow-up delivery. Exact-head CI is tracked on the PR.
+
+Follow-up evidence: 437 tests and five package smoke checks passed in the full
+`pnpm verify` push gate. The local mobile fixture also exercised a standard
+MCP Apps parent iframe without `window.openai`, including initialize, accept,
+revisit, alternatives, free list navigation, replacement and finish/cancel.
+No real Nemlig basket was mutated. Baseline PR #120 is merged at
+`c0048d11267e04b96904c3b6352618d39f7cbf6f`; production deploy job 36096394361
+succeeded and the live edge probe verified that exact revision. PR #127 remains
+a separate, undeployed follow-up for feedback and review.
