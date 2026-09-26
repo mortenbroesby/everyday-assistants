@@ -12,4 +12,4 @@
 
 - [x] 3.1 Update ChatGPT instructions, feature documentation, version and release note; verify release and OpenSpec checks pass.
 - [x] 3.2 Run focused tests, a representative MCP/browser end-to-end smoke, and final `pnpm verify`; inspect the diff for safety and secrets.
-- [ ] 3.3 Commit and push the scoped branch, open one issue-linked PR, verify exact-head CI/ruleset, and merge if permitted; verify the resulting main SHA. Production deployment remains a separate approval gate.
+- [x] 3.3 Commit and push the scoped branch, open one issue-linked PR, verify exact-head CI/ruleset, and merge if permitted; verify the resulting main SHA. Production deployment remains a separate approval gate.
