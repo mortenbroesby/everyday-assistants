@@ -25,6 +25,7 @@ const viewerResource = (uri: string) => ({ contents: [{
 }] });
 
 const userToolMetadata = {
+  show_my_basket_visually: { ui: { resourceUri: PRODUCT_VIEWER_RESOURCE_URI }, "openai/outputTemplate": PRODUCT_VIEWER_RESOURCE_URI },
   start_product_review: { ui: { resourceUri: PRODUCT_VIEWER_RESOURCE_URI }, "openai/outputTemplate": PRODUCT_VIEWER_RESOURCE_URI, "openai/widgetAccessible": true },
   update_product_review: { ui: { resourceUri: PRODUCT_VIEWER_RESOURCE_URI }, "openai/outputTemplate": PRODUCT_VIEWER_RESOURCE_URI, "openai/widgetAccessible": true },
   submit_product_review: { ui: { resourceUri: PRODUCT_VIEWER_RESOURCE_URI, visibility: ["model"] }, "openai/outputTemplate": PRODUCT_VIEWER_RESOURCE_URI },
@@ -72,7 +73,7 @@ test("production acceptance omits removed saved-storage tools while retaining di
       }
       if (name === "browse_grocery_section") return { structuredContent: { result: [] } };
       if (name === "show_grocery_sections") return { structuredContent: { departments: [{ id: "fruit" }] } };
-      if (name === "show_my_basket") return { structuredContent: { items: [] } };
+      if (name === "show_my_basket" || name === "show_my_basket_visually") return { structuredContent: { items: [] } };
       return { structuredContent: { applicable: false } };
     },
   };
@@ -80,7 +81,7 @@ test("production acceptance omits removed saved-storage tools while retaining di
   const report = await verifyReadOnlyProductionFeatures(client);
   assert.deepEqual(calls, [
     "find_groceries", "get_grocery_details", "show_my_favorites", "show_grocery_sections",
-    "browse_grocery_section", "show_my_basket",
+    "browse_grocery_section", "show_my_basket", "show_my_basket_visually",
   ]);
   for (const forbidden of [
     ...productionToolInventory.prepareOnly,
@@ -106,18 +107,18 @@ test("service acceptance has a closed read-only fixture inventory and denies bas
       if (name === "find_groceries") return { structuredContent: { result: [{ id: 7 }] } };
       if (name === "get_grocery_details") return { structuredContent: { result: { id: 7, name: "Milk" } } };
       if (name === "show_grocery_sections") return { structuredContent: { departments: [{ id: "fruit" }] } };
-      if (name === "show_my_basket") return { structuredContent: { items: [] } };
+      if (name === "show_my_basket" || name === "show_my_basket_visually") return { structuredContent: { items: [] } };
       return { structuredContent: { result: [] } };
     },
   };
   const report = await verifyServiceAcceptanceFeatures(client);
   assert.deepEqual(calls, [
-    "find_groceries", "get_grocery_details", "show_my_favorites", "show_grocery_sections", "browse_grocery_section", "show_my_basket",
+    "find_groceries", "get_grocery_details", "show_my_favorites", "show_grocery_sections", "browse_grocery_section", "show_my_basket", "show_my_basket_visually",
     "review_items_to_add", "add_approved_items",
   ]);
   assert.deepEqual(report.denied, ["review_items_to_add", "add_approved_items"]);
   assert.deepEqual(resourceReads, [PRODUCT_VIEWER_RESOURCE_URI]);
-  assert.equal(report.requestCount, 11);
+  assert.equal(report.requestCount, 12);
 });
 
 test("regular read-only acceptance verifies the exact viewer resource and user tool metadata", async () => {
@@ -165,13 +166,13 @@ test("service acceptance closes its inventory when Apps are disabled", async () 
       if (["review_items_to_add", "add_approved_items"].includes(name)) return { isError: true };
       if (name === "find_groceries") return { structuredContent: { result: [{ id: 7 }] } };
       if (name === "show_grocery_sections") return { structuredContent: { departments: [{ id: "fruit" }] } };
-      if (name === "show_my_basket") return { structuredContent: { items: [] } };
+      if (name === "show_my_basket" || name === "show_my_basket_visually") return { structuredContent: { items: [] } };
       return { structuredContent: { result: [] } };
     },
   };
   const report = await verifyServiceAcceptanceFeatures(client);
   assert.equal(calls.includes("get_grocery_details"), true);
-  assert.equal(report.requestCount, 11);
+  assert.equal(report.requestCount, 12);
 });
 
 test("service acceptance accepts only explicit HTTP 403 transport denials", async () => {
@@ -183,7 +184,7 @@ test("service acceptance accepts only explicit HTTP 403 transport denials", asyn
       if (["review_items_to_add", "add_approved_items"].includes(name)) throw { status: 403 };
       if (name === "find_groceries") return { structuredContent: { result: [{ id: 7 }] } };
       if (name === "show_grocery_sections") return { structuredContent: { departments: [{ id: "fruit" }] } };
-      if (name === "show_my_basket") return { structuredContent: { items: [] } };
+      if (name === "show_my_basket" || name === "show_my_basket_visually") return { structuredContent: { items: [] } };
       return { structuredContent: { result: [] } };
     },
   };

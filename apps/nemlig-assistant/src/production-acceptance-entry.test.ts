@@ -10,6 +10,7 @@ import { serviceAcceptanceResourceInventory, serviceAcceptanceToolInventory } fr
 import { PRODUCT_VIEWER_MIME_TYPE, PRODUCT_VIEWER_RESOURCE_URI, renderProductViewerHtml } from "./product-viewer.js";
 
 const userToolMetadata = {
+  show_my_basket_visually: { ui: { resourceUri: PRODUCT_VIEWER_RESOURCE_URI }, "openai/outputTemplate": PRODUCT_VIEWER_RESOURCE_URI },
   start_product_review: { ui: { resourceUri: PRODUCT_VIEWER_RESOURCE_URI }, "openai/outputTemplate": PRODUCT_VIEWER_RESOURCE_URI, "openai/widgetAccessible": true },
   update_product_review: { ui: { resourceUri: PRODUCT_VIEWER_RESOURCE_URI }, "openai/outputTemplate": PRODUCT_VIEWER_RESOURCE_URI, "openai/widgetAccessible": true },
   submit_product_review: { ui: { resourceUri: PRODUCT_VIEWER_RESOURCE_URI, visibility: ["model"] }, "openai/outputTemplate": PRODUCT_VIEWER_RESOURCE_URI },
@@ -52,7 +53,7 @@ function serviceClient(): AcceptanceClient {
       if (name === "find_groceries") return { structuredContent: { result: [{ id: 7 }] } };
       if (name === "get_grocery_details") return { structuredContent: { result: { id: 7, name: "Milk" } } };
       if (name === "show_grocery_sections") return { structuredContent: { departments: [{ id: "fruit" }] } };
-      if (name === "show_my_basket") return { structuredContent: { items: [] } };
+      if (name === "show_my_basket" || name === "show_my_basket_visually") return { structuredContent: { items: [] } };
       return { structuredContent: { result: [] } };
     },
   };

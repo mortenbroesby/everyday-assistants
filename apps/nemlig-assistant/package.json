@@ -53,6 +53,7 @@
     "release:retry:check": "tsx release/retry.ts",
     "smoke": "tsx --test src/smoke.test.ts",
     "smoke:review-ui": "tsx scripts/smoke-review-ui.ts",
+    "smoke:visual-basket": "tsx scripts/smoke-visual-basket.ts",
     "smoke:package": "tsx scripts/smoke-package.ts",
     "test": "tsx --test src/*.test.ts release/*.test.ts scripts/*.test.mjs",
     "coverage": "node scripts/coverage.mjs"

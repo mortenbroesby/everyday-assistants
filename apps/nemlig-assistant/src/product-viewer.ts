@@ -247,7 +247,8 @@ footer > button.quiet { background: transparent; color: var(--muted); font-size:
     headline.append(el("span", text(product.name, "Product " + (id || "details unavailable")), "name"), el("span", money(product.price), "price"));
     info.append(headline, el("div", [product.brand, product.unit_size].filter(Boolean).join(" · ") || "Package details unavailable", "meta"));
     info.append(el("div", product.unit_price === undefined ? text(product.unit, "Unit price unavailable") : money(product.unit_price) + (product.unit ? " · " + product.unit : ""), "meta"));
-    if (item && item.quantity !== 1) info.append(el("div", item.quantity + " packages", "meta"));
+    const quantity = item ? item.quantity : view && view.context === "basket" ? view.basket && view.basket.quantity : undefined;
+    if (quantity !== undefined) info.append(el("div", quantity + (quantity === 1 ? " package" : " packages") + (view && view.context === "basket" ? " · Basket line: " + money(view.basket && view.basket.line_total) : ""), "meta"));
     for (const [label, value] of [["Organic", product.is_organic], ["Frozen", product.is_frozen], ["Offer", product.is_on_discount]]) if (value === true) info.append(el("span", label, "badge"));
     if (product.available !== true) info.append(el("div", product.available === undefined ? "Availability unknown" : "Unavailable", "meta"));
     summary.append(info); details.append(summary);
@@ -414,8 +415,13 @@ footer > button.quiet { background: transparent; color: var(--muted); font-size:
     const views = Array.isArray(value.views) ? value.views : Array.isArray(value.products) ? value.products : Array.isArray(value.result) ? value.result : Array.isArray(value) ? value : undefined;
     if (!views) return false;
     received = true; active = false; unavailable = false; review = undefined; nav.hidden = true; footer.hidden = true; submissionRoot.hidden = true; context.replaceChildren(); root.replaceChildren();
-    title.textContent = "Nemlig products"; intro.textContent = "Inspect product details here or continue in conversation.";
-    views.forEach(view => root.append(row(view, undefined, "result"))); status.textContent = views.length + " products shown."; return true;
+    const actualBasket = value.detail_limit !== undefined && Array.isArray(value.items);
+    title.textContent = actualBasket ? "Actual Nemlig basket" : "Nemlig products";
+    intro.textContent = actualBasket ? "Your current Nemlig basket. This view cannot change it." : "Inspect product details here or continue in conversation.";
+    views.forEach(view => root.append(row(view, undefined, "result")));
+    status.textContent = actualBasket ? views.length + " basket lines shown" + (value.unenriched_count ? "; " + value.unenriched_count + " without current details" : "") + "." : views.length + " products shown.";
+    if (actualBasket && !views.length) root.append(el("p", "Your Nemlig basket is empty."));
+    return true;
   };
   window.addEventListener("message", event => {
     if (event.source !== window.parent || window.parent === window) return;

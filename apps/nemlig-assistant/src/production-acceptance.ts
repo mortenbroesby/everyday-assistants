@@ -12,7 +12,7 @@ interface ToolResult {
 export const productionToolInventory = {
   readOnly: [
     "find_groceries", "get_profile", "show_my_favorites", "show_grocery_sections",
-    "browse_grocery_section", "check_nemlig_connection", "reconnect_nemlig_assistant", "show_my_basket", "get_grocery_details",
+    "browse_grocery_section", "check_nemlig_connection", "reconnect_nemlig_assistant", "show_my_basket", "show_my_basket_visually", "get_grocery_details",
   ],
   prepareOnly: [
     "review_items_to_add", "review_item_to_remove", "review_item_swap", "review_emptying_basket",
@@ -96,7 +96,7 @@ export function assertProductionInventory(
   assert.deepEqual(resources.map(({ uri }) => uri).sort(), [...productionResourceInventory].sort(), "Production MCP resource inventory drifted");
   for (const name of prohibitedProductionTools) assert.equal(tools.some((tool) => tool.name === name), false, `Prohibited production capability advertised: ${name}`);
   const metadata = new Map(tools.map(({ name, _meta }) => [name, _meta]));
-  for (const name of ["start_product_review", "update_product_review", "submit_product_review"] as const) {
+  for (const name of ["show_my_basket_visually", "start_product_review", "update_product_review", "submit_product_review"] as const) {
     const actual = metadata.get(name);
     assert.ok(actual && typeof actual === "object", `Production ${name} metadata drifted`);
     const value = actual as Record<string, unknown>;
@@ -107,8 +107,10 @@ export function assertProductionInventory(
     assert.equal(value["openai/outputTemplate"], PRODUCT_VIEWER_RESOURCE_URI, `Production ${name} output template metadata drifted`);
     if (name === "submit_product_review") {
       assert.equal(value["openai/widgetAccessible"], undefined, `Production ${name} widget accessibility metadata drifted`);
-    } else {
+    } else if (name !== "show_my_basket_visually") {
       assert.equal(value["openai/widgetAccessible"], true, `Production ${name} widget accessibility metadata drifted`);
+    } else {
+      assert.equal(value["openai/widgetAccessible"], undefined, `Production ${name} widget accessibility metadata drifted`);
     }
   }
 }
@@ -258,6 +260,8 @@ export async function verifyReadOnlyProductionFeatures(
 
   const current = await call<Basket>("show_my_basket");
   assert.ok(Array.isArray(current.items), "show_my_basket returned no basket items");
+  const visual = await call<Basket>("show_my_basket_visually");
+  assert.ok(Array.isArray(visual.items), "show_my_basket_visually returned no basket items");
   return { exercised, unavailable };
 }
 
@@ -300,6 +304,7 @@ export async function verifyServiceAcceptanceFeatures(
   assert.ok(section, "Service grocery sections returned no usable section");
   content(await call("browse_grocery_section", { section, result_count: 1, page: 1 }), "browse_grocery_section");
   basket(await call("show_my_basket"), "show_my_basket");
+  basket(await call("show_my_basket_visually"), "show_my_basket_visually");
   const denied: string[] = [];
   for (const name of ["review_items_to_add", "add_approved_items"]) {
     try {
@@ -312,7 +317,7 @@ export async function verifyServiceAcceptanceFeatures(
     }
     denied.push(name);
   }
-  assert.ok(requestCount <= 11, "Service MCP acceptance exceeded its request budget");
+  assert.ok(requestCount <= 12, "Service MCP acceptance exceeded its request budget");
   return { exercised, denied, requestCount };
 }
 
