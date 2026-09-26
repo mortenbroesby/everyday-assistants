@@ -74,6 +74,8 @@ exact review and apply boundary and remain subject to final revalidation.
 ### Review the basket safely
 
 - Inspect the current basket without changing it.
+- Show the actual basket visually, with safe product images when available, using
+  a separate bounded read-only action. The ordinary basket view stays fast.
 - Prepare an exact batch of additions.
 - Prepare removal of one exact basket line.
 - Compare and prepare replacement of one exact line with one exact product.
@@ -255,6 +257,9 @@ The MCP surface is organized around household actions:
 - Reopen ChatGPT authorization after an expired or disabled app connection:
   `reconnect_nemlig_assistant`.
 - See the actual Nemlig basket: `show_my_basket`.
+- See actual basket products visually: `show_my_basket_visually` enriches up to
+  12 lines with exact details and uses the shared viewer; all lines remain in
+  the structured and text fallback. Missing images are labelled, not invented.
 - Build a local review: `start_product_review`; refresh, accept, change, remove,
   reconsider accepted products, append new products, navigate, finish shopping, or
   prepare submission with `update_product_review`. Show can recover the active
@@ -266,8 +271,11 @@ The MCP surface is organized around household actions:
 - Complete an approved change: `add_approved_items`, `remove_approved_item`,
   `make_approved_item_swap`, and `empty_approved_basket`.
 - Search and exact product details return the same supported detailed product
-  facts without mounting a widget for every search. Only local review tools attach
-  the shared viewer, with complete structured and text fallbacks. The viewer
+  facts without mounting a widget for every search. Local review tools and the
+  explicit visual-basket read attach the shared viewer, with complete structured
+  and text fallbacks. Image URLs alone do not prove that ChatGPT displayed a card.
+  To reopen a temporary local review visually, use `update_product_review` show;
+  to view the actual provider basket visually, use `show_my_basket_visually`. The viewer
   initializes the MCP Apps bridge and shows actionable errors or cancelled states
   instead of waiting indefinitely.
   The viewer can edit the server-owned local review; it never calls Nemlig directly or applies a provider change.

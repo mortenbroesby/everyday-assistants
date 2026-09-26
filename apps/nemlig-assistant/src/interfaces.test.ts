@@ -268,6 +268,7 @@ const friendlyCatalog = [
   ["review_items_to_add", "Review items to add", true, false, ["items", "authorization"]],
   ["show_grocery_sections", "Show grocery sections", true, false, []],
   ["show_my_basket", "Show my Nemlig basket", true, false, []],
+  ["show_my_basket_visually", "Show my Nemlig basket visually", true, false, []],
   ["show_my_favorites", "Show my favourites", true, false, ["search_term", "result_count", "page"]],
   ["start_product_review", "Start a local product review", false, false, ["items"]],
   ["submit_product_review", "Submit the approved local Basket", false, false, ["review_id", "revision", "submission_id"]],
@@ -621,6 +622,9 @@ test("MCP exposes independent discovery, exact details, and one shared product v
     assert.match(instructions, /independent capabilities/);
     assert.match(instructions, /Basket changes require the matching staged review\/apply tools and explicit approval/);
     assert.match(instructions, /Never check out, pay, order, or select delivery slots/);
+    assert.match(instructions, /temporary local review visually, use update_product_review show/u);
+    assert.match(instructions, /show_my_basket_visually when the user asks to see actual provider-basket products/u);
+    assert.match(instructions, /Image URLs in tool data do not prove that ChatGPT rendered cards/u);
     assert.doesNotMatch(instructions, /Suggest an improvement|GitHub issue/);
     assert.match(tools.get("find_groceries") ?? "", /current Nemlig catalogue directly/);
     assert.match(tools.get("find_groceries") ?? "", /'Prince biscuits' becomes 'prince kiks'/);
@@ -661,6 +665,100 @@ test("MCP basket viewer uses basket summaries without fetching product details",
     assert.equal(views[0]?.basket.line_total, 7.5);
   });
   assert.equal(productReads, 0);
+});
+
+test("visual basket advertises the viewer and enriches six exact lines without changing the basket", async () => {
+  const readIds: number[] = [];
+  let writes = 0;
+  const client = fakeClient({
+    getCart: async () => ({ ...basket, items: Array.from({ length: 6 }, (_, index) => ({ id: index + 1, name: `Basket ${index + 1}`, quantity: 2, total: 20 })) }),
+    getProduct: async (id) => { readIds.push(id); return { ...product, id, name: `Detail ${id}`, imageUrl: `https://www.nemlig.com/image-${id}.jpg` }; },
+    addToCart: async () => { writes++; throw new Error("unexpected write"); },
+    removeFromCart: async () => { writes++; throw new Error("unexpected write"); },
+    clearCart: async () => { writes++; throw new Error("unexpected write"); },
+  });
+  await withMcpClient(createMcpServer(client, testCredentials), async (mcp) => {
+    const tool = (await mcp.listTools()).tools.find(({ name }) => name === "show_my_basket_visually");
+    assert.equal((tool?._meta as { ui?: { resourceUri?: string } } | undefined)?.ui?.resourceUri, PRODUCT_VIEWER_RESOURCE_URI);
+    assert.equal(tool?.annotations?.readOnlyHint, true);
+    const result = await mcp.callTool({ name: "show_my_basket_visually", arguments: {} });
+    assert.notEqual(result.isError, true, toolText(result));
+    const value = result.structuredContent as { items: unknown[]; views: Array<{ context: string; product: { id: number; image_url?: string }; basket: { quantity: number; line_total: number } }> };
+    assert.equal(value.items.length, 6);
+    assert.deepEqual(value.views.map((view) => view.product.id), [1, 2, 3, 4, 5, 6]);
+    assert.equal(value.views[0]?.product.image_url, "https://www.nemlig.com/image-1.jpg");
+    assert.deepEqual(value.views[0]?.basket, { kind: "basket", quantity: 2, line_total: 20 });
+    assert.match(toolText(result), /Basket 1/u);
+  });
+  assert.deepEqual(readIds.sort((a, b) => a - b), [1, 2, 3, 4, 5, 6]);
+  assert.equal(writes, 0);
+});
+
+test("visual basket bounds detail reads and retains lines when details fail or mismatch", async () => {
+  const readIds: number[] = [];
+  const client = fakeClient({
+    getCart: async () => ({ ...basket, items: Array.from({ length: 15 }, (_, index) => ({ id: index + 1, name: `Line ${index + 1}`, quantity: 1, total: 9 })) }),
+    getProduct: async (id) => {
+      readIds.push(id);
+      if (id === 2) throw new NemligError("Not found", 404);
+      if (id === 3) return { ...product, id: 99, imageUrl: "https://www.nemlig.com/wrong.jpg" };
+      if (id === 4) return { ...product, id, name: undefined, imageUrl: "https://www.nemlig.com/image.jpg" };
+      return { ...product, id, imageUrl: "https://images.test/not-allowed.jpg" };
+    },
+  });
+  await withMcpClient(createMcpServer(client, testCredentials), async (mcp) => {
+    const result = await mcp.callTool({ name: "show_my_basket_visually", arguments: {} });
+    assert.notEqual(result.isError, true, toolText(result));
+    const value = result.structuredContent as { views: Array<{ product: { id: number; name: string; image_url?: string } }>; detail_limit: number; unenriched_count: number };
+    assert.equal(value.views.length, 15);
+    assert.equal(value.detail_limit, 12);
+    assert.equal(value.unenriched_count, 5);
+    assert.equal(value.views[1]?.product.name, "Line 2");
+    assert.equal(value.views[2]?.product.name, "Line 3");
+    assert.equal(value.views[3]?.product.name, "Line 4");
+    assert.equal(value.views[0]?.product.image_url, undefined);
+    assert.equal(value.views[12]?.product.name, "Line 13");
+    assert.match(toolText(result), /not enriched|without images/iu);
+  });
+  assert.deepEqual(readIds.sort((a, b) => a - b), Array.from({ length: 12 }, (_, index) => index + 1));
+});
+
+test("visual basket retries a 401 only after the in-flight detail group settles", async () => {
+  let cartReads = 0;
+  let logins = 0;
+  let active = 0;
+  let first = true;
+  const client = fakeClient({
+    getCart: async () => { cartReads++; return { ...basket, items: [1, 2, 3].map((id) => ({ id, name: `Line ${id}`, quantity: 1, total: 10 })) }; },
+    login: async () => { assert.equal(active, 0, "reauthentication started before detail requests settled"); logins++; },
+    getProduct: async (id) => {
+      active++;
+      await new Promise((resolve) => setTimeout(resolve, id === 3 ? 10 : 1));
+      active--;
+      if (id === 2 && first) { first = false; throw new NemligError("Expired", 401); }
+      return { ...product, id, imageUrl: "https://www.nemlig.com/image.jpg" };
+    },
+  });
+  await withMcpClient(createMcpServer(client, testCredentials), async (mcp) => {
+    const result = await mcp.callTool({ name: "show_my_basket_visually", arguments: {} });
+    assert.notEqual(result.isError, true, toolText(result));
+    assert.equal((result.structuredContent as { image_count: number }).image_count, 3);
+  });
+  assert.equal(cartReads, 2);
+  assert.equal(logins, 1);
+});
+
+test("visual basket shows an empty basket without detail reads", async () => {
+  const client = fakeClient({
+    getCart: async () => ({ ...basket, items: [] }),
+    getProduct: async () => { throw new Error("unexpected detail read"); },
+  });
+  await withMcpClient(createMcpServer(client, testCredentials), async (mcp) => {
+    const result = await mcp.callTool({ name: "show_my_basket_visually", arguments: {} });
+    assert.notEqual(result.isError, true, toolText(result));
+    assert.deepEqual((result.structuredContent as { views: unknown[] }).views, []);
+    assert.match(toolText(result), /Kurven er tom/u);
+  });
 });
 
 test("MCP exact product details are read-only and retain bounded factual fields", async () => {

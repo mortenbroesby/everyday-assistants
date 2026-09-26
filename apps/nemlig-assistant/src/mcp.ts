@@ -50,7 +50,7 @@ export interface McpRequestContext {
 }
 
 export const serviceAcceptanceToolInventory = [
-  "find_groceries", "get_grocery_details", "show_my_favorites", "show_grocery_sections", "browse_grocery_section", "show_my_basket",
+  "find_groceries", "get_grocery_details", "show_my_favorites", "show_grocery_sections", "browse_grocery_section", "show_my_basket", "show_my_basket_visually",
 ] as const;
 export const serviceAcceptanceResourceInventory = [PRODUCT_VIEWER_RESOURCE_URI, ...RETIRED_PRODUCT_VIEWER_RESOURCE_URIS] as const;
 
@@ -87,8 +87,8 @@ const productViewSchema = z.discriminatedUnion("status", [
     context: z.enum(["search", "details", "result", "basket", "review"]),
     status: z.literal("complete"),
     product: candidateSchema,
-    basket: z.object({ quantity: z.number().optional(), line_total: z.number().optional() }).optional(),
-    review: z.object({ quantity: z.number().int().positive().optional(), line_total: z.number().optional(), approved: z.boolean() }).optional(),
+    basket: z.object({ kind: z.literal("basket").optional(), quantity: z.number().optional(), line_total: z.number().optional() }).optional(),
+    review: z.object({ kind: z.literal("review").optional(), quantity: z.number().int().positive().optional(), line_total: z.number().optional(), approved: z.boolean() }).optional(),
   }),
   z.object({
     context: z.enum(["search", "details", "result", "basket", "review"]),
@@ -135,6 +135,11 @@ const basketSchema = z.object({
   delivery_time: z.string().optional(),
 });
 const basketResultSchema = basketSchema.extend({ views: z.array(productViewSchema) });
+const visualBasketResultSchema = basketResultSchema.extend({
+  detail_limit: z.number().int().positive(),
+  unenriched_count: z.number().int().nonnegative(),
+  image_count: z.number().int().nonnegative(),
+});
 
 const proposalBase = {
   applicable: z.literal(true),
@@ -291,6 +296,52 @@ const basketProductViews = (basket: unknown): ProductView[] => {
     return createProductViewFromSummary(facts, { kind: "basket", quantity: facts.quantity, line_total: facts.line_total });
   });
 };
+const VISUAL_BASKET_DETAIL_LIMIT = 12;
+const VISUAL_BASKET_CONCURRENCY = 3;
+const VISUAL_BASKET_DETAIL_TIMEOUT_MS = 8_000;
+const visualBasketProductViews = async (
+  client: ShoppingClient,
+  basket: ReturnType<typeof basketPayload>,
+  signal?: AbortSignal,
+): Promise<{ views: ProductView[]; unenrichedCount: number; imageCount: number }> => {
+  const views = basketProductViews(basket);
+  let unenrichedCount = views.length;
+  for (let offset = 0; offset < Math.min(views.length, VISUAL_BASKET_DETAIL_LIMIT); offset += VISUAL_BASKET_CONCURRENCY) {
+    const group = views.slice(offset, offset + VISUAL_BASKET_CONCURRENCY);
+    const settled = await Promise.allSettled(group.map(async (summary) => {
+      const id = summary.status === "complete" ? summary.product.id : undefined;
+      if (id === undefined || !Number.isSafeInteger(id) || id <= 0) return summary;
+      try {
+        const detailSignal = signal
+          ? AbortSignal.any([signal, AbortSignal.timeout(VISUAL_BASKET_DETAIL_TIMEOUT_MS)])
+          : AbortSignal.timeout(VISUAL_BASKET_DETAIL_TIMEOUT_MS);
+        const detail = await client.getProduct(id, detailSignal);
+        if (detail.id !== id) return summary;
+        const basketView = summary.status === "complete" ? summary.basket : undefined;
+        const view = createProductView(detail, { kind: "basket", quantity: basketView?.quantity, line_total: basketView?.line_total });
+        return view.status === "complete" && summary.status === "complete"
+          ? { ...view, product: { ...view.product, name: view.product.name?.trim() ? view.product.name : summary.product.name } }
+          : summary;
+      } catch (error) {
+        if (signal?.aborted || (error instanceof NemligError && error.status === 401)) throw error;
+        return summary;
+      }
+    }));
+    const rejected = settled.find((result) => result.status === "rejected");
+    if (rejected?.status === "rejected") throw rejected.reason;
+    for (const [index, result] of settled.entries()) {
+      if (result.status !== "fulfilled") continue;
+      const view = result.value;
+      if (view !== group[index]) unenrichedCount--;
+      views[offset + index] = view;
+    }
+  }
+  return {
+    views,
+    unenrichedCount,
+    imageCount: views.filter((view) => view.status === "complete" && view.product.image_url).length,
+  };
+};
 const proposalProductViews = (proposal: ProposalView | NoopProposalView): ProductView[] => {
   if (!proposal.applicable) return [];
   const review = record(proposal.review);
@@ -368,7 +419,7 @@ export function createMcpServer(
     },
     {
       instructions:
-        `Current release: ${NEMLIG_RELEASE_IDENTITY}. Use Nemlig Assistant as independent capabilities for current products, rich exact product details, prices, availability, favourites, basket contents, and grocery sections. Normalize each search into one short Danish catalogue phrase. Search and details tools return data without opening widgets. After collecting suitable exact products, call start_product_review once to display the shopping review. Use update_product_review show (review_id optional) to recover this conversation’s active review; add appends new picks to Needs review without resetting accepted products. Use revisit to move accepted products back to Needs review. End discards the temporary local review only when the user finishes shopping. These tools share voice/touch choices and a LOCAL basket. Never call legacy review_items_to_add/add_approved_items for local acceptance; those operate on the actual provider basket. Use show_my_basket only when the user asks about the actual Nemlig basket. Accept/keep or replace unresolved exact products into the local basket; remove deletes them locally. For everything except X/Y, pass the exact remaining product_ids from the current snapshot. Refresh with show without review_id after stale state. If no active review remains, ask before starting a fresh review from the exact visible product IDs and quantities; never replay the failed edit or restore prior acceptance or approval. Use prepare_submission only when the user wants to send the local Basket, then ask approval of its exact quantities, current prices, and effects; only call submit_product_review after explicit approval of that unchanged submission. Never treat local acceptance as provider approval. A submitted or uncertain draft remains inspectable; never retry blindly. Basket changes require the matching staged review/apply tools and explicit approval; revalidate every change, stop on uncertainty, and read the basket back. Never check out, pay, order, or select delivery slots.`,
+        `Current release: ${NEMLIG_RELEASE_IDENTITY}. Use Nemlig Assistant as independent capabilities for current products, rich exact product details, prices, availability, favourites, basket contents, and grocery sections. Normalize each search into one short Danish catalogue phrase. Search and details tools return data without opening widgets. After collecting suitable exact products, call start_product_review once to display the shopping review. Use update_product_review show (review_id optional) to recover this conversation’s active review; add appends new picks to Needs review without resetting accepted products. If the user asks to see products in the temporary local review visually, use update_product_review show to reopen its viewer, not repeated exact detail reads. Use revisit to move accepted products back to Needs review. End discards the temporary local review only when the user finishes shopping. These tools share voice/touch choices and a LOCAL basket. Never call legacy review_items_to_add/add_approved_items for local acceptance; those operate on the actual provider basket. Use show_my_basket for a quick text read of the actual Nemlig basket, and show_my_basket_visually when the user asks to see actual provider-basket products as images or cards. Image URLs in tool data do not prove that ChatGPT rendered cards; if no viewer appears, state the limitation honestly and use the complete text fallback. Accept/keep or replace unresolved exact products into the local basket; remove deletes them locally. For everything except X/Y, pass the exact remaining product_ids from the current snapshot. Refresh with show without review_id after stale state. If no active review remains, ask before starting a fresh review from the exact visible product IDs and quantities; never replay the failed edit or restore prior acceptance or approval. Use prepare_submission only when the user wants to send the local Basket, then ask approval of its exact quantities, current prices, and effects; only call submit_product_review after explicit approval of that unchanged submission. Never treat local acceptance as provider approval. A submitted or uncertain draft remains inspectable; never retry blindly. Basket changes require the matching staged review/apply tools and explicit approval; revalidate every change, stop on uncertainty, and read the basket back. Never check out, pay, order, or select delivery slots.`,
       supportedProtocolVersions: SUPPORTED_PROTOCOL_VERSIONS,
     },
   );
@@ -608,6 +659,25 @@ export function createMcpServer(
       const basket = basketPayload(await client.getCart());
       const views = basketProductViews(basket);
       return success({ ...basket, views }, `${basketText(basket)}\n${productViewsToText(views)}`);
+    }),
+  );
+
+  registerTool(
+    "show_my_basket_visually",
+    {
+      title: "Show my Nemlig basket visually",
+      description: "Open a read-only visual view of the actual Nemlig basket using current exact product details and safe images where available. This is not the temporary local shopping review. Detail reads are bounded; every basket line remains in the text fallback. Image URLs alone do not prove the ChatGPT client displayed cards. Does not change the basket.",
+      inputSchema: z.object({}),
+      outputSchema: visualBasketResultSchema,
+      annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true },
+      _meta: PRODUCT_VIEWER_RESOURCE_METADATA,
+    },
+    (_input, ctx) => runAuthenticatedRead("show_my_basket_visually", async () => {
+      const basket = basketPayload(await client.getCart());
+      const { views, unenrichedCount, imageCount } = await visualBasketProductViews(client, basket, ctx.mcpReq.signal);
+      const note = unenrichedCount ? `\n${unenrichedCount} basket lines were not enriched with exact product details and may be without images.` : "";
+      return success({ ...basket, views, detail_limit: VISUAL_BASKET_DETAIL_LIMIT, unenriched_count: unenrichedCount, image_count: imageCount },
+        `${basketText(basket)}\n${productViewsToText(views)}${note}\nImage URLs do not confirm whether your ChatGPT client displayed this viewer.`);
     }),
   );
 

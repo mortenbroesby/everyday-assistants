@@ -66,6 +66,7 @@ const normalTools = new Set([
   "show_grocery_sections",
   "browse_grocery_section",
   "show_my_basket",
+  "show_my_basket_visually",
   "start_product_review",
   "update_product_review",
   "review_items_to_add",
@@ -81,6 +82,7 @@ const serviceTools = new Set([
   "show_grocery_sections",
   "browse_grocery_section",
   "show_my_basket",
+  "show_my_basket_visually",
 ]);
 const serviceResources = new Set([PRODUCT_VIEWER_RESOURCE_URI, ...RETIRED_PRODUCT_VIEWER_RESOURCE_URIS]);
 
