@@ -702,6 +702,7 @@ test("visual basket bounds detail reads and retains lines when details fail or m
       readIds.push(id);
       if (id === 2) throw new NemligError("Not found", 404);
       if (id === 3) return { ...product, id: 99, imageUrl: "https://www.nemlig.com/wrong.jpg" };
+      if (id === 4) return { ...product, id, name: undefined, imageUrl: "https://www.nemlig.com/image.jpg" };
       return { ...product, id, imageUrl: "https://images.test/not-allowed.jpg" };
     },
   });
@@ -714,6 +715,7 @@ test("visual basket bounds detail reads and retains lines when details fail or m
     assert.equal(value.unenriched_count, 5);
     assert.equal(value.views[1]?.product.name, "Line 2");
     assert.equal(value.views[2]?.product.name, "Line 3");
+    assert.equal(value.views[3]?.product.name, "Line 4");
     assert.equal(value.views[0]?.product.image_url, undefined);
     assert.equal(value.views[12]?.product.name, "Line 13");
     assert.match(toolText(result), /not enriched|without images/iu);

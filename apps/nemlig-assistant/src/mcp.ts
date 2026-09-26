@@ -318,7 +318,10 @@ const visualBasketProductViews = async (
         const detail = await client.getProduct(id, detailSignal);
         if (detail.id !== id) return summary;
         const basketView = summary.status === "complete" ? summary.basket : undefined;
-        return createProductView(detail, { kind: "basket", quantity: basketView?.quantity, line_total: basketView?.line_total });
+        const view = createProductView(detail, { kind: "basket", quantity: basketView?.quantity, line_total: basketView?.line_total });
+        return view.status === "complete" && summary.status === "complete"
+          ? { ...view, product: { ...view.product, name: view.product.name?.trim() ? view.product.name : summary.product.name } }
+          : summary;
       } catch (error) {
         if (signal?.aborted || (error instanceof NemligError && error.status === 401)) throw error;
         return summary;
