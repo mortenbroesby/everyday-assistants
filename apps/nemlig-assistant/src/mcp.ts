@@ -298,6 +298,7 @@ const basketProductViews = (basket: unknown): ProductView[] => {
 };
 const VISUAL_BASKET_DETAIL_LIMIT = 12;
 const VISUAL_BASKET_CONCURRENCY = 3;
+const VISUAL_BASKET_DETAIL_TIMEOUT_MS = 8_000;
 const visualBasketProductViews = async (
   client: ShoppingClient,
   basket: ReturnType<typeof basketPayload>,
@@ -311,7 +312,10 @@ const visualBasketProductViews = async (
       const id = summary.status === "complete" ? summary.product.id : undefined;
       if (id === undefined || !Number.isSafeInteger(id) || id <= 0) return summary;
       try {
-        const detail = await client.getProduct(id, signal);
+        const detailSignal = signal
+          ? AbortSignal.any([signal, AbortSignal.timeout(VISUAL_BASKET_DETAIL_TIMEOUT_MS)])
+          : AbortSignal.timeout(VISUAL_BASKET_DETAIL_TIMEOUT_MS);
+        const detail = await client.getProduct(id, detailSignal);
         if (detail.id !== id) return summary;
         const basketView = summary.status === "complete" ? summary.basket : undefined;
         return createProductView(detail, { kind: "basket", quantity: basketView?.quantity, line_total: basketView?.line_total });
