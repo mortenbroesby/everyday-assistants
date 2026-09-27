@@ -1276,6 +1276,38 @@ test("edge acceptance failure has a bounded stage category and retains only prov
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
+test("service fixture typed failures retain their bounded boundary in the release journal", async () => {
+  const { deps, root } = await fixture();
+  deps.acceptanceMode = "service";
+  deps.env.NEMLIG_CI_ACCEPTANCE_READY = "true";
+  deps.env.NEMLIG_MCP_SERVICE_CLIENT_ID = "service-client";
+  deps.issueServiceToken = async () => "machine-token";
+  const run = deps.run;
+  let attempts = 0;
+  deps.run = async (command, args, options) => {
+    if (command === "pnpm" && args.includes("production:test:features")) {
+      attempts += 1;
+      if (attempts > 1) throw new Error("later private fixture detail");
+      const stdout = JSON.stringify({
+        schema: 1, profile: "service", failed: ["service_resource_inventory_mismatch"], failureCategory: "feature_failed",
+        lastCompletedBoundary: "service_resource_inventory_read", correlationIds: [],
+      });
+      throw Object.assign(new Error("private fixture detail"), { acceptanceFailure: options?.captureFailureStdout?.(stdout) });
+    }
+    return await run(command, args, options);
+  };
+  try {
+    const report = await deployProduction(commit, deps);
+    assert.equal(report.failure, "service_fixture_acceptance_failed");
+    assert.deepEqual(report.acceptanceFailure, {
+      stage: "read_only", profile: "service", category: "feature_failed",
+      lastCompletedBoundary: "service_resource_inventory_read", correlationIds: [],
+    });
+    assert.equal(attempts, 12);
+    assert.doesNotMatch(JSON.stringify(report), /private fixture detail|machine-token/u);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
 test("Worker rollback with changed Container metadata remains unknown", async () => {
   const { deps, root } = await fixture({ failFeatures: true, rollbackApplicationVersionDrift: true });
   try {

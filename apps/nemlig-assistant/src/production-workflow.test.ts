@@ -54,7 +54,13 @@ test("routine releases queue trusted main ancestors; manual dispatch is recovery
   assert.match(gate, /echo "deploy=false" >> "\$GITHUB_OUTPUT"/u);
   assert.doesNotMatch(gate, /pull-requests: read|deploy:nemlig-production|\/pulls|merge_commit_sha/u);
   assert.match(gate, /actions\/checkout@[0-9a-f]{40}/u);
-  assert.match(gate, /ref: "\$\{\{ env\.CANDIDATE_SHA \}\}"/u);
+  assert.doesNotMatch(source, /ref: "\$\{\{ env\.CANDIDATE_SHA \}\}"/u);
+  for (const job of [gate, preflight, deploy, retention, section(source, "  reconcile:")]) {
+    assert.match(job, /ref: main/u);
+    assert.match(job, /fetch-depth: 0/u);
+    assert.match(job, /git merge-base --is-ancestor "\$CANDIDATE_SHA" origin\/main/u);
+    assert.match(job, /git checkout --detach "\$CANDIDATE_SHA"/u);
+  }
   assert.match(gate, /persist-credentials: false/u);
   assert.match(gate, /fetch-depth: 0/u);
   assert.match(gate, /git fetch origin refs\/heads\/main:refs\/remotes\/origin\/main/u);

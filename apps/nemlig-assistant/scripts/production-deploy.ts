@@ -1111,7 +1111,9 @@ const parseAcceptanceFailure = (stdout: string | undefined, profile: AcceptanceF
     try { value = object(JSON.parse(line)); } catch { continue; }
     if (!value || value.schema !== 1 || value.profile !== profile
       || typeof value.failureCategory !== "string" || !acceptanceFailureCategories.has(value.failureCategory)
-      || !Array.isArray(value.failed) || !value.failed.includes(value.failureCategory)
+      || !Array.isArray(value.failed) || value.failed.length !== 1
+      || !(value.failed[0] === value.failureCategory || (value.failureCategory === "feature_failed"
+        && ["product_viewer_html_mismatch", "service_tool_inventory_mismatch", "service_resource_inventory_mismatch"].includes(value.failed[0])))
       || typeof value.lastCompletedBoundary !== "string"
       || !/^[A-Za-z0-9_:-]{1,64}$/u.test(value.lastCompletedBoundary)
       || !Array.isArray(value.correlationIds) || value.correlationIds.length > 16
@@ -1134,6 +1136,7 @@ const retryAcceptance = async (
   profile: AcceptanceFailureEvidence["profile"],
   failure: "edge_acceptance_failed" | "service_fixture_acceptance_failed" | "authenticated_read_only_acceptance_failed",
 ): Promise<void> => {
+  let lastEvidence: AcceptanceFailureEvidence | undefined;
   for (let attempt = 0; attempt < attempts; attempt += 1) {
     try {
       await runAt(deps, deps.packageRoot, "pnpm", args, {
@@ -1141,11 +1144,12 @@ const retryAcceptance = async (
       });
       return;
     } catch (error) {
+      const evidence = object(error)?.acceptanceFailure;
+      if (validAcceptanceFailure(evidence)) lastEvidence = evidence;
       deps.signal?.throwIfAborted();
       if (deps.signal?.aborted) throw new DeployFailure("command_cancelled");
       if (attempt === attempts - 1) {
-        const evidence = object(error)?.acceptanceFailure;
-        throw new AcceptanceFailure(failure, validAcceptanceFailure(evidence) ? evidence : undefined);
+        throw new AcceptanceFailure(failure, lastEvidence);
       }
       await sleepAbortably(deps);
     }
