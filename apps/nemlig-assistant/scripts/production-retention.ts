@@ -392,7 +392,8 @@ const main = async (): Promise<void> => {
       let raw: string;
       try { raw = await readFile(acceptancePath!, "utf8"); } catch { fail("acceptance_evidence_missing"); }
       acceptedRelease = parseAcceptedReleaseJournal(raw!, commit);
-      if (ledger.accepted[0]?.commit === commit && ledger.cleanup?.completedAt) {
+      if (ledger.accepted[0]?.commit === commit && ledger.accepted[0].digest === acceptedRelease.digest
+        && ledger.accepted[0].acceptedAt === acceptedRelease.acceptedAt && ledger.cleanup?.completedAt) {
         console.log(JSON.stringify({ commit, cleanupComplete: true, skipped: true }));
         return;
       }
@@ -488,7 +489,8 @@ const main = async (): Promise<void> => {
     if (acceptedRelease) {
       ledger = recordAcceptedImageRelease(ledger, acceptedRelease);
       const cleanup = ledger.cleanup;
-      if (!cleanup || cleanup.commit !== commit || cleanup.completedAt) fail("cleanup_checkpoint_invalid");
+      if (!cleanup || cleanup.commit !== commit || ledger.accepted[0]?.digest !== acceptedRelease.digest
+        || ledger.accepted[0].acceptedAt !== acceptedRelease.acceptedAt || cleanup.completedAt) fail("cleanup_checkpoint_invalid");
       await saveLedger(ledger);
     }
 

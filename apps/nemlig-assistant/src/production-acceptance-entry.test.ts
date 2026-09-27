@@ -421,3 +421,70 @@ test("stale viewer HTML produces bounded feature evidence instead of parsing HTM
     console.log = originalLog;
   }
 });
+
+test("service inventory drift identifies the failed list without exposing its contents", async () => {
+  const entry = await import("../scripts/production-acceptance.js");
+  for (const [kind, failed, boundary] of [
+    ["tool", "service_tool_inventory_mismatch", "service_tool_inventory_read"],
+    ["resource", "service_resource_inventory_mismatch", "service_resource_inventory_read"],
+  ] as const) {
+    const client = serviceClient();
+    if (kind === "tool") {
+      client.listTools = async () => ({ tools: [{ name: "private-token" }] });
+      client.listResources = async () => { throw new Error("resource inventory must not be requested"); };
+    } else client.listResources = async () => ({ resources: [{ uri: "private-token" }] });
+    const output: string[] = [];
+    const originalLog = console.log;
+    console.log = (value: string) => output.push(value);
+    try {
+      const report = await entry.run(["--service"], {
+        NEMLIG_PRODUCTION_MCP_URL: "https://nemlig-mcp.example.test/mcp",
+        NEMLIG_MCP_SERVICE_ACCESS_TOKEN: "test-token",
+      }, { fetcher: edgeFetcher([]), connect: async () => ({ client, close: async () => undefined }) });
+      assert.equal(report.failureCategory, "feature_failed");
+      assert.equal(report.lastCompletedBoundary, boundary);
+      assert.deepEqual(report.failed, [failed]);
+      assert.doesNotMatch(output.join(""), /private-token|test-token/u);
+    } finally {
+      console.log = originalLog;
+    }
+  }
+});
+
+test("service failure keeps the last completed MCP boundary and primary error", async () => {
+  const entry = await import("../scripts/production-acceptance.js");
+  const client = serviceClient();
+  client.listResources = async () => { throw new Error("MCP resource stream failed private-data"); };
+  const output: string[] = [];
+  const originalLog = console.log;
+  console.log = (value: string) => output.push(value);
+  try {
+    const report = await entry.run(["--service"], {
+      NEMLIG_PRODUCTION_MCP_URL: "https://nemlig-mcp.example.test/mcp",
+      NEMLIG_MCP_SERVICE_ACCESS_TOKEN: "test-token",
+    }, { fetcher: edgeFetcher([]), connect: async () => ({ client, close: async () => { throw new Error("close failed"); } }) });
+    assert.equal(report.failureCategory, "transport_failed");
+    assert.equal(report.lastCompletedBoundary, "service_tool_inventory_read");
+    assert.doesNotMatch(output.join(""), /private-data|test-token|close failed/u);
+  } finally {
+    console.log = originalLog;
+  }
+});
+
+test("service timeout reports the last completed MCP boundary", async () => {
+  const entry = await import("../scripts/production-acceptance.js");
+  const client = serviceClient();
+  client.listResources = async () => await new Promise(() => undefined);
+  const originalLog = console.log;
+  console.log = () => undefined;
+  try {
+    const report = await entry.run(["--service"], {
+      NEMLIG_PRODUCTION_MCP_URL: "https://nemlig-mcp.example.test/mcp",
+      NEMLIG_MCP_SERVICE_ACCESS_TOKEN: "test-token",
+    }, { fetcher: edgeFetcher([]), connect: async () => ({ client, close: async () => undefined }), totalTimeoutMs: 25 });
+    assert.equal(report.failureCategory, "deadline_exceeded");
+    assert.equal(report.lastCompletedBoundary, "service_tool_inventory_read");
+  } finally {
+    console.log = originalLog;
+  }
+});

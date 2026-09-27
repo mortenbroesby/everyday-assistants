@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   acceptedImageDigests,
   executeImageRetention,
+  markImageRetentionComplete,
   parseImageRetentionLedger,
   parseRetentionCount,
   planImageRetention,
@@ -117,6 +118,15 @@ test("accepted-image ledger is exact, newest-first, and idempotent", () => {
   assert.throws(() => parseImageRetentionLedger({ ...ledger, legacyResetCompletedAt: "2026-09-23T08:00:00.000Z" }, repository), /image_retention_ledger_invalid/u);
   assert.throws(() => parseImageRetentionLedger({ ...ledger, repository: "other/repository" }, repository), /image_retention_ledger_invalid/u);
   assert.throws(() => recordAcceptedImageRelease(ledger, { ...second, digest: digest(3) }), /image_retention_ledger_commit_conflict/u);
+  const rebuilt = { ...second, digest: digest(3), acceptedAt: "2026-09-23T08:00:00.000Z" };
+  const recovered = recordAcceptedImageRelease(ledger, rebuilt);
+  assert.deepEqual(recovered.accepted.slice(0, 2), [rebuilt, second], "a later accepted rebuild keeps both proven images");
+  assert.deepEqual(recovered.cleanup, { commit: second.commit, acceptedAt: rebuilt.acceptedAt }, "the rebuild starts a new cleanup checkpoint");
+  assert.deepEqual(acceptedImageDigests(recovered), [digest(3), digest(1)]);
+  assert.deepEqual(recordAcceptedImageRelease(recovered, rebuilt), recovered, "the exact journal event is idempotent");
+  assert.equal(markImageRetentionComplete(recovered, "2026-09-23T09:00:00.000Z").cleanup?.acceptedAt, rebuilt.acceptedAt);
+  assert.equal(resolveRetentionDeleteIntent(recordRetentionDeleteIntent(recovered, digest(1), "old-tag"), false).cleanup?.acceptedAt, rebuilt.acceptedAt);
+  assert.throws(() => parseImageRetentionLedger({ ...recovered, cleanup: { commit: second.commit, acceptedAt: second.acceptedAt } }, repository), /image_retention_ledger_invalid/u);
   assert.throws(() => parseImageRetentionLedger({ ...ledger, accepted: [first, second] }, repository), /image_retention_ledger_invalid/u);
 
   let longHistory = recordAcceptedImageRelease(empty, { ...first, digest: digest(2) });
