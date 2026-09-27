@@ -21,6 +21,7 @@
 - [x] 3.5 Implement the separate Worker-version policy with complete paginated inventory and cardinality validation, fixed UTC 48-hour cutoff, journal-derived active/recovery protection, fresh revalidation, delete readback, shared lease fencing, bounded durable evidence, explicit reviewed resume, and timeout tests; no live deletion is claimed.
 - [ ] 3.6 Run the protected Worker-version policy against the live production inventory and verify the remaining history without deleting a required recovery reference.
 - [x] 3.7 Correct audit findings in Worker retention, release summarization, failed-deploy evidence handling, workflow tests, and operations/spec documentation; no provider mutation is claimed.
+- [x] 3.8 Accept a distinct exact recovery journal event when a previously accepted source commit has a new image digest; preserve the old event and prove same-event replay/conflicting evidence remain safe. Verified against the saved 27 September recovery journal and ledger without provider mutation; live retention reconciliation remains in 4.3.
 
 ## 4. Accepted-release cleanup (#100)
 

@@ -14,6 +14,11 @@ retention completion or rerun cleanup from the successful deploy. Preserve
 the `476dd92` fixture failure as unresolved until its precise inventory or
 transport boundary is proven. Before any further recovery, establish that
 the prior runner stopped and the exact Worker/Container state is safe.
+Read-only reconciliation of the saved recovery journal and current ledger
+reproduced `image_retention_ledger_commit_conflict`: recovery rebuilt the same
+`94a9a3c` source into a different accepted image. A distinct acceptance time
+is now part of the ledger event identity; this code change does not itself
+reconcile the live interrupted retention lease or prove cleanup completion.
 
 Production endpoints:
 

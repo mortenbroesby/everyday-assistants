@@ -180,6 +180,7 @@ export async function main(
   argv: string[] = process.argv.slice(2),
   env: Environment = process.env,
   dependencies: AcceptanceEntryDependencies = defaultDependencies,
+  progress?: { lastCompletedBoundary: string },
 ): Promise<AcceptanceOutcome> {
   const options = parseArgs(argv);
   if (options.mutation && env.CI?.trim()) throw new Error("CI acceptance cannot select mutation mode");
@@ -208,30 +209,47 @@ export async function main(
       expectedScopes: ["use:nemlig-assistant"],
     });
     const observedRevision = /^[0-9a-f]{40}$/u.test(edge.revision) ? edge.revision : undefined;
+    if (progress) progress.lastCompletedBoundary = edge.lastCompletedBoundary;
     if (options.edgeOnly) {
       return { profile: "edge", observedRevision, required: ["edge"], passed: ["edge"], unavailable: [], lastCompletedBoundary: edge.lastCompletedBoundary, correlationIds: edge.correlationIds };
     }
 
     const accessToken = required(env, options.service ? "NEMLIG_MCP_SERVICE_ACCESS_TOKEN" : "NEMLIG_MCP_ACCESS_TOKEN");
     const connected = await abortable("Authenticated MCP connect", dependencies.connect(origin, accessToken, controller.signal), controller.signal);
+    if (progress) progress.lastCompletedBoundary = "authenticated_mcp_connect";
     const closeOnAbort = () => { void connected.close().catch(() => undefined); };
     controller.signal.addEventListener("abort", closeOnAbort, { once: true });
+    let outcome: AcceptanceOutcome | undefined;
+    let operationFailed = false;
+    let operationError: unknown;
     try {
       if (options.service) {
-        const report = await verifyServiceAcceptanceFeatures(connected.client, { signal: controller.signal });
-        return { profile: "service", observedRevision, required: ["edge", "service_fixture"], passed: ["edge", "service_fixture"], unavailable: [], lastCompletedBoundary: `service_fixture_${report.requestCount}_requests`, correlationIds: edge.correlationIds };
+        const report = await verifyServiceAcceptanceFeatures(connected.client, {
+          signal: controller.signal,
+          onBoundary: (boundary) => { if (progress) progress.lastCompletedBoundary = boundary; },
+        });
+        outcome = { profile: "service", observedRevision, required: ["edge", "service_fixture"], passed: ["edge", "service_fixture"], unavailable: [], lastCompletedBoundary: `service_fixture_${report.requestCount}_requests`, correlationIds: edge.correlationIds };
       } else if (!mutations) {
         const report = await verifyReadOnlyProductionFeatures(connected.client, { signal: controller.signal });
         await verifyAggregateTierUsage(origin, accessToken, dependencies.fetcher, { signal: controller.signal });
-        return { profile: "live-user", observedRevision, required: ["edge", "live_user_features", "owner_admin"], passed: ["edge", "live_user_features", "owner_admin"], unavailable: report.unavailable, lastCompletedBoundary: "owner_admin", correlationIds: edge.correlationIds };
+        outcome = { profile: "live-user", observedRevision, required: ["edge", "live_user_features", "owner_admin"], passed: ["edge", "live_user_features", "owner_admin"], unavailable: report.unavailable, lastCompletedBoundary: "owner_admin", correlationIds: edge.correlationIds };
       } else {
         await verifyApprovedReversibleProductionMutation(connected.client, mutations.change, mutations.restoration);
-        return { profile: "mutation", observedRevision, required: ["edge", "approved_mutation"], passed: ["edge", "approved_mutation"], unavailable: [], lastCompletedBoundary: "approved_mutation_restored", correlationIds: edge.correlationIds };
+        outcome = { profile: "mutation", observedRevision, required: ["edge", "approved_mutation"], passed: ["edge", "approved_mutation"], unavailable: [], lastCompletedBoundary: "approved_mutation_restored", correlationIds: edge.correlationIds };
       }
-    } finally {
-      controller.signal.removeEventListener("abort", closeOnAbort);
-      await abortable("Authenticated MCP close", connected.close(), controller.signal);
+    } catch (error) {
+      operationFailed = true;
+      operationError = error;
     }
+    controller.signal.removeEventListener("abort", closeOnAbort);
+    try {
+      await abortable("Authenticated MCP close", connected.close(), controller.signal);
+    } catch (error) {
+      if (!operationFailed) { operationFailed = true; operationError = error; }
+    }
+    if (operationFailed) throw operationError;
+    if (!outcome) throw new Error("Production acceptance outcome unavailable");
+    return outcome;
   } finally {
     clearTimeout(timer);
   }
@@ -244,8 +262,9 @@ export async function run(
 ): Promise<AcceptanceReport> {
   const startedAt = new Date().toISOString();
   const sourceSha = /^[0-9a-f]{40}$/u.test(env.GITHUB_SHA?.trim() ?? "") ? env.GITHUB_SHA?.trim() : undefined;
+  const progress = { lastCompletedBoundary: "none" };
   try {
-    const outcome = await main(argv, env, dependencies);
+    const outcome = await main(argv, env, dependencies, progress);
     const report: AcceptanceReport = { schema: 1, sourceSha, startedAt, completedAt: new Date().toISOString(), ...outcome, failed: [] };
     console.log(JSON.stringify(report));
     return report;
@@ -257,7 +276,7 @@ export async function run(
       required: [], passed: [],
       failed: [boundedFailure?.code ?? failureCategory(error)],
       unavailable: [],
-      lastCompletedBoundary: boundedFailure?.lastCompletedBoundary ?? "none",
+      lastCompletedBoundary: boundedFailure?.lastCompletedBoundary ?? progress.lastCompletedBoundary,
       failureCategory: failureCategory(error), correlationIds: [],
     };
     console.log(JSON.stringify(report));

@@ -59,10 +59,10 @@ export interface AcceptedImageRelease {
 export interface ImageRetentionLedger {
   schema: 1;
   repository: string;
-  /** Newest first; every accepted commit supports idempotent replay detection. */
+  /** Newest first; each exact accepted journal event supports idempotent replay detection. */
   accepted: AcceptedImageRelease[];
   /** Current accepted commit's cleanup checkpoint; absent until the first accepted release. */
-  cleanup?: { commit: string; inFlight?: { digest: string; tag: string }; completedAt?: string };
+  cleanup?: { commit: string; acceptedAt?: string; inFlight?: { digest: string; tag: string }; completedAt?: string };
 }
 
 const fail = (reason: string): never => { throw new Error(`image_retention_${reason}`); };
@@ -93,8 +93,9 @@ export function parseImageRetentionLedger(value: unknown, expectedRepository: st
       const imageDigest = entry.digest as string;
       const acceptedAt = entry.acceptedAt as string;
       const acceptedTime = Date.parse(acceptedAt);
-      if (seen.has(commit) || acceptedTime > previousTime) fail("ledger_invalid");
-      seen.add(commit);
+      const eventKey = `${commit}\0${acceptedAt}`;
+      if (seen.has(eventKey) || acceptedTime > previousTime) fail("ledger_invalid");
+      seen.add(eventKey);
       previousTime = acceptedTime;
       parsed.push({ commit, digest: imageDigest, acceptedAt });
     }
@@ -113,12 +114,15 @@ export function parseImageRetentionLedger(value: unknown, expectedRepository: st
         || typeof flight.tag !== "string" || !tagPattern.test(flight.tag)) fail("ledger_invalid");
       inFlight = { digest: flight.digest as string, tag: flight.tag as string };
     }
-    if (Object.keys(checkpoint).some((key) => !["commit", "inFlight", "completedAt"].includes(key))
+    if (Object.keys(checkpoint).some((key) => !["commit", "acceptedAt", "inFlight", "completedAt"].includes(key))
       || Object.keys(checkpoint).length < 1 || typeof checkpoint.commit !== "string" || !/^[0-9a-f]{40}$/u.test(checkpoint.commit)
-      || !accepted.some(({ commit }) => commit === checkpoint.commit)
+      || accepted[0]?.commit !== checkpoint.commit
+      || (checkpoint.acceptedAt !== undefined && checkpoint.acceptedAt !== accepted[0].acceptedAt)
+      || (checkpoint.acceptedAt === undefined && accepted.some((entry, index) => index > 0 && entry.commit === checkpoint.commit))
       || (checkpoint.completedAt !== undefined && !validTimestamp(checkpoint.completedAt))) fail("ledger_invalid");
     cleanup = {
       commit: checkpoint.commit as string,
+      ...(checkpoint.acceptedAt ? { acceptedAt: checkpoint.acceptedAt as string } : {}),
       ...(inFlight ? { inFlight } : {}),
       ...(checkpoint.completedAt ? { completedAt: checkpoint.completedAt as string } : {}),
     };
@@ -143,7 +147,7 @@ export function recordAcceptedImageRelease(
   release: AcceptedImageRelease,
 ): ImageRetentionLedger {
   const ledger = parseImageRetentionLedger(ledgerInput, ledgerInput.repository);
-  const existing = ledger.accepted.find((entry) => entry.commit === release.commit);
+  const existing = ledger.accepted.find((entry) => entry.commit === release.commit && entry.acceptedAt === release.acceptedAt);
   if (existing) {
     if (existing.digest !== release.digest) fail("ledger_commit_conflict");
     return ledger;
@@ -151,7 +155,7 @@ export function recordAcceptedImageRelease(
   const next = parseImageRetentionLedger({
     ...ledger,
     accepted: [release, ...ledger.accepted],
-    cleanup: { commit: release.commit },
+    cleanup: { commit: release.commit, acceptedAt: release.acceptedAt },
   }, ledger.repository);
   return next;
 }
@@ -160,7 +164,7 @@ export function markImageRetentionComplete(ledgerInput: ImageRetentionLedger, co
   const ledger = parseImageRetentionLedger(ledgerInput, ledgerInput.repository);
   const cleanup = ledger.cleanup;
   if (!validTimestamp(completedAt) || !ledger.accepted[0] || cleanup?.commit !== ledger.accepted[0].commit || cleanup?.inFlight) fail("ledger_invalid");
-  return { ...ledger, cleanup: { commit: cleanup!.commit, completedAt } };
+  return { ...ledger, cleanup: { commit: cleanup!.commit, ...(cleanup!.acceptedAt ? { acceptedAt: cleanup!.acceptedAt } : {}), completedAt } };
 }
 
 export function recordRetentionDeleteIntent(ledgerInput: ImageRetentionLedger, digest: string, tag: string): ImageRetentionLedger {
@@ -178,7 +182,7 @@ export function resolveRetentionDeleteIntent(ledgerInput: ImageRetentionLedger, 
   if (tagStillPresent) fail("delete_outcome_uncertain");
   return {
     ...ledger,
-    cleanup: { commit: checkpoint!.commit },
+    cleanup: { commit: checkpoint!.commit, ...(checkpoint!.acceptedAt ? { acceptedAt: checkpoint!.acceptedAt } : {}) },
   };
 }
 

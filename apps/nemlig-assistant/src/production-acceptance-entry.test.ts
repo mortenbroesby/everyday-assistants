@@ -450,3 +450,41 @@ test("service inventory drift identifies the failed list without exposing its co
     }
   }
 });
+
+test("service failure keeps the last completed MCP boundary and primary error", async () => {
+  const entry = await import("../scripts/production-acceptance.js");
+  const client = serviceClient();
+  client.listResources = async () => { throw new Error("MCP resource stream failed private-data"); };
+  const output: string[] = [];
+  const originalLog = console.log;
+  console.log = (value: string) => output.push(value);
+  try {
+    const report = await entry.run(["--service"], {
+      NEMLIG_PRODUCTION_MCP_URL: "https://nemlig-mcp.example.test/mcp",
+      NEMLIG_MCP_SERVICE_ACCESS_TOKEN: "test-token",
+    }, { fetcher: edgeFetcher([]), connect: async () => ({ client, close: async () => { throw new Error("close failed"); } }) });
+    assert.equal(report.failureCategory, "transport_failed");
+    assert.equal(report.lastCompletedBoundary, "service_tool_inventory_read");
+    assert.doesNotMatch(output.join(""), /private-data|test-token|close failed/u);
+  } finally {
+    console.log = originalLog;
+  }
+});
+
+test("service timeout reports the last completed MCP boundary", async () => {
+  const entry = await import("../scripts/production-acceptance.js");
+  const client = serviceClient();
+  client.listResources = async () => await new Promise(() => undefined);
+  const originalLog = console.log;
+  console.log = () => undefined;
+  try {
+    const report = await entry.run(["--service"], {
+      NEMLIG_PRODUCTION_MCP_URL: "https://nemlig-mcp.example.test/mcp",
+      NEMLIG_MCP_SERVICE_ACCESS_TOKEN: "test-token",
+    }, { fetcher: edgeFetcher([]), connect: async () => ({ client, close: async () => undefined }), totalTimeoutMs: 25 });
+    assert.equal(report.failureCategory, "deadline_exceeded");
+    assert.equal(report.lastCompletedBoundary, "service_tool_inventory_read");
+  } finally {
+    console.log = originalLog;
+  }
+});

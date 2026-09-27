@@ -165,6 +165,7 @@ export interface ServiceAcceptanceFeatureReport {
 export interface AcceptanceDeadlineOptions {
   totalTimeoutMs?: number;
   signal?: AbortSignal;
+  onBoundary?: (boundary: string) => void;
 }
 
 const abortError = (signal: AbortSignal): Error => signal.reason instanceof Error
@@ -286,13 +287,16 @@ export async function verifyServiceAcceptanceFeatures(
     options.signal,
   );
   const tools = (await withinTotalDeadline("tool inventory", () => client.listTools())).tools;
+  options.onBoundary?.("service_tool_inventory_read");
   const names = tools.map(({ name }) => name).sort();
   if (!isDeepStrictEqual(names, [...serviceAcceptanceToolInventory].sort())) throw new ServiceInventoryMismatchError("service_tool_inventory_mismatch");
   const resources = await listResourcesOrEmpty(client, withinTotalDeadline, "Service");
+  options.onBoundary?.("service_resource_inventory_read");
   if (!isDeepStrictEqual(resources.map(({ uri }) => uri).sort(), [...serviceAcceptanceResourceInventory].sort())) throw new ServiceInventoryMismatchError("service_resource_inventory_mismatch");
 
   assert.ok(client.readResource, "Service product-viewer resource reader is required");
   const viewer = await withinTotalDeadline("product viewer resource", () => client.readResource!({ uri: PRODUCT_VIEWER_RESOURCE_URI }));
+  options.onBoundary?.("product_viewer_resource_read");
   assertProductViewerResource(viewer, "Service");
 
   const exercised: string[] = [];
@@ -301,6 +305,7 @@ export async function verifyServiceAcceptanceFeatures(
   const call = async (name: string, args: Record<string, unknown> = {}): Promise<ToolResult> => {
     requestCount += 1;
     const result = await withinTotalDeadline(name, () => client.callTool({ name, arguments: args }));
+    options.onBoundary?.(`service_${name}_returned`);
     exercised.push(name);
     return result;
   };
@@ -320,10 +325,12 @@ export async function verifyServiceAcceptanceFeatures(
     try {
       requestCount += 1;
       const result = await withinTotalDeadline(name, () => client.callTool({ name, arguments: {} }));
+      options.onBoundary?.(`service_${name}_returned`);
       exercised.push(name);
       assert.equal(result.isError, true, `Service acceptance allowed forbidden ${name}`);
     } catch (error) {
       assert.ok(isServiceForbiddenResponse(error), `Service acceptance failed ${name} without a precise HTTP 403 denial`);
+      options.onBoundary?.(`service_${name}_denied`);
     }
     denied.push(name);
   }
