@@ -210,6 +210,28 @@ test("a matching host result keeps an explicitly opened frame active and ignores
   assert.equal(app.controls(/Open current review/i), undefined);
 });
 
+test("a same-revision verified submission supersedes an uncertain host snapshot", async () => {
+  const current = snapshot("active-review", 3, "basket");
+  const submission = { submission_id: "submission-one", review: { lines: [], expected_products_price: 30 } };
+  const uncertain = { review: { ...current.review, revision: 4, submission: { ...submission, status: "uncertain" } } };
+  const submitted = { review: { ...current.review, revision: 4, submission: { ...submission, status: "submitted" } } };
+  const app = mount(reviewOutput, () => current);
+  await app.controls(/Open current review/i)!.click();
+  const notify = (payload: unknown) => {
+    for (const listener of app.windowListeners.get("message") ?? []) listener({
+      source: app.parent, detail: undefined, preventDefault() {},
+      data: { jsonrpc: "2.0", method: "ui/notifications/tool-result", params: payload },
+    } as FakeEvent);
+  };
+  notify(uncertain);
+  assert.match(app.get("submission").text, /Check Nemlig before trying again/u);
+  notify(submitted);
+  assert.match(app.get("submission").text, /Submitted to Nemlig/u);
+  assert.ok(app.controls(/Needs review/i), "the existing card remains active");
+  notify(uncertain);
+  assert.match(app.get("submission").text, /Submitted to Nemlig/u, "an older same-revision notification cannot undo verified success");
+});
+
 test("Basket navigation and Clear Basket stay in one active local review", async () => {
   const basket = snapshot("active-review", 4, "basket");
   const needs = snapshot("active-review", 3);

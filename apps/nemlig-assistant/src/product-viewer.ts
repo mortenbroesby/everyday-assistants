@@ -458,7 +458,10 @@ footer > button.quiet { background: transparent; color: var(--muted); font-size:
     if (value.review && Array.isArray(value.review.items) && value.review.review_id) {
       const sameReview = review && review.review_id === value.review.review_id;
       if (sameReview && value.review.revision < review.revision) return !current;
-      if (!current && sameReview && value.review.revision === review.revision) return true;
+      const verifiedCompletion = sameReview && review.submission?.status === "uncertain"
+        && value.review.submission?.status === "submitted"
+        && value.review.submission.submission_id === review.submission.submission_id;
+      if (!current && sameReview && value.review.revision === review.revision && !verifiedCompletion) return true;
       const previousSubmissionId = review && review.submission && review.submission.submission_id;
       received = true; active = current || (active && sameReview); unavailable = false; review = value.review;
       selected = sameReview ? new Set([...selected].filter(id => review.items.some(i => i.product_id === id && i.state === "needs-review"))) : new Set();
