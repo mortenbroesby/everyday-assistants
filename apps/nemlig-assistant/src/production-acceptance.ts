@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
+import { isDeepStrictEqual } from "node:util";
 import { serviceAcceptanceResourceInventory, serviceAcceptanceToolInventory } from "./mcp.js";
 import { PRODUCT_VIEWER_MIME_TYPE, PRODUCT_VIEWER_RESOURCE_METADATA, PRODUCT_VIEWER_RESOURCE_URI, renderProductViewerHtml } from "./product-viewer.js";
 import { RETIRED_PRODUCT_VIEWER_RESOURCE_URIS } from "./product-viewer-identity.js";
@@ -121,6 +122,15 @@ export class ProductViewerHtmlMismatchError extends Error {
   readonly lastCompletedBoundary = "product_viewer_resource_read";
   constructor() {
     super("Product-viewer resource HTML drifted from the released renderer");
+  }
+}
+
+/** Stable, content-free evidence for a machine fixture inventory mismatch. */
+export class ServiceInventoryMismatchError extends Error {
+  readonly lastCompletedBoundary: string;
+  constructor(readonly code: "service_tool_inventory_mismatch" | "service_resource_inventory_mismatch") {
+    super(code);
+    this.lastCompletedBoundary = code === "service_tool_inventory_mismatch" ? "service_tool_inventory_read" : "service_resource_inventory_read";
   }
 }
 
@@ -276,10 +286,10 @@ export async function verifyServiceAcceptanceFeatures(
     options.signal,
   );
   const tools = (await withinTotalDeadline("tool inventory", () => client.listTools())).tools;
-  const resources = await listResourcesOrEmpty(client, withinTotalDeadline, "Service");
   const names = tools.map(({ name }) => name).sort();
-  assert.deepEqual(names, [...serviceAcceptanceToolInventory].sort(), "Service MCP tool inventory drifted");
-  assert.deepEqual(resources.map(({ uri }) => uri).sort(), [...serviceAcceptanceResourceInventory].sort(), "Service MCP resource inventory drifted");
+  if (!isDeepStrictEqual(names, [...serviceAcceptanceToolInventory].sort())) throw new ServiceInventoryMismatchError("service_tool_inventory_mismatch");
+  const resources = await listResourcesOrEmpty(client, withinTotalDeadline, "Service");
+  if (!isDeepStrictEqual(resources.map(({ uri }) => uri).sort(), [...serviceAcceptanceResourceInventory].sort())) throw new ServiceInventoryMismatchError("service_resource_inventory_mismatch");
 
   assert.ok(client.readResource, "Service product-viewer resource reader is required");
   const viewer = await withinTotalDeadline("product viewer resource", () => client.readResource!({ uri: PRODUCT_VIEWER_RESOURCE_URI }));

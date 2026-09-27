@@ -4,6 +4,7 @@ import process from "node:process";
 import { fileURLToPath } from "node:url";
 import {
   ProductViewerHtmlMismatchError,
+  ServiceInventoryMismatchError,
   verifyApprovedReversibleProductionMutation,
   verifyAggregateTierUsage,
   verifyProductionEdge,
@@ -161,7 +162,7 @@ const inheritedMutationApproval = (env: Environment): boolean => Object.keys(env
   /^NEMLIG_PRODUCTION_(?:MUTATION|RESTORATION)(?:_CONFIRMATION)?$/u.test(name) && Boolean(env[name]?.trim()));
 
 const failureCategory = (error: unknown): NonNullable<AcceptanceReport["failureCategory"]> => {
-  if (error instanceof ProductViewerHtmlMismatchError) return "feature_failed";
+  if (error instanceof ProductViewerHtmlMismatchError || error instanceof ServiceInventoryMismatchError) return "feature_failed";
   const message = error instanceof Error ? error.message : "";
   if (/deadline exceeded|timed out/iu.test(message)) return "deadline_exceeded";
   if (/argument|valid URL|required|approval environment|cannot select mutation|fixed production target/iu.test(message)) return "input_invalid";
@@ -249,13 +250,14 @@ export async function run(
     console.log(JSON.stringify(report));
     return report;
   } catch (error) {
+    const boundedFailure = error instanceof ProductViewerHtmlMismatchError || error instanceof ServiceInventoryMismatchError ? error : undefined;
     const report: AcceptanceReport = {
       schema: 1, sourceSha, startedAt, completedAt: new Date().toISOString(),
       profile: argv.includes("--mutation") ? "mutation" : argv.includes("--edge-only") ? "edge" : argv.includes("--service") ? "service" : "live-user",
       required: [], passed: [],
-      failed: [error instanceof ProductViewerHtmlMismatchError ? error.code : failureCategory(error)],
+      failed: [boundedFailure?.code ?? failureCategory(error)],
       unavailable: [],
-      lastCompletedBoundary: error instanceof ProductViewerHtmlMismatchError ? error.lastCompletedBoundary : "none",
+      lastCompletedBoundary: boundedFailure?.lastCompletedBoundary ?? "none",
       failureCategory: failureCategory(error), correlationIds: [],
     };
     console.log(JSON.stringify(report));
