@@ -52,7 +52,7 @@ The server SHALL expose current catalogue search, favourites, grocery sections, 
 
 ### Requirement: Conversational reviewed basket changes
 
-The server SHALL keep catalogue results and exact product details independent from basket operations, while basket changes SHALL remain behind the existing matching staged review/apply tools and explicit approval. Review and apply responses SHALL retain structured data plus a readable text fallback. Local review results SHALL attach the shared viewer resource; the viewer renders server-owned temporary review state and invokes only local-draft tools. Actual provider changes require a separate unchanged exact submission review and explicit approval.
+The server SHALL keep catalogue results and exact product details independent from basket operations, while basket changes SHALL remain behind the existing matching staged review/apply tools and explicit approval. Review and apply responses SHALL retain structured data plus a readable text fallback. Local review results SHALL attach the shared viewer resource; the viewer renders server-owned temporary review state and invokes local-draft tools plus the protected submit tool only after its explicit prepared-review confirmation. Actual provider changes require a separate unchanged exact submission review and explicit approval.
 
 #### Scenario: Exact review is submitted
 

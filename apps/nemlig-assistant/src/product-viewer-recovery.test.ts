@@ -10,6 +10,7 @@ class FakeNode {
   textContent = "";
   hidden = false;
   disabled = false;
+  open = false;
   checked = false;
   value = "";
   type = "";
@@ -99,7 +100,7 @@ function mount(toolOutput: unknown, respond: (call: ToolCall) => unknown | Promi
   const script = renderProductViewerHtml().split("<script>")[1]!.split("</script>")[0]!;
   new Script(script).runInNewContext(context);
   const controls = (label: RegExp) => [...nodes.values()].flatMap(node => node.queryAll("button")).find(button => label.test(button.text));
-  return { calls, get, controls, openai, windowListeners, expireTimers(delay: number) { for (const [id, timer] of timers) if (timer.delay === delay) { timers.delete(id); timer.callback(); } } };
+  return { calls, get, controls, openai, parent, windowListeners, expireTimers(delay: number) { for (const [id, timer] of timers) if (timer.delay === delay) { timers.delete(id); timer.callback(); } } };
 }
 
 const reviewOutput = snapshot("old-review", 6);
@@ -163,6 +164,18 @@ test("restarting an unavailable historical review preserves quantities without r
   assert.match(app.get("products").text, /Current milk draft/u);
 });
 
+test("duplicate unavailable host output keeps explicit safe restart visible", async () => {
+  const app = mount(reviewOutput, () => ({ unavailable: true }));
+  await app.controls(/Open current review/i)!.click();
+  assert.ok(app.controls(/Start new review/i));
+  for (const listener of app.windowListeners.get("message") ?? []) listener({
+    source: app.parent, detail: undefined, preventDefault() {},
+    data: { jsonrpc: "2.0", method: "ui/notifications/tool-result", params: { unavailable: true } },
+  } as FakeEvent);
+  assert.ok(app.controls(/Start new review/i));
+  assert.equal(app.controls(/Open current review/i), undefined);
+});
+
 
 test("a host globals update gates historical review data again", async () => {
   const app = mount(reviewOutput, () => snapshot("active-review", 2));
@@ -175,6 +188,155 @@ test("a host globals update gates historical review data again", async () => {
   assert.equal(app.calls.length, 1, "an external payload cannot trigger another hydration call");
   assert.ok(app.controls(/Open current review/i), "the later host snapshot returns the viewer to its activation gate");
   assert.equal(app.controls(/Move to Needs review|Remove|Change product/i), undefined, "historical review controls are hidden again");
+});
+
+test("a matching host result keeps an explicitly opened frame active and ignores stale revisions", async () => {
+  const current = snapshot("active-review", 3, "basket");
+  const app = mount(reviewOutput, () => current);
+  await app.controls(/Open current review/i)!.click();
+  assert.ok(app.controls(/Needs review/i));
+  for (const listener of app.windowListeners.get("message") ?? []) listener({
+    source: app.parent,
+    detail: undefined,
+    preventDefault() {},
+    data: { jsonrpc: "2.0", method: "ui/notifications/tool-result", params: current },
+  } as FakeEvent);
+  assert.equal(app.controls(/Open current review/i), undefined, "same-review host output must not collapse the mounted card");
+  assert.ok(app.controls(/Needs review/i));
+  for (const listener of app.windowListeners.get("openai:set_globals") ?? []) listener({
+    detail: { globals: { toolOutput: snapshot("active-review", 2) } }, preventDefault() {},
+  });
+  assert.equal(app.get("title").textContent, "Basket", "a delayed older result must not overwrite the confirmed destination");
+  assert.equal(app.controls(/Open current review/i), undefined);
+});
+
+test("a same-revision verified submission supersedes an uncertain host snapshot", async () => {
+  const current = snapshot("active-review", 3, "basket");
+  const submission = { submission_id: "submission-one", review: { lines: [], expected_products_price: 30 } };
+  const uncertain = { review: { ...current.review, revision: 4, submission: { ...submission, status: "uncertain" } } };
+  const submitted = { review: { ...current.review, revision: 4, submission: { ...submission, status: "submitted" } } };
+  const app = mount(reviewOutput, () => current);
+  await app.controls(/Open current review/i)!.click();
+  const notify = (payload: unknown) => {
+    for (const listener of app.windowListeners.get("message") ?? []) listener({
+      source: app.parent, detail: undefined, preventDefault() {},
+      data: { jsonrpc: "2.0", method: "ui/notifications/tool-result", params: payload },
+    } as FakeEvent);
+  };
+  notify(uncertain);
+  assert.match(app.get("submission").text, /Check Nemlig before trying again/u);
+  notify(submitted);
+  assert.match(app.get("submission").text, /Submitted to Nemlig/u);
+  assert.ok(app.controls(/Needs review/i), "the existing card remains active");
+  notify(uncertain);
+  assert.match(app.get("submission").text, /Submitted to Nemlig/u, "an older same-revision notification cannot undo verified success");
+});
+
+test("Basket navigation and Clear Basket stay in one active local review", async () => {
+  const basket = snapshot("active-review", 4, "basket");
+  const needs = snapshot("active-review", 3);
+  const cleared = snapshot("active-review", 5);
+  const app = mount(reviewOutput, call => {
+    const action = call.args.action as { kind?: string; destination?: string };
+    if (action?.kind === "show") return needs;
+    if (action?.kind === "navigate") return basket;
+    if (action?.kind === "revisit") return cleared;
+    throw new Error("Unexpected tool call");
+  });
+  await app.controls(/Open current review/i)!.click();
+  await app.controls(/^Basket \(0\)$/i)!.click();
+  assert.equal(app.get("title").textContent, "Basket");
+  assert.equal(app.controls(/Open current review/i), undefined);
+  await app.controls(/Clear local Basket/i)!.click();
+  assert.equal(app.calls.length, 2, "opening a local confirmation does not mutate a basket");
+  await app.controls(/Move all to Needs review/i)!.click();
+  assert.deepEqual(JSON.parse(JSON.stringify(app.calls[2])), {
+    name: "update_product_review",
+    args: { review_id: "active-review", revision: 4, action: { kind: "revisit", product_ids: [41] } },
+  });
+  assert.equal(app.controls(/Open current review/i), undefined);
+  assert.equal(app.get("title").textContent, "Needs review");
+  assert.equal(app.calls.some(call => call.name === "submit_product_review"), false);
+});
+
+test("same-review navigation keeps compatible selection and disclosure state", async () => {
+  const needs = snapshot("active-review", 2);
+  const basket = { review: { ...needs.review, revision: 3, destination: "basket" } };
+  const back = { review: { ...needs.review, revision: 4 } };
+  const app = mount(reviewOutput, call => {
+    const action = call.args.action as { kind?: string; destination?: string };
+    if (action?.kind === "show") return needs;
+    if (action?.destination === "basket") return basket;
+    if (action?.destination === "needs-review") return back;
+    throw new Error("Unexpected tool call");
+  });
+  await app.controls(/Open current review/i)!.click();
+  const checkbox = app.get("products").queryAll("input")[0]!;
+  checkbox.checked = true;
+  for (const listener of checkbox.listeners.get("change") ?? []) listener({ target: checkbox, preventDefault() {} });
+  const details = app.get("products").queryAll("details")[0]!;
+  details.open = true;
+  for (const listener of details.listeners.get("toggle") ?? []) listener({ target: details, preventDefault() {} });
+  await app.controls(/^Basket \(0\)$/i)!.click();
+  await app.controls(/^Needs review \(1\)$/i)!.click();
+  assert.equal(app.get("products").queryAll("input")[0]!.checked, true);
+  assert.equal(app.get("products").queryAll("details")[0]!.open, true);
+  assert.equal(app.controls(/Open current review/i), undefined);
+});
+
+test("viewer submission requires a separate exact confirmation after preparation", async () => {
+  const basket = snapshot("active-review", 2, "basket");
+  const prepared = { review: { ...basket.review, revision: 3, submission: {
+    submission_id: "prepared-id", status: "prepared", expires_at: "2099-01-01T00:00:00Z",
+    review: { lines: [{ product_id: 41, quantity: 3, name: "Current milk draft", item_price: 10, line_total: 30 }], expected_products_price: 30 },
+  } } };
+  const submitted = { review: { ...prepared.review, revision: 4, submission: { ...prepared.review.submission, status: "submitted" } } };
+  const app = mount(reviewOutput, call => {
+    if (call.name === "submit_product_review") return submitted;
+    const action = call.args.action as { kind?: string };
+    if (action?.kind === "show") return basket;
+    if (action?.kind === "prepare_submission") return prepared;
+    throw new Error("Unexpected tool call");
+  });
+  await app.controls(/Open current review/i)!.click();
+  await app.controls(/^Update Nemlig basket$/i)!.click();
+  assert.equal(app.calls.some(call => call.name === "submit_product_review"), false, "preparing never submits");
+  assert.match(app.get("submission").text, /30\.00 kr/u);
+  assert.equal(app.calls.some(call => call.name === "submit_product_review"), false, "showing confirmation never submits");
+  await app.controls(/^Cancel$/i)!.click();
+  assert.equal(app.calls.some(call => call.name === "submit_product_review"), false, "cancel never submits");
+  await app.controls(/^Review prepared update$/i)!.click();
+  await app.controls(/Confirm update to Nemlig/i)!.click();
+  assert.deepEqual(JSON.parse(JSON.stringify(app.calls.find(call => call.name === "submit_product_review"))), {
+    name: "submit_product_review", args: { review_id: "active-review", revision: 3, submission_id: "prepared-id" },
+  });
+  assert.match(app.get("submission").text, /Submitted to Nemlig/u);
+  assert.equal(app.controls(/Confirm update to Nemlig/i), undefined);
+});
+
+test("uncertain submission never retries and removes the UI confirmation", async () => {
+  const basket = snapshot("active-review", 2, "basket");
+  const prepared = { review: { ...basket.review, revision: 3, submission: {
+    submission_id: "prepared-id", status: "prepared", expires_at: "2099-01-01T00:00:00Z",
+    review: { lines: [{ product_id: 41, quantity: 3, name: "Current milk draft", item_price: 10, line_total: 30 }], expected_products_price: 30 },
+  } } };
+  const uncertain = { review: { ...prepared.review, revision: 4, submission: { ...prepared.review.submission, status: "uncertain" } } };
+  let shows = 0;
+  const app = mount(reviewOutput, call => {
+    if (call.name === "submit_product_review") throw new Error("provider response lost");
+    const action = call.args.action as { kind?: string };
+    if (action?.kind === "show") return ++shows === 1 ? basket : uncertain;
+    if (action?.kind === "prepare_submission") return prepared;
+    throw new Error("Unexpected tool call");
+  });
+  await app.controls(/Open current review/i)!.click();
+  await app.controls(/^Update Nemlig basket$/i)!.click();
+  await app.controls(/Confirm update to Nemlig/i)!.click();
+  assert.equal(app.calls.filter(call => call.name === "submit_product_review").length, 1);
+  assert.equal(shows, 2, "one read-only outcome check is allowed after uncertain submission");
+  assert.match(app.get("submission").text, /Check Nemlig before trying again/u);
+  assert.equal(app.controls(/Confirm update to Nemlig/i), undefined);
+  assert.match(app.get("status").text, /do not retry automatically/u);
 });
 
 test("a JSON-RPC thrown stale edit refreshes once and never replays the edit", async () => {

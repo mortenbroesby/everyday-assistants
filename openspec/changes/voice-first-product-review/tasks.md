@@ -104,3 +104,21 @@ one read, connection failure, process restart, quantity-preserving unchecked
 recovery, finish, and zero provider basket calls. A separate real-MCP submission
 smoke uses the real proposal service and a fake basket to verify the exact
 accepted lines, protected submit, readback and rejection of duplicate submission.
+
+## 8. Persistent review and Basket actions
+
+- [x] 8.1 Reproduce the mounted-card collapse, preserve activation only for the same current review, and add regression coverage for duplicate/stale host results and historical cards.
+- [x] 8.2 Preserve compatible presentation state, simplify Basket rows, and add a revision-checked local Clear Basket confirmation.
+- [x] 8.3 Add interactive exact submission confirmation through the existing protected submit operation; test cancellation, stale/expired/uncertain outcomes and no automatic retry.
+- [x] 8.4 Run focused and repository gates, review the diff, and prepare a scoped release PR.
+- [ ] 8.5 Verify the exact v5 artifact in native ChatGPT after release and metadata refresh; keep production release and host acceptance separate from local proof.
+
+27 September local evidence: native v4 ChatGPT card collapsed within the same
+mounted sandbox after acceptance and navigation; the accepted line was present
+after explicit reopening. The v5 test program exercises duplicate results,
+inactive historical cards, compatible presentation state, clear confirmation,
+UI submission cancel/confirm/uncertainty, and expiry rejection. The loopback
+real-MCP browser passed one-activation local accept, Basket, quantity, revisit,
+alternatives, replacement, clear and rebuild with zero provider basket calls.
+The real-MCP fake-basket submission smoke passed protected apply/readback; no
+live Nemlig submission or native v5 host acceptance was attempted.

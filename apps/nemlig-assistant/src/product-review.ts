@@ -262,7 +262,7 @@ export class ProductReviewService {
     } finally { stored.busy = false; }
   }
 
-  /** Model-only entry point: call only after explicit approval of this exact submission. */
+  /** Call only after explicit conversational or viewer approval of this exact submission. */
   async submit(owner: string, id: string, revision: number, submissionId: string): Promise<{ review: ProductReviewSnapshot; result: ApplyResult }> {
     if (!this.proposals) throw new NemligError("Submission service unavailable.");
     const stored = this.lock(owner, id, revision);

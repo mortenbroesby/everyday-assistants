@@ -90,3 +90,28 @@ it back to Needs review and invalidate pending submission approval.
 - **THEN** the action is not replayed; a bounded read can find this conversation's current draft
 - **AND** if no active draft remains, the viewer offers an explicit fresh review of the displayed exact products and quantities, with refreshed product data and no restored acceptance or submission authority
 - **AND** a previously submitted or uncertain snapshot directs the user to inspect the actual basket instead of offering automatic recovery
+
+### Requirement: Persistent local review interaction
+An explicitly activated review frame SHALL remain active across confirmed
+same-review edits and destination changes while it stays mounted. Initial,
+remounted, foreign-review and retired cards SHALL remain inactive until their
+explicit current-conversation activation. Older host snapshots SHALL NOT
+replace a newer confirmed review revision.
+
+#### Scenario: Local change returns a host result
+- **WHEN** an activated frame accepts products, changes quantities, navigates,
+  or resolves alternatives and receives a matching current snapshot
+- **THEN** the same frame renders the updated destination without requiring
+  `Open current review` again
+
+#### Scenario: Clear the local Basket
+- **WHEN** the user confirms Clear Basket
+- **THEN** one revision-checked local action moves its accepted lines to Needs
+  review, keeps the frame active, and leaves the real Nemlig basket unchanged
+
+#### Scenario: Confirm exact submission in the viewer
+- **WHEN** the user explicitly confirms the current prepared lines, quantities,
+  prices and effect in the review UI
+- **THEN** the existing protected submit operation applies that exact unchanged
+  review once and reports verified or uncertain outcome without automatic retry
+- **AND** cancellation or merely opening the prepared review performs no write

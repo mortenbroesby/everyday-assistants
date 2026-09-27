@@ -118,6 +118,22 @@ test("submission hides provider references, invalidates edits, and retains verif
   assert.equal(writes, 2);
 });
 
+test("an expired prepared submission cannot write the provider basket", async () => {
+  let now = 1_000;
+  let writes = 0;
+  const proposals = {
+    prepareAdditions: async () => ({ proposal_id: "private", expires_at: new Date(now + 1_000).toISOString(), review: { lines: [{ product_id: 1, quantity: 1 }] } }),
+    apply: async () => { writes++; throw new Error("Expired proposal must never apply"); },
+  } as unknown as NonNullable<ConstructorParameters<typeof ProductReviewService>[1]>["proposals"];
+  const service = new ProductReviewService(client, { proposals, now: () => now });
+  let draft = await service.start("owner", [{ product_id: 1, quantity: 1 }]);
+  draft = await service.update("owner", draft.review_id, draft.revision, { kind: "accept", product_ids: [1] });
+  draft = await service.prepare("owner", draft.review_id, draft.revision);
+  now += 1_000;
+  await assert.rejects(service.submit("owner", draft.review_id, draft.revision, draft.submission!.submission_id), /expired/i);
+  assert.equal(writes, 0);
+});
+
 test("an asynchronous alternatives search excludes conflicting edits and leaves no partial state on failure", async () => {
   let release!: () => void;
   const pending = new Promise<void>(resolve => { release = resolve; });

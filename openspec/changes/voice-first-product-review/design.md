@@ -32,15 +32,17 @@ from the viewer. Existing discovery and actual basket tools remain independent.
 - Expose start/update tools usable by the model and app. Reuse the single viewer
   URI for a compact draft snapshot with two destinations and contextual
   alternatives. One reusable DOM row renders safe text, images and native details.
-  The viewer invokes only local-draft operations, never the provider apply tools.
+  The viewer invokes local-draft operations; only its explicit prepared-review
+  confirmation may invoke the protected submission tool.
   A host without tool bridging falls back to exact conversational requests.
 - Updates require the current revision; show refreshes a stale snapshot without
   modifying it. Return the same complete snapshot to model and UI. Store context
   navigation/alternatives in the service so voice and touch see the same target.
 - Preparing submission captures the current resolved lines through the existing
   BasketProposalService. Expose a separate submission reference, not its internal
-  proposal ID, and invalidate it on any draft edit. Submit is a separate model-only
-  tool after explicit approval of unchanged exact quantities/prices; reuse the
+  proposal ID, and invalidate it on any draft edit. Submit is a separate
+  protected tool after explicit approval of unchanged exact quantities/prices,
+  either in conversation or in the viewer's confirmation control; reuse the
   service's fresh revalidation, principal binding, single use and readback.
   Serialize draft edits against prepare/apply. Keep draft contents after outcomes;
   block repeated submissions of an unchanged submitted or uncertain draft.
@@ -129,3 +131,36 @@ retired resource URIs resolve to inert notices with a conversational route to
 the current review, not missing resources or old shopping code. Host-cached
 pre-change documents cannot be rewritten by the server; test and report that
 platform limit. Release acceptance includes these actual historical-card cases.
+
+## Persistent in-place review and interactive submission
+
+Native ChatGPT reproduction on 27 September 2026 showed that local acceptance
+and destination navigation change the already-mounted v4 iframe into its own
+inactive `Open current review` presentation. The accepted item was present in
+Basket after explicit reopening. The viewer has no `requestClose()` call; its
+host-output receiver clears `active` on every review snapshot. Preserve an
+explicitly activated frame for subsequent snapshots of that same review, reject
+older revisions, and keep initial/remounted and different-review snapshots
+inactive. Do not auto-reopen, request close, or infer card age.
+
+Keep presentation-only selection and disclosure state across same-review
+updates where the corresponding product remains. Server snapshots continue to
+own destination, alternatives context and counts. Avoid a second widget or
+browser-owned business state. Basket rows emphasize image, name, pack/brand,
+quantity and line price, with catalogue metadata in details, following the
+current Nemlig catalogue hierarchy.
+
+`Clear Basket` uses one revision-checked `revisit` of all accepted product IDs:
+it empties the local Basket but leaves those products in Needs review for
+rebuilding. It never clears the provider basket. A local confirmation names
+that effect.
+
+The existing `prepare_submission` produces the exact priced review; a separate
+explicit button in that review may call the existing protected
+`submit_product_review` tool with the unchanged review ID, revision and
+submission ID. Make that tool app-visible without removing its model path or
+server-side single-use, expiry, freshness, principal, lock and readback checks.
+No submission occurs on preparation, opening a card, or changing destinations.
+Failure/uncertainty never triggers a retry. A host without app tool access
+retains the conversational approval path and must not claim UI confirmation
+worked. Native host confirmation remains a release acceptance requirement.

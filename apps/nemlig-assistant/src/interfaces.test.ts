@@ -1259,8 +1259,8 @@ test("MCP local review and explicit submission share exact state without prematu
     assert.ok(review.submission);
     assert.equal(JSON.stringify(review).includes("proposal_id"), false);
     const tool = (await mcp.listTools()).tools.find(t => t.name === "submit_product_review");
-    assert.deepEqual((tool?._meta?.ui as { visibility: string[] }).visibility, ["model"]);
-    assert.notEqual(tool?._meta?.["openai/widgetAccessible"], true);
+    assert.deepEqual((tool?._meta?.ui as { visibility: string[] }).visibility, ["model", "app"]);
+    assert.equal(tool?._meta?.["openai/widgetAccessible"], true);
     const args = { review_id: review.review_id, revision: review.revision, submission_id: review.submission.submission_id };
     const submitted = await mcp.callTool({ name: "submit_product_review", arguments: args });
     assert.equal(submitted.isError, undefined, toolText(submitted));
