@@ -285,6 +285,15 @@ rollout. The MCP HTTP transport is stateless: modern clients do not depend on
 session IDs, and production acceptance does not probe obsolete session-recovery
 behavior. The journal records the starting version, the exact enabled transition, the resulting Container image, and the bounded edge and
 authenticated read-only checks.
+During a routine rollout, the machine fixture first compares the release version
+reported by its authenticated MCP connection with the checked-out candidate.
+A previous backend release is retried within a fixed 17-minute maximum, capped
+earlier to leave five minutes of the operation deadline for rollback. Other
+fixture failures keep their shorter retry budget. A passing fixture must also
+have one running instance at the candidate application version; a configured
+image or inactive instance alone is not acceptance. This check does not restart
+or force-replace a Container, and its synthetic reads do not prove ChatGPT UI
+rendering or owner shopping acceptance.
 It never prepares or applies a proposal and never mutates a basket, favorite, or
 saved list.
 

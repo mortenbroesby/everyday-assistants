@@ -13,6 +13,7 @@ import { parsePrincipalPolicy } from "./principal-policy.js";
 import type { ShoppingClient } from "./client.js";
 import { encryptCredentials, type CredentialEnvelope } from "./credential-envelope.js";
 import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
+import { NEMLIG_VERSION } from "./runtime.js";
 
 const ownerSubject = "auth0|owner";
 const principalPolicy = parsePrincipalPolicy(JSON.stringify({
@@ -187,6 +188,7 @@ test("HTTP service acceptance uses signed machine identity and its fixed fixture
     const client = modernClient("service-test");
       const transport = new StreamableHTTPClientTransport(endpoint, { requestInit: { headers: { authorization: `Bearer ${token}` } }, ...(throughGateway ? { fetch: edgeFetch } : {}) });
       await client.connect(transport);
+      assert.equal(client.getServerVersion()?.version, NEMLIG_VERSION);
       const report = await verifyServiceAcceptanceFeatures({
         listTools: async () => client.listTools(),
         callTool: async (request) => await client.callTool(request) as { isError?: boolean; structuredContent?: unknown },
