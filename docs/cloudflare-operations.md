@@ -2,12 +2,23 @@
 
 Production state is time-sensitive. Verify the current workflow journal,
 Worker, routes and Container before any operation; historical version IDs and
-acceptance below are not current-state proof. On 2026-09-23, the failed release
-run left the Worker intentionally disabled and both public routes returned
-HTTP 503. The Container application remained running but unhealthy. Do not
-retry deployment, reconcile the pending journal, stop the Container, or prune
-images until exact recovery evidence proves the prior runner is stopped and
-the provider state is safe.
+acceptance below are not current-state proof. On 2026-09-27, [recovery run
+36320068876](https://github.com/mortenbroesby/everyday-assistants/actions/runs/36320068876)
+restored the last accepted source SHA `94a9a3c` after the `476dd92` service
+fixture failed and its fail-closed rollback returned both MCP routes to 503.
+The recovery deploy passed edge and service acceptance; live route readback
+showed 401 for anonymous MCP requests, and a fresh ChatGPT conversation
+completed profile, sections, and catalogue reads without basket writes.
+The run's separate post-deploy image-retention job failed; do not infer
+retention completion or rerun cleanup from the successful deploy. Preserve
+the `476dd92` fixture failure as unresolved until its precise inventory or
+transport boundary is proven. Before any further recovery, establish that
+the prior runner stopped and the exact Worker/Container state is safe.
+Read-only reconciliation of the saved recovery journal and current ledger
+reproduced `image_retention_ledger_commit_conflict`: recovery rebuilt the same
+`94a9a3c` source into a different accepted image. A distinct acceptance time
+is now part of the ledger event identity; this code change does not itself
+reconcile the live interrupted retention lease or prove cleanup completion.
 
 Production endpoints:
 
@@ -274,6 +285,15 @@ rollout. The MCP HTTP transport is stateless: modern clients do not depend on
 session IDs, and production acceptance does not probe obsolete session-recovery
 behavior. The journal records the starting version, the exact enabled transition, the resulting Container image, and the bounded edge and
 authenticated read-only checks.
+During a routine rollout, the machine fixture first compares the release version
+reported by its authenticated MCP connection with the checked-out candidate.
+A previous backend release is retried within a fixed 17-minute maximum, capped
+earlier to leave five minutes of the operation deadline for rollback. Other
+fixture failures keep their shorter retry budget. A passing fixture must also
+have one running instance at the candidate application version; a configured
+image or inactive instance alone is not acceptance. This check does not restart
+or force-replace a Container, and its synthetic reads do not prove ChatGPT UI
+rendering or owner shopping acceptance.
 It never prepares or applies a proposal and never mutates a basket, favorite, or
 saved list.
 

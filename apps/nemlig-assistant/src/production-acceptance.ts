@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
+import { isDeepStrictEqual } from "node:util";
 import { serviceAcceptanceResourceInventory, serviceAcceptanceToolInventory } from "./mcp.js";
 import { PRODUCT_VIEWER_MIME_TYPE, PRODUCT_VIEWER_RESOURCE_METADATA, PRODUCT_VIEWER_RESOURCE_URI, renderProductViewerHtml } from "./product-viewer.js";
 import { RETIRED_PRODUCT_VIEWER_RESOURCE_URIS } from "./product-viewer-identity.js";
@@ -124,6 +125,15 @@ export class ProductViewerHtmlMismatchError extends Error {
   }
 }
 
+/** Stable, content-free evidence for a machine fixture inventory mismatch. */
+export class ServiceInventoryMismatchError extends Error {
+  readonly lastCompletedBoundary: string;
+  constructor(readonly code: "service_tool_inventory_mismatch" | "service_resource_inventory_mismatch", boundary?: string) {
+    super(code);
+    this.lastCompletedBoundary = boundary ?? (code === "service_tool_inventory_mismatch" ? "service_tool_inventory_read" : "service_resource_inventory_read");
+  }
+}
+
 const assertProductViewerResource = (viewer: { contents: unknown[] }, label: string): void => {
   assert.equal(viewer.contents.length, 1, `${label} product-viewer resource returned an unexpected content count`);
   const viewerContent = viewer.contents[0];
@@ -155,6 +165,7 @@ export interface ServiceAcceptanceFeatureReport {
 export interface AcceptanceDeadlineOptions {
   totalTimeoutMs?: number;
   signal?: AbortSignal;
+  onBoundary?: (boundary: string) => void;
 }
 
 const abortError = (signal: AbortSignal): Error => signal.reason instanceof Error
@@ -276,13 +287,22 @@ export async function verifyServiceAcceptanceFeatures(
     options.signal,
   );
   const tools = (await withinTotalDeadline("tool inventory", () => client.listTools())).tools;
-  const resources = await listResourcesOrEmpty(client, withinTotalDeadline, "Service");
+  options.onBoundary?.("service_tool_inventory_read");
   const names = tools.map(({ name }) => name).sort();
-  assert.deepEqual(names, [...serviceAcceptanceToolInventory].sort(), "Service MCP tool inventory drifted");
-  assert.deepEqual(resources.map(({ uri }) => uri).sort(), [...serviceAcceptanceResourceInventory].sort(), "Service MCP resource inventory drifted");
+  if (!isDeepStrictEqual(names, [...serviceAcceptanceToolInventory].sort())) {
+    const missing = serviceAcceptanceToolInventory.flatMap((name, index) => names.includes(name) ? [] : [index]);
+    const missingMask = missing.reduce((mask, index) => mask | (1 << index), 0);
+    const unexpectedCount = Math.max(0, names.length - serviceAcceptanceToolInventory.length + missing.length);
+    throw new ServiceInventoryMismatchError("service_tool_inventory_mismatch",
+      `service_tool_inventory_read_m${missingMask.toString(16)}_x${Math.min(unexpectedCount, 99)}`);
+  }
+  const resources = await listResourcesOrEmpty(client, withinTotalDeadline, "Service");
+  options.onBoundary?.("service_resource_inventory_read");
+  if (!isDeepStrictEqual(resources.map(({ uri }) => uri).sort(), [...serviceAcceptanceResourceInventory].sort())) throw new ServiceInventoryMismatchError("service_resource_inventory_mismatch");
 
   assert.ok(client.readResource, "Service product-viewer resource reader is required");
   const viewer = await withinTotalDeadline("product viewer resource", () => client.readResource!({ uri: PRODUCT_VIEWER_RESOURCE_URI }));
+  options.onBoundary?.("product_viewer_resource_read");
   assertProductViewerResource(viewer, "Service");
 
   const exercised: string[] = [];
@@ -291,6 +311,7 @@ export async function verifyServiceAcceptanceFeatures(
   const call = async (name: string, args: Record<string, unknown> = {}): Promise<ToolResult> => {
     requestCount += 1;
     const result = await withinTotalDeadline(name, () => client.callTool({ name, arguments: args }));
+    options.onBoundary?.(`service_${name}_returned`);
     exercised.push(name);
     return result;
   };
@@ -310,10 +331,12 @@ export async function verifyServiceAcceptanceFeatures(
     try {
       requestCount += 1;
       const result = await withinTotalDeadline(name, () => client.callTool({ name, arguments: {} }));
+      options.onBoundary?.(`service_${name}_returned`);
       exercised.push(name);
       assert.equal(result.isError, true, `Service acceptance allowed forbidden ${name}`);
     } catch (error) {
       assert.ok(isServiceForbiddenResponse(error), `Service acceptance failed ${name} without a precise HTTP 403 denial`);
+      options.onBoundary?.(`service_${name}_denied`);
     }
     denied.push(name);
   }

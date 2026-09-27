@@ -38,6 +38,16 @@ Routine delivery SHALL verify the exact deployed source revision, health, OAuth 
 - **WHEN** edge/OAuth checks or authenticated read-only useful-work acceptance exhaust their bounded retries
 - **THEN** the journal reports a fixed stage-specific failure category without command output, response bodies, tokens, or user data, and cleanup remains ineligible
 
+#### Scenario: Service tool inventory differs from the expected fixture
+
+- **WHEN** the machine identity can list tools but the exact fixture inventory differs
+- **THEN** the failure evidence records only a bounded mask of missing expected tools and count of unexpected entries, without publishing actual tool names or payloads
+
+#### Scenario: A new Worker reaches a previous Container image during rollout
+
+- **WHEN** the enabled Worker reports the candidate revision but the authenticated MCP connection still identifies an earlier backend release, or the candidate instance has not started
+- **THEN** read-only acceptance waits within a fixed budget for the candidate backend release before exercising the service fixture, and requires the running application version to match before accepting the release; exhaustion fails closed and cannot authorize image retention
+
 ### Requirement: Release summaries distinguish evidence and cleanup state
 
 The protected workflow SHALL publish a bounded summary that distinguishes

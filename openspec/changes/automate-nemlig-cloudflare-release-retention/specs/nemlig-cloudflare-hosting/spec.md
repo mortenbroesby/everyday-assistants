@@ -38,6 +38,11 @@ After exact deployment acceptance and durable evidence recording, cleanup SHALL 
 - **WHEN** a current deployment, running/rolling application, unresolved release journal, or explicit hold references an image outside the nominal window
 - **THEN** that image remains protected and total retention may exceed ten
 
+#### Scenario: Recovery rebuilds an accepted source commit
+
+- **WHEN** a protected recovery accepts a new image digest for a previously accepted source commit and records a distinct exact acceptance time
+- **THEN** the ledger retains both accepted image events in order, starts a new cleanup checkpoint, and treats replay of the same exact event as idempotent rather than rejecting the release or guessing image age
+
 #### Scenario: Provenance or reference state is incomplete
 
 - **WHEN** inventory, timestamps/order, tag-to-digest mapping, provider references, or durable accepted-release history is uncertain
