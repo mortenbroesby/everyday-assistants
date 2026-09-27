@@ -91,12 +91,12 @@ Local recovery evidence: real MCP HTTP regression passes across a fresh service 
 
 - [x] 7.1 Add executable failing browser-program checks for inactive activation, stale revision, generic failure and safe restart.
 - [x] 7.2 Gate host snapshots, normalize recovery, and retain inert retired resources with bounded explicit activation.
-- [ ] 7.3 Run real MCP browser smoke and final gates; merge one reviewed release PR.
+- [x] 7.3 Run real MCP browser smoke and final gates; merge one reviewed release PR.
 - [ ] 7.4 Deploy exact merged SHA and verify refreshed v4 UI plus historical cards in ChatGPT.
 
 Regression baseline: 4.16.3 / 02d66c9 rendered stale active revisions with raw
 INVALID_ARGUMENT; reload/remount restored actionable historical snapshots.
-Ended-review recovery passed. This follow-up completes the failed 6.4 criterion.
+Ended-review recovery passed locally; the native ChatGPT portion of 6.4 remains unverified.
 
 Implementation evidence: executable viewer tests first failed then passed; the
 real-MCP browser smoke passed inactive mount/remount, rejected stale edit plus
@@ -104,3 +104,13 @@ one read, connection failure, process restart, quantity-preserving unchecked
 recovery, finish, and zero provider basket calls. A separate real-MCP submission
 smoke uses the real proposal service and a fake basket to verify the exact
 accepted lines, protected submit, readback and rejection of duplicate submission.
+
+7.3 was completed by PR #138 (merged as `94a9a3c61fcdf87b05b0de1f1aad8a4bd0ffffd4`):
+its exact-head CI, recorded browser smoke, and final verification passed. On
+`476dd9239ec03ada14664c38fe14b2dafe5540d5`, the focused viewer, review,
+MCP, and gateway tests and loopback real-MCP browser regression were rerun on
+27 September 2026. This is local evidence, not native ChatGPT acceptance.
+6.4 remains open for its native recovery and normal-control portion. 7.4 remains
+open for exact-served-revision and native historical-card proof; production
+deployment and retention are separately owned by #96. See #137 for the
+sanitized host acceptance matrix and remaining blocked cases.
