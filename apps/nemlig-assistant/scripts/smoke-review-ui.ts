@@ -26,10 +26,10 @@ const mcpHandler = toNodeHandler(handler);
 const client = new Client({ name: "review-ui-smoke", version: "1" }, { versionNegotiation: { mode: { pin: "2026-07-28" } } });
 const page = `<!doctype html><html><body><h1>Review recovery smoke</h1>
 <button id="start">Start sample review</button><button id="reset">Simulate server restart</button><button id="replace">Create current review without updating card</button>
-<button id="run">Run regression smoke</button><button id="retired">Show retired card</button><output id="status">Ready</output><iframe id="viewer" src="/viewer" style="width:100%;height:760px"></iframe>
+<button id="run">Run regression smoke</button><button id="flow">Run continuous local flow</button><button id="retired">Show retired card</button><output id="status">Ready</output><iframe id="viewer" src="/viewer" style="width:100%;height:760px"></iframe>
 <script>
 const frame = document.getElementById('viewer'), status = document.getElementById('status');
-let transcript, offline = false;
+let transcript, offline = false, initialized = false;
 const widgetCalls = [];
 const publish = () => frame.contentWindow.postMessage({jsonrpc:'2.0',method:'ui/notifications/tool-result',params:transcript},location.origin);
 const call = args => fetch('/call', {method:'POST',body:JSON.stringify(args)}).then(r=>r.json());
@@ -45,7 +45,7 @@ window.addEventListener('message',async event=>{
  if(event.source!==frame.contentWindow || event.origin!==location.origin)return;
  const m=event.data;
  if(m.method==='ui/initialize')frame.contentWindow.postMessage({jsonrpc:'2.0',id:m.id,result:{protocolVersion:'2026-01-26',hostCapabilities:{}}},location.origin);
- if(m.method==='ui/notifications/initialized' && transcript)publish();
+ if(m.method==='ui/notifications/initialized'){ initialized=true; if(transcript)publish(); }
  if(m.method==='ui/message'){ status.textContent='PASS: retired card requested current review in conversation'; frame.contentWindow.postMessage({jsonrpc:'2.0',id:m.id,result:{}},location.origin); }
  if(m.method==='tools/call'){
   widgetCalls.push(m.params);
@@ -53,6 +53,7 @@ window.addEventListener('message',async event=>{
   // Reproduce ChatGPT wrapping a tool error as a JSON-RPC exception.
   const response=result.isError ? {error:{code:-32602,message:'Error code: INVALID_ARGUMENT; Error calling MCP tool: '+result.content.map(c=>c.text||'').join(' ')}} : {result};
   frame.contentWindow.postMessage({jsonrpc:'2.0',id:m.id,...response},location.origin);
+  if (!result.isError) frame.contentWindow.postMessage({jsonrpc:'2.0',method:'ui/notifications/tool-result',params:result},location.origin);
  }
 });
 // Runs against the actual iframe DOM, MCP transport and draft service. No provider access.
@@ -77,6 +78,11 @@ document.getElementById('run').onclick = async () => {
   check(widgetCalls.length===0 && !doc().querySelector('input'),'Historical payload performed work');
   click('Open current review'); await wait(()=>button('Needs review (2)') && !button('Needs review (2)').disabled);
   select(); click('Add selected to local Basket (1)'); await wait(()=>button('Basket (1)') && !button('Basket (1)').disabled);
+  check(!button('Open current review'),'Local acceptance collapsed the mounted frame');
+  click('Basket (1)'); await wait(()=>doc().querySelector('#title')?.textContent==='Basket' && !button('Basket (1)').disabled);
+  check(!button('Open current review'),'Basket navigation collapsed the mounted frame');
+  click('Needs review (1)'); await wait(()=>doc().querySelector('#title')?.textContent==='Needs review' && !button('Needs review (1)').disabled);
+  check(!button('Open current review'),'Return navigation collapsed the mounted frame');
   status.textContent='Checking remount'; const beforeMount=widgetCalls.length;
   frame.src='/viewer'; await wait(()=>button('Open current review'));
   check(widgetCalls.length===beforeMount,'Remount called backend');
@@ -101,6 +107,41 @@ document.getElementById('run').onclick = async () => {
   status.textContent='PASS: inactive mount, remount, stale revision, outage, restart, finish; provider basket calls 0';
  } catch(error) { status.textContent='FAIL: '+error.message; }
  finally { offline=false; run.disabled=false; }
+};
+document.getElementById('flow').onclick = async () => {
+ const run=document.getElementById('flow'); run.disabled=true;
+ const doc=()=>frame.contentDocument;
+ const button=label=>[...doc().querySelectorAll('button')].find(b=>b.textContent===label);
+ const check=(condition,label)=>{if(!condition)throw new Error(label);};
+ const wait=async predicate=>{const until=Date.now()+5000;while(!predicate()){if(Date.now()>until)throw new Error('Timed out: '+status.textContent);await new Promise(r=>setTimeout(r,25));}};
+ const click=label=>{const b=button(label);check(b&&!b.disabled,'Missing enabled control: '+label);b.click();};
+ const open=()=>check(!button('Open current review'),'The mounted review collapsed');
+ try {
+  status.textContent='Starting continuous local flow';
+  transcript=undefined; initialized=false; frame.src='/viewer'; await wait(()=>initialized&&doc()?.querySelector('#products'));
+  await fetch('/reset',{method:'POST'}); await document.getElementById('start').onclick();
+  await wait(()=>button('Open current review')); click('Open current review');
+  await wait(()=>button('Needs review (2)')&&!button('Needs review (2)').disabled);
+  doc().querySelector('input[type=checkbox]').click(); click('Add selected to local Basket (1)');
+  await wait(()=>button('Basket (1)')&&!button('Basket (1)').disabled); open();
+  click('Basket (1)'); await wait(()=>doc().querySelector('#title')?.textContent==='Basket'&&!button('Basket (1)').disabled); open();
+  doc().querySelector('#products article > details > summary').click();
+  const quantity=doc().querySelector('#products input[type=number]'); check(quantity,'Quantity control missing'); quantity.value='2'; click('Update quantity');
+  await wait(()=>doc().querySelector('#products')?.textContent.includes('2 packages')&&!button('Basket (1)').disabled); open();
+  click('Move to Needs review'); await wait(()=>button('Needs review (2)')&&!button('Needs review (2)').disabled); open();
+  doc().querySelector('#products article > details > summary').click(); click('Find alternatives');
+  await wait(()=>doc().querySelector('#title')?.textContent.startsWith('Alternatives for')&&button('Alternatives')); open();
+  const radio=doc().querySelector('input[type=radio]'); check(radio,'Alternative choice missing'); radio.click(); click('Replace with selected');
+  await wait(()=>button('Basket (1)')&&!button('Basket (1)').disabled); open();
+  click('Basket (1)'); await wait(()=>doc().querySelector('#title')?.textContent==='Basket'&&!button('Basket (1)').disabled); open();
+  click('Clear local Basket'); check(button('Move all to Needs review'),'Clear confirmation missing'); click('Move all to Needs review');
+  await wait(()=>button('Basket (0)')&&!button('Basket (0)').disabled); open();
+  doc().querySelector('input[type=checkbox]').click(); click('Add selected to local Basket (1)');
+  await wait(()=>button('Basket (1)')&&!button('Basket (1)').disabled); open();
+  click('Basket (1)'); await wait(()=>doc().querySelector('#title')?.textContent==='Basket'&&!button('Basket (1)').disabled); open();
+  const stats=await fetch('/stats').then(r=>r.json()); check(stats.providerBasketCalls===0,'Provider basket accessed');
+  status.textContent='PASS: one activation, accept, Basket, quantity, revisit, alternatives, replace, clear, rebuild; provider basket calls 0';
+ } catch(error){status.textContent='FAIL: '+error.message;} finally{run.disabled=false;}
 };
 </script></body></html>`;
 const server = createServer((req, res) => {

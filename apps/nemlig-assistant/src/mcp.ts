@@ -724,7 +724,7 @@ export function createMcpServer(
     inputSchema: z.object({ review_id: z.string().uuid().describe("The private local review reference."), revision: z.number().int().positive().describe("The latest unchanged review revision."), submission_id: z.string().uuid().describe("The exact prepared submission reference explicitly approved by the user.") }),
     outputSchema: z.object({ review: reviewSnapshotSchema, result: applyResultSchema }),
     annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true },
-    _meta: { ...PRODUCT_VIEWER_RESOURCE_METADATA, ui: { resourceUri: PRODUCT_VIEWER_RESOURCE_URI, visibility: ["model"] } },
+    _meta: { ...PRODUCT_VIEWER_RESOURCE_METADATA, ui: { resourceUri: PRODUCT_VIEWER_RESOURCE_URI, visibility: ["model", "app"] }, "openai/widgetAccessible": true },
   }, ({ review_id, revision, submission_id }, ctx) => runMcpOperation("submit_product_review", async () => {
     await ensureLoggedIn(client, loadCredentials, true);
     return success(await reviews.submit(reviewOwner(ctx), review_id, revision, submission_id));

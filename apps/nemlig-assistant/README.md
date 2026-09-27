@@ -127,6 +127,12 @@ products, adjust quantities, remove them, or inspect alternatives for one produc
 Alternatives remain available while you inspect Basket, and every view has a safe
 exit. All of these operations also work through conversation, including “everything
 except the ricotta and cucumbers is fine.” Local acceptance never changes Nemlig.
+Once explicitly opened, the same current review frame stays active across
+confirmed local edits and destination changes. Compatible selections and open
+product rows remain in place. Basket rows show product, package, quantity and
+line price first; catalogue facts remain in product details. **Clear local
+Basket** moves its accepted products back to Needs review after confirmation,
+without touching the real Nemlig basket.
 
 Voice and touch use one private temporary draft per ChatGPT conversation, identified
 by the host session metadata and authenticated principal. There is no hourly expiry.
@@ -160,9 +166,12 @@ adding new exact products hydrates only those products, and
 explicit alternatives searches hydrate up to ten results with three concurrent
 reads and existing request limits.
 
-When you are happy with the local Basket, choose **Review submission to Nemlig**.
-This prepares fresh exact product prices and quantities, then asks for approval in
-conversation. Only explicit approval of that unchanged review allows submission.
+When you are happy with the local Basket, choose **Update Nemlig basket**.
+This prepares fresh exact product prices and quantities and shows the separate
+on-screen confirmation. Inspect the prepared lines, then confirm in the viewer
+or approve the same exact review in conversation. Merely preparing or showing
+confirmation does not submit. Only explicit approval of the unchanged review
+allows submission.
 The quantities of those products are set in Nemlig; unrelated basket lines stay
 unchanged and unresolved draft items are excluded. Editing the draft invalidates
 the pending submission. The local Basket remains visible after success or failure;
@@ -265,7 +274,8 @@ The MCP surface is organized around household actions:
   prepare submission with `update_product_review`. Show can recover the active
   conversation review without its opaque reference. Repeated starts preserve it.
 - Submit that exact local Basket after explicit approval: `submit_product_review`.
-  This tool is model-only; visual controls cannot apply a provider mutation.
+  This protected tool can be called by the model after conversational approval
+  or by the viewer after its separate on-screen exact-review confirmation.
 - Review basket changes: `review_items_to_add`, `review_item_to_remove`,
   `review_item_swap`, and `review_emptying_basket`.
 - Complete an approved change: `add_approved_items`, `remove_approved_item`,
@@ -278,7 +288,8 @@ The MCP surface is organized around household actions:
   to view the actual provider basket visually, use `show_my_basket_visually`. The viewer
   initializes the MCP Apps bridge and shows actionable errors or cancelled states
   instead of waiting indefinitely.
-  The viewer can edit the server-owned local review; it never calls Nemlig directly or applies a provider change.
+  The viewer can edit the server-owned local review and can call only the protected
+  submission tool after on-screen confirmation; it never calls Nemlig directly.
 
 After this connection recovery, use the app named `Nemlig Assistant (Rejoin)`.
 For ordinary later releases, use **Refresh** on that app so ChatGPT rediscovers
@@ -437,7 +448,9 @@ This README is the user-facing inventory of shipped feature sets:
 - rich individual short-query product discovery and refinement
 - one shared product presentation with a headless fallback
 - voice/touch local review, editable Basket, and contextual alternatives
+- persistent in-place review navigation, simplified Basket and confirmed local clear
 - explicit protected submission of resolved local products
+- on-screen exact submission confirmation with conversational fallback
 - favourites as read-only evidence for uncertain matches
 - composable catalogue search, favourites, sections, browsing, and exact details
 - product comparison with staged basket review/apply
