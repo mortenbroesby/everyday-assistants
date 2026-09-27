@@ -88,10 +88,11 @@ button[aria-current="page"] { background: var(--accent); color: white; }
 button:focus-visible, summary:focus-visible, input:focus-visible { outline: 3px solid #4b94dd; outline-offset: 2px; }
 nav, .actions, form { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
 nav { margin-bottom: 10px; padding: 4px; background: var(--soft); border-radius: 12px; } nav button { flex: 1; background: transparent; }
+nav button::after { content: attr(data-hint); display: block; font-size: .72rem; font-weight: 400; }
 .actions { margin-top: 10px; } .actions > button { flex: 1; }
 #status { margin: 6px 0; font-size: .8rem; color: var(--muted); } #status:empty { display: none; } #fallback { white-space: pre-wrap; overflow-wrap: anywhere; }
 article { border-bottom: 1px solid var(--line); padding: 9px 0; display: flex; align-items: flex-start; gap: 3px; }
-article > details { flex: 1; min-width: 0; } article > label { display: flex; min-width: 30px; min-height: 54px; align-items: center; justify-content: center; }
+article > details { flex: 1; min-width: 0; } article > label { display: flex; min-width: 44px; min-height: 54px; align-items: center; justify-content: center; }
 input[type="checkbox"], input[type="radio"] { width: 17px; height: 17px; accent-color: var(--accent); }
 summary.row { list-style: none; display: grid; grid-template-columns: 44px minmax(0, 1fr) 12px; gap: 8px; min-height: 54px; align-items: center; }
 summary.row::-webkit-details-marker { display: none; }
@@ -101,7 +102,12 @@ details[open] > summary.row::after { content: "⌃"; }
 .headline { display: flex; justify-content: space-between; gap: 8px; } .name { font-weight: 550; overflow-wrap: anywhere; } .price { white-space: nowrap; font-size: .85rem; font-variant-numeric: tabular-nums; }
 .meta { font-size: .75rem; color: var(--muted); overflow-wrap: anywhere; } .badge { font-size: .67rem; color: var(--accent); background: var(--soft); border-radius: 4px; padding: 1px 4px; margin-right: 4px; }
 .basket-quantity { font-size: .8rem; font-weight: 600; color: var(--accent); }
-.detail-body { padding: 12px 0 4px; overflow-wrap: anywhere; } .fact { border-top: 1px solid var(--line); padding: 8px 0; } .fact > summary { min-height: 32px; }
+.detail-body { padding: 12px 0 4px; overflow-wrap: anywhere; } .fact { border-top: 1px solid var(--line); padding: 8px 0; } .fact > summary { min-height: 44px; display: flex; align-items: center; }
+.quantity-control { display: flex; align-items: center; gap: 12px; } .quantity-control button { min-width: 44px; }
+.quiet { background: transparent; color: var(--muted); }
+.empty-state { text-align: center; padding: 28px 4px; } .empty-state .icon { font-size: 2rem; }
+.empty-state button { display: block; width: 100%; margin-top: 8px; }
+.summary-line { display: flex; justify-content: space-between; gap: 12px; font-weight: 600; }
 input[type="search"] { min-width: 0; flex: 1; width: 100%; } input[type="search"], input[type="number"] { min-height: 44px; border: 1px solid var(--line); border-radius: 8px; padding: 8px; color: inherit; background: transparent; }
 input[type="number"] { width: 76px; } form { margin: 10px 0; } form label { width: 100%; }
 footer { padding-top: 12px; margin-top: 4px; } footer > button { width: 100%; margin-top: 6px; }
@@ -114,7 +120,7 @@ footer > button.quiet { background: transparent; color: var(--muted); font-size:
 </head>
 <body><main aria-labelledby="title">
 <nav id="navigation" aria-label="Product review destinations" hidden></nav>
-<h1 id="title" tabindex="-1">Nemlig products</h1>
+<h1 id="title" tabindex="-1">Your Nemlig selection</h1>
 <p id="intro" class="muted">Inspect products here or continue in conversation.</p>
 <p id="status" role="status" aria-live="polite">Loading your shopping review…</p>
 <div id="context"></div>
@@ -129,7 +135,8 @@ footer > button.quiet { background: transparent; color: var(--muted); font-size:
   const status = document.getElementById("status"), title = document.getElementById("title"), intro = document.getElementById("intro");
   const footer = document.getElementById("actions"), submissionRoot = document.getElementById("submission"), fallback = document.getElementById("fallback");
   const safeImageOrigins = new Set(["https://nemlig.com", "https://www.nemlig.com"]);
-  let review, active = false, unavailable = false, busy = false, selected = new Set(), replacement, expanded = new Set();
+  let review, active = false, unavailable = false, busy = false, selected = new Set(), replacement, expanded = new Set(), factsExpanded = new Set();
+  let showAfterSuccess = false;
   let confirmingClear = false, confirmingSubmit = false, submitBlocked = false;
   let bridgeReady = false, received = false, requestId = 0;
   const pending = new Map();
@@ -175,11 +182,11 @@ footer > button.quiet { background: transparent; color: var(--muted); font-size:
       : { review_id: review.review_id, revision: review.revision, action };
     if (!bridgeReady && (!window.openai || typeof window.openai.callTool !== "function")) {
       const descriptions = {
-        restart: "start a new local review of these products", show: "refresh your local review", end: "finish shopping and discard the temporary local basket", revisit: "move selected products back to Needs review", accept: "accept the selected products into your local Basket",
+        restart: "start a new local review of these products", show: "refresh your local review", end: "discard this temporary local selection", revisit: "move selected products back to In Review", accept: "accept the selected products into Ready",
         remove: "remove the selected products locally", quantity: "change this product's local quantity",
         alternatives: "find alternatives for this product", replace: "use the selected alternative",
-        navigate: "open " + (action.destination === "basket" ? "your local Basket" : action.destination === "alternatives" ? "the current alternatives" : "Needs review"),
-        prepare_submission: "review your local Basket before submitting it to Nemlig"
+        navigate: "open " + (action.destination === "ready" ? "Ready" : action.destination === "alternatives" ? "the current alternatives" : "In Review"),
+        prepare_submission: "review Ready products before submitting them to Nemlig"
       };
       await followUp("Please use " + tool + " with " + JSON.stringify(args) + ". This is a local review action, not approval to submit to Nemlig.",
         "Continue in conversation: ask to " + descriptions[action.kind] + ". No change has been confirmed here.");
@@ -244,10 +251,11 @@ footer > button.quiet { background: transparent; color: var(--muted); font-size:
       renderReview(); status.textContent = message;
     }
   };
-  const detailsFact = (body, label, value) => {
-    if (typeof value !== "string" || !value.trim()) return;
-    const details = el("details", undefined, "fact");
-    details.append(el("summary", label), el("p", value)); body.append(details);
+  const detailsFact = (body, label, value, key) => {
+    if (!value) return;
+    const details = el("details", undefined, "fact"); details.open = factsExpanded.has(key);
+    details.addEventListener("toggle", () => { if (details.open) factsExpanded.add(key); else factsExpanded.delete(key); });
+    details.append(el("summary", label), value); body.append(details);
   };
   const row = (view, item, mode) => {
     const article = el("article");
@@ -278,46 +286,44 @@ footer > button.quiet { background: transparent; color: var(--muted); font-size:
     } else summary.append(el("span", "No image", "photo"));
     const info = el("div"), headline = el("div", undefined, "headline");
     const quantity = item ? item.quantity : view && view.context === "basket" ? view.basket && view.basket.quantity : undefined;
-    headline.append(el("span", text(product.name, "Product " + (id || "details unavailable")), "name"), el("span", money(mode === "basket" && quantity !== undefined && typeof product.price === "number" ? quantity * product.price : product.price), "price"));
+    headline.append(el("span", text(product.name, "Product " + (id || "details unavailable")), "name"), el("span", money(quantity !== undefined && typeof product.price === "number" ? quantity * product.price : product.price), "price"));
     info.append(headline, el("div", [product.brand, product.unit_size].filter(Boolean).join(" · ") || "Package details unavailable", "meta"));
-    if (mode !== "basket") info.append(el("div", product.unit_price === undefined ? text(product.unit, "Unit price unavailable") : money(product.unit_price) + (product.unit ? " · " + product.unit : ""), "meta"));
-    if (quantity !== undefined) info.append(el("div", quantity + (quantity === 1 ? " package" : " packages"), mode === "basket" ? "basket-quantity" : "meta"));
-    if (mode !== "basket") for (const [label, value] of [["Organic", product.is_organic], ["Frozen", product.is_frozen], ["Offer", product.is_on_discount]]) if (value === true) info.append(el("span", label, "badge"));
+    info.append(el("div", product.unit_price === undefined ? text(product.unit, "Unit price unavailable") : money(product.unit_price) + (product.unit ? " · " + product.unit : ""), "meta"));
+    if (quantity !== undefined) info.append(el("div", quantity + " ×", "basket-quantity"));
+    if (mode !== "ready") for (const [label, value] of [["Organic", product.is_organic], ["Frozen", product.is_frozen], ["Offer", product.is_on_discount]]) if (value === true) info.append(el("span", label, "badge"));
     if (product.available !== true) info.append(el("div", product.available === undefined ? "Availability unknown" : "Unavailable", "meta"));
     summary.append(info); details.append(summary);
     const body = el("div", undefined, "detail-body");
     if (!view || view.status !== "complete") body.append(el("p", "Product details unavailable."));
     else {
       body.append(el("p", "Product ID: " + product.id, "muted"));
-      if (mode === "basket") body.append(el("p", "Unit price: " + money(product.price) + (product.unit ? " · " + product.unit : ""), "muted"));
-      detailsFact(body, "Description", product.description);
-      detailsFact(body, "Ingredients / declaration", product.declaration);
-      detailsFact(body, "Category", [product.category, product.subcategory].filter(Boolean).join(" / "));
-      detailsFact(body, "Labels", Array.isArray(product.labels) ? product.labels.join(", ") : undefined);
-      for (const detail of Array.isArray(product.details) ? product.details : []) if (detail) detailsFact(body, detail.key, detail.value);
+      detailsFact(body, "Varebeskrivelse", typeof product.description === "string" && product.description.trim() ? el("p", product.description) : undefined, id + ":description");
+      detailsFact(body, "Varedeklaration", typeof product.declaration === "string" && product.declaration.trim() ? el("p", product.declaration) : undefined, id + ":declaration");
+      if (Array.isArray(product.details) && product.details.length) {
+        const facts = el("div");
+        for (const detail of product.details) if (detail && detail.key && detail.value) facts.append(el("p", detail.key + ": " + detail.value));
+        detailsFact(body, "Detaljer om varen", facts, id + ":details");
+      }
       if (view.context === "basket" || view.context === "review") {
         const quantities = view.context === "basket" ? view.basket : view.review;
         body.append(el("p", (view.context === "basket" ? "Basket quantity: " : "Review quantity: ") + (quantities && quantities.quantity || "Unknown") + " · Line total: " + money(quantities && quantities.line_total)));
       }
     }
     if (item && mode !== "alternative") {
-      const form = el("form"), label = el("label", "Package quantity"), quantity = el("input");
-      quantity.type = "number"; quantity.min = "1"; quantity.step = "1"; quantity.required = true; quantity.value = item.quantity;
-      quantity.id = "quantity-" + id; label.htmlFor = quantity.id;
-      const save = button("Update quantity", () => {}); save.type = "submit";
-      form.append(label, quantity, save);
-      form.addEventListener("submit", event => { event.preventDefault(); if (form.reportValidity()) void update({ kind: "quantity", product_id: id, quantity: Number(quantity.value) }); });
-      body.append(form);
+      const quantityControl = el("div", undefined, "quantity-control");
+      const decrement = button("−", () => void update({ kind: "quantity", product_id: id, quantity: item.quantity - 1 }));
+      decrement.setAttribute("aria-label", "Decrease quantity of " + nameOf(item)); decrement.disabled = busy || item.quantity <= 1;
+      const increment = button("+", () => void update({ kind: "quantity", product_id: id, quantity: item.quantity + 1 }));
+      increment.setAttribute("aria-label", "Increase quantity of " + nameOf(item)); increment.disabled = busy || item.quantity >= Number.MAX_SAFE_INTEGER;
+      quantityControl.append(el("span", "Quantity"), decrement, el("span", String(item.quantity)), increment);
+      body.append(quantityControl);
       const actions = el("div", undefined, "actions");
-      actions.append(button(item.state === "basket" ? "Change product" : "Find alternatives", () => {
-        if (review.alternatives && review.alternatives.product_id === id && review.alternatives.origin === item.state) void update({ kind: "navigate", destination: "alternatives" });
+      if (item.state === "needs-review") actions.append(button("Choose alternative", () => {
+        if (review.alternatives && review.alternatives.product_id === id) void update({ kind: "navigate", destination: "alternatives" });
         else void update({ kind: "alternatives", product_id: id, query: text(product.name, String(id)).slice(0, 200) });
-      }), button("Remove", () => void update({ kind: "remove", product_ids: [id] })));
-      if (item.state === "needs-review") {
-        const accept = button("Add to local Basket", () => void update({ kind: "accept", product_ids: [id] }), true);
-        accept.disabled = busy || !canUse(view); actions.append(accept);
-      }
-      if (item.state === "basket") actions.append(button("Move to Needs review", () => void update({ kind: "revisit", product_ids: [id] })));
+      }));
+      actions.append(button("Remove", () => void update({ kind: "remove", product_ids: [id] })));
+      if (item.state === "ready") actions.append(button("Move to In Review", () => void update({ kind: "revisit", product_ids: [id] })));
       body.append(actions);
     }
     details.append(body); article.append(details); return article;
@@ -325,45 +331,47 @@ footer > button.quiet { background: transparent; color: var(--muted); font-size:
   const renderFooter = () => {
     footer.replaceChildren(); footer.hidden = !review; if (!review) return;
     if (review.destination === "needs-review") {
-      const accept = button("Add selected to local Basket (" + selected.size + ")", () => void update({ kind: "accept", product_ids: [...selected] }), true);
-      accept.disabled = busy || !selected.size; footer.append(accept);
-    } else if (review.destination === "basket") {
-      const items = review.items.filter(i => i.state === "basket");
+      const available = review.items.filter(i => i.state === "needs-review" && canUse(i.view));
+      if (available.length > 1) footer.append(button(selected.size === available.length ? "Clear selection" : "Select all", () => {
+        selected = selected.size === available.length ? new Set() : new Set(available.map(i => i.product_id)); renderReview();
+      }));
+      if (selected.size) {
+        footer.append(el("p", selected.size + " selected", "muted"));
+        footer.append(button("Add " + selected.size + " to Ready", () => void update({ kind: "accept", product_ids: [...selected] }), true));
+      }
+    } else if (review.destination === "ready") {
+      const items = review.items.filter(i => i.state === "ready");
       const known = items.every(i => i.view.status === "complete" && typeof i.view.product.price === "number");
-      footer.append(el("p", "Local total: " + (known ? money(items.reduce((sum, i) => sum + i.quantity * i.view.product.price, 0)) : "Unavailable")));
-      const prepare = button("Update Nemlig basket", () => void update({ kind: "prepare_submission" }), true);
+      const summary = el("p", undefined, "summary-line"); summary.append(el("span", items.length + (items.length === 1 ? " product ready" : " products ready")), el("span", known ? money(items.reduce((sum, i) => sum + i.quantity * i.view.product.price, 0)) : "Unavailable")); footer.append(summary);
+      const pendingCount = review.items.length - items.length;
+      if (pendingCount) footer.append(el("p", pendingCount + (pendingCount === 1 ? " product is" : " products are") + " still In Review and will not be submitted.", "muted"));
+      const prepare = button("Send to Nemlig basket", () => void update({ kind: "prepare_submission" }), true);
       prepare.disabled = busy || !items.length || !!(review.submission && review.submission.status !== "prepared");
       footer.append(prepare);
       if (items.length) {
-        const clear = button("Clear local Basket", () => { confirmingClear = true; renderFooter(); });
+        const clear = button("Remove all Ready products", () => { confirmingClear = true; renderFooter(); });
         clear.className = "quiet"; footer.append(clear);
-        if (confirmingClear) footer.append(el("p", "Move all " + items.length + " products back to Needs review? Your Nemlig basket will not change."),
-          button("Move all to Needs review", () => void update({ kind: "revisit", product_ids: items.map(i => i.product_id) })),
+        if (confirmingClear) footer.append(el("p", "Remove " + items.length + " Ready products from this selection? Your real Nemlig basket will not change."),
+          button("Remove Ready products", () => void update({ kind: "remove", product_ids: items.map(i => i.product_id) })),
           button("Cancel", () => { confirmingClear = false; renderFooter(); }));
       }
-      footer.append(el("p", "Unresolved items are excluded. Nothing is sent until you confirm the exact prepared review.", "muted"));
     } else if (review.alternatives) {
       const target = review.items.find(i => i.product_id === review.alternatives.product_id);
-      const replace = button("Replace with selected", () => void update({ kind: "replace", product_id: target.product_id, replacement_id: replacement }), true);
+      const replace = button("Use selected alternative", () => void update({ kind: "replace", product_id: target.product_id, replacement_id: replacement }), true);
       replace.disabled = busy || replacement === undefined; footer.append(replace);
-      const keep = button("Keep current product", async () => {
-        if (target.state === "needs-review") await update({ kind: "accept", product_ids: [target.product_id] });
-        if (review.alternatives) await update({ kind: "navigate", destination: review.alternatives.origin });
-      });
-      keep.disabled = busy || !canUse(target.view);
-      footer.append(keep, button("Cancel · back to " + (review.alternatives.origin === "basket" ? "Basket" : "Needs review"), () => void update({ kind: "navigate", destination: review.alternatives.origin })));
+      footer.append(button("Back to In Review", () => void update({ kind: "navigate", destination: "needs-review" })));
     }
     const refresh = button("Refresh review", () => void update({ kind: "show" })); refresh.className = "quiet";
-    const finish = button("Finish shopping", () => {
-      footer.replaceChildren(el("p", "Discard this temporary local basket? Your Nemlig basket will not change."),
-        button("Discard local basket", () => void update({ kind: "end" })), button("Keep shopping", renderFooter));
+    const finish = button("Clear selection and start over", () => {
+      footer.replaceChildren(el("p", "Discard this entire local selection? Your real Nemlig basket will not change."),
+        button("Discard selection", () => void update({ kind: "end" })), button("Keep shopping", renderFooter));
     }); finish.className = "quiet";
     footer.append(refresh, finish);
   };
   const renderSubmission = () => {
     submissionRoot.replaceChildren(); submissionRoot.hidden = !review.submission; if (!review.submission) return;
     const submission = review.submission;
-    submissionRoot.append(el("h2", submission.status === "submitted" ? "Submitted to Nemlig" : submission.status === "uncertain" ? "Check Nemlig before trying again" : "Review before sending"));
+    submissionRoot.append(el("h2", submission.status === "submitted" ? "Added to Nemlig — verified" : submission.status === "uncertain" ? "Check Nemlig before trying again" : "Confirm the exact Nemlig change"));
     const lines = Array.isArray(submission.review.lines) ? submission.review.lines : [];
     for (const line of lines) submissionRoot.append(el("p", line.quantity + " × " + text(line.name, "Product " + line.product_id) + " · " + text(line.unit_size, "") + " · " + money(line.item_price) + " each · " + money(line.line_total)));
     submissionRoot.append(el("p", "Expected Nemlig product total: " + money(submission.review.expected_products_price)));
@@ -371,14 +379,26 @@ footer > button.quiet { background: transparent; color: var(--muted); font-size:
       submissionRoot.append(el("p", "These quantities replace the quantities of the same products in Nemlig. Other products stay unchanged.", "muted"));
       if (submitBlocked) submissionRoot.append(el("p", "This submission was not confirmed. Inspect the actual Nemlig basket in conversation before preparing a new review."));
       else if (confirmingSubmit) {
-        submissionRoot.append(el("p", "Update your Nemlig basket with these " + lines.length + " product lines for " + money(submission.review.expected_products_price) + "? Only the shown product quantities will be set."));
-        submissionRoot.append(button("Cancel", () => { confirmingSubmit = false; renderSubmission(); }), button("Confirm update to Nemlig", () => void submitPrepared(), true));
-      } else submissionRoot.append(button("Review prepared update", () => { confirmingSubmit = true; renderSubmission(); }, true));
+        submissionRoot.append(el("p", "Add " + (lines.length === 1 ? "this product" : "these " + lines.length + " products") + " to your real Nemlig basket for " + money(submission.review.expected_products_price) + "? Only the shown product quantities will be set."));
+        submissionRoot.append(button("Cancel", () => { confirmingSubmit = false; renderSubmission(); }), button("Add to Nemlig", () => void submitPrepared(), true));
+      } else submissionRoot.append(button("Review exact change", () => { confirmingSubmit = true; renderSubmission(); }, true));
       submissionRoot.append(button("Review in conversation", () => void followUp("Please present the exact prepared submission for local review " + review.review_id + ", revision " + review.revision + ", submission " + submission.submission_id + ", and ask for my explicit approval. Do not submit yet.")));
-    } else submissionRoot.append(el("p", submission.status === "submitted" ? "Nemlig readback verified. Your local basket remains available." : "The submission outcome is uncertain. Inspect the actual Nemlig basket; do not retry automatically."));
+    } else submissionRoot.append(el("p", submission.status === "submitted" ? "Nemlig readback verified. Your selection remains available, but this exact submission cannot be repeated." : "The submission outcome is uncertain. Inspect the actual Nemlig basket; do not retry automatically."));
+  };
+  const renderEmpty = () => {
+    nav.hidden = true; context.replaceChildren(); root.replaceChildren(); submissionRoot.hidden = true; footer.hidden = true;
+    title.textContent = "What should we shop for?";
+    intro.textContent = "Ask Nemlig Assistant what you need. We’ll find products and bring them here for you to review.";
+    const panel = el("div", undefined, "empty-state"); panel.append(el("div", "🛒", "icon"));
+    for (const [label, prompt] of [
+      ["Plan groceries for the week", "Help me plan groceries for the week and find exact Nemlig products for review."],
+      ["Find ingredients for dinner", "Help me find ingredients for dinner and bring exact Nemlig products into a new review."],
+      ["Find products from my shopping list", "Help me find products from my shopping list and start a new Nemlig review."],
+    ]) panel.append(button(label, () => void followUp(prompt, "Ask Nemlig Assistant in conversation: " + label + ".")));
+    root.append(panel);
   };
   const renderReview = () => {
-    if (!review) return;
+    if (!review) { if (received && active) renderEmpty(); return; }
     if (!active) {
       nav.hidden = true; context.replaceChildren(); root.replaceChildren(); submissionRoot.hidden = true;
       title.textContent = "Shopping review";
@@ -401,16 +421,26 @@ footer > button.quiet { background: transparent; color: var(--muted); font-size:
       }
       return;
     }
+    if (!review.items.length) { renderEmpty(); status.textContent = ""; return; }
+    if (review.submission?.status === "submitted" && !showAfterSuccess) {
+      nav.hidden = true; context.replaceChildren(); root.replaceChildren(); footer.hidden = true;
+      title.textContent = "Added to Nemlig";
+      intro.textContent = "Your exact submission was verified against the real Nemlig basket.";
+      renderSubmission(); submissionRoot.hidden = false;
+      root.append(button("Continue reviewing selection", () => { showAfterSuccess = true; renderReview(); }));
+      return;
+    }
     nav.hidden = false; nav.replaceChildren(); context.replaceChildren(); root.replaceChildren();
-    for (const [destination, label] of [["needs-review", "Needs review"], ["basket", "Basket"], ...(review.alternatives ? [["alternatives", "Alternatives"]] : [])]) {
-      const control = button(label + (destination === "alternatives" ? "" : " (" + review.items.filter(i => i.state === destination).length + ")"), () => void update({ kind: "navigate", destination }));
+    for (const [destination, label, hint] of [["needs-review", "In Review", "decide"], ["ready", "Ready", "ready"]]) {
+      const control = button(label + " (" + review.items.filter(i => i.state === destination).length + ")", () => void update({ kind: "navigate", destination }));
+      control.setAttribute("data-hint", hint);
       if (review.destination === destination) control.setAttribute("aria-current", "page"); nav.append(control);
     }
-    intro.textContent = review.destination === "basket" ? "The products you’ve chosen. Send to Nemlig when you’re ready." : review.destination === "alternatives" ? "Compare options and choose a replacement, or keep the current product." : "Keep the products you like. Find alternatives for the rest.";
+    intro.textContent = review.destination === "ready" ? "These exact products are ready to send to Nemlig." : review.destination === "alternatives" ? "Compare options for this In Review product." : "Choose exact products to move to Ready.";
     if (review.destination === "alternatives" && review.alternatives) {
       const alternatives = review.alternatives, target = review.items.find(i => i.product_id === alternatives.product_id);
-      title.textContent = "Alternatives for " + nameOf(target);
-      context.append(el("h2", "Current product"), row(target.view, target, "current"), el("h2", "Alternatives"));
+      title.textContent = "Choose alternative for " + nameOf(target);
+      context.append(button("‹ Back to In Review", () => void update({ kind: "navigate", destination: "needs-review" })), el("h2", "Current product"), row(target.view, undefined, "current"), el("h2", "Alternatives"));
       const form = el("form"), label = el("label", "Find or refine alternatives"), query = el("input");
       query.id = "alternative-query"; label.htmlFor = query.id; query.type = "search"; query.required = true; query.maxLength = 200; query.value = alternatives.query;
       const search = button("Search", () => {}); search.type = "submit"; form.append(label, query, search);
@@ -419,11 +449,14 @@ footer > button.quiet { background: transparent; color: var(--muted); font-size:
       alternatives.views.forEach(view => root.append(row(view, undefined, "alternative")));
       if (!alternatives.views.length) root.append(el("p", "No alternatives returned. Refine the search, keep the current product, or go back."));
     } else {
-      title.textContent = review.destination === "basket" ? "Basket" : "Needs review";
-      if (review.alternatives) context.append(button("Return to alternatives for " + nameOf(review.items.find(i => i.product_id === review.alternatives.product_id)), () => void update({ kind: "navigate", destination: "alternatives" })));
+      title.textContent = review.destination === "ready" ? "Ready" : "In Review";
+      if (review.destination === "needs-review" && review.alternatives) context.append(button("Return to alternatives for " + nameOf(review.items.find(i => i.product_id === review.alternatives.product_id)), () => void update({ kind: "navigate", destination: "alternatives" })));
       const items = review.items.filter(i => i.state === review.destination);
-      items.forEach(item => root.append(row(item.view, item, item.state === "needs-review" ? "select" : "basket")));
-      if (!items.length) root.append(el("p", review.destination === "basket" ? "Your local Basket is empty. Accept products from Needs review." : "All products are resolved. Your local Basket is ready to inspect."));
+      items.forEach(item => root.append(row(item.view, item, item.state === "needs-review" ? "select" : "ready")));
+      if (!items.length) {
+        root.append(el("p", review.destination === "ready" ? "No products are Ready yet. Choose exact products in In Review." : "Everything in this selection is Ready."));
+        root.append(button(review.destination === "ready" ? "Go to In Review" : "Go to Ready", () => void update({ kind: "navigate", destination: review.destination === "ready" ? "needs-review" : "ready" }), true));
+      }
     }
     status.textContent = "";
     renderFooter(); renderSubmission();
@@ -444,16 +477,13 @@ footer > button.quiet { background: transparent; color: var(--muted); font-size:
       else {
         nav.hidden = true; footer.hidden = true; submissionRoot.hidden = true;
         context.replaceChildren(); root.replaceChildren();
-        title.textContent = "No active review"; intro.textContent = "Find products and start a new local review.";
+        active = true; renderEmpty();
       }
       return true;
     }
     if (value.ended) {
-      received = true; active = false; unavailable = false; review = undefined; selected = new Set(); expanded = new Set(); confirmingClear = false; confirmingSubmit = false;
-      nav.hidden = true; footer.hidden = true; submissionRoot.hidden = true;
-      context.replaceChildren(); root.replaceChildren();
-      title.textContent = "Shopping finished"; intro.textContent = "Your temporary local basket has been discarded.";
-      status.textContent = "Nothing was changed in Nemlig."; return true;
+      received = true; active = true; unavailable = false; review = undefined; selected = new Set(); expanded = new Set(); factsExpanded = new Set(); confirmingClear = false; confirmingSubmit = false;
+      renderEmpty(); status.textContent = "Your local selection was discarded. Nothing changed in Nemlig."; return true;
     }
     if (value.review && Array.isArray(value.review.items) && value.review.review_id) {
       const sameReview = review && review.review_id === value.review.review_id;
@@ -465,7 +495,8 @@ footer > button.quiet { background: transparent; color: var(--muted); font-size:
       const previousSubmissionId = review && review.submission && review.submission.submission_id;
       received = true; active = current || (active && sameReview); unavailable = false; review = value.review;
       selected = sameReview ? new Set([...selected].filter(id => review.items.some(i => i.product_id === id && i.state === "needs-review"))) : new Set();
-      if (!sameReview) expanded = new Set();
+      if (!sameReview) { expanded = new Set(); factsExpanded = new Set(); showAfterSuccess = false; }
+      if (review.submission?.status === "submitted" && (!sameReview || previousSubmissionId !== review.submission.submission_id)) showAfterSuccess = false;
       replacement = sameReview && review.alternatives && review.alternatives.views.some(v => v.status === "complete" && v.product.id === replacement) ? replacement : undefined;
       confirmingClear = false; confirmingSubmit = false;
       if (!sameReview || review.submission?.submission_id !== previousSubmissionId) submitBlocked = false;
