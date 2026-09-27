@@ -425,7 +425,7 @@ test("stale viewer HTML produces bounded feature evidence instead of parsing HTM
 test("service inventory drift identifies the failed list without exposing its contents", async () => {
   const entry = await import("../scripts/production-acceptance.js");
   for (const [kind, failed, boundary] of [
-    ["tool", "service_tool_inventory_mismatch", "service_tool_inventory_read"],
+    ["tool", "service_tool_inventory_mismatch", "service_tool_inventory_read_m7f_x1"],
     ["resource", "service_resource_inventory_mismatch", "service_resource_inventory_read"],
   ] as const) {
     const client = serviceClient();
@@ -449,6 +449,20 @@ test("service inventory drift identifies the failed list without exposing its co
       console.log = originalLog;
     }
   }
+});
+
+test("service inventory evidence distinguishes a missing visual tool from an unexpected tool", async () => {
+  const entry = await import("../scripts/production-acceptance.js");
+  const client = serviceClient();
+  client.listTools = async () => ({ tools: serviceAcceptanceToolInventory
+    .filter((name) => name !== "show_my_basket_visually")
+    .map((name) => ({ name })) });
+  const report = await entry.run(["--service"], {
+    NEMLIG_PRODUCTION_MCP_URL: "https://nemlig-mcp.example.test/mcp",
+    NEMLIG_MCP_SERVICE_ACCESS_TOKEN: "test-token",
+  }, { fetcher: edgeFetcher([]), connect: async () => ({ client, close: async () => undefined }) });
+  assert.equal(report.lastCompletedBoundary, "service_tool_inventory_read_m40_x0");
+  assert.deepEqual(report.failed, ["service_tool_inventory_mismatch"]);
 });
 
 test("service failure keeps the last completed MCP boundary and primary error", async () => {

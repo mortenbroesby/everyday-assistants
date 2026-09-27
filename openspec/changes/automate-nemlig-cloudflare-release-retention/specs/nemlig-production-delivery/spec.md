@@ -38,6 +38,11 @@ Routine delivery SHALL verify the exact deployed source revision, health, OAuth 
 - **WHEN** edge/OAuth checks or authenticated read-only useful-work acceptance exhaust their bounded retries
 - **THEN** the journal reports a fixed stage-specific failure category without command output, response bodies, tokens, or user data, and cleanup remains ineligible
 
+#### Scenario: Service tool inventory differs from the expected fixture
+
+- **WHEN** the machine identity can list tools but the exact fixture inventory differs
+- **THEN** the failure evidence records only a bounded mask of missing expected tools and count of unexpected entries, without publishing actual tool names or payloads
+
 ### Requirement: Release summaries distinguish evidence and cleanup state
 
 The protected workflow SHALL publish a bounded summary that distinguishes
