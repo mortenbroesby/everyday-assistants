@@ -128,9 +128,9 @@ export class ProductViewerHtmlMismatchError extends Error {
 /** Stable, content-free evidence for a machine fixture inventory mismatch. */
 export class ServiceInventoryMismatchError extends Error {
   readonly lastCompletedBoundary: string;
-  constructor(readonly code: "service_tool_inventory_mismatch" | "service_resource_inventory_mismatch") {
+  constructor(readonly code: "service_tool_inventory_mismatch" | "service_resource_inventory_mismatch", boundary?: string) {
     super(code);
-    this.lastCompletedBoundary = code === "service_tool_inventory_mismatch" ? "service_tool_inventory_read" : "service_resource_inventory_read";
+    this.lastCompletedBoundary = boundary ?? (code === "service_tool_inventory_mismatch" ? "service_tool_inventory_read" : "service_resource_inventory_read");
   }
 }
 
@@ -289,7 +289,13 @@ export async function verifyServiceAcceptanceFeatures(
   const tools = (await withinTotalDeadline("tool inventory", () => client.listTools())).tools;
   options.onBoundary?.("service_tool_inventory_read");
   const names = tools.map(({ name }) => name).sort();
-  if (!isDeepStrictEqual(names, [...serviceAcceptanceToolInventory].sort())) throw new ServiceInventoryMismatchError("service_tool_inventory_mismatch");
+  if (!isDeepStrictEqual(names, [...serviceAcceptanceToolInventory].sort())) {
+    const missing = serviceAcceptanceToolInventory.flatMap((name, index) => names.includes(name) ? [] : [index]);
+    const missingMask = missing.reduce((mask, index) => mask | (1 << index), 0);
+    const unexpectedCount = Math.max(0, names.length - serviceAcceptanceToolInventory.length + missing.length);
+    throw new ServiceInventoryMismatchError("service_tool_inventory_mismatch",
+      `service_tool_inventory_read_m${missingMask.toString(16)}_x${Math.min(unexpectedCount, 99)}`);
+  }
   const resources = await listResourcesOrEmpty(client, withinTotalDeadline, "Service");
   options.onBoundary?.("service_resource_inventory_read");
   if (!isDeepStrictEqual(resources.map(({ uri }) => uri).sort(), [...serviceAcceptanceResourceInventory].sort())) throw new ServiceInventoryMismatchError("service_resource_inventory_mismatch");
