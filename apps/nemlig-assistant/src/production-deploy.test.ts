@@ -192,6 +192,8 @@ async function fixture(options: {
   failDisabledDeploy?: boolean;
   failFeatures?: boolean;
   failFeaturesOnce?: boolean;
+  staleRuntimeReads?: number;
+  staleRuntimeForever?: boolean;
   failProbe?: boolean;
   failProbeOnce?: boolean;
   failCurrentRead?: boolean;
@@ -357,6 +359,12 @@ async function fixture(options: {
     }
     if (args[0] === "production:test:features") {
       featureReads += 1;
+      if ((options.staleRuntimeReads ?? 0) >= featureReads || options.staleRuntimeForever) {
+        throw Object.assign(new Error("previous runtime"), { acceptanceFailure: {
+          stage: "read_only", profile: "service", category: "feature_failed",
+          lastCompletedBoundary: "service_runtime_version_read", correlationIds: [],
+        } });
+      }
       if (options.failFeaturesOnce && featureReads === 1) throw new Error("container not converged");
       if (options.failFeatures) throw new Error("acceptance failed");
       if (options.localFinalMirrorFailure) {
@@ -791,6 +799,90 @@ test("enabled acceptance retries while the Container service converges", async (
   try {
     assert.equal((await deployProduction(commit, deps)).outcome, "success");
     assert.equal(calls.filter(({ args }) => args[0] === "production:test:features").length, 2);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test("service release waits through previous backend versions before accepting the candidate", async () => {
+  const { deps, calls, root } = await fixture({ staleRuntimeReads: 14, enabledInstanceRows: [
+    [{ id: "instance", name: "nemlig-production", state: "inactive", version: null }],
+    [{ id: "instance", name: "nemlig-production", state: "running", version: 26 }],
+  ] });
+  deps.acceptanceMode = "service";
+  deps.env = { CLOUDFLARE_ACCOUNT_ID: accountId, NEMLIG_MCP_SERVICE_CLIENT_ID: "service-client", NEMLIG_MCP_SERVICE_CLIENT_SECRET: "machine-secret", NEMLIG_CI_ACCEPTANCE_READY: "true" };
+  deps.issueServiceToken = async () => "machine-token";
+  try {
+    const report = await deployProduction(commit, deps);
+    assert.equal(report.outcome, "success");
+    assert.equal(calls.filter(({ args }) => args[0] === "production:test:features").length, 15);
+    assert.ok(calls.some(({ args }) => args.includes("containers") && args.includes("instances")));
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test("service release cannot accept a matching fixture while its instance is inactive or old", async () => {
+  for (const row of [
+    { id: "instance", name: "nemlig-production", state: "inactive", version: null },
+    { id: "instance", name: "nemlig-production", state: "running", version: 25 },
+  ]) {
+    const { deps, calls, root } = await fixture({ enabledInstanceRows: [[row]] });
+    deps.acceptanceMode = "service";
+    deps.env = { CLOUDFLARE_ACCOUNT_ID: accountId, NEMLIG_MCP_SERVICE_CLIENT_ID: "service-client", NEMLIG_MCP_SERVICE_CLIENT_SECRET: "machine-secret", NEMLIG_CI_ACCEPTANCE_READY: "true" };
+    deps.issueServiceToken = async () => "machine-token";
+    try {
+      const report = await deployProduction(commit, deps);
+      assert.equal(report.outcome, "failed");
+      assert.equal(report.failure, "container_instance_timeout");
+      assert.equal(calls.filter(({ args }) => args[0] === "production:test:features").length, 1);
+    } finally { await rm(root, { recursive: true, force: true }); }
+  }
+});
+
+test("previous backend version is bounded and cannot authorize release or cleanup", async () => {
+  const { deps, calls, root } = await fixture({ staleRuntimeForever: true });
+  deps.acceptanceMode = "service";
+  deps.env = { CLOUDFLARE_ACCOUNT_ID: accountId, NEMLIG_MCP_SERVICE_CLIENT_ID: "service-client", NEMLIG_MCP_SERVICE_CLIENT_SECRET: "machine-secret", NEMLIG_CI_ACCEPTANCE_READY: "true" };
+  deps.issueServiceToken = async () => "machine-token";
+  try {
+    const report = await deployProduction(commit, deps);
+    assert.equal(report.outcome, "failed");
+    assert.equal(report.failure, "service_fixture_acceptance_failed");
+    assert.equal(report.rollback, "restored");
+    assert.equal(report.lastVerifiedState, "disabled");
+    assert.equal(report.acceptanceFailure?.lastCompletedBoundary, "service_runtime_version_read");
+    assert.equal(calls.filter(({ args }) => args[0] === "production:test:features").length, 180);
+    assert.equal(report.checks.includes("service_fixture_acceptance"), false);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test("stale runtime followed by transport timeouts preserves the rollback reserve", async () => {
+  const { deps, root } = await fixture();
+  deps.acceptanceMode = "service";
+  deps.env = { CLOUDFLARE_ACCOUNT_ID: accountId, NEMLIG_MCP_SERVICE_CLIENT_ID: "service-client", NEMLIG_MCP_SERVICE_CLIENT_SECRET: "machine-secret", NEMLIG_CI_ACCEPTANCE_READY: "true" };
+  deps.issueServiceToken = async () => "machine-token";
+  const started = Date.parse("2026-09-05T12:00:00.000Z");
+  let now = started;
+  deps.now = () => new Date(now);
+  deps.sleep = async (milliseconds) => { now += milliseconds; };
+  const run = deps.run;
+  let features = 0;
+  deps.run = async (command, args, options) => {
+    if (command === "pnpm" && args[0] === "production:test:features") {
+      features += 1;
+      if (features === 1) throw Object.assign(new Error("previous runtime"), { acceptanceFailure: {
+        stage: "read_only", profile: "service", category: "feature_failed",
+        lastCompletedBoundary: "service_runtime_version_read", correlationIds: [],
+      } });
+      now += options?.timeoutMs ?? 0;
+      throw new Error("transport timed out");
+    }
+    return await run(command, args, options);
+  };
+  try {
+    const report = await deployProduction(commit, deps);
+    assert.equal(report.outcome, "failed");
+    assert.equal(report.rollback, "restored");
+    assert.equal(report.lastVerifiedState, "disabled");
+    assert.ok(features < 12, "ordinary retries continued beyond the acceptance cutoff");
+    assert.ok(now <= started + 20 * 60_000, "acceptance consumed the five-minute rollback reserve");
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
@@ -1305,6 +1397,32 @@ test("service fixture typed failures retain their bounded boundary in the releas
     });
     assert.equal(attempts, 12);
     assert.doesNotMatch(JSON.stringify(report), /private fixture detail|machine-token/u);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test("runtime-version failure report is parsed and retried without exposing server data", async () => {
+  const { deps, root } = await fixture();
+  deps.acceptanceMode = "service";
+  deps.env.NEMLIG_CI_ACCEPTANCE_READY = "true";
+  deps.env.NEMLIG_MCP_SERVICE_CLIENT_ID = "service-client";
+  deps.issueServiceToken = async () => "machine-token";
+  const run = deps.run;
+  let attempts = 0;
+  deps.run = async (command, args, options) => {
+    if (command === "pnpm" && args[0] === "production:test:features" && ++attempts === 1) {
+      const stdout = JSON.stringify({
+        schema: 1, profile: "service", failed: ["service_runtime_version_mismatch"], failureCategory: "feature_failed",
+        lastCompletedBoundary: "service_runtime_version_read", correlationIds: [],
+      });
+      throw Object.assign(new Error("private old-server data"), { acceptanceFailure: options?.captureFailureStdout?.(stdout) });
+    }
+    return await run(command, args, options);
+  };
+  try {
+    const report = await deployProduction(commit, deps);
+    assert.equal(report.outcome, "success");
+    assert.equal(attempts, 2);
+    assert.doesNotMatch(JSON.stringify(report), /private old-server data|machine-token/u);
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 

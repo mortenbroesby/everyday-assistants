@@ -2,6 +2,7 @@ import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/cli
 import { resolve } from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
+import { NEMLIG_VERSION } from "../src/runtime.js";
 import {
   ProductViewerHtmlMismatchError,
   ServiceInventoryMismatchError,
@@ -18,7 +19,14 @@ type Environment = Record<string, string | undefined>;
 
 interface ConnectedAcceptanceClient {
   client: AcceptanceClient;
+  serverVersion?: string;
   close(): Promise<void>;
+}
+
+class ServiceRuntimeVersionMismatchError extends Error {
+  readonly code = "service_runtime_version_mismatch";
+  readonly lastCompletedBoundary = "service_runtime_version_read";
+  constructor() { super("Service runtime version does not match the candidate."); }
 }
 
 export interface AcceptanceEntryDependencies {
@@ -125,6 +133,7 @@ const defaultConnect = async (origin: URL, token: string, signal: AbortSignal): 
     signal.removeEventListener("abort", closeOnAbort);
   }
   return {
+    serverVersion: client.getServerVersion()?.version,
     client: {
       listTools: () => client.listTools(),
       listResources: () => client.listResources(),
@@ -162,7 +171,8 @@ const inheritedMutationApproval = (env: Environment): boolean => Object.keys(env
   /^NEMLIG_PRODUCTION_(?:MUTATION|RESTORATION)(?:_CONFIRMATION)?$/u.test(name) && Boolean(env[name]?.trim()));
 
 const failureCategory = (error: unknown): NonNullable<AcceptanceReport["failureCategory"]> => {
-  if (error instanceof ProductViewerHtmlMismatchError || error instanceof ServiceInventoryMismatchError) return "feature_failed";
+  if (error instanceof ProductViewerHtmlMismatchError || error instanceof ServiceInventoryMismatchError
+    || error instanceof ServiceRuntimeVersionMismatchError) return "feature_failed";
   const message = error instanceof Error ? error.message : "";
   if (/deadline exceeded|timed out/iu.test(message)) return "deadline_exceeded";
   if (/argument|valid URL|required|approval environment|cannot select mutation|fixed production target/iu.test(message)) return "input_invalid";
@@ -224,6 +234,8 @@ export async function main(
     let operationError: unknown;
     try {
       if (options.service) {
+        if (progress) progress.lastCompletedBoundary = "service_runtime_version_read";
+        if (connected.serverVersion !== NEMLIG_VERSION) throw new ServiceRuntimeVersionMismatchError();
         const report = await verifyServiceAcceptanceFeatures(connected.client, {
           signal: controller.signal,
           onBoundary: (boundary) => { if (progress) progress.lastCompletedBoundary = boundary; },
@@ -269,7 +281,8 @@ export async function run(
     console.log(JSON.stringify(report));
     return report;
   } catch (error) {
-    const boundedFailure = error instanceof ProductViewerHtmlMismatchError || error instanceof ServiceInventoryMismatchError ? error : undefined;
+    const boundedFailure = error instanceof ProductViewerHtmlMismatchError || error instanceof ServiceInventoryMismatchError
+      || error instanceof ServiceRuntimeVersionMismatchError ? error : undefined;
     const report: AcceptanceReport = {
       schema: 1, sourceSha, startedAt, completedAt: new Date().toISOString(),
       profile: argv.includes("--mutation") ? "mutation" : argv.includes("--edge-only") ? "edge" : argv.includes("--service") ? "service" : "live-user",

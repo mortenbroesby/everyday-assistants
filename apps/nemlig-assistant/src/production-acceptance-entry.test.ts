@@ -8,6 +8,7 @@ import {
 } from "./production-acceptance.js";
 import { serviceAcceptanceResourceInventory, serviceAcceptanceToolInventory } from "./mcp.js";
 import { PRODUCT_VIEWER_MIME_TYPE, PRODUCT_VIEWER_RESOURCE_URI, renderProductViewerHtml } from "./product-viewer.js";
+import { NEMLIG_VERSION } from "./runtime.js";
 
 const userToolMetadata = {
   show_my_basket_visually: { ui: { resourceUri: PRODUCT_VIEWER_RESOURCE_URI }, "openai/outputTemplate": PRODUCT_VIEWER_RESOURCE_URI },
@@ -147,7 +148,7 @@ test("service acceptance uses only its in-memory token, closes the MCP client, a
     connect: async (_origin, token) => {
       tokens.push(token);
       events.push("connect");
-      return { client: serviceClient(), close: async () => { events.push("close"); } };
+      return { client: serviceClient(), serverVersion: NEMLIG_VERSION, close: async () => { events.push("close"); } };
     },
   });
   assert.deepEqual(tokens, ["service-token"]);
@@ -157,6 +158,26 @@ test("service acceptance uses only its in-memory token, closes the MCP client, a
   assert.deepEqual(report.required, ["edge", "service_fixture"]);
   assert.deepEqual(report.passed, ["edge", "service_fixture"]);
   assert.equal(report.profile, "service");
+});
+
+test("service acceptance rejects a previous backend release before listing tools", async () => {
+  const entry = await import("../scripts/production-acceptance.js");
+  const client = serviceClient();
+  client.listTools = async () => { throw new Error("old backend must not list tools"); };
+  let closed = 0;
+  const report = await entry.run(["--service"], {
+    NEMLIG_PRODUCTION_MCP_URL: "https://nemlig-mcp.example.test/mcp",
+    NEMLIG_MCP_SERVICE_ACCESS_TOKEN: "test-token",
+  }, {
+    fetcher: edgeFetcher([]),
+    connect: async () => ({ client, serverVersion: "4.17.0", close: async () => { closed += 1; } }),
+  });
+  assert.equal(closed, 1);
+  assert.equal(report.failureCategory, "feature_failed");
+  assert.equal(report.lastCompletedBoundary, "service_runtime_version_read");
+  assert.deepEqual(report.failed, ["service_runtime_version_mismatch"]);
+  assert.doesNotMatch(JSON.stringify(report), /4\.17\.0|test-token/u);
+  assert.notEqual(NEMLIG_VERSION, "4.17.0");
 });
 
 test("service acceptance does not depend on legacy expired-session recovery", async () => {
@@ -174,7 +195,7 @@ test("service acceptance does not depend on legacy expired-session recovery", as
       }
       return edgeFetcher(calls)(input, init);
     },
-    connect: async () => ({ client: serviceClient(), close: async () => undefined }),
+    connect: async () => ({ client: serviceClient(), serverVersion: NEMLIG_VERSION, close: async () => undefined }),
   });
   assert.deepEqual(sessionRequests, []);
   assert.equal(calls.filter((path) => path === "/mcp").length, 2);
@@ -412,7 +433,7 @@ test("stale viewer HTML produces bounded feature evidence instead of parsing HTM
     const report = await entry.run(["--service"], {
       NEMLIG_PRODUCTION_MCP_URL: "https://nemlig-mcp.example.test/mcp",
       NEMLIG_MCP_SERVICE_ACCESS_TOKEN: "test-token",
-    }, { fetcher: edgeFetcher([]), connect: async () => ({ client, close: async () => undefined }) });
+    }, { fetcher: edgeFetcher([]), connect: async () => ({ client, serverVersion: NEMLIG_VERSION, close: async () => undefined }) });
     assert.equal(report.failureCategory, "feature_failed");
     assert.equal(report.lastCompletedBoundary, "product_viewer_resource_read");
     assert.deepEqual(report.failed, ["product_viewer_html_mismatch"]);
@@ -440,7 +461,7 @@ test("service inventory drift identifies the failed list without exposing its co
       const report = await entry.run(["--service"], {
         NEMLIG_PRODUCTION_MCP_URL: "https://nemlig-mcp.example.test/mcp",
         NEMLIG_MCP_SERVICE_ACCESS_TOKEN: "test-token",
-      }, { fetcher: edgeFetcher([]), connect: async () => ({ client, close: async () => undefined }) });
+      }, { fetcher: edgeFetcher([]), connect: async () => ({ client, serverVersion: NEMLIG_VERSION, close: async () => undefined }) });
       assert.equal(report.failureCategory, "feature_failed");
       assert.equal(report.lastCompletedBoundary, boundary);
       assert.deepEqual(report.failed, [failed]);
@@ -460,7 +481,7 @@ test("service inventory evidence distinguishes a missing visual tool from an une
   const report = await entry.run(["--service"], {
     NEMLIG_PRODUCTION_MCP_URL: "https://nemlig-mcp.example.test/mcp",
     NEMLIG_MCP_SERVICE_ACCESS_TOKEN: "test-token",
-  }, { fetcher: edgeFetcher([]), connect: async () => ({ client, close: async () => undefined }) });
+  }, { fetcher: edgeFetcher([]), connect: async () => ({ client, serverVersion: NEMLIG_VERSION, close: async () => undefined }) });
   assert.equal(report.lastCompletedBoundary, "service_tool_inventory_read_m40_x0");
   assert.deepEqual(report.failed, ["service_tool_inventory_mismatch"]);
 });
@@ -476,7 +497,7 @@ test("service failure keeps the last completed MCP boundary and primary error", 
     const report = await entry.run(["--service"], {
       NEMLIG_PRODUCTION_MCP_URL: "https://nemlig-mcp.example.test/mcp",
       NEMLIG_MCP_SERVICE_ACCESS_TOKEN: "test-token",
-    }, { fetcher: edgeFetcher([]), connect: async () => ({ client, close: async () => { throw new Error("close failed"); } }) });
+    }, { fetcher: edgeFetcher([]), connect: async () => ({ client, serverVersion: NEMLIG_VERSION, close: async () => { throw new Error("close failed"); } }) });
     assert.equal(report.failureCategory, "transport_failed");
     assert.equal(report.lastCompletedBoundary, "service_tool_inventory_read");
     assert.doesNotMatch(output.join(""), /private-data|test-token|close failed/u);
@@ -495,7 +516,7 @@ test("service timeout reports the last completed MCP boundary", async () => {
     const report = await entry.run(["--service"], {
       NEMLIG_PRODUCTION_MCP_URL: "https://nemlig-mcp.example.test/mcp",
       NEMLIG_MCP_SERVICE_ACCESS_TOKEN: "test-token",
-    }, { fetcher: edgeFetcher([]), connect: async () => ({ client, close: async () => undefined }), totalTimeoutMs: 25 });
+    }, { fetcher: edgeFetcher([]), connect: async () => ({ client, serverVersion: NEMLIG_VERSION, close: async () => undefined }), totalTimeoutMs: 25 });
     assert.equal(report.failureCategory, "deadline_exceeded");
     assert.equal(report.lastCompletedBoundary, "service_tool_inventory_read");
   } finally {

@@ -1032,12 +1032,12 @@ const verifyDisabledRoutes = async (deps: DeployDependencies): Promise<void> => 
   }
 };
 
-const sleepAbortably = async (deps: DeployDependencies): Promise<void> => {
-  if (!deps.signal) return await deps.sleep(5_000);
+const sleepAbortably = async (deps: DeployDependencies, durationMs = 5_000): Promise<void> => {
+  if (!deps.signal) return await deps.sleep(durationMs);
   await new Promise<void>((resolvePromise, reject) => {
     const abort = () => reject(new DeployFailure("command_cancelled"));
     deps.signal!.addEventListener("abort", abort, { once: true });
-    void deps.sleep(5_000).then(() => {
+    void deps.sleep(durationMs).then(() => {
       deps.signal!.removeEventListener("abort", abort);
       resolvePromise();
     }, (error) => {
@@ -1076,11 +1076,15 @@ const runningInstanceVersion = (raw: string, minimumVersion: number): number | n
 const runningInstanceMatches = (raw: string, expectedVersion: number): boolean =>
   runningInstanceVersion(raw, expectedVersion) === expectedVersion;
 
-const waitForAcceptedInstance = async (deps: DeployDependencies, applicationId: string, minimumVersion: number): Promise<number | null> => {
+const waitForAcceptedInstance = async (deps: DeployDependencies, applicationId: string, minimumVersion: number, requireRunning = false): Promise<number | null> => {
   for (let attempt = 0; attempt < 36; attempt += 1) {
     deps.signal?.throwIfAborted();
     const raw = await wrangler(deps, ["containers", "instances", applicationId, "--json"]);
-    if (instancesInactive(raw)) return null;
+    if (instancesInactive(raw)) {
+      if (!requireRunning) return null;
+      if (attempt < 35) await sleepAbortably(deps);
+      continue;
+    }
     const version = runningInstanceVersion(raw, minimumVersion);
     if (version !== null) {
       if (version !== minimumVersion) fail("cloudflare_deployment_drift");
@@ -1113,7 +1117,7 @@ const parseAcceptanceFailure = (stdout: string | undefined, profile: AcceptanceF
       || typeof value.failureCategory !== "string" || !acceptanceFailureCategories.has(value.failureCategory)
       || !Array.isArray(value.failed) || value.failed.length !== 1
       || !(value.failed[0] === value.failureCategory || (value.failureCategory === "feature_failed"
-        && ["product_viewer_html_mismatch", "service_tool_inventory_mismatch", "service_resource_inventory_mismatch"].includes(value.failed[0])))
+        && ["product_viewer_html_mismatch", "service_tool_inventory_mismatch", "service_resource_inventory_mismatch", "service_runtime_version_mismatch"].includes(value.failed[0])))
       || typeof value.lastCompletedBoundary !== "string"
       || !/^[A-Za-z0-9_:-]{1,64}$/u.test(value.lastCompletedBoundary)
       || !Array.isArray(value.correlationIds) || value.correlationIds.length > 16
@@ -1135,23 +1139,36 @@ const retryAcceptance = async (
   stage: AcceptanceFailureEvidence["stage"],
   profile: AcceptanceFailureEvidence["profile"],
   failure: "edge_acceptance_failed" | "service_fixture_acceptance_failed" | "authenticated_read_only_acceptance_failed",
+  runtimeConvergenceMs?: number,
 ): Promise<void> => {
   let lastEvidence: AcceptanceFailureEvidence | undefined;
-  for (let attempt = 0; attempt < attempts; attempt += 1) {
+  const convergenceDeadline = runtimeConvergenceMs === undefined ? undefined : deps.now().getTime() + runtimeConvergenceMs;
+  const remainingMs = (): number => convergenceDeadline === undefined ? Infinity : convergenceDeadline - deps.now().getTime();
+  let staleRuntimeAttempts = 0;
+  for (let attempt = 0; attempt < attempts;) {
+    if (remainingMs() <= 0) throw new AcceptanceFailure(failure, lastEvidence);
     try {
       await runAt(deps, deps.packageRoot, "pnpm", args, {
-        timeoutMs: 120_000, env, captureFailureStdout: (stdout) => parseAcceptanceFailure(stdout, profile, stage),
+        timeoutMs: Math.min(120_000, remainingMs()), env, captureFailureStdout: (stdout) => parseAcceptanceFailure(stdout, profile, stage),
       });
+      if (remainingMs() <= 0) throw new AcceptanceFailure(failure, lastEvidence);
       return;
     } catch (error) {
+      if (error instanceof AcceptanceFailure) throw error;
       const evidence = object(error)?.acceptanceFailure;
       if (validAcceptanceFailure(evidence)) lastEvidence = evidence;
       deps.signal?.throwIfAborted();
       if (deps.signal?.aborted) throw new DeployFailure("command_cancelled");
-      if (attempt === attempts - 1) {
+      const staleRuntime = profile === "service" && validAcceptanceFailure(evidence)
+        && evidence.category === "feature_failed" && evidence.lastCompletedBoundary === "service_runtime_version_read";
+      if (staleRuntime) staleRuntimeAttempts += 1;
+      else attempt += 1;
+      if ((staleRuntime && (runtimeConvergenceMs === undefined || staleRuntimeAttempts >= 180)) || attempt >= attempts || remainingMs() <= 0) {
         throw new AcceptanceFailure(failure, lastEvidence);
       }
-      await sleepAbortably(deps);
+      const delayMs = staleRuntime ? 15_000 : 5_000;
+      if (remainingMs() <= delayMs) throw new AcceptanceFailure(failure, lastEvidence);
+      await sleepAbortably(deps, delayMs);
     }
   }
 };
@@ -1196,7 +1213,9 @@ export async function deployProduction(commit: string, inputDeps: DeployDependen
   const inheritedSignal = inputDeps.signal;
   if (inheritedSignal?.aborted) abortOperation();
   else inheritedSignal?.addEventListener("abort", abortOperation, { once: true });
-  const operationDeadline = setTimeout(abortOperation, Math.min(inputDeps.operationDeadlineMs ?? 25 * 60_000, 25 * 60_000));
+  const operationDurationMs = Math.min(inputDeps.operationDeadlineMs ?? 25 * 60_000, 25 * 60_000);
+  const operationDeadlineAt = inputDeps.now().getTime() + operationDurationMs;
+  const operationDeadline = setTimeout(abortOperation, operationDurationMs);
   const recovery = inputDeps.acceptanceMode === "recovery";
   const service = inputDeps.env.GITHUB_ACTIONS === "true" || inputDeps.acceptanceMode === "service" || recovery;
   // Do not read owner credentials or pass the machine secret to child commands.
@@ -1368,13 +1387,15 @@ export async function deployProduction(commit: string, inputDeps: DeployDependen
       journal.checks.push("enabled_version", "image_reused");
       await transition("enable_deploy", "result", enabledId);
     }
-    const preAcceptanceRunningVersion = await waitForAcceptedInstance(deps, enabledContainer.id, enabledContainer.version);
+    // The machine fixture itself wakes a cold Container and verifies the server release before any tool call.
+    const preAcceptanceRunningVersion = service ? null : await waitForAcceptedInstance(deps, enabledContainer.id, enabledContainer.version);
     await retryAcceptance(deps, ["production:probe"], { NEMLIG_EXPECTED_REVISION: commit }, 12, "edge", "edge", "edge_acceptance_failed");
     await retryAcceptance(deps, ["production:test:features", ...(service ? ["--service"] : [])],
       service ? { NEMLIG_MCP_SERVICE_ACCESS_TOKEN: serviceToken, NEMLIG_EXPECTED_REVISION: commit } : {}, service ? 12 : 1,
       "read_only", service ? "service" : "live-user",
-      service ? "service_fixture_acceptance_failed" : "authenticated_read_only_acceptance_failed");
-    const runningVersion = await waitForAcceptedInstance(deps, enabledContainer.id, enabledContainer.version);
+      service ? "service_fixture_acceptance_failed" : "authenticated_read_only_acceptance_failed",
+      routine ? Math.max(0, Math.min(17 * 60_000, operationDeadlineAt - deps.now().getTime() - 5 * 60_000)) : undefined);
+    const runningVersion = await waitForAcceptedInstance(deps, enabledContainer.id, enabledContainer.version, service);
     await verifyCurrent(deps, enabledId);
     await verifyLeaseHead(deps, repository, journal);
     const provenContainer = await readContainer(deps, enabledContainer.id);
