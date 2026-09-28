@@ -10,6 +10,7 @@ these obsolete policy or migration steps.
 - [x] 12.3 Implement the minimal maintained-client adapter, bounded pinned-origin discovery/exchange, transaction replay protection and existing portal session handoff; preserve all credential and basket boundaries.
 - [ ] 12.4 Update deployment configuration validation, README/operator documentation, release version/note and strict/privacy/package/repository gates; review, commit/push and verify exact-head CI.
 - [ ] 12.5 Review/provision one public browser client and the session secret, stage private v3 policy, deploy disabled/onboarding-only, have the owner validate through the portal, then perform protected release and real owner read-only acceptance. No basket mutation; leave live gates unchecked until observed.
+- [ ] 12.6 Fix the demonstrated Worker fetch redirect-mode incompatibility, preserving explicit redirect rejection; run the focused failing regression, Worker-runtime smoke and repository gates before another reviewed staging attempt.
 
 Repository evidence (2026-09-28, base `9b934706ccc2b374763389659d0a1a29bd1b26e6`):
 anonymous-entry regression failed with 401 before implementation; the real-SDK
@@ -22,6 +23,25 @@ the protected credential form: one exchange, one session, zero credential
 writes. This proves local browser handoff, not live Auth0/Nemlig or ChatGPT
 acceptance. Full repository/package/Docker and exact-head CI evidence remains
 part of 12.4; live migration remains 12.5. No viewer/resource change is included.
+
+Delivery reconciliation (2026-09-28): PR #154 merged at
+`f559feff9d832d54c196dbf24f1b0fbc6926d580`; exact-main CI
+36482105964 passed the full production-readiness gate. Local Docker dry-run
+passed; local full verification reported two deadline failures, with the import
+check passing on rerun and Wrangler startup still exceeding its deadline.
+Approved browser-client/key provisioning and private v3 policy installation
+completed. Onboarding-only Worker `c0631a7d-673d-4170-a264-18203260387a`
+served that source with application 116 and a registry-manifest-matched image;
+both MCP routes remained 503 and its sole instance inactive. Anonymous /connect
+returned 200, but the real browser's Sign in returned 401 before an issuer login
+screen. The unchanged handler redirected in Node; workerd at the production
+compatibility date reproduced TypeError for fetch redirect:error. This is an
+application runtime defect, not evidence of invalid credentials or Auth0 outage.
+At 21:28 UTC Worker `3242c960-eff9-46c8-ae3d-55df810f5b15` was read back
+with both switches disabled, the same source/application/image and preserved
+runtime/namespaces. No owner credential replacement or basket write occurred.
+Automatic releases remain paused. Owner sign-in, credential readiness, enabled
+release and native ChatGPT acceptance are unverified; 12.5 stays unchecked.
 
 ## 1. Contract and Baseline
 
