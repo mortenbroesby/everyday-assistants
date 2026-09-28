@@ -17,7 +17,7 @@ submissions; it now rejects that replay. Focused HTTP/gateway/policy/portal chec
 and 104 mocked deployment tests pass. The initial repository verification passed
 494 tests (94.93% line coverage), lint, build, typecheck and five smoke cases;
 committed-head verification on `147b7e1b6241a0840578edf18092cdeb820eb6c0`
-passed the full gate again (494 tests, same coverage). The documentation-only
+passed the full gate again (494 tests, 94.87% loaded-source line coverage). The documentation-only
 handoff commit is reverified before push; its exact head and CI status are
 recorded in the PR, not inferred from this checklist.
 
