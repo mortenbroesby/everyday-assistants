@@ -30,7 +30,20 @@ recorded in the PR, not inferred from this checklist.
 - [x] 3.2 Delete all operation caps/counters, tiers, per-person budgets/forecast/telemetry and usage/reset endpoints; verify obsolete stored usage is never read or written.
 - [x] 3.3 Replace legacy policy versions with one current encrypted-credential family contract; verify exact owner authorization, unknown/disabled denial, credential/session/conversation isolation and no inline-password fallback.
 - [x] 3.4 Remove obsolete deployment bindings, fixtures and current documentation/specification claims; verify mocked deployment/configuration gates and no operational tier/expensive/legacy-policy branches remain.
-- [ ] 3.5 Run focused regression/mock HTTP tests, strict/privacy/version/release-note gates and final `pnpm verify`; update the same PR with exact SHA/CI and unperformed release transitions. No merge/deploy/provider mutation.
+- [x] 3.5 Run focused regression/mock HTTP tests, strict/privacy/version/release-note gates and final `pnpm verify`; update the same PR with exact SHA/CI and unperformed release transitions. No merge/deploy/provider mutation.
+
+Refinement evidence (2026-09-28): source commit
+`3f05df8f52c2f962bfeeff8043ff81092330f228`, based on current main
+`cc2ffdcbf0f32ca793a0c87bcf5f2caddbaec1c8`, passed committed-head
+`pnpm verify` before push: lint, build, typecheck, 486 tests with no failures,
+94.51% loaded-source line coverage and five smoke cases. Strict specs passed
+26/26; privacy, major-version/release-note checks and packed-package smoke
+passed. Regressions cover 6,001 admissions without obsolete usage-state reads
+or writes, and a loopback MCP burst with 501 reads plus 30 rejected unapproved
+mutations (zero mocked provider writes). Owner controls, delayed credential
+commit and profile/review continuity regressions pass. All providers are mocked.
+Final documentation-head revalidation, remote ref and exact-head CI are recorded
+on #151 and PR #152; this checklist does not assert CI, merge or release success.
 
 No viewer/browser-native acceptance is needed for this non-UI policy change,
 and no native/production behavior is claimed. The local Cloudflare dry run
