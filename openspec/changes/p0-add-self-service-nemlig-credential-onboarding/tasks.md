@@ -8,9 +8,9 @@ these obsolete policy or migration steps.
 - [x] 12.1 Rebaseline the existing proposal/design/delta specs for owner-only schema-v3 browser recovery, preserving historical evidence without applying legacy tasks.
 - [x] 12.2 Add a failing focused real-SDK regression for anonymous browser entry and owner PKCE POST callback into the existing portal; cover wrong/duplicate state, expiry/tamper, issuer/client drift, unknown/disabled/service identity, cancellation and no automatic exchange retry.
 - [x] 12.3 Implement the minimal maintained-client adapter, bounded pinned-origin discovery/exchange, transaction replay protection and existing portal session handoff; preserve all credential and basket boundaries.
-- [ ] 12.4 Update deployment configuration validation, README/operator documentation, release version/note and strict/privacy/package/repository gates; review, commit/push and verify exact-head CI.
+- [x] 12.4 Update deployment configuration validation, README/operator documentation, release version/note and strict/privacy/package/repository gates; review, commit/push and verify exact-head CI.
 - [ ] 12.5 Review/provision one public browser client and the session secret, stage private v3 policy, deploy disabled/onboarding-only, have the owner validate through the portal, then perform protected release and real owner read-only acceptance. No basket mutation; leave live gates unchecked until observed.
-- [ ] 12.6 Fix the demonstrated Worker fetch redirect-mode incompatibility, preserving explicit redirect rejection; run the focused failing regression, Worker-runtime smoke and repository gates before another reviewed staging attempt.
+- [x] 12.6 Fix the demonstrated Worker fetch redirect-mode incompatibility, preserving explicit redirect rejection; run the focused failing regression, Worker-runtime smoke and repository gates before another reviewed staging attempt.
 
 Repository evidence (2026-09-28, base `9b934706ccc2b374763389659d0a1a29bd1b26e6`):
 anonymous-entry regression failed with 401 before implementation; the real-SDK
@@ -42,6 +42,18 @@ with both switches disabled, the same source/application/image and preserved
 runtime/namespaces. No owner credential replacement or basket write occurred.
 Automatic releases remain paused. Owner sign-in, credential readiness, enabled
 release and native ChatGPT acceptance are unverified; 12.5 stays unchecked.
+
+Fix evidence: PR #155 implementation `a2488617379a2a43041908e509663dfeaa9790e4`
+passed exact-head CI 36488031977, including the full production-readiness gate
+and packed-package/Docker checks. Its focused Worker-mode regression first
+failed with 401 instead of 303; all 16 OAuth tests then passed with manual fetch
+and explicit 3xx rejection. A local workerd handler harness built from that
+source (diagnostic error logging only) read issuer metadata with HTTP 200 and
+returned 303 to the configured issuer with zero credential work. Local full
+verification initially passed 505/506 with the existing Wrangler startup
+deadline failure; its isolated rerun and subsequent full hook execution passed
+(506/506 tests, coverage validation and 5/5 smoke). No timeout was weakened.
+The fix is not yet deployed; this completes repository gates, not 12.5.
 
 ## 1. Contract and Baseline
 
