@@ -7,8 +7,6 @@ const validEnv: CloudflareEnv = {
   MCP_ENABLED: "true",
   MCP_DAILY_LIMIT: "5000",
   MCP_EXPENSIVE_DAILY_LIMIT: "500",
-  MCP_RATE_LIMIT: "60",
-  MCP_EXPENSIVE_RATE_LIMIT: "10",
   MCP_AUTH_TIMEOUT_MS: "5000",
   MCP_CONTROL_TIMEOUT_MS: "3000",
   MCP_TOTAL_TIMEOUT_MS: "90000",
@@ -19,11 +17,10 @@ const validEnv: CloudflareEnv = {
     schema_version: 1,
     revision: "family-v1",
     budgets: {
-      principal_minute_limits: { "0": 20, "1": 20, "2": 20 },
-      tier0_reserve: { minute: 20, month: 30_000 },
-      guest_limit: { minute: 20, month: 30_000 },
-      tier1_shed_at: { minute: 20, month: 30_000 },
-      tier2_shed_at: { minute: 20, month: 30_000 },
+      tier0_reserve: { month: 30_000 },
+      guest_limit: { month: 30_000 },
+      tier1_shed_at: { month: 30_000 },
+      tier2_shed_at: { month: 30_000 },
     },
     principals: [{ subject: "auth0|owner", principal_key: "a".repeat(32), tier: 0, enabled: true, nemlig: { username: "owner@example.test", password: "secret" } }],
   }),
@@ -55,21 +52,19 @@ test("Cloudflare safety configuration is explicit, bounded, and internally consi
   assert.throws(() => loadGatewayConfig({ ...validEnv, MCP_DAILY_LIMIT: "0" }), /MCP_DAILY_LIMIT/u);
   assert.throws(() => loadGatewayConfig({ ...validEnv, MCP_DAILY_LIMIT: "100001" }), /MCP_DAILY_LIMIT/u);
   assert.throws(() => loadGatewayConfig({ ...validEnv, MCP_EXPENSIVE_DAILY_LIMIT: "5001" }), /MCP_EXPENSIVE_DAILY_LIMIT/u);
-  assert.throws(() => loadGatewayConfig({ ...validEnv, MCP_RATE_LIMIT: "20", MCP_EXPENSIVE_RATE_LIMIT: "21" }), /MCP_EXPENSIVE_RATE_LIMIT/u);
   assert.throws(() => loadGatewayConfig({ ...validEnv, MCP_BACKEND_TIMEOUT_MS: "120001" }), /MCP_BACKEND_TIMEOUT_MS/u);
   assert.throws(() => loadGatewayConfig({ ...validEnv, MCP_TOTAL_TIMEOUT_MS: "5000" }), /MCP_AUTH_TIMEOUT_MS/u);
   assert.throws(() => loadGatewayConfig({ ...validEnv, MCP_CONTROL_TIMEOUT_MS: "30000" }), /MCP_CONTROL_TIMEOUT_MS/u);
   assert.throws(() => loadGatewayConfig({ ...validEnv, NEMLIG_MCP_PUBLIC_URL: "http://mcp.example.test/mcp" }), /HTTPS/u);
   assert.throws(() => loadGatewayConfig({ ...validEnv, NEMLIG_MCP_PRINCIPALS: undefined }), /NEMLIG_MCP_PRINCIPALS/u);
-  const policy = JSON.parse(validEnv.NEMLIG_MCP_PRINCIPALS!) as { budgets: Record<string, { minute: number; month: number } | Record<string, number>> };
+  const policy = JSON.parse(validEnv.NEMLIG_MCP_PRINCIPALS!) as { budgets: Record<string, { month: number }> };
   assert.throws(() => loadGatewayConfig({
     ...validEnv,
     NEMLIG_MCP_PRINCIPALS: JSON.stringify({
       ...policy,
       budgets: {
-        principal_minute_limits: { "0": 61, "1": 61, "2": 61 },
-        tier0_reserve: { minute: 61, month: 30_000 }, guest_limit: { minute: 61, month: 30_000 },
-        tier1_shed_at: { minute: 61, month: 30_000 }, tier2_shed_at: { minute: 61, month: 30_000 },
+        tier0_reserve: { month: 155_001 }, guest_limit: { month: 155_001 },
+        tier1_shed_at: { month: 155_001 }, tier2_shed_at: { month: 155_001 },
       },
     }),
   }), /global safety limits/u);
@@ -102,8 +97,7 @@ test("Wrangler configuration fixes both environments to one disabled EU lite Con
     assert.deepEqual(deployment.observability, { enabled: true, head_sampling_rate: 1 });
     assert.equal(deployment.vars.MCP_ENABLED, "false");
     assert.equal(deployment.vars.MCP_CREDENTIAL_ONBOARDING_ENABLED, "false");
-    assert.equal(deployment.vars.MCP_CREDENTIAL_RATE_LIMIT, "3");
-    assert.equal(deployment.vars.MCP_CREDENTIAL_GLOBAL_RATE_LIMIT, "10");
+    assert.equal(Object.keys(deployment.vars).some((name) => name.endsWith("RATE_LIMIT")), false);
     assert.equal(deployment.vars.MCP_TOTAL_TIMEOUT_MS, "90000");
     assert.equal(deployment.vars.MCP_CONTROL_TIMEOUT_MS, "3000");
     assert.equal(deployment.vars.MCP_AUTH_TIMEOUT_MS, "5000");

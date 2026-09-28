@@ -4,14 +4,7 @@ export const MAX_PRINCIPAL_POLICY_BYTES = 16_384;
 export const MAX_PRINCIPALS = 16;
 
 const windowSchema = z.object({
-  minute: z.number().int().positive(),
   month: z.number().int().positive(),
-}).strict();
-
-const tierLimitsSchema = z.object({
-  "0": z.number().int().positive(),
-  "1": z.number().int().positive(),
-  "2": z.number().int().positive(),
 }).strict();
 
 const principalSchema = z.object({
@@ -22,7 +15,6 @@ const principalSchema = z.object({
 }).strict();
 
 const budgetsSchema = z.object({
-  principal_minute_limits: tierLimitsSchema,
   tier0_reserve: windowSchema,
   guest_limit: windowSchema,
   tier1_shed_at: windowSchema,
@@ -30,15 +22,10 @@ const budgetsSchema = z.object({
 }).strict();
 
 const refineBudgets = (budgets: z.infer<typeof budgetsSchema>, context: z.RefinementCtx): void => {
-  for (const window of ["minute", "month"] as const) {
-    if (budgets.tier0_reserve[window] !== budgets.guest_limit[window]
-      || budgets.tier1_shed_at[window] !== budgets.guest_limit[window]
-      || budgets.tier2_shed_at[window] !== budgets.guest_limit[window]) {
-      context.addIssue({ code: "custom", message: `unequal ${window} tier allowance` });
-    }
-  }
-  if (Object.values(budgets.principal_minute_limits).some((limit) => limit !== budgets.guest_limit.minute)) {
-    context.addIssue({ code: "custom", message: "unequal principal minute tier allowance" });
+  if (budgets.tier0_reserve.month !== budgets.guest_limit.month
+    || budgets.tier1_shed_at.month !== budgets.guest_limit.month
+    || budgets.tier2_shed_at.month !== budgets.guest_limit.month) {
+    context.addIssue({ code: "custom", message: "unequal month tier allowance" });
   }
 };
 

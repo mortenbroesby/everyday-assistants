@@ -161,18 +161,20 @@ in a connection URL.
 
 Credential validation SHALL perform at most one bounded Nemlig authentication
 attempt and one bounded authenticated read, SHALL perform no basket, favorite,
-profile, address, order, delivery-slot, or payment mutation, and SHALL be rate
-limited per principal and globally before Container access. Credential lookup for
+profile, address, order, delivery-slot, or payment mutation, and SHALL retain
+authorization and CSRF replay protection before Container access without an
+app-owned request-rate gate, as superseded by `remove-nemlig-local-rate-limits`.
+Credential lookup for
 ordinary MCP traffic SHALL reuse the existing controller admission operation and
 SHALL NOT add polling, a recurring job, another Container, another Durable Object
 namespace, or another per-request storage round trip.
 
 #### Scenario: Repeated invalid submissions occur
 
-- **WHEN** a principal or the deployment exceeds the configured credential-
-  validation rate
-- **THEN** further attempts are rejected without waking the Container or
-  contacting Nemlig and without affecting the previous credential record
+- **WHEN** an eligible principal submits distinct authenticated, CSRF-protected
+  validations beyond the former minute thresholds
+- **THEN** each performs bounded read-only validation without a rate denial;
+  failures preserve the previous credential and replayed actions are rejected
 
 #### Scenario: Maximum ordinary MCP workload occurs
 

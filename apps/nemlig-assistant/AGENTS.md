@@ -20,7 +20,7 @@ app, also apply this file. Then select the matching app-local skill:
   actions are never allowed.
 - Production/provider work must follow `nemlig-production` and
   `docs/cloudflare-operations.md`. Preserve authentication-before-wake,
-  one-Container, quota, rate-limit, retry, circuit-breaker, and kill-switch
+  one-Container, daily/monthly cost ceilings, retry, circuit-breaker, and kill-switch
   controls; ask before provider changes, secrets, or material cost.
 - For shipped user-visible behavior, update the README feature inventory; keep
   planned work in `BACKLOG.md` or a linked OpenSpec change.

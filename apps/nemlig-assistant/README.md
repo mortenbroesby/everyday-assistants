@@ -98,7 +98,9 @@ The production profile is designed for private, low-volume family use:
 
 - Auth0 authenticates before useful requests reach the backend.
 - One fixed Cloudflare Container can sleep when idle and cannot horizontally autoscale.
-- Per-user rate limits and daily normal/expensive quotas bound usage.
+- No app-owned per-minute MCP or credential-validation throttles. Global daily
+  and expensive-operation caps, equal per-principal monthly allowances and the
+  emergency breaker remain; provider/platform limits are not bypassed.
 - An automatic circuit breaker fails closed when a quota is exceeded.
 - `MCP_ENABLED` provides an immediate manual kill switch.
 - Explicit timeouts and bounded retries prevent failed work from running forever.

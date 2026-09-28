@@ -6,15 +6,11 @@ export interface CloudflareEnv {
   MCP_ENABLED?: string;
   MCP_DAILY_LIMIT?: string;
   MCP_EXPENSIVE_DAILY_LIMIT?: string;
-  MCP_RATE_LIMIT?: string;
-  MCP_EXPENSIVE_RATE_LIMIT?: string;
   MCP_AUTH_TIMEOUT_MS?: string;
   MCP_CONTROL_TIMEOUT_MS?: string;
   MCP_TOTAL_TIMEOUT_MS?: string;
   MCP_BACKEND_TIMEOUT_MS?: string;
   MCP_CREDENTIAL_ONBOARDING_ENABLED?: string;
-  MCP_CREDENTIAL_RATE_LIMIT?: string;
-  MCP_CREDENTIAL_GLOBAL_RATE_LIMIT?: string;
   NEMLIG_MCP_AUTH0_ISSUER?: string;
   NEMLIG_MCP_AUTH0_AUDIENCE?: string;
   NEMLIG_MCP_PRINCIPALS?: string;
@@ -32,8 +28,6 @@ export interface CloudflareEnv {
 export interface GatewayConfig {
   dailyLimit: number;
   expensiveDailyLimit: number;
-  rateLimit: number;
-  expensiveRateLimit: number;
   authTimeoutMs: number;
   controlTimeoutMs: number;
   totalTimeoutMs: number;
@@ -67,8 +61,6 @@ const boundedInteger = (env: CloudflareEnv, name: keyof CloudflareEnv, maximum: 
 export function loadGatewayConfig(env: CloudflareEnv): GatewayConfig {
   const dailyLimit = boundedInteger(env, "MCP_DAILY_LIMIT", 100_000);
   const expensiveDailyLimit = boundedInteger(env, "MCP_EXPENSIVE_DAILY_LIMIT", dailyLimit);
-  const rateLimit = boundedInteger(env, "MCP_RATE_LIMIT", 600);
-  const expensiveRateLimit = boundedInteger(env, "MCP_EXPENSIVE_RATE_LIMIT", rateLimit);
   const authTimeoutMs = boundedInteger(env, "MCP_AUTH_TIMEOUT_MS", 10_000);
   const controlTimeoutMs = boundedInteger(env, "MCP_CONTROL_TIMEOUT_MS", 10_000);
   const totalTimeoutMs = boundedInteger(env, "MCP_TOTAL_TIMEOUT_MS", 120_000);
@@ -89,9 +81,7 @@ export function loadGatewayConfig(env: CloudflareEnv): GatewayConfig {
   }
   const { budgets } = principalPolicy;
   const maximumMonthlyOperations = dailyLimit * 31;
-  if (budgets.guest_limit.minute > rateLimit
-    || budgets.guest_limit.month > maximumMonthlyOperations
-    || Object.values(budgets.principal_minute_limits).some((limit) => limit > rateLimit)) {
+  if (budgets.guest_limit.month > maximumMonthlyOperations) {
     throw new Error("Principal policy exceeds global safety limits.");
   }
   if (issuer.protocol !== "https:" || issuer.search || issuer.hash) throw new Error("NEMLIG_MCP_AUTH0_ISSUER must be an HTTPS URL without query or fragment.");
@@ -102,8 +92,6 @@ export function loadGatewayConfig(env: CloudflareEnv): GatewayConfig {
   return {
     dailyLimit,
     expensiveDailyLimit,
-    rateLimit,
-    expensiveRateLimit,
     authTimeoutMs,
     controlTimeoutMs,
     totalTimeoutMs,

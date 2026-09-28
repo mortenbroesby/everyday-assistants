@@ -7,7 +7,7 @@ import { createLocalJWKSet, exportJWK, generateKeyPair, SignJWT } from "jose";
 import { Auth0InfrastructureError, createAuth0Verifier, SERVICE_ACCEPTANCE_SCOPE, type Auth0Config } from "./auth0.js";
 import { verifyServiceAcceptanceFeatures } from "./production-acceptance.js";
 import { handleGatewayRequest } from "./cloudflare-gateway.js";
-import { emptyUsageState } from "./cloudflare-usage.js";
+import { admitUsageAtomically, emptyUsageState, type UsageState, type UsageStorage } from "./cloudflare-usage.js";
 import { BasketProposalService } from "./proposals.js";
 import { parsePrincipalPolicy } from "./principal-policy.js";
 import type { ShoppingClient } from "./client.js";
@@ -19,9 +19,8 @@ const ownerSubject = "auth0|owner";
 const principalPolicy = parsePrincipalPolicy(JSON.stringify({
   schema_version: 1, revision: "family-v1",
   budgets: {
-    principal_minute_limits: { "0": 20, "1": 20, "2": 20 },
-    tier0_reserve: { minute: 20, month: 30_000 }, guest_limit: { minute: 20, month: 30_000 },
-    tier1_shed_at: { minute: 20, month: 30_000 }, tier2_shed_at: { minute: 20, month: 30_000 },
+    tier0_reserve: { month: 30_000 }, guest_limit: { month: 30_000 },
+    tier1_shed_at: { month: 30_000 }, tier2_shed_at: { month: 30_000 },
   },
   principals: [
     { subject: ownerSubject, principal_key: "a".repeat(32), tier: 0, enabled: true, nemlig: { username: "owner@example.test", password: "owner-secret" } },
@@ -51,6 +50,71 @@ const oauth: OAuthMetadata = {
 
 const modernClient = (name: string) => new Client({ name, version: "1.0.0" }, {
   versionNegotiation: { mode: { pin: "2026-07-28" } },
+});
+
+test("loopback MCP bursts pass real gateway admission without minute throttles or unapproved writes", async () => {
+  const empty = { items: [], productsPrice: 0, deliveryPrice: 0, numberOfProducts: 0, deliveryTime: "" };
+  let reads = 0;
+  let writes = 0;
+  const shopper = {
+    isLoggedIn: () => true,
+    getCart: async () => { reads += 1; return empty; },
+    addToCart: async () => { writes += 1; throw new Error("unapproved write"); },
+  } as unknown as ShoppingClient;
+  const app = createHttpApp(config, oauth, {
+    verifyAccessToken: async (token) => ({ token, clientId: "chatgpt", scopes: [config.requiredScope],
+      expiresAt: Date.now() / 1000 + 300, extra: { subject: ownerSubject } }),
+  }, () => ({ client: shopper, proposals: new BasketProposalService(shopper) }));
+  const server = app.listen(0, config.host);
+  await new Promise<void>((resolve, reject) => { server.once("listening", resolve); server.once("error", reject); });
+  const endpoint = new URL(`http://${config.host}:${(server.address() as AddressInfo).port}/mcp`);
+  const now = new Date("2026-09-28T12:00:00Z");
+  let state: UsageState | undefined;
+  let tail = Promise.resolve();
+  const storage: UsageStorage = {
+    transaction: async <T>(callback: () => Promise<T>) => {
+      const result = tail.then(callback); tail = result.then(() => undefined, () => undefined); return result;
+    },
+    get: async <T>() => state as T | undefined,
+    put: async (_key, value) => { state = value; },
+  };
+  const edgeFetch = async (input: RequestInfo | URL, init?: RequestInit) => handleGatewayRequest(new Request(input, init), {
+    MCP_ENABLED: "true", MCP_DAILY_LIMIT: "5000", MCP_EXPENSIVE_DAILY_LIMIT: "500",
+    MCP_AUTH_TIMEOUT_MS: "5000", MCP_CONTROL_TIMEOUT_MS: "3000", MCP_TOTAL_TIMEOUT_MS: "30000", MCP_BACKEND_TIMEOUT_MS: "25000",
+    NEMLIG_MCP_AUTH0_ISSUER: config.issuer.href, NEMLIG_MCP_AUTH0_AUDIENCE: config.audience,
+    NEMLIG_MCP_PRINCIPALS: JSON.stringify(principalPolicy), NEMLIG_MCP_PUBLIC_URL: config.publicUrl.href,
+  }, {
+    authenticate: async () => principalPolicy.principals[0],
+    admit: async (operation, principal, gateway) => admitUsageAtomically(storage, operation, gateway,
+      { principalKey: principal.principal_key, tier: principal.tier }, {
+        revision: principalPolicy.revision, budgets: principalPolicy.budgets,
+        principalKeys: principalPolicy.principals.map(({ principal_key }) => principal_key),
+      }, now),
+    forward: async (request) => fetch(request),
+  });
+  const client = modernClient("burst-test");
+  try {
+    await client.connect(new StreamableHTTPClientTransport(endpoint, {
+      requestInit: { headers: { authorization: "Bearer test" } }, fetch: edgeFetch,
+    }));
+    for (let index = 0; index < 120; index += 1) {
+      const result = await client.callTool({ name: "show_my_basket", arguments: {} });
+      assert.notEqual(result.isError, true);
+    }
+    for (let index = 0; index < 30; index += 1) {
+      const result = await client.callTool({ name: "add_approved_items", arguments: { approved_review: "missing-review" } });
+      assert.equal(result.isError, true, "rate removal must not bypass exact approval");
+    }
+    assert.equal(reads, 120);
+    assert.equal(writes, 0);
+    assert.equal(state?.normalCount, 120);
+    assert.equal(state?.expensiveCount, 30);
+    assert.equal(state?.principals[principalPolicy.principals[0]!.principal_key]?.monthCount, 150);
+  } finally {
+    await client.close();
+    server.closeAllConnections();
+    await new Promise<void>((resolve, reject) => server.close((error?: Error) => error ? reject(error) : resolve()));
+  }
 });
 
 test("HTTP MCP accepts a 2025-era ChatGPT initialize handshake", async () => {
@@ -175,7 +239,7 @@ test("HTTP service acceptance uses signed machine identity and its fixed fixture
     try {
       const endpoint = new URL(`http://${config.host}:${(server.address() as AddressInfo).port}/mcp`);
       const edgeFetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => await handleGatewayRequest(new Request(input, init), {
-        MCP_ENABLED: "true", MCP_DAILY_LIMIT: "5000", MCP_EXPENSIVE_DAILY_LIMIT: "500", MCP_RATE_LIMIT: "60", MCP_EXPENSIVE_RATE_LIMIT: "10",
+        MCP_ENABLED: "true", MCP_DAILY_LIMIT: "5000", MCP_EXPENSIVE_DAILY_LIMIT: "500",
         MCP_AUTH_TIMEOUT_MS: "5000", MCP_CONTROL_TIMEOUT_MS: "3000", MCP_TOTAL_TIMEOUT_MS: "30000", MCP_BACKEND_TIMEOUT_MS: "25000",
         NEMLIG_MCP_AUTH0_ISSUER: config.issuer.href, NEMLIG_MCP_AUTH0_AUDIENCE: config.audience,
         NEMLIG_MCP_PRINCIPALS: JSON.stringify(principalPolicy), NEMLIG_MCP_PUBLIC_URL: config.publicUrl.href,

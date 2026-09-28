@@ -4,7 +4,6 @@ import { encryptCredentials } from "./credential-envelope.js";
 import {
   findPrincipalRecord,
   admitPrincipalRequest,
-  consumeValidationRate,
   consumePortalCsrf,
   getCredentialRecord,
   registerInvitedPrincipal,
@@ -89,12 +88,11 @@ test("atomic admission requires the current sealed credential without another st
     revision: "family-v2",
     principalKeys: ["a".repeat(32)],
     budgets: {
-      principal_minute_limits: { "0": 20, "1": 20, "2": 20 },
-      tier0_reserve: { minute: 20, month: 30_000 }, guest_limit: { minute: 20, month: 30_000 },
-      tier1_shed_at: { minute: 20, month: 30_000 }, tier2_shed_at: { minute: 20, month: 30_000 },
+      tier0_reserve: { month: 30_000 }, guest_limit: { month: 30_000 },
+      tier1_shed_at: { month: 30_000 }, tier2_shed_at: { month: 30_000 },
     },
   };
-  const limits = { dailyLimit: 5_000, expensiveDailyLimit: 500, rateLimit: 60, expensiveRateLimit: 10 };
+  const limits = { dailyLimit: 5_000, expensiveDailyLimit: 500 };
   const missing = await admitPrincipalRequest(storage, "normal", limits, { principalKey: principal.principal_key, tier: 1 }, policy, true);
   assert.deepEqual({ admitted: missing.admitted, ...(!missing.admitted ? { reason: missing.reason } : {}) }, { admitted: false, reason: "credential_required" });
   assert.equal(await storage.get("usage"), undefined);
@@ -114,26 +112,13 @@ test("service fixture admission retains usage accounting without a human credent
   const policy: TierAdmissionPolicy = {
     revision: "family-v2", principalKeys: ["a".repeat(32)],
     budgets: {
-      principal_minute_limits: { "0": 20, "1": 20, "2": 20 },
-      tier0_reserve: { minute: 20, month: 30_000 }, guest_limit: { minute: 20, month: 30_000 },
-      tier1_shed_at: { minute: 20, month: 30_000 }, tier2_shed_at: { minute: 20, month: 30_000 },
+      tier0_reserve: { month: 30_000 }, guest_limit: { month: 30_000 },
+      tier1_shed_at: { month: 30_000 }, tier2_shed_at: { month: 30_000 },
     },
   };
-  const admitted = await admitPrincipalRequest(storage, "normal", { dailyLimit: 5_000, expensiveDailyLimit: 500, rateLimit: 60, expensiveRateLimit: 10 }, { principalKey: "s".repeat(32), tier: 2 }, policy, false);
+  const admitted = await admitPrincipalRequest(storage, "normal", { dailyLimit: 5_000, expensiveDailyLimit: 500 }, { principalKey: "s".repeat(32), tier: 2 }, policy, false);
   assert.equal(admitted.admitted, true);
   assert.equal((await storage.get<ReturnType<typeof emptyUsageState>>("usage"))?.normalCount, 1);
-});
-
-test("credential validation rate limits stop before backend work", async () => {
-  const storage = new MemoryStorage();
-  const key = "a".repeat(32);
-  const now = new Date("2026-09-06T12:00:00Z");
-  assert.equal(await consumeValidationRate(storage, key, 2, 3, now), true);
-  assert.equal(await consumeValidationRate(storage, key, 2, 3, now), true);
-  assert.equal(await consumeValidationRate(storage, key, 2, 3, now), false);
-  assert.equal(await consumeValidationRate(storage, "b".repeat(32), 2, 3, now), true);
-  assert.equal(await consumeValidationRate(storage, "c".repeat(32), 2, 3, now), false);
-  assert.equal(await consumeValidationRate(storage, key, 2, 3, new Date("2026-09-06T12:01:00Z")), true);
 });
 
 test("portal CSRF tokens are accepted once per subject", async () => {
@@ -143,4 +128,21 @@ test("portal CSRF tokens are accepted once per subject", async () => {
   assert.equal(await consumePortalCsrf(storage, "auth0|guest", "a".repeat(32), expiresAt), false);
   assert.equal(await consumePortalCsrf(storage, "auth0|other", "a".repeat(32), expiresAt), true);
   assert.equal(await consumePortalCsrf(storage, "auth0|guest", "b".repeat(32), Date.now() - 1), false);
+});
+
+test("CSRF replay storage is atomic, expires old entries, and fails closed", async (context) => {
+  let now = Date.parse("2026-09-28T12:00:00Z");
+  context.mock.method(Date, "now", () => now);
+  const storage = new MemoryStorage();
+  const results = await Promise.all([
+    consumePortalCsrf(storage, "auth0|guest", "a".repeat(32), now + 1000),
+    consumePortalCsrf(storage, "auth0|guest", "a".repeat(32), now + 1000),
+  ]);
+  assert.deepEqual(results.sort(), [false, true]);
+  now += 1001;
+  assert.equal(await consumePortalCsrf(storage, "auth0|guest", "b".repeat(32), now + 1000), true);
+  const records = [...storage.values.values()] as Array<Array<{ hash: string; expiresAt: number }>>;
+  assert.equal(records[0]?.length, 1, "expired replay entries are removed on the next action");
+  context.mock.method(storage, "put", async () => { throw new Error("storage unavailable"); });
+  await assert.rejects(consumePortalCsrf(storage, "auth0|guest", "c".repeat(32), now + 1000), /storage unavailable/u);
 });

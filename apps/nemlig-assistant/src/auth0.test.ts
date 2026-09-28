@@ -8,9 +8,8 @@ const ownerSubject = "auth0|owner";
 const principalPolicy = parsePrincipalPolicy(JSON.stringify({
   schema_version: 1, revision: "family-v1",
   budgets: {
-    principal_minute_limits: { "0": 20, "1": 20, "2": 20 },
-    tier0_reserve: { minute: 20, month: 30_000 }, guest_limit: { minute: 20, month: 30_000 },
-    tier1_shed_at: { minute: 20, month: 30_000 }, tier2_shed_at: { minute: 20, month: 30_000 },
+    tier0_reserve: { month: 30_000 }, guest_limit: { month: 30_000 },
+    tier1_shed_at: { month: 30_000 }, tier2_shed_at: { month: 30_000 },
   },
   principals: [{ subject: ownerSubject, principal_key: "a".repeat(32), tier: 0, enabled: true, nemlig: { username: "owner@example.test", password: "secret" } }],
 }));

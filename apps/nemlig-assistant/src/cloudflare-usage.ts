@@ -6,7 +6,7 @@ export type BreakerReason = "daily_limit" | "expensive_daily_limit";
 export type Tier = 0 | 1 | 2;
 export type TierKey = "0" | "1" | "2";
 export const ADMISSION_REASONS = [
-  "rate_limit", "principal_rate_limit", "family_reserve", "tier_1_shed",
+  "principal_monthly_limit", "family_reserve", "tier_1_shed",
   "tier_2_shed", "daily_limit", "expensive_daily_limit", "breaker_open",
 ] as const;
 export type AdmissionReason = typeof ADMISSION_REASONS[number];
@@ -27,10 +27,6 @@ export interface UsageState {
   breakerOpen: boolean;
   trippedAt?: string;
   tripReason?: BreakerReason;
-  normalMinute: string;
-  normalMinuteCount: number;
-  expensiveMinute: string;
-  expensiveMinuteCount: number;
   policyRevision: string;
   tiers: Record<TierKey, PeriodUsage>;
   rejections: Record<TierKey, Record<AdmissionReason, PeriodUsage>>;
@@ -40,8 +36,6 @@ export interface UsageState {
 export interface AdmissionLimits {
   dailyLimit: number;
   expensiveDailyLimit: number;
-  rateLimit: number;
-  expensiveRateLimit: number;
 }
 
 export interface AdmissionPrincipal { principalKey: string; tier: Tier }
@@ -77,10 +71,6 @@ export const emptyUsageState = (now: Date, policyRevision = "unconfigured"): Usa
     normalCount: 0,
     expensiveCount: 0,
     breakerOpen: false,
-    normalMinute: current.minute,
-    normalMinuteCount: 0,
-    expensiveMinute: current.minute,
-    expensiveMinuteCount: 0,
     policyRevision,
     tiers: { "0": emptyPeriodUsage(now), "1": emptyPeriodUsage(now), "2": emptyPeriodUsage(now) },
     rejections: { "0": emptyRejections(now), "1": emptyRejections(now), "2": emptyRejections(now) },
@@ -110,8 +100,6 @@ const currentState = (stored: UsageState | undefined, policy: TierAdmissionPolic
     breakerOpen: sameDay ? stored.breakerOpen : false,
     ...(sameDay && stored.trippedAt ? { trippedAt: stored.trippedAt } : {}),
     ...(sameDay && stored.tripReason ? { tripReason: stored.tripReason } : {}),
-    normalMinuteCount: stored?.normalMinute === current.minute ? stored.normalMinuteCount : 0,
-    expensiveMinuteCount: stored?.expensiveMinute === current.minute ? stored.expensiveMinuteCount : 0,
     tiers: {
       "0": currentPeriodUsage(stored?.tiers?.["0"], now),
       "1": currentPeriodUsage(stored?.tiers?.["1"], now),
@@ -150,7 +138,6 @@ export function aggregateUsage(
 ) {
   const state = currentState(stored, policy, now);
   const headroom = (tier: TierKey) => ({
-    minute: Math.max(0, policy.budgets.guest_limit.minute - state.tiers[tier].minuteCount),
     month: Math.max(0, policy.budgets.guest_limit.month - state.tiers[tier].monthCount),
   });
   return {
@@ -171,7 +158,7 @@ export function aggregateUsage(
     }])) as Record<TierKey, {
       admitted: ReturnType<typeof counts>;
       rejected: Record<AdmissionReason, ReturnType<typeof counts>>;
-      remaining_headroom: { minute: number; month: number };
+      remaining_headroom: { month: number };
     }>,
   };
 }
@@ -184,7 +171,7 @@ const deny = (state: UsageState, tier: Tier, reason: AdmissionReason, status: 42
   return { admitted: false, status, reason, state };
 };
 
-/** Applies global, tier, principal, rate, and breaker admission rules. */
+/** Applies retained global/principal cost ceilings and the daily breaker. */
 export function admitUsage(
   stored: UsageState | undefined,
   operation: OperationClass,
@@ -198,10 +185,6 @@ export function admitUsage(
   if (operation === "protocol") return { admitted: true, state };
 
   const expensive = operation === "expensive";
-  const minuteCountKey = expensive ? "expensiveMinuteCount" : "normalMinuteCount";
-  const rateLimit = expensive ? limits.expensiveRateLimit : limits.rateLimit;
-  if (state[minuteCountKey] >= rateLimit) return deny(state, principal.tier, "rate_limit");
-
   const total = state.normalCount + state.expensiveCount;
   const tripReason: BreakerReason | undefined = total + 1 > limits.dailyLimit
     ? "daily_limit"
@@ -217,14 +200,12 @@ export function admitUsage(
 
   const principalUsage = state.principals[principal.principalKey];
   if (!principalUsage
-    || principalUsage.minuteCount >= policy.budgets.principal_minute_limits[String(principal.tier) as TierKey]
     || principalUsage.monthCount >= policy.budgets.guest_limit.month) {
-    return deny(state, principal.tier, "principal_rate_limit");
+    return deny(state, principal.tier, "principal_monthly_limit");
   }
 
   const tierUsage = state.tiers[String(principal.tier) as TierKey];
 
-  state[minuteCountKey] += 1;
   if (expensive) state.expensiveCount += 1;
   else state.normalCount += 1;
   for (const usage of [tierUsage, principalUsage]) {

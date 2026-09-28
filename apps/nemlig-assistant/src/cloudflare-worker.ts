@@ -9,7 +9,7 @@ import { attachAdmissionCredential, handleGatewayRequest, type GatewayDeadline, 
 import { parseGatewayRequestEvent, type GatewayRequestEvent } from "./cloudflare-observability.js";
 import { resetUsage, type AdmissionLimits, type AdmissionPrincipal, type AdmissionResult, type TierAdmissionPolicy, type UsageState } from "./cloudflare-usage.js";
 import { findEnabledPrincipal, type Principal } from "./principal-policy.js";
-import { admitPrincipalRequest, consumePortalCsrf, consumeValidationRate, findPrincipalRecord, getCredentialRecord, listPrincipalRecords, registerInvitedPrincipal, replaceCredentialRecord, revokeCredentialRecord, setPrincipalStatus } from "./principal-records.js";
+import { admitPrincipalRequest, consumePortalCsrf, findPrincipalRecord, getCredentialRecord, listPrincipalRecords, registerInvitedPrincipal, replaceCredentialRecord, revokeCredentialRecord, setPrincipalStatus } from "./principal-records.js";
 import { encryptCredentials } from "./credential-envelope.js";
 import type { Credentials } from "./config.js";
 import { handleOnboardingRequest, loadOnboardingConfig } from "./onboarding.js";
@@ -163,11 +163,10 @@ export class NemligMcpContainer extends Container<Env> {
     subject: string,
     owner: Principal,
     credentials: Credentials,
-    input: { policyRevision: string; keyVersion: string; perPrincipalRate: number; globalRate: number },
-  ): Promise<"connected" | "invalid" | "limited"> {
+    input: { policyRevision: string; keyVersion: string },
+  ): Promise<"connected" | "invalid"> {
     const principal = await this.managementPrincipal(subject, owner);
-    if (!principal || !this.env.NEMLIG_MCP_CREDENTIAL_KEY
-      || !await consumeValidationRate(this.ctx.storage, principal.principal_key, input.perPrincipalRate, input.globalRate)) return principal ? "limited" : "invalid";
+    if (!principal || !this.env.NEMLIG_MCP_CREDENTIAL_KEY) return "invalid";
     const current = await getCredentialRecord(this.ctx.storage, principal);
     const generation = (current?.generation ?? 0) + 1;
     const envelope = await encryptCredentials(credentials, {
@@ -264,8 +263,6 @@ export default {
           return getContainer(containerNamespace(env), FIXED_CONTAINER_NAME).replaceCredential(subject, owner, credentials, {
             policyRevision: config.principalPolicy.revision,
             keyVersion: onboarding.credentialKeyVersion,
-            perPrincipalRate: onboarding.perPrincipalRate,
-            globalRate: onboarding.globalRate,
           });
         },
         async revoke(subject) {
@@ -304,8 +301,6 @@ export default {
         return container.admit(operation, {
           dailyLimit: config.dailyLimit,
           expensiveDailyLimit: config.expensiveDailyLimit,
-          rateLimit: config.rateLimit,
-          expensiveRateLimit: config.expensiveRateLimit,
         }, { principalKey: principal.principal_key, tier: principal.tier }, {
           revision: config.principalPolicy.revision,
           budgets: config.principalPolicy.budgets,

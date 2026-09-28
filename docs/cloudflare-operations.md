@@ -47,7 +47,8 @@ only to preserve existing records and rollback: its handler returns 410 without
 storage access, and the application no longer forwards saved-shopping requests.
 Do not delete that namespace or stored records as part of a routine deployment. The Worker
 is disabled by default. Useful operations default to 5,000/day, expensive operations
-to 500/day, and per-minute owner limits to 60 normal and 10 expensive. Valid MCP
+to 500/day, with equal private-policy monthly allowances. There are no app-owned
+per-minute MCP or credential-validation throttles. Valid MCP
 messages other than `tools/call` are protocol traffic and do not consume
 useful-operation quota, but an open breaker
 still prevents it from waking the Container.
@@ -134,9 +135,9 @@ portal cookie; the portal then handles only the Nemlig credential form and
 provider validation. There is no application-owned authorization-code exchange,
 refresh, Organization, invitation, or ID-token verifier.
 
-At most fifteen invited principals can be stored. Validation is limited to
-three attempts per principal and ten total attempts per minute; each attempt
-performs one Nemlig login and one authenticated read. Invitation registration
+At most fifteen invited principals can be stored. Each credential validation
+performs one bounded Nemlig login and one bounded authenticated read, without an
+app-owned request-rate gate. Invitation registration
 and the owner recovery UX remain a separate #69 decision because removing the
 old invitation dependency without a replacement would strand existing users.
 Do not enable this surface until that dependency has an approved operator or
@@ -151,7 +152,7 @@ separate approval for access control, provisioning, local development,
 rotation, revocation, ciphertext compatibility, and rollback.
 
 An accepted invitation creates a pending Tier 1 principal. One successful,
-rate-limited read-only validation atomically stores the sealed generation and
+read-only validation atomically stores the sealed generation and
 activates that principal. Failed replacement preserves the last known-good
 generation. Users can replace or revoke only their own connection; the owner
 portal can disable or revoke invitee access. Rotation invalidates old MCP
@@ -676,7 +677,7 @@ Paid, then charges $0.60 per
 additional million; the existing 5,000-per-day useful-operation breaker and
 closed event schema keep event shape and useful-operation volume bounded, but
 public traffic can increase log volume and cost during this diagnostic period.
-The one `lite` Container, one-instance ceiling, quotas, rate limits, ten-minute
+The one `lite` Container, one-instance ceiling, daily/monthly cost ceilings, ten-minute
 sleep, and dynamic `MCP_ENABLED` kill switch remain unchanged.
 
 ## Diagnose a ChatGPT reconnect without collecting secrets
@@ -816,8 +817,36 @@ owner action.
 ## Residual cost signals
 
 Investigate unexpected `container_started` events, sustained admitted useful
-request counts, repeated rate limits, a breaker trip, large Worker log volume, or a
+request counts, monthly-cost denials, external rate limits, a breaker trip, large Worker log volume, or a
 Container that does not sleep after 10 minutes. The architectural ceiling is one
 `lite` Container; authenticated activity, Worker requests, logs, egress, other
 Cloudflare account workloads, Auth0, GitHub, domain, and Nemlig costs can still
 add charges. Budget alerts do not stop usage.
+
+## App-local throttle removal configuration boundary (5.0.0)
+
+Before a separately authorized release, transition the private
+`NEMLIG_MCP_PRINCIPALS` policy: remove `budgets.principal_minute_limits` and
+`minute` from all four budget windows, preserving equal monthly allowances,
+identities, credentials and revision lineage. The strict parser rejects obsolete
+fields; it does not silently adapt them. Retain a private rollback copy compatible
+with the previous code. Do not publish the policy or reset usage/credential records.
+
+Remove `MCP_RATE_LIMIT`, `MCP_EXPENSIVE_RATE_LIMIT`,
+`MCP_CREDENTIAL_RATE_LIMIT` and `MCP_CREDENTIAL_GLOBAL_RATE_LIMIT` from plain
+configuration. They are absent from new deployment candidates. Follow the existing
+disabled/preflight/release procedure; a policy mismatch is a configuration blocker,
+not permission to deploy or replace secrets automatically.
+
+Authenticated bursts can consume retained budgets faster and saturate fixed
+capacity. Credential validation is not charged to MCP useful-operation quotas,
+so allowed principals can generate more provider-login traffic without that
+ceiling. CSRF, authorization, bounded input and one-attempt validation remain,
+but do not imply zero abuse or a hard billing cap. This source change does not
+remove Nemlig, ChatGPT, Auth0 or Cloudflare limits.
+
+Consumed CSRF token hashes are retained until their signed expiry, not evicted
+after a count threshold. The per-principal record grows with credential actions
+within the 15-minute lifetime; expired entries are removed by the next action.
+Storage exhaustion must fail closed before provider work rather than permit
+replay or silently discard still-valid tokens. No cleanup polling is added.

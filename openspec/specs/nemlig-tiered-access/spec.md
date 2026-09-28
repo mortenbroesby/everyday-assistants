@@ -2,9 +2,9 @@
 
 ## Purpose
 
-Defines private multi-principal access that reserves capacity for the family,
-sheds less-protected tiers predictably, and isolates every Nemlig account and
-piece of user state without increasing the global cost ceiling.
+Defines private multi-principal access with equal monthly cost allowances,
+isolated Nemlig accounts and user state, and retained global cost ceilings
+without application-owned short-window request throttling.
 
 ## Requirements
 
@@ -38,37 +38,53 @@ committed identity or credential value.
 
 ### Requirement: Family-reserved tier admission
 
-The system SHALL retain Tier 0, Tier 1, and Tier 2 as identity and reporting labels but SHALL apply the same configured monthly, daily, and short-window admission allowances to all three tiers. It SHALL NOT reserve capacity for one tier or shed one otherwise eligible tier before another. Every tier SHALL remain subordinate to the unchanged global cost and safety ceilings.
+The system SHALL retain Tier 0, Tier 1 and Tier 2 as identity/reporting labels
+and SHALL apply the same monthly allowance to eligible principals in every tier.
+It SHALL NOT enforce principal-minute thresholds, reserve capacity for one tier,
+or shed one eligible tier before another. Every tier SHALL remain subordinate to
+the retained global daily, expensive-operation and emergency cost ceilings.
 
 #### Scenario: Two tiers have equal usage
 
-- **WHEN** otherwise eligible principals in different tiers have the same current and forecast usage
-- **THEN** the admission decision is the same for both principals
+- **WHEN** eligible principals in different tiers have equal monthly usage
+- **THEN** the admission decision is equal for both
 
 #### Scenario: A principal reaches the shared allowance
 
-- **WHEN** a principal in any tier reaches the configured shared admission threshold
-- **THEN** that principal is denied before Container wake without changing another principal’s independent allowance
+- **WHEN** a principal reaches the configured monthly allowance
+- **THEN** it is denied before backend wake with an explicit monthly-cost reason
+  without changing another principal's independent allowance
 
 #### Scenario: Global headroom is exhausted
 
-- **WHEN** aggregate demand from any combination of tiers reaches a global breaker, quota, or cost ceiling
-- **THEN** the global safeguard denies further work without a tier bypass or reserved-capacity exception
+- **WHEN** aggregate demand reaches a global breaker or cost ceiling
+- **THEN** the global safeguard denies work without a tier exception
+
+#### Scenario: Burst exceeds former principal-minute allowance
+
+- **WHEN** eligible requests exceed the former principal-minute allowance while
+  retained cost controls permit them
+- **THEN** requests remain admitted regardless of tier or minute counts
+
+#### Scenario: Monthly tier allowances disagree
+
+- **WHEN** configuration supplies unequal monthly allowances for tiers
+- **THEN** configuration validation fails instead of preserving ordered shedding
 
 #### Scenario: Guest demand reaches the family reserve
 
-- **WHEN** Tier 1 or Tier 2 demand reaches capacity that was formerly reserved for Tier 0
-- **THEN** admission uses the same per-principal and global allowances for every tier without retaining a Tier 0 reserve
+- **WHEN** Tier 1 or Tier 2 demand reaches capacity formerly reserved for Tier 0
+- **THEN** the same monthly and global cost allowances apply without a reserve
 
 #### Scenario: Experimental threshold is reached first
 
-- **WHEN** a legacy configuration supplies a lower Tier 2 threshold than the shared allowance
-- **THEN** configuration validation fails rather than shedding Tier 2 under a different threshold
+- **WHEN** configuration supplies a lower Tier 2 monthly threshold
+- **THEN** validation fails instead of shedding Tier 2 differently
 
 #### Scenario: Trusted threshold is reached
 
-- **WHEN** a legacy configuration supplies a different Tier 1 threshold from Tier 0 or Tier 2
-- **THEN** configuration validation fails rather than preserving ordered tier shedding
+- **WHEN** configuration supplies a different Tier 1 monthly threshold
+- **THEN** validation fails instead of preserving ordered tier shedding
 
 ### Requirement: Deterministic bounded usage forecast
 

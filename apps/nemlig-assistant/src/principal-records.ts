@@ -187,30 +187,6 @@ export async function admitPrincipalRequest(
   });
 }
 
-interface ValidationWindow { minute: string; count: number }
-export async function consumeValidationRate(
-  storage: PrincipalStorage,
-  principalKey: string,
-  perPrincipalLimit: number,
-  globalLimit: number,
-  now = new Date(),
-): Promise<boolean> {
-  if (!validPrincipalKey(principalKey) || !Number.isSafeInteger(perPrincipalLimit) || perPrincipalLimit < 1
-    || !Number.isSafeInteger(globalLimit) || globalLimit < perPrincipalLimit) return false;
-  const minute = now.toISOString().slice(0, 16);
-  return storage.transaction(async () => {
-    const current = (value: ValidationWindow | undefined): ValidationWindow => value?.minute === minute ? value : { minute, count: 0 };
-    const principal = current(await storage.get<ValidationWindow>(`validation:${principalKey}`));
-    const global = current(await storage.get<ValidationWindow>("validation:global"));
-    if (principal.count >= perPrincipalLimit || global.count >= globalLimit) return false;
-    principal.count += 1;
-    global.count += 1;
-    await storage.put(`validation:${principalKey}`, principal);
-    await storage.put("validation:global", global);
-    return true;
-  });
-}
-
 export async function consumePortalCsrf(storage: PrincipalStorage, subject: string, csrf: string, expiresAt: number): Promise<boolean> {
   if (!validSubject(subject) || !/^[A-Za-z0-9_-]{32}$/u.test(csrf) || !Number.isSafeInteger(expiresAt) || expiresAt <= Date.now()) return false;
   const key = `portal-csrf:${await digest(subject)}`;
@@ -219,7 +195,8 @@ export async function consumePortalCsrf(storage: PrincipalStorage, subject: stri
     const current = (await storage.get<Array<{ hash: string; expiresAt: number }>>(key) ?? [])
       .filter((entry) => entry.expiresAt > Date.now());
     if (current.some((entry) => entry.hash === hash)) return false;
-    await storage.put(key, [...current, { hash, expiresAt }].slice(-32));
+    // Never evict an unexpired token: a retained signed cookie can replay it.
+    await storage.put(key, [...current, { hash, expiresAt }]);
     return true;
   });
 }

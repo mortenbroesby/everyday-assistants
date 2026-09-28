@@ -11,11 +11,10 @@ const validPolicy = () => ({
   schema_version: 1,
   revision: "family-v1",
   budgets: {
-    principal_minute_limits: { "0": 20, "1": 20, "2": 20 },
-    tier0_reserve: { minute: 20, month: 30_000 },
-    guest_limit: { minute: 20, month: 30_000 },
-    tier1_shed_at: { minute: 20, month: 30_000 },
-    tier2_shed_at: { minute: 20, month: 30_000 },
+    tier0_reserve: { month: 30_000 },
+    guest_limit: { month: 30_000 },
+    tier1_shed_at: { month: 30_000 },
+    tier2_shed_at: { month: 30_000 },
   },
   principals: [{
     subject: "auth0|owner",
@@ -61,7 +60,7 @@ test("parses credential-free schema v2 and rejects dynamic identities or credent
     { ...validV2Policy(), principals: [{ ...validV2Policy().owner, subject: "auth0|guest", tier: 1 }] },
     { ...validV2Policy(), owner: { ...validV2Policy().owner, nemlig: { username: "owner@example.test", password: "secret" } } },
     { ...validV2Policy(), owner: { ...validV2Policy().owner, principal_key: "guessable" } },
-    { ...validV2Policy(), budgets: { ...validV2Policy().budgets, tier2_shed_at: { minute: 19, month: 30_000 } } },
+    { ...validV2Policy(), budgets: { ...validV2Policy().budgets, tier2_shed_at: { month: 29_999 } } },
   ]) assert.throws(() => parsePrincipalPolicy(JSON.stringify(invalid)), /NEMLIG_MCP_PRINCIPALS is invalid/u);
 });
 
@@ -76,7 +75,7 @@ test("fails closed for missing, malformed, duplicate, oversized, incomplete, and
     { ...validPolicy(), principals: [{ ...validPolicy().principals[0], enabled: false }] },
     { ...validPolicy(), principals: [{ ...validPolicy().principals[0], principal_key: "guessable" }] },
     { ...validPolicy(), principals: [{ ...validPolicy().principals[0], nemlig: { username: "", password: "" } }] },
-    { ...validPolicy(), budgets: { ...validPolicy().budgets, tier2_shed_at: { minute: 19, month: 30_000 } } },
+    { ...validPolicy(), budgets: { ...validPolicy().budgets, tier2_shed_at: { month: 29_999 } } },
   ];
   for (const value of invalidPolicies) {
     const raw = typeof value === "string" || value === undefined ? value : JSON.stringify(value);
@@ -86,6 +85,17 @@ test("fails closed for missing, malformed, duplicate, oversized, incomplete, and
     () => parsePrincipalPolicy("x".repeat(MAX_PRINCIPAL_POLICY_BYTES + 1)),
     /^Error: NEMLIG_MCP_PRINCIPALS is invalid\.$/u,
   );
+});
+
+test("obsolete minute policy fields are rejected rather than kept as compatibility controls", () => {
+  for (const fixture of [validPolicy(), validV2Policy()]) {
+    assert.throws(() => parsePrincipalPolicy(JSON.stringify({
+      ...fixture, budgets: { ...fixture.budgets, principal_minute_limits: { "0": 20, "1": 20, "2": 20 } },
+    })), /NEMLIG_MCP_PRINCIPALS is invalid/u);
+    assert.throws(() => parsePrincipalPolicy(JSON.stringify({
+      ...fixture, budgets: { ...fixture.budgets, guest_limit: { ...fixture.budgets.guest_limit, minute: 20 } },
+    })), /NEMLIG_MCP_PRINCIPALS is invalid/u);
+  }
 });
 
 test("validation errors never disclose identity or credential values", () => {

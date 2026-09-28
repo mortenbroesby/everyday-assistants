@@ -170,13 +170,15 @@ Ordinary MCP requests still make one controller admission call and address at
 most the fixed single Container. The sealed envelope adds bounded bytes to that
 existing internal request but no extra storage RPC. Portal GETs stop at the
 Worker/Auth0 boundary; successful management operations add a small number of
-controller reads/writes, and validation attempts are rate-limited before the
-Container. There is no polling, alarm, queue, scheduled work, log drain,
+controller reads/writes. `remove-nemlig-local-rate-limits` supersedes the former
+validation-rate gates. There is no polling, alarm, queue, scheduled work, log drain,
 keep-awake request, extra namespace, or autoscaling.
 
-Worst credible abuse is therefore bounded by the separate onboarding switch,
-per-principal/global validation rates, request deadlines, and the existing one-
-Container ceiling. Any plan change or measured usage outside the existing
+The onboarding switch, authorization, CSRF, request deadlines and existing
+one-Container ceiling remain. Removing validation rates allows more provider
+login traffic outside MCP usage caps, and replay history grows with actions
+until signed-token expiry. This is not a hard billing or request-count cap.
+Any measured usage outside the existing
 Cloudflare/Auth0 allowances requires a new human cost decision.
 
 ### Implementation map
@@ -217,7 +219,7 @@ traffic retains one controller admission and at most one fixed Container wake.
 - [ChatGPT may not advertise URL elicitation] -> Keep the same fixed HTTPS page
   as a manual fallback and verify real client capabilities during acceptance.
 - [Credential validation wakes the fixed Container] -> Keep onboarding off by
-  default, rate-limit before wake, make one attempt with no retry, and never use
+  default, authorize before wake, make one attempt with no retry, and never use
   validation as a health poll.
 - [Rotation interrupts an open conversation] -> Reject the obsolete generation
   immediately and return concise reconnect guidance instead of continuing with

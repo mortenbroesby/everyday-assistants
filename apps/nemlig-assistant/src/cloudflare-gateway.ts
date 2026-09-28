@@ -363,9 +363,7 @@ export async function handleGatewayRequest(
     }
     if (!admission.admitted) {
       denialReason = admission.reason;
-      const outcome = admission.reason === "rate_limit" || admission.reason === "principal_rate_limit"
-        ? "rate_limited"
-        : admission.reason === "daily_limit" || admission.reason === "expensive_daily_limit" || admission.reason === "breaker_open"
+      const outcome = admission.reason === "daily_limit" || admission.reason === "expensive_daily_limit" || admission.reason === "breaker_open"
           ? "breaker_rejected"
           : "capacity_rejected";
       return finish(json(admission.reason === "credential_required"

@@ -20,25 +20,51 @@ const policy: TierAdmissionPolicy = {
   revision: "family-v1",
   principalKeys: [owner.principalKey, trusted.principalKey, experimental.principalKey],
   budgets: {
-    principal_minute_limits: { "0": 5, "1": 5, "2": 5 },
-    tier0_reserve: { minute: 5, month: 500 },
-    guest_limit: { minute: 5, month: 500 },
-    tier1_shed_at: { minute: 5, month: 500 },
-    tier2_shed_at: { minute: 5, month: 500 },
+    tier0_reserve: { month: 500 },
+    guest_limit: { month: 500 },
+    tier1_shed_at: { month: 500 },
+    tier2_shed_at: { month: 500 },
   },
 };
-const limits: AdmissionLimits = { dailyLimit: 2, expensiveDailyLimit: 1, rateLimit: 1, expensiveRateLimit: 1 };
-const generousLimits: AdmissionLimits = { dailyLimit: 5_000, expensiveDailyLimit: 500, rateLimit: 60, expensiveRateLimit: 10 };
+const limits: AdmissionLimits = { dailyLimit: 2, expensiveDailyLimit: 1 };
+const generousLimits: AdmissionLimits = { dailyLimit: 5_000, expensiveDailyLimit: 500 };
 const at = (value: string) => new Date(value);
 
-test("usage admission retains global rates and persistent daily breakers", () => {
+test("same-minute bursts exceed former global and principal rates without rejection", () => {
+  const now = at("2026-09-28T12:00:00Z");
+  for (const principal of [owner, trusted, experimental]) {
+    let state: UsageState | undefined;
+    for (const operation of [...Array<"normal">(120).fill("normal"), ...Array<"expensive">(30).fill("expensive")]) {
+      const result = admitUsage(state, operation, generousLimits, principal, policy, now);
+      assert.equal(result.admitted, true, `burst denied: ${!result.admitted && result.reason}`);
+      state = result.state;
+    }
+    assert.equal(state?.normalCount, 120);
+    assert.equal(state?.expensiveCount, 30);
+    assert.equal(state?.principals[principal.principalKey]?.monthCount, 150);
+  }
+});
+
+test("retained usage survives removal of stored minute gates and policy rotation", () => {
+  const now = at("2026-09-28T12:00:00Z");
+  const first = admitUsage(undefined, "normal", generousLimits, owner, policy, now);
+  const stored = { ...first.state, normalMinute: "2026-09-28T12:00", normalMinuteCount: 60,
+    expensiveMinute: "2026-09-28T12:00", expensiveMinuteCount: 10 };
+  const next = admitUsage(stored, "expensive", generousLimits, owner, { ...policy, revision: "no-rates" }, now);
+  assert.equal(next.admitted, true);
+  assert.equal(next.state.normalCount, 1);
+  assert.equal(next.state.expensiveCount, 1);
+  assert.equal(next.state.principals[owner.principalKey]?.monthCount, 2);
+  assert.equal(next.state.policyRevision, "no-rates");
+  assert.equal("normalMinuteCount" in next.state, false);
+  assert.equal("expensiveMinuteCount" in next.state, false);
+});
+
+test("usage admission retains persistent daily breakers without a minute gate", () => {
   let state = emptyUsageState(at("2026-08-31T12:00:00Z"));
   const normal = admitUsage(state, "normal", limits, owner, policy, at("2026-08-31T12:00:01Z"));
   assert.equal(normal.admitted, true);
   state = normal.state;
-  const rateLimited = admitUsage(state, "normal", limits, owner, policy, at("2026-08-31T12:00:02Z"));
-  assert.equal(rateLimited.admitted, false);
-  if (!rateLimited.admitted) assert.equal(rateLimited.reason, "rate_limit");
   const expensive = admitUsage(state, "expensive", limits, owner, policy, at("2026-08-31T12:01:00Z"));
   assert.equal(expensive.admitted, true);
   state = expensive.state;
@@ -80,29 +106,34 @@ test("protocol traffic does not consume global, tier, or principal useful-operat
 
 test("equal usage receives equal admission across every retained tier", () => {
   const now = at("2026-09-30T12:00:00Z");
+  const monthlyPolicy = { ...policy, budgets: {
+    tier0_reserve: { month: 5 }, guest_limit: { month: 5 },
+    tier1_shed_at: { month: 5 }, tier2_shed_at: { month: 5 },
+  } };
   for (const principal of [owner, trusted, experimental]) {
     let state: UsageState | undefined;
     for (let index = 0; index < 5; index += 1) {
-      const result = admitUsage(state, "normal", generousLimits, principal, policy, now);
+      const result = admitUsage(state, "normal", generousLimits, principal, monthlyPolicy, now);
       assert.equal(result.admitted, true); state = result.state;
     }
-    const denied = admitUsage(state, "normal", generousLimits, principal, policy, now);
+    const denied = admitUsage(state, "normal", generousLimits, principal, monthlyPolicy, now);
     assert.equal(denied.admitted, false);
-    if (!denied.admitted) assert.equal(denied.reason, "principal_rate_limit");
+    if (!denied.admitted) assert.equal(denied.reason, "principal_monthly_limit");
   }
 });
 
 test("per-principal limits are independent and policy revisions preserve retained-key usage", () => {
   const strict = {
     ...policy,
-    budgets: { ...policy.budgets, principal_minute_limits: { "0": 1, "1": 1, "2": 1 } },
+    budgets: { tier0_reserve: { month: 1 }, guest_limit: { month: 1 },
+      tier1_shed_at: { month: 1 }, tier2_shed_at: { month: 1 } },
   };
   const now = at("2026-09-30T12:00:00Z");
   const first = admitUsage(undefined, "normal", generousLimits, trusted, strict, now);
   assert.equal(first.admitted, true);
   const denied = admitUsage(first.state, "normal", generousLimits, trusted, strict, now);
   assert.equal(denied.admitted, false);
-  if (!denied.admitted) assert.equal(denied.reason, "principal_rate_limit");
+  if (!denied.admitted) assert.equal(denied.reason, "principal_monthly_limit");
   assert.equal(admitUsage(first.state, "normal", generousLimits, experimental, strict, now).admitted, true);
   const rotated = admitUsage(first.state, "protocol", generousLimits, trusted, { ...strict, revision: "family-v2" }, now);
   assert.equal(rotated.state.policyRevision, "family-v2");
@@ -149,12 +180,16 @@ test("global breakers override guest tier capacity", () => {
 test("aggregate usage reports bounded tier counts and headroom without principal keys", () => {
   const now = at("2026-09-30T12:00:00Z");
   const admitted = admitUsage(undefined, "normal", generousLimits, trusted, policy, now);
-  const denied = admitUsage(admitted.state, "normal", { ...generousLimits, rateLimit: 1 }, trusted, policy, now);
+  const monthlyPolicy = { ...policy, budgets: {
+    tier0_reserve: { month: 1 }, guest_limit: { month: 1 },
+    tier1_shed_at: { month: 1 }, tier2_shed_at: { month: 1 },
+  } };
+  const denied = admitUsage(admitted.state, "normal", generousLimits, trusted, monthlyPolicy, now);
   assert.equal(denied.admitted, false);
-  const aggregate = aggregateUsage(denied.state, policy, now);
+  const aggregate = aggregateUsage(denied.state, monthlyPolicy, now);
   assert.equal(aggregate.tiers["1"].admitted.minute, 1);
-  assert.equal(aggregate.tiers["1"].rejected.rate_limit.minute, 1);
-  assert.equal(aggregate.tiers["1"].remaining_headroom.minute, 4);
+  assert.equal(aggregate.tiers["1"].rejected.principal_monthly_limit.minute, 1);
+  assert.deepEqual(aggregate.tiers["1"].remaining_headroom, { month: 0 });
   const text = JSON.stringify(aggregate);
   assert.doesNotMatch(text, new RegExp(owner.principalKey, "u"));
   assert.doesNotMatch(text, new RegExp(trusted.principalKey, "u"));

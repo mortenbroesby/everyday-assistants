@@ -12,9 +12,8 @@ import { RETIRED_PRODUCT_VIEWER_RESOURCE_URIS } from "./product-viewer-identity.
 const policy = parsePrincipalPolicy(JSON.stringify({
   schema_version: 1, revision: "family-v1",
   budgets: {
-    principal_minute_limits: { "0": 20, "1": 20, "2": 20 },
-    tier0_reserve: { minute: 20, month: 30_000 }, guest_limit: { minute: 20, month: 30_000 },
-    tier1_shed_at: { minute: 20, month: 30_000 }, tier2_shed_at: { minute: 20, month: 30_000 },
+    tier0_reserve: { month: 30_000 }, guest_limit: { month: 30_000 },
+    tier1_shed_at: { month: 30_000 }, tier2_shed_at: { month: 30_000 },
   },
   principals: [{ subject: "auth0|owner", principal_key: "a".repeat(32), tier: 0, enabled: true, nemlig: { username: "owner@example.test", password: "secret" } }],
 }));
@@ -24,8 +23,6 @@ const env: CloudflareEnv = {
   MCP_ENABLED: "true",
   MCP_DAILY_LIMIT: "5000",
   MCP_EXPENSIVE_DAILY_LIMIT: "500",
-  MCP_RATE_LIMIT: "60",
-  MCP_EXPENSIVE_RATE_LIMIT: "10",
   MCP_AUTH_TIMEOUT_MS: "5000",
   MCP_CONTROL_TIMEOUT_MS: "3000",
   MCP_TOTAL_TIMEOUT_MS: "30000",
@@ -292,7 +289,7 @@ test("service acceptance cannot access edge administration", async () => {
   assert.equal(forwarded, 0);
 });
 
-test("unauthorized, rate-limited, and open-breaker requests never reach the Container", async () => {
+test("unauthorized, monthly-cost-limited, and open-breaker requests never reach the Container", async () => {
   let forwarded = 0;
   const base = {
     forward: async () => { forwarded += 1; return new Response("unexpected"); },
@@ -302,10 +299,10 @@ test("unauthorized, rate-limited, and open-breaker requests never reach the Cont
     authenticate: async () => { throw new Error("invalid"); },
     admit: async () => { throw new Error("unexpected"); },
   });
-  const rateLimited = await handleGatewayRequest(mcpRequest({ method: "tools/call", params: { name: "show_my_basket" } }), env, {
+  const monthlyLimited = await handleGatewayRequest(mcpRequest({ method: "tools/call", params: { name: "show_my_basket" } }), env, {
     ...base,
     authenticate: async () => principal,
-    admit: async () => ({ admitted: false, status: 429, reason: "rate_limit", state: emptyUsageState(new Date()) }),
+    admit: async () => ({ admitted: false, status: 429, reason: "principal_monthly_limit", state: emptyUsageState(new Date()) }),
   });
   const tripped = await handleGatewayRequest(mcpRequest({ method: "server/discover" }), env, {
     ...base,
@@ -321,7 +318,8 @@ test("unauthorized, rate-limited, and open-breaker requests never reach the Cont
     error: "connection_required", connection_url: "https://nemlig-mcp.broesby.dk/connect",
   });
   assert.match(unauthorized.headers.get("www-authenticate") ?? "", /error="invalid_token"/u);
-  assert.deepEqual([unauthorized.status, rateLimited.status, tripped.status, connectionRequired.status], [401, 429, 503, 409]);
+  assert.deepEqual(await monthlyLimited.json(), { error: "principal_monthly_limit" });
+  assert.deepEqual([unauthorized.status, monthlyLimited.status, tripped.status, connectionRequired.status], [401, 429, 503, 409]);
   assert.equal(forwarded, 0);
 });
 
