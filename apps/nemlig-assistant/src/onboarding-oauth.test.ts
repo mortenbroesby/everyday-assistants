@@ -51,7 +51,7 @@ const setup = () => {
       counts.fetches += 1;
       const url = new URL(input instanceof Request ? input.url : String(input));
       assert.equal(url.origin, new URL(issuer).origin);
-      assert.equal(init?.redirect, "error");
+      assert.equal(init?.redirect, "manual");
       assert.ok(init?.signal);
       if (url.pathname.startsWith("/.well-known/")) return json({ issuer: metadataIssuer,
         authorization_endpoint: `${endpointOrigin}authorize`, token_endpoint: `${tokenOrigin}token`,
@@ -89,6 +89,54 @@ const setup = () => {
     setEndpointOrigin: (value: string) => { endpointOrigin = value; }, setTokenOrigin: (value: string) => { tokenOrigin = value; },
     setMetadataIssuer: (value: string) => { metadataIssuer = value; } };
 };
+
+test("owner sign-in uses the Worker-supported redirect mode", async () => {
+  const run = setup();
+  const original = run.dependencies.oauthFetch!;
+  run.dependencies.oauthFetch = (input, init) => {
+    if (init?.redirect === "error") throw new TypeError("Invalid redirect value: error is unsupported at the edge.");
+    assert.equal(init?.redirect, "manual");
+    return original(input, init);
+  };
+  await run.start();
+  assert.equal(run.counts.credentialWork, 0);
+});
+
+test("OAuth discovery redirects are rejected without following or fallback reads", async () => {
+  for (const status of [301, 302, 303, 307, 308]) {
+    const run = setup();
+    let calls = 0;
+    run.dependencies.oauthFetch = async (_input, init) => {
+      calls += 1;
+      assert.equal(init?.redirect, "manual");
+      return new Response(null, { status, headers: { location: "https://foreign.example.test/metadata" } });
+    };
+    const response = await handleOnboardingRequest(new Request(`${origin}/connect/sign-in`), env, run.dependencies);
+    assert.equal(response.status, 401);
+    assert.equal(calls, 1);
+    assert.equal(run.counts.auth + run.counts.consumed + run.counts.credentialWork, 0);
+  }
+});
+
+test("OAuth exchange redirects are rejected without retry or session authority", async () => {
+  const run = setup();
+  const { transaction } = await run.start();
+  const original = run.dependencies.oauthFetch!;
+  let exchanges = 0;
+  run.dependencies.oauthFetch = async (input, init) => {
+    if (init?.method === "POST") {
+      exchanges += 1;
+      assert.equal(init.redirect, "manual");
+      return new Response(null, { status: 307, headers: { location: `${issuer}another-token-endpoint` } });
+    }
+    return original(input, init);
+  };
+  const response = await run.finish(transaction);
+  assert.equal(response.status, 401);
+  assert.equal(exchanges, 1);
+  assert.equal(run.counts.auth + run.counts.consumed + run.counts.credentialWork, 0);
+  assert.ok(!response.headers.getSetCookie().some((value) => value.startsWith("__Host-nemlig-session=")));
+});
 
 test("real SDK owner PKCE POST sign-in establishes only the existing portal session", async () => {
   const run = setup();

@@ -173,7 +173,10 @@ const browserLogin = async (request: Request, config: OnboardingConfig, env: Clo
       const target = new URL(input instanceof Request ? input.url : String(input));
       if (target.origin !== issuer.origin || target.username || target.password || target.hash) throw new Error("OAuth destination rejected.");
       if ((init?.method ?? (input instanceof Request ? input.method : "GET")).toUpperCase() === "POST" && ++exchanges > 1) throw new Error("OAuth exchange already attempted.");
-      return (dependencies.oauthFetch ?? fetch)(input, { ...init, signal, redirect: "error" });
+      // Workers supports manual redirects, not the browser/Node "error" mode.
+      const fetched = await (dependencies.oauthFetch ?? fetch)(input, { ...init, signal, redirect: "manual" });
+      if (fetched.status >= 300 && fetched.status < 400) throw new Error("OAuth redirect rejected.");
+      return fetched;
     };
     const metadata = await discoverAuthorizationServerMetadata(issuer, { fetchFn });
     if (!metadata || metadata.issuer !== issuer.href) return failed();

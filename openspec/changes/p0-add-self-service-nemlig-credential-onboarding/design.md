@@ -6,7 +6,8 @@ SDK's authorization-code/PKCE flow and issuer discovery with a pre-registered
 public client; do not dynamically register clients from web requests. Promote
 that existing package from development to runtime dependencies, adding no new
 package. Only the configured HTTPS issuer origin may receive OAuth fetches;
-redirects are rejected, the whole OAuth leg has one bounded auth deadline and
+redirects are rejected using manual fetch plus explicit 3xx rejection (the
+Worker runtime rejects fetch redirect:error), the whole OAuth leg has one bounded auth deadline and
 code exchange is never automatically retried.
 
 Use response_mode=form_post, the configured Auth0 audience as well as MCP resource,
