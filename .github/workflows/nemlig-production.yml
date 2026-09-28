@@ -457,17 +457,24 @@ jobs:
           retention-days: 7
           include-hidden-files: true
       - name: Finalize routine deployment recovery
-        if: ${{ always() && steps.deploy.outcome == 'success' && steps.release-artifact.outcome == 'success' }}
+        if: ${{ !cancelled() && (steps.deploy.outcome == 'success' || steps.deploy.outcome == 'failure') && steps.release-artifact.outcome == 'success' }}
         env:
           GH_TOKEN: "${{ github.token }}"
           CLOUDFLARE_API_TOKEN: "${{ secrets.CLOUDFLARE_API_TOKEN }}"
           CLOUDFLARE_ACCOUNT_ID: "${{ vars.CLOUDFLARE_ACCOUNT_ID }}"
         run: |
           set -euo pipefail
+          if [[ ! -f "$GITHUB_WORKSPACE/.git/nemlig-production-deploy/latest.json" ]]; then
+            echo "No owned deployment journal; nothing to finalize."
+            exit 0
+          fi
           operation_id=$(node --input-type=module -e '
             import { readFileSync } from "node:fs";
             const value = JSON.parse(readFileSync(process.argv[1], "utf8"));
             if (typeof value.operationId !== "string" || !/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/.test(value.operationId)) process.exit(1);
+            if (value.commit !== process.env.CANDIDATE_SHA
+              || value.releaseRunId !== Number(process.env.GITHUB_RUN_ID)
+              || value.releaseRunAttempt !== Number(process.env.GITHUB_RUN_ATTEMPT)) process.exit(1);
             process.stdout.write(value.operationId);
           ' "$GITHUB_WORKSPACE/.git/nemlig-production-deploy/latest.json")
           pnpm --filter nemlig-assistant production:deploy -- finalize "$operation_id" --evidence-saved --original-runner-stopped
