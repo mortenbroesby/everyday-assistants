@@ -329,8 +329,11 @@ principal authorization, MCP initialization, and profile discovery do not need a
 Nemlig login. Provider-backed tools remain credential-gated and return the
 existing connection-required result until a Nemlig connection is provisioned.
 
-When the provider portal is enabled by the operator, it accepts a standard
-resource bearer token and then uses a short-lived signed portal cookie. Enter
+When the provider portal is enabled and configured by the operator, `/connect`
+offers **Sign in** for the configured owner using the installed MCP OAuth client
+and PKCE. A verified owner resource token establishes the existing short-lived
+signed portal cookie; tokens are not returned to the page or chat. Standard
+resource bearer entry remains available to configured family members. Enter
 only your own Nemlig login in that separately authenticated page. Never send it
 through ChatGPT or a tool argument. The page can replace or revoke your
 connection; the owner can disable or revoke invitee access. Follow the disabled-first

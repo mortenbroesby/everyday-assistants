@@ -21,6 +21,7 @@ export interface CloudflareEnv {
   NEMLIG_MCP_SERVICE_ACCEPTANCE_ENABLED?: string;
   NEMLIG_MCP_SERVICE_CLIENT_ID?: string;
   NEMLIG_MCP_ONBOARDING_SESSION_KEY?: string;
+  NEMLIG_MCP_ONBOARDING_CLIENT_ID?: string;
 }
 
 export interface GatewayConfig {

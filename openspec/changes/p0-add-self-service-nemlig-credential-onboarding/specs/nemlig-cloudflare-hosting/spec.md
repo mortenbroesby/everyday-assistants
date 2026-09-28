@@ -60,6 +60,31 @@ prerequisites succeed.
 
 ## ADDED Requirements
 
+### Requirement: Bounded owner browser authentication adapter
+
+The owner portal SHALL use the installed maintained OAuth client with an exact
+configured HTTPS issuer/resource, pre-registered public browser client and
+fixed POST callback. Its authenticated expiring transaction cookie SHALL bind
+state, PKCE verifier, issuer and client. OAuth fetches SHALL be bounded to the
+issuer origin, reject redirects and never automatically replay code exchange.
+After existing token verification, exact enabled owner authorization and
+authenticated one-use transaction consumption SHALL precede portal authority.
+No OAuth code/token SHALL enter URLs, rendered HTML, logs or tool results.
+
+#### Scenario: Invalid callback or identity arrives
+
+- **WHEN** transaction binding, expiry, method, origin, fields, issuer, client,
+  owner authorization or one-use consumption fails
+- **THEN** no portal session, credential replacement or Container wake occurs,
+  and only a sanitized failure is returned
+
+#### Scenario: Migration is not yet accepted
+
+- **WHEN** the browser client, portal secret, private v3 policy or owner credential
+  validation is unverified
+- **THEN** release remains held or MCP disabled; machine fixtures do not count as
+  real owner credential or native ChatGPT acceptance
+
 ### Requirement: Exact-email invitation and principal-registration boundary
 
 The onboarding web application SHALL accept new principals only through an

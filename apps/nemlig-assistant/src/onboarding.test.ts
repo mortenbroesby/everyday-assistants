@@ -41,6 +41,21 @@ const cookieValue = (response: Response): string => {
   return match[1];
 };
 
+test("anonymous browser has a usable sign-in entry without provider or storage work", async () => {
+  let calls = 0;
+  const result = await handleOnboardingRequest(new Request("https://mcp.example.test/connect"), env, {
+    ...dependencies,
+    authenticate: async () => { calls += 1; return undefined; },
+    principalStatus: async () => { calls += 1; return undefined; },
+    connectionStatus: async () => { calls += 1; return false; },
+  });
+  assert.equal(result.status, 200);
+  const markup = await result.text();
+  assert.match(markup, /<a href="\/connect\/sign-in">Sign in<\/a>/u);
+  assert.doesNotMatch(markup, /<form/u);
+  assert.equal(calls, 0);
+});
+
 test("credential portal configuration does not require request-rate settings", () => {
   const config = loadOnboardingConfig(env);
   assert.equal(config.publicUrl.href, "https://mcp.example.test/mcp");
@@ -117,18 +132,21 @@ test("authenticated credential bursts keep rotating single-use CSRF without a ra
   assert.equal([...values.keys()].some((key) => key.startsWith("validation:")), false);
 });
 
-test("credential portal has no Auth0 callback or configuration dependency", async () => {
+test("credential portal does not accept an unbound browser callback", async () => {
   assert.equal(loadOnboardingConfig(env).publicUrl.href, "https://mcp.example.test/mcp");
   assert.throws(() => loadOnboardingConfig({ ...env, NEMLIG_MCP_ONBOARDING_SESSION_KEY: "short" }), /configuration is invalid/u);
   const callback = await handleOnboardingRequest(new Request("https://mcp.example.test/connect/callback?code=old"), env, dependencies);
-  assert.equal(callback.status, 404);
+  assert.equal(callback.status, 401);
 });
 
 test("credential portal accepts a standard bearer token and keeps provider state separate", async () => {
   connected = false;
   const anonymous = await handleOnboardingRequest(new Request("https://mcp.example.test/connect"), env, dependencies);
-  assert.equal(anonymous.status, 401);
-  assert.match(anonymous.headers.get("www-authenticate") ?? "", /resource_metadata=/u);
+  assert.equal(anonymous.status, 200);
+  assert.match(await anonymous.text(), /Sign in/u);
+  const invalid = await handleOnboardingRequest(new Request("https://mcp.example.test/connect", { headers: { authorization: "Bearer invalid" } }), env, dependencies);
+  assert.equal(invalid.status, 401);
+  assert.match(invalid.headers.get("www-authenticate") ?? "", /resource_metadata=/u);
 
   const login = await handleOnboardingRequest(new Request("https://mcp.example.test/connect", {
     headers: { authorization: "Bearer valid-access-token" },

@@ -3,6 +3,26 @@ The policy/tier/compatibility tasks below are historical and superseded by
 schema support. Re-baseline remaining onboarding independently before applying
 these obsolete policy or migration steps.
 
+## 12. Approved current owner browser recovery (2026-09-28)
+
+- [x] 12.1 Rebaseline the existing proposal/design/delta specs for owner-only schema-v3 browser recovery, preserving historical evidence without applying legacy tasks.
+- [x] 12.2 Add a failing focused real-SDK regression for anonymous browser entry and owner PKCE POST callback into the existing portal; cover wrong/duplicate state, expiry/tamper, issuer/client drift, unknown/disabled/service identity, cancellation and no automatic exchange retry.
+- [x] 12.3 Implement the minimal maintained-client adapter, bounded pinned-origin discovery/exchange, transaction replay protection and existing portal session handoff; preserve all credential and basket boundaries.
+- [ ] 12.4 Update deployment configuration validation, README/operator documentation, release version/note and strict/privacy/package/repository gates; review, commit/push and verify exact-head CI.
+- [ ] 12.5 Review/provision one public browser client and the session secret, stage private v3 policy, deploy disabled/onboarding-only, have the owner validate through the portal, then perform protected release and real owner read-only acceptance. No basket mutation; leave live gates unchecked until observed.
+
+Repository evidence (2026-09-28, base `9b934706ccc2b374763389659d0a1a29bd1b26e6`):
+anonymous-entry regression failed with 401 before implementation; the real-SDK
+suite now passes 13 cases including existing RS256 verification, issuer/audience/
+expiry/scope rejection, PKCE unreserved characters, malformed callbacks,
+concurrent replay and no automatic exchange retry. A loopback synthetic HTTPS
+Chromium smoke followed the sign-in link across sites, posted back with the
+transaction cookie and issuer Origin, returned to clean `/connect`, and displayed
+the protected credential form: one exchange, one session, zero credential
+writes. This proves local browser handoff, not live Auth0/Nemlig or ChatGPT
+acceptance. Full repository/package/Docker and exact-head CI evidence remains
+part of 12.4; live migration remains 12.5. No viewer/resource change is included.
+
 ## 1. Contract and Baseline
 
 - [x] 1.1 Rebase the isolated worktree onto current `origin/main`, confirm `fix-nemlig-oauth-reliability` and sibling work remain unchanged, and verify the branch/root/base/status evidence is clean

@@ -21,6 +21,12 @@ basket. CI runs this same command with read-only repository permissions.
 
 ## Owner-run live evidence
 
+Owner browser recovery also requires the reviewed public client and separate
+portal session secret in the [onboarding runbook](cloudflare-operations.md#owner-browser-entry-prerequisites).
+Verify browser POST/cookie handoff and explicit credential validation on the
+disabled/onboarding-only revision before enabling MCP. Local OAuth tests and
+service fixtures do not establish production owner or provider access.
+
 Live checks remain separate from the automatic gate:
 
 - `pnpm --filter nemlig-assistant production:probe` checks health, revision,

@@ -1,3 +1,16 @@
+## Current owner recovery scope (2026-09-28)
+
+The owner approved a minimal browser sign-in/reconnection path to unblock the
+strict schema-v3 production migration. Only section 12 of tasks.md is current
+implementation scope. Preserve the existing credential portal, encrypted records
+and fixed Container. Use the installed maintained MCP OAuth client for PKCE and
+code exchange, one explicitly configured public browser client, exact enabled
+owner authorization, single-use transaction binding and a POST callback. No
+refresh token, ID-token/email enrollment, Organization, invitation, legacy policy,
+password fallback, auth server or shopping mutation is added. Provider/client and
+secret provisioning remain reviewed operator checkpoints; local tests cannot
+prove owner production or native ChatGPT acceptance.
+
 ## Superseded policy boundary
 
 The tier/budget, legacy-policy migration and dynamic enrollment clauses below
