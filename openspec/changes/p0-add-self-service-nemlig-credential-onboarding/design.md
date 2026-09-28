@@ -1,5 +1,10 @@
 ## Context
 
+Historical design: its tier/budget and schema-v1/v2 compatibility decisions are
+superseded by `remove-nemlig-local-rate-limits`. Only the current schema-v3
+configured-family contract is supported. Do not implement the old migration or
+dynamic-enrollment paths below without a separately re-baselined plan.
+
 See `proposal.md` for motivation and the delta specs for observable behavior.
 The current schema stores subject, principal key, tier, enablement, and plaintext
 Nemlig credentials together inside one encrypted Worker secret. Both the Worker

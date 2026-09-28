@@ -334,7 +334,6 @@ test("MCP profile tool exposes the authenticated principal as a stable read-only
     createMcpServer(fakeClient(), testCredentials, undefined, undefined, {
       principalKey: "auth0|profile-owner",
       policyRevision: "test-v1",
-      tier: 0,
     }),
     async (mcp) => {
       const tool = (await mcp.listTools()).tools.find(({ name }) => name === "get_profile");
@@ -394,7 +393,7 @@ test("service acceptance exposes only its fixed read-only tool inventory", async
     browseDepartment: unexpected, getCart: unexpected, addToCart: unexpected, removeFromCart: unexpected, clearCart: unexpected,
   });
   for (const expectedVariant of [serviceAcceptanceToolInventory, serviceAcceptanceToolInventory] as const) await withMcpClient(createMcpServer(client, testCredentials, undefined, undefined, {
-    principalKey: "s".repeat(32), policyRevision: "service", tier: 2, kind: "service",
+    principalKey: "s".repeat(32), policyRevision: "service", kind: "service",
   }), async (mcp) => {
     const expected = expectedVariant;
     assert.deepEqual((await mcp.listTools()).tools.map(({ name }) => name).sort(), [...expected].sort());
@@ -451,7 +450,7 @@ test("connection guidance uses URL elicitation only when explicitly supported", 
 test("connection status verifies Nemlig and does not trust OAuth context alone", async () => {
   const client = fakeClient({ getCart: async () => { throw new NemligError("Nemlig unavailable"); } });
   await withMcpClient(createMcpServer(client, testCredentials, undefined, undefined, {
-    principalKey: "p".repeat(32), policyRevision: "test", tier: 0,
+    principalKey: "p".repeat(32), policyRevision: "test",
   }), async (mcp) => {
     const result = await mcp.callTool({ name: "check_nemlig_connection", arguments: {} });
     assert.deepEqual(result.structuredContent, { status: "provider_unavailable", connection_url: NEMLIG_CONNECT_URL });
@@ -601,7 +600,7 @@ test("every MCP tool has complete schemas, accurate annotations, and safe server
 test("authenticated HTTP request context preserves stdio tool and resource metadata", async () => {
   await withMcpClient(createMcpServer(fakeClient(), testCredentials), async (stdio) => {
     await withMcpClient(
-      createMcpServer(fakeClient(), testCredentials, undefined, undefined, { principalKey: "auth0|owner", policyRevision: "test-v1", tier: 0 }),
+      createMcpServer(fakeClient(), testCredentials, undefined, undefined, { principalKey: "auth0|owner", policyRevision: "test-v1" }),
       async (http) => {
         assert.deepEqual(await http.listTools(), await stdio.listTools());
         const expectedResources = expectedProductViewerResources;
@@ -943,7 +942,7 @@ test("MCP additions require prepare then apply and direct mutation tools are una
 test("approved MCP writes authenticate before the task and never retry an indeterminate mutation", async () => {
   let logins = 0;
   let writes = 0;
-  const context = { principalKey: "auth0|owner", policyRevision: "test-v1", tier: 0 as const };
+  const context = { principalKey: "auth0|owner", policyRevision: "test-v1" };
   const client = fakeClient({
     login: async () => { logins += 1; },
     getCart: async () => ({ ...basket, items: [], productsPrice: 0, numberOfProducts: 0 }),
@@ -1007,7 +1006,7 @@ test("hosted proposals survive a principal reconnect but remain isolated by prin
   let proposalId = "";
 
   await withMcpClient(
-    createMcpServer(client, testCredentials, undefined, proposals, { principalKey: "auth0|owner", policyRevision: "test-v1", tier: 0 }),
+    createMcpServer(client, testCredentials, undefined, proposals, { principalKey: "auth0|owner", policyRevision: "test-v1" }),
     async (mcp) => {
       const prepared = await mcp.callTool({
         name: "review_items_to_add",
@@ -1018,7 +1017,7 @@ test("hosted proposals survive a principal reconnect but remain isolated by prin
   );
 
   await withMcpClient(
-    createMcpServer(client, testCredentials, undefined, new BasketProposalService(client), { principalKey: "auth0|owner", policyRevision: "test-v1", tier: 0 }),
+    createMcpServer(client, testCredentials, undefined, new BasketProposalService(client), { principalKey: "auth0|owner", policyRevision: "test-v1" }),
     async (mcp) => {
       const unavailable = await mcp.callTool({ name: "add_approved_items", arguments: { approved_review: proposalId } });
       assert.equal(unavailable.isError, true);
@@ -1027,7 +1026,7 @@ test("hosted proposals survive a principal reconnect but remain isolated by prin
   );
 
   await withMcpClient(
-    createMcpServer(client, testCredentials, undefined, proposals, { principalKey: "auth0|other", policyRevision: "test-v1", tier: 1 }),
+    createMcpServer(client, testCredentials, undefined, proposals, { principalKey: "auth0|other", policyRevision: "test-v1" }),
     async (mcp) => {
       const rejected = await mcp.callTool({ name: "add_approved_items", arguments: { approved_review: proposalId } });
       assert.equal(rejected.isError, true);
@@ -1036,7 +1035,7 @@ test("hosted proposals survive a principal reconnect but remain isolated by prin
   );
 
   await withMcpClient(
-    createMcpServer(client, testCredentials, undefined, proposals, { principalKey: "auth0|owner", policyRevision: "test-v2", tier: 0 }),
+    createMcpServer(client, testCredentials, undefined, proposals, { principalKey: "auth0|owner", policyRevision: "test-v2" }),
     async (mcp) => {
       const rejected = await mcp.callTool({ name: "add_approved_items", arguments: { approved_review: proposalId } });
       assert.equal(rejected.isError, true);
@@ -1045,7 +1044,7 @@ test("hosted proposals survive a principal reconnect but remain isolated by prin
   );
 
   await withMcpClient(
-    createMcpServer(client, testCredentials, undefined, proposals, { principalKey: "auth0|owner", policyRevision: "test-v1", tier: 0 }),
+    createMcpServer(client, testCredentials, undefined, proposals, { principalKey: "auth0|owner", policyRevision: "test-v1" }),
     async (mcp) => {
       const result = await mcp.callTool({ name: "add_approved_items", arguments: { approved_review: proposalId } });
       assert.equal(result.isError, undefined);

@@ -1,64 +1,59 @@
 ## Context
 
-See proposal.md and #151. Current main is `85bcd7ee3d09`. The gateway applies
-global normal/expensive minute gates and private principal-minute gates; the
-credential portal separately persists minute validation windows. These are
-distinct from the daily breaker and principal monthly cost allowance.
+See proposal.md and #151/#152. Reviewed baseline `85bcd7ee3d09`; reconciled main
+`cc2ffdcbf0f3`. Initial minute-gate removal retained daily/expensive/tier
+machinery. The owner clarified all app-local limiting and compatibility should
+go. Earlier-head CI is not evidence for this final contract.
 
 ## Goals / Non-Goals
 
-Delete the three throttle paths and their dead configuration. Keep atomic usage
-accounting and every unrelated safety boundary. Do not change the viewer,
-provider search, platform quotas, retries, infrastructure capacity or live secrets.
+Delete unnecessary usage policy, not authentication or provider-write safety.
+No UI/framework, identity-provider change, production operation or real basket write.
 
 ## Decisions
 
-Burst verification reproduced a pre-existing CSRF replay defect: truncating the
-consumed-token history to 32 entries admitted an old still-valid credential
-action after 65 submissions. Preserve the existing per-principal hashed record
-and expiry cleanup, but retain every consumed token until its signed expiry.
-No polling, new namespace or compatibility path is needed. Record size grows
-with authenticated credential actions in the 15-minute lifetime; platform
-storage failure must fail closed before provider work, not forget live tokens.
-
-- Delete gates rather than raise constants, add bypass switches or infinite
-  sentinels. Keep minute usage telemetry only where it reports actual activity,
-  not fictional rate headroom. Monthly rejection gets a cost-specific reason.
-- Remove rate fields from strict policy/configuration schemas and deployment
-  candidate bindings. No silent compatibility projection. Existing persisted
-  usage counts remain readable; no destructive storage cleanup is required.
-- Credential validation remains authenticated, authorized, CSRF single-use,
-  encrypted and provider-verified; remove the validation-window storage helper
-  and misleading `limited` portal outcome.
-- This is a breaking private configuration contract and gets a major package
-  version/reviewed release note. The viewer HTML/resource identity is unchanged.
+- Delete every minute/day/month usage gate, class budget, tier, reserve,
+  forecast, counter and usage/reset endpoint. Do not replace these with infinite
+  values, adapters or unused schemas. Keep protocol/profile/useful distinctions
+  only for credential gating and sanitized diagnostics; all shopping is equal.
+- One strict private policy (`schema_version: 3`): revision, explicit
+  `owner_subject` and bounded enabled family identities/opaque keys. No old
+  versions, tier/budget/organization/invitation/inline-password fields or dynamic
+  unknown-identity fallback.
+- Reuse the existing independent encrypted credential records/envelopes, exact
+  key/revision/generation binding, disable/revoke and account/conversation
+  isolation. Owner-only credential management is a security privilege, not a tier.
+- Enumerate current configured members for owner management, storing status by
+  their exact configured subject/key. Credential commit atomically rechecks
+  disable/revoke decisions; no separate post-validation enable can undo them.
+  Remove unused dynamic invitation registration/indexing rather than preserve a
+  second enrollment path. Credential-free profile discovery must not evict an
+  active shopping context; real credential rotation still invalidates old state.
+- Leave obsolete stored usage untouched and unread. Removing a gate does not
+  authorize deleting durable data or deploying old policy/configuration.
+- Retain consumed CSRF hashes until their signed expiry; storage failure denies
+  before provider work. No eviction-based replay vulnerability or polling.
+- Same PR, existing major `5.0.0` release note. No second admission workflow.
 
 ## Risks / Trade-offs
 
-- Higher authenticated bursts can saturate the fixed Container or consume daily
-  budget faster. Retain bounded hydration, timeouts, one instance, atomic daily
-  and monthly cost admission, and kill switch. No new queue/retry/polling.
-- Credential-validation bursts are no longer minute-capped and do not inherit
-  MCP useful-operation accounting; a compromised allowed identity can generate
-  additional provider-login attempts and traffic. OAuth/authorization, CSRF,
-  bounded form/body size and deadlines remain, but this does not guarantee zero
-  abuse or a billing hard cap. Review this risk before production approval.
-- Current model: 60 normal/10 expensive global operations per minute plus
-  principal and credential minute caps. Proposed model: no app throughput caps;
-  MCP retains 5,000 useful/500 expensive daily defaults and existing monthly
-  allowance. Worst credible failure is repeated authenticated work exhausting
-  those budgets rapidly, plus repeated authorized portal validations and public
-  auth/log traffic. Cheaper alternatives were higher caps or pacing read-only
-  work; the owner explicitly chose deletion. No cost is incurred by this PR's
-  local mocked tests; no production activation is authorized.
+There is no app-enforced operation or billing ceiling. A runaway authenticated
+loop can generate repeated provider reads, log/storage traffic and cost until
+manually stopped. One fixed Container, deadlines, bounded hydration/retries and
+manual kill switches limit individual work but do not cap aggregate traffic.
+These remaining controls are not presented as equivalent to the removed limits.
+External provider/platform rate limits still apply; no bypass is implemented.
+
+Credential validation and short-lived CSRF replay history can grow with allowed
+authenticated requests; persistence failures remain fail closed.
 
 ## Migration Plan
 
-Before any separately approved release, stage the private principal-policy
-document with its minute fields removed and unchanged identities, credentials,
-monthly allowances and revision lineage. Preserve old configuration privately
-for rollback. Review obsolete plaintext-variable removal with the candidate
-configuration. Do not perform that secret/configuration transition in this task.
-An unchanged old strict policy must fail closed, not run unbounded accidentally.
-Rollback requires the recorded prior code and compatible private configuration;
-never discard credential records or usage accounting to roll back.
+Before separately authorized release, privately stage exact family identities,
+keys and explicit owner in the current strict policy. Preserve encrypted
+credentials, revision lineage and private rollback configuration. Migrate any
+inline credentials using the existing protected onboarding only with approval.
+Remove every obsolete rate/daily/expensive binding; stale deployment bindings
+must fail validation rather than be projected away. No live transition occurs
+in this PR. Prior-code rollback needs its own compatible private configuration;
+current code contains no legacy parser, replay or restored submission authority.

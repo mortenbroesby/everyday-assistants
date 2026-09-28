@@ -1,5 +1,8 @@
 ## 1. Remove application request throttles
 
+These checked tasks record the first request's evidence, not completion of the
+subsequent family-only/no-compatibility refinement in section 3.
+
 - [x] 1.1 Add and run focused failing burst/configuration regressions identifying the former global, principal and credential rate gates.
 - [x] 1.2 Delete MCP minute admission/configuration/policy fields and obsolete denials; verify burst tests and unchanged atomic daily/monthly cost accounting.
 - [x] 1.3 Delete credential minute validation storage/configuration/outcome; verify credential/CSRF/isolation tests and no rate helper remains in the runtime.
@@ -20,6 +23,14 @@ committed-head verification on `147b7e1b6241a0840578edf18092cdeb820eb6c0`
 passed the full gate again (494 tests, 94.87% loaded-source line coverage). The documentation-only
 handoff commit is reverified before push; its exact head and CI status are
 recorded in the PR, not inferred from this checklist.
+
+## 3. Family-only refinement without backward compatibility
+
+- [x] 3.1 Add focused failing regressions for no operation limits/counters, no tier/expensive fields and rejection of old policy schemas.
+- [x] 3.2 Delete all operation caps/counters, tiers, per-person budgets/forecast/telemetry and usage/reset endpoints; verify obsolete stored usage is never read or written.
+- [x] 3.3 Replace legacy policy versions with one current encrypted-credential family contract; verify exact owner authorization, unknown/disabled denial, credential/session/conversation isolation and no inline-password fallback.
+- [x] 3.4 Remove obsolete deployment bindings, fixtures and current documentation/specification claims; verify mocked deployment/configuration gates and no operational tier/expensive/legacy-policy branches remain.
+- [ ] 3.5 Run focused regression/mock HTTP tests, strict/privacy/version/release-note gates and final `pnpm verify`; update the same PR with exact SHA/CI and unperformed release transitions. No merge/deploy/provider mutation.
 
 No viewer/browser-native acceptance is needed for this non-UI policy change,
 and no native/production behavior is claimed. The local Cloudflare dry run

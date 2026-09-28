@@ -7,12 +7,12 @@ import {
   type GatewayOutcome,
   type GatewayRequestEvent,
 } from "./cloudflare-observability.js";
-import { aggregateUsage, type AdmissionResult, type UsageState } from "./cloudflare-usage.js";
+import type { AdmissionResult } from "./principal-records.js";
 import type { Principal } from "./principal-policy.js";
 import { Auth0InfrastructureError, oauthReconnectChallenge } from "./auth0.js";
 import { PRODUCT_VIEWER_RESOURCE_URI, RETIRED_PRODUCT_VIEWER_RESOURCE_URIS } from "./product-viewer-identity.js";
 
-export type OperationClass = "protocol" | "profile" | "normal" | "expensive";
+export type OperationClass = "protocol" | "profile" | "useful";
 export const INTERNAL_CREDENTIAL_HEADERS = [
   "x-nemlig-credential-envelope",
   "x-nemlig-principal-key",
@@ -44,8 +44,6 @@ export interface GatewayDependencies {
   authenticate(token: string, config: GatewayConfig, deadline: GatewayDeadline): Promise<Principal | undefined>;
   admit(operation: OperationClass, principal: Principal, config: GatewayConfig, deadline: GatewayDeadline): Promise<AdmissionResult>;
   forward(request: Request, operation: OperationClass, config: GatewayConfig, deadline: GatewayDeadline, admission: AdmissionResult): Promise<Response>;
-  resetUsage?(config: GatewayConfig, deadline: GatewayDeadline): Promise<UsageState>;
-  usage?(config: GatewayConfig, deadline: GatewayDeadline): Promise<UsageState | undefined>;
   event?(event: GatewayRequestEvent): void;
   now?(): number;
   requestId?(): string;
@@ -56,24 +54,6 @@ class BoundaryTimeoutError extends Error {
     super(outcome);
   }
 }
-
-const normalTools = new Set([
-  "check_nemlig_connection",
-  "reconnect_nemlig_assistant",
-  "find_groceries",
-  "get_grocery_details",
-  "show_my_favorites",
-  "show_grocery_sections",
-  "browse_grocery_section",
-  "show_my_basket",
-  "show_my_basket_visually",
-  "start_product_review",
-  "update_product_review",
-  "review_items_to_add",
-  "review_item_to_remove",
-  "review_item_swap",
-  "review_emptying_basket",
-]);
 
 const serviceTools = new Set([
   "find_groceries",
@@ -107,16 +87,16 @@ const isServiceRequestAllowed = async (request: Request): Promise<boolean> => {
   return false;
 };
 
-/** Classifies protocol, normal, and unknown/expensive MCP traffic before admission. */
+/** Separates protocol/profile credential handling, not shopping price classes. */
 export function classifyMcpMessage(value: unknown): OperationClass {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return "expensive";
+  if (!value || typeof value !== "object" || Array.isArray(value)) return "useful";
   const message = value as { method?: unknown; params?: unknown };
-  if (typeof message.method !== "string") return "expensive";
+  if (typeof message.method !== "string") return "useful";
   if (message.method !== "tools/call") return "protocol";
   const params = message.params;
   const name = params && typeof params === "object" && "name" in params ? (params as { name?: unknown }).name : undefined;
   if (name === "get_profile") return "profile";
-  return typeof name === "string" && normalTools.has(name) ? "normal" : "expensive";
+  return "useful";
 }
 
 const json = (body: unknown, status = 200): Response => new Response(JSON.stringify(body), {
@@ -222,21 +202,19 @@ export async function handleGatewayRequest(
   const method = classifyGatewayMethod(request.method);
   let revision = env.NEMLIG_MCP_REVISION?.trim() || "unconfigured";
   let operation: GatewayRequestEvent["operation"] = "none";
-  let tier: GatewayRequestEvent["tier"] = "none";
   let denialReason: GatewayRequestEvent["denial_reason"] = "none";
   let emitted = false;
   const finish = (response: Response, outcome: GatewayOutcome): Response => {
     if (!emitted) {
       emitted = true;
       const event = parseGatewayRequestEvent({
-        schema_version: 1,
+        schema_version: 2,
         event: "gateway_request_terminal",
         request_id: requestId,
         revision,
         route,
         method,
         operation,
-        tier,
         denial_reason: denialReason,
         outcome,
         status: response.status,
@@ -264,21 +242,6 @@ export async function handleGatewayRequest(
   const totalController = new AbortController();
   const totalTimer = setTimeout(() => totalController.abort(), config.totalTimeoutMs);
   const remainingMs = () => config.totalTimeoutMs - (now() - startedAt);
-  const runAdminControl = async (
-    work: (deadline: GatewayDeadline) => Promise<UsageState | undefined>,
-  ): Promise<Response> => {
-    try {
-      const usage = await withinBoundary(work, config.controlTimeoutMs, remainingMs, totalController.signal, "control_timeout");
-      return finish(json(aggregateUsage(usage, {
-        revision: config.principalPolicy.revision,
-        budgets: config.principalPolicy.budgets,
-        principalKeys: config.principalPolicy.principals.map(({ principal_key }) => principal_key),
-      })), "completed");
-    } catch (error) {
-      const outcome = error instanceof BoundaryTimeoutError ? error.outcome : "backend_failed";
-      return finish(json({ error: outcome }, outcome.endsWith("timeout") ? 504 : 502), outcome);
-    }
-  };
   try {
     if (url.pathname === "/healthz") return finish(json({ status: "ok", enabled: true }), "protocol_completed");
     if (url.pathname === "/revision") return finish(json({ revision: config.revision }), "protocol_completed");
@@ -291,8 +254,7 @@ export async function handleGatewayRequest(
         bearer_methods_supported: ["header"],
       }), "protocol_completed");
     }
-    const admin = url.pathname === "/admin/usage" || url.pathname === "/admin/reset-breaker";
-    if (url.pathname !== "/mcp" && !admin) {
+    if (url.pathname !== "/mcp") {
       denialReason = "request_invalid";
       return finish(new Response("Not found", { status: 404 }), "request_rejected");
     }
@@ -302,9 +264,7 @@ export async function handleGatewayRequest(
       denialReason = "origin_not_allowed";
       return finish(json({ error: "origin_not_allowed" }, 403), "request_rejected");
     }
-    const classified = admin
-      ? { operation: "protocol" as const, request }
-      : await withinBoundary((deadline) => classifyRequest(request, deadline.signal), remainingMs(), remainingMs, totalController.signal, "request_timeout");
+    const classified = await withinBoundary((deadline) => classifyRequest(request, deadline.signal), remainingMs(), remainingMs, totalController.signal, "request_timeout");
     if (classified instanceof Response) {
       denialReason = "request_invalid";
       return finish(classified, "request_rejected");
@@ -327,7 +287,6 @@ export async function handleGatewayRequest(
         return finish(json({ error: "principal_not_allowed" }, 403), "request_rejected");
       }
       principal = authenticated;
-      tier = String(principal.tier) as "0" | "1" | "2";
     } catch (error) {
       if (error instanceof BoundaryTimeoutError) return finish(json({ error: error.outcome }, 504), error.outcome);
       if (error instanceof Auth0InfrastructureError) {
@@ -337,22 +296,10 @@ export async function handleGatewayRequest(
       denialReason = "authentication_failed";
       return finish(unauthorized(config), "authentication_rejected");
     }
-    if (admin && principal.tier !== 0) {
-      denialReason = "principal_not_allowed";
-      return finish(json({ error: "principal_not_allowed" }, 403), "request_rejected");
-    }
     if (config.serviceAcceptance && principal.subject === `${config.serviceAcceptance.clientId}@clients`
       && !await isServiceRequestAllowed(classified.request)) {
       denialReason = "principal_not_allowed";
       return finish(json({ error: "principal_not_allowed" }, 403), "request_rejected");
-    }
-    if (url.pathname === "/admin/usage") {
-      if (request.method !== "GET" || !dependencies.usage) return finish(new Response("Method not allowed", { status: 405 }), "request_rejected");
-      return runAdminControl((deadline) => dependencies.usage!(config, deadline));
-    }
-    if (url.pathname === "/admin/reset-breaker") {
-      if (request.method !== "POST" || !dependencies.resetUsage) return finish(new Response("Method not allowed", { status: 405 }), "request_rejected");
-      return runAdminControl((deadline) => dependencies.resetUsage!(config, deadline));
     }
     let admission: AdmissionResult;
     try {
@@ -363,12 +310,8 @@ export async function handleGatewayRequest(
     }
     if (!admission.admitted) {
       denialReason = admission.reason;
-      const outcome = admission.reason === "daily_limit" || admission.reason === "expensive_daily_limit" || admission.reason === "breaker_open"
-          ? "breaker_rejected"
-          : "capacity_rejected";
-      return finish(json(admission.reason === "credential_required"
-        ? { error: "connection_required", connection_url: "https://nemlig-mcp.broesby.dk/connect" }
-        : { error: admission.reason }, admission.status), outcome);
+      return finish(json({ error: "connection_required", connection_url: "https://nemlig-mcp.broesby.dk/connect" },
+        admission.status), "connection_required");
     }
     try {
       const response = await withinBoundary(

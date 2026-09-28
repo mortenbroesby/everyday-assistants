@@ -1,3 +1,8 @@
+The policy/tier/compatibility tasks below are historical and superseded by
+`remove-nemlig-local-rate-limits`. Checkmarks record prior work, not current
+schema support. Re-baseline remaining onboarding independently before applying
+these obsolete policy or migration steps.
+
 ## 1. Contract and Baseline
 
 - [x] 1.1 Rebase the isolated worktree onto current `origin/main`, confirm `fix-nemlig-oauth-reliability` and sibling work remain unchanged, and verify the branch/root/base/status evidence is clean

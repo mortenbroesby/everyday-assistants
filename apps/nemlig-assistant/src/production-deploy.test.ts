@@ -36,9 +36,9 @@ const applicationId = "a03ce8c9-3543-4505-866e-14d2e66007ca";
 const image = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 const candidateImage = "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
 const accountId = "0123456789abcdef0123456789abcdef";
-const configDigest = "9e2fc7a6c97d6ccb7ce7cd25c9ae9cb1e086df6180e36d608c93d72a095bff59";
+const configDigest = "97844eb211bcad40d0ecb550858a0f487e2c00e3fba748c45b5536cc65e73968";
 const execFileAsync = promisify(execFile);
-const obsoleteRateVars = ["MCP_RATE_LIMIT", "MCP_EXPENSIVE_RATE_LIMIT", "MCP_CREDENTIAL_RATE_LIMIT", "MCP_CREDENTIAL_GLOBAL_RATE_LIMIT"];
+const obsoleteAdmissionVars = ["MCP_RATE_LIMIT", "MCP_EXPENSIVE_RATE_LIMIT", "MCP_CREDENTIAL_RATE_LIMIT", "MCP_CREDENTIAL_GLOBAL_RATE_LIMIT", "MCP_EXPENSIVE_DAILY_LIMIT", "MCP_DAILY_LIMIT"];
 
 const version = (id: string, revision: string, enabled: boolean) => JSON.stringify({
   id,
@@ -53,9 +53,7 @@ const version = (id: string, revision: string, enabled: boolean) => JSON.stringi
       ["MCP_BACKEND_TIMEOUT_MS", "85000"],
       ["MCP_CREDENTIAL_ONBOARDING_ENABLED", "false"],
       ["MCP_CONTROL_TIMEOUT_MS", "3000"],
-      ["MCP_DAILY_LIMIT", "5000"],
       ["MCP_ENABLED", String(enabled)],
-      ["MCP_EXPENSIVE_DAILY_LIMIT", "500"],
       ["MCP_TOTAL_TIMEOUT_MS", "90000"],
       ["NEMLIG_MCP_CREDENTIAL_KEY_VERSION", "one"],
       ["NEMLIG_MCP_AUTH0_AUDIENCE", "https://nemlig-mcp.broesby.dk/mcp"],
@@ -84,7 +82,7 @@ const config = (path: string) => ({
   configPath: path, userConfigPath: path, name: "nemlig-mcp-cloudflare-production", keep_vars: false,
   limits: { cpu_ms: 100, subrequests: 8 },
   vars: {
-    MCP_ENABLED: "false", MCP_DAILY_LIMIT: "5000", MCP_EXPENSIVE_DAILY_LIMIT: "500",
+    MCP_ENABLED: "false",
     MCP_AUTH_TIMEOUT_MS: "5000", MCP_CONTROL_TIMEOUT_MS: "3000", MCP_TOTAL_TIMEOUT_MS: "90000", MCP_BACKEND_TIMEOUT_MS: "85000",
     MCP_CREDENTIAL_ONBOARDING_ENABLED: "false",
     NEMLIG_MCP_CREDENTIAL_KEY_VERSION: "one",
@@ -955,28 +953,37 @@ test("live onboarding survives the repository false default and both deployment 
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
-test("deployment candidates omit all obsolete application rate variables", async () => {
+test("checked-in local and production config omit operation caps and retain request deadlines", async () => {
+  const checkedIn = JSON.parse(await readFile(new URL("../wrangler.jsonc", import.meta.url), "utf8"));
+  for (const vars of [checkedIn.vars, checkedIn.env.production.vars]) {
+    assert.equal(vars.MCP_TOTAL_TIMEOUT_MS, "90000");
+    for (const name of obsoleteAdmissionVars) assert.equal(Object.hasOwn(vars, name), false, name);
+  }
+});
+
+test("deployment candidates omit all obsolete application rate and category variables", async () => {
   const { deps, calls, root } = await fixture();
   try {
     assert.equal((await deployProduction(commit, deps)).outcome, "success");
     const deploys = calls.filter(({ args }) => args.includes("deploy"));
     assert.equal(deploys.length, 2);
     for (const { args } of deploys) {
-      for (const name of obsoleteRateVars) assert.equal(args.some((arg) => arg.startsWith(`${name}:`)), false, name);
-      for (const name of ["MCP_DAILY_LIMIT", "MCP_EXPENSIVE_DAILY_LIMIT", "MCP_TOTAL_TIMEOUT_MS", "NEMLIG_MCP_CREDENTIAL_KEY_VERSION"]) {
+      for (const name of obsoleteAdmissionVars) assert.equal(args.some((arg) => arg.startsWith(`${name}:`)), false, name);
+      for (const name of ["MCP_TOTAL_TIMEOUT_MS", "NEMLIG_MCP_CREDENTIAL_KEY_VERSION"]) {
         assert.ok(args.some((arg) => arg.startsWith(`${name}:`)), name);
       }
     }
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
-test("obsolete application rate variables fail closed in local config and starting/candidate readback", async () => {
-  for (const name of obsoleteRateVars) {
+test("obsolete application rate and category variables fail closed in local config and starting/candidate readback", async () => {
+  for (const name of obsoleteAdmissionVars) {
+    const text = name === "MCP_DAILY_LIMIT" ? "5000" : name === "MCP_EXPENSIVE_DAILY_LIMIT" ? "500" : "60";
     for (const target of ["local", startingId, disabledId, enabledId]) {
       const { deps, calls, root } = await fixture({
-        ...(target === "local" ? { configReader: ({ config: path }) => { const local = config(path); return { ...local, vars: { ...local.vars, [name]: "60" } }; } } : {}),
+        ...(target === "local" ? { configReader: ({ config: path }) => { const local = config(path); return { ...local, vars: { ...local.vars, [name]: text } }; } } : {}),
         versionBindings: (values, id) => id === target
-          ? [...values.filter((value) => value.name !== name), { name, type: "plain_text", text: "60" }] : values,
+          ? [...values.filter((value) => value.name !== name), { name, type: "plain_text", text }] : values,
       });
       try {
         const report = await deployProduction(commit, deps);
@@ -1016,20 +1023,17 @@ test("Cloudflare null self-target metadata is treated as an unset target", async
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
-test("a disabled legacy auth canary binding is ignored during deployment readback", async () => {
-  const { deps, calls, root } = await fixture({ versionBindings: (values, id) => id === startingId ? [
-    ...values,
-    { name: "NEMLIG_MCP_AUTH_CANARY", type: "plain_text", text: "false" },
-    { name: "MCP_MINIMAL_AUTH_ENABLED", type: "plain_text", text: "true" },
-  ] : values });
-  try {
-    assert.equal((await deployProduction(commit, deps)).outcome, "success");
-    const deploys = calls.filter(({ args }) => args.includes("deploy"));
-    assert.equal(deploys.length, 2);
-    assert.ok(deploys.every(({ args }) => args.includes("NEMLIG_MCP_CREDENTIAL_KEY_VERSION:one")));
-    assert.ok(deploys.every(({ args }) => !args.some((arg) => arg.startsWith("MCP_MINIMAL_AUTH_ENABLED:"))));
-    assert.ok(deploys.every(({ args }) => !args.some((arg) => arg.startsWith("NEMLIG_MCP_AUTH_CANARY:"))));
-  } finally { await rm(root, { recursive: true, force: true }); }
+test("legacy starting auth aliases fail closed instead of being projected away", async () => {
+  for (const [name, text] of [["NEMLIG_MCP_AUTH_CANARY", "false"], ["MCP_MINIMAL_AUTH_ENABLED", "true"]]) {
+    const { deps, calls, root } = await fixture({ versionBindings: (values, id) => id === startingId
+      ? [...values, { name, type: "plain_text", text }] : values });
+    try {
+      const report = await deployProduction(commit, deps);
+      assert.equal(report.outcome, "failed", name);
+      assert.equal(report.failure, "cloudflare_runtime_unexpected_binding", name);
+      assert.equal(calls.some(({ args }) => args.includes("deploy")), false);
+    } finally { await rm(root, { recursive: true, force: true }); }
+  }
 });
 
 test("unrecognized starting plaintext bindings fail closed with a bounded category", async () => {
@@ -1046,7 +1050,7 @@ test("unrecognized starting plaintext bindings fail closed with a bounded catego
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
-test("an enabled legacy auth canary binding remains unsafe", async () => {
+test("an enabled legacy auth canary is rejected as an unexpected binding", async () => {
   const { deps, calls, root } = await fixture({ versionBindings: (values) => [
     ...values,
     { name: "NEMLIG_MCP_AUTH_CANARY", type: "plain_text", text: "true" },
@@ -1054,7 +1058,7 @@ test("an enabled legacy auth canary binding remains unsafe", async () => {
   try {
     const report = await deployProduction(commit, deps);
     assert.equal(report.outcome, "failed");
-    assert.equal(report.failure, "cloudflare_runtime_legacy_binding_invalid");
+    assert.equal(report.failure, "cloudflare_runtime_unexpected_binding");
     assert.equal(calls.some(({ args }) => args.includes("deploy")), false);
   } finally { await rm(root, { recursive: true, force: true }); }
 });
@@ -1063,8 +1067,8 @@ test("malformed bindings and starting safety or DO drift stop before deployment"
   const transforms: Array<(values: Record<string, unknown>[]) => Record<string, unknown>[]> = [
     (values) => [...values, { ...values[0] }],
     (values) => [...values, {}],
-    (values) => values.map((value) => value.name === "MCP_DAILY_LIMIT" ? { ...value, type: "json" } : value),
-    (values) => values.map((value) => value.name === "MCP_DAILY_LIMIT" ? { ...value, text: "5001" } : value),
+    (values) => values.map((value) => value.name === "MCP_TOTAL_TIMEOUT_MS" ? { ...value, type: "json" } : value),
+    (values) => values.map((value) => value.name === "MCP_TOTAL_TIMEOUT_MS" ? { ...value, text: "90001" } : value),
     (values) => values.map((value) => value.name === "NEMLIG_MCP_CREDENTIAL_KEY_VERSION" ? { ...value, text: "invalid version!" } : value),
     (values) => values.map((value) => value.name === "NEMLIG_MCP_CONTAINER" ? { ...value, class_name: "Other" } : value),
     (values) => values.map((value) => value.type === "durable_object_namespace" ? { ...value, script_name: "other-worker" } : value),
@@ -1088,7 +1092,7 @@ test("each candidate readback rejects changed safety, DO or secret metadata", as
         if (mutation === "added-secret") return [...baseline, { name: "extra_secret", type: "secret_text" }];
         if (mutation === "removed-secret") return values;
         return baseline.map((value) => {
-          if (mutation === "safety" && value.name === "MCP_DAILY_LIMIT") return { ...value, text: "5001" };
+          if (mutation === "safety" && value.name === "MCP_TOTAL_TIMEOUT_MS") return { ...value, text: "90001" };
           if (mutation === "do" && value.name === "NEMLIG_MCP_CONTAINER") return { ...value, class_name: "Wrong" };
           if (mutation === "wrong-type" && value.name === "legacy_secret") return { ...value, type: "plain_text", text: "wrong" };
           return value;
@@ -1112,7 +1116,7 @@ test("redirected paths and local safety changes fail without leaking reader erro
       if (field === "configPath" || field === "userConfigPath") return { ...local, [field]: `${path}.redirected` };
       if (field === "keep_vars") return { ...local, keep_vars: true };
       if (field === "limits") return { ...local, limits: { cpu_ms: 200, subrequests: 8 } };
-      return { ...local, vars: { ...local.vars, MCP_DAILY_LIMIT: "5001" } };
+      return { ...local, vars: { ...local.vars, MCP_TOTAL_TIMEOUT_MS: "90001" } };
     } });
     try {
       const report = await deployProduction(commit, deps);
@@ -1143,7 +1147,7 @@ test("the default pinned Wrangler reader handles the real production environment
 test("invalid plain values cannot become matching config proof even when local and live agree", async () => {
   for (const [name, text] of [
     ["NEMLIG_MCP_AUTH0_ISSUER", "https://user:password@example.com/"], ["NEMLIG_MCP_HTTP_PORT", "8.08e3"],
-    ["MCP_DAILY_LIMIT", "0"], ["MCP_EXPENSIVE_DAILY_LIMIT", "9007199254740992"],
+    ["MCP_TOTAL_TIMEOUT_MS", "0"], ["MCP_TOTAL_TIMEOUT_MS", "9007199254740992"],
     ["MCP_CREDENTIAL_ONBOARDING_ENABLED", "yes"], ["NEMLIG_MCP_HTTP_PORT", "65536"],
     ["NEMLIG_MCP_CREDENTIAL_KEY_VERSION", "not/valid"], ["NEMLIG_MCP_CREDENTIAL_KEY_VERSION", ""],
     ["NEMLIG_MCP_AUTH0_ISSUER", "http://insecure.example/"], ["NEMLIG_MCP_PUBLIC_URL", ""],
@@ -1834,7 +1838,7 @@ test("four-read recovery proof rejects every provider drift dimension without de
       const raw = await run(command, args, options);
       if (command !== "pnpm") return raw;
       if (drift === "worker" && args.includes("deployments")) return deployment(thirdPartyId);
-      if (drift === "config" && args.includes("versions")) return raw.replace('"name":"MCP_DAILY_LIMIT","text":"5000"', '"name":"MCP_DAILY_LIMIT","text":"5001"');
+      if (drift === "config" && args.includes("versions")) return raw.replace('"name":"MCP_TOTAL_TIMEOUT_MS","text":"90000"', '"name":"MCP_TOTAL_TIMEOUT_MS","text":"90001"');
       if (args.includes("instances")) {
         if (drift === "malformed-instance") return "[]";
         if (drift === "instance") return JSON.stringify([{ id: "instance", name: "nemlig-production", state: "running", version: 24 }]);
@@ -1902,7 +1906,7 @@ test("rollback cannot claim the disabled candidate with changed configuration or
     const { deps, root } = await fixture({ failFeatures: true,
       ...(mode === "instance" ? { restoredInstanceRows: [{ id: "instance", name: "nemlig-production", state: "running", version: 24 }] } : {}),
       versionBindings: (values, id) => {
-        if (id === disabledId && ++startingReads > 1 && mode === "config") return values.map((value) => value.name === "MCP_DAILY_LIMIT" ? { ...value, text: "5001" } : value);
+        if (id === disabledId && ++startingReads > 1 && mode === "config") return values.map((value) => value.name === "MCP_TOTAL_TIMEOUT_MS" ? { ...value, text: "90001" } : value);
         return values;
       },
     });
@@ -1920,7 +1924,7 @@ test("failure recovery rechecks earlier disabled or starting configuration befor
     const { deps, root } = await fixture({
       ...(target === disabledId ? { remoteEnableIntentFailure: true } : { driftBeforeEnable: true }),
       versionBindings: (values, id) => id === target && ++reads > 1
-        ? values.map((value) => value.name === "MCP_DAILY_LIMIT" ? { ...value, text: "5001" } : value) : values,
+        ? values.map((value) => value.name === "MCP_TOTAL_TIMEOUT_MS" ? { ...value, text: "90001" } : value) : values,
     });
     try {
       const report = await deployProduction(commit, deps);
@@ -2022,7 +2026,7 @@ test("pending rollback reconciliation denies drift, a running Container, and a c
       }
       const raw = await run(command, args, options);
       if (drift === "worker_revision" && command === "pnpm" && args.includes("versions")) return raw.replace(commit, previousCommit);
-      if (drift === "config" && command === "pnpm" && args.includes("versions")) return raw.replace('"name":"MCP_DAILY_LIMIT","text":"5000"', '"name":"MCP_DAILY_LIMIT","text":"5001"');
+      if (drift === "config" && command === "pnpm" && args.includes("versions")) return raw.replace('"name":"MCP_TOTAL_TIMEOUT_MS","text":"90000"', '"name":"MCP_TOTAL_TIMEOUT_MS","text":"90001"');
       if (drift === "route" && command === "pnpm") return raw;
       return raw;
     };

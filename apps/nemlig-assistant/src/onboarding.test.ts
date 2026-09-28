@@ -12,13 +12,9 @@ const env: CloudflareEnv = {
   NEMLIG_MCP_CREDENTIAL_KEY: secret(2),
   NEMLIG_MCP_CREDENTIAL_KEY_VERSION: "one",
   NEMLIG_MCP_PRINCIPALS: JSON.stringify({
-    schema_version: 1,
-    revision: "family-v1",
-    budgets: {
-      tier0_reserve: { month: 30_000 }, guest_limit: { month: 30_000 },
-      tier1_shed_at: { month: 30_000 }, tier2_shed_at: { month: 30_000 },
-    },
-    principals: [{ subject: "auth0|owner", principal_key: "a".repeat(32), tier: 0, enabled: true, nemlig: { username: "owner@example.test", password: "secret" } }],
+    schema_version: 3,
+    revision: "family-v3", owner_subject: "auth0|owner",
+    principals: [{ subject: "auth0|owner", principal_key: "a".repeat(32), enabled: true }],
   }),
 };
 

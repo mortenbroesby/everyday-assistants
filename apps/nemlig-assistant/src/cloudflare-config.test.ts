@@ -5,8 +5,6 @@ import { FIXED_CONTAINER_NAME, loadGatewayConfig, type CloudflareEnv } from "./c
 
 const validEnv: CloudflareEnv = {
   MCP_ENABLED: "true",
-  MCP_DAILY_LIMIT: "5000",
-  MCP_EXPENSIVE_DAILY_LIMIT: "500",
   MCP_AUTH_TIMEOUT_MS: "5000",
   MCP_CONTROL_TIMEOUT_MS: "3000",
   MCP_TOTAL_TIMEOUT_MS: "90000",
@@ -14,17 +12,13 @@ const validEnv: CloudflareEnv = {
   NEMLIG_MCP_AUTH0_ISSUER: "https://tenant.example.test",
   NEMLIG_MCP_AUTH0_AUDIENCE: "https://mcp.example.test/mcp",
   NEMLIG_MCP_PRINCIPALS: JSON.stringify({
-    schema_version: 1,
-    revision: "family-v1",
-    budgets: {
-      tier0_reserve: { month: 30_000 },
-      guest_limit: { month: 30_000 },
-      tier1_shed_at: { month: 30_000 },
-      tier2_shed_at: { month: 30_000 },
-    },
-    principals: [{ subject: "auth0|owner", principal_key: "a".repeat(32), tier: 0, enabled: true, nemlig: { username: "owner@example.test", password: "secret" } }],
+    schema_version: 3,
+    revision: "family-v3", owner_subject: "auth0|owner",
+    principals: [{ subject: "auth0|owner", principal_key: "a".repeat(32), enabled: true }],
   }),
   NEMLIG_MCP_PUBLIC_URL: "https://mcp.example.test/mcp",
+  NEMLIG_MCP_CREDENTIAL_KEY: Buffer.alloc(32, 1).toString("base64url"),
+  NEMLIG_MCP_CREDENTIAL_KEY_VERSION: "one",
 };
 
 interface WranglerDeployment {
@@ -37,8 +31,8 @@ interface WranglerDeployment {
 
 test("Cloudflare safety configuration is explicit, bounded, and internally consistent", () => {
   const config = loadGatewayConfig(validEnv);
-  assert.equal(config.dailyLimit, 5000);
-  assert.equal(config.expensiveDailyLimit, 500);
+  assert.equal("dailyLimit" in config, false);
+  assert.equal("expensiveDailyLimit" in config, false);
   assert.equal(config.totalTimeoutMs, 90_000);
   assert.equal(config.controlTimeoutMs, 3_000);
   assert.equal(config.authTimeoutMs, 5_000);
@@ -46,45 +40,24 @@ test("Cloudflare safety configuration is explicit, bounded, and internally consi
   assert.equal(config.issuer.href, "https://tenant.example.test/");
   assert.equal(config.principalPolicy.principals[0]?.subject, "auth0|owner");
   assert.equal(FIXED_CONTAINER_NAME, "nemlig-production");
-  assert.throws(() => loadGatewayConfig({ ...validEnv, MCP_DAILY_LIMIT: undefined }), /MCP_DAILY_LIMIT is required/u);
   assert.throws(() => loadGatewayConfig({ ...validEnv, MCP_TOTAL_TIMEOUT_MS: undefined }), /MCP_TOTAL_TIMEOUT_MS is required/u);
   assert.throws(() => loadGatewayConfig({ ...validEnv, MCP_CONTROL_TIMEOUT_MS: undefined }), /MCP_CONTROL_TIMEOUT_MS is required/u);
-  assert.throws(() => loadGatewayConfig({ ...validEnv, MCP_DAILY_LIMIT: "0" }), /MCP_DAILY_LIMIT/u);
-  assert.throws(() => loadGatewayConfig({ ...validEnv, MCP_DAILY_LIMIT: "100001" }), /MCP_DAILY_LIMIT/u);
-  assert.throws(() => loadGatewayConfig({ ...validEnv, MCP_EXPENSIVE_DAILY_LIMIT: "5001" }), /MCP_EXPENSIVE_DAILY_LIMIT/u);
   assert.throws(() => loadGatewayConfig({ ...validEnv, MCP_BACKEND_TIMEOUT_MS: "120001" }), /MCP_BACKEND_TIMEOUT_MS/u);
   assert.throws(() => loadGatewayConfig({ ...validEnv, MCP_TOTAL_TIMEOUT_MS: "5000" }), /MCP_AUTH_TIMEOUT_MS/u);
   assert.throws(() => loadGatewayConfig({ ...validEnv, MCP_CONTROL_TIMEOUT_MS: "30000" }), /MCP_CONTROL_TIMEOUT_MS/u);
   assert.throws(() => loadGatewayConfig({ ...validEnv, NEMLIG_MCP_PUBLIC_URL: "http://mcp.example.test/mcp" }), /HTTPS/u);
   assert.throws(() => loadGatewayConfig({ ...validEnv, NEMLIG_MCP_PRINCIPALS: undefined }), /NEMLIG_MCP_PRINCIPALS/u);
-  const policy = JSON.parse(validEnv.NEMLIG_MCP_PRINCIPALS!) as { budgets: Record<string, { month: number }> };
-  assert.throws(() => loadGatewayConfig({
-    ...validEnv,
-    NEMLIG_MCP_PRINCIPALS: JSON.stringify({
-      ...policy,
-      budgets: {
-        tier0_reserve: { month: 155_001 }, guest_limit: { month: 155_001 },
-        tier1_shed_at: { month: 155_001 }, tier2_shed_at: { month: 155_001 },
-      },
-    }),
-  }), /global safety limits/u);
+
 });
 
-test("schema-v2 requires only the versioned encryption secret", () => {
-  const legacy = JSON.parse(validEnv.NEMLIG_MCP_PRINCIPALS!) as { budgets: unknown };
-  const v2 = {
-    schema_version: 2, revision: "family-v2", budgets: legacy.budgets,
-    organization: { id: "org_abcdefgh" }, invitation: { default_tier: 1 },
-    owner: { subject: "auth0|owner", principal_key: "a".repeat(32), tier: 0, enabled: true },
-  };
-  const configured = {
-    ...validEnv,
-    NEMLIG_MCP_PRINCIPALS: JSON.stringify(v2),
-    NEMLIG_MCP_CREDENTIAL_KEY: Buffer.alloc(32, 1).toString("base64url"),
-    NEMLIG_MCP_CREDENTIAL_KEY_VERSION: "one",
-  };
-  assert.equal(loadGatewayConfig(configured).principalPolicy.schema_version, 2);
-  assert.throws(() => loadGatewayConfig({ ...configured, NEMLIG_MCP_CREDENTIAL_KEY: undefined }), /encryption configuration/u);
+test("current policy requires a versioned encryption secret and rejects old policy versions", () => {
+  assert.equal(loadGatewayConfig(validEnv).principalPolicy.schema_version, 3);
+  assert.throws(() => loadGatewayConfig({ ...validEnv, NEMLIG_MCP_CREDENTIAL_KEY: undefined }), /encryption configuration/u);
+  assert.throws(() => loadGatewayConfig({ ...validEnv, NEMLIG_MCP_CREDENTIAL_KEY_VERSION: undefined }), /encryption configuration/u);
+  const policy = JSON.parse(validEnv.NEMLIG_MCP_PRINCIPALS!);
+  for (const schema_version of [1, 2]) assert.throws(() => loadGatewayConfig({
+    ...validEnv, NEMLIG_MCP_PRINCIPALS: JSON.stringify({ ...policy, schema_version }),
+  }), /NEMLIG_MCP_PRINCIPALS/u);
 });
 
 test("Wrangler configuration fixes both environments to one disabled EU lite Container", async () => {
@@ -97,7 +70,7 @@ test("Wrangler configuration fixes both environments to one disabled EU lite Con
     assert.deepEqual(deployment.observability, { enabled: true, head_sampling_rate: 1 });
     assert.equal(deployment.vars.MCP_ENABLED, "false");
     assert.equal(deployment.vars.MCP_CREDENTIAL_ONBOARDING_ENABLED, "false");
-    assert.equal(Object.keys(deployment.vars).some((name) => name.endsWith("RATE_LIMIT")), false);
+    assert.equal(Object.keys(deployment.vars).some((name) => name.endsWith("RATE_LIMIT") || name.includes("DAILY_LIMIT")), false);
     assert.equal(deployment.vars.MCP_TOTAL_TIMEOUT_MS, "90000");
     assert.equal(deployment.vars.MCP_CONTROL_TIMEOUT_MS, "3000");
     assert.equal(deployment.vars.MCP_AUTH_TIMEOUT_MS, "5000");

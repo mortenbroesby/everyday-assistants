@@ -1,51 +1,103 @@
-## MODIFIED Requirements
+## REMOVED Requirements
 
 ### Requirement: Family-reserved tier admission
 
-The system SHALL retain Tier 0, Tier 1 and Tier 2 as identity/reporting labels
-and SHALL apply the same monthly allowance to eligible principals in every tier.
-It SHALL NOT enforce principal-minute thresholds, reserve capacity for one tier,
-or shed one eligible tier before another. Every tier SHALL remain subordinate to
-the retained global daily, expensive-operation and emergency cost ceilings.
+**Reason**: The owner requests family-only operation without tiers or per-person budgets.
+**Migration**: Remove tier/budget fields from private configuration before a
+separately approved release. No tier aliases or legacy policy parser remain.
 
-#### Scenario: Two tiers have equal usage
+### Requirement: Deterministic bounded usage forecast
 
-- **WHEN** eligible principals in different tiers have equal monthly usage
-- **THEN** the admission decision is equal for both
+**Reason**: Shared household admission does not use tier forecasts or month budgets.
+**Migration**: Delete forecasts and all usage counters; preserve unused stored
+records without reading, converting or deleting them.
 
-#### Scenario: A principal reaches the shared allowance
+### Requirement: Private aggregate evidence
 
-- **WHEN** a principal reaches the configured monthly allowance
-- **THEN** it is denied before backend wake with an explicit monthly-cost reason
-  without changing another principal's independent allowance
+**Reason**: Family operation needs no count-based admission or usage reporting.
+**Migration**: Delete obsolete usage/reset endpoints and tier reports; retain
+privacy-safe request/lifecycle diagnostics.
 
-#### Scenario: Global headroom is exhausted
+## MODIFIED Requirements
 
-- **WHEN** aggregate demand reaches a global breaker or cost ceiling
-- **THEN** the global safeguard denies work without a tier exception
+### Requirement: Private fail-closed principal policy
 
-#### Scenario: Burst exceeds former principal-minute allowance
+The service SHALL authorize only explicitly configured enabled family identities
+in one current strict private policy with opaque principal keys and an explicit
+owner subject. It SHALL NOT accept old policy versions, tiers, budgets, inline
+credentials or dynamic unknown-identity fallback. Every member SHALL use their
+own current encrypted credential record. The owner SHALL be one enabled member,
+not implicitly the first array entry. No private values SHALL be committed.
 
-- **WHEN** eligible requests exceed the former principal-minute allowance while
-  retained cost controls permit them
-- **THEN** requests remain admitted regardless of tier or minute counts
+#### Scenario: Unknown principal authenticates
 
-#### Scenario: Monthly tier allowances disagree
+- **WHEN** a valid identity is absent from the family policy
+- **THEN** it is rejected before backend wake or provider access
 
-- **WHEN** configuration supplies unequal monthly allowances for tiers
-- **THEN** configuration validation fails instead of preserving ordered shedding
+#### Scenario: Invitees are not configured
 
-#### Scenario: Guest demand reaches the family reserve
+- **WHEN** the private configuration names only the owner
+- **THEN** only that identity is eligible; no guest class or implicit enrollment exists
 
-- **WHEN** Tier 1 or Tier 2 demand reaches capacity formerly reserved for Tier 0
-- **THEN** the same monthly and global cost allowances apply without a reserve
+#### Scenario: Policy is invalid
 
-#### Scenario: Experimental threshold is reached first
+- **WHEN** policy is old, absent, malformed, duplicated, or lacks one enabled exact owner
+- **THEN** configuration fails closed without another member's identity or credentials
 
-- **WHEN** configuration supplies a lower Tier 2 monthly threshold
-- **THEN** validation fails instead of shedding Tier 2 differently
+#### Scenario: Configured member has no invitation registry record
 
-#### Scenario: Trusted threshold is reached
+- **WHEN** the exact owner manages a configured family member without an old
+  invitation registry record
+- **THEN** the member is present in owner controls and disable/revoke persists
+  using only that member's configured subject/key; unknown targets cannot update
 
-- **WHEN** configuration supplies a different Tier 1 monthly threshold
-- **THEN** validation fails instead of preserving ordered tier shedding
+#### Scenario: Disable occurs during credential validation
+
+- **WHEN** owner disable or revoke commits while credential validation is pending
+- **THEN** the later credential commit fails without restoring access or credentials
+
+#### Scenario: Credential-free profile discovery during active shopping
+
+- **WHEN** an authorized profile request lacks a provider credential envelope
+- **THEN** profile discovery does not discard the credential-bound current review
+  or submission state; genuine credential rotation still invalidates stale state
+
+### Requirement: Global safeguards override all tiers
+
+All configured family members SHALL remain
+subject to the manual kill switch, fixed Container capacity, authentication,
+deadlines, bounded work/retries and exact protected provider-write approval.
+The service SHALL NOT retain tiers, category caps, reserve allocations or forecasts.
+Owner-only administrative permission SHALL be checked against the configured
+owner identity rather than a usage tier.
+
+#### Scenario: Global breaker or kill switch is active
+
+- **WHEN** a member requests work while the manual kill switch denies it
+- **THEN** no membership label or owner privilege bypasses admission
+
+#### Scenario: Tier totals are misconfigured
+
+- **WHEN** configuration contains removed tiers or budget fields
+- **THEN** strict validation rejects it without a compatibility conversion
+
+#### Scenario: Non-owner attempts administrative access
+
+- **WHEN** another authenticated family member requests owner-only operations
+- **THEN** authorization rejects them without disclosing identities or shopping data
+
+### Requirement: Invitee activation requires isolated acceptance
+
+No additional family identity SHALL be enabled without exact configured identity,
+independent encrypted credentials and acceptance of isolation and denial-before-
+wake. Tier ordering is not an acceptance gate because tiers do not exist.
+
+#### Scenario: New invitee is prepared
+
+- **WHEN** the owner prepares another disabled family identity
+- **THEN** it remains unable to shop until isolated acceptance and explicit enablement
+
+#### Scenario: Acceptance cannot prove isolation
+
+- **WHEN** identity/account/session/approval isolation is missing or uncertain
+- **THEN** that identity remains disabled and prior configured access is preserved

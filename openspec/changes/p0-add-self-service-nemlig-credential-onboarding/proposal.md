@@ -1,3 +1,12 @@
+## Superseded policy boundary
+
+The tier/budget, legacy-policy migration and dynamic enrollment clauses below
+are historical research, not current implementation instructions.
+`remove-nemlig-local-rate-limits` supersedes them with one strict schema-v3
+configured-family policy, encrypted credentials and no usage gates or compatibility.
+Remaining onboarding work must be re-baselined separately; no new Auth0 flow,
+private migration or invitation is authorized by this repository cleanup.
+
 ## Why
 
 Invited users currently cannot enroll themselves or provide and rotate their own Nemlig credentials: the operator must manually copy an Auth0 subject into policy and place every username and password inside one Cloudflare secret. That forces unsafe credential handoff and brittle identity setup, so the private tiered-access design cannot safely enable the user's boss.

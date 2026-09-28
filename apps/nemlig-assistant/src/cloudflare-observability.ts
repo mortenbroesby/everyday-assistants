@@ -1,22 +1,18 @@
 import { z } from "zod";
-import { ADMISSION_REASONS } from "./cloudflare-usage.js";
 
 const routeSchema = z.enum([
   "health",
   "revision",
   "oauth_metadata",
   "mcp",
-  "admin_usage",
-  "admin_reset",
   "unknown",
 ]);
 const methodSchema = z.enum(["GET", "POST", "DELETE", "OTHER"]);
-const operationSchema = z.enum(["protocol", "profile", "normal", "expensive", "none"]);
-const tierSchema = z.enum(["0", "1", "2", "none"]);
+const operationSchema = z.enum(["protocol", "profile", "useful", "none"]);
 const denialReasonSchema = z.enum([
   "none", "mcp_disabled", "configuration_invalid", "request_invalid",
   "origin_not_allowed", "authentication_required", "authentication_failed",
-  "principal_not_allowed", "credential_required", ...ADMISSION_REASONS,
+  "principal_not_allowed", "credential_required",
 ]);
 const outcomeSchema = z.enum([
   "completed",
@@ -28,8 +24,7 @@ const outcomeSchema = z.enum([
   "authentication_timeout",
   "authentication_unavailable",
   "control_timeout",
-  "capacity_rejected",
-  "breaker_rejected",
+  "connection_required",
   "backend_timeout",
   "backend_rejected",
   "request_timeout",
@@ -37,14 +32,13 @@ const outcomeSchema = z.enum([
 ]);
 
 export const gatewayRequestEventSchema = z.object({
-  schema_version: z.literal(1),
+  schema_version: z.literal(2),
   event: z.literal("gateway_request_terminal"),
   request_id: z.string().uuid(),
   revision: z.string().min(1).max(128),
   route: routeSchema,
   method: methodSchema,
   operation: operationSchema,
-  tier: tierSchema,
   denial_reason: denialReasonSchema,
   outcome: outcomeSchema,
   status: z.number().int().min(100).max(599),
@@ -65,8 +59,6 @@ export function classifyGatewayRoute(pathname: string): GatewayRoute {
   if (pathname === "/revision") return "revision";
   if (pathname.startsWith("/.well-known/oauth-protected-resource")) return "oauth_metadata";
   if (pathname === "/mcp") return "mcp";
-  if (pathname === "/admin/usage") return "admin_usage";
-  if (pathname === "/admin/reset-breaker") return "admin_reset";
   return "unknown";
 }
 

@@ -98,10 +98,8 @@ The production profile is designed for private, low-volume family use:
 
 - Auth0 authenticates before useful requests reach the backend.
 - One fixed Cloudflare Container can sleep when idle and cannot horizontally autoscale.
-- No app-owned per-minute MCP or credential-validation throttles. Global daily
-  and expensive-operation caps, equal per-principal monthly allowances and the
-  emergency breaker remain; provider/platform limits are not bypassed.
-- An automatic circuit breaker fails closed when a quota is exceeded.
+- No app-owned request throttles, daily/monthly quotas, usage tiers or counters.
+  Provider/platform limits are not bypassed; there is no app-enforced billing cap.
 - `MCP_ENABLED` provides an immediate manual kill switch.
 - Explicit timeouts and bounded retries prevent failed work from running forever.
 
@@ -169,7 +167,7 @@ are required; provider basket access is denied by the fixture.
 Product disclosures, navigation and ordinary local edits do not fetch Nemlig;
 adding new exact products hydrates only those products, and
 explicit alternatives searches hydrate up to ten results with three concurrent
-reads and existing request limits.
+reads and bounded provider deadlines/retries.
 
 When you are happy with Ready, choose **Send to Nemlig basket**.
 This prepares fresh exact product prices and quantities and shows the separate
@@ -316,15 +314,15 @@ in [Cloudflare operations](../../docs/cloudflare-operations.md). It is the only
 supported ChatGPT deployment. The CLI and stdio MCP server remain available for
 direct local development and use; they are not a ChatGPT hosting fallback.
 
-Hosted identity is resolved from the validated Auth0 subject. Schema v2 keeps
-the static Tier 0 owner and tier budgets in the encrypted
-`NEMLIG_MCP_PRINCIPALS` policy while legacy invitation records remain a separate
-capability; this application no longer performs that Auth0 flow. Each user
-has independent sealed credentials, sessions and basket proposals; unknown or disabled identities are rejected before Container
-wake. Tier labels remain for identity and reporting, but all three tiers use
-the same per-principal allowances without reserved capacity or ordered
-shedding. The global kill switch, breaker, quotas, deadlines, and one-Container
-ceiling still override every tier.
+Hosted identity is resolved from the validated Auth0 subject. The only supported
+private policy is schema v3: revision, explicit `owner_subject`, and configured
+family identities with opaque keys and enabled flags. Old schemas, inline
+credentials, tiers and budgets are rejected without compatibility adapters.
+Each member has independent sealed credentials, sessions and basket proposals;
+unknown or disabled identities are rejected before backend work. There are no
+app-local rate limits, daily/monthly quotas or usage counters. The manual kill
+switch, deadlines, bounded retries and one-Container ceiling remain; none is a
+hard billing cap. External provider/platform limits still apply.
 
 The authenticated `get_profile` tool is provider-independent: Auth0 validation,
 principal authorization, MCP initialization, and profile discovery do not need a

@@ -6,12 +6,8 @@ import { parsePrincipalPolicy } from "./principal-policy.js";
 
 const ownerSubject = "auth0|owner";
 const principalPolicy = parsePrincipalPolicy(JSON.stringify({
-  schema_version: 1, revision: "family-v1",
-  budgets: {
-    tier0_reserve: { month: 30_000 }, guest_limit: { month: 30_000 },
-    tier1_shed_at: { month: 30_000 }, tier2_shed_at: { month: 30_000 },
-  },
-  principals: [{ subject: ownerSubject, principal_key: "a".repeat(32), tier: 0, enabled: true, nemlig: { username: "owner@example.test", password: "secret" } }],
+  schema_version: 3, revision: "family-v3", owner_subject: "auth0|owner",
+  principals: [{ subject: ownerSubject, principal_key: "a".repeat(32), enabled: true }],
 }));
 
 const config: Auth0Config = {
@@ -24,6 +20,8 @@ const config: Auth0Config = {
   revision: "test-revision",
   host: "127.0.0.1",
   port: 3333,
+  credentialKey: Buffer.alloc(32, 1).toString("base64url"),
+  credentialKeyVersion: "one",
 };
 
 test("Auth0 verifier returns the validated subject and enforces audience, issuer, signature, expiry, and scope", async () => {
@@ -99,6 +97,8 @@ test("HTTP auth configuration defaults to loopback and allows only the Container
     NEMLIG_MCP_AUTH0_ISSUER: "https://tenant.example.test",
     NEMLIG_MCP_AUTH0_AUDIENCE: config.audience,
     NEMLIG_MCP_PRINCIPALS: JSON.stringify(principalPolicy),
+    NEMLIG_MCP_CREDENTIAL_KEY: config.credentialKey,
+    NEMLIG_MCP_CREDENTIAL_KEY_VERSION: config.credentialKeyVersion,
     NEMLIG_MCP_PUBLIC_URL: config.publicUrl.href,
   });
   assert.equal(loaded.issuer.href, config.issuer.href);
@@ -108,12 +108,16 @@ test("HTTP auth configuration defaults to loopback and allows only the Container
     NEMLIG_MCP_AUTH0_ISSUER: config.issuer.href,
     NEMLIG_MCP_AUTH0_AUDIENCE: config.audience,
     NEMLIG_MCP_PRINCIPALS: JSON.stringify(principalPolicy),
+    NEMLIG_MCP_CREDENTIAL_KEY: config.credentialKey,
+    NEMLIG_MCP_CREDENTIAL_KEY_VERSION: config.credentialKeyVersion,
     NEMLIG_MCP_PUBLIC_URL: "http://127.0.0.1:3333/mcp",
   }).host, "127.0.0.1");
   assert.equal(loadAuth0Config({
     NEMLIG_MCP_AUTH0_ISSUER: config.issuer.href,
     NEMLIG_MCP_AUTH0_AUDIENCE: config.audience,
     NEMLIG_MCP_PRINCIPALS: JSON.stringify(principalPolicy),
+    NEMLIG_MCP_CREDENTIAL_KEY: config.credentialKey,
+    NEMLIG_MCP_CREDENTIAL_KEY_VERSION: config.credentialKeyVersion,
     NEMLIG_MCP_PUBLIC_URL: config.publicUrl.href,
     NEMLIG_MCP_HTTP_HOST: "0.0.0.0",
   }).host, "0.0.0.0");
@@ -121,6 +125,8 @@ test("HTTP auth configuration defaults to loopback and allows only the Container
     NEMLIG_MCP_AUTH0_ISSUER: config.issuer.href,
     NEMLIG_MCP_AUTH0_AUDIENCE: config.audience,
     NEMLIG_MCP_PRINCIPALS: JSON.stringify(principalPolicy),
+    NEMLIG_MCP_CREDENTIAL_KEY: config.credentialKey,
+    NEMLIG_MCP_CREDENTIAL_KEY_VERSION: config.credentialKeyVersion,
     NEMLIG_MCP_PUBLIC_URL: config.publicUrl.href,
     NEMLIG_MCP_HTTP_HOST: "example.test",
   }), /NEMLIG_MCP_HTTP_HOST/u);
@@ -128,12 +134,16 @@ test("HTTP auth configuration defaults to loopback and allows only the Container
     NEMLIG_MCP_AUTH0_ISSUER: config.issuer.href,
     NEMLIG_MCP_AUTH0_AUDIENCE: config.audience,
     NEMLIG_MCP_PRINCIPALS: JSON.stringify(principalPolicy),
+    NEMLIG_MCP_CREDENTIAL_KEY: config.credentialKey,
+    NEMLIG_MCP_CREDENTIAL_KEY_VERSION: config.credentialKeyVersion,
     NEMLIG_MCP_PUBLIC_URL: "http://example.test:3333/mcp",
   }), /loopback/u);
   assert.throws(() => loadAuth0Config({
     NEMLIG_MCP_AUTH0_ISSUER: "http://tenant.example.test",
     NEMLIG_MCP_AUTH0_AUDIENCE: config.audience,
     NEMLIG_MCP_PRINCIPALS: JSON.stringify(principalPolicy),
+    NEMLIG_MCP_CREDENTIAL_KEY: config.credentialKey,
+    NEMLIG_MCP_CREDENTIAL_KEY_VERSION: config.credentialKeyVersion,
     NEMLIG_MCP_PUBLIC_URL: config.publicUrl.href,
   }), /HTTPS/u);
 });
@@ -143,6 +153,8 @@ test("service acceptance is disabled by default and requires its fixed client ID
     NEMLIG_MCP_AUTH0_ISSUER: config.issuer.href,
     NEMLIG_MCP_AUTH0_AUDIENCE: config.audience,
     NEMLIG_MCP_PRINCIPALS: JSON.stringify(principalPolicy),
+    NEMLIG_MCP_CREDENTIAL_KEY: config.credentialKey,
+    NEMLIG_MCP_CREDENTIAL_KEY_VERSION: config.credentialKeyVersion,
     NEMLIG_MCP_PUBLIC_URL: config.publicUrl.href,
   };
   assert.equal(loadAuth0Config(env).serviceAcceptance, undefined);
@@ -150,6 +162,22 @@ test("service acceptance is disabled by default and requires its fixed client ID
   assert.deepEqual(loadAuth0Config({
     ...env, NEMLIG_MCP_SERVICE_ACCEPTANCE_ENABLED: "true", NEMLIG_MCP_SERVICE_CLIENT_ID: "service-client",
   }).serviceAcceptance, { clientId: "service-client" });
+});
+
+test("every family auth configuration requires versioned encryption, never inline credentials", () => {
+  const env = {
+    NEMLIG_MCP_AUTH0_ISSUER: config.issuer.href,
+    NEMLIG_MCP_AUTH0_AUDIENCE: config.audience,
+    NEMLIG_MCP_PRINCIPALS: JSON.stringify(principalPolicy),
+    NEMLIG_MCP_PUBLIC_URL: config.publicUrl.href,
+    NEMLIG_MCP_CREDENTIAL_KEY: config.credentialKey,
+    NEMLIG_MCP_CREDENTIAL_KEY_VERSION: config.credentialKeyVersion,
+  };
+  assert.throws(() => loadAuth0Config({ ...env, NEMLIG_MCP_CREDENTIAL_KEY: undefined }), /encryption configuration/u);
+  assert.throws(() => loadAuth0Config({ ...env, NEMLIG_MCP_CREDENTIAL_KEY_VERSION: undefined }), /encryption configuration/u);
+  for (const schema_version of [1, 2]) assert.throws(() => loadAuth0Config({ ...env,
+    NEMLIG_MCP_PRINCIPALS: JSON.stringify({ ...principalPolicy, schema_version }),
+  }), /NEMLIG_MCP_PRINCIPALS/u);
 });
 
 test("Auth0 metadata failure is fail-closed", async () => {

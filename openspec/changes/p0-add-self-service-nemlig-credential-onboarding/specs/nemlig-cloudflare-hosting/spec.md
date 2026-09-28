@@ -1,3 +1,8 @@
+Historical delta: tier/budget and legacy-policy clauses below are superseded by
+`remove-nemlig-local-rate-limits` and its synced durable family contract. Do not
+apply this older delta over that implementation; remaining onboarding needs
+its own coherent re-baseline.
+
 ## MODIFIED Requirements
 
 ### Requirement: Authentication protects backend wake-up

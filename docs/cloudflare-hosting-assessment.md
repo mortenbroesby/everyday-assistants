@@ -5,6 +5,11 @@ authenticated read and basket-add flows verified
 
 Evidence checked: 2026-09-01
 
+Historical assessment: its quoted pricing and traffic projections are dated
+evidence, not a current billing promise. Version 5.0.0 removes all app-local
+operation quotas, tier budgets and the daily breaker; see
+[current operations](cloudflare-operations.md#family-only-configuration-boundary-500).
+
 Production resources: one Worker, two fixed Durable Object classes, one `lite`
 Container application capped at one instance, and the custom hostname
 `nemlig-mcp.broesby.dk`
@@ -164,17 +169,9 @@ staging infrastructure for this family-only service.
   Disabled requests return 503 before auth, Durable Object, Container, or Nemlig.
 - Authentication and owner/scope checks happen before the Durable Object. Invalid
   Internet traffic cannot wake the Container.
-- The fixed object atomically admits each useful operation against exact
-  per-owner rate windows and daily normal/expensive quotas before Container use.
-  Do not use Cloudflare's permissive, per-location Rate Limiting binding for this
-  strict global accounting.
-- Defaults remain 5,000 useful operations/day, 500 expensive operations/day,
-  60 normal/minute/owner, and 10 expensive/minute/owner until an MCP session
-  measurement justifies changing them.
-- Exceeding either daily quota opens the breaker. Later useful operations fail
-  closed without touching the Container. Store trip time and an enumerated
-  reason. Reset on the next UTC usage period or through an authenticated manual
-  reset.
+- Current admission verifies independent encrypted credentials and exact
+  principal/revision/generation binding. There is no operation accounting,
+  automatic daily breaker or app-local request limit.
 - Configure a thin Worker CPU limit and the lowest measured subrequest limit that
   supports Auth0 plus the fixed admission and backend calls. Configure an overall
   backend timeout.
@@ -188,9 +185,9 @@ staging infrastructure for this family-only service.
 Cloudflare's current Workers Paid minimum is **USD 5/month per account**. It
 includes 10 million Worker requests, 30 million Worker CPU milliseconds, 1
 million Durable Object requests, and the initial Container allowances. At the
-proposed 5,000-operation daily ceiling, useful family traffic is only about
+historically modeled 5,000-operation/day traffic level, useful family traffic was about
 150,000 Worker/object operations per 30-day month, before minor protocol
-overhead, and remains within the request allowances.
+overhead. This is a historical estimate, not an enforced ceiling or current cost guarantee.
 
 The `lite` Container has 0.25 GiB memory, 1/16 vCPU, and 2 GB disk. The included
 25 GiB-hours of memory and 200 GB-hours of disk each cover about **100 awake
@@ -221,8 +218,8 @@ correspond to roughly USD 15 total before tax and other fixed charges.
 
 - Requests rejected before the Durable Object still consume Worker request/CPU
   allowance. The manual switch prevents backend cost, not all Worker billing.
-- A compromised valid owner token could consume the configured quotas; exact
-  rate limits and the breaker bound the damage but do not make cost zero.
+- A compromised valid owner token can generate ongoing authenticated traffic;
+  fixed capacity and bounded individual requests do not cap aggregate cost.
 - A Container that fails to sleep increases memory/disk duration. `max_instances
   = 1`, wake logging, and the manual switch are the primary controls.
 - Falling back from `lite` to `basic`, high CPU, excessive Auth0/JWKS fetches,

@@ -5,14 +5,14 @@ import type { OAuthTokenVerifier } from "@modelcontextprotocol/express";
 import { DurableObject } from "cloudflare:workers";
 import { createAuth0Verifier, fetchAuth0Metadata, SERVICE_ACCEPTANCE_SCOPE, type Auth0Config } from "./auth0.js";
 import { FIXED_CONTAINER_NAME, loadGatewayConfig, type CloudflareEnv, type GatewayConfig } from "./cloudflare-config.js";
-import { attachAdmissionCredential, handleGatewayRequest, type GatewayDeadline, type OperationClass } from "./cloudflare-gateway.js";
+import { attachAdmissionCredential, handleGatewayRequest, type GatewayDeadline } from "./cloudflare-gateway.js";
 import { parseGatewayRequestEvent, type GatewayRequestEvent } from "./cloudflare-observability.js";
-import { resetUsage, type AdmissionLimits, type AdmissionPrincipal, type AdmissionResult, type TierAdmissionPolicy, type UsageState } from "./cloudflare-usage.js";
+import type { AdmissionPrincipal, AdmissionResult, AdmissionPolicy } from "./principal-records.js";
 import { findEnabledPrincipal, type Principal } from "./principal-policy.js";
-import { admitPrincipalRequest, consumePortalCsrf, findPrincipalRecord, getCredentialRecord, listPrincipalRecords, registerInvitedPrincipal, replaceCredentialRecord, revokeCredentialRecord, setPrincipalStatus } from "./principal-records.js";
+import { admitPrincipalRequest, consumePortalCsrf, findPrincipalRecord, getCredentialRecord, replaceCredentialRecord, revokeCredentialRecord, setPrincipalStatus } from "./principal-records.js";
 import { encryptCredentials } from "./credential-envelope.js";
 import type { Credentials } from "./config.js";
-import { handleOnboardingRequest, loadOnboardingConfig } from "./onboarding.js";
+import { handleOnboardingRequest } from "./onboarding.js";
 
 interface Env extends CloudflareEnv {
   NEMLIG_MCP_CONTAINER: DurableObjectNamespace<NemligMcpContainer>;
@@ -34,6 +34,8 @@ const auth0Config = (config: GatewayConfig): Auth0Config => ({
   issuer: config.issuer,
   audience: config.audience,
   principalPolicy: config.principalPolicy,
+  credentialKey: config.credentialKey,
+  credentialKeyVersion: config.credentialKeyVersion,
   requiredScope: config.requiredScope,
   ...(config.serviceAcceptance ? { serviceAcceptance: config.serviceAcceptance } : {}),
   publicUrl: config.publicUrl,
@@ -75,10 +77,9 @@ const requestEvent = (event: GatewayRequestEvent): void => {
 };
 
 const lifecycleEvent = (
-  event: "container_started" | "container_stopped" | "container_error" | "breaker_tripped" | "breaker_reset",
-  reason?: "daily_limit" | "expensive_daily_limit",
+  event: "container_started" | "container_stopped" | "container_error",
 ): void => {
-  console.log(JSON.stringify({ schema_version: 1, event, ...(reason ? { reason } : {}) }));
+  console.log(JSON.stringify({ schema_version: 1, event }));
 };
 
 export class NemligMcpContainer extends Container<Env> {
@@ -113,66 +114,58 @@ export class NemligMcpContainer extends Container<Env> {
   }
 
   async admit(
-    operation: OperationClass,
-    limits: AdmissionLimits,
     principal: AdmissionPrincipal,
-    policy: TierAdmissionPolicy,
+    policy: AdmissionPolicy,
     credentialRequired: boolean,
   ): Promise<AdmissionResult> {
-    const result = await admitPrincipalRequest(this.ctx.storage, operation, limits, principal, policy, credentialRequired);
-    if (!result.admitted && (result.reason === "daily_limit" || result.reason === "expensive_daily_limit")) {
-      lifecycleEvent("breaker_tripped", result.reason);
-    }
-    return result;
+    return admitPrincipalRequest(this.ctx.storage, principal, policy, credentialRequired);
   }
 
-  async principal(subject: string): Promise<Principal | undefined> {
+  async principal(configured: Principal): Promise<Principal | undefined> {
+    const record = await findPrincipalRecord(this.ctx.storage, configured.subject);
+    if (record && (record.status !== "enabled" || record.principal_key !== configured.principal_key)) return undefined;
+    return configured;
+  }
+
+  async principalStatus(subject: string): Promise<"owner" | "pending" | "enabled" | undefined> {
+    const policy = loadGatewayConfig(this.env).principalPolicy;
+    const configured = findEnabledPrincipal(policy, subject);
+    if (!configured) return undefined;
+    if (subject === policy.owner_subject) return "owner";
     const record = await findPrincipalRecord(this.ctx.storage, subject);
-    return record?.status === "enabled" ? {
-      subject: record.subject,
-      principal_key: record.principal_key,
-      tier: record.tier,
-      enabled: true,
-    } : undefined;
+    if (record && record.principal_key !== configured.principal_key) return undefined;
+    return !record ? "enabled" : record.status === "pending" || record.status === "enabled" ? record.status : undefined;
   }
 
-  async principalStatus(subject: string, ownerSubject: string): Promise<"owner" | "pending" | "enabled" | undefined> {
-    if (subject === ownerSubject) return "owner";
+  private async managementPrincipal(subject: string): Promise<Principal | undefined> {
+    const policy = loadGatewayConfig(this.env).principalPolicy;
+    const configured = findEnabledPrincipal(policy, subject);
+    if (!configured) return undefined;
+    if (subject === policy.owner_subject) return configured;
     const record = await findPrincipalRecord(this.ctx.storage, subject);
-    return record?.status === "pending" || record?.status === "enabled" ? record.status : undefined;
+    if (record && (record.principal_key !== configured.principal_key
+      || (record.status !== "pending" && record.status !== "enabled"))) return undefined;
+    return configured;
   }
 
-  async register(input: { subject: string; organizationId: string; invitationIdHash: string }): Promise<void> {
-    await registerInvitedPrincipal(this.ctx.storage, input);
-  }
-
-  private async managementPrincipal(subject: string, owner: Principal): Promise<Principal | undefined> {
-    if (subject === owner.subject) return owner;
-    const record = await findPrincipalRecord(this.ctx.storage, subject);
-    return record && (record.status === "pending" || record.status === "enabled") ? {
-      subject: record.subject, principal_key: record.principal_key, tier: record.tier, enabled: record.status === "enabled",
-    } : undefined;
-  }
-
-  async connectionStatus(subject: string, owner: Principal): Promise<boolean> {
-    const principal = await this.managementPrincipal(subject, owner);
+  async connectionStatus(subject: string): Promise<boolean> {
+    const principal = await this.managementPrincipal(subject);
     return Boolean(principal && await getCredentialRecord(this.ctx.storage, principal));
   }
 
   async replaceCredential(
     subject: string,
-    owner: Principal,
     credentials: Credentials,
-    input: { policyRevision: string; keyVersion: string },
   ): Promise<"connected" | "invalid"> {
-    const principal = await this.managementPrincipal(subject, owner);
+    const principal = await this.managementPrincipal(subject);
     if (!principal || !this.env.NEMLIG_MCP_CREDENTIAL_KEY) return "invalid";
+    const config = loadGatewayConfig(this.env);
     const current = await getCredentialRecord(this.ctx.storage, principal);
     const generation = (current?.generation ?? 0) + 1;
     const envelope = await encryptCredentials(credentials, {
       principalKey: principal.principal_key,
-      policyRevision: input.policyRevision,
-      keyVersion: input.keyVersion,
+      policyRevision: config.principalPolicy.revision,
+      keyVersion: config.credentialKeyVersion,
       generation,
     }, this.env.NEMLIG_MCP_CREDENTIAL_KEY);
     const headers = {
@@ -184,17 +177,20 @@ export class NemligMcpContainer extends Container<Env> {
     const validation = await this.fetch(new Request("http://container.internal/__credential-validation", { method: "POST", headers }));
     if (!validation.ok) return "invalid";
     await replaceCredentialRecord(this.ctx.storage, principal, envelope, true);
-    if (subject !== owner.subject) await setPrincipalStatus(this.ctx.storage, subject, "enabled", true);
     return "connected";
   }
 
-  async revokeCredential(subject: string, owner: Principal): Promise<void> {
-    const principal = await this.managementPrincipal(subject, owner);
+  async revokeCredential(subject: string): Promise<void> {
+    const principal = await this.managementPrincipal(subject);
     if (principal) await revokeCredentialRecord(this.ctx.storage, principal);
   }
 
   async setInviteeStatus(subject: string, status: "disabled" | "revoked"): Promise<void> {
-    await setPrincipalStatus(this.ctx.storage, subject, status);
+    const policy = loadGatewayConfig(this.env).principalPolicy;
+    const principal = policy.principals.find((member) => member.subject === subject);
+    if (!principal || subject === policy.owner_subject) throw new Error("Access update rejected.");
+    const record = await setPrincipalStatus(this.ctx.storage, principal, status);
+    if (!record || record.status !== status) throw new Error("Access update rejected.");
   }
 
   async consumePortalCsrf(subject: string, csrf: string, expiresAt: number): Promise<boolean> {
@@ -202,19 +198,14 @@ export class NemligMcpContainer extends Container<Env> {
   }
 
   async listInvitees(): Promise<Array<{ subject: string; status: "pending" | "enabled" | "disabled" | "revoked" }>> {
-    return (await listPrincipalRecords(this.ctx.storage)).map(({ subject, status }) => ({ subject, status }));
+    const policy = loadGatewayConfig(this.env).principalPolicy;
+    return Promise.all(policy.principals.filter(({ subject }) => subject !== policy.owner_subject).map(async (principal) => {
+      const record = await findPrincipalRecord(this.ctx.storage, principal.subject);
+      return { subject: principal.subject,
+        status: !principal.enabled ? "disabled" : record?.status ?? "enabled" };
+    }));
   }
 
-  async usage(): Promise<UsageState | undefined> {
-    return this.ctx.storage.get<UsageState>("usage");
-  }
-
-  async resetUsage(policyRevision: string): Promise<UsageState> {
-    const state = resetUsage(new Date(), policyRevision);
-    await this.ctx.storage.put("usage", state);
-    lifecycleEvent("breaker_reset");
-    return state;
-  }
 }
 
 // ponytail: retain the retired namespace and data; remove only with approved data cleanup.
@@ -241,34 +232,19 @@ export default {
             && identity.scopes.length === 1 && identity.scopes[0] === SERVICE_ACCEPTANCE_SCOPE;
           if (service) return undefined;
           const configured = findEnabledPrincipal(config.principalPolicy, identity.subject);
-          if (configured) return configured.subject;
-          if (config.principalPolicy.schema_version !== 2) return undefined;
-          const principal = await getContainer(containerNamespace(env), FIXED_CONTAINER_NAME).principal(identity.subject);
-          return principal?.subject;
+          return configured?.subject;
         },
         async principalStatus(subject) {
-          const config = loadGatewayConfig(env);
-          const owner = config.principalPolicy.principals.find(({ tier }) => tier === 0)!;
-          return getContainer(containerNamespace(env), FIXED_CONTAINER_NAME).principalStatus(subject, owner.subject);
+          return getContainer(containerNamespace(env), FIXED_CONTAINER_NAME).principalStatus(subject);
         },
         async connectionStatus(subject) {
-          const config = loadGatewayConfig(env);
-          const owner = config.principalPolicy.principals.find(({ tier }) => tier === 0)!;
-          return getContainer(containerNamespace(env), FIXED_CONTAINER_NAME).connectionStatus(subject, owner);
+          return getContainer(containerNamespace(env), FIXED_CONTAINER_NAME).connectionStatus(subject);
         },
         async replace(subject, credentials) {
-          const config = loadGatewayConfig(env);
-          const onboarding = loadOnboardingConfig(env);
-          const owner = config.principalPolicy.principals.find(({ tier }) => tier === 0)!;
-          return getContainer(containerNamespace(env), FIXED_CONTAINER_NAME).replaceCredential(subject, owner, credentials, {
-            policyRevision: config.principalPolicy.revision,
-            keyVersion: onboarding.credentialKeyVersion,
-          });
+          return getContainer(containerNamespace(env), FIXED_CONTAINER_NAME).replaceCredential(subject, credentials);
         },
         async revoke(subject) {
-          const config = loadGatewayConfig(env);
-          const owner = config.principalPolicy.principals.find(({ tier }) => tier === 0)!;
-          return getContainer(containerNamespace(env), FIXED_CONTAINER_NAME).revokeCredential(subject, owner);
+          return getContainer(containerNamespace(env), FIXED_CONTAINER_NAME).revokeCredential(subject);
         },
         async listPrincipals() {
           return getContainer(containerNamespace(env), FIXED_CONTAINER_NAME).listInvitees();
@@ -289,30 +265,18 @@ export default {
           && identity.clientId === config.serviceAcceptance.clientId
           && identity.subject === `${config.serviceAcceptance.clientId}@clients`
           && identity.scopes.length === 1 && identity.scopes[0] === SERVICE_ACCEPTANCE_SCOPE;
-        if (service) return { subject: identity.subject, principal_key: "s".repeat(32), tier: 2, enabled: true };
+        if (service) return { subject: identity.subject, principal_key: "s".repeat(32), enabled: true };
         const configured = findEnabledPrincipal(config.principalPolicy, identity.subject);
-        if (configured) return configured;
-        if (config.principalPolicy.schema_version !== 2) return undefined;
-        return getContainer(containerNamespace(env), FIXED_CONTAINER_NAME).principal(identity.subject);
+        if (!configured) return undefined;
+        return getContainer(containerNamespace(env), FIXED_CONTAINER_NAME).principal(configured);
       },
       event: requestEvent,
       async admit(operation, principal, config) {
         const container = getContainer(containerNamespace(env), FIXED_CONTAINER_NAME);
-        return container.admit(operation, {
-          dailyLimit: config.dailyLimit,
-          expensiveDailyLimit: config.expensiveDailyLimit,
-        }, { principalKey: principal.principal_key, tier: principal.tier }, {
+        return container.admit({ principalKey: principal.principal_key }, {
           revision: config.principalPolicy.revision,
-          budgets: config.principalPolicy.budgets,
-          principalKeys: config.principalPolicy.principals.map(({ principal_key }) => principal_key),
         }, operation !== "protocol" && operation !== "profile"
-          && config.principalPolicy.schema_version === 2 && !isVerifiedServicePrincipal(principal, config));
-      },
-      async usage() {
-        return getContainer(containerNamespace(env), FIXED_CONTAINER_NAME).usage();
-      },
-      async resetUsage(config) {
-        return getContainer(containerNamespace(env), FIXED_CONTAINER_NAME).resetUsage(config.principalPolicy.revision);
+          && !isVerifiedServicePrincipal(principal, config));
       },
       async forward(original, _operation, _config, deadline, admission) {
         const namespace = containerNamespace(env);

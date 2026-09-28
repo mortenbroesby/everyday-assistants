@@ -31,8 +31,8 @@ Live checks remain separate from the automatic gate:
   owner token and a 90-second total budget. It exercises read-only paths,
   including catalogue planning and at most one favorite result, without
   list writes, proposal preparation/application, feature requests, or basket
-  mutation. It also verifies that `/admin/usage` returns only bounded aggregate
-  Tier 0/1/2 counts and headroom without identity or credential fields.
+  mutation. Obsolete usage/reset endpoints no longer exist; no tier or
+  count-based admission evidence is required.
 - For the Rejoin connection recovery, verify the new app named
   `Nemlig Assistant (Rejoin)` with an authenticated `get_profile` read before
   retiring the previous Nemlig app. Complete the UI release acceptance below for later releases.
