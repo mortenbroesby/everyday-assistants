@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { spawnSync } from "node:child_process";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
 
 const workflowPath = new URL("../../../.github/workflows/nemlig-production.yml", import.meta.url);
@@ -165,10 +168,30 @@ test("routine deployment does not require a historical cutover artifact", async 
   assert.match(source, /production:deploy -- finalize "\$operation_id" --evidence-saved --original-runner-stopped/u);
 });
 
-test("routine recovery finalization only runs after a successful provider deployment", async () => {
+test("routine recovery may finalize a completed failed deployment but never a cancelled one", async () => {
   const source = await readFile(workflowPath, "utf8");
   assert.match(source, /- name: Deploy exact approved merge\n\s+id: deploy/u);
-  assert.match(source, /if: \$\{\{ always\(\) && steps\.deploy\.outcome == 'success' && steps\.release-artifact\.outcome == 'success' \}\}/u);
+  assert.match(source, /if: \$\{\{ !cancelled\(\) && \(steps\.deploy\.outcome == 'success' \|\| steps\.deploy\.outcome == 'failure'\) && steps\.release-artifact\.outcome == 'success' \}\}/u);
+});
+
+test("workflow finalization executes only an exact-run journal operation", async () => {
+  const source = section(await readFile(workflowPath, "utf8"), "  deploy:");
+  const script = source.match(/operation_id=\$\(node --input-type=module -e '([\s\S]*?)' "\$GITHUB_WORKSPACE\/\.git\/nemlig-production-deploy\/latest\.json"\)/u)?.[1];
+  assert.ok(script);
+  const root = await mkdtemp(join(tmpdir(), "nemlig-finalize-workflow-"));
+  const path = join(root, "journal.json");
+  const journal = { operationId: "44444444-4444-4444-8444-444444444444", commit: "a".repeat(40), releaseRunId: 123, releaseRunAttempt: 2 };
+  try {
+    for (const replacement of [{}, { operationId: "invalid" }, { commit: "b".repeat(40) }, { releaseRunId: 124 }, { releaseRunAttempt: 1 }]) {
+      await writeFile(path, JSON.stringify({ ...journal, ...replacement }));
+      const result: ReturnType<typeof spawnSync> = spawnSync(process.execPath, ["--input-type=module", "-e", script, path], {
+        encoding: "utf8", env: { ...process.env, CANDIDATE_SHA: journal.commit, GITHUB_RUN_ID: "123", GITHUB_RUN_ATTEMPT: "2" },
+      });
+      const matches = Object.keys(replacement).length === 0;
+      assert.equal(result.status, matches ? 0 : 1);
+      assert.equal(result.stdout, matches ? journal.operationId : "");
+    }
+  } finally { await rm(root, { recursive: true, force: true }); }
 });
 
 test("CI does not gate verification on release metadata", async () => {
@@ -234,7 +257,11 @@ test("routine recovery finalizes only after its artifact is saved", async () => 
   const upload = deploy.indexOf("uses: actions/upload-artifact@");
   const finalize = deploy.indexOf("production:deploy -- finalize");
   assert.ok(upload >= 0 && finalize > upload);
-  assert.match(deploy, /if: \$\{\{ always\(\) && steps\.deploy\.outcome == 'success' && steps\.release-artifact\.outcome == 'success' \}\}/u);
+  assert.match(deploy, /if: \$\{\{ !cancelled\(\) && \(steps\.deploy\.outcome == 'success' \|\| steps\.deploy\.outcome == 'failure'\) && steps\.release-artifact\.outcome == 'success' \}\}/u);
+  assert.match(deploy, /\[\[ ! -f "\$GITHUB_WORKSPACE\/\.git\/nemlig-production-deploy\/latest\.json" \]\]/u);
+  assert.match(deploy, /value\.commit !== process\.env\.CANDIDATE_SHA/u);
+  assert.match(deploy, /value\.releaseRunId !== Number\(process\.env\.GITHUB_RUN_ID\)/u);
+  assert.match(deploy, /value\.releaseRunAttempt !== Number\(process\.env\.GITHUB_RUN_ATTEMPT\)/u);
   assert.match(deploy, /JSON\.parse\(readFileSync\(process\.argv\[1\], "utf8"\)\)/u);
   assert.match(deploy, /GITHUB_WORKSPACE\/\.git\/nemlig-production-deploy\/latest\.json/u);
   assert.doesNotMatch(deploy, /readFileSync\([^\n]*RUNNER_TEMP\/nemlig-release\.json/u);

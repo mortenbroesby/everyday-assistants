@@ -309,7 +309,11 @@ The operation has a 25-minute deadline; cancellation terminates the command's
 process group before returning.
 
 After the deployment command stops and the bounded report artifact is saved, a
-known terminal run invokes exact-state finalization automatically. An uncertain
+non-cancelled completed deploy invokes exact-state finalization automatically,
+including a failed release whose rollback is verified. The saved journal must
+match the candidate SHA, workflow run ID and attempt. Finalization alone decides
+whether the state is terminal; successful lease release does not turn a failed
+deployment into acceptance or authorize retention. An uncertain
 operation, failed artifact upload, pending intent, unknown state or drift retains
 both leases for explicit inspection and finalization. Finalization requires the exact operation UUID,
 complete terminal evidence, matching current Worker/configuration/application/instance and unchanged remote
