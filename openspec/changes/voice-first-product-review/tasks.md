@@ -122,3 +122,11 @@ real-MCP browser passed one-activation local accept, Basket, quantity, revisit,
 alternatives, replacement, clear and rebuild with zero provider basket calls.
 The real-MCP fake-basket submission smoke passed protected apply/readback; no
 live Nemlig submission or native v5 host acceptance was attempted.
+
+## 9. In Review and Ready UX refinement
+
+- [x] 9.1 Implement Ready as the sole review contract, reject obsolete basket actions, and add focused protocol tests.
+- [x] 9.2 Keep alternatives in In Review, batch acceptance, remove-all-Ready semantics, and protected Ready-only submission; add service regressions.
+- [x] 9.3 Refine the existing lightweight viewer with compact rows, disclosures, quantity, empty/success states and same-frame navigation; add executable viewer and mobile browser checks.
+- [ ] 9.4 Version the resource, update docs/release note, pass repository gates, commit/push one scoped PR and verify exact-head CI.
+- [ ] 9.5 After a separately approved release, verify the v6 mounted experience in native ChatGPT; do not infer this from local tests.

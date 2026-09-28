@@ -5,11 +5,11 @@ import { isAuthenticationFailure, resolveDetailedProductSearch, type ProductDisc
 import { createProductView, type ProductView } from "./product-presentation.js";
 import { runReadPool } from "./read-coordination.js";
 
-export type ReviewDestination = "needs-review" | "basket" | "alternatives";
+export type ReviewDestination = "needs-review" | "ready" | "alternatives";
 export interface ReviewItem {
   product_id: number;
   quantity: number;
-  state: "needs-review" | "basket";
+  state: "needs-review" | "ready";
   view: ProductView;
 }
 export interface ProductReviewSnapshot {
@@ -18,7 +18,7 @@ export interface ProductReviewSnapshot {
   destination: ReviewDestination;
   items: ReviewItem[];
   submission?: { submission_id: string; status: "prepared" | "submitted" | "uncertain"; expires_at: string; review: Record<string, unknown> };
-  alternatives?: { product_id: number; origin: "needs-review" | "basket"; query: string; views: ProductView[] };
+  alternatives?: { product_id: number; origin: "needs-review"; query: string; views: ProductView[] };
 }
 export type ProductReviewAction =
   | { kind: "accept" | "remove" | "revisit"; product_ids: number[] }
@@ -140,8 +140,9 @@ export class ProductReviewService {
           if (!action.product_ids.length || new Set(action.product_ids).size !== action.product_ids.length) throw new NemligError("Select unique exact products.");
           const selected = action.product_ids.map(itemFor);
           if (action.kind === "accept") {
+            if (selected.some(item => item.state !== "needs-review")) throw new NemligError("Only In Review products can be accepted into Ready.");
             if (selected.some(item => !available(item.view))) throw new NemligError("Unavailable products cannot be accepted. Choose an available alternative.");
-            selected.forEach(item => { item.state = "basket"; });
+            selected.forEach(item => { item.state = "ready"; });
           } else {
             draft.items = draft.items.filter(item => !action.product_ids.includes(item.product_id));
           }
@@ -150,9 +151,8 @@ export class ProductReviewService {
         case "revisit": {
           if (!action.product_ids.length || new Set(action.product_ids).size !== action.product_ids.length) throw new NemligError("Select unique exact products.");
           const selected = action.product_ids.map(itemFor);
-          if (selected.some(item => item.state !== "basket")) throw new NemligError("Only local Basket products can be moved back to Needs review.");
+          if (selected.some(item => item.state !== "ready")) throw new NemligError("Only Ready products can be moved back to In Review.");
           selected.forEach(item => { item.state = "needs-review"; });
-          draft.destination = "needs-review";
           break;
         }
         case "add": {
@@ -188,6 +188,7 @@ export class ProductReviewService {
           break;
         case "alternatives": {
           const target = itemFor(action.product_id);
+          if (target.state !== "needs-review") throw new NemligError("Move a Ready product to In Review before choosing alternatives.");
           const limit = action.limit ?? 5;
           if (!validPositive(limit) || limit > 10) throw new NemligError("Alternative limit must be between 1 and 10.");
           const results = await resolveDetailedProductSearch(this.client, action.query, limit, { signal });
@@ -212,8 +213,8 @@ export class ProductReviewService {
           if (draft.items.some(item => item !== target && item.product_id === action.replacement_id)) throw new NemligError("This product already exists in the local review. Adjust its quantity instead.");
           target.product_id = action.replacement_id;
           target.view = replacement;
-          target.state = "basket";
-          draft.destination = draft.alternatives.origin;
+          target.state = "needs-review";
+          draft.destination = "needs-review";
           delete draft.alternatives;
           break;
         }
@@ -251,8 +252,8 @@ export class ProductReviewService {
     try {
       const previous = stored.snapshot.submission;
       if (previous && previous.status !== "prepared") throw new NemligError("Inspect the actual Nemlig basket before deliberately editing and reviewing a new submission.");
-      const items = stored.snapshot.items.filter(item => item.state === "basket");
-      if (!items.length) throw new NemligError("Local Basket is empty. Accept products before preparing submission.");
+      const items = stored.snapshot.items.filter(item => item.state === "ready");
+      if (!items.length) throw new NemligError("Ready is empty. Accept products before preparing submission.");
       const proposal = await this.proposals.prepareAdditions(owner, items.map(({ product_id, quantity }) => ({ product_id, quantity })), { kind: "exact_review" }, { signal, freshProducts: true });
       this.get(owner, id);
       stored.proposalId = proposal.proposal_id;

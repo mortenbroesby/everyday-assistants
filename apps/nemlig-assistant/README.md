@@ -121,22 +121,25 @@ Provider descriptions, declarations, and item details are converted from HTML
 to bounded plain text, including Danish characters and entities. Scripts,
 styles, images and link destinations are omitted; conversion does not fetch
 additional resources.
-The shared product viewer has compact, expandable rows. Needs review contains
-unresolved products; local Basket contains accepted products. Accept selected
-products, adjust quantities, remove them, or inspect alternatives for one product.
-Alternatives remain available while you inspect Basket, and every view has a safe
-exit. All of these operations also work through conversation, including “everything
-except the ricotta and cucumbers is fine.” Local acceptance never changes Nemlig.
+The shared product viewer has compact, expandable rows. **In Review** contains
+unresolved products; **Ready** contains exact accepted products. Select one or
+more In Review rows, then add them to Ready in one local action. Adjust
+quantities or remove products in either view. Choose alternatives only from In
+Review; choosing a replacement does not accept it automatically. These local
+operations also work through conversation, including “everything except the
+ricotta and cucumbers is fine.” Local acceptance never changes Nemlig.
 Once explicitly opened, the same current review frame stays active across
 confirmed local edits and destination changes. Compatible selections and open
-product rows remain in place. Basket rows show product, package, quantity and
-line price first; catalogue facts remain in product details. **Clear local
-Basket** moves its accepted products back to Needs review after confirmation,
-without touching the real Nemlig basket.
+product rows remain in place. Rows show product, package, quantity and line
+price first. Expanded rows contain collapsed **Varebeskrivelse**,
+**Varedeklaration**, and **Detaljer om varen** sections; opening them makes no
+tool call. **Remove all Ready products** removes those products from the local
+selection after confirmation, without touching the real Nemlig basket.
 
 Voice and touch use one private temporary draft per ChatGPT conversation, identified
 by the host session metadata and authenticated principal. There is no hourly expiry.
-**Finish shopping** discards the local draft. A restart or bounded memory eviction
+**Clear selection and start over** discards the local draft and shows a
+conversational starting screen. A restart or bounded memory eviction
 can also discard it; missing state is reported rather than silently recreated.
 Each principal retains at most eight conversation drafts of 50 products. Hosts
 without conversation context cannot access a hosted draft. ChatGPT does not
@@ -156,7 +159,7 @@ transcript cards. Refresh app metadata and explicitly open the current review.
 Run `pnpm --filter nemlig-assistant smoke:review-ui`, open its loopback URL,
 and click **Run regression smoke**. The real MCP adapter and fake catalogue
 exercise inactive mount/remount, conflicting revisions, a failed connection,
-process restart, explicit recovery and Finish shopping. The page reports PASS
+process restart, explicit recovery and clearing the local selection. The page reports PASS
 only when the stale edit was not replayed, restart cleared acceptance while
 preserving quantities, and provider basket calls remained zero. No credentials
 are required; provider basket access is denied by the fixture.
@@ -166,16 +169,16 @@ adding new exact products hydrates only those products, and
 explicit alternatives searches hydrate up to ten results with three concurrent
 reads and existing request limits.
 
-When you are happy with the local Basket, choose **Update Nemlig basket**.
+When you are happy with Ready, choose **Send to Nemlig basket**.
 This prepares fresh exact product prices and quantities and shows the separate
 on-screen confirmation. Inspect the prepared lines, then confirm in the viewer
 or approve the same exact review in conversation. Merely preparing or showing
 confirmation does not submit. Only explicit approval of the unchanged review
 allows submission.
 The quantities of those products are set in Nemlig; unrelated basket lines stay
-unchanged and unresolved draft items are excluded. Editing the draft invalidates
-the pending submission. The local Basket remains visible after success or failure;
-if the result is uncertain, inspect the actual Nemlig basket before any deliberate
+unchanged and In Review items are excluded. Editing the draft invalidates
+the pending submission. Verified success has its own screen; the local selection
+remains available for continued review. If the result is uncertain, inspect the actual Nemlig basket before any deliberate
 new review. There is no automatic retry.
 
 Interactive ChatGPT hosts use their tool bridge. Other hosts retain the complete
@@ -273,7 +276,7 @@ The MCP surface is organized around household actions:
   reconsider accepted products, append new products, navigate, finish shopping, or
   prepare submission with `update_product_review`. Show can recover the active
   conversation review without its opaque reference. Repeated starts preserve it.
-- Submit that exact local Basket after explicit approval: `submit_product_review`.
+- Submit those exact Ready lines after explicit approval: `submit_product_review`.
   This protected tool can be called by the model after conversational approval
   or by the viewer after its separate on-screen exact-review confirmation.
 - Review basket changes: `review_items_to_add`, `review_item_to_remove`,
@@ -447,8 +450,8 @@ This README is the user-facing inventory of shipped feature sets:
 - fresh Nemlig authentication before every provider-backed MCP task
 - rich individual short-query product discovery and refinement
 - one shared product presentation with a headless fallback
-- voice/touch local review, editable Basket, and contextual alternatives
-- persistent in-place review navigation, simplified Basket and confirmed local clear
+- voice/touch In Review and Ready selection with contextual alternatives
+- persistent in-place review navigation, compact rows, and confirmed local removal
 - explicit protected submission of resolved local products
 - on-screen exact submission confirmation with conversational fallback
 - favourites as read-only evidence for uncertain matches

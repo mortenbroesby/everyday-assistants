@@ -18,8 +18,8 @@ Nemlig directly, apply provider writes, or treat local acceptance as submission.
 
 #### Scenario: Local product review is displayed
 - **WHEN** the client receives a draft snapshot
-- **THEN** it presents Needs review, local Basket, and one contextual alternatives
-  view with safe exits, explicit removal, bulk acceptance and submission intent
+- **THEN** it presents In Review, Ready, and one contextual alternatives
+  drill-in with safe exits, explicit removal, batch acceptance and submission intent
 
 #### Scenario: Viewer receives partial or unavailable data
 - **WHEN** a product field, image or interactive host bridge is unavailable

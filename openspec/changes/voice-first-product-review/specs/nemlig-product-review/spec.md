@@ -1,20 +1,20 @@
 ## Purpose
 
-Provide a temporary product review and local basket shared by conversation and
+Provide a temporary In Review and Ready selection shared by conversation and
 touch, with an explicit, safely approved later transfer to the Nemlig basket.
 
 ## ADDED Requirements
 
 ### Requirement: Shared private product review
 The system SHALL maintain the same principal-and-conversation-bound temporary review snapshot for
-voice and touch. Needs review SHALL contain unresolved products; Basket SHALL
+voice and touch. In Review SHALL contain unresolved products; Ready SHALL
 contain only locally accepted products. Local acceptance, quantity change,
 replacement, removal and navigation SHALL NOT modify the Nemlig basket.
 
 #### Scenario: Accept some products
 - **WHEN** the user accepts selected exact products by voice or touch
-- **THEN** those products move to the local Basket and unresolved products remain
-  in Needs review, with no provider mutation
+- **THEN** those products move to Ready and unresolved products remain
+  In Review, with no provider mutation
 
 #### Scenario: Conflicting or foreign state
 - **WHEN** a caller changes a stale revision or accesses another principal's draft
@@ -29,17 +29,17 @@ replacement, removal and navigation SHALL NOT modify the Nemlig basket.
 ### Requirement: Contextual alternatives and reversible navigation
 The system SHALL show alternatives for one identified local product, reuse the
 same expandable product presentation, allow keeping or replacing the product,
-and allow returning to either list without resolving it. Replacing or keeping an
-unresolved product SHALL move it to the local Basket. Removing a product SHALL
+and allow returning to the In Review list without resolving it. Replacing or keeping an
+unresolved product SHALL leave it In Review. Removing a product SHALL
 remove it locally, without provider writes. Alternative results SHALL survive
 temporary list navigation within the current draft when its target still exists.
 
-#### Scenario: Cancel a basket change
-- **WHEN** the user opens alternatives for a local Basket product then cancels
-- **THEN** the unchanged local product remains in Basket
+#### Scenario: Cancel an alternative choice
+- **WHEN** the user opens alternatives for an In Review product then cancels
+- **THEN** the unchanged local product remains In Review
 
 #### Scenario: Inspect alternatives and return
-- **WHEN** the user inspects Basket while considering alternatives and returns
+- **WHEN** the user temporarily navigates to Ready while considering alternatives and returns
 - **THEN** the same target and returned alternatives remain available
 
 ### Requirement: Explicit protected submission
@@ -50,7 +50,7 @@ existing freshness, single-use, principal, mutation-lock and readback safeguards
 SHALL remain effective. Unrelated real basket lines SHALL remain unchanged.
 
 #### Scenario: Local selection is complete
-- **WHEN** the user requests submission of the local Basket
+- **WHEN** the user requests submission of Ready products
 - **THEN** the system prepares exact current quantities, prices and effects for
   approval without applying them
 
@@ -64,22 +64,22 @@ SHALL remain effective. Unrelated real basket lines SHALL remain unchanged.
 - **THEN** the local draft remains intact, the outcome is explicitly uncertain or
   failed, and the system does not automatically retry the submission
 
-### Requirement: Active conversation basket
+### Requirement: Active conversation selection
 The system SHALL retain one active temporary draft per authenticated conversation
 without a fixed time expiry. New conversations SHALL NOT access another
 conversation's draft. Hosted requests without conversation context SHALL fail
 closed. Repeated starts SHALL preserve the active draft; explicit additions SHALL
 append unresolved products without resetting resolved products. Finish shopping
 SHALL discard only the local draft. Reconsidering an accepted product SHALL move
-it back to Needs review and invalidate pending submission approval.
+it back to In Review and invalidate pending submission approval.
 
 #### Scenario: Continue a long shopping conversation
 - **WHEN** the user returns to the active draft more than an hour after starting
-- **THEN** time alone has not removed the basket
+- **THEN** time alone has not removed the local selection
 
 #### Scenario: Two conversations share an account
 - **WHEN** one conversation supplies the other conversation's review reference
-- **THEN** the system refuses access without modifying either basket
+- **THEN** the system refuses access without modifying either local selection
 
 #### Scenario: Finish and start again
 - **WHEN** the user ends a review and later begins another
@@ -104,14 +104,46 @@ replace a newer confirmed review revision.
 - **THEN** the same frame renders the updated destination without requiring
   `Open current review` again
 
-#### Scenario: Clear the local Basket
-- **WHEN** the user confirms Clear Basket
-- **THEN** one revision-checked local action moves its accepted lines to Needs
-  review, keeps the frame active, and leaves the real Nemlig basket unchanged
-
 #### Scenario: Confirm exact submission in the viewer
 - **WHEN** the user explicitly confirms the current prepared lines, quantities,
   prices and effect in the review UI
 - **THEN** the existing protected submit operation applies that exact unchanged
   review once and reports verified or uncertain outcome without automatic retry
 - **AND** cancellation or merely opening the prepared review performs no write
+
+### Requirement: In Review and Ready refinement
+The review SHALL expose In Review as unresolved and Ready as exact accepted
+products. The review contract SHALL use `ready` without a `basket` alias or
+representation selector. Alternatives SHALL only open for In Review products. Choosing
+an alternative SHALL leave the replacement In Review. Ready SHALL remain
+independently submittable while other products remain In Review.
+
+#### Scenario: Select and accept in one action
+- **WHEN** the user checks one or more In Review rows and chooses Add to Ready
+- **THEN** one revision-checked local update accepts exactly those products,
+  stays in In Review and makes no provider mutation
+- **AND** selecting rows or opening product/factual disclosures alone makes no
+  tool or provider call
+
+#### Scenario: Reconsider a Ready product
+- **WHEN** a Ready product is moved back to In Review
+- **THEN** it can be offered alternatives there; no direct alternative action
+  is offered in Ready
+- **AND** choosing a replacement does not implicitly accept it
+
+#### Scenario: Remove all Ready products
+- **WHEN** the user confirms removal of all Ready products
+- **THEN** one local action removes those exact products from the selection,
+  retains any In Review products, and leaves the actual Nemlig basket unchanged
+
+#### Scenario: Empty and completed workspace
+- **WHEN** the local selection has no products or its draft is ended
+- **THEN** the viewer shows conversational starting actions without empty
+  In Review and Ready navigation
+- **AND** a verified provider submission shows a distinct success state while
+  an uncertain submission never offers an automatic retry
+
+#### Scenario: Obsolete review action
+- **WHEN** an already-cached older card sends `basket` navigation
+- **THEN** the new contract rejects the action without changing the review or
+  the real Nemlig basket
