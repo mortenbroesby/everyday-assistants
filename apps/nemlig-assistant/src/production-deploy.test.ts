@@ -1677,6 +1677,22 @@ test("successful deployment finalizes from its stateful remote journal chain", a
   }
 });
 
+test("failed acceptance with verified disabled rollback releases only its exact terminal lease", async () => {
+  const { deps, calls, root } = await fixture({ failFeatures: true });
+  try {
+    const report = await deployProduction(commit, deps);
+    assert.equal(report.outcome, "failed");
+    assert.equal(report.lastVerifiedState, "disabled");
+    assert.equal(report.rollback, "restored");
+    const mutationsBefore = calls.filter(({ args }) => args.includes("deploy") || args.includes("rollback")).length;
+    assert.equal(await finalizeDeploymentRecovery(report.operationId, deps, true, true), true);
+    assert.equal(calls.filter(({ command, args }) => command === "gh" && args.includes("DELETE")).length, 1);
+    assert.equal(calls.filter(({ args }) => args.includes("deploy") || args.includes("rollback")).length, mutationsBefore);
+    await assert.rejects(access(join(root, "nemlig-production-deploy.lock")));
+    assert.equal(report.outcome, "failed");
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
 test("ambiguous deploy failure retains both leases and reports unknown state", async () => {
   const { deps, calls, root } = await fixture({ failDisabledDeploy: true });
   try {
