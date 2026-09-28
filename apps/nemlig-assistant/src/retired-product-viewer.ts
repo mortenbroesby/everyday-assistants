@@ -1,4 +1,4 @@
-/** A compatibility page for cached MCP Apps clients. It never hydrates old review data. */
+/** An inert retirement notice for previously published resource URIs. It never hydrates old review data. */
 export function renderRetiredProductViewerHtml(): string {
   return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">

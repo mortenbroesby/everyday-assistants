@@ -102,7 +102,7 @@ test("MCP submission smoke searches, prepares only accepted lines, and verifies 
       [7, 3, "needs-review"], [8, 2, "needs-review"],
     ]);
     review = await update({ kind: "accept", product_ids: [7] });
-    assert.deepEqual(review.items.map(({ product_id, state }) => [product_id, state]), [[7, "basket"], [8, "needs-review"]]);
+    assert.deepEqual(review.items.map(({ product_id, state }) => [product_id, state]), [[7, "ready"], [8, "needs-review"]]);
     assert.equal(providerWrites, 0, "local acceptance does not mutate the provider basket");
 
     review = await update({ kind: "prepare_submission" });

@@ -104,8 +104,8 @@ recorded release steps; they SHALL NOT be inferred from healthy edge endpoints.
 
 #### Scenario: Local UI release test
 - **WHEN** the operator verifies a released review UI
-- **THEN** selecting and accepting an exact product changes only the local Basket,
-  and navigation back to Needs review preserves both lists without provider writes
+- **THEN** selecting and accepting an exact product changes only Ready,
+  and navigation back to In Review preserves both lists without provider writes
 
 ### Requirement: Inactive historical shopping cards
 Host-supplied review snapshots SHALL start inactive without product hydration or

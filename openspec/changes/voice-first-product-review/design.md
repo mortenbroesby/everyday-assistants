@@ -164,3 +164,39 @@ No submission occurs on preparation, opening a card, or changing destinations.
 Failure/uncertainty never triggers a retry. A host without app tool access
 retains the conversational approval path and must not claim UI confirmation
 worked. Native host confirmation remains a release acceptance requirement.
+
+## Ready review refinement
+
+The mounted v5 card has been observed to remain active across local edits in
+ChatGPT. Build on that viewer and its existing protected submission path. The
+two product states are now In Review and Ready. Alternatives are a contextual
+In Review drill-in, not a third product state: replacing a product leaves it
+unaccepted in In Review. Only Ready lines are prepared for submission, even if
+other products remain In Review.
+
+Use `ready` as the sole review state and destination value in the service and
+MCP contract. Do not add a `basket` alias, representation selector, projection
+or stored-state migration. Existing fetched v5 resource URIs become inert.
+Already-cached v5 JavaScript cannot be rewritten by the server; if it tries to
+send obsolete `basket` actions, the new schema rejects them without a mutation.
+The v6 viewer receives only canonical Ready review snapshots. Native historical
+card behavior remains a separate acceptance item and is not proven locally.
+Never change the actual Nemlig basket schema or provider proposal semantics.
+
+The v6 viewer keeps product and factual disclosures, checkboxes, focus and
+scroll as presentation state. Selection alone makes no tool call. One bulk
+accept action handles selected products; there is no per-row acceptance
+button. Compact rows show image, name, pack/brand, quantity and line price.
+Expanded factual disclosures are Varebeskrivelse, Varedeklaration and Detaljer
+om varen, all closed by default and sourced from the supplied snapshot.
+
+The secondary Remove all Ready products action confirms one revision-checked
+local `remove` of exactly the accepted IDs. It removes those products from the
+selection rather than moving them back to In Review, and never touches Nemlig.
+End still discards the whole draft. A zero-product draft or ended draft shows a
+purpose-built conversational starting state. A verified submission gets its
+own success presentation; uncertain outcomes retain the no-retry boundary.
+
+Changing viewer HTML requires a v6 URI per the resource cache policy. Retire
+v5 as an inert resource while preserving older retired URIs. Deployment and
+native ChatGPT acceptance remain separate from local implementation evidence.
