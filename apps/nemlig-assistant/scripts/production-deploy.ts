@@ -302,7 +302,7 @@ export function parseCurrentDeployment(raw: string): CurrentDeployment {
   return { id, version: deployedId };
 }
 
-const configPlainNames = ["MCP_AUTH_TIMEOUT_MS", "MCP_CONTROL_TIMEOUT_MS", "MCP_TOTAL_TIMEOUT_MS", "MCP_BACKEND_TIMEOUT_MS", "MCP_CREDENTIAL_ONBOARDING_ENABLED", "NEMLIG_MCP_CREDENTIAL_KEY_VERSION", "NEMLIG_MCP_HTTP_HOST", "NEMLIG_MCP_HTTP_PORT", "NEMLIG_MCP_AUTH0_ISSUER", "NEMLIG_MCP_AUTH0_AUDIENCE", "NEMLIG_MCP_PUBLIC_URL", "NEMLIG_MCP_SERVICE_ACCEPTANCE_ENABLED", "NEMLIG_MCP_SERVICE_CLIENT_ID"] as const;
+const configPlainNames = ["MCP_AUTH_TIMEOUT_MS", "MCP_CONTROL_TIMEOUT_MS", "MCP_TOTAL_TIMEOUT_MS", "MCP_BACKEND_TIMEOUT_MS", "MCP_CREDENTIAL_ONBOARDING_ENABLED", "NEMLIG_MCP_ONBOARDING_CLIENT_ID", "NEMLIG_MCP_CREDENTIAL_KEY_VERSION", "NEMLIG_MCP_HTTP_HOST", "NEMLIG_MCP_HTTP_PORT", "NEMLIG_MCP_AUTH0_ISSUER", "NEMLIG_MCP_AUTH0_AUDIENCE", "NEMLIG_MCP_PUBLIC_URL", "NEMLIG_MCP_SERVICE_ACCEPTANCE_ENABLED", "NEMLIG_MCP_SERVICE_CLIENT_ID"] as const;
 const configPlainSet = new Set<string>(configPlainNames);
 const requiredSecrets = new Set(["NEMLIG_MCP_PRINCIPALS"]);
 const expectedDo = new Map([["NEMLIG_MCP_CONTAINER", "NemligMcpContainer"], ["NEMLIG_PLAN_STORAGE", "PlanStorage"]]);
@@ -345,11 +345,14 @@ const effectiveConfig = (vars: Map<string, string>, secrets: Iterable<string>, r
   if (!normalized.has("NEMLIG_MCP_SERVICE_CLIENT_ID")) normalized.set("NEMLIG_MCP_SERVICE_CLIENT_ID", "");
   const serviceEnabled = normalized.get("NEMLIG_MCP_SERVICE_ACCEPTANCE_ENABLED");
   const serviceClientId = normalized.get("NEMLIG_MCP_SERVICE_CLIENT_ID") ?? "";
-  if (configPlainNames.filter((name) => name !== "NEMLIG_MCP_SERVICE_CLIENT_ID").some((name) => {
+  if (configPlainNames.filter((name) => name !== "NEMLIG_MCP_SERVICE_CLIENT_ID" && name !== "NEMLIG_MCP_ONBOARDING_CLIENT_ID").some((name) => {
     const value = normalized.get(name);
     return typeof value !== "string" || value.length === 0 || value.length > 2048;
   }) || serviceClientId.length > 2048) fail("cloudflare_runtime_safety_mismatch");
   if (!["true", "false"].includes(normalized.get("MCP_CREDENTIAL_ONBOARDING_ENABLED") ?? "")) fail("cloudflare_runtime_safety_mismatch");
+  const browserClientId = normalized.get("NEMLIG_MCP_ONBOARDING_CLIENT_ID") ?? "";
+  const onboardingEnabled = normalized.get("MCP_CREDENTIAL_ONBOARDING_ENABLED") === "true";
+  if ((browserClientId !== "" || onboardingEnabled) && !/^[A-Za-z0-9_-]{8,128}$/u.test(browserClientId)) fail("cloudflare_runtime_safety_mismatch");
   if (!["true", "false"].includes(serviceEnabled ?? "")
     || (serviceEnabled === "true" && !/^[A-Za-z0-9_-]{1,128}$/u.test(serviceClientId))) fail("cloudflare_runtime_safety_mismatch");
   if (!/^[A-Za-z0-9._-]{1,32}$/u.test(normalized.get("NEMLIG_MCP_CREDENTIAL_KEY_VERSION") ?? "")) {
@@ -371,7 +374,8 @@ const effectiveConfig = (vars: Map<string, string>, secrets: Iterable<string>, r
   } catch { fail("cloudflare_runtime_safety_mismatch"); }
   const secretNames = [...secrets].sort();
   if (secretNames.some((name, index) => (index > 0 && name === secretNames[index - 1]) || !/^[A-Za-z_][A-Za-z0-9_]{0,127}$/u.test(name))
-    || (requireSecrets && [...requiredSecrets].some((name) => !secretNames.includes(name)))) fail("cloudflare_runtime_safety_mismatch");
+    || (requireSecrets && ([...requiredSecrets].some((name) => !secretNames.includes(name))
+      || (onboardingEnabled && ["NEMLIG_MCP_ONBOARDING_SESSION_KEY", "NEMLIG_MCP_CREDENTIAL_KEY"].some((name) => !secretNames.includes(name)))))) fail("cloudflare_runtime_safety_mismatch");
   const canonical = JSON.stringify({ limits: [100, 8], vars: [...normalized].filter(([name]) => configPlainSet.has(name)).sort(([left], [right]) => left.localeCompare(right)), durableObjects: [...expectedDo].sort(([left], [right]) => left.localeCompare(right)), secrets: secretNames.map((name) => [name, "secret_text"]) });
   return { vars, secrets: secretNames, digest: createHash("sha256").update(canonical).digest("hex") };
 };
@@ -607,7 +611,7 @@ const candidateConfig = (local: EffectiveConfig, live: EffectiveConfig): Effecti
   const onboarding = live.vars.get("MCP_CREDENTIAL_ONBOARDING_ENABLED");
   if (onboarding !== "true" && onboarding !== "false") fail("cloudflare_runtime_safety_mismatch");
   vars.set("MCP_CREDENTIAL_ONBOARDING_ENABLED", onboarding as string);
-  for (const name of ["NEMLIG_MCP_SERVICE_ACCEPTANCE_ENABLED", "NEMLIG_MCP_SERVICE_CLIENT_ID"]) {
+  for (const name of ["NEMLIG_MCP_SERVICE_ACCEPTANCE_ENABLED", "NEMLIG_MCP_SERVICE_CLIENT_ID", "NEMLIG_MCP_ONBOARDING_CLIENT_ID"]) {
     const value = live.vars.get(name);
     if (value !== undefined) vars.set(name, value);
   }

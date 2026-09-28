@@ -1,3 +1,42 @@
+## Current owner recovery design (2026-09-28)
+
+Implement only section 12. Anonymous /connect renders a native sign-in link,
+without provider/storage work. Explicit sign-in uses the installed MCP client
+SDK's authorization-code/PKCE flow and issuer discovery with a pre-registered
+public client; do not dynamically register clients from web requests. Promote
+that existing package from development to runtime dependencies, adding no new
+package. Only the configured HTTPS issuer origin may receive OAuth fetches;
+redirects are rejected, the whole OAuth leg has one bounded auth deadline and
+code exchange is never automatically retried.
+
+Use response_mode=form_post, the configured Auth0 audience as well as MCP resource,
+and the exact /connect/callback URI. A short-lived
+authenticated HttpOnly Secure SameSite=None transaction cookie binds random state,
+PKCE verifier, issuer and client; only this transaction cookie permits the
+cross-site provider POST. The existing portal cookie remains SameSite=Lax.
+Reject wrong method/origin, duplicate/missing fields, tampering, expiry and
+configuration drift before exchange. The library validates discovery/issuer and
+PKCE; existing resource-token verification then requires the exact enabled
+owner. Consume the transaction through existing authenticated CSRF replay
+storage before creating the portal session. One callback request makes at most
+one exchange. A separate replay may attempt an exchange but cannot issue a
+second session, and no automatic retry occurs. Discard OAuth tokens; request no
+offline_access/openid and accept no ID token as authority. Return only sanitized
+errors and clean /connect redirects. No code/token is included in HTML or URLs.
+
+Credential changes still require the existing portal session, origin, bounded
+form, one-use CSRF and one read-only validation before atomic sealed replacement.
+MCP and onboarding switches remain independent and no sign-in changes either.
+One public browser client plus a portal-session secret are separate live setup
+prerequisites; preserve the credential key and private schema-v3 identity/key/
+revision bindings. No auth client is created, secret changed or production enabled
+by implementation. Each sign-in adds bounded issuer discovery/code-exchange work
+and one authenticated replay-storage write; no polling, keep-warm calls or new
+paid service. With app-local quotas intentionally absent, aggregate requests can
+still incur usage and cost until disabled; this is not a hard billing cap.
+
+The remaining design below is historical, not an alternative implementation.
+
 ## Context
 
 Historical design: its tier/budget and schema-v1/v2 compatibility decisions are

@@ -2,8 +2,9 @@ import type { CloudflareEnv } from "./cloudflare-config.js";
 import { parsePrincipalPolicy, type PrincipalPolicy } from "./principal-policy.js";
 import type { Credentials } from "./config.js";
 import { oauthReconnectChallenge } from "./auth0.js";
+import { auth, discoverAuthorizationServerMetadata, type OAuthClientProvider } from "@modelcontextprotocol/client";
 
-/** Provider credential portal settings. OAuth is deliberately absent here. */
+/** Existing credential portal settings; browser OAuth stays in its adapter. */
 export interface OnboardingConfig {
   publicUrl: URL;
   origin: string;
@@ -14,6 +15,7 @@ export interface OnboardingConfig {
 }
 
 export interface OnboardingDependencies {
+  oauthFetch?: typeof fetch;
   /** Verifies a standard resource-server access token and returns its subject. */
   authenticate(token: string): Promise<string | undefined>;
   principalStatus(subject: string): Promise<"owner" | "pending" | "enabled" | undefined>;
@@ -26,8 +28,10 @@ export interface OnboardingDependencies {
 }
 
 interface SessionCookie { kind: "session"; subject: string; csrf: string; expiresAt: number }
+interface LoginCookie { kind: "login"; state: string; codeVerifier: string; issuer: string; clientId: string; expiresAt: number }
 
 const SESSION_COOKIE = "__Host-nemlig-session";
+const LOGIN_COOKIE = "__Host-nemlig-login";
 const encoder = new TextEncoder();
 const invalidConfig = (): never => { throw new Error("Credential onboarding configuration is invalid."); };
 const required = (env: CloudflareEnv, name: keyof CloudflareEnv): string => env[name]?.trim() || invalidConfig();
@@ -58,17 +62,22 @@ const decode = (value: string): Uint8Array<ArrayBuffer> => {
   return result;
 };
 const hmacKey = (encoded: string): Promise<CryptoKey> => crypto.subtle.importKey("raw", decode(encoded), { name: "HMAC", hash: "SHA-256" }, false, ["sign", "verify"]);
-const signCookie = async (value: SessionCookie, key: string): Promise<string> => {
+const signCookie = async (value: SessionCookie | LoginCookie, key: string): Promise<string> => {
   const payload = base64url(encoder.encode(JSON.stringify(value)));
   const signature = await crypto.subtle.sign("HMAC", await hmacKey(key), encoder.encode(payload));
   return `${payload}.${base64url(new Uint8Array(signature))}`;
 };
-const verifyCookie = async (value: string | undefined, key: string): Promise<SessionCookie | undefined> => {
+const verifyCookie = async (value: string | undefined, key: string): Promise<SessionCookie | LoginCookie | undefined> => {
   try {
     const [payload, signature, extra] = value?.split(".") ?? [];
     if (!payload || !signature || extra || !await crypto.subtle.verify("HMAC", await hmacKey(key), decode(signature), encoder.encode(payload))) return undefined;
-    const parsed = JSON.parse(new TextDecoder().decode(decode(payload))) as SessionCookie;
-    return parsed.kind === "session" && typeof parsed.subject === "string" && Number.isSafeInteger(parsed.expiresAt) && parsed.expiresAt > Date.now() ? parsed : undefined;
+    const parsed = JSON.parse(new TextDecoder().decode(decode(payload))) as SessionCookie | LoginCookie;
+    if (!Number.isSafeInteger(parsed.expiresAt) || parsed.expiresAt <= Date.now()) return undefined;
+    if (parsed.kind === "session" && typeof parsed.subject === "string" && /^[A-Za-z0-9_-]{32}$/u.test(parsed.csrf)) return parsed;
+    if (parsed.kind === "login" && /^[A-Za-z0-9_-]{32}$/u.test(parsed.state)
+      && /^[A-Za-z0-9._~-]{43,128}$/u.test(parsed.codeVerifier)
+      && typeof parsed.issuer === "string" && typeof parsed.clientId === "string") return parsed;
+    return undefined;
   } catch { return undefined; }
 };
 
@@ -123,20 +132,106 @@ const readForm = async (request: Request): Promise<URLSearchParams | undefined> 
 const bearer = (request: Request): string | undefined => request.headers.get("authorization")?.match(/^Bearer\s+([^\s]+)$/iu)?.[1];
 const authRequired = (config: OnboardingConfig): Response => response("Authentication required.", 401, { "www-authenticate": oauthReconnectChallenge(config.publicUrl) });
 
+const signInPage = (): Response => response('<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Connect Nemlig</title><main><h1>Connect Nemlig</h1><p>Sign in as the configured owner to manage your Nemlig connection.</p><a href="/connect/sign-in">Sign in</a></main></html>');
+const loginCookie = (value: string, age = 600): string => `${LOGIN_COOKIE}=${value}; Path=/; Max-Age=${age}; Secure; HttpOnly; SameSite=None`;
+
+/** The SDK owns OAuth/PKCE; this adapter owns browser transaction/session binding. */
+const browserLogin = async (request: Request, config: OnboardingConfig, env: CloudflareEnv, dependencies: OnboardingDependencies): Promise<Response> => {
+  const failed = (): Response => response("Sign-in failed. Return to /connect and try again.", 401, { "set-cookie": loginCookie("", 0) });
+  try {
+    const issuer = new URL(required(env, "NEMLIG_MCP_AUTH0_ISSUER"));
+    const clientId = required(env, "NEMLIG_MCP_ONBOARDING_CLIENT_ID");
+    const audience = required(env, "NEMLIG_MCP_AUTH0_AUDIENCE");
+    const timeout = Number(env.MCP_AUTH_TIMEOUT_MS ?? "5000");
+    if (issuer.protocol !== "https:" || issuer.username || issuer.password || issuer.search || issuer.hash
+      || !/^[A-Za-z0-9_-]{8,128}$/u.test(clientId) || !Number.isSafeInteger(timeout) || timeout < 1 || timeout > 10_000) return failed();
+    if (!issuer.pathname.endsWith("/")) issuer.pathname += "/";
+    const callback = new URL("/connect/callback", config.origin);
+    const completing = new URL(request.url).pathname === callback.pathname;
+    if (request.method !== (completing ? "POST" : "GET")) return failed();
+    const saved = await verifyCookie(cookie(request, LOGIN_COOKIE), config.sessionKey);
+    let transaction: LoginCookie;
+    let code: string | undefined;
+    let iss: string | undefined;
+    if (completing) {
+      if (request.headers.get("origin") !== issuer.origin || saved?.kind !== "login"
+        || saved.issuer !== issuer.href || saved.clientId !== clientId
+        || !request.headers.get("content-type")?.startsWith("application/x-www-form-urlencoded")) return failed();
+      const form = await readForm(request);
+      if (!form || ["code", "state"].some((name) => form.getAll(name).length !== 1)
+        || form.getAll("iss").length > 1 || form.has("error") || form.get("state") !== saved.state) return failed();
+      code = form.get("code") ?? undefined;
+      iss = form.get("iss") ?? undefined;
+      if (!code || code.length > 2048) return failed();
+      transaction = saved;
+    } else {
+      transaction = { kind: "login", state: random(24), codeVerifier: "", issuer: issuer.href, clientId, expiresAt: Date.now() + 600_000 };
+    }
+    const signal = AbortSignal.timeout(timeout);
+    let exchanges = 0;
+    const fetchFn: typeof fetch = async (input, init) => {
+      const target = new URL(input instanceof Request ? input.url : String(input));
+      if (target.origin !== issuer.origin || target.username || target.password || target.hash) throw new Error("OAuth destination rejected.");
+      if ((init?.method ?? (input instanceof Request ? input.method : "GET")).toUpperCase() === "POST" && ++exchanges > 1) throw new Error("OAuth exchange already attempted.");
+      return (dependencies.oauthFetch ?? fetch)(input, { ...init, signal, redirect: "error" });
+    };
+    const metadata = await discoverAuthorizationServerMetadata(issuer, { fetchFn });
+    if (!metadata || metadata.issuer !== issuer.href) return failed();
+    let authorizationUrl: URL | undefined;
+    let accessToken: string | undefined;
+    const provider: OAuthClientProvider = {
+      redirectUrl: callback,
+      clientMetadata: { redirect_uris: [callback.href], token_endpoint_auth_method: "none", grant_types: ["authorization_code"], response_types: ["code"], application_type: "web" },
+      clientInformation: () => ({ client_id: clientId, issuer: issuer.href }),
+      tokens: () => undefined,
+      saveTokens: (tokens) => { accessToken = tokens.access_token; },
+      state: () => transaction.state,
+      saveCodeVerifier: (verifier) => { transaction.codeVerifier = verifier; },
+      codeVerifier: () => transaction.codeVerifier,
+      discoveryState: () => ({ authorizationServerUrl: issuer.href, authorizationServerMetadata: metadata,
+        resourceMetadata: { resource: config.publicUrl.href, authorization_servers: [issuer.href] } }),
+      // Never let SDK invalid-grant/client recovery repeat a code exchange.
+      invalidateCredentials: () => { throw new Error("OAuth recovery requires a new sign-in."); },
+      redirectToAuthorization: (url) => {
+        if (url.origin !== issuer.origin) throw new Error("OAuth destination rejected.");
+        url.searchParams.set("response_mode", "form_post");
+        // Auth0 selects the resource-server JWT through audience, not resource.
+        url.searchParams.set("audience", audience);
+        authorizationUrl = url;
+      },
+    };
+    const result = await auth(provider, { serverUrl: config.publicUrl, scope: env.NEMLIG_MCP_REQUIRED_SCOPE ?? "use:nemlig-assistant", fetchFn,
+      ...(completing ? { authorizationCode: code, iss } : {}) });
+    if (!completing && result === "REDIRECT" && authorizationUrl) {
+      return redirect(authorizationUrl.href, [loginCookie(await signCookie(transaction, config.sessionKey))]);
+    }
+    if (!accessToken || result !== "AUTHORIZED") return failed();
+    const subject = await dependencies.authenticate(accessToken);
+    accessToken = undefined;
+    if (subject !== config.principalPolicy.owner_subject
+      || !config.principalPolicy.principals.some((member) => member.subject === subject && member.enabled)
+      || !await dependencies.consumeCsrf(subject, transaction.state, transaction.expiresAt)) return failed();
+    const session: SessionCookie = { kind: "session", subject, csrf: random(24), expiresAt: Date.now() + 900_000 };
+    return redirect("/connect", [loginCookie("", 0), setCookie(SESSION_COOKIE, await signCookie(session, config.sessionKey), 900)]);
+  } catch { return failed(); }
+};
+
 /**
- * Provider credential management only. The caller arrives with a standard
- * resource-server token; this module does not implement Auth0 login, code
- * exchange, refresh, organization, invitation, or identity management.
+ * Credential management with a maintained-client owner browser sign-in adapter.
+ * No refresh, Organization, invitation, enrollment or alternate credential path.
  */
 export async function handleOnboardingRequest(request: Request, env: CloudflareEnv, dependencies: OnboardingDependencies): Promise<Response> {
   if (env.MCP_CREDENTIAL_ONBOARDING_ENABLED !== "true") return response("Credential onboarding is disabled.", 503);
   let config: OnboardingConfig;
   try { config = loadOnboardingConfig(env); } catch { return response("Credential onboarding configuration is invalid.", 503); }
   const url = new URL(request.url);
+  if (url.pathname === "/connect/sign-in" || url.pathname === "/connect/callback") return browserLogin(request, config, env, dependencies);
   if (url.pathname !== "/connect") return response("Not found.", 404);
-  let session = await verifyCookie(cookie(request, SESSION_COOKIE), config.sessionKey);
+  const verified = await verifyCookie(cookie(request, SESSION_COOKIE), config.sessionKey);
+  let session = verified?.kind === "session" ? verified : undefined;
   if (!session) {
     if (request.method !== "GET") return authRequired(config);
+    if (!request.headers.has("authorization")) return signInPage();
     const subject = await (async () => {
       const token = bearer(request);
       return token ? dependencies.authenticate(token) : undefined;

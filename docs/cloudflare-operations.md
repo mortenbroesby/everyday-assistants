@@ -127,19 +127,25 @@ disabled endpoint and no-running-Container state were verified.
 The onboarding implementation is disabled by default with
 `MCP_CREDENTIAL_ONBOARDING_ENABLED=false`. It reuses the Worker, fixed
 controller Durable Object, existing encrypted credential records and
-one-Container ceiling, but it no longer implements an Auth0 browser flow. An
-already-authenticated standard resource bearer token establishes a short-lived
-portal cookie; the portal then handles only the Nemlig credential form and
-provider validation. There is no application-owned authorization-code exchange,
-refresh, Organization, invitation, or ID-token verifier.
+one-Container ceiling. `/connect` has an owner **Sign in** link. The installed
+MCP OAuth client handles authorization code with PKCE; a small browser adapter
+binds issuer, client, state, expiry and the exact enabled owner to the existing
+short-lived portal cookie. Codes arrive by POST, access tokens stay in memory
+and pass the existing resource JWT verifier, and authenticated replay storage
+prevents a second session from the same transaction. Each callback request
+attempts at most one exchange; a replay may attempt an exchange but cannot issue
+another session. There is no automatic exchange retry, refresh, Organization,
+invitation/enrollment, ID-token authority or inline-credential fallback. An
+already-authenticated configured family member can still enter with a standard
+resource bearer token. Merely viewing the anonymous entry makes no provider or
+storage calls; sign-in adds bounded issuer requests, not a new paid service.
 
 At most fifteen invited principals can be stored. Each credential validation
 performs one bounded Nemlig login and one bounded authenticated read, without an
 app-owned request-rate gate. Invitation registration
-and the owner recovery UX remain a separate #69 decision because removing the
-old invitation dependency without a replacement would strand existing users.
-Do not enable this surface until that dependency has an approved operator or
-client-supported recovery procedure. No Auth0 client, API, callback, tenant,
+remain outside this owner-only recovery path. Do not enable this surface until
+the reviewed browser client and session key below are provisioned and owner
+acceptance is recorded. No Auth0 client, API, callback, tenant,
 identity, or existing credential record is deleted by this source change.
 
 The existing `NEMLIG_MCP_CREDENTIAL_KEY` Worker secret and fixed Durable Object
@@ -171,6 +177,36 @@ members require independent isolation acceptance. If any identity, isolation,
 validation or provider gate fails, disable both switches and restore the exact
 previous Worker with its privately retained compatible configuration. Current
 code has no old-schema or inline-credential fallback.
+
+### Owner browser entry prerequisites
+
+Before enabling onboarding, review one public OAuth client on the existing
+issuer. Do not repurpose the ChatGPT client or introduce an auth server. Use
+`token_endpoint_auth_method=none`, authorization-code-only grants, S256 PKCE,
+and the exact callback `https://nemlig-mcp.broesby.dk/connect/callback` with
+`response_mode=form_post`. The adapter sends the configured Auth0 API `audience`
+as well as MCP `resource`; do not depend on an unverified tenant compatibility
+profile. No refresh grant, `offline_access`, Organization, new enrollment or
+Management API audience is needed. Confirm the existing owner can obtain the
+configured API scope using this client. See Auth0's
+[PKCE authorization parameters](https://auth0.com/docs/api/authentication/authorization-code-flow-with-pkce/authorize-with-pkce)
+and [OAuth response modes](https://github.com/auth0/docs/blob/master/articles/protocols/oauth2/index.md).
+
+Provision the public identifier as `NEMLIG_MCP_ONBOARDING_CLIENT_ID` and a
+separate random 32-byte base64url `NEMLIG_MCP_ONBOARDING_SESSION_KEY` Worker
+secret through the approved private operator path. Preserve the credential
+encryption key, exact schema-v3 principal keys/revision, encrypted generations
+and private rollback material. Deployment preserves the live browser identifier
+and fails before mutation when enabled onboarding lacks the identifier, session
+key or credential-key binding. Secret presence is not proof of valid contents.
+
+During disabled/onboarding-only rollout, use an actual browser to verify the
+cross-site POST transaction cookie, issuer Origin, clean redirect and protected
+credential form. Owner sign-in itself does not validate or save Nemlig access;
+the owner must explicitly use the existing credential form. Record read-only
+connection validation before the separately gated enabled production release.
+Neither local synthetic OAuth nor service-fixture acceptance proves this live
+owner migration. Native ChatGPT acceptance remains a separate release gate.
 
 For an incident, disable onboarding first; disable MCP too if credential
 selection, principal isolation, or encryption-key integrity is uncertain.

@@ -937,20 +937,42 @@ test("invalid local config reader stops before either deploy", async () => {
 });
 
 test("live onboarding survives the repository false default and both deployment readbacks", async () => {
-  const { deps, calls, root } = await fixture({ versionBindings: (values) => values.map((value) =>
-    value.name === "MCP_CREDENTIAL_ONBOARDING_ENABLED" ? { ...value, text: "true" } : value) });
+  const { deps, calls, root } = await fixture({ versionBindings: (values) => [
+    ...values.map((value) => value.name === "MCP_CREDENTIAL_ONBOARDING_ENABLED" ? { ...value, text: "true" } : value),
+    { name: "NEMLIG_MCP_ONBOARDING_CLIENT_ID", type: "plain_text", text: "owner-browser-client" },
+    { name: "NEMLIG_MCP_ONBOARDING_SESSION_KEY", type: "secret_text" },
+    { name: "NEMLIG_MCP_CREDENTIAL_KEY", type: "secret_text" },
+  ] });
   try {
     assert.equal((await deployProduction(commit, deps)).outcome, "success");
     const deploys = calls.filter(({ args }) => args.includes("deploy"));
     assert.equal(deploys.length, 2);
     for (const { args } of deploys) {
       assert.ok(args.includes("MCP_CREDENTIAL_ONBOARDING_ENABLED:true"));
+      assert.ok(args.includes("NEMLIG_MCP_ONBOARDING_CLIENT_ID:owner-browser-client"));
       assert.equal(args.includes("MCP_CREDENTIAL_ONBOARDING_ENABLED:false"), false);
       for (const [name, value] of Object.entries(config("").vars)) {
         if (name !== "MCP_ENABLED" && name !== "MCP_CREDENTIAL_ONBOARDING_ENABLED") assert.ok(args.includes(`${name}:${value}`));
       }
     }
   } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test("incomplete or malformed enabled browser sign-in stops before deployment", async () => {
+  for (const fault of ["client", "session", "credential", "malformed"]) {
+    const { deps, calls, root } = await fixture({ versionBindings: (values) => [
+      ...values.map((value) => value.name === "MCP_CREDENTIAL_ONBOARDING_ENABLED" ? { ...value, text: "true" } : value),
+      ...(fault === "client" ? [] : [{ name: "NEMLIG_MCP_ONBOARDING_CLIENT_ID", type: "plain_text", text: fault === "malformed" ? "bad client" : "owner-browser-client" }]),
+      ...(fault === "session" ? [] : [{ name: "NEMLIG_MCP_ONBOARDING_SESSION_KEY", type: "secret_text" }]),
+      ...(fault === "credential" ? [] : [{ name: "NEMLIG_MCP_CREDENTIAL_KEY", type: "secret_text" }]),
+    ] });
+    try {
+      const result = await deployProduction(commit, deps);
+      assert.equal(result.outcome, "failed", fault);
+      assert.equal(result.failure, "cloudflare_runtime_safety_mismatch", fault);
+      assert.equal(calls.some(({ args }) => args.includes("deploy")), false, fault);
+    } finally { await rm(root, { recursive: true, force: true }); }
+  }
 });
 
 test("checked-in local and production config omit operation caps and retain request deadlines", async () => {

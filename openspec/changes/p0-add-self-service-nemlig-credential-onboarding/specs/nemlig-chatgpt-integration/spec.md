@@ -36,6 +36,28 @@ record is missing, invalid, disabled, or revoked.
 
 ## ADDED Requirements
 
+### Requirement: Owner browser connection entry
+
+The fixed connection page SHALL provide an explicit browser sign-in entry for
+the exact enabled owner in the current schema-v3 policy, without requesting a
+token or Nemlig password through chat. A maintained OAuth client SHALL handle
+PKCE and exchange; successful resource-token verification SHALL establish only
+the existing short-lived credential portal session, never enable MCP or write
+Nemlig credentials automatically. No refresh or ID token SHALL provide authority.
+
+#### Scenario: Owner opens the public connection URL
+
+- **WHEN** the owner opens /connect without a portal session
+- **THEN** a sign-in entry is available without provider/storage reads, and explicit
+  sign-in uses a configured browser client without changing the ChatGPT client
+
+#### Scenario: Valid owner browser sign-in completes
+
+- **WHEN** a bounded PKCE POST callback has valid one-use transaction binding and
+  the resource token verifies as the exact enabled configured owner
+- **THEN** the existing protected portal session is issued, OAuth tokens are
+  discarded and only a subsequent explicit validated form may save credentials
+
 ### Requirement: Out-of-band self-service Nemlig connection
 
 An explicitly invited principal SHALL be able to add, rotate, inspect the
