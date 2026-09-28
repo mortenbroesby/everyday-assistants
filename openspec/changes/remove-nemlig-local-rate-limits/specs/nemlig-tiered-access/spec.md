@@ -1,11 +1,24 @@
-# Nemlig Private Family Access Specification
+## REMOVED Requirements
 
-## Purpose
+### Requirement: Family-reserved tier admission
 
-Defines explicitly configured private family access with independent encrypted
-credentials, isolated accounts and user state, and no usage tiers or quotas.
+**Reason**: The owner requests family-only operation without tiers or per-person budgets.
+**Migration**: Remove tier/budget fields from private configuration before a
+separately approved release. No tier aliases or legacy policy parser remain.
 
-## Requirements
+### Requirement: Deterministic bounded usage forecast
+
+**Reason**: Shared household admission does not use tier forecasts or month budgets.
+**Migration**: Delete forecasts and all usage counters; preserve unused stored
+records without reading, converting or deleting them.
+
+### Requirement: Private aggregate evidence
+
+**Reason**: Family operation needs no count-based admission or usage reporting.
+**Migration**: Delete obsolete usage/reset endpoints and tier reports; retain
+privacy-safe request/lifecycle diagnostics.
+
+## MODIFIED Requirements
 
 ### Requirement: Private fail-closed principal policy
 
@@ -48,34 +61,6 @@ not implicitly the first array entry. No private values SHALL be committed.
 - **WHEN** an authorized profile request lacks a provider credential envelope
 - **THEN** profile discovery does not discard the credential-bound current review
   or submission state; genuine credential rotation still invalidates stale state
-
-### Requirement: Per-principal isolation
-
-The system SHALL bind each admitted request and MCP session to one authenticated
-principal and SHALL use only that principal's Nemlig credentials, upstream
-session, basket, favourites, proposals, approvals, shopping plans, and named
-lists. A principal identifier SHALL be opaque outside the encrypted policy and
-SHALL NOT be accepted from an untrusted request field.
-
-#### Scenario: Principal opens an MCP session
-
-- **WHEN** an enabled principal initializes an MCP session
-- **THEN** the session, client, proposal service, and storage scope are created
-  for that authenticated principal only
-
-#### Scenario: Session is reused by another principal
-
-- **WHEN** a different authenticated principal presents an existing MCP session
-  identifier or proposal reference
-- **THEN** the request is denied without revealing whether the referenced state
-  exists and without any Nemlig mutation
-
-#### Scenario: Principal configuration is unavailable
-
-- **WHEN** an admitted identity has no usable independent Nemlig credentials or
-  its own session cannot be established
-- **THEN** the operation fails without falling back to family or another
-  principal's credentials, session, basket, favourites, proposals, or lists
 
 ### Requirement: Global safeguards override all tiers
 

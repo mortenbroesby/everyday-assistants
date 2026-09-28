@@ -214,13 +214,13 @@ Manual dispatch is reserved for exceptional recovery.
 - Make interruption recoverable and report the last verified state instead of
   guessing whether production is enabled.
 - Compare live configuration with the repository contract: one `lite`
-  Container, sleep policy, useful and expensive quotas, per-minute limits,
-  circuit-breaker threshold, CPU/subrequest limits, retry bounds, deadlines,
+  Container, sleep policy, manual kill switches, CPU/subrequest limits, retry bounds, deadlines,
   and bounded log retention; the current authentication investigation
   temporarily uses 100% head sampling without changing those safety limits.
 - Add regression tests that fail if authentication no longer precedes wake, the
   kill switch permits backend dispatch, retries amplify, capacity increases,
-  quotas disappear, or terminal safety evidence is absent.
+  or terminal safety evidence is absent. App-local quotas were explicitly removed
+  by #151/#152; this drill must not restore them.
 - Produce a conservative daily and monthly cost envelope from configured
   maximums and current provider pricing, clearly separating hard technical
   ceilings from delayed alerts and recurring charges.
@@ -241,48 +241,16 @@ pending.
   destructive actions retain exact separate approval.
 - Candidate evidence includes Nemlig product description, item details,
   package, price, availability, and approved direct image when supplied.
-- Tier labels remain, but Tier 0, Tier 1, and Tier 2 use equal admission
-  allowances. Global cost and safety controls remain authoritative.
+- Family identities use independent encrypted credentials and isolated state
+  under the current strict policy; usage tiers and budgets no longer exist.
 
-## P1 — add tiered access with equal allowances
+## Retired — tiered access and usage budgets
 
-**Status:** Implementation in progress. The repository default remains one
-enabled Tier 0 owner; Tier 1 and Tier 2 activation remain disabled until a
-separately approved real-user isolation exercise proves every boundary below.
-
-Keep the existing tier labels for identity and reporting. Admission is equal:
-
-- **Tier 0 — family**, **Tier 1 — trusted invitees**, and **Tier 2 — experimental
-  access** use the same minute and monthly allowance. All remain subject to
-  authentication, provider availability, per-principal limits, the global
-  emergency kill switch, and the owner-set hard safety ceiling.
-
-**Acceptance criteria:**
-
-- Keep the identity-to-tier assignment private, owner-controlled, auditable,
-  and changeable without a code deployment. Never commit names, email
-  addresses, Auth0 subjects, credentials, or tokens.
-- Enforce tier admission, per-principal rate limits, and tier budgets at the
-  Worker before Durable Object dispatch or Container wake. A denied tier must
-  incur only the cheapest edge path.
-- Apply identical monthly and short-window limits across all tiers and fail
-  closed if legacy configuration supplies unequal thresholds.
-- Give denied users a stable, non-sensitive explanation that access is
-  temporarily limited by capacity policy; do not reveal household usage,
-  spending, identities, or another tier's limits.
-- Add tests for equal decisions, monthly reset, concurrent admission,
-  fail-closed unknown identities, and no
-  Container wake after denial.
-- Extend cost and safety evidence with per-tier admitted/rejected counts and
-  remaining headroom, using bounded aggregate logs without prompts, shopping
-  data, identity values, or unbounded cardinality.
-- Before inviting anyone, require their own authenticated principal and
-  separately linked Nemlig account. Never expose or reuse the family's Nemlig
-  credentials, sessions, basket, proposals, approvals, lists, or favorites.
-
-**Safety boundary:** Tier labels do not replace the circuit breaker or kill
-switch. The global hard ceiling must still stop every tier when continuing
-would violate the accepted cost envelope.
+Superseded by #151/#152 and `remove-nemlig-local-rate-limits`. The maintained
+contract is explicitly configured family identities with independent encrypted
+credentials and account/conversation isolation. No app-local operation quotas,
+class caps, tier labels, reserves, shedding or usage forecasting remain. Any
+future public/multi-tenant usage policy requires a separately approved design.
 
 ## P1 — make product wording reliably reach Danish catalogue search
 

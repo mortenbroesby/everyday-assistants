@@ -1,3 +1,8 @@
+The policy/tier/compatibility tasks below are historical and superseded by
+`remove-nemlig-local-rate-limits`. Checkmarks record prior work, not current
+schema support. Re-baseline remaining onboarding independently before applying
+these obsolete policy or migration steps.
+
 ## 1. Contract and Baseline
 
 - [x] 1.1 Rebase the isolated worktree onto current `origin/main`, confirm `fix-nemlig-oauth-reliability` and sibling work remain unchanged, and verify the branch/root/base/status evidence is clean
@@ -20,7 +25,7 @@
 
 ## 4. Browser Authentication and Portal
 
-- [ ] 4.1 Revise configuration validation for the disabled-by-default onboarding switch, ordinary Auth0 Free web-client settings, browser-session/credential keys, rate limits, HTTPS origin, and callback with no Organization setting; verify missing, malformed, inconsistent, or unsafe production values fail closed while the ChatGPT OAuth client remains unchanged
+- [ ] 4.1 Revise configuration validation for the disabled-by-default onboarding switch, ordinary Auth0 Free web-client settings, browser-session/credential keys, HTTPS origin, and callback with no Organization setting; verify missing, malformed, inconsistent, or unsafe production values fail closed while the ChatGPT OAuth client remains unchanged. Rate settings are removed by `remove-nemlig-local-rate-limits`.
 - [ ] 4.2 Revise authorization-code-with-PKCE browser login and callback handling against the existing Auth0 issuer with no invitation or Organization parameter forwarding; verify state, nonce, PKCE, issuer, audience/client, verified email, callback, and subject validation failures are rejected without logging or persisting identity data
 - [ ] 4.3 Add owner-only exact-email invitation creation/cancellation, match the verified callback email by keyed digest, and atomically consume it into one pending Tier 1 principal; verify missing, expired, cancelled, replayed, and wrong-email invitations share one denial shape, unknown users cannot self-register, no user can choose a tier, and owner controls take effect on the next admission
 - [ ] 4.4 Extend the minimal server-side `/connect` portal with owner-only invitation controls and native password-manager fields, no preloaded values or third-party assets, restrictive CSP/frame/referrer/MIME/permissions headers, and `no-store`; verify accessibility, enumeration resistance, and absence of email or secret-bearing markup after submission

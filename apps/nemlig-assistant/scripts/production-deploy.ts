@@ -55,7 +55,7 @@ export interface DeploymentJournal {
 interface AcceptanceFailureEvidence {
   stage: "edge" | "read_only";
   profile: "edge" | "service" | "live-user";
-  category: "input_invalid" | "deadline_exceeded" | "edge_failed" | "authentication_failed" | "transport_failed" | "feature_failed" | "owner_admin_failed" | "mutation_failed" | "unknown_failure";
+  category: "input_invalid" | "deadline_exceeded" | "edge_failed" | "authentication_failed" | "transport_failed" | "feature_failed" | "mutation_failed" | "unknown_failure";
   lastCompletedBoundary: string;
   correlationIds: string[];
 }
@@ -163,8 +163,8 @@ const isoTime = (value: unknown): value is string => {
 };
 const imageDigest = /^sha256:[0-9a-f]{64}$/u;
 const journalChecks = new Set(["source_and_auth_preflight", "recovery_source", "exclusive_lease", "starting_state_recorded", "disabled_version", "disabled_routes", "container_inactive", "enabled_version", "image_reused", "container_rollout", "edge_acceptance", "authenticated_read_only_acceptance", "service_fixture_acceptance", "starting_version_restored"]);
-const journalFailures = new Set(["service_acceptance_not_ready", "service_token_unavailable", "edge_acceptance_failed", "service_fixture_acceptance_failed", "authenticated_read_only_acceptance_failed", "owner_access_token_required", "github_repository_invalid", "source_revision_mismatch", "candidate_does_not_supersede_runtime", "recovery_source_invalid", "github_ci_workflow_invalid", "github_ci_invalid", "exact_head_ci_not_green", "github_environment_not_ready", "local_deployment_lease_unavailable", "remote_deployment_lease_unavailable", "remote_journal_invalid", "remote_journal_append_failed", "remote_journal_parent_invalid", "remote_deployment_lease_changed", "deployment_journal_invalid", "deployment_journal_oversized", "deployment_journal_write_failed", "cloudflare_deployment_drift", "cloudflare_upload_version_missing", "cloudflare_registry_manifest_invalid", "cloudflare_config_invalid", "cloudflare_runtime_binding_unsupported", "cloudflare_runtime_safety_mismatch", "cloudflare_runtime_unexpected_binding", "cloudflare_runtime_legacy_binding_invalid", "cloudflare_instances_invalid", "disabled_route_unavailable", "disabled_route_mismatch", "container_inactive_timeout", "container_instance_timeout", "container_image_changed_during_enable", "recovery_finalize_denied", "command_failed", "command_cancelled", "unexpected_failure"]);
-const acceptanceFailureCategories = new Set(["input_invalid", "deadline_exceeded", "edge_failed", "authentication_failed", "transport_failed", "feature_failed", "owner_admin_failed", "mutation_failed", "unknown_failure"]);
+const journalFailures = new Set(["service_acceptance_not_ready", "service_token_unavailable", "edge_acceptance_failed", "service_fixture_acceptance_failed", "authenticated_read_only_acceptance_failed", "owner_access_token_required", "github_repository_invalid", "source_revision_mismatch", "candidate_does_not_supersede_runtime", "recovery_source_invalid", "github_ci_workflow_invalid", "github_ci_invalid", "exact_head_ci_not_green", "github_environment_not_ready", "local_deployment_lease_unavailable", "remote_deployment_lease_unavailable", "remote_journal_invalid", "remote_journal_append_failed", "remote_journal_parent_invalid", "remote_deployment_lease_changed", "deployment_journal_invalid", "deployment_journal_oversized", "deployment_journal_write_failed", "cloudflare_deployment_drift", "cloudflare_upload_version_missing", "cloudflare_registry_manifest_invalid", "cloudflare_config_invalid", "cloudflare_runtime_binding_unsupported", "cloudflare_runtime_safety_mismatch", "cloudflare_runtime_unexpected_binding", "cloudflare_instances_invalid", "disabled_route_unavailable", "disabled_route_mismatch", "container_inactive_timeout", "container_instance_timeout", "container_image_changed_during_enable", "recovery_finalize_denied", "command_failed", "command_cancelled", "unexpected_failure"]);
+const acceptanceFailureCategories = new Set(["input_invalid", "deadline_exceeded", "edge_failed", "authentication_failed", "transport_failed", "feature_failed", "mutation_failed", "unknown_failure"]);
 
 const validAcceptanceFailure = (value: unknown): value is AcceptanceFailureEvidence => {
   const evidence = object(value);
@@ -302,15 +302,11 @@ export function parseCurrentDeployment(raw: string): CurrentDeployment {
   return { id, version: deployedId };
 }
 
-const configPlainNames = ["MCP_DAILY_LIMIT", "MCP_EXPENSIVE_DAILY_LIMIT", "MCP_RATE_LIMIT", "MCP_EXPENSIVE_RATE_LIMIT", "MCP_AUTH_TIMEOUT_MS", "MCP_CONTROL_TIMEOUT_MS", "MCP_TOTAL_TIMEOUT_MS", "MCP_BACKEND_TIMEOUT_MS", "MCP_CREDENTIAL_ONBOARDING_ENABLED", "MCP_CREDENTIAL_RATE_LIMIT", "MCP_CREDENTIAL_GLOBAL_RATE_LIMIT", "NEMLIG_MCP_CREDENTIAL_KEY_VERSION", "NEMLIG_MCP_HTTP_HOST", "NEMLIG_MCP_HTTP_PORT", "NEMLIG_MCP_AUTH0_ISSUER", "NEMLIG_MCP_AUTH0_AUDIENCE", "NEMLIG_MCP_PUBLIC_URL", "NEMLIG_MCP_SERVICE_ACCEPTANCE_ENABLED", "NEMLIG_MCP_SERVICE_CLIENT_ID"] as const;
+const configPlainNames = ["MCP_AUTH_TIMEOUT_MS", "MCP_CONTROL_TIMEOUT_MS", "MCP_TOTAL_TIMEOUT_MS", "MCP_BACKEND_TIMEOUT_MS", "MCP_CREDENTIAL_ONBOARDING_ENABLED", "NEMLIG_MCP_CREDENTIAL_KEY_VERSION", "NEMLIG_MCP_HTTP_HOST", "NEMLIG_MCP_HTTP_PORT", "NEMLIG_MCP_AUTH0_ISSUER", "NEMLIG_MCP_AUTH0_AUDIENCE", "NEMLIG_MCP_PUBLIC_URL", "NEMLIG_MCP_SERVICE_ACCEPTANCE_ENABLED", "NEMLIG_MCP_SERVICE_CLIENT_ID"] as const;
 const configPlainSet = new Set<string>(configPlainNames);
 const requiredSecrets = new Set(["NEMLIG_MCP_PRINCIPALS"]);
 const expectedDo = new Map([["NEMLIG_MCP_CONTAINER", "NemligMcpContainer"], ["NEMLIG_PLAN_STORAGE", "PlanStorage"]]);
 const productionWorker = "nemlig-mcp-cloudflare-production";
-const knownStartingBindingsToRemove = new Map([
-  ["MCP_MINIMAL_AUTH_ENABLED", "true"],
-  ["NEMLIG_MCP_AUTH_CANARY", "false"],
-]);
 
 const bindings = (resource: Record<string, unknown>): Map<string, Record<string, unknown>> => {
   const resources = object(resource.resources);
@@ -359,7 +355,7 @@ const effectiveConfig = (vars: Map<string, string>, secrets: Iterable<string>, r
   if (!/^[A-Za-z0-9._-]{1,32}$/u.test(normalized.get("NEMLIG_MCP_CREDENTIAL_KEY_VERSION") ?? "")) {
     fail("cloudflare_runtime_safety_mismatch");
   }
-  for (const name of ["MCP_DAILY_LIMIT", "MCP_EXPENSIVE_DAILY_LIMIT", "MCP_RATE_LIMIT", "MCP_EXPENSIVE_RATE_LIMIT", "MCP_AUTH_TIMEOUT_MS", "MCP_CONTROL_TIMEOUT_MS", "MCP_TOTAL_TIMEOUT_MS", "MCP_BACKEND_TIMEOUT_MS", "MCP_CREDENTIAL_RATE_LIMIT", "MCP_CREDENTIAL_GLOBAL_RATE_LIMIT"]) {
+  for (const name of ["MCP_AUTH_TIMEOUT_MS", "MCP_CONTROL_TIMEOUT_MS", "MCP_TOTAL_TIMEOUT_MS", "MCP_BACKEND_TIMEOUT_MS"]) {
     const value = vars.get(name) ?? "";
     if (!/^[1-9]\d*$/u.test(value) || !Number.isSafeInteger(Number(value))) fail("cloudflare_runtime_safety_mismatch");
   }
@@ -380,7 +376,7 @@ const effectiveConfig = (vars: Map<string, string>, secrets: Iterable<string>, r
   return { vars, secrets: secretNames, digest: createHash("sha256").update(canonical).digest("hex") };
 };
 
-const versionConfig = (raw: string, allowKnownStartingBindingsToRemove = false): EffectiveConfig => {
+const versionConfig = (raw: string): EffectiveConfig => {
   const parsed = object(json(raw, "cloudflare_version_invalid")) ?? fail("cloudflare_version_invalid");
   const resources = object(parsed.resources);
   const runtime = object(resources?.script_runtime);
@@ -395,8 +391,6 @@ const versionConfig = (raw: string, allowKnownStartingBindingsToRemove = false):
       if (value.type !== "plain_text") fail("cloudflare_runtime_safety_mismatch");
       const text = typeof value.text === "string" ? value.text : fail("cloudflare_runtime_safety_mismatch");
       vars.set(name, text);
-    } else if (allowKnownStartingBindingsToRemove && knownStartingBindingsToRemove.has(name)) {
-      if (value.type !== "plain_text" || value.text !== knownStartingBindingsToRemove.get(name)) fail("cloudflare_runtime_legacy_binding_invalid");
     } else if (value.type === "secret_text") {
       secrets.push(name);
     } else if (value.type !== "durable_object_namespace") fail("cloudflare_runtime_unexpected_binding");
@@ -436,10 +430,6 @@ export function verifyCandidateVersion(raw: string, expectedId: string, commit: 
     MCP_AUTH_TIMEOUT_MS: "5000",
     MCP_BACKEND_TIMEOUT_MS: "85000",
     MCP_CONTROL_TIMEOUT_MS: "3000",
-    MCP_DAILY_LIMIT: "5000",
-    MCP_EXPENSIVE_DAILY_LIMIT: "500",
-    MCP_EXPENSIVE_RATE_LIMIT: "10",
-    MCP_RATE_LIMIT: "60",
     MCP_TOTAL_TIMEOUT_MS: "90000",
   };
   for (const [name, text] of Object.entries(expectedText)) {
@@ -800,7 +790,7 @@ const verifyRecoveryTarget = async (deps: DeployDependencies, expected: Recovery
   const instances = await wrangler(deps, ["containers", "instances", container.id, "--json"]);
   const exactMetadata = (expected.version === undefined || current.version === expected.version) && (expected.enabled === undefined || state.enabled === expected.enabled)
     && container.id === expected.containerId && container.image === expected.image && container.version === expected.applicationVersion
-    && versionConfig(raw, true).digest === expected.configDigest
+    && versionConfig(raw).digest === expected.configDigest
     && (instancesInactive(instances) || (state.enabled && runningInstanceMatches(instances, expected.applicationVersion)));
   if (!exactMetadata) return undefined;
   if (expected.enabled === false) {
@@ -1280,7 +1270,7 @@ export async function deployProduction(commit: string, inputDeps: DeployDependen
       try { await runAt(deps, deps.repoRoot, "git", ["merge-base", "--is-ancestor", starting.revision, commit]); }
       catch { fail("candidate_does_not_supersede_runtime"); }
     }
-    const startingConfig = versionConfig(startingRaw, true);
+    const startingConfig = versionConfig(startingRaw);
     configured = candidateConfig(await readLocalConfig(deps), startingConfig);
     if (configured.digest !== startingConfig.digest) fail("cloudflare_runtime_safety_mismatch");
     if (service) {

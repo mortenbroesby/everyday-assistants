@@ -7,14 +7,13 @@ import {
 } from "./cloudflare-observability.js";
 
 const safeEvent: GatewayRequestEvent = {
-  schema_version: 1,
+  schema_version: 2,
   event: "gateway_request_terminal",
   request_id: "00000000-0000-4000-8000-000000000000",
   revision: "abc123",
   route: "mcp",
   method: "POST",
-  operation: "normal",
-  tier: "0",
+  operation: "useful",
   denial_reason: "none",
   outcome: "completed",
   status: 200,
@@ -23,11 +22,13 @@ const safeEvent: GatewayRequestEvent = {
 
 test("terminal request evidence accepts only the closed privacy-safe schema", () => {
   assert.deepEqual(parseGatewayRequestEvent(safeEvent), safeEvent);
-  for (const sensitiveKey of ["error", "headers", "body", "query", "token", "cookie", "arguments", "stack"]) {
+  for (const sensitiveKey of ["error", "headers", "body", "query", "token", "cookie", "arguments", "stack", "tier"]) {
     assert.throws(() => parseGatewayRequestEvent({ ...safeEvent, [sensitiveKey]: "representative-secret-value" }));
   }
   assert.throws(() => parseGatewayRequestEvent({ ...safeEvent, revision: "" }));
   assert.throws(() => parseGatewayRequestEvent({ ...safeEvent, outcome: "private-provider-response" }));
+  assert.throws(() => parseGatewayRequestEvent({ ...safeEvent, schema_version: 1 }));
+  assert.throws(() => parseGatewayRequestEvent({ ...safeEvent, operation: "expensive" }));
 });
 
 test("every privacy-safe terminal event is emitted for bounded diagnosis", () => {

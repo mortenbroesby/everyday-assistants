@@ -10,8 +10,6 @@ export interface OnboardingConfig {
   sessionKey: string;
   credentialKey: string;
   credentialKeyVersion: string;
-  perPrincipalRate: number;
-  globalRate: number;
   principalPolicy: PrincipalPolicy;
 }
 
@@ -20,7 +18,7 @@ export interface OnboardingDependencies {
   authenticate(token: string): Promise<string | undefined>;
   principalStatus(subject: string): Promise<"owner" | "pending" | "enabled" | undefined>;
   connectionStatus(subject: string): Promise<boolean>;
-  replace(subject: string, credentials: Credentials): Promise<"connected" | "invalid" | "limited">;
+  replace(subject: string, credentials: Credentials): Promise<"connected" | "invalid">;
   revoke(subject: string): Promise<void>;
   listPrincipals(): Promise<Array<{ subject: string; status: "pending" | "enabled" | "disabled" | "revoked" }>>;
   setPrincipalStatus(subject: string, status: "disabled" | "revoked"): Promise<void>;
@@ -33,10 +31,6 @@ const SESSION_COOKIE = "__Host-nemlig-session";
 const encoder = new TextEncoder();
 const invalidConfig = (): never => { throw new Error("Credential onboarding configuration is invalid."); };
 const required = (env: CloudflareEnv, name: keyof CloudflareEnv): string => env[name]?.trim() || invalidConfig();
-const bounded = (env: CloudflareEnv, name: keyof CloudflareEnv, maximum: number): number => {
-  const value = Number(required(env, name));
-  return Number.isSafeInteger(value) && value > 0 && value <= maximum ? value : invalidConfig();
-};
 
 export function loadOnboardingConfig(env: CloudflareEnv): OnboardingConfig {
   const publicUrl = new URL(required(env, "NEMLIG_MCP_PUBLIC_URL"));
@@ -48,10 +42,7 @@ export function loadOnboardingConfig(env: CloudflareEnv): OnboardingConfig {
     || !/^[A-Za-z0-9_-]{43}$/u.test(sessionKey)
     || !/^[A-Za-z0-9_-]{43}$/u.test(credentialKey)
     || !/^[A-Za-z0-9._-]{1,32}$/u.test(credentialKeyVersion)) invalidConfig();
-  const perPrincipalRate = bounded(env, "MCP_CREDENTIAL_RATE_LIMIT", 10);
-  const globalRate = bounded(env, "MCP_CREDENTIAL_GLOBAL_RATE_LIMIT", 60);
-  if (globalRate < perPrincipalRate) invalidConfig();
-  return { publicUrl, origin: publicUrl.origin, sessionKey, credentialKey, credentialKeyVersion, perPrincipalRate, globalRate, principalPolicy };
+  return { publicUrl, origin: publicUrl.origin, sessionKey, credentialKey, credentialKeyVersion, principalPolicy };
 }
 
 const base64url = (bytes: Uint8Array): string => {
@@ -182,7 +173,7 @@ export async function handleOnboardingRequest(request: Request, env: CloudflareE
     const result = await dependencies.replace(session.subject, { username: username.trim(), password });
     return result === "connected"
       ? render(page(renewed.csrf, true, "Connection saved."))
-      : render(page(renewed.csrf, await dependencies.connectionStatus(session.subject), result === "limited" ? "Try again later." : "Connection failed."), result === "limited" ? 429 : 400);
+      : render(page(renewed.csrf, await dependencies.connectionStatus(session.subject), "Connection failed."), 400);
   } catch {
     return render(page(renewed.csrf, false, "Request failed."), 500);
   }

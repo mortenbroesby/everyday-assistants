@@ -4,17 +4,11 @@ export const FIXED_CONTAINER_NAME = "nemlig-production";
 
 export interface CloudflareEnv {
   MCP_ENABLED?: string;
-  MCP_DAILY_LIMIT?: string;
-  MCP_EXPENSIVE_DAILY_LIMIT?: string;
-  MCP_RATE_LIMIT?: string;
-  MCP_EXPENSIVE_RATE_LIMIT?: string;
   MCP_AUTH_TIMEOUT_MS?: string;
   MCP_CONTROL_TIMEOUT_MS?: string;
   MCP_TOTAL_TIMEOUT_MS?: string;
   MCP_BACKEND_TIMEOUT_MS?: string;
   MCP_CREDENTIAL_ONBOARDING_ENABLED?: string;
-  MCP_CREDENTIAL_RATE_LIMIT?: string;
-  MCP_CREDENTIAL_GLOBAL_RATE_LIMIT?: string;
   NEMLIG_MCP_AUTH0_ISSUER?: string;
   NEMLIG_MCP_AUTH0_AUDIENCE?: string;
   NEMLIG_MCP_PRINCIPALS?: string;
@@ -30,10 +24,6 @@ export interface CloudflareEnv {
 }
 
 export interface GatewayConfig {
-  dailyLimit: number;
-  expensiveDailyLimit: number;
-  rateLimit: number;
-  expensiveRateLimit: number;
   authTimeoutMs: number;
   controlTimeoutMs: number;
   totalTimeoutMs: number;
@@ -45,8 +35,8 @@ export interface GatewayConfig {
   publicUrl: URL;
   allowedOrigins: string[];
   revision: string;
-  credentialKey?: string;
-  credentialKeyVersion?: string;
+  credentialKey: string;
+  credentialKeyVersion: string;
   serviceAcceptance?: { clientId: string };
 }
 
@@ -65,10 +55,6 @@ const boundedInteger = (env: CloudflareEnv, name: keyof CloudflareEnv, maximum: 
 };
 
 export function loadGatewayConfig(env: CloudflareEnv): GatewayConfig {
-  const dailyLimit = boundedInteger(env, "MCP_DAILY_LIMIT", 100_000);
-  const expensiveDailyLimit = boundedInteger(env, "MCP_EXPENSIVE_DAILY_LIMIT", dailyLimit);
-  const rateLimit = boundedInteger(env, "MCP_RATE_LIMIT", 600);
-  const expensiveRateLimit = boundedInteger(env, "MCP_EXPENSIVE_RATE_LIMIT", rateLimit);
   const authTimeoutMs = boundedInteger(env, "MCP_AUTH_TIMEOUT_MS", 10_000);
   const controlTimeoutMs = boundedInteger(env, "MCP_CONTROL_TIMEOUT_MS", 10_000);
   const totalTimeoutMs = boundedInteger(env, "MCP_TOTAL_TIMEOUT_MS", 120_000);
@@ -82,17 +68,9 @@ export function loadGatewayConfig(env: CloudflareEnv): GatewayConfig {
   const credentialKey = env.NEMLIG_MCP_CREDENTIAL_KEY?.trim();
   const credentialKeyVersion = env.NEMLIG_MCP_CREDENTIAL_KEY_VERSION?.trim();
   const serviceAcceptanceEnabled = env.NEMLIG_MCP_SERVICE_ACCEPTANCE_ENABLED === "true";
-  if (principalPolicy.schema_version === 2
-    && (!credentialKey || !/^[A-Za-z0-9_-]{43}$/u.test(credentialKey)
-      || !credentialKeyVersion || !/^[A-Za-z0-9._-]{1,32}$/u.test(credentialKeyVersion))) {
-    throw new Error("Schema-v2 credential encryption configuration is invalid.");
-  }
-  const { budgets } = principalPolicy;
-  const maximumMonthlyOperations = dailyLimit * 31;
-  if (budgets.guest_limit.minute > rateLimit
-    || budgets.guest_limit.month > maximumMonthlyOperations
-    || Object.values(budgets.principal_minute_limits).some((limit) => limit > rateLimit)) {
-    throw new Error("Principal policy exceeds global safety limits.");
+  if (!credentialKey || !/^[A-Za-z0-9_-]{43}$/u.test(credentialKey)
+    || !credentialKeyVersion || !/^[A-Za-z0-9._-]{1,32}$/u.test(credentialKeyVersion)) {
+    throw new Error("Credential encryption configuration is invalid.");
   }
   if (issuer.protocol !== "https:" || issuer.search || issuer.hash) throw new Error("NEMLIG_MCP_AUTH0_ISSUER must be an HTTPS URL without query or fragment.");
   if (!issuer.pathname.endsWith("/")) issuer.pathname += "/";
@@ -100,10 +78,6 @@ export function loadGatewayConfig(env: CloudflareEnv): GatewayConfig {
     throw new Error("NEMLIG_MCP_PUBLIC_URL must be an HTTPS /mcp URL without query or fragment.");
   }
   return {
-    dailyLimit,
-    expensiveDailyLimit,
-    rateLimit,
-    expensiveRateLimit,
     authTimeoutMs,
     controlTimeoutMs,
     totalTimeoutMs,
@@ -116,8 +90,8 @@ export function loadGatewayConfig(env: CloudflareEnv): GatewayConfig {
     allowedOrigins: (env.NEMLIG_MCP_ALLOWED_ORIGINS ?? "https://chatgpt.com,https://chat.openai.com")
       .split(",").map((value) => value.trim()).filter(Boolean),
     revision: env.NEMLIG_MCP_REVISION?.trim() || "development",
-    ...(credentialKey ? { credentialKey } : {}),
-    ...(credentialKeyVersion ? { credentialKeyVersion } : {}),
+    credentialKey,
+    credentialKeyVersion,
     ...(serviceAcceptanceEnabled ? { serviceAcceptance: { clientId: required(env, "NEMLIG_MCP_SERVICE_CLIENT_ID") } } : {}),
   };
 }

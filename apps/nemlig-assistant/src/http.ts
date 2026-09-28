@@ -28,7 +28,7 @@ const defaultPrincipalContext: PrincipalContextFactory = () => {
   return { client, proposals: new BasketProposalService(client) };
 };
 
-const servicePrincipal: Principal = { subject: "service", principal_key: "s".repeat(32), tier: 2, enabled: true };
+const servicePrincipal: Principal = { subject: "service", principal_key: "s".repeat(32), enabled: true };
 const serviceContext = (): PrincipalContext => {
   const product = () => ({ id: 1, name: "Service fixture banana", price: 1, unit: "1 kr/stk.", unitPrice: 1, unitSize: "1 stk.", brand: "Fixture", category: "Frugt", subcategory: "Bananer", imageUrl: "", available: true, labels: [], isOrganic: false, isFrozen: false, isRefrigerated: false, isDairy: false, isLactoseFree: false, isGlutenFree: false, isVegan: true, isOnDiscount: false });
   const client: ShoppingClient = {
@@ -41,12 +41,12 @@ const serviceContext = (): PrincipalContext => {
 };
 
 const isCredentialFreeRequest = (request: Request): boolean => {
-  // Schema-v2 profile discovery must work before provider credential onboarding.
+  // Protocol and profile discovery must work before provider credential onboarding.
   const body = request.body;
   if (!body || typeof body !== "object" || Array.isArray(body)) return false;
   const method = (body as { method?: unknown }).method;
-  if (method === "server/discover") return true;
-  if (method !== "tools/call") return false;
+  if (typeof method !== "string") return false;
+  if (method !== "tools/call") return true;
   const params = (body as { params?: unknown }).params;
   return !!params && typeof params === "object" && !Array.isArray(params) && (params as { name?: unknown }).name === "get_profile";
 };
@@ -90,7 +90,7 @@ export function createHttpApp(
       async () => credentials,
       mcpEnv,
       context.proposals,
-      { principalKey: principal.principal_key, policyRevision: config.principalPolicy.revision, tier: principal.tier, ...(service ? { kind: "service" as const } : {}) },
+      { principalKey: principal.principal_key, policyRevision: config.principalPolicy.revision, ...(service ? { kind: "service" as const } : {}) },
       context.reviews ??= new ProductReviewService(context.client, { proposals: context.proposals }),
     );
   }, { legacy: "stateless" });
@@ -111,7 +111,8 @@ export function createHttpApp(
       const policyRevision = req.get("x-nemlig-policy-revision");
       const generation = Number(req.get("x-nemlig-credential-generation"));
       const encoded = req.get("x-nemlig-credential-envelope");
-      if (!principalKey || policyRevision !== config.principalPolicy.revision || !Number.isSafeInteger(generation)
+      if (!principalKey || !config.principalPolicy.principals.some((principal) => principal.principal_key === principalKey)
+        || policyRevision !== config.principalPolicy.revision || !Number.isSafeInteger(generation)
         || generation < 1 || !encoded || !config.credentialKey || !config.credentialKeyVersion) return res.status(403).json({ error: "validation_rejected" });
       const credentials = await decryptCredentials(JSON.parse(atob(encoded)), {
         principalKey, policyRevision, keyVersion: config.credentialKeyVersion, generation,
@@ -165,28 +166,26 @@ export function createHttpApp(
       if (!service && !req.auth?.scopes.includes(config.requiredScope)) return res.status(403).json({ error: "principal_not_allowed" });
       const configured = !service && typeof subject === "string" ? findEnabledPrincipal(config.principalPolicy, subject) : undefined;
       let principal = configured;
-      let credentials: Credentials | undefined = configured?.nemlig;
+      let credentials: Credentials | undefined;
       let generation = 0;
       if (service) {
         principal = servicePrincipal;
         credentials = undefined;
-      } else if (config.principalPolicy.schema_version === 2 && typeof subject === "string"
-        && (!isCredentialFreeRequest(req) || req.get("x-nemlig-credential-envelope"))) {
+      } else {
+        if (!configured) return res.status(403).json({ error: "principal_not_allowed" });
         const principalKey = req.get("x-nemlig-principal-key");
         const policyRevision = req.get("x-nemlig-policy-revision");
         const generationValue = Number(req.get("x-nemlig-credential-generation"));
         const encodedEnvelope = req.get("x-nemlig-credential-envelope");
         if (!principalKey && !policyRevision && !req.get("x-nemlig-credential-generation") && !encodedEnvelope) {
-          principal = configured ?? { subject, principal_key: "p".repeat(32), tier: 1, enabled: true };
-        } else if (!principalKey || policyRevision !== config.principalPolicy.revision
+          if (!isCredentialFreeRequest(req)) return res.status(403).json({ error: "principal_not_allowed" });
+        } else if (!principalKey || configured.principal_key !== principalKey || policyRevision !== config.principalPolicy.revision
           || !Number.isSafeInteger(generationValue) || generationValue < 1 || !encodedEnvelope
           || !config.credentialKey || !config.credentialKeyVersion) {
           return res.status(403).json({ error: "principal_not_allowed" });
         } else {
           try {
             const envelope = JSON.parse(atob(encodedEnvelope)) as CredentialEnvelope;
-            if (configured && configured.principal_key !== principalKey) return res.status(403).json({ error: "principal_not_allowed" });
-            principal = configured ?? { subject, principal_key: principalKey, tier: 1, enabled: true };
             generation = generationValue;
             credentials = await decryptCredentials(envelope, {
               principalKey,
@@ -201,7 +200,11 @@ export function createHttpApp(
       }
       if (!principal) return res.status(403).json({ error: "principal_not_allowed" });
       const contextKey = `${principal.principal_key}:${config.principalPolicy.revision}:${generation}`;
-      let context = service ? serviceContext() : contexts.get(contextKey);
+      let context: PrincipalContext | undefined;
+      if (service) context = serviceContext();
+      // Credential-free discovery is request-local, not a credential rotation.
+      else if (generation === 0) context = createContext(principal);
+      else context = contexts.get(contextKey);
       if (!context) {
         for (const key of contexts.keys()) if (key.startsWith(`${principal.principal_key}:`)) contexts.delete(key);
         if (contexts.size >= MAX_PRINCIPALS) return res.status(503).json({ error: "principal_capacity_unavailable" });

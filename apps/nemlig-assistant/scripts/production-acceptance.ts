@@ -7,7 +7,6 @@ import {
   ProductViewerHtmlMismatchError,
   ServiceInventoryMismatchError,
   verifyApprovedReversibleProductionMutation,
-  verifyAggregateTierUsage,
   verifyProductionEdge,
   verifyReadOnlyProductionFeatures,
   verifyServiceAcceptanceFeatures,
@@ -161,7 +160,7 @@ export interface AcceptanceReport {
   failed: string[];
   unavailable: string[];
   lastCompletedBoundary: string;
-  failureCategory?: "input_invalid" | "deadline_exceeded" | "edge_failed" | "authentication_failed" | "transport_failed" | "feature_failed" | "owner_admin_failed" | "mutation_failed" | "unknown_failure";
+  failureCategory?: "input_invalid" | "deadline_exceeded" | "edge_failed" | "authentication_failed" | "transport_failed" | "feature_failed" | "mutation_failed" | "unknown_failure";
   correlationIds: string[];
 }
 
@@ -178,7 +177,6 @@ const failureCategory = (error: unknown): NonNullable<AcceptanceReport["failureC
   if (/argument|valid URL|required|approval environment|cannot select mutation|fixed production target/iu.test(message)) return "input_invalid";
   if (/edge|health|revision|OAuth|anonymous|Origin/iu.test(message)) return "edge_failed";
   if (/token|authentication|authorization/iu.test(message)) return "authentication_failed";
-  if (/admin|tier usage/iu.test(message)) return "owner_admin_failed";
   if (/mutation|restor/iu.test(message)) return "mutation_failed";
   if (/connect|transport|MCP/iu.test(message)) return "transport_failed";
   if (/feature|inventory|basket|favorites|shopping|resource/iu.test(message)) return "feature_failed";
@@ -243,8 +241,7 @@ export async function main(
         outcome = { profile: "service", observedRevision, required: ["edge", "service_fixture"], passed: ["edge", "service_fixture"], unavailable: [], lastCompletedBoundary: `service_fixture_${report.requestCount}_requests`, correlationIds: edge.correlationIds };
       } else if (!mutations) {
         const report = await verifyReadOnlyProductionFeatures(connected.client, { signal: controller.signal });
-        await verifyAggregateTierUsage(origin, accessToken, dependencies.fetcher, { signal: controller.signal });
-        outcome = { profile: "live-user", observedRevision, required: ["edge", "live_user_features", "owner_admin"], passed: ["edge", "live_user_features", "owner_admin"], unavailable: report.unavailable, lastCompletedBoundary: "owner_admin", correlationIds: edge.correlationIds };
+        outcome = { profile: "live-user", observedRevision, required: ["edge", "live_user_features"], passed: ["edge", "live_user_features"], unavailable: report.unavailable, lastCompletedBoundary: "live_user_features", correlationIds: edge.correlationIds };
       } else {
         await verifyApprovedReversibleProductionMutation(connected.client, mutations.change, mutations.restoration);
         outcome = { profile: "mutation", observedRevision, required: ["edge", "approved_mutation"], passed: ["edge", "approved_mutation"], unavailable: [], lastCompletedBoundary: "approved_mutation_restored", correlationIds: edge.correlationIds };

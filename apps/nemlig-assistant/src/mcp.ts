@@ -45,7 +45,6 @@ export const NEMLIG_IMAGE_ORIGINS = IMAGE_ORIGINS;
 export interface McpRequestContext {
   principalKey: string;
   policyRevision: string;
-  tier: 0 | 1 | 2;
   kind?: "service";
 }
 

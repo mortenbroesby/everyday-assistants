@@ -158,7 +158,7 @@ registration, or unrestricted account mapping.
 
 The system SHALL NOT extend the private hosted boundary to an additional Auth0
 identity or Nemlig account unless an approved design defines private identity
-mapping, per-principal isolation, revocation, quotas, credential ownership, and
+mapping, per-principal isolation, revocation, credential ownership, and
 an explicit activation gate. It SHALL NOT extend access to arbitrary public
 users, checkout, payment, ordering, or delivery-slot mutation.
 
@@ -167,7 +167,7 @@ users, checkout, payment, ordering, or delivery-slot mutation.
 - **WHEN** support for another Auth0 identity or Nemlig account is requested
 - **THEN** that principal remains disabled until its separate identity and
   account are configured, isolation acceptance succeeds, and the owner
-  explicitly enables it under the approved tiered-access design
+  explicitly enables it under the current private-family design
 
 #### Scenario: Public access is requested
 

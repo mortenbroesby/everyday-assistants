@@ -29,10 +29,10 @@ Both returned HTTP 503 with `MCP temporarily disabled` during the latest
 read-only incident verification. The Worker is
 `nemlig-mcp-cloudflare-production`; the configured Container is `lite`, EU
 placed, sleeps after 10 minutes, and is capped at one instance. The currently
-deployed owner-only policy is the schema-v1 migration source. Schema v2 keeps
-only the static owner identity, tier budgets, and legacy invitation metadata in
-`NEMLIG_MCP_PRINCIPALS`; accepted users' sealed credential records
-live in the existing fixed controller Durable Object. The authenticated
+served policy is not asserted by this source update. Current code accepts only
+schema v3: revision, explicit owner subject and configured enabled family
+identities/opaque keys. Sealed credential records
+remain in the existing fixed controller Durable Object. The authenticated
 `get_profile` operation is intentionally provider-independent and does not
 require a Nemlig credential; provider-backed operations remain credential-gated.
 This document records
@@ -46,11 +46,10 @@ legacy `PlanStorage` class, namespace binding and migration history are retained
 only to preserve existing records and rollback: its handler returns 410 without
 storage access, and the application no longer forwards saved-shopping requests.
 Do not delete that namespace or stored records as part of a routine deployment. The Worker
-is disabled by default. Useful operations default to 5,000/day, expensive operations
-to 500/day, and per-minute owner limits to 60 normal and 10 expensive. Valid MCP
-messages other than `tools/call` are protocol traffic and do not consume
-useful-operation quota, but an open breaker
-still prevents it from waking the Container.
+is disabled by default. No app-local operation quota, rate throttle, tier budget,
+usage counter or automatic daily breaker remains. Protocol/profile distinctions
+serve only credential gating and diagnostics. The manual kill switch still
+stops new MCP work before backend access.
 
 The Worker CPU and subrequest limits are 100 ms and 8. Every request has a
 90-second total deadline. Auth0 is capped at 5 seconds, Durable Object control
@@ -100,7 +99,7 @@ disabled endpoint and no-running-Container state were verified.
 5. The runtime no longer submits GitHub issues and does not forward `GH_TOKEN`.
    Do not provision a GitHub token for the assistant. The hosted runtime no
    longer reads the legacy owner-subject, username, or password bindings. Keep
-   the existing provider-held secrets only until the credential-free schema-v2
+   the existing provider-held secrets only until the current encrypted-credential
    deployment is verified; then remove them as a separate owner-controlled
    secret cleanup. They must never be reused for an invitee.
 
@@ -134,9 +133,9 @@ portal cookie; the portal then handles only the Nemlig credential form and
 provider validation. There is no application-owned authorization-code exchange,
 refresh, Organization, invitation, or ID-token verifier.
 
-At most fifteen invited principals can be stored. Validation is limited to
-three attempts per principal and ten total attempts per minute; each attempt
-performs one Nemlig login and one authenticated read. Invitation registration
+At most fifteen invited principals can be stored. Each credential validation
+performs one bounded Nemlig login and one bounded authenticated read, without an
+app-owned request-rate gate. Invitation registration
 and the owner recovery UX remain a separate #69 decision because removing the
 old invitation dependency without a replacement would strand existing users.
 Do not enable this surface until that dependency has an approved operator or
@@ -150,9 +149,10 @@ Secret Store was not selected as a competing store: a migration would need
 separate approval for access control, provisioning, local development,
 rotation, revocation, ciphertext compatibility, and rollback.
 
-An accepted invitation creates a pending Tier 1 principal. One successful,
-rate-limited read-only validation atomically stores the sealed generation and
-activates that principal. Failed replacement preserves the last known-good
+Only an explicitly configured family identity can use the credential portal.
+One successful read-only validation atomically stores its sealed generation.
+An existing pending record still requires its isolation/activation checks;
+unknown subjects cannot enroll through a registry fallback. Failed replacement preserves the last known-good
 generation. Users can replace or revoke only their own connection; the owner
 portal can disable or revoke invitee access. Rotation invalidates old MCP
 sessions on their next request, and revocation removes the current generation.
@@ -165,18 +165,19 @@ must not be presented as a ChatGPT/Auth0 reconnect challenge.
 For rollout, keep both `MCP_ENABLED` and onboarding false, deploy the exact
 CI-green revision, and verify both surfaces fail closed without Container
 activity. Enable onboarding alone for owner migration, validate and store the
-owner credential through the page, switch to schema v2, then enable MCP and run
-read-only owner acceptance. Only then issue an invitee. If any identity,
-isolation, validation, cost, or provider gate fails, disable both switches and
-restore the recorded schema-v1 secret and previous Worker version. Do not remove
-the fallback or its rollback material until owner and invitee acceptance passes.
+owner credential through the page using the current schema-v3 policy, then
+enable MCP and run read-only owner acceptance. Additional configured family
+members require independent isolation acceptance. If any identity, isolation,
+validation or provider gate fails, disable both switches and restore the exact
+previous Worker with its privately retained compatible configuration. Current
+code has no old-schema or inline-credential fallback.
 
 For an incident, disable onboarding first; disable MCP too if credential
 selection, principal isolation, or encryption-key integrity is uncertain.
 Revoke the affected principal or credential in the owner portal, rotate the
 upstream Nemlig password when upstream revocation is intended, and rotate the
 encryption key if ciphertext confidentiality may be compromised. Inspect only
-sanitized terminal/lifecycle events and aggregate limits—never request bodies,
+sanitized terminal/lifecycle events—never request bodies,
 cookies, invitation links, subjects, credentials, envelopes, or provider
 responses.
 
@@ -387,7 +388,7 @@ images. If cleanup is interrupted or uncertain, use the protected workflow's
 finished; the operation re-reads current state before continuing. The job does
 not remove Worker deployments/versions, secrets, Durable Object state, Container
 applications, or any other registry repository. Deployment still keeps the
-existing one `lite` Container and cost ceilings; image pruning does not add
+existing one `lite` Container and bounded-work safeguards; image pruning does not add
 runtime capacity or perform basket/order/payment/delivery operations.
 
 The workflow summary separates deployment, technical acceptance, owner
@@ -420,7 +421,7 @@ alone.
 ### Configuration and recovery disposition
 
 The current production binding inventory is intentionally small. Active
-runtime consumers are `MCP_ENABLED`, the quota/timeout variables, the Auth0
+runtime consumers are `MCP_ENABLED`, timeout variables, the Auth0
 issuer/audience and public URL, the service-acceptance identity, the credential
 key version, `NEMLIG_MCP_PRINCIPALS`, and the `NEMLIG_MCP_CONTAINER` and
 `NEMLIG_PLAN_STORAGE` Durable Object bindings. The HTTP host/port values are
@@ -642,42 +643,23 @@ closed: the automated contracts and credential-free production probe passed,
 while the optional token-backed feature sweep and reversible live mutation
 exercise remain operator-run checks rather than claimed completion evidence.
 
-## Inspect usage and reset the breaker
+## Inspect sanitized operational evidence
 
-Use a current owner access token without placing it in command history:
+There are no application usage counters, quotas, daily breaker or reset endpoint.
+Old usage records remain untouched and are not read or converted. Inspect only
+sanitized terminal outcomes and Container lifecycle events; use the documented
+manual kill switch to stop new work.
 
-```sh
-read -rs MCP_OWNER_TOKEN
-curl -sS -H "Authorization: Bearer $MCP_OWNER_TOKEN" https://YOUR_MCP_HOST/admin/usage
-curl -sS -X POST -H "Authorization: Bearer $MCP_OWNER_TOKEN" https://YOUR_MCP_HOST/admin/reset-breaker
-unset MCP_OWNER_TOKEN
-```
+Each request emits at most one closed `gateway_request_terminal` event with
+schema version, generated request ID, revision, route, method, credential-gating
+category, terminal outcome, HTTP status and elapsed milliseconds. Lifecycle events
+are limited to Container start/stop/error. No raw errors, headers, bodies, tokens,
+cookies, OAuth artifacts, prompts, arguments or shopping data are logged.
 
-Inspection returns only the UTC period, normal/expensive counts, minute windows,
-breaker status, and enumerated trip reason/time. Reset requires the same Auth0
-owner, subject, audience, and scope checks as MCP use. The next UTC day also
-resets lazily. If state cannot be inspected, leave the MCP disabled rather than
-bypassing admission.
-
-Each request can emit at most one allowlisted `gateway_request_terminal` event.
-It contains only schema version, server-generated request ID, revision, route,
-method, coarse operation class, terminal outcome, HTTP status, and elapsed
-milliseconds. Authenticated useful operations, timeouts, failures, breaker
-rejections, and disabled/configuration outcomes are always retained. Public
-protocol successes and authentication rejections are retained during the
-bounded authentication investigation. Sparse lifecycle events are limited to
-Container start/stop/error and breaker trip/reset. Logs contain no raw errors, headers,
-bodies, query strings, tokens, credentials, cookies, OAuth artifacts, prompts,
-tool arguments, shopping data, provider responses, or stacks.
-
-Workers Logs is enabled with 100% head sampling in Wrangler for this bounded
-investigation. Cloudflare includes 20 million log events per month on Workers
-Paid, then charges $0.60 per
-additional million; the existing 5,000-per-day useful-operation breaker and
-closed event schema keep event shape and useful-operation volume bounded, but
-public traffic can increase log volume and cost during this diagnostic period.
-The one `lite` Container, one-instance ceiling, quotas, rate limits, ten-minute
-sleep, and dynamic `MCP_ENABLED` kill switch remain unchanged.
+Workers Logs remains enabled at 100% sampling for bounded investigation. The
+closed schema limits event contents, not traffic or billing. The single sleeping
+`lite` Container, bounded deadlines/retries and manual `MCP_ENABLED` switch
+remain. No app-enforced aggregate operation or billing ceiling exists.
 
 ## Diagnose a ChatGPT reconnect without collecting secrets
 
@@ -720,11 +702,11 @@ authorization UI or Auth0's browser redirect before a request reaches it.
 
 ### Create or rotate the private principal policy
 
-Schema v1 is the bounded single-owner migration format and contains the owner's
-credential. Schema v2 contains a non-secret revision, tier budgets, one enabled
-Tier 0 owner identity/key, and legacy invitation metadata; it contains no
-Nemlig credential or dynamic invitee. Do not
-put either real policy in a command argument, environment file, repository file,
+Only schema v3 is accepted: `schema_version`, `revision`, `owner_subject` and
+`principals` entries with `subject`, `principal_key` and `enabled`. The owner
+must identify exactly one enabled configured member. No tiers, budgets, inline
+passwords, legacy versions or automatic unknown-identity enrollment exist.
+Do not put the real policy in a command argument, environment file, repository file,
 issue, chat, log, or test.
 
 1. Keep the current policy recoverable in the owner's password manager, prepare
@@ -740,10 +722,10 @@ issue, chat, log, or test.
    pnpm --filter nemlig-assistant exec wrangler secret put NEMLIG_MCP_PRINCIPALS --env production
    ```
 
-4. Keep production disabled while validating the new revision, one enabled
-   Tier 0 entry, configured limits, anonymous rejection, and unknown-principal
+4. Keep production disabled while validating the new revision, explicit enabled
+   owner, configured identities, anonymous rejection, and unknown-principal
    denial. Enable the same application revision only after those checks pass,
-   then run the bounded Tier 0 read-only acceptance.
+   then run bounded owner read-only acceptance.
 5. If validation or acceptance fails, restore the recorded prior policy through
    the same hidden prompt and restore the exact prior Worker version. If either
    state is uncertain, leave the MCP disabled.
@@ -756,21 +738,20 @@ rotation; they are not needed for runtime lookup.
 ### Stage and later enable an invitee
 
 An invitee is a separate principal and Nemlig account, never an alias for the
-family account. In schema v2, do not add the invitee or credential to the static
-policy. Issue a native Organization invitation; successful redemption creates a
-pending Tier 1 record and successful credential validation activates it. A
-disabled record must still be denied before usage-state access or Container wake.
+family account. Stage its exact subject and opaque key in the private current
+policy, disabled until isolated acceptance. Each identity uses only its own
+encrypted credentials. A disabled or unknown identity is denied before backend
+work; a stored record alone never grants admission.
 
 Before changing that entry to `enabled: true`, perform a separately approved
 two-account read-only isolation exercise: each identity must see only its own
 favorites and basket; guessed session and proposal references from the other
 account must return the same non-sensitive
-denial; equal usage must receive the same admission decision across Tier 0,
-Tier 1, and Tier 2. Record only pass/fail, policy revision, tier labels, denial reasons,
-correlation IDs, and aggregate headroom. Do not record subjects, opaque keys,
+denial. No usage tier or per-person budget applies. Record only pass/fail,
+policy revision, sanitized denial reasons and correlation IDs. Do not record subjects, opaque keys,
 credentials, returned shopping data, or per-principal counts.
 
-If any identity, credential, state, or accounting boundary is uncertain, keep
+If any identity, credential or state boundary is uncertain, keep
 the invitee disabled and restore the last verified policy. Invitee activation
 does not authorize a basket mutation.
 
@@ -786,9 +767,9 @@ pnpm --filter nemlig-assistant cloudflare:check
 pnpm --filter nemlig-assistant exec wrangler deploy --env production
 ```
 
-Keep `MCP_ENABLED=false` until the rolled-back revision, Auth0 rejection, usage
-state, and read-only flow are verified. Never roll back by loosening quotas or
-creating another Container.
+Keep `MCP_ENABLED=false` until the rolled-back revision, its compatible private
+configuration, Auth0 rejection and read-only flow are verified. Never roll back
+by weakening authorization or creating another Container.
 
 ## Remove the deployment
 
@@ -816,8 +797,28 @@ owner action.
 ## Residual cost signals
 
 Investigate unexpected `container_started` events, sustained admitted useful
-request counts, repeated rate limits, a breaker trip, large Worker log volume, or a
+traffic, external rate limits, large Worker log volume, or a
 Container that does not sleep after 10 minutes. The architectural ceiling is one
 `lite` Container; authenticated activity, Worker requests, logs, egress, other
 Cloudflare account workloads, Auth0, GitHub, domain, and Nemlig costs can still
 add charges. Budget alerts do not stop usage.
+
+## Family-only configuration boundary (5.0.0)
+
+Before a separately authorized release, stage only the current schema-v3 policy
+above. Preserve exact identity/key and encrypted credential revision/generation
+bindings. Old versions and removed fields fail closed without conversion. Keep
+private prior-code-compatible rollback material. Do not publish or migrate real
+credentials/configuration in a repository PR.
+
+Remove all former `MCP_RATE_LIMIT`, `MCP_EXPENSIVE_RATE_LIMIT`,
+`MCP_CREDENTIAL_RATE_LIMIT`, `MCP_CREDENTIAL_GLOBAL_RATE_LIMIT`,
+`MCP_DAILY_LIMIT` and `MCP_EXPENSIVE_DAILY_LIMIT` bindings before release.
+New candidates omit them and stale deployment bindings fail validation. Existing
+stored usage is neither read nor deleted. There is no count-based app limit and
+no hard billing cap: runaway authenticated traffic can keep generating provider,
+logging and storage cost until stopped. External provider/platform limits remain.
+
+Consumed CSRF hashes remain until signed expiry, with expired entries removed
+on the next action. Replay storage grows during that 15-minute lifetime and
+storage failures deny before provider work; no cleanup polling is introduced.
