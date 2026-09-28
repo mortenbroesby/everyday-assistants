@@ -6,9 +6,9 @@
 
 ## 2. Integrate and deliver the reviewable change
 
-- [ ] 2.1 Reconcile deployment configuration/checks, affected durable specs/instructions/docs and a major package release note; verify strict specs, version and release-note gates.
-- [ ] 2.2 Run a representative mocked HTTP end-to-end burst, app build/typecheck/tests and final repository verification; review the diff for unintended safety removals or secrets.
-- [ ] 2.3 Commit/push one scoped branch, open one PR linked to #151, verify the remote SHA and exact-head CI, and report unperformed private configuration/production/native acceptance.
+- [x] 2.1 Reconcile deployment configuration/checks, affected durable specs/instructions/docs and a major package release note; verify strict specs, version and release-note gates.
+- [x] 2.2 Run a representative mocked HTTP end-to-end burst, app build/typecheck/tests and final repository verification; review the diff for unintended safety removals or secrets.
+- [x] 2.3 Commit/push one scoped branch, verify the remote SHA, and report unperformed private configuration/production/native acceptance. PR publication and exact-head CI status are external delivery evidence tracked on #151 and the linked PR; this checkbox does not assert CI success, merge or deployment.
 
 Evidence: the burst regression initially failed with `principal_rate_limit`;
 portal/configuration and deployment regressions also failed before removal.
@@ -16,7 +16,10 @@ The replay regression initially admitted the first consumed token after 65
 submissions; it now rejects that replay. Focused HTTP/gateway/policy/portal checks
 and 104 mocked deployment tests pass. The initial repository verification passed
 494 tests (94.93% line coverage), lint, build, typecheck and five smoke cases;
-final committed-head verification and CI are recorded in the PR.
+committed-head verification on `147b7e1b6241a0840578edf18092cdeb820eb6c0`
+passed the full gate again (494 tests, same coverage). The documentation-only
+handoff commit is reverified before push; its exact head and CI status are
+recorded in the PR, not inferred from this checklist.
 
 No viewer/browser-native acceptance is needed for this non-UI policy change,
 and no native/production behavior is claimed. The local Cloudflare dry run
