@@ -60,7 +60,8 @@ viewer SHALL retain a complete structured/text fallback.
 
 - **WHEN** a product-bearing result is rendered
 - **THEN** the viewer displays supported facts, safe images, and relevant
-  context without render-triggered network access or implied approval
+  context without render-triggered tool/provider-API reads or implied approval;
+  permitted product image loading remains available
 
 #### Scenario: Viewer receives partial data
 
