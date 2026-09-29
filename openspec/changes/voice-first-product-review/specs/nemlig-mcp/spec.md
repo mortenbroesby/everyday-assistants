@@ -6,7 +6,7 @@ tools and temporary product review snapshots. The viewer SHALL render returned
 data with complete structured/text fallback, safe observed HTTPS Nemlig images,
 and accessible compact expandable rows. Draft controls SHALL use the same
 principal-bound draft operations as conversation. The viewer SHALL NOT fetch
-Nemlig directly, apply provider writes, or treat local acceptance as submission.
+Nemlig directly, bypass protected submission, or treat local acceptance as approval.
 
 #### Scenario: Resource inventory is inspected
 - **WHEN** a client lists resources or calls a product-bearing tool
@@ -21,13 +21,21 @@ Nemlig directly, apply provider writes, or treat local acceptance as submission.
 - **THEN** it presents In Review, Ready, and one contextual alternatives
   drill-in with safe exits, explicit removal, batch acceptance and submission intent
 
+#### Scenario: Plain product or actual-basket payload is rendered
+- **WHEN** the viewer receives product facts or an actual-basket result without an activated local review
+- **THEN** it renders read-only rows without local edit or submission controls and makes no automatic provider fetch
+
+#### Scenario: Local review controls are explicitly activated
+- **WHEN** a user edits an activated local review or confirms its prepared submission
+- **THEN** the viewer invokes the existing review tool with current review reference, revision, and required exact action inputs, or the protected submit tool with review reference, current revision, and unchanged prepared submission reference after exact approval; the server remains authoritative and no write is retried automatically
+
 #### Scenario: Viewer receives partial or unavailable data
 - **WHEN** a product field, image or interactive host bridge is unavailable
 - **THEN** the viewer labels missing facts honestly and supplies the equivalent
   conversational action without fabricating an action result
 
 ### Requirement: Non-recipe tool surface
-The server SHALL expose independent product search, favourites, exact product details, department browsing, basket view, and staged basket review/apply tools. Only local review tools SHALL reference the shared viewer; discovery and legacy provider tools SHALL return data without mounting widgets. The server SHALL NOT expose direct model-visible basket mutation, recipe, checkout, order, payment, purchase, or delivery-slot tools.
+The server SHALL expose independent product search, favourites, exact product details, department browsing, basket view, and staged basket review/apply tools. Local review tools and the explicit read-only actual-basket visual action SHALL reference the shared viewer; ordinary discovery and provider reads SHALL return data without mounting widgets. The server SHALL NOT expose direct model-visible basket mutation, recipe, checkout, order, payment, purchase, or delivery-slot tools.
 
 #### Scenario: Enumerate base tools
 - **WHEN** a client lists tools
@@ -42,7 +50,7 @@ The server SHALL expose independent product search, favourites, exact product de
 The server SHALL expose current catalogue search, favourites, grocery sections, browsing, exact product details, and basket reads as independent conversational capabilities. Exact product details SHALL resolve one current product by its positive catalogue ID and SHALL remain read-only. Product search SHALL hydrate returned candidates through the existing exact-product loader and use the same supported public product projection as exact lookup. The server SHALL register one product viewer resource for product-bearing results and SHALL preserve complete structured and text fallbacks.
 
 #### Scenario: Exact product details are requested
-- **WHEN** a client supplies a positive product ID returned by a current search or plan
+- **WHEN** a client supplies a positive product ID returned by current discovery
 - **THEN** the server returns current product facts without reading or changing the basket
 
 #### Scenario: Rich product search is requested

@@ -10,6 +10,11 @@ used for this final comparison SHALL come from a bounded authoritative upstream
 read started during application and SHALL NOT be satisfied by product data
 retained from discovery or proposal preparation.
 
+#### Scenario: Fresh product validation fails
+
+- **WHEN** any addition or replacement product cannot be freshly revalidated
+- **THEN** the server invalidates the proposal before the first mutation and requires a new review without retrying the write
+
 #### Scenario: Reviewed details remain unchanged
 
 - **WHEN** every proposal invariant still matches inside the mutation lock using fresh authoritative product data

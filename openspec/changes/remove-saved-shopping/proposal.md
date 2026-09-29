@@ -1,5 +1,8 @@
 ## Why
 
+Portfolio status (29 September 2026, #114): Interface removal integrated; live/archival evidence owner: #96. Existing PlanStorage records and namespace remain preserved; no data deletion or native-list integration is authorized.
+See [portfolio evidence](../../../docs/openspec-portfolio-reconciliation.md).
+
 The owner explicitly chose to remove all saved-shopping functionality; groceries will be supplied in each conversation. Any future integration with Nemlig's native lists is deferred.
 
 ## What Changes

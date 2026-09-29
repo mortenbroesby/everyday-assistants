@@ -1,5 +1,8 @@
 ## Why
 
+Portfolio status (29 September 2026, #114): Implemented safety contract. Historical edge probes do not prove the full owner-read portion of task 4.2; acceptance owner: #67, reusing #96's exact release evidence. Leave that mixed task unchecked until its evidence is reconciled.
+See [portfolio evidence](../../../docs/openspec-portfolio-reconciliation.md).
+
 Basket proposal application claims to revalidate current product details, but
 `NemligClient.getProduct()` can return an indefinitely retained process-local
 product from an earlier search. A changed price, availability flag, package, or

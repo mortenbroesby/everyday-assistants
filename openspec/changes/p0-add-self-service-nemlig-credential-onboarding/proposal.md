@@ -1,5 +1,11 @@
 ## Current owner recovery scope (2026-09-28)
 
+Acceptance owner: #67; deployment evidence is reused from #96. Section 12 is
+the current implementation; the older invitation/tier/Organization tasks are
+superseded research, not a request to restore them. Live task 12.5 remains
+unchecked until enabled owner acceptance is evidenced. See the
+[portfolio reconciliation](../../../docs/openspec-portfolio-reconciliation.md).
+
 The owner approved a minimal browser sign-in/reconnection path to unblock the
 strict schema-v3 production migration. Only section 12 of tasks.md is current
 implementation scope. Preserve the existing credential portal, encrypted records

@@ -1,5 +1,11 @@
 # Nemlig Assistant backlog
 
+Current portfolio disposition is tracked by [#114](https://github.com/mortenbroesby/everyday-assistants/issues/114)
+and the [29 September reconciliation](../../docs/openspec-portfolio-reconciliation.md).
+Older checked stories below are dated implementation evidence, not a claim
+that their retired tools or policies remain supported. Current behavior is in
+the README and canonical specs; #67, #96 and #137 own outstanding live gates.
+
 ## P3 — simplify the product model
 
 **Status:** Broader roadmap proposed. The owner selected feature-request removal
@@ -48,9 +54,10 @@ Expanded plan: one P2 epic, ten stories and 50 implementation tasks. The design
 also flags invitation-spec mismatch, principal retention/capacity and lifecycle
 reliability under their existing P0/P1 owners; these are not cleanup authority.
 
-Implementation must preserve provider-call budgets, fresh revalidation,
-authorization, private ownership, quotas and deployment safeguards. Future
-saved-shopping removal is now owned by `remove-saved-shopping`; matching improvements remain separate.
+Implementation must preserve bounded provider work, fresh revalidation,
+authorization, private ownership, manual kill switches and deployment safeguards.
+Saved-shopping removal is integrated; it does not authorize deleting retained
+provider data. App-local operation quotas were removed by PR #152.
 
 ## P0 — restore reliable ChatGPT reconnect and add bounded observability
 
@@ -88,7 +95,7 @@ OAuth boundary without weakening cost or basket safeguards.
   60-second Nemlig interaction window, and shorter control-plane budgets.
 - [x] Keep read retries bounded to an early transport failure and preserve
   single-attempt, indeterminate-result handling for every mutation.
-- [x] Preserve the one-Container ceiling, kill switch, circuit breaker, quotas,
+- [x] Preserve the one-Container ceiling, kill switch,
   approval envelopes, authentication-before-wake, and fail-closed behavior.
 - [x] Verify the focused reliability tests, privacy checks, full repository
   verification, production-readiness gate, and exact-head CI.
@@ -185,7 +192,7 @@ Manual dispatch is reserved for exceptional recovery.
 - [x] Expose a protected reconciliation dispatch for a saved pending rollback;
   it proves the exact disabled state before releasing the recovery lease and
   never redeploys the candidate.
-- [x] Preserve bounded runtime acceptance and the kill switch, quotas, breaker,
+- [x] Preserve bounded runtime acceptance and the manual kill switch,
   authentication-before-wake, EU `lite` placement and one-Container ceiling.
 - [ ] Prove the exact merged SHA reaches live read-only acceptance after the
   unresolved production journal is safely reconciled.
@@ -230,10 +237,12 @@ Manual dispatch is reserved for exceptional recovery.
 Done means a recorded drill proves disable, no wake, exact restoration, and
 post-restore health, and the owner accepts the documented worst credible cost.
 
-## P0 — enable automatic grocery runs
+## Retired — application-owned automatic grocery runs
 
-**Status:** Implemented in the active OpenSpec change; production acceptance is
-pending.
+**Status:** Historical implementation, superseded by PR #95's planner retirement
+and the current conversational discovery/local-review workflow. The following
+describes the old feature, not a pending task to restore its tools or automatic
+submission authority.
 
 - Automatic mode resolves up to 50 lines by default and leaves only unclear or
   explicitly manual choices for the user.
@@ -362,8 +371,10 @@ until a second real user is ready to onboard.
 
 ## Custom presentation
 
-**Status:** Removed from the MCP surface by the composable workflow reset.
+**Status:** Implemented in the current lightweight shared product viewer.
 
-Keep product discovery and exact details conversational. Revisit a custom client
-presentation only when a concrete family-use problem and a separate approved
-interface contract justify it.
+The local workspace uses In Review and Ready, contextual alternatives and exact
+protected submission. The separate visual basket action presents the actual
+Nemlig basket read-only. Structured/text results remain usable without a viewer.
+Native historical-card acceptance remains #137; do not infer it from local
+browser smoke or returned image URLs.

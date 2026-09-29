@@ -1,5 +1,8 @@
 ## Why
 
+Portfolio status (29 September 2026, #114): Active, exclusively owned by #96. Shipped implementation is not missing code; current deployment/retention evidence and protected exceptions remain that issue's gates.
+See [portfolio evidence](../../../docs/openspec-portfolio-reconciliation.md).
+
 Issue #96 has an automatic main-to-production workflow, but a real green main merge stopped before mutation because live Worker configuration and the validator disagree. Container image tags are accumulating without a proven accepted-release retention policy. Routine reviewed merges should be the release decision, with verified runtime and conservative recovery before any cleanup.
 
 ## What Changes

@@ -1,5 +1,24 @@
 # Product simplification roadmap
 
+## Current disposition — 29 September 2026
+
+This is a dated research roadmap, not a list of unimplemented obligations.
+See [#114](https://github.com/mortenbroesby/everyday-assistants/issues/114) and
+the [portfolio reconciliation](openspec-portfolio-reconciliation.md).
+PR #95 delivered MCP v2, retired the application-owned planner and supplied the
+shared viewer. PRs #146/#149 refined that viewer into In Review/Ready; PR #152
+removed all app-local request/usage limits and backward-compatible policies.
+Feature requests and saved-shopping interfaces are already removed. Do not
+recreate these surfaces, same-run automatic authority, quota machinery or a
+frontend framework by applying the historical recommendations below.
+
+Worker-native hosting remains deferred, not delivered or required. #147 owns
+targeted routing/metadata refinement; #148 has a separate tool-identification
+gate. #67, #96 and #137 retain their distinct unproven live acceptance. No
+production/provider operation or new feature is authorized by this record.
+
+## Original research baseline — 9 September 2026
+
 Status: proposed roadmap, 2026-09-09; feature-request removal implemented in source
 as the first owner-selected deletion, followed by removal of all saved shopping.
 Production acceptance remains pending. Scope: Nemlig Assistant in Everyday Assistants.

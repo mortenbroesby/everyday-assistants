@@ -2,7 +2,7 @@
 
 ### Requirement: Shared product viewer and exact basket review
 The integration SHALL use one shared product presentation for conversational and
-touch review. Local Basket is a shortlist of resolved products, not the actual
+touch review. Local Ready is a shortlist of resolved products, not the actual
 Nemlig basket. Both input modes SHALL address exact products in the same temporary
 draft and support acceptance, changes, removal, quantities and safe navigation.
 Actual submission SHALL use the existing exact proposal/apply safety engine only

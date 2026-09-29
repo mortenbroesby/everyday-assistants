@@ -8,14 +8,17 @@ changes remain independent conversational operations.
 
 ### Requirement: No planner orchestration
 
-The system SHALL NOT expose or require a whole-list planner, saved shopping
-journey, selection store, automatic basket authority, or picker workflow.
+The system SHALL NOT expose or require a whole-list planner, saved-shopping
+journey, planner-issued automatic basket authority, or the retired picker
+wizard. An explicitly opened principal-and-conversation-bound local review
+SHALL use the current product-review contract without restoring those surfaces.
 
 #### Scenario: Products are requested
 
 - **WHEN** a user asks for one or more products
 - **THEN** the client performs direct search operations and keeps product choice
-  in the conversation without creating planner state
+  in the conversation or explicitly opened local review without creating
+  planner state
 
 #### Scenario: Search is repeated
 
@@ -45,17 +48,19 @@ explicit, and invalid rows SHALL not be represented as false products.
 
 ### Requirement: Display-only product presentation
 
-The system SHALL provide one reusable product presentation for search, exact
-details, basket, review, and result contexts. Presentation SHALL be pure and
-display-only: it SHALL not fetch, select, approve, mutate, or persist shopping
-state. A host viewer SHALL expand already-returned details without another
-provider call and SHALL have a complete structured/text fallback.
+The system SHALL provide one reusable product-fact presentation for search,
+exact details, provider basket, review, and result contexts. Rendering facts
+or expanding disclosures SHALL make no tool/provider call or shopping change.
+An explicitly activated local-review workspace MAY expose the existing
+server-authoritative review controls and exact protected confirmation; it
+SHALL NOT own duplicate business state or contact Nemlig directly. The host
+viewer SHALL retain a complete structured/text fallback.
 
 #### Scenario: Viewer renders a product
 
 - **WHEN** a product-bearing result is rendered
 - **THEN** the viewer displays supported facts, safe images, and relevant
-  context without network access or write controls
+  context without render-triggered network access or implied approval
 
 #### Scenario: Viewer receives partial data
 

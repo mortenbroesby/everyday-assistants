@@ -2,6 +2,9 @@
 
 ## Why
 
+Portfolio status (29 September 2026, #114): Removal integrated; live/archival tasks remain evidence gaps, not permission to restore feedback submission. Delivery evidence owner: #96. No replacement feature is selected.
+See [portfolio evidence](../../../docs/openspec-portfolio-reconciliation.md).
+
 The owner does not use feature-request submission and explicitly requested its removal. Remove the product surface and its GitHub subprocess/token machinery rather than maintain an unused workflow.
 
 ## What Changes

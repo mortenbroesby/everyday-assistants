@@ -1,5 +1,8 @@
 ## Why
 
+Portfolio status (29 September 2026, #114): Repository implementation delivered; later planner/list/version-ceremony changes supersede those historical surfaces. Remaining applicable runtime delivery evidence is owned by #96; do not repeat the refactor or archive unverified acceptance.
+See [portfolio evidence](../../../docs/openspec-portfolio-reconciliation.md).
+
 The previous P2 maintenance change is complete at `7245d096`; repeating it would not address the remaining architectural and verification debt. A second audit at `c491823` found server-to-CLI coupling, permissive plan/list contracts, mixed planning/persistence responsibilities, import-time acceptance execution, unenforced release-version policy, and missing coverage wiring, alongside custom parsing that maintained dependencies can replace.
 
 Epic: **Make the Nemlig assistant easier to change without weakening grocery safety.** This expanded plan contains ten ordered P2 stories with independently verifiable slices, plus separately prioritized follow-up work. It is a maintenance programme, not permission for a rewrite or for absorbing unfinished P0 authentication work.
