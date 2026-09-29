@@ -288,7 +288,7 @@ test("acceptance uses one deadline, aborts hanging transport, and never continue
   assert.equal(callsAfterTimeout, 0);
 });
 
-test("deadline aborts a hanging feature call and cleanup without issuing later tool calls", async () => {
+test("deadline aborts a hanging feature call and cleanup without issuing later tool calls", { timeout: 1_000 }, async () => {
   const edgeCalls: string[] = [];
   const toolCalls: string[] = [];
   let closes = 0;
@@ -301,7 +301,8 @@ test("deadline aborts a hanging feature call and cleanup without issuing later t
     totalTimeoutMs: 5,
     connect: async () => ({
       client: {
-        listTools: async () => await new Promise((resolve) => setTimeout(() => resolve({ tools: allTools }), 20)),
+        // A hanging call must not race the deadline with another real timer.
+        listTools: async () => await new Promise(() => {}),
         listResources: async () => ({ resources: [] }),
         readResource: async () => ({ contents: [] }),
         callTool: async ({ name }) => { toolCalls.push(name); return { structuredContent: {} }; },
