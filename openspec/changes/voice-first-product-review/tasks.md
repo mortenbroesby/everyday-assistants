@@ -174,7 +174,7 @@ redeploy the old v4 release.
   annotations and structured/headless responses; demonstrate direct search,
   add, quantity, revisit, alternative, replace and remove without opening a
   widget, with stale edits rejected and no automatic retry.
-- [ ] 10.5 Version changed viewer content, retire the prior URI per policy,
+- [x] 10.5 Version changed viewer content, retire the prior URI per policy,
   update product docs and one reviewed release note, then run focused checks,
   browser/MCP smoke, strict OpenSpec validation and required repository gates.
   Review the scoped diff, checkpoint commits and draft PR head against current
@@ -212,3 +212,12 @@ redeploy the old v4 release.
   through the real fixture-backed tool/client path; assert distinct outcomes,
   exact safe error mapping, and assistant instructions that do not report a
   failure as no matches. Do not rename/merge tools without demonstrated benefit.
+
+10.5 local implementation evidence (29 September 2026): commit `c439732`
+contains the v7 viewer identity and retired-v6 handling; package/release metadata
+is `5.2.0 / Gather` with a reviewed release note. `pnpm verify`, strict
+OpenSpec validation, fixture-backed interface tests, and loopback browser smoke
+passed on `c439732` before release-only metadata was applied. Smoke covered
+320px/375px and recorded zero provider basket writes. Release metadata is not a
+deployment or native ChatGPT acceptance; 10.6 remains open for served-revision,
+metadata-readback, and historical-card evidence.
