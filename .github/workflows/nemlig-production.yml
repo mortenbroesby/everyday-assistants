@@ -332,7 +332,7 @@ jobs:
             inspection=$(pnpm --silent --filter nemlig-assistant production:deploy -- inspect-recovery "$RECONCILE_OPERATION" --original-runner-stopped)
             node --input-type=module -e '
               const inspection = JSON.parse(process.argv[1]);
-              if (inspection.cleanupEligible !== true || inspection.state !== "disabled") process.exit(1);
+              if (inspection.cleanupEligible !== true || !["disabled", "restored"].includes(inspection.state)) process.exit(1);
             ' "$inspection"
           fi
           pnpm --filter nemlig-assistant production:deploy -- finalize "$RECONCILE_OPERATION" --evidence-saved --original-runner-stopped
