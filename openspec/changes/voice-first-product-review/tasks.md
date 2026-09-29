@@ -91,12 +91,12 @@ Local recovery evidence: real MCP HTTP regression passes across a fresh service 
 
 - [x] 7.1 Add executable failing browser-program checks for inactive activation, stale revision, generic failure and safe restart.
 - [x] 7.2 Gate host snapshots, normalize recovery, and retain inert retired resources with bounded explicit activation.
-- [ ] 7.3 Run real MCP browser smoke and final gates; merge one reviewed release PR.
+- [x] 7.3 Run real MCP browser smoke and final gates; merge one reviewed release PR.
 - [ ] 7.4 Deploy exact merged SHA and verify refreshed v4 UI plus historical cards in ChatGPT.
 
 Regression baseline: 4.16.3 / 02d66c9 rendered stale active revisions with raw
 INVALID_ARGUMENT; reload/remount restored actionable historical snapshots.
-Ended-review recovery passed. This follow-up completes the failed 6.4 criterion.
+Ended-review recovery passed locally; the native ChatGPT portion of 6.4 remains unverified.
 
 Implementation evidence: executable viewer tests first failed then passed; the
 real-MCP browser smoke passed inactive mount/remount, rejected stale edit plus
@@ -104,6 +104,16 @@ one read, connection failure, process restart, quantity-preserving unchecked
 recovery, finish, and zero provider basket calls. A separate real-MCP submission
 smoke uses the real proposal service and a fake basket to verify the exact
 accepted lines, protected submit, readback and rejection of duplicate submission.
+
+7.3 was completed by PR #138 (merged as `94a9a3c61fcdf87b05b0de1f1aad8a4bd0ffffd4`):
+its exact-head CI, recorded browser smoke, and final verification passed. On
+`476dd9239ec03ada14664c38fe14b2dafe5540d5`, the focused viewer, review,
+MCP, and gateway tests and loopback real-MCP browser regression were rerun on
+27 September 2026. This is local evidence, not native ChatGPT acceptance.
+6.4 remains open for its native recovery and normal-control portion. 7.4 remains
+open for exact-served-revision and native historical-card proof; production
+deployment and retention are separately owned by #96. See #137 for the
+sanitized host acceptance matrix and remaining blocked cases.
 
 ## 8. Persistent review and Basket actions
 
@@ -128,5 +138,15 @@ live Nemlig submission or native v5 host acceptance was attempted.
 - [x] 9.1 Implement Ready as the sole review contract, reject obsolete basket actions, and add focused protocol tests.
 - [x] 9.2 Keep alternatives in In Review, batch acceptance, remove-all-Ready semantics, and protected Ready-only submission; add service regressions.
 - [x] 9.3 Refine the existing lightweight viewer with compact rows, disclosures, quantity, empty/success states and same-frame navigation; add executable viewer and mobile browser checks.
-- [ ] 9.4 Version the resource, update docs/release note, pass repository gates, commit/push one scoped PR and verify exact-head CI.
+- [x] 9.4 Version the resource, update docs/release note, pass repository gates, commit/push one scoped PR and verify exact-head CI.
 - [ ] 9.5 After a separately approved release, verify the v6 mounted experience in native ChatGPT; do not infer this from local tests.
+
+9.4 was completed by PR #149, tested at
+`a1ebed07f94565a46b3662c77fdc440bad23e2c9` and merged as
+`85bcd7ee3d094c94041282dab2ce85925e803aa2` on 28 September 2026.
+Exact-head CI run `36346228455` passed. Its recorded loopback continuous-flow
+checks at 320px and 375px made zero provider basket calls. This credits the
+implementation gate only; 9.5 and the native historical/recovery gates remain
+open. The current resource is v6, with v4/v5 now retired; #137's historical v4
+case must not be mistaken for current-renderer acceptance or an instruction to
+redeploy the old v4 release.
