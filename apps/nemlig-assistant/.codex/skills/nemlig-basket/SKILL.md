@@ -36,15 +36,14 @@ pnpm nemlig --help
    pnpm nemlig favorites --limit 5
    ```
 
-3. For a whole list, use automatic mode by default and accept at most 50 lines.
-   Present choices only when requested or when no deterministic clear match
-   exists. Use Nemlig's description, item details, package, price, availability,
-   and direct image when supplied; keep a text fallback.
+3. For a list, collect exact products and quantities through independent reads.
+   Use Nemlig's supplied description, details, package, price, availability and
+   image, with a text fallback. Leave ambiguous or unavailable products unresolved.
+   The application-owned planner and automatic submission authority are retired.
 
-4. Wait for explicit approval of the exact proposal unless the authenticated
-   user already said to proceed with the same automatic run. That scope covers
-   only its clear additions and is exact, expiring, connection-bound, and
-   single-use. Any changed fact requires a new authorization.
+4. Wait for explicit approval of the exact unchanged products, quantities,
+   current prices and basket effects. Local selection or acceptance is not
+   provider-write approval. Any changed fact requires a fresh review and approval.
 
 5. Add only approved lines:
 
@@ -70,12 +69,21 @@ explicit approval. Never replace a basket, check out, pay, or place an order.
 
 ## MCP workflow
 
-Model-visible basket writes never call a direct mutation tool. Automatic runs
-still use `plan_my_shopping` → `review_items_to_add` → `add_approved_items`;
-carry the same-run authorization through that sequence without asking twice.
-Manual or unresolved choices require an exact unchanged review. Removals,
-replacements, and clearing always require separate exact approval. Never retry
-an indeterminate action result; inspect the basket and create a new review.
+Model-visible basket writes never call a direct mutation tool. Additions use
+`review_items_to_add` → explicit exact approval → `add_approved_items`, or the
+local review's `prepare_submission` → explicit exact approval →
+`submit_product_review`. Both preserve fresh validation, principal binding,
+single-use authority, serialization and verified basket readback. Removals,
+replacements and clearing use their matching review/apply tools with separate
+exact approval. Never retry an indeterminate result; inspect the draft and actual
+basket before deliberately creating a fresh review.
+
+Use `start_product_review` for an explicit new selection. To reopen, first use
+`update_product_review` with action `show` and no old review ID or revision.
+Only after it reports no active draft may you ask to start fresh. Never replay
+a failed edit or restore old acceptance/submission authority. In Review and
+Ready are local states, not the actual Nemlig basket; alternatives belong only
+to In Review. Local acceptance, removal and ending do not mutate Nemlig.
 
 For private ChatGPT use, follow `../../../../../docs/cloudflare-operations.md`.
 Identity, infrastructure, and app changes remain owner actions and never

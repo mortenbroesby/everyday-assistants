@@ -418,7 +418,35 @@ export function createMcpServer(
     },
     {
       instructions:
-        `Current release: ${NEMLIG_RELEASE_IDENTITY}. Use Nemlig Assistant as independent capabilities for current products, exact details, prices, availability, favourites, actual basket contents, and grocery sections. Normalize each search into one short Danish catalogue phrase. Search and details return data without opening widgets. After collecting exact products, call start_product_review once. Use update_product_review show (review_id optional) to recover this conversation's active review; add appends new products In Review without resetting Ready products. Show, not repeated detail reads, reopens the local viewer. In Review means unresolved; Ready means the user accepted the exact product locally. Use one accept action for selected exact IDs. Alternatives are only for In Review; replacement remains In Review until separately accepted. Revisit moves Ready products back to In Review; remove deletes them from the local selection; end discards the entire temporary selection. None of these changes touches the real Nemlig basket. Use show_my_basket or show_my_basket_visually to inspect the actual basket; image URLs do not prove cards rendered, so use complete text fallback if needed. For 'everything except X/Y', pass exact remaining IDs from the current snapshot. After a stale result, show the active review without replaying the edit. If no active review remains, ask before explicitly starting fresh; never restore old acceptance or approval. prepare_submission includes only Ready lines and does not write. Require explicit approval of the exact unchanged quantities, current prices and effects before submit_product_review. Never treat local acceptance as provider approval. A submitted or uncertain draft remains inspectable; do not retry blindly. Other actual basket changes require their matching staged review/apply tools and explicit approval, fresh revalidation, and readback. Never check out, pay, order, or select delivery slots.`,
+        `Current release: ${NEMLIG_RELEASE_IDENTITY}. Use Nemlig Assistant as independent capabilities for current products, exact details, prices, availability, favourites, actual basket contents, and grocery sections.
+
+Current catalogue
+- find_groceries: Normalize each search into one short Danish catalogue phrase.
+- get_grocery_details: current facts for an exact returned product ID. Search and details return data without opening widgets, not an existing local review.
+- show_my_favorites searches saved favourites; show_grocery_sections and browse_grocery_section browse the current catalogue.
+
+Actual Nemlig basket
+- Use show_my_basket or show_my_basket_visually to inspect the actual basket, not local Ready products.
+- image URLs do not prove cards rendered, so use complete text fallback if needed. An empty actual basket does not imply an empty local review.
+
+Local shopping review
+- After collecting exact products, call start_product_review once. Use update_product_review show without an old review_id or revision to recover this conversation's active review. Show, not repeated detail reads, reopens the local viewer.
+- add appends new products In Review without resetting Ready products. In Review means unresolved; Ready means the user accepted the exact product locally. Use one accept action for selected exact IDs.
+- Alternatives are only for In Review; replacement remains In Review until separately accepted. If no alternatives are returned, return to In Review and leave the product unresolved or try a different search.
+- Revisit moves Ready products back to In Review; remove deletes them from the local selection; end discards the entire temporary selection. None of these changes touches the real Nemlig basket.
+- For 'everything except X/Y', pass exact remaining IDs from the current snapshot.
+
+Sending to Nemlig
+- prepare_submission includes only Ready lines and does not write; other In Review products do not block it.
+- Require explicit approval of the exact unchanged quantities, current prices and effects before submit_product_review. Never treat local acceptance as provider approval.
+- Other actual basket changes require their matching staged review/apply tools and explicit approval, fresh revalidation, and readback.
+
+Recovery and safety
+- After a stale result, show the active review without replaying the edit. If no active review remains, ask before explicitly starting fresh; never restore old acceptance or approval.
+- A submitted or uncertain draft remains inspectable; do not retry blindly. Inspect the draft and actual basket before a deliberate new review.
+- Unavailable product facts are not an available selection; use find_groceries for fresh candidates, without automatically accepting or submitting them.
+- check_nemlig_connection provides the connection page for missing/expired Nemlig access. reconnect_nemlig_assistant is for the ChatGPT app connection, not provider unavailability.
+- Never check out, pay, order, or select delivery slots.`,
       supportedProtocolVersions: SUPPORTED_PROTOCOL_VERSIONS,
     },
   );
@@ -554,7 +582,7 @@ export function createMcpServer(
     "find_groceries",
     {
       title: "Find groceries",
-      description: "Search the current Nemlig catalogue directly with one short Danish grocery phrase translated or normalized before the call. Keep a distinctive brand plus its Danish category, for example 'Prince biscuits' becomes 'prince kiks'. This does not change your basket.",
+      description: "Search the current Nemlig catalogue directly with one short Danish grocery phrase translated or normalized before the call. Keep a distinctive brand plus its Danish category, for example 'Prince biscuits' becomes 'prince kiks'. This does not change your basket. Not for reopening an existing local review; use update_product_review show instead.",
       inputSchema: z.object({
         search_term: z.string().min(1).describe("One short Danish catalogue phrase, translated or normalized from the request before this call. Preserve a distinctive brand and add the Danish category; use 'prince kiks', not 'Prince biscuits' or a full sentence."),
         result_count: z.number().int().positive().optional().describe("Optional provider result count. If omitted, do not impose an application limit."),
@@ -574,7 +602,7 @@ export function createMcpServer(
     "get_grocery_details",
     {
       title: "Get grocery details",
-      description: "Fetch current details for one exact Nemlig product reference returned by a search. This is read-only and does not read or change your basket.",
+      description: "Fetch current details for one exact Nemlig product reference returned by a search. This is read-only and does not read or change your basket. Not for reopening an existing local review; use update_product_review show instead.",
       inputSchema: z.object({
         product_id: z.number().int().positive().describe("The exact positive product reference returned by Nemlig Assistant."),
       }),
@@ -682,7 +710,7 @@ export function createMcpServer(
 
   registerTool("start_product_review", {
     title: "Start a local product review",
-    description: "Start a temporary private review from exact returned product IDs and quantities. All items initially need review. Acceptance and edits are local; nothing is sent to Nemlig. One active review belongs to this conversation, without a time limit. If a review already exists, return it unchanged; use update action add to include more products. Discard the selection explicitly with end. Temporary state can be lost on a server restart or memory eviction. The review card may be attached to the conversation even when the text result does not show it; do not start another review solely because the text omits the card.",
+    description: "Start a temporary private review from exact returned product IDs and quantities. All items initially need review. Acceptance and edits are local; nothing is sent to Nemlig. One active review belongs to this conversation, without a time limit. If a review already exists, return it unchanged; use update action add to include more products. Not for reopening an existing local review; use update_product_review show without an old review_id or revision. Discard the selection explicitly with end. Temporary state can be lost on a server restart or memory eviction. The review card may be attached to the conversation even when the text result does not show it; do not start another review solely because the text omits the card.",
     inputSchema: z.object({ items: z.array(z.object({ product_id: z.number().int().positive(), quantity: z.number().int().positive() })).min(1).max(50).describe("Exact returned products and intended package quantities to review locally.") }),
     outputSchema: z.object({ review: reviewSnapshotSchema }),
     annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true },
@@ -701,7 +729,7 @@ export function createMcpServer(
       const owner = reviewOwner(ctx);
       if (action.kind === "show") {
         const review = review_id ? reviews.show(owner, review_id) : reviews.active(owner);
-        if (!review) return success({ unavailable: true }, "No active local review remains. Start a new review explicitly; previous selections and submission approval are not restored.");
+        if (!review) return success({ unavailable: true }, "No active local review remains. Ask before starting a new review with start_product_review; previous selections and submission approval are not restored.");
         return success({ review });
       }
       if (!review_id) throw new NemligError("Show the active review before editing it.");

@@ -128,6 +128,9 @@ quantities or remove products in either view. Choose alternatives only from In
 Review; choosing a replacement does not accept it automatically. These local
 operations also work through conversation, including “everything except the
 ricotta and cucumbers is fine.” Local acceptance never changes Nemlig.
+The MCP routing map separates catalogue discovery, the actual Nemlig basket,
+local review, protected submission and recovery. Reopening uses review `show`,
+not new searches, repeated details or a second start; failed edits are not replayed.
 Once explicitly opened, the same current review frame stays active across
 confirmed local edits and destination changes. Compatible selections and open
 product rows remain in place. Rows show product, package, quantity and line
