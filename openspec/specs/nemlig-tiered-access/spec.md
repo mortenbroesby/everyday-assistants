@@ -1,100 +1,53 @@
-# Nemlig Tiered Access Specification
+# Nemlig Private Family Access Specification
 
 ## Purpose
 
-Defines private multi-principal access that reserves capacity for the family,
-sheds less-protected tiers predictably, and isolates every Nemlig account and
-piece of user state without increasing the global cost ceiling.
+Defines explicitly configured private family access with independent encrypted
+credentials, isolated accounts and user state, and no usage tiers or quotas.
 
 ## Requirements
 
 ### Requirement: Private fail-closed principal policy
 
-The system SHALL authorize only enabled principals in an owner-controlled
-encrypted policy, SHALL assign each to exactly Tier 0, Tier 1, or Tier 2, and
-SHALL reject an unknown, duplicate, malformed, disabled, or incompletely
-configured principal before usage-state access, Container wake, or Nemlig
-access. The policy SHALL be changeable without a code build and SHALL contain no
-committed identity or credential value.
+The service SHALL authorize only explicitly configured enabled family identities
+in one current strict private policy with opaque principal keys and an explicit
+owner subject. It SHALL NOT accept old policy versions, tiers, budgets, inline
+credentials or dynamic unknown-identity fallback. Every member SHALL use their
+own current encrypted credential record. The owner SHALL be one enabled member,
+not implicitly the first array entry. No private values SHALL be committed.
 
 #### Scenario: Unknown principal authenticates
 
-- **WHEN** a valid token belongs to a subject absent from the private policy
-- **THEN** the request receives a stable non-sensitive denial before Durable
-  Object dispatch, Container wake, or Nemlig access
+- **WHEN** a valid identity is absent from the family policy
+- **THEN** it is rejected before backend wake or provider access
 
 #### Scenario: Invitees are not configured
 
-- **WHEN** production contains only the existing Tier 0 owner entry
-- **THEN** current owner behavior remains available and every other principal
-  fails closed
+- **WHEN** the private configuration names only the owner
+- **THEN** only that identity is eligible; no guest class or implicit enrollment exists
 
 #### Scenario: Policy is invalid
 
-- **WHEN** the private policy is absent, malformed, ambiguous, or assigns a
-  principal without a complete separate Nemlig account configuration
-- **THEN** startup or request validation fails closed without using another
-  principal's configuration
+- **WHEN** policy is old, absent, malformed, duplicated, or lacks one enabled exact owner
+- **THEN** configuration fails closed without another member's identity or credentials
 
-### Requirement: Family-reserved tier admission
+#### Scenario: Configured member has no invitation registry record
 
-The system SHALL retain Tier 0, Tier 1, and Tier 2 as identity and reporting labels but SHALL apply the same configured monthly, daily, and short-window admission allowances to all three tiers. It SHALL NOT reserve capacity for one tier or shed one otherwise eligible tier before another. Every tier SHALL remain subordinate to the unchanged global cost and safety ceilings.
+- **WHEN** the exact owner manages a configured family member without an old
+  invitation registry record
+- **THEN** the member is present in owner controls and disable/revoke persists
+  using only that member's configured subject/key; unknown targets cannot update
 
-#### Scenario: Two tiers have equal usage
+#### Scenario: Disable occurs during credential validation
 
-- **WHEN** otherwise eligible principals in different tiers have the same current and forecast usage
-- **THEN** the admission decision is the same for both principals
+- **WHEN** owner disable or revoke commits while credential validation is pending
+- **THEN** the later credential commit fails without restoring access or credentials
 
-#### Scenario: A principal reaches the shared allowance
+#### Scenario: Credential-free profile discovery during active shopping
 
-- **WHEN** a principal in any tier reaches the configured shared admission threshold
-- **THEN** that principal is denied before Container wake without changing another principal’s independent allowance
-
-#### Scenario: Global headroom is exhausted
-
-- **WHEN** aggregate demand from any combination of tiers reaches a global breaker, quota, or cost ceiling
-- **THEN** the global safeguard denies further work without a tier bypass or reserved-capacity exception
-
-#### Scenario: Guest demand reaches the family reserve
-
-- **WHEN** Tier 1 or Tier 2 demand reaches capacity that was formerly reserved for Tier 0
-- **THEN** admission uses the same per-principal and global allowances for every tier without retaining a Tier 0 reserve
-
-#### Scenario: Experimental threshold is reached first
-
-- **WHEN** a legacy configuration supplies a lower Tier 2 threshold than the shared allowance
-- **THEN** configuration validation fails rather than shedding Tier 2 under a different threshold
-
-#### Scenario: Trusted threshold is reached
-
-- **WHEN** a legacy configuration supplies a different Tier 1 threshold from Tier 0 or Tier 2
-- **THEN** configuration validation fails rather than preserving ordered tier shedding
-
-### Requirement: Deterministic bounded usage forecast
-
-The system SHALL atomically count admitted useful operations by principal and
-tier for the current UTC minute, day, and month. It SHALL calculate a
-conservative month-end forecast from usage to date using a documented,
-deterministic, upward-rounded formula and SHALL compare both current usage and
-the forecast with configured shedding thresholds.
-
-#### Scenario: Month-end forecast crosses a threshold
-
-- **WHEN** current usage is below a tier threshold but the conservative forecast
-  equals or exceeds it
-- **THEN** that tier is shed according to tier order before Container wake
-
-#### Scenario: UTC accounting period changes
-
-- **WHEN** the minute, day, or month changes
-- **THEN** only the corresponding counters reset and the new period's first
-  concurrent admission is counted exactly once
-
-#### Scenario: Concurrent requests contend
-
-- **WHEN** multiple principals request the final available allocation
-- **THEN** admission is serialized atomically and no limit or Tier 0 reserve is
-  overspent
+- **WHEN** an authorized profile request lacks a provider credential envelope
+- **THEN** profile discovery does not discard the credential-bound current review
+  or submission state; genuine credential rotation still invalidates stale state
 
 ### Requirement: Per-principal isolation
 
@@ -126,60 +79,40 @@ SHALL NOT be accepted from an untrusted request field.
 
 ### Requirement: Global safeguards override all tiers
 
-Tier admission SHALL remain subordinate to the global kill switch, one-Container
-maximum, authentication, global daily and expensive-operation breaker, CPU and
-subrequest limits, deadlines, and bounded retry rules. Tier configuration SHALL
-NOT increase any global limit or provision capacity.
+All configured family members SHALL remain
+subject to the manual kill switch, fixed Container capacity, authentication,
+deadlines, bounded work/retries and exact protected provider-write approval.
+The service SHALL NOT retain tiers, category caps, reserve allocations or forecasts.
+Owner-only administrative permission SHALL be checked against the configured
+owner identity rather than a usage tier.
 
 #### Scenario: Global breaker or kill switch is active
 
-- **WHEN** any tier sends a request while the global breaker is open or the kill
-  switch is disabled
-- **THEN** the global rejection wins and no tier reserve bypasses it
+- **WHEN** a member requests work while the manual kill switch denies it
+- **THEN** no membership label or owner privilege bypasses admission
 
 #### Scenario: Tier totals are misconfigured
 
-- **WHEN** tier allocations or thresholds exceed the existing global ceilings,
-  overlap the Tier 0 reserve, or violate tier order
-- **THEN** configuration validation fails closed before production work is
-  admitted
+- **WHEN** configuration contains removed tiers or budget fields
+- **THEN** strict validation rejects it without a compatibility conversion
 
-### Requirement: Private aggregate evidence
+#### Scenario: Non-owner attempts administrative access
 
-The system SHALL expose owner-only aggregate admitted and rejected counts plus
-remaining headroom by tier and reason. Logs and responses SHALL use bounded tier
-labels and stable reason codes and SHALL NOT include identity values, credentials,
-tokens, prompts, shopping data, per-principal cardinality, or another tier's
-private usage.
-
-#### Scenario: Principal is shed
-
-- **WHEN** a tier policy denies an authenticated request
-- **THEN** the caller receives a stable explanation that capacity is temporarily
-  limited without learning household usage, spending, identities, or limits
-
-#### Scenario: Owner inspects tier state
-
-- **WHEN** the authorized Tier 0 owner requests usage evidence
-- **THEN** the response reports bounded aggregate tier counts and remaining
-  headroom without returning identity or shopping data
+- **WHEN** another authenticated family member requests owner-only operations
+- **THEN** authorization rejects them without disclosing identities or shopping data
 
 ### Requirement: Invitee activation requires isolated acceptance
 
-No Tier 1 or Tier 2 principal SHALL be enabled in production until the owner has
-configured that principal's separate authenticated identity and Nemlig account
-and an acceptance check has proved isolation, denial-before-wake, tier ordering,
-and unchanged global capacity without basket mutation.
+No additional family identity SHALL be enabled without exact configured identity,
+independent encrypted credentials and acceptance of isolation and denial-before-
+wake. Tier ordering is not an acceptance gate because tiers do not exist.
 
 #### Scenario: New invitee is prepared
 
-- **WHEN** the owner adds a disabled invitee entry
-- **THEN** the invitee remains unable to use the service until the separate
-  isolation acceptance succeeds and the owner explicitly enables the entry
+- **WHEN** the owner prepares another disabled family identity
+- **THEN** it remains unable to shop until isolated acceptance and explicit enablement
 
 #### Scenario: Acceptance cannot prove isolation
 
-- **WHEN** identity, account, session, proposal, or stored-list isolation is
-  missing or uncertain
-- **THEN** the invitee remains disabled and production retains its prior
-  principal policy
+- **WHEN** identity/account/session/approval isolation is missing or uncertain
+- **THEN** that identity remains disabled and prior configured access is preserved

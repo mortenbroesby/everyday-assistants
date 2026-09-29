@@ -114,3 +114,39 @@ MCP, and gateway tests and loopback real-MCP browser regression were rerun on
 open for exact-served-revision and native historical-card proof; production
 deployment and retention are separately owned by #96. See #137 for the
 sanitized host acceptance matrix and remaining blocked cases.
+
+## 8. Persistent review and Basket actions
+
+- [x] 8.1 Reproduce the mounted-card collapse, preserve activation only for the same current review, and add regression coverage for duplicate/stale host results and historical cards.
+- [x] 8.2 Preserve compatible presentation state, simplify Basket rows, and add a revision-checked local Clear Basket confirmation.
+- [x] 8.3 Add interactive exact submission confirmation through the existing protected submit operation; test cancellation, stale/expired/uncertain outcomes and no automatic retry.
+- [x] 8.4 Run focused and repository gates, review the diff, and prepare a scoped release PR.
+- [ ] 8.5 Verify the exact v5 artifact in native ChatGPT after release and metadata refresh; keep production release and host acceptance separate from local proof.
+
+27 September local evidence: native v4 ChatGPT card collapsed within the same
+mounted sandbox after acceptance and navigation; the accepted line was present
+after explicit reopening. The v5 test program exercises duplicate results,
+inactive historical cards, compatible presentation state, clear confirmation,
+UI submission cancel/confirm/uncertainty, and expiry rejection. The loopback
+real-MCP browser passed one-activation local accept, Basket, quantity, revisit,
+alternatives, replacement, clear and rebuild with zero provider basket calls.
+The real-MCP fake-basket submission smoke passed protected apply/readback; no
+live Nemlig submission or native v5 host acceptance was attempted.
+
+## 9. In Review and Ready UX refinement
+
+- [x] 9.1 Implement Ready as the sole review contract, reject obsolete basket actions, and add focused protocol tests.
+- [x] 9.2 Keep alternatives in In Review, batch acceptance, remove-all-Ready semantics, and protected Ready-only submission; add service regressions.
+- [x] 9.3 Refine the existing lightweight viewer with compact rows, disclosures, quantity, empty/success states and same-frame navigation; add executable viewer and mobile browser checks.
+- [x] 9.4 Version the resource, update docs/release note, pass repository gates, commit/push one scoped PR and verify exact-head CI.
+- [ ] 9.5 After a separately approved release, verify the v6 mounted experience in native ChatGPT; do not infer this from local tests.
+
+9.4 was completed by PR #149, tested at
+`a1ebed07f94565a46b3662c77fdc440bad23e2c9` and merged as
+`85bcd7ee3d094c94041282dab2ce85925e803aa2` on 28 September 2026.
+Exact-head CI run `36346228455` passed. Its recorded loopback continuous-flow
+checks at 320px and 375px made zero provider basket calls. This credits the
+implementation gate only; 9.5 and the native historical/recovery gates remain
+open. The current resource is v6, with v4/v5 now retired; #137's historical v4
+case must not be mistaken for current-renderer acceptance or an instruction to
+redeploy the old v4 release.

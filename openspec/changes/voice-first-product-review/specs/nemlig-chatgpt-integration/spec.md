@@ -26,7 +26,8 @@ after explicit approval of an unchanged submission review.
 #### Scenario: Complete product result is shown
 - **WHEN** a search or exact lookup contains resolved products
 - **THEN** every product appears once with its supported exact facts and context;
-  local draft controls never apply provider mutations or imply approval
+  local draft controls never apply provider mutations or imply approval; the
+  separate protected submission confirmation may apply an exact prepared change
 
 ### Requirement: Direct normal ChatGPT use
 
@@ -103,8 +104,8 @@ recorded release steps; they SHALL NOT be inferred from healthy edge endpoints.
 
 #### Scenario: Local UI release test
 - **WHEN** the operator verifies a released review UI
-- **THEN** selecting and accepting an exact product changes only the local Basket,
-  and navigation back to Needs review preserves both lists without provider writes
+- **THEN** selecting and accepting an exact product changes only Ready,
+  and navigation back to In Review preserves both lists without provider writes
 
 ### Requirement: Inactive historical shopping cards
 Host-supplied review snapshots SHALL start inactive without product hydration or
@@ -130,3 +131,8 @@ review. The app SHALL NOT infer message age from time or shared browser storage.
 - **WHEN** the host requests a known retired viewer URI
 - **THEN** it receives an inactive notice, not obsolete shopping controls or a missing-template response
 - **AND** server changes make no claim to remove documents already cached by the host
+
+#### Scenario: Activated current card receives a duplicate host snapshot
+- **WHEN** the same mounted review receives a matching tool result or globals update
+- **THEN** it stays active, preserves compatible presentation state, and does not
+  reopen or replace the card

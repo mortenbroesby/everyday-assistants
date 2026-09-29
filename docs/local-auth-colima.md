@@ -15,7 +15,7 @@ only discovers the configured issuer, verifies a bearer access token with
 scope, and application principal, and then admits the request before the
 Durable Object or Container can wake.
 
-Nemlig credentials are a separate provider concern. Existing schema-v2
+Nemlig credentials are a separate provider concern. Current family schema v3
 credential records remain sealed in the fixed controller Durable Object with
 AES-GCM, bound to principal, policy revision, key version, and generation. The
 encryption key is an existing Worker secret. No Cloudflare Secret Store or

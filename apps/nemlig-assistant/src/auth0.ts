@@ -15,8 +15,8 @@ export interface Auth0Config {
   revision: string;
   host: "127.0.0.1" | "0.0.0.0";
   port: number;
-  credentialKey?: string;
-  credentialKeyVersion?: string;
+  credentialKey: string;
+  credentialKeyVersion: string;
   serviceAcceptance?: { clientId: string };
 }
 
@@ -80,10 +80,9 @@ export function loadAuth0Config(env: NodeJS.ProcessEnv = process.env): Auth0Conf
   const credentialKey = env.NEMLIG_MCP_CREDENTIAL_KEY?.trim();
   const credentialKeyVersion = env.NEMLIG_MCP_CREDENTIAL_KEY_VERSION?.trim();
   const serviceAcceptanceEnabled = env.NEMLIG_MCP_SERVICE_ACCEPTANCE_ENABLED === "true";
-  if (principalPolicy.schema_version === 2
-    && (!credentialKey || !/^[A-Za-z0-9_-]{43}$/u.test(credentialKey)
-      || !credentialKeyVersion || !/^[A-Za-z0-9._-]{1,32}$/u.test(credentialKeyVersion))) {
-    throw new Error("Schema-v2 credential encryption configuration is invalid.");
+  if (!credentialKey || !/^[A-Za-z0-9_-]{43}$/u.test(credentialKey)
+    || !credentialKeyVersion || !/^[A-Za-z0-9._-]{1,32}$/u.test(credentialKeyVersion)) {
+    throw new Error("Credential encryption configuration is invalid.");
   }
   return {
     issuer,
@@ -96,8 +95,8 @@ export function loadAuth0Config(env: NodeJS.ProcessEnv = process.env): Auth0Conf
     revision: env.NEMLIG_MCP_REVISION?.trim() || "development",
     host,
     port,
-    ...(credentialKey ? { credentialKey } : {}),
-    ...(credentialKeyVersion ? { credentialKeyVersion } : {}),
+    credentialKey,
+    credentialKeyVersion,
     ...(serviceAcceptanceEnabled ? { serviceAcceptance: { clientId: required(env, "NEMLIG_MCP_SERVICE_CLIENT_ID") } } : {}),
   };
 }

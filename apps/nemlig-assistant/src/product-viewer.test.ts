@@ -40,8 +40,8 @@ const complete: ProductView = {
 };
 
 test("viewer exposes one MCP Apps resource identity and a complete headless fallback", () => {
-  assert.equal(PRODUCT_VIEWER_RESOURCE_VERSION, "4");
-  assert.equal(PRODUCT_VIEWER_RESOURCE_URI, "ui://nemlig/product-viewer-v4.html");
+  assert.equal(PRODUCT_VIEWER_RESOURCE_VERSION, "6");
+  assert.equal(PRODUCT_VIEWER_RESOURCE_URI, "ui://nemlig/product-viewer-v6.html");
   assert.equal(PRODUCT_VIEWER_MIME_TYPE, "text/html;profile=mcp-app");
   assert.deepEqual(PRODUCT_VIEWER_RESOURCE_METADATA, {
     ui: { resourceUri: PRODUCT_VIEWER_RESOURCE_URI },
@@ -57,7 +57,7 @@ test("viewer exposes one MCP Apps resource identity and a complete headless fall
   assert.equal(productViewsToText([]), "No products found.");
 });
 
-test("viewer resource is accessible, self-contained, and limited to local review actions", () => {
+test("viewer resource is accessible, self-contained, and uses only local review plus protected submission actions", () => {
   const html = renderProductViewerHtml();
 
   assert.match(html, /<html lang="en">/u);
@@ -72,19 +72,22 @@ test("viewer resource is accessible, self-contained, and limited to local review
   assert.match(html, /Product ID: /u);
   assert.match(html, /product\.unit/u);
   assert.match(html, /product\.unit_price/u);
-  assert.match(html, /product\.labels/u);
   assert.match(html, /product\.declaration/u);
   assert.match(html, /product\.details/u);
   assert.match(html, /el\("details"/u);
   assert.match(html, /el\("summary"/u);
   assert.match(html, /product\.declaration/u);
   assert.match(html, /product\.details/u);
-  assert.match(html, /Review quantity: /u);
+  assert.match(html, /quantityControl/u);
   assert.doesNotMatch(html, /\b(fetch|XMLHttpRequest|WebSocket)\b/u);
   assert.match(html, /callTool\("update_product_review"/u);
-  assert.doesNotMatch(html, /callTool\("(?:submit_product_review|add_approved_items|remove_approved_item|make_approved_item_swap|empty_approved_basket)"/u);
-  assert.match(html, /Add selected to local Basket/u);
+  assert.match(html, /callTool\("submit_product_review"/u);
+  assert.doesNotMatch(html, /callTool\("(?:add_approved_items|remove_approved_item|make_approved_item_swap|empty_approved_basket)"/u);
+  assert.match(html, /Add " \+ selected\.size \+ " to Ready/u);
+  assert.match(html, /Varebeskrivelse|Varedeklaration|Detaljer om varen/u);
+  assert.doesNotMatch(html, /Add to local Basket/u);
   assert.match(html, /Review in conversation/u);
+  assert.match(html, /Add to Nemlig/u);
   assert.doesNotMatch(html, /<script\s+src=/u);
 });
 

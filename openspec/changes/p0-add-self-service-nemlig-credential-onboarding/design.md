@@ -1,4 +1,49 @@
+## Current owner recovery design (2026-09-28)
+
+Implement only section 12. Anonymous /connect renders a native sign-in link,
+without provider/storage work. Explicit sign-in uses the installed MCP client
+SDK's authorization-code/PKCE flow and issuer discovery with a pre-registered
+public client; do not dynamically register clients from web requests. Promote
+that existing package from development to runtime dependencies, adding no new
+package. Only the configured HTTPS issuer origin may receive OAuth fetches;
+redirects are rejected using manual fetch plus explicit 3xx rejection (the
+Worker runtime rejects fetch redirect:error), the whole OAuth leg has one bounded auth deadline and
+code exchange is never automatically retried.
+
+Use response_mode=form_post, the configured Auth0 audience as well as MCP resource,
+and the exact /connect/callback URI. A short-lived
+authenticated HttpOnly Secure SameSite=None transaction cookie binds random state,
+PKCE verifier, issuer and client; only this transaction cookie permits the
+cross-site provider POST. The existing portal cookie remains SameSite=Lax.
+Reject wrong method/origin, duplicate/missing fields, tampering, expiry and
+configuration drift before exchange. The library validates discovery/issuer and
+PKCE; existing resource-token verification then requires the exact enabled
+owner. Consume the transaction through existing authenticated CSRF replay
+storage before creating the portal session. One callback request makes at most
+one exchange. A separate replay may attempt an exchange but cannot issue a
+second session, and no automatic retry occurs. Discard OAuth tokens; request no
+offline_access/openid and accept no ID token as authority. Return only sanitized
+errors and clean /connect redirects. No code/token is included in HTML or URLs.
+
+Credential changes still require the existing portal session, origin, bounded
+form, one-use CSRF and one read-only validation before atomic sealed replacement.
+MCP and onboarding switches remain independent and no sign-in changes either.
+One public browser client plus a portal-session secret are separate live setup
+prerequisites; preserve the credential key and private schema-v3 identity/key/
+revision bindings. No auth client is created, secret changed or production enabled
+by implementation. Each sign-in adds bounded issuer discovery/code-exchange work
+and one authenticated replay-storage write; no polling, keep-warm calls or new
+paid service. With app-local quotas intentionally absent, aggregate requests can
+still incur usage and cost until disabled; this is not a hard billing cap.
+
+The remaining design below is historical, not an alternative implementation.
+
 ## Context
+
+Historical design: its tier/budget and schema-v1/v2 compatibility decisions are
+superseded by `remove-nemlig-local-rate-limits`. Only the current schema-v3
+configured-family contract is supported. Do not implement the old migration or
+dynamic-enrollment paths below without a separately re-baselined plan.
 
 See `proposal.md` for motivation and the delta specs for observable behavior.
 The current schema stores subject, principal key, tier, enablement, and plaintext
@@ -170,13 +215,15 @@ Ordinary MCP requests still make one controller admission call and address at
 most the fixed single Container. The sealed envelope adds bounded bytes to that
 existing internal request but no extra storage RPC. Portal GETs stop at the
 Worker/Auth0 boundary; successful management operations add a small number of
-controller reads/writes, and validation attempts are rate-limited before the
-Container. There is no polling, alarm, queue, scheduled work, log drain,
+controller reads/writes. `remove-nemlig-local-rate-limits` supersedes the former
+validation-rate gates. There is no polling, alarm, queue, scheduled work, log drain,
 keep-awake request, extra namespace, or autoscaling.
 
-Worst credible abuse is therefore bounded by the separate onboarding switch,
-per-principal/global validation rates, request deadlines, and the existing one-
-Container ceiling. Any plan change or measured usage outside the existing
+The onboarding switch, authorization, CSRF, request deadlines and existing
+one-Container ceiling remain. Removing validation rates allows more provider
+login traffic outside MCP usage caps, and replay history grows with actions
+until signed-token expiry. This is not a hard billing or request-count cap.
+Any measured usage outside the existing
 Cloudflare/Auth0 allowances requires a new human cost decision.
 
 ### Implementation map
@@ -217,7 +264,7 @@ traffic retains one controller admission and at most one fixed Container wake.
 - [ChatGPT may not advertise URL elicitation] -> Keep the same fixed HTTPS page
   as a manual fallback and verify real client capabilities during acceptance.
 - [Credential validation wakes the fixed Container] -> Keep onboarding off by
-  default, rate-limit before wake, make one attempt with no retry, and never use
+  default, authorize before wake, make one attempt with no retry, and never use
   validation as a health poll.
 - [Rotation interrupts an open conversation] -> Reject the obsolete generation
   immediately and return concise reconnect guidance instead of continuing with

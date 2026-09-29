@@ -39,7 +39,6 @@ function edgeFetcher(calls: string[], origin = "https://nemlig-mcp.example.test/
       scopes_supported: scopes,
       bearer_methods_supported: ["header"],
     });
-    if (request.url.endsWith("/admin/usage")) return Response.json({ schema_version: 1, tiers: { "0": {}, "1": {}, "2": {} } });
     return new Response(null, { status: request.headers.has("origin") ? 403 : 401 });
   };
 }
@@ -96,7 +95,7 @@ test("importing the acceptance entry performs no work", async () => {
   assert.deepEqual(output, []);
 });
 
-test("default acceptance connects after edge, verifies read-only paths, aggregates, and closes", async () => {
+test("default acceptance connects after edge, verifies read-only paths without quota endpoints, and closes", async () => {
   const calls: string[] = [];
   const events: string[] = [];
   const report = await (await import("../scripts/production-acceptance.js")).main([], {
@@ -110,32 +109,36 @@ test("default acceptance connects after edge, verifies read-only paths, aggregat
     },
   });
   assert.deepEqual(events, ["connect", "close"]);
-  assert.deepEqual(calls, ["/healthz", "/revision", "/.well-known/oauth-protected-resource/mcp", "/mcp", "/mcp", "/admin/usage"]);
-  assert.deepEqual(report.required, ["edge", "live_user_features", "owner_admin"]);
-  assert.deepEqual(report.passed, ["edge", "live_user_features", "owner_admin"]);
+  assert.deepEqual(calls, ["/healthz", "/revision", "/.well-known/oauth-protected-resource/mcp", "/mcp", "/mcp"]);
+  assert.deepEqual(report.required, ["edge", "live_user_features"]);
+  assert.deepEqual(report.passed, ["edge", "live_user_features"]);
+  assert.equal(report.lastCompletedBoundary, "live_user_features");
 });
 
-test("default owner acceptance rejects unavailable or malformed aggregate admin evidence", async () => {
+test("acceptance profiles never request removed usage or breaker endpoints", async () => {
   const entry = await import("../scripts/production-acceptance.js");
-  for (const response of [
-    new Response(null, { status: 500 }),
-    Response.json({ schema_version: 2, tiers: { "0": {}, "1": {}, "2": {} } }),
-  ]) {
+  for (const args of [[], ["--service"], ["--edge-only"]]) {
     let closed = 0;
-    await assert.rejects(entry.main([], {
+    const report = await entry.main(args, {
       NEMLIG_PRODUCTION_MCP_URL: "https://nemlig-mcp.example.test/mcp",
       NEMLIG_MCP_ACCESS_TOKEN: "test-token",
+      NEMLIG_MCP_SERVICE_ACCESS_TOKEN: "service-token",
     }, {
-      fetcher: async (input, init) => new URL(input instanceof Request ? input.url : input).pathname === "/admin/usage"
-        ? response.clone()
-        : edgeFetcher([])(input, init),
-      connect: async () => ({ client: readonlyClient(), close: async () => { closed += 1; } }),
-    }), /Tier usage|schema/iu);
-    assert.equal(closed, 1);
+      fetcher: async (input, init) => {
+        const path = new URL(input instanceof Request ? input.url : input).pathname;
+        assert.notEqual(path, "/admin/usage");
+        assert.notEqual(path, "/admin/reset-breaker");
+        return await edgeFetcher([])(input, init);
+      },
+      connect: async () => ({ client: args.includes("--service") ? serviceClient() : readonlyClient(), serverVersion: NEMLIG_VERSION, close: async () => { closed += 1; } }),
+    });
+    assert.equal(closed, args.includes("--edge-only") ? 0 : 1);
+    assert.equal(report.required.includes("owner_admin"), false);
+    assert.equal(report.passed.includes("owner_admin"), false);
   }
 });
 
-test("service acceptance uses only its in-memory token, closes the MCP client, and skips owner admin access", async () => {
+test("service acceptance uses only its in-memory token, closes the MCP client, and skips quota endpoints", async () => {
   const calls: string[] = [];
   const tokens: string[] = [];
   const events: string[] = [];
@@ -154,6 +157,7 @@ test("service acceptance uses only its in-memory token, closes the MCP client, a
   assert.deepEqual(tokens, ["service-token"]);
   assert.deepEqual(events, ["connect", "close"]);
   assert.equal(calls.includes("/admin/usage"), false);
+  assert.equal(calls.includes("/admin/reset-breaker"), false);
   assert.equal(calls.filter((path) => path === "/mcp").length, 2);
   assert.deepEqual(report.required, ["edge", "service_fixture"]);
   assert.deepEqual(report.passed, ["edge", "service_fixture"]);

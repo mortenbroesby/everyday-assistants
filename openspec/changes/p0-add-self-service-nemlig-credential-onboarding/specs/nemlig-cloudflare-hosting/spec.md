@@ -1,3 +1,8 @@
+Historical delta: tier/budget and legacy-policy clauses below are superseded by
+`remove-nemlig-local-rate-limits` and its synced durable family contract. Do not
+apply this older delta over that implementation; remaining onboarding needs
+its own coherent re-baseline.
+
 ## MODIFIED Requirements
 
 ### Requirement: Authentication protects backend wake-up
@@ -54,6 +59,31 @@ prerequisites succeed.
   returns only sanitized connection-required guidance
 
 ## ADDED Requirements
+
+### Requirement: Bounded owner browser authentication adapter
+
+The owner portal SHALL use the installed maintained OAuth client with an exact
+configured HTTPS issuer/resource, pre-registered public browser client and
+fixed POST callback. Its authenticated expiring transaction cookie SHALL bind
+state, PKCE verifier, issuer and client. OAuth fetches SHALL be bounded to the
+issuer origin, reject redirects and never automatically replay code exchange.
+After existing token verification, exact enabled owner authorization and
+authenticated one-use transaction consumption SHALL precede portal authority.
+No OAuth code/token SHALL enter URLs, rendered HTML, logs or tool results.
+
+#### Scenario: Invalid callback or identity arrives
+
+- **WHEN** transaction binding, expiry, method, origin, fields, issuer, client,
+  owner authorization or one-use consumption fails
+- **THEN** no portal session, credential replacement or Container wake occurs,
+  and only a sanitized failure is returned
+
+#### Scenario: Migration is not yet accepted
+
+- **WHEN** the browser client, portal secret, private v3 policy or owner credential
+  validation is unverified
+- **THEN** release remains held or MCP disabled; machine fixtures do not count as
+  real owner credential or native ChatGPT acceptance
 
 ### Requirement: Exact-email invitation and principal-registration boundary
 
@@ -161,18 +191,20 @@ in a connection URL.
 
 Credential validation SHALL perform at most one bounded Nemlig authentication
 attempt and one bounded authenticated read, SHALL perform no basket, favorite,
-profile, address, order, delivery-slot, or payment mutation, and SHALL be rate
-limited per principal and globally before Container access. Credential lookup for
+profile, address, order, delivery-slot, or payment mutation, and SHALL retain
+authorization and CSRF replay protection before Container access without an
+app-owned request-rate gate, as superseded by `remove-nemlig-local-rate-limits`.
+Credential lookup for
 ordinary MCP traffic SHALL reuse the existing controller admission operation and
 SHALL NOT add polling, a recurring job, another Container, another Durable Object
 namespace, or another per-request storage round trip.
 
 #### Scenario: Repeated invalid submissions occur
 
-- **WHEN** a principal or the deployment exceeds the configured credential-
-  validation rate
-- **THEN** further attempts are rejected without waking the Container or
-  contacting Nemlig and without affecting the previous credential record
+- **WHEN** an eligible principal submits distinct authenticated, CSRF-protected
+  validations beyond the former minute thresholds
+- **THEN** each performs bounded read-only validation without a rate denial;
+  failures preserve the previous credential and replayed actions are rejected
 
 #### Scenario: Maximum ordinary MCP workload occurs
 

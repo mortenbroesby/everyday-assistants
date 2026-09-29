@@ -1,3 +1,25 @@
+## Current owner recovery scope (2026-09-28)
+
+The owner approved a minimal browser sign-in/reconnection path to unblock the
+strict schema-v3 production migration. Only section 12 of tasks.md is current
+implementation scope. Preserve the existing credential portal, encrypted records
+and fixed Container. Use the installed maintained MCP OAuth client for PKCE and
+code exchange, one explicitly configured public browser client, exact enabled
+owner authorization, single-use transaction binding and a POST callback. No
+refresh token, ID-token/email enrollment, Organization, invitation, legacy policy,
+password fallback, auth server or shopping mutation is added. Provider/client and
+secret provisioning remain reviewed operator checkpoints; local tests cannot
+prove owner production or native ChatGPT acceptance.
+
+## Superseded policy boundary
+
+The tier/budget, legacy-policy migration and dynamic enrollment clauses below
+are historical research, not current implementation instructions.
+`remove-nemlig-local-rate-limits` supersedes them with one strict schema-v3
+configured-family policy, encrypted credentials and no usage gates or compatibility.
+Remaining onboarding work must be re-baselined separately; no new Auth0 flow,
+private migration or invitation is authorized by this repository cleanup.
+
 ## Why
 
 Invited users currently cannot enroll themselves or provide and rotate their own Nemlig credentials: the operator must manually copy an Auth0 subject into policy and place every username and password inside one Cloudflare secret. That forces unsafe credential handoff and brittle identity setup, so the private tiered-access design cannot safely enable the user's boss.
@@ -11,7 +33,7 @@ Invited users currently cannot enroll themselves or provide and rotate their own
 - Remove Nemlig credential pairs and invitee identities from the shared principal policy. Keep the Tier 0 owner, tier rules, budgets, and invitation defaults static; store pending invitation digests and accepted invitee principals in the existing controller Durable Object.
 - Encrypt each principal's credentials with a versioned authenticated-encryption envelope under a separately managed Cloudflare secret and store only ciphertext in a principal-scoped record inside the existing fixed controller Durable Object.
 - Treat owner issuance of an invitation as the explicit conditional Tier 1 grant: exact-email redemption, successful credential validation, and isolation gates activate access without a second subject-copy or enable step; retain owner-only disable and revocation.
-- Add self-service status, rotation, and credential revocation without revealing stored values, plus sanitized and rate-limited failure handling that preserves the global kill switch, auth-before-wake, quotas, breaker, bounded retries, one-Container ceiling, and basket approval contract.
+- Add self-service status, rotation, and credential revocation without revealing stored values, plus sanitized failure handling that preserves the global kill switch, auth-before-wake, cost ceilings, breaker, bounded retries, one-Container ceiling, and basket approval contract. App-local rate throttles are removed by `remove-nemlig-local-rate-limits`.
 - Add a disabled-first migration that copies and verifies the existing owner's credential without exposing it, retains an immediate rollback path, and requires explicit human checkpoints before Auth0 configuration, Cloudflare bindings/secrets, production migration, or any material cost change.
 
 Non-goals: public or uninvited signup, arbitrary account mapping, user-selected tiers, shared Nemlig credentials, password recovery, checkout or ordering, basket mutation during validation, Auth0 Organizations, changing the third-party ChatGPT OAuth client, building a Management API invitation service or adding an email provider, secret-bearing invitation URLs, replacing Auth0, adding a database vendor or paid secret manager, autoscaling, or changing the existing ChatGPT app identity.

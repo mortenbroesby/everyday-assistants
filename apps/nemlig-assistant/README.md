@@ -98,8 +98,8 @@ The production profile is designed for private, low-volume family use:
 
 - Auth0 authenticates before useful requests reach the backend.
 - One fixed Cloudflare Container can sleep when idle and cannot horizontally autoscale.
-- Per-user rate limits and daily normal/expensive quotas bound usage.
-- An automatic circuit breaker fails closed when a quota is exceeded.
+- No app-owned request throttles, daily/monthly quotas, usage tiers or counters.
+  Provider/platform limits are not bypassed; there is no app-enforced billing cap.
 - `MCP_ENABLED` provides an immediate manual kill switch.
 - Explicit timeouts and bounded retries prevent failed work from running forever.
 
@@ -121,16 +121,25 @@ Provider descriptions, declarations, and item details are converted from HTML
 to bounded plain text, including Danish characters and entities. Scripts,
 styles, images and link destinations are omitted; conversion does not fetch
 additional resources.
-The shared product viewer has compact, expandable rows. Needs review contains
-unresolved products; local Basket contains accepted products. Accept selected
-products, adjust quantities, remove them, or inspect alternatives for one product.
-Alternatives remain available while you inspect Basket, and every view has a safe
-exit. All of these operations also work through conversation, including “everything
-except the ricotta and cucumbers is fine.” Local acceptance never changes Nemlig.
+The shared product viewer has compact, expandable rows. **In Review** contains
+unresolved products; **Ready** contains exact accepted products. Select one or
+more In Review rows, then add them to Ready in one local action. Adjust
+quantities or remove products in either view. Choose alternatives only from In
+Review; choosing a replacement does not accept it automatically. These local
+operations also work through conversation, including “everything except the
+ricotta and cucumbers is fine.” Local acceptance never changes Nemlig.
+Once explicitly opened, the same current review frame stays active across
+confirmed local edits and destination changes. Compatible selections and open
+product rows remain in place. Rows show product, package, quantity and line
+price first. Expanded rows contain collapsed **Varebeskrivelse**,
+**Varedeklaration**, and **Detaljer om varen** sections; opening them makes no
+tool call. **Remove all Ready products** removes those products from the local
+selection after confirmation, without touching the real Nemlig basket.
 
 Voice and touch use one private temporary draft per ChatGPT conversation, identified
 by the host session metadata and authenticated principal. There is no hourly expiry.
-**Finish shopping** discards the local draft. A restart or bounded memory eviction
+**Clear selection and start over** discards the local draft and shows a
+conversational starting screen. A restart or bounded memory eviction
 can also discard it; missing state is reported rather than silently recreated.
 Each principal retains at most eight conversation drafts of 50 products. Hosts
 without conversation context cannot access a hosted draft. ChatGPT does not
@@ -150,7 +159,7 @@ transcript cards. Refresh app metadata and explicitly open the current review.
 Run `pnpm --filter nemlig-assistant smoke:review-ui`, open its loopback URL,
 and click **Run regression smoke**. The real MCP adapter and fake catalogue
 exercise inactive mount/remount, conflicting revisions, a failed connection,
-process restart, explicit recovery and Finish shopping. The page reports PASS
+process restart, explicit recovery and clearing the local selection. The page reports PASS
 only when the stale edit was not replayed, restart cleared acceptance while
 preserving quantities, and provider basket calls remained zero. No credentials
 are required; provider basket access is denied by the fixture.
@@ -158,15 +167,18 @@ are required; provider basket access is denied by the fixture.
 Product disclosures, navigation and ordinary local edits do not fetch Nemlig;
 adding new exact products hydrates only those products, and
 explicit alternatives searches hydrate up to ten results with three concurrent
-reads and existing request limits.
+reads and bounded provider deadlines/retries.
 
-When you are happy with the local Basket, choose **Review submission to Nemlig**.
-This prepares fresh exact product prices and quantities, then asks for approval in
-conversation. Only explicit approval of that unchanged review allows submission.
+When you are happy with Ready, choose **Send to Nemlig basket**.
+This prepares fresh exact product prices and quantities and shows the separate
+on-screen confirmation. Inspect the prepared lines, then confirm in the viewer
+or approve the same exact review in conversation. Merely preparing or showing
+confirmation does not submit. Only explicit approval of the unchanged review
+allows submission.
 The quantities of those products are set in Nemlig; unrelated basket lines stay
-unchanged and unresolved draft items are excluded. Editing the draft invalidates
-the pending submission. The local Basket remains visible after success or failure;
-if the result is uncertain, inspect the actual Nemlig basket before any deliberate
+unchanged and In Review items are excluded. Editing the draft invalidates
+the pending submission. Verified success has its own screen; the local selection
+remains available for continued review. If the result is uncertain, inspect the actual Nemlig basket before any deliberate
 new review. There is no automatic retry.
 
 Interactive ChatGPT hosts use their tool bridge. Other hosts retain the complete
@@ -264,8 +276,9 @@ The MCP surface is organized around household actions:
   reconsider accepted products, append new products, navigate, finish shopping, or
   prepare submission with `update_product_review`. Show can recover the active
   conversation review without its opaque reference. Repeated starts preserve it.
-- Submit that exact local Basket after explicit approval: `submit_product_review`.
-  This tool is model-only; visual controls cannot apply a provider mutation.
+- Submit those exact Ready lines after explicit approval: `submit_product_review`.
+  This protected tool can be called by the model after conversational approval
+  or by the viewer after its separate on-screen exact-review confirmation.
 - Review basket changes: `review_items_to_add`, `review_item_to_remove`,
   `review_item_swap`, and `review_emptying_basket`.
 - Complete an approved change: `add_approved_items`, `remove_approved_item`,
@@ -278,7 +291,8 @@ The MCP surface is organized around household actions:
   to view the actual provider basket visually, use `show_my_basket_visually`. The viewer
   initializes the MCP Apps bridge and shows actionable errors or cancelled states
   instead of waiting indefinitely.
-  The viewer can edit the server-owned local review; it never calls Nemlig directly or applies a provider change.
+  The viewer can edit the server-owned local review and can call only the protected
+  submission tool after on-screen confirmation; it never calls Nemlig directly.
 
 After this connection recovery, use the app named `Nemlig Assistant (Rejoin)`.
 For ordinary later releases, use **Refresh** on that app so ChatGPT rediscovers
@@ -300,27 +314,40 @@ in [Cloudflare operations](../../docs/cloudflare-operations.md). It is the only
 supported ChatGPT deployment. The CLI and stdio MCP server remain available for
 direct local development and use; they are not a ChatGPT hosting fallback.
 
-Hosted identity is resolved from the validated Auth0 subject. Schema v2 keeps
-the static Tier 0 owner and tier budgets in the encrypted
-`NEMLIG_MCP_PRINCIPALS` policy while legacy invitation records remain a separate
-capability; this application no longer performs that Auth0 flow. Each user
-has independent sealed credentials, sessions and basket proposals; unknown or disabled identities are rejected before Container
-wake. Tier labels remain for identity and reporting, but all three tiers use
-the same per-principal allowances without reserved capacity or ordered
-shedding. The global kill switch, breaker, quotas, deadlines, and one-Container
-ceiling still override every tier.
+Hosted identity is resolved from the validated Auth0 subject. The only supported
+private policy is schema v3: revision, explicit `owner_subject`, and configured
+family identities with opaque keys and enabled flags. Old schemas, inline
+credentials, tiers and budgets are rejected without compatibility adapters.
+Each member has independent sealed credentials, sessions and basket proposals;
+unknown or disabled identities are rejected before backend work. There are no
+app-local rate limits, daily/monthly quotas or usage counters. The manual kill
+switch, deadlines, bounded retries and one-Container ceiling remain; none is a
+hard billing cap. External provider/platform limits still apply.
 
 The authenticated `get_profile` tool is provider-independent: Auth0 validation,
 principal authorization, MCP initialization, and profile discovery do not need a
 Nemlig login. Provider-backed tools remain credential-gated and return the
 existing connection-required result until a Nemlig connection is provisioned.
 
-When the provider portal is enabled by the operator, it accepts a standard
-resource bearer token and then uses a short-lived signed portal cookie. Enter
+When the provider portal is enabled and configured by the operator, `/connect`
+offers **Sign in** for the configured owner using the installed MCP OAuth client
+and PKCE. A verified owner resource token establishes the existing short-lived
+signed portal cookie; tokens are not returned to the page or chat.
+Native connection forms retain their same-origin header for strict origin and
+single-use CSRF checks; no referrer is sent to other origins.
+Opening or signing in to the page never replaces stored Nemlig credentials.
+Standard resource bearer entry remains available to configured family members. Enter
 only your own Nemlig login in that separately authenticated page. Never send it
 through ChatGPT or a tool argument. The page can replace or revoke your
 connection; the owner can disable or revoke invitee access. Follow the disabled-first
 [self-service procedure](../../docs/cloudflare-operations.md#self-service-credential-onboarding).
+
+For a credential-free native-form regression, run
+`pnpm --filter nemlig-assistant smoke:onboarding` and open its loopback URL.
+Use only the printed synthetic credentials, click **Connect**, then
+**Revoke connection**: both must succeed. This exercises the real portal
+renderer, signed cookie and single-use CSRF store with no OAuth/Nemlig access.
+It is not a live owner-connection or native ChatGPT acceptance test.
 
 The MCP server advertises the original orange bitten-dot icon and the display
 name `Nemlig Assistant` to clients that render standard MCP app metadata.
@@ -436,8 +463,10 @@ This README is the user-facing inventory of shipped feature sets:
 - fresh Nemlig authentication before every provider-backed MCP task
 - rich individual short-query product discovery and refinement
 - one shared product presentation with a headless fallback
-- voice/touch local review, editable Basket, and contextual alternatives
+- voice/touch In Review and Ready selection with contextual alternatives
+- persistent in-place review navigation, compact rows, and confirmed local removal
 - explicit protected submission of resolved local products
+- on-screen exact submission confirmation with conversational fallback
 - favourites as read-only evidence for uncertain matches
 - composable catalogue search, favourites, sections, browsing, and exact details
 - product comparison with staged basket review/apply

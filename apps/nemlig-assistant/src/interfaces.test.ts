@@ -271,7 +271,7 @@ const friendlyCatalog = [
   ["show_my_basket_visually", "Show my Nemlig basket visually", true, false, []],
   ["show_my_favorites", "Show my favourites", true, false, ["search_term", "result_count", "page"]],
   ["start_product_review", "Start a local product review", false, false, ["items"]],
-  ["submit_product_review", "Submit the approved local Basket", false, false, ["review_id", "revision", "submission_id"]],
+  ["submit_product_review", "Submit the approved Ready products", false, false, ["review_id", "revision", "submission_id"]],
   ["update_product_review", "Update the local product review", false, false, ["review_id", "revision", "action"]],
 ] as const;
 
@@ -334,7 +334,6 @@ test("MCP profile tool exposes the authenticated principal as a stable read-only
     createMcpServer(fakeClient(), testCredentials, undefined, undefined, {
       principalKey: "auth0|profile-owner",
       policyRevision: "test-v1",
-      tier: 0,
     }),
     async (mcp) => {
       const tool = (await mcp.listTools()).tools.find(({ name }) => name === "get_profile");
@@ -394,7 +393,7 @@ test("service acceptance exposes only its fixed read-only tool inventory", async
     browseDepartment: unexpected, getCart: unexpected, addToCart: unexpected, removeFromCart: unexpected, clearCart: unexpected,
   });
   for (const expectedVariant of [serviceAcceptanceToolInventory, serviceAcceptanceToolInventory] as const) await withMcpClient(createMcpServer(client, testCredentials, undefined, undefined, {
-    principalKey: "s".repeat(32), policyRevision: "service", tier: 2, kind: "service",
+    principalKey: "s".repeat(32), policyRevision: "service", kind: "service",
   }), async (mcp) => {
     const expected = expectedVariant;
     assert.deepEqual((await mcp.listTools()).tools.map(({ name }) => name).sort(), [...expected].sort());
@@ -451,7 +450,7 @@ test("connection guidance uses URL elicitation only when explicitly supported", 
 test("connection status verifies Nemlig and does not trust OAuth context alone", async () => {
   const client = fakeClient({ getCart: async () => { throw new NemligError("Nemlig unavailable"); } });
   await withMcpClient(createMcpServer(client, testCredentials, undefined, undefined, {
-    principalKey: "p".repeat(32), policyRevision: "test", tier: 0,
+    principalKey: "p".repeat(32), policyRevision: "test",
   }), async (mcp) => {
     const result = await mcp.callTool({ name: "check_nemlig_connection", arguments: {} });
     assert.deepEqual(result.structuredContent, { status: "provider_unavailable", connection_url: NEMLIG_CONNECT_URL });
@@ -601,7 +600,7 @@ test("every MCP tool has complete schemas, accurate annotations, and safe server
 test("authenticated HTTP request context preserves stdio tool and resource metadata", async () => {
   await withMcpClient(createMcpServer(fakeClient(), testCredentials), async (stdio) => {
     await withMcpClient(
-      createMcpServer(fakeClient(), testCredentials, undefined, undefined, { principalKey: "auth0|owner", policyRevision: "test-v1", tier: 0 }),
+      createMcpServer(fakeClient(), testCredentials, undefined, undefined, { principalKey: "auth0|owner", policyRevision: "test-v1" }),
       async (http) => {
         assert.deepEqual(await http.listTools(), await stdio.listTools());
         const expectedResources = expectedProductViewerResources;
@@ -620,11 +619,11 @@ test("MCP exposes independent discovery, exact details, and one shared product v
     assert.match(instructions, /Use Nemlig Assistant as independent capabilities for current products/);
     assert.match(instructions, /Normalize each search into one short Danish catalogue phrase/);
     assert.match(instructions, /independent capabilities/);
-    assert.match(instructions, /Basket changes require the matching staged review\/apply tools and explicit approval/);
+    assert.match(instructions, /actual basket changes require their matching staged review\/apply tools and explicit approval/i);
     assert.match(instructions, /Never check out, pay, order, or select delivery slots/);
-    assert.match(instructions, /temporary local review visually, use update_product_review show/u);
-    assert.match(instructions, /show_my_basket_visually when the user asks to see actual provider-basket products/u);
-    assert.match(instructions, /Image URLs in tool data do not prove that ChatGPT rendered cards/u);
+    assert.match(instructions, /Show, not repeated detail reads, reopens the local viewer/u);
+    assert.match(instructions, /show_my_basket_visually to inspect the actual basket/u);
+    assert.match(instructions, /image URLs do not prove cards rendered/u);
     assert.doesNotMatch(instructions, /Suggest an improvement|GitHub issue/);
     assert.match(tools.get("find_groceries") ?? "", /current Nemlig catalogue directly/);
     assert.match(tools.get("find_groceries") ?? "", /'Prince biscuits' becomes 'prince kiks'/);
@@ -943,7 +942,7 @@ test("MCP additions require prepare then apply and direct mutation tools are una
 test("approved MCP writes authenticate before the task and never retry an indeterminate mutation", async () => {
   let logins = 0;
   let writes = 0;
-  const context = { principalKey: "auth0|owner", policyRevision: "test-v1", tier: 0 as const };
+  const context = { principalKey: "auth0|owner", policyRevision: "test-v1" };
   const client = fakeClient({
     login: async () => { logins += 1; },
     getCart: async () => ({ ...basket, items: [], productsPrice: 0, numberOfProducts: 0 }),
@@ -1007,7 +1006,7 @@ test("hosted proposals survive a principal reconnect but remain isolated by prin
   let proposalId = "";
 
   await withMcpClient(
-    createMcpServer(client, testCredentials, undefined, proposals, { principalKey: "auth0|owner", policyRevision: "test-v1", tier: 0 }),
+    createMcpServer(client, testCredentials, undefined, proposals, { principalKey: "auth0|owner", policyRevision: "test-v1" }),
     async (mcp) => {
       const prepared = await mcp.callTool({
         name: "review_items_to_add",
@@ -1018,7 +1017,7 @@ test("hosted proposals survive a principal reconnect but remain isolated by prin
   );
 
   await withMcpClient(
-    createMcpServer(client, testCredentials, undefined, new BasketProposalService(client), { principalKey: "auth0|owner", policyRevision: "test-v1", tier: 0 }),
+    createMcpServer(client, testCredentials, undefined, new BasketProposalService(client), { principalKey: "auth0|owner", policyRevision: "test-v1" }),
     async (mcp) => {
       const unavailable = await mcp.callTool({ name: "add_approved_items", arguments: { approved_review: proposalId } });
       assert.equal(unavailable.isError, true);
@@ -1027,7 +1026,7 @@ test("hosted proposals survive a principal reconnect but remain isolated by prin
   );
 
   await withMcpClient(
-    createMcpServer(client, testCredentials, undefined, proposals, { principalKey: "auth0|other", policyRevision: "test-v1", tier: 1 }),
+    createMcpServer(client, testCredentials, undefined, proposals, { principalKey: "auth0|other", policyRevision: "test-v1" }),
     async (mcp) => {
       const rejected = await mcp.callTool({ name: "add_approved_items", arguments: { approved_review: proposalId } });
       assert.equal(rejected.isError, true);
@@ -1036,7 +1035,7 @@ test("hosted proposals survive a principal reconnect but remain isolated by prin
   );
 
   await withMcpClient(
-    createMcpServer(client, testCredentials, undefined, proposals, { principalKey: "auth0|owner", policyRevision: "test-v2", tier: 0 }),
+    createMcpServer(client, testCredentials, undefined, proposals, { principalKey: "auth0|owner", policyRevision: "test-v2" }),
     async (mcp) => {
       const rejected = await mcp.callTool({ name: "add_approved_items", arguments: { approved_review: proposalId } });
       assert.equal(rejected.isError, true);
@@ -1045,7 +1044,7 @@ test("hosted proposals survive a principal reconnect but remain isolated by prin
   );
 
   await withMcpClient(
-    createMcpServer(client, testCredentials, undefined, proposals, { principalKey: "auth0|owner", policyRevision: "test-v1", tier: 0 }),
+    createMcpServer(client, testCredentials, undefined, proposals, { principalKey: "auth0|owner", policyRevision: "test-v1" }),
     async (mcp) => {
       const result = await mcp.callTool({ name: "add_approved_items", arguments: { approved_review: proposalId } });
       assert.equal(result.isError, undefined);
@@ -1253,23 +1252,52 @@ test("MCP local review and explicit submission share exact state without prematu
       review = (result.structuredContent as { review: typeof review }).review;
     };
     await update({ kind: "accept", product_ids: [7] });
-    assert.equal(review.items[0]?.state, "basket");
+    assert.equal(review.items[0]?.state, "ready");
     await update({ kind: "prepare_submission" });
     assert.equal(writes, 0);
     assert.ok(review.submission);
     assert.equal(JSON.stringify(review).includes("proposal_id"), false);
     const tool = (await mcp.listTools()).tools.find(t => t.name === "submit_product_review");
-    assert.deepEqual((tool?._meta?.ui as { visibility: string[] }).visibility, ["model"]);
-    assert.notEqual(tool?._meta?.["openai/widgetAccessible"], true);
+    assert.deepEqual((tool?._meta?.ui as { visibility: string[] }).visibility, ["model", "app"]);
+    assert.equal(tool?._meta?.["openai/widgetAccessible"], true);
     const args = { review_id: review.review_id, revision: review.revision, submission_id: review.submission.submission_id };
     const submitted = await mcp.callTool({ name: "submit_product_review", arguments: args });
     assert.equal(submitted.isError, undefined, toolText(submitted));
     const data = submitted.structuredContent as { review: typeof review; result: { basket: { items: Array<{ id: number; quantity: number }> } } };
     assert.equal(data.review.submission?.status, "submitted");
+    assert.equal(data.review.items[0]?.state, "ready");
     assert.equal(data.review.items.length, 1);
     assert.deepEqual(data.result.basket.items.map(i => [i.id, i.quantity]), [[99, 1], [7, 2]]);
     assert.equal((await mcp.callTool({ name: "submit_product_review", arguments: args })).isError, true);
     assert.equal(writes, 1);
+  });
+});
+
+test("MCP review uses Ready only and rejects obsolete basket navigation", async () => {
+  const noWrite = async (): Promise<never> => { throw new Error("Local review must not mutate the provider basket"); };
+  const provider = fakeClient({ getCart: noWrite, addToCart: noWrite, removeFromCart: noWrite, clearCart: noWrite });
+  await withMcpClient(createMcpServer(provider, testCredentials), async mcp => {
+    const call = async (name: string, args: Record<string, unknown>) => {
+      const result = await mcp.callTool({ name, arguments: args });
+      assert.equal(result.isError, undefined, toolText(result));
+      return (result.structuredContent as { review: ProductReviewSnapshot }).review;
+    };
+    const started = await call("start_product_review", { items: [{ product_id: 7, quantity: 1 }] });
+    assert.equal(started.destination, "needs-review");
+    let review = await call("update_product_review", { review_id: started.review_id, revision: started.revision, action: { kind: "accept", product_ids: [7] } });
+    assert.equal(review.items[0]?.state, "ready");
+    review = await call("update_product_review", { action: { kind: "show" } });
+    assert.equal(review.items[0]?.state, "ready");
+    const obsolete = await mcp.callTool({ name: "update_product_review", arguments: { review_id: review.review_id, revision: review.revision, action: { kind: "navigate", destination: "basket" } } });
+    assert.equal(obsolete.isError, true);
+    review = await call("update_product_review", { review_id: review.review_id, revision: review.revision, action: { kind: "navigate", destination: "ready" } });
+    assert.equal(review.destination, "ready");
+    const rejected = await mcp.callTool({ name: "update_product_review", arguments: { review_id: review.review_id, revision: review.revision, action: { kind: "alternatives", product_id: 7, query: "mælk" } } });
+    assert.equal(rejected.isError, true, "Ready must move back before alternatives");
+    review = await call("update_product_review", { review_id: review.review_id, revision: review.revision, action: { kind: "revisit", product_ids: [7] } });
+    review = await call("update_product_review", { review_id: review.review_id, revision: review.revision, action: { kind: "alternatives", product_id: 7, query: "mælk" } });
+    assert.equal(review.alternatives?.origin, "needs-review");
+    assert.equal((await call("start_product_review", { items: [{ product_id: 7, quantity: 1 }] })).items[0]?.state, "needs-review");
   });
 });
 

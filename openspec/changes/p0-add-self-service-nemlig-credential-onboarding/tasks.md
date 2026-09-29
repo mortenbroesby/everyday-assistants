@@ -1,3 +1,60 @@
+The policy/tier/compatibility tasks below are historical and superseded by
+`remove-nemlig-local-rate-limits`. Checkmarks record prior work, not current
+schema support. Re-baseline remaining onboarding independently before applying
+these obsolete policy or migration steps.
+
+## 12. Approved current owner browser recovery (2026-09-28)
+
+- [x] 12.1 Rebaseline the existing proposal/design/delta specs for owner-only schema-v3 browser recovery, preserving historical evidence without applying legacy tasks.
+- [x] 12.2 Add a failing focused real-SDK regression for anonymous browser entry and owner PKCE POST callback into the existing portal; cover wrong/duplicate state, expiry/tamper, issuer/client drift, unknown/disabled/service identity, cancellation and no automatic exchange retry.
+- [x] 12.3 Implement the minimal maintained-client adapter, bounded pinned-origin discovery/exchange, transaction replay protection and existing portal session handoff; preserve all credential and basket boundaries.
+- [x] 12.4 Update deployment configuration validation, README/operator documentation, release version/note and strict/privacy/package/repository gates; review, commit/push and verify exact-head CI.
+- [ ] 12.5 Review/provision one public browser client and the session secret, stage private v3 policy, deploy disabled/onboarding-only, have the owner validate through the portal, then perform protected release and real owner read-only acceptance. No basket mutation; leave live gates unchecked until observed.
+- [x] 12.6 Fix the demonstrated Worker fetch redirect-mode incompatibility, preserving explicit redirect rejection; run the focused failing regression, Worker-runtime smoke and repository gates before another reviewed staging attempt.
+
+Repository evidence (2026-09-28, base `9b934706ccc2b374763389659d0a1a29bd1b26e6`):
+anonymous-entry regression failed with 401 before implementation; the real-SDK
+suite now passes 13 cases including existing RS256 verification, issuer/audience/
+expiry/scope rejection, PKCE unreserved characters, malformed callbacks,
+concurrent replay and no automatic exchange retry. A loopback synthetic HTTPS
+Chromium smoke followed the sign-in link across sites, posted back with the
+transaction cookie and issuer Origin, returned to clean `/connect`, and displayed
+the protected credential form: one exchange, one session, zero credential
+writes. This proves local browser handoff, not live Auth0/Nemlig or ChatGPT
+acceptance. Full repository/package/Docker and exact-head CI evidence remains
+part of 12.4; live migration remains 12.5. No viewer/resource change is included.
+
+Delivery reconciliation (2026-09-28): PR #154 merged at
+`f559feff9d832d54c196dbf24f1b0fbc6926d580`; exact-main CI
+36482105964 passed the full production-readiness gate. Local Docker dry-run
+passed; local full verification reported two deadline failures, with the import
+check passing on rerun and Wrangler startup still exceeding its deadline.
+Approved browser-client/key provisioning and private v3 policy installation
+completed. Onboarding-only Worker `c0631a7d-673d-4170-a264-18203260387a`
+served that source with application 116 and a registry-manifest-matched image;
+both MCP routes remained 503 and its sole instance inactive. Anonymous /connect
+returned 200, but the real browser's Sign in returned 401 before an issuer login
+screen. The unchanged handler redirected in Node; workerd at the production
+compatibility date reproduced TypeError for fetch redirect:error. This is an
+application runtime defect, not evidence of invalid credentials or Auth0 outage.
+At 21:28 UTC Worker `3242c960-eff9-46c8-ae3d-55df810f5b15` was read back
+with both switches disabled, the same source/application/image and preserved
+runtime/namespaces. No owner credential replacement or basket write occurred.
+Automatic releases remain paused. Owner sign-in, credential readiness, enabled
+release and native ChatGPT acceptance are unverified; 12.5 stays unchecked.
+
+Fix evidence: PR #155 implementation `a2488617379a2a43041908e509663dfeaa9790e4`
+passed exact-head CI 36488031977, including the full production-readiness gate
+and packed-package/Docker checks. Its focused Worker-mode regression first
+failed with 401 instead of 303; all 16 OAuth tests then passed with manual fetch
+and explicit 3xx rejection. A local workerd handler harness built from that
+source (diagnostic error logging only) read issuer metadata with HTTP 200 and
+returned 303 to the configured issuer with zero credential work. Local full
+verification initially passed 505/506 with the existing Wrangler startup
+deadline failure; its isolated rerun and subsequent full hook execution passed
+(506/506 tests, coverage validation and 5/5 smoke). No timeout was weakened.
+The fix is not yet deployed; this completes repository gates, not 12.5.
+
 ## 1. Contract and Baseline
 
 - [x] 1.1 Rebase the isolated worktree onto current `origin/main`, confirm `fix-nemlig-oauth-reliability` and sibling work remain unchanged, and verify the branch/root/base/status evidence is clean
@@ -20,7 +77,7 @@
 
 ## 4. Browser Authentication and Portal
 
-- [ ] 4.1 Revise configuration validation for the disabled-by-default onboarding switch, ordinary Auth0 Free web-client settings, browser-session/credential keys, rate limits, HTTPS origin, and callback with no Organization setting; verify missing, malformed, inconsistent, or unsafe production values fail closed while the ChatGPT OAuth client remains unchanged
+- [ ] 4.1 Revise configuration validation for the disabled-by-default onboarding switch, ordinary Auth0 Free web-client settings, browser-session/credential keys, HTTPS origin, and callback with no Organization setting; verify missing, malformed, inconsistent, or unsafe production values fail closed while the ChatGPT OAuth client remains unchanged. Rate settings are removed by `remove-nemlig-local-rate-limits`.
 - [ ] 4.2 Revise authorization-code-with-PKCE browser login and callback handling against the existing Auth0 issuer with no invitation or Organization parameter forwarding; verify state, nonce, PKCE, issuer, audience/client, verified email, callback, and subject validation failures are rejected without logging or persisting identity data
 - [ ] 4.3 Add owner-only exact-email invitation creation/cancellation, match the verified callback email by keyed digest, and atomically consume it into one pending Tier 1 principal; verify missing, expired, cancelled, replayed, and wrong-email invitations share one denial shape, unknown users cannot self-register, no user can choose a tier, and owner controls take effect on the next admission
 - [ ] 4.4 Extend the minimal server-side `/connect` portal with owner-only invitation controls and native password-manager fields, no preloaded values or third-party assets, restrictive CSP/frame/referrer/MIME/permissions headers, and `no-store`; verify accessibility, enumeration resistance, and absence of email or secret-bearing markup after submission

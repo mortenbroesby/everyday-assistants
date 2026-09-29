@@ -7,7 +7,6 @@ import {
   productionBasketFingerprint,
   verifyApprovedProductionMutation,
   verifyApprovedReversibleProductionMutation,
-  verifyAggregateTierUsage,
   verifyProductionEdge,
   verifyReadOnlyProductionFeatures,
   verifyServiceAcceptanceFeatures,
@@ -214,17 +213,6 @@ test("service acceptance preserves its operation-specific total deadline context
     callTool: async () => ({ structuredContent: {} }),
   };
   await assert.rejects(verifyServiceAcceptanceFeatures(client, { totalTimeoutMs: 5 }), /Service acceptance timed out during tool inventory/u);
-});
-
-test("tier usage acceptance requires bounded aggregate output without identity data", async () => {
-  let authorization = "";
-  await verifyAggregateTierUsage(new URL("https://nemlig-mcp.example.test/mcp"), "private-token", async (_input, init) => {
-    authorization = new Headers(init?.headers).get("authorization") ?? "";
-    return Response.json({ schema_version: 1, policy_revision: "family-v1", tiers: { "0": {}, "1": {}, "2": {} } });
-  });
-  assert.equal(authorization, "Bearer private-token");
-  await assert.rejects(verifyAggregateTierUsage(new URL("https://nemlig-mcp.example.test/mcp"), "private-token", async () =>
-    Response.json({ schema_version: 1, tiers: { "0": {}, "1": {}, "2": {} }, principal_key: "private-token" })), /principal_key/iu);
 });
 
 const approved: ApprovedProductionMutation = {

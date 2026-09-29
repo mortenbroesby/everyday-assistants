@@ -45,7 +45,6 @@ export const NEMLIG_IMAGE_ORIGINS = IMAGE_ORIGINS;
 export interface McpRequestContext {
   principalKey: string;
   policyRevision: string;
-  tier: 0 | 1 | 2;
   kind?: "service";
 }
 
@@ -99,9 +98,9 @@ const productViewSchema = z.discriminatedUnion("status", [
 
 const reviewSnapshotSchema = z.object({
   review_id: z.string().uuid(), revision: z.number().int().positive(),
-  destination: z.enum(["needs-review", "basket", "alternatives"]),
-  items: z.array(z.object({ product_id: z.number().int().positive(), quantity: z.number().int().positive(), state: z.enum(["needs-review", "basket"]), view: productViewSchema })),
-  alternatives: z.object({ product_id: z.number().int().positive(), origin: z.enum(["needs-review", "basket"]), query: z.string(), views: z.array(productViewSchema) }).optional(),
+  destination: z.enum(["needs-review", "ready", "alternatives"]),
+  items: z.array(z.object({ product_id: z.number().int().positive(), quantity: z.number().int().positive(), state: z.enum(["needs-review", "ready"]), view: productViewSchema })),
+  alternatives: z.object({ product_id: z.number().int().positive(), origin: z.literal("needs-review"), query: z.string(), views: z.array(productViewSchema) }).optional(),
   submission: z.object({ submission_id: z.string().uuid(), status: z.enum(["prepared", "submitted", "uncertain"]), expires_at: z.string(), review: z.record(z.string(), z.unknown()) }).optional(),
 });
 const reviewActionSchema = z.discriminatedUnion("kind", [
@@ -113,7 +112,7 @@ const reviewActionSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("accept"), product_ids: z.array(z.number().int().positive()).min(1).max(50) }),
   z.object({ kind: z.literal("remove"), product_ids: z.array(z.number().int().positive()).min(1).max(50) }),
   z.object({ kind: z.literal("quantity"), product_id: z.number().int().positive(), quantity: z.number().int().positive() }),
-  z.object({ kind: z.literal("navigate"), destination: z.enum(["needs-review", "basket", "alternatives"]) }),
+  z.object({ kind: z.literal("navigate"), destination: z.enum(["needs-review", "ready", "alternatives"]) }),
   z.object({ kind: z.literal("alternatives"), product_id: z.number().int().positive(), query: z.string().trim().min(1).max(200), limit: z.number().int().min(1).max(10).optional() }),
   z.object({ kind: z.literal("replace"), product_id: z.number().int().positive(), replacement_id: z.number().int().positive() }),
 ]);
@@ -419,7 +418,7 @@ export function createMcpServer(
     },
     {
       instructions:
-        `Current release: ${NEMLIG_RELEASE_IDENTITY}. Use Nemlig Assistant as independent capabilities for current products, rich exact product details, prices, availability, favourites, basket contents, and grocery sections. Normalize each search into one short Danish catalogue phrase. Search and details tools return data without opening widgets. After collecting suitable exact products, call start_product_review once to display the shopping review. Use update_product_review show (review_id optional) to recover this conversation’s active review; add appends new picks to Needs review without resetting accepted products. If the user asks to see products in the temporary local review visually, use update_product_review show to reopen its viewer, not repeated exact detail reads. Use revisit to move accepted products back to Needs review. End discards the temporary local review only when the user finishes shopping. These tools share voice/touch choices and a LOCAL basket. Never call legacy review_items_to_add/add_approved_items for local acceptance; those operate on the actual provider basket. Use show_my_basket for a quick text read of the actual Nemlig basket, and show_my_basket_visually when the user asks to see actual provider-basket products as images or cards. Image URLs in tool data do not prove that ChatGPT rendered cards; if no viewer appears, state the limitation honestly and use the complete text fallback. Accept/keep or replace unresolved exact products into the local basket; remove deletes them locally. For everything except X/Y, pass the exact remaining product_ids from the current snapshot. Refresh with show without review_id after stale state. If no active review remains, ask before starting a fresh review from the exact visible product IDs and quantities; never replay the failed edit or restore prior acceptance or approval. Use prepare_submission only when the user wants to send the local Basket, then ask approval of its exact quantities, current prices, and effects; only call submit_product_review after explicit approval of that unchanged submission. Never treat local acceptance as provider approval. A submitted or uncertain draft remains inspectable; never retry blindly. Basket changes require the matching staged review/apply tools and explicit approval; revalidate every change, stop on uncertainty, and read the basket back. Never check out, pay, order, or select delivery slots.`,
+        `Current release: ${NEMLIG_RELEASE_IDENTITY}. Use Nemlig Assistant as independent capabilities for current products, exact details, prices, availability, favourites, actual basket contents, and grocery sections. Normalize each search into one short Danish catalogue phrase. Search and details return data without opening widgets. After collecting exact products, call start_product_review once. Use update_product_review show (review_id optional) to recover this conversation's active review; add appends new products In Review without resetting Ready products. Show, not repeated detail reads, reopens the local viewer. In Review means unresolved; Ready means the user accepted the exact product locally. Use one accept action for selected exact IDs. Alternatives are only for In Review; replacement remains In Review until separately accepted. Revisit moves Ready products back to In Review; remove deletes them from the local selection; end discards the entire temporary selection. None of these changes touches the real Nemlig basket. Use show_my_basket or show_my_basket_visually to inspect the actual basket; image URLs do not prove cards rendered, so use complete text fallback if needed. For 'everything except X/Y', pass exact remaining IDs from the current snapshot. After a stale result, show the active review without replaying the edit. If no active review remains, ask before explicitly starting fresh; never restore old acceptance or approval. prepare_submission includes only Ready lines and does not write. Require explicit approval of the exact unchanged quantities, current prices and effects before submit_product_review. Never treat local acceptance as provider approval. A submitted or uncertain draft remains inspectable; do not retry blindly. Other actual basket changes require their matching staged review/apply tools and explicit approval, fresh revalidation, and readback. Never check out, pay, order, or select delivery slots.`,
       supportedProtocolVersions: SUPPORTED_PROTOCOL_VERSIONS,
     },
   );
@@ -465,7 +464,7 @@ export function createMcpServer(
     if (session !== undefined && (typeof session !== "string" || !session.trim() || session.length > 512)) throw new NemligError("Invalid shopping session context.");
     // Conversation metadata scopes state; authenticated principal/policy still authorizes access.
     if (typeof session === "string") return JSON.stringify([connectionId(ctx.sessionId), session]);
-    if (requestContext) throw new NemligError("This host did not provide a conversation session. Reopen the review in ChatGPT; no local basket was accessed.");
+    if (requestContext) throw new NemligError("This host did not provide a conversation session. Reopen the review in ChatGPT; no local selection was accessed.");
     return connectionId(ctx.sessionId); // One process/transport session for local MCP clients.
   };
 
@@ -651,7 +650,7 @@ export function createMcpServer(
     "show_my_basket",
     {
       title: "Show my Nemlig basket",
-      description: "Show the actual Nemlig basket, not the local shopping review. For the local Basket use update_product_review show or navigate. Show the current items and totals in your Nemlig basket. This does not change your basket.",
+      description: "Show the actual Nemlig basket, not the local shopping review. For Ready products in the local selection use update_product_review show or navigate. Show the current items and totals in your Nemlig basket. This does not change your basket.",
       outputSchema: basketResultSchema,
       annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true },
     },
@@ -683,7 +682,7 @@ export function createMcpServer(
 
   registerTool("start_product_review", {
     title: "Start a local product review",
-    description: "Start a temporary private review from exact returned product IDs and quantities. All items initially need review. Acceptance and edits are local; nothing is sent to Nemlig. One active review belongs to this conversation, without a time limit. If a review already exists, return it unchanged; use update action add to include more products. Finish shopping explicitly with end. Temporary state can be lost on a server restart or memory eviction. The review card may be attached to the conversation even when the text result does not show it; do not start another review solely because the text omits the card.",
+    description: "Start a temporary private review from exact returned product IDs and quantities. All items initially need review. Acceptance and edits are local; nothing is sent to Nemlig. One active review belongs to this conversation, without a time limit. If a review already exists, return it unchanged; use update action add to include more products. Discard the selection explicitly with end. Temporary state can be lost on a server restart or memory eviction. The review card may be attached to the conversation even when the text result does not show it; do not start another review solely because the text omits the card.",
     inputSchema: z.object({ items: z.array(z.object({ product_id: z.number().int().positive(), quantity: z.number().int().positive() })).min(1).max(50).describe("Exact returned products and intended package quantities to review locally.") }),
     outputSchema: z.object({ review: reviewSnapshotSchema }),
     annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true },
@@ -692,7 +691,7 @@ export function createMcpServer(
 
   registerTool("update_product_review", {
     title: "Update the local product review",
-    description: "Show/refresh or edit the shared temporary local review using its exact product IDs. Add newly found exact products; accept selected products (including everything except explicitly excluded IDs), revisit accepted products, remove, change quantity, find alternatives, replace, navigate, or end shopping. End discards this conversation’s local basket, never the real Nemlig basket. Keeping an unresolved product means accept. Navigation preserves alternatives. None of these actions writes to Nemlig. The review card may be attached to the conversation even when the text result does not show it. prepare_submission reviews only resolved local Basket lines at exact current prices, sets their Nemlig quantities while preserving unrelated lines, and requires a subsequent explicit approval. After errors show the current state; never repeat a stale edit blindly.",
+    description: "Show/refresh or edit the shared temporary local review using exact product IDs. Add newly found products, batch-accept selected In Review products into Ready, revisit accepted products, remove, change quantity, navigate, or discard the local selection with end. Alternatives are for In Review only; replacing leaves the new product In Review, not Ready. End and remove never change the real Nemlig basket. None of these actions writes to Nemlig. The review card may be attached even when text omits it. prepare_submission reviews only Ready lines at exact current prices, sets their Nemlig quantities while preserving unrelated lines, and requires subsequent explicit approval. After errors show current state; never repeat a stale edit blindly.",
     inputSchema: z.object({ review_id: z.string().uuid().optional().describe("The current local review reference. May be omitted for show to recover this conversation’s active review."), revision: z.number().int().positive().optional().describe("Current revision required for every action except show."), action: reviewActionSchema.describe("The local change, navigation, refresh, or preparation requested by the user.") }),
     outputSchema: z.union([z.object({ review: reviewSnapshotSchema }), z.object({ ended: z.literal(true) }), z.object({ unavailable: z.literal(true) })]),
     annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true },
@@ -719,12 +718,12 @@ export function createMcpServer(
   });
 
   registerTool("submit_product_review", {
-    title: "Submit the approved local Basket",
-    description: "Only after the user explicitly approves the exact unchanged prepared submission, set those resolved product quantities in the real Nemlig basket and verify readback. Local acceptance is NOT approval. Requires current review revision and its submission_id. No automatic retry; on any error inspect the draft and actual basket first.",
+    title: "Submit the approved Ready products",
+    description: "Only after the user explicitly approves the exact unchanged prepared submission, set those Ready product quantities in the real Nemlig basket and verify readback. Local acceptance is NOT approval. Requires current review revision and its submission_id. No automatic retry; on any error inspect the draft and actual basket first.",
     inputSchema: z.object({ review_id: z.string().uuid().describe("The private local review reference."), revision: z.number().int().positive().describe("The latest unchanged review revision."), submission_id: z.string().uuid().describe("The exact prepared submission reference explicitly approved by the user.") }),
     outputSchema: z.object({ review: reviewSnapshotSchema, result: applyResultSchema }),
     annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true },
-    _meta: { ...PRODUCT_VIEWER_RESOURCE_METADATA, ui: { resourceUri: PRODUCT_VIEWER_RESOURCE_URI, visibility: ["model"] } },
+    _meta: { ...PRODUCT_VIEWER_RESOURCE_METADATA, ui: { resourceUri: PRODUCT_VIEWER_RESOURCE_URI, visibility: ["model", "app"] }, "openai/widgetAccessible": true },
   }, ({ review_id, revision, submission_id }, ctx) => runMcpOperation("submit_product_review", async () => {
     await ensureLoggedIn(client, loadCredentials, true);
     return success(await reviews.submit(reviewOwner(ctx), review_id, revision, submission_id));

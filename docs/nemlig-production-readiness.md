@@ -21,6 +21,12 @@ basket. CI runs this same command with read-only repository permissions.
 
 ## Owner-run live evidence
 
+Owner browser recovery also requires the reviewed public client and separate
+portal session secret in the [onboarding runbook](cloudflare-operations.md#owner-browser-entry-prerequisites).
+Verify browser POST/cookie handoff and explicit credential validation on the
+disabled/onboarding-only revision before enabling MCP. Local OAuth tests and
+service fixtures do not establish production owner or provider access.
+
 Live checks remain separate from the automatic gate:
 
 - `pnpm --filter nemlig-assistant production:probe` checks health, revision,
@@ -31,8 +37,8 @@ Live checks remain separate from the automatic gate:
   owner token and a 90-second total budget. It exercises read-only paths,
   including catalogue planning and at most one favorite result, without
   list writes, proposal preparation/application, feature requests, or basket
-  mutation. It also verifies that `/admin/usage` returns only bounded aggregate
-  Tier 0/1/2 counts and headroom without identity or credential fields.
+  mutation. Obsolete usage/reset endpoints no longer exist; no tier or
+  count-based admission evidence is required.
 - For the Rejoin connection recovery, verify the new app named
   `Nemlig Assistant (Rejoin)` with an authenticated `get_profile` read before
   retiring the previous Nemlig app. Complete the UI release acceptance below for later releases.

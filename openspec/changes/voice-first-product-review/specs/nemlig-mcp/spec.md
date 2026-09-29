@@ -18,8 +18,8 @@ Nemlig directly, apply provider writes, or treat local acceptance as submission.
 
 #### Scenario: Local product review is displayed
 - **WHEN** the client receives a draft snapshot
-- **THEN** it presents Needs review, local Basket, and one contextual alternatives
-  view with safe exits, explicit removal, bulk acceptance and submission intent
+- **THEN** it presents In Review, Ready, and one contextual alternatives
+  drill-in with safe exits, explicit removal, batch acceptance and submission intent
 
 #### Scenario: Viewer receives partial or unavailable data
 - **WHEN** a product field, image or interactive host bridge is unavailable
@@ -52,7 +52,7 @@ The server SHALL expose current catalogue search, favourites, grocery sections, 
 
 ### Requirement: Conversational reviewed basket changes
 
-The server SHALL keep catalogue results and exact product details independent from basket operations, while basket changes SHALL remain behind the existing matching staged review/apply tools and explicit approval. Review and apply responses SHALL retain structured data plus a readable text fallback. Local review results SHALL attach the shared viewer resource; the viewer renders server-owned temporary review state and invokes only local-draft tools. Actual provider changes require a separate unchanged exact submission review and explicit approval.
+The server SHALL keep catalogue results and exact product details independent from basket operations, while basket changes SHALL remain behind the existing matching staged review/apply tools and explicit approval. Review and apply responses SHALL retain structured data plus a readable text fallback. Local review results SHALL attach the shared viewer resource; the viewer renders server-owned temporary review state and invokes local-draft tools plus the protected submit tool only after its explicit prepared-review confirmation. Actual provider changes require a separate unchanged exact submission review and explicit approval.
 
 #### Scenario: Exact review is submitted
 

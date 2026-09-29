@@ -3,8 +3,8 @@
 ## Purpose
 
 Defines a private Cloudflare hosting option for the Nemlig MCP that preserves its
-safety contract and deliberately becomes unavailable before usage or cost can
-grow without a strict bound.
+safety contract and fixed capacity without application-owned request quotas,
+tiers or throttles, and without claiming a hard billing guarantee.
 
 ## Requirements
 
@@ -61,7 +61,7 @@ access, Nemlig access, or another expensive downstream operation.
 
 - **WHEN** `MCP_ENABLED` is not exactly `true`
 - **THEN** the gateway returns HTTP 503 with `MCP temporarily disabled` and does
-  not access the circuit breaker, Container, or Nemlig
+  not access the Container or Nemlig
 
 #### Scenario: Emergency disable is required
 
@@ -74,15 +74,15 @@ access, Nemlig access, or another expensive downstream operation.
 
 The gateway SHALL authenticate the configured private-family Auth0 token,
 authorize the subject against an encrypted owner-controlled principal policy,
-and apply tier admission before forwarding a useful request, touching the MCP
+and verify independent encrypted credentials before forwarding a provider-backed request, touching the MCP
 Container, or contacting Nemlig. The default production policy SHALL contain
-only the existing Tier 0 owner; the system SHALL NOT add public registration or
+only explicitly configured family identities; the system SHALL NOT add public registration or
 enable an invitee without separate owner action and isolation acceptance.
 
 #### Scenario: Unauthenticated Internet request arrives
 
 - **WHEN** a caller lacks valid owner authorization
-- **THEN** the gateway rejects the request without reading usage state, waking
+- **THEN** the gateway rejects the request without reading or creating state, waking
   or calling the MCP Container, or contacting Nemlig
 
 #### Scenario: Unknown authenticated principal arrives
@@ -90,81 +90,21 @@ enable an invitee without separate owner action and isolation acceptance.
 - **WHEN** a valid token belongs to a subject absent from the private principal
   policy
 - **THEN** the gateway returns a stable non-sensitive denial without reading
-  usage state, waking or calling the MCP Container, or contacting Nemlig
+  or creating state, waking or calling the MCP Container, or contacting Nemlig
 
 #### Scenario: Authenticated owner sends a valid request
 
-- **WHEN** the configured Tier 0 owner presents valid authorization and the
-  global and tier usage controls permit the request
+- **WHEN** the configured explicit owner presents valid authorization and a current
+  independently bound credential
 - **THEN** the gateway forwards only the validated request to the fixed MCP
   Container for the owner's isolated account and state
 
 #### Scenario: Allowed invitee sends a valid request
 
-- **WHEN** an enabled configured principal presents valid authorization and the
-  global and tier usage controls permit the request
+- **WHEN** an enabled configured family member presents valid authorization and a
+  current independently bound credential
 - **THEN** the gateway forwards only the validated request to the fixed MCP
   Container for that principal's isolated account and state
-
-### Requirement: Application-activity circuit breaker
-
-The gateway SHALL maintain a global daily operation count, daily expensive-
-operation count, breaker state, trip time, and trip reason from actual
-application activity rather than delayed billing data. Limits SHALL be
-configurable, with conservative initial targets of 5,000 total operations and
-500 expensive operations per usage period.
-
-#### Scenario: Daily operation quota is exceeded
-
-- **WHEN** an accepted operation would exceed `MCP_DAILY_LIMIT`
-- **THEN** the breaker opens, records the trip, rejects subsequent operations
-  with HTTP 429 or 503, and does not wake or call the Container
-
-#### Scenario: Daily expensive-operation quota is exceeded
-
-- **WHEN** an accepted expensive operation would exceed
-  `MCP_EXPENSIVE_DAILY_LIMIT`
-- **THEN** the breaker opens, records the trip, rejects subsequent operations,
-  and does not wake or call the Container
-
-#### Scenario: Breaker has already tripped
-
-- **WHEN** another operation arrives while the breaker is open
-- **THEN** the gateway fails closed without accessing the Container or Nemlig
-
-#### Scenario: Breaker reset is due
-
-- **WHEN** a new usage period begins or the authenticated operator uses the
-  documented manual reset procedure
-- **THEN** the breaker resets safely with an auditable non-secret state change
-
-### Requirement: Per-owner rate limiting
-
-The gateway SHALL enforce configurable per-authenticated-owner limits for normal
-and expensive operations before Container access. Initial targets SHALL be 60
-normal operations per minute and 10 expensive operations per minute, adjusted
-only when measured MCP protocol chatter requires it and with the adjustment
-documented.
-
-#### Scenario: Normal request rate is exceeded
-
-- **WHEN** the owner exceeds `MCP_RATE_LIMIT` for the configured interval
-- **THEN** the gateway rejects excess normal operations without calling the
-  Container
-
-#### Scenario: Expensive request rate is exceeded
-
-- **WHEN** the owner exceeds `MCP_EXPENSIVE_RATE_LIMIT` for the configured
-  interval
-- **THEN** the gateway rejects excess expensive operations without calling the
-  Container
-
-#### Scenario: Required MCP protocol chatter occurs
-
-- **WHEN** initialization, discovery, or other legitimate protocol traffic is
-  measured during compatibility testing
-- **THEN** rate classification preserves client compatibility without exempting
-  useful backend operations from bounded usage controls
 
 ### Requirement: Execution and retry work is bounded
 
@@ -187,45 +127,41 @@ queue or process that can indefinitely regenerate work.
 
 ### Requirement: Configuration and environments fail safe
 
-Operational thresholds SHALL be configurable through at least `MCP_ENABLED`,
-`MCP_DAILY_LIMIT`, `MCP_EXPENSIVE_DAILY_LIMIT`, `MCP_RATE_LIMIT`, and
-`MCP_EXPENSIVE_RATE_LIMIT`; only credentials SHALL use secret storage. The
-deployment SHALL provide local/development and production environments, and a
-non-production environment SHALL NOT access or mutate the real Nemlig basket
-unless deliberately configured with production credentials.
+The service SHALL retain explicit enablement, bounded request deadlines, fixed
+capacity and private credential configuration. Development SHALL NOT mutate the
+real Nemlig basket without deliberate credentials and exact approval. Removed
+rate/daily/expensive/tier configuration SHALL NOT be redeployed as current
+configuration. Only the current strict family policy SHALL be supported.
 
 #### Scenario: Non-production is configured normally
 
-- **WHEN** a developer runs or deploys the non-production configuration
-- **THEN** real Nemlig mutation credentials are absent and real basket mutation
-  fails closed
+- **WHEN** a developer runs the non-production configuration
+- **THEN** real Nemlig mutation credentials are absent and real mutation fails closed
 
 #### Scenario: Required safety configuration is invalid
 
-- **WHEN** a threshold or environment binding is absent, malformed, or unsafe
-- **THEN** deployment validation or service startup fails rather than silently
-  selecting an unbounded default
+- **WHEN** a retained required environment binding is absent, malformed or unsafe
+- **THEN** startup or deployment fails without silently weakening retained safety
 
 ### Requirement: Minimal privacy-safe observability
 
-The service SHALL expose enough bounded, structured operational evidence to
-determine whether the MCP is enabled, whether the breaker is open, current daily
-normal and expensive counts, limit trips, rate-limit events, and unexpected
-Container wakes. It SHALL NOT log authentication secrets, Nemlig credentials,
-tokens, cookies, prompts, basket contents, or other sensitive Nemlig data.
+The service SHALL expose bounded structured enablement, request-outcome and
+Container-lifecycle evidence without tiers, budgets, usage headroom or cost
+denials. It SHALL NOT log secrets, credentials, tokens, cookies, prompts,
+basket contents or other sensitive Nemlig data.
 
 #### Scenario: Operator inspects cost controls
 
-- **WHEN** the operator follows the documented inspection procedure
-- **THEN** current enablement, breaker state, counts, trip reason and time, rate
-  limiting, and backend wake evidence are available without sensitive data
+- **WHEN** the operator follows documented operational inspection
+- **THEN** enablement, sanitized outcomes and backend lifecycle evidence are
+  available, and documentation explicitly states there is no app-enforced cost cap
 
 ### Requirement: Reproducible and reversible operations
 
 Cloudflare infrastructure configuration SHALL be reproducible from the
 repository except unavoidable secrets, account or domain configuration, and the
 emergency `MCP_ENABLED` override. Operations documentation SHALL cover deploy,
-immediate disable, re-enable, breaker inspection and reset, usage inspection,
+immediate disable, re-enable, sanitized request/lifecycle inspection,
 secret rotation, rollback, advisory USD 10 and USD 20 budget alerts, and the
 absence of an instantaneous Cloudflare billing hard cap.
 
@@ -359,7 +295,7 @@ build and upload the candidate Container image once. Routine releases SHALL keep
 supervised cutover and explicit local owner mode SHALL retain the disabled-first
 verification path and enable the same revision without another Container build
 or rollout. Every mode SHALL retain the existing Worker, one `lite` Container
-maximum, bindings, routes, timeouts, quotas, circuit breaker, and secrets.
+maximum, bindings, routes, timeouts, manual kill switches, and secrets.
 
 #### Scenario: Another release holds the lease
 
@@ -446,3 +382,33 @@ fresh session after a Container replacement.
   been replaced
 - **THEN** the MCP returns HTTP 404 without accessing Nemlig or changing basket,
   favourite, saved-list, account, or order state
+
+### Requirement: Private requests have no application rate throttle
+
+The service SHALL NOT reject eligible requests or authenticated credential
+validations because of minute/day/month operation counts. It SHALL NOT retain
+normal/expensive classes, tiers, budgets, reserves, forecasts or usage counters.
+External limits SHALL remain external and SHALL NOT be bypassed. Authentication,
+CSRF, credential validation, isolation, fixed capacity, deadlines, bounded work,
+manual kill switches and exact protected writes SHALL remain enforced.
+
+#### Scenario: Eligible burst exceeds former MCP thresholds
+
+- **WHEN** authenticated eligible operations exceed former rate or daily thresholds
+- **THEN** the app continues without an application count-based denial or counter write
+
+#### Scenario: Valid credential submissions exceed former thresholds
+
+- **WHEN** authenticated CSRF-protected credential validations exceed former thresholds
+- **THEN** no rate gate blocks them; invalid credentials cannot replace verified ones
+
+#### Scenario: Credential burst does not forget consumed authorization
+
+- **WHEN** more than 32 actions occur while an earlier consumed signed token is valid
+- **THEN** replay is rejected before provider work; hashes remain until expiry and
+  storage failure does not permit the action
+
+#### Scenario: Obsolete usage storage is present
+
+- **WHEN** old usage/breaker records exist
+- **THEN** current requests neither read, convert, reset nor enforce them

@@ -1,6 +1,6 @@
 {
   "name": "nemlig-assistant",
-  "version": "4.17.2",
+  "version": "5.1.2",
   "private": true,
   "description": "Safe local Nemlig Assistant CLI and MCP server",
   "type": "module",
@@ -53,12 +53,14 @@
     "release:retry:check": "tsx release/retry.ts",
     "smoke": "tsx --test src/smoke.test.ts",
     "smoke:review-ui": "tsx scripts/smoke-review-ui.ts",
+    "smoke:onboarding": "tsx scripts/smoke-onboarding.ts",
     "smoke:visual-basket": "tsx scripts/smoke-visual-basket.ts",
     "smoke:package": "tsx scripts/smoke-package.ts",
     "test": "tsx --test src/*.test.ts release/*.test.ts scripts/*.test.mjs",
     "coverage": "node scripts/coverage.mjs"
   },
   "dependencies": {
+    "@modelcontextprotocol/client": "2.0.0",
     "@cloudflare/containers": "0.3.7",
     "@inquirer/password": "^5.2.0",
     "@modelcontextprotocol/core": "2.0.0",
@@ -76,7 +78,6 @@
   "devDependencies": {
     "@cloudflare/workers-types": "5.20260831.1",
     "@eslint/js": "^10.0.1",
-    "@modelcontextprotocol/client": "2.0.0",
     "@types/html-to-text": "9.0.4",
     "@types/node": "22.20.1",
     "@types/semver": "7.8.0",
@@ -89,6 +90,6 @@
     "wrangler": "4.127.1"
   },
   "nemligRelease": {
-    "codename": "Gallery"
+    "codename": "Welcome"
   }
 }
