@@ -202,8 +202,17 @@ key or credential-key binding. Secret presence is not proof of valid contents.
 
 During disabled/onboarding-only rollout, use an actual browser to verify the
 cross-site POST transaction cookie, issuer Origin, clean redirect and protected
-credential form. Owner sign-in itself does not validate or save Nemlig access;
-the owner must explicitly use the existing credential form. Record read-only
+credential form.
+
+The portal uses `Referrer-Policy: same-origin`: native form POSTs must retain
+the exact site Origin while cross-origin referrers remain suppressed. Using
+`no-referrer` makes a browser send `Origin: null`, which the protected POST
+correctly rejects before credential validation. Never fix this by accepting
+null/missing origins or disabling CSRF. After a header release, load a fresh
+form instead of resubmitting the old document.
+
+Owner sign-in itself does not validate or save Nemlig access; the owner must
+explicitly use the existing credential form. Record read-only
 connection validation before the separately gated enabled production release.
 Neither local synthetic OAuth nor service-fixture acceptance proves this live
 owner migration. Native ChatGPT acceptance remains a separate release gate.
