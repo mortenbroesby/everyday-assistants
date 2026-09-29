@@ -20,7 +20,9 @@ unresolved choices, navigate contextual alternatives, or express user actions.
   restoring retired whole-list planning, saved lists, or a separate UI workflow.
 
 Goal and acceptance are owned by GitHub issue #113. This change records only the
-new durable contracts and design decisions. Non-goals include onboarding,
+new durable contracts and design decisions. It now also includes the owner's
+follow-up discovery, conversational authorization, and debounce refinements in
+this same product outcome and draft PR. Non-goals include onboarding,
 meal/recipe planning, checkout, payment, delivery slots, authentication redesign,
 new state-management dependencies, and unrelated deployment work.
 
@@ -55,8 +57,11 @@ Any added hydration must have an explicit bounded request model before apply.
 
 On 25 September 2026 the owner confirmed that Basket is a local resolved shortlist.
 Only an explicit later submission prepares an exact Nemlig additions review; local
-acceptance, replacement and removal never mutate the provider basket. A fresh
-approval and verified readback remain mandatory for actual submission.
+acceptance, replacement and removal never mutate the provider basket. A clear
+conversational request to add the current Ready selection itself authorizes only
+that exact unchanged prepared payload; Ready status alone is not authority.
+Fresh validation and verified readback remain mandatory. UI-initiated submission
+retains its exact on-screen confirmation.
 
 The owner subsequently requested the generated compact green review mockup,
 conversation-scoped ephemeral Basket state without a one-hour expiry, freely
@@ -92,6 +97,14 @@ extends their contract instead of creating another shopping flow.
   and titles where they cause ambiguity; keep distinct discovery, visual view,
   local-edit and protected-write boundaries. Add, merge, remove or rename a tool
   only with a demonstrated user benefit and verified host/resource behavior.
+- Make open-ended catalogue lookup explicit and independent from an existing
+  To decide/Ready product; when contextual alternatives are insufficient, allow
+  a deliberate broader search without silently turning it into a replacement.
+  Keep the user-facing tool set coherent across conversation and viewer controls.
+- Trace the reported simple-term search failure through schema, handler, client,
+  and error mapping. Distinguish upstream search errors from a successful empty
+  result, and improve code only where a fixture demonstrates our boundary is at
+  fault.
 - Keep an explicitly opened selection visible if a delayed historical-card
   snapshot arrives after the current selection has loaded. The current viewer
   can fold back to its inactive prompt in that exact event order; a fresh mount

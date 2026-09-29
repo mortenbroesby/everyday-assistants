@@ -42,8 +42,8 @@ from the viewer. Existing discovery and actual basket tools remain independent.
 - Preparing submission captures the current resolved lines through the existing
   BasketProposalService. Expose a separate submission reference, not its internal
   proposal ID, and invalidate it on any draft edit. Submit is a separate
-  protected tool after explicit approval of unchanged exact quantities/prices,
-  either in conversation or in the viewer's confirmation control; reuse the
+  protected tool after a clear conversational add instruction for the unchanged
+  Ready lines or the viewer's exact confirmation; reuse the
   service's fresh revalidation, principal binding, single use and readback.
   Serialize draft edits against prepare/apply. Keep draft contents after outcomes;
   block repeated submissions of an unchanged submitted or uncertain draft.
@@ -257,6 +257,58 @@ enumerate the whole catalogue. The assistant can deliberately search another
 concise Danish phrase after inspecting results. It should explain material
 category differences, such as butter versus margarine, and describe the
 queries performed instead of claiming exhaustive catalogue coverage.
+
+### 29 September follow-up: quantity batching and clarification continuity
+
+Quantity +/- presses update the displayed quantity and line total immediately,
+but persist through the existing revision-checked selection update after a
+400 ms quiet interval. A burst for one product sends only its final quantity.
+Before navigation, another mutation, prepare, or submit, flush any pending
+quantity first and serialize the next action after its confirmed revision.
+Optimistic quantities are presentation-only; an error or stale revision clears
+them, uses at most the existing read-only recovery, and never replays a failed
+edit or submits an unconfirmed quantity. Submission always uses the server's
+current Ready rows and the protected exact proposal path.
+
+The clarification regression has an application cause, not a proven ChatGPT
+host lifecycle cause: a conversational add of a new To decide item moves the
+destination there and currently deletes the prepared submission/proposal even
+when the Ready IDs and quantities did not change. Keep a prepared capability
+only while the exact Ready product IDs and quantities it represents remain
+unchanged. Any Ready addition, removal, revisit, or quantity change invalidates
+it. To decide-only changes may advance the selection revision but preserve the
+prepared exact lines; the viewer still requires the user to inspect/confirm
+those lines before a UI-initiated write. A conversational “add the current Ready
+selection to my Nemlig basket” is itself explicit authorization for that exact
+current payload, so the assistant must not ask a redundant approval question.
+Ready status alone is not authorization. If scope is unclear, an exact Ready
+line changed after intent, or the intent cannot be bound to the prepared set,
+ask the user to clarify. Existing fresh provider revalidation, proposal
+principal/conversation binding, single-use serialization, readback and
+uncertain-write/no-retry safeguards remain mandatory.
+
+Open-ended catalogue search is an independent discovery job, not an implicit
+continuation of the currently selected product's alternatives. A phrase such as
+“salmiak” goes directly to `find_groceries`, even with a selection or alternatives
+context open, and must not alter local membership or implicitly replace a row.
+Alternatives can offer a deliberate new phrase when they are insufficient; the
+assistant may then search broadly through the same direct tool without forcing
+the result set into that target. The existing tool jobs are sufficient, so this
+request does not justify a broad rename, merge, or parallel interface.
+
+The current request path validates `search_term`, passes it to
+`resolveDetailedProductSearch`, calls Nemlig's primary `/search` endpoint, and
+propagates an HTTP 500 as a status-bearing `NemligError`; MCP maps it to an
+error result (`Search products failed (HTTP 500).`). It does not convert that
+failure into an empty result. A successful empty response instead becomes a
+successful structured empty result with “No products found.” The agent-facing
+guidance should preserve this distinction: report provider failure as failure,
+empty response as no matches in this response (not catalogue-wide absence), and
+do not invent results or automatically repeat the same failing query. Add a
+fixture-backed MCP regression for the complete schema→handler→HTTP→error path;
+do not call the live provider. If that regression confirms current behavior,
+retain code/error mapping and make only the demonstrated instruction/test
+improvement.
 
 ### MCP tool surface and wording
 

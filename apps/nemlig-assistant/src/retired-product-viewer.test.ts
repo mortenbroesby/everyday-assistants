@@ -11,15 +11,16 @@ test("retired viewer identities cover the stable and previous versioned URIs", (
     "ui://nemlig/product-viewer-v3.html",
     "ui://nemlig/product-viewer-v4.html",
     "ui://nemlig/product-viewer-v5.html",
+    "ui://nemlig/product-viewer-v6.html",
   ]);
 });
 
-test("retired viewer is inert and offers a conversation route to the current review", () => {
+test("retired viewer is inert and offers a conversation route to the current selection", () => {
   const html = renderRetiredProductViewerHtml();
-  assert.match(html, /This review card is retired/u);
-  assert.match(html, /Open the current review/u);
+  assert.match(html, /This selection card is retired/u);
+  assert.match(html, /Open current selection/u);
   assert.match(html, /ui\/message/u);
   assert.match(html, /sendFollowUpMessage/u);
-  assert.match(html, /Open my current local shopping review/u);
-  assert.doesNotMatch(html, /tools\/call|callTool|hydrate|fetch\(|Nemlig/u);
+  assert.match(html, /Open my current Nemlig selection/u);
+  assert.doesNotMatch(html, /tools\/call|callTool|hydrate|fetch\(/u);
 });

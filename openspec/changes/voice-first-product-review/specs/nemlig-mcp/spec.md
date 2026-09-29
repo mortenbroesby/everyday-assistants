@@ -57,10 +57,20 @@ The server SHALL expose current catalogue search, favourites, grocery sections, 
 - **WHEN** a client supplies a search phrase and an optional provider-selected result count
 - **THEN** the server returns unique detailed products in provider order, labels unavailable or invalid rows explicitly, and performs no second lookup when the viewer expands a successful result
 
+#### Scenario: Open-ended discovery is independent of a local product
+- **WHEN** the user asks for matching products such as “salmiak” while a local selection or a product's alternatives is open
+- **THEN** direct catalogue search uses the phrase as a standalone query, does not require or mutate a target product, and leaves local product membership and alternatives context unchanged
+
+#### Scenario: Search failure differs from no matches
+- **WHEN** catalogue search succeeds with no candidates
+- **THEN** the tool returns a successful empty result, distinct from a failed search
+- **WHEN** the provider search returns HTTP 500
+- **THEN** the MCP call is an error that preserves the safe upstream operation/status message, not a successful empty result or a fabricated “no matches” response
+
 
 ### Requirement: Conversational reviewed basket changes
 
-The server SHALL keep catalogue results and exact product details independent from basket operations, while basket changes SHALL remain behind the existing matching staged review/apply tools and explicit approval. Review and apply responses SHALL retain structured data plus a readable text fallback. Local review results SHALL attach the shared viewer resource; the viewer renders server-owned temporary review state and invokes local-draft tools plus the protected submit tool only after its explicit prepared-review confirmation. Actual provider changes require a separate unchanged exact submission review and explicit approval.
+The server SHALL keep catalogue results and exact product details independent from basket operations, while basket changes SHALL remain behind the existing matching staged review/apply tools and valid exact user authorization. A clear conversational instruction to add the current Ready selection authorizes only its unchanged exact prepared payload; Ready status alone does not. Other provider changes retain explicit approval requirements. Review and apply responses SHALL retain structured data plus a readable text fallback. Local review results SHALL attach the shared viewer resource; the viewer renders server-owned temporary review state and invokes the protected submit tool only after its explicit prepared-review confirmation. Actual provider changes require fresh validation, single-use authority and verified readback.
 
 #### Scenario: Exact review is submitted
 
@@ -87,10 +97,23 @@ tool-surface change SHALL preserve the staged exact-approval and readback
 boundary and the machine-readable feature inventory.
 
 #### Scenario: User only wants matching products
-- **WHEN** the user asks for all products matching a broad phrase such as butter
+- **WHEN** the user asks for all products matching an open phrase such as salmiak or butter
 - **THEN** direct read-only search returns the unique detailed products from
   the provider response without an application result cap when count is omitted,
   and it creates no local review or basket change
+
+#### Scenario: Search another way after alternatives are insufficient
+- **WHEN** alternatives for one product are empty or irrelevant and the user asks
+  to look up a broader or otherwise different phrase
+- **THEN** direct catalogue search is available independently of that alternatives
+  target; it does not silently replace the target or force candidates into it
+
+#### Scenario: Search succeeds empty or fails
+- **WHEN** search returns no candidates successfully or the provider returns an
+  error such as HTTP 500
+- **THEN** the assistant distinguishes “no matches returned” from “search failed,”
+  does not claim catalogue absence after an empty response, and does not invent
+  candidates or treat an error as an empty result
 
 #### Scenario: User edits by conversation
 - **WHEN** the user asks to add, change quantity, revisit, replace or remove an
@@ -101,7 +124,16 @@ boundary and the machine-readable feature inventory.
 #### Scenario: User requests a real-basket change
 - **WHEN** the user asks to alter the actual Nemlig basket
 - **THEN** the assistant can choose the matching factual prepare operation and
-  separate approved apply operation; no local selection action grants approval
+  protected apply operation; a clear conversational add instruction authorizes
+  only the unchanged exact Ready payload it names, while other actual-basket
+  changes require their exact explicit approval
+
+#### Scenario: Tool jobs match conversational and viewer workflows
+- **WHEN** the user operates any product lookup, local selection, alternative,
+  preparation, or protected write through either the viewer or conversation
+- **THEN** MCP titles/descriptions expose distinct understandable jobs and both
+  routes preserve the same state and safety boundaries without a redundant
+  parallel tool/workflow
 
 #### Scenario: Viewer is not displayed
 - **WHEN** a read-only search or basket result is consumed without a widget

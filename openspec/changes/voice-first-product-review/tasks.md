@@ -153,22 +153,22 @@ redeploy the old v4 release.
 
 ## 10. Discovery, selection language, and current-card continuity
 
-- [ ] 10.1 Replace the foreign-snapshot fold expectation with a failing
+- [x] 10.1 Replace the foreign-snapshot fold expectation with a failing
   historical A → explicit current B → delayed A regression; ignore unsolicited
   foreign review payloads only after activation. Verify both bridges and both
   notification channels, reversed order, a following local edit, fresh inactive
   remount, same-ID stale rejection, and explicit recovery to C without replay.
-- [ ] 10.2 Remove the alternatives-only default five, maximum ten, and viewer
+- [x] 10.2 Remove the alternatives-only default five, maximum ten, and viewer
   refinement count while retaining optional caller counts. Verify more than ten
   eligible results in provider order, omitted count reaching the provider,
   duplicate IDs, incomplete details, cancellation, stale candidate rejection,
   replacement quantity/state, and zero provider basket mutations.
-- [ ] 10.3 Refine the existing contextual search control and user-facing copy to
+- [x] 10.3 Refine the existing contextual search control and user-facing copy to
   Your Nemlig selection / To decide / Ready / Open current selection. Verify an
   empty or irrelevant result can search again without changing membership, a
   slow or cancelled broad search remains recoverable, disclosure/navigation
   make no provider reads, and 320px/375px plus accessible labels remain usable.
-- [ ] 10.4 Update existing MCP descriptions, titles and agent instructions for
+- [x] 10.4 Update existing MCP descriptions, titles and agent instructions for
   broad search, deliberate follow-up phrases, conversation-only local edits and
   exact real-basket preparation. Verify the 21-tool inventory, honest
   annotations and structured/headless responses; demonstrate direct search,
@@ -184,3 +184,31 @@ redeploy the old v4 release.
   B → delayed A acceptance attempt. Verify current and remounted card behavior
   separately; keep #137's other historical evidence and #96 deployment evidence
   separately attributed and leave this item open without direct host proof.
+- [x] 10.7 Debounce rapid quantity +/- input on the existing server-authoritative
+  update path with a defined 400 ms quiet interval. Keep displayed quantities
+  and totals responsive; serialize/cancel pending edits safely; flush before
+  navigation, other mutations, prepare, or submit. Test bursts, per-item edits,
+  flush ordering, failures, stale revisions, and no stale submission.
+- [x] 10.8 Trace assistant clarification after Ready products exist. Preserve a
+  prepared exact submission across edits confined to To decide only when its
+  Ready IDs/quantities remain identical; invalidate it on any Ready-set or
+  Ready-quantity change. Keep the submission visible/recoverable in the same
+  workspace, require a fresh exact confirmation where applicable, and preserve
+  current price/readback/uncertainty protections. Test the conversational add
+  path and mixed Ready/To decide state.
+- [x] 10.9 Treat an unambiguous conversational instruction to add the current
+  exact Ready selection to the real Nemlig basket as authorization for that
+  exact prepared payload; do not ask for a redundant second conversational
+  approval. Ready acceptance alone is not authorization. Clarify ambiguous
+  scope or changed Ready contents/quantities, and preserve exact binding,
+  freshness, principal/conversation binding, single-use serialization,
+  readback, and uncertain-write/no-retry behavior. Test explicit intent,
+  ambiguity/change rejection, and uncertain writes.
+- [x] 10.10 Add open-ended search guidance and MCP parity for the user jobs in
+  conversation and the viewer. Verify a term such as “salmiak” calls direct
+  catalogue search independently of any local/alternatives product, does not
+  mutate that selection, and allows a deliberate broader search when contextual
+  alternatives are insufficient. Trace successful-empty and upstream HTTP 500
+  through the real fixture-backed tool/client path; assert distinct outcomes,
+  exact safe error mapping, and assistant instructions that do not report a
+  failure as no matches. Do not rename/merge tools without demonstrated benefit.

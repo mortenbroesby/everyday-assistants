@@ -5,8 +5,9 @@ The integration SHALL use one shared product presentation for conversational and
 touch review. Local Ready is a shortlist of resolved products, not the actual
 Nemlig basket. Both input modes SHALL address exact products in the same temporary
 draft and support acceptance, changes, removal, quantities and safe navigation.
-Actual submission SHALL use the existing exact proposal/apply safety engine only
-after explicit approval of an unchanged submission review.
+Actual submission SHALL use the existing exact proposal/apply safety engine.
+A clear conversational add instruction authorizes only the unchanged current
+Ready payload; the viewer still requires its exact on-screen confirmation.
 
 #### Scenario: Product review is operated by voice
 - **WHEN** the user accepts some products, changes another, or requests remaining
@@ -32,16 +33,25 @@ after explicit approval of an unchanged submission review.
 ### Requirement: Direct normal ChatGPT use
 
 The system SHALL support independent product search, exact product lookup,
-basket inspection, exact basket review, and explicitly approved apply in normal
+ basket inspection, exact basket review, and authorized protected apply in normal
 ChatGPT conversations without requiring Codex, a saved planner, or a picker.
 Selected local review results render through one shared product viewer, with
 complete conversational structured/text fallbacks.
 
 #### Scenario: User searches for products
 
-- **WHEN** the private app is available and the user asks for products
+- **WHEN** the private app is available and the user asks for products by an
+  open-ended term such as “salmiak,” including while another selection product
+  or alternatives view exists
 - **THEN** ChatGPT receives richly detailed products in provider order and may
-  summarize them without mounting a viewer, then open one local review for selected products
+  summarize them without mounting a viewer or binding the query to that product;
+  search leaves existing selection membership unchanged
+
+#### Scenario: Catalogue search fails
+- **WHEN** the provider returns an HTTP error instead of a successful search response
+- **THEN** ChatGPT explains that the search failed, not that no products matched;
+  a successful empty response is reported separately and neither outcome changes
+  local selection or actual basket
 
 #### Scenario: Viewer is unavailable
 
@@ -60,14 +70,24 @@ complete conversational structured/text fallbacks.
 
 The direct ChatGPT integration SHALL describe products, basket changes, and
 verified results like a household shopping assistant rather than a transaction
-log. It SHALL distinguish local review changes from Nemlig changes and SHALL require explicit
-approval of the exact unchanged proposal before applying a basket change.
+log. It SHALL distinguish local selection changes from Nemlig changes. A clear
+conversational instruction to add the current Ready selection authorizes only
+that unchanged exact prepared payload; other actual basket changes require
+explicit approval of the exact unchanged proposal.
 
 #### Scenario: ChatGPT reviews a prepared change
 
-- **WHEN** ChatGPT receives a valid basket proposal without exact approval
+- **WHEN** ChatGPT receives a valid basket proposal without exact user authorization
 - **THEN** it presents a clean summary of what would change and asks one simple
   approval question without showing opaque protocol fields by default
+
+#### Scenario: User already instructed an exact Ready addition
+- **WHEN** the user clearly asks to add the current Ready selection to the real
+  Nemlig basket and the Ready IDs/quantities remain unchanged during preparation
+- **THEN** the assistant applies exactly the freshly prepared payload without
+  repeating a redundant conversational approval question
+- **AND** if scope is ambiguous or any Ready line changed after that instruction,
+  it asks which exact current products and quantities the user means instead
 
 #### Scenario: User requests product comparison
 

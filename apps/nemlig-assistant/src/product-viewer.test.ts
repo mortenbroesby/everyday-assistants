@@ -40,8 +40,8 @@ const complete: ProductView = {
 };
 
 test("viewer exposes one MCP Apps resource identity and a complete headless fallback", () => {
-  assert.equal(PRODUCT_VIEWER_RESOURCE_VERSION, "6");
-  assert.equal(PRODUCT_VIEWER_RESOURCE_URI, "ui://nemlig/product-viewer-v6.html");
+  assert.equal(PRODUCT_VIEWER_RESOURCE_VERSION, "7");
+  assert.equal(PRODUCT_VIEWER_RESOURCE_URI, "ui://nemlig/product-viewer-v7.html");
   assert.equal(PRODUCT_VIEWER_MIME_TYPE, "text/html;profile=mcp-app");
   assert.deepEqual(PRODUCT_VIEWER_RESOURCE_METADATA, {
     ui: { resourceUri: PRODUCT_VIEWER_RESOURCE_URI },
@@ -61,6 +61,23 @@ test("viewer resource is accessible, self-contained, and uses only local review 
   const html = renderProductViewerHtml();
 
   assert.match(html, /<html lang="en">/u);
+  assert.match(html, /<title>Your Nemlig selection<\/title>/u);
+  assert.match(html, /aria-label="Selection destinations"/u);
+  assert.match(html, /Open current selection/u);
+  assert.match(html, /To decide/u);
+  assert.match(html, /Search for more products/u);
+  assert.match(html, /No new alternatives for this selection/u);
+  assert.match(html, /Loaded the current selection/u);
+  assert.match(html, /current selection to check its state/u);
+  assert.match(html, /Could not load the selection/u);
+  assert.match(html, /No current selection was returned/u);
+  assert.match(html, /reopen your current selection/u);
+  assert.match(html, /Open the current selection again when the connection is available/u);
+  assert.match(html, /Inspect the actual Nemlig basket in conversation before preparing another Nemlig basket change/u);
+  assert.match(html, /Inspect in conversation/u);
+  assert.match(html, /Review exact change/u);
+  assert.match(html, /Exact Nemlig submission confirmation/u);
+  assert.doesNotMatch(html, /Open current review|Open the current review|Shopping review|Find or refine alternatives|No alternatives returned|Could not load the review|current shopping review|preparing a new review|Review in conversation|Open it again when/u);
   assert.match(html, /role="status"/u);
   assert.match(html, /aria-live="polite"/u);
   assert.match(html, /aria-label="Product results"/u);
@@ -86,7 +103,7 @@ test("viewer resource is accessible, self-contained, and uses only local review 
   assert.match(html, /Add " \+ selected\.size \+ " to Ready/u);
   assert.match(html, /Varebeskrivelse|Varedeklaration|Detaljer om varen/u);
   assert.doesNotMatch(html, /Add to local Basket/u);
-  assert.match(html, /Review in conversation/u);
+  assert.match(html, /Inspect in conversation/u);
   assert.match(html, /Add to Nemlig/u);
   assert.doesNotMatch(html, /<script\s+src=/u);
 });

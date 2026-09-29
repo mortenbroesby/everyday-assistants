@@ -31,6 +31,7 @@ class FakeNode {
   }
   setAttribute(name: string, value: string): void { this.attributes.set(name, value); }
   replaceWith(node: FakeNode): void { this.parent?.replaceChild(this, node); }
+  reportValidity(): boolean { return true; }
   parent?: FakeNode;
   replaceChild(oldNode: FakeNode, newNode: FakeNode): void {
     const index = this.children.indexOf(oldNode); if (index >= 0) { newNode.parent = this; this.children[index] = newNode; }
@@ -105,12 +106,12 @@ function mount(toolOutput: unknown, respond: (call: ToolCall) => unknown | Promi
 
 const reviewOutput = snapshot("old-review", 6);
 
-test("host review payload stays inert until explicit Open current review activation", async () => {
+test("host review payload stays inert until explicit Open current selection activation", async () => {
   const app = mount(reviewOutput, () => snapshot("active-review", 2));
   assert.equal(app.calls.length, 0, "receiving historical review state must not hydrate or call tools");
-  assert.ok(app.controls(/Open current review/i), "host review payload offers an explicit activation control");
+  assert.ok(app.controls(/Open current selection/i), "host review payload offers an explicit activation control");
   assert.equal(app.controls(/Add selected|Remove|Change product/i), undefined, "stale editing controls are withheld before activation");
-  await app.controls(/Open current review/i)!.click();
+  await app.controls(/Open current selection/i)!.click();
   assert.deepEqual(JSON.parse(JSON.stringify(app.calls)), [{ name: "update_product_review", args: { action: { kind: "show" } } }]);
   assert.match(app.get("products").text, /Current milk draft/u, "the confirmed current draft is rendered after activation");
 });
@@ -119,9 +120,9 @@ test("stale active revision refreshes once without replaying edit and clears sel
   let reads = 0;
   const app = mount(reviewOutput, call => {
     if (call.args.action && (call.args.action as { kind?: string }).kind === "show") { reads++; return snapshot("fresh-review", 8); }
-    return { isError: true, content: [{ type: "text", text: "Error code: INVALID_ARGUMENT; Error: RuntimeException - Review revision is stale. Refresh before trying this action again. private detail" }] };
+    return { isError: true, content: [{ type: "text", text: "Error code: INVALID_ARGUMENT; Error: RuntimeException - Selection revision is stale. Refresh before trying this action again. private detail" }] };
   });
-  await app.controls(/Open current review/i)!.click();
+  await app.controls(/Open current selection/i)!.click();
   const checkbox = [...app.get("products").queryAll("input")][0]!;
   checkbox.checked = true;
   for (const listener of checkbox.listeners.get("change") ?? []) listener({ target: checkbox, preventDefault() {} });
@@ -137,11 +138,11 @@ test("stale active revision refreshes once without replaying edit and clears sel
 test("unknown, timed out, and service failures leave stale editing disabled", async t => {
   for (const scenario of ["unknown", "timeout", "service"] as const) await t.test(scenario, async () => {
     const app = mount(reviewOutput, () => scenario === "timeout" ? new Promise(() => {}) : (() => { throw new Error(scenario === "unknown" ? "INVALID_ARGUMENT: unknown review" : "Service Unavailable: internal trace"); })());
-    await app.controls(/Open current review/i)!.click();
+    await app.controls(/Open current selection/i)!.click();
     if (scenario === "timeout") { app.expireTimers(20_000); await new Promise(resolve => setImmediate(resolve)); }
     assert.equal(app.calls.length, 1, "no stale edits or automatic retries follow a failed open");
     assert.equal(app.controls(/Add selected to local Basket|Remove|Change product/i), undefined);
-    assert.match(app.get("status").text, /review|refresh|unavailable|connect/i);
+    assert.match(app.get("status").text, /selection|refresh|unavailable|connect/i);
     assert.doesNotMatch(app.get("status").text, /internal trace|INVALID_ARGUMENT/i);
   });
 });
@@ -155,10 +156,10 @@ test("restarting an unavailable historical review preserves quantities without r
     return { unavailable: true };
   });
   assert.equal(app.calls.length, 0, "receiving an old review must not recover automatically");
-  await app.controls(/Open current review/i)!.click();
+  await app.controls(/Open current selection/i)!.click();
   assert.equal(showCalls, 1);
-  assert.ok(app.controls(/Start new review/i));
-  await app.controls(/Start new review/i)!.click();
+  assert.ok(app.controls(/Start new selection/i));
+  await app.controls(/Start new selection/i)!.click();
   const restart = app.calls.find(call => call.name === "start_product_review");
   assert.deepEqual(JSON.parse(JSON.stringify(restart?.args)), { items: [{ product_id: 41, quantity: 3 }] }, "restart retains quantities and excludes prior acceptance state");
   assert.match(app.get("products").text, /Current milk draft/u);
@@ -166,48 +167,116 @@ test("restarting an unavailable historical review preserves quantities without r
 
 test("duplicate unavailable host output keeps explicit safe restart visible", async () => {
   const app = mount(reviewOutput, () => ({ unavailable: true }));
-  await app.controls(/Open current review/i)!.click();
-  assert.ok(app.controls(/Start new review/i));
+  await app.controls(/Open current selection/i)!.click();
+  assert.ok(app.controls(/Start new selection/i));
   for (const listener of app.windowListeners.get("message") ?? []) listener({
     source: app.parent, detail: undefined, preventDefault() {},
     data: { jsonrpc: "2.0", method: "ui/notifications/tool-result", params: { unavailable: true } },
   } as FakeEvent);
-  assert.ok(app.controls(/Start new review/i));
-  assert.equal(app.controls(/Open current review/i), undefined);
+  assert.ok(app.controls(/Start new selection/i));
+  assert.equal(app.controls(/Open current selection/i), undefined);
 });
 
 
-test("a host globals update gates historical review data again", async () => {
-  const app = mount(reviewOutput, () => snapshot("active-review", 2));
-  await app.controls(/Open current review/i)!.click();
-  assert.match(app.get("products").text, /Current milk draft/u);
-  const external = snapshot("another-old-review", 4, "ready");
+test("a different historical review arriving after explicit activation cannot fold the current selection", async t => {
+  for (const bridge of ["openai", "mcp-apps"] as const) for (const channel of ["tool-result", "globals"] as const) {
+    await t.test(`${bridge} bridge / ${channel} notification`, async () => {
+      let reads = 0;
+      const app = mount(reviewOutput, call => {
+        const action = call.args.action as { kind?: string } | undefined;
+        if (action?.kind === "show") {
+          reads++;
+          if (reads === 1) return snapshot("current-B", 2);
+          return snapshot("current-C", 1, "ready");
+        }
+        return { isError: true, content: [{ type: "text", text: "Selection revision is stale. Refresh before trying this action again." }] };
+      }, bridge === "mcp-apps");
+      if (bridge === "mcp-apps") await new Promise(resolve => setImmediate(resolve));
+
+      await app.controls(/Open current selection/i)!.click();
+      assert.match(app.get("products").text, /Current milk draft/u);
+      const oldA = reviewOutput;
+      if (channel === "globals") {
+        for (const listener of app.windowListeners.get("openai:set_globals") ?? []) listener({
+          detail: { globals: { toolOutput: oldA } }, preventDefault() {},
+        });
+      } else {
+        for (const listener of app.windowListeners.get("message") ?? []) listener({
+          source: app.parent, detail: undefined, preventDefault() {},
+          data: { jsonrpc: "2.0", method: "ui/notifications/tool-result", params: oldA },
+        } as FakeEvent);
+      }
+      assert.equal(app.calls.length, 1, "an unsolicited historical result cannot trigger a read");
+      assert.equal(app.controls(/Open current selection/i), undefined, "the confirmed current selection stays active");
+      assert.match(app.get("products").text, /Current milk draft/u);
+
+      const checkbox = app.get("products").queryAll("input")[0]!;
+      checkbox.checked = true;
+      for (const listener of checkbox.listeners.get("change") ?? []) listener({ target: checkbox, preventDefault() {} });
+      await app.controls(/Add 1 to Ready/i)!.click();
+      assert.equal(app.calls.filter(call => call.name === "update_product_review").length, 3, "one explicit open, one failed edit, and one read-only recovery");
+      assert.deepEqual(JSON.parse(JSON.stringify(app.calls.at(-1)?.args)), { action: { kind: "show" } });
+      assert.equal(reads, 2, "the stale edit is not replayed; explicit recovery obtains the replacement current draft");
+      assert.equal(app.get("title").textContent, "Ready");
+      assert.equal(app.controls(/Open current selection/i), undefined);
+      assert.match(app.get("products").text, /Current milk draft/u);
+      assert.equal(app.calls.at(-1)?.args.review_id, undefined, "recovery is conversation-scoped, not bound to old A or B");
+    });
+  }
+});
+
+test("an older card notification received before the current show resolves cannot defeat its correlated result", async () => {
+  let finishShow!: (result: unknown) => void;
+  const app = mount(reviewOutput, call => call.args.action ? new Promise(resolve => { finishShow = resolve; }) : snapshot("unused", 1));
+  const opening = app.controls(/Open current selection/i)!.click();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(typeof finishShow, "function", "the explicit current show is pending before the old notification arrives");
   for (const listener of app.windowListeners.get("openai:set_globals") ?? []) listener({
-    detail: { globals: { toolOutput: external } }, preventDefault() {},
+    detail: { globals: { toolOutput: reviewOutput } }, preventDefault() {},
   });
-  assert.equal(app.calls.length, 1, "an external payload cannot trigger another hydration call");
-  assert.ok(app.controls(/Open current review/i), "the later host snapshot returns the viewer to its activation gate");
-  assert.equal(app.controls(/Move to Needs review|Remove|Change product/i), undefined, "historical review controls are hidden again");
+  finishShow(snapshot("current-B", 2));
+  await opening;
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(app.get("title").textContent, "To decide");
+  assert.equal(app.controls(/Open current selection/i), undefined);
+  assert.equal(app.calls.length, 1, "an unsolicited snapshot does not add a recovery call");
+});
+
+test("a fresh frame remains inactive and non-review products cannot replace an active selection", async () => {
+  const app = mount(reviewOutput, () => snapshot("current-B", 2));
+  await app.controls(/Open current selection/i)!.click();
+  for (const listener of app.windowListeners.get("message") ?? []) listener({
+    source: app.parent, detail: undefined, preventDefault() {},
+    data: { jsonrpc: "2.0", method: "ui/notifications/tool-result", params: { views: [product(99, "Unrelated butter search")] } },
+  } as FakeEvent);
+  assert.equal(app.get("title").textContent, "To decide");
+  assert.match(app.get("products").text, /Current milk draft/u);
+  assert.doesNotMatch(app.get("products").text, /Unrelated butter search/u);
+  assert.equal(app.calls.length, 1, "unrelated product cards do not call review tools");
+
+  const remounted = mount(reviewOutput, () => snapshot("current-C", 1));
+  assert.equal(remounted.calls.length, 0);
+  assert.ok(remounted.controls(/Open current selection/i), "activation is not persisted to a new frame");
 });
 
 test("a matching host result keeps an explicitly opened frame active and ignores stale revisions", async () => {
   const current = snapshot("active-review", 3, "ready");
   const app = mount(reviewOutput, () => current);
-  await app.controls(/Open current review/i)!.click();
-  assert.ok(app.controls(/In Review/i));
+  await app.controls(/Open current selection/i)!.click();
+  assert.ok(app.controls(/To decide/i));
   for (const listener of app.windowListeners.get("message") ?? []) listener({
     source: app.parent,
     detail: undefined,
     preventDefault() {},
     data: { jsonrpc: "2.0", method: "ui/notifications/tool-result", params: current },
   } as FakeEvent);
-  assert.equal(app.controls(/Open current review/i), undefined, "same-review host output must not collapse the mounted card");
-  assert.ok(app.controls(/In Review/i));
+  assert.equal(app.controls(/Open current selection/i), undefined, "same-review host output must not collapse the mounted card");
+  assert.ok(app.controls(/To decide/i));
   for (const listener of app.windowListeners.get("openai:set_globals") ?? []) listener({
     detail: { globals: { toolOutput: snapshot("active-review", 2) } }, preventDefault() {},
   });
   assert.equal(app.get("title").textContent, "Ready", "a delayed older result must not overwrite the confirmed destination");
-  assert.equal(app.controls(/Open current review/i), undefined);
+  assert.equal(app.controls(/Open current selection/i), undefined);
 });
 
 test("a same-revision verified submission supersedes an uncertain host snapshot", async () => {
@@ -216,7 +285,7 @@ test("a same-revision verified submission supersedes an uncertain host snapshot"
   const uncertain = { review: { ...current.review, revision: 4, submission: { ...submission, status: "uncertain" } } };
   const submitted = { review: { ...current.review, revision: 4, submission: { ...submission, status: "submitted" } } };
   const app = mount(reviewOutput, () => current);
-  await app.controls(/Open current review/i)!.click();
+  await app.controls(/Open current selection/i)!.click();
   const notify = (payload: unknown) => {
     for (const listener of app.windowListeners.get("message") ?? []) listener({
       source: app.parent, detail: undefined, preventDefault() {},
@@ -227,7 +296,7 @@ test("a same-revision verified submission supersedes an uncertain host snapshot"
   assert.match(app.get("submission").text, /Check Nemlig before trying again/u);
   notify(submitted);
   assert.match(app.get("submission").text, /Added to Nemlig — verified/u);
-  assert.ok(app.controls(/Continue reviewing selection/i), "the existing card remains active");
+  assert.ok(app.controls(/Continue with selection/i), "the existing card remains active");
   notify(uncertain);
   assert.match(app.get("submission").text, /Added to Nemlig — verified/u, "an older same-revision notification cannot undo verified success");
 });
@@ -243,10 +312,10 @@ test("Ready navigation and removing all Ready products stay in one active local 
     if (action?.kind === "remove") return cleared;
     throw new Error("Unexpected tool call");
   });
-  await app.controls(/Open current review/i)!.click();
+  await app.controls(/Open current selection/i)!.click();
   await app.controls(/^Ready \(0\)$/i)!.click();
   assert.equal(app.get("title").textContent, "Ready");
-  assert.equal(app.controls(/Open current review/i), undefined);
+  assert.equal(app.controls(/Open current selection/i), undefined);
   await app.controls(/Remove all Ready products/i)!.click();
   assert.equal(app.calls.length, 2, "opening a local confirmation does not mutate a basket");
   await app.controls(/^Remove Ready products$/i)!.click();
@@ -254,7 +323,7 @@ test("Ready navigation and removing all Ready products stay in one active local 
     name: "update_product_review",
     args: { review_id: "active-review", revision: 4, action: { kind: "remove", product_ids: [41] } },
   });
-  assert.equal(app.controls(/Open current review/i), undefined);
+  assert.equal(app.controls(/Open current selection/i), undefined);
   assert.equal(app.get("title").textContent, "What should we shop for?");
   assert.equal(app.calls.some(call => call.name === "submit_product_review"), false);
 });
@@ -270,7 +339,7 @@ test("same-review navigation keeps compatible selection and disclosure state", a
     if (action?.destination === "needs-review") return back;
     throw new Error("Unexpected tool call");
   });
-  await app.controls(/Open current review/i)!.click();
+  await app.controls(/Open current selection/i)!.click();
   const checkbox = app.get("products").queryAll("input")[0]!;
   checkbox.checked = true;
   for (const listener of checkbox.listeners.get("change") ?? []) listener({ target: checkbox, preventDefault() {} });
@@ -278,10 +347,10 @@ test("same-review navigation keeps compatible selection and disclosure state", a
   details.open = true;
   for (const listener of details.listeners.get("toggle") ?? []) listener({ target: details, preventDefault() {} });
   await app.controls(/^Ready \(0\)$/i)!.click();
-  await app.controls(/^In Review \(1\)$/i)!.click();
+  await app.controls(/^To decide \(1\)$/i)!.click();
   assert.equal(app.get("products").queryAll("input")[0]!.checked, true);
   assert.equal(app.get("products").queryAll("details")[0]!.open, true);
-  assert.equal(app.controls(/Open current review/i), undefined);
+  assert.equal(app.controls(/Open current selection/i), undefined);
 });
 
 test("disclosure and Select all are presentation only; one batch action accepts exact rows", async () => {
@@ -294,7 +363,7 @@ test("disclosure and Select all are presentation only; one batch action accepts 
   const current = { review: { ...first.review, items: [...first.review.items, second] } };
   const accepted = { review: { ...current.review, revision: 3, items: current.review.items.map(item => ({ ...item, state: "ready" })) } };
   const app = mount(reviewOutput, call => (call.args.action as { kind?: string })?.kind === "accept" ? accepted : current);
-  await app.controls(/Open current review/i)!.click();
+  await app.controls(/Open current selection/i)!.click();
   const initialCalls = app.calls.length;
   const disclosure = app.get("products").queryAll("details")[0]!;
   disclosure.open = true;
@@ -312,11 +381,11 @@ test("disclosure and Select all are presentation only; one batch action accepts 
   await app.controls(/^Add 2 to Ready$/i)!.click();
   assert.equal(app.calls.length, initialCalls + 1);
   assert.deepEqual(JSON.parse(JSON.stringify(app.calls.at(-1)?.args.action)), { kind: "accept", product_ids: [41, 42] });
-  assert.equal(app.get("title").textContent, "In Review");
+  assert.equal(app.get("title").textContent, "To decide");
   assert.ok(app.controls(/^Ready \(2\)$/i));
 });
 
-test("Ready has no alternative action; returning an item to In Review enables it", async () => {
+test("Ready has no alternative action; returning an item to To decide enables it", async () => {
   const ready = snapshot("active-review", 2, "ready");
   const revisited = { review: { ...ready.review, revision: 3, items: ready.review.items.map(item => ({ ...item, state: "needs-review" })) } };
   const inReview = { review: { ...revisited.review, revision: 4, destination: "needs-review" } };
@@ -326,17 +395,130 @@ test("Ready has no alternative action; returning an item to In Review enables it
     if (action?.kind === "navigate") return inReview;
     return ready;
   });
-  await app.controls(/Open current review/i)!.click();
+  await app.controls(/Open current selection/i)!.click();
   const productDetails = app.get("products").queryAll("details")[0]!;
   productDetails.open = true;
   for (const listener of productDetails.listeners.get("toggle") ?? []) listener({ target: productDetails, preventDefault() {} });
   assert.equal(app.controls(/Choose alternative/i), undefined);
-  await app.controls(/Move to In Review/i)!.click();
-  await app.controls(/^In Review \(1\)$/i)!.click();
+  await app.controls(/Move to To decide/i)!.click();
+  await app.controls(/^To decide \(1\)$/i)!.click();
   const reopened = app.get("products").queryAll("details")[0]!;
   reopened.open = true;
   for (const listener of reopened.listeners.get("toggle") ?? []) listener({ target: reopened, preventDefault() {} });
   assert.ok(app.controls(/Choose alternative/i));
+});
+
+test("empty contextual search can be refined without changing selection membership or forcing a result count", async () => {
+  const needs = snapshot("active-review", 2);
+  const empty = { review: { ...needs.review, revision: 3, destination: "alternatives", alternatives: { product_id: 41, origin: "needs-review", query: "Dairy", views: [] } } };
+  const found = { review: { ...empty.review, revision: 4, alternatives: { ...empty.review.alternatives, query: "butter", views: [product(42, "Butter option")] } } };
+  const back = { review: { ...found.review, revision: 5, destination: "needs-review" } };
+  const app = mount(reviewOutput, call => {
+    const action = call.args.action as { kind?: string; query?: string };
+    if (action?.kind === "show") return needs;
+    if (action?.kind === "alternatives") return action.query === "butter" ? found : empty;
+    if (action?.kind === "navigate") return back;
+    throw new Error("Unexpected tool call");
+  });
+  await app.controls(/Open current selection/i)!.click();
+  const details = app.get("products").queryAll("details")[0]!;
+  details.open = true;
+  for (const listener of details.listeners.get("toggle") ?? []) listener({ target: details, preventDefault() {} });
+  await app.controls(/Choose alternative/i)!.click();
+  assert.match(app.get("products").text, /No new alternatives for this selection/u);
+  assert.equal(app.calls.at(-1)?.args.action && (app.calls.at(-1)!.args.action as { limit?: number }).limit, undefined);
+  assert.equal(app.get("context").queryAll("input")[0]?.value, "Dairy");
+  assert.equal(needs.review.items.length, 1, "an empty result does not remove or accept the target product");
+
+  const form = app.get("context").queryAll("form")[0]!;
+  app.get("context").queryAll("input")[0]!.value = "butter";
+  for (const listener of form.listeners.get("submit") ?? []) listener({ target: form, preventDefault() {} });
+  await new Promise(resolve => setImmediate(resolve));
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal((app.calls.at(-1)?.args.action as { query?: string; limit?: number }).query, "butter");
+  assert.equal((app.calls.at(-1)?.args.action as { limit?: number }).limit, undefined);
+  assert.match(app.get("products").text, /Butter option/u);
+  assert.equal(found.review.items.length, 1, "searching does not change local selection membership");
+  await app.controls(/Back to To decide/i)!.click();
+  assert.equal(app.get("title").textContent, "To decide");
+  assert.equal(app.calls.length, 4, "show, contextual search, deliberate follow-up, and navigation are explicit calls");
+});
+
+test("quantity bursts update totals immediately, debounce at 400 ms, and flush before navigation, prepare, and submit", async () => {
+  let current: ReturnType<typeof snapshot> & { review: ReturnType<typeof snapshot>["review"] & { submission?: { submission_id: string; status: string; expires_at: string; review: unknown } } } = snapshot("active-review", 1, "ready");
+  let submissions = 0;
+  const app = mount(reviewOutput, call => {
+    const action = call.args.action as { kind?: string; destination?: string; quantity?: number; product_id?: number };
+    if (action?.kind === "show") return current;
+    if (action?.kind === "quantity") {
+      current = { review: { ...current.review, revision: current.review.revision + 1, submission: undefined, items: current.review.items.map(item => item.product_id === action.product_id ? { ...item, quantity: action.quantity! } : item) } };
+      return current;
+    }
+    if (action?.kind === "navigate") {
+      current = { review: { ...current.review, revision: current.review.revision + 1, destination: action.destination as "needs-review" | "ready" } };
+      return current;
+    }
+    if (action?.kind === "prepare_submission") {
+      current = { review: { ...current.review, revision: current.review.revision + 1, submission: {
+        submission_id: "prepared-quantity", status: "prepared", expires_at: "2099-01-01T00:00:00Z",
+        review: { lines: [{ product_id: 41, quantity: current.review.items[0]!.quantity, name: "Current milk draft", item_price: 10, line_total: current.review.items[0]!.quantity * 10 }], expected_products_price: current.review.items[0]!.quantity * 10 },
+      } } };
+      return current;
+    }
+    if (call.name === "submit_product_review") { submissions++; return current; }
+    throw new Error("Unexpected tool call");
+  });
+  const settle = async () => { for (let index = 0; index < 5; index++) await new Promise(resolve => setImmediate(resolve)); };
+  const plus = () => app.get("products").queryAll("button").find(button => button.attributes.get("aria-label") === "Increase quantity of Current milk draft")!;
+  const pressPlus = async () => { assert.ok(plus()); await plus().click(); };
+  await app.controls(/Open current selection/i)!.click();
+  const details = app.get("products").queryAll("details")[0]!;
+  details.open = true;
+  for (const listener of details.listeners.get("toggle") ?? []) listener({ target: details, preventDefault() {} });
+
+  await pressPlus(); await pressPlus(); await pressPlus();
+  assert.equal(app.calls.length, 1, "rapid +/- presses do not send immediate updates");
+  assert.match(app.get("products").text, /6 ×/u, "quantity renders optimistically");
+  assert.match(app.get("products").text, /60\.00 kr/u, "line total renders optimistically");
+  app.expireTimers(400); await settle();
+  assert.deepEqual(JSON.parse(JSON.stringify(app.calls.at(-1)?.args.action)), { kind: "quantity", product_id: 41, quantity: 6 });
+
+  await pressPlus();
+  await app.controls(/^To decide \(0\)$/i)!.click();
+  assert.deepEqual(app.calls.slice(-2).map(call => (call.args.action as { kind: string }).kind), ["quantity", "navigate"], "navigation waits for a flushed quantity revision");
+  await app.controls(/^Ready \(1\)$/i)!.click();
+  await pressPlus();
+  await app.controls(/^Send to Nemlig basket$/i)!.click();
+  assert.deepEqual(app.calls.slice(-2).map(call => (call.args.action as { kind: string }).kind), ["quantity", "prepare_submission"], "prepare uses the flushed Ready quantity");
+  assert.match(app.get("submission").text, /80\.00 kr/u);
+
+  await pressPlus();
+  await app.controls(/^Add to Nemlig$/i)!.click();
+  await settle();
+  assert.equal(submissions, 0, "a pending Ready quantity invalidates the old exact submission before any provider write");
+  assert.equal(app.calls.at(-1)?.name, "update_product_review");
+  assert.equal((app.calls.at(-1)?.args.action as { kind: string }).kind, "quantity");
+  assert.match(app.get("status").text, /Ready quantities changed.*Prepare the exact Nemlig basket change again/u);
+});
+
+test("failed or stale debounced quantity refreshes once, drops optimistic values, and does not continue the queued action", async () => {
+  const current = snapshot("active-review", 3, "ready");
+  const app = mount(reviewOutput, call => {
+    const action = call.args.action as { kind?: string };
+    if (action?.kind === "show") return current;
+    if (action?.kind === "quantity") return { isError: true, content: [{ type: "text", text: "Selection revision is stale. Refresh before trying again." }] };
+    throw new Error("A failed quantity must stop later actions");
+  });
+  await app.controls(/Open current selection/i)!.click();
+  const details = app.get("products").queryAll("details")[0]!;
+  details.open = true;
+  for (const listener of details.listeners.get("toggle") ?? []) listener({ target: details, preventDefault() {} });
+  const plus = app.get("products").queryAll("button").find(button => button.attributes.get("aria-label") === "Increase quantity of Current milk draft")!;
+  await plus.click();
+  await app.controls(/^To decide \(0\)$/i)!.click();
+  assert.deepEqual(app.calls.map(call => (call.args.action as { kind: string }).kind), ["show", "quantity", "show"]);
+  assert.match(app.get("products").text, /3 ×/u, "optimistic quantity is discarded in favor of the recovered server state");
+  assert.match(app.get("status").text, /quantity change was not saved.*action was not applied/i);
 });
 
 test("viewer submission requires a separate exact confirmation after preparation", async () => {
@@ -353,7 +535,7 @@ test("viewer submission requires a separate exact confirmation after preparation
     if (action?.kind === "prepare_submission") return prepared;
     throw new Error("Unexpected tool call");
   });
-  await app.controls(/Open current review/i)!.click();
+  await app.controls(/Open current selection/i)!.click();
   await app.controls(/^Send to Nemlig basket$/i)!.click();
   assert.equal(app.calls.some(call => call.name === "submit_product_review"), false, "preparing never submits");
   assert.match(app.get("submission").text, /30\.00 kr/u);
@@ -384,7 +566,7 @@ test("uncertain submission never retries and removes the UI confirmation", async
     if (action?.kind === "prepare_submission") return prepared;
     throw new Error("Unexpected tool call");
   });
-  await app.controls(/Open current review/i)!.click();
+  await app.controls(/Open current selection/i)!.click();
   await app.controls(/^Send to Nemlig basket$/i)!.click();
   await app.controls(/^Add to Nemlig$/i)!.click();
   assert.equal(app.calls.filter(call => call.name === "submit_product_review").length, 1);
@@ -395,12 +577,12 @@ test("uncertain submission never retries and removes the UI confirmation", async
 });
 
 test("a JSON-RPC thrown stale edit refreshes once and never replays the edit", async () => {
-  const error = new Error("Error code: INVALID_ARGUMENT; Error: RuntimeException - Review revision is stale. Refresh before trying this action again. private detail");
+  const error = new Error("Error code: INVALID_ARGUMENT; Error: RuntimeException - Selection revision is stale. Refresh before trying this action again. private detail");
   const app = mount(reviewOutput, call => {
     if ((call.args.action as { kind?: string } | undefined)?.kind === "show") return snapshot("active-review", 2);
     throw error;
   }, true);
-  await app.controls(/Open current review/i)!.click();
+  await app.controls(/Open current selection/i)!.click();
   const checkbox = [...app.get("products").queryAll("input")][0]!;
   checkbox.checked = true;
   for (const listener of checkbox.listeners.get("change") ?? []) listener({ target: checkbox, preventDefault() {} });
@@ -426,9 +608,9 @@ test("submitted or uncertain historical reviews cannot restart and show basket i
       },
     };
     const app = mount(historical, call => call.args.action ? { unavailable: true } : { unavailable: true });
-    await app.controls(/Open current review/i)!.click();
+    await app.controls(/Open current selection/i)!.click();
     assert.equal(app.calls.length, 1, "only explicit read-only recovery is allowed");
-    assert.equal(app.controls(/Start new review/i), undefined, "an old submitted or uncertain draft cannot seed another submission");
+    assert.equal(app.controls(/Start new selection/i), undefined, "an old submitted or uncertain draft cannot seed another submission");
     assert.match(app.get("products").text, /Check your actual Nemlig basket in conversation/u);
     assert.equal(app.controls(/Add selected|Remove|Change product/i), undefined);
   });

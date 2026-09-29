@@ -44,10 +44,15 @@ temporary list navigation within the current draft when its target still exists.
 
 ### Requirement: Explicit protected submission
 The system SHALL submit only the local resolved lines through an exact provider
-review and subsequent explicit approval. Editing the draft SHALL invalidate its
-pending submission. Unresolved lines SHALL never be submitted implicitly. All
-existing freshness, single-use, principal, mutation-lock and readback safeguards
-SHALL remain effective. Unrelated real basket lines SHALL remain unchanged.
+review and valid user authorization. A clear conversational instruction to add
+the current Ready selection SHALL itself authorize only that unchanged exact
+prepared payload; the viewer's Send action SHALL retain its on-screen exact
+confirmation. Ready acceptance alone SHALL NOT authorize a provider write.
+Editing a Ready product ID or quantity SHALL invalidate its pending submission;
+To decide-only changes MAY preserve it when the Ready IDs and quantities remain
+identical. Unresolved lines SHALL never be submitted implicitly. All existing
+freshness, single-use, principal, mutation-lock and readback safeguards SHALL
+remain effective. Unrelated real basket lines SHALL remain unchanged.
 
 #### Scenario: Local selection is complete
 - **WHEN** the user requests submission of Ready products
@@ -58,6 +63,14 @@ SHALL remain effective. Unrelated real basket lines SHALL remain unchanged.
 - **WHEN** the user approves the unchanged current submission review
 - **THEN** the system applies it once, returns verified Nemlig basket readback,
   retains the local draft and marks the submission outcome truthfully
+
+#### Scenario: Clear conversational Ready instruction
+- **WHEN** the user clearly instructs the assistant to add the current Ready
+  selection and the Ready IDs/quantities remain unchanged during preparation
+- **THEN** the protected apply path uses only that exact prepared payload without
+  another redundant conversational approval question
+- **AND** if scope is ambiguous or a Ready ID/quantity changes after intent, no
+  provider write occurs until the user clarifies the exact current lines
 
 #### Scenario: Submission fails or becomes uncertain
 - **WHEN** application or readback fails
