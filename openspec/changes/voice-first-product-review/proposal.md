@@ -68,3 +68,42 @@ The owner also requires release completion to include visible, interactive UI in
 the connected ChatGPT app. Deployment health alone is insufficient. Refresh and
 verify the app metadata, check the exact viewer artifact, and exercise local
 review controls before reporting a UI release delivered.
+
+## Product discovery and tool-surface refinement (29 September 2026)
+
+Users need to see the relevant alternatives returned for an In Review product,
+search again when those results miss the intent, and shop entirely through
+conversation when they prefer. Today the alternatives path defaults to five,
+rejects more than ten, and the viewer requests ten on refinement. Direct
+catalogue search and local conversational edits already exist, so this follow-up
+extends their contract instead of creating another shopping flow.
+
+- Show every distinct alternative returned by each requested provider search
+  when the user has not requested a smaller count, including honest unavailable
+  rows. Offer another search from an empty or irrelevant result set. A search
+  covers the provider response actually received, not the entire catalogue.
+- Let the assistant browse broadly (for example, `smør`), then try a deliberate
+  related Danish phrase if needed. It must explain material category differences
+  rather than silently treating butter, spreads and margarine as equivalent.
+- Make conversational search, local add/quantity/revisit/replace/remove and
+  protected real-basket changes easy to select without opening the viewer.
+  The local review remains authoritative and actual writes keep exact approval.
+- Audit the registered MCP tools against these user jobs. Improve descriptions
+  and titles where they cause ambiguity; keep distinct discovery, visual view,
+  local-edit and protected-write boundaries. Add, merge, remove or rename a tool
+  only with a demonstrated user benefit and verified host/resource behavior.
+- Keep an explicitly opened selection visible if a delayed historical-card
+  snapshot arrives after the current selection has loaded. The current viewer
+  can fold back to its inactive prompt in that exact event order; a fresh mount
+  still requires explicit conversation-scoped activation.
+- Use shopping language for the workspace: propose **Your Nemlig selection**,
+  **To decide** and **Ready**, and **Open current selection**. Keep the exact
+  real Nemlig basket distinct from the temporary selection.
+
+This is the same review outcome and the same OpenSpec/PR boundary. Planning and
+implementation use `codex/nemlig-product-search-alternatives`, based on
+`63cc0eecd570490ed55a1f91078f331d2c2e17e4`, in one draft PR. Issue #113
+is the completed baseline. This follow-up addresses the confirmed current-viewer
+fold race; #137 native historical-card acceptance and #96 production evidence
+remain separate. No provider basket mutation, credential, deployment or new
+frontend architecture is in scope.

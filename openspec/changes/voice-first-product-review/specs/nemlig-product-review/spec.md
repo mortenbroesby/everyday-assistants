@@ -94,15 +94,22 @@ it back to In Review and invalidate pending submission approval.
 ### Requirement: Persistent local review interaction
 An explicitly activated review frame SHALL remain active across confirmed
 same-review edits and destination changes while it stays mounted. Initial,
-remounted, foreign-review and retired cards SHALL remain inactive until their
-explicit current-conversation activation. Older host snapshots SHALL NOT
-replace a newer confirmed review revision.
+remounted and retired cards SHALL remain inactive until their explicit
+current-conversation activation. A foreign-review snapshot SHALL NOT activate
+an inactive frame or displace a different draft already confirmed in an active
+frame. Older host snapshots SHALL NOT replace a newer confirmed review revision.
 
 #### Scenario: Local change returns a host result
 - **WHEN** an activated frame accepts products, changes quantities, navigates,
   or resolves alternatives and receives a matching current snapshot
 - **THEN** the same frame renders the updated destination without requiring
-  `Open current review` again
+  `Open current selection` again
+
+#### Scenario: Old draft notification follows explicit activation
+- **WHEN** an inactive historical card for A explicitly fetches current draft B
+  and then receives an unsolicited A snapshot
+- **THEN** B remains the active visible selection; A cannot fold the frame or
+  restore its old product controls
 
 #### Scenario: Confirm exact submission in the viewer
 - **WHEN** the user explicitly confirms the current prepared lines, quantities,
@@ -112,8 +119,8 @@ replace a newer confirmed review revision.
 - **AND** cancellation or merely opening the prepared review performs no write
 
 ### Requirement: In Review and Ready refinement
-The review SHALL expose In Review as unresolved and Ready as exact accepted
-products. The review contract SHALL use `ready` without a `basket` alias or
+The review contract SHALL represent In Review as unresolved and Ready as exact
+accepted products. It SHALL use `ready` without a `basket` alias or
 representation selector. Alternatives SHALL only open for In Review products. Choosing
 an alternative SHALL leave the replacement In Review. Ready SHALL remain
 independently submittable while other products remain In Review.
@@ -147,3 +154,52 @@ independently submittable while other products remain In Review.
 - **WHEN** an already-cached older card sends `basket` navigation
 - **THEN** the new contract rejects the action without changing the review or
   the real Nemlig basket
+
+### Requirement: Complete and refinable contextual alternatives
+For an In Review product, an alternatives search without a user-requested
+count SHALL expose every distinct candidate returned by the provider response
+that is not already in the local selection. It SHALL preserve provider order,
+identify unavailable or incomplete product facts, and SHALL NOT silently cap
+the result at a small application default. The review SHALL retain the exact
+target while offering a further search when returned candidates are empty or
+irrelevant. A refinement SHALL replace the current candidate set; only a
+candidate in that current authoritative set can be chosen. The review SHALL
+NOT claim that one provider response exhausts the catalogue.
+
+#### Scenario: More than ten alternatives are returned
+- **WHEN** an uncapped search returns more than ten distinct candidates
+- **THEN** every eligible returned candidate is available in provider order,
+  and a candidate with unavailable details is identified rather than silently omitted
+
+#### Scenario: No relevant new alternative appears
+- **WHEN** a search returns no new candidates or the user rejects those shown
+- **THEN** the target remains In Review and the user can search again with a
+  different phrase or return without changing the selection or real basket
+
+#### Scenario: A search replaces earlier alternatives
+- **WHEN** a further search replaces the alternatives for the same target
+- **THEN** a candidate shown only by the earlier search cannot be selected
+  until it appears in the current authoritative alternatives context
+
+#### Scenario: A returned alternative is chosen
+- **WHEN** the user chooses an available current candidate
+- **THEN** it replaces the exact target at its existing quantity, remains In
+  Review, and requires separate local acceptance before it enters Ready
+
+### Requirement: Shopping workspace language
+The viewer SHALL identify the temporary workspace as **Your Nemlig selection**,
+label unresolved products **To decide** and accepted products **Ready**, and
+offer **Open current selection** for explicit activation. It SHALL identify the
+real Nemlig basket separately so a local edit is not mistaken for a provider
+mutation. These labels SHALL NOT change review state values or approval rules.
+
+#### Scenario: User returns to an inactive historical card
+- **WHEN** the card needs explicit activation before showing current products
+- **THEN** its action says Open current selection and the resulting workspace
+  shows To decide and Ready for the two local product states
+
+#### Scenario: User sees the real basket
+- **WHEN** the actual provider basket is displayed or changed through its
+  protected tools
+- **THEN** the interface calls it the Nemlig basket, distinct from the
+  temporary selection and its Ready products

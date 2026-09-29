@@ -76,3 +76,34 @@ The server SHALL keep catalogue results and exact product details independent fr
 - **WHEN** the host supports the standard MCP Apps bridge
 - **THEN** the viewer initializes before receiving results, renders explicit tool
   errors or cancellation, and offers a conversational fallback after loading times out
+
+### Requirement: Clear independent shopping tools
+The MCP surface SHALL describe direct catalogue search, exact details, local
+review editing, visual actual-basket inspection, and protected actual-basket
+changes as distinct user jobs. Tool names, titles, descriptions and annotations
+SHALL distinguish reads from local edits and real-basket writes. Discovery
+SHALL remain available without creating a review or mounting its viewer. A
+tool-surface change SHALL preserve the staged exact-approval and readback
+boundary and the machine-readable feature inventory.
+
+#### Scenario: User only wants matching products
+- **WHEN** the user asks for all products matching a broad phrase such as butter
+- **THEN** direct read-only search returns the unique detailed products from
+  the provider response without an application result cap when count is omitted,
+  and it creates no local review or basket change
+
+#### Scenario: User edits by conversation
+- **WHEN** the user asks to add, change quantity, revisit, replace or remove an
+  exact product in the active local selection without using the viewer
+- **THEN** the same revision-checked review operations and current snapshot are
+  available through conversation, with no real-basket write
+
+#### Scenario: User requests a real-basket change
+- **WHEN** the user asks to alter the actual Nemlig basket
+- **THEN** the assistant can choose the matching factual prepare operation and
+  separate approved apply operation; no local selection action grants approval
+
+#### Scenario: Viewer is not displayed
+- **WHEN** a read-only search or basket result is consumed without a widget
+- **THEN** structured results and readable text remain usable, and image URLs
+  alone do not count as rendered product cards
