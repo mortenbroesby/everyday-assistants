@@ -64,7 +64,7 @@ export class ProductReviewService {
   private get(owner: string, id: string): StoredReview {
     const draft = this.drafts.get(id);
     if (!draft || draft.owner !== owner) {
-      throw new NemligError("Product review unavailable. Start a new review explicitly.");
+      throw new NemligError("Product review unavailable. Use update_product_review show without an old review_id or revision to find this conversation's active review; never replay the failed edit. If none remains, ask before starting a new review.");
     }
     return draft;
   }
@@ -240,7 +240,7 @@ export class ProductReviewService {
   private lock(owner: string, id: string, revision: number): StoredReview {
     const stored = this.get(owner, id);
     if (stored.busy) throw new NemligError("A review operation is in progress. Refresh after it finishes.");
-    if (stored.snapshot.revision !== revision) throw new NemligError("Review revision is stale. Refresh before trying this action again.");
+    if (stored.snapshot.revision !== revision) throw new NemligError("Review revision is stale. Show the current review before choosing your next action; never replay the failed edit.");
     stored.busy = true;
     this.touch(stored);
     return stored;

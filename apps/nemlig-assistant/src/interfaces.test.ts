@@ -629,6 +629,21 @@ test("MCP exposes independent discovery, exact details, and one shared product v
     assert.match(tools.get("find_groceries") ?? "", /'Prince biscuits' becomes 'prince kiks'/);
     assert.match(tools.get("show_my_favorites") ?? "", /saved Nemlig favourites/);
 
+    for (const group of ["Current catalogue", "Actual Nemlig basket", "Local shopping review", "Sending to Nemlig", "Recovery and safety"]) {
+      assert.match(instructions, new RegExp(`\\n${group}\\n`, "u"));
+    }
+    for (const name of ["find_groceries", "get_grocery_details", "start_product_review"]) {
+      assert.match(tools.get(name) ?? "", /not for reopening an existing local review/iu, name);
+      assert.match(tools.get(name) ?? "", /update_product_review.*show/u, name);
+    }
+    for (const name of ["show_my_basket", "show_my_basket_visually"]) {
+      assert.match(tools.get(name) ?? "", /actual Nemlig basket/u, name);
+      assert.match(tools.get(name) ?? "", /not (?:the local|the temporary local) shopping review/iu, name);
+    }
+    assert.match(tools.get("update_product_review") ?? "", /None of these actions writes to Nemlig/u);
+    assert.match(tools.get("submit_product_review") ?? "", /Local acceptance is NOT approval/u);
+    assert.match(instructions, /If no alternatives are returned.*In Review/u);
+
     const direct = (await mcp.listTools()).tools.find((tool) => tool.name === "find_groceries");
     const details = (await mcp.listTools()).tools.find((tool) => tool.name === "get_grocery_details");
     assert.equal((await mcp.listResources()).resources[0]?.uri, PRODUCT_VIEWER_RESOURCE_URI);
@@ -1301,6 +1316,40 @@ test("MCP review uses Ready only and rejects obsolete basket navigation", async 
   });
 });
 
+test("empty and unavailable results retain safe routes without accepting or writing", async () => {
+  let writes = 0;
+  const denied = async (): Promise<never> => { writes++; throw new Error("Unexpected basket mutation"); };
+  const provider = fakeClient({
+    getProduct: async () => { throw new NemligError("Product not found."); },
+    searchProducts: async () => [],
+    getCart: async () => ({ ...basket, items: [], numberOfProducts: 0, productsPrice: 0 }),
+    addToCart: denied, removeFromCart: denied, clearCart: denied,
+  });
+  await withMcpClient(createMcpServer(provider, testCredentials), async mcp => {
+    const detail = await mcp.callTool({ name: "get_grocery_details", arguments: { product_id: 7 } });
+    assert.equal(detail.isError, true);
+    assert.match(toolText(detail), /Product not found/u);
+    assert.match(mcp.getInstructions() ?? "", /Unavailable product facts.*find_groceries/u);
+    const empty = await mcp.callTool({ name: "show_my_basket", arguments: {} });
+    assert.equal(empty.isError, undefined);
+    assert.deepEqual((empty.structuredContent as { items: unknown[] }).items, []);
+    const started = await mcp.callTool({ name: "start_product_review", arguments: { items: [{ product_id: 7, quantity: 1 }] } });
+    assert.equal(started.isError, undefined);
+    let review = (started.structuredContent as { review: ProductReviewSnapshot }).review;
+    const alternatives = await mcp.callTool({ name: "update_product_review", arguments: { review_id: review.review_id, revision: review.revision, action: { kind: "alternatives", product_id: 7, query: "mælk" } } });
+    assert.equal(alternatives.isError, undefined);
+    review = (alternatives.structuredContent as { review: ProductReviewSnapshot }).review;
+    assert.deepEqual(review.alternatives?.views, []);
+    assert.equal(review.items[0]?.state, "needs-review");
+    assert.equal(review.submission, undefined);
+    const refused = await mcp.callTool({ name: "update_product_review", arguments: { review_id: review.review_id, revision: review.revision, action: { kind: "accept", product_ids: [7] } } });
+    assert.equal(refused.isError, true);
+    assert.match(toolText(refused), /Choose an available alternative/u);
+    assert.match(mcp.getInstructions() ?? "", /empty actual basket does not imply an empty local review/u);
+  });
+  assert.equal(writes, 0);
+});
+
 test("lost and ended review recovery reports absence, finds the current draft, and never replays edits", async () => {
   const noWrite = async (): Promise<never> => { throw new Error("Recovery must not touch the provider basket"); };
   const provider = fakeClient({ getCart: noWrite, addToCart: noWrite, removeFromCart: noWrite, clearCart: noWrite });
@@ -1313,10 +1362,13 @@ test("lost and ended review recovery reports absence, finds the current draft, a
   await withMcpClient(createMcpServer(provider, testCredentials), async mcp => {
     const edit = await mcp.callTool({ name: "update_product_review", arguments: { review_id: stale.review_id, revision: stale.revision, action: { kind: "accept", product_ids: [7] } } });
     assert.equal(edit.isError, true);
+    assert.match(toolText(edit), /update_product_review show without.*review_id/u);
+    assert.match(toolText(edit), /never replay/iu);
     const show = () => mcp.callTool({ name: "update_product_review", arguments: { action: { kind: "show" } } });
     const absent = await show();
     assert.equal(absent.isError, undefined, toolText(absent));
     assert.deepEqual(absent.structuredContent, { unavailable: true });
+    assert.match(toolText(absent), /Ask before starting a new review/u);
     const restarted = await mcp.callTool({ name: "start_product_review", arguments: { items: stale.items.map(({ product_id, quantity }) => ({ product_id, quantity })) } });
     const current = (restarted.structuredContent as { review: ProductReviewSnapshot }).review;
     assert.notEqual(current.review_id, stale.review_id);
@@ -1326,6 +1378,7 @@ test("lost and ended review recovery reports absence, finds the current draft, a
     assert.deepEqual((await show()).structuredContent, { review: current });
     const oldEdit = await mcp.callTool({ name: "update_product_review", arguments: { review_id: stale.review_id, revision: stale.revision, action: { kind: "accept", product_ids: [7] } } });
     assert.equal(oldEdit.isError, true);
+    assert.match(toolText(oldEdit), /update_product_review show without.*review_id/u);
     assert.deepEqual((await show()).structuredContent, { review: current });
     await mcp.callTool({ name: "update_product_review", arguments: { review_id: current.review_id, revision: current.revision, action: { kind: "end" } } });
     assert.deepEqual((await show()).structuredContent, { unavailable: true });
