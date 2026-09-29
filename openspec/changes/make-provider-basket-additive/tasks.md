@@ -16,7 +16,7 @@
 
 ## 4. Document and verify the safety boundary
 
-- [ ] 4.1 Update the README, API inventory, current OpenSpecs, and issue #165 with add-only behavior, removed operations, the absolute-quantity provider endpoint, and the external concurrent-edit limitation; verify repository privacy checks pass.
+- [x] 4.1 Update the README, API inventory, current OpenSpecs, and issue #165 with add-only behavior, removed operations, the absolute-quantity provider endpoint, and the external concurrent-edit limitation; verify repository privacy checks pass.
 - [x] 4.2 Run focused Nemlig tests, strict OpenSpec validation, and the repository verification gates; inspect the exact diff for remaining decrement/clear paths.
 - [ ] 4.3 BLOCKED: Current cold-login attempts return HTTP 400 and flag semantics remain unknown. Resolve the login request/error boundary before further sign-ins or live addition acceptance.
-- [ ] 4.4 Open one scoped PR with exact tested SHA and release note if release-bearing; keep deployment and goal completion blocked until the login/cold-start preservation and provider concurrency evidence are sufficient.
+- [x] 4.4 Open one scoped draft PR with exact tested SHA and release note; keep deployment and goal completion blocked until the login/cold-start preservation and provider concurrency evidence are sufficient.
