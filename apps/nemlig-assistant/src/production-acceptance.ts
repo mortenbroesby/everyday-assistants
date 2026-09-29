@@ -16,13 +16,12 @@ export const productionToolInventory = {
     "browse_grocery_section", "check_nemlig_connection", "reconnect_nemlig_assistant", "show_my_basket", "show_my_basket_visually", "get_grocery_details",
   ],
   prepareOnly: [
-    "review_items_to_add", "review_item_to_remove", "review_item_swap", "review_emptying_basket",
+    "review_items_to_add",
   ],
   localState: ["start_product_review", "update_product_review"],
   externalState: [
     "submit_product_review",
     "add_approved_items",
-    "remove_approved_item", "make_approved_item_swap", "empty_approved_basket",
   ],
 } as const;
 
@@ -324,7 +323,7 @@ export async function verifyServiceAcceptanceFeatures(
   return { exercised, denied, requestCount };
 }
 
-export type ProductionMutationOperation = "additions" | "removal" | "replacement" | "clear";
+export type ProductionMutationOperation = "additions";
 
 export interface ApprovedProductionMutation {
   operation: ProductionMutationOperation;
@@ -337,9 +336,6 @@ const mutationTools: Record<ProductionMutationOperation, {
   apply: ToolName;
 }> = {
   additions: { prepare: "review_items_to_add", apply: "add_approved_items" },
-  removal: { prepare: "review_item_to_remove", apply: "remove_approved_item" },
-  replacement: { prepare: "review_item_swap", apply: "make_approved_item_swap" },
-  clear: { prepare: "review_emptying_basket", apply: "empty_approved_basket" },
 };
 
 export const productionBasketFingerprint = (value: Basket): string => createHash("sha256").update(JSON.stringify({
@@ -388,29 +384,15 @@ export async function verifyApprovedProductionMutation(
 
   const final = basket(await client.callTool({ name: "show_my_basket", arguments: {} }), "final show_my_basket");
   assert.deepEqual(final, applied.basket, "Apply and fresh basket readbacks differ");
-  return { initial, final };
-}
-
-export async function verifyApprovedReversibleProductionMutation(
-  client: AcceptanceClient,
-  change: ApprovedProductionMutation,
-  restoration: ApprovedProductionMutation,
-): Promise<Basket> {
-  const changed = await verifyApprovedProductionMutation(client, change);
-  try {
-    const restored = await verifyApprovedProductionMutation(client, restoration);
-    assert.equal(
-      productionBasketFingerprint(restored.final),
-      productionBasketFingerprint(changed.initial),
-      "Restored basket differs from the exact initial basket",
-    );
-    return restored.final;
-  } catch (error) {
-    throw new Error(
-      `Restoration stopped at basket fingerprint ${productionBasketFingerprint(changed.final)}: ${error instanceof Error ? error.message : "unknown failure"}`,
-      { cause: error },
-    );
+  for (const item of initial.items) {
+    if (item.id === undefined) continue;
+    const retained = final.items.find((candidate) => candidate.id === item.id);
+    assert.ok(retained, `Add-only mutation removed existing basket product ${item.id}`);
+    if (item.quantity !== undefined && retained.quantity !== undefined) {
+      assert.ok(retained.quantity >= item.quantity, `Add-only mutation lowered quantity for existing product ${item.id}`);
+    }
   }
+  return { initial, final };
 }
 
 export async function verifyProductionEdge(

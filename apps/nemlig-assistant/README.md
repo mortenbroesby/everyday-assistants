@@ -77,11 +77,8 @@ exact review and apply boundary and remain subject to final revalidation.
 - Show the actual basket visually, with safe product images when available, using
   a separate bounded read-only action. The ordinary basket view stays fast.
 - Prepare an exact batch of additions.
-- Prepare removal of one exact basket line.
-- Compare and prepare replacement of one exact line with one exact product.
-- Prepare clearing the basket.
-- Review signed basket-price differences and potential savings for the exact
-  quantities under consideration.
+- Preview the final quantity and price after adding the requested positive
+  quantity to each existing line.
 
 ### Use the interface that fits
 
@@ -199,8 +196,9 @@ Read → review the exact intended change → receive explicit approval → comp
   are read-only; they never authorize or change the Nemlig basket.
 - Every basket change starts with the matching `review_*` tool.
 - Approval is requested for the exact reviewed products and quantities.
-  Removals, replacements, and clearing always require their own exact review
-  and approval.
+- The provider basket is add-only in Nemlig Assistant: it never lowers a
+  quantity, removes/replaces a line, or clears the basket. Manage removals on
+  Nemlig.com directly.
 - Ordinary summaries show names, quantities, useful package distinctions, and
   prices without internal IDs, expiry times, or protocol status fields. Ask for
   “technical details” when those internals are useful for troubleshooting.
@@ -211,10 +209,9 @@ Read → review the exact intended change → receive explicit approval → comp
 - Any changed fact invalidates the approval.
 - The approved action freshly resolves every affected product upstream and
   revalidates the review and current basket state before writing.
-- Add, remove, replace, and clear immediately read the basket back.
+- Additions read the basket before writing, apply a positive quantity delta,
+  then verify readback and preservation of existing lines.
 - Writes are never automatically retried after an uncertain result.
-- Replacement adds and verifies the new line before removing the old one. If
-  verification becomes uncertain, the workflow stops because both may remain.
 - Repeated completed actions return the stored sanitized result without writing again.
 - The assistant never orders, checks out, or pays.
 
@@ -249,10 +246,11 @@ Basket CLI commands exist for deliberate local use:
 
 ```sh
 pnpm nemlig add 701015 --quantity 1
-pnpm nemlig remove 701015
 ```
 
-They remain subject to the exact-product approval and readback contract above.
+The CLI has no provider-basket remove or clear command. `add` means add this
+many units to the existing Nemlig line; it does not set the line to that
+quantity.
 
 ### Local MCP server
 
@@ -282,10 +280,9 @@ The MCP surface is organized around household actions:
 - Submit those exact Ready lines after explicit approval: `submit_product_review`.
   This protected tool can be called by the model after conversational approval
   or by the viewer after its separate on-screen exact-review confirmation.
-- Review basket changes: `review_items_to_add`, `review_item_to_remove`,
-  `review_item_swap`, and `review_emptying_basket`.
-- Complete an approved change: `add_approved_items`, `remove_approved_item`,
-  `make_approved_item_swap`, and `empty_approved_basket`.
+- Review additive basket changes: `review_items_to_add`.
+- Complete an approved addition: `add_approved_items`. It adds approved
+  quantities to existing lines and does not alter existing quantities downward.
 - Search and exact product details return the same supported detailed product
   facts without mounting a widget for every search. Local review tools and the
   explicit visual-basket read attach the shared viewer, with complete structured
@@ -306,8 +303,8 @@ Use ChatGPT's **Reconnect** setting or the `Reconnect Nemlig Assistant` action
 when authorization has expired; invalid tokens also trigger that prompt
 automatically.
 
-Direct `add_to_cart`, `remove_from_cart`, `replace_cart_line`, and
-`clear_cart` MCP tools intentionally do not exist. Basket changes continue to
+Only staged addition tools are exposed for the real provider basket. There is
+no assistant operation to lower, remove, replace, or clear a line. Additions
 require the matching staged review/apply tools and explicit approval.
 
 ### Auth0 and hosted MCP

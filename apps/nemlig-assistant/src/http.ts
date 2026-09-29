@@ -35,7 +35,7 @@ const serviceContext = (): PrincipalContext => {
     isLoggedIn: () => true, login: async () => {}, searchProducts: async () => [product()], getProduct: async () => product(), getFreshProduct: async () => product(),
     listFavorites: async () => [product()], listDepartments: async () => [{ id: "/frugt", name: "Frugt" }], browseDepartment: async () => ({ products: [product()], page: 1, hasNext: false }),
     getCart: async () => ({ items: [], productsPrice: 0, deliveryPrice: 0, numberOfProducts: 0, deliveryTime: undefined }),
-    addToCart: async () => { throw new Error("service fixture is read-only"); }, removeFromCart: async () => { throw new Error("service fixture is read-only"); }, clearCart: async () => { throw new Error("service fixture is read-only"); },
+    addToCart: async () => { throw new Error("service fixture is read-only"); },
   };
   return { client, proposals: new BasketProposalService(client) };
 };

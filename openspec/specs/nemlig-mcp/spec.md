@@ -62,15 +62,19 @@ The search tools SHALL return normalized product candidates and SHALL NOT infer 
 - **THEN** the tool returns an empty structured list
 
 ### Requirement: MCP authentication behavior
-Every provider-backed MCP tool SHALL use an authenticated client for the current caller. Hosted client contexts SHALL remain isolated by authorized principal, policy revision, and credential generation. Read-only tools MAY reuse that client's existing session and SHALL load configured credentials when login or reauthentication is required. Protected basket apply and local-review submission tools SHALL request fresh authentication before their task. Missing credentials when authentication is required SHALL produce a clean remediation error without a provider task or mutation. Read-only tools MAY retry their complete task once after HTTP 401, sharing in-flight reauthentication or reusing a session already refreshed by another read. Basket writes SHALL NOT retry an indeterminate mutation.
+Every provider-backed MCP tool SHALL use an authenticated client for the current caller. Hosted client contexts SHALL remain isolated by authorized principal, policy revision, and credential generation. Provider tools SHALL reuse an authenticated session in the current authorized client context and SHALL load configured credentials and log in only when authentication is required or an operation establishes that the session is expired. Missing credentials when authentication is required SHALL produce a clean remediation error without a provider task or mutation. Read-only tools MAY retry their complete task once after HTTP 401, sharing in-flight reauthentication or reusing a session already refreshed by another read. Basket writes SHALL NOT retry an indeterminate mutation.
 
 #### Scenario: Read reuses an authenticated session
 - **WHEN** a read-only provider tool is called with an existing session in its current authorized client context
 - **THEN** it uses that session without loading credentials or starting another login
 
-#### Scenario: Fresh authentication before a protected write
-- **WHEN** an approved basket apply or local-review submission tool is called
-- **THEN** it requests fresh authentication before performing its task and still requires the unchanged exact approval, applicable fresh product and basket checks, single-use authorization, and verified readback
+#### Scenario: Protected write reuses a valid session
+- **WHEN** an approved addition is applied with a valid session in the current authorized client context
+- **THEN** it does not issue another login before the provider write and still enforces exact approval, fresh basket/product validation, single-use authorization, and verified readback
+
+#### Scenario: Cold protected write authenticates first
+- **WHEN** an approved basket apply or local-review submission tool is called without an authenticated session
+- **THEN** it authenticates before performing the provider write and still requires unchanged exact approval, applicable fresh product and basket checks, single-use authorization, and verified readback
 
 #### Scenario: Authentication context changes
 - **WHEN** a hosted request belongs to another principal or changes policy revision or credential generation
@@ -88,12 +92,16 @@ Every provider-backed MCP tool SHALL use an authenticated client for the current
 - **WHEN** an approved basket write fails after fresh authentication
 - **THEN** the tool does not retry the mutation
 
-### Requirement: MCP basket tools
-The view tool SHALL return normalized basket data, and every model-visible add, remove, replace, or clear operation SHALL use the matching read-only prepare tool followed by its protected apply tool only after explicit approval of the unchanged exact proposal. Additions MAY alternatively use the prepared local-review submission path with the same exact approval and server-side safety checks. Local product acceptance SHALL NOT constitute approval to write to Nemlig.
+### Requirement: Add-only MCP basket tools
+The view tool SHALL return normalized basket data. Every model-visible provider-basket mutation SHALL be an additive operation using the matching read-only prepare tool followed by its protected apply tool only after explicit approval of the unchanged exact proposal. Additions MAY alternatively use the prepared local-review submission path with the same exact approval and server-side safety checks. Local product acceptance SHALL NOT constitute approval to write to Nemlig. The assistant SHALL expose no operation that lowers a line quantity, removes a line, replaces a line, or clears the provider basket.
 
 #### Scenario: Prepare additions
 - **WHEN** `review_items_to_add` receives exact positive product quantities plus its explicit exact-review authorization
-- **THEN** it returns an exact proposal without changing the basket
+- **THEN** it returns an exact proposal describing the requested quantity as an addition and showing the expected final basket without changing it
+
+#### Scenario: Product already exists
+- **WHEN** `review_items_to_add` receives a product with an existing positive basket quantity
+- **THEN** the proposal displays the existing quantity and resulting quantity after adding the requested delta
 
 #### Scenario: Invalid add quantity
 - **WHEN** `review_items_to_add` receives a quantity below one
@@ -101,43 +109,15 @@ The view tool SHALL return normalized basket data, and every model-visible add, 
 
 #### Scenario: Apply approved additions
 - **WHEN** `add_approved_items` receives the still-valid proposal after exact approval
-- **THEN** it applies only those unchanged lines and returns verified basket readback
-
-#### Scenario: Prepare a replacement
-
-- **WHEN** `review_item_swap` receives an exact current basket product ID, distinct replacement product ID, and positive final replacement quantity
-- **THEN** it returns both exact lines, price and package metadata, signed basket-price difference, expected basket totals, and expiry without changing the basket
-
-#### Scenario: Apply an approved replacement
-
-- **WHEN** `make_approved_item_swap` receives the still-valid proposal ID after explicit approval
-- **THEN** it applies only the unchanged staged replacement and returns verified basket readback or sanitized inspection guidance for a consumed partial or uncertain result
+- **THEN** it adds only those unchanged positive deltas, preserves existing and unrelated quantities, and returns verified basket readback
 
 #### Scenario: Successful add
 - **WHEN** an unchanged addition proposal is covered by exact approval and applied
 - **THEN** the server adds only its exact lines and returns verified basket readback
 
-#### Scenario: Successful clear
-- **WHEN** an unchanged clear proposal is explicitly approved and applied
-- **THEN** the server clears only that reviewed basket and returns verified empty-basket readback
-
-#### Scenario: Direct mutation is requested
-- **WHEN** a model-visible client requests an unregistered direct mutation tool
-- **THEN** the server reports that the tool is unavailable and performs no mutation
-
-### Requirement: Factual replacement savings
-
-The replacement preparation tool SHALL report the exact current line total, proposed replacement line total, expected product total, and signed price difference using current normalized basket and product data. It SHALL describe a positive difference as potential savings only for the reviewed quantities and SHALL expose package, item-price, and unit-price metadata needed for the user to judge comparability.
-
-#### Scenario: Replacement costs less
-
-- **WHEN** the proposed replacement line total is lower than the current basket line total
-- **THEN** the review reports the exact positive potential savings and does not claim product equivalence or apply the replacement
-
-#### Scenario: Replacement costs the same or more
-
-- **WHEN** the proposed replacement line total is equal to or greater than the current line total
-- **THEN** the review reports the signed price difference without labeling it as savings or suppressing the candidate
+#### Scenario: Destructive operation is requested
+- **WHEN** a model-visible client requests a removed provider-basket remove, replace, or clear tool
+- **THEN** the server reports that the tool is unavailable and performs no provider mutation
 
 ### Requirement: Composable catalogue and product viewer surface
 The server SHALL expose current catalogue search, favourites, grocery sections, browsing, exact product details, and basket reads as independent conversational capabilities. Exact product details SHALL resolve one current product by its positive catalogue ID and SHALL remain read-only. Product search SHALL hydrate returned candidates through the existing exact-product loader and use the same supported public product projection as exact lookup. The server SHALL register one current shared product viewer resource for local review and visual basket results and SHALL preserve complete structured and text fallbacks.

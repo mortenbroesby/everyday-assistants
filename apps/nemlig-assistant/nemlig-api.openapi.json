@@ -428,7 +428,7 @@
         "operationId": "setBasketProductQuantity",
         "tags": ["Basket"],
         "summary": "Set one product's basket quantity",
-        "description": "Despite its name, quantity zero is used by the client to remove one line. A successful HTTP response is indeterminate until GetBasket confirms the exact resulting state.",
+        "description": "The provider sets one product's absolute quantity; it is not an atomic increment. Nemlig Assistant reads the current basket, adds a positive requested delta, sends a target no lower than the latest verified quantity, and verifies the entire basket by readback. A concurrent change from another Nemlig client can race between read and write.",
         "security": [{ "bearerAuth": [] }, { "cookieAuth": [] }],
         "x-nemlig": {
           "usage": "client-used",
@@ -444,24 +444,6 @@
         },
         "responses": {
           "200": { "description": "Mutation accepted; exact basket state is not established by this response." },
-          "default": { "$ref": "#/components/responses/ProviderError" }
-        }
-      }
-    },
-    "/webapi/basket/ClearBasket": {
-      "post": {
-        "operationId": "clearBasket",
-        "tags": ["Basket"],
-        "summary": "Clear the entire current basket",
-        "security": [{ "bearerAuth": [] }, { "cookieAuth": [] }],
-        "x-nemlig": {
-          "usage": "client-used",
-          "confidence": "high",
-          "safety": "destructive-basket-mutation-requires-separate-explicit-approval-and-readback",
-          "evidence": ["NemligClient.clearCart"]
-        },
-        "responses": {
-          "200": { "description": "Clear accepted; exact basket state is not established until GetBasket readback." },
           "default": { "$ref": "#/components/responses/ProviderError" }
         }
       }

@@ -2,18 +2,18 @@
 
 ## Purpose
 
-Defines the server-enforced proposal protocol that lets the private ChatGPT connection or a local MCP client review exact Nemlig basket changes and apply only unchanged, authorization-bound, single-use approvals.
+Defines the server-enforced proposal protocol that lets the private ChatGPT connection or a local MCP client review exact Nemlig basket additions and apply only unchanged, authorization-bound, single-use approvals. The real provider basket is add-only through this assistant.
 
 ## Requirements
 
 ### Requirement: Exact addition proposal
 
-The system SHALL prepare one or more basket additions without mutation and return an opaque proposal ID, issue and expiry times, current basket fingerprint, exact product IDs and names, sizes, quantities, availability, unit prices, line totals, expected basket effect, relevant upstream labels, and the authorization scope that produced the proposal. The private ownership binding SHALL NOT be disclosed.
+The system SHALL prepare one or more positive basket additions without mutation and return an opaque proposal ID, issue and expiry times, current basket fingerprint, exact product IDs and names, sizes, requested addition quantities, current and expected final line quantities, availability, unit prices, added line totals, expected basket effect, relevant upstream labels, and the authorization scope that produced the proposal. The private ownership binding SHALL NOT be disclosed.
 
 #### Scenario: Prepare available additions
 
-- **WHEN** the private connection prepares one or more distinct valid product IDs and positive quantities
-- **THEN** the server resolves current product and basket data through bounded read work, stores an authorization-bound proposal, and returns all details needed for exact validation without changing the basket
+- **WHEN** the private connection prepares one or more distinct valid product IDs and positive addition quantities
+- **THEN** the server resolves current product and basket data through bounded read work, stores an authorization-bound proposal, and returns the exact increment, current and resulting quantities, and expected basket totals without changing the basket
 
 #### Scenario: Product is unavailable or ambiguous
 
@@ -25,66 +25,10 @@ The system SHALL prepare one or more basket additions without mutation and retur
 - **WHEN** a client supplies no additions, duplicate product IDs, invalid IDs, or invalid quantities
 - **THEN** preparation fails before reading or changing the basket
 
-### Requirement: Exact clear proposal
+#### Scenario: Product already exists in the basket
 
-The system SHALL prepare clearing without mutation and bind the proposal to the authorization context, exact current basket lines and totals, basket fingerprint, issue time, and expiry.
-
-#### Scenario: Prepare clearing a non-empty basket
-
-- **WHEN** the private connection requests a clear proposal
-- **THEN** the server returns the exact basket that would be removed and performs no mutation
-
-#### Scenario: Prepare clearing an empty basket
-
-- **WHEN** the basket is already empty
-- **THEN** the server reports that no mutation is necessary and does not create an applicable destructive proposal
-
-### Requirement: Exact line-removal proposal
-
-The system SHALL prepare removal of one exact basket product line without mutation and bind the proposal to the product ID, current line name, quantity, total, basket fingerprint, authorization context, issue time, and expiry.
-
-#### Scenario: Prepare removal of an existing product line
-
-- **WHEN** the private connection requests removal of a product ID currently present in the basket
-- **THEN** the server returns the exact line that would be removed and performs no mutation
-
-#### Scenario: Product line is absent
-
-- **WHEN** the requested product ID is not present in the current basket
-- **THEN** the server reports that no mutation is necessary and creates no applicable removal proposal
-
-### Requirement: Exact replacement proposal
-
-The system SHALL prepare replacement of one exact current basket line with one distinct available product and positive final quantity without mutation, and SHALL bind the proposal to the authorization context, current basket fingerprint, both product identities, current line quantity and total, replacement package and price metadata, replacement quantity and line total, expected basket totals, issue time, and expiry. The review SHALL present the signed price difference as a factual basket-cost change and SHALL NOT claim that the products are equivalent.
-
-#### Scenario: Prepare an available replacement
-
-- **WHEN** a client supplies one product ID currently in the basket, one distinct available replacement product ID, and a positive final replacement quantity
-- **THEN** the server returns the exact current and replacement lines, expected basket effect, and signed price difference without changing the basket
-
-#### Scenario: Replacement request is not applicable
-
-- **WHEN** the current line is absent, both product IDs are the same, the replacement cannot be resolved exactly, the replacement is unavailable, or the quantity is invalid
-- **THEN** the server creates no applicable proposal and performs no mutation
-
-### Requirement: Staged replacement application
-
-The system SHALL apply an explicitly approved replacement inside the existing process-local mutation lock by revalidating every proposal invariant, setting and verifying the replacement line first, and only then removing and verifying the old line. The system SHALL consume the proposal and stop immediately when any mutation or readback is failed, mismatched, or uncertain, and SHALL never retry or continue the sequence automatically.
-
-#### Scenario: Replacement remains unchanged
-
-- **WHEN** the exact replacement proposal is approved and every basket and product invariant still matches
-- **THEN** the server sets and verifies the approved final replacement quantity, removes and verifies the old line, and returns the resulting verified basket
-
-#### Scenario: Replacement line cannot be verified
-
-- **WHEN** adding or reading back the replacement line fails or differs from the approved quantity and total
-- **THEN** the server consumes the proposal, does not remove the old line, reports that the basket requires inspection, and performs no automatic retry
-
-#### Scenario: Old line removal cannot be verified
-
-- **WHEN** the replacement line is verified but removing or reading back the old line fails or differs
-- **THEN** the server consumes the proposal, reports that the basket may contain both products and requires inspection, and performs no further mutation or automatic retry
+- **WHEN** a requested product already has a positive basket quantity
+- **THEN** the proposal treats the requested quantity as an increment and displays the existing quantity and exact resulting quantity, not an absolute target
 
 ### Requirement: Short-lived authorization-bound proposals
 
@@ -115,9 +59,33 @@ The system SHALL generate cryptographically random opaque proposal IDs, store pr
 - **WHEN** a restart or replacement removes an uncompleted process-local proposal
 - **THEN** the server fails closed, requires a fresh review, and does not infer approval or repeat an uncertain mutation
 
+### Requirement: Add-only provider operations
+
+The assistant SHALL expose no provider-basket removal, replacement, or clear operation. An approved addition SHALL increase the requested product quantity by its reviewed positive delta, preserve every previously verified line, and fail closed if the reviewed basket state changed before application. The observed Nemlig write endpoint accepts an absolute quantity rather than an atomic increment; the assistant SHALL read current quantity immediately before writing, SHALL never intentionally send a lower quantity than that read, and SHALL document that an independent Nemlig client can still race between read and write.
+
+#### Scenario: Add to an existing product line
+
+- **WHEN** an unchanged proposal adds a positive quantity to a product already in the basket
+- **THEN** the provider client sends the latest observed quantity plus the approved delta and readback verifies the resulting line and preservation of existing lines
+
+#### Scenario: Basket changes after review
+
+- **WHEN** the current basket fingerprint differs from the proposal before application
+- **THEN** the proposal is invalidated and no provider mutation occurs
+
+#### Scenario: Provider write may have an uncertain outcome
+
+- **WHEN** a provider write or its readback fails or is uncertain
+- **THEN** the proposal is consumed, the user is told to inspect the basket, and the mutation is never automatically retried
+
+#### Scenario: Concurrent external basket mutation
+
+- **WHEN** another Nemlig client changes the basket between the final read and Nemlig applying the absolute-quantity write
+- **THEN** the system makes no claim that the provider write is atomic or concurrency-safe and documents this limitation
+
 ### Requirement: Revalidation inside the mutation lock
 
-The system SHALL obtain the process-local mutation lock and revalidate authorization binding, proposal state, expiry, current basket fingerprint, exact product identity, availability, quantity, unit price, line total, and expected totals before mutation. Addition and replacement application SHALL use fresh authoritative product facts rather than cached review facts.
+The system SHALL obtain the process-local mutation lock and revalidate authorization binding, proposal state, expiry, current basket fingerprint, exact product identity, availability, quantity, unit price, line total, and expected totals before mutation. Addition application SHALL use fresh authoritative product facts rather than cached review facts.
 
 #### Scenario: Reviewed details remain unchanged
 
@@ -131,7 +99,7 @@ The system SHALL obtain the process-local mutation lock and revalidate authoriza
 
 #### Scenario: Fresh product validation fails
 
-- **WHEN** a fresh authoritative lookup fails for any addition or replacement product
+- **WHEN** a fresh authoritative lookup fails for any addition product
 - **THEN** the server invalidates the proposal before the first mutation and requires a new review without retrying the write
 
 ### Requirement: Single-use and idempotency-aware application
@@ -162,19 +130,19 @@ The system SHALL read the basket immediately after every mutation attempt, retur
 - **WHEN** Nemlig may have changed the basket but verification fails or differs
 - **THEN** the server reports partial or indeterminate success, consumes the proposal, and performs no further mutation
 
-### Requirement: Proposal-based MCP tool surface
+### Requirement: Add-only proposal MCP surface
 
-The model-visible MCP surface SHALL expose review_items_to_add, add_approved_items, review_item_to_remove, remove_approved_item, review_item_swap, make_approved_item_swap, review_emptying_basket, and empty_approved_basket and SHALL NOT expose direct add_to_cart, remove_from_cart, replace_cart_line, or clear_cart mutation tools. Deliberate local CLI commands may remain available.
+The model-visible MCP surface SHALL expose only `review_items_to_add` and `add_approved_items` for provider-basket mutation, and SHALL NOT expose a provider-basket remove, replace, or clear capability. Local review edits are not provider-basket operations. Historical clients requesting retired provider tools SHALL receive the standard unknown-tool response.
 
 #### Scenario: Tools are enumerated
 
 - **WHEN** an MCP client lists tools
-- **THEN** it can prepare and apply exact additions, one-line removals, one-line replacements, or clearing but cannot directly mutate the basket without a proposal
+- **THEN** it can prepare and apply exact additions but sees no provider-basket remove, replace, or clear tool
 
-#### Scenario: Model attempts direct mutation
+#### Scenario: Retired destructive operation is requested
 
-- **WHEN** a client requests add_to_cart, remove_from_cart, replace_cart_line, or clear_cart by name
-- **THEN** the MCP server reports that the direct tool is unavailable and performs no mutation
+- **WHEN** a client requests a removed provider-basket remove, replace, or clear tool by name
+- **THEN** the MCP server reports that the tool is unavailable and performs no provider mutation
 
 ### Requirement: Accurate write annotations
 
@@ -182,23 +150,13 @@ The system SHALL advertise annotations that match each tool's actual behavior an
 
 #### Scenario: Read and preparation tools are inspected
 
-- **WHEN** find_groceries, show_my_basket, review_items_to_add, review_item_to_remove, review_item_swap, or review_emptying_basket is enumerated
+- **WHEN** a discovery, basket-view, or `review_items_to_add` tool is enumerated
 - **THEN** it is marked read-only and non-destructive
 
 #### Scenario: Addition application is inspected
 
 - **WHEN** add_approved_items is enumerated
 - **THEN** it is marked state-changing, non-destructive, and open-world
-
-#### Scenario: Clear application is inspected
-
-- **WHEN** remove_approved_item or empty_approved_basket is enumerated
-- **THEN** it is marked state-changing, destructive, and open-world
-
-#### Scenario: Replacement application is inspected
-
-- **WHEN** make_approved_item_swap is enumerated
-- **THEN** it is marked state-changing, destructive, and open-world
 
 ### Requirement: Redacted proposal audit
 

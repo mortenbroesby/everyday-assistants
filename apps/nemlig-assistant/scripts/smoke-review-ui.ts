@@ -17,7 +17,7 @@ const catalogue = {
   isLoggedIn: () => true, login: async () => {}, getProduct: async (id: number) => product(id),
   getFreshProduct: async (id: number) => product(id), searchProducts: async () => [product(1), product(2), product(3)],
   getCart: async () => { basketReads++; return { items: [], productsPrice: 0, deliveryPrice: 0, numberOfProducts: 0, deliveryTime: "smoke" }; },
-  addToCart: denied, removeFromCart: denied, clearCart: denied,
+  addToCart: denied,
 } as unknown as ShoppingClient;
 const makeServer = () => createMcpServer(catalogue, async () => undefined);
 let current = makeServer();

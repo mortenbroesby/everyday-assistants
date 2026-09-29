@@ -77,8 +77,6 @@ test("MCP submission smoke searches, prepares only accepted lines, and verifies 
       };
       return structuredClone(basket);
     },
-    removeFromCart: async () => { throw new Error("Unexpected removal"); },
-    clearCart: async () => { throw new Error("Unexpected clear"); },
   };
   const credentials = async () => ({ username: "person@example.test", password: "test-only" });
 

@@ -453,38 +453,36 @@ export class NemligClient {
     return normalizeBasket(await this.json(`${API_BASE_URL}/basket/GetBasket`, { signal }, "Get basket"));
   }
 
+  /** Add a positive quantity delta; the provider adapter translates it to its absolute-quantity endpoint. */
   async addToCart(productId: number, quantity = 1): Promise<Basket> {
     this.requireLogin("add items");
     if (!Number.isInteger(productId) || productId < 1) throw new NemligError("Product ID must be positive.");
     if (!Number.isInteger(quantity) || quantity < 1) throw new NemligError("Quantity must be at least 1.");
-    await this.writeBasket(productId, quantity, "Add to basket");
-    return this.readback("Product was added");
-  }
-
-  async removeFromCart(productId: number): Promise<Basket> {
-    this.requireLogin("remove an item");
-    if (!Number.isInteger(productId) || productId < 1) throw new NemligError("Product ID must be positive.");
-    const matchesProduct = (item: Basket["items"][number]): boolean => String(item.id) === String(productId);
-    if (!(await this.getCart()).items.some(matchesProduct)) {
-      throw new NemligError(`Product ${productId} is not in the basket; nothing was removed.`);
+    const before = await this.getCart();
+    if (before.items.some((item) => item.id === undefined || typeof item.quantity !== "number" || !Number.isInteger(item.quantity) || item.quantity < 0)) {
+      throw new NemligError("Basket lines cannot be verified safely; inspect the Nemlig basket first.");
     }
-    await this.writeBasket(productId, 0, "Remove from basket");
-    const basket = await this.readback("Product was removed");
-    if (basket.items.some(matchesProduct)) {
-      throw new NemligError(`Product ${productId} may not have been removed; stop before further mutations.`);
+    const matches = before.items.filter((item) => String(item.id) === String(productId));
+    if (matches.length > 1) throw new NemligError("Duplicate basket lines prevent a safe addition; inspect the Nemlig basket first.");
+    const currentQuantity = matches[0]?.quantity ?? 0;
+    if (!Number.isInteger(currentQuantity) || currentQuantity < 0 || currentQuantity + quantity > Number.MAX_SAFE_INTEGER) {
+      throw new NemligError("Current basket quantity cannot be increased safely; inspect the Nemlig basket first.");
     }
-    return basket;
-  }
-
-  async clearCart(): Promise<Basket> {
-    this.requireLogin("clear the basket");
-    await this.json(
-      `${API_BASE_URL}/basket/ClearBasket`,
-      { method: "POST" },
-      "Clear basket",
-      false,
-    );
-    return this.readback("Basket was cleared");
+    const targetQuantity = currentQuantity + quantity;
+    await this.writeBasket(productId, targetQuantity, "Add to basket");
+    const after = await this.readback("Product was added");
+    const addedLine = after.items.find((item) => String(item.id) === String(productId));
+    if (!addedLine || typeof addedLine.quantity !== "number" || addedLine.quantity < targetQuantity) {
+      throw new NemligError("Basket readback did not confirm the additive quantity; inspect the basket and do not retry.");
+    }
+    for (const previous of before.items) {
+      if (previous.id === undefined) throw new NemligError("Basket line identity could not be verified; inspect the basket and do not retry.");
+      const current = after.items.find((item) => String(item.id) === String(previous.id));
+      if (!current || typeof current.quantity !== "number" || typeof previous.quantity !== "number" || current.quantity < previous.quantity) {
+        throw new NemligError("A previous basket line was not preserved; inspect the basket and do not retry.");
+      }
+    }
+    return after;
   }
 
   private async readback(action: string): Promise<Basket> {
@@ -715,6 +713,4 @@ export type ShoppingClient = Pick<
   | "browseDepartment"
   | "getCart"
   | "addToCart"
-  | "removeFromCart"
-  | "clearCart"
 >;
