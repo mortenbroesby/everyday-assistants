@@ -1120,7 +1120,11 @@ const parseAcceptanceFailure = (stdout: string | undefined, profile: AcceptanceF
       stage, profile, category: value.failureCategory as AcceptanceFailureEvidence["category"],
       lastCompletedBoundary: value.lastCompletedBoundary, correlationIds: value.correlationIds as string[],
     };
-    return validAcceptanceFailure(evidence) ? evidence : undefined;
+    if (!validAcceptanceFailure(evidence)) return undefined;
+    // The report's failure identifier is allowlisted above; print only that
+    // identifier, never child stdout, request data, or authentication details.
+    console.error(`acceptance_failure_code=${value.failed[0]}`);
+    return evidence;
   }
   return undefined;
 };

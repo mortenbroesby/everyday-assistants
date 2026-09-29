@@ -1456,7 +1456,9 @@ test("service fixture typed failures retain their bounded boundary in the releas
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
-test("runtime-version failure report is parsed and retried without exposing server data", async () => {
+test("runtime-version failure report is parsed and retried without exposing server data", async (t) => {
+  const diagnostics: string[] = [];
+  t.mock.method(console, "error", (message: string) => { diagnostics.push(message); });
   const { deps, root } = await fixture();
   deps.acceptanceMode = "service";
   deps.env.NEMLIG_CI_ACCEPTANCE_READY = "true";
@@ -1478,6 +1480,7 @@ test("runtime-version failure report is parsed and retried without exposing serv
     const report = await deployProduction(commit, deps);
     assert.equal(report.outcome, "success");
     assert.equal(attempts, 2);
+    assert.deepEqual(diagnostics, ["acceptance_failure_code=service_runtime_version_mismatch"]);
     assert.doesNotMatch(JSON.stringify(report), /private old-server data|machine-token/u);
   } finally { await rm(root, { recursive: true, force: true }); }
 });
