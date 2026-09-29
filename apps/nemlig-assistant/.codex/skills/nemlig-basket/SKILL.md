@@ -41,9 +41,27 @@ pnpm nemlig --help
    image, with a text fallback. Leave ambiguous or unavailable products unresolved.
    The application-owned planner and automatic submission authority are retired.
 
-4. Wait for explicit approval of the exact unchanged products, quantities,
-   current prices and basket effects. Local selection or acceptance is not
-   provider-write approval. Any changed fact requires a fresh review and approval.
+4. Treat the real Nemlig basket as sacred and add-only. Never remove, decrease,
+   replace, swap, or clear its contents, even if asked or explicitly approved;
+   explain that the user can manage those actions directly on Nemlig.com. This
+   prohibition applies to MCP, CLI, provider APIs, and production tests. Local
+   selection removal and clearing are different operations and remain allowed.
+
+   A requested quantity is an amount to add, not an absolute final quantity.
+   If Nemlig already has two and the user authorizes adding two, the final
+   quantity must be four. When the provider endpoint sets an absolute quantity,
+   read the current basket, verify the exact line and freshness, and only send a
+   positive resulting quantity strictly greater than the observed quantity.
+   Fail closed for incomplete or stale basket data; never send zero or a smaller
+   quantity. Separate external edits made directly on Nemlig.com can still race
+   the provider's non-atomic read/set boundary; do not claim cross-client locking.
+
+5. A clear conversational instruction to add the exact unchanged Ready
+   selection is itself authorization for that exact positive addition. Do not
+   ask for a redundant second conversational approval. For any other addition,
+   obtain approval of the exact unchanged products, added quantities, current
+   prices and resulting basket effects. Local selection or acceptance alone is
+   not provider-write authorization. Any changed fact requires a fresh review.
 
 5. Add only approved lines:
 
@@ -54,29 +72,22 @@ pnpm nemlig --help
    The command automatically displays the resulting basket and total. Stop on
    partial success, failed readback, or mismatch.
 
-To remove one exact product line, first display its current product ID, name,
-quantity, and total and obtain a separate explicit approval. Then run:
-
-```sh
-pnpm nemlig remove <product-id>
-```
-
-The command sets only that product's absolute quantity to zero and verifies by
-readback that its ID is absent. It never clears the basket.
-
-Before clearing a basket, display its exact contents and total and obtain
-explicit approval. Never replace a basket, check out, pay, or place an order.
+The CLI and MCP have no actual-basket remove, replace, swap, or clear operation.
+Never add such a path. The user manages destructive changes directly on
+Nemlig.com. Never check out, pay, or place an order.
 
 ## MCP workflow
 
 Model-visible basket writes never call a direct mutation tool. Additions use
-`review_items_to_add` → explicit exact approval → `add_approved_items`, or the
-local review's `prepare_submission` → explicit exact approval →
-`submit_product_review`. Both preserve fresh validation, principal binding,
-single-use authority, serialization and verified basket readback. Removals,
-replacements and clearing use their matching review/apply tools with separate
-exact approval. Never retry an indeterminate result; inspect the draft and actual
-basket before deliberately creating a fresh review.
+`review_items_to_add` → exact authorization → `add_approved_items`, or the local
+review's `prepare_submission` → its existing exact confirmation →
+`submit_product_review`. These are the only assistant provider-basket write
+paths and only add positive quantities. A clear instruction to add the exact
+unchanged Ready selection supplies authorization without a redundant second
+chat approval; UI confirmation remains as designed. Both paths preserve fresh
+validation, principal binding, single-use authority, serialization and verified
+basket readback. Never retry an indeterminate result; inspect the draft and
+actual basket before deliberately creating a fresh addition review.
 
 Use `start_product_review` for an explicit new selection. To reopen, first use
 `update_product_review` with action `show` and no old review ID or revision.

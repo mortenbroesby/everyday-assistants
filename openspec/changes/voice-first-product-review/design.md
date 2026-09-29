@@ -47,10 +47,11 @@ from the viewer. Existing discovery and actual basket tools remain independent.
   service's fresh revalidation, principal binding, single use and readback.
   Serialize draft edits against prepare/apply. Keep draft contents after outcomes;
   block repeated submissions of an unchanged submitted or uncertain draft.
-- Submission sets the reviewed quantities of selected products in the real
-  basket using existing semantics; unrelated provider lines stay unchanged. It
-  does not replace/clear the whole provider basket. UI labels distinguish local
-  Basket from actual Nemlig submission and never imply that acceptance is sent.
+- Submission adds the reviewed Ready quantities to the latest observed line
+  quantities; unrelated provider lines stay unchanged. It never sets a lower or
+  equal quantity, removes a line, replaces a product, or clears the provider
+  basket. UI labels distinguish local Ready from the actual Nemlig basket and
+  never imply that local acceptance has already been sent.
 
 ## Risks / Trade-offs
 
@@ -313,7 +314,8 @@ improvement.
 ### MCP tool surface and wording
 
 The current inventory has 21 tools: ten read-only, four preparation, two local
-selection, and five external-state actions. Compare the jobs to the official
+selection, and five external-state actions. The add-only boundary below reduces
+this to 15 by removing three provider prepare/apply pairs; compare the jobs to the official
 [GitHub MCP server](https://github.com/github/github-mcp-server), which offers
 toolsets and individual allowlists, the reference
 [filesystem server](https://github.com/modelcontextprotocol/servers/blob/main/src/filesystem/README.md),
@@ -327,7 +329,7 @@ not evidence that a rename or a larger toolset improves our ChatGPT host.
 | `find_groceries`, `get_grocery_details` | Keep both; clarify broad search versus exact detail and omitted-count behavior. | Search and exact inspection are distinct user requests. |
 | `show_my_basket`, `show_my_basket_visually` | Keep both; make the text versus current visual view explicit. | Visual hydration and host rendering have different cost and evidence. |
 | `start_product_review`, `update_product_review` | Keep the state boundary; describe starting versus editing a temporary selection, including conversation-only add, quantity, revisit, replace and remove. | Both paths already share server authority; a new conversational tool would duplicate it. |
-| Four `review_*` prepare tools and four matching approved apply tools | Keep each exact operation paired with its approved apply step; clarify actual-basket effects in titles/descriptions. | Merging stages or accepting a generic approval would obscure exact intent binding, operation type and verified readback. |
+| Provider-basket tools | Keep only `review_items_to_add` → `add_approved_items` plus the selection submission path; remove prepare/apply tools for provider removal, clear, and swap. | The owner has made the actual Nemlig basket add-only; exact approval does not authorize destructive operations. |
 | Profile, connection, favourites and section tools | Retain; check titles and annotations for their separate identity, recovery and browsing jobs. | No demonstrated overlap justifies removal in this follow-up. |
 
 Tool inventory and annotation tests should verify any title/description edits.
@@ -335,7 +337,8 @@ Avoid renaming machine tool IDs or altering the service acceptance allowlist
 without a concrete selection defect and a corresponding host check. Keep
 read-only, preparation, local-edit, and actual-write distinctions truthful;
 `update_product_review` includes edits and therefore is not read-only even
-when its `show` action only reads.
+when its `show` action only reads. Local selection `remove` and `clear` actions
+remain separate and never call provider basket mutation APIs.
 
 Use **Your Nemlig selection** for the workspace, **To decide** for unresolved
 rows, **Ready** for accepted rows, and **Open current selection** for explicit
@@ -348,3 +351,22 @@ Check mobile, screen reader labels, tool titles, empty state, errors and
 conversational prompts for contradictory wording. Viewer content changes
 require the next versioned resource URI and release note under repository
 policy; no release is part of this planning PR.
+
+### Add-only Nemlig basket invariant
+
+Nemlig's `/basket/AddToBasket` request is an absolute quantity setter, not an
+increment operation; quantity zero removes a line. Treat user-authorized
+quantities as increments. Read the current basket, bind that snapshot to the
+proposal, calculate current quantity plus approved addition, and send only a
+positive target greater than the observed current quantity. Re-read and reject
+stale basket snapshots before writes, serialize assistant writes, and verify the
+resulting quantities and totals. If an existing line's quantity is incomplete,
+fail closed. Remove all provider remove/clear/swap operations from clients,
+proposal services, CLI, MCP, and production acceptance; production acceptance
+must not perform a destructive restoration after adding a test line.
+
+The provider API inventory contains no compare-and-set or atomic increment
+endpoint. A simultaneous change made directly on Nemlig.com after our last read
+but before its absolute setter is an external race the assistant cannot
+eliminate; do not claim cross-client atomicity. The assistant itself must never
+intentionally submit zero or a quantity at or below its last observed line.

@@ -70,7 +70,7 @@ The server SHALL expose current catalogue search, favourites, grocery sections, 
 
 ### Requirement: Conversational reviewed basket changes
 
-The server SHALL keep catalogue results and exact product details independent from basket operations, while basket changes SHALL remain behind the existing matching staged review/apply tools and valid exact user authorization. A clear conversational instruction to add the current Ready selection authorizes only its unchanged exact prepared payload; Ready status alone does not. Other provider changes retain explicit approval requirements. Review and apply responses SHALL retain structured data plus a readable text fallback. Local review results SHALL attach the shared viewer resource; the viewer renders server-owned temporary review state and invokes the protected submit tool only after its explicit prepared-review confirmation. Actual provider changes require fresh validation, single-use authority and verified readback.
+The server SHALL keep catalogue results and exact product details independent from basket operations. The only provider-basket mutation the assistant exposes SHALL be a positive, authorization-bound addition. A clear conversational instruction to add the current Ready selection authorizes only its unchanged exact prepared payload; Ready status alone does not. The assistant SHALL expose no provider-basket clear, line removal, swap, replacement, or quantity decrease operation, regardless of approval. Review and apply responses SHALL retain structured data plus a readable text fallback. Local review results SHALL attach the shared viewer resource; the viewer renders server-owned temporary review state and invokes the protected submit tool only after its explicit prepared-review confirmation. Actual additions require fresh validation, single-use authority and verified readback.
 
 #### Scenario: Exact review is submitted
 
@@ -81,6 +81,19 @@ The server SHALL keep catalogue results and exact product details independent fr
 
 - **WHEN** the user explicitly approves an unchanged review
 - **THEN** the matching apply tool performs the bounded mutation, verifies basket readback, and returns structured data plus a readable fallback
+
+#### Scenario: User asks to remove, swap, replace or clear actual basket items
+- **WHEN** the user asks Nemlig Assistant to remove, swap, replace or clear
+  products in the actual Nemlig basket
+- **THEN** the assistant explains that actual-basket destructive operations are
+  unavailable and leaves the basket unchanged; the user can manage it directly
+  on Nemlig.com
+
+#### Scenario: User adds to an existing provider line
+- **WHEN** the Nemlig basket already contains two units and the user authorizes
+  adding two more of the same product
+- **THEN** the protected addition sets and verifies four units, never two or
+  fewer, while preserving the existing line
 
 #### Scenario: Host initializes or fails
 - **WHEN** the host supports the standard MCP Apps bridge

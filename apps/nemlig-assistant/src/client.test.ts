@@ -193,6 +193,7 @@ test("network reads retry, while basket mutations do not", async () => {
   const requests: ExpectedRequest[] = [
     { match: "/login$", response: json({ RedirectUrl: "/" }) },
     ...sessionRequests(),
+    { match: "/basket/GetBasket$", response: json({ Lines: [], TotalProductsPrice: 0, NumberOfProducts: 0 }) },
     { match: "/basket/AddToBasket$", response: json({}, { status: 503 }) },
   ];
   const writeClient = new NemligClient(mockFetch(requests));
@@ -748,6 +749,7 @@ test("basket add sends the exact payload and returns normalized readback", async
   const requests: ExpectedRequest[] = [
     { match: "/login$", response: json({ RedirectUrl: "/" }) },
     ...sessionRequests(),
+    { match: "/basket/GetBasket$", response: json({ Lines: [], TotalProductsPrice: 0, NumberOfProducts: 0 }) },
     {
       match: "/basket/AddToBasket$",
       inspect: (_url, init) =>
@@ -777,90 +779,44 @@ test("basket add sends the exact payload and returns normalized readback", async
   assert.equal(basket.productsPrice, 25.9);
 });
 
-test("exact basket-line removal sends zero quantity and verifies the product ID is absent", async () => {
+test("basket addition increments the current line instead of setting it to the requested delta", async () => {
   const requests: ExpectedRequest[] = [
     { match: "/login$", response: json({ RedirectUrl: "/" }) },
     ...sessionRequests(),
-    {
-      match: "/basket/GetBasket$",
-      response: json({ Lines: [{ Id: 7, Name: "Banana", Quantity: 1, Total: 2.5 }] }),
-    },
+    { match: "/basket/GetBasket$", response: json({ Lines: [{ Id: 7, Name: "Butter", Quantity: 2, Total: 10 }], TotalProductsPrice: 10, NumberOfProducts: 2 }) },
     {
       match: "/basket/AddToBasket$",
-      inspect: (_url, init) =>
-        assert.deepEqual(JSON.parse(String(init?.body)), {
-          ProductId: 7,
-          quantity: 0,
-          AffectPartialQuantity: false,
-          disableQuantityValidation: false,
-        }),
+      inspect: (_url, init) => assert.deepEqual(JSON.parse(String(init?.body)), {
+        ProductId: 7,
+        quantity: 4,
+        AffectPartialQuantity: false,
+        disableQuantityValidation: false,
+      }),
       response: json({}),
     },
-    {
-      match: "/basket/GetBasket$",
-      response: json({ Lines: [{ Id: 8, Name: "Milk", Quantity: 1, Total: 12.5 }] }),
-    },
+    { match: "/basket/GetBasket$", response: json({ Lines: [{ Id: 7, Name: "Butter", Quantity: 4, Total: 20 }], TotalProductsPrice: 20, NumberOfProducts: 4 }) },
   ];
   const client = new NemligClient(mockFetch(requests));
   await client.login("person@example.test", "secret");
-  assert.deepEqual((await client.removeFromCart(7)).items.map((item) => item.id), [8]);
+  const result = await client.addToCart(7, 2, 2);
+  assert.equal(result.items[0]?.quantity, 4);
   assert.equal(requests.length, 0);
 });
 
-test("exact basket-line removal refuses absent lines and reports failed ID verification", async () => {
+test("basket addition rejects a stale expected quantity and incomplete existing line before writing", async () => {
   const requests: ExpectedRequest[] = [
     { match: "/login$", response: json({ RedirectUrl: "/" }) },
     ...sessionRequests(),
-    { match: "/basket/GetBasket$", response: json({ Lines: [] }) },
-    { match: "/basket/GetBasket$", response: json({ Lines: [{ ProductId: "7" }] }) },
-    { match: "/basket/AddToBasket$", response: json({}) },
-    { match: "/basket/GetBasket$", response: json({ Lines: [{ Id: 7 }] }) },
+    { match: "/basket/GetBasket$", response: json({ Lines: [{ Id: 7, Name: "Butter", Quantity: 3, Total: 15 }] }) },
+    { match: "/basket/GetBasket$", response: json({ Lines: [{ Id: 7, Name: "Butter", Quantity: 2 }] }) },
+    { match: "/basket/GetBasket$", response: json({ Lines: [{ Id: 7, Name: "Butter", Total: 15 }] }) },
   ];
   const client = new NemligClient(mockFetch(requests));
   await client.login("person@example.test", "secret");
-  await assert.rejects(client.removeFromCart(7), /not in the basket; nothing was removed/);
-  await assert.rejects(client.removeFromCart(7), /may not have been removed/);
+  await assert.rejects(client.addToCart(7, 2, 2), /Basket quantity changed after review/);
+  await assert.rejects(client.addToCart(7, 2), /Current basket line is incomplete/);
+  await assert.rejects(client.addToCart(7, 2), /Current basket line is incomplete/);
   assert.equal(requests.length, 0);
-});
-
-test("basket validation blocks bad inputs before calls and reports partial readback failure", async () => {
-  const requests: ExpectedRequest[] = [
-    { match: "/login$", response: json({ RedirectUrl: "/" }) },
-    ...sessionRequests(),
-    { match: "/basket/ClearBasket$", response: json({}) },
-    { match: "/basket/GetBasket$", response: json({}, { status: 500 }) },
-  ];
-  const client = new NemligClient(mockFetch(requests));
-  await client.login("person@example.test", "secret");
-  await assert.rejects(client.addToCart(1, 0), /Quantity must be at least 1/);
-  await assert.rejects(client.removeFromCart(0), /Product ID must be positive/);
-  await assert.rejects(client.clearCart(), /Basket was cleared, but basket verification failed/);
-  assert.equal(requests.length, 0);
-});
-
-test("clear basket returns the verified normalized empty basket", async () => {
-  const requests: ExpectedRequest[] = [
-    { match: "/login$", response: json({ RedirectUrl: "/" }) },
-    ...sessionRequests(),
-    {
-      match: "/basket/ClearBasket$",
-      inspect: (_url, init) => assert.equal(init?.method, "POST"),
-      response: json({}),
-    },
-    {
-      match: "/basket/GetBasket$",
-      response: json({ Lines: [], TotalProductsPrice: 0, DeliveryPrice: 0, NumberOfProducts: 0 }),
-    },
-  ];
-  const client = new NemligClient(mockFetch(requests));
-  await client.login("person@example.test", "secret");
-  assert.deepEqual(await client.clearCart(), {
-    items: [],
-    productsPrice: 0,
-    deliveryPrice: 0,
-    numberOfProducts: 0,
-    deliveryTime: undefined,
-  });
 });
 
 test("unauthenticated basket operations fail before network access", async () => {
@@ -868,8 +824,6 @@ test("unauthenticated basket operations fail before network access", async () =>
   await assert.rejects(client.listFavorites(), /Must be logged in/);
   await assert.rejects(client.getCart(), /Must be logged in/);
   await assert.rejects(client.addToCart(1), /Must be logged in/);
-  await assert.rejects(client.removeFromCart(1), /Must be logged in/);
-  await assert.rejects(client.clearCart(), /Must be logged in/);
 });
 
 test("search validates its boundary", async () => {

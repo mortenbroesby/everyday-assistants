@@ -39,6 +39,8 @@ new state-management dependencies, and unrelated deployment work.
   plus only the demonstrated missing local-state and protected submission contracts.
 - `nemlig-chatgpt-integration`: contextual touch intent and conversational actions
   operate on the same product references and reviewed outcome.
+- `nemlig-basket-proposals`: restrict real Nemlig basket writes to monotonic,
+  explicitly authorized additions; remove assistant clear, removal, and swap paths.
 
 ## Impact
 
@@ -62,6 +64,13 @@ conversational request to add the current Ready selection itself authorizes only
 that exact unchanged prepared payload; Ready status alone is not authority.
 Fresh validation and verified readback remain mandatory. UI-initiated submission
 retains its exact on-screen confirmation.
+
+On 29 September 2026 the owner made the real Nemlig basket add-only: the assistant
+must never remove a provider line, swap products, or clear the provider basket.
+An approved request to add two units of a product already present twice means
+add two more, leaving four. This rules out sending a smaller absolute quantity
+through Nemlig's quantity-setting endpoint. Local selection removal and Clear
+Basket remain local-only operations.
 
 The owner subsequently requested the generated compact green review mockup,
 conversation-scoped ephemeral Basket state without a one-hour expiry, freely

@@ -453,38 +453,35 @@ export class NemligClient {
     return normalizeBasket(await this.json(`${API_BASE_URL}/basket/GetBasket`, { signal }, "Get basket"));
   }
 
-  async addToCart(productId: number, quantity = 1): Promise<Basket> {
+  async addToCart(productId: number, quantity = 1, expectedCurrentQuantity?: number): Promise<Basket> {
     this.requireLogin("add items");
     if (!Number.isInteger(productId) || productId < 1) throw new NemligError("Product ID must be positive.");
     if (!Number.isInteger(quantity) || quantity < 1) throw new NemligError("Quantity must be at least 1.");
-    await this.writeBasket(productId, quantity, "Add to basket");
-    return this.readback("Product was added");
-  }
-
-  async removeFromCart(productId: number): Promise<Basket> {
-    this.requireLogin("remove an item");
-    if (!Number.isInteger(productId) || productId < 1) throw new NemligError("Product ID must be positive.");
-    const matchesProduct = (item: Basket["items"][number]): boolean => String(item.id) === String(productId);
-    if (!(await this.getCart()).items.some(matchesProduct)) {
-      throw new NemligError(`Product ${productId} is not in the basket; nothing was removed.`);
+    const currentBasket = await this.getCart();
+    const matching = currentBasket.items.filter((item) => String(item.id) === String(productId));
+    if (matching.length > 1) throw new NemligError("Basket contains duplicate product lines; no addition was made.");
+    const current = matching[0];
+    if (current && current.quantity === undefined) {
+      throw new NemligError("Current basket line is incomplete; no addition was made.");
     }
-    await this.writeBasket(productId, 0, "Remove from basket");
-    const basket = await this.readback("Product was removed");
-    if (basket.items.some(matchesProduct)) {
-      throw new NemligError(`Product ${productId} may not have been removed; stop before further mutations.`);
+    const currentQuantity = current?.quantity ?? 0;
+    if (!Number.isInteger(currentQuantity) || currentQuantity < 0 || (current && current.total === undefined)) {
+      throw new NemligError("Current basket line is incomplete; no addition was made.");
+    }
+    if (expectedCurrentQuantity !== undefined && currentQuantity !== expectedCurrentQuantity) {
+      throw new NemligError("Basket quantity changed after review; prepare and review a new addition.");
+    }
+    const resultingQuantity = currentQuantity + quantity;
+    if (!Number.isSafeInteger(resultingQuantity) || resultingQuantity <= currentQuantity) {
+      throw new NemligError("Resulting basket quantity is invalid; no addition was made.");
+    }
+    await this.writeBasket(productId, resultingQuantity, "Add to basket");
+    const basket = await this.readback("Product was added");
+    const applied = basket.items.find((item) => String(item.id) === String(productId));
+    if (applied?.quantity !== resultingQuantity) {
+      throw new NemligError("Basket readback did not verify the positive addition; stop before further mutations.");
     }
     return basket;
-  }
-
-  async clearCart(): Promise<Basket> {
-    this.requireLogin("clear the basket");
-    await this.json(
-      `${API_BASE_URL}/basket/ClearBasket`,
-      { method: "POST" },
-      "Clear basket",
-      false,
-    );
-    return this.readback("Basket was cleared");
   }
 
   private async readback(action: string): Promise<Basket> {
@@ -496,6 +493,9 @@ export class NemligClient {
   }
 
   private async writeBasket(productId: number, quantity: number, operation: string): Promise<void> {
+    if (!Number.isSafeInteger(quantity) || quantity < 1) {
+      throw new NemligError("Provider basket quantity must be a positive absolute value.");
+    }
     await this.json(
       `${API_BASE_URL}/basket/AddToBasket`,
       {
@@ -715,6 +715,4 @@ export type ShoppingClient = Pick<
   | "browseDepartment"
   | "getCart"
   | "addToCart"
-  | "removeFromCart"
-  | "clearCart"
 >;

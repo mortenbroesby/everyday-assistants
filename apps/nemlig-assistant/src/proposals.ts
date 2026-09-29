@@ -2,7 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { NemligError, type Basket, type Product, type ShoppingClient } from "./client.js";
 import { runReadPool } from "./read-coordination.js";
 
-export type ProposalOperation = "additions" | "removal" | "replacement" | "clear";
+export type ProposalOperation = "additions";
 export type AdditionAuthorization = { kind: "exact_review" };
 
 export interface ProposalAuditEvent {
@@ -17,27 +17,16 @@ export interface ProposalLine {
   unit_size: string;
   category: string;
   subcategory: string;
+  /** Number of additional units explicitly requested. */
   quantity: number;
+  current_quantity: number;
+  resulting_quantity: number;
+  current_line_total: number;
+  resulting_line_total: number;
   available: boolean;
   item_price: number;
   unit_price: number | undefined;
   unit: string;
-  currency: "DKK";
-  line_total: number;
-  labels: string[];
-}
-
-export interface ReplacementLine {
-  product_id: number;
-  name: string;
-  unit: string;
-  unit_size: string;
-  category: string;
-  subcategory: string;
-  quantity: number;
-  available: boolean;
-  item_price: number;
-  unit_price: number | undefined;
   currency: "DKK";
   line_total: number;
   labels: string[];
@@ -46,29 +35,10 @@ export interface ReplacementLine {
 interface AddOperation {
   kind: "additions";
   lines: ProposalLine[];
-}
-
-interface RemoveOperation {
-  kind: "removal";
-  productId: number;
-  line: Basket["items"][number];
-}
-
-interface ReplacementOperation {
-  kind: "replacement";
-  currentProductId: number;
-  current: ReplacementLine;
-  replacement: ReplacementLine;
   expectedProductsPrice: number;
   expectedNumberOfProducts: number;
 }
-
-interface ClearOperation {
-  kind: "clear";
-  basket: Basket;
-}
-
-type Operation = AddOperation | RemoveOperation | ReplacementOperation | ClearOperation;
+type Operation = AddOperation;
 type ProposalState = "prepared" | "applying" | "completed" | "invalid" | "indeterminate";
 
 export interface ProposalView extends Record<string, unknown> {
@@ -85,7 +55,7 @@ export interface ProposalView extends Record<string, unknown> {
 
 export interface NoopProposalView extends Record<string, unknown> {
   applicable: false;
-  operation: "removal" | "replacement" | "clear";
+  operation: "additions";
   reason: string;
 }
 
@@ -172,6 +142,10 @@ const productLine = (product: Product, quantity: number): ProposalLine => {
     category: product.category,
     subcategory: product.subcategory,
     quantity,
+    current_quantity: 0,
+    resulting_quantity: quantity,
+    current_line_total: 0,
+    resulting_line_total: money(product.price * quantity),
     available: product.available,
     item_price: product.price,
     unit_price: product.unitPrice,
@@ -183,33 +157,6 @@ const productLine = (product: Product, quantity: number): ProposalLine => {
 };
 
 const sameLine = (left: ProposalLine, right: ProposalLine): boolean =>
-  JSON.stringify(left) === JSON.stringify(right);
-
-const replacementLine = (product: Product, quantity: number, lineTotal?: number): ReplacementLine => {
-  if (typeof product.id !== "number" || !product.name || product.price === undefined) {
-    throw new NemligError("Product data is incomplete; no proposal was created.");
-  }
-  if (product.available === undefined) {
-    throw new NemligError("Product availability could not be confirmed; no proposal was created.");
-  }
-  return {
-    product_id: product.id,
-    name: product.name,
-    unit: product.unit,
-    unit_size: product.unitSize,
-    category: product.category,
-    subcategory: product.subcategory,
-    quantity,
-    available: product.available,
-    item_price: product.price,
-    unit_price: product.unitPrice,
-    currency: "DKK",
-    line_total: money(lineTotal ?? product.price * quantity),
-    labels: [...product.labels],
-  };
-};
-
-const sameReplacementLine = (left: ReplacementLine, right: ReplacementLine): boolean =>
   JSON.stringify(left) === JSON.stringify(right);
 
 class Mutex {
@@ -241,7 +188,7 @@ export class BasketProposalService {
   constructor(
     private readonly client: Pick<
       ShoppingClient,
-      "getProduct" | "getFreshProduct" | "getCart" | "addToCart" | "removeFromCart" | "clearCart"
+      "getProduct" | "getFreshProduct" | "getCart" | "addToCart"
     >,
     options: ProposalServiceOptions = {},
   ) {
@@ -264,22 +211,54 @@ export class BasketProposalService {
       throw new NemligError("A valid additions authorization is required.");
     }
     const basket = await this.client.getCart(options.signal);
-    const lines = await runReadPool(items, async (item, signal) =>
+    const products = await runReadPool(items, async (item, signal) =>
       productLine(await (options.freshProducts ? this.client.getFreshProduct(item.product_id, signal) : this.client.getProduct(item.product_id, signal)), item.quantity), options);
-    if (lines.some((line) => !line.available)) throw new NemligError("An exact product is unavailable; no proposal was created.");
+    if (products.some((line) => !line.available)) throw new NemligError("An exact product is unavailable; no proposal was created.");
     const basketLines = new Map<string, Basket["items"][number]>();
-    for (const line of basket.items) if (line.id !== undefined && !basketLines.has(String(line.id))) {
-      basketLines.set(String(line.id), line);
+    for (const line of basket.items) {
+      if (line.id !== undefined) {
+        if (basketLines.has(String(line.id))) throw new NemligError("Basket contains a duplicate product line; no proposal was created.");
+        basketLines.set(String(line.id), line);
+      }
     }
-    const totals = lines.reduce((result, line) => {
-      const currentLine = basketLines.get(String(line.product_id));
+    const additions = products.map((line) => {
+      const current = basketLines.get(String(line.product_id));
+      if (current && (current.quantity === undefined || current.total === undefined)) {
+        throw new NemligError("Current basket line is incomplete; no proposal was created.");
+      }
+      const currentQuantity = current?.quantity ?? 0;
+      if (!Number.isInteger(currentQuantity) || currentQuantity < 0) {
+        throw new NemligError("Current basket line is incomplete; no proposal was created.");
+      }
+      const currentLineTotal = current?.total ?? 0;
       return {
-        price: result.price + line.line_total - (currentLine?.total ?? 0),
-        count: result.count + line.quantity - (currentLine?.quantity ?? 0),
+        ...line,
+        current_quantity: currentQuantity,
+        resulting_quantity: currentQuantity + line.quantity,
+        current_line_total: currentLineTotal,
+        resulting_line_total: money(currentLineTotal + line.line_total),
       };
-    }, { price: basket.productsPrice ?? 0, count: basket.numberOfProducts ?? 0 });
-    return this.create(connectionId, basket, { kind: "additions", lines }, {
-      lines,
+    });
+    const addedCount = additions.reduce((sum, line) => sum + line.quantity, 0);
+    const addedPrice = additions.reduce((sum, line) => sum + line.line_total, 0);
+    if (basket.productsPrice === undefined && basket.items.some((line) => line.total === undefined)) {
+      throw new NemligError("Current basket totals are incomplete; no proposal was created.");
+    }
+    if (basket.numberOfProducts === undefined && basket.items.some((line) => line.quantity === undefined)) {
+      throw new NemligError("Current basket quantities are incomplete; no proposal was created.");
+    }
+    const currentPrice = basket.productsPrice ?? basket.items.reduce((sum, line) => sum + line.total!, 0);
+    const currentCount = basket.numberOfProducts ?? basket.items.reduce((sum, line) => sum + line.quantity!, 0);
+    const totals = { price: money(currentPrice + addedPrice), count: currentCount + addedCount };
+    return this.create(connectionId, basket, {
+      kind: "additions",
+      lines: additions,
+      expectedProductsPrice: totals.price,
+      expectedNumberOfProducts: totals.count,
+    }, {
+      lines: additions,
+      added_products_price: money(addedPrice),
+      added_number_of_products: addedCount,
       expected_products_price: money(totals.price),
       expected_number_of_products: totals.count,
     }, authorization.kind);
@@ -295,108 +274,6 @@ export class BasketProposalService {
     }
     const ids = new Set(items.map((item) => item.product_id));
     if (ids.size !== items.length) throw new NemligError("Each product ID may appear only once per proposal.");
-  }
-
-  async prepareRemoval(
-    connectionId: string,
-    productId: number,
-    options: ProposalReadOptions = {},
-  ): Promise<ProposalView | NoopProposalView> {
-    if (!Number.isInteger(productId) || productId < 1) throw new NemligError("Product ID must be positive.");
-    const basket = await this.client.getCart(options.signal);
-    const line = basket.items.find((item) => sameId(item.id, productId));
-    if (!line) return { applicable: false, operation: "removal", reason: `Product ${productId} is not in the basket.` };
-    return this.create(connectionId, basket, { kind: "removal", productId, line }, { line });
-  }
-
-  async prepareReplacement(
-    connectionId: string,
-    currentProductId: number,
-    replacementProductId: number,
-    replacementQuantity: number,
-    options: ProposalReadOptions = {},
-  ): Promise<ProposalView | NoopProposalView> {
-    if (!Number.isInteger(currentProductId) || currentProductId < 1) {
-      throw new NemligError("Current product ID must be positive.");
-    }
-    if (!Number.isInteger(replacementProductId) || replacementProductId < 1) {
-      throw new NemligError("Replacement product ID must be positive.");
-    }
-    if (currentProductId === replacementProductId) {
-      throw new NemligError("Current and replacement product IDs must differ.");
-    }
-    if (!Number.isInteger(replacementQuantity) || replacementQuantity < 1) {
-      throw new NemligError("Replacement quantity must be positive.");
-    }
-
-    const basket = await this.client.getCart(options.signal);
-    const basketLine = basket.items.find((item) => sameId(item.id, currentProductId));
-    if (!basketLine) {
-      return {
-        applicable: false,
-        operation: "replacement",
-        reason: `Product ${currentProductId} is not in the basket.`,
-      };
-    }
-    const currentQuantity = basketLine.quantity;
-    if (!Number.isInteger(currentQuantity) || currentQuantity === undefined || currentQuantity < 1 || basketLine.total === undefined) {
-      throw new NemligError("Current basket line is incomplete; no proposal was created.");
-    }
-
-    const [currentProduct, replacementProduct] = await runReadPool(
-      [currentProductId, replacementProductId],
-      (productId, signal) => this.client.getProduct(productId, signal),
-      options,
-    );
-    const current = replacementLine(currentProduct, currentQuantity, basketLine.total);
-    const replacement = replacementLine(replacementProduct, replacementQuantity);
-    if (!replacement.available) {
-      throw new NemligError("The exact replacement product is unavailable; no proposal was created.");
-    }
-
-    const existingReplacement = basket.items.find((item) => sameId(item.id, replacementProductId));
-    if (existingReplacement && (existingReplacement.total === undefined || existingReplacement.quantity === undefined)) {
-      throw new NemligError("Existing replacement basket line is incomplete; no proposal was created.");
-    }
-    if (basket.productsPrice === undefined && basket.items.some((item) => item.total === undefined)) {
-      throw new NemligError("Current basket totals are incomplete; no proposal was created.");
-    }
-    if (basket.numberOfProducts === undefined && basket.items.some((item) => item.quantity === undefined)) {
-      throw new NemligError("Current basket quantities are incomplete; no proposal was created.");
-    }
-    const currentProductsPrice = basket.productsPrice ?? basket.items.reduce((sum, item) => sum + (item.total ?? 0), 0);
-    const currentCount = basket.numberOfProducts ?? basket.items.reduce((sum, item) => sum + (item.quantity ?? 0), 0);
-    const expectedProductsPrice = money(
-      currentProductsPrice - current.line_total - (existingReplacement?.total ?? 0) + replacement.line_total,
-    );
-    const expectedCount = currentCount - current.quantity - (existingReplacement?.quantity ?? 0) + replacement.quantity;
-    const priceDifference = money(currentProductsPrice - expectedProductsPrice);
-    return this.create(connectionId, basket, {
-      kind: "replacement",
-      currentProductId,
-      current,
-      replacement,
-      expectedProductsPrice,
-      expectedNumberOfProducts: expectedCount,
-    }, {
-      current_line: current,
-      replacement_line: replacement,
-      existing_replacement_line: existingReplacement ?? null,
-      current_products_price: money(currentProductsPrice),
-      expected_products_price: expectedProductsPrice,
-      expected_number_of_products: expectedCount,
-      price_difference: priceDifference,
-      ...(priceDifference > 0 ? { potential_savings: priceDifference } : {}),
-    });
-  }
-
-  async prepareClear(
-    connectionId: string,
-    options: ProposalReadOptions = {},
-  ): Promise<ProposalView | NoopProposalView> {
-    const basket = await this.client.getCart(options.signal);
-    if (!basket.items.length) return { applicable: false, operation: "clear", reason: "The basket is already empty." };
-    return this.create(connectionId, basket, { kind: "clear", basket }, { basket: basketPayload(basket) });
   }
 
   /**
@@ -429,7 +306,13 @@ export class BasketProposalService {
       if (proposal.operation.kind === "additions") {
         try {
           for (const reviewed of proposal.operation.lines) {
-            const current = productLine(await this.client.getFreshProduct(reviewed.product_id), reviewed.quantity);
+            const current = {
+              ...productLine(await this.client.getFreshProduct(reviewed.product_id), reviewed.quantity),
+              current_quantity: reviewed.current_quantity,
+              resulting_quantity: reviewed.resulting_quantity,
+              current_line_total: reviewed.current_line_total,
+              resulting_line_total: reviewed.resulting_line_total,
+            };
             if (!sameLine(current, reviewed)) {
               proposal.state = "invalid";
               this.record("invalidated", proposal.operation.kind, "rejected");
@@ -441,80 +324,27 @@ export class BasketProposalService {
           this.invalidate(proposal);
           throw new NemligError("Current product details could not be revalidated; prepare and review a new proposal.");
         }
-      } else if (proposal.operation.kind === "replacement") {
-        const operation = proposal.operation;
-        const currentBasketLine = basket.items.find((item) => sameId(item.id, operation.currentProductId));
-        if (!currentBasketLine?.quantity || currentBasketLine.total === undefined) {
-          this.invalidate(proposal);
-          throw new NemligError("Current basket line changed after review; prepare and review a new proposal.");
-        }
-        let current: Product;
-        let replacement: Product;
-        try {
-          [current, replacement] = await Promise.all([
-            this.client.getFreshProduct(operation.current.product_id),
-            this.client.getFreshProduct(operation.replacement.product_id),
-          ]);
-        } catch {
-          this.invalidate(proposal);
-          throw new NemligError("Current product details could not be revalidated; prepare and review a new proposal.");
-        }
-        if (
-          !sameReplacementLine(
-            replacementLine(current, currentBasketLine.quantity, currentBasketLine.total),
-            operation.current,
-          ) ||
-          !sameReplacementLine(
-            replacementLine(replacement, operation.replacement.quantity),
-            operation.replacement,
-          )
-        ) {
-          this.invalidate(proposal);
-          throw new NemligError("Replacement details changed after review; prepare and review a new proposal.");
-        }
       }
 
       proposal.state = "applying";
       this.record("applying", proposal.operation.kind, "started");
-      let replacementVerified = false;
       try {
-        let result: Basket;
-        if (proposal.operation.kind === "additions") {
-          result = basket;
-          for (const line of proposal.operation.lines) {
-            result = await this.client.addToCart(line.product_id, line.quantity);
-          }
-          for (const line of proposal.operation.lines) {
-            const applied = result.items.find((item) => sameId(item.id, line.product_id));
-            if (applied?.quantity !== line.quantity || money(applied.total ?? Number.NaN) !== line.line_total) {
-              throw new NemligError("Basket readback did not match the approved additions.");
-            }
-          }
-        } else if (proposal.operation.kind === "removal") {
-          const { productId } = proposal.operation;
-          result = await this.client.removeFromCart(productId);
-          if (result.items.some((item) => sameId(item.id, productId))) {
-            throw new NemligError("Basket readback still contains the approved removal.");
-          }
-        } else if (proposal.operation.kind === "replacement") {
-          const { currentProductId, replacement, expectedProductsPrice, expectedNumberOfProducts } = proposal.operation;
-          result = await this.client.addToCart(replacement.product_id, replacement.quantity);
-          const applied = result.items.find((item) => sameId(item.id, replacement.product_id));
-          if (applied?.quantity !== replacement.quantity || money(applied.total ?? Number.NaN) !== replacement.line_total) {
-            throw new NemligError("Basket readback did not match the approved replacement.");
-          }
-          replacementVerified = true;
-          result = await this.client.removeFromCart(currentProductId);
+        let result = basket;
+        for (const line of proposal.operation.lines) {
+          result = await this.client.addToCart(line.product_id, line.quantity, line.current_quantity);
+          const applied = result.items.find((item) => sameId(item.id, line.product_id));
           if (
-            result.items.some((item) => sameId(item.id, currentProductId)) ||
-            money(result.productsPrice ?? Number.NaN) !== expectedProductsPrice ||
-            result.numberOfProducts !== expectedNumberOfProducts
+            applied?.quantity !== line.resulting_quantity ||
+            money(applied.total ?? Number.NaN) !== line.resulting_line_total
           ) {
-            throw new NemligError("Final basket readback did not match the approved replacement.");
+            throw new NemligError("Basket readback did not match the approved positive addition.");
           }
-        } else {
-          result = await this.client.clearCart();
-          if (result.items.length) throw new NemligError("Basket readback is not empty after clear.");
+        }
+        if (
+          money(result.productsPrice ?? Number.NaN) !== proposal.operation.expectedProductsPrice ||
+          result.numberOfProducts !== proposal.operation.expectedNumberOfProducts
+        ) {
+          throw new NemligError("Basket total readback did not match the approved positive additions.");
         }
         const completed: ApplyResult = {
           status: "completed",
@@ -529,13 +359,6 @@ export class BasketProposalService {
       } catch {
         proposal.state = "indeterminate";
         this.record("indeterminate", proposal.operation.kind, "uncertain");
-        if (proposal.operation.kind === "replacement") {
-          throw new NemligError(
-            replacementVerified
-              ? "Replacement was added, but the old product may remain; inspect the basket and do not retry this proposal."
-              : "Basket may have changed, but the old product was not intentionally removed; inspect the basket and do not retry this proposal.",
-          );
-        }
         throw new NemligError("Basket may have changed but verification did not complete; inspect the basket and do not retry this proposal.");
       }
     });

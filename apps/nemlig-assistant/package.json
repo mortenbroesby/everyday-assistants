@@ -47,7 +47,6 @@
     "production:retention": "tsx scripts/production-retention.ts",
     "publish:deployment-release": "tsx scripts/publish-release.ts",
     "production:test:features": "tsx scripts/production-acceptance.ts",
-    "production:test:mutation": "tsx scripts/production-acceptance.ts --mutation",
     "release:apply": "tsx release/agent.ts --apply",
     "release:plan": "tsx release/agent.ts",
     "release:retry:check": "tsx release/retry.ts",

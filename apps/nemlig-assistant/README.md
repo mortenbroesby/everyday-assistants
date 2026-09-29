@@ -208,26 +208,27 @@ Read → prepare the exact intended change → confirm user authorization → ap
 
 - Search, favourites, browsing, proposed-basket review and basket inspection
   are read-only; they never authorize or change the Nemlig basket.
-- Every basket change starts with the matching `review_*` tool.
-- Additions from Ready require exact review and a clear add instruction for
-  those unchanged lines, or the viewer's exact on-screen confirmation. Other
-  changes require approval for their exact reviewed products and quantities.
-  Removals, replacements, and clearing always require their own exact review
-  and approval.
+- Every real Nemlig basket change is a positive addition. It starts with
+  `review_items_to_add` or an exact Ready submission review.
+- A clear instruction to add the unchanged Ready selection authorizes only
+  those exact additions; the viewer retains its exact on-screen confirmation.
+  Other additions require approval for the exact reviewed products and
+  additional quantities. No approval authorizes removing, decreasing,
+  replacing, swapping, or clearing real basket contents.
 - Ordinary summaries show names, quantities, useful package distinctions, and
   prices without internal IDs, expiry times, or protocol status fields. Ask for
   “technical details” when those internals are useful for troubleshooting.
-- A review is connection-bound, short-lived, single-use, and tied to exact
-  products, quantities, prices, totals, and the current basket fingerprint.
+- An additions review is connection-bound, short-lived, single-use, and tied to
+  exact products, additional and resulting quantities, prices, totals, and the
+  current basket fingerprint.
 - The default 15-minute review window accommodates a normal ChatGPT approval
   round-trip without weakening final revalidation.
 - Any changed fact invalidates the approval.
 - The approved action freshly resolves every affected product upstream and
   revalidates the review and current basket state before writing.
-- Add, remove, replace, and clear immediately read the basket back.
+- Additions re-read the basket immediately before writing and verify the
+  resulting line quantities and basket totals afterward.
 - Writes are never automatically retried after an uncertain result.
-- Replacement adds and verifies the new line before removing the old one. If
-  verification becomes uncertain, the workflow stops because both may remain.
 - Repeated completed actions return the stored sanitized result without writing again.
 - The assistant never orders, checks out, or pays.
 
@@ -297,10 +298,15 @@ The MCP surface is organized around household actions:
   Ready acceptance alone is not provider-write authorization. The protected
   tool uses only the unchanged prepared lines; ambiguous scope or changed Ready
   IDs/quantities requires clarification.
-- Review basket changes: `review_items_to_add`, `review_item_to_remove`,
-  `review_item_swap`, and `review_emptying_basket`.
-- Complete an approved change: `add_approved_items`, `remove_approved_item`,
-  `make_approved_item_swap`, and `empty_approved_basket`.
+- Review/add actual-basket quantities: `review_items_to_add` and
+  `add_approved_items`. Nemlig Assistant is strictly add-only for the real
+  basket: it cannot remove, decrease, replace, swap, or clear products. If two
+  units are already present and two more are authorized, the resulting line is
+  four units. The provider accepts an absolute quantity, so the assistant
+  re-reads the basket and sets the resulting positive quantity; stale or
+  incomplete state fails closed. Nemlig does not expose an atomic increment or
+  compare-and-set here, so an edit made simultaneously on Nemlig.com can race
+  that read/set boundary. Manage removals and clearing directly on Nemlig.com.
 - Search and exact product details return the same supported detailed product
   facts without mounting a widget for every search. Local review tools and the
   explicit visual-basket read attach the shared viewer, with complete structured

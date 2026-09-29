@@ -221,3 +221,18 @@ passed on `c439732` before release-only metadata was applied. Smoke covered
 320px/375px and recorded zero provider basket writes. Release metadata is not a
 deployment or native ChatGPT acceptance; 10.6 remains open for served-revision,
 metadata-readback, and historical-card evidence.
+
+## 11. Add-only real Nemlig basket safety
+
+- [x] 11.1 Update the basket proposal contract and repository/basket instructions
+  to state that the real Nemlig basket is add-only; verify strict OpenSpec
+  validation and keep local selection clearing explicitly separate.
+- [x] 11.2 Remove real-basket clear, line removal, and swap from the provider
+  client, proposal service, CLI, MCP inventory, and production acceptance path;
+  verify no assistant path can call those provider mutations.
+- [x] 11.3 Make requested quantities additive to the latest known provider line
+  quantity; test 2 existing + 2 approved = 4, positive-only provider writes,
+  exact proposal totals, stale-basket rejection, and verified readback.
+- [x] 11.4 Update README/tool inventory and relevant tests; run focused gates,
+  strict OpenSpec validation, browser/MCP smoke, and `pnpm verify`; push the
+  change to draft PR #164 without merging or deploying.

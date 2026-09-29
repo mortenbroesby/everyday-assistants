@@ -62,7 +62,7 @@ test("local CLI help and MCP surface need no credentials or network", async () =
   assert.doesNotMatch(stdout, /feature-request/);
   assert.match(stdout, /cart/);
   assert.match(stdout, /add/);
-  assert.match(stdout, /remove/);
+  assert.doesNotMatch(stdout, /^\s+remove\s/imu);
   assert.doesNotMatch(stdout, /parse|checkout|--password/);
 
   const unavailable = async (): Promise<never> => {
@@ -79,8 +79,6 @@ test("local CLI help and MCP surface need no credentials or network", async () =
     browseDepartment: unavailable,
     getCart: unavailable,
     addToCart: unavailable,
-    removeFromCart: unavailable,
-    clearCart: unavailable,
   };
   const server = createMcpServer(shoppingClient, async () => undefined);
   const client = modernClient("smoke");
@@ -97,16 +95,10 @@ test("local CLI help and MCP surface need no credentials or network", async () =
         "add_approved_items",
         "browse_grocery_section",
         "check_nemlig_connection",
-        "empty_approved_basket",
         "find_groceries",
         "get_grocery_details",
         "get_profile",
-        "make_approved_item_swap",
         "reconnect_nemlig_assistant",
-        "remove_approved_item",
-        "review_emptying_basket",
-        "review_item_swap",
-        "review_item_to_remove",
         "review_items_to_add",
         "show_grocery_sections",
         "show_my_basket",
@@ -165,8 +157,6 @@ test("direct discovery reaches a reviewed proposal and verified basket without u
       basket = { ...basket, items, productsPrice: items.reduce((total, item) => total + (item.total ?? 0), 0), numberOfProducts: items.reduce((total, item) => total + (item.quantity ?? 0), 0) };
       return basket;
     },
-    removeFromCart: async () => { throw new Error("unexpected removal"); },
-    clearCart: async () => { throw new Error("unexpected clear"); },
   };
   const server = createMcpServer(client, async () => ({ username: "smoke@example.test", password: "synthetic" }));
   const mcp = modernClient("recipe-smoke");
@@ -221,7 +211,6 @@ test("an indeterminate recipe write is attempted once", async () => {
     listFavorites: unavailable, listDepartments: unavailable, browseDepartment: unavailable,
     getCart: async () => empty,
     addToCart: async () => { writes += 1; throw new Error("indeterminate write"); },
-    removeFromCart: unavailable, clearCart: unavailable,
   };
   const server = createMcpServer(client, async () => ({ username: "smoke@example.test", password: "synthetic" }));
   const mcp = modernClient("write-smoke");
