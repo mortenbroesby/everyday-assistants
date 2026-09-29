@@ -2042,6 +2042,25 @@ test("pending rollback reconciliation records only the observed exact disabled c
   assert.equal((await inspectDeploymentRecovery(pending.operationId, deps, true)).cleanupEligible, true);
 });
 
+test("failed enable intent can release its lease only after exact readback of the unchanged disabled start", async () => {
+  const pending = terminalJournal({
+    outcome: "failed", rollback: "not_needed", lastVerifiedState: "unknown", failure: "command_failed",
+    remoteCommit: "cccccccccccccccccccccccccccccccccccccccc", startingEnabled: false,
+    transitions: [{ phase: "enable_deploy", kind: "intent", at: "2026-09-05T12:00:00.000Z", version: startingId }],
+  });
+  const deps = recoveryDeps(pending, startingId, false);
+  deps.stateRoot = "/tmp/nemlig-release-lock";
+  const result = await reconcilePendingRollback(pending.operationId, deps, true, true);
+  assert.deepEqual(result, { operation: pending.operationId, originalRunnerStopped: true, reconciled: true, reason: "eligible", state: "disabled" });
+  assert.deepEqual(await inspectDeploymentRecovery(pending.operationId, deps, true), {
+    operation: pending.operationId, originalRunnerStopped: true, cleanupEligible: true, reason: "eligible", state: "restored",
+  });
+  assert.equal(await finalizeDeploymentRecovery(pending.operationId, deps, true, true), true);
+
+  const drifted = recoveryDeps(pending, startingId, false, { active: true });
+  assert.equal((await reconcilePendingRollback(pending.operationId, drifted, true, true)).reason, "provider_drift");
+});
+
 test("pending rollback reconciliation denies drift, a running Container, and a changed journal head", async () => {
   const terminal = terminalJournal();
   const pending = terminalJournal({

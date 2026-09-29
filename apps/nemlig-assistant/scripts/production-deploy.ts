@@ -830,6 +830,24 @@ const pendingRollbackTarget = (journal: DeploymentJournal): RecoveryTarget | und
   };
 };
 
+/** A failed enable command may leave the already-disabled starting state intact. */
+const pendingNoopEnableTarget = (journal: DeploymentJournal): RecoveryTarget | undefined => {
+  const intent = journal.transitions.at(-1);
+  if (journal.outcome !== "failed" || journal.lastVerifiedState !== "unknown" || journal.rollback !== "not_needed"
+    || journal.transitions.length !== 1 || intent?.phase !== "enable_deploy" || intent.kind !== "intent"
+    || !journal.startingVersion || intent.version !== journal.startingVersion || journal.startingEnabled !== false
+    || !journal.startingContainerId || !journal.startingImage || !journal.startingApplicationVersion || !journal.startingConfigDigest) return undefined;
+  return {
+    version: journal.startingVersion,
+    image: journal.startingImage,
+    applicationVersion: journal.startingApplicationVersion,
+    containerId: journal.startingContainerId,
+    configDigest: journal.startingConfigDigest,
+    enabled: false,
+    state: "restored",
+  };
+};
+
 /** Reconciles only an already-journaled rollback intent; it never mutates Cloudflare. */
 export async function reconcilePendingRollback(
   operation: string,
@@ -851,14 +869,16 @@ export async function reconcilePendingRollback(
     // Verify that exact relationship, then advance the in-memory parent to the
     // current head before appending the reconciled result.
     if (!journal.remoteCommit || journal.remoteCommit !== remote.parent) return denied("journal_head_changed");
-    const target = pendingRollbackTarget(journal);
+    const rollbackTarget = pendingRollbackTarget(journal);
+    const noopEnableTarget = pendingNoopEnableTarget(journal);
+    const target = rollbackTarget ?? noopEnableTarget;
     if (!target) return denied("pending_or_unknown");
     let observedVersion: string | undefined;
     try { observedVersion = await verifyRecoveryTarget(deps, target); } catch { observedVersion = undefined; }
     if (!observedVersion) return denied("provider_drift");
     if (await readRemoteHead(deps, repo.nameWithOwner) !== remote.head) return denied("journal_head_changed");
 
-    const reconciled: DeploymentJournal = {
+    const reconciled: DeploymentJournal = rollbackTarget ? {
       ...journal,
       remoteCommit: remote.head,
       disabledVersion: observedVersion,
@@ -869,6 +889,14 @@ export async function reconcilePendingRollback(
       rollback: "restored",
       transitions: [...journal.transitions, {
         phase: "rollback", kind: "result", at: deps.now().toISOString(), version: observedVersion,
+      }],
+    } : {
+      ...journal,
+      remoteCommit: remote.head,
+      checks: [...new Set([...journal.checks, "disabled_routes", "container_inactive", "starting_version_restored"])],
+      lastVerifiedState: "restored",
+      transitions: [...journal.transitions, {
+        phase: "enable_deploy", kind: "result", at: deps.now().toISOString(), version: observedVersion,
       }],
     };
     journalJson(reconciled);
@@ -894,8 +922,10 @@ const knownTerminal = (journal: DeploymentJournal): boolean => {
     && (journal.checks.includes("authenticated_read_only_acceptance") || journal.checks.includes("service_fixture_acceptance"));
   if (journal.lastVerifiedState === "disabled") return ["disabled_deploy", "rollback"].includes(result.phase) && result.version === journal.disabledVersion
     && ["disabled_routes", "container_inactive"].every((check) => journal.checks.includes(check));
-  return journal.lastVerifiedState === "restored" && journal.rollback === "restored" && result.phase === "rollback"
-    && result.version === journal.startingVersion && journal.checks.includes("starting_version_restored");
+  return journal.lastVerifiedState === "restored" && result.version === journal.startingVersion
+    && journal.checks.includes("starting_version_restored")
+    && ((journal.rollback === "restored" && result.phase === "rollback")
+      || (journal.rollback === "not_needed" && result.phase === "enable_deploy"));
 };
 
 export async function inspectDeploymentRecovery(operation: string, deps: DeployDependencies, originalRunnerStopped = false): Promise<RecoveryInspection> {
