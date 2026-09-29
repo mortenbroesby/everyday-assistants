@@ -1,5 +1,8 @@
 ## Why
 
+Portfolio status (29 September 2026, #114): Delivered identity metadata; mandatory publication ceremony later superseded. Live identity/delivery owner: #96. Do not create a prerelease solely to finish the historical checkbox.
+See [portfolio evidence](../../../docs/openspec-portfolio-reconciliation.md).
+
 Nemlig releases have precise semantic versions and immutable deployment evidence,
 but no memorable human-facing identity. A codename paired with each successfully
 deployed version will let the owner ask ChatGPT which release is live and receive

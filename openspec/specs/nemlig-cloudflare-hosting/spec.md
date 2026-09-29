@@ -208,82 +208,85 @@ access token, or remove the test item without a separate exact approval.
 
 - **WHEN** the approval is absent or any product, quantity, name, or proposal
   detail differs from the reviewed addition
-- **THEN** the acceptance check fails before `apply_cart_additions` and leaves
+- **THEN** the acceptance check fails before `add_approved_items` and leaves
   the basket unchanged
 
 ### Requirement: Automated production releases are exact and review-gated
 
 The repository SHALL provide one production release operation that accepts an
-exact `main` commit and requires successful CI for that exact revision before any
-Cloudflare mutation. It MAY start from a manual dispatch or SHALL be submitted
-after successful CI for a merged pull request whose exact merge range satisfies
-the package-scoped Nemlig release policy, contains the required forward version,
-and contains its reviewed agent-authored note. An ineligible merge MUST stop
-before production credentials or provider access. The owner's explicit approval
-of the release-bearing pull request SHALL be the sole human release checkpoint;
-after that pull request is merged, exact-main CI, deployment, and publication
-SHALL proceed without a second approval gate.
+exact commit in current `main` history and requires successful trusted push-to-main
+CI for that exact revision before any Cloudflare mutation. Routine candidates
+SHALL queue after successful CI, with serialized execution and no cancellation of
+an active release. A queued candidate MAY remain eligible after `main` advances,
+provided it remains an ancestor of refreshed `main`. The owner's approval of the
+pull request before merge SHALL remain the routine human release decision;
+deployment SHALL proceed without another human approval. Semantic-version bumps,
+release labels, release-note files, and GitHub prereleases SHALL NOT determine
+deployment eligibility. Manual workflow dispatch SHALL be limited to explicit
+incident recovery, rollback reconciliation, or retention-resume operations.
 
-After routine deployment succeeds, a separate job SHALL publish the reviewed
-note as a GitHub prerelease only when the schema-2 deployment journal identifies
-the exact candidate and producing run, records success with the enabled state
-and completion time, includes edge and service-fixture acceptance, and excludes
-pending live acceptance. The journal commit, not the historical cutover
-`acceptedRevision`, is the deployed revision.
+GitHub prerelease publication SHALL be separate from deployment eligibility and
+SHALL NOT be a required automatic production workflow step. If publication is
+invoked, it SHALL use a reviewed committed note and require the schema-2 deployment
+journal to identify the exact candidate and producing run, record success with
+the enabled state and completion time, include edge and service-fixture
+acceptance, and exclude failure or rollback evidence. For a successful deployment,
+the journal commit, not the historical cutover `acceptedRevision`, is the deployed
+revision.
 
 #### Scenario: Exact release is authorized and ready
 
-- **WHEN** the operator explicitly invokes the release operation with a full
-  commit that equals local HEAD and refreshed remote `main` and exact-head CI is
-  successful
+- **WHEN** an authorized release uses a full commit equal to clean local HEAD,
+  remains in refreshed remote `main` history, and passes exact-head trusted CI
 - **THEN** the operation may proceed to its serialized Cloudflare preflight
 
-#### Scenario: Labeled merge is ready
+#### Scenario: Queued main candidate is ready
 
-- **WHEN** the owner explicitly approves a pull request with a
-  version-policy-eligible Nemlig change and its reviewed note, that pull request
-  is merged to `main`, and CI succeeds for the exact merge commit
+- **WHEN** the owner approves a pull request before merge, trusted push-to-main
+  CI succeeds for its exact commit, and that queued commit remains in current
+  `main` history even if newer commits have merged
 - **THEN** the routine release proceeds automatically for that exact commit
   without another human approval
 
-#### Scenario: Merge is not labeled
+#### Scenario: Deployment has no package release metadata
 
-- **WHEN** CI succeeds for a merge containing only documentation,
-  specifications, agent instructions, workflow changes, another assistant, or
-  other paths excluded by the package-scoped release policy
-- **THEN** no production job receives credentials and Cloudflare is unchanged
+- **WHEN** a trusted green `main` candidate has no version bump, release label,
+  release note, or GitHub prerelease
+- **THEN** those omissions do not exclude it from routine deployment; source,
+  runtime ancestry, configuration, authorization, and acceptance checks still apply
 
 #### Scenario: Source or CI does not match
 
-- **WHEN** the supplied commit, checked-out HEAD, remote `main`, successful CI
-  result, merge base, package version, or release note does not identify one
-  coherent release
+- **WHEN** the supplied commit differs from clean checked-out HEAD, is outside
+  current `main` history, or lacks successful trusted exact-head CI and its
+  successful `verify` job
 - **THEN** the operation fails before changing Cloudflare
 
 #### Scenario: Exact routine deployment is published
 
-- **WHEN** the automatic routine release succeeds for the exact candidate and
-  its deployment journal contains every required terminal acceptance check
-- **THEN** the downstream job publishes or confirms an idempotent prerelease
+- **WHEN** separate publication is invoked after a routine release succeeds for
+  the exact candidate and its journal contains every required terminal
+  acceptance check
+- **THEN** the publication operation publishes or confirms an idempotent prerelease
   whose tag resolves to that candidate and whose body matches its committed note
 
 #### Scenario: Deployment evidence is not publishable
 
-- **WHEN** the journal is failed, rolled back, incomplete, live-acceptance
-  pending, for another commit or run, or missing a routine acceptance check
+- **WHEN** the journal is failed, rolled back, incomplete, for another commit or
+  run, or missing a routine acceptance check
 - **THEN** publication fails before creating or changing a tag or release
 
 #### Scenario: Publication is retried
 
 - **WHEN** deployment succeeded but GitHub publication was interrupted
-- **THEN** the publication job reconciles retained exact-run evidence and
+- **THEN** the publication operation reconciles retained exact-run evidence and
   matching remote state without redeploying, retargeting, or overwriting a
   conflict
 
-#### Scenario: Manual finalize or supervised cutover runs
+#### Scenario: Recovery or retention resumes
 
-- **WHEN** the workflow only finalizes recovery or records pending supervised
-  live acceptance
+- **WHEN** the workflow only reconciles rollback, finalizes recovery, or resumes
+  retention
 - **THEN** it does not publish a fresh application release
 
 ### Requirement: Automated releases are serialized and build once
@@ -305,11 +308,17 @@ maximum, bindings, routes, timeouts, manual kill switches, and secrets.
 
 #### Scenario: Routine candidate rolls out
 
-- **WHEN** an accepted service cutover already exists and an exact descendant is
-  released routinely
+- **WHEN** a trusted green `main` candidate is the same revision as or a
+  descendant of the currently deployed runtime revision and passes release preflight
 - **THEN** the operation deploys the candidate with `MCP_ENABLED=true` in one
   Cloudflare rollout and never deliberately returns the disabled response during
   a successful release
+
+#### Scenario: Queued candidate would regress the deployed runtime
+
+- **WHEN** the current runtime revision is not an ancestor of a routine candidate
+- **THEN** the operation fails before provider mutation; deploying an earlier
+  green `main` ancestor requires explicit incident-recovery mode
 
 #### Scenario: Supervised disabled candidate is safe
 
@@ -369,19 +378,52 @@ attempt, and last verified production state.
 - **THEN** the operation reports the deployed commit and enabled version, releases
   its production lease, and records that rollback was unnecessary
 
-### Requirement: MCP sessions recover after a Container replacement
+#### Scenario: Routine recovery has verified terminal evidence
 
-The hosted MCP SHALL return HTTP 404 for a request that presents an unknown
-`Mcp-Session-Id`, while retaining HTTP 400 for a non-initialize request that omits
-the required session ID, so a conforming Streamable HTTP client can initialize a
-fresh session after a Container replacement.
+- **WHEN** a non-cancelled routine deployment succeeds or fails, its artifact is
+  saved, and the journal identifies that candidate, workflow run, and run attempt
+- **THEN** finalization may release its lease only after verifying the owned
+  operation's terminal production state with the original runner stopped;
+  failure remains failure even when recovery is verified
 
-#### Scenario: Deployment replaces an in-memory session
+#### Scenario: Recovery evidence is incomplete or drifted
 
-- **WHEN** a client sends a previously valid session ID after the Container has
-  been replaced
-- **THEN** the MCP returns HTTP 404 without accessing Nemlig or changing basket,
-  favourite, saved-list, account, or order state
+- **WHEN** the operation is cancelled, the artifact is missing, journal ownership
+  mismatches, work is pending, or production no longer matches the terminal evidence
+- **THEN** automatic finalization does not release the recovery lease
+
+### Requirement: Hosted MCP uses stateless protocol serving
+
+The canonical hosted MCP endpoint SHALL serve the modern `2026-07-28` protocol
+through one stateless handler and tool implementation. Modern discovery and tool
+calls SHALL NOT require an initialize request or `Mcp-Session-Id`. Every request
+SHALL retain gateway authentication, principal-policy authorization, request-size,
+deadline, and manual kill-switch checks. Provider-backed requests SHALL require
+independently bound current credentials before Container wake or provider access.
+Application review and proposal state SHALL remain isolated by authenticated
+principal, policy revision, and credential generation across request-scoped MCP
+server instances.
+
+#### Scenario: Modern discovery and tool call
+
+- **WHEN** an authorized modern client sends discovery and then a supported tool
+  call without initialization or a transport session identifier
+- **THEN** both requests pass the retained access checks and reach the same
+  hosted MCP tool implementation
+
+#### Scenario: A later request fails access checks
+
+- **WHEN** a later request lacks valid authentication, an enabled principal, or
+  the current credentials required for provider-backed work
+- **THEN** it is rejected before Container wake or provider access even if an
+  earlier request from that client succeeded
+
+#### Scenario: Container replacement loses application state
+
+- **WHEN** a Container replacement loses an uncompleted process-local review or
+  proposal and a client attempts to continue it
+- **THEN** the server requires a fresh review, does not infer approval, and does
+  not repeat an uncertain mutation; protocol continuation needs no session recovery
 
 ### Requirement: Private requests have no application rate throttle
 

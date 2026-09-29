@@ -20,14 +20,15 @@ The system SHALL apply this capability only after PR #8 is merged, the TypeScrip
 The system SHALL support independent product search, exact product lookup,
 basket inspection, exact basket review, and explicitly approved apply in normal
 ChatGPT conversations without requiring Codex, a saved planner, or a picker.
-Product-bearing results MAY render through one shared display-only viewer, with
+Selected local review results MAY render through one shared product viewer, with
 complete conversational structured/text fallbacks.
 
 #### Scenario: User searches for products
 
 - **WHEN** the private app is available and the user asks for products
 - **THEN** ChatGPT receives richly detailed products in provider order and may
-  present them through the shared viewer without creating shopping state
+  summarize them without mounting a viewer, then explicitly open one local
+  review for selected products
 
 #### Scenario: Viewer is unavailable
 
@@ -180,7 +181,7 @@ users, checkout, payment, ordering, or delivery-slot mutation.
 
 The direct ChatGPT integration SHALL describe products, basket changes, and
 verified results like a household shopping assistant rather than a transaction
-log. It SHALL keep product presentation display-only and SHALL require explicit
+log. It SHALL distinguish local review changes from Nemlig changes and SHALL require explicit
 approval of the exact unchanged proposal before applying a basket change.
 
 #### Scenario: ChatGPT reviews a prepared change
@@ -222,27 +223,85 @@ the current basket to determine product search results.
 
 ### Requirement: Shared product viewer and exact basket review
 
-Before requesting approval to add products, the integration SHALL present every
-resolved product through the shared display-only viewer when supported, while
-retaining complete structured and conversational fallbacks. The viewer SHALL
-not own selection, approval, provider access, or basket state. The handoff SHALL
-use the existing exact review and protected apply workflow.
+The integration SHALL use one shared product presentation for conversational
+and touch review. Ready is a local selection of accepted products, not the
+actual Nemlig basket. Both input modes SHALL address exact products in the same
+temporary draft and support acceptance, changes, removal, quantities and safe
+navigation. Business state SHALL remain server-authoritative. Actual submission
+SHALL use the existing exact proposal/apply safety engine only after explicit
+approval of an unchanged submission review.
+
+#### Scenario: Product review is operated by voice
+
+- **WHEN** the user accepts some products, changes another, or requests remaining
+  unresolved items conversationally
+- **THEN** the resulting snapshot matches the equivalent touch operations
 
 #### Scenario: Complete product result is shown
 
 - **WHEN** a search or exact lookup contains resolved products
 - **THEN** every product appears once with its supported exact facts and context,
-  without a browser-side search, approval, or mutation control
+  without an automatic provider call or implied approval; local draft controls
+  make no provider mutation, and a separate explicit protected confirmation may
+  apply only its exact unchanged prepared submission
 
 #### Scenario: User approves the exact basket review
 
-- **WHEN** the user explicitly approves the unchanged review
-- **THEN** the integration uses `review_items_to_add` followed by
-  `add_approved_items`, fresh validation, single use, cancellation, readback,
-  and no automatic retry
+- **WHEN** the user requests submission and explicitly approves the exact
+  unchanged current review
+- **THEN** the existing protected submission path performs fresh validation,
+  single-use application and verified basket readback without clearing unrelated
+  Nemlig lines or retrying an uncertain write
 
 #### Scenario: Viewer is unavailable
 
 - **WHEN** the client cannot render MCP Apps
-- **THEN** the integration presents the same complete product facts and exact
-  approval boundary conversationally
+- **THEN** the same snapshot, product facts, explicit submission review and local
+  operations remain available through structured tools and conversation
+
+### Requirement: Visible UI release acceptance
+A UI release SHALL be reported delivered only after the connected ChatGPT app
+advertises the intended review tools and renders an interactive review. Server
+deployment acceptance SHALL verify the expected viewer HTML and resource
+metadata. ChatGPT metadata refresh and live UI acceptance SHALL be separate
+recorded release steps; they SHALL NOT be inferred from healthy edge endpoints.
+
+#### Scenario: Deployment succeeds but the app catalog is stale
+- **WHEN** Cloudflare accepts a release but ChatGPT still advertises old tools
+- **THEN** UI delivery remains pending until app refresh readback confirms the
+  intended catalog and a local review renders and supports navigation
+
+#### Scenario: Local UI release test
+- **WHEN** the operator verifies a released review UI
+- **THEN** selecting and accepting an exact product changes only Ready,
+  and navigation back to In Review preserves both lists without provider writes
+
+### Requirement: Inactive historical shopping cards
+Host-supplied review snapshots SHALL start inactive without product hydration or
+shopping controls. Explicit activation SHALL read the active conversation before
+rendering controls. Retired known viewer resources SHALL resolve to inert notices
+without backend shopping calls and offer a conversational route to the current
+review. The app SHALL NOT infer message age from time or shared browser storage.
+
+#### Scenario: Reopen or remount a transcript card
+- **WHEN** the host supplies a retained review snapshot
+- **THEN** the card shows an explicit Open current review action instead of historical products or mutations
+- **AND** activation reads current state without replaying or restoring prior acceptance
+
+#### Scenario: Old revision is edited
+- **WHEN** another card or conversation action has advanced the revision
+- **THEN** the rejected action triggers at most one read-only refresh, clears transient selection, and reports the conflict in plain language without raw protocol errors or mutation replay
+
+#### Scenario: Service cannot confirm the action
+- **WHEN** a tool fails or times out without a known stale-state result
+- **THEN** the card hides shopping controls and offers explicit read-only recovery without automatic mutation retries
+
+#### Scenario: Retired resource is requested
+- **WHEN** the host requests a known retired viewer URI
+- **THEN** it receives an inactive notice, not obsolete shopping controls or a missing-template response
+- **AND** server changes make no claim to remove documents already cached by the host
+
+#### Scenario: Activated current card receives a duplicate host snapshot
+- **WHEN** the same mounted review receives a matching tool result or globals update
+- **THEN** it stays active, preserves compatible presentation state, and does not
+  reopen or replace the card

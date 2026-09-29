@@ -2,32 +2,32 @@
 
 ## Purpose
 
-Defines the server-enforced proposal protocol that lets the private ChatGPT connection or a local MCP client review exact Nemlig basket changes and apply only unchanged, connection-bound, single-use approvals.
+Defines the server-enforced proposal protocol that lets the private ChatGPT connection or a local MCP client review exact Nemlig basket changes and apply only unchanged, authorization-bound, single-use approvals.
 
 ## Requirements
 
 ### Requirement: Exact addition proposal
 
-The system SHALL prepare between one and fifty basket additions without mutation and return an opaque proposal ID, local connection binding, issue and expiry times, current basket fingerprint, exact product IDs and names, sizes, quantities, availability, unit prices, line totals, expected basket effect, relevant upstream labels, and the authorization scope that produced the proposal.
+The system SHALL prepare one or more basket additions without mutation and return an opaque proposal ID, issue and expiry times, current basket fingerprint, exact product IDs and names, sizes, quantities, availability, unit prices, line totals, expected basket effect, relevant upstream labels, and the authorization scope that produced the proposal. The private ownership binding SHALL NOT be disclosed.
 
 #### Scenario: Prepare available additions
 
-- **WHEN** the private connection prepares one or more and at most fifty valid product IDs and positive quantities
-- **THEN** the server resolves current product and basket data, stores a connection-bound proposal, and returns all details needed for exact validation without changing the basket
+- **WHEN** the private connection prepares one or more distinct valid product IDs and positive quantities
+- **THEN** the server resolves current product and basket data through bounded read work, stores an authorization-bound proposal, and returns all details needed for exact validation without changing the basket
 
 #### Scenario: Product is unavailable or ambiguous
 
 - **WHEN** a requested product cannot be resolved exactly or is unavailable
 - **THEN** preparation reports the unresolved line and creates no applicable proposal containing that line
 
-#### Scenario: Addition batch is too large
+#### Scenario: Addition input is invalid
 
-- **WHEN** a client attempts to prepare more than fifty additions
+- **WHEN** a client supplies no additions, duplicate product IDs, invalid IDs, or invalid quantities
 - **THEN** preparation fails before reading or changing the basket
 
 ### Requirement: Exact clear proposal
 
-The system SHALL prepare clearing without mutation and bind the proposal to the local connection, exact current basket lines and totals, basket fingerprint, issue time, and expiry.
+The system SHALL prepare clearing without mutation and bind the proposal to the authorization context, exact current basket lines and totals, basket fingerprint, issue time, and expiry.
 
 #### Scenario: Prepare clearing a non-empty basket
 
@@ -41,7 +41,7 @@ The system SHALL prepare clearing without mutation and bind the proposal to the 
 
 ### Requirement: Exact line-removal proposal
 
-The system SHALL prepare removal of one exact basket product line without mutation and bind the proposal to the product ID, current line name, quantity, total, basket fingerprint, local connection, issue time, and expiry.
+The system SHALL prepare removal of one exact basket product line without mutation and bind the proposal to the product ID, current line name, quantity, total, basket fingerprint, authorization context, issue time, and expiry.
 
 #### Scenario: Prepare removal of an existing product line
 
@@ -55,7 +55,7 @@ The system SHALL prepare removal of one exact basket product line without mutati
 
 ### Requirement: Exact replacement proposal
 
-The system SHALL prepare replacement of one exact current basket line with one distinct available product and positive final quantity without mutation, and SHALL bind the proposal to the connection, current basket fingerprint, both product identities, current line quantity and total, replacement package and price metadata, replacement quantity and line total, expected basket totals, issue time, and expiry. The review SHALL present the signed price difference as a factual basket-cost change and SHALL NOT claim that the products are equivalent.
+The system SHALL prepare replacement of one exact current basket line with one distinct available product and positive final quantity without mutation, and SHALL bind the proposal to the authorization context, current basket fingerprint, both product identities, current line quantity and total, replacement package and price metadata, replacement quantity and line total, expected basket totals, issue time, and expiry. The review SHALL present the signed price difference as a factual basket-cost change and SHALL NOT claim that the products are equivalent.
 
 #### Scenario: Prepare an available replacement
 
@@ -86,13 +86,18 @@ The system SHALL apply an explicitly approved replacement inside the existing pr
 - **WHEN** the replacement line is verified but removing or reading back the old line fails or differs
 - **THEN** the server consumes the proposal, reports that the basket may contain both products and requires inspection, and performs no further mutation or automatic retry
 
-### Requirement: Short-lived connection-bound proposals
+### Requirement: Short-lived authorization-bound proposals
 
-The system SHALL generate cryptographically random opaque proposal IDs, store proposals only for a short configurable lifetime, and bind each proposal to its local connection, operation, and current basket fingerprint.
+The system SHALL generate cryptographically random opaque proposal IDs, store proposals only for a short configurable lifetime, and bind each proposal to its operation and current basket fingerprint. Hosted proposal state SHALL be isolated by authenticated principal, policy revision, and credential generation, independently of the request-scoped MCP server. A transport server instance or client-supplied session identifier SHALL NOT define hosted proposal ownership. Local MCP clients SHALL retain their process/transport connection binding.
 
-#### Scenario: Another connection presents a proposal
+#### Scenario: Same principal presents a proposal in another HTTP request
 
-- **WHEN** a connection other than the one that prepared a proposal attempts to apply it
+- **WHEN** the preparing principal presents a proposal in a later stateless HTTP request with the same policy revision and credential generation
+- **THEN** the server can locate the proposal across fresh MCP server instances and still enforces operation, expiry, authorization, and basket freshness before application
+
+#### Scenario: Another authorization context presents a proposal
+
+- **WHEN** another hosted principal or another local connection attempts to apply a proposal
 - **THEN** the server rejects the request and performs no mutation
 
 #### Scenario: Proposal expires
@@ -100,9 +105,19 @@ The system SHALL generate cryptographically random opaque proposal IDs, store pr
 - **WHEN** application begins after proposal expiry
 - **THEN** the server treats the proposal as expired and requires a new proposal
 
+#### Scenario: Policy or credentials change
+
+- **WHEN** a hosted request uses a different policy revision or credential generation from the proposal's preparing context
+- **THEN** the old proposal is unavailable in that context and a fresh review is required before any mutation
+
+#### Scenario: Process-local proposal state is lost
+
+- **WHEN** a restart or replacement removes an uncompleted process-local proposal
+- **THEN** the server fails closed, requires a fresh review, and does not infer approval or repeat an uncertain mutation
+
 ### Requirement: Revalidation inside the mutation lock
 
-The system SHALL obtain the process-local mutation lock and revalidate connection binding, proposal state, expiry, current basket fingerprint, exact product identity, availability, quantity, unit price, line total, and expected totals before mutation.
+The system SHALL obtain the process-local mutation lock and revalidate authorization binding, proposal state, expiry, current basket fingerprint, exact product identity, availability, quantity, unit price, line total, and expected totals before mutation. Addition and replacement application SHALL use fresh authoritative product facts rather than cached review facts.
 
 #### Scenario: Reviewed details remain unchanged
 
@@ -114,13 +129,18 @@ The system SHALL obtain the process-local mutation lock and revalidate connectio
 - **WHEN** price, availability, product, quantity, total, or basket state differs
 - **THEN** the server invalidates the proposal, reports the changed fields, performs no mutation, and requires a new proposal
 
+#### Scenario: Fresh product validation fails
+
+- **WHEN** a fresh authoritative lookup fails for any addition or replacement product
+- **THEN** the server invalidates the proposal before the first mutation and requires a new review without retrying the write
+
 ### Requirement: Single-use and idempotency-aware application
 
 The system SHALL consume a proposal at most once, SHALL return a stored sanitized result for a replay whose completion is known, and SHALL never automatically repeat a mutation whose outcome is uncertain.
 
 #### Scenario: Completed proposal is replayed
 
-- **WHEN** the same connection repeats an apply request for a proposal with a stored completed result
+- **WHEN** the same authorization context repeats an apply request for a proposal with a stored completed result
 - **THEN** the server returns that result without calling Nemlig again
 
 #### Scenario: Outcome is indeterminate
@@ -144,7 +164,7 @@ The system SHALL read the basket immediately after every mutation attempt, retur
 
 ### Requirement: Proposal-based MCP tool surface
 
-The model-visible MCP surface SHALL expose prepare_cart_additions, apply_cart_additions, prepare_cart_removal, apply_cart_removal, prepare_cart_replacement, apply_cart_replacement, prepare_cart_clear, and apply_cart_clear and SHALL NOT expose direct add_to_cart, remove_from_cart, replace_cart_line, or clear_cart mutation tools. Deliberate local CLI commands may remain available.
+The model-visible MCP surface SHALL expose review_items_to_add, add_approved_items, review_item_to_remove, remove_approved_item, review_item_swap, make_approved_item_swap, review_emptying_basket, and empty_approved_basket and SHALL NOT expose direct add_to_cart, remove_from_cart, replace_cart_line, or clear_cart mutation tools. Deliberate local CLI commands may remain available.
 
 #### Scenario: Tools are enumerated
 
@@ -162,22 +182,22 @@ The system SHALL advertise annotations that match each tool's actual behavior an
 
 #### Scenario: Read and preparation tools are inspected
 
-- **WHEN** search_products, view_cart, pick_products, prepare_cart_additions, prepare_cart_removal, prepare_cart_replacement, or prepare_cart_clear is enumerated
+- **WHEN** find_groceries, show_my_basket, review_items_to_add, review_item_to_remove, review_item_swap, or review_emptying_basket is enumerated
 - **THEN** it is marked read-only and non-destructive
 
 #### Scenario: Addition application is inspected
 
-- **WHEN** apply_cart_additions is enumerated
+- **WHEN** add_approved_items is enumerated
 - **THEN** it is marked state-changing, non-destructive, and open-world
 
 #### Scenario: Clear application is inspected
 
-- **WHEN** apply_cart_removal or apply_cart_clear is enumerated
+- **WHEN** remove_approved_item or empty_approved_basket is enumerated
 - **THEN** it is marked state-changing, destructive, and open-world
 
 #### Scenario: Replacement application is inspected
 
-- **WHEN** apply_cart_replacement is enumerated
+- **WHEN** make_approved_item_swap is enumerated
 - **THEN** it is marked state-changing, destructive, and open-world
 
 ### Requirement: Redacted proposal audit

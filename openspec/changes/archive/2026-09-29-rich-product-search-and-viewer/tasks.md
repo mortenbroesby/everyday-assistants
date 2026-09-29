@@ -20,5 +20,13 @@
 
 - [x] 4.1 Reconcile README, backlog, OpenSpec, package/resource policy, and synthetic fixtures with the delivered behavior; verify strict OpenSpec/privacy checks pass.
 - [x] 4.2 Run focused app build/check/smoke tests and inspect the final diff for secrets, stale planner references, and scope creep; verify all relevant focused checks pass.
-- [ ] 4.3 Run the final `pnpm verify` once on the final candidate, commit checkpoint/final changes, push the dedicated branch, and verify the PR exact head and required CI.
-- [ ] 4.4 Integrate through repository rules, verify remote `main` contains the exact intended commit and exact-head CI succeeds, then report remaining live/provider uncertainty without claiming production deployment.
+- [x] 4.3 Run the final `pnpm verify` once on the final candidate, commit checkpoint/final changes, push the dedicated branch, and verify the PR exact head and required CI.
+- [x] 4.4 Integrate through repository rules, verify remote `main` contains the exact intended commit and exact-head CI succeeds, then report remaining live/provider uncertainty without claiming production deployment.
+
+Closeout for #114, 29 September 2026: PR #95 tested
+`8f7220fefaf35f969514d1ae0d2df52dd240a46c`, passed exact-head CI
+`35789718220`, and merged as `ff6252c3e6a4ac84cc16189bc8a9525e7b0a16d3`.
+Its recorded 370 tests, final verification, strict/privacy checks and package
+dry run are historical execution evidence, not tests rerun by this closeout.
+Current main `f45ce936` contains the merge. Native review/gallery acceptance
+and live provider uncertainty remain separate; no deployment is claimed here.

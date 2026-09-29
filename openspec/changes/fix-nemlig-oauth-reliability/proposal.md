@@ -1,5 +1,8 @@
 ## Why
 
+Portfolio status (29 September 2026, #114): Implemented repository behavior; owner acceptance belongs to #67. Use current supported provider reads, not retired shopping-list tools. Two conversations, idle/cold start, actual expiry/equivalent and stable identity are not proven by one successful portal save.
+See [portfolio evidence](../../../docs/openspec-portfolio-reconciliation.md).
+
 Nemlig Assistant repeatedly became unusable in ChatGPT without a bounded error or enough evidence to identify the failing boundary. The current incident most strongly implicates an expired ChatGPT OAuth connection or reconnect handoff—not the healthy Worker or Nemlig backend—so the hosted path needs explicit OAuth-boundary evidence, end-to-end deadlines, and a repeatable connection acceptance check now.
 
 ## What Changes

@@ -1,6 +1,6 @@
 ## Purpose
 
-Defines a local MCP server that exposes the TypeScript shopper's safe non-recipe product and basket capabilities to compatible clients.
+Defines an MCP server that exposes the TypeScript shopper's safe non-recipe product and basket capabilities through local stdio and authenticated stateless HTTP to compatible clients.
 
 ## Requirements
 
@@ -15,8 +15,32 @@ The system SHALL expose a `nemlig-assistant` MCP server over stdio through the l
 - **WHEN** a Nemlig request or runtime operation fails
 - **THEN** the tool returns a concise sanitized MCP error without a stack trace
 
+### Requirement: Stateless HTTP serves the modern MCP protocol
+
+The Nemlig MCP HTTP server SHALL serve the modern `2026-07-28` protocol through the canonical endpoint. Each HTTP request MAY use a fresh MCP server instance, and continuation across requests SHALL depend only on authenticated, principal-scoped application state rather than an MCP transport session. Any accepted SDK-supported handshake SHALL preserve the same authentication, isolation, and protected-write boundaries; this requirement does not introduce an application-owned compatibility adapter.
+
+#### Scenario: Modern client calls a tool without initialization
+
+- **WHEN** a client explicitly using protocol revision `2026-07-28` discovers tools and invokes a read tool through the canonical HTTP endpoint
+- **THEN** it receives the normal tool result without an initialize handshake or required `Mcp-Session-Id`
+
+#### Scenario: Existing ChatGPT client initializes
+
+- **WHEN** an authenticated compatible client uses the `2025-06-18` initialize handshake
+- **THEN** the canonical endpoint accepts it through stateless legacy compatibility without creating a transport-owned provider session or bypassing authentication and principal isolation
+
+#### Scenario: A reviewed basket change crosses HTTP requests
+
+- **WHEN** one authenticated principal prepares a basket review in one HTTP request and applies it in a later request using a fresh MCP server instance
+- **THEN** the review remains available to that principal and the existing expiry, freshness, single-use, write serialization, uncertainty, and readback checks remain enforced
+
+#### Scenario: Requests belong to different principals
+
+- **WHEN** a second authenticated principal presents a review created by the first principal
+- **THEN** the server rejects it without provider mutation or disclosure of the first principal's application state
+
 ### Requirement: Non-recipe tool surface
-The server SHALL expose independent product search, favourites, exact product details, department browsing, basket view, and staged basket review/apply tools. Product-bearing tools MAY reference one shared display-only product viewer resource. The server SHALL NOT expose direct model-visible basket mutation, recipe, checkout, order, payment, purchase, or delivery-slot tools.
+The server SHALL expose independent product search, favourites, exact product details, department browsing, basket view, local product review, and protected basket review/apply tools. Local review tools and the read-only visual basket action SHALL reference the shared product viewer; search, exact details, and ordinary basket reads SHALL return data without mounting a widget. The server SHALL NOT expose unprotected direct model-visible basket mutation, recipe, checkout, order, payment, purchase, or delivery-slot tools.
 
 #### Scenario: Enumerate base tools
 - **WHEN** a client lists tools
@@ -24,7 +48,7 @@ The server SHALL expose independent product search, favourites, exact product de
 
 #### Scenario: Inspect prohibited tools
 - **WHEN** a client enumerates all tools
-- **THEN** no tool name or description offers direct basket mutation, recipe parsing, checkout, order placement, payment, purchase, or delivery-slot changes
+- **THEN** no tool name or description offers unprotected direct basket mutation, recipe parsing, checkout, order placement, payment, purchase, or delivery-slot changes
 
 ### Requirement: Product candidates preserve provider facts
 The search tools SHALL return normalized product candidates and SHALL NOT infer comparative recommendation or price-ranking labels. They MAY expose provider-supplied labels and positively established classifications such as organic status; unknown classifications SHALL remain unknown.
@@ -38,26 +62,34 @@ The search tools SHALL return normalized product candidates and SHALL NOT infer 
 - **THEN** the tool returns an empty structured list
 
 ### Requirement: MCP authentication behavior
-Every provider-backed MCP tool SHALL load configured credentials and establish a fresh Nemlig session before performing its task, regardless of process-local login state, and SHALL return a clean remediation error when a complete credential pair is unavailable. Read-only tools MAY re-authenticate and retry once after a later HTTP 401. Basket writes SHALL NOT retry an indeterminate mutation.
+Every provider-backed MCP tool SHALL use an authenticated client for the current caller. Hosted client contexts SHALL remain isolated by authorized principal, policy revision, and credential generation. Read-only tools MAY reuse that client's existing session and SHALL load configured credentials when login or reauthentication is required. Protected basket apply and local-review submission tools SHALL request fresh authentication before their task. Missing credentials when authentication is required SHALL produce a clean remediation error without a provider task or mutation. Read-only tools MAY retry their complete task once after HTTP 401, sharing in-flight reauthentication or reusing a session already refreshed by another read. Basket writes SHALL NOT retry an indeterminate mutation.
 
-#### Scenario: Fresh authentication before a provider task
-- **WHEN** any provider-backed MCP tool is called while process-local state reports an existing login
-- **THEN** the tool establishes a fresh Nemlig session before reading or writing provider data
+#### Scenario: Read reuses an authenticated session
+- **WHEN** a read-only provider tool is called with an existing session in its current authorized client context
+- **THEN** it uses that session without loading credentials or starting another login
+
+#### Scenario: Fresh authentication before a protected write
+- **WHEN** an approved basket apply or local-review submission tool is called
+- **THEN** it requests fresh authentication before performing its task and still requires the unchanged exact approval, applicable fresh product and basket checks, single-use authorization, and verified readback
+
+#### Scenario: Authentication context changes
+- **WHEN** a hosted request belongs to another principal or changes policy revision or credential generation
+- **THEN** it cannot reuse the previous context's credentials, provider session, or private review state
 
 #### Scenario: Credentials unavailable
-- **WHEN** a provider-backed MCP tool is called without a complete configured credential pair
+- **WHEN** a provider-backed MCP tool requires login or reauthentication but has no complete configured credential pair
 - **THEN** the tool instructs the user to configure credentials or run interactive login and performs no provider task or mutation
 
-#### Scenario: Read expires after pre-authentication
-- **WHEN** a read-only provider task returns HTTP 401 after fresh authentication
-- **THEN** the tool re-authenticates once and retries the complete read-only task once
+#### Scenario: Read session expires
+- **WHEN** a read-only provider task returns HTTP 401
+- **THEN** it refreshes or reuses the already refreshed session and retries the complete read-only task at most once; a second failure is returned without further authentication or task retries
 
 #### Scenario: Write result is indeterminate
 - **WHEN** an approved basket write fails after fresh authentication
 - **THEN** the tool does not retry the mutation
 
 ### Requirement: MCP basket tools
-The view tool SHALL return normalized basket data, and every model-visible add, remove, replace, or clear operation SHALL use the matching read-only prepare tool followed by its apply tool only after explicit approval of the unchanged proposal.
+The view tool SHALL return normalized basket data, and every model-visible add, remove, replace, or clear operation SHALL use the matching read-only prepare tool followed by its protected apply tool only after explicit approval of the unchanged exact proposal. Additions MAY alternatively use the prepared local-review submission path with the same exact approval and server-side safety checks. Local product acceptance SHALL NOT constitute approval to write to Nemlig.
 
 #### Scenario: Prepare additions
 - **WHEN** `review_items_to_add` receives exact positive product quantities plus its explicit exact-review authorization
@@ -108,10 +140,10 @@ The replacement preparation tool SHALL report the exact current line total, prop
 - **THEN** the review reports the signed price difference without labeling it as savings or suppressing the candidate
 
 ### Requirement: Composable catalogue and product viewer surface
-The server SHALL expose current catalogue search, favourites, grocery sections, browsing, exact product details, and basket reads as independent conversational capabilities. Exact product details SHALL resolve one current product by its positive catalogue ID and SHALL remain read-only. Product search SHALL hydrate returned candidates through the existing exact-product loader and use the same supported public product projection as exact lookup. The server SHALL register one display-only product viewer resource for product-bearing results and SHALL preserve complete structured and text fallbacks.
+The server SHALL expose current catalogue search, favourites, grocery sections, browsing, exact product details, and basket reads as independent conversational capabilities. Exact product details SHALL resolve one current product by its positive catalogue ID and SHALL remain read-only. Product search SHALL hydrate returned candidates through the existing exact-product loader and use the same supported public product projection as exact lookup. The server SHALL register one current shared product viewer resource for local review and visual basket results and SHALL preserve complete structured and text fallbacks.
 
 #### Scenario: Exact product details are requested
-- **WHEN** a client supplies a positive product ID returned by a current search or plan
+- **WHEN** a client supplies a positive product ID returned by a current search
 - **THEN** the server returns current product facts without reading or changing the basket
 
 #### Scenario: Rich product search is requested
@@ -119,10 +151,10 @@ The server SHALL expose current catalogue search, favourites, grocery sections, 
 - **THEN** the server returns unique detailed products in provider order, labels unavailable or invalid rows explicitly, and performs no second lookup when the viewer expands a successful result
 
 ### Requirement: Read-only MCP favorites search
-The `list_favorites` tool SHALL accept optional non-empty search text, SHALL return only matching authenticated favorites as normalized ranked candidates up to the requested positive limit, and SHALL remain read-only and non-destructive.
+The `show_my_favorites` tool SHALL accept optional non-empty search text, SHALL return only matching authenticated favorites as normalized ranked candidates up to the requested positive limit when supplied, and SHALL remain read-only and non-destructive.
 
 #### Scenario: Conversational favorite search
-- **WHEN** a client calls `list_favorites` with the query `banan`
+- **WHEN** a client calls `show_my_favorites` with the query `banan`
 - **THEN** the tool returns matching favorites with their identifying metadata and deterministic candidate tags for review
 
 #### Scenario: Several candidates remain plausible
@@ -130,8 +162,8 @@ The `list_favorites` tool SHALL accept optional non-empty search text, SHALL ret
 - **THEN** the tool returns the candidates for user choice and does not automatically invoke a basket preparation or application tool
 
 #### Scenario: Search text is absent
-- **WHEN** a client calls `list_favorites` without a query
-- **THEN** the tool preserves the existing limited favorites listing response
+- **WHEN** a client calls `show_my_favorites` without a query
+- **THEN** the tool returns the authenticated favorites listing without imposing an application result limit when none is requested
 
 #### Scenario: Search returns no favorite
 - **WHEN** no favorite matches the supplied query
@@ -143,7 +175,7 @@ The MCP server SHALL guide clients to use `find_groceries` for search, `get_groc
 
 #### Scenario: Product request
 - **WHEN** the user asks to find products
-- **THEN** the client invokes direct search and may present the returned detailed products through the shared viewer without creating shopping state
+- **THEN** the client invokes direct search and presents the returned detailed products without creating shopping state or opening a widget
 
 #### Scenario: Explicit exact lookup
 - **WHEN** the user supplies a positive product ID returned by a current search
@@ -155,7 +187,7 @@ The MCP server SHALL guide clients to use `find_groceries` for search, `get_groc
 
 ### Requirement: Conversational reviewed basket changes
 
-The server SHALL keep catalogue results and exact product details independent from basket operations, while basket changes SHALL remain behind the existing matching staged review/apply tools and explicit approval. Review and apply responses SHALL retain structured data plus a readable text fallback. Product-bearing results MAY attach the one shared display-only viewer resource; the viewer never owns shopping state or invokes provider calls.
+The server SHALL keep catalogue results and exact product details independent from basket operations, while basket changes SHALL remain behind the existing matching staged review/apply tools or prepared local-review submission for additions and explicit approval. Review and apply responses SHALL retain structured data plus a readable text fallback. Plain product and actual-basket payloads SHALL remain read-only. An explicitly activated local review SHALL attach the shared viewer resource; its controls SHALL use server-owned, principal- and conversation-bound review state and invoke protected submission only after explicit confirmation of the exact unchanged prepared effects. The viewer SHALL NOT invoke Nemlig directly or treat local acceptance as provider-write approval.
 
 #### Scenario: Exact review is submitted
 
@@ -235,15 +267,23 @@ answer an explicit request.
 - **THEN** the presentation includes only the additional package, price, identifier, timing, or diagnostic detail needed for the user to understand or resolve that case
 
 ### Requirement: Shared product viewer resource
-The server SHALL register one reusable display-only product viewer resource for appropriate product-bearing tools. The viewer SHALL render already-returned structured data, SHALL perform no provider or network fetch, SHALL expose no basket mutation or approval controls, and SHALL retain a complete structured/text fallback when a host cannot render the resource. Product image URLs SHALL be retained only for observed HTTPS Nemlig origins; hostile, non-HTTPS, and unrelated origins SHALL be omitted while text details remain available.
+The server SHALL register one reusable current product viewer resource for local product review and the read-only visual basket action. The viewer SHALL render already-returned structured data, SHALL perform no render-triggered tool/provider-API read or direct provider-API fetch, and SHALL retain a complete structured/text fallback when a host cannot render the resource. Plain product and actual-basket payloads SHALL expose no local review edits or submission confirmation. Only an explicitly activated server-owned local review SHALL enable review controls through the same principal- and conversation-bound tools as conversation. Edits SHALL supply the current review reference and revision plus exact product references and quantities where the action requires them; submission SHALL supply the unchanged prepared submission reference and current review revision after explicit exact approval, with freshness, single-use, uncertainty, and readback safeguards enforced by the server. Rendering or local acceptance SHALL NOT authorize a provider write. Permitted product images MAY load; their URLs SHALL be retained only for observed HTTPS Nemlig origins. Hostile, non-HTTPS, and unrelated origins SHALL be omitted while text details remain available.
 
 #### Scenario: Resource inventory is inspected
 - **WHEN** a client requests the MCP resource inventory
-- **THEN** the single viewer resource is advertised once with its supported MCP Apps MIME type and clients can continue with structured/text tools
+- **THEN** the current shared viewer resource is advertised once with its supported MCP Apps MIME type and clients can continue with structured/text tools
 
 #### Scenario: Viewer expands a search result
-- **WHEN** a host renders a successfully hydrated search result
+- **WHEN** a host expands a successfully hydrated product in a local review or visual basket result
 - **THEN** the viewer displays the returned detailed fields without another provider/tool call
+
+#### Scenario: Plain product or actual-basket payload is rendered
+- **WHEN** the viewer receives product facts or an actual-basket result without an activated local review
+- **THEN** it renders read-only rows without local edit or submission controls and makes no automatic provider fetch
+
+#### Scenario: Local review controls are explicitly activated
+- **WHEN** a user edits an activated local review or confirms its prepared submission
+- **THEN** the viewer invokes the existing review tool with current review reference, revision, and required exact action inputs, or the protected submit tool with review reference, current revision, and unchanged prepared submission reference after exact approval; the server remains authoritative and no write is retried automatically
 
 #### Scenario: Viewer receives partial or unavailable data
 - **WHEN** a result is unavailable, invalid, or missing an image or optional field
@@ -270,12 +310,17 @@ The server SHALL expose a distinct, read-only visual basket action that reads th
 
 ### Requirement: Parallel reads share pre-authentication
 
-The MCP runtime SHALL authenticate before every provider-backed task and SHALL coalesce overlapping login attempts for the same principal client. It SHALL preserve the existing single retry after an HTTP 401.
+The MCP runtime SHALL ensure authentication before every provider-backed task, reuse existing sessions for read-only work, and coalesce overlapping login attempts only within the same principal client. A read-only task SHALL retry at most once after HTTP 401; if another read already refreshed that client's session, it SHALL reuse the refreshed session rather than start a redundant login. These read retry rules SHALL NOT retry a basket write.
 
 #### Scenario: ChatGPT starts independent searches concurrently
 
 - **WHEN** multiple read-only tools begin while a fresh login for their shared principal client is in flight
 - **THEN** they await that login and continue without starting competing login sessions
+
+#### Scenario: An old read fails after another read refreshed the session
+
+- **WHEN** a read returns HTTP 401 from an earlier session generation after another read has refreshed the same principal client
+- **THEN** it retries once with the newer session without another login and returns any subsequent failure
 
 ### Requirement: Representative recipe-scale smoke verification
 

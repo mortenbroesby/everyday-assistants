@@ -43,4 +43,11 @@
 - [x] 7.1 Run the issue's focused HTTP, auth, proposal, runtime, gateway, and interface test set; verify identity isolation, invalidation, single-use/replay, write readback, product/profile contracts, and no real-provider path.
 - [x] 7.2 Run `pnpm --filter nemlig-assistant build`, `check`, `smoke:package`, root `pnpm verify`, `pnpm privacy:check`, `pnpm spec:validate`, and `pnpm --filter nemlig-assistant cloudflare:check` on the final relevant diff; record any unavailable platform proof precisely.
 - [x] 7.3 Reconcile the OpenSpec transport requirements and review the final diff for v1 remnants, secrets, accidental product changes, and complexity; verify strict OpenSpec validation.
-- [ ] 7.4 Decide the package release version near merge, add the reviewed release note, commit scoped checkpoints, push the dedicated branch, open one PR, and verify required CI and the eventual integrated `main` revision under repository delivery rules.
+- [x] 7.4 Decide the package release version near merge, add the reviewed release note, commit scoped checkpoints, push the dedicated branch, open one PR, and verify required CI and the eventual integrated `main` revision under repository delivery rules.
+
+Closeout for #114, 29 September 2026: PR #95 tested
+`8f7220fefaf35f969514d1ae0d2df52dd240a46c`, passed exact-head CI
+`35789718220`, and merged as `ff6252c3e6a4ac84cc16189bc8a9525e7b0a16d3`.
+The merged commit is an ancestor of inspected main `f45ce936`. PR evidence
+records final verification, package smoke, version 4.14.0 and its release note.
+This credits repository delivery, not native ChatGPT or provider acceptance.

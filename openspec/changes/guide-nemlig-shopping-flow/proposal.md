@@ -1,5 +1,8 @@
 ## Why
 
+Portfolio status (29 September 2026, #114): Superseded design research, not an active implementation request. PR #95 and the current In Review/Ready contract replace the old wizard; unchecked historical native tasks remain unverified. Current host acceptance owner: #137.
+See [portfolio evidence](../../../docs/openspec-portfolio-reconciliation.md).
+
 The deployed Nemlig shopping views work independently, but they do not show the user where they are in the agreed shopping journey or what to do next. The live ChatGPT acceptance test exposed this gap: a proposal rendered successfully, yet the approved List → Proposal → Choices → Approve flow was not visible.
 
 ## What Changes

@@ -1,5 +1,8 @@
 ## Why
 
+Portfolio status (29 September 2026, #114): Current v6 implementation is integrated. Native historical/recovery acceptance owner: #137; deployment evidence is separately reused from #96. Preserve unchecked host gates and the existing lightweight viewer.
+See [portfolio evidence](../../../docs/openspec-portfolio-reconciliation.md).
+
 Issue #113 requires a conversational product review surface with optional touch
 controls. The current shared viewer can display products but cannot represent
 unresolved choices, navigate contextual alternatives, or express user actions.
