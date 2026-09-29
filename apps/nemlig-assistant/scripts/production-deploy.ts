@@ -127,7 +127,7 @@ class DeployFailure extends Error {
 }
 
 class CommandFailure extends DeployFailure {
-  constructor(code: string, readonly status?: number, readonly acceptanceFailure?: AcceptanceFailureEvidence) {
+  constructor(code: string, readonly status?: number, readonly acceptanceFailure?: AcceptanceFailureEvidence, readonly diagnostic?: string) {
     super(code);
   }
 }
@@ -139,6 +139,14 @@ class AcceptanceFailure extends DeployFailure {
 }
 
 const fail = (code: string): never => { throw new DeployFailure(code); };
+
+/** Emits only a provider HTTP status or documented numeric error code, never stderr text. */
+export const commandFailureDiagnostic = (stderr: string): string | undefined => {
+  const http = /\bHTTP\s+([45]\d\d)\b/iu.exec(stderr)?.[1];
+  if (http) return `command_http_status=${http}`;
+  const code = /\b(?:error\s+)?code\s*[:#]?\s*(\d{3,6})\b/iu.exec(stderr)?.[1];
+  return code ? `command_provider_error_code=${code}` : undefined;
+};
 
 const json = (raw: string, code: string): unknown => {
   try {
@@ -535,7 +543,7 @@ export const defaultRunner: CommandRunner = async (command, args, options = {}) 
     }
     else if (code === 0) done();
     else done(new CommandFailure("command_failed", /HTTP 404\b/u.test(stderr) ? 404 : undefined,
-      options.captureFailureStdout?.(output.slice(-16 * 1024).trim())));
+      options.captureFailureStdout?.(output.slice(-16 * 1024).trim()), commandFailureDiagnostic(stderr)));
   });
   if (options.input !== undefined) child.stdin.end(options.input);
   else child.stdin.end();
@@ -1407,6 +1415,7 @@ export async function deployProduction(commit: string, inputDeps: DeployDependen
     journal.checks.push("edge_acceptance", service ? "service_fixture_acceptance" : "authenticated_read_only_acceptance");
     journal.outcome = "success";
   } catch (error) {
+    if (error instanceof CommandFailure && error.diagnostic) console.error(error.diagnostic);
     console.error(error instanceof Error ? error.message : "unexpected deployment failure");
     journal.outcome = "failed";
     journal.failure = error instanceof DeployFailure && journalFailures.has(error.code) ? error.code : "unexpected_failure";

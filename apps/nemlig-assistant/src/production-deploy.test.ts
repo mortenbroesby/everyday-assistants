@@ -7,6 +7,7 @@ import test from "node:test";
 import { promisify } from "node:util";
 import {
   deployProduction,
+  commandFailureDiagnostic,
   defaultRunner,
   finalizeDeploymentRecovery,
   inspectDeploymentRecovery,
@@ -2139,6 +2140,12 @@ test("the runner rejects a pre-aborted command before spawning and kills a detac
   } finally {
     await rm(root, { recursive: true, force: true });
   }
+});
+
+test("command diagnostics preserve only a provider status or numeric code", () => {
+  assert.equal(commandFailureDiagnostic("Request failed with HTTP 409 and private details"), "command_http_status=409");
+  assert.equal(commandFailureDiagnostic("API error code: 10007 with private details"), "command_provider_error_code=10007");
+  assert.equal(commandFailureDiagnostic("private detail without a recognized code"), undefined);
 });
 
 test("cancellation after remote intent retains the lease and suppresses rollback and later mutations", async () => {
