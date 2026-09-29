@@ -333,12 +333,21 @@ When the provider portal is enabled and configured by the operator, `/connect`
 offers **Sign in** for the configured owner using the installed MCP OAuth client
 and PKCE. A verified owner resource token establishes the existing short-lived
 signed portal cookie; tokens are not returned to the page or chat.
+Native connection forms retain their same-origin header for strict origin and
+single-use CSRF checks; no referrer is sent to other origins.
 Opening or signing in to the page never replaces stored Nemlig credentials.
 Standard resource bearer entry remains available to configured family members. Enter
 only your own Nemlig login in that separately authenticated page. Never send it
 through ChatGPT or a tool argument. The page can replace or revoke your
 connection; the owner can disable or revoke invitee access. Follow the disabled-first
 [self-service procedure](../../docs/cloudflare-operations.md#self-service-credential-onboarding).
+
+For a credential-free native-form regression, run
+`pnpm --filter nemlig-assistant smoke:onboarding` and open its loopback URL.
+Use only the printed synthetic credentials, click **Connect**, then
+**Revoke connection**: both must succeed. This exercises the real portal
+renderer, signed cookie and single-use CSRF store with no OAuth/Nemlig access.
+It is not a live owner-connection or native ChatGPT acceptance test.
 
 The MCP server advertises the original orange bitten-dot icon and the display
 name `Nemlig Assistant` to clients that render standard MCP app metadata.

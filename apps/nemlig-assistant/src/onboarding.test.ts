@@ -155,11 +155,28 @@ test("credential portal accepts a standard bearer token and keeps provider state
   const sessionCookie = cookieValue(login);
   const portal = await handleOnboardingRequest(new Request("https://mcp.example.test/connect", { headers: { cookie: sessionCookie } }), env, dependencies);
   assert.equal(portal.status, 200);
+  assert.equal(portal.headers.get("referrer-policy"), "same-origin", "native form POST must retain Origin for the strict server check");
   const html = await portal.text();
   assert.match(html, /autocomplete="current-password"/u);
   assert.doesNotMatch(html, /authorization_code|client_secret|organization|private-password/u);
   const csrf = html.match(/name="csrf" value="([^"]+)"/u)?.[1];
   assert.ok(csrf);
+  for (const origin of [undefined, "null", "https://foreign.example.test"]) {
+    const rejected = await handleOnboardingRequest(new Request("https://mcp.example.test/connect", {
+      method: "POST",
+      headers: { cookie: sessionCookie, ...(origin ? { origin } : {}), "content-type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ csrf, action: "replace", username: "owner@example.test", password: "private-password" }),
+    }), env, dependencies);
+    assert.equal(rejected.status, 403);
+    assert.equal(connected, false, "rejected origins must not reach credential replacement");
+  }
+  const badCsrf = await handleOnboardingRequest(new Request("https://mcp.example.test/connect", {
+    method: "POST",
+    headers: { cookie: sessionCookie, origin: "https://mcp.example.test", "content-type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({ csrf: "wrong", action: "replace", username: "owner@example.test", password: "private-password" }),
+  }), env, dependencies);
+  assert.equal(badCsrf.status, 403);
+  assert.equal(connected, false, "same-origin alone must not authorize credential replacement");
   const saved = await handleOnboardingRequest(new Request("https://mcp.example.test/connect", {
     method: "POST",
     headers: { cookie: sessionCookie, origin: "https://mcp.example.test", "content-type": "application/x-www-form-urlencoded" },

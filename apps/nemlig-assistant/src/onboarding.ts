@@ -90,7 +90,8 @@ const securityHeaders = new Headers({
   "cache-control": "no-store",
   "content-security-policy": "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'",
   "permissions-policy": "camera=(), microphone=(), geolocation=()",
-  "referrer-policy": "no-referrer",
+  // Native form POSTs under no-referrer send Origin: null and fail our origin check.
+  "referrer-policy": "same-origin",
   "x-content-type-options": "nosniff",
   "x-frame-options": "DENY",
 });
