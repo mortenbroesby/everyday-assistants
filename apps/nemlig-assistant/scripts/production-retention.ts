@@ -13,7 +13,9 @@ import {
   planImageRetention,
   parseRetentionCount,
   retentionDryRunFingerprint,
+  parseRegistryCredentialOutput,
   readRegistryInventory,
+  registryCredentialCommand,
   registryOrigin,
   productionImageName,
   type ImageRetentionLedger,
@@ -47,19 +49,7 @@ interface GithubResponse {
 const jsonObject = (value: unknown): Record<string, unknown> | undefined =>
   value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : undefined;
 
-export function parseRegistryCredentialOutput(raw: string): { authorization: string } {
-  let value: unknown;
-  try { value = JSON.parse(raw); } catch { return fail("credentials_invalid"); }
-  const credentials = jsonObject(value);
-  const password = credentials?.password;
-  if (typeof password !== "string" || password.length === 0
-    || (credentials?.username !== undefined && credentials.username !== "v1")) fail("credentials_invalid");
-  return { authorization: `Basic ${Buffer.from(`v1:${password as string}`).toString("base64")}` };
-}
-
-export function registryCredentialCommand(permission: "pull" | "push"): string[] {
-  return ["exec", "wrangler", "containers", "registries", "credentials", new URL(registryOrigin).host, `--${permission}`, "--expiration-minutes", "5", "--json", "--env", "production"];
-}
+export { parseRegistryCredentialOutput, registryCredentialCommand } from "./container-image-retention.js";
 
 export function parseRetentionLease(raw: string): RetentionLease {
   let value: unknown;

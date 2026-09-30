@@ -48,6 +48,11 @@ Routine delivery SHALL verify the exact deployed source revision, health, OAuth 
 - **WHEN** the enabled Worker reports the candidate revision but the authenticated MCP connection still identifies an earlier backend release, or the candidate instance has not started
 - **THEN** read-only acceptance waits within a fixed budget for the candidate backend release before exercising the service fixture, and requires the running application version to match before accepting the release; exhaustion fails closed and cannot authorize image retention
 
+#### Scenario: Disabled-route propagation is transient
+
+- **WHEN** either public MCP route does not yet return the exact disabled response immediately after the disabled Worker deployment
+- **THEN** the deploy checks both routes again within a fixed retry and time budget; it proceeds only after both return HTTP 503 with the exact disabled response, otherwise it leaves the Worker disabled and records the bounded failure category
+
 ### Requirement: Release summaries distinguish evidence and cleanup state
 
 The protected workflow SHALL publish a bounded summary that distinguishes
@@ -104,3 +109,8 @@ Recovery SHALL retain only state required to distinguish runner loss before muta
   state, append the missing rollback result, and only then release the lease;
   any Worker, Container, configuration, or ownership mismatch retains the
   lease and performs no provider mutation
+
+#### Scenario: Disabled deployment result is not journaled after a route probe fails
+
+- **WHEN** a stopped runner leaves only a `disabled_deploy` intent and read-only evidence proves the current Worker is the exact commit's disabled version, its version-tagged registry image matches the same Container application/version, configuration and identity match the saved start, the Container is inactive, and both public routes return the fixed disabled response
+- **THEN** protected recovery appends the observed disabled-deploy result and may release the lease without deploying or rolling back; any mismatch retains the lease without provider mutation

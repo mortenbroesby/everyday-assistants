@@ -95,7 +95,7 @@ const config = (path: string) => ({
   durable_objects: { bindings: [{ name: "NEMLIG_MCP_CONTAINER", class_name: "NemligMcpContainer" }, { name: "NEMLIG_PLAN_STORAGE", class_name: "PlanStorage" }] },
 });
 
-const recoveryDeps = (journal: Record<string, unknown>, currentVersion: string, currentEnabled: boolean, options: { image?: string; applicationVersion?: number; active?: boolean; rollbackTo?: { version: string; enabled: boolean } } = {}): DeployDependencies => {
+const recoveryDeps = (journal: Record<string, unknown>, currentVersion: string, currentEnabled: boolean, options: { image?: string; applicationVersion?: number; active?: boolean; revision?: string; configDrift?: boolean; rollbackTo?: { version: string; enabled: boolean } } = {}): DeployDependencies => {
   let liveVersion = currentVersion;
   let liveEnabled = currentEnabled;
   let remoteParent = typeof journal.remoteCommit === "string" ? journal.remoteCommit : "cccccccccccccccccccccccccccccccccccccccc";
@@ -110,15 +110,20 @@ const recoveryDeps = (journal: Record<string, unknown>, currentVersion: string, 
       return "rollback accepted";
     }
     if (command === "pnpm" && args.includes("deployments")) return deployment(liveVersion);
-    if (command === "pnpm" && args.includes("versions")) return version(liveVersion, commit, liveEnabled);
+    if (command === "pnpm" && args.includes("versions")) {
+      const raw = version(liveVersion, options.revision ?? commit, liveEnabled);
+      return options.configDrift ? raw.replace('"name":"MCP_TOTAL_TIMEOUT_MS","text":"90000"', '"name":"MCP_TOTAL_TIMEOUT_MS","text":"90001"') : raw;
+    }
     if (command === "pnpm" && args.includes("instances")) return JSON.stringify([{ id: "durable-object", name: "nemlig-production", state: options.active ? "running" : "inactive", version: options.active ? options.applicationVersion ?? 25 : null }]);
     if (command === "pnpm" && args.includes("info")) return JSON.stringify({
       id: applicationId, name: "nemlig-mcp-cloudflare-production-nemligmcpcontainer-production", instances: 1,
       configuration: { image: options.image ?? image }, version: options.applicationVersion ?? 25,
     });
+    if (command === "pnpm" && args.includes("registries")) return JSON.stringify({ username: "v1", password: "pull-credential" });
     if (command === "pnpm" && args.includes("containers")) return JSON.stringify([{
       id: applicationId, name: "nemlig-mcp-cloudflare-production-nemligmcpcontainer-production", instances: 1, image: options.image ?? image, version: options.applicationVersion ?? 25,
     }]);
+    if (command === "docker") return JSON.stringify({ Descriptor: { digest: candidateImage } });
     if (command !== "gh") throw new Error("unexpected command");
     if (args[0] === "repo") return JSON.stringify({ nameWithOwner: "mortenbroesby/everyday-assistants", url: "https://github.com/mortenbroesby/everyday-assistants" });
     if (args[0] === "api" && args[1] === "--method" && args[2] === "DELETE") { remoteHead = ""; return ""; }
@@ -140,8 +145,9 @@ const recoveryDeps = (journal: Record<string, unknown>, currentVersion: string, 
     }
     throw new Error("unexpected gh api");
   };
-  return { repoRoot: ".", packageRoot: ".", env: {}, run,
+  return { repoRoot: ".", packageRoot: ".", env: { CLOUDFLARE_ACCOUNT_ID: accountId }, run,
     fetcher: async () => new Response("MCP temporarily disabled", { status: 503 }),
+    registryFetcher: async () => new Response(null, { status: 200, headers: { "docker-content-digest": candidateImage } }),
     sleep: async () => undefined, now: () => new Date() };
 };
 
@@ -771,6 +777,25 @@ test("successful deployment builds once, reuses the image, and journals only red
   } finally {
     await rm(root, { recursive: true, force: true });
   }
+});
+
+test("disabled-route verification retries transient edge failures within a fixed bound", async () => {
+  const { deps, root } = await fixture();
+  const fetcher = deps.fetcher;
+  let routeReads = 0;
+  let sleeps = 0;
+  deps.fetcher = async (url, init) => {
+    routeReads += 1;
+    if (routeReads === 1) throw new Error("temporary edge transport failure");
+    return await fetcher(url, init);
+  };
+  deps.sleep = async () => { sleeps += 1; };
+  try {
+    const report = await deployProduction(commit, deps);
+    assert.equal(report.outcome, "success");
+    assert.equal(routeReads, 4);
+    assert.equal(sleeps, 1);
+  } finally { await rm(root, { recursive: true, force: true }); }
 });
 
 test("config preflight supplies every validated plain production value to both deploys", async () => {
@@ -1924,9 +1949,9 @@ test("disabled recovery requires both exact public routes to remain disabled", a
     const result = await inspectDeploymentRecovery(journal.operationId, deps, true);
     assert.equal(result.cleanupEligible, false);
     assert.equal(result.reason, "provider_drift");
-    assert.equal(routeReads, 1);
+    assert.equal(routeReads, 12);
     assert.equal(await finalizeDeploymentRecovery(journal.operationId, deps, true, true), false);
-    assert.equal(routeReads, 2);
+    assert.equal(routeReads, 24);
   }
 });
 
@@ -2047,6 +2072,64 @@ test("pending rollback reconciliation records only the observed exact disabled c
   assert.equal(calls.some((call) => /wrangler deploy(?: |$)/u.test(call)), false);
   assert.equal(calls.some((call) => call.includes("containers delete")), false);
   assert.equal((await inspectDeploymentRecovery(pending.operationId, deps, true)).cleanupEligible, true);
+});
+
+test("interrupted disabled deploy is reconciled only from its exact disabled candidate", async () => {
+  const pending = terminalJournal({
+    outcome: "failed", rollback: "not_needed", lastVerifiedState: "unknown", failure: "disabled_route_unavailable",
+    remoteCommit: "cccccccccccccccccccccccccccccccccccccccc", startingEnabled: false,
+    transitions: [{ phase: "disabled_deploy", kind: "intent", at: "2026-09-05T12:00:00.000Z", version: startingId }],
+  });
+  const root = await mkdtemp(join(tmpdir(), "nemlig-interrupted-disabled-deploy-"));
+  const deps = recoveryDeps(pending, disabledId, false, { image: candidateImage, applicationVersion: 26 });
+  deps.stateRoot = root;
+  const run = deps.run;
+  const calls: string[] = [];
+  deps.run = async (command, args, options) => {
+    calls.push(`${command} ${args.join(" ")}`);
+    return await run(command, args, options);
+  };
+  try {
+    assert.equal((await reconcilePendingRollback(pending.operationId, deps, true, false)).reason, "runner_not_stopped");
+    const result = await reconcilePendingRollback(pending.operationId, deps, true, true);
+    assert.deepEqual(result, { operation: pending.operationId, originalRunnerStopped: true, reconciled: true, reason: "eligible", state: "disabled" });
+    assert.deepEqual(await inspectDeploymentRecovery(pending.operationId, deps, true), {
+      operation: pending.operationId, originalRunnerStopped: true, cleanupEligible: true, reason: "eligible", state: "disabled",
+    });
+    assert.equal(await finalizeDeploymentRecovery(pending.operationId, deps, true, true), true);
+    assert.ok(calls.some((call) => call.includes("registries credentials")));
+    assert.equal(calls.some((call) => /wrangler (?:deploy|rollback)(?:\s|$)|wrangler containers delete/u.test(call)), false);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test("interrupted disabled deploy drift retains the lease without provider mutation", async () => {
+  const pending = terminalJournal({
+    outcome: "failed", rollback: "not_needed", lastVerifiedState: "unknown", failure: "disabled_route_unavailable",
+    remoteCommit: "cccccccccccccccccccccccccccccccccccccccc", startingEnabled: false,
+    transitions: [{ phase: "disabled_deploy", kind: "intent", at: "2026-09-05T12:00:00.000Z", version: startingId }],
+  });
+  for (const drift of ["revision", "image", "application", "active", "config", "route"]) {
+    const deps = recoveryDeps(pending, disabledId, false, {
+      image: drift === "image" ? image : candidateImage,
+      applicationVersion: drift === "application" ? 25 : 26,
+      active: drift === "active",
+      revision: drift === "revision" ? previousCommit : commit,
+      configDrift: drift === "config",
+    });
+    if (drift === "route") deps.fetcher = async () => new Response("unexpected", { status: 200 });
+    deps.sleep = async () => undefined;
+    const run = deps.run;
+    let writes = 0;
+    deps.run = async (command, args, options) => {
+      if (command === "gh" && args[0] === "api" && ["POST", "PATCH", "DELETE"].some((method) => args.includes(method))) writes += 1;
+      if (command === "pnpm" && /(?:^|\s)(?:deploy|rollback)(?:\s|$)/u.test(args.join(" "))) writes += 1;
+      return await run(command, args, options);
+    };
+    const result = await reconcilePendingRollback(pending.operationId, deps, true, true);
+    assert.equal(result.reconciled, false, drift);
+    assert.equal(result.reason, "provider_drift", drift);
+    assert.equal(writes, 0, drift);
+  }
 });
 
 test("failed enable intent can release its lease only after exact readback of the unchanged disabled start", async () => {

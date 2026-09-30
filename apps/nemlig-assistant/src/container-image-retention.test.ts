@@ -7,6 +7,7 @@ import {
   parseImageRetentionLedger,
   parseRetentionCount,
   planImageRetention,
+  readRegistryTagDigest,
   readRegistryInventory,
   recordAcceptedImageRelease,
   recordRetentionDeleteIntent,
@@ -31,6 +32,26 @@ test("retention count defaults to ten and accepts any positive safe integer", ()
   for (const value of ["0", "-1", "01", "1.5", "9007199254740992", "NaN"]) {
     assert.throws(() => parseRetentionCount(value), /image_retention_policy_invalid/u);
   }
+});
+
+test("candidate registry digest reads are repository-scoped and validate the immutable response", async () => {
+  const expectedDigest = digest(42);
+  let requestUrl = "";
+  let requestInit: RequestInit | undefined;
+  const fetcher: typeof fetch = async (input, init) => {
+    requestUrl = String(input);
+    requestInit = init;
+    return new Response(null, { status: 200, headers: { "docker-content-digest": expectedDigest } });
+  };
+  assert.equal(await readRegistryTagDigest({
+    accountId, repository, tag: "11111111", authorization: "Basic dGVzdA==", fetcher,
+  }), expectedDigest);
+  assert.match(requestUrl, /\/v2\/0123456789abcdef0123456789abcdef\/nemlig-mcp-cloudflare-production-nemligmcpcontainer-production\/manifests\/11111111$/u);
+  assert.equal(requestInit?.method, "HEAD");
+  assert.equal((requestInit?.headers as Record<string, string>).Authorization, "Basic dGVzdA==");
+  await assert.rejects(readRegistryTagDigest({ accountId, repository: `${accountId}/foreign`, tag: "11111111", authorization: "Basic dGVzdA==", fetcher }), /image_retention_inventory_scope_invalid/u);
+  await assert.rejects(readRegistryTagDigest({ accountId, repository, tag: "latest", authorization: "Basic dGVzdA==", fetcher: async () => new Response(null, { status: 404 }) }), /image_retention_registry_manifest_http_404/u);
+  await assert.rejects(readRegistryTagDigest({ accountId, repository, tag: "11111111", authorization: "Basic dGVzdA==", fetcher: async () => new Response(null, { status: 200 }) }), /image_retention_registry_manifest_digest_invalid/u);
 });
 
 test("retention fingerprint is stable and changes when production references change", () => {
