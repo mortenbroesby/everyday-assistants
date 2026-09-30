@@ -17,7 +17,7 @@
 
 ## 4. Document and verify the safety boundary
 
-- [x] 4.1 Update the README, API inventory, current OpenSpecs, and issue #165 with add-only behavior, removed operations, the absolute-quantity provider endpoint, and the external concurrent-edit limitation; verify repository privacy checks pass.
+- [x] 4.1 Update the README, API inventory, current OpenSpecs, and issue #165 with add-only behavior, removed operations, login-flag source mapping, the absolute-quantity provider endpoint, and the external concurrent-edit limitation; verify repository privacy checks pass.
 - [x] 4.2 Re-run the full relevant Nemlig/repository verification gates on the updated login-flag implementation and inspect the exact diff for remaining decrement/clear paths.
 - [ ] 4.3 Once the current authorized credential session is active, send at most one cold login using ordinary website flags, then immediately read back the basket in the already-authenticated browser; do not retry after any error. Record pass/fail/blocked and the exact request flags without credentials or basket contents. No checkout or order.
-- [ ] 4.4 Update the existing scoped PR and issue #165 with the new source finding, tests, and remaining live limitation; keep deployment and goal completion pending until cold-login preservation and provider concurrency evidence are sufficient.
+- [x] 4.4 Update the existing scoped PR and issue #165 with the new source finding, tests, and remaining live limitation; keep deployment and goal completion pending until cold-login preservation and provider concurrency evidence are sufficient.
