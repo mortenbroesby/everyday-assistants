@@ -20,6 +20,10 @@ The system SHALL prepare one or more positive basket additions without mutation 
 - **WHEN** a requested product already has a positive basket quantity
 - **THEN** the proposal treats the requested quantity as an increment, displays the existing quantity and exact resulting quantity, and does not describe the increment as an absolute target
 
+#### Scenario: Basket snapshot is incomplete
+- **WHEN** the basket is missing verified aggregate totals/count, valid line identities or quantities, or the current total for a requested existing line
+- **THEN** preparation creates no applicable proposal and reports that the basket cannot be reviewed safely
+
 ### Requirement: Add-only provider basket operations
 
 The assistant SHALL expose no provider-basket removal, replacement, or clear operation. An approved addition SHALL increase the requested product quantity by the reviewed positive delta, preserve every unrelated line, and fail closed if the current basket differs from the last verified snapshot before a write. The first expected snapshot SHALL be the reviewed basket; after each successful per-product write and readback, that verified basket SHALL become the expected snapshot for the next product. Because Nemlig's observed write endpoint accepts an absolute line quantity, the service SHALL never intentionally send a lower quantity than the expected snapshot and SHALL report the provider's lack of an atomic increment precondition as a concurrency limitation.
@@ -47,6 +51,14 @@ The assistant SHALL expose no provider-basket removal, replacement, or clear ope
 #### Scenario: Provider write may have an uncertain outcome
 - **WHEN** a provider write or its readback fails or is uncertain
 - **THEN** the proposal is consumed, the user is told to inspect the basket, and the mutation is never automatically retried
+
+#### Scenario: A write cannot be prepared before dispatch
+- **WHEN** a fresh pre-write basket read, basket validation, or anti-forgery bootstrap fails before the `AddToBasket` request is dispatched
+- **THEN** no provider mutation is reported as uncertain; with no earlier verified additions, the proposal is invalidated and may be replaced by a fresh review
+
+#### Scenario: Pre-write failure follows an earlier verified addition
+- **WHEN** a later product's pre-write read, validation, or anti-forgery bootstrap fails after earlier products were verified
+- **THEN** no later `AddToBasket` request is dispatched, the proposal becomes terminal partial, and the user is told which earlier additions were verified and to inspect before preparing again
 
 #### Scenario: Concurrent external basket mutation
 - **WHEN** another Nemlig client changes the basket in the interval after the final read and before Nemlig applies the absolute-quantity write

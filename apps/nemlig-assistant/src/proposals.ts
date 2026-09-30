@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import {
+  BasketPreflightError,
   basketFingerprint,
   BasketSnapshotChangedError,
   NemligError,
@@ -14,9 +15,9 @@ export type ProposalOperation = "additions";
 export type AdditionAuthorization = { kind: "exact_review" };
 
 export interface ProposalAuditEvent {
-  event: "created" | "invalidated" | "applying" | "completed" | "replayed" | "expired" | "indeterminate";
+  event: "created" | "invalidated" | "applying" | "completed" | "replayed" | "expired" | "indeterminate" | "partial";
   operation: ProposalOperation;
-  result: "prepared" | "rejected" | "started" | "verified" | "known-result" | "expired" | "uncertain";
+  result: "prepared" | "rejected" | "started" | "verified" | "known-result" | "expired" | "uncertain" | "verified-partial";
 }
 
 export interface ProposalLine {
@@ -40,7 +41,7 @@ interface AddOperation {
   lines: ProposalLine[];
 }
 type Operation = AddOperation;
-type ProposalState = "prepared" | "applying" | "completed" | "invalid" | "indeterminate";
+type ProposalState = "prepared" | "applying" | "completed" | "invalid" | "indeterminate" | "partial";
 
 export interface ProposalView extends Record<string, unknown> {
   applicable: true;
@@ -184,13 +185,10 @@ export class BasketProposalService {
       throw new NemligError("A valid additions authorization is required.");
     }
     const basket = await this.client.getCart(options.signal);
+    const basketLines = this.validateAdditionBasket(basket, items);
     const lines = await runReadPool(items, async (item, signal) =>
       productLine(await (options.freshProducts ? this.client.getFreshProduct(item.product_id, signal) : this.client.getProduct(item.product_id, signal)), item.quantity), options);
     if (lines.some((line) => !line.available)) throw new NemligError("An exact product is unavailable; no proposal was created.");
-    const basketLines = new Map<string, Basket["items"][number]>();
-    for (const line of basket.items) if (line.id !== undefined && !basketLines.has(String(line.id))) {
-      basketLines.set(String(line.id), line);
-    }
     const reviewedLines = lines.map((line) => {
       const existing = basketLines.get(String(line.product_id));
       return {
@@ -203,7 +201,7 @@ export class BasketProposalService {
     const totals = lines.reduce((result, line) => ({
       price: result.price + line.line_total,
       count: result.count + line.quantity,
-    }), { price: basket.productsPrice ?? 0, count: basket.numberOfProducts ?? 0 });
+    }), { price: basket.productsPrice!, count: basket.numberOfProducts! });
     return this.create(connectionId, basket, { kind: "additions", lines }, {
       lines: reviewedLines,
       expected_products_price: money(totals.price),
@@ -221,6 +219,33 @@ export class BasketProposalService {
     }
     const ids = new Set(items.map((item) => item.product_id));
     if (ids.size !== items.length) throw new NemligError("Each product ID may appear only once per proposal.");
+  }
+
+  private validateAdditionBasket(
+    basket: Basket,
+    items: Array<{ product_id: number; quantity: number }>,
+  ): Map<string, Basket["items"][number]> {
+    if (!Number.isFinite(basket.productsPrice) || basket.productsPrice! < 0 ||
+        !Number.isSafeInteger(basket.numberOfProducts) || basket.numberOfProducts! < 0) {
+      throw new NemligError("Nemlig basket totals are incomplete; no proposal was created.");
+    }
+    const basketLines = new Map<string, Basket["items"][number]>();
+    for (const line of basket.items) {
+      if (!Number.isSafeInteger(line.id) || line.id! < 1 ||
+          !Number.isSafeInteger(line.quantity) || line.quantity! < 0) {
+        throw new NemligError("Nemlig basket lines are incomplete; no proposal was created.");
+      }
+      const id = String(line.id);
+      if (basketLines.has(id)) throw new NemligError("Nemlig basket contains duplicate product lines; no proposal was created.");
+      basketLines.set(id, line);
+    }
+    for (const item of items) {
+      const existing = basketLines.get(String(item.product_id));
+      if (existing && (!Number.isFinite(existing.total) || existing.total! < 0)) {
+        throw new NemligError("A matching Nemlig basket line is incomplete; no proposal was created.");
+      }
+    }
+    return basketLines;
   }
 
   /**
@@ -245,7 +270,13 @@ export class BasketProposalService {
         throw new NemligError("Proposal expired; prepare and review a new proposal.");
       }
 
-      const basket = await this.client.getCart();
+      let basket: Basket;
+      try {
+        basket = await this.client.getCart();
+      } catch {
+        this.invalidate(proposal);
+        throw new NemligError("Current basket could not be revalidated; no provider write was sent. Prepare and review a new proposal.");
+      }
       if (basketFingerprint(basket) !== proposal.basketFingerprint) {
         this.invalidate(proposal);
         throw new NemligError("Basket changed after review; prepare and review a new proposal.");
@@ -294,8 +325,8 @@ export class BasketProposalService {
         }
         const addedQuantity = proposal.operation.lines.reduce((total, line) => total + line.quantity, 0);
         const addedValue = proposal.operation.lines.reduce((total, line) => total + line.line_total, 0);
-        const expectedProductsPrice = money((basket.productsPrice ?? 0) + addedValue);
-        const expectedNumberOfProducts = (basket.numberOfProducts ?? 0) + addedQuantity;
+        const expectedProductsPrice = money(basket.productsPrice! + addedValue);
+        const expectedNumberOfProducts = basket.numberOfProducts! + addedQuantity;
         if (
           money(result.productsPrice ?? Number.NaN) !== expectedProductsPrice ||
           result.numberOfProducts !== expectedNumberOfProducts
@@ -313,14 +344,21 @@ export class BasketProposalService {
         this.record("completed", proposal.operation.kind, "verified");
         return completed;
       } catch (error) {
-        if (error instanceof BasketSnapshotChangedError && verifiedAdditions === 0) {
+        if (error instanceof BasketPreflightError && verifiedAdditions === 0) {
           this.invalidate(proposal);
-          throw new NemligError("Basket changed before an addition; no provider write was sent. Prepare and review a new proposal.");
+          const detail = error instanceof BasketSnapshotChangedError
+            ? "Basket changed before an addition"
+            : "A required basket preflight failed";
+          throw new NemligError(`${detail}; no provider write was sent. Prepare and review a new proposal.`);
         }
-        if (error instanceof BasketSnapshotChangedError) {
-          proposal.state = "indeterminate";
-          this.record("indeterminate", proposal.operation.kind, "uncertain");
-          throw new NemligError("Earlier additions were verified, but the basket changed before the next write; inspect the basket and do not retry this proposal.");
+        if (error instanceof BasketPreflightError) {
+          proposal.state = "partial";
+          this.record("partial", proposal.operation.kind, "verified-partial");
+          const detail = error instanceof BasketSnapshotChangedError
+            ? "the basket changed before the next write"
+            : "the next write failed its basket preflight";
+          const verifiedNames = proposal.operation.lines.slice(0, verifiedAdditions).map(({ name }) => name).join(", ");
+          throw new NemligError(`Earlier verified additions: ${verifiedNames}. ${detail}; no later write was sent. Inspect the basket and prepare a new proposal only after reconciling it.`);
         }
         proposal.state = "indeterminate";
         this.record("indeterminate", proposal.operation.kind, "uncertain");

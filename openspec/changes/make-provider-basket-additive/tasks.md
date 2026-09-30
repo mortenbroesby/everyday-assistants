@@ -5,6 +5,8 @@
 - [x] 1.3 Preserve single-use and uncertain-write safeguards; verify a failed/uncertain write is attempted once and no automatic retry occurs.
 - [x] 1.4 Bind each product write to the last verified basket snapshot; reject detected drift before POST and consume partial batches without retry or rollback.
 - [x] 1.5 Add real-client mock-HTTP regressions for sequential multi-line writes, existing and unrelated lines, drift before the first/later POST, and uncertain partial failure.
+- [x] 1.6 Reject incomplete basket totals, counts, quantities, identities, or requested existing-line totals during preparation before creating an applicable proposal.
+- [x] 1.7 Distinguish known pre-dispatch failures from post-dispatch uncertainty; consume no-write proposals as invalid and represent verified partial batches without retrying any line.
 
 ## 2. Remove provider-destructive capabilities
 

@@ -22,7 +22,12 @@ export class NemligError extends Error {
   }
 }
 
-export class BasketSnapshotChangedError extends NemligError {
+/** A failure known to occur before the provider's basket-write request was dispatched. */
+export class BasketPreflightError extends NemligError {
+  override readonly name: string = "BasketPreflightError";
+}
+
+export class BasketSnapshotChangedError extends BasketPreflightError {
   override readonly name = "BasketSnapshotChangedError";
 
   constructor() {
@@ -498,21 +503,31 @@ export class NemligClient {
 
   /** Add a positive quantity delta; the provider adapter translates it to its absolute-quantity endpoint. */
   async addToCart(productId: number, quantity = 1, expectedBasket?: Basket): Promise<Basket> {
-    this.requireLogin("add items");
-    if (!Number.isInteger(productId) || productId < 1) throw new NemligError("Product ID must be positive.");
-    if (!Number.isInteger(quantity) || quantity < 1) throw new NemligError("Quantity must be at least 1.");
-    const before = await this.getCart();
+    if (!this.loggedIn) throw new BasketPreflightError("Must be logged in to add items.");
+    if (!Number.isInteger(productId) || productId < 1) throw new BasketPreflightError("Product ID must be positive.");
+    if (!Number.isInteger(quantity) || quantity < 1) throw new BasketPreflightError("Quantity must be at least 1.");
+    let before: Basket;
+    try {
+      before = await this.getCart();
+    } catch {
+      throw new BasketPreflightError("Basket could not be re-read before addition; no provider write was sent.");
+    }
     if (expectedBasket && basketFingerprint(before) !== basketFingerprint(expectedBasket)) {
       throw new BasketSnapshotChangedError();
     }
     if (before.items.some((item) => item.id === undefined || typeof item.quantity !== "number" || !Number.isInteger(item.quantity) || item.quantity < 0)) {
-      throw new NemligError("Basket lines cannot be verified safely; inspect the Nemlig basket first.");
+      throw new BasketPreflightError("Basket lines cannot be verified safely; no provider write was sent.");
     }
     const matches = before.items.filter((item) => String(item.id) === String(productId));
-    if (matches.length > 1) throw new NemligError("Duplicate basket lines prevent a safe addition; inspect the Nemlig basket first.");
+    if (matches.length > 1) throw new BasketPreflightError("Duplicate basket lines prevent a safe addition; no provider write was sent.");
     const currentQuantity = matches[0]?.quantity ?? 0;
     if (!Number.isInteger(currentQuantity) || currentQuantity < 0 || currentQuantity + quantity > Number.MAX_SAFE_INTEGER) {
-      throw new NemligError("Current basket quantity cannot be increased safely; inspect the Nemlig basket first.");
+      throw new BasketPreflightError("Current basket quantity cannot be increased safely; no provider write was sent.");
+    }
+    try {
+      await this.ensureAntiForgery();
+    } catch {
+      throw new BasketPreflightError("Anti-forgery state could not be prepared; no provider write was sent.");
     }
     const targetQuantity = currentQuantity + quantity;
     await this.writeBasket(productId, targetQuantity, "Add to basket");
@@ -575,7 +590,11 @@ export class NemligClient {
 
   private async ensureAntiForgery(signal?: AbortSignal): Promise<void> {
     const host = new URL(API_BASE_URL).host;
-    if (this.cookies.get(host)?.has(xsrfCookieName)) return;
+    const existingCookie = this.cookies.get(host)?.get(xsrfCookieName);
+    if (existingCookie) {
+      if (!decodeCookie(existingCookie)) throw new NemligError("Get anti-forgery state failed: invalid response data.");
+      return;
+    }
     const response = asRecord(await this.json(
       `${API_BASE_URL}/AntiForgery`,
       { signal },
