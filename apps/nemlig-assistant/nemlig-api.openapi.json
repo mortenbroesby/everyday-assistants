@@ -60,7 +60,7 @@
           "usage": "client-used",
           "confidence": "high",
           "safety": "authentication-write",
-          "evidence": ["NemligClient.login", "NemligClient.validateCredentials"]
+          "evidence": ["NemligClient.login", "NemligClient.validateCredentials", "Nemlig website main.js ordinary-login and merge-dialog handlers (anonymous source inspection 2026-09-30)"]
         },
         "requestBody": {
           "required": true,
@@ -72,7 +72,7 @@
         },
         "responses": {
           "200": {
-            "description": "Login result; success is inferred from RedirectUrl or MergeSuccessful.",
+            "description": "Login result; success is inferred from RedirectUrl or MergeSuccessful=true. Current website code routes MergeSuccessful=false to its basket merge-decision flow.",
             "content": {
               "application/json": {
                 "schema": { "$ref": "#/components/schemas/LoginResponse" }
@@ -560,10 +560,10 @@
         "properties": {
           "Username": { "type": "string", "writeOnly": true },
           "Password": { "type": "string", "format": "password", "writeOnly": true },
-          "CheckForExistingProducts": { "type": "boolean" },
-          "DoMerge": { "type": "boolean" },
+          "CheckForExistingProducts": { "type": "boolean", "description": "The current website uses true for ordinary login and false after a merge-dialog choice." },
+          "DoMerge": { "type": "boolean", "description": "The current website uses true for ordinary login and the explicit add/merge choice; false is used for its remove choice." },
           "AppInstalled": { "type": "boolean" },
-          "SaveExistingBasket": { "type": "boolean" }
+          "SaveExistingBasket": { "type": "boolean", "description": "The current website sets true only for the explicit save-to-shopping-list choice; that flow clears the provider basket after saving." }
         }
       },
       "LoginResponse": {

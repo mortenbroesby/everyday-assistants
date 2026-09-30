@@ -276,8 +276,8 @@ export class NemligClient {
           body: JSON.stringify({
             Username: username,
             Password: password,
-            CheckForExistingProducts: false,
-            DoMerge: false,
+            CheckForExistingProducts: true,
+            DoMerge: true,
             AppInstalled: false,
             SaveExistingBasket: false,
           }),
@@ -288,6 +288,9 @@ export class NemligClient {
         false,
       );
       const data = asRecord(response);
+      if (data.MergeSuccessful === false) {
+        throw new NemligError("Nemlig requires a basket decision. Resolve it on Nemlig.com; the assistant will not choose a remove or save option.");
+      }
       if (!data.RedirectUrl && !data.MergeSuccessful) {
         throw new NemligError("Login failed: invalid credentials");
       }
@@ -308,10 +311,13 @@ export class NemligClient {
       method: "POST",
       signal,
       body: JSON.stringify({
-        Username: username, Password: password, CheckForExistingProducts: false,
-        DoMerge: false, AppInstalled: false, SaveExistingBasket: false,
+        Username: username, Password: password, CheckForExistingProducts: true,
+        DoMerge: true, AppInstalled: false, SaveExistingBasket: false,
       }),
     }, "Validate login", false, false, false));
+    if (response.MergeSuccessful === false) {
+      throw new NemligError("Nemlig requires a basket decision. Resolve it on Nemlig.com; the assistant will not choose a remove or save option.");
+    }
     if (!response.RedirectUrl && !response.MergeSuccessful) throw new NemligError("Login failed: invalid credentials");
     const token = asRecord(await this.json(`${API_BASE_URL}/Token`, { signal }, "Validate account", false, false, false));
     if (!asString(token.access_token)) throw new NemligError("Validate account failed: invalid response data.");

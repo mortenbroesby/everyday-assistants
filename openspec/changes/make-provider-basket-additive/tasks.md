@@ -12,12 +12,12 @@
 ## 3. Reuse authenticated sessions
 
 - [x] 3.1 Stop forcing a new `/login` immediately before a protected write when the current authorized client session is already valid; verify warm writes issue no login and cold writes authenticate before any mutation.
-- [x] 3.2 Keep current login flags unchanged; record the rejected HTTP 400 responses and stop additional login attempts without a new concrete diagnosis.
+- [x] 3.2 Replace the unconditional `false,false,false` tuple in login and credential validation with Nemlig's ordinary website flags, never silently choose the website's “remove from basket” tuple, and fail closed on unresolved merge responses; verify exact flags and no fallback login in client tests.
 - [x] 3.3 Match the first-party anti-forgery flow for cold login and state-changing API calls: fetch `/webapi/AntiForgery` when no XSRF cookie exists, retain XSRF-prefixed cookies in the existing jar, send `X-XSRF-TOKEN` plus same-origin `Origin`, and exclude the old session cookie from login. Client, credential-validation, and basket-write regressions pass without exposing tokens.
 
 ## 4. Document and verify the safety boundary
 
 - [x] 4.1 Update the README, API inventory, current OpenSpecs, and issue #165 with add-only behavior, removed operations, the absolute-quantity provider endpoint, and the external concurrent-edit limitation; verify repository privacy checks pass.
-- [x] 4.2 Run focused Nemlig tests, strict OpenSpec validation, and the repository verification gates; inspect the exact diff for remaining decrement/clear paths.
-- [x] 4.3 After the anti-forgery fix passes local tests, perform bounded real login/flag probes with immediate read-only basket readback. Three POST attempts for `CheckForExistingProducts=true, DoMerge=true, SaveExistingBasket=false` returned HTTP 400. The final attempt included both XSRF cookies, `X-XSRF-TOKEN`, and `Origin`; the sanitized probe captured no validation-field names. Browser readback after each showed 2 bananas and 1 milk unchanged. Keep flags unchanged; semantics remain unproven. No checkout or order.
-- [x] 4.4 Open one scoped draft PR with exact tested SHA and release note; keep deployment and goal completion blocked until the login/cold-start preservation and provider concurrency evidence are sufficient.
+- [x] 4.2 Re-run the full relevant Nemlig/repository verification gates on the updated login-flag implementation and inspect the exact diff for remaining decrement/clear paths.
+- [ ] 4.3 Once the current authorized credential session is active, send at most one cold login using ordinary website flags, then immediately read back the basket in the already-authenticated browser; do not retry after any error. Record pass/fail/blocked and the exact request flags without credentials or basket contents. No checkout or order.
+- [ ] 4.4 Update the existing scoped PR and issue #165 with the new source finding, tests, and remaining live limitation; keep deployment and goal completion pending until cold-login preservation and provider concurrency evidence are sufficient.

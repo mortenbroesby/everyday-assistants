@@ -76,8 +76,8 @@ test("login retains multiple cookies and reuses the session for basket access", 
         assert.deepEqual(JSON.parse(String(init?.body)), {
           Username: "person@example.test",
           Password: "never-logged",
-          CheckForExistingProducts: false,
-          DoMerge: false,
+          CheckForExistingProducts: true,
+          DoMerge: true,
           AppInstalled: false,
           SaveExistingBasket: false,
         });
@@ -131,6 +131,14 @@ test("cold login obtains anti-forgery state before posting credentials", async (
       match: "/login$",
       inspect: (_url, init) => {
         order.push("login");
+        assert.deepEqual(JSON.parse(String(init?.body)), {
+          Username: "person@example.test",
+          Password: "secret",
+          CheckForExistingProducts: true,
+          DoMerge: true,
+          AppInstalled: false,
+          SaveExistingBasket: false,
+        });
         const headers = new Headers(init?.headers);
         assert.equal(headers.get("x-xsrf-token"), "csrf-secret");
         assert.equal(headers.get("cookie"), "XSRF-TOKEN=csrf-secret; XSRF-COOKIE-TOKEN=csrf-cookie");
@@ -208,6 +216,28 @@ test("login rejects provider errors without exposing the supplied secret", async
   });
 });
 
+test("login stops on an unresolved basket merge without trying remove or save flags", async () => {
+  const requests: ExpectedRequest[] = [
+    antiForgeryRequest(),
+    {
+      match: "/login$",
+      inspect: (_url, init) => assert.deepEqual(JSON.parse(String(init?.body)), {
+        Username: "person@example.test",
+        Password: "secret",
+        CheckForExistingProducts: true,
+        DoMerge: true,
+        AppInstalled: false,
+        SaveExistingBasket: false,
+      }),
+      response: json({ MergeSuccessful: false, CanCreateShoppingList: true }),
+    },
+  ];
+  const client = new NemligClient(mockFetch(requests));
+  await assert.rejects(client.login("person@example.test", "secret"), /basket decision.*Nemlig.com/i);
+  assert.equal(client.isLoggedIn(), false);
+  assert.equal(requests.length, 0, "an unresolved merge must not trigger another login or session bootstrap");
+});
+
 test("login does not carry the previous session into reauthentication", async () => {
   const requests: ExpectedRequest[] = [
     antiForgeryRequest(),
@@ -273,8 +303,8 @@ test("credential validation performs one login and one authenticated read with n
       match: "/login$",
       inspect: (_url, init) => {
         assert.deepEqual(JSON.parse(String(init?.body)), {
-          Username: "person@example.test", Password: "private-secret", CheckForExistingProducts: false,
-          DoMerge: false, AppInstalled: false, SaveExistingBasket: false,
+          Username: "person@example.test", Password: "private-secret", CheckForExistingProducts: true,
+          DoMerge: true, AppInstalled: false, SaveExistingBasket: false,
         });
         assert.equal(new Headers(init?.headers).get("x-xsrf-token"), "anti-forgery-token");
         assert.equal(new Headers(init?.headers).get("cookie"), "XSRF-TOKEN=anti-forgery-token; XSRF-COOKIE-TOKEN=cookie-token");
@@ -290,6 +320,25 @@ test("credential validation performs one login and one authenticated read with n
   const failing = new NemligClient((async () => { attempts += 1; throw new TypeError("offline"); }) as typeof fetch);
   await assert.rejects(failing.validateCredentials("person@example.test", "private-secret"), /network unavailable/u);
   assert.equal(attempts, 1);
+});
+
+test("credential validation stops at a provider basket decision without fetching an API token", async () => {
+  const requests: ExpectedRequest[] = [
+    antiForgeryRequest(),
+    {
+      match: "/login$",
+      inspect: (_url, init) => assert.deepEqual(JSON.parse(String(init?.body)), {
+        Username: "person@example.test", Password: "private-secret", CheckForExistingProducts: true,
+        DoMerge: true, AppInstalled: false, SaveExistingBasket: false,
+      }),
+      response: json({ MergeSuccessful: false, CanCreateShoppingList: true }),
+    },
+  ];
+  await assert.rejects(
+    new NemligClient(mockFetch(requests)).validateCredentials("person@example.test", "private-secret"),
+    /basket decision.*Nemlig.com/i,
+  );
+  assert.equal(requests.length, 0, "unresolved login cannot continue to API-token or provider reads");
 });
 
 test("network reads retry, while basket mutations do not", async () => {

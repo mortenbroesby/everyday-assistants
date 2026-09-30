@@ -212,6 +212,9 @@ Read → review the exact intended change → receive explicit approval → comp
 - Additions read the basket before writing, apply a positive quantity delta,
   then verify readback and preservation of existing lines.
 - Writes are never automatically retried after an uncertain result.
+- Cold login follows Nemlig's ordinary website flags; if Nemlig requires a
+  basket decision, the assistant stops rather than selecting a remove/save
+  option. Resolve the prompt directly on Nemlig.com.
 - Repeated completed actions return the stored sanitized result without writing again.
 - The assistant never orders, checks out, or pays.
 
