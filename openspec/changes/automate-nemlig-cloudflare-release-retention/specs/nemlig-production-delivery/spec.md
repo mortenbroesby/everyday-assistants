@@ -92,3 +92,15 @@ Recovery SHALL retain only state required to distinguish runner loss before muta
 
 - **WHEN** the observed Worker, Container, or release owner differs from the operation's verified state
 - **THEN** the operation stops without overwriting the other actor's state
+
+#### Scenario: Enable command takes effect but its result is not journaled
+
+- **WHEN** the original runner is stopped, the saved operation has only an
+  `enable_deploy` intent, the exact candidate Worker is enabled, and the
+  Container still matches the recorded starting image, application version,
+  configuration, and inactive state
+- **THEN** protected recovery may roll the Worker back to the recorded
+  starting version, verify disabled routes and unchanged inactive Container
+  state, append the missing rollback result, and only then release the lease;
+  any Worker, Container, configuration, or ownership mismatch retains the
+  lease and performs no provider mutation
