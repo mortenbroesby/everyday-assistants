@@ -428,7 +428,7 @@
         "operationId": "setBasketProductQuantity",
         "tags": ["Basket"],
         "summary": "Set one product's basket quantity",
-        "description": "The provider sets one product's absolute quantity; it is not an atomic increment. Nemlig Assistant reads the current basket, adds a positive requested delta, sends a target no lower than the latest verified quantity, and verifies the entire basket by readback. A concurrent change from another Nemlig client can race between read and write.",
+        "description": "The provider sets one product's absolute quantity; it is not an atomic increment. Nemlig Assistant binds each sequential product write to the reviewed or last verified basket snapshot, adds a positive requested delta, and verifies the basket by readback before proceeding. Detected drift before the first write prevents the POST; drift between writes stops the remaining batch without retry or rollback. A concurrent change from another Nemlig client can still race between read and write.",
         "security": [{ "bearerAuth": [] }, { "cookieAuth": [] }],
         "x-nemlig": {
           "usage": "client-used",

@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { compile } from "html-to-text";
 import { z } from "zod";
 
@@ -15,10 +15,18 @@ const DEFAULT_PRODUCT_TIMESTAMP = "AAAAAAAA-YFA_17hS";
 const DEFAULT_CORRELATION_ID = "YFA_17hS";
 
 export class NemligError extends Error {
-  override readonly name = "NemligError";
+  override readonly name: string = "NemligError";
 
   constructor(message: string, readonly status?: number) {
     super(message);
+  }
+}
+
+export class BasketSnapshotChangedError extends NemligError {
+  override readonly name = "BasketSnapshotChangedError";
+
+  constructor() {
+    super("Basket changed since the last verified read.");
   }
 }
 
@@ -81,6 +89,25 @@ export interface Basket {
   numberOfProducts: number | undefined;
   deliveryTime: string | undefined;
 }
+
+/** Stable identity for the provider basket state relevant to additive writes. */
+export const basketFingerprint = (basket: Basket): string => {
+  const stable = {
+    items: basket.items
+      .map((item) => ({
+        id: item.id ?? null,
+        name: item.name ?? null,
+        quantity: item.quantity ?? null,
+        total: item.total ?? null,
+      }))
+      .sort((left, right) => String(left.id).localeCompare(String(right.id))),
+    productsPrice: basket.productsPrice ?? null,
+    deliveryPrice: basket.deliveryPrice ?? null,
+    numberOfProducts: basket.numberOfProducts ?? null,
+    deliveryTime: basket.deliveryTime ?? null,
+  };
+  return createHash("sha256").update(JSON.stringify(stable)).digest("hex");
+};
 
 const asRecord = (value: unknown): Record<string, unknown> => {
   const parsed = recordSchema.safeParse(value);
@@ -470,11 +497,14 @@ export class NemligClient {
   }
 
   /** Add a positive quantity delta; the provider adapter translates it to its absolute-quantity endpoint. */
-  async addToCart(productId: number, quantity = 1): Promise<Basket> {
+  async addToCart(productId: number, quantity = 1, expectedBasket?: Basket): Promise<Basket> {
     this.requireLogin("add items");
     if (!Number.isInteger(productId) || productId < 1) throw new NemligError("Product ID must be positive.");
     if (!Number.isInteger(quantity) || quantity < 1) throw new NemligError("Quantity must be at least 1.");
     const before = await this.getCart();
+    if (expectedBasket && basketFingerprint(before) !== basketFingerprint(expectedBasket)) {
+      throw new BasketSnapshotChangedError();
+    }
     if (before.items.some((item) => item.id === undefined || typeof item.quantity !== "number" || !Number.isInteger(item.quantity) || item.quantity < 0)) {
       throw new NemligError("Basket lines cannot be verified safely; inspect the Nemlig basket first.");
     }

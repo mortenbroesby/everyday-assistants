@@ -309,6 +309,13 @@ automatically.
 Only staged addition tools are exposed for the real provider basket. There is
 no assistant operation to lower, remove, replace, or clear a line. Additions
 require the matching staged review/apply tools and explicit approval.
+Each approved product is added through Nemlig's absolute-quantity endpoint
+using a fresh basket read, then verified by readback before the next product is
+sent. A detected basket change before the first write cancels the proposal
+without a provider mutation; a change between product writes stops the rest of
+the batch and requires basket inspection. Nemlig exposes no atomic increment
+or conditional write, so another client can still race between our last read
+and the provider applying a write.
 
 ### Auth0 and hosted MCP
 

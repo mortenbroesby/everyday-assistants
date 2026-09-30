@@ -61,7 +61,7 @@ The system SHALL generate cryptographically random opaque proposal IDs, store pr
 
 ### Requirement: Add-only provider operations
 
-The assistant SHALL expose no provider-basket removal, replacement, or clear operation. An approved addition SHALL increase the requested product quantity by its reviewed positive delta, preserve every previously verified line, and fail closed if the reviewed basket state changed before application. The observed Nemlig write endpoint accepts an absolute quantity rather than an atomic increment; the assistant SHALL read current quantity immediately before writing, SHALL never intentionally send a lower quantity than that read, and SHALL document that an independent Nemlig client can still race between read and write.
+The assistant SHALL expose no provider-basket removal, replacement, or clear operation. An approved addition SHALL increase the requested product quantity by its reviewed positive delta, preserve every previously verified line, and fail closed if the basket differs from the reviewed snapshot at the immediate pre-write read. For a multi-product addition, each successful write and readback SHALL become the expected snapshot for the next write. If drift is detected before the first write, no write SHALL be sent; if detected after an earlier verified write, the remaining writes SHALL stop and the proposal SHALL be consumed without retry or rollback. The observed Nemlig write endpoint accepts an absolute quantity rather than an atomic increment; the assistant SHALL never intentionally send a lower quantity than the expected snapshot and SHALL document that an independent Nemlig client can still race between read and write.
 
 #### Scenario: Add to an existing product line
 
@@ -72,6 +72,18 @@ The assistant SHALL expose no provider-basket removal, replacement, or clear ope
 
 - **WHEN** the current basket fingerprint differs from the proposal before application
 - **THEN** the proposal is invalidated and no provider mutation occurs
+
+#### Scenario: Basket changes after proposal validation but before the first write
+- **WHEN** the immediate pre-write basket read differs from the reviewed snapshot
+- **THEN** the proposal is invalidated and no `AddToBasket` request is sent
+
+#### Scenario: Basket changes between product writes
+- **WHEN** the immediate pre-write basket read differs from the last verified readback after an earlier product addition
+- **THEN** no further write is sent, the proposal is consumed, and the user is told to inspect the basket without retry or rollback
+
+#### Scenario: Multi-product addition uses verified snapshots sequentially
+- **WHEN** an approved proposal contains multiple products and each provider readback verifies
+- **THEN** each line is sent in sequence and its verified basket becomes the expected snapshot for the next line
 
 #### Scenario: Provider write may have an uncertain outcome
 

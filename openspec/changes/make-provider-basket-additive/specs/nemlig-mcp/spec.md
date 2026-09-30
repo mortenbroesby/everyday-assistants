@@ -56,7 +56,7 @@ Every provider-backed MCP tool SHALL use an authenticated client for the current
 ## ADDED Requirements
 
 ### Requirement: Add-only MCP basket tools
-The view tool SHALL return normalized basket data. Every model-visible provider-basket mutation SHALL be an additive operation using the matching read-only prepare tool followed by its protected apply tool only after explicit approval of the unchanged exact proposal. Additions MAY alternatively use the prepared local-review submission path with the same exact approval and server-side safety checks. Local product acceptance SHALL NOT constitute approval to write to Nemlig. The assistant SHALL expose no operation that lowers a line quantity, removes a line, replaces a line, or clears the provider basket.
+The view tool SHALL return normalized basket data. Every model-visible provider-basket mutation SHALL be an additive operation using the matching read-only prepare tool followed by its protected apply tool only after explicit approval of the unchanged exact proposal. Additions MAY alternatively use the prepared local-review submission path with the same exact approval and server-side safety checks. Both paths SHALL use the same protected per-product `AddToBasket` sequence and SHALL NOT fall back to another write path after failed authentication or an uncertain result. Each line SHALL be verified before the next line is sent. Local product acceptance SHALL NOT constitute approval to write to Nemlig. The assistant SHALL expose no operation that lowers a line quantity, removes a line, replaces a line, or clears the provider basket.
 
 #### Scenario: Prepare additions
 - **WHEN** `review_items_to_add` receives exact positive product quantities plus its explicit exact-review authorization

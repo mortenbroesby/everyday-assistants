@@ -5,11 +5,13 @@ Nemlig's observed `AddToBasket` endpoint sets one product's absolute quantity, b
 ## What Changes
 
 - **BREAKING** Change assistant basket additions to positive quantity deltas that are resolved against the latest verified basket, with stale-state checks and exact readback.
+- Bind every per-product provider write to the last verified basket snapshot; stop before the next write if the basket changes between additions.
 - **BREAKING** Remove provider-basket removal, replacement, and clear operations from MCP and CLI, including their provider client paths.
 - Avoid a redundant `/login` before a protected write when the authorized client already has an authenticated session; still authenticate when required.
 - Bootstrap Nemlig's anti-forgery cookies before login and send the matching XSRF header and same-origin `Origin` on state-changing API calls, matching the website's first-party request flow.
 - **SAFETY** Stop sending the assistant's unconditional `false,false,false` login flags. Current first-party Nemlig code maps that combination to the login-dialog choice named “remove from basket”; use the website's ordinary login defaults and fail closed if the provider requires a separate merge decision. The backend effect of those flags remains unverified.
 - Keep live flag semantics explicitly unproven until one bounded successful request and immediate readback establish behavior; previous corrected requests returned HTTP 400 and the browser readback showed the known basket unchanged.
+- Use the existing protected `AddToBasket` path for each distinct approved product, sequentially. Do not introduce a second submission path or use it as a fallback after failed authentication.
 
 ## Capabilities
 

@@ -22,7 +22,7 @@ The system SHALL prepare one or more positive basket additions without mutation 
 
 ### Requirement: Add-only provider basket operations
 
-The assistant SHALL expose no provider-basket removal, replacement, or clear operation. An approved addition SHALL increase the requested product quantity by the reviewed positive delta, preserve every unrelated line, and fail closed if the current basket no longer matches the reviewed state. Because Nemlig's observed write endpoint accepts an absolute line quantity, the service SHALL verify current quantities immediately before writing, SHALL never intentionally send a lower quantity than the latest verified quantity, and SHALL report the provider's lack of an atomic increment precondition as a concurrency limitation.
+The assistant SHALL expose no provider-basket removal, replacement, or clear operation. An approved addition SHALL increase the requested product quantity by the reviewed positive delta, preserve every unrelated line, and fail closed if the current basket differs from the last verified snapshot before a write. The first expected snapshot SHALL be the reviewed basket; after each successful per-product write and readback, that verified basket SHALL become the expected snapshot for the next product. Because Nemlig's observed write endpoint accepts an absolute line quantity, the service SHALL never intentionally send a lower quantity than the expected snapshot and SHALL report the provider's lack of an atomic increment precondition as a concurrency limitation.
 
 #### Scenario: Add to an existing product line
 - **WHEN** an unchanged proposal adds a positive quantity to a product already in the current basket
@@ -32,9 +32,17 @@ The assistant SHALL expose no provider-basket removal, replacement, or clear ope
 - **WHEN** the basket fingerprint differs from the proposal before application
 - **THEN** the proposal is invalidated and no provider mutation occurs
 
-#### Scenario: Current quantity increases immediately before a write
-- **WHEN** a fresh pre-write basket read shows a higher quantity than the quantity used to calculate the pending target
-- **THEN** the service recalculates the target from the latest quantity before sending the write
+#### Scenario: Basket changes before the first write
+- **WHEN** the immediate pre-write basket read differs from the reviewed snapshot
+- **THEN** the proposal is invalidated and no `AddToBasket` request is sent
+
+#### Scenario: Basket changes between product writes
+- **WHEN** an immediate pre-write basket read differs from the last verified readback after an earlier product addition
+- **THEN** the service sends no further write, consumes the proposal, reports that earlier verified additions may already be present, and requires basket inspection without retry or rollback
+
+#### Scenario: Multiple approved products
+- **WHEN** an unchanged proposal contains multiple distinct product lines
+- **THEN** the service sends one `AddToBasket` request per line sequentially, verifies each readback, and uses it as the next line's expected snapshot
 
 #### Scenario: Provider write may have an uncertain outcome
 - **WHEN** a provider write or its readback fails or is uncertain

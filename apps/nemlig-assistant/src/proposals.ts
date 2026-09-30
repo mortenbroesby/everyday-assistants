@@ -1,5 +1,13 @@
-import { createHash, randomUUID } from "node:crypto";
-import { NemligError, type Basket, type Product, type ShoppingClient } from "./client.js";
+import { randomUUID } from "node:crypto";
+import {
+  basketFingerprint,
+  BasketSnapshotChangedError,
+  NemligError,
+  type Basket,
+  type Product,
+  type ShoppingClient,
+} from "./client.js";
+export { basketFingerprint } from "./client.js";
 import { runReadPool } from "./read-coordination.js";
 
 export type ProposalOperation = "additions";
@@ -96,24 +104,6 @@ export const basketPayload = (basket: Basket): BasketPayload => ({
   number_of_products: basket.numberOfProducts,
   delivery_time: basket.deliveryTime,
 });
-
-export const basketFingerprint = (basket: Basket): string => {
-  const stable = {
-    items: basket.items
-      .map((item) => ({
-        id: item.id ?? null,
-        name: item.name ?? null,
-        quantity: item.quantity ?? null,
-        total: item.total ?? null,
-      }))
-      .sort((left, right) => String(left.id).localeCompare(String(right.id))),
-    productsPrice: basket.productsPrice ?? null,
-    deliveryPrice: basket.deliveryPrice ?? null,
-    numberOfProducts: basket.numberOfProducts ?? null,
-    deliveryTime: basket.deliveryTime ?? null,
-  };
-  return createHash("sha256").update(JSON.stringify(stable)).digest("hex");
-};
 
 const productLine = (product: Product, quantity: number): ProposalLine => {
   if (typeof product.id !== "number" || !product.name || product.price === undefined) {
@@ -260,6 +250,7 @@ export class BasketProposalService {
         this.invalidate(proposal);
         throw new NemligError("Basket changed after review; prepare and review a new proposal.");
       }
+      let verifiedAdditions = 0;
       try {
         for (const reviewed of proposal.operation.lines) {
           const current = productLine(await this.client.getFreshProduct(reviewed.product_id), reviewed.quantity);
@@ -285,7 +276,7 @@ export class BasketProposalService {
           const expectedQuantity = (previousLine?.quantity ?? 0) + line.quantity;
           const expectedTotal = money((previousLine?.total ?? 0) + line.line_total);
           const previousLines = result.items;
-          result = await this.client.addToCart(line.product_id, line.quantity);
+          result = await this.client.addToCart(line.product_id, line.quantity, result);
           const applied = result.items.find((item) => sameId(item.id, line.product_id));
           if (applied?.quantity !== expectedQuantity || money(applied.total ?? Number.NaN) !== expectedTotal) {
             throw new NemligError("Basket readback did not match the approved additive quantity.");
@@ -299,6 +290,7 @@ export class BasketProposalService {
               throw new NemligError("Basket readback did not preserve every previously verified line.");
             }
           }
+          verifiedAdditions += 1;
         }
         const addedQuantity = proposal.operation.lines.reduce((total, line) => total + line.quantity, 0);
         const addedValue = proposal.operation.lines.reduce((total, line) => total + line.line_total, 0);
@@ -320,7 +312,16 @@ export class BasketProposalService {
         proposal.result = completed;
         this.record("completed", proposal.operation.kind, "verified");
         return completed;
-      } catch {
+      } catch (error) {
+        if (error instanceof BasketSnapshotChangedError && verifiedAdditions === 0) {
+          this.invalidate(proposal);
+          throw new NemligError("Basket changed before an addition; no provider write was sent. Prepare and review a new proposal.");
+        }
+        if (error instanceof BasketSnapshotChangedError) {
+          proposal.state = "indeterminate";
+          this.record("indeterminate", proposal.operation.kind, "uncertain");
+          throw new NemligError("Earlier additions were verified, but the basket changed before the next write; inspect the basket and do not retry this proposal.");
+        }
         proposal.state = "indeterminate";
         this.record("indeterminate", proposal.operation.kind, "uncertain");
         throw new NemligError("Basket may have changed but verification did not complete; inspect the basket and do not retry this proposal.");

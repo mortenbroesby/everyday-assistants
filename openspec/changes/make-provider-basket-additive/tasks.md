@@ -3,6 +3,8 @@
 - [x] 1.1 Change proposal preparation to present requested quantities as deltas and compute projected final quantities/totals; verify with a basket fixture containing an existing matching line.
 - [x] 1.2 Apply each approved delta from the latest verified basket state and verify exact target line, unchanged unrelated lines, totals, and stale-snapshot rejection with focused regression tests.
 - [x] 1.3 Preserve single-use and uncertain-write safeguards; verify a failed/uncertain write is attempted once and no automatic retry occurs.
+- [x] 1.4 Bind each product write to the last verified basket snapshot; reject detected drift before POST and consume partial batches without retry or rollback.
+- [x] 1.5 Add real-client mock-HTTP regressions for sequential multi-line writes, existing and unrelated lines, drift before the first/later POST, and uncertain partial failure.
 
 ## 2. Remove provider-destructive capabilities
 
@@ -17,7 +19,7 @@
 
 ## 4. Document and verify the safety boundary
 
-- [x] 4.1 Update the README, API inventory, current OpenSpecs, and issue #165 with add-only behavior, removed operations, login-flag source mapping, the absolute-quantity provider endpoint, and the external concurrent-edit limitation; verify repository privacy checks pass.
-- [x] 4.2 Re-run the full relevant Nemlig/repository verification gates on the updated login-flag implementation and inspect the exact diff for remaining decrement/clear paths.
+- [x] 4.1 Update the README, API inventory, current OpenSpecs, and issue #165 with add-only behavior, removed operations, login-flag source mapping, sequential per-product writes, stale-snapshot handling, the absolute-quantity endpoint, and the external concurrent-edit limitation; verify privacy checks pass.
+- [x] 4.2 Re-run the full relevant Nemlig/repository verification gates on the final implementation and inspect the exact diff for remaining decrement/clear paths.
 - [ ] 4.3 Once the current authorized credential session is active, send at most one cold login using ordinary website flags, then immediately read back the basket in the already-authenticated browser; do not retry after any error. Record pass/fail/blocked and the exact request flags without credentials or basket contents. No checkout or order.
-- [x] 4.4 Update the existing scoped PR and issue #165 with the new source finding, tests, and remaining live limitation; keep deployment and goal completion pending until cold-login preservation and provider concurrency evidence are sufficient.
+- [ ] 4.4 Update the existing scoped PR and issue #165 with the implementation evidence and remaining live limitation; keep PR draft, deployment, and goal completion pending until cold-login preservation and provider concurrency evidence are sufficient.
