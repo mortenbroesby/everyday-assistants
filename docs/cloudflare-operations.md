@@ -292,8 +292,8 @@ not a fresh real-family Nemlig or ChatGPT acceptance claim.
 
    If the saved release artifact and original-runner-stopped evidence are
    available, a protected reconciliation dispatch can prove the exact disabled
-   Worker/Container state, append the missing rollback result, and then release
-   the lease without deploying again:
+   Worker/Container state, append the missing transition result, and then
+   release the lease without deploying again:
 
    ```sh
    gh workflow run nemlig-production.yml --ref main \
@@ -307,6 +307,17 @@ not a fresh real-family Nemlig or ChatGPT acceptance claim.
    are disabled and the Container remains unchanged/inactive before finalizing.
    Drift or an uncertain rollback keeps the lease; the recovery path never
    retries the rollback.
+
+   If the saved journal contains only a `disabled_deploy` intent after a
+   disabled-route probe failure, reconciliation can close the operation only
+   when the current Worker is the exact disabled candidate SHA, its versioned
+   registry tag resolves to the exact current Container image, configuration
+   and Container identity match the journal, the Container is inactive, and
+   both routes return the fixed disabled response. It appends the missing
+   disabled result without deploying or rolling back; any mismatch retains the
+   lease. Deployment checks both public routes as a pair up to six times with
+   five-second spacing to tolerate transient edge propagation, and fail closed
+   after that bounded window.
 
 5. If the run is canceled, fails, or leaves a lease, download its artifact and
    run `inspect-recovery` with that artifact's operation UUID. Continue only
@@ -384,10 +395,11 @@ pnpm --filter nemlig-assistant production:deploy -- reconcile-recovery OPERATION
 pnpm --filter nemlig-assistant production:deploy -- finalize OPERATION_UUID --evidence-saved --original-runner-stopped
 ```
 
-Reconciliation is narrower than deployment: it only accepts a journaled rollback
-intent when the current Worker, configuration, image, application version,
-inactive instance and both disabled routes match exactly. It appends the
-observed disabled version to the remote journal; it never changes Cloudflare.
+Reconciliation is narrower than deployment: it accepts only the explicitly
+supported interrupted phases when current Worker, configuration, registry
+image, application version, inactive instance and both disabled routes match
+exactly. It appends the observed terminal result to the remote journal; it
+never deploys, rolls back, or changes a Container.
 
 Inspection is read-only and uses four bounded Worker/Container metadata reads;
 for a disabled target it also confirms both public routes still return the fixed
