@@ -1,7 +1,7 @@
 ## MODIFIED Requirements
 
 ### Requirement: MCP authentication behavior
-Every provider-backed MCP tool SHALL use an authenticated client for the current caller. Hosted client contexts SHALL remain isolated by authorized principal, policy revision, and credential generation. Provider tools SHALL reuse an authenticated session in the current authorized client context and SHALL load configured credentials and log in only when authentication is required or an operation establishes that the session is expired. Missing credentials when authentication is required SHALL produce a clean remediation error without a provider task or mutation. Read-only tools MAY retry their complete task once after HTTP 401, sharing in-flight reauthentication or reusing a session already refreshed by another read. Basket writes SHALL NOT retry an indeterminate mutation.
+Every provider-backed MCP tool SHALL use an authenticated client for the current caller. Hosted client contexts SHALL remain isolated by authorized principal, policy revision, and credential generation. Provider tools SHALL reuse an authenticated session in the current authorized client context and SHALL load configured credentials and log in only when authentication is required or an operation establishes that the session is expired. Before a same-origin state-changing API request, the client SHALL obtain Nemlig's anti-forgery cookies when absent and send the corresponding `X-XSRF-TOKEN` header and same-origin `Origin`. An unauthenticated login request SHALL NOT carry a previous authenticated session cookie. Missing credentials when authentication is required SHALL produce a clean remediation error without a provider task or mutation. Read-only tools MAY retry their complete task once after HTTP 401, sharing in-flight reauthentication or reusing a session already refreshed by another read. Basket writes SHALL NOT retry an indeterminate mutation.
 
 #### Scenario: Read reuses an authenticated session
 - **WHEN** a provider-backed tool is called with an existing session in its current authorized client context
@@ -14,6 +14,10 @@ Every provider-backed MCP tool SHALL use an authenticated client for the current
 #### Scenario: Cold protected write authenticates first
 - **WHEN** an approved basket apply or local-review submission tool is called without an authenticated session in its current authorized context
 - **THEN** it authenticates before performing the task and still requires unchanged exact approval, applicable fresh product and basket checks, single-use authorization, and verified readback
+
+#### Scenario: Same-origin API mutation uses anti-forgery state
+- **WHEN** a client sends a login or other state-changing request to Nemlig's same-origin API
+- **THEN** it obtains the provider's XSRF-prefixed anti-forgery cookies when absent, sends the matching `X-XSRF-TOKEN` and `Origin` headers, and does not include an old authenticated session cookie on login
 
 #### Scenario: Authentication is required
 - **WHEN** a provider-backed task has no authenticated session or an operation establishes that the session is expired

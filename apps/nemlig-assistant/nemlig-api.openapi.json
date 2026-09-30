@@ -28,7 +28,7 @@
   ],
   "x-nemlig": {
     "status": "reverse-engineered-private-contract",
-    "lastObserved": "2026-09-13",
+    "lastObserved": "2026-09-30",
     "maintainer": "Nemlig Assistant contributors",
     "clientSource": "apps/nemlig-assistant/src/client.ts",
     "confidenceScale": {
@@ -455,10 +455,10 @@
         "summary": "Get an anti-forgery header/value pair",
         "security": [],
         "x-nemlig": {
-          "usage": "observed-only",
-          "confidence": "medium",
+          "usage": "client-used-and-observed",
+          "confidence": "high",
           "safety": "sensitive-read",
-          "evidence": ["anonymous Playwright trace 2026-09-13"]
+          "evidence": ["NemligClient.ensureAntiForgery", "anonymous live GET 2026-09-30", "first-party website anti-forgery interceptor"]
         },
         "responses": {
           "200": {

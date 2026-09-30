@@ -33,6 +33,16 @@ const json = (value: unknown, init?: ResponseInit): Response =>
     ...init,
   });
 
+const antiForgeryRequest = (): ExpectedRequest => ({
+  match: "/AntiForgery$",
+  response: () => {
+    const headers = new Headers({ "content-type": "application/json" });
+    headers.append("set-cookie", "XSRF-TOKEN=anti-forgery-token; Path=/; Secure");
+    headers.append("set-cookie", "XSRF-COOKIE-TOKEN=cookie-token; Path=/; Secure");
+    return new Response(JSON.stringify({ Header: "X-XSRF-TOKEN", Value: "anti-forgery-token" }), { headers });
+  },
+});
+
 const sessionRequests = (): ExpectedRequest[] => [
   { match: "/Token$", response: json({ access_token: "token-value" }) },
   {
@@ -52,8 +62,17 @@ const sessionRequests = (): ExpectedRequest[] => [
 test("login retains multiple cookies and reuses the session for basket access", async () => {
   const requests: ExpectedRequest[] = [
     {
+      match: "/AntiForgery$",
+      response: () => {
+        const headers = new Headers({ "content-type": "application/json" });
+        headers.append("set-cookie", "XSRF-TOKEN=anti-forgery-value; Path=/; Secure");
+        headers.append("set-cookie", "XSRF-COOKIE-TOKEN=anti-forgery-cookie; Path=/; Secure");
+        return new Response(JSON.stringify({ Header: "X-XSRF-TOKEN", Value: "anti-forgery-value" }), { headers });
+      },
+    },
+    {
       match: "/login$",
-      inspect: (_url, init) =>
+      inspect: (_url, init) => {
         assert.deepEqual(JSON.parse(String(init?.body)), {
           Username: "person@example.test",
           Password: "never-logged",
@@ -61,7 +80,12 @@ test("login retains multiple cookies and reuses the session for basket access", 
           DoMerge: false,
           AppInstalled: false,
           SaveExistingBasket: false,
-        }),
+        });
+        const headers = new Headers(init?.headers);
+        assert.equal(headers.get("x-xsrf-token"), "anti-forgery-value");
+        assert.equal(headers.get("cookie"), "XSRF-TOKEN=anti-forgery-value; XSRF-COOKIE-TOKEN=anti-forgery-cookie");
+        assert.equal(headers.get("origin"), "https://www.nemlig.com");
+      },
       response: () => {
         const headers = new Headers({ "content-type": "application/json" });
         headers.append("set-cookie", "session=abc; Path=/; Secure");
@@ -90,9 +114,90 @@ test("login retains multiple cookies and reuses the session for basket access", 
   assert.equal(requests.length, 0);
 });
 
+test("cold login obtains anti-forgery state before posting credentials", async () => {
+  const order: string[] = [];
+  const requests: ExpectedRequest[] = [
+    {
+      match: "/AntiForgery$",
+      inspect: () => order.push("anti-forgery"),
+      response: () => {
+        const headers = new Headers({ "content-type": "application/json" });
+        headers.append("set-cookie", "XSRF-TOKEN=csrf-secret; Path=/; Secure");
+        headers.append("set-cookie", "XSRF-COOKIE-TOKEN=csrf-cookie; Path=/; Secure");
+        return new Response(JSON.stringify({ Header: "X-XSRF-TOKEN", Value: "csrf-secret" }), { headers });
+      },
+    },
+    {
+      match: "/login$",
+      inspect: (_url, init) => {
+        order.push("login");
+        const headers = new Headers(init?.headers);
+        assert.equal(headers.get("x-xsrf-token"), "csrf-secret");
+        assert.equal(headers.get("cookie"), "XSRF-TOKEN=csrf-secret; XSRF-COOKIE-TOKEN=csrf-cookie");
+        assert.equal(headers.get("origin"), "https://www.nemlig.com");
+      },
+      response: json({ RedirectUrl: "/" }),
+    },
+    ...sessionRequests(),
+  ];
+
+  await new NemligClient(mockFetch(requests)).login("person@example.test", "secret");
+  assert.deepEqual(order, ["anti-forgery", "login"]);
+  assert.equal(requests.length, 0);
+});
+
+test("login fails closed when anti-forgery state is incomplete", async () => {
+  const requests: ExpectedRequest[] = [
+    {
+      match: "/AntiForgery$",
+      response: json({ ErrorMessage: "private-provider-detail" }),
+    },
+  ];
+  await assert.rejects(
+    new NemligClient(mockFetch(requests)).login("person@example.test", "secret"),
+    (error) => {
+      assert.ok(error instanceof NemligError);
+      assert.doesNotMatch(error.message, /private-provider-detail/u);
+      return true;
+    },
+  );
+  assert.equal(requests.length, 0, "credentials must not be submitted without valid anti-forgery state");
+});
+
+test("state-changing Nemlig API calls bootstrap anti-forgery state before dispatch", async () => {
+  const order: string[] = [];
+  const requests: ExpectedRequest[] = [
+    {
+      ...antiForgeryRequest(),
+      inspect: () => order.push("anti-forgery"),
+    },
+    {
+      match: "/basket/AddToBasket$",
+      inspect: (_url, init) => {
+        order.push("mutation");
+        const headers = new Headers(init?.headers);
+        assert.equal(headers.get("x-xsrf-token"), "anti-forgery-token");
+        assert.equal(headers.get("origin"), "https://www.nemlig.com");
+        assert.equal(headers.get("cookie"), "XSRF-TOKEN=anti-forgery-token; XSRF-COOKIE-TOKEN=cookie-token");
+      },
+      response: json({}),
+    },
+  ];
+  const client = new NemligClient(mockFetch(requests));
+  await Reflect.get(client, "json").call(
+    client,
+    "https://www.nemlig.com/webapi/basket/AddToBasket",
+    { method: "POST", body: "{}" },
+    "Add to basket",
+    false,
+  );
+  assert.deepEqual(order, ["anti-forgery", "mutation"]);
+  assert.equal(requests.length, 0);
+});
+
 test("login rejects provider errors without exposing the supplied secret", async () => {
   const client = new NemligClient(
-    mockFetch([{ match: "/login$", response: new Response("{}", { status: 401 }) }]),
+    mockFetch([antiForgeryRequest(), { match: "/login$", response: new Response("{}", { status: 401 }) }]),
   );
   await assert.rejects(client.login("person@example.test", "private-secret"), (error) => {
     assert.ok(error instanceof NemligError);
@@ -105,6 +210,7 @@ test("login rejects provider errors without exposing the supplied secret", async
 
 test("login does not carry the previous session into reauthentication", async () => {
   const requests: ExpectedRequest[] = [
+    antiForgeryRequest(),
     { match: "/login$", response: () => {
       const headers = new Headers(); headers.append("set-cookie", "session=old; Path=/");
       return new Response(JSON.stringify({ RedirectUrl: "/" }), { headers });
@@ -115,7 +221,7 @@ test("login does not carry the previous session into reauthentication", async ()
       inspect: (_url, init) => {
         const headers = new Headers(init?.headers);
         assert.equal(headers.has("authorization"), false);
-        assert.equal(headers.has("cookie"), false);
+        assert.equal(headers.get("cookie"), "XSRF-TOKEN=anti-forgery-token; XSRF-COOKIE-TOKEN=cookie-token");
       },
       response: () => {
         const headers = new Headers(); headers.append("set-cookie", "session=new; Path=/");
@@ -133,6 +239,7 @@ test("login does not carry the previous session into reauthentication", async ()
 
 test("failed session bootstrap clears a previously authenticated client", async () => {
   const requests: ExpectedRequest[] = [
+    antiForgeryRequest(),
     { match: "/login$", response: json({ RedirectUrl: "/" }) },
     ...sessionRequests(),
     { match: "/login$", response: json({ RedirectUrl: "/" }) },
@@ -149,6 +256,7 @@ test("failed session bootstrap clears a previously authenticated client", async 
 test("login error fields never expose hostile provider text", async () => {
   const secret = "synthetic-token-and-password";
   const client = new NemligClient(mockFetch([
+    antiForgeryRequest(),
     { match: "/login$", response: json({ ErrorMessage: secret }) },
   ]));
   await assert.rejects(client.login("person@example.test", "secret"), (error) => {
@@ -160,12 +268,18 @@ test("login error fields never expose hostile provider text", async () => {
 
 test("credential validation performs one login and one authenticated read with no retry or mutation", async () => {
   const requests: ExpectedRequest[] = [
+    antiForgeryRequest(),
     {
       match: "/login$",
-      inspect: (_url, init) => assert.deepEqual(JSON.parse(String(init?.body)), {
-        Username: "person@example.test", Password: "private-secret", CheckForExistingProducts: false,
-        DoMerge: false, AppInstalled: false, SaveExistingBasket: false,
-      }),
+      inspect: (_url, init) => {
+        assert.deepEqual(JSON.parse(String(init?.body)), {
+          Username: "person@example.test", Password: "private-secret", CheckForExistingProducts: false,
+          DoMerge: false, AppInstalled: false, SaveExistingBasket: false,
+        });
+        assert.equal(new Headers(init?.headers).get("x-xsrf-token"), "anti-forgery-token");
+        assert.equal(new Headers(init?.headers).get("cookie"), "XSRF-TOKEN=anti-forgery-token; XSRF-COOKIE-TOKEN=cookie-token");
+        assert.equal(new Headers(init?.headers).get("origin"), "https://www.nemlig.com");
+      },
       response: json({ RedirectUrl: "/" }),
     },
     { match: "/Token$", response: json({ access_token: "validated" }) },
@@ -191,6 +305,7 @@ test("network reads retry, while basket mutations do not", async () => {
   assert.equal(NEMLIG_READ_ATTEMPT_TIMEOUT_MS, 60_000);
 
   const requests: ExpectedRequest[] = [
+    antiForgeryRequest(),
     { match: "/login$", response: json({ RedirectUrl: "/" }) },
     ...sessionRequests(),
     { match: "/basket/GetBasket$", response: json({ Lines: [], TotalProductsPrice: 0, NumberOfProducts: 0 }) },
@@ -601,6 +716,7 @@ test("category fallback returns the first non-empty product group", async () => 
 
 test("favorites follows authenticated show-all groups, deduplicates, and never mutates", async () => {
   const requests: ExpectedRequest[] = [
+    antiForgeryRequest(),
     { match: "/login$", response: json({ MergeSuccessful: true }) },
     ...sessionRequests(),
     {
@@ -678,6 +794,7 @@ test("favorites matching is Danish-aware, ordered, limited, and empty when unmat
 
 test("favorites paging applies one global offset across groups", async () => {
   const requests: ExpectedRequest[] = [
+    antiForgeryRequest(),
     { match: "/login$", response: json({ MergeSuccessful: true }) }, ...sessionRequests(),
     { match: "https://www.nemlig.com/favoritter\\?", response: json({ content: [
       { TemplateName: "productlistshowallspot", ProductGroupId: "first" },
@@ -694,6 +811,7 @@ test("favorites paging applies one global offset across groups", async () => {
 test("favorites continue after a full page duplicated from a preceding group", async () => {
   const firstGroup = Array.from({ length: 50 }, (_, index) => ({ Id: index + 1, Name: `Favorite ${index + 1}` }));
   const requests: ExpectedRequest[] = [
+    antiForgeryRequest(),
     { match: "/login$", response: json({ MergeSuccessful: true }) }, ...sessionRequests(),
     { match: "https://www.nemlig.com/favoritter\\?", response: json({ content: [
       { TemplateName: "productlistshowallspot", ProductGroupId: "first" },
@@ -729,6 +847,7 @@ test("favorites stop before starting another provider page after cancellation", 
   const reason = new Error("favorites cancelled");
   const products = Array.from({ length: 50 }, (_, index) => ({ Id: index + 1, Name: `Favorite ${index + 1}` }));
   const requests: ExpectedRequest[] = [
+    antiForgeryRequest(),
     { match: "/login$", response: json({ MergeSuccessful: true }) }, ...sessionRequests(),
     { match: "https://www.nemlig.com/favoritter\\?", response: json({ content: [
       { TemplateName: "productlistshowallspot", ProductGroupId: "many-pages" },
@@ -747,6 +866,7 @@ test("favorites stop before starting another provider page after cancellation", 
 
 test("basket add treats quantity as a positive delta and preserves every existing line", async () => {
   const requests: ExpectedRequest[] = [
+    antiForgeryRequest(),
     { match: "/login$", response: json({ RedirectUrl: "/" }) },
     ...sessionRequests(),
     { match: "/basket/GetBasket$", response: json({
@@ -758,13 +878,16 @@ test("basket add treats quantity as a positive delta and preserves every existin
     }) },
     {
       match: "/basket/AddToBasket$",
-      inspect: (_url, init) =>
+      inspect: (_url, init) => {
         assert.deepEqual(JSON.parse(String(init?.body)), {
           ProductId: 2301138,
           quantity: 2,
           AffectPartialQuantity: false,
           disableQuantityValidation: false,
-        }),
+        });
+        assert.equal(new Headers(init?.headers).get("x-xsrf-token"), "anti-forgery-token");
+        assert.equal(new Headers(init?.headers).get("origin"), "https://www.nemlig.com");
+      },
       response: json({}),
     },
     {
@@ -794,6 +917,7 @@ test("basket add treats quantity as a positive delta and preserves every existin
 
 test("basket validation blocks bad inputs before calls and reports partial readback failure", async () => {
   const requests: ExpectedRequest[] = [
+    antiForgeryRequest(),
     { match: "/login$", response: json({ RedirectUrl: "/" }) },
     ...sessionRequests(),
   ];

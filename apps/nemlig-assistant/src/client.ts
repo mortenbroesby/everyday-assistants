@@ -218,6 +218,16 @@ const abortReason = (signal: AbortSignal): unknown => signal.reason ?? new DOMEx
 const throwIfAborted = (signal: AbortSignal | null | undefined): void => {
   if (signal?.aborted) throw abortReason(signal);
 };
+const xsrfCookieName = "XSRF-TOKEN";
+const xsrfHeaderName = "X-XSRF-TOKEN";
+
+const decodeCookie = (value: string): string | undefined => {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return undefined;
+  }
+};
 
 export class NemligClient {
   private readonly cookies = new Map<string, Map<string, string>>();
@@ -527,6 +537,24 @@ export class NemligClient {
     this.hydratedProductIds.clear();
   }
 
+  private async ensureAntiForgery(signal?: AbortSignal): Promise<void> {
+    const host = new URL(API_BASE_URL).host;
+    if (this.cookies.get(host)?.has(xsrfCookieName)) return;
+    const response = asRecord(await this.json(
+      `${API_BASE_URL}/AntiForgery`,
+      { signal },
+      "Get anti-forgery state",
+      false,
+      false,
+      false,
+    ));
+    const cookie = this.cookies.get(host)?.get(xsrfCookieName);
+    const value = asString(response.Value);
+    if (response.Header !== xsrfHeaderName || !cookie || !value || decodeCookie(cookie) !== value) {
+      throw new NemligError("Get anti-forgery state failed: invalid response data.");
+    }
+  }
+
   private async refreshSession(signal?: AbortSignal): Promise<void> {
     throwIfAborted(signal);
     const token = asRecord(await this.json(`${API_BASE_URL}/Token`, { signal }, "Get token", true));
@@ -636,6 +664,13 @@ export class NemligClient {
     includeSession = true,
   ): Promise<unknown> {
     throwIfAborted(init.signal);
+    const target = new URL(url);
+    const targetMethod = (init.method ?? "GET").toUpperCase();
+    const targetIsNemligApi = target.origin === new URL(API_BASE_URL).origin && target.pathname.startsWith("/webapi");
+    if (targetIsNemligApi && !["GET", "HEAD", "OPTIONS"].includes(targetMethod)
+      && !this.cookies.get(target.host)?.has(xsrfCookieName)) {
+      await this.ensureAntiForgery(init.signal ?? undefined);
+    }
     for (let attempt = 0; attempt <= (retry ? NEMLIG_READ_MAX_RETRIES : 0); attempt += 1) {
       throwIfAborted(init.signal);
       const attemptSignal = AbortSignal.timeout(NEMLIG_READ_ATTEMPT_TIMEOUT_MS);
@@ -659,9 +694,26 @@ export class NemligClient {
         }
         if (includeSession && this.accessToken) headers.set("Authorization", `Bearer ${this.accessToken}`);
         const host = requestUrl.host;
+        const sameOriginApi = api && requestUrl.origin === new URL(API_BASE_URL).origin;
         const cookies = this.cookies.get(host);
         if (includeSession && cookies?.size) {
           headers.set("Cookie", [...cookies].map(([name, value]) => `${name}=${value}`).join("; "));
+        } else if (!includeSession && sameOriginApi && cookies) {
+          const antiForgeryCookies = [...cookies].filter(([name]) => name.startsWith("XSRF-"));
+          if (antiForgeryCookies.length) {
+            headers.set("Cookie", antiForgeryCookies.map(([name, value]) => `${name}=${value}`).join("; "));
+          }
+        }
+        const method = (init.method ?? "GET").toUpperCase();
+        const xsrfValue = cookies?.get(xsrfCookieName);
+        const mutatingMethod = !["GET", "HEAD", "OPTIONS"].includes(method);
+        if (sameOriginApi && mutatingMethod) headers.set("Origin", requestUrl.origin);
+        if (
+          sameOriginApi && mutatingMethod && xsrfValue
+        ) {
+          const decoded = decodeCookie(xsrfValue);
+          if (!decoded) throw new NemligError(`${operation} failed: invalid anti-forgery state.`);
+          headers.set(xsrfHeaderName, decoded);
         }
 
         const signal = init.signal ? AbortSignal.any([init.signal, attemptSignal]) : attemptSignal;

@@ -76,6 +76,10 @@ Every provider-backed MCP tool SHALL use an authenticated client for the current
 - **WHEN** an approved basket apply or local-review submission tool is called without an authenticated session
 - **THEN** it authenticates before performing the provider write and still requires unchanged exact approval, applicable fresh product and basket checks, single-use authorization, and verified readback
 
+#### Scenario: Same-origin API mutation uses anti-forgery state
+- **WHEN** a client sends a login or other state-changing request to Nemlig's same-origin API
+- **THEN** it obtains the provider's XSRF-prefixed anti-forgery cookies when absent, sends the matching `X-XSRF-TOKEN` and `Origin` headers, and does not include an old authenticated session cookie on login
+
 #### Scenario: Authentication context changes
 - **WHEN** a hosted request belongs to another principal or changes policy revision or credential generation
 - **THEN** it cannot reuse the previous context's credentials, provider session, or private review state
