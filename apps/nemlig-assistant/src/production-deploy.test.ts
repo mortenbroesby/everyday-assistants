@@ -95,15 +95,22 @@ const config = (path: string) => ({
   durable_objects: { bindings: [{ name: "NEMLIG_MCP_CONTAINER", class_name: "NemligMcpContainer" }, { name: "NEMLIG_PLAN_STORAGE", class_name: "PlanStorage" }] },
 });
 
-const recoveryDeps = (journal: Record<string, unknown>, currentVersion: string, currentEnabled: boolean, options: { image?: string; applicationVersion?: number; active?: boolean } = {}): DeployDependencies => {
+const recoveryDeps = (journal: Record<string, unknown>, currentVersion: string, currentEnabled: boolean, options: { image?: string; applicationVersion?: number; active?: boolean; rollbackTo?: { version: string; enabled: boolean } } = {}): DeployDependencies => {
+  let liveVersion = currentVersion;
+  let liveEnabled = currentEnabled;
   let remoteParent = typeof journal.remoteCommit === "string" ? journal.remoteCommit : "cccccccccccccccccccccccccccccccccccccccc";
   let remoteHead = "dddddddddddddddddddddddddddddddddddddddd";
   let currentJournal = JSON.stringify(journal);
   const tree = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
   const blob = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
   const run: CommandRunner = async (command, args, runOptions) => {
-    if (command === "pnpm" && args.includes("deployments")) return deployment(currentVersion);
-    if (command === "pnpm" && args.includes("versions")) return version(currentVersion, commit, currentEnabled);
+    if (command === "pnpm" && args.includes("rollback") && options.rollbackTo) {
+      liveVersion = options.rollbackTo.version;
+      liveEnabled = options.rollbackTo.enabled;
+      return "rollback accepted";
+    }
+    if (command === "pnpm" && args.includes("deployments")) return deployment(liveVersion);
+    if (command === "pnpm" && args.includes("versions")) return version(liveVersion, commit, liveEnabled);
     if (command === "pnpm" && args.includes("instances")) return JSON.stringify([{ id: "durable-object", name: "nemlig-production", state: options.active ? "running" : "inactive", version: options.active ? options.applicationVersion ?? 25 : null }]);
     if (command === "pnpm" && args.includes("info")) return JSON.stringify({
       id: applicationId, name: "nemlig-mcp-cloudflare-production-nemligmcpcontainer-production", instances: 1,
@@ -2059,6 +2066,96 @@ test("failed enable intent can release its lease only after exact readback of th
 
   const drifted = recoveryDeps(pending, startingId, false, { active: true });
   assert.equal((await reconcilePendingRollback(pending.operationId, drifted, true, true)).reason, "provider_drift");
+});
+
+test("interrupted enable is rolled back only from the exact candidate and unchanged inactive starting Container", async () => {
+  const pending = terminalJournal({
+    outcome: "failed", rollback: "not_needed", lastVerifiedState: "unknown", failure: "command_failed",
+    remoteCommit: "cccccccccccccccccccccccccccccccccccccccc", startingEnabled: false,
+    transitions: [{ phase: "enable_deploy", kind: "intent", at: "2026-09-05T12:00:00.000Z", version: startingId }],
+  });
+  const root = await mkdtemp(join(tmpdir(), "nemlig-interrupted-enable-"));
+  const deps = recoveryDeps(pending, enabledId, true, { rollbackTo: { version: startingId, enabled: false } });
+  deps.stateRoot = root;
+  const run = deps.run;
+  let rollbackCalls = 0;
+  deps.run = async (command, args, options) => {
+    if (args.includes("rollback")) rollbackCalls += 1;
+    return run(command, args, options);
+  };
+  try {
+    assert.deepEqual(await reconcilePendingRollback(pending.operationId, deps, true, true), {
+      operation: pending.operationId, originalRunnerStopped: true, reconciled: true, reason: "eligible", state: "disabled",
+    });
+    assert.deepEqual(await inspectDeploymentRecovery(pending.operationId, deps, true), {
+      operation: pending.operationId, originalRunnerStopped: true, cleanupEligible: true, reason: "eligible", state: "restored",
+    });
+    assert.equal(rollbackCalls, 1);
+    assert.equal(await finalizeDeploymentRecovery(pending.operationId, deps, true, true), true);
+    assert.equal(rollbackCalls, 1, "finalization must only release a previously verified terminal lease");
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test("interrupted enable drift retains the lease and never retries an uncertain rollback", async () => {
+  const pending = terminalJournal({
+    outcome: "failed", rollback: "not_needed", lastVerifiedState: "unknown", failure: "command_failed",
+    remoteCommit: "cccccccccccccccccccccccccccccccccccccccc", startingEnabled: false,
+    transitions: [{ phase: "enable_deploy", kind: "intent", at: "2026-09-05T12:00:00.000Z", version: startingId }],
+  });
+  for (const drift of ["revision", "image", "application_version", "active_instance", "config"]) {
+    const deps = recoveryDeps(pending, enabledId, true, {
+      image: drift === "image" ? candidateImage : image,
+      applicationVersion: drift === "application_version" ? 26 : 25,
+      active: drift === "active_instance",
+    });
+    const run = deps.run;
+    let rollbackCalls = 0;
+    let journalWrites = 0;
+    deps.run = async (command, args, options) => {
+      if (args.includes("rollback")) rollbackCalls += 1;
+      if (command === "gh" && args[0] === "api" && args[1] === "--method" && ["POST", "PATCH"].includes(args[2] ?? "")) journalWrites += 1;
+      const raw = await run(command, args, options);
+      if (drift === "revision" && command === "pnpm" && args.includes("versions")) return raw.replace(commit, previousCommit);
+      if (drift === "config" && command === "pnpm" && args.includes("versions")) return raw.replace('"name":"MCP_TOTAL_TIMEOUT_MS","text":"90000"', '"name":"MCP_TOTAL_TIMEOUT_MS","text":"90001"');
+      return raw;
+    };
+    const result = await reconcilePendingRollback(pending.operationId, deps, true, true);
+    assert.equal(result.reconciled, false, drift);
+    assert.equal(result.reason, "provider_drift", drift);
+    assert.equal(rollbackCalls, 0, drift);
+    assert.equal(journalWrites, 0, drift);
+  }
+
+  const deps = recoveryDeps(pending, enabledId, true);
+  const run = deps.run;
+  let rollbackCalls = 0;
+  deps.run = async (command, args, options) => {
+    if (command === "pnpm" && args.includes("rollback")) {
+      rollbackCalls += 1;
+      throw new Error("uncertain provider result");
+    }
+    return run(command, args, options);
+  };
+  assert.equal((await reconcilePendingRollback(pending.operationId, deps, true, true)).reconciled, false);
+  assert.equal((await reconcilePendingRollback(pending.operationId, deps, true, true)).reason, "provider_drift");
+  assert.equal(rollbackCalls, 1, "an uncertain rollback is never retried");
+
+  const appliedThenLost = recoveryDeps(pending, enabledId, true, { rollbackTo: { version: startingId, enabled: false } });
+  const appliedRun = appliedThenLost.run;
+  let appliedRollbackCalls = 0;
+  appliedThenLost.run = async (command, args, options) => {
+    if (command === "pnpm" && args.includes("rollback")) {
+      appliedRollbackCalls += 1;
+      await appliedRun(command, args, options);
+      throw new Error("rollback applied but response was lost");
+    }
+    return appliedRun(command, args, options);
+  };
+  assert.equal((await reconcilePendingRollback(pending.operationId, appliedThenLost, true, true)).reconciled, false);
+  assert.deepEqual(await reconcilePendingRollback(pending.operationId, appliedThenLost, true, true), {
+    operation: pending.operationId, originalRunnerStopped: true, reconciled: true, reason: "eligible", state: "disabled",
+  });
+  assert.equal(appliedRollbackCalls, 1, "readback of an applied rollback completes evidence without retrying the mutation");
 });
 
 test("pending rollback reconciliation denies drift, a running Container, and a changed journal head", async () => {

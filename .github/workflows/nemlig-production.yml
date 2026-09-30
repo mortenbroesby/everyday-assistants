@@ -25,7 +25,7 @@ on:
         type: boolean
         default: false
       reconcile_operation:
-        description: Reconcile one saved pending rollback operation and release its lease
+        description: Reconcile one saved deployment operation and release its lease
         required: false
         type: string
 
@@ -315,7 +315,7 @@ jobs:
           node-version: 22.23.1
       - name: Install frozen dependencies
         run: pnpm install --frozen-lockfile
-      - name: Reconcile exact pending rollback and release lease
+      - name: Reconcile exact saved deployment state and release lease
         env:
           GH_TOKEN: "${{ github.token }}"
           CLOUDFLARE_API_TOKEN: "${{ secrets.CLOUDFLARE_API_TOKEN }}"

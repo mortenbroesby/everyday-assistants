@@ -300,6 +300,14 @@ not a fresh real-family Nemlig or ChatGPT acceptance claim.
      -f commit="$sha" -f recovery=true -f reconcile_operation="$operation"
    ```
 
+   If the saved journal contains only an `enable_deploy` intent, protected
+   reconciliation first requires exact readback of that candidate Worker and
+   the unchanged, inactive starting Container. Only then may it journal and
+   roll back to the recorded starting Worker; it must verify both public routes
+   are disabled and the Container remains unchanged/inactive before finalizing.
+   Drift or an uncertain rollback keeps the lease; the recovery path never
+   retries the rollback.
+
 5. If the run is canceled, fails, or leaves a lease, download its artifact and
    run `inspect-recovery` with that artifact's operation UUID. Continue only
    when inspection proves a terminal matching state; never retry the deployment
