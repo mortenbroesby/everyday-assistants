@@ -54,18 +54,10 @@ pnpm nemlig --help
    The command automatically displays the resulting basket and total. Stop on
    partial success, failed readback, or mismatch.
 
-To remove one exact product line, first display its current product ID, name,
-quantity, and total and obtain a separate explicit approval. Then run:
-
-```sh
-pnpm nemlig remove <product-id>
-```
-
-The command sets only that product's absolute quantity to zero and verifies by
-readback that its ID is absent. It never clears the basket.
-
-Before clearing a basket, display its exact contents and total and obtain
-explicit approval. Never replace a basket, check out, pay, or place an order.
+Nemlig Assistant is add-only for the real provider basket. It has no remove,
+replace, or clear operation. If the user wants to remove or reduce anything,
+direct them to manage that directly on Nemlig.com. Never check out, pay, or
+place an order.
 
 ## MCP workflow
 
@@ -73,9 +65,8 @@ Model-visible basket writes never call a direct mutation tool. Additions use
 `review_items_to_add` → explicit exact approval → `add_approved_items`, or the
 local review's `prepare_submission` → explicit exact approval →
 `submit_product_review`. Both preserve fresh validation, principal binding,
-single-use authority, serialization and verified basket readback. Removals,
-replacements and clearing use their matching review/apply tools with separate
-exact approval. Never retry an indeterminate result; inspect the draft and actual
+single-use authority, serialization and verified basket readback. Never retry
+an indeterminate result; inspect the draft and actual
 basket before deliberately creating a fresh review.
 
 Use `start_product_review` for an explicit new selection. To reopen, first use

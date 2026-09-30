@@ -6,7 +6,7 @@ import { NEMLIG_VERSION } from "../src/runtime.js";
 import {
   ProductViewerHtmlMismatchError,
   ServiceInventoryMismatchError,
-  verifyApprovedReversibleProductionMutation,
+  verifyApprovedProductionMutation,
   verifyProductionEdge,
   verifyReadOnlyProductionFeatures,
   verifyServiceAcceptanceFeatures,
@@ -55,7 +55,7 @@ const approvedMutation = (env: Environment, name: string): ApprovedProductionMut
     throw new Error(`${name} must contain valid JSON`);
   }
   const object = record(value, name);
-  if (!["additions", "removal", "replacement", "clear"].includes(object.operation as string)) throw new Error(`${name} operation is invalid`);
+  if (object.operation !== "additions") throw new Error(`${name} operation is invalid`);
   record(object.prepareArguments, `${name}.prepareArguments`);
   record(object.expectedReview, `${name}.expectedReview`);
   return object as unknown as ApprovedProductionMutation;
@@ -167,7 +167,7 @@ export interface AcceptanceReport {
 type AcceptanceOutcome = Omit<AcceptanceReport, "schema" | "sourceSha" | "startedAt" | "completedAt" | "failed" | "failureCategory">;
 
 const inheritedMutationApproval = (env: Environment): boolean => Object.keys(env).some((name) =>
-  /^NEMLIG_PRODUCTION_(?:MUTATION|RESTORATION)(?:_CONFIRMATION)?$/u.test(name) && Boolean(env[name]?.trim()));
+  /^NEMLIG_PRODUCTION_MUTATION(?:_CONFIRMATION)?$/u.test(name) && Boolean(env[name]?.trim()));
 
 const failureCategory = (error: unknown): NonNullable<AcceptanceReport["failureCategory"]> => {
   if (error instanceof ProductViewerHtmlMismatchError || error instanceof ServiceInventoryMismatchError
@@ -183,7 +183,7 @@ const failureCategory = (error: unknown): NonNullable<AcceptanceReport["failureC
   return "unknown_failure";
 };
 
-/** Run credential-free edge, read-only, or explicitly approved reversible acceptance. */
+/** Run credential-free edge, read-only, or explicitly approved add-only acceptance. */
 export async function main(
   argv: string[] = process.argv.slice(2),
   env: Environment = process.env,
@@ -197,10 +197,7 @@ export async function main(
   const timer = setTimeout(() => controller.abort(new Error("Production acceptance deadline exceeded")), dependencies.totalTimeoutMs ?? 90_000);
   try {
     const mutations = options.mutation
-      ? {
-          change: approvedMutation(env, "NEMLIG_PRODUCTION_MUTATION"),
-          restoration: approvedMutation(env, "NEMLIG_PRODUCTION_RESTORATION"),
-        }
+      ? approvedMutation(env, "NEMLIG_PRODUCTION_MUTATION")
       : undefined;
     let origin: URL;
     try {
@@ -243,8 +240,8 @@ export async function main(
         const report = await verifyReadOnlyProductionFeatures(connected.client, { signal: controller.signal });
         outcome = { profile: "live-user", observedRevision, required: ["edge", "live_user_features"], passed: ["edge", "live_user_features"], unavailable: report.unavailable, lastCompletedBoundary: "live_user_features", correlationIds: edge.correlationIds };
       } else {
-        await verifyApprovedReversibleProductionMutation(connected.client, mutations.change, mutations.restoration);
-        outcome = { profile: "mutation", observedRevision, required: ["edge", "approved_mutation"], passed: ["edge", "approved_mutation"], unavailable: [], lastCompletedBoundary: "approved_mutation_restored", correlationIds: edge.correlationIds };
+        await verifyApprovedProductionMutation(connected.client, mutations);
+        outcome = { profile: "mutation", observedRevision, required: ["edge", "approved_addition"], passed: ["edge", "approved_addition"], unavailable: [], lastCompletedBoundary: "approved_addition_verified", correlationIds: edge.correlationIds };
       }
     } catch (error) {
       operationFailed = true;

@@ -23,8 +23,6 @@ import {
   BasketProposalService,
   basketPayload,
   type ApplyResult,
-  type NoopProposalView,
-  type ProposalOperation,
   type ProposalView,
 } from "./proposals.js";
 import { IMAGE_ORIGINS, createProductView, createProductViewFromSummary, createProductViews, rankProducts, type ProductSummaryFacts, type ProductView } from "./product-presentation.js";
@@ -156,6 +154,9 @@ const proposalLineSchema = z.object({
   category: z.string(),
   subcategory: z.string(),
   quantity: z.number().int().positive(),
+  current_quantity: z.number().int().nonnegative(),
+  resulting_quantity: z.number().int().positive(),
+  resulting_line_total: z.number(),
   available: z.boolean(),
   item_price: z.number(),
   unit_price: z.number().optional(),
@@ -177,73 +178,9 @@ const additionsProposalSchema = z.object({
   views: z.array(productViewSchema).min(1),
 });
 
-const removalProposalSchema = z.object({
-  applicable: z.boolean(),
-  operation: z.literal("removal"),
-  proposal_id: z.string().uuid().optional(),
-  connection_bound: z.literal(true).optional(),
-  issued_at: z.string().datetime().optional(),
-  expires_at: z.string().datetime().optional(),
-  basket_fingerprint: z.string().regex(/^[a-f0-9]{64}$/u).optional(),
-  review: z.object({ line: basketItemSchema }).optional(),
-  reason: z.string().optional(),
-  views: z.array(productViewSchema).optional(),
-});
-
-const clearProposalSchema = z.object({
-  applicable: z.boolean(),
-  operation: z.literal("clear"),
-  proposal_id: z.string().uuid().optional(),
-  connection_bound: z.literal(true).optional(),
-  issued_at: z.string().datetime().optional(),
-  expires_at: z.string().datetime().optional(),
-  basket_fingerprint: z.string().regex(/^[a-f0-9]{64}$/u).optional(),
-  review: z.object({ basket: basketSchema }).optional(),
-  reason: z.string().optional(),
-  views: z.array(productViewSchema).optional(),
-});
-
-const replacementLineSchema = z.object({
-  product_id: z.number().int().positive(),
-  name: z.string(),
-  unit: z.string(),
-  unit_size: z.string(),
-  category: z.string(),
-  subcategory: z.string(),
-  quantity: z.number().int().positive(),
-  available: z.boolean(),
-  item_price: z.number(),
-  unit_price: z.number().optional(),
-  currency: z.literal("DKK"),
-  line_total: z.number(),
-  labels: z.array(z.string()),
-});
-
-const replacementProposalSchema = z.object({
-  applicable: z.boolean(),
-  operation: z.literal("replacement"),
-  proposal_id: z.string().uuid().optional(),
-  connection_bound: z.literal(true).optional(),
-  issued_at: z.string().datetime().optional(),
-  expires_at: z.string().datetime().optional(),
-  basket_fingerprint: z.string().regex(/^[a-f0-9]{64}$/u).optional(),
-  review: z.object({
-    current_line: replacementLineSchema,
-    replacement_line: replacementLineSchema,
-    existing_replacement_line: basketItemSchema.nullable(),
-    current_products_price: z.number(),
-    expected_products_price: z.number(),
-    expected_number_of_products: z.number(),
-    price_difference: z.number(),
-    potential_savings: z.number().positive().optional(),
-  }).optional(),
-  reason: z.string().optional(),
-  views: z.array(productViewSchema).optional(),
-});
-
 const applyResultSchema = z.object({
   status: z.literal("completed"),
-  operation: z.enum(["additions", "removal", "replacement", "clear"]),
+  operation: z.literal("additions"),
   replayed: z.boolean(),
   basket: basketSchema,
   views: z.array(productViewSchema).optional(),
@@ -341,8 +278,7 @@ const visualBasketProductViews = async (
     imageCount: views.filter((view) => view.status === "complete" && view.product.image_url).length,
   };
 };
-const proposalProductViews = (proposal: ProposalView | NoopProposalView): ProductView[] => {
-  if (!proposal.applicable) return [];
+const proposalProductViews = (proposal: ProposalView): ProductView[] => {
   const review = record(proposal.review);
   const reviewView = (line: unknown): ProductView => {
     const facts = summaryFacts(line);
@@ -351,25 +287,18 @@ const proposalProductViews = (proposal: ProposalView | NoopProposalView): Produc
     });
   };
   if (proposal.operation === "additions") return (Array.isArray(review.lines) ? review.lines : []).map(reviewView);
-  if (proposal.operation === "removal") return review.line ? [reviewView(review.line)] : [];
-  if (proposal.operation === "replacement") return [review.current_line, review.replacement_line].filter(Boolean).map(reviewView);
-  const items = record(review.basket).items;
-  return Array.isArray(items) ? items.map(reviewView) : [];
+  return [];
 };
-const proposalText = (proposal: ProposalView | NoopProposalView): string => {
-  if (!proposal.applicable) return "Der er ikke noget at ændre i kurven.";
+const proposalText = (proposal: ProposalView): string => {
   const review = record(proposal.review);
   if (proposal.operation === "additions") {
     const lines = Array.isArray(review.lines) ? review.lines : [];
-    return `Tilføj til kurven:\n${lines.map((line) => lineText(line, true)).join("\n")}\nForventet varetotal: ${kr(review.expected_products_price)}\nSkal jeg tilføje det?`;
+    return `Tilføj til kurven:\n${lines.map((value) => {
+      const line = record(value);
+      return `${lineText(line, true)} · antal ændres fra ${line.current_quantity} til ${line.resulting_quantity}`;
+    }).join("\n")}\nForventet varetotal: ${kr(review.expected_products_price)}\nSkal jeg tilføje det?`;
   }
-  if (proposal.operation === "removal") return `Fjern ${lineText(review.line)} fra kurven?`;
-  if (proposal.operation === "replacement") {
-    return `Erstat ${lineText(review.current_line, true)}\nmed ${lineText(review.replacement_line, true)}\nPrisforskel: ${kr(Math.abs(Number(review.price_difference ?? 0)))}\nSkal jeg erstatte varen?`;
-  }
-  const basket = record(review.basket);
-  const items = Array.isArray(basket.items) ? basket.items : [];
-  return `Tøm kurven:\n${items.map((item) => lineText(item)).join("\n")}\nSkal jeg tømme kurven?`;
+  return "Basket addition proposal is unavailable.";
 };
 
 const success = (value: unknown, text = JSON.stringify(value)) => ({
@@ -428,6 +357,7 @@ Current catalogue
 Actual Nemlig basket
 - Use show_my_basket or show_my_basket_visually to inspect the actual basket, not local Ready products.
 - image URLs do not prove cards rendered, so use complete text fallback if needed. An empty actual basket does not imply an empty local review.
+- Actual basket additions require their matching staged review/apply tools and explicit approval.
 
 Local shopping review
 - After collecting exact products, call start_product_review once. Use update_product_review show without an old review_id or revision to recover this conversation's active review. Show, not repeated detail reads, reopens the local viewer.
@@ -439,7 +369,7 @@ Local shopping review
 Sending to Nemlig
 - prepare_submission includes only Ready lines and does not write; other In Review products do not block it.
 - Require explicit approval of the exact unchanged quantities, current prices and effects before submit_product_review. Never treat local acceptance as provider approval.
-- Other actual basket changes require their matching staged review/apply tools and explicit approval, fresh revalidation, and readback.
+- The real Nemlig basket is add-only: submit only exact approved positive additions. Never lower a quantity, remove or replace a line, or clear the provider basket. Use Nemlig.com directly for those actions.
 
 Recovery and safety
 - After a stale result, show the active review without replaying the edit. If no active review remains, ask before explicitly starting fresh; never restore old acceptance or approval.
@@ -719,7 +649,7 @@ Recovery and safety
 
   registerTool("update_product_review", {
     title: "Update the local product review",
-    description: "Show/refresh or edit the shared temporary local review using exact product IDs. Add newly found products, batch-accept selected In Review products into Ready, revisit accepted products, remove, change quantity, navigate, or discard the local selection with end. Alternatives are for In Review only; replacing leaves the new product In Review, not Ready. End and remove never change the real Nemlig basket. None of these actions writes to Nemlig. The review card may be attached even when text omits it. prepare_submission reviews only Ready lines at exact current prices, sets their Nemlig quantities while preserving unrelated lines, and requires subsequent explicit approval. After errors show current state; never repeat a stale edit blindly.",
+      description: "Show/refresh or edit the shared temporary local review using exact product IDs. Add newly found products, batch-accept selected In Review products into Ready, revisit accepted products, remove, change quantity, navigate, or discard the local selection with end. Alternatives are for In Review only; replacing leaves the new product In Review, not Ready. End and remove never change the real Nemlig basket. None of these actions writes to Nemlig. The review card may be attached even when text omits it. prepare_submission reviews only Ready lines at exact current prices and requires subsequent explicit approval; submission adds those quantities to existing provider lines and never removes or lowers any current basket contents. After errors show current state; never repeat a stale edit blindly.",
     inputSchema: z.object({ review_id: z.string().uuid().optional().describe("The current local review reference. May be omitted for show to recover this conversation’s active review."), revision: z.number().int().positive().optional().describe("Current revision required for every action except show."), action: reviewActionSchema.describe("The local change, navigation, refresh, or preparation requested by the user.") }),
     outputSchema: z.union([z.object({ review: reviewSnapshotSchema }), z.object({ ended: z.literal(true) }), z.object({ unavailable: z.literal(true) })]),
     annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true },
@@ -753,7 +683,7 @@ Recovery and safety
     annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true },
     _meta: { ...PRODUCT_VIEWER_RESOURCE_METADATA, ui: { resourceUri: PRODUCT_VIEWER_RESOURCE_URI, visibility: ["model", "app"] }, "openai/widgetAccessible": true },
   }, ({ review_id, revision, submission_id }, ctx) => runMcpOperation("submit_product_review", async () => {
-    await ensureLoggedIn(client, loadCredentials, true);
+    await ensureLoggedIn(client, loadCredentials);
     return success(await reviews.submit(reviewOwner(ctx), review_id, revision, submission_id));
   }));
 
@@ -789,96 +719,22 @@ Recovery and safety
     }),
   );
 
-  const registerAction = (
-    name: "add_approved_items" | "remove_approved_item" | "make_approved_item_swap" | "empty_approved_basket",
-    operation: ProposalOperation,
-    title: string,
-    description: string,
-    destructiveHint: boolean,
-  ): void => {
-    registerTool(
-      name,
-      {
-        title,
-        description,
-        inputSchema: z.object({ approved_review: z.string().uuid().describe("The private reference returned by the matching unchanged review.") }),
-        outputSchema: applyResultSchema,
-        annotations: { readOnlyHint: false, destructiveHint, openWorldHint: true },
-        },
-      ({ approved_review }, ctx) => runMcpOperation(name, async () => {
-          await ensureLoggedIn(client, loadCredentials, true);
-          const result: ApplyResult = await proposals.apply(connectionId(ctx.sessionId), approved_review, operation);
-          const views = basketProductViews(result.basket);
-          return success({ ...result, views }, `${basketText(result.basket, true)}\n${productViewsToText(views)}`);
-        }),
-    );
-  };
-
-  registerAction("add_approved_items", "additions", "Add the approved items", "Add exactly the items from the approved unchanged review, then show the verified basket. This changes your basket.", false);
-
   registerTool(
-    "review_item_to_remove",
+    "add_approved_items",
     {
-      title: "Review an item to remove",
-      description: "Review one exact basket item before removing it. This does not change your basket.",
-      inputSchema: z.object({ basket_item: z.number().int().positive().describe("The exact item reference shown in your current basket.") }),
-      outputSchema: removalProposalSchema,
-      annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true },
+      title: "Add the approved items",
+      description: "Add the exact approved quantities to the current Nemlig basket without lowering, removing, replacing, or clearing any existing line. The result is verified by basket readback.",
+      inputSchema: z.object({ approved_review: z.string().uuid().describe("The private reference returned by the matching unchanged additions review.") }),
+      outputSchema: applyResultSchema,
+      annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true },
     },
-    ({ basket_item }, ctx) => runAuthenticatedRead("review_item_to_remove", async () => {
-      const proposal = await proposals.prepareRemoval(connectionId(ctx.sessionId), basket_item, { signal: ctx.mcpReq.signal });
-      const views = proposalProductViews(proposal);
-      return success({ ...proposal, views }, `${proposalText(proposal)}\n${productViewsToText(views)}`);
+    ({ approved_review }, ctx) => runMcpOperation("add_approved_items", async () => {
+      await ensureLoggedIn(client, loadCredentials);
+      const result: ApplyResult = await proposals.apply(connectionId(ctx.sessionId), approved_review, "additions");
+      const views = basketProductViews(result.basket);
+      return success({ ...result, views }, `${basketText(result.basket, true)}\n${productViewsToText(views)}`);
     }),
   );
-
-  registerAction("remove_approved_item", "removal", "Remove the approved item", "Remove exactly the item from the approved unchanged review, then show the verified basket. This changes your basket.", true);
-
-  registerTool(
-    "review_item_swap",
-    {
-      title: "Review swapping an item",
-      description: "Compare swapping one basket item for one exact product, including the basket-price difference. This does not change your basket or claim the products are equivalent.",
-      inputSchema: z.object({
-              current_item: z.number().int().positive().describe("The exact item reference shown in your current basket."),
-              replacement_item: z.number().int().positive().describe("The exact replacement product reference returned by a search."),
-              quantity: z.number().int().positive().describe("The final quantity of the replacement product."),
-            }),
-      outputSchema: replacementProposalSchema,
-      annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true },
-    },
-    ({ current_item, replacement_item, quantity }, ctx) => runAuthenticatedRead("review_item_swap", async () => {
-      const proposal = await proposals.prepareReplacement(
-        connectionId(ctx.sessionId),
-        current_item,
-        replacement_item,
-        quantity,
-        { signal: ctx.mcpReq.signal },
-      );
-      const views = proposalProductViews(proposal);
-      return success({ ...proposal, views }, `${proposalText(proposal)}\n${productViewsToText(views)}`);
-    }),
-  );
-
-  registerAction("make_approved_item_swap", "replacement", "Make the approved swap", "Make exactly the swap from the approved unchanged review, then show the verified basket. This changes your basket.", true);
-
-  registerTool(
-    "review_emptying_basket",
-    {
-      title: "Review emptying my basket",
-      description: "Review every current basket item before emptying the basket. This does not change your basket.",
-      inputSchema: z.object({}),
-      outputSchema: clearProposalSchema,
-      annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true },
-    },
-    (_input, ctx) => runAuthenticatedRead("review_emptying_basket", async () => {
-      const proposal = await proposals.prepareClear(connectionId(ctx.sessionId), { signal: ctx.mcpReq.signal });
-      const views = proposalProductViews(proposal);
-      return success({ ...proposal, views }, `${proposalText(proposal)}\n${productViewsToText(views)}`);
-    }),
-  );
-
-  registerAction("empty_approved_basket", "clear", "Empty my approved basket", "Empty exactly the approved unchanged basket, then verify that it is empty. This changes your basket.", true);
 
   return server;
 }

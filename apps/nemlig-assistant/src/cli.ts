@@ -187,16 +187,6 @@ export function createProgram(overrides: Partial<CliDependencies> = {}): Command
       dependencies.out(`✓ Added ${options.quantity}x product ${productId}.\n${formatBasket(basket)}`);
     });
 
-  program
-    .command("remove")
-    .description("Remove one exact, already reviewed and explicitly approved product line, then verify the basket.")
-    .argument("<product-id>", "Numeric Nemlig product ID", positiveInteger)
-    .action(async (productId: number) => {
-      await ensureLoggedIn(dependencies.client, dependencies.credentials);
-      const basket = await dependencies.client.removeFromCart(productId);
-      dependencies.out(`✓ Removed product ${productId}.\n${formatBasket(basket)}`);
-    });
-
   return program;
 }
 

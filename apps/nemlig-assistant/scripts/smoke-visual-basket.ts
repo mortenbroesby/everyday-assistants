@@ -26,7 +26,7 @@ const fixture = {
     return { items: Array.from({ length: 6 }, (_, index) => ({ id: index + 1, name: `Smoke product ${index + 1}`, quantity: 2, total: 20 })), productsPrice: 120, deliveryPrice: 0, numberOfProducts: 12, deliveryTime: undefined };
   },
   getProduct: async (id: number) => { productReads++; return product(id); },
-  addToCart: denied, removeFromCart: denied, clearCart: denied,
+  addToCart: denied,
 } as unknown as ShoppingClient;
 const server = createMcpServer(fixture, async () => undefined);
 const handler = createMcpHandler(() => server, { legacy: "reject" });

@@ -322,8 +322,6 @@ test("HTTP MCP preserves an owner proposal across authenticated transport reconn
     browseDepartment: async () => ({ products: [], page: 1, hasNext: false }),
     getCart: async () => changed ? applied : empty,
     addToCart: async () => { changed = true; return applied; },
-    removeFromCart: async () => empty,
-    clearCart: async () => empty,
   };
   const proposalStores = new Map<string, BasketProposalService>();
   const app = createHttpApp(config, oauth, {
@@ -405,8 +403,6 @@ test("modern HTTP requests preserve a basket review across fresh clients and ser
     browseDepartment: async () => ({ products: [], page: 1, hasNext: false }),
     getCart: async () => addCalls ? applied : empty,
     addToCart: async () => { addCalls += 1; return applied; },
-    removeFromCart: async () => empty,
-    clearCart: async () => empty,
   };
   const contexts = new Map<string, { client: ShoppingClient; proposals: BasketProposalService }>();
   let contextCreates = 0;
@@ -495,8 +491,6 @@ test("HTTP MCP creates bounded isolated clients, credentials, baskets, favourite
         deliveryTime: principal.subject === ownerSubject ? "owner-basket" : "guest-basket",
       }),
       addToCart: async () => { throw new Error("unused"); },
-      removeFromCart: async () => { throw new Error("unused"); },
-      clearCart: async () => { throw new Error("unused"); },
     };
     const proposals = new BasketProposalService(client);
     clients.add(client);
@@ -587,8 +581,7 @@ test("current family stateless requests decrypt credentials and isolate credenti
     getFreshProduct: async () => { throw new Error("unused"); }, listFavorites: async () => [],
     listDepartments: async () => [], browseDepartment: async () => ({ products: [], page: 1, hasNext: false }),
     getCart: async () => ({ items: [], productsPrice: 0, deliveryPrice: 0, numberOfProducts: 0, deliveryTime: "guest-current" }),
-    addToCart: async () => { throw new Error("unused"); }, removeFromCart: async () => { throw new Error("unused"); },
-    clearCart: async () => { throw new Error("unused"); },
+    addToCart: async () => { throw new Error("unused"); },
   };
   const app = createHttpApp(familyConfig, oauth, {
     verifyAccessToken: async (token) => ({ token, clientId: "chatgpt", scopes: [config.requiredScope], expiresAt: Date.now() / 1000 + 300, extra: { subject: "auth0|guest" } }),

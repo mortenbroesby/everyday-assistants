@@ -337,23 +337,20 @@ test("missing token is rejected before connect", async () => {
   assert.equal(calls.length, 5);
 });
 
-test("mutation validates both envelopes, applies, restores once, and closes", async () => {
+test("mutation validates the exact add-only envelope, applies once, and closes", async () => {
   const edgeCalls: string[] = [];
   const calls: string[] = [];
   const events: string[] = [];
   const change: ApprovedProductionMutation = { operation: "additions", prepareArguments: {}, expectedReview: { exact: "change" } };
-  const restoration: ApprovedProductionMutation = { operation: "removal", prepareArguments: {}, expectedReview: { exact: "restore" } };
   const serializedChange = JSON.stringify(change);
-  const serializedRestoration = JSON.stringify(restoration);
   const client: AcceptanceClient = {
     listTools: async () => ({ tools: allTools }),
     callTool: async ({ name }) => {
       calls.push(name);
       if (name === "show_my_basket") return { structuredContent: { items: [], products_price: 0 } };
       if (name === "review_items_to_add") return { structuredContent: { applicable: true, operation: "additions", proposal_id: "919b4c09-704e-466b-8dda-fe4391b8561c", review: change.expectedReview } };
-      if (name === "review_item_to_remove") return { structuredContent: { applicable: true, operation: "removal", proposal_id: "919b4c09-704e-466b-8dda-fe4391b8561c", review: restoration.expectedReview } };
       if (name === "add_approved_items") return { structuredContent: { status: "completed", operation: "additions", replayed: false, basket: { items: [], products_price: 0 } } };
-      return { structuredContent: { status: "completed", operation: "removal", replayed: false, basket: { items: [], products_price: 0 } } };
+      return { structuredContent: { items: [], products_price: 0 } };
     },
   };
   const entry = await import("../scripts/production-acceptance.js");
@@ -362,19 +359,13 @@ test("mutation validates both envelopes, applies, restores once, and closes", as
     NEMLIG_MCP_ACCESS_TOKEN: "test-token",
     NEMLIG_PRODUCTION_MUTATION: serializedChange,
     NEMLIG_PRODUCTION_MUTATION_CONFIRMATION: serializedChange,
-    NEMLIG_PRODUCTION_RESTORATION: serializedRestoration,
-    NEMLIG_PRODUCTION_RESTORATION_CONFIRMATION: serializedRestoration,
   }, {
     fetcher: edgeFetcher(edgeCalls),
     connect: async () => ({ client, close: async () => { events.push("close"); } }),
   });
   assert.deepEqual(events, ["close"]);
-  assert.deepEqual(calls, [
-    "show_my_basket", "review_items_to_add", "add_approved_items", "show_my_basket",
-    "show_my_basket", "review_item_to_remove", "remove_approved_item", "show_my_basket",
-  ]);
+  assert.deepEqual(calls, ["show_my_basket", "review_items_to_add", "add_approved_items", "show_my_basket"]);
   assert.equal(calls.filter((name) => name === "add_approved_items").length, 1);
-  assert.equal(calls.filter((name) => name === "remove_approved_item").length, 1);
 });
 
 test("read-only failure after connect still closes the client", async () => {

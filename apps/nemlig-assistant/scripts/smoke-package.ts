@@ -80,7 +80,7 @@ try {
   assert.doesNotMatch(help.stdout, /feature-request/);
   assert.match(help.stdout, /cart/);
   assert.match(help.stdout, /add/);
-  assert.match(help.stdout, /remove/);
+  assert.doesNotMatch(help.stdout, /\bremove\b/u);
   assert.doesNotMatch(help.stdout, /parse|checkout|--password/i);
 
   const transport = new StdioClientTransport({
@@ -100,16 +100,10 @@ try {
       "add_approved_items",
       "browse_grocery_section",
       "check_nemlig_connection",
-      "empty_approved_basket",
       "find_groceries",
       "get_grocery_details",
       "get_profile",
-      "make_approved_item_swap",
       "reconnect_nemlig_assistant",
-      "remove_approved_item",
-      "review_emptying_basket",
-      "review_item_swap",
-      "review_item_to_remove",
       "review_items_to_add",
       "show_grocery_sections",
       "show_my_basket",
