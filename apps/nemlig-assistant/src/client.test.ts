@@ -590,6 +590,7 @@ test("search accepts nested products and sends the current session values", asyn
         assert.equal(parsed.searchParams.get("take"), "2");
         assert.equal(parsed.searchParams.get("timestamp"), "product-stamp");
         assert.equal(parsed.searchParams.get("TimeSlotId"), "7");
+        assert.equal(parsed.searchParams.get("deliveryZoneId"), "9");
         assert.equal(new Headers(init?.headers).has("content-type"), false);
       },
       response: json({ Products: { Products: [{ Id: 1, Name: "Mælk", Price: 10 }] } }),
