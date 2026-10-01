@@ -6,12 +6,10 @@ import { NEMLIG_VERSION } from "../src/runtime.js";
 import {
   ProductViewerHtmlMismatchError,
   ServiceInventoryMismatchError,
-  verifyApprovedProductionMutation,
   verifyProductionEdge,
   verifyReadOnlyProductionFeatures,
   verifyServiceAcceptanceFeatures,
   type AcceptanceClient,
-  type ApprovedProductionMutation,
 } from "../src/production-acceptance.js";
 
 type Environment = Record<string, string | undefined>;
@@ -40,38 +38,13 @@ const required = (env: Environment, name: string): string => {
   return value;
 };
 
-const record = (value: unknown, name: string): Record<string, unknown> => {
-  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error(`${name} must be a JSON object`);
-  return value as Record<string, unknown>;
-};
-
-const approvedMutation = (env: Environment, name: string): ApprovedProductionMutation => {
-  const serialized = required(env, name);
-  if (required(env, `${name}_CONFIRMATION`) !== serialized) throw new Error(`${name}_CONFIRMATION must exactly repeat the approved envelope`);
-  let value: unknown;
-  try {
-    value = JSON.parse(serialized);
-  } catch {
-    throw new Error(`${name} must contain valid JSON`);
-  }
-  const object = record(value, name);
-  if (object.operation !== "additions") throw new Error(`${name} operation is invalid`);
-  record(object.prepareArguments, `${name}.prepareArguments`);
-  record(object.expectedReview, `${name}.expectedReview`);
-  return object as unknown as ApprovedProductionMutation;
-};
-
-const parseArgs = (argv: string[]): { edgeOnly: boolean; mutation: boolean; service: boolean } => {
+const parseArgs = (argv: string[]): { edgeOnly: boolean; service: boolean } => {
   let edgeOnly = false;
-  let mutation = false;
   let service = false;
   for (const argument of argv) {
     if (argument === "--edge-only") {
       if (edgeOnly) throw new Error("--edge-only must not be repeated");
       edgeOnly = true;
-    } else if (argument === "--mutation") {
-      if (mutation) throw new Error("--mutation must not be repeated");
-      mutation = true;
     } else if (argument === "--service") {
       if (service) throw new Error("--service must not be repeated");
       service = true;
@@ -79,8 +52,8 @@ const parseArgs = (argv: string[]): { edgeOnly: boolean; mutation: boolean; serv
       throw new Error(`Unknown acceptance argument: ${argument}`);
     }
   }
-  if ((edgeOnly && mutation) || (edgeOnly && service) || (mutation && service)) throw new Error("--edge-only, --mutation, and --service cannot be combined");
-  return { edgeOnly, mutation, service };
+  if (edgeOnly && service) throw new Error("--edge-only and --service cannot be combined");
+  return { edgeOnly, service };
 };
 
 const abortable = async <T>(label: string, work: Promise<T>, signal: AbortSignal): Promise<T> => {
@@ -154,36 +127,32 @@ export interface AcceptanceReport {
   observedRevision?: string;
   startedAt: string;
   completedAt: string;
-  profile: "edge" | "live-user" | "service" | "mutation";
+  profile: "edge" | "live-user" | "service";
   required: string[];
   passed: string[];
   failed: string[];
   unavailable: string[];
   lastCompletedBoundary: string;
-  failureCategory?: "input_invalid" | "deadline_exceeded" | "edge_failed" | "authentication_failed" | "transport_failed" | "feature_failed" | "mutation_failed" | "unknown_failure";
+  failureCategory?: "input_invalid" | "deadline_exceeded" | "edge_failed" | "authentication_failed" | "transport_failed" | "feature_failed" | "unknown_failure";
   correlationIds: string[];
 }
 
 type AcceptanceOutcome = Omit<AcceptanceReport, "schema" | "sourceSha" | "startedAt" | "completedAt" | "failed" | "failureCategory">;
-
-const inheritedMutationApproval = (env: Environment): boolean => Object.keys(env).some((name) =>
-  /^NEMLIG_PRODUCTION_MUTATION(?:_CONFIRMATION)?$/u.test(name) && Boolean(env[name]?.trim()));
 
 const failureCategory = (error: unknown): NonNullable<AcceptanceReport["failureCategory"]> => {
   if (error instanceof ProductViewerHtmlMismatchError || error instanceof ServiceInventoryMismatchError
     || error instanceof ServiceRuntimeVersionMismatchError) return "feature_failed";
   const message = error instanceof Error ? error.message : "";
   if (/deadline exceeded|timed out/iu.test(message)) return "deadline_exceeded";
-  if (/argument|valid URL|required|approval environment|cannot select mutation|fixed production target/iu.test(message)) return "input_invalid";
+  if (/argument|valid URL|required|fixed production target/iu.test(message)) return "input_invalid";
   if (/edge|health|revision|OAuth|anonymous|Origin/iu.test(message)) return "edge_failed";
   if (/token|authentication|authorization/iu.test(message)) return "authentication_failed";
-  if (/mutation|restor/iu.test(message)) return "mutation_failed";
   if (/connect|transport|MCP/iu.test(message)) return "transport_failed";
   if (/feature|inventory|basket|favorites|shopping|resource/iu.test(message)) return "feature_failed";
   return "unknown_failure";
 };
 
-/** Run credential-free edge, read-only, or explicitly approved add-only acceptance. */
+/** Run credential-free edge or authenticated read-only acceptance. */
 export async function main(
   argv: string[] = process.argv.slice(2),
   env: Environment = process.env,
@@ -191,14 +160,9 @@ export async function main(
   progress?: { lastCompletedBoundary: string },
 ): Promise<AcceptanceOutcome> {
   const options = parseArgs(argv);
-  if (options.mutation && env.CI?.trim()) throw new Error("CI acceptance cannot select mutation mode");
-  if (!options.mutation && inheritedMutationApproval(env)) throw new Error("mutation approval environment is not allowed for normal acceptance");
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(new Error("Production acceptance deadline exceeded")), dependencies.totalTimeoutMs ?? 90_000);
   try {
-    const mutations = options.mutation
-      ? approvedMutation(env, "NEMLIG_PRODUCTION_MUTATION")
-      : undefined;
     let origin: URL;
     try {
       origin = new URL(env.NEMLIG_PRODUCTION_MCP_URL?.trim() || "https://nemlig-mcp.broesby.dk/mcp");
@@ -236,12 +200,9 @@ export async function main(
           onBoundary: (boundary) => { if (progress) progress.lastCompletedBoundary = boundary; },
         });
         outcome = { profile: "service", observedRevision, required: ["edge", "service_fixture"], passed: ["edge", "service_fixture"], unavailable: [], lastCompletedBoundary: `service_fixture_${report.requestCount}_requests`, correlationIds: edge.correlationIds };
-      } else if (!mutations) {
+      } else {
         const report = await verifyReadOnlyProductionFeatures(connected.client, { signal: controller.signal });
         outcome = { profile: "live-user", observedRevision, required: ["edge", "live_user_features"], passed: ["edge", "live_user_features"], unavailable: report.unavailable, lastCompletedBoundary: "live_user_features", correlationIds: edge.correlationIds };
-      } else {
-        await verifyApprovedProductionMutation(connected.client, mutations);
-        outcome = { profile: "mutation", observedRevision, required: ["edge", "approved_addition"], passed: ["edge", "approved_addition"], unavailable: [], lastCompletedBoundary: "approved_addition_verified", correlationIds: edge.correlationIds };
       }
     } catch (error) {
       operationFailed = true;
@@ -279,7 +240,7 @@ export async function run(
       || error instanceof ServiceRuntimeVersionMismatchError ? error : undefined;
     const report: AcceptanceReport = {
       schema: 1, sourceSha, startedAt, completedAt: new Date().toISOString(),
-      profile: argv.includes("--mutation") ? "mutation" : argv.includes("--edge-only") ? "edge" : argv.includes("--service") ? "service" : "live-user",
+      profile: argv.includes("--edge-only") ? "edge" : argv.includes("--service") ? "service" : "live-user",
       required: [], passed: [],
       failed: [boundedFailure?.code ?? failureCategory(error)],
       unavailable: [],

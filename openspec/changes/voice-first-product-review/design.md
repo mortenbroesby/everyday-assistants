@@ -28,7 +28,8 @@ from the viewer. Existing discovery and actual basket tools remain independent.
   the existing request-local read pool, concurrency three, cancellation and
   principal client cache. Preserve unavailable rows honestly. Pure local edits
   and navigation do not authenticate with Nemlig, fetch or mutate it. Explicit
-  alternatives searches use the existing bounded read path and caller limit.
+  alternatives searches use the existing read path and an optional user count;
+  omission does not impose an application result cap.
 - Expose start/update tools usable by the model and app. Reuse the single viewer
   URI for a compact draft snapshot with two destinations and contextual
   alternatives. One reusable DOM row renders safe text, images and native details.
@@ -41,15 +42,16 @@ from the viewer. Existing discovery and actual basket tools remain independent.
 - Preparing submission captures the current resolved lines through the existing
   BasketProposalService. Expose a separate submission reference, not its internal
   proposal ID, and invalidate it on any draft edit. Submit is a separate
-  protected tool after explicit approval of unchanged exact quantities/prices,
-  either in conversation or in the viewer's confirmation control; reuse the
+  protected tool after a clear conversational add instruction for the unchanged
+  Ready lines or the viewer's exact confirmation; reuse the
   service's fresh revalidation, principal binding, single use and readback.
   Serialize draft edits against prepare/apply. Keep draft contents after outcomes;
   block repeated submissions of an unchanged submitted or uncertain draft.
-- Submission sets the reviewed quantities of selected products in the real
-  basket using existing semantics; unrelated provider lines stay unchanged. It
-  does not replace/clear the whole provider basket. UI labels distinguish local
-  Basket from actual Nemlig submission and never imply that acceptance is sent.
+- Submission adds the reviewed Ready quantities to the latest observed line
+  quantities; unrelated provider lines stay unchanged. It never sets a lower or
+  equal quantity, removes a line, replaces a product, or clears the provider
+  basket. UI labels distinguish local Ready from the actual Nemlig basket and
+  never imply that local acceptance has already been sent.
 
 ## Risks / Trade-offs
 
@@ -59,7 +61,7 @@ from the viewer. Existing discovery and actual basket tools remain independent.
   allow refresh, keep failed-action feedback and safe navigation.
 - Provider write succeeds but response/readback fails → preserve uncertainty,
   never retry automatically; inspect the actual basket before a new review.
-- Hydration fan-out → max 50 selected IDs/start and explicit alternative limit,
+- Hydration fan-out → max 50 selected IDs/start, provider-returned alternatives,
   existing three-read pool and request deadlines; no navigation/expansion reads,
   polling, new storage, service or capacity. Existing quota limits remain unchanged. Start/update use normal admission like existing search and preparation; actual submission remains expensive.
 - Existing open historical deltas forbid controls → coordinate #114 and reconcile
@@ -140,8 +142,9 @@ inactive `Open current review` presentation. The accepted item was present in
 Basket after explicit reopening. The viewer has no `requestClose()` call; its
 host-output receiver clears `active` on every review snapshot. Preserve an
 explicitly activated frame for subsequent snapshots of that same review, reject
-older revisions, and keep initial/remounted and different-review snapshots
-inactive. Do not auto-reopen, request close, or infer card age.
+older revisions, and ignore unsolicited snapshots for a different review while
+that frame is active. Initial/remounted frames remain inactive. Do not
+auto-reopen, request close, or infer card age.
 
 Keep presentation-only selection and disclosure state across same-review
 updates where the corresponding product remains. Server snapshots continue to
@@ -200,3 +203,170 @@ own success presentation; uncertain outcomes retain the no-retry boundary.
 Changing viewer HTML requires a v6 URI per the resource cache policy. Retire
 v5 as an inert resource while preserving older retired URIs. Deployment and
 native ChatGPT acceptance remain separate from local implementation evidence.
+
+## 29 September follow-up: discovery, language, and historical snapshot race
+
+### Confirmed lifecycle defect
+
+At base `63cc0eecd570490ed55a1f91078f331d2c2e17e4`, the current renderer
+accepts unsolicited review snapshots even when their review ID differs from
+the explicitly activated one. Historical card A can mount inactive, an explicit
+conversation-scoped `show` can return current draft B and activate it, and a
+delayed A notification through either host channel can then overwrite B while
+setting `active = false`. Existing recovery coverage expects this fold for a
+foreign snapshot, so the regression is encoded in the test. Astra reproduced
+the event order in the fake host over both bridges and both notification
+channels. This establishes an application defect; it does not identify the
+unobserved cause of the user's latest native ChatGPT incident.
+
+Keep the frame bound to its confirmed draft after activation. Ignore an
+unsolicited different-ID review snapshot while active. Only the correlated
+response to an explicit current `show` or recovery action can switch to a
+different active draft. Matching-ID older revisions remain ignored. A fresh
+mount starts inactive and makes no shopping call before user activation;
+retired resources remain inert. Do not persist activation, add reopen logic,
+use `requestClose()`, or replay a failed edit. Exercise both notification
+channels and both bridges, reversed event order, subsequent local edits, and
+explicit switch to a replacement draft. Native host acceptance later records
+the served revision and whether a card remounted; a local reproduction alone
+cannot prove the host's separate lifecycle behavior.
+
+### Discovery and alternatives
+
+`find_groceries` already has an optional count and no application ceiling when
+omitted. The alternatives schema currently permits at most ten, the service
+defaults to five and slices the result, and the viewer requests ten on
+refinement. Remove those three alternatives-only limits. Pass an omitted count
+through the existing detailed search; retain a positive count only when the
+user requests one. Preserve result order, duplicate-ID handling, incomplete
+facts, the existing concurrency-three detail pool, cancellation, and revision
+checks. There is no new browser-side product state or automatic synonym tree.
+
+The existing alternative form becomes an explicit **Search for more products**
+action with the same target product. It can start from a useful category phrase
+instead of repeating a full branded product name. Each new search replaces the
+authoritative candidate set; choosing an earlier candidate requires finding it
+again. Display “No new alternatives for this selection” when returned IDs are
+already present locally, and distinguish incomplete detail reads from no
+matches. A broad query may require more detail reads and outlast the viewer's
+loading wait: keep cancellation and a recoverable state, verify the slow case,
+and avoid a silent result cap or automatic retries.
+
+One uncounted search means every unique eligible candidate in the response
+actually returned. The Nemlig client issues one search response and does not
+enumerate the whole catalogue. The assistant can deliberately search another
+concise Danish phrase after inspecting results. It should explain material
+category differences, such as butter versus margarine, and describe the
+queries performed instead of claiming exhaustive catalogue coverage.
+
+### 29 September follow-up: quantity batching and clarification continuity
+
+Quantity +/- presses update the displayed quantity and line total immediately,
+but persist through the existing revision-checked selection update after a
+400 ms quiet interval. A burst for one product sends only its final quantity.
+Before navigation, another mutation, prepare, or submit, flush any pending
+quantity first and serialize the next action after its confirmed revision.
+Optimistic quantities are presentation-only; an error or stale revision clears
+them, uses at most the existing read-only recovery, and never replays a failed
+edit or submits an unconfirmed quantity. Submission always uses the server's
+current Ready rows and the protected exact proposal path.
+
+The clarification regression has an application cause, not a proven ChatGPT
+host lifecycle cause: a conversational add of a new To decide item moves the
+destination there and currently deletes the prepared submission/proposal even
+when the Ready IDs and quantities did not change. Keep a prepared capability
+only while the exact Ready product IDs and quantities it represents remain
+unchanged. Any Ready addition, removal, revisit, or quantity change invalidates
+it. To decide-only changes may advance the selection revision but preserve the
+prepared exact lines; the viewer still requires the user to inspect/confirm
+those lines before a UI-initiated write. A conversational “add the current Ready
+selection to my Nemlig basket” is itself explicit authorization for that exact
+current payload, so the assistant must not ask a redundant approval question.
+Ready status alone is not authorization. If scope is unclear, an exact Ready
+line changed after intent, or the intent cannot be bound to the prepared set,
+ask the user to clarify. Existing fresh provider revalidation, proposal
+principal/conversation binding, single-use serialization, readback and
+uncertain-write/no-retry safeguards remain mandatory.
+
+Open-ended catalogue search is an independent discovery job, not an implicit
+continuation of the currently selected product's alternatives. A phrase such as
+“salmiak” goes directly to `find_groceries`, even with a selection or alternatives
+context open, and must not alter local membership or implicitly replace a row.
+Alternatives can offer a deliberate new phrase when they are insufficient; the
+assistant may then search broadly through the same direct tool without forcing
+the result set into that target. The existing tool jobs are sufficient, so this
+request does not justify a broad rename, merge, or parallel interface.
+
+The current request path validates `search_term`, passes it to
+`resolveDetailedProductSearch`, calls Nemlig's primary `/search` endpoint, and
+propagates an HTTP 500 as a status-bearing `NemligError`; MCP maps it to an
+error result (`Search products failed (HTTP 500).`). It does not convert that
+failure into an empty result. A successful empty response instead becomes a
+successful structured empty result with “No products found.” The agent-facing
+guidance should preserve this distinction: report provider failure as failure,
+empty response as no matches in this response (not catalogue-wide absence), and
+do not invent results or automatically repeat the same failing query. Add a
+fixture-backed MCP regression for the complete schema→handler→HTTP→error path;
+do not call the live provider. If that regression confirms current behavior,
+retain code/error mapping and make only the demonstrated instruction/test
+improvement.
+
+### MCP tool surface and wording
+
+The current inventory has 21 tools: ten read-only, four preparation, two local
+selection, and five external-state actions. The add-only boundary below reduces
+this to 15 by removing three provider prepare/apply pairs; compare the jobs to the official
+[GitHub MCP server](https://github.com/github/github-mcp-server), which offers
+toolsets and individual allowlists, the reference
+[filesystem server](https://github.com/modelcontextprotocol/servers/blob/main/src/filesystem/README.md),
+which labels reads and writes with tool annotations, and the reference
+[memory server](https://github.com/modelcontextprotocol/servers/blob/main/src/memory/index.ts),
+which separates search from opening exact matches. These are design comparisons,
+not evidence that a rename or a larger toolset improves our ChatGPT host.
+
+| Current tools | Decision for implementation | Reason |
+| --- | --- | --- |
+| `find_groceries`, `get_grocery_details` | Keep both; clarify broad search versus exact detail and omitted-count behavior. | Search and exact inspection are distinct user requests. |
+| `show_my_basket`, `show_my_basket_visually` | Keep both; make the text versus current visual view explicit. | Visual hydration and host rendering have different cost and evidence. |
+| `start_product_review`, `update_product_review` | Keep the state boundary; describe starting versus editing a temporary selection, including conversation-only add, quantity, revisit, replace and remove. | Both paths already share server authority; a new conversational tool would duplicate it. |
+| Provider-basket tools | Keep only `review_items_to_add` → `add_approved_items` plus the selection submission path; remove prepare/apply tools for provider removal, clear, and swap. | The owner has made the actual Nemlig basket add-only; exact approval does not authorize destructive operations. |
+| Profile, connection, favourites and section tools | Retain; check titles and annotations for their separate identity, recovery and browsing jobs. | No demonstrated overlap justifies removal in this follow-up. |
+
+Tool inventory and annotation tests should verify any title/description edits.
+Avoid renaming machine tool IDs or altering the service acceptance allowlist
+without a concrete selection defect and a corresponding host check. Keep
+read-only, preparation, local-edit, and actual-write distinctions truthful;
+`update_product_review` includes edits and therefore is not read-only even
+when its `show` action only reads. Local selection `remove` and `clear` actions
+remain separate and never call provider basket mutation APIs.
+
+Use **Your Nemlig selection** for the workspace, **To decide** for unresolved
+rows, **Ready** for accepted rows, and **Open current selection** for explicit
+activation. “Review” describes a process, while “selection” describes the
+thing the household is building; “To decide” describes the remaining action.
+Keep internal `review_id`, `needs-review`, and MCP tool IDs for this scoped
+change because their semantics stay correct. This is a copy decision, not a
+compatibility layer. Continue to call the provider state the **Nemlig basket**.
+Check mobile, screen reader labels, tool titles, empty state, errors and
+conversational prompts for contradictory wording. Viewer content changes
+require the next versioned resource URI and release note under repository
+policy; no release is part of this planning PR.
+
+### Add-only Nemlig basket invariant
+
+Nemlig's `/basket/AddToBasket` request is an absolute quantity setter, not an
+increment operation; quantity zero removes a line. Treat user-authorized
+quantities as increments. Read the current basket, bind that snapshot to the
+proposal, calculate current quantity plus approved addition, and send only a
+positive target greater than the observed current quantity. Re-read and reject
+stale basket snapshots before writes, serialize assistant writes, and verify the
+resulting quantities and totals. If an existing line's quantity is incomplete,
+fail closed. Remove all provider remove/clear/swap operations from clients,
+proposal services, CLI, MCP, and production acceptance; production acceptance
+must not perform a destructive restoration after adding a test line.
+
+The provider API inventory contains no compare-and-set or atomic increment
+endpoint. A simultaneous change made directly on Nemlig.com after our last read
+but before its absolute setter is an external race the assistant cannot
+eliminate; do not claim cross-client atomicity. The assistant itself must never
+intentionally submit zero or a quantity at or below its last observed line.

@@ -80,7 +80,7 @@ try {
   assert.doesNotMatch(help.stdout, /feature-request/);
   assert.match(help.stdout, /cart/);
   assert.match(help.stdout, /add/);
-  assert.doesNotMatch(help.stdout, /\bremove\b/u);
+  assert.doesNotMatch(help.stdout, /^\s{2}remove(?:\s|$)/mu);
   assert.doesNotMatch(help.stdout, /parse|checkout|--password/i);
 
   const transport = new StdioClientTransport({

@@ -42,6 +42,27 @@ test("alternatives omit products already present in the local review", async () 
   assert.deepEqual(alternatives.alternatives?.views.map(view => view.status === "complete" ? view.product.id : view.product_id), [3]);
 });
 
+test("alternatives preserve every unique provider result in order unless the user requests a count", async () => {
+  const candidates = Array.from({ length: 12 }, (_, index) => product(index + 10));
+  const receivedLimits: Array<number | undefined> = [];
+  const service = new ProductReviewService({
+    ...client,
+    searchProducts: async (_query, limit) => { receivedLimits.push(limit); return [...candidates, candidates[0]!]; },
+  });
+  const draft = await service.start("owner", [{ product_id: 1, quantity: 2 }]);
+  const alternatives = await service.update("owner", draft.review_id, draft.revision, {
+    kind: "alternatives", product_id: 1, query: "smør",
+  });
+  assert.deepEqual(receivedLimits, [undefined]);
+  assert.deepEqual(alternatives.alternatives?.views.map(view => view.status === "complete" ? view.product.id : view.product_id), candidates.map(item => item.id));
+
+  const limited = await service.update("owner", draft.review_id, alternatives.revision, {
+    kind: "alternatives", product_id: 1, query: "smør", limit: 2,
+  });
+  assert.deepEqual(receivedLimits, [undefined, 2]);
+  assert.deepEqual(limited.alternatives?.views.map(view => view.status === "complete" ? view.product.id : view.product_id), [10, 11]);
+});
+
 test("Ready lines cannot choose alternatives until moved back; replacement remains unaccepted", async () => {
   const service = new ProductReviewService(client);
   let draft = await service.start("owner", [{ product_id: 1, quantity: 2 }]);
@@ -163,6 +184,45 @@ test("submission hides provider references, invalidates edits, and retains verif
   assert.equal(uncertain.items.length, 1);
   await assert.rejects(service.prepare("owner", draft.review_id, uncertain.revision), /inspect/i);
   assert.equal(writes, 2);
+});
+
+test("clarification edits to To decide preserve the exact prepared Ready submission; Ready changes invalidate it", async () => {
+  let writes = 0;
+  const proposals = {
+    prepareAdditions: async (_owner: string, items: Array<{ product_id: number; quantity: number }>) => ({
+      applicable: true as const, proposal_id: "private", operation: "additions" as const, connection_bound: true as const,
+      issued_at: new Date(0).toISOString(), expires_at: new Date(Date.now() + 900_000).toISOString(), basket_fingerprint: "private",
+      review: { lines: items.map(item => ({ ...item, item_price: 5 })) },
+    }),
+    apply: async () => {
+      writes++;
+      return { status: "completed" as const, operation: "additions" as const, replayed: false, basket: { items: [], products_price: 0, delivery_price: 0, number_of_products: 0, delivery_time: undefined } };
+    },
+  };
+  const service = new ProductReviewService(client, { proposals });
+  let draft = await service.start("owner", [{ product_id: 1, quantity: 2 }, { product_id: 2, quantity: 1 }]);
+  draft = await service.update("owner", draft.review_id, draft.revision, { kind: "accept", product_ids: [1] });
+  draft = await service.prepare("owner", draft.review_id, draft.revision);
+  const exactSubmission = draft.submission!;
+
+  draft = await service.update("owner", draft.review_id, draft.revision, { kind: "add", items: [{ product_id: 3, quantity: 1 }] });
+  assert.equal(draft.destination, "needs-review");
+  assert.equal(draft.submission?.submission_id, exactSubmission.submission_id);
+  assert.deepEqual(draft.items.filter(item => item.state === "ready").map(({ product_id, quantity }) => [product_id, quantity]), [[1, 2]]);
+  await assert.rejects(service.submit("owner", draft.review_id, draft.revision - 1, exactSubmission.submission_id), /stale/i);
+  const submitted = await service.submit("owner", draft.review_id, draft.revision, exactSubmission.submission_id);
+  assert.equal(submitted.review.submission?.status, "submitted");
+  assert.deepEqual(submitted.result.basket.items, []);
+  assert.equal(writes, 1);
+
+  let next = await service.start("other-owner", [{ product_id: 1, quantity: 2 }]);
+  next = await service.update("other-owner", next.review_id, next.revision, { kind: "accept", product_ids: [1] });
+  next = await service.prepare("other-owner", next.review_id, next.revision);
+  const oldSubmission = next.submission!.submission_id;
+  next = await service.update("other-owner", next.review_id, next.revision, { kind: "quantity", product_id: 1, quantity: 3 });
+  assert.equal(next.submission, undefined);
+  await assert.rejects(service.submit("other-owner", next.review_id, next.revision, oldSubmission), /submission/i);
+  assert.equal(writes, 1);
 });
 
 test("an expired prepared submission cannot write the provider basket", async () => {

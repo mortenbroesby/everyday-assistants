@@ -4,13 +4,10 @@ import {
   assertProductionInventory,
   productionResourceInventory,
   productionToolInventory,
-  productionBasketFingerprint,
-  verifyApprovedProductionMutation,
   verifyProductionEdge,
   verifyReadOnlyProductionFeatures,
   verifyServiceAcceptanceFeatures,
   type AcceptanceClient,
-  type ApprovedProductionMutation,
 } from "./production-acceptance.js";
 import { serviceAcceptanceResourceInventory, serviceAcceptanceToolInventory } from "./mcp.js";
 import { PRODUCT_VIEWER_MIME_TYPE, PRODUCT_VIEWER_RESOURCE_URI, renderProductViewerHtml } from "./product-viewer.js";
@@ -39,12 +36,6 @@ const removedStorageTools = [
   "copy_my_shopping_list", "set_my_shopping_list_status", "shop_from_my_list", "migrate_my_saved_plan",
 ];
 const retainedTools = allTools.filter(({ name }) => !removedStorageTools.includes(name));
-
-test("production basket fingerprint is order-stable and state-sensitive", () => {
-  const first = { items: [{ id: 7, name: "Milk", quantity: 1, total: 12 }, { id: 8, name: "Bread", quantity: 1, total: 20 }], products_price: 32 };
-  assert.equal(productionBasketFingerprint(first), productionBasketFingerprint({ ...first, items: [...first.items].reverse() }));
-  assert.notEqual(productionBasketFingerprint(first), productionBasketFingerprint({ ...first, products_price: 33 }));
-});
 
 test("production inventory fails closed for missing and unknown entries", () => {
   const resources = productionResourceInventory.map((uri) => ({ uri }));
@@ -212,92 +203,6 @@ test("service acceptance preserves its operation-specific total deadline context
     callTool: async () => ({ structuredContent: {} }),
   };
   await assert.rejects(verifyServiceAcceptanceFeatures(client, { totalTimeoutMs: 5 }), /Service acceptance timed out during tool inventory/u);
-});
-
-const approved: ApprovedProductionMutation = {
-  operation: "additions",
-  prepareArguments: { items: [{ product: 7, quantity: 2 }] },
-  expectedReview: { lines: [{ product_id: 7, name: "Økologisk mælk", quantity: 2, line_total: 25 }] },
-};
-const emptyBasket: { items: Array<{ id: number; name: string; quantity: number; total: number }>; products_price: number } = { items: [], products_price: 0 };
-const initialBasket = { items: [{ id: 8, name: "Banan", quantity: 2, total: 5 }], products_price: 5 };
-const addedBasket = { items: [...initialBasket.items, { id: 7, name: "Økologisk mælk", quantity: 2, total: 25 }], products_price: 30 };
-
-const proposal = (operation: ApprovedProductionMutation["operation"], review: Record<string, unknown>, overrides: Record<string, unknown> = {}) => ({
-  applicable: true,
-  operation,
-  proposal_id: "919b4c09-704e-466b-8dda-fe4391b8561c",
-  review,
-  ...overrides,
-});
-
-test("production mutation supports only the approved additive prepare/apply pair", async () => {
-  const prepare = "review_items_to_add";
-  const apply = "add_approved_items";
-  const calls: string[] = [];
-  const envelope: ApprovedProductionMutation = { operation: "additions", prepareArguments: {}, expectedReview: { exact: "additions" } };
-  const client: AcceptanceClient = {
-    listTools: async () => ({ tools: ["show_my_basket", prepare, apply].map((name) => ({ name })) }),
-    callTool: async ({ name }) => {
-      calls.push(name);
-      if (name === prepare) return { structuredContent: proposal(envelope.operation, envelope.expectedReview) };
-      if (name === apply) return { structuredContent: { status: "completed", operation: "additions", replayed: false, basket: addedBasket } };
-      return { structuredContent: calls.length === 1 ? initialBasket : addedBasket };
-    },
-  };
-  assert.deepEqual((await verifyApprovedProductionMutation(client, envelope)).final, addedBasket);
-  assert.deepEqual(calls, ["show_my_basket", prepare, apply, "show_my_basket"]);
-});
-
-test("production addition acceptance rejects a missing or reduced pre-existing line", async () => {
-  for (const finalBasket of [
-    { items: [], products_price: 25 },
-    { items: [{ id: 8, name: "Banan", quantity: 1, total: 2.5 }, { id: 7, name: "Milk", quantity: 2, total: 25 }], products_price: 27.5 },
-  ]) {
-    let basketReads = 0;
-    const client: AcceptanceClient = {
-      listTools: async () => ({ tools: ["show_my_basket", "review_items_to_add", "add_approved_items"].map((name) => ({ name })) }),
-      callTool: async ({ name }) => {
-        if (name === "show_my_basket") return { structuredContent: basketReads++ === 0 ? initialBasket : finalBasket };
-        if (name === "review_items_to_add") return { structuredContent: proposal("additions", approved.expectedReview) };
-        return { structuredContent: { status: "completed", operation: "additions", replayed: false, basket: finalBasket } };
-      },
-    };
-    await assert.rejects(verifyApprovedProductionMutation(client, approved), /removed existing|lowered quantity/u);
-  }
-});
-
-test("generic production mutation rejects price or proposal drift before apply", async () => {
-  const calls: string[] = [];
-  const client: AcceptanceClient = {
-    listTools: async () => ({ tools: ["show_my_basket", "review_items_to_add", "add_approved_items"].map((name) => ({ name })) }),
-    callTool: async ({ name }) => {
-      calls.push(name);
-      if (name === "review_items_to_add") {
-        return { structuredContent: proposal("additions", { lines: [{ product_id: 7, line_total: 26 }] }) };
-      }
-      return { structuredContent: emptyBasket };
-    },
-  };
-
-  await assert.rejects(verifyApprovedProductionMutation(client, approved), /differs from the exact approval/u);
-  assert.deepEqual(calls, ["show_my_basket", "review_items_to_add"]);
-});
-
-test("indeterminate apply is not retried and does not call a sibling mutation", async () => {
-  const calls: string[] = [];
-  const client: AcceptanceClient = {
-    listTools: async () => ({ tools: ["show_my_basket", "review_items_to_add", "add_approved_items"].map((name) => ({ name })) }),
-    callTool: async ({ name }) => {
-      calls.push(name);
-      if (name === "review_items_to_add") return { structuredContent: proposal("additions", approved.expectedReview) };
-      if (name === "add_approved_items") return { isError: true };
-      return { structuredContent: emptyBasket };
-    },
-  };
-
-  await assert.rejects(verifyApprovedProductionMutation(client, approved), /returned an MCP error/u);
-  assert.deepEqual(calls, ["show_my_basket", "review_items_to_add", "add_approved_items"]);
 });
 
 test("production edge probe verifies enablement, OAuth metadata, and cheap rejection paths", async () => {

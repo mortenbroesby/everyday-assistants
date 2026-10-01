@@ -26,7 +26,12 @@ export interface ProposalLine {
   unit_size: string;
   category: string;
   subcategory: string;
+  /** Number of additional units explicitly requested. */
   quantity: number;
+  current_quantity: number;
+  resulting_quantity: number;
+  current_line_total: number;
+  resulting_line_total: number;
   available: boolean;
   item_price: number;
   unit_price: number | undefined;
@@ -120,6 +125,10 @@ const productLine = (product: Product, quantity: number): ProposalLine => {
     category: product.category,
     subcategory: product.subcategory,
     quantity,
+    current_quantity: 0,
+    resulting_quantity: quantity,
+    current_line_total: 0,
+    resulting_line_total: money(product.price * quantity),
     available: product.available,
     item_price: product.price,
     unit_price: product.unitPrice,
@@ -195,6 +204,7 @@ export class BasketProposalService {
         ...line,
         current_quantity: existing?.quantity ?? 0,
         resulting_quantity: (existing?.quantity ?? 0) + line.quantity,
+        current_line_total: money(existing?.total ?? 0),
         resulting_line_total: money((existing?.total ?? 0) + line.line_total),
       };
     });
@@ -247,7 +257,6 @@ export class BasketProposalService {
     }
     return basketLines;
   }
-
   /**
    * Applies one exact, connection-bound, unexpired review under a mutex. It
    * checks the basket fingerprint and fresh product details before sequential

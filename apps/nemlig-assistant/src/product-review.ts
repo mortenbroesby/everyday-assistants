@@ -128,6 +128,11 @@ export class ProductReviewService {
     const stored = this.lock(owner, id, revision);
     // Commit only after all validation and reads succeed, so bulk actions are atomic.
     const draft = structuredClone(stored.snapshot);
+    const readySelection = (items: ReviewItem[]) => JSON.stringify(items
+      .filter(item => item.state === "ready")
+      .map(({ product_id, quantity }) => [product_id, quantity])
+      .sort(([left], [right]) => Number(left) - Number(right)));
+    const previousReadySelection = readySelection(stored.snapshot.items);
     const itemFor = (productId: number): ReviewItem => {
       const item = draft.items.find(row => row.product_id === productId);
       if (!item) throw new NemligError("Exact product is not in this review.");
@@ -189,9 +194,8 @@ export class ProductReviewService {
         case "alternatives": {
           const target = itemFor(action.product_id);
           if (target.state !== "needs-review") throw new NemligError("Move a Ready product to In Review before choosing alternatives.");
-          const limit = action.limit ?? 5;
-          if (!validPositive(limit) || limit > 10) throw new NemligError("Alternative limit must be between 1 and 10.");
-          const results = await resolveDetailedProductSearch(this.client, action.query, limit, { signal });
+          if (action.limit !== undefined && !validPositive(action.limit)) throw new NemligError("Alternative limit must be a positive integer.");
+          const results = await resolveDetailedProductSearch(this.client, action.query, action.limit, { signal });
           const existingIds = new Set(draft.items.map(item => item.product_id));
           draft.alternatives = {
             product_id: target.product_id,
@@ -199,7 +203,7 @@ export class ProductReviewService {
             query: action.query,
             views: results.items
               .filter(item => item.productId === undefined || !existingIds.has(item.productId))
-              .slice(0, limit)
+              .slice(0, action.limit)
               .map(item => createProductView(item, { kind: "details" })),
           };
           draft.destination = "alternatives";
@@ -224,7 +228,9 @@ export class ProductReviewService {
         delete draft.alternatives;
       }
       this.get(owner, id); // Confirm the draft still exists after asynchronous reads.
-      if (action.kind !== "navigate" && action.kind !== "alternatives") {
+      const preparedReadySelectionUnchanged = draft.submission?.status === "prepared"
+        && readySelection(draft.items) === previousReadySelection;
+      if (action.kind !== "navigate" && action.kind !== "alternatives" && !preparedReadySelectionUnchanged) {
         delete draft.submission;
         delete stored.proposalId;
       }
@@ -240,7 +246,7 @@ export class ProductReviewService {
   private lock(owner: string, id: string, revision: number): StoredReview {
     const stored = this.get(owner, id);
     if (stored.busy) throw new NemligError("A review operation is in progress. Refresh after it finishes.");
-    if (stored.snapshot.revision !== revision) throw new NemligError("Review revision is stale. Show the current review before choosing your next action; never replay the failed edit.");
+    if (stored.snapshot.revision !== revision) throw new NemligError("Selection revision is stale. Show the current selection before choosing your next action; never replay the failed edit.");
     stored.busy = true;
     this.touch(stored);
     return stored;

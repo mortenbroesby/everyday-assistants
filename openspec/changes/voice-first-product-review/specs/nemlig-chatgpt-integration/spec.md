@@ -5,8 +5,9 @@ The integration SHALL use one shared product presentation for conversational and
 touch review. Local Ready is a shortlist of resolved products, not the actual
 Nemlig basket. Both input modes SHALL address exact products in the same temporary
 draft and support acceptance, changes, removal, quantities and safe navigation.
-Actual submission SHALL use the existing exact proposal/apply safety engine only
-after explicit approval of an unchanged submission review.
+Actual submission SHALL use the existing exact proposal/apply safety engine.
+A clear conversational add instruction authorizes only the unchanged current
+Ready payload; the viewer still requires its exact on-screen confirmation.
 
 #### Scenario: Product review is operated by voice
 - **WHEN** the user accepts some products, changes another, or requests remaining
@@ -32,16 +33,25 @@ after explicit approval of an unchanged submission review.
 ### Requirement: Direct normal ChatGPT use
 
 The system SHALL support independent product search, exact product lookup,
-basket inspection, exact basket review, and explicitly approved apply in normal
+ basket inspection, exact basket review, and authorized protected apply in normal
 ChatGPT conversations without requiring Codex, a saved planner, or a picker.
 Selected local review results render through one shared product viewer, with
 complete conversational structured/text fallbacks.
 
 #### Scenario: User searches for products
 
-- **WHEN** the private app is available and the user asks for products
+- **WHEN** the private app is available and the user asks for products by an
+  open-ended term such as “salmiak,” including while another selection product
+  or alternatives view exists
 - **THEN** ChatGPT receives richly detailed products in provider order and may
-  summarize them without mounting a viewer, then open one local review for selected products
+  summarize them without mounting a viewer or binding the query to that product;
+  search leaves existing selection membership unchanged
+
+#### Scenario: Catalogue search fails
+- **WHEN** the provider returns an HTTP error instead of a successful search response
+- **THEN** ChatGPT explains that the search failed, not that no products matched;
+  a successful empty response is reported separately and neither outcome changes
+  local selection or actual basket
 
 #### Scenario: Viewer is unavailable
 
@@ -60,14 +70,24 @@ complete conversational structured/text fallbacks.
 
 The direct ChatGPT integration SHALL describe products, basket changes, and
 verified results like a household shopping assistant rather than a transaction
-log. It SHALL distinguish local review changes from Nemlig changes and SHALL require explicit
-approval of the exact unchanged proposal before applying a basket change.
+log. It SHALL distinguish local selection changes from Nemlig changes. A clear
+conversational instruction to add the current Ready selection authorizes only
+that unchanged exact prepared payload; other actual basket changes require
+explicit approval of the exact unchanged proposal.
 
 #### Scenario: ChatGPT reviews a prepared change
 
-- **WHEN** ChatGPT receives a valid basket proposal without exact approval
+- **WHEN** ChatGPT receives a valid basket proposal without exact user authorization
 - **THEN** it presents a clean summary of what would change and asks one simple
   approval question without showing opaque protocol fields by default
+
+#### Scenario: User already instructed an exact Ready addition
+- **WHEN** the user clearly asks to add the current Ready selection to the real
+  Nemlig basket and the Ready IDs/quantities remain unchanged during preparation
+- **THEN** the assistant applies exactly the freshly prepared payload without
+  repeating a redundant conversational approval question
+- **AND** if scope is ambiguous or any Ready line changed after that instruction,
+  it asks which exact current products and quantities the user means instead
 
 #### Scenario: User requests product comparison
 
@@ -113,10 +133,14 @@ shopping controls. Explicit activation SHALL read the active conversation before
 rendering controls. Retired known viewer resources SHALL resolve to inert notices
 without backend shopping calls and offer a conversational route to the current
 review. The app SHALL NOT infer message age from time or shared browser storage.
+After explicit activation, an unsolicited review snapshot for a different draft
+SHALL NOT replace or deactivate the confirmed current draft. A correlated
+conversation-scoped show or recovery result MAY switch the active frame to a
+different current draft. Activation SHALL NOT survive a fresh mount.
 
 #### Scenario: Reopen or remount a transcript card
 - **WHEN** the host supplies a retained review snapshot
-- **THEN** the card shows an explicit Open current review action instead of historical products or mutations
+- **THEN** the card shows an explicit Open current selection action instead of historical products or mutations
 - **AND** activation reads current state without replaying or restoring prior acceptance
 
 #### Scenario: Old revision is edited
@@ -136,3 +160,48 @@ review. The app SHALL NOT infer message age from time or shared browser storage.
 - **WHEN** the same mounted review receives a matching tool result or globals update
 - **THEN** it stays active, preserves compatible presentation state, and does not
   reopen or replace the card
+
+#### Scenario: Historical snapshot arrives after current activation
+- **WHEN** historical card A explicitly opens current draft B and a delayed
+  host globals or tool-result notification supplies A again
+- **THEN** the mounted frame keeps B active and visible with no extra tool call,
+  lost local selection, or return to the Open current selection prompt
+
+#### Scenario: Current draft changes by explicit recovery
+- **WHEN** an explicit conversation-scoped show or recovery call confirms a
+  different current draft C after B was active
+- **THEN** that correlated result can switch the mounted frame to C; an
+  unsolicited different-draft notification alone cannot do so
+
+#### Scenario: Historical frame remounts
+- **WHEN** a historical card gets a new frame after a prior activation
+- **THEN** it starts inactive and must explicitly fetch the current
+  conversation draft before showing shopping controls
+
+### Requirement: User-directed product discovery and review by conversation
+The assistant SHALL let the user search and compare products without starting
+or opening a review, and SHALL let the user operate the existing local review
+through conversation without using touch controls. For alternatives it SHALL
+show all distinct eligible options returned by each search, help assess their
+relevance, offer another deliberate search when none fits, and distinguish
+adjacent product categories. It SHALL describe the scope
+of the searches performed and SHALL NOT claim catalogue-wide completeness from
+one response or accept a replacement into Ready implicitly.
+
+#### Scenario: Broad product lookup
+- **WHEN** the user asks for products matching butter without choosing any
+- **THEN** the assistant searches the current catalogue, presents all unique
+  products returned by that query with honest missing facts, and leaves local
+  review and the actual basket unchanged
+
+#### Scenario: Alternative results miss the intent
+- **WHEN** the current alternative results are empty or not relevant
+- **THEN** the assistant can try a new concise Danish category or related
+  phrase and explain differences that could affect the choice, without an
+  automatic synonym search cascade or an implicit replacement
+
+#### Scenario: Conversational edit while a viewer is mounted
+- **WHEN** the user changes the local selection through conversation while a
+  review viewer is open
+- **THEN** both routes use the same authoritative review; a stale viewer edit
+  is rejected and can read the latest snapshot without replaying that edit

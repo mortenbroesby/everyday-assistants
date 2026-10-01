@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import test from "node:test";
-import { NemligError, type Basket, type Product, type ShoppingClient } from "./client.js";
+import { NemligClient, NemligError, SEARCH_GATEWAY_URL, type Basket, type Product, type ShoppingClient } from "./client.js";
 import { createProgram } from "./cli.js";
 import { createMcpServer, NEMLIG_CONNECT_URL, rankProducts, safeNemligImageUrl, serviceAcceptanceToolInventory } from "./mcp.js";
 import { productionToolInventory } from "./production-acceptance.js";
@@ -16,8 +16,8 @@ import { RETIRED_PRODUCT_VIEWER_RESOURCE_URIS } from "./product-viewer-identity.
 import { NEMLIG_RELEASE_IDENTITY } from "./runtime.js";
 
 const expectedProductViewerResources = [
-  { uri: PRODUCT_VIEWER_RESOURCE_URI, name: "nemlig-product-viewer", title: "Nemlig product viewer", description: "Product results and shared local review supplied by Nemlig Assistant.", mimeType: "text/html;profile=mcp-app" },
-  ...RETIRED_PRODUCT_VIEWER_RESOURCE_URIS.map((uri, index) => ({ uri, name: `nemlig-retired-product-viewer-v${index}`, title: "Updated Nemlig review card", description: "This retired review card contains no shopping data. Use its button to open the current conversation review.", mimeType: "text/html;profile=mcp-app" })),
+  { uri: PRODUCT_VIEWER_RESOURCE_URI, name: "nemlig-product-viewer", title: "Your Nemlig selection", description: "Product results and the shared local shopping selection supplied by Nemlig Assistant.", mimeType: "text/html;profile=mcp-app" },
+  ...RETIRED_PRODUCT_VIEWER_RESOURCE_URIS.map((uri, index) => ({ uri, name: `nemlig-retired-product-viewer-v${index}`, title: "Updated Nemlig selection", description: "This retired selection card contains no shopping data. Use its button to open the current conversation selection.", mimeType: "text/html;profile=mcp-app" })),
 ];
 
 const basket: Basket = {
@@ -226,18 +226,18 @@ const friendlyCatalog = [
   ["add_approved_items", "Add the approved items", false, false, ["approved_review"]],
   ["browse_grocery_section", "Browse a grocery section", true, false, ["section", "result_count", "page"]],
   ["check_nemlig_connection", "Check my Nemlig connection", true, false, []],
-  ["find_groceries", "Find groceries", true, false, ["search_term", "result_count"]],
-  ["get_grocery_details", "Get grocery details", true, false, ["product_id"]],
+  ["find_groceries", "Search Nemlig products", true, false, ["search_term", "result_count"]],
+  ["get_grocery_details", "Get Nemlig product details", true, false, ["product_id"]],
   ["get_profile", "Get my Nemlig profile", true, false, []],
   ["reconnect_nemlig_assistant", "Reconnect Nemlig Assistant", true, false, []],
-  ["review_items_to_add", "Review items to add", true, false, ["items", "authorization"]],
+  ["review_items_to_add", "Prepare additions to the Nemlig basket", true, false, ["items", "authorization"]],
   ["show_grocery_sections", "Show grocery sections", true, false, []],
   ["show_my_basket", "Show my Nemlig basket", true, false, []],
   ["show_my_basket_visually", "Show my Nemlig basket visually", true, false, []],
   ["show_my_favorites", "Show my favourites", true, false, ["search_term", "result_count", "page"]],
-  ["start_product_review", "Start a local product review", false, false, ["items"]],
-  ["submit_product_review", "Submit the approved Ready products", false, false, ["review_id", "revision", "submission_id"]],
-  ["update_product_review", "Update the local product review", false, false, ["review_id", "revision", "action"]],
+  ["start_product_review", "Start your Nemlig selection", false, false, ["items"]],
+  ["submit_product_review", "Add explicitly requested Ready products to Nemlig", false, false, ["review_id", "revision", "submission_id"]],
+  ["update_product_review", "Update your Nemlig selection", false, false, ["review_id", "revision", "action"]],
 ] as const;
 
 const formerToolNames = [
@@ -368,7 +368,7 @@ test("service acceptance exposes only its fixed read-only tool inventory", async
       const body = retired.contents[0];
       assert.ok(body && "text" in body);
       if (body && "text" in body) {
-        assert.match(body.text, /This review card is retired/u);
+        assert.match(body.text, /This selection card is retired/u);
         assert.doesNotMatch(body.text, /tools\/call|callTool|hydrate|fetch\(/u);
       }
     }
@@ -517,6 +517,55 @@ test("MCP find_groceries authenticates first and retries once on a later expired
   assert.equal(logins, 1);
 });
 
+test("MCP distinguishes a successful empty salmiak search from an upstream HTTP 500", async () => {
+  const callSearch = async (status: number) => {
+    const calls: string[] = [];
+    const fetcher: typeof fetch = async input => {
+      const url = new URL(String(input));
+      calls.push(url.href);
+      const json = (value: unknown, responseStatus = 200) => new Response(JSON.stringify(value), {
+        status: responseStatus,
+        headers: { "content-type": "application/json" },
+      });
+      if (url.pathname.endsWith("/AntiForgery")) {
+        const headers = new Headers({ "content-type": "application/json" });
+        headers.append("set-cookie", "XSRF-TOKEN=fixture-xsrf; Path=/; Secure");
+        headers.append("set-cookie", "XSRF-COOKIE-TOKEN=fixture-cookie; Path=/; Secure");
+        return new Response(JSON.stringify({ Header: "X-XSRF-TOKEN", Value: "fixture-xsrf" }), { headers });
+      }
+      if (url.pathname.endsWith("/login")) return json({ RedirectUrl: "/" });
+      if (url.pathname.endsWith("/Token")) return json({ access_token: "fixture-token" });
+      if (url.pathname.endsWith("/v2/AppSettings/Website")) return json({ CombinedProductsAndSitecoreTimestamp: "fixture-products", SitecorePublishedStamp: "fixture-site" });
+      if (url.pathname.endsWith("/user/GetCurrentUser")) return json({ DebitorId: 42 });
+      if (url.pathname.endsWith("/Order/DeliverySpot")) return json({ TimeslotUtc: "2026092915-60-240", TimeslotId: 7, DeliveryZoneId: 9 });
+      if (url.origin + url.pathname === `${SEARCH_GATEWAY_URL}/search`) {
+        assert.equal(url.searchParams.get("query"), "salmiak");
+        return json({}, status);
+      }
+      if (url.origin + url.pathname === `${SEARCH_GATEWAY_URL}/quick`) return json({ Categories: [] });
+      throw new Error(`Unexpected fixture request: ${url.pathname}`);
+    };
+    return withMcpClient(createMcpServer(new NemligClient(fetcher), testCredentials), async mcp => {
+      const tool = (await mcp.listTools()).tools.find(item => item.name === "find_groceries");
+      assert.match(tool?.description ?? "", /not tied to the current selection or an alternative target/u);
+      return { result: await mcp.callTool({ name: "find_groceries", arguments: { search_term: "salmiak" } }), calls };
+    });
+  };
+
+  const empty = await callSearch(200);
+  assert.equal(empty.result.isError, undefined, toolText(empty.result));
+  assert.deepEqual((empty.result.structuredContent as { result: unknown[] }).result, []);
+  assert.match(toolText(empty.result), /No products found/u);
+  assert.equal(empty.calls.filter(url => url.includes("/search?")).length, 1);
+  assert.equal(empty.calls.filter(url => url.includes("/quick?")).length, 1);
+
+  const failed = await callSearch(500);
+  assert.equal(failed.result.isError, true);
+  assert.equal(toolText(failed.result), "Search products failed (HTTP 500).");
+  assert.equal(failed.calls.filter(url => url.includes("/search?")).length, 1);
+  assert.equal(failed.calls.filter(url => url.includes("/quick?")).length, 0, "a primary HTTP failure is not retried as a different search or converted to empty");
+});
+
 test("every MCP tool has complete schemas, accurate annotations, and safe server instructions", async () => {
   await withMcpClient(createMcpServer(fakeClient(), testCredentials), async (mcp) => {
     const tools = (await mcp.listTools()).tools;
@@ -539,10 +588,10 @@ test("every MCP tool has complete schemas, accurate annotations, and safe server
       assert.equal(byName.get(name)?.annotations?.destructiveHint, false, name);
     }
     assert.equal(byName.get("add_approved_items")?.annotations?.destructiveHint, false);
-    for (const forbidden of ["remove_approved_item", "make_approved_item_swap", "empty_approved_basket", "review_item_to_remove", "review_item_swap", "review_emptying_basket"]) {
-      assert.equal(byName.has(forbidden), false, `${forbidden} must not be exposed`);
+    for (const name of ["review_item_to_remove", "remove_approved_item", "review_item_swap", "make_approved_item_swap", "review_emptying_basket", "empty_approved_basket"]) {
+      assert.equal(byName.has(name), false, `${name} must not be exposed`);
     }
-    assert.match(mcp.getInstructions() ?? "", /matching staged review\/apply tools and explicit approval/);
+    assert.match(mcp.getInstructions() ?? "", /add-only for the real basket/);
     assert.equal(mcp.getInstructions()?.startsWith(`Current release: ${NEMLIG_RELEASE_IDENTITY}.`), true);
     assert.match(mcp.getInstructions() ?? "", /independent capabilities/);
     assert.match(mcp.getInstructions() ?? "", /Never check out, pay, order, or select delivery slots/);
@@ -573,32 +622,42 @@ test("MCP exposes independent discovery, exact details, and one shared product v
     const tools = new Map((await mcp.listTools()).tools.map((tool) => [tool.name, tool.description ?? ""]));
     const instructions = mcp.getInstructions() ?? "";
     assert.match(instructions, /Use Nemlig Assistant as independent capabilities for current products/);
-    assert.match(instructions, /Normalize each search into one short Danish catalogue phrase/);
+    assert.match(instructions, /Search independently with a concise Danish phrase/);
+    assert.match(instructions, /all unique detailed products in the single provider response actually returned/);
     assert.match(instructions, /independent capabilities/);
-    assert.match(instructions, /actual basket additions require their matching staged review\/apply tools and explicit approval/i);
+    assert.match(instructions, /add-only for the real basket/i);
     assert.match(instructions, /Never check out, pay, order, or select delivery slots/);
-    assert.match(instructions, /Show, not repeated detail reads, reopens the local viewer/u);
+    assert.match(instructions, /Normal edits use update_product_review directly; do not repeat searches or starts to restore the card/u);
     assert.match(instructions, /show_my_basket_visually to inspect the actual basket/u);
     assert.match(instructions, /image URLs do not prove cards rendered/u);
     assert.doesNotMatch(instructions, /Suggest an improvement|GitHub issue/);
-    assert.match(tools.get("find_groceries") ?? "", /current Nemlig catalogue directly/);
+    assert.match(tools.get("find_groceries") ?? "", /current Nemlig catalogue independently/);
+    assert.match(tools.get("find_groceries") ?? "", /all unique detailed candidates from the one provider response/);
     assert.match(tools.get("find_groceries") ?? "", /'Prince biscuits' becomes 'prince kiks'/);
+    assert.match(tools.get("find_groceries") ?? "", /not tied to the current selection or an alternative target/u);
+    assert.match(tools.get("find_groceries") ?? "", /an error means the search failed and must not be presented as no matches/u);
+    assert.match(instructions, /A successful empty result means no matches in that response; a tool error means search failed/u);
     assert.match(tools.get("show_my_favorites") ?? "", /saved Nemlig favourites/);
 
-    for (const group of ["Current catalogue", "Actual Nemlig basket", "Local shopping review", "Sending to Nemlig", "Recovery and safety"]) {
+    for (const group of ["Current catalogue", "Actual Nemlig basket", "Local shopping selection", "Sending to Nemlig", "Recovery and safety"]) {
       assert.match(instructions, new RegExp(`\\n${group}\\n`, "u"));
     }
     for (const name of ["find_groceries", "get_grocery_details", "start_product_review"]) {
-      assert.match(tools.get(name) ?? "", /not for reopening an existing local review/iu, name);
+      assert.match(tools.get(name) ?? "", /not for reopening an existing selection/iu, name);
       assert.match(tools.get(name) ?? "", /update_product_review.*show/u, name);
     }
     for (const name of ["show_my_basket", "show_my_basket_visually"]) {
       assert.match(tools.get(name) ?? "", /actual Nemlig basket/u, name);
-      assert.match(tools.get(name) ?? "", /not (?:the local|the temporary local) shopping review/iu, name);
+      assert.match(tools.get(name) ?? "", /not (?:the local|the temporary local)(?: shopping)? selection/iu, name);
     }
-    assert.match(tools.get("update_product_review") ?? "", /None of these actions writes to Nemlig/u);
-    assert.match(tools.get("submit_product_review") ?? "", /Local acceptance is NOT approval/u);
-    assert.match(instructions, /If no alternatives are returned.*In Review/u);
+    assert.match(tools.get("update_product_review") ?? "", /None of these local edits writes to Nemlig/u);
+    assert.match(tools.get("submit_product_review") ?? "", /clear user command.*sufficient conversational authorization.*do not ask again/u);
+    assert.match(tools.get("submit_product_review") ?? "", /Ready contents\/quantities changed after intent, ask/u);
+    assert.match(tools.get("submit_product_review") ?? "", /Local Ready acceptance alone.*is not authorization/u);
+    assert.match(tools.get("update_product_review") ?? "", /A To decide-only clarification\/add leaves the prepared Ready payload unchanged/u);
+    assert.match(instructions, /If none fit, search again deliberately with another concise Danish phrase/u);
+    assert.match(tools.get("update_product_review") ?? "", /By conversation or viewer/u);
+    assert.match(tools.get("update_product_review") ?? "", /provider response actually returned/u);
 
     const direct = (await mcp.listTools()).tools.find((tool) => tool.name === "find_groceries");
     const details = (await mcp.listTools()).tools.find((tool) => tool.name === "get_grocery_details");
@@ -610,7 +669,7 @@ test("MCP exposes independent discovery, exact details, and one shared product v
     assert.equal((direct?._meta as { ui?: { resourceUri?: string } } | undefined)?.ui?.resourceUri, undefined);
     assert.equal((details?._meta as { ui?: { resourceUri?: string } } | undefined)?.ui?.resourceUri, undefined);
     assert.match(JSON.stringify(details?.inputSchema), /product_id/u);
-    assert.match(JSON.stringify(direct?.inputSchema), /prince kiks.*Prince biscuits/);
+    assert.match(JSON.stringify(direct?.inputSchema), /concise Danish catalogue phrase/u);
   });
 });
 
@@ -888,6 +947,7 @@ test("MCP additions require prepare then apply and direct mutation tools are una
       name: "add_approved_items",
       arguments: { approved_review: proposalId },
     });
+    assert.equal(result.isError, undefined, toolText(result));
     assert.deepEqual(added, [7, 2]);
     assert.match(assertFriendlyBasketText(result), /Kurven indeholder nu/u);
     assert.deepEqual(Object.keys(result.structuredContent ?? {}).sort(), ["basket", "operation", "replayed", "status", "views"]);
@@ -975,6 +1035,7 @@ test("an explicitly reviewed grocery addition reaches verified readback", async 
     } });
     assert.match(toolText(prepared), /Skal jeg/iu);
     const applied = await mcp.callTool({ name: "add_approved_items", arguments: { approved_review: (prepared.structuredContent as { proposal_id: string }).proposal_id } });
+    assert.equal(applied.isError, undefined, toolText(applied));
     assert.equal((applied.structuredContent as { basket: { number_of_products: number } }).basket.number_of_products, 2);
   });
 });
@@ -1046,7 +1107,7 @@ test("hosted proposals survive a principal reconnect but remain isolated by prin
   );
 });
 
-test("MCP local review and explicit submission share exact state without premature provider writes", async () => {
+test("a clear conversational add command authorizes only its exact prepared Ready selection", async () => {
   let writes = 0;
   let current: Basket = { items: [{ id: 99, name: "Existing", quantity: 1, total: 2 }], productsPrice: 2, deliveryPrice: 0, numberOfProducts: 1, deliveryTime: undefined };
   const provider = fakeClient({
@@ -1068,6 +1129,8 @@ test("MCP local review and explicit submission share exact state without prematu
     };
     await update({ kind: "accept", product_ids: [7] });
     assert.equal(review.items[0]?.state, "ready");
+    // This MCP tool sequence represents the user's explicit conversational command to add
+    // the current Ready selection. The model must not ask for a second redundant approval.
     await update({ kind: "prepare_submission" });
     assert.equal(writes, 0);
     assert.ok(review.submission);
@@ -1116,6 +1179,78 @@ test("MCP review uses Ready only and rejects obsolete basket navigation", async 
   });
 });
 
+test("MCP supports broad search and the complete headless selection workflow without basket writes", async () => {
+  const options = Array.from({ length: 12 }, (_, index) => ({ ...product, id: 100 + index, name: `Butter option ${index + 1}` }));
+  const other = { ...product, id: 120, name: "Margarine option" };
+  const added = { ...product, id: 112, name: "Added product" };
+  const searchCalls: Array<{ query: string; limit: number | undefined }> = [];
+  let basketWrites = 0;
+  const forbidden = async (): Promise<never> => { basketWrites++; throw new Error("Local selection must not write to the provider basket"); };
+  const provider = fakeClient({
+    searchProducts: async (query, limit) => {
+      searchCalls.push({ query, limit });
+      return query === "margarine" || query === "salmiak" ? [other] : [...options, options[0]!];
+    },
+    getProduct: async (id) => [product, ...options, other, added].find(candidate => candidate.id === id) ?? product,
+    getCart: forbidden,
+    addToCart: forbidden,
+  });
+
+  await withMcpClient(createMcpServer(provider, testCredentials), async mcp => {
+    const broad = await mcp.callTool({ name: "find_groceries", arguments: { search_term: "smør" } });
+    assert.equal(broad.isError, undefined, toolText(broad));
+    assert.equal((broad.structuredContent as { views: unknown[] }).views.length, 12);
+    assert.deepEqual(searchCalls[0], { query: "smør", limit: undefined });
+
+    let current = (await mcp.callTool({ name: "start_product_review", arguments: { items: [{ product_id: 7, quantity: 2 }] } })).structuredContent as { review: ProductReviewSnapshot };
+    const independent = await mcp.callTool({ name: "find_groceries", arguments: { search_term: "salmiak" } });
+    assert.equal(independent.isError, undefined, toolText(independent));
+    assert.deepEqual((independent.structuredContent as { result: Array<{ id: number }> }).result.map(item => item.id), [120]);
+    assert.deepEqual(searchCalls[1], { query: "salmiak", limit: undefined }, "an open-ended lookup is not forced through the active product's alternatives query");
+    const stillActive = await mcp.callTool({ name: "update_product_review", arguments: { action: { kind: "show" } } });
+    assert.deepEqual((stillActive.structuredContent as { review: ProductReviewSnapshot }).review.items.map(item => [item.product_id, item.quantity, item.state]), [[7, 2, "needs-review"]]);
+    const update = async (action: Record<string, unknown>) => {
+      const result = await mcp.callTool({ name: "update_product_review", arguments: { review_id: current.review.review_id, revision: current.review.revision, action } });
+      assert.equal(result.isError, undefined, toolText(result));
+      current = result.structuredContent as { review: ProductReviewSnapshot };
+      return current.review;
+    };
+
+    await update({ kind: "add", items: [{ product_id: 112, quantity: 1 }] });
+    await update({ kind: "quantity", product_id: 7, quantity: 4 });
+    let selection = await update({ kind: "accept", product_ids: [7] });
+    assert.deepEqual(selection.items.map(item => [item.product_id, item.quantity, item.state]), [[7, 4, "ready"], [112, 1, "needs-review"]]);
+    await update({ kind: "navigate", destination: "ready" });
+    await update({ kind: "revisit", product_ids: [7] });
+    selection = await update({ kind: "alternatives", product_id: 7, query: "smør" });
+    assert.equal(selection.alternatives?.views.length, 12);
+    assert.deepEqual(searchCalls[2], { query: "smør", limit: undefined });
+
+    selection = await update({ kind: "alternatives", product_id: 7, query: "margarine" });
+    assert.equal(selection.alternatives?.views.length, 1);
+    const oldCandidate = await mcp.callTool({ name: "update_product_review", arguments: {
+      review_id: selection.review_id, revision: selection.revision,
+      action: { kind: "replace", product_id: 7, replacement_id: 100 },
+    } });
+    assert.equal(oldCandidate.isError, true, "a candidate from a superseded search cannot be selected");
+    selection = await update({ kind: "replace", product_id: 7, replacement_id: 120 });
+    assert.deepEqual(selection.items.map(item => [item.product_id, item.quantity, item.state]), [[120, 4, "needs-review"], [112, 1, "needs-review"]]);
+    selection = await update({ kind: "remove", product_ids: [120, 112] });
+    assert.deepEqual(selection.items, []);
+    const ended = await mcp.callTool({ name: "update_product_review", arguments: {
+      review_id: selection.review_id, revision: selection.revision, action: { kind: "end" },
+    } });
+    assert.deepEqual(ended.structuredContent, { ended: true });
+  });
+  assert.equal(basketWrites, 0);
+  assert.deepEqual(searchCalls, [
+    { query: "smør", limit: undefined },
+    { query: "salmiak", limit: undefined },
+    { query: "smør", limit: undefined },
+    { query: "margarine", limit: undefined },
+  ]);
+});
+
 test("empty and unavailable results retain safe routes without accepting or writing", async () => {
   let writes = 0;
   const denied = async (): Promise<never> => { writes++; throw new Error("Unexpected basket mutation"); };
@@ -1145,7 +1280,7 @@ test("empty and unavailable results retain safe routes without accepting or writ
     const refused = await mcp.callTool({ name: "update_product_review", arguments: { review_id: review.review_id, revision: review.revision, action: { kind: "accept", product_ids: [7] } } });
     assert.equal(refused.isError, true);
     assert.match(toolText(refused), /Choose an available alternative/u);
-    assert.match(mcp.getInstructions() ?? "", /empty actual basket does not imply an empty local review/u);
+    assert.match(mcp.getInstructions() ?? "", /empty actual basket does not imply an empty local selection/u);
   });
   assert.equal(writes, 0);
 });
@@ -1168,7 +1303,7 @@ test("lost and ended review recovery reports absence, finds the current draft, a
     const absent = await show();
     assert.equal(absent.isError, undefined, toolText(absent));
     assert.deepEqual(absent.structuredContent, { unavailable: true });
-    assert.match(toolText(absent), /Ask before starting a new review/u);
+    assert.match(toolText(absent), /Ask before starting a new selection/u);
     const restarted = await mcp.callTool({ name: "start_product_review", arguments: { items: stale.items.map(({ product_id, quantity }) => ({ product_id, quantity })) } });
     const current = (restarted.structuredContent as { review: ProductReviewSnapshot }).review;
     assert.notEqual(current.review_id, stale.review_id);

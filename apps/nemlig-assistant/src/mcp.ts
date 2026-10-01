@@ -111,7 +111,7 @@ const reviewActionSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("remove"), product_ids: z.array(z.number().int().positive()).min(1).max(50) }),
   z.object({ kind: z.literal("quantity"), product_id: z.number().int().positive(), quantity: z.number().int().positive() }),
   z.object({ kind: z.literal("navigate"), destination: z.enum(["needs-review", "ready", "alternatives"]) }),
-  z.object({ kind: z.literal("alternatives"), product_id: z.number().int().positive(), query: z.string().trim().min(1).max(200), limit: z.number().int().min(1).max(10).optional() }),
+  z.object({ kind: z.literal("alternatives"), product_id: z.number().int().positive(), query: z.string().trim().min(1).max(200), limit: z.number().int().positive().optional() }),
   z.object({ kind: z.literal("replace"), product_id: z.number().int().positive(), replacement_id: z.number().int().positive() }),
 ]);
 
@@ -350,30 +350,35 @@ export function createMcpServer(
         `Current release: ${NEMLIG_RELEASE_IDENTITY}. Use Nemlig Assistant as independent capabilities for current products, exact details, prices, availability, favourites, actual basket contents, and grocery sections.
 
 Current catalogue
-- find_groceries: Normalize each search into one short Danish catalogue phrase.
-- get_grocery_details: current facts for an exact returned product ID. Search and details return data without opening widgets, not an existing local review.
+- find_groceries: Search independently with a concise Danish phrase, even when a local selection or one product's alternatives are open. An omitted result_count means all unique detailed products in the single provider response actually returned, without an application cap; it does not prove the whole catalogue was enumerated. Inspect results, then make another deliberate related search when useful. A successful empty result means no matches in that response; a tool error means search failed, not that no products matched. Report errors honestly and do not automatically repeat the same failing phrase. Do not run an automatic synonym cascade or silently equate nearby categories.
+- get_grocery_details: current facts for an exact returned product ID. Search and details return data without opening widgets, not an existing local selection.
 - show_my_favorites searches saved favourites; show_grocery_sections and browse_grocery_section browse the current catalogue.
 
 Actual Nemlig basket
 - Use show_my_basket or show_my_basket_visually to inspect the actual basket, not local Ready products.
-- image URLs do not prove cards rendered, so use complete text fallback if needed. An empty actual basket does not imply an empty local review.
-- Actual basket additions require their matching staged review/apply tools and explicit approval.
+- image URLs do not prove cards rendered, so use complete text fallback if needed. An empty actual basket does not imply an empty local selection.
+- Actual basket additions use their matching staged review/apply tools. A clear
+  instruction to add the current unchanged Ready selection authorizes only that
+  exact prepared payload; other additions require approval of the exact review.
 
-Local shopping review
-- After collecting exact products, call start_product_review once. Use update_product_review show without an old review_id or revision to recover this conversation's active review. Show, not repeated detail reads, reopens the local viewer.
-- add appends new products In Review without resetting Ready products. In Review means unresolved; Ready means the user accepted the exact product locally. Use one accept action for selected exact IDs.
-- Alternatives are only for In Review; replacement remains In Review until separately accepted. If no alternatives are returned, return to In Review and leave the product unresolved or try a different search.
-- Revisit moves Ready products back to In Review; remove deletes them from the local selection; end discards the entire temporary selection. None of these changes touches the real Nemlig basket.
+Local shopping selection
+- After collecting exact products, call start_product_review once. Use update_product_review show without an old review_id or revision to recover this conversation's active selection or explicitly open its current card. Normal edits use update_product_review directly; do not repeat searches or starts to restore the card.
+- The user can work entirely in conversation: add exact products, change quantities, revisit Ready products, choose a different product from current alternatives, or remove products through update_product_review. Use the current snapshot IDs and revision; after a stale edit, refresh and never replay it.
+- add appends new products to To decide without resetting Ready products. To decide means unresolved; Ready means the user accepted the exact product locally. Use one accept action for selected exact IDs.
+- Alternatives are only for To decide; show every distinct eligible result from the provider response when no count is requested. If none fit, search again deliberately with another concise Danish phrase. Explain meaningful differences (for example butter versus margarine); do not claim one response covers the catalogue. Replacement remains in To decide until separately accepted.
+- Revisit moves Ready products back to To decide; remove deletes them from the local selection; end discards the entire temporary selection. None of these changes touches the real Nemlig basket.
 - For 'everything except X/Y', pass exact remaining IDs from the current snapshot.
 
 Sending to Nemlig
-- prepare_submission includes only Ready lines and does not write; other In Review products do not block it.
-- Require explicit approval of the exact unchanged quantities, current prices and effects before submit_product_review. Never treat local acceptance as provider approval.
-- The real Nemlig basket is add-only: submit only exact approved positive additions. Never lower a quantity, remove or replace a line, or clear the provider basket. Use Nemlig.com directly for those actions.
+- prepare_submission includes only Ready lines and does not write; other To decide products do not block it.
+- A clear conversational command to add the current Ready selection to the real Nemlig basket is itself authorization for exactly those prepared Ready product IDs and quantities. Prepare and then call submit_product_review with that unchanged current submission; do not ask a redundant second approval question. Ready status or a request only to inspect/prepare is not authorization.
+- If the requested products/quantities or scope are ambiguous, or any Ready ID/quantity changes after the command, do not submit that stale intent; ask which exact current Ready products and quantities the user wants added. To decide-only edits do not alter the prepared payload. Provider price/freshness failures require a fresh preparation and renewed clear instruction.
+- The direct add command authorizes the exact unchanged product IDs and quantities, but not changed quantities or unrelated products. Never treat Ready/local acceptance by itself as provider authorization. A separately initiated submission still needs approval of its exact prepared change.
+- Nemlig Assistant is add-only for the real basket. Never remove, replace, swap, decrease, or clear an actual basket item, even if explicitly asked or approved. Explain that the user manages those actions on Nemlig.com. A quantity means additional units: two already present plus two authorized becomes four. The provider's quantity endpoint sets an absolute quantity, so the server must re-read and validate the exact current basket and only set a strictly greater positive quantity. Fail closed when line data is incomplete or state is stale. Local selection removal/clear is separate and allowed.
 
 Recovery and safety
-- After a stale result, show the active review without replaying the edit. If no active review remains, ask before explicitly starting fresh; never restore old acceptance or approval.
-- A submitted or uncertain draft remains inspectable; do not retry blindly. Inspect the draft and actual basket before a deliberate new review.
+- After a stale result, show the active selection without replaying the edit. If no active selection remains, ask before explicitly starting fresh; never restore old acceptance or approval.
+- A submitted or uncertain selection remains inspectable; do not retry blindly. Inspect the selection and actual basket before a deliberate new selection.
 - Unavailable product facts are not an available selection; use find_groceries for fresh candidates, without automatically accepting or submitting them.
 - check_nemlig_connection provides the connection page for missing/expired Nemlig access. reconnect_nemlig_assistant is for the ChatGPT app connection, not provider unavailability.
 - Never check out, pay, order, or select delivery slots.`,
@@ -403,14 +408,14 @@ Recovery and safety
   server.registerResource(
     "nemlig-product-viewer",
     PRODUCT_VIEWER_RESOURCE_URI,
-    { title: "Nemlig product viewer", description: "Product results and shared local review supplied by Nemlig Assistant.", mimeType: PRODUCT_VIEWER_MIME_TYPE },
+    { title: "Your Nemlig selection", description: "Product results and the shared local shopping selection supplied by Nemlig Assistant.", mimeType: PRODUCT_VIEWER_MIME_TYPE },
     async (uri) => ({ contents: [{ uri: uri.href, mimeType: PRODUCT_VIEWER_MIME_TYPE, text: renderProductViewerHtml(), _meta: { ui: { csp: { connectDomains: [], resourceDomains: ["https://nemlig.com", "https://www.nemlig.com"] }, prefersBorder: true } } }] }),
   );
   for (const [index, uri] of RETIRED_PRODUCT_VIEWER_RESOURCE_URIS.entries()) {
     server.registerResource(
       `nemlig-retired-product-viewer-v${index}`,
       uri,
-      { title: "Updated Nemlig review card", description: "This retired review card contains no shopping data. Use its button to open the current conversation review.", mimeType: PRODUCT_VIEWER_MIME_TYPE },
+      { title: "Updated Nemlig selection", description: "This retired selection card contains no shopping data. Use its button to open the current conversation selection.", mimeType: PRODUCT_VIEWER_MIME_TYPE },
       async (resourceUri) => ({ contents: [{ uri: resourceUri.href, mimeType: PRODUCT_VIEWER_MIME_TYPE, text: renderRetiredProductViewerHtml(), _meta: { ui: { csp: { connectDomains: [], resourceDomains: [] }, prefersBorder: true } } }] }),
     );
   }
@@ -511,11 +516,11 @@ Recovery and safety
   registerTool(
     "find_groceries",
     {
-      title: "Find groceries",
-      description: "Search the current Nemlig catalogue directly with one short Danish grocery phrase translated or normalized before the call. Keep a distinctive brand plus its Danish category, for example 'Prince biscuits' becomes 'prince kiks'. This does not change your basket. Not for reopening an existing local review; use update_product_review show instead.",
+      title: "Search Nemlig products",
+      description: "Search the current Nemlig catalogue independently with a concise Danish grocery phrase translated or normalized from the request. This is not tied to the current selection or an alternative target. Preserve a distinctive brand and Danish category when useful (for example 'Prince biscuits' becomes 'prince kiks'); use an open phrase such as 'salmiak' or a broad category phrase such as 'smør' when the user wants matching products generally. With result_count omitted, return all unique detailed candidates from the one provider response actually received, without an application cap; this does not enumerate or guarantee completeness of the entire catalogue. A successful empty result means no matches from this response only; an error means the search failed and must not be presented as no matches. Inspect results before making a deliberate related follow-up search; do not automatically repeat a failing query, launch a synonym cascade, or silently equate categories. Read-only: does not change the local selection or real Nemlig basket. Not for reopening an existing selection; use update_product_review show instead.",
       inputSchema: z.object({
-        search_term: z.string().min(1).describe("One short Danish catalogue phrase, translated or normalized from the request before this call. Preserve a distinctive brand and add the Danish category; use 'prince kiks', not 'Prince biscuits' or a full sentence."),
-        result_count: z.number().int().positive().optional().describe("Optional provider result count. If omitted, do not impose an application limit."),
+        search_term: z.string().min(1).describe("A concise Danish catalogue phrase. Use a broad phrase for all matching products; retain a distinctive brand when it matters. For example, 'Prince biscuits' becomes 'prince kiks'."),
+        result_count: z.number().int().positive().optional().describe("Optional requested provider result count. If omitted, do not impose an application cap; the search still covers only the single provider response received."),
       }),
       outputSchema: z.object({ result: z.array(candidateSchema), views: z.array(productViewSchema) }),
       annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true },
@@ -531,8 +536,8 @@ Recovery and safety
   registerTool(
     "get_grocery_details",
     {
-      title: "Get grocery details",
-      description: "Fetch current details for one exact Nemlig product reference returned by a search. This is read-only and does not read or change your basket. Not for reopening an existing local review; use update_product_review show instead.",
+      title: "Get Nemlig product details",
+      description: "Fetch current details for one exact Nemlig product ID returned by search. This is a read-only exact lookup, not a catalogue search, and does not read or change the local selection or real basket. Not for reopening an existing selection; use update_product_review show instead.",
       inputSchema: z.object({
         product_id: z.number().int().positive().describe("The exact positive product reference returned by Nemlig Assistant."),
       }),
@@ -608,7 +613,7 @@ Recovery and safety
     "show_my_basket",
     {
       title: "Show my Nemlig basket",
-      description: "Show the actual Nemlig basket, not the local shopping review. For Ready products in the local selection use update_product_review show or navigate. Show the current items and totals in your Nemlig basket. This does not change your basket.",
+      description: "Show the actual Nemlig basket, not the local selection. For Ready products in the local selection use update_product_review show or navigate. Show the current items and totals in your Nemlig basket. This does not change your basket.",
       outputSchema: basketResultSchema,
       annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true },
     },
@@ -623,7 +628,7 @@ Recovery and safety
     "show_my_basket_visually",
     {
       title: "Show my Nemlig basket visually",
-      description: "Open a read-only visual view of the actual Nemlig basket using current exact product details and safe images where available. This is not the temporary local shopping review. Detail reads are bounded; every basket line remains in the text fallback. Image URLs alone do not prove the ChatGPT client displayed cards. Does not change the basket.",
+      description: "Open a read-only visual view of the actual Nemlig basket using current exact product details and safe images where available. This is not the temporary local shopping selection. Detail reads are bounded; every basket line remains in the text fallback. Image URLs alone do not prove the ChatGPT client displayed cards. Does not change the basket.",
       inputSchema: z.object({}),
       outputSchema: visualBasketResultSchema,
       annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true },
@@ -639,18 +644,18 @@ Recovery and safety
   );
 
   registerTool("start_product_review", {
-    title: "Start a local product review",
-    description: "Start a temporary private review from exact returned product IDs and quantities. All items initially need review. Acceptance and edits are local; nothing is sent to Nemlig. One active review belongs to this conversation, without a time limit. If a review already exists, return it unchanged; use update action add to include more products. Not for reopening an existing local review; use update_product_review show without an old review_id or revision. Discard the selection explicitly with end. Temporary state can be lost on a server restart or memory eviction. The review card may be attached to the conversation even when the text result does not show it; do not start another review solely because the text omits the card.",
-    inputSchema: z.object({ items: z.array(z.object({ product_id: z.number().int().positive(), quantity: z.number().int().positive() })).min(1).max(50).describe("Exact returned products and intended package quantities to review locally.") }),
+    title: "Start your Nemlig selection",
+    description: "Start a temporary private shopping selection from exact returned product IDs and quantities. All items initially need a decision. Acceptance and edits are local; nothing is sent to Nemlig. One active selection belongs to this conversation, without a time limit. If it already exists, return it unchanged; use update_product_review add to include more products. Not for reopening an existing selection; use update_product_review show without an old review_id or revision. Discard it explicitly with end. Temporary state can be lost on server restart or memory eviction. The selection card may be attached even when the text result does not show it; do not start another solely because the text omits the card.",
+    inputSchema: z.object({ items: z.array(z.object({ product_id: z.number().int().positive(), quantity: z.number().int().positive() })).min(1).max(50).describe("Exact returned products and intended package quantities to decide locally.") }),
     outputSchema: z.object({ review: reviewSnapshotSchema }),
     annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true },
     _meta: { ...PRODUCT_VIEWER_RESOURCE_METADATA, "openai/widgetAccessible": true },
   }, ({ items }, ctx) => runAuthenticatedRead("start_product_review", async () => success({ review: await reviews.start(reviewOwner(ctx), items, ctx.mcpReq.signal) })));
 
   registerTool("update_product_review", {
-    title: "Update the local product review",
-      description: "Show/refresh or edit the shared temporary local review using exact product IDs. Add newly found products, batch-accept selected In Review products into Ready, revisit accepted products, remove, change quantity, navigate, or discard the local selection with end. Alternatives are for In Review only; replacing leaves the new product In Review, not Ready. End and remove never change the real Nemlig basket. None of these actions writes to Nemlig. The review card may be attached even when text omits it. prepare_submission reviews only Ready lines at exact current prices and requires subsequent explicit approval; submission adds those quantities to existing provider lines and never removes or lowers any current basket contents. After errors show current state; never repeat a stale edit blindly.",
-    inputSchema: z.object({ review_id: z.string().uuid().optional().describe("The current local review reference. May be omitted for show to recover this conversation’s active review."), revision: z.number().int().positive().optional().describe("Current revision required for every action except show."), action: reviewActionSchema.describe("The local change, navigation, refresh, or preparation requested by the user.") }),
+    title: "Update your Nemlig selection",
+    description: "Show or edit the shared temporary local selection using exact product IDs. By conversation or viewer, add newly found products, accept selected To decide products into Ready, revisit, remove, change quantity, navigate, search alternatives or discard with end. The selection state is server-authoritative; use its current revision. Uncounted alternatives include every distinct eligible candidate in the provider response actually returned; another search replaces the candidate set. Alternatives are for To decide only; replacement stays there until accepted separately. None of these local edits writes to Nemlig. A To decide-only clarification/add leaves the prepared Ready payload unchanged; any Ready ID or quantity change invalidates it. prepare_submission prepares only Ready lines at fresh exact prices and quantities, preserving unrelated Nemlig lines. A clear conversational command to add the current unchanged Ready selection authorizes applying only that prepared payload without a redundant approval question; otherwise require explicit approval of the exact prepared change. If intent or scope is unclear, or any Ready product ID/quantity changed after the command, ask before applying. After errors show current state; never replay a stale edit.",
+    inputSchema: z.object({ review_id: z.string().uuid().optional().describe("The current local selection reference. May be omitted for show to recover this conversation’s active selection."), revision: z.number().int().positive().optional().describe("Current selection revision required for every action except show."), action: reviewActionSchema.describe("The local selection change, navigation, refresh, or preparation requested by the user.") }),
     outputSchema: z.union([z.object({ review: reviewSnapshotSchema }), z.object({ ended: z.literal(true) }), z.object({ unavailable: z.literal(true) })]),
     annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true },
     _meta: { ...PRODUCT_VIEWER_RESOURCE_METADATA, "openai/widgetAccessible": true },
@@ -659,11 +664,11 @@ Recovery and safety
       const owner = reviewOwner(ctx);
       if (action.kind === "show") {
         const review = review_id ? reviews.show(owner, review_id) : reviews.active(owner);
-        if (!review) return success({ unavailable: true }, "No active local review remains. Ask before starting a new review with start_product_review; previous selections and submission approval are not restored.");
+        if (!review) return success({ unavailable: true }, "No active local selection remains. Ask before starting a new selection with start_product_review; previous selections and submission approval are not restored.");
         return success({ review });
       }
-      if (!review_id) throw new NemligError("Show the active review before editing it.");
-      if (revision === undefined) throw new NemligError("Current review revision is required. Show the review first.");
+      if (!review_id) throw new NemligError("Show the active selection before editing it.");
+      if (revision === undefined) throw new NemligError("Current selection revision is required. Show the selection first.");
       if (action.kind === "end") { reviews.end(owner, review_id, revision); return success({ ended: true }); }
       const review = action.kind === "prepare_submission"
         ? await reviews.prepare(owner, review_id, revision, ctx.mcpReq.signal)
@@ -676,9 +681,9 @@ Recovery and safety
   });
 
   registerTool("submit_product_review", {
-    title: "Submit the approved Ready products",
-    description: "Only after the user explicitly approves the exact unchanged prepared submission, set those Ready product quantities in the real Nemlig basket and verify readback. Local acceptance is NOT approval. Requires current review revision and its submission_id. No automatic retry; on any error inspect the draft and actual basket first.",
-    inputSchema: z.object({ review_id: z.string().uuid().describe("The private local review reference."), revision: z.number().int().positive().describe("The latest unchanged review revision."), submission_id: z.string().uuid().describe("The exact prepared submission reference explicitly approved by the user.") }),
+    title: "Add explicitly requested Ready products to Nemlig",
+    description: "After a clear user command to add the current Ready selection, apply exactly the unchanged prepared product IDs and quantities; that command is sufficient conversational authorization, so do not ask again. Alternatively, apply only after explicit approval of the displayed exact prepared submission. Local Ready acceptance alone, or a request only to inspect/prepare, is not authorization. If scope is ambiguous or Ready contents/quantities changed after intent, ask which exact products to add. Fresh price validation and verified readback are mandatory. Requires the current selection revision and its submission_id. No automatic retry; on any error inspect the selection and actual basket first.",
+    inputSchema: z.object({ review_id: z.string().uuid().describe("The private local selection reference."), revision: z.number().int().positive().describe("The latest selection revision matching the prepared submission."), submission_id: z.string().uuid().describe("The exact prepared submission reference bound to the user's clear add instruction or explicit approval.") }),
     outputSchema: z.object({ review: reviewSnapshotSchema, result: applyResultSchema }),
     annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true },
     _meta: { ...PRODUCT_VIEWER_RESOURCE_METADATA, ui: { resourceUri: PRODUCT_VIEWER_RESOURCE_URI, visibility: ["model", "app"] }, "openai/widgetAccessible": true },
@@ -690,8 +695,8 @@ Recovery and safety
   registerTool(
     "review_items_to_add",
     {
-      title: "Review items to add",
-      description: "Review exact products and quantities before adding them. This does not change your basket.",
+      title: "Prepare additions to the Nemlig basket",
+      description: "Prepare an exact review of products and quantities for the real Nemlig basket. This is preparation only and does not add products. Show the exact prepared change and require the user's explicit approval before the matching apply. Fresh validation and verified basket readback remain required.",
       inputSchema: z.object({
               items: z
                 .array(

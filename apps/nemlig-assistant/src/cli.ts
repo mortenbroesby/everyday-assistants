@@ -178,9 +178,9 @@ export function createProgram(overrides: Partial<CliDependencies> = {}): Command
 
   program
     .command("add")
-    .description("Add an already reviewed and explicitly approved product, then verify the basket.")
+    .description("Add more units of an already reviewed and explicitly authorized product, then verify the basket.")
     .argument("<product-id>", "Numeric Nemlig product ID", positiveInteger)
-    .option("-q, --quantity <number>", "Approved quantity", positiveInteger, 1)
+    .option("-q, --quantity <number>", "Additional units to add (not the final quantity)", positiveInteger, 1)
     .action(async (productId: number, options: { quantity: number }) => {
       await ensureLoggedIn(dependencies.client, dependencies.credentials);
       const basket = await dependencies.client.addToCart(productId, options.quantity);

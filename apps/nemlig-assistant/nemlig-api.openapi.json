@@ -428,13 +428,13 @@
         "operationId": "setBasketProductQuantity",
         "tags": ["Basket"],
         "summary": "Set one product's basket quantity",
-        "description": "The provider sets one product's absolute quantity; it is not an atomic increment. Nemlig Assistant binds each sequential product write to the reviewed or last verified basket snapshot, adds a positive requested delta, and verifies the basket by readback before proceeding. Detected drift before the first write prevents the POST; drift between writes stops the remaining batch without retry or rollback. A concurrent change from another Nemlig client can still race between read and write.",
+        "description": "Nemlig accepts an absolute line quantity and its provider API can interpret zero as removal; it is not an atomic increment or compare-and-set. Nemlig Assistant sends only strictly greater positive quantities, binding each sequential write to the reviewed or last verified basket snapshot. It verifies readback before proceeding; detected drift before the first write prevents the POST, and drift between writes stops the remaining batch without retry or rollback. A simultaneous external Nemlig.com edit can still race the read/set boundary. A successful HTTP response is indeterminate until GetBasket confirms the resulting state.",
         "security": [{ "bearerAuth": [] }, { "cookieAuth": [] }],
         "x-nemlig": {
           "usage": "client-used",
           "confidence": "high",
-          "safety": "basket-mutation-requires-explicit-approval-and-readback",
-          "evidence": ["NemligClient.writeBasket"]
+          "safety": "assistant-add-only-positive-quantity-after-fresh-read-and-readback",
+          "evidence": ["NemligClient.writeBasket", "owner decision 2026-09-29"]
         },
         "requestBody": {
           "required": true,

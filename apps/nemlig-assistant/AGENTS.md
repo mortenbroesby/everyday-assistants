@@ -15,9 +15,19 @@ app, also apply this file. Then select the matching app-local skill:
   the user to run interactive login; never put a password in arguments or logs.
 - Search, favorites, and basket viewing are read-only. Repository work,
   authentication, a spec, or tool availability never authorizes a mutation.
-- Basket mutations must follow the complete prepare/review/apply/readback
-  contract in `nemlig-basket`; checkout, payment, ordering, and delivery-slot
-  actions are never allowed.
+- The real Nemlig basket is add-only through this assistant: its contents are
+  sacred and SHALL NEVER be removed, decreased, replaced, swapped, or cleared,
+  even when a user asks or approves. The user manages those actions directly
+  on Nemlig.com. A requested quantity means additional units: if Nemlig already
+  has two and the user authorizes adding two, the resulting quantity is four.
+  If the provider only accepts absolute quantities, read the current basket and
+  set a strictly greater positive resulting quantity; fail closed on incomplete
+  or stale state. Never send zero or any quantity at/below the observed value.
+  This rule applies to MCP, CLI, provider clients, proposal services, tests, and
+  production acceptance. Local selection removal/clear is separate and remains
+  allowed. Actual additions must follow the exact prepare/review/authorization/
+  apply/readback contract in `nemlig-basket`; checkout, payment, ordering, and
+  delivery-slot actions are never allowed.
 - Production/provider work must follow `nemlig-production` and
   `docs/cloudflare-operations.md`. Preserve authentication-before-wake,
   one-Container, bounded-work/retry and manual kill-switch controls; ask before

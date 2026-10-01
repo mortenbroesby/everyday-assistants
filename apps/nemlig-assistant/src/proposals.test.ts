@@ -316,6 +316,10 @@ test("addition preparation stores exact review data without mutation or connecti
       category: "Grønt",
       subcategory: "",
       quantity: 2,
+      current_quantity: 0,
+      resulting_quantity: 2,
+      current_line_total: 0,
+      resulting_line_total: 5,
       available: true,
       item_price: 2.5,
       unit_price: 2.5,
@@ -323,9 +327,6 @@ test("addition preparation stores exact review data without mutation or connecti
       currency: "DKK",
       line_total: 5,
       labels: ["Frugt"],
-      current_quantity: 0,
-      resulting_quantity: 2,
-      resulting_line_total: 5,
     }],
     expected_products_price: 5,
     expected_number_of_products: 2,
@@ -394,6 +395,7 @@ test("approved addition quantities are deltas for existing lines and preserve un
       labels: ["Frugt"],
       current_quantity: 2,
       resulting_quantity: 3,
+      current_line_total: 5,
       resulting_line_total: 7.5,
     }],
     expected_products_price: 20,
@@ -428,7 +430,7 @@ test("addition preparation rejects incomplete basket facts before creating a pro
       service.prepareAdditions("connection", [{ product_id: 7, quantity: 1 }], { kind: "exact_review" }),
       /basket.*(complete|verified|safely)/iu,
     );
-    assert.equal(productReads, 0, "incomplete basket facts must be rejected before product lookups");
+  assert.equal(productReads, 0, "incomplete basket facts must be rejected before product lookups");
   }
 });
 

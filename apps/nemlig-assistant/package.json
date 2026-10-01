@@ -1,6 +1,6 @@
 {
   "name": "nemlig-assistant",
-  "version": "5.1.4",
+  "version": "5.2.0",
   "private": true,
   "description": "Safe local Nemlig Assistant CLI and MCP server",
   "type": "module",
@@ -47,7 +47,6 @@
     "production:retention": "tsx scripts/production-retention.ts",
     "publish:deployment-release": "tsx scripts/publish-release.ts",
     "production:test:features": "tsx scripts/production-acceptance.ts",
-    "production:test:mutation": "tsx scripts/production-acceptance.ts --mutation",
     "release:apply": "tsx release/agent.ts --apply",
     "release:plan": "tsx release/agent.ts",
     "release:retry:check": "tsx release/retry.ts",
@@ -90,6 +89,6 @@
     "wrangler": "4.127.1"
   },
   "nemligRelease": {
-    "codename": "Additive"
+    "codename": "Gather"
   }
 }

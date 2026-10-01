@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { createHash } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
 import { serviceAcceptanceResourceInventory, serviceAcceptanceToolInventory } from "./mcp.js";
 import { PRODUCT_VIEWER_MIME_TYPE, PRODUCT_VIEWER_RESOURCE_METADATA, PRODUCT_VIEWER_RESOURCE_URI, renderProductViewerHtml } from "./product-viewer.js";
@@ -321,78 +320,6 @@ export async function verifyServiceAcceptanceFeatures(
   }
   assert.ok(requestCount <= 12, "Service MCP acceptance exceeded its request budget");
   return { exercised, denied, requestCount };
-}
-
-export type ProductionMutationOperation = "additions";
-
-export interface ApprovedProductionMutation {
-  operation: ProductionMutationOperation;
-  prepareArguments: Record<string, unknown>;
-  expectedReview: Record<string, unknown>;
-}
-
-const mutationTools: Record<ProductionMutationOperation, {
-  prepare: ToolName;
-  apply: ToolName;
-}> = {
-  additions: { prepare: "review_items_to_add", apply: "add_approved_items" },
-};
-
-export const productionBasketFingerprint = (value: Basket): string => createHash("sha256").update(JSON.stringify({
-  items: value.items.map((item) => ({
-    id: item.id ?? null,
-    name: item.name ?? null,
-    quantity: item.quantity ?? null,
-    total: item.total ?? null,
-  })).sort((left, right) => String(left.id).localeCompare(String(right.id))),
-  products_price: value.products_price ?? null,
-  delivery_price: value.delivery_price ?? null,
-  number_of_products: value.number_of_products ?? null,
-  delivery_time: value.delivery_time ?? null,
-})).digest("hex");
-
-export async function verifyApprovedProductionMutation(
-  client: AcceptanceClient,
-  approved: ApprovedProductionMutation,
-): Promise<{ initial: Basket; final: Basket }> {
-  assert.ok(approved.expectedReview && typeof approved.expectedReview === "object", "Exact approved review is required");
-  const names = mutationTools[approved.operation];
-  assert.ok(names, "Approved mutation operation is invalid");
-  const tools = new Set((await client.listTools()).tools.map(({ name }) => name));
-  for (const name of ["show_my_basket", names.prepare, names.apply]) assert.ok(tools.has(name), `Production MCP is missing ${name}`);
-
-  const initial = basket(await client.callTool({ name: "show_my_basket", arguments: {} }), "initial show_my_basket");
-  const prepared = content<{
-    applicable?: boolean;
-    operation?: string;
-    proposal_id?: string;
-    review?: Record<string, unknown>;
-  }>(await client.callTool({ name: names.prepare, arguments: approved.prepareArguments }), names.prepare);
-  assert.equal(prepared.applicable, true, `Prepared ${approved.operation} is not applicable`);
-  assert.equal(prepared.operation, approved.operation, "Prepared operation changed");
-  assert.match(prepared.proposal_id ?? "", /^[0-9a-f-]{36}$/iu, "Prepared proposal ID is invalid");
-  assert.deepEqual(prepared.review, approved.expectedReview, "Prepared proposal differs from the exact approval");
-
-  const applied = content<{ status?: string; operation?: string; replayed?: boolean; basket?: Basket }>(
-    await client.callTool({ name: names.apply, arguments: { approved_review: prepared.proposal_id } }),
-    names.apply,
-  );
-  assert.equal(applied.status, "completed", `${approved.operation} was not completed`);
-  assert.equal(applied.operation, approved.operation, "Applied operation changed");
-  assert.equal(applied.replayed, false, "Acceptance proposal was unexpectedly replayed");
-  assert.ok(applied.basket && Array.isArray(applied.basket.items), "Apply returned no basket readback");
-
-  const final = basket(await client.callTool({ name: "show_my_basket", arguments: {} }), "final show_my_basket");
-  assert.deepEqual(final, applied.basket, "Apply and fresh basket readbacks differ");
-  for (const item of initial.items) {
-    if (item.id === undefined) continue;
-    const retained = final.items.find((candidate) => candidate.id === item.id);
-    assert.ok(retained, `Add-only mutation removed existing basket product ${item.id}`);
-    if (item.quantity !== undefined && retained.quantity !== undefined) {
-      assert.ok(retained.quantity >= item.quantity, `Add-only mutation lowered quantity for existing product ${item.id}`);
-    }
-  }
-  return { initial, final };
 }
 
 export async function verifyProductionEdge(

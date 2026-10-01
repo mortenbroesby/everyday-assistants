@@ -150,3 +150,89 @@ implementation gate only; 9.5 and the native historical/recovery gates remain
 open. The current resource is v6, with v4/v5 now retired; #137's historical v4
 case must not be mistaken for current-renderer acceptance or an instruction to
 redeploy the old v4 release.
+
+## 10. Discovery, selection language, and current-card continuity
+
+- [x] 10.1 Replace the foreign-snapshot fold expectation with a failing
+  historical A → explicit current B → delayed A regression; ignore unsolicited
+  foreign review payloads only after activation. Verify both bridges and both
+  notification channels, reversed order, a following local edit, fresh inactive
+  remount, same-ID stale rejection, and explicit recovery to C without replay.
+- [x] 10.2 Remove the alternatives-only default five, maximum ten, and viewer
+  refinement count while retaining optional caller counts. Verify more than ten
+  eligible results in provider order, omitted count reaching the provider,
+  duplicate IDs, incomplete details, cancellation, stale candidate rejection,
+  replacement quantity/state, and zero provider basket mutations.
+- [x] 10.3 Refine the existing contextual search control and user-facing copy to
+  Your Nemlig selection / To decide / Ready / Open current selection. Verify an
+  empty or irrelevant result can search again without changing membership, a
+  slow or cancelled broad search remains recoverable, disclosure/navigation
+  make no provider reads, and 320px/375px plus accessible labels remain usable.
+- [x] 10.4 Update existing MCP descriptions, titles and agent instructions for
+  broad search, deliberate follow-up phrases, conversation-only local edits and
+  exact real-basket preparation. Verify the 21-tool inventory, honest
+  annotations and structured/headless responses; demonstrate direct search,
+  add, quantity, revisit, alternative, replace and remove without opening a
+  widget, with stale edits rejected and no automatic retry.
+- [x] 10.5 Version changed viewer content, retire the prior URI per policy,
+  update product docs and one reviewed release note, then run focused checks,
+  browser/MCP smoke, strict OpenSpec validation and required repository gates.
+  Review the scoped diff, checkpoint commits and draft PR head against current
+  main; verify exact-head CI before requesting merge or release.
+- [ ] 10.6 After a separately approved release, record the exact served revision,
+  ChatGPT metadata/resource readback, and a native historical-card A → current
+  B → delayed A acceptance attempt. Verify current and remounted card behavior
+  separately; keep #137's other historical evidence and #96 deployment evidence
+  separately attributed and leave this item open without direct host proof.
+- [x] 10.7 Debounce rapid quantity +/- input on the existing server-authoritative
+  update path with a defined 400 ms quiet interval. Keep displayed quantities
+  and totals responsive; serialize/cancel pending edits safely; flush before
+  navigation, other mutations, prepare, or submit. Test bursts, per-item edits,
+  flush ordering, failures, stale revisions, and no stale submission.
+- [x] 10.8 Trace assistant clarification after Ready products exist. Preserve a
+  prepared exact submission across edits confined to To decide only when its
+  Ready IDs/quantities remain identical; invalidate it on any Ready-set or
+  Ready-quantity change. Keep the submission visible/recoverable in the same
+  workspace, require a fresh exact confirmation where applicable, and preserve
+  current price/readback/uncertainty protections. Test the conversational add
+  path and mixed Ready/To decide state.
+- [x] 10.9 Treat an unambiguous conversational instruction to add the current
+  exact Ready selection to the real Nemlig basket as authorization for that
+  exact prepared payload; do not ask for a redundant second conversational
+  approval. Ready acceptance alone is not authorization. Clarify ambiguous
+  scope or changed Ready contents/quantities, and preserve exact binding,
+  freshness, principal/conversation binding, single-use serialization,
+  readback, and uncertain-write/no-retry behavior. Test explicit intent,
+  ambiguity/change rejection, and uncertain writes.
+- [x] 10.10 Add open-ended search guidance and MCP parity for the user jobs in
+  conversation and the viewer. Verify a term such as “salmiak” calls direct
+  catalogue search independently of any local/alternatives product, does not
+  mutate that selection, and allows a deliberate broader search when contextual
+  alternatives are insufficient. Trace successful-empty and upstream HTTP 500
+  through the real fixture-backed tool/client path; assert distinct outcomes,
+  exact safe error mapping, and assistant instructions that do not report a
+  failure as no matches. Do not rename/merge tools without demonstrated benefit.
+
+10.5 local implementation evidence (29 September 2026): commit `c439732`
+contains the v7 viewer identity and retired-v6 handling; package/release metadata
+is `5.2.0 / Gather` with a reviewed release note. `pnpm verify`, strict
+OpenSpec validation, fixture-backed interface tests, and loopback browser smoke
+passed on `c439732` before release-only metadata was applied. Smoke covered
+320px/375px and recorded zero provider basket writes. Release metadata is not a
+deployment or native ChatGPT acceptance; 10.6 remains open for served-revision,
+metadata-readback, and historical-card evidence.
+
+## 11. Add-only real Nemlig basket safety
+
+- [x] 11.1 Update the basket proposal contract and repository/basket instructions
+  to state that the real Nemlig basket is add-only; verify strict OpenSpec
+  validation and keep local selection clearing explicitly separate.
+- [x] 11.2 Remove real-basket clear, line removal, and swap from the provider
+  client, proposal service, CLI, MCP inventory, and production acceptance path;
+  verify no assistant path can call those provider mutations.
+- [x] 11.3 Make requested quantities additive to the latest known provider line
+  quantity; test 2 existing + 2 approved = 4, positive-only provider writes,
+  exact proposal totals, stale-basket rejection, and verified readback.
+- [x] 11.4 Update README/tool inventory and relevant tests; run focused gates,
+  strict OpenSpec validation, browser/MCP smoke, and `pnpm verify`; push the
+  change to draft PR #164 without merging or deploying.

@@ -555,6 +555,9 @@ export class NemligClient {
   }
 
   private async writeBasket(productId: number, quantity: number, operation: string): Promise<void> {
+    if (!Number.isSafeInteger(quantity) || quantity < 1) {
+      throw new NemligError("Provider basket quantity must be a positive absolute value.");
+    }
     await this.json(
       `${API_BASE_URL}/basket/AddToBasket`,
       {

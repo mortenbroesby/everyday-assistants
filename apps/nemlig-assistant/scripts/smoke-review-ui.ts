@@ -21,13 +21,13 @@ const catalogue = {
 } as unknown as ShoppingClient;
 const makeServer = () => createMcpServer(catalogue, async () => undefined);
 let current = makeServer();
-const retiredV5 = "ui://nemlig/product-viewer-v5.html";
+const retiredV6 = "ui://nemlig/product-viewer-v6.html";
 const handler = createMcpHandler(() => current, { legacy: "reject" });
 const mcpHandler = toNodeHandler(handler);
 const client = new Client({ name: "review-ui-smoke", version: "1" }, { versionNegotiation: { mode: { pin: "2026-07-28" } } });
-const page = `<!doctype html><html><body><h1>Review recovery smoke</h1>
-<button id="start">Start sample review</button><button id="reset">Simulate server restart</button><button id="replace">Create current review without updating card</button>
-<button id="run">Run regression smoke</button><button id="flow">Run continuous local flow</button><button id="retired">Show retired v5 card</button><output id="status">Ready</output><iframe id="viewer" src="/viewer" style="width:100%;height:760px"></iframe>
+const page = `<!doctype html><html><body><h1>Selection recovery smoke</h1>
+<button id="start">Start sample selection</button><button id="reset">Simulate server restart</button><button id="replace">Create current selection without updating card</button>
+<button id="run">Run regression smoke</button><button id="flow">Run continuous local flow</button><button id="retired">Show retired v6 card</button><output id="status">Ready</output><iframe id="viewer" src="/viewer" style="width:100%;height:760px"></iframe>
 <script>
 const frame = document.getElementById('viewer'), status = document.getElementById('status');
 let transcript, offline = false, initialized = false;
@@ -37,17 +37,17 @@ const call = args => fetch('/call', {method:'POST',body:JSON.stringify(args)}).t
 document.getElementById('start').onclick = async () => {
  transcript = await call({name:'start_product_review',arguments:{items:[{product_id:1,quantity:1},{product_id:2,quantity:2}]}});
  publish();
- status.textContent='Review shown';
+ status.textContent='Selection shown';
 };
 document.getElementById('retired').onclick = () => { frame.src='/retired'; status.textContent='Retired card: no shopping calls'; };
-document.getElementById('replace').onclick = async () => { await call({name:'start_product_review',arguments:{items:[{product_id:3,quantity:4}]}}); status.textContent='Current review created; old card retained'; };
+document.getElementById('replace').onclick = async () => { await call({name:'start_product_review',arguments:{items:[{product_id:3,quantity:4}]}}); status.textContent='Current selection created; old card retained'; };
 document.getElementById('reset').onclick = async () => { await fetch('/reset',{method:'POST'}); status.textContent='Server restarted; old card retained'; };
 window.addEventListener('message',async event=>{
  if(event.source!==frame.contentWindow || event.origin!==location.origin)return;
  const m=event.data;
  if(m.method==='ui/initialize')frame.contentWindow.postMessage({jsonrpc:'2.0',id:m.id,result:{protocolVersion:'2026-01-26',hostCapabilities:{}}},location.origin);
  if(m.method==='ui/notifications/initialized'){ initialized=true; if(transcript)publish(); }
- if(m.method==='ui/message'){ status.textContent='PASS: retired card requested current review in conversation'; frame.contentWindow.postMessage({jsonrpc:'2.0',id:m.id,result:{}},location.origin); }
+ if(m.method==='ui/message'){ status.textContent='PASS: retired card requested current selection in conversation'; frame.contentWindow.postMessage({jsonrpc:'2.0',id:m.id,result:{}},location.origin); }
  if(m.method==='tools/call'){
   widgetCalls.push(m.params);
   const result=offline ? {isError:true,content:[{type:'text',text:'Service Unavailable: private trace'}]} : await call(m.params);
@@ -73,29 +73,29 @@ document.getElementById('run').onclick = async () => {
   try {
   await fetch('/reset',{method:'POST'});
   widgetCalls.length=0; await document.getElementById('start').onclick();
-  status.textContent='Checking retired v5 resource'; frame.src='/retired';
+  status.textContent='Checking retired v6 resource'; frame.src='/retired';
   await wait(()=>doc()?.querySelector('#open'));
-  check(doc().querySelector('h1')?.textContent==='This review card is retired'&&!doc().querySelector('#products'),'Retired v5 hydrated review data');
-  click('Open the current review'); await wait(()=>status.textContent==='PASS: retired card requested current review in conversation');
+  check(doc().querySelector('h1')?.textContent==='This selection card is retired'&&!doc().querySelector('#products'),'Retired v6 hydrated selection data');
+  click('Open current selection'); await wait(()=>status.textContent==='PASS: retired card requested current selection in conversation');
   const retiredStats=await fetch('/stats').then(r=>r.json());
-  check(widgetCalls.length===0&&retiredStats.providerBasketCalls===0,'Retired v5 made shopping calls');
-  status.textContent='Checking inactive snapshots'; frame.src='/viewer'; await wait(()=>button('Open current review'));
+  check(widgetCalls.length===0&&retiredStats.providerBasketCalls===0,'Retired v6 made shopping calls');
+  status.textContent='Checking inactive snapshots'; frame.src='/viewer'; await wait(()=>button('Open current selection'));
   check(widgetCalls.length===0 && !doc().querySelector('input'),'Historical payload performed work');
-  click('Open current review'); await wait(()=>button('In Review (2)') && !button('In Review (2)').disabled);
+  click('Open current selection'); await wait(()=>button('To decide (2)') && !button('To decide (2)').disabled);
   await select(); click('Add 1 to Ready'); await wait(()=>button('Ready (1)') && !button('Ready (1)').disabled);
-  check(!button('Open current review'),'Local acceptance collapsed the mounted frame');
+  check(!button('Open current selection'),'Local acceptance collapsed the mounted frame');
   click('Ready (1)'); await wait(()=>doc().querySelector('#title')?.textContent==='Ready' && !button('Ready (1)').disabled);
   check(!button('Choose alternative'),'Ready offered alternatives');
   const canonical=(await call({name:'update_product_review',arguments:{action:{kind:'show'}}})).structuredContent.review;
   check(canonical.destination==='ready'&&canonical.items.find(item=>item.product_id===1)?.state==='ready','Wire review is not canonical Ready');
-  check(!button('Open current review'),'Ready navigation collapsed the mounted frame');
-  click('In Review (1)'); await wait(()=>doc().querySelector('#title')?.textContent==='In Review' && !button('In Review (1)').disabled);
-  check(!!button('Choose alternative'),'In Review omitted alternatives');
-  check(!button('Open current review'),'Return navigation collapsed the mounted frame');
+  check(!button('Open current selection'),'Ready navigation collapsed the mounted frame');
+  click('To decide (1)'); await wait(()=>doc().querySelector('#title')?.textContent==='To decide' && !button('To decide (1)').disabled);
+  check(!!button('Choose alternative'),'To decide omitted alternatives');
+  check(!button('Open current selection'),'Return navigation collapsed the mounted frame');
   status.textContent='Checking remount'; const beforeMount=widgetCalls.length;
-  frame.src='/viewer'; await wait(()=>button('Open current review'));
+  frame.src='/viewer'; await wait(()=>button('Open current selection'));
   check(widgetCalls.length===beforeMount,'Remount called backend');
-  click('Open current review'); await wait(()=>button('Ready (1)') && !button('Ready (1)').disabled);
+  click('Open current selection'); await wait(()=>button('Ready (1)') && !button('Ready (1)').disabled);
   status.textContent='Checking stale revision without replay';
   const current=(await call({name:'update_product_review',arguments:{action:{kind:'show'}}})).structuredContent.review;
   await call({name:'update_product_review',arguments:{review_id:current.review_id,revision:current.revision,action:{kind:'quantity',product_id:1,quantity:3}}});
@@ -104,17 +104,17 @@ document.getElementById('run').onclick = async () => {
   check(widgetCalls.length===beforeConflict+2,'Conflict must make one edit attempt and one read');
   check(widgetCalls.at(-1).arguments.action.kind==='show','Conflict recovery was not read-only');
   check(button('Ready (1)') && !doc().querySelector('input:checked'),'Conflict changed acceptance');
-  status.textContent='Checking connection failure'; offline=true; click('Refresh review'); await wait(()=>button('Open current review'));
+  status.textContent='Checking connection failure'; offline=true; click('Refresh selection'); await wait(()=>button('Open current selection'));
   check(!doc().querySelector('input') && !/INVALID_ARGUMENT|private trace/.test(text()),'Failure leaked details or editable snapshot');
-  offline=false; click('Open current review'); await wait(()=>button('Ready (1)') && !button('Ready (1)').disabled);
+  offline=false; click('Open current selection'); await wait(()=>button('Ready (1)') && !button('Ready (1)').disabled);
   status.textContent='Checking process restart'; await fetch('/reset',{method:'POST'});
-  await select(); click('Add 1 to Ready'); await wait(()=>button('Start new review'));
-  click('Start new review'); await wait(()=>button('In Review (2)') && !button('In Review (2)').disabled);
+  await select(); click('Add 1 to Ready'); await wait(()=>button('Start new selection'));
+  click('Start new selection'); await wait(()=>button('To decide (2)') && !button('To decide (2)').disabled);
   check(button('Ready (0)') && !doc().querySelector('input:checked') && [...doc().querySelectorAll('#products .basket-quantity')].some(node=>node.textContent.startsWith('3')),'Restart restored acceptance or lost quantities');
   click('Clear selection and start over'); click('Discard selection'); await wait(()=>doc().querySelector('#title')?.textContent==='What should we shop for?');
   const stats=await fetch('/stats').then(r=>r.json()); check(stats.providerBasketCalls===0,'Provider basket accessed');
   status.textContent='Checking prepare only'; await document.getElementById('start').onclick();
-  await wait(()=>button('Open current review')); click('Open current review'); await wait(()=>button('In Review (2)'));
+  await wait(()=>button('Open current selection')); click('Open current selection'); await wait(()=>button('To decide (2)'));
   await select(); click('Add 1 to Ready'); await wait(()=>button('Ready (1)')&&!button('Ready (1)').disabled);
   click('Ready (1)'); await wait(()=>doc().querySelector('#title')?.textContent==='Ready'&&!button('Ready (1)').disabled);
   click('Send to Nemlig basket'); await wait(()=>doc().querySelector('#submission h2')?.textContent==='Confirm the exact Nemlig change');
@@ -123,7 +123,7 @@ document.getElementById('run').onclick = async () => {
   check(prepared.basketReads===1&&prepared.basketWrites===0,'Prepare crossed the wrong provider boundary');
   check(!!button('Add to Nemlig'),'Exact confirmation missing');
   check(widgetCalls.every(call=>!('representation' in call.arguments)),'Viewer sent a representation selector');
-  status.textContent='PASS: retired v5, inactive mount, remount, stale revision, outage, restart, finish, prepare only; one fake basket read, zero writes';
+  status.textContent='PASS: retired v6, inactive mount, remount, stale revision, outage, restart, finish, prepare only; one fake basket read, zero writes';
  } catch(error) { status.textContent='FAIL: '+error.message; }
  finally { offline=false; run.disabled=false; }
 };
@@ -134,7 +134,7 @@ document.getElementById('flow').onclick = async () => {
  const check=(condition,label)=>{if(!condition)throw new Error(label);};
  const wait=async predicate=>{const until=Date.now()+15000;while(!predicate()){if(Date.now()>until)throw new Error('Timed out: '+status.textContent);await new Promise(r=>setTimeout(r,25));}};
  const click=label=>{const b=button(label);check(b&&!b.disabled,'Missing enabled control: '+label);b.click();};
- const open=()=>check(!button('Open current review'),'The mounted review collapsed');
+ const open=()=>check(!button('Open current selection'),'The mounted review collapsed');
  const widths=async()=>{const original=frame.style.width;for(const width of [320,375]){frame.style.width=width+'px';await new Promise(requestAnimationFrame);check(doc().documentElement.scrollWidth<=doc().documentElement.clientWidth+1,width+'px viewer overflow');}frame.style.width=original;};
  try {
   status.textContent='Starting continuous local flow';
@@ -144,9 +144,9 @@ document.getElementById('flow').onclick = async () => {
   transcript=await call({name:'update_product_review',arguments:{action:{kind:'show'}}}); publish();
   await wait(()=>doc().querySelector('#title')?.textContent==='What should we shop for?'); await widths();
   await document.getElementById('start').onclick();
-  await wait(()=>button('Open current review')||button('In Review (2)'));
-  if(button('Open current review')) click('Open current review');
-  await wait(()=>button('In Review (2)')&&!button('In Review (2)').disabled); await widths();
+  await wait(()=>button('Open current selection')||button('To decide (2)'));
+  if(button('Open current selection')) click('Open current selection');
+  await wait(()=>button('To decide (2)')&&!button('To decide (2)').disabled); await widths();
   doc().querySelector('input[type=checkbox]').click(); click('Add 1 to Ready');
   await wait(()=>button('Ready (1)')&&!button('Ready (1)').disabled); open();
   click('Ready (1)'); await wait(()=>doc().querySelector('#title')?.textContent==='Ready'&&!button('Ready (1)').disabled); open(); await widths();
@@ -155,14 +155,14 @@ document.getElementById('flow').onclick = async () => {
   doc().querySelector('#products article > details > summary').click();
   const plus=doc().querySelector('#products button[aria-label="Increase quantity of Smoke product 1"]'); check(plus,'Quantity control missing'); plus.click();
   await wait(()=>doc().querySelector('#products .basket-quantity')?.textContent?.startsWith('2')); open();
-  status.textContent='Checking move back to In Review';
-  click('Move to In Review'); await wait(()=>button('In Review (2)')&&!button('In Review (2)').disabled); open();
-  click('In Review (2)'); await wait(()=>doc().querySelector('#title')?.textContent==='In Review'&&!button('In Review (2)').disabled);
+  status.textContent='Checking move back to To decide';
+  click('Move to To decide'); await wait(()=>button('To decide (2)')&&!button('To decide (2)').disabled); open();
+  click('To decide (2)'); await wait(()=>doc().querySelector('#title')?.textContent==='To decide'&&!button('To decide (2)').disabled);
   status.textContent='Checking alternatives';
   doc().querySelector('#products article > details > summary').click(); click('Choose alternative');
   await wait(()=>doc().querySelector('#title')?.textContent.startsWith('Choose alternative for')); open();
   const radio=doc().querySelector('input[type=radio]'); check(radio,'Alternative choice missing'); radio.click(); click('Use selected alternative');
-  await wait(()=>doc().querySelector('#title')?.textContent==='In Review'&&button('In Review (2)')); open();
+  await wait(()=>doc().querySelector('#title')?.textContent==='To decide'&&button('To decide (2)')); open();
   doc().querySelector('input[type=checkbox]').click(); click('Add 1 to Ready');
   await wait(()=>button('Ready (1)')&&!button('Ready (1)').disabled); open();
   click('Ready (1)'); await wait(()=>doc().querySelector('#title')?.textContent==='Ready'&&!button('Ready (1)').disabled); open();
@@ -170,13 +170,13 @@ document.getElementById('flow').onclick = async () => {
   await wait(()=>button('Ready (0)')&&!button('Ready (0)').disabled); open();
   const remaining=(await call({name:'update_product_review',arguments:{action:{kind:'show'}}})).structuredContent.review.items;
   check(remaining.length===1&&remaining[0].product_id===2,'Remove all Ready products retained local rows');
-  click('In Review (1)'); await wait(()=>doc().querySelector('#title')?.textContent==='In Review'&&!button('In Review (1)').disabled); open();
+  click('To decide (1)'); await wait(()=>doc().querySelector('#title')?.textContent==='To decide'&&!button('To decide (1)').disabled); open();
   doc().querySelector('input[type=checkbox]').click(); click('Add 1 to Ready');
   await wait(()=>button('Ready (1)')&&!button('Ready (1)').disabled); open();
   click('Ready (1)'); await wait(()=>doc().querySelector('#title')?.textContent==='Ready'&&!button('Ready (1)').disabled); open(); await widths();
   const stats=await fetch('/stats').then(r=>r.json()); check(stats.providerBasketCalls===0,'Provider basket accessed');
   check(widgetCalls.every(call=>!('representation' in call.arguments)),'Viewer sent a representation selector');
-  status.textContent='PASS: empty, activation, In Review, Ready, quantity, alternatives, remove, rebuild, 320/375px; provider basket calls 0';
+  status.textContent='PASS: empty, activation, To decide, Ready, quantity, alternatives, remove, rebuild, 320/375px; provider basket calls 0';
  } catch(error){status.textContent='FAIL: '+error.message;} finally{run.disabled=false;}
 };
 </script></body></html>`;
@@ -185,7 +185,7 @@ const server = createServer((req, res) => {
   void (async () => {
     if (req.url === "/") { res.setHeader("content-type", "text/html"); res.end(page); return; }
     if (req.url === "/viewer" || req.url === "/retired") {
-      const resource = (await client.readResource({ uri: req.url === "/retired" ? retiredV5 : PRODUCT_VIEWER_RESOURCE_URI })).contents[0];
+      const resource = (await client.readResource({ uri: req.url === "/retired" ? retiredV6 : PRODUCT_VIEWER_RESOURCE_URI })).contents[0];
       res.setHeader("content-type", "text/html"); res.end(resource && "text" in resource ? resource.text : "Missing viewer"); return;
     }
     if (req.url === "/reset" && req.method === "POST") { current = makeServer(); basketReads = 0; writes = 0; res.end("reset"); return; }
@@ -205,4 +205,4 @@ await new Promise<void>(resolve => server.once("listening", resolve));
 const origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
 await client.connect(new StreamableHTTPClientTransport(new URL("/mcp", origin)));
 console.log(`Review UI smoke: ${origin}`);
-console.log("Exercise v5 retirement, local review controls, and prepare-only submission; continuous flow requires zero fake provider basket calls.");
+console.log("Exercise v6 retirement, local selection controls, and prepare-only submission; continuous flow requires zero fake provider basket calls.");
