@@ -645,7 +645,7 @@ export class NemligClient {
       recipeCount: "0",
       timestamp: this.productTimestamp,
       timeslotUtc: this.timeslot,
-      deliveryZoneId: "1",
+      deliveryZoneId: String(this.deliveryZoneId),
       includeFavorites: this.userId ?? "0",
       TimeSlotId: String(this.timeslotId),
     });

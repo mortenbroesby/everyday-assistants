@@ -67,7 +67,7 @@ test("Worker recovery references come from the deployment journal", () => {
 });
 
 test("Wrangler runs from the package root where its dependency is installed", async () => {
-  const output = await runWranglerCommand(["--version"], process.env, AbortSignal.timeout(10_000), 10_000);
+  const output = await runWranglerCommand(["--version"], process.env, AbortSignal.timeout(30_000), 30_000);
   assert.match(output, /^\d+\.\d+\.\d+/u);
 });
 

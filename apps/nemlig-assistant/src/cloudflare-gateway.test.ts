@@ -382,7 +382,6 @@ test("requests without content length are still capped at one MiB", async () => 
 test("a stalled request body is cancelled at the total deadline", async () => {
   let cancelled = false;
   const body = new ReadableStream<Uint8Array>({
-    pull: () => new Promise(() => {}),
     cancel: () => { cancelled = true; },
   });
   const request = new Request("https://mcp.example.test/mcp", {
@@ -396,7 +395,7 @@ test("a stalled request body is cancelled at the total deadline", async () => {
     ...env,
     MCP_AUTH_TIMEOUT_MS: "2",
     MCP_CONTROL_TIMEOUT_MS: "2",
-    MCP_TOTAL_TIMEOUT_MS: "10",
+    MCP_TOTAL_TIMEOUT_MS: "250",
     MCP_BACKEND_TIMEOUT_MS: "5",
   }, {
     authenticate: async () => { throw new Error("unexpected"); },

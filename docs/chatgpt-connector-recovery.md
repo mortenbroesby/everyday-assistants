@@ -48,6 +48,57 @@ Nemlig provider credentials are a separate concern. The acceptance operation
 does not require a Nemlig login, wake provider-backed functionality, read
 shopping data, or mutate a basket, order, payment, or delivery.
 
+## Layer ownership and diagnosis
+
+For this deployment, the ChatGPT app is a saved remote-MCP connection, not a
+copy or symlink of the server. It stores the MCP endpoint and OAuth connection
+association/settings, then discovers tool schemas and UI-resource metadata
+from the endpoint; the host may retain metadata or already-rendered cards. A
+plugin ZIP is a separate packaging/import mechanism and is not the routine
+release artifact for this connection.
+
+```text
+ChatGPT connection
+  -> Cloudflare Worker (edge token checks, policy/admission, routing)
+  -> fixed Container-backed Durable Object (runs MCP tools/resources)
+```
+
+Auth0 handles OAuth authorization/client registration and issues tokens; the
+Worker and Container validate the bearer token at their respective boundaries.
+The Nemlig owner connection is a separate encrypted provider session used only
+when a tool calls Nemlig. It is not the ChatGPT OAuth login. Routine server
+releases deploy the reviewed Worker and Container application through the
+repository workflow, not by uploading a plugin ZIP.
+
+Use evidence to select the layer before changing it:
+
+1. Confirm the actual ChatGPT connection, exposed action, and configured MCP
+   endpoint. A selected connector pill does not prove a tool was invoked.
+2. Correlate the call with sanitized Worker evidence. A Worker HTTP 200 means
+   an HTTP response completed; inspect the returned JSON-RPC/tool result for
+   `isError` or a structured error before calling the MCP operation successful.
+   `/revision` proves only the gateway's configured revision, not the Container
+   image or what ChatGPT rendered.
+3. Investigate Auth0 when there is OAuth/token evidence, such as authorization,
+   consent, token exchange, issuer/JWKS, or token-validation failure. A tool
+   that passed authentication and failed during a Nemlig operation is not, by
+   itself, evidence for changing Auth0.
+4. If the MCP tool reached the Nemlig client and a provider request failed,
+   trace that operation in source: endpoint, query/body parameters, and the
+   session-derived context refreshed from the current owner session. Reproduce
+   at most once with a bounded read-only check where safe. Fix the application
+   only when a focused regression demonstrates an application request defect;
+   investigate the owner session only when the provider error indicates
+   provider authentication/session state. Keep raw provider bodies and
+   shopping data out of logs/support notes.
+5. For stale UI or actions, compare fresh `tools/list` metadata and the live UI
+   resource URI/document with what ChatGPT actually requested and rendered.
+   Refresh metadata only when stale schemas/resources are demonstrated. A
+   refresh acknowledgement is not proof of rendered content.
+6. Upload/replace a plugin package only if an app-level configuration change
+   is required and evidence confirms that this ChatGPT integration is updated
+   from that package. A ZIP download/upload menu alone is not evidence.
+
 ## What failed
 
 The first failing boundary was the old ChatGPT connector registration, before
@@ -141,6 +192,11 @@ basket, order, payment, delivery, proposal, or other business mutation was
 performed.
 
 ## Future repair runbook
+
+The steps below apply only when the connector itself is unavailable before a
+tool call is authenticated. For an authenticated MCP call that fails during a
+Nemlig search/provider operation, follow the layer-diagnosis sequence above;
+do not assume this historical Auth0 registration failure has recurred.
 
 When ChatGPT reports that this connector is unavailable, do not start by
 changing Worker authentication or recreating the MCP endpoint.

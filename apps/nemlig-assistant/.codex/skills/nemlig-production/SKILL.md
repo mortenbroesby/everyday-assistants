@@ -14,6 +14,18 @@ Run from the Everyday Assistants repository root.
 3. Read `docs/nemlig-production-readiness.md` and
    `docs/cloudflare-operations.md`.
 
+## Identify the failing boundary first
+
+Read [`docs/chatgpt-connector-recovery.md`](../../../../../docs/chatgpt-connector-recovery.md)
+for the layer map and diagnostic sequence. ChatGPT stores a remote MCP
+connection; the Cloudflare Worker is the edge and routes to the Container that
+runs this application's MCP tools/resources. Auth0 supplies OAuth tokens that
+the service validates. The Nemlig owner session is separate provider access.
+A normal server release deploys through the repository's Cloudflare workflow;
+do not upload a plugin ZIP or change Auth0 without evidence that boundary is
+the cause. A completed Worker request/HTTP 200 is not proof that an MCP tool
+returned successfully.
+
 ## Automated evidence
 
 Run the credential-free repository gate:
