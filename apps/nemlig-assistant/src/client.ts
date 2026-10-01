@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { compile } from "html-to-text";
 import { z } from "zod";
 
@@ -15,10 +15,23 @@ const DEFAULT_PRODUCT_TIMESTAMP = "AAAAAAAA-YFA_17hS";
 const DEFAULT_CORRELATION_ID = "YFA_17hS";
 
 export class NemligError extends Error {
-  override readonly name = "NemligError";
+  override readonly name: string = "NemligError";
 
   constructor(message: string, readonly status?: number) {
     super(message);
+  }
+}
+
+/** A failure known to occur before the provider's basket-write request was dispatched. */
+export class BasketPreflightError extends NemligError {
+  override readonly name: string = "BasketPreflightError";
+}
+
+export class BasketSnapshotChangedError extends BasketPreflightError {
+  override readonly name = "BasketSnapshotChangedError";
+
+  constructor() {
+    super("Basket changed since the last verified read.");
   }
 }
 
@@ -81,6 +94,25 @@ export interface Basket {
   numberOfProducts: number | undefined;
   deliveryTime: string | undefined;
 }
+
+/** Stable identity for the provider basket state relevant to additive writes. */
+export const basketFingerprint = (basket: Basket): string => {
+  const stable = {
+    items: basket.items
+      .map((item) => ({
+        id: item.id ?? null,
+        name: item.name ?? null,
+        quantity: item.quantity ?? null,
+        total: item.total ?? null,
+      }))
+      .sort((left, right) => String(left.id).localeCompare(String(right.id))),
+    productsPrice: basket.productsPrice ?? null,
+    deliveryPrice: basket.deliveryPrice ?? null,
+    numberOfProducts: basket.numberOfProducts ?? null,
+    deliveryTime: basket.deliveryTime ?? null,
+  };
+  return createHash("sha256").update(JSON.stringify(stable)).digest("hex");
+};
 
 const asRecord = (value: unknown): Record<string, unknown> => {
   const parsed = recordSchema.safeParse(value);
@@ -218,6 +250,16 @@ const abortReason = (signal: AbortSignal): unknown => signal.reason ?? new DOMEx
 const throwIfAborted = (signal: AbortSignal | null | undefined): void => {
   if (signal?.aborted) throw abortReason(signal);
 };
+const xsrfCookieName = "XSRF-TOKEN";
+const xsrfHeaderName = "X-XSRF-TOKEN";
+
+const decodeCookie = (value: string): string | undefined => {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return undefined;
+  }
+};
 
 export class NemligClient {
   private readonly cookies = new Map<string, Map<string, string>>();
@@ -266,8 +308,8 @@ export class NemligClient {
           body: JSON.stringify({
             Username: username,
             Password: password,
-            CheckForExistingProducts: false,
-            DoMerge: false,
+            CheckForExistingProducts: true,
+            DoMerge: true,
             AppInstalled: false,
             SaveExistingBasket: false,
           }),
@@ -278,6 +320,9 @@ export class NemligClient {
         false,
       );
       const data = asRecord(response);
+      if (data.MergeSuccessful === false) {
+        throw new NemligError("Nemlig requires a basket decision. Resolve it on Nemlig.com; the assistant will not choose a remove or save option.");
+      }
       if (!data.RedirectUrl && !data.MergeSuccessful) {
         throw new NemligError("Login failed: invalid credentials");
       }
@@ -298,10 +343,13 @@ export class NemligClient {
       method: "POST",
       signal,
       body: JSON.stringify({
-        Username: username, Password: password, CheckForExistingProducts: false,
-        DoMerge: false, AppInstalled: false, SaveExistingBasket: false,
+        Username: username, Password: password, CheckForExistingProducts: true,
+        DoMerge: true, AppInstalled: false, SaveExistingBasket: false,
       }),
     }, "Validate login", false, false, false));
+    if (response.MergeSuccessful === false) {
+      throw new NemligError("Nemlig requires a basket decision. Resolve it on Nemlig.com; the assistant will not choose a remove or save option.");
+    }
     if (!response.RedirectUrl && !response.MergeSuccessful) throw new NemligError("Login failed: invalid credentials");
     const token = asRecord(await this.json(`${API_BASE_URL}/Token`, { signal }, "Validate account", false, false, false));
     if (!asString(token.access_token)) throw new NemligError("Validate account failed: invalid response data.");
@@ -453,35 +501,49 @@ export class NemligClient {
     return normalizeBasket(await this.json(`${API_BASE_URL}/basket/GetBasket`, { signal }, "Get basket"));
   }
 
-  async addToCart(productId: number, quantity = 1, expectedCurrentQuantity?: number): Promise<Basket> {
-    this.requireLogin("add items");
-    if (!Number.isInteger(productId) || productId < 1) throw new NemligError("Product ID must be positive.");
-    if (!Number.isInteger(quantity) || quantity < 1) throw new NemligError("Quantity must be at least 1.");
-    const currentBasket = await this.getCart();
-    const matching = currentBasket.items.filter((item) => String(item.id) === String(productId));
-    if (matching.length > 1) throw new NemligError("Basket contains duplicate product lines; no addition was made.");
-    const current = matching[0];
-    if (current && current.quantity === undefined) {
-      throw new NemligError("Current basket line is incomplete; no addition was made.");
+  /** Add a positive quantity delta; the provider adapter translates it to its absolute-quantity endpoint. */
+  async addToCart(productId: number, quantity = 1, expectedBasket?: Basket): Promise<Basket> {
+    if (!this.loggedIn) throw new BasketPreflightError("Must be logged in to add items.");
+    if (!Number.isInteger(productId) || productId < 1) throw new BasketPreflightError("Product ID must be positive.");
+    if (!Number.isInteger(quantity) || quantity < 1) throw new BasketPreflightError("Quantity must be at least 1.");
+    let before: Basket;
+    try {
+      before = await this.getCart();
+    } catch {
+      throw new BasketPreflightError("Basket could not be re-read before addition; no provider write was sent.");
     }
-    const currentQuantity = current?.quantity ?? 0;
-    if (!Number.isInteger(currentQuantity) || currentQuantity < 0 || (current && current.total === undefined)) {
-      throw new NemligError("Current basket line is incomplete; no addition was made.");
+    if (expectedBasket && basketFingerprint(before) !== basketFingerprint(expectedBasket)) {
+      throw new BasketSnapshotChangedError();
     }
-    if (expectedCurrentQuantity !== undefined && currentQuantity !== expectedCurrentQuantity) {
-      throw new NemligError("Basket quantity changed after review; prepare and review a new addition.");
+    if (before.items.some((item) => item.id === undefined || typeof item.quantity !== "number" || !Number.isInteger(item.quantity) || item.quantity < 0)) {
+      throw new BasketPreflightError("Basket lines cannot be verified safely; no provider write was sent.");
     }
-    const resultingQuantity = currentQuantity + quantity;
-    if (!Number.isSafeInteger(resultingQuantity) || resultingQuantity <= currentQuantity) {
-      throw new NemligError("Resulting basket quantity is invalid; no addition was made.");
+    const matches = before.items.filter((item) => String(item.id) === String(productId));
+    if (matches.length > 1) throw new BasketPreflightError("Duplicate basket lines prevent a safe addition; no provider write was sent.");
+    const currentQuantity = matches[0]?.quantity ?? 0;
+    if (!Number.isInteger(currentQuantity) || currentQuantity < 0 || currentQuantity + quantity > Number.MAX_SAFE_INTEGER) {
+      throw new BasketPreflightError("Current basket quantity cannot be increased safely; no provider write was sent.");
     }
-    await this.writeBasket(productId, resultingQuantity, "Add to basket");
-    const basket = await this.readback("Product was added");
-    const applied = basket.items.find((item) => String(item.id) === String(productId));
-    if (applied?.quantity !== resultingQuantity) {
-      throw new NemligError("Basket readback did not verify the positive addition; stop before further mutations.");
+    try {
+      await this.ensureAntiForgery();
+    } catch {
+      throw new BasketPreflightError("Anti-forgery state could not be prepared; no provider write was sent.");
     }
-    return basket;
+    const targetQuantity = currentQuantity + quantity;
+    await this.writeBasket(productId, targetQuantity, "Add to basket");
+    const after = await this.readback("Product was added");
+    const addedLine = after.items.find((item) => String(item.id) === String(productId));
+    if (!addedLine || typeof addedLine.quantity !== "number" || addedLine.quantity < targetQuantity) {
+      throw new NemligError("Basket readback did not confirm the additive quantity; inspect the basket and do not retry.");
+    }
+    for (const previous of before.items) {
+      if (previous.id === undefined) throw new NemligError("Basket line identity could not be verified; inspect the basket and do not retry.");
+      const current = after.items.find((item) => String(item.id) === String(previous.id));
+      if (!current || typeof current.quantity !== "number" || typeof previous.quantity !== "number" || current.quantity < previous.quantity) {
+        throw new NemligError("A previous basket line was not preserved; inspect the basket and do not retry.");
+      }
+    }
+    return after;
   }
 
   private async readback(action: string): Promise<Basket> {
@@ -527,6 +589,28 @@ export class NemligClient {
     this.deliveryZoneId = 1;
     this.knownProducts.clear();
     this.hydratedProductIds.clear();
+  }
+
+  private async ensureAntiForgery(signal?: AbortSignal): Promise<void> {
+    const host = new URL(API_BASE_URL).host;
+    const existingCookie = this.cookies.get(host)?.get(xsrfCookieName);
+    if (existingCookie) {
+      if (!decodeCookie(existingCookie)) throw new NemligError("Get anti-forgery state failed: invalid response data.");
+      return;
+    }
+    const response = asRecord(await this.json(
+      `${API_BASE_URL}/AntiForgery`,
+      { signal },
+      "Get anti-forgery state",
+      false,
+      false,
+      false,
+    ));
+    const cookie = this.cookies.get(host)?.get(xsrfCookieName);
+    const value = asString(response.Value);
+    if (response.Header !== xsrfHeaderName || !cookie || !value || decodeCookie(cookie) !== value) {
+      throw new NemligError("Get anti-forgery state failed: invalid response data.");
+    }
   }
 
   private async refreshSession(signal?: AbortSignal): Promise<void> {
@@ -638,6 +722,13 @@ export class NemligClient {
     includeSession = true,
   ): Promise<unknown> {
     throwIfAborted(init.signal);
+    const target = new URL(url);
+    const targetMethod = (init.method ?? "GET").toUpperCase();
+    const targetIsNemligApi = target.origin === new URL(API_BASE_URL).origin && target.pathname.startsWith("/webapi");
+    if (targetIsNemligApi && !["GET", "HEAD", "OPTIONS"].includes(targetMethod)
+      && !this.cookies.get(target.host)?.has(xsrfCookieName)) {
+      await this.ensureAntiForgery(init.signal ?? undefined);
+    }
     for (let attempt = 0; attempt <= (retry ? NEMLIG_READ_MAX_RETRIES : 0); attempt += 1) {
       throwIfAborted(init.signal);
       const attemptSignal = AbortSignal.timeout(NEMLIG_READ_ATTEMPT_TIMEOUT_MS);
@@ -661,9 +752,26 @@ export class NemligClient {
         }
         if (includeSession && this.accessToken) headers.set("Authorization", `Bearer ${this.accessToken}`);
         const host = requestUrl.host;
+        const sameOriginApi = api && requestUrl.origin === new URL(API_BASE_URL).origin;
         const cookies = this.cookies.get(host);
         if (includeSession && cookies?.size) {
           headers.set("Cookie", [...cookies].map(([name, value]) => `${name}=${value}`).join("; "));
+        } else if (!includeSession && sameOriginApi && cookies) {
+          const antiForgeryCookies = [...cookies].filter(([name]) => name.startsWith("XSRF-"));
+          if (antiForgeryCookies.length) {
+            headers.set("Cookie", antiForgeryCookies.map(([name, value]) => `${name}=${value}`).join("; "));
+          }
+        }
+        const method = (init.method ?? "GET").toUpperCase();
+        const xsrfValue = cookies?.get(xsrfCookieName);
+        const mutatingMethod = !["GET", "HEAD", "OPTIONS"].includes(method);
+        if (sameOriginApi && mutatingMethod) headers.set("Origin", requestUrl.origin);
+        if (
+          sameOriginApi && mutatingMethod && xsrfValue
+        ) {
+          const decoded = decodeCookie(xsrfValue);
+          if (!decoded) throw new NemligError(`${operation} failed: invalid anti-forgery state.`);
+          headers.set(xsrfHeaderName, decoded);
         }
 
         const signal = init.signal ? AbortSignal.any([init.signal, attemptSignal]) : attemptSignal;

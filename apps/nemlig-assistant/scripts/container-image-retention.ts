@@ -8,6 +8,50 @@ const pageSize = 100;
 const maximumPageBytes = 1024 * 1024;
 export const defaultRetainedImages = 10;
 
+export function registryCredentialCommand(permission: "pull" | "push"): string[] {
+  return ["exec", "wrangler", "containers", "registries", "credentials", new URL(registryOrigin).host,
+    `--${permission}`, "--expiration-minutes", "5", "--json", "--env", "production"];
+}
+
+export function parseRegistryCredentialOutput(raw: string, errorPrefix = "production_retention"): { authorization: string } {
+  const invalid = (): never => { throw new Error(`${errorPrefix}_credentials_invalid`); };
+  let value: unknown;
+  try { value = JSON.parse(raw); } catch { return invalid(); }
+  const credentials = value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : undefined;
+  const password = credentials?.password;
+  if (typeof password !== "string" || password.length === 0
+    || (credentials?.username !== undefined && credentials.username !== "v1")) return invalid();
+  return { authorization: `Basic ${Buffer.from(`v1:${password}`).toString("base64")}` };
+}
+
+export async function readRegistryTagDigest(input: {
+  accountId: string;
+  repository: string;
+  tag: string;
+  authorization: string;
+  fetcher: typeof fetch;
+  signal?: AbortSignal;
+}): Promise<string> {
+  const expectedRepository = `${input.accountId}/${productionImageName}`;
+  if (!/^[0-9a-f]{32}$/u.test(input.accountId) || input.repository !== expectedRepository || !tagPattern.test(input.tag)
+    || !/^Basic [A-Za-z0-9+/]+={0,2}$/u.test(input.authorization)) fail("inventory_scope_invalid");
+  const deadline = AbortSignal.timeout(15_000);
+  const signal = input.signal ? AbortSignal.any([input.signal, deadline]) : deadline;
+  const repositoryPath = input.repository.split("/").map(encodeURIComponent).join("/");
+  const url = new URL(`${registryOrigin}/v2/${repositoryPath}/manifests/${encodeURIComponent(input.tag)}`);
+  let response: Response;
+  try {
+    response = await input.fetcher(url, { method: "HEAD", headers: {
+      Authorization: input.authorization,
+      Accept: "application/vnd.oci.image.manifest.v1+json, application/vnd.docker.distribution.manifest.v2+json",
+    }, signal });
+  } catch { return fail("registry_unavailable"); }
+  if (!response.ok) return fail(`registry_manifest_http_${response.status}`);
+  const digest = response.headers.get("docker-content-digest");
+  if (!digestPattern.test(digest ?? "")) return fail("registry_manifest_digest_invalid");
+  return digest!;
+}
+
 export interface RegistryImageTag {
   tag: string;
   digest: string;

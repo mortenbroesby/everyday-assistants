@@ -62,7 +62,7 @@ test("local CLI help and MCP surface need no credentials or network", async () =
   assert.doesNotMatch(stdout, /feature-request/);
   assert.match(stdout, /cart/);
   assert.match(stdout, /add/);
-  assert.doesNotMatch(stdout, /^\s+remove\s/imu);
+  assert.doesNotMatch(stdout, /\bremove\b/u);
   assert.doesNotMatch(stdout, /parse|checkout|--password/);
 
   const unavailable = async (): Promise<never> => {

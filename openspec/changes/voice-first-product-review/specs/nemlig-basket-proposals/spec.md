@@ -2,7 +2,7 @@
 
 ### Requirement: Exact addition proposal
 
-The system SHALL prepare one or more positive basket additions without mutation and return an opaque proposal ID, issue and expiry times, current basket fingerprint, exact product IDs and names, sizes, requested additional quantities, observed current quantities, resulting quantities, availability, unit prices, incremental line totals, expected resulting basket totals, relevant upstream labels, and the authorization scope that produced the proposal. The private ownership binding SHALL NOT be disclosed. Requested quantities mean additional units, never absolute target quantities.
+The system SHALL prepare one or more positive basket additions without mutation and return an opaque proposal ID, issue and expiry times, current basket fingerprint, exact product IDs and names, sizes, requested additional quantities, observed current quantities, resulting quantities, current and resulting line totals, availability, unit prices, incremental line totals, expected resulting basket totals, relevant upstream labels, and the authorization scope that produced the proposal. The private ownership binding SHALL NOT be disclosed. Requested quantities mean additional units, never absolute target quantities.
 
 #### Scenario: Prepare available additions
 
@@ -23,6 +23,11 @@ The system SHALL prepare one or more positive basket additions without mutation 
 
 - **WHEN** a client supplies no additions, duplicate product IDs, invalid IDs, or invalid quantities
 - **THEN** preparation fails before reading or changing the basket
+
+#### Scenario: Product already exists in the basket
+
+- **WHEN** a requested product already has a positive basket quantity
+- **THEN** the proposal treats the requested quantity as an increment and displays the existing quantity and exact resulting quantity, not an absolute target
 
 ### Requirement: Revalidation inside the mutation lock
 

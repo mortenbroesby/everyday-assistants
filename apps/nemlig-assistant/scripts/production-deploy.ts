@@ -5,6 +5,7 @@ import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
 import { issueServiceToken } from "./service-token.js";
+import { parseRegistryCredentialOutput, readRegistryTagDigest, registryCredentialCommand, productionImageName } from "./container-image-retention.js";
 
 const fullSha = /^[0-9a-f]{40}$/u;
 const revisionSha = /^[0-9a-f]{7,40}$/u;
@@ -86,6 +87,7 @@ export interface DeployDependencies {
   env: NodeJS.ProcessEnv;
   run: CommandRunner;
   fetcher: typeof fetch;
+  registryFetcher?: typeof fetch;
   sleep: (milliseconds: number) => Promise<void>;
   now: () => Date;
   operationId?: () => string;
@@ -578,6 +580,21 @@ const resolveCandidateImage = async (deps: DeployDependencies, workerVersion: st
   return manifestDigest(await runAt(deps, deps.packageRoot, "docker", ["manifest", "inspect", "-v", ref], { timeoutMs: 120_000 }));
 };
 
+const resolveCandidateImageFromRegistry = async (deps: DeployDependencies, workerVersion: string): Promise<string> => {
+  const accountId = deps.env.CLOUDFLARE_ACCOUNT_ID;
+  if (!accountId || !/^[0-9a-f]{32}$/u.test(accountId)) throw new DeployFailure("cloudflare_registry_manifest_invalid");
+  const output = await runAt(deps, deps.packageRoot, "pnpm", registryCredentialCommand("pull"), { timeoutMs: 30_000 });
+  const { authorization } = parseRegistryCredentialOutput(output, "cloudflare_registry");
+  return await readRegistryTagDigest({
+    accountId,
+    repository: `${accountId}/${productionImageName}`,
+    tag: workerVersion.split("-")[0]!,
+    authorization,
+    fetcher: deps.registryFetcher ?? fetch,
+    signal: deps.signal,
+  });
+};
+
 const readLocalConfig = async (deps: DeployDependencies): Promise<EffectiveConfig> => {
   const trusted = await realpath(resolve(deps.packageRoot, "wrangler.jsonc")).catch(() => fail("cloudflare_config_invalid"));
   let config: unknown;
@@ -774,6 +791,7 @@ interface RecoveryTarget {
   configDigest: string;
   sourceRevision?: string;
   enabled?: boolean;
+  requireInactive?: boolean;
   state: "enabled" | "disabled" | "restored";
 }
 
@@ -800,10 +818,13 @@ const verifyRecoveryTarget = async (deps: DeployDependencies, expected: Recovery
   verifyCandidateVersion(raw, current.version, expected.sourceRevision ?? state.revision, expected.enabled ?? state.enabled);
   const container = await readContainer(deps, expected.containerId);
   const instances = await wrangler(deps, ["containers", "instances", container.id, "--json"]);
+  const instanceMatches = expected.requireInactive
+    ? instancesInactive(instances)
+    : instancesInactive(instances) || (state.enabled && runningInstanceMatches(instances, expected.applicationVersion));
   const exactMetadata = (expected.version === undefined || current.version === expected.version) && (expected.enabled === undefined || state.enabled === expected.enabled)
     && container.id === expected.containerId && container.image === expected.image && container.version === expected.applicationVersion
     && versionConfig(raw).digest === expected.configDigest
-    && (instancesInactive(instances) || (state.enabled && runningInstanceMatches(instances, expected.applicationVersion)));
+    && instanceMatches;
   if (!exactMetadata) return undefined;
   if (expected.enabled === false) {
     try { await verifyDisabledRoutes(deps); } catch { return undefined; }
@@ -848,7 +869,78 @@ const pendingNoopEnableTarget = (journal: DeploymentJournal): RecoveryTarget | u
   };
 };
 
-/** Reconciles only an already-journaled rollback intent; it never mutates Cloudflare. */
+const pendingInterruptedEnableTarget = (journal: DeploymentJournal): RecoveryTarget | undefined => {
+  const intent = journal.transitions.at(-1);
+  if (journal.outcome !== "failed" || journal.lastVerifiedState !== "unknown" || journal.rollback !== "not_needed"
+    || journal.transitions.length !== 1 || intent?.phase !== "enable_deploy" || intent.kind !== "intent"
+    || !journal.startingVersion || intent.version !== journal.startingVersion || journal.startingEnabled !== false
+    || !journal.startingContainerId || !journal.startingImage || !journal.startingApplicationVersion || !journal.startingConfigDigest) return undefined;
+  return {
+    containerId: journal.startingContainerId,
+    image: journal.startingImage,
+    applicationVersion: journal.startingApplicationVersion,
+    configDigest: journal.startingConfigDigest,
+    sourceRevision: journal.commit,
+    enabled: true,
+    requireInactive: true,
+    state: "enabled",
+  };
+};
+
+const pendingInterruptedEnableRollbackTarget = (journal: DeploymentJournal): RecoveryTarget | undefined => {
+  const [enableIntent, enableResult, rollbackIntent] = journal.transitions;
+  if (journal.outcome !== "failed" || journal.lastVerifiedState !== "unknown" || journal.rollback !== "attempted"
+    || journal.transitions.length !== 3 || enableIntent?.phase !== "enable_deploy" || enableIntent.kind !== "intent"
+    || enableIntent.version !== journal.startingVersion || enableResult?.phase !== "enable_deploy" || enableResult.kind !== "result"
+    || enableResult.version !== journal.enabledVersion || rollbackIntent?.phase !== "rollback" || rollbackIntent.kind !== "intent"
+    || rollbackIntent.version !== journal.startingVersion || journal.startingEnabled !== false
+    || !journal.startingVersion || !journal.startingContainerId || !journal.startingImage
+    || !journal.startingApplicationVersion || !journal.startingConfigDigest) return undefined;
+  return {
+    version: journal.startingVersion,
+    containerId: journal.startingContainerId,
+    image: journal.startingImage,
+    applicationVersion: journal.startingApplicationVersion,
+    configDigest: journal.startingConfigDigest,
+    enabled: false,
+    state: "restored",
+  };
+};
+
+const pendingInterruptedDisabledDeploy = (journal: DeploymentJournal): boolean => {
+  const [intent] = journal.transitions;
+  return journal.outcome === "failed" && journal.lastVerifiedState === "unknown" && journal.rollback === "not_needed"
+    && ["disabled_route_unavailable", "disabled_route_mismatch"].includes(journal.failure ?? "")
+    && journal.transitions.length === 1 && intent?.phase === "disabled_deploy" && intent.kind === "intent"
+    && Boolean(journal.startingVersion && intent.version === journal.startingVersion && journal.startingContainerId
+      && journal.startingImage && journal.startingApplicationVersion && journal.startingConfigDigest)
+    && typeof journal.startingEnabled === "boolean";
+};
+
+const verifyInterruptedDisabledDeploy = async (journal: DeploymentJournal, deps: DeployDependencies): Promise<RecoveryTarget | undefined> => {
+  try {
+    const current = await readCurrent(deps);
+    if (current.version === journal.startingVersion) return undefined;
+    const raw = await readVersion(deps, current.version);
+    verifyCandidateVersion(raw, current.version, journal.commit, false);
+    const container = await readContainer(deps, journal.startingContainerId);
+    if ((container.image === journal.startingImage) !== (container.version === journal.startingApplicationVersion)) return undefined;
+    const target: RecoveryTarget = {
+      version: current.version,
+      containerId: journal.startingContainerId!,
+      image: await resolveCandidateImageFromRegistry(deps, current.version),
+      applicationVersion: container.version,
+      configDigest: journal.startingConfigDigest!,
+      sourceRevision: journal.commit,
+      enabled: false,
+      state: "disabled",
+    };
+    if (container.image !== target.image || !await verifyRecoveryTarget(deps, target)) return undefined;
+    return target;
+  } catch { return undefined; }
+};
+
+/** Reconciles stopped failed operations from exact provider readback; any rollback is journaled and narrowly bound. */
 export async function reconcilePendingRollback(
   operation: string,
   deps: DeployDependencies,
@@ -871,32 +963,115 @@ export async function reconcilePendingRollback(
     if (!journal.remoteCommit || journal.remoteCommit !== remote.parent) return denied("journal_head_changed");
     const rollbackTarget = pendingRollbackTarget(journal);
     const noopEnableTarget = pendingNoopEnableTarget(journal);
-    const target = rollbackTarget ?? noopEnableTarget;
-    if (!target) return denied("pending_or_unknown");
-    let observedVersion: string | undefined;
-    try { observedVersion = await verifyRecoveryTarget(deps, target); } catch { observedVersion = undefined; }
-    if (!observedVersion) return denied("provider_drift");
-    if (await readRemoteHead(deps, repo.nameWithOwner) !== remote.head) return denied("journal_head_changed");
+    const interruptedRollbackTarget = pendingInterruptedEnableRollbackTarget(journal);
+    const interruptedEnableTarget = pendingInterruptedEnableTarget(journal);
+    if (pendingInterruptedDisabledDeploy(journal)) {
+      const target = await verifyInterruptedDisabledDeploy(journal, deps);
+      if (!target) return denied("provider_drift");
+      if (await readRemoteHead(deps, repo.nameWithOwner) !== remote.head) return denied("journal_head_changed");
+      const reconciled: DeploymentJournal = {
+        ...journal,
+        remoteCommit: remote.head,
+        disabledVersion: target.version,
+        disabledImage: target.image,
+        disabledApplicationVersion: target.applicationVersion,
+        checks: [...new Set([...journal.checks, "disabled_version", "disabled_routes", "container_inactive"])],
+        lastVerifiedState: "disabled",
+        transitions: [...journal.transitions, {
+          phase: "disabled_deploy", kind: "result", at: deps.now().toISOString(), version: target.version,
+        }],
+      };
+      journalJson(reconciled);
+      try { await appendRemoteJournal(deps, repo.nameWithOwner, reconciled); }
+      catch (error) {
+        if (error instanceof DeployFailure && error.code === "remote_journal_parent_invalid") return denied("journal_head_changed");
+        return denied("journal_invalid");
+      }
+      return { operation, originalRunnerStopped, reconciled: true, reason: "eligible", state: "disabled" };
+    }
+    const startingTarget: RecoveryTarget | undefined = journal.startingVersion && journal.startingContainerId
+      && journal.startingImage && journal.startingApplicationVersion && journal.startingConfigDigest
+      ? { version: journal.startingVersion, containerId: journal.startingContainerId, image: journal.startingImage,
+        applicationVersion: journal.startingApplicationVersion, configDigest: journal.startingConfigDigest,
+        enabled: journal.startingEnabled, state: "restored" }
+      : undefined;
 
-    const reconciled: DeploymentJournal = rollbackTarget ? {
+    if (rollbackTarget || noopEnableTarget) {
+      const target = rollbackTarget ?? noopEnableTarget!;
+      let observedVersion: string | undefined;
+      try { observedVersion = await verifyRecoveryTarget(deps, target); } catch { observedVersion = undefined; }
+      if (!observedVersion) {
+        if (rollbackTarget || !interruptedEnableTarget) return denied("provider_drift");
+      } else {
+        if (await readRemoteHead(deps, repo.nameWithOwner) !== remote.head) return denied("journal_head_changed");
+        const reconciled: DeploymentJournal = rollbackTarget ? {
+          ...journal,
+          remoteCommit: remote.head,
+          disabledVersion: observedVersion,
+          disabledImage: target.image,
+          disabledApplicationVersion: target.applicationVersion,
+          checks: [...new Set([...journal.checks, "disabled_routes", "container_inactive"])],
+          lastVerifiedState: "disabled",
+          rollback: "restored",
+          transitions: [...journal.transitions, {
+            phase: "rollback", kind: "result", at: deps.now().toISOString(), version: observedVersion,
+          }],
+        } : {
+          ...journal,
+          remoteCommit: remote.head,
+          checks: [...new Set([...journal.checks, "disabled_routes", "container_inactive", "starting_version_restored"])],
+          lastVerifiedState: "restored",
+          transitions: [...journal.transitions, {
+            phase: "enable_deploy", kind: "result", at: deps.now().toISOString(), version: observedVersion,
+          }],
+        };
+        journalJson(reconciled);
+        try { await appendRemoteJournal(deps, repo.nameWithOwner, reconciled); }
+        catch (error) {
+          if (error instanceof DeployFailure && error.code === "remote_journal_parent_invalid") return denied("journal_head_changed");
+          return denied("journal_invalid");
+        }
+        return { operation, originalRunnerStopped, reconciled: true, reason: "eligible", state: "disabled" };
+      }
+    }
+
+    if (!startingTarget || (!interruptedRollbackTarget && !interruptedEnableTarget)) return denied("pending_or_unknown");
+    if (interruptedEnableTarget) {
+      let enabledVersion: string | undefined;
+      try { enabledVersion = await verifyRecoveryTarget(deps, interruptedEnableTarget); } catch { enabledVersion = undefined; }
+      if (!enabledVersion) return denied("provider_drift");
+      if (await readRemoteHead(deps, repo.nameWithOwner) !== remote.head) return denied("journal_head_changed");
+      const rollbackIntent: DeploymentJournal = {
+        ...journal,
+        remoteCommit: remote.head,
+        enabledVersion,
+        rollback: "attempted",
+        transitions: [...journal.transitions,
+          { phase: "enable_deploy", kind: "result", at: deps.now().toISOString(), version: enabledVersion },
+          { phase: "rollback", kind: "intent", at: deps.now().toISOString(), version: journal.startingVersion }],
+      };
+      journalJson(rollbackIntent);
+      try { await appendRemoteJournal(deps, repo.nameWithOwner, rollbackIntent); }
+      catch (error) {
+        if (error instanceof DeployFailure && error.code === "remote_journal_parent_invalid") return denied("journal_head_changed");
+        return denied("journal_invalid");
+      }
+      await verifyLeaseHead(deps, repo.nameWithOwner, rollbackIntent);
+      await wrangler(deps, ["rollback", journal.startingVersion!, "--message", `Fail-closed recovery after interrupted ${journal.commit.slice(0, 7)} release`, "--yes"], 120_000);
+      journal.remoteCommit = rollbackIntent.remoteCommit;
+      Object.assign(journal, rollbackIntent);
+    }
+
+    let restoredVersion: string | undefined;
+    try { restoredVersion = await verifyRecoveryTarget(deps, startingTarget); } catch { restoredVersion = undefined; }
+    if (!restoredVersion) return denied("provider_drift");
+    const reconciled: DeploymentJournal = {
       ...journal,
-      remoteCommit: remote.head,
-      disabledVersion: observedVersion,
-      disabledImage: target.image,
-      disabledApplicationVersion: target.applicationVersion,
-      checks: [...new Set([...journal.checks, "disabled_routes", "container_inactive"])],
-      lastVerifiedState: "disabled",
-      rollback: "restored",
-      transitions: [...journal.transitions, {
-        phase: "rollback", kind: "result", at: deps.now().toISOString(), version: observedVersion,
-      }],
-    } : {
-      ...journal,
-      remoteCommit: remote.head,
       checks: [...new Set([...journal.checks, "disabled_routes", "container_inactive", "starting_version_restored"])],
       lastVerifiedState: "restored",
+      rollback: "restored",
       transitions: [...journal.transitions, {
-        phase: "enable_deploy", kind: "result", at: deps.now().toISOString(), version: observedVersion,
+        phase: "rollback", kind: "result", at: deps.now().toISOString(), version: restoredVersion,
       }],
     };
     journalJson(reconciled);
@@ -1055,13 +1230,29 @@ export async function preflightProductionDeploy(commit: string, deps: DeployDepe
 }
 
 const verifyDisabledRoutes = async (deps: DeployDependencies): Promise<void> => {
-  for (const endpoint of [customMcp, workersMcp]) {
-    const timeout = AbortSignal.timeout(10_000);
-    const signal = deps.signal ? AbortSignal.any([deps.signal, timeout]) : timeout;
-    const response = await deps.fetcher(endpoint, { signal })
-      .catch(() => fail("disabled_route_unavailable"));
-    if (response.status !== 503 || await response.text() !== "MCP temporarily disabled") fail("disabled_route_mismatch");
+  let lastFailure: "disabled_route_unavailable" | "disabled_route_mismatch" = "disabled_route_unavailable";
+  for (let attempt = 0; attempt < 6; attempt += 1) {
+    let bothDisabled = true;
+    for (const endpoint of [customMcp, workersMcp]) {
+      deps.signal?.throwIfAborted();
+      const timeout = AbortSignal.timeout(10_000);
+      const signal = deps.signal ? AbortSignal.any([deps.signal, timeout]) : timeout;
+      try {
+        const response = await deps.fetcher(endpoint, { signal });
+        if (response.status !== 503 || await response.text() !== "MCP temporarily disabled") {
+          bothDisabled = false;
+          lastFailure = "disabled_route_mismatch";
+        }
+      } catch {
+        deps.signal?.throwIfAborted();
+        bothDisabled = false;
+        lastFailure = "disabled_route_unavailable";
+      }
+    }
+    if (bothDisabled) return;
+    if (attempt < 5) await sleepAbortably(deps);
   }
+  fail(lastFailure);
 };
 
 const sleepAbortably = async (deps: DeployDependencies, durationMs = 5_000): Promise<void> => {

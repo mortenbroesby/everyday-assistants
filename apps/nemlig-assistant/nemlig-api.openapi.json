@@ -28,7 +28,7 @@
   ],
   "x-nemlig": {
     "status": "reverse-engineered-private-contract",
-    "lastObserved": "2026-09-13",
+    "lastObserved": "2026-09-30",
     "maintainer": "Nemlig Assistant contributors",
     "clientSource": "apps/nemlig-assistant/src/client.ts",
     "confidenceScale": {
@@ -60,7 +60,7 @@
           "usage": "client-used",
           "confidence": "high",
           "safety": "authentication-write",
-          "evidence": ["NemligClient.login", "NemligClient.validateCredentials"]
+          "evidence": ["NemligClient.login", "NemligClient.validateCredentials", "Nemlig website main.js ordinary-login and merge-dialog handlers (anonymous source inspection 2026-09-30)"]
         },
         "requestBody": {
           "required": true,
@@ -72,7 +72,7 @@
         },
         "responses": {
           "200": {
-            "description": "Login result; success is inferred from RedirectUrl or MergeSuccessful.",
+            "description": "Login result; success is inferred from RedirectUrl or MergeSuccessful=true. Current website code routes MergeSuccessful=false to its basket merge-decision flow.",
             "content": {
               "application/json": {
                 "schema": { "$ref": "#/components/schemas/LoginResponse" }
@@ -428,7 +428,7 @@
         "operationId": "setBasketProductQuantity",
         "tags": ["Basket"],
         "summary": "Set one product's basket quantity",
-        "description": "Nemlig accepts an absolute line quantity and its provider API can interpret zero as removal. Nemlig Assistant sends only a strictly greater positive quantity computed from a fresh basket read; it has no compare-and-set operation, so a simultaneous external Nemlig.com edit can still race the read/set boundary. A successful HTTP response is indeterminate until GetBasket confirms the resulting state.",
+        "description": "Nemlig accepts an absolute line quantity and its provider API can interpret zero as removal; it is not an atomic increment or compare-and-set. Nemlig Assistant sends only strictly greater positive quantities, binding each sequential write to the reviewed or last verified basket snapshot. It verifies readback before proceeding; detected drift before the first write prevents the POST, and drift between writes stops the remaining batch without retry or rollback. A simultaneous external Nemlig.com edit can still race the read/set boundary. A successful HTTP response is indeterminate until GetBasket confirms the resulting state.",
         "security": [{ "bearerAuth": [] }, { "cookieAuth": [] }],
         "x-nemlig": {
           "usage": "client-used",
@@ -455,10 +455,10 @@
         "summary": "Get an anti-forgery header/value pair",
         "security": [],
         "x-nemlig": {
-          "usage": "observed-only",
-          "confidence": "medium",
+          "usage": "client-used-and-observed",
+          "confidence": "high",
           "safety": "sensitive-read",
-          "evidence": ["anonymous Playwright trace 2026-09-13"]
+          "evidence": ["NemligClient.ensureAntiForgery", "anonymous live GET 2026-09-30", "first-party website anti-forgery interceptor"]
         },
         "responses": {
           "200": {
@@ -560,10 +560,10 @@
         "properties": {
           "Username": { "type": "string", "writeOnly": true },
           "Password": { "type": "string", "format": "password", "writeOnly": true },
-          "CheckForExistingProducts": { "type": "boolean" },
-          "DoMerge": { "type": "boolean" },
+          "CheckForExistingProducts": { "type": "boolean", "description": "The current website uses true for ordinary login and false after a merge-dialog choice." },
+          "DoMerge": { "type": "boolean", "description": "The current website uses true for ordinary login and the explicit add/merge choice; false is used for its remove choice." },
           "AppInstalled": { "type": "boolean" },
-          "SaveExistingBasket": { "type": "boolean" }
+          "SaveExistingBasket": { "type": "boolean", "description": "The current website sets true only for the explicit save-to-shopping-list choice; that flow clears the provider basket after saving." }
         }
       },
       "LoginResponse": {

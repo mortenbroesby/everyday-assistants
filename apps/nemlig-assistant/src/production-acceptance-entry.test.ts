@@ -314,7 +314,7 @@ test("missing token is rejected before connect", async () => {
   assert.equal(calls.length, 5);
 });
 
- test("read-only failure after connect still closes the client", async () => {
+test("read-only failure after connect still closes the client", async () => {
   const calls: string[] = [];
   let closed = 0;
   const entry = await import("../scripts/production-acceptance.js");

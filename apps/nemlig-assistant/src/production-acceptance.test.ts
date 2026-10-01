@@ -205,7 +205,7 @@ test("service acceptance preserves its operation-specific total deadline context
   await assert.rejects(verifyServiceAcceptanceFeatures(client, { totalTimeoutMs: 5 }), /Service acceptance timed out during tool inventory/u);
 });
 
- test("production edge probe verifies enablement, OAuth metadata, and cheap rejection paths", async () => {
+test("production edge probe verifies enablement, OAuth metadata, and cheap rejection paths", async () => {
   const requests: Request[] = [];
   const fetcher: typeof fetch = async (input, init) => {
     const request = new Request(input, init);

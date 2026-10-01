@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { Basket, Product, ShoppingClient } from "./client.js";
+import { NemligClient, type Basket, type Product, type ShoppingClient } from "./client.js";
 import {
   basketFingerprint,
   BasketProposalService,
@@ -60,6 +60,228 @@ const fakeClient = (overrides: Partial<ProposalClient> = {}): ProposalClient => 
   ...overrides,
 });
 
+const otherProduct: Product = { ...product, id: 8, name: "Pære", price: 4, unitPrice: 4, unit: "4 kr/stk." };
+
+const httpProposalFixture = (
+  initial: Basket,
+  options: {
+    onBasketRead?: (read: number, basket: Basket) => void;
+    failBasketReadAt?: number[];
+    failAntiForgery?: boolean;
+    failPostAfterApply?: number;
+  } = {},
+) => {
+  const state = { basket: structuredClone(initial), basketReads: 0 };
+  const events: string[] = [];
+  const posts: Array<{ ProductId: number; quantity: number; AffectPartialQuantity: false; disableQuantityValidation: false }> = [];
+  const client = new NemligClient(async (input, init) => {
+    const path = new URL(String(input)).pathname;
+    if (path.endsWith("/basket/GetBasket")) {
+      state.basketReads += 1;
+      options.onBasketRead?.(state.basketReads, state.basket);
+      events.push("read");
+      if (options.failBasketReadAt?.includes(state.basketReads)) return new Response("{}", { status: 503 });
+      return Response.json({
+        Lines: state.basket.items.map((item) => ({
+          Id: item.id,
+          Name: item.name,
+          Quantity: item.quantity,
+          Total: item.total,
+        })),
+        TotalProductsPrice: state.basket.productsPrice,
+        DeliveryPrice: state.basket.deliveryPrice,
+        NumberOfProducts: state.basket.numberOfProducts,
+        FormattedDeliveryTime: state.basket.deliveryTime,
+      });
+    }
+    if (path.endsWith("/AntiForgery")) {
+      if (options.failAntiForgery) return new Response("{}", { status: 503 });
+      const headers = new Headers();
+      headers.append("set-cookie", "XSRF-TOKEN=test-xsrf; Path=/");
+      headers.append("set-cookie", "XSRF-COOKIE-TOKEN=test-cookie; Path=/");
+      return Response.json({ Header: "X-XSRF-TOKEN", Value: "test-xsrf" }, { headers });
+    }
+    if (path.endsWith("/basket/AddToBasket")) {
+      const body = JSON.parse(String(init?.body)) as typeof posts[number];
+      posts.push(body);
+      events.push(`write:${body.ProductId}`);
+      const selected = body.ProductId === 7 ? product : body.ProductId === 8 ? otherProduct : undefined;
+      assert.ok(selected, `Unexpected product write: ${body.ProductId}`);
+      const existing = state.basket.items.find((item) => item.id === body.ProductId);
+      const nextLine = { id: body.ProductId, name: selected.name, quantity: body.quantity, total: (selected.price ?? 0) * body.quantity };
+      state.basket = {
+        ...state.basket,
+        items: existing
+          ? state.basket.items.map((item) => item.id === body.ProductId ? nextLine : item)
+          : [...state.basket.items, nextLine],
+        productsPrice: (state.basket.productsPrice ?? 0) - (existing?.total ?? 0) + (nextLine.total ?? 0),
+        numberOfProducts: (state.basket.numberOfProducts ?? 0) - (existing?.quantity ?? 0) + body.quantity,
+      };
+      if (posts.length === options.failPostAfterApply) throw new Error("Mock response lost after provider applied write");
+      return Response.json({});
+    }
+    throw new Error(`Unexpected mock request: ${path}`);
+  });
+  Object.assign(client, { loggedIn: true });
+  client.getProduct = async (id) => id === 7 ? product : otherProduct;
+  client.getFreshProduct = async (id) => id === 7 ? product : otherProduct;
+  return { client, state, events, posts };
+};
+
+const basketWithExistingProducts = (): Basket => ({
+  items: [
+    { id: 7, name: "Banan", quantity: 2, total: 5 },
+    { id: 9, name: "Minimælk", quantity: 1, total: 12.5 },
+  ],
+  productsPrice: 17.5,
+  deliveryPrice: 0,
+  numberOfProducts: 3,
+  deliveryTime: undefined,
+});
+
+test("real client applies multiple reviewed lines sequentially and preserves unrelated products", async () => {
+  const fixture = httpProposalFixture(basketWithExistingProducts());
+  const service = new BasketProposalService(fixture.client);
+  const prepared = await service.prepareAdditions("connection", [
+    { product_id: 7, quantity: 1 },
+    { product_id: 8, quantity: 2 },
+  ], { kind: "exact_review" });
+
+  const result = await service.apply("connection", prepared.proposal_id, "additions");
+
+  assert.deepEqual(fixture.posts, [
+    { ProductId: 7, quantity: 3, AffectPartialQuantity: false, disableQuantityValidation: false },
+    { ProductId: 8, quantity: 2, AffectPartialQuantity: false, disableQuantityValidation: false },
+  ]);
+  assert.deepEqual(fixture.events, ["read", "read", "read", "write:7", "read", "read", "write:8", "read"]);
+  assert.deepEqual(result.basket.items, [
+    { id: 7, name: "Banan", quantity: 3, total: 7.5 },
+    { id: 9, name: "Minimælk", quantity: 1, total: 12.5 },
+    { id: 8, name: "Pære", quantity: 2, total: 8 },
+  ]);
+  assert.equal(result.basket.products_price, 28);
+  assert.equal(result.basket.number_of_products, 6);
+});
+
+test("real client rejects basket drift before the first product POST", async () => {
+  const fixture = httpProposalFixture(basketWithExistingProducts(), {
+    onBasketRead: (read, basket) => {
+      if (read === 3) {
+        const banana = basket.items.find((item) => item.id === 7)!;
+        banana.quantity = 3;
+        banana.total = 7.5;
+        basket.productsPrice = 20;
+        basket.numberOfProducts = 4;
+      }
+    },
+  });
+  const service = new BasketProposalService(fixture.client);
+  const prepared = await service.prepareAdditions("connection", [{ product_id: 7, quantity: 1 }], { kind: "exact_review" });
+
+  await assert.rejects(
+    service.apply("connection", prepared.proposal_id, "additions"),
+    /Basket changed before an addition; no provider write was sent/u,
+  );
+  assert.deepEqual(fixture.posts, []);
+  await assert.rejects(service.apply("connection", prepared.proposal_id, "additions"), /no longer applicable/u);
+});
+
+test("real client stops a multi-line proposal when the basket drifts between writes", async () => {
+  const fixture = httpProposalFixture(basketWithExistingProducts(), {
+    onBasketRead: (read, basket) => {
+      if (read === 5) {
+        const milk = basket.items.find((item) => item.id === 9)!;
+        milk.quantity = 2;
+        milk.total = 25;
+        basket.productsPrice = 30;
+        basket.numberOfProducts = 6;
+      }
+    },
+  });
+  const audits: ProposalAuditEvent[] = [];
+  const service = new BasketProposalService(fixture.client, { audit: (event) => audits.push(event) });
+  const prepared = await service.prepareAdditions("connection", [
+    { product_id: 7, quantity: 1 },
+    { product_id: 8, quantity: 2 },
+  ], { kind: "exact_review" });
+
+  await assert.rejects(
+    service.apply("connection", prepared.proposal_id, "additions"),
+    /Earlier verified additions: Banan\..*basket changed before the next write.*no later write was sent/u,
+  );
+  assert.deepEqual(fixture.posts, [{
+    ProductId: 7,
+    quantity: 3,
+    AffectPartialQuantity: false,
+    disableQuantityValidation: false,
+  }]);
+  await assert.rejects(service.apply("connection", prepared.proposal_id, "additions"), /no longer applicable/u);
+  assert.equal(fixture.posts.length, 1);
+  assert.deepEqual(audits.slice(-2), [
+    { event: "applying", operation: "additions", result: "started" },
+    { event: "partial", operation: "additions", result: "verified-partial" },
+  ]);
+});
+
+test("real client never retries a proposal after an uncertain later write", async () => {
+  const fixture = httpProposalFixture(basketWithExistingProducts(), { failPostAfterApply: 2 });
+  const service = new BasketProposalService(fixture.client);
+  const prepared = await service.prepareAdditions("connection", [
+    { product_id: 7, quantity: 1 },
+    { product_id: 8, quantity: 2 },
+  ], { kind: "exact_review" });
+
+  await assert.rejects(service.apply("connection", prepared.proposal_id, "additions"), /may have changed.*do not retry/u);
+  await assert.rejects(service.apply("connection", prepared.proposal_id, "additions"), /no longer applicable/u);
+  assert.deepEqual(fixture.posts, [
+    { ProductId: 7, quantity: 3, AffectPartialQuantity: false, disableQuantityValidation: false },
+    { ProductId: 8, quantity: 2, AffectPartialQuantity: false, disableQuantityValidation: false },
+  ]);
+});
+
+test("real client rejects a known pre-write read failure without calling it uncertain", async () => {
+  const fixture = httpProposalFixture(basketWithExistingProducts(), { failBasketReadAt: [3] });
+  const service = new BasketProposalService(fixture.client);
+  const prepared = await service.prepareAdditions("connection", [{ product_id: 7, quantity: 1 }], { kind: "exact_review" });
+
+  await assert.rejects(service.apply("connection", prepared.proposal_id, "additions"), /no provider write was sent/u);
+  await assert.rejects(service.apply("connection", prepared.proposal_id, "additions"), /no longer applicable/u);
+  assert.deepEqual(fixture.posts, []);
+});
+
+test("a failed apply-time basket read consumes the proposal before any write", async () => {
+  const fixture = httpProposalFixture(basketWithExistingProducts(), { failBasketReadAt: [2] });
+  const service = new BasketProposalService(fixture.client);
+  const prepared = await service.prepareAdditions("connection", [{ product_id: 7, quantity: 1 }], { kind: "exact_review" });
+
+  await assert.rejects(service.apply("connection", prepared.proposal_id, "additions"), /no provider write was sent/u);
+  await assert.rejects(service.apply("connection", prepared.proposal_id, "additions"), /no longer applicable/u);
+  assert.deepEqual(fixture.posts, []);
+});
+
+test("real client consumes a proposal when anti-forgery setup fails before dispatch", async () => {
+  const fixture = httpProposalFixture(basketWithExistingProducts(), { failAntiForgery: true });
+  const service = new BasketProposalService(fixture.client);
+  const prepared = await service.prepareAdditions("connection", [{ product_id: 7, quantity: 1 }], { kind: "exact_review" });
+
+  await assert.rejects(service.apply("connection", prepared.proposal_id, "additions"), /no provider write was sent/u);
+  await assert.rejects(service.apply("connection", prepared.proposal_id, "additions"), /no longer applicable/u);
+  assert.deepEqual(fixture.posts, []);
+});
+
+test("real client reports a verified partial batch when the next pre-write read fails", async () => {
+  const fixture = httpProposalFixture(basketWithExistingProducts(), { failBasketReadAt: [5] });
+  const service = new BasketProposalService(fixture.client);
+  const prepared = await service.prepareAdditions("connection", [
+    { product_id: 7, quantity: 1 },
+    { product_id: 8, quantity: 2 },
+  ], { kind: "exact_review" });
+
+  await assert.rejects(service.apply("connection", prepared.proposal_id, "additions"), /Earlier verified additions: Banan\..*no later write/u);
+  await assert.rejects(service.apply("connection", prepared.proposal_id, "additions"), /no longer applicable/u);
+  assert.deepEqual(fixture.posts.map(({ ProductId }) => ProductId), [7]);
+});
+
 test("basket fingerprints are order-stable and change with reviewed basket state", () => {
   const first: Basket = {
     ...bananaBasket(),
@@ -108,39 +330,108 @@ test("addition preparation stores exact review data without mutation or connecti
     }],
     expected_products_price: 5,
     expected_number_of_products: 2,
-    added_products_price: 5,
-    added_number_of_products: 2,
   });
   assert.equal(mutations, 0);
   assert.deepEqual(audits, [{ event: "created", operation: "additions", result: "prepared" }]);
   assert.doesNotMatch(JSON.stringify(audits), /Banan|private-connection|00000000/);
 });
 
-test("approved addition is cumulative: two existing plus two requested results in four", async () => {
-  let current: Basket = {
-    ...bananaBasket(2),
-    items: [{ id: 7, name: "Banan", quantity: 2, total: 5 }],
+test("approved addition quantities are deltas for existing lines and preserve unrelated products", async () => {
+  const original: Basket = {
+    items: [
+      { id: 7, name: "Banan", quantity: 2, total: 5 },
+      { id: 9, name: "Minimælk", quantity: 1, total: 12.5 },
+    ],
+    productsPrice: 17.5,
+    deliveryPrice: 0,
+    numberOfProducts: 3,
+    deliveryTime: undefined,
   };
-  let written: [number, number | undefined, number | undefined] | undefined;
-  const service = new BasketProposalService(fakeClient({
-    getCart: async () => current,
-    addToCart: async (id, amount, expected) => {
-      written = [id, amount, expected];
-      current = bananaBasket(4);
-      return current;
+  let current = structuredClone(original);
+  const writes: Array<[number, number]> = [];
+  const client = fakeClient({
+    getCart: async () => structuredClone(current),
+    addToCart: async (id, quantityDelta = 1) => {
+      writes.push([id, quantityDelta]);
+      const existing = current.items.find((item) => item.id === id);
+      const targetQuantity = (existing?.quantity ?? 0) + quantityDelta;
+      const line: Basket["items"][number] = {
+        id,
+        name: "Banan",
+        quantity: targetQuantity,
+        total: 2.5 * targetQuantity,
+      };
+      current = {
+        ...current,
+        items: existing
+          ? current.items.map((item) => item.id === id ? line : item)
+          : [...current.items, line],
+        productsPrice: (current.productsPrice ?? 0) - (existing?.total ?? 0) + line.total!,
+        numberOfProducts: (current.numberOfProducts ?? 0) - (existing?.quantity ?? 0) + targetQuantity,
+      };
+      return structuredClone(current);
     },
-  }), { id: () => "00000000-0000-4000-8000-000000000099" });
-
-  const prepared = await service.prepareAdditions("connection", [{ product_id: 7, quantity: 2 }], { kind: "exact_review" });
-  const line = (prepared.review.lines as Array<Record<string, unknown>>)[0]!;
-  assert.deepEqual(
-    { added: line.quantity, existing: line.current_quantity, resulting: line.resulting_quantity, addedTotal: line.line_total, resultingLineTotal: line.resulting_line_total },
-    { added: 2, existing: 2, resulting: 4, addedTotal: 5, resultingLineTotal: 10 },
+  });
+  const service = new BasketProposalService(client);
+  const prepared = await service.prepareAdditions(
+    "connection",
+    [{ product_id: 7, quantity: 1 }],
+    { kind: "exact_review" },
   );
-  assert.equal(prepared.review.expected_products_price, 10);
-  const result = await service.apply("connection", prepared.proposal_id, "additions");
-  assert.deepEqual(written, [7, 2, 2]);
-  assert.equal(result.basket.items[0]?.quantity, 4);
+  assert.deepEqual(prepared.review, {
+    lines: [{
+      product_id: 7,
+      name: "Banan",
+      unit_size: "1 stk.",
+      category: "Grønt",
+      subcategory: "",
+      quantity: 1,
+      available: true,
+      item_price: 2.5,
+      unit_price: 2.5,
+      unit: "2,50 kr/stk.",
+      currency: "DKK",
+      line_total: 2.5,
+      labels: ["Frugt"],
+      current_quantity: 2,
+      resulting_quantity: 3,
+      current_line_total: 5,
+      resulting_line_total: 7.5,
+    }],
+    expected_products_price: 20,
+    expected_number_of_products: 4,
+  });
+  const applied = await service.apply("connection", prepared.proposal_id, "additions");
+  assert.deepEqual(writes, [[7, 1]], "the proposal service passes the approved positive delta");
+  assert.deepEqual(applied.basket.items, [
+    { id: 7, name: "Banan", quantity: 3, total: 7.5 },
+    { id: 9, name: "Minimælk", quantity: 1, total: 12.5 },
+  ]);
+  assert.equal(applied.basket.products_price, 20);
+  assert.equal(applied.basket.number_of_products, 4);
+});
+
+test("addition preparation rejects incomplete basket facts before creating a proposal", async () => {
+  const complete = basketWithExistingProducts();
+  const incompleteSnapshots: Basket[] = [
+    { ...complete, productsPrice: undefined },
+    { ...complete, numberOfProducts: undefined },
+    { ...complete, items: [{ ...complete.items[0]!, quantity: undefined }, complete.items[1]!] },
+    { ...complete, items: [{ ...complete.items[0]!, total: undefined }, complete.items[1]!] },
+  ];
+
+  for (const basket of incompleteSnapshots) {
+    let productReads = 0;
+    const service = new BasketProposalService(fakeClient({
+      getCart: async () => structuredClone(basket),
+      getProduct: async () => { productReads += 1; return product; },
+    }));
+    await assert.rejects(
+      service.prepareAdditions("connection", [{ product_id: 7, quantity: 1 }], { kind: "exact_review" }),
+      /basket.*(complete|verified|safely)/iu,
+    );
+  assert.equal(productReads, 0, "incomplete basket facts must be rejected before product lookups");
+  }
 });
 
 test("addition preparation rejects missing or planner-issued authorization", async () => {
@@ -322,7 +613,7 @@ test("application checks every addition freshly before the first mutation", asyn
   await assert.rejects(service.apply("connection", proposal.proposal_id, "additions"), /no longer applicable/);
 });
 
- test("completed application is single-use, mutex-serialized, and replayed without another write", async () => {
+test("completed application is single-use, mutex-serialized, and replayed without another write", async () => {
   let writes = 0;
   const service = new BasketProposalService(fakeClient({
     addToCart: async () => {
@@ -372,7 +663,7 @@ test("wrong-connection, expiry, restart, and indeterminate outcomes never write 
   assert.equal(writes, 1);
 });
 
- test("Ready submission preparation bypasses cached product facts", async () => {
+test("Ready submission preparation bypasses cached product facts", async () => {
   let freshReads = 0;
   const proposals = new BasketProposalService(fakeClient({
     getProduct: async () => { throw new Error("Cached facts must not prepare Ready submission"); },

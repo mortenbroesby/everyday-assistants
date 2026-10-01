@@ -82,11 +82,8 @@ approval, with final revalidation and verified readback.
 - Show the actual basket visually, with safe product images when available, using
   a separate bounded read-only action. The ordinary basket view stays fast.
 - Prepare an exact batch of additions.
-- Prepare removal of one exact basket line.
-- Compare and prepare replacement of one exact line with one exact product.
-- Prepare clearing the basket.
-- Review signed basket-price differences and potential savings for the exact
-  quantities under consideration.
+- Preview the final quantity and price after adding the requested positive
+  quantity to each existing line.
 
 ### Use the interface that fits
 
@@ -215,6 +212,9 @@ Read → prepare the exact intended change → confirm user authorization → ap
   Other additions require approval for the exact reviewed products and
   additional quantities. No approval authorizes removing, decreasing,
   replacing, swapping, or clearing real basket contents.
+  The provider basket is add-only; no approval authorizes removing, decreasing,
+  replacing, swapping, or clearing real basket contents. Manage removals on
+  Nemlig.com directly.
 - Ordinary summaries show names, quantities, useful package distinctions, and
   prices without internal IDs, expiry times, or protocol status fields. Ask for
   “technical details” when those internals are useful for troubleshooting.
@@ -229,6 +229,14 @@ Read → prepare the exact intended change → confirm user authorization → ap
 - Additions re-read the basket immediately before writing and verify the
   resulting line quantities and basket totals afterward.
 - Writes are never automatically retried after an uncertain result.
+- Cold login follows Nemlig's ordinary website flags; if Nemlig requires a
+  basket decision, the assistant stops rather than selecting a remove/save
+  option. Resolve the prompt directly on Nemlig.com.
+  Each addition uses the absolute-quantity provider endpoint as a positive
+  delta, after a fresh snapshot check; sequential writes verify each readback
+  and preserve previously verified lines. The provider has no atomic increment
+  or compare-and-set, so a simultaneous edit on Nemlig.com can race the final
+  read/write boundary.
 - Repeated completed actions return the stored sanitized result without writing again.
 - The assistant never orders, checks out, or pays.
 
@@ -263,10 +271,11 @@ Basket CLI commands exist for deliberate local use:
 
 ```sh
 pnpm nemlig add 701015 --quantity 1
-pnpm nemlig remove 701015
 ```
 
-They remain subject to the exact-product approval and readback contract above.
+The CLI has no provider-basket remove or clear command. `add` means add this
+many units to the existing Nemlig line; it does not set the line to that
+quantity.
 
 ### Local MCP server
 

@@ -75,6 +75,8 @@ pnpm nemlig --help
 The CLI and MCP have no actual-basket remove, replace, swap, or clear operation.
 Never add such a path. The user manages destructive changes directly on
 Nemlig.com. Never check out, pay, or place an order.
+Nemlig Assistant is add-only for the real provider basket. If the user wants to
+remove or reduce anything, direct them to manage that directly on Nemlig.com.
 
 ## MCP workflow
 
@@ -88,6 +90,13 @@ chat approval; UI confirmation remains as designed. Both paths preserve fresh
 validation, principal binding, single-use authority, serialization and verified
 basket readback. Never retry an indeterminate result; inspect the draft and
 actual basket before deliberately creating a fresh addition review.
+The user's clear conversational instruction to add the exact unchanged Ready
+selection is authorization for that prepared payload; do not ask for redundant
+chat approval. Other additions require approval of the exact reviewed change.
+Both paths preserve fresh validation, principal binding, single-use authority,
+serialization and verified basket readback. Never retry an indeterminate
+result; inspect the draft and actual basket before deliberately creating a
+fresh addition review.
 
 Use `start_product_review` for an explicit new selection. To reopen, first use
 `update_product_review` with action `show` and no old review ID or revision.

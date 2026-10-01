@@ -70,7 +70,7 @@ const testCredentials = async () => ({ username: "person@example.test", password
 test("CLI exposes only supported commands and never accepts a password option", () => {
   const help = createProgram({ client: fakeClient() }).helpInformation();
   for (const command of ["login", "logout", "search", "favorites", "add", "cart"]) assert.match(help, new RegExp(command));
-  assert.doesNotMatch(help, /^\s+remove\s/imu);
+  assert.doesNotMatch(help, /\bremove\b/u);
   assert.doesNotMatch(help, /plan_my_shopping|\bplan\b/u);
   for (const forbidden of ["feature-request", "parse", "checkout", "--password"]) assert.doesNotMatch(help, new RegExp(forbidden));
 });
@@ -527,6 +527,12 @@ test("MCP distinguishes a successful empty salmiak search from an upstream HTTP 
         status: responseStatus,
         headers: { "content-type": "application/json" },
       });
+      if (url.pathname.endsWith("/AntiForgery")) {
+        const headers = new Headers({ "content-type": "application/json" });
+        headers.append("set-cookie", "XSRF-TOKEN=fixture-xsrf; Path=/; Secure");
+        headers.append("set-cookie", "XSRF-COOKIE-TOKEN=fixture-cookie; Path=/; Secure");
+        return new Response(JSON.stringify({ Header: "X-XSRF-TOKEN", Value: "fixture-xsrf" }), { headers });
+      }
       if (url.pathname.endsWith("/login")) return json({ RedirectUrl: "/" });
       if (url.pathname.endsWith("/Token")) return json({ access_token: "fixture-token" });
       if (url.pathname.endsWith("/v2/AppSettings/Website")) return json({ CombinedProductsAndSitecoreTimestamp: "fixture-products", SitecorePublishedStamp: "fixture-site" });
@@ -960,7 +966,7 @@ test("MCP additions require prepare then apply and direct mutation tools are una
   });
 });
 
-test("approved MCP writes authenticate before the task and never retry an indeterminate mutation", async () => {
+test("approved MCP writes reuse a warm session and never retry an indeterminate mutation", async () => {
   let logins = 0;
   let writes = 0;
   const context = { principalKey: "auth0|owner", policyRevision: "test-v1" };
@@ -983,7 +989,33 @@ test("approved MCP writes authenticate before the task and never retry an indete
     });
     assert.equal(result.isError, true);
   });
-  assert.equal(logins, 1);
+  assert.equal(logins, 0);
+  assert.equal(writes, 1);
+});
+
+test("approved MCP writes authenticate a cold session before mutation", async () => {
+  let loggedIn = false;
+  let writes = 0;
+  const client = fakeClient({
+    isLoggedIn: () => loggedIn,
+    login: async () => { loggedIn = true; },
+    getCart: async () => ({ ...basket, items: [], productsPrice: 0, numberOfProducts: 0 }),
+    addToCart: async () => {
+      assert.equal(loggedIn, true, "cold session must authenticate before provider mutation");
+      writes += 1;
+      return { ...basket, items: [{ id: 7, name: product.name, quantity: 1, total: product.price }], numberOfProducts: 1 };
+    },
+  });
+  const proposals = new BasketProposalService(client);
+  await withMcpClient(createMcpServer(client, testCredentials, undefined, proposals), async (mcp) => {
+    const prepared = await mcp.callTool({ name: "review_items_to_add", arguments: {
+      items: [{ product: 7, quantity: 1 }], authorization: "exact_review",
+    } });
+    const result = await mcp.callTool({ name: "add_approved_items", arguments: {
+      approved_review: (prepared.structuredContent as { proposal_id: string }).proposal_id,
+    } });
+    assert.equal(result.isError, undefined, toolText(result));
+  });
   assert.equal(writes, 1);
 });
 
@@ -1075,7 +1107,7 @@ test("hosted proposals survive a principal reconnect but remain isolated by prin
   );
 });
 
- test("a clear conversational add command authorizes only its exact prepared Ready selection", async () => {
+test("a clear conversational add command authorizes only its exact prepared Ready selection", async () => {
   let writes = 0;
   let current: Basket = { items: [{ id: 99, name: "Existing", quantity: 1, total: 2 }], productsPrice: 2, deliveryPrice: 0, numberOfProducts: 1, deliveryTime: undefined };
   const provider = fakeClient({

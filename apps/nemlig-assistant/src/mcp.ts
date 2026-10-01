@@ -156,7 +156,6 @@ const proposalLineSchema = z.object({
   quantity: z.number().int().positive(),
   current_quantity: z.number().int().nonnegative(),
   resulting_quantity: z.number().int().positive(),
-  current_line_total: z.number(),
   resulting_line_total: z.number(),
   available: z.boolean(),
   item_price: z.number(),
@@ -287,12 +286,19 @@ const proposalProductViews = (proposal: ProposalView): ProductView[] => {
       kind: "review", quantity: facts.quantity, line_total: facts.line_total, approved: false,
     });
   };
-  return (Array.isArray(review.lines) ? review.lines : []).map(reviewView);
+  if (proposal.operation === "additions") return (Array.isArray(review.lines) ? review.lines : []).map(reviewView);
+  return [];
 };
 const proposalText = (proposal: ProposalView): string => {
   const review = record(proposal.review);
-  const lines = Array.isArray(review.lines) ? review.lines : [];
-  return `Tilføj disse mængder til kurven:\n${lines.map((line) => lineText(line, true)).join("\n")}\nForventet total efter tilføjelse: ${kr(review.expected_products_price)}\nSkal jeg tilføje det?`;
+  if (proposal.operation === "additions") {
+    const lines = Array.isArray(review.lines) ? review.lines : [];
+    return `Tilføj til kurven:\n${lines.map((value) => {
+      const line = record(value);
+      return `${lineText(line, true)} · antal ændres fra ${line.current_quantity} til ${line.resulting_quantity}`;
+    }).join("\n")}\nForventet varetotal: ${kr(review.expected_products_price)}\nSkal jeg tilføje det?`;
+  }
+  return "Basket addition proposal is unavailable.";
 };
 
 const success = (value: unknown, text = JSON.stringify(value)) => ({
@@ -351,6 +357,9 @@ Current catalogue
 Actual Nemlig basket
 - Use show_my_basket or show_my_basket_visually to inspect the actual basket, not local Ready products.
 - image URLs do not prove cards rendered, so use complete text fallback if needed. An empty actual basket does not imply an empty local selection.
+- Actual basket additions use their matching staged review/apply tools. A clear
+  instruction to add the current unchanged Ready selection authorizes only that
+  exact prepared payload; other additions require approval of the exact review.
 
 Local shopping selection
 - After collecting exact products, call start_product_review once. Use update_product_review show without an old review_id or revision to recover this conversation's active selection or explicitly open its current card. Normal edits use update_product_review directly; do not repeat searches or starts to restore the card.
@@ -679,7 +688,7 @@ Recovery and safety
     annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true },
     _meta: { ...PRODUCT_VIEWER_RESOURCE_METADATA, ui: { resourceUri: PRODUCT_VIEWER_RESOURCE_URI, visibility: ["model", "app"] }, "openai/widgetAccessible": true },
   }, ({ review_id, revision, submission_id }, ctx) => runMcpOperation("submit_product_review", async () => {
-    await ensureLoggedIn(client, loadCredentials, true);
+    await ensureLoggedIn(client, loadCredentials);
     return success(await reviews.submit(reviewOwner(ctx), review_id, revision, submission_id));
   }));
 
@@ -715,26 +724,22 @@ Recovery and safety
     }),
   );
 
-  const registerAction = (): void => {
-    registerTool(
-      "add_approved_items",
-      {
-        title: "Add the approved items",
-        description: "Add exactly the positive additional quantities from the unchanged prepared proposal authorized by the user, then show the verified basket. Existing quantities are preserved and increased, never replaced or decreased.",
-        inputSchema: z.object({ approved_review: z.string().uuid().describe("The private reference returned by the matching unchanged review.") }),
-        outputSchema: applyResultSchema,
-        annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true },
-        },
-      ({ approved_review }, ctx) => runMcpOperation("add_approved_items", async () => {
-          await ensureLoggedIn(client, loadCredentials, true);
-          const result: ApplyResult = await proposals.apply(connectionId(ctx.sessionId), approved_review, "additions");
-          const views = basketProductViews(result.basket);
-          return success({ ...result, views }, `${basketText(result.basket, true)}\n${productViewsToText(views)}`);
-        }),
-    );
-  };
-
-  registerAction();
+  registerTool(
+    "add_approved_items",
+    {
+      title: "Add the approved items",
+      description: "Add the exact approved quantities to the current Nemlig basket without lowering, removing, replacing, or clearing any existing line. The result is verified by basket readback.",
+      inputSchema: z.object({ approved_review: z.string().uuid().describe("The private reference returned by the matching unchanged additions review.") }),
+      outputSchema: applyResultSchema,
+      annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true },
+    },
+    ({ approved_review }, ctx) => runMcpOperation("add_approved_items", async () => {
+      await ensureLoggedIn(client, loadCredentials);
+      const result: ApplyResult = await proposals.apply(connectionId(ctx.sessionId), approved_review, "additions");
+      const views = basketProductViews(result.basket);
+      return success({ ...result, views }, `${basketText(result.basket, true)}\n${productViewsToText(views)}`);
+    }),
+  );
 
   return server;
 }
