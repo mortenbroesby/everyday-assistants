@@ -649,7 +649,7 @@ export class NemligClient {
       includeFavorites: this.userId ?? "0",
       TimeSlotId: String(this.timeslotId),
     });
-    if (limit !== undefined) params.set("take", String(limit));
+    params.set("take", String(limit ?? 20));
     const response = asRecord(
       await this.json(`${SEARCH_GATEWAY_URL}/search?${params}`, { signal }, "Search products", true, true),
     );

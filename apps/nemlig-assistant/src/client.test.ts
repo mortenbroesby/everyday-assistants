@@ -601,13 +601,13 @@ test("search accepts nested products and sends the current session values", asyn
   assert.equal(requests.length, 0);
 });
 
-test("search without an explicit count returns every product provided by Nemlig", async () => {
+test("search without an explicit count requests Nemlig's default 20-item page", async () => {
   const products = Array.from({ length: 12 }, (_, index) => ({ Id: index + 1, Name: `Product ${index + 1}` }));
   const requests: ExpectedRequest[] = [
     ...sessionRequests(),
     {
       match: `${SEARCH_GATEWAY_URL}/search`,
-      inspect: (url) => assert.equal(new URL(url).searchParams.has("take"), false),
+      inspect: (url) => assert.equal(new URL(url).searchParams.get("take"), "20"),
       response: json({ Products: products }),
     },
   ];
