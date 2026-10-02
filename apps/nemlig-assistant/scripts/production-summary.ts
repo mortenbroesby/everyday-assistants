@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
+import { deploymentFailureReasons } from "./production-failure-reasons.js";
 
 const fullSha = /^[0-9a-f]{40}$/u;
 const digestPattern = /^sha256:[0-9a-f]{64}$/u;
@@ -33,6 +34,8 @@ export type CleanupSummaryStatus = "complete" | "held" | "not_run" | "failed" | 
 export interface ProductionSummary {
   commit: string;
   deployment: ProductionSummaryStatus;
+  deploymentFailure?: string;
+  deploymentNextAction?: string;
   technicalAcceptance: ProductionSummaryStatus;
   ownerAcceptance: "not_run";
   cleanup: {
@@ -122,6 +125,16 @@ export function projectProductionSummary(input: ProductionSummaryInput): Product
   const deployment: ProductionSummaryStatus = releaseMatches && release?.outcome === "success" && release.lastVerifiedState === "enabled"
     ? "passed"
     : releaseMatches && release?.outcome === "failed" ? "failed" : "unknown";
+  const deploymentFailure = deployment === "failed"
+    ? typeof release?.failure === "string" && deploymentFailureReasons.has(release.failure) ? release.failure : "unknown_failure"
+    : undefined;
+  const deploymentNextAction = deployment === "failed"
+    ? release?.lastVerifiedState === "disabled"
+      ? "Restore a previously accepted main revision through protected recovery; do not retry this candidate."
+      : release?.lastVerifiedState === "unknown"
+        ? "Hold and reconcile the exact operation and provider state before any retry."
+        : "Resolve the reported failure through the protected exact-CI deployment path; do not bypass its checks."
+    : undefined;
   const technicalAcceptance: ProductionSummaryStatus = deployment === "passed"
     ? checks.includes("edge_acceptance") && (checks.includes("service_fixture_acceptance") || checks.includes("authenticated_read_only_acceptance"))
       ? "passed" : "unknown"
@@ -179,6 +192,7 @@ export function projectProductionSummary(input: ProductionSummaryInput): Product
   return {
     commit,
     deployment,
+    ...(deploymentFailure ? { deploymentFailure, deploymentNextAction } : {}),
     technicalAcceptance,
     ownerAcceptance: "not_run",
     cleanup: {
@@ -210,6 +224,10 @@ export function formatProductionSummary(summary: ProductionSummary): string {
     `- Source SHA: \`${summary.commit}\``,
     `- Verified live revision: ${summary.deployment === "passed" ? `\`${summary.commit}\`` : "not proven"}`,
     `- Deployment: ${statusLabel(summary.deployment)}`,
+    ...(summary.deploymentFailure ? [
+      `- Deployment failure: \`${summary.deploymentFailure}\``,
+      `- Deployment next action: ${summary.deploymentNextAction}`,
+    ] : []),
     `- Technical acceptance: ${statusLabel(summary.technicalAcceptance)}`,
     "- Owner acceptance: not run (CI synthetic acceptance is not owner proof)",
     `- Cleanup: ${statusLabel(summary.cleanup.status)}${cleanupReasons}`,
