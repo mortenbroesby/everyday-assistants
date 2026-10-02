@@ -122,6 +122,27 @@ test("a failed deployment reports cleanup as intentionally not run", () => {
   assert.match(formatProductionSummary(summary), /Cleanup next action: resolve the bounded deployment failure; cleanup is intentionally not run\./u);
 });
 
+test("failed deployments expose only a bounded reason and state-appropriate next action", () => {
+  const disabled = projectProductionSummary({
+    commit,
+    release: { ...acceptedRelease, outcome: "failed", failure: "container_instance_timeout", lastVerifiedState: "disabled" },
+    retention: { commit, outcome: "not_run", reason: "deployment_not_accepted" },
+  });
+  assert.equal(disabled.deploymentFailure, "container_instance_timeout");
+  assert.match(disabled.deploymentNextAction ?? "", /protected recovery; do not retry this candidate/u);
+  assert.match(formatProductionSummary(disabled), /Deployment failure: `container_instance_timeout`/u);
+  assert.match(formatProductionSummary(disabled), /Deployment next action: Restore a previously accepted main revision/u);
+
+  const unknown = projectProductionSummary({
+    commit,
+    release: { ...acceptedRelease, outcome: "failed", failure: "this_is_not_a_known_failure", lastVerifiedState: "unknown" },
+    retention: { commit, outcome: "not_run", reason: "deployment_not_accepted" },
+  });
+  assert.equal(unknown.deploymentFailure, "unknown_failure");
+  assert.match(unknown.deploymentNextAction ?? "", /reconcile the exact operation and provider state/u);
+  assert.doesNotMatch(formatProductionSummary(unknown), /this_is_not_a_known_failure/u);
+});
+
 test("an accepted deployment remains reported when artifact or finalization evidence is incomplete", () => {
   for (const reason of ["release_evidence_not_saved", "finalization_incomplete"]) {
     const summary = projectProductionSummary({

@@ -4,6 +4,7 @@ import { open, mkdir, readFile, realpath, rename, unlink, writeFile } from "node
 import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
+import { deploymentFailureReasons } from "./production-failure-reasons.js";
 import { issueServiceToken } from "./service-token.js";
 import { parseRegistryCredentialOutput, readRegistryTagDigest, registryCredentialCommand, productionImageName } from "./container-image-retention.js";
 
@@ -173,7 +174,6 @@ const isoTime = (value: unknown): value is string => {
 };
 const imageDigest = /^sha256:[0-9a-f]{64}$/u;
 const journalChecks = new Set(["source_and_auth_preflight", "recovery_source", "exclusive_lease", "starting_state_recorded", "disabled_version", "disabled_routes", "container_inactive", "enabled_version", "image_reused", "container_rollout", "edge_acceptance", "authenticated_read_only_acceptance", "service_fixture_acceptance", "starting_version_restored"]);
-const journalFailures = new Set(["service_acceptance_not_ready", "service_token_unavailable", "edge_acceptance_failed", "service_fixture_acceptance_failed", "authenticated_read_only_acceptance_failed", "owner_access_token_required", "github_repository_invalid", "source_revision_mismatch", "candidate_does_not_supersede_runtime", "recovery_source_invalid", "github_ci_workflow_invalid", "github_ci_invalid", "exact_head_ci_not_green", "github_environment_not_ready", "local_deployment_lease_unavailable", "remote_deployment_lease_unavailable", "remote_journal_invalid", "remote_journal_append_failed", "remote_journal_parent_invalid", "remote_deployment_lease_changed", "deployment_journal_invalid", "deployment_journal_oversized", "deployment_journal_write_failed", "cloudflare_deployment_drift", "cloudflare_upload_version_missing", "cloudflare_registry_manifest_invalid", "cloudflare_config_invalid", "cloudflare_runtime_binding_unsupported", "cloudflare_runtime_safety_mismatch", "cloudflare_runtime_unexpected_binding", "cloudflare_instances_invalid", "disabled_route_unavailable", "disabled_route_mismatch", "container_inactive_timeout", "container_instance_timeout", "container_image_changed_during_enable", "recovery_finalize_denied", "command_failed", "command_cancelled", "unexpected_failure"]);
 const acceptanceFailureCategories = new Set(["input_invalid", "deadline_exceeded", "edge_failed", "authentication_failed", "transport_failed", "feature_failed", "mutation_failed", "unknown_failure"]);
 
 const validAcceptanceFailure = (value: unknown): value is AcceptanceFailureEvidence => {
@@ -208,7 +208,7 @@ const journalJson = (journal: DeploymentJournal): string => {
     || (journal.disabledImage !== undefined && (typeof journal.disabledImage !== "string" || !imageDigest.test(journal.disabledImage)))
     || (journal.enabledImage !== undefined && (typeof journal.enabledImage !== "string" || !imageDigest.test(journal.enabledImage)))
     || (journal.acceptanceFailure !== undefined && (!validAcceptanceFailure(journal.acceptanceFailure) || journal.outcome !== "failed"))) fail("deployment_journal_invalid");
-  if (journal.checks.some((check) => !journalChecks.has(check)) || (journal.failure !== undefined && !journalFailures.has(journal.failure))) fail("deployment_journal_invalid");
+  if (journal.checks.some((check) => !journalChecks.has(check)) || (journal.failure !== undefined && !deploymentFailureReasons.has(journal.failure))) fail("deployment_journal_invalid");
   const phaseOrder: JournalPhase[] = journal.transitions[0]?.phase === "enable_deploy"
     ? ["enable_deploy", "rollback"]
     : ["disabled_deploy", "enable_deploy", "rollback"];
@@ -1639,7 +1639,7 @@ export async function deployProduction(commit: string, inputDeps: DeployDependen
     if (error instanceof CommandFailure && error.diagnostic) console.error(error.diagnostic);
     console.error(error instanceof Error ? error.message : "unexpected deployment failure");
     journal.outcome = "failed";
-    journal.failure = error instanceof DeployFailure && journalFailures.has(error.code) ? error.code : "unexpected_failure";
+    journal.failure = error instanceof DeployFailure && deploymentFailureReasons.has(error.code) ? error.code : "unexpected_failure";
     if (error instanceof AcceptanceFailure && error.evidence) journal.acceptanceFailure = error.evidence;
     if (mutationUncertain) {
       journal.lastVerifiedState = "unknown";
