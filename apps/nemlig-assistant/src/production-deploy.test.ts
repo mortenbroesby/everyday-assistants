@@ -852,6 +852,9 @@ test("service release cannot accept a matching fixture while its instance is ina
     { id: "instance", name: "nemlig-production", state: "running", version: 25 },
   ]) {
     const { deps, calls, root } = await fixture({ enabledInstanceRows: [[row]] });
+    const diagnostics: string[] = [];
+    deps.diagnostic = (message) => diagnostics.push(message);
+    deps.now = () => new Date(0);
     deps.acceptanceMode = "service";
     deps.env = { CLOUDFLARE_ACCOUNT_ID: accountId, NEMLIG_MCP_SERVICE_CLIENT_ID: "service-client", NEMLIG_MCP_SERVICE_CLIENT_SECRET: "machine-secret", NEMLIG_CI_ACCEPTANCE_READY: "true" };
     deps.issueServiceToken = async () => "machine-token";
@@ -860,6 +863,12 @@ test("service release cannot accept a matching fixture while its instance is ina
       assert.equal(report.outcome, "failed");
       assert.equal(report.failure, "container_instance_timeout");
       assert.equal(calls.filter(({ args }) => args[0] === "production:test:features").length, 1);
+      assert.equal(diagnostics.length, 1);
+      assert.deepEqual(JSON.parse(diagnostics[0]!), {
+        event: "container_acceptance_convergence", expectedVersion: 26,
+        observedVersion: row.version, state: row.state, polls: 36, result: "timeout",
+        elapsedMs: 0,
+      });
     } finally { await rm(root, { recursive: true, force: true }); }
   }
 });
@@ -1220,6 +1229,9 @@ test("invalid plain values cannot become matching config proof even when local a
 
 test("enabled acceptance waits for one matching running Container instance", async () => {
   const { deps, calls, root } = await fixture();
+  const diagnostics: string[] = [];
+  deps.diagnostic = (message) => diagnostics.push(message);
+  deps.now = () => new Date(0);
   try {
     const report = await deployProduction(commit, deps);
     assert.equal(report.outcome, "success");
@@ -1227,6 +1239,11 @@ test("enabled acceptance waits for one matching running Container instance", asy
     const firstInstanceRead = calls.findIndex(({ args }) => args.includes("containers") && args.includes("instances"));
     const firstFeatureAcceptance = calls.findIndex(({ args }) => args[0] === "production:test:features");
     assert.ok(firstInstanceRead >= 0 && firstInstanceRead < firstFeatureAcceptance, "feature acceptance ran before the candidate instance was running");
+    assert.equal(diagnostics.length, 1);
+    assert.deepEqual(JSON.parse(diagnostics[0]!), {
+      event: "container_acceptance_convergence", expectedVersion: 26,
+      observedVersion: 26, state: "running", polls: 1, result: "accepted", elapsedMs: 0,
+    });
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
@@ -1253,8 +1270,21 @@ test("enabled acceptance rejects malformed, wrong, or ambiguous Container instan
     [[{ id: "instance", name: "nemlig-production", state: "unknown", version: 25 }]],
   ]) {
     const { deps, root } = await fixture({ enabledInstanceRows });
+    const diagnostics: string[] = [];
+    deps.diagnostic = (message) => diagnostics.push(message);
+    deps.now = () => new Date(0);
+    deps.acceptanceMode = "service";
+    deps.env = { CLOUDFLARE_ACCOUNT_ID: accountId, NEMLIG_MCP_SERVICE_CLIENT_ID: "service-client", NEMLIG_MCP_SERVICE_CLIENT_SECRET: "machine-secret", NEMLIG_CI_ACCEPTANCE_READY: "true" };
+    deps.issueServiceToken = async () => "machine-token";
     try {
       assert.equal((await deployProduction(commit, deps)).outcome, "failed");
+      assert.equal(diagnostics.length, 1);
+      assert.deepEqual(JSON.parse(diagnostics[0]!), {
+        event: "container_acceptance_convergence", expectedVersion: 26,
+        observedVersion: null, state: "invalid", polls: 1, result: "invalid_inventory",
+        elapsedMs: 0,
+      });
+      assert.equal(diagnostics[0]!.includes("not-an-instance"), false);
     } finally { await rm(root, { recursive: true, force: true }); }
   }
 });
@@ -1263,12 +1293,24 @@ test("enabled acceptance bounds Container instance convergence at 36 reads", asy
   const { deps, calls, root } = await fixture({ enabledInstanceRows: [[{
     id: "instance", name: "nemlig-production", state: "provisioning", version: null,
   }]] });
+  deps.acceptanceMode = "service";
+  deps.env = { CLOUDFLARE_ACCOUNT_ID: accountId, NEMLIG_MCP_SERVICE_CLIENT_ID: "service-client", NEMLIG_MCP_SERVICE_CLIENT_SECRET: "machine-secret", NEMLIG_CI_ACCEPTANCE_READY: "true" };
+  deps.issueServiceToken = async () => "machine-token";
   try {
+    const diagnostics: string[] = [];
+    deps.diagnostic = (message) => diagnostics.push(message);
+    deps.now = () => new Date(0);
     const report = await deployProduction(commit, deps);
     assert.equal(report.outcome, "failed");
     assert.equal(report.failure, "container_instance_timeout");
-    // One disabled read, 36 convergence reads, one rollback proof read.
-    assert.equal(calls.filter(({ args }) => args.includes("containers") && args.includes("instances")).length, 38);
+    assert.equal(diagnostics.length, 1);
+    assert.deepEqual(JSON.parse(diagnostics[0]!), {
+      event: "container_acceptance_convergence", expectedVersion: 26,
+      observedVersion: null, state: "provisioning", polls: 36, result: "timeout",
+      elapsedMs: 0,
+    });
+    // One setup read plus 36 final-gate convergence reads; the count is unchanged.
+    assert.equal(calls.filter(({ args }) => args.includes("containers") && args.includes("instances")).length, 37);
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
@@ -1513,7 +1555,13 @@ test("runtime-version failure report is parsed and retried without exposing serv
     const report = await deployProduction(commit, deps);
     assert.equal(report.outcome, "success");
     assert.equal(attempts, 2);
-    assert.deepEqual(diagnostics, ["acceptance_failure_code=service_runtime_version_mismatch"]);
+    assert.deepEqual(diagnostics, [
+      "acceptance_failure_code=service_runtime_version_mismatch",
+      JSON.stringify({
+        event: "container_acceptance_convergence", expectedVersion: 26,
+        observedVersion: 26, state: "running", polls: 1, result: "accepted", elapsedMs: 0,
+      }),
+    ]);
     assert.doesNotMatch(JSON.stringify(report), /private old-server data|machine-token/u);
   } finally { await rm(root, { recursive: true, force: true }); }
 });
