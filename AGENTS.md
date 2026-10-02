@@ -66,9 +66,11 @@ OpenSpec; surface conflicts rather than choosing silently.
 - Preserve unrelated work; commit/push scoped work, open one PR, reconcile
   current `origin/main` without overwriting concurrent work, and require
   exact-head CI and the active GitHub ruleset before merge.
-- Release-bearing Nemlig work needs one reviewed note at
-  `apps/nemlig-assistant/release/notes/<version>.md`. Package version policy,
-  exact-SHA CI, and `nemlig-production` approval govern release/deployment;
-  npm publication remains disabled.
+- The automatic Nemlig production workflow deploys a verified `main` SHA without
+  a semantic-version bump, codename, or release-note file. A separately scoped
+  package-identity release still needs one reviewed note at
+  `apps/nemlig-assistant/release/notes/<version>.md`. Exact-SHA CI and
+  `nemlig-production` approval govern deployment; npm publication remains
+  disabled.
 - Remove a task worktree only when clean, inactive, and recoverable; preserve
   dirty, active, unresolved, or deliberately parked worktrees.

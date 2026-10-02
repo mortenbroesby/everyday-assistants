@@ -33,6 +33,7 @@ test("summary separates deployment, technical acceptance, owner acceptance, and 
     traffic: "not_measured",
   });
   assert.match(formatProductionSummary(summary), /Owner acceptance: not run/u);
+  assert.match(formatProductionSummary(summary), new RegExp("Verified live revision: `" + commit + "`"));
   assert.match(formatProductionSummary(summary), /Traffic allocation: configured state is not measured by this summary; request rate is not inferred/u);
 });
 
@@ -106,6 +107,19 @@ test("summary covers unstable, dry-run, skipped, failed, uncertain, and missing 
   assert.equal(missing.deployment, "unknown");
   assert.equal(missing.technicalAcceptance, "unknown");
   assert.equal(missing.ownerAcceptance, "not_run");
+});
+
+test("a failed deployment reports cleanup as intentionally not run", () => {
+  const summary = projectProductionSummary({
+    commit,
+    release: { ...acceptedRelease, outcome: "failed", lastVerifiedState: "unchanged" },
+    retention: { commit, outcome: "not_run", reason: "deployment_not_accepted" },
+  });
+  assert.equal(summary.deployment, "failed");
+  assert.equal(summary.cleanup.status, "not_run");
+  assert.deepEqual(summary.cleanup.reasons, ["deployment_not_accepted"]);
+  assert.match(formatProductionSummary(summary), /Verified live revision: not proven/u);
+  assert.match(formatProductionSummary(summary), /Cleanup next action: resolve the bounded deployment failure; cleanup is intentionally not run\./u);
 });
 
 test("summary treats contradictory or partial same-commit retention evidence as uncertain", () => {

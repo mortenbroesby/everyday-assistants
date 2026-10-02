@@ -92,11 +92,13 @@ const safeHolds = (value: unknown): HoldInventory => {
   return { known: invalid === 0, holds, total: value.length, omitted: Math.max(0, value.length - holds.length), reasonCounts };
 };
 
-const cleanupNextAction = (status: CleanupSummaryStatus): string => {
+const cleanupNextAction = (status: CleanupSummaryStatus, reasons: readonly string[]): string => {
   switch (status) {
     case "complete": return "No cleanup action is pending.";
     case "held": return "preserve holds and obtain bounded provenance/reference evidence before any cleanup resume.";
-    case "not_run": return "do not infer cleanup from deployment success; run the protected retention path when its evidence is available.";
+    case "not_run": return reasons.includes("deployment_not_accepted")
+      ? "resolve the bounded deployment failure; cleanup is intentionally not run."
+      : "do not infer cleanup from deployment success; run the protected retention path when its evidence is available.";
     case "uncertain": return "hold cleanup and reconcile the exact prior operation and provider state before retrying.";
     case "failed": return "keep the accepted deployment state unchanged and inspect the bounded retention failure before a protected retry.";
   }
@@ -130,6 +132,9 @@ export function projectProductionSummary(input: ProductionSummaryInput): Product
   } else if (!retentionCommitMatches) {
     cleanupStatus = "uncertain";
     reasons = ["retention_commit_mismatch"];
+  } else if (retention.outcome === "not_run") {
+    cleanupStatus = "not_run";
+    reasons = [safeFailure(retention.failure ?? retention.reason ?? "retention_report_missing")];
   } else if (retention.cleanupComplete === true && (retention.outcome === "failed" || typeof retention.failure === "string"
     || (retention.outcome !== undefined && retention.outcome !== "success" && retention.skipped !== true))) {
     cleanupStatus = "uncertain";
@@ -154,9 +159,6 @@ export function projectProductionSummary(input: ProductionSummaryInput): Product
     cleanupStatus = "held";
     reasons = holdInventory.known ? Object.keys(holdInventory.reasonCounts) : ["protected_hold_inventory_unknown"];
     if (reasons.length === 0) reasons = ["protected_hold"];
-  } else if (retention.outcome === "not_run") {
-    cleanupStatus = "not_run";
-    reasons = [safeFailure(retention.failure ?? retention.reason ?? "retention_report_missing")];
   } else {
     cleanupStatus = "uncertain";
     reasons = ["retention_report_incomplete"];
@@ -174,7 +176,7 @@ export function projectProductionSummary(input: ProductionSummaryInput): Product
       protectedTotal: holdInventory.total,
       protectedOmitted: holdInventory.omitted,
       protectedReasonCounts: holdInventory.reasonCounts,
-      nextAction: cleanupNextAction(cleanupStatus),
+      nextAction: cleanupNextAction(cleanupStatus, reasons),
     },
     traffic: "not_measured",
   };
@@ -193,6 +195,7 @@ export function formatProductionSummary(summary: ProductionSummary): string {
   return [
     "## Nemlig production release summary",
     `- Source SHA: \`${summary.commit}\``,
+    `- Verified live revision: ${summary.deployment === "passed" ? `\`${summary.commit}\`` : "not proven"}`,
     `- Deployment: ${statusLabel(summary.deployment)}`,
     `- Technical acceptance: ${statusLabel(summary.technicalAcceptance)}`,
     "- Owner acceptance: not run (CI synthetic acceptance is not owner proof)",
