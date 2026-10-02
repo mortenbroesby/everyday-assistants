@@ -177,6 +177,42 @@ test("routine recovery may finalize a completed failed deployment but never a ca
   assert.match(source, /if: \$\{\{ !cancelled\(\) && \(steps\.deploy\.outcome == 'success' \|\| steps\.deploy\.outcome == 'failure'\) && steps\.release-artifact\.outcome == 'success' \}\}/u);
 });
 
+test("production summary reports accepted deployment with artifact or finalization failure", async () => {
+  const deploy = section(await readFile(workflowPath, "utf8"), "  deploy:");
+  assert.match(deploy, /- name: Finalize routine deployment recovery\n\s+id: finalize/u);
+  const summary = deploy.slice(deploy.indexOf("- name: Summarize incomplete production delivery"));
+  assert.match(summary, /steps\.deploy\.outcome == 'failure'/u);
+  assert.match(summary, /steps\.release-artifact\.outcome == 'failure'/u);
+  assert.match(summary, /steps\.finalize\.outcome == 'failure'/u);
+  assert.match(summary, /steps\.deploy\.outcome == 'cancelled'/u);
+  assert.match(summary, /release_evidence_not_saved/u);
+  assert.match(summary, /finalization_incomplete/u);
+
+  const start = summary.indexOf("          reason=deployment_not_accepted");
+  const end = summary.indexOf("          summary_args=");
+  assert.ok(start >= 0 && end > start);
+  const script = `retention_report="$RUNNER_TEMP/nemlig-retention-not-run.json"\n${summary.slice(start, end).trim()}`;
+  const cases = [
+    [{ DEPLOY_OUTCOME: "failure", RELEASE_ARTIFACT_OUTCOME: "success", FINALIZATION_OUTCOME: "failure", WORKFLOW_CANCELLED: "false" }, "deployment_not_accepted"],
+    [{ DEPLOY_OUTCOME: "success", RELEASE_ARTIFACT_OUTCOME: "failure", FINALIZATION_OUTCOME: "skipped", WORKFLOW_CANCELLED: "false" }, "release_evidence_not_saved"],
+    [{ DEPLOY_OUTCOME: "success", RELEASE_ARTIFACT_OUTCOME: "success", FINALIZATION_OUTCOME: "failure" }, "finalization_incomplete"],
+    [{ DEPLOY_OUTCOME: "success", RELEASE_ARTIFACT_OUTCOME: "success", FINALIZATION_OUTCOME: "skipped" }, "release_interrupted"],
+    [{ DEPLOY_OUTCOME: "cancelled", RELEASE_ARTIFACT_OUTCOME: "success", FINALIZATION_OUTCOME: "skipped" }, "release_interrupted"],
+  ] as const;
+  for (const [outcomes, expectedReason] of cases) {
+    const root = await mkdtemp(join(tmpdir(), "nemlig-summary-workflow-"));
+    try {
+      const result = spawnSync("bash", ["-c", script], {
+        encoding: "utf8",
+        env: { ...process.env, ...outcomes, CANDIDATE_SHA: "a".repeat(40), RUNNER_TEMP: root },
+      });
+      assert.equal(result.status, 0, result.stderr);
+      const report = JSON.parse(await readFile(join(root, "nemlig-retention-not-run.json"), "utf8")) as { reason: string };
+      assert.equal(report.reason, expectedReason);
+    } finally { await rm(root, { recursive: true, force: true }); }
+  }
+});
+
 test("workflow finalization executes only an exact-run journal operation", async () => {
   const source = section(await readFile(workflowPath, "utf8"), "  deploy:");
   const script = source.match(/finalization_target=\$\(node --input-type=module -e '([\s\S]*?)' "\$GITHUB_WORKSPACE\/\.git\/nemlig-production-deploy\/latest\.json" "\$GITHUB_WORKSPACE\/\.git\/nemlig-production-deploy\.lock"\)/u)?.[1];

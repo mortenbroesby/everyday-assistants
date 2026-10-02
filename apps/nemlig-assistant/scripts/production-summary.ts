@@ -21,7 +21,11 @@ const uncertainReasons = new Set([
   "retention_commit_mismatch", "retention_report_invalid", "retention_report_missing", "retention_report_contradictory",
   "retention_report_incomplete", "unknown_failure", "deployment_not_accepted",
 ]);
-const summaryFailureReasons = new Set([...failureReasons, "retention_commit_mismatch", "retention_report_invalid", "retention_report_missing", "retention_report_contradictory"]);
+const summaryFailureReasons = new Set([
+  ...failureReasons, "retention_commit_mismatch", "retention_report_invalid", "retention_report_missing", "retention_report_contradictory",
+  "release_evidence_not_saved", "finalization_incomplete", "release_interrupted",
+]);
+const notRunReasons = new Set(["deployment_not_accepted", "release_evidence_not_saved", "finalization_incomplete", "release_interrupted"]);
 
 export type ProductionSummaryStatus = "passed" | "failed" | "unknown";
 export type CleanupSummaryStatus = "complete" | "held" | "not_run" | "failed" | "uncertain";
@@ -96,9 +100,12 @@ const cleanupNextAction = (status: CleanupSummaryStatus, reasons: readonly strin
   switch (status) {
     case "complete": return "No cleanup action is pending.";
     case "held": return "preserve holds and obtain bounded provenance/reference evidence before any cleanup resume.";
-    case "not_run": return reasons.includes("deployment_not_accepted")
-      ? "resolve the bounded deployment failure; cleanup is intentionally not run."
-      : "do not infer cleanup from deployment success; run the protected retention path when its evidence is available.";
+    case "not_run":
+      if (reasons.includes("deployment_not_accepted")) return "resolve the bounded deployment failure; cleanup is intentionally not run.";
+      if (reasons.some((reason) => ["release_evidence_not_saved", "finalization_incomplete", "release_interrupted"].includes(reason))) {
+        return "reconcile the exact release journal through the protected recovery path before cleanup.";
+      }
+      return "do not infer cleanup from deployment success; run the protected retention path when its evidence is available.";
     case "uncertain": return "hold cleanup and reconcile the exact prior operation and provider state before retrying.";
     case "failed": return "keep the accepted deployment state unchanged and inspect the bounded retention failure before a protected retry.";
   }
@@ -132,9 +139,6 @@ export function projectProductionSummary(input: ProductionSummaryInput): Product
   } else if (!retentionCommitMatches) {
     cleanupStatus = "uncertain";
     reasons = ["retention_commit_mismatch"];
-  } else if (retention.outcome === "not_run") {
-    cleanupStatus = "not_run";
-    reasons = [safeFailure(retention.failure ?? retention.reason ?? "retention_report_missing")];
   } else if (retention.cleanupComplete === true && (retention.outcome === "failed" || typeof retention.failure === "string"
     || (retention.outcome !== undefined && retention.outcome !== "success" && retention.skipped !== true))) {
     cleanupStatus = "uncertain";
@@ -149,6 +153,15 @@ export function projectProductionSummary(input: ProductionSummaryInput): Product
     const reason = safeFailure(retention.failure);
     cleanupStatus = uncertainReasons.has(reason) ? "uncertain" : "failed";
     reasons = [reason];
+  } else if (retention.outcome === "not_run") {
+    const reason = safeFailure(retention.reason);
+    if (retention.cleanupComplete !== undefined || !notRunReasons.has(reason)) {
+      cleanupStatus = "uncertain";
+      reasons = [retention.cleanupComplete !== undefined ? "retention_report_contradictory" : "retention_report_invalid"];
+    } else {
+      cleanupStatus = "not_run";
+      reasons = [reason];
+    }
   } else if (retention.stable === false) {
     cleanupStatus = "held";
     reasons = ["inventory_unstable"];

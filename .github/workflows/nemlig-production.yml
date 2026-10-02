@@ -454,6 +454,7 @@ jobs:
           retention-days: 7
           include-hidden-files: true
       - name: Finalize routine deployment recovery
+        id: finalize
         if: ${{ !cancelled() && (steps.deploy.outcome == 'success' || steps.deploy.outcome == 'failure') && steps.release-artifact.outcome == 'success' }}
         env:
           GH_TOKEN: "${{ github.token }}"
@@ -484,12 +485,32 @@ jobs:
             exit 0
           fi
           pnpm --filter nemlig-assistant production:deploy -- finalize "$finalization_target" --evidence-saved --original-runner-stopped
-      - name: Summarize failed deployment without cleanup
-        if: ${{ always() && steps.deploy.outcome == 'failure' && steps.release-artifact.outcome == 'success' }}
+      - name: Summarize incomplete production delivery
+        if: >-
+          ${{ always() && (steps.deploy.outcome == 'failure' || steps.deploy.outcome == 'cancelled' ||
+          steps.release-artifact.outcome == 'failure' || steps.release-artifact.outcome == 'cancelled' ||
+          steps.finalize.outcome == 'failure' || steps.finalize.outcome == 'cancelled' ||
+          (cancelled() && steps.deploy.outcome == 'success' && steps.release-artifact.outcome == 'success')) }}
+        env:
+          DEPLOY_OUTCOME: "${{ steps.deploy.outcome }}"
+          RELEASE_ARTIFACT_OUTCOME: "${{ steps.release-artifact.outcome }}"
+          FINALIZATION_OUTCOME: "${{ steps.finalize.outcome }}"
         run: |
           set -euo pipefail
           retention_report="$RUNNER_TEMP/nemlig-retention-not-run.json"
-          printf '{"commit":"%s","outcome":"not_run","reason":"deployment_not_accepted"}\n' "$CANDIDATE_SHA" > "$retention_report"
+          reason=deployment_not_accepted
+          if [[ "$DEPLOY_OUTCOME" == "cancelled" ]]; then
+            reason=release_interrupted
+          elif [[ "$DEPLOY_OUTCOME" == "success" ]]; then
+            if [[ "$RELEASE_ARTIFACT_OUTCOME" != "success" ]]; then
+              reason=release_evidence_not_saved
+            elif [[ "$FINALIZATION_OUTCOME" == "cancelled" || "$FINALIZATION_OUTCOME" == "skipped" ]]; then
+              reason=release_interrupted
+            else
+              reason=finalization_incomplete
+            fi
+          fi
+          printf '{"commit":"%s","outcome":"not_run","reason":"%s"}\n' "$CANDIDATE_SHA" "$reason" > "$retention_report"
           summary_args=(--commit "$CANDIDATE_SHA" --retention "$retention_report")
           release_journal="$GITHUB_WORKSPACE/.git/nemlig-production-deploy/latest.json"
           if [[ -f "$release_journal" ]]; then summary_args+=(--release "$release_journal"); fi
