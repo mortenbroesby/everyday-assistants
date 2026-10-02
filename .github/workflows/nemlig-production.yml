@@ -134,7 +134,8 @@ jobs:
     needs: [release-gate, preflight, deploy]
     if: >-
       always() &&
-      (needs.release-gate.outputs.deploy == 'true' || needs.release-gate.outputs.retention == 'true' || needs.release-gate.outputs.worker_retention == 'true')
+      (needs.release-gate.outputs.retention == 'true' || needs.release-gate.outputs.worker_retention == 'true' ||
+      (needs.release-gate.outputs.deploy == 'true' && needs.deploy.result == 'success'))
     runs-on: ubuntu-latest
     timeout-minutes: 20
     environment:
@@ -201,10 +202,6 @@ jobs:
             pnpm --silent --filter nemlig-assistant production:retention -- resume "${{ needs.release-gate.outputs.retention_commit }}" > "$retention_report" || retention_status=$?
           elif [[ "${{ needs.release-gate.outputs.worker_retention }}" == "true" ]]; then
             printf '{"commit":"%s","outcome":"skipped","failure":"worker_retention_resume"}\n' "$CANDIDATE_SHA" > "$retention_report"
-          else
-            echo "Retention job was scheduled without accepted deployment or explicit image-retention resume." >&2
-            printf '{"commit":"%s","outcome":"failed","failure":"deployment_not_accepted"}\n' "$CANDIDATE_SHA" > "$retention_report"
-            retention_status=1
           fi
           release_journal=""
           if [[ -d "$RUNNER_TEMP/nemlig-production-release" ]]; then
@@ -457,6 +454,7 @@ jobs:
           retention-days: 7
           include-hidden-files: true
       - name: Finalize routine deployment recovery
+        id: finalize
         if: ${{ !cancelled() && (steps.deploy.outcome == 'success' || steps.deploy.outcome == 'failure') && steps.release-artifact.outcome == 'success' }}
         env:
           GH_TOKEN: "${{ github.token }}"
@@ -468,13 +466,52 @@ jobs:
             echo "No owned deployment journal; nothing to finalize."
             exit 0
           fi
-          operation_id=$(node --input-type=module -e '
-            import { readFileSync } from "node:fs";
+          finalization_target=$(node --input-type=module -e '
+            import { existsSync, readFileSync } from "node:fs";
             const value = JSON.parse(readFileSync(process.argv[1], "utf8"));
             if (typeof value.operationId !== "string" || !/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/.test(value.operationId)) process.exit(1);
             if (value.commit !== process.env.CANDIDATE_SHA
               || value.releaseRunId !== Number(process.env.GITHUB_RUN_ID)
               || value.releaseRunAttempt !== Number(process.env.GITHUB_RUN_ATTEMPT)) process.exit(1);
-            process.stdout.write(value.operationId);
-          ' "$GITHUB_WORKSPACE/.git/nemlig-production-deploy/latest.json")
-          pnpm --filter nemlig-assistant production:deploy -- finalize "$operation_id" --evidence-saved --original-runner-stopped
+            const alreadyReleasedPreMutationLease = value.outcome === "failed"
+              && value.lastVerifiedState === "unchanged"
+              && Array.isArray(value.transitions) && value.transitions.length === 0
+              && !existsSync(process.argv[2]);
+            if (alreadyReleasedPreMutationLease) process.stdout.write("released-pre-mutation-lease");
+            else process.stdout.write(value.operationId);
+          ' "$GITHUB_WORKSPACE/.git/nemlig-production-deploy/latest.json" "$GITHUB_WORKSPACE/.git/nemlig-production-deploy.lock")
+          if [[ "$finalization_target" == "released-pre-mutation-lease" ]]; then
+            echo "Skipping finalization after this operation released its unchanged pre-mutation lease."
+            exit 0
+          fi
+          pnpm --filter nemlig-assistant production:deploy -- finalize "$finalization_target" --evidence-saved --original-runner-stopped
+      - name: Summarize incomplete production delivery
+        if: >-
+          ${{ always() && (steps.deploy.outcome == 'failure' || steps.deploy.outcome == 'cancelled' ||
+          steps.release-artifact.outcome == 'failure' || steps.release-artifact.outcome == 'cancelled' ||
+          steps.finalize.outcome == 'failure' || steps.finalize.outcome == 'cancelled' ||
+          (cancelled() && steps.deploy.outcome == 'success' && steps.release-artifact.outcome == 'success')) }}
+        env:
+          DEPLOY_OUTCOME: "${{ steps.deploy.outcome }}"
+          RELEASE_ARTIFACT_OUTCOME: "${{ steps.release-artifact.outcome }}"
+          FINALIZATION_OUTCOME: "${{ steps.finalize.outcome }}"
+        run: |
+          set -euo pipefail
+          retention_report="$RUNNER_TEMP/nemlig-retention-not-run.json"
+          reason=deployment_not_accepted
+          if [[ "$DEPLOY_OUTCOME" == "cancelled" ]]; then
+            reason=release_interrupted
+          elif [[ "$DEPLOY_OUTCOME" == "success" ]]; then
+            if [[ "$RELEASE_ARTIFACT_OUTCOME" != "success" ]]; then
+              reason=release_evidence_not_saved
+            elif [[ "$FINALIZATION_OUTCOME" == "cancelled" || "$FINALIZATION_OUTCOME" == "skipped" ]]; then
+              reason=release_interrupted
+            else
+              reason=finalization_incomplete
+            fi
+          fi
+          printf '{"commit":"%s","outcome":"not_run","reason":"%s"}\n' "$CANDIDATE_SHA" "$reason" > "$retention_report"
+          summary_args=(--commit "$CANDIDATE_SHA" --retention "$retention_report")
+          release_journal="$GITHUB_WORKSPACE/.git/nemlig-production-deploy/latest.json"
+          if [[ -f "$release_journal" ]]; then summary_args+=(--release "$release_journal"); fi
+          pnpm --silent --filter nemlig-assistant exec tsx scripts/production-summary.ts -- "${summary_args[@]}" >> "$GITHUB_STEP_SUMMARY"

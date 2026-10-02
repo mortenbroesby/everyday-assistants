@@ -21,7 +21,11 @@ const uncertainReasons = new Set([
   "retention_commit_mismatch", "retention_report_invalid", "retention_report_missing", "retention_report_contradictory",
   "retention_report_incomplete", "unknown_failure", "deployment_not_accepted",
 ]);
-const summaryFailureReasons = new Set([...failureReasons, "retention_commit_mismatch", "retention_report_invalid", "retention_report_missing", "retention_report_contradictory"]);
+const summaryFailureReasons = new Set([
+  ...failureReasons, "retention_commit_mismatch", "retention_report_invalid", "retention_report_missing", "retention_report_contradictory",
+  "release_evidence_not_saved", "finalization_incomplete", "release_interrupted",
+]);
+const notRunReasons = new Set(["deployment_not_accepted", "release_evidence_not_saved", "finalization_incomplete", "release_interrupted"]);
 
 export type ProductionSummaryStatus = "passed" | "failed" | "unknown";
 export type CleanupSummaryStatus = "complete" | "held" | "not_run" | "failed" | "uncertain";
@@ -92,11 +96,16 @@ const safeHolds = (value: unknown): HoldInventory => {
   return { known: invalid === 0, holds, total: value.length, omitted: Math.max(0, value.length - holds.length), reasonCounts };
 };
 
-const cleanupNextAction = (status: CleanupSummaryStatus): string => {
+const cleanupNextAction = (status: CleanupSummaryStatus, reasons: readonly string[]): string => {
   switch (status) {
     case "complete": return "No cleanup action is pending.";
     case "held": return "preserve holds and obtain bounded provenance/reference evidence before any cleanup resume.";
-    case "not_run": return "do not infer cleanup from deployment success; run the protected retention path when its evidence is available.";
+    case "not_run":
+      if (reasons.includes("deployment_not_accepted")) return "resolve the bounded deployment failure; cleanup is intentionally not run.";
+      if (reasons.some((reason) => ["release_evidence_not_saved", "finalization_incomplete", "release_interrupted"].includes(reason))) {
+        return "reconcile the exact release journal through the protected recovery path before cleanup.";
+      }
+      return "do not infer cleanup from deployment success; run the protected retention path when its evidence is available.";
     case "uncertain": return "hold cleanup and reconcile the exact prior operation and provider state before retrying.";
     case "failed": return "keep the accepted deployment state unchanged and inspect the bounded retention failure before a protected retry.";
   }
@@ -144,6 +153,15 @@ export function projectProductionSummary(input: ProductionSummaryInput): Product
     const reason = safeFailure(retention.failure);
     cleanupStatus = uncertainReasons.has(reason) ? "uncertain" : "failed";
     reasons = [reason];
+  } else if (retention.outcome === "not_run") {
+    const reason = safeFailure(retention.reason);
+    if (retention.cleanupComplete !== undefined || !notRunReasons.has(reason)) {
+      cleanupStatus = "uncertain";
+      reasons = [retention.cleanupComplete !== undefined ? "retention_report_contradictory" : "retention_report_invalid"];
+    } else {
+      cleanupStatus = "not_run";
+      reasons = [reason];
+    }
   } else if (retention.stable === false) {
     cleanupStatus = "held";
     reasons = ["inventory_unstable"];
@@ -154,9 +172,6 @@ export function projectProductionSummary(input: ProductionSummaryInput): Product
     cleanupStatus = "held";
     reasons = holdInventory.known ? Object.keys(holdInventory.reasonCounts) : ["protected_hold_inventory_unknown"];
     if (reasons.length === 0) reasons = ["protected_hold"];
-  } else if (retention.outcome === "not_run") {
-    cleanupStatus = "not_run";
-    reasons = [safeFailure(retention.failure ?? retention.reason ?? "retention_report_missing")];
   } else {
     cleanupStatus = "uncertain";
     reasons = ["retention_report_incomplete"];
@@ -174,7 +189,7 @@ export function projectProductionSummary(input: ProductionSummaryInput): Product
       protectedTotal: holdInventory.total,
       protectedOmitted: holdInventory.omitted,
       protectedReasonCounts: holdInventory.reasonCounts,
-      nextAction: cleanupNextAction(cleanupStatus),
+      nextAction: cleanupNextAction(cleanupStatus, reasons),
     },
     traffic: "not_measured",
   };
@@ -193,6 +208,7 @@ export function formatProductionSummary(summary: ProductionSummary): string {
   return [
     "## Nemlig production release summary",
     `- Source SHA: \`${summary.commit}\``,
+    `- Verified live revision: ${summary.deployment === "passed" ? `\`${summary.commit}\`` : "not proven"}`,
     `- Deployment: ${statusLabel(summary.deployment)}`,
     `- Technical acceptance: ${statusLabel(summary.technicalAcceptance)}`,
     "- Owner acceptance: not run (CI synthetic acceptance is not owner proof)",

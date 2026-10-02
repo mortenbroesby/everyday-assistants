@@ -105,10 +105,14 @@ test("routine releases queue trusted main ancestors; manual dispatch is recovery
   assert.match(deploy, /if-no-files-found: error/u);
   assert.match(deploy, /retention-days: 7/u);
   assert.match(deploy, /include-hidden-files: true/u);
+  assert.match(deploy, /const alreadyReleasedPreMutationLease = value\.outcome === "failed"\n\s+&& value\.lastVerifiedState === "unchanged"\n\s+&& Array\.isArray\(value\.transitions\) && value\.transitions\.length === 0\n\s+&& !existsSync\(process\.argv\[2\]\);/u);
+  assert.match(deploy, /if \(alreadyReleasedPreMutationLease\) process\.stdout\.write\("released-pre-mutation-lease"\);/u);
+  assert.match(deploy, /Skipping finalization after this operation released its unchanged pre-mutation lease\./u);
   assert.doesNotMatch(source, /setup-.*provider|activate|cloudflare\/workers/u);
 
   assert.match(retention, /needs: \[release-gate, preflight, deploy\]/u);
-  assert.match(retention, /needs\.release-gate\.outputs\.deploy == 'true' \|\| needs\.release-gate\.outputs\.retention == 'true' \|\| needs\.release-gate\.outputs\.worker_retention == 'true'/u);
+  assert.match(retention, /needs\.release-gate\.outputs\.retention == 'true' \|\| needs\.release-gate\.outputs\.worker_retention == 'true' \|\|\s+\(needs\.release-gate\.outputs\.deploy == 'true' && needs\.deploy\.result == 'success'\)/u);
+  assert.doesNotMatch(retention, /deployment_not_accepted/u);
   assert.match(retention, /environment:\n\s+name: nemlig-production/u);
   assert.match(retention, /permissions:\n\s+contents: write\n\s+actions: read/u);
   assert.match(retention, /actions\/download-artifact@[0-9a-f]{40}/u);
@@ -117,7 +121,6 @@ test("routine releases queue trusted main ancestors; manual dispatch is recovery
   assert.match(retention, /retention_report="\$RUNNER_TEMP\/nemlig-retention\.json"/u);
   assert.match(retention, /acceptance_evidence_missing.*CANDIDATE_SHA|CANDIDATE_SHA.*acceptance_evidence_missing/u);
   assert.match(retention, /worker_retention_resume.*CANDIDATE_SHA|CANDIDATE_SHA.*worker_retention_resume/u);
-  assert.match(retention, /deployment_not_accepted.*CANDIDATE_SHA|CANDIDATE_SHA.*deployment_not_accepted/u);
   assert.match(retention, /exec tsx scripts\/production-summary\.ts -- "\$\{summary_args\[@\]\}" >> "\$GITHUB_STEP_SUMMARY"/u);
   assert.match(retention, /exit "\$retention_status"/u);
   assert.match(retention, /retention_status=\$\?/u);
@@ -141,7 +144,7 @@ test("routine releases queue trusted main ancestors; manual dispatch is recovery
   assert.match(retention, /CLOUDFLARE_API_TOKEN:/u);
   assert.match(retention, /NEMLIG_CONTAINER_IMAGE_RETENTION_COUNT: "\$\{\{ vars\.NEMLIG_CONTAINER_IMAGE_RETENTION_COUNT \|\| '10' \}\}"/u);
   assert.doesNotMatch(retention, /NEMLIG_CONTAINER_IMAGE_RETENTION_ENABLED/u);
-  assert.match(retention, /scheduled without accepted deployment or explicit image-retention resume/u);
+  assert.doesNotMatch(retention, /scheduled without accepted deployment or explicit image-retention resume/u);
   assert.doesNotMatch(preflight, /CLOUDFLARE|secrets\./u);
 });
 
@@ -165,7 +168,7 @@ test("routine deployment does not require a historical cutover artifact", async 
   const source = await readFile(workflowPath, "utf8");
   assert.doesNotMatch(source, /verifyRoutineRelease|service_cutover_required|service-cutover|finalize_operation|CUTOVER/u);
   assert.match(source, /production:deploy -- --service "\$CANDIDATE_SHA"/u);
-  assert.match(source, /production:deploy -- finalize "\$operation_id" --evidence-saved --original-runner-stopped/u);
+  assert.match(source, /production:deploy -- finalize "\$finalization_target" --evidence-saved --original-runner-stopped/u);
 });
 
 test("routine recovery may finalize a completed failed deployment but never a cancelled one", async () => {
@@ -174,22 +177,75 @@ test("routine recovery may finalize a completed failed deployment but never a ca
   assert.match(source, /if: \$\{\{ !cancelled\(\) && \(steps\.deploy\.outcome == 'success' \|\| steps\.deploy\.outcome == 'failure'\) && steps\.release-artifact\.outcome == 'success' \}\}/u);
 });
 
+test("production summary reports accepted deployment with artifact or finalization failure", async () => {
+  const deploy = section(await readFile(workflowPath, "utf8"), "  deploy:");
+  assert.match(deploy, /- name: Finalize routine deployment recovery\n\s+id: finalize/u);
+  const summary = deploy.slice(deploy.indexOf("- name: Summarize incomplete production delivery"));
+  assert.match(summary, /steps\.deploy\.outcome == 'failure'/u);
+  assert.match(summary, /steps\.release-artifact\.outcome == 'failure'/u);
+  assert.match(summary, /steps\.finalize\.outcome == 'failure'/u);
+  assert.match(summary, /steps\.deploy\.outcome == 'cancelled'/u);
+  assert.match(summary, /release_evidence_not_saved/u);
+  assert.match(summary, /finalization_incomplete/u);
+
+  const start = summary.indexOf("          reason=deployment_not_accepted");
+  const end = summary.indexOf("          summary_args=");
+  assert.ok(start >= 0 && end > start);
+  const script = `retention_report="$RUNNER_TEMP/nemlig-retention-not-run.json"\n${summary.slice(start, end).trim()}`;
+  const cases = [
+    [{ DEPLOY_OUTCOME: "failure", RELEASE_ARTIFACT_OUTCOME: "success", FINALIZATION_OUTCOME: "failure", WORKFLOW_CANCELLED: "false" }, "deployment_not_accepted"],
+    [{ DEPLOY_OUTCOME: "success", RELEASE_ARTIFACT_OUTCOME: "failure", FINALIZATION_OUTCOME: "skipped", WORKFLOW_CANCELLED: "false" }, "release_evidence_not_saved"],
+    [{ DEPLOY_OUTCOME: "success", RELEASE_ARTIFACT_OUTCOME: "success", FINALIZATION_OUTCOME: "failure" }, "finalization_incomplete"],
+    [{ DEPLOY_OUTCOME: "success", RELEASE_ARTIFACT_OUTCOME: "success", FINALIZATION_OUTCOME: "skipped" }, "release_interrupted"],
+    [{ DEPLOY_OUTCOME: "cancelled", RELEASE_ARTIFACT_OUTCOME: "success", FINALIZATION_OUTCOME: "skipped" }, "release_interrupted"],
+  ] as const;
+  for (const [outcomes, expectedReason] of cases) {
+    const root = await mkdtemp(join(tmpdir(), "nemlig-summary-workflow-"));
+    try {
+      const result = spawnSync("bash", ["-c", script], {
+        encoding: "utf8",
+        env: { ...process.env, ...outcomes, CANDIDATE_SHA: "a".repeat(40), RUNNER_TEMP: root },
+      });
+      assert.equal(result.status, 0, result.stderr);
+      const report = JSON.parse(await readFile(join(root, "nemlig-retention-not-run.json"), "utf8")) as { reason: string };
+      assert.equal(report.reason, expectedReason);
+    } finally { await rm(root, { recursive: true, force: true }); }
+  }
+});
+
 test("workflow finalization executes only an exact-run journal operation", async () => {
   const source = section(await readFile(workflowPath, "utf8"), "  deploy:");
-  const script = source.match(/operation_id=\$\(node --input-type=module -e '([\s\S]*?)' "\$GITHUB_WORKSPACE\/\.git\/nemlig-production-deploy\/latest\.json"\)/u)?.[1];
+  const script = source.match(/finalization_target=\$\(node --input-type=module -e '([\s\S]*?)' "\$GITHUB_WORKSPACE\/\.git\/nemlig-production-deploy\/latest\.json" "\$GITHUB_WORKSPACE\/\.git\/nemlig-production-deploy\.lock"\)/u)?.[1];
   assert.ok(script);
   const root = await mkdtemp(join(tmpdir(), "nemlig-finalize-workflow-"));
   const path = join(root, "journal.json");
-  const journal = { operationId: "44444444-4444-4444-8444-444444444444", commit: "a".repeat(40), releaseRunId: 123, releaseRunAttempt: 2 };
+  const lease = join(root, "lease.lock");
+  const journal = { operationId: "44444444-4444-4444-8444-444444444444", commit: "a".repeat(40), releaseRunId: 123, releaseRunAttempt: 2, outcome: "failed", lastVerifiedState: "unchanged", transitions: [] };
   try {
+    await writeFile(lease, "owned");
     for (const replacement of [{}, { operationId: "invalid" }, { commit: "b".repeat(40) }, { releaseRunId: 124 }, { releaseRunAttempt: 1 }]) {
       await writeFile(path, JSON.stringify({ ...journal, ...replacement }));
-      const result: ReturnType<typeof spawnSync> = spawnSync(process.execPath, ["--input-type=module", "-e", script, path], {
+      const result: ReturnType<typeof spawnSync> = spawnSync(process.execPath, ["--input-type=module", "-e", script, path, lease], {
         encoding: "utf8", env: { ...process.env, CANDIDATE_SHA: journal.commit, GITHUB_RUN_ID: "123", GITHUB_RUN_ATTEMPT: "2" },
       });
       const matches = Object.keys(replacement).length === 0;
       assert.equal(result.status, matches ? 0 : 1);
       assert.equal(result.stdout, matches ? journal.operationId : "");
+    }
+    await rm(lease);
+    await writeFile(path, JSON.stringify(journal));
+    const released = spawnSync(process.execPath, ["--input-type=module", "-e", script, path, lease], {
+      encoding: "utf8", env: { ...process.env, CANDIDATE_SHA: journal.commit, GITHUB_RUN_ID: "123", GITHUB_RUN_ATTEMPT: "2" },
+    });
+    assert.equal(released.status, 0);
+    assert.equal(released.stdout, "released-pre-mutation-lease");
+    for (const replacement of [{ transitions: [{}] }, { lastVerifiedState: "unknown" }, { outcome: "success" }]) {
+      await writeFile(path, JSON.stringify({ ...journal, ...replacement }));
+      const result: ReturnType<typeof spawnSync> = spawnSync(process.execPath, ["--input-type=module", "-e", script, path, lease], {
+        encoding: "utf8", env: { ...process.env, CANDIDATE_SHA: journal.commit, GITHUB_RUN_ID: "123", GITHUB_RUN_ATTEMPT: "2" },
+      });
+      assert.equal(result.status, 0);
+      assert.equal(result.stdout, journal.operationId);
     }
   } finally { await rm(root, { recursive: true, force: true }); }
 });
@@ -267,7 +323,7 @@ test("routine recovery finalizes only after its artifact is saved", async () => 
   assert.match(deploy, /GITHUB_WORKSPACE\/\.git\/nemlig-production-deploy\/latest\.json/u);
   assert.doesNotMatch(deploy, /readFileSync\([^\n]*RUNNER_TEMP\/nemlig-release\.json/u);
   assert.match(deploy, /\^\[0-9a-f\]\{8\}\(\?:-\[0-9a-f\]\{4\}\)\{3\}-\[0-9a-f\]\{12\}\$/u);
-  assert.match(deploy, /finalize "\$operation_id" --evidence-saved --original-runner-stopped/u);
+  assert.match(deploy, /finalize "\$finalization_target" --evidence-saved --original-runner-stopped/u);
 
   const finalization = deploy.slice(deploy.lastIndexOf("      - name:", finalize));
   assert.match(finalization, /GH_TOKEN:/u);
