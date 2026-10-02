@@ -94,6 +94,7 @@ export interface DeployDependencies {
   operationId?: () => string;
   operationDeadlineMs?: number;
   stateRoot?: string;
+  diagnostic?: (message: string) => void;
   acceptanceMode?: "owner" | "service" | "recovery";
   issueServiceToken?: typeof issueServiceToken;
   signal?: AbortSignal;
@@ -1299,22 +1300,72 @@ const runningInstanceVersion = (raw: string, minimumVersion: number): number | n
 const runningInstanceMatches = (raw: string, expectedVersion: number): boolean =>
   runningInstanceVersion(raw, expectedVersion) === expectedVersion;
 
-const waitForAcceptedInstance = async (deps: DeployDependencies, applicationId: string, minimumVersion: number, requireRunning = false): Promise<number | null> => {
+const waitForAcceptedInstance = async (deps: DeployDependencies, applicationId: string, minimumVersion: number, requireRunning = false, reportDiagnostic = false): Promise<number | null> => {
+  const startedAt = deps.now().getTime();
+  let polls = 0;
+  let observedVersion: number | null = null;
+  let state = "unknown";
+  const report = (result: "accepted" | "inactive" | "timeout" | "invalid_inventory" | "read_failed" | "version_drift") => {
+    if (!reportDiagnostic) return;
+    const elapsed = deps.now().getTime() - startedAt;
+    const diagnostic = JSON.stringify({
+      event: "container_acceptance_convergence",
+      expectedVersion: minimumVersion,
+      observedVersion,
+      state,
+      polls,
+      result,
+      elapsedMs: Number.isFinite(elapsed) ? Math.max(0, Math.min(6 * 60 * 60 * 1000, Math.floor(elapsed))) : 0,
+    });
+    if (deps.diagnostic) deps.diagnostic(diagnostic);
+    else console.error(diagnostic);
+  };
   for (let attempt = 0; attempt < 36; attempt += 1) {
     deps.signal?.throwIfAborted();
-    const raw = await wrangler(deps, ["containers", "instances", applicationId, "--json"]);
-    if (instancesInactive(raw)) {
-      if (!requireRunning) return null;
+    polls += 1;
+    let raw: string;
+    try {
+      raw = await wrangler(deps, ["containers", "instances", applicationId, "--json"]);
+    } catch (error) {
+      report("read_failed");
+      throw error;
+    }
+    let inactive: boolean;
+    let version: number | null = null;
+    try {
+      const parsed = JSON.parse(raw) as unknown;
+      const row = Array.isArray(parsed) && parsed.length === 1 ? object(parsed[0]) : undefined;
+      const states = ["inactive", "running", "provisioning", "stopping", "stopped"];
+      state = row && typeof row.state === "string" && states.includes(row.state) ? row.state : "invalid";
+      observedVersion = row && typeof row.version === "number" && Number.isSafeInteger(row.version) && row.version > 0
+        ? row.version : null;
+      inactive = instancesInactive(raw);
+      if (!inactive) version = runningInstanceVersion(raw, minimumVersion);
+    } catch (error) {
+      state = "invalid";
+      observedVersion = null;
+      report("invalid_inventory");
+      throw error;
+    }
+    if (inactive) {
+      if (!requireRunning) {
+        report("inactive");
+        return null;
+      }
       if (attempt < 35) await sleepAbortably(deps);
       continue;
     }
-    const version = runningInstanceVersion(raw, minimumVersion);
     if (version !== null) {
-      if (version !== minimumVersion) fail("cloudflare_deployment_drift");
+      if (version !== minimumVersion) {
+        report("version_drift");
+        fail("cloudflare_deployment_drift");
+      }
+      report("accepted");
       return version;
     }
     if (attempt < 35) await sleepAbortably(deps);
   }
+  report("timeout");
   return fail("container_instance_timeout");
 };
 
@@ -1622,7 +1673,7 @@ export async function deployProduction(commit: string, inputDeps: DeployDependen
       "read_only", service ? "service" : "live-user",
       service ? "service_fixture_acceptance_failed" : "authenticated_read_only_acceptance_failed",
       routine ? Math.max(0, Math.min(17 * 60_000, operationDeadlineAt - deps.now().getTime() - 5 * 60_000)) : undefined);
-    const runningVersion = await waitForAcceptedInstance(deps, enabledContainer.id, enabledContainer.version, service);
+    const runningVersion = await waitForAcceptedInstance(deps, enabledContainer.id, enabledContainer.version, service, true);
     await verifyCurrent(deps, enabledId);
     await verifyLeaseHead(deps, repository, journal);
     const provenContainer = await readContainer(deps, enabledContainer.id);
