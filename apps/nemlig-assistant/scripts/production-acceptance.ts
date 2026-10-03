@@ -38,9 +38,10 @@ const required = (env: Environment, name: string): string => {
   return value;
 };
 
-const parseArgs = (argv: string[]): { edgeOnly: boolean; service: boolean } => {
+const parseArgs = (argv: string[]): { edgeOnly: boolean; service: boolean; initializeOnly: boolean } => {
   let edgeOnly = false;
   let service = false;
+  let initializeOnly = false;
   for (const argument of argv) {
     if (argument === "--edge-only") {
       if (edgeOnly) throw new Error("--edge-only must not be repeated");
@@ -48,12 +49,16 @@ const parseArgs = (argv: string[]): { edgeOnly: boolean; service: boolean } => {
     } else if (argument === "--service") {
       if (service) throw new Error("--service must not be repeated");
       service = true;
+    } else if (argument === "--initialize-only") {
+      if (initializeOnly) throw new Error("--initialize-only must not be repeated");
+      initializeOnly = true;
     } else {
       throw new Error(`Unknown acceptance argument: ${argument}`);
     }
   }
-  if (edgeOnly && service) throw new Error("--edge-only and --service cannot be combined");
-  return { edgeOnly, service };
+  if (edgeOnly && (service || initializeOnly)) throw new Error("--edge-only cannot be combined with service acceptance");
+  if (initializeOnly && !service) throw new Error("--initialize-only requires --service");
+  return { edgeOnly, service, initializeOnly };
 };
 
 const abortable = async <T>(label: string, work: Promise<T>, signal: AbortSignal): Promise<T> => {
@@ -172,15 +177,15 @@ export async function main(
     if (env.CI?.trim() && origin.href !== "https://nemlig-mcp.broesby.dk/mcp") {
       throw new Error("CI acceptance requires the fixed production target");
     }
-    const edge = await verifyProductionEdge(origin, dependencies.fetcher, {
+    const edge = options.initializeOnly ? undefined : await verifyProductionEdge(origin, dependencies.fetcher, {
       expectedRevision: env.NEMLIG_EXPECTED_REVISION?.trim() || undefined,
       signal: controller.signal,
       expectedScopes: ["use:nemlig-assistant"],
     });
-    const observedRevision = /^[0-9a-f]{40}$/u.test(edge.revision) ? edge.revision : undefined;
-    if (progress) progress.lastCompletedBoundary = edge.lastCompletedBoundary;
+    const observedRevision = edge && /^[0-9a-f]{40}$/u.test(edge.revision) ? edge.revision : undefined;
+    if (progress && edge) progress.lastCompletedBoundary = edge.lastCompletedBoundary;
     if (options.edgeOnly) {
-      return { profile: "edge", observedRevision, required: ["edge"], passed: ["edge"], unavailable: [], lastCompletedBoundary: edge.lastCompletedBoundary, correlationIds: edge.correlationIds };
+      return { profile: "edge", observedRevision, required: ["edge"], passed: ["edge"], unavailable: [], lastCompletedBoundary: edge!.lastCompletedBoundary, correlationIds: edge!.correlationIds };
     }
 
     const accessToken = required(env, options.service ? "NEMLIG_MCP_SERVICE_ACCESS_TOKEN" : "NEMLIG_MCP_ACCESS_TOKEN");
@@ -195,14 +200,18 @@ export async function main(
       if (options.service) {
         if (progress) progress.lastCompletedBoundary = "service_runtime_version_read";
         if (connected.serverVersion !== NEMLIG_VERSION) throw new ServiceRuntimeVersionMismatchError();
-        const report = await verifyServiceAcceptanceFeatures(connected.client, {
-          signal: controller.signal,
-          onBoundary: (boundary) => { if (progress) progress.lastCompletedBoundary = boundary; },
-        });
-        outcome = { profile: "service", observedRevision, required: ["edge", "service_fixture"], passed: ["edge", "service_fixture"], unavailable: [], lastCompletedBoundary: `service_fixture_${report.requestCount}_requests`, correlationIds: edge.correlationIds };
+        if (options.initializeOnly) {
+          outcome = { profile: "service", observedRevision, required: ["service_runtime"], passed: ["service_runtime"], unavailable: [], lastCompletedBoundary: "service_runtime_version_read", correlationIds: [] };
+        } else {
+          const report = await verifyServiceAcceptanceFeatures(connected.client, {
+            signal: controller.signal,
+            onBoundary: (boundary) => { if (progress) progress.lastCompletedBoundary = boundary; },
+          });
+          outcome = { profile: "service", observedRevision, required: ["edge", "service_fixture"], passed: ["edge", "service_fixture"], unavailable: [], lastCompletedBoundary: `service_fixture_${report.requestCount}_requests`, correlationIds: edge!.correlationIds };
+        }
       } else {
         const report = await verifyReadOnlyProductionFeatures(connected.client, { signal: controller.signal });
-        outcome = { profile: "live-user", observedRevision, required: ["edge", "live_user_features"], passed: ["edge", "live_user_features"], unavailable: report.unavailable, lastCompletedBoundary: "live_user_features", correlationIds: edge.correlationIds };
+        outcome = { profile: "live-user", observedRevision, required: ["edge", "live_user_features"], passed: ["edge", "live_user_features"], unavailable: report.unavailable, lastCompletedBoundary: "live_user_features", correlationIds: edge!.correlationIds };
       }
     } catch (error) {
       operationFailed = true;
