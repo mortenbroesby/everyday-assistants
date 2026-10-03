@@ -1300,7 +1300,7 @@ const runningInstanceVersion = (raw: string, minimumVersion: number): number | n
 const runningInstanceMatches = (raw: string, expectedVersion: number): boolean =>
   runningInstanceVersion(raw, expectedVersion) === expectedVersion;
 
-const waitForAcceptedInstance = async (deps: DeployDependencies, applicationId: string, minimumVersion: number, requireRunning = false, reportDiagnostic = false): Promise<number | null> => {
+const waitForAcceptedInstance = async (deps: DeployDependencies, applicationId: string, minimumVersion: number, requireRunning = false, reportDiagnostic = false, diagnosticEvent = "container_acceptance_convergence"): Promise<number | null> => {
   const startedAt = deps.now().getTime();
   let polls = 0;
   let observedVersion: number | null = null;
@@ -1309,7 +1309,7 @@ const waitForAcceptedInstance = async (deps: DeployDependencies, applicationId: 
     if (!reportDiagnostic) return;
     const elapsed = deps.now().getTime() - startedAt;
     const diagnostic = JSON.stringify({
-      event: "container_acceptance_convergence",
+      event: diagnosticEvent,
       expectedVersion: minimumVersion,
       observedVersion,
       state,
@@ -1665,14 +1665,24 @@ export async function deployProduction(commit: string, inputDeps: DeployDependen
       journal.checks.push("enabled_version", "image_reused");
       await transition("enable_deploy", "result", enabledId);
     }
-    // The machine fixture itself wakes a cold Container and verifies the server release before any tool call.
-    const preAcceptanceRunningVersion = service ? null : await waitForAcceptedInstance(deps, enabledContainer.id, enabledContainer.version);
-    await retryAcceptance(deps, ["production:probe"], { NEMLIG_EXPECTED_REVISION: commit }, 12, "edge", "edge", "edge_acceptance_failed");
+    // Initialize MCP to wake the Container, then prove the exact candidate application version before its feature fixture.
+    let preAcceptanceRunningVersion: number | null;
+    if (service) {
+      await retryAcceptance(deps, ["production:probe"], { NEMLIG_EXPECTED_REVISION: commit }, 12, "edge", "edge", "edge_acceptance_failed");
+      await retryAcceptance(deps, ["production:test:features", "--service", "--initialize-only"], {
+        NEMLIG_MCP_SERVICE_ACCESS_TOKEN: serviceToken, NEMLIG_EXPECTED_REVISION: commit,
+      }, 12, "read_only", "service", "service_fixture_acceptance_failed",
+      Math.max(0, Math.min(60_000, operationDeadlineAt - deps.now().getTime() - 8 * 60_000)));
+      preAcceptanceRunningVersion = await waitForAcceptedInstance(deps, enabledContainer.id, enabledContainer.version, true, true, "container_pre_fixture_convergence");
+    } else {
+      preAcceptanceRunningVersion = await waitForAcceptedInstance(deps, enabledContainer.id, enabledContainer.version);
+      await retryAcceptance(deps, ["production:probe"], { NEMLIG_EXPECTED_REVISION: commit }, 12, "edge", "edge", "edge_acceptance_failed");
+    }
     await retryAcceptance(deps, ["production:test:features", ...(service ? ["--service"] : [])],
       service ? { NEMLIG_MCP_SERVICE_ACCESS_TOKEN: serviceToken, NEMLIG_EXPECTED_REVISION: commit } : {}, service ? 12 : 1,
       "read_only", service ? "service" : "live-user",
       service ? "service_fixture_acceptance_failed" : "authenticated_read_only_acceptance_failed",
-      routine ? Math.max(0, Math.min(17 * 60_000, operationDeadlineAt - deps.now().getTime() - 5 * 60_000)) : undefined);
+      service ? Math.max(0, Math.min(17 * 60_000, operationDeadlineAt - deps.now().getTime() - 8 * 60_000)) : undefined);
     const runningVersion = await waitForAcceptedInstance(deps, enabledContainer.id, enabledContainer.version, service, true);
     await verifyCurrent(deps, enabledId);
     await verifyLeaseHead(deps, repository, journal);

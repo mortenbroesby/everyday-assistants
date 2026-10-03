@@ -238,6 +238,7 @@ async function fixture(options: {
   let enabledInstanceReads = 0;
   let probeReads = 0;
   let featureReads = 0;
+  let initializationReads = 0;
   let disabledContainerReads = 0;
   let rolledBack = false;
   let appended = false;
@@ -367,20 +368,22 @@ async function fixture(options: {
       return "edge ok";
     }
     if (args[0] === "production:test:features") {
-      featureReads += 1;
-      if ((options.staleRuntimeReads ?? 0) >= featureReads || options.staleRuntimeForever) {
+      const initializeOnly = args.includes("--initialize-only");
+      if (initializeOnly) initializationReads += 1;
+      else featureReads += 1;
+      if (initializeOnly && ((options.staleRuntimeReads ?? 0) >= initializationReads || options.staleRuntimeForever)) {
         throw Object.assign(new Error("previous runtime"), { acceptanceFailure: {
           stage: "read_only", profile: "service", category: "feature_failed",
           lastCompletedBoundary: "service_runtime_version_read", correlationIds: [],
         } });
       }
-      if (options.failFeaturesOnce && featureReads === 1) throw new Error("container not converged");
-      if (options.failFeatures) throw new Error("acceptance failed");
-      if (options.localFinalMirrorFailure) {
+      if (!initializeOnly && options.failFeaturesOnce && featureReads === 1) throw new Error("container not converged");
+      if (!initializeOnly && options.failFeatures) throw new Error("acceptance failed");
+      if (!initializeOnly && options.localFinalMirrorFailure) {
         await rm(join(root, "nemlig-production-deploy", "latest.json"));
         await mkdir(join(root, "nemlig-production-deploy", "latest.json"));
       }
-      return "features ok";
+      return initializeOnly ? "service initialized" : "features ok";
     }
     if (!args.includes("wrangler")) throw new Error("unexpected pnpm command");
     if (args.includes("deployments") && args.includes("list")) {
@@ -826,7 +829,9 @@ test("enabled acceptance retries while the Container service converges", async (
   deps.issueServiceToken = async () => "machine-token";
   try {
     assert.equal((await deployProduction(commit, deps)).outcome, "success");
-    assert.equal(calls.filter(({ args }) => args[0] === "production:test:features").length, 2);
+    const acceptanceCalls = calls.filter(({ args }) => args[0] === "production:test:features");
+    assert.equal(acceptanceCalls.filter(({ args }) => args.includes("--initialize-only")).length, 1);
+    assert.equal(acceptanceCalls.filter(({ args }) => !args.includes("--initialize-only")).length, 2);
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
@@ -841,8 +846,14 @@ test("service release waits through previous backend versions before accepting t
   try {
     const report = await deployProduction(commit, deps);
     assert.equal(report.outcome, "success");
-    assert.equal(calls.filter(({ args }) => args[0] === "production:test:features").length, 15);
-    assert.ok(calls.some(({ args }) => args.includes("containers") && args.includes("instances")));
+    const acceptanceCalls = calls.filter(({ args }) => args[0] === "production:test:features");
+    assert.equal(acceptanceCalls.filter(({ args }) => args.includes("--initialize-only")).length, 15);
+    assert.equal(acceptanceCalls.filter(({ args }) => !args.includes("--initialize-only")).length, 1);
+    const initializationIndex = calls.findIndex(({ args }) => args[0] === "production:test:features" && args.includes("--initialize-only"));
+    const candidateInstanceIndex = calls.findIndex(({ args }, index) => index > initializationIndex && args.includes("containers") && args.includes("instances"));
+    const fixtureIndex = calls.findIndex(({ args }) => args[0] === "production:test:features" && !args.includes("--initialize-only"));
+    assert.ok(initializationIndex >= 0 && candidateInstanceIndex > initializationIndex && fixtureIndex > candidateInstanceIndex,
+      "the exact candidate instance must be observed after MCP initialization and before the full fixture");
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
@@ -862,10 +873,12 @@ test("service release cannot accept a matching fixture while its instance is ina
       const report = await deployProduction(commit, deps);
       assert.equal(report.outcome, "failed");
       assert.equal(report.failure, "container_instance_timeout");
-      assert.equal(calls.filter(({ args }) => args[0] === "production:test:features").length, 1);
+      const acceptanceCalls = calls.filter(({ args }) => args[0] === "production:test:features");
+      assert.equal(acceptanceCalls.filter(({ args }) => args.includes("--initialize-only")).length, 1);
+      assert.equal(acceptanceCalls.filter(({ args }) => !args.includes("--initialize-only")).length, 0);
       assert.equal(diagnostics.length, 1);
       assert.deepEqual(JSON.parse(diagnostics[0]!), {
-        event: "container_acceptance_convergence", expectedVersion: 26,
+        event: "container_pre_fixture_convergence", expectedVersion: 26,
         observedVersion: row.version, state: row.state, polls: 36, result: "timeout",
         elapsedMs: 0,
       });
@@ -885,7 +898,8 @@ test("previous backend version is bounded and cannot authorize release or cleanu
     assert.equal(report.rollback, "restored");
     assert.equal(report.lastVerifiedState, "disabled");
     assert.equal(report.acceptanceFailure?.lastCompletedBoundary, "service_runtime_version_read");
-    assert.equal(calls.filter(({ args }) => args[0] === "production:test:features").length, 180);
+    assert.equal(calls.filter(({ args }) => args[0] === "production:test:features" && args.includes("--initialize-only")).length, 180);
+    assert.equal(calls.filter(({ args }) => args[0] === "production:test:features" && !args.includes("--initialize-only")).length, 0);
     assert.equal(report.checks.includes("service_fixture_acceptance"), false);
   } finally { await rm(root, { recursive: true, force: true }); }
 });
@@ -1280,7 +1294,7 @@ test("enabled acceptance rejects malformed, wrong, or ambiguous Container instan
       assert.equal((await deployProduction(commit, deps)).outcome, "failed");
       assert.equal(diagnostics.length, 1);
       assert.deepEqual(JSON.parse(diagnostics[0]!), {
-        event: "container_acceptance_convergence", expectedVersion: 26,
+        event: "container_pre_fixture_convergence", expectedVersion: 26,
         observedVersion: null, state: "invalid", polls: 1, result: "invalid_inventory",
         elapsedMs: 0,
       });
@@ -1305,11 +1319,11 @@ test("enabled acceptance bounds Container instance convergence at 36 reads", asy
     assert.equal(report.failure, "container_instance_timeout");
     assert.equal(diagnostics.length, 1);
     assert.deepEqual(JSON.parse(diagnostics[0]!), {
-      event: "container_acceptance_convergence", expectedVersion: 26,
+      event: "container_pre_fixture_convergence", expectedVersion: 26,
       observedVersion: null, state: "provisioning", polls: 36, result: "timeout",
       elapsedMs: 0,
     });
-    // One setup read plus 36 final-gate convergence reads; the count is unchanged.
+    // One setup read plus 36 pre-fixture convergence reads; the bounded count is unchanged.
     assert.equal(calls.filter(({ args }) => args.includes("containers") && args.includes("instances")).length, 37);
   } finally { await rm(root, { recursive: true, force: true }); }
 });
@@ -1508,7 +1522,7 @@ test("service fixture typed failures retain their bounded boundary in the releas
   const run = deps.run;
   let attempts = 0;
   deps.run = async (command, args, options) => {
-    if (command === "pnpm" && args.includes("production:test:features")) {
+    if (command === "pnpm" && args.includes("production:test:features") && !args.includes("--initialize-only")) {
       attempts += 1;
       if (attempts > 1) throw new Error("later private fixture detail");
       const stdout = JSON.stringify({
@@ -1542,7 +1556,7 @@ test("runtime-version failure report is parsed and retried without exposing serv
   const run = deps.run;
   let attempts = 0;
   deps.run = async (command, args, options) => {
-    if (command === "pnpm" && args[0] === "production:test:features" && ++attempts === 1) {
+    if (command === "pnpm" && args[0] === "production:test:features" && !args.includes("--initialize-only") && ++attempts === 1) {
       const stdout = JSON.stringify({
         schema: 1, profile: "service", failed: ["service_runtime_version_mismatch"], failureCategory: "feature_failed",
         lastCompletedBoundary: "service_runtime_version_read", correlationIds: [],
@@ -1556,6 +1570,10 @@ test("runtime-version failure report is parsed and retried without exposing serv
     assert.equal(report.outcome, "success");
     assert.equal(attempts, 2);
     assert.deepEqual(diagnostics, [
+      JSON.stringify({
+        event: "container_pre_fixture_convergence", expectedVersion: 26,
+        observedVersion: 26, state: "running", polls: 1, result: "accepted", elapsedMs: 0,
+      }),
       "acceptance_failure_code=service_runtime_version_mismatch",
       JSON.stringify({
         event: "container_acceptance_convergence", expectedVersion: 26,
@@ -2477,14 +2495,17 @@ test("service deployment never reads owner credentials and issues one token befo
     assert.equal(issues, 1);
     assert.ok(report.checks.includes("service_fixture_acceptance"));
     assert.equal(report.checks.includes("authenticated_read_only_acceptance"), false);
-    const acceptance = calls.find(({ args }) => args.includes("--service"));
+    const acceptance = calls.find(({ args }) => args.includes("--service") && !args.includes("--initialize-only"));
     assert.ok(acceptance);
     assert.deepEqual(acceptance.args, ["production:test:features", "--service"]);
     assert.equal(acceptance.env?.NEMLIG_MCP_SERVICE_ACCESS_TOKEN, "machine-token");
+    const initialization = calls.find(({ args }) => args.includes("--initialize-only"));
+    assert.deepEqual(initialization?.args, ["production:test:features", "--service", "--initialize-only"]);
+    assert.equal(initialization?.env?.NEMLIG_MCP_SERVICE_ACCESS_TOKEN, "machine-token");
     for (const call of calls) {
       assert.equal(call.env?.NEMLIG_MCP_ACCESS_TOKEN, undefined);
       assert.equal(call.env?.NEMLIG_MCP_SERVICE_CLIENT_SECRET, undefined);
-      if (call !== acceptance) assert.equal(call.env?.NEMLIG_MCP_SERVICE_ACCESS_TOKEN, undefined);
+      if (call !== acceptance && call !== initialization) assert.equal(call.env?.NEMLIG_MCP_SERVICE_ACCESS_TOKEN, undefined);
     }
     assert.doesNotMatch(JSON.stringify(report), /machine-token|machine-secret/);
   } finally { await rm(root, { recursive: true, force: true }); }
