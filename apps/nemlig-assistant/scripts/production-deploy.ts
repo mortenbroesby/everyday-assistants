@@ -1304,21 +1304,46 @@ const waitForAcceptedInstance = async (deps: DeployDependencies, applicationId: 
   const startedAt = deps.now().getTime();
   let polls = 0;
   let observedVersion: number | null = null;
-  let state = "unknown";
+  let state: string | null = null;
+  let firstState: string | null = null;
+  let firstObservedVersion: number | null = null;
+  let observations = 0;
+  const stateCounts = { inactive: 0, running: 0, provisioning: 0, stopping: 0, stopped: 0, invalid: 0 };
+  const versionCounts = { missing: 0, older: 0, expected: 0, newer: 0 };
+  const recordObservation = (): void => {
+    if (observations === 0) {
+      firstState = state;
+      firstObservedVersion = observedVersion;
+    }
+    observations += 1;
+    stateCounts[state as keyof typeof stateCounts] += 1;
+    const category = observedVersion === null ? "missing"
+      : observedVersion < minimumVersion ? "older"
+        : observedVersion === minimumVersion ? "expected" : "newer";
+    versionCounts[category] += 1;
+  };
   const report = (result: "accepted" | "inactive" | "timeout" | "invalid_inventory" | "read_failed" | "version_drift") => {
     if (!reportDiagnostic) return;
-    const elapsed = deps.now().getTime() - startedAt;
-    const diagnostic = JSON.stringify({
-      event: diagnosticEvent,
-      expectedVersion: minimumVersion,
-      observedVersion,
-      state,
-      polls,
-      result,
-      elapsedMs: Number.isFinite(elapsed) ? Math.max(0, Math.min(6 * 60 * 60 * 1000, Math.floor(elapsed))) : 0,
-    });
-    if (deps.diagnostic) deps.diagnostic(diagnostic);
-    else console.error(diagnostic);
+    try {
+      const elapsed = deps.now().getTime() - startedAt;
+      const diagnostic = JSON.stringify({
+        event: diagnosticEvent,
+        expectedVersion: minimumVersion,
+        firstState,
+        firstObservedVersion,
+        observedVersion,
+        state,
+        stateCounts,
+        versionCounts,
+        polls,
+        result,
+        elapsedMs: Number.isFinite(elapsed) ? Math.max(0, Math.min(6 * 60 * 60 * 1000, Math.floor(elapsed))) : 0,
+      });
+      if (deps.diagnostic) deps.diagnostic(diagnostic);
+      else console.error(diagnostic);
+    } catch {
+      // Diagnostics are best-effort and must not replace the deployment result.
+    }
   };
   for (let attempt = 0; attempt < 36; attempt += 1) {
     deps.signal?.throwIfAborted();
@@ -1341,9 +1366,11 @@ const waitForAcceptedInstance = async (deps: DeployDependencies, applicationId: 
         ? row.version : null;
       inactive = instancesInactive(raw);
       if (!inactive) version = runningInstanceVersion(raw, minimumVersion);
+      recordObservation();
     } catch (error) {
       state = "invalid";
       observedVersion = null;
+      recordObservation();
       report("invalid_inventory");
       throw error;
     }
