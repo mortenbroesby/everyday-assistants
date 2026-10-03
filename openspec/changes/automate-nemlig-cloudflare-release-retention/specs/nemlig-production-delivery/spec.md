@@ -51,7 +51,7 @@ Routine delivery SHALL verify the exact deployed source revision, health, OAuth 
 #### Scenario: Final running-instance convergence is diagnosable without widening provider reads
 
 - **WHEN** the final bounded instance gate accepts, times out, receives invalid inventory, encounters a read failure, or observes version drift
-- **THEN** it emits one fixed-schema diagnostic containing only the expected and last valid numeric application versions, an allowlisted state, poll count, elapsed milliseconds, and fixed result category; it adds no provider reads or retries, and it preserves the existing 36-read limit, acceptance predicate, rollback, and lease behavior
+- **THEN** it emits one fixed-schema diagnostic containing only the expected version, nullable first and last observed allowlisted state and nullable numeric application version, fixed-key counts by state and version relation (missing, older, expected, newer), poll count, elapsed milliseconds, and fixed result category; absent observations are null rather than an inferred state. Diagnostic output is best-effort and cannot replace the deployment result. It adds no provider reads or retries and preserves the existing 36-read limit, acceptance predicate, rollback, and lease behavior.
 
 #### Scenario: Disabled-route propagation is transient
 

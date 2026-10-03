@@ -877,13 +877,100 @@ test("service release cannot accept a matching fixture while its instance is ina
       assert.equal(acceptanceCalls.filter(({ args }) => args.includes("--initialize-only")).length, 1);
       assert.equal(acceptanceCalls.filter(({ args }) => !args.includes("--initialize-only")).length, 0);
       assert.equal(diagnostics.length, 1);
+      const stateCounts = row.state === "inactive"
+        ? { inactive: 36, running: 0, provisioning: 0, stopping: 0, stopped: 0, invalid: 0 }
+        : { inactive: 0, running: 36, provisioning: 0, stopping: 0, stopped: 0, invalid: 0 };
       assert.deepEqual(JSON.parse(diagnostics[0]!), {
         event: "container_pre_fixture_convergence", expectedVersion: 26,
+        firstState: row.state, firstObservedVersion: row.version,
         observedVersion: row.version, state: row.state, polls: 36, result: "timeout",
+        stateCounts,
+        versionCounts: row.version === null
+          ? { missing: 36, older: 0, expected: 0, newer: 0 }
+          : { missing: 0, older: 36, expected: 0, newer: 0 },
         elapsedMs: 0,
       });
     } finally { await rm(root, { recursive: true, force: true }); }
   }
+});
+
+test("convergence diagnostic retains the bounded observed transition without changing acceptance", async () => {
+  const { deps, calls, root } = await fixture({ enabledInstanceRows: [
+    [{ id: "instance", name: "nemlig-production", state: "provisioning", version: null }],
+    [{ id: "instance", name: "nemlig-production", state: "running", version: 25 }],
+    [{ id: "instance", name: "nemlig-production", state: "stopping", version: 25 }],
+    [{ id: "instance", name: "nemlig-production", state: "inactive", version: null }],
+  ] });
+  const diagnostics: string[] = [];
+  deps.diagnostic = (message) => diagnostics.push(message);
+  deps.now = () => new Date(0);
+  deps.acceptanceMode = "service";
+  deps.env = { CLOUDFLARE_ACCOUNT_ID: accountId, NEMLIG_MCP_SERVICE_CLIENT_ID: "service-client", NEMLIG_MCP_SERVICE_CLIENT_SECRET: "machine-secret", NEMLIG_CI_ACCEPTANCE_READY: "true" };
+  deps.issueServiceToken = async () => "machine-token";
+  try {
+    const report = await deployProduction(commit, deps);
+    assert.equal(report.outcome, "failed");
+    assert.equal(report.failure, "container_instance_timeout");
+    assert.equal(diagnostics.length, 1);
+    assert.deepEqual(JSON.parse(diagnostics[0]!), {
+      event: "container_pre_fixture_convergence", expectedVersion: 26,
+      firstState: "provisioning", firstObservedVersion: null,
+      observedVersion: null, state: "inactive",
+      stateCounts: { inactive: 33, running: 1, provisioning: 1, stopping: 1, stopped: 0, invalid: 0 },
+      versionCounts: { missing: 34, older: 2, expected: 0, newer: 0 },
+      polls: 36, result: "timeout", elapsedMs: 0,
+    });
+    assert.equal(calls.filter(({ args }) => args.includes("containers") && args.includes("instances")).length, 37);
+    assert.equal(calls.some(({ args }) => args[0] === "production:test:features" && !args.includes("--initialize-only")), false);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test("a diagnostic output failure cannot replace the deployment failure", async () => {
+  const { deps, root } = await fixture({ enabledInstanceRows: [[{
+    id: "instance", name: "nemlig-production", state: "provisioning", version: null,
+  }]] });
+  deps.diagnostic = () => { throw new Error("closed diagnostics pipe"); };
+  deps.acceptanceMode = "service";
+  deps.env = { CLOUDFLARE_ACCOUNT_ID: accountId, NEMLIG_MCP_SERVICE_CLIENT_ID: "service-client", NEMLIG_MCP_SERVICE_CLIENT_SECRET: "machine-secret", NEMLIG_CI_ACCEPTANCE_READY: "true" };
+  deps.issueServiceToken = async () => "machine-token";
+  try {
+    const report = await deployProduction(commit, deps);
+    assert.equal(report.outcome, "failed");
+    assert.equal(report.failure, "container_instance_timeout");
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test("a first instance-read failure reports no invented observation", async () => {
+  const { deps, root } = await fixture();
+  const run = deps.run;
+  let failedInstanceRead = false;
+  deps.run = async (command, args, options) => {
+    if (!failedInstanceRead && args.includes("containers") && args.includes("instances")) {
+      failedInstanceRead = true;
+      throw new Error("instance inventory unavailable");
+    }
+    return await run(command, args, options);
+  };
+  const diagnostics: string[] = [];
+  deps.diagnostic = (message) => diagnostics.push(message);
+  deps.now = () => new Date(0);
+  deps.acceptanceMode = "service";
+  deps.env = { CLOUDFLARE_ACCOUNT_ID: accountId, NEMLIG_MCP_SERVICE_CLIENT_ID: "service-client", NEMLIG_MCP_SERVICE_CLIENT_SECRET: "machine-secret", NEMLIG_CI_ACCEPTANCE_READY: "true" };
+  deps.issueServiceToken = async () => "machine-token";
+  try {
+    const report = await deployProduction(commit, deps);
+    assert.equal(failedInstanceRead, true);
+    assert.equal(report.outcome, "failed");
+    assert.equal(diagnostics.length, 1);
+    assert.deepEqual(JSON.parse(diagnostics[0]!), {
+      event: "container_pre_fixture_convergence", expectedVersion: 26,
+      firstState: null, firstObservedVersion: null,
+      observedVersion: null, state: null,
+      stateCounts: { inactive: 0, running: 0, provisioning: 0, stopping: 0, stopped: 0, invalid: 0 },
+      versionCounts: { missing: 0, older: 0, expected: 0, newer: 0 },
+      polls: 1, result: "read_failed", elapsedMs: 0,
+    });
+  } finally { await rm(root, { recursive: true, force: true }); }
 });
 
 test("previous backend version is bounded and cannot authorize release or cleanup", async () => {
@@ -1256,7 +1343,11 @@ test("enabled acceptance waits for one matching running Container instance", asy
     assert.equal(diagnostics.length, 1);
     assert.deepEqual(JSON.parse(diagnostics[0]!), {
       event: "container_acceptance_convergence", expectedVersion: 26,
-      observedVersion: 26, state: "running", polls: 1, result: "accepted", elapsedMs: 0,
+      firstState: "running", firstObservedVersion: 26,
+      observedVersion: 26, state: "running",
+      stateCounts: { inactive: 0, running: 1, provisioning: 0, stopping: 0, stopped: 0, invalid: 0 },
+      versionCounts: { missing: 0, older: 0, expected: 1, newer: 0 },
+      polls: 1, result: "accepted", elapsedMs: 0,
     });
   } finally { await rm(root, { recursive: true, force: true }); }
 });
@@ -1295,7 +1386,10 @@ test("enabled acceptance rejects malformed, wrong, or ambiguous Container instan
       assert.equal(diagnostics.length, 1);
       assert.deepEqual(JSON.parse(diagnostics[0]!), {
         event: "container_pre_fixture_convergence", expectedVersion: 26,
+        firstState: "invalid", firstObservedVersion: null,
         observedVersion: null, state: "invalid", polls: 1, result: "invalid_inventory",
+        stateCounts: { inactive: 0, running: 0, provisioning: 0, stopping: 0, stopped: 0, invalid: 1 },
+        versionCounts: { missing: 1, older: 0, expected: 0, newer: 0 },
         elapsedMs: 0,
       });
       assert.equal(diagnostics[0]!.includes("not-an-instance"), false);
@@ -1320,7 +1414,10 @@ test("enabled acceptance bounds Container instance convergence at 36 reads", asy
     assert.equal(diagnostics.length, 1);
     assert.deepEqual(JSON.parse(diagnostics[0]!), {
       event: "container_pre_fixture_convergence", expectedVersion: 26,
+      firstState: "provisioning", firstObservedVersion: null,
       observedVersion: null, state: "provisioning", polls: 36, result: "timeout",
+      stateCounts: { inactive: 0, running: 0, provisioning: 36, stopping: 0, stopped: 0, invalid: 0 },
+      versionCounts: { missing: 36, older: 0, expected: 0, newer: 0 },
       elapsedMs: 0,
     });
     // One setup read plus 36 pre-fixture convergence reads; the bounded count is unchanged.
@@ -1572,12 +1669,20 @@ test("runtime-version failure report is parsed and retried without exposing serv
     assert.deepEqual(diagnostics, [
       JSON.stringify({
         event: "container_pre_fixture_convergence", expectedVersion: 26,
-        observedVersion: 26, state: "running", polls: 1, result: "accepted", elapsedMs: 0,
+        firstState: "running", firstObservedVersion: 26,
+        observedVersion: 26, state: "running",
+        stateCounts: { inactive: 0, running: 1, provisioning: 0, stopping: 0, stopped: 0, invalid: 0 },
+        versionCounts: { missing: 0, older: 0, expected: 1, newer: 0 },
+        polls: 1, result: "accepted", elapsedMs: 0,
       }),
       "acceptance_failure_code=service_runtime_version_mismatch",
       JSON.stringify({
         event: "container_acceptance_convergence", expectedVersion: 26,
-        observedVersion: 26, state: "running", polls: 1, result: "accepted", elapsedMs: 0,
+        firstState: "running", firstObservedVersion: 26,
+        observedVersion: 26, state: "running",
+        stateCounts: { inactive: 0, running: 1, provisioning: 0, stopping: 0, stopped: 0, invalid: 0 },
+        versionCounts: { missing: 0, older: 0, expected: 1, newer: 0 },
+        polls: 1, result: "accepted", elapsedMs: 0,
       }),
     ]);
     assert.doesNotMatch(JSON.stringify(report), /private old-server data|machine-token/u);
