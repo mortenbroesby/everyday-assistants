@@ -51,6 +51,7 @@ export interface DeploymentJournal {
   deliveryMode?: "routine" | "recovery";
   outcome: "running" | "success" | "failed";
   failure?: string;
+  recoveryFailure?: string;
   acceptanceFailure?: AcceptanceFailureEvidence;
   remoteCommit?: string;
   transitions: JournalTransition[];
@@ -213,9 +214,13 @@ const journalJson = (journal: DeploymentJournal): string => {
     || (journal.disabledImage !== undefined && (typeof journal.disabledImage !== "string" || !imageDigest.test(journal.disabledImage)))
     || (journal.enabledImage !== undefined && (typeof journal.enabledImage !== "string" || !imageDigest.test(journal.enabledImage)))
     || (journal.acceptanceFailure !== undefined && (!validAcceptanceFailure(journal.acceptanceFailure) || journal.outcome !== "failed"))) fail("deployment_journal_invalid");
-  if (journal.checks.some((check) => !journalChecks.has(check)) || (journal.failure !== undefined && !deploymentFailureReasons.has(journal.failure))) fail("deployment_journal_invalid");
+  if (journal.checks.some((check) => !journalChecks.has(check))
+    || (journal.failure !== undefined && !deploymentFailureReasons.has(journal.failure))
+    || (journal.recoveryFailure !== undefined && !deploymentFailureReasons.has(journal.recoveryFailure))) fail("deployment_journal_invalid");
   const phaseOrder: JournalPhase[] = journal.transitions[0]?.phase === "enable_deploy"
-    ? ["enable_deploy", "rollback", "container_restore", "worker_restore"]
+    ? journal.transitions.some(({ phase }) => phase === "rollback")
+      ? ["enable_deploy", "rollback", "container_restore", "worker_restore"]
+      : ["enable_deploy", "container_restore", "worker_restore"]
     : ["disabled_deploy", "enable_deploy", "rollback"];
   let nextPhase = 0;
   let expecting: JournalKind = "intent";
@@ -1841,51 +1846,35 @@ export async function deployProduction(commit: string, inputDeps: DeployDependen
           && journal.transitions.at(-1)?.phase === "enable_deploy" && journal.transitions.at(-1)?.kind === "result") {
           verifyCandidateVersion(currentRaw, current.version, commit, true);
           verifyConfig(currentRaw, configured);
-          await transition("rollback", "intent", current.version);
+          // A routine release failure is not an emergency. Keep the Worker enabled
+          // while restoring the exact accepted image; only an explicitly dispatched
+          // recovery/emergency operation may deploy MCP_ENABLED=false.
           await verifyCurrent(deps, current.version);
           await verifyLeaseHead(deps, repository, journal);
           journal.rollback = "attempted";
+          await transition("container_restore", "intent", current.version);
           mutationUncertain = true;
-          const disabledOutput = await wrangler(deps, ["deploy", ...deployVars(configured, false, commit), "--containers-rollout", "none", "--message",
-            `Automated fail-closed recovery after ${commit.slice(0, 7)} release`], 180_000);
-          mutationUncertain = false;
-          const disabledId = deployedVersionFromOutput(disabledOutput);
-          await verifyCurrent(deps, disabledId);
-          const disabledRaw = await readVersion(deps, disabledId);
-          verifyCandidateVersion(disabledRaw, disabledId, commit, false);
-          verifyConfig(disabledRaw, configured);
-          const disabledContainer = await readContainer(deps, startingContainer.id);
-          if (disabledContainer.image !== journal.enabledImage || disabledContainer.version !== journal.enabledApplicationVersion) {
-            fail("cloudflare_deployment_drift");
+          let restoredApplicationVersion: number;
+          try {
+            restoredApplicationVersion = await restoreStartingContainerImage(deps, journal, {
+              id: startingContainer.id,
+              image: journal.enabledImage!,
+              version: journal.enabledApplicationVersion!,
+            });
+          } catch (restoreError) {
+            journal.recoveryFailure = restoreError instanceof DeployFailure && deploymentFailureReasons.has(restoreError.code)
+              ? restoreError.code
+              : "unexpected_failure";
+            throw restoreError;
           }
-          await verifyDisabledRoutes(deps);
-          await waitForInactive(deps, disabledContainer.id);
-          await verifyLeaseHead(deps, repository, journal);
-          const provenDisabledContainer = await readContainer(deps, disabledContainer.id);
-          if (provenDisabledContainer.image !== disabledContainer.image || provenDisabledContainer.version !== disabledContainer.version) {
-            fail("cloudflare_deployment_drift");
-          }
-          journal.disabledVersion = disabledId;
-          journal.disabledImage = provenDisabledContainer.image;
-          journal.disabledApplicationVersion = provenDisabledContainer.version;
-          journal.lastVerifiedState = "disabled";
-          journal.rollback = "restored";
-          journal.checks.push("disabled_version", "disabled_routes", "container_inactive");
-          await transition("rollback", "result", disabledId);
-          // Candidate failure is known, and the original enabled release is exact.
-          // Restore its immutable image before returning its Worker version to traffic.
-          await verifyLeaseHead(deps, repository, journal);
-          await transition("container_restore", "intent", disabledId);
-          mutationUncertain = true;
-          const restoredApplicationVersion = await restoreStartingContainerImage(deps, journal, provenDisabledContainer);
           mutationUncertain = false;
           const restoredContainer = await readContainer(deps, startingContainer.id);
           if (restoredContainer.id !== startingContainer.id || restoredContainer.image !== journal.startingImage
             || restoredContainer.version !== restoredApplicationVersion) fail("cloudflare_deployment_drift");
           journal.restoredApplicationVersion = restoredApplicationVersion;
-          await transition("container_restore", "result", disabledId);
+          await transition("container_restore", "result", current.version);
 
-          await verifyCurrent(deps, disabledId);
+          await verifyCurrent(deps, current.version);
           await verifyLeaseHead(deps, repository, journal);
           await transition("worker_restore", "intent", starting.id);
           mutationUncertain = true;
@@ -1898,6 +1887,7 @@ export async function deployProduction(commit: string, inputDeps: DeployDependen
           const restoredWorkerContainer = await readContainer(deps, startingContainer.id);
           if (restoredWorkerContainer.image !== journal.startingImage || restoredWorkerContainer.version !== restoredApplicationVersion) fail("cloudflare_deployment_drift");
           await transition("worker_restore", "result", starting.id);
+          journal.rollback = "restored";
           journal.lastVerifiedState = "restored";
           restoredReleaseProven = true;
 

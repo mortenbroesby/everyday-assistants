@@ -55,23 +55,33 @@ Routine delivery SHALL verify the exact deployed source revision, health, OAuth 
 
 #### Scenario: Explicit recovery verifies disabled-route propagation
 
-- **WHEN** explicit recovery or emergency isolation intentionally deploys a disabled Worker
+- **WHEN** a separately authorized emergency-isolation operation intentionally deploys a disabled Worker
 - **THEN** the deploy checks both public routes within a fixed retry and time budget; it proceeds only after both return HTTP 503 with the exact disabled response, otherwise it records the bounded failure category and keeps the incident isolated
 
 #### Scenario: A known routine candidate fails read-only acceptance
 
 - **WHEN** a routine candidate's read-only acceptance fails after its exact Worker version, Container image, and starting enabled release have been durably recorded, and the failure is known rather than an uncertain provider mutation
-- **THEN** the deployment uses the existing production lease to temporarily disable the known-failing candidate, restore the exact starting Container image by immutable digest, waits for the rollout to finish and verifies the exact image and a running instance, restores the exact starting Worker version without force, and reruns read-only service acceptance against the starting revision; the candidate remains failed and is never retained as accepted
+- **THEN** the deployment uses the existing production lease to restore the exact starting Container image by immutable digest and the exact starting enabled Worker version, then reruns read-only service acceptance against the starting revision; it never deploys a disabled Worker as routine failure handling, and the candidate remains failed and is never retained as accepted
 
 #### Scenario: Every non-recovery release deploys enabled
 
 - **WHEN** an exact, authorized routine release runs through either CI service acceptance or the local read-only acceptance path
-- **THEN** it deploys the candidate Worker with MCP enabled and does not publish a disabled staging version; only explicit recovery or incident handling may intentionally deploy disabled
+- **THEN** it deploys the candidate Worker with MCP enabled and does not publish a disabled staging version; disablement is reserved for a separately authorized emergency-isolation operation
 
 #### Scenario: Automatic restoration cannot be proven safe or completes with a failed acceptance
 
 - **WHEN** the starting snapshot is incomplete, lease ownership changes, rollout state is pending/ambiguous, any mutation result is uncertain, the bounded recovery window expires, or restored-release acceptance fails
-- **THEN** the deployment does not retry or perform another speculative mutation; the Worker may remain disabled only as emergency isolation while failback is unresolved or during an owner-directed incident; if the exact prior release was restored but its read-only acceptance fails, leave it enabled, mark acceptance unproven, and retain the lease; unresolved cases are not reported as successful recovery
+- **THEN** the deployment does not retry or perform another speculative mutation; it never deploys a disabled Worker for routine failure handling, records provider state as unknown when it cannot be proven, and retains the lease; if the exact prior release was restored but its read-only acceptance fails, leave it enabled and mark acceptance unproven; unresolved cases are not reported as successful recovery
+
+#### Scenario: Routine failure does not use the emergency kill switch
+
+- **WHEN** a routine deploy, instance-convergence check, or read-only acceptance fails
+- **THEN** automation never deploys `MCP_ENABLED=false`; disablement requires a separately authorized emergency operation, and an enabled-but-unverified or unavailable service is reported honestly without being called healthy
+
+#### Scenario: An interrupted container failback is reconciled under its lease
+
+- **WHEN** a stopped release runner leaves a `container_restore` intent and the original operation, exact starting image/version, disabled Worker, and current provider state can be read back
+- **THEN** protected reconciliation resumes only the exact recorded restoration when authoritative reads prove the safe preconditions, restores the exact starting enabled Worker, appends bounded journal evidence, and releases the lease only after exact readback; uncertain or drifted state remains held without a blind retry
 
 #### Scenario: Restoration capability is verified before a routine release
 

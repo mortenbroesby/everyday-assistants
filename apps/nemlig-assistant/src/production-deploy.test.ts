@@ -2798,11 +2798,9 @@ test("a routine acceptance failure restores the last accepted image and Worker b
     assert.equal(report.rollback, "restored");
     assert.equal(report.checks.includes("starting_version_restored"), true);
     const deploys = calls.filter(({ args }) => args.includes("deploy"));
-    assert.equal(deploys.length, 2);
+    assert.equal(deploys.length, 1);
     assert.ok(deploys[0]?.args.includes("MCP_ENABLED:true"));
-    const rollout = deploys[1]!.args.indexOf("--containers-rollout");
-    assert.deepEqual(deploys[1]?.args.slice(rollout, rollout + 2), ["--containers-rollout", "none"]);
-    assert.ok(deploys[1]?.args.includes("MCP_ENABLED:false"));
+    assert.equal(deploys.some(({ args }) => args.includes("MCP_ENABLED:false")), false);
     assert.ok(calls.some(({ command, args }) => command === "pnpm" && args.includes("rollback") && args.includes(startingId)));
     assert.deepEqual(rolloutBody, {
       description: `Restore known accepted release after ${commit.slice(0, 7)} acceptance failure`,
@@ -2810,7 +2808,7 @@ test("a routine acceptance failure restores the last accepted image and Worker b
       target_configuration: { image: `registry.cloudflare.com/${accountId}/nemlig-mcp-cloudflare-production-nemligmcpcontainer-production@${image}` },
     });
     assert.deepEqual(report.transitions.map(({ phase, kind }) => `${phase}:${kind}`), [
-      "enable_deploy:intent", "enable_deploy:result", "rollback:intent", "rollback:result",
+      "enable_deploy:intent", "enable_deploy:result",
       "container_restore:intent", "container_restore:result", "worker_restore:intent", "worker_restore:result",
     ]);
     assert.equal(await finalizeDeploymentRecovery(report.operationId, deps, true, true), true);
@@ -2867,8 +2865,40 @@ test("an uncertain Container restore request is never retried or followed by spe
     assert.equal(report.outcome, "failed");
     assert.equal(report.lastVerifiedState, "unknown");
     assert.equal(report.rollback, "failed");
+    assert.equal(report.recoveryFailure, "cloudflare_container_restore_uncertain");
     assert.equal(rolloutRequests, 1);
     assert.equal(calls.some(({ command, args }) => command === "pnpm" && args.includes("rollback") && args.includes(startingId)), false);
+    assert.equal(calls.some(({ command, args }) => command === "gh" && args.includes("DELETE")), false);
+    await access(join(root, "nemlig-production-deploy.lock"));
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test("a routine Container restore failure never disables the Worker or releases the recovery lease", async () => {
+  const { deps, calls, root } = await fixture({ failCandidateFeatures: true });
+  const fetch = deps.fetcher;
+  let rolloutRequests = 0;
+  deps.fetcher = async (input, init) => {
+    if (String(input).endsWith("/rollouts") && init?.method === "POST") {
+      rolloutRequests += 1;
+      return Response.json({ success: false, errors: [{ code: 1000, message: "restore rejected" }] }, { status: 500 });
+    }
+    return await fetch(input, init);
+  };
+  deps.env = { ...deps.env, NEMLIG_CI_ACCEPTANCE_READY: "true", NEMLIG_MCP_SERVICE_CLIENT_ID: "service-client" };
+  deps.acceptanceMode = "service";
+  deps.issueServiceToken = async () => "machine-token";
+  try {
+    const report = await deployProduction(commit, deps);
+    assert.equal(report.outcome, "failed");
+    assert.equal(report.lastVerifiedState, "unknown");
+    assert.equal(report.rollback, "failed");
+    assert.equal(report.recoveryFailure, "cloudflare_container_restore_uncertain");
+    assert.equal(rolloutRequests, 1);
+    const deploys = calls.filter(({ args }) => args.includes("deploy"));
+    assert.equal(deploys.length, 1);
+    assert.ok(deploys[0]?.args.includes("MCP_ENABLED:true"));
+    assert.equal(deploys.some(({ args }) => args.includes("MCP_ENABLED:false")), false);
+    assert.equal(calls.some(({ command, args }) => command === "pnpm" && args.includes("rollback")), false);
     assert.equal(calls.some(({ command, args }) => command === "gh" && args.includes("DELETE")), false);
     await access(join(root, "nemlig-production-deploy.lock"));
   } finally { await rm(root, { recursive: true, force: true }); }
