@@ -9,5 +9,6 @@ export const deploymentFailureReasons: ReadonlySet<string> = new Set([
   "cloudflare_runtime_binding_unsupported", "cloudflare_runtime_safety_mismatch", "cloudflare_runtime_unexpected_binding",
   "cloudflare_instances_invalid", "disabled_route_unavailable", "disabled_route_mismatch", "container_inactive_timeout",
   "container_instance_timeout", "container_image_changed_during_enable", "recovery_finalize_denied", "command_failed",
+  "cloudflare_container_restore_unavailable", "cloudflare_container_restore_read_failed", "cloudflare_container_restore_uncertain", "cloudflare_container_restore_timeout",
   "command_cancelled", "unexpected_failure",
 ]);
