@@ -23,6 +23,7 @@ test("summary separates deployment, technical acceptance, owner acceptance, and 
   });
   assert.deepEqual(summary, {
     commit,
+    verifiedLiveRevision: commit,
     deployment: "passed",
     technicalAcceptance: "passed",
     ownerAcceptance: "not_run",
@@ -141,6 +142,29 @@ test("failed deployments expose only a bounded reason and state-appropriate next
   assert.equal(unknown.deploymentFailure, "unknown_failure");
   assert.match(unknown.deploymentNextAction ?? "", /reconcile the exact operation and provider state/u);
   assert.doesNotMatch(formatProductionSummary(unknown), /this_is_not_a_known_failure/u);
+});
+
+test("a failed candidate can report the exact accepted live revision only after restored-release acceptance", () => {
+  const previous = "b".repeat(40);
+  const restored = projectProductionSummary({
+    commit,
+    release: { ...acceptedRelease, outcome: "failed", failure: "service_fixture_acceptance_failed",
+      lastVerifiedState: "restored", startingRevision: previous, checks: ["starting_version_restored"] },
+    retention: { commit, outcome: "not_run", reason: "deployment_not_accepted" },
+  });
+  assert.equal(restored.deployment, "failed");
+  assert.equal(restored.verifiedLiveRevision, previous);
+  assert.match(restored.deploymentNextAction ?? "", /keep this candidate failed/u);
+  assert.ok(formatProductionSummary(restored).includes(previous));
+
+  const unaccepted = projectProductionSummary({
+    commit,
+    release: { ...acceptedRelease, outcome: "failed", failure: "service_fixture_acceptance_failed",
+      lastVerifiedState: "restored", startingRevision: previous, checks: [] },
+    retention: { commit, outcome: "not_run", reason: "deployment_not_accepted" },
+  });
+  assert.equal(unaccepted.verifiedLiveRevision, undefined);
+  assert.match(unaccepted.deploymentNextAction ?? "", /acceptance was not proven/u);
 });
 
 test("an accepted deployment remains reported when artifact or finalization evidence is incomplete", () => {

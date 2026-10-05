@@ -33,6 +33,7 @@ export type CleanupSummaryStatus = "complete" | "held" | "not_run" | "failed" | 
 
 export interface ProductionSummary {
   commit: string;
+  verifiedLiveRevision?: string;
   deployment: ProductionSummaryStatus;
   deploymentFailure?: string;
   deploymentNextAction?: string;
@@ -133,8 +134,16 @@ export function projectProductionSummary(input: ProductionSummaryInput): Product
       ? "Restore a previously accepted main revision through protected recovery; do not retry this candidate."
       : release?.lastVerifiedState === "unknown"
         ? "Hold and reconcile the exact operation and provider state before any retry."
+        : release?.lastVerifiedState === "restored" && checks.includes("starting_version_restored")
+          ? "The last accepted revision was restored and passed read-only acceptance; keep this candidate failed and correct it in a new main commit."
+          : release?.lastVerifiedState === "restored"
+            ? "The prior Worker and image were restored, but their read-only acceptance was not proven; hold the lease and reconcile before another release."
         : "Resolve the reported failure through the protected exact-CI deployment path; do not bypass its checks."
     : undefined;
+  const verifiedLiveRevision = deployment === "passed" ? commit
+    : releaseMatches && release?.lastVerifiedState === "restored" && checks.includes("starting_version_restored")
+      && typeof release.startingRevision === "string" && fullSha.test(release.startingRevision)
+      ? release.startingRevision : undefined;
   const technicalAcceptance: ProductionSummaryStatus = deployment === "passed"
     ? checks.includes("edge_acceptance") && (checks.includes("service_fixture_acceptance") || checks.includes("authenticated_read_only_acceptance"))
       ? "passed" : "unknown"
@@ -191,6 +200,7 @@ export function projectProductionSummary(input: ProductionSummaryInput): Product
   }
   return {
     commit,
+    ...(verifiedLiveRevision ? { verifiedLiveRevision } : {}),
     deployment,
     ...(deploymentFailure ? { deploymentFailure, deploymentNextAction } : {}),
     technicalAcceptance,
@@ -222,7 +232,7 @@ export function formatProductionSummary(summary: ProductionSummary): string {
   return [
     "## Nemlig production release summary",
     `- Source SHA: \`${summary.commit}\``,
-    `- Verified live revision: ${summary.deployment === "passed" ? `\`${summary.commit}\`` : "not proven"}`,
+    `- Verified live revision: ${summary.verifiedLiveRevision ? `\`${summary.verifiedLiveRevision}\`` : "not proven"}`,
     `- Deployment: ${statusLabel(summary.deployment)}`,
     ...(summary.deploymentFailure ? [
       `- Deployment failure: \`${summary.deploymentFailure}\``,

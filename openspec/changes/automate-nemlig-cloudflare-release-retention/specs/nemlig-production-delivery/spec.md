@@ -53,10 +53,30 @@ Routine delivery SHALL verify the exact deployed source revision, health, OAuth 
 - **WHEN** the final bounded instance gate accepts, times out, receives invalid inventory, encounters a read failure, or observes version drift
 - **THEN** it emits one fixed-schema diagnostic containing only the expected version, nullable first and last observed allowlisted state and nullable numeric application version, fixed-key counts by state and version relation (missing, older, expected, newer), poll count, elapsed milliseconds, and fixed result category; absent observations are null rather than an inferred state. Diagnostic output is best-effort and cannot replace the deployment result. It adds no provider reads or retries and preserves the existing 36-read limit, acceptance predicate, rollback, and lease behavior.
 
-#### Scenario: Disabled-route propagation is transient
+#### Scenario: Explicit recovery verifies disabled-route propagation
 
-- **WHEN** either public MCP route does not yet return the exact disabled response immediately after the disabled Worker deployment
-- **THEN** the deploy checks both routes again within a fixed retry and time budget; it proceeds only after both return HTTP 503 with the exact disabled response, otherwise it leaves the Worker disabled and records the bounded failure category
+- **WHEN** explicit recovery or emergency isolation intentionally deploys a disabled Worker
+- **THEN** the deploy checks both public routes within a fixed retry and time budget; it proceeds only after both return HTTP 503 with the exact disabled response, otherwise it records the bounded failure category and keeps the incident isolated
+
+#### Scenario: A known routine candidate fails read-only acceptance
+
+- **WHEN** a routine candidate's read-only acceptance fails after its exact Worker version, Container image, and starting enabled release have been durably recorded, and the failure is known rather than an uncertain provider mutation
+- **THEN** the deployment uses the existing production lease to temporarily disable the known-failing candidate, restore the exact starting Container image by immutable digest, waits for the rollout to finish and verifies the exact image and a running instance, restores the exact starting Worker version without force, and reruns read-only service acceptance against the starting revision; the candidate remains failed and is never retained as accepted
+
+#### Scenario: Every non-recovery release deploys enabled
+
+- **WHEN** an exact, authorized routine release runs through either CI service acceptance or the local read-only acceptance path
+- **THEN** it deploys the candidate Worker with MCP enabled and does not publish a disabled staging version; only explicit recovery or incident handling may intentionally deploy disabled
+
+#### Scenario: Automatic restoration cannot be proven safe or completes with a failed acceptance
+
+- **WHEN** the starting snapshot is incomplete, lease ownership changes, rollout state is pending/ambiguous, any mutation result is uncertain, the bounded recovery window expires, or restored-release acceptance fails
+- **THEN** the deployment does not retry or perform another speculative mutation; the Worker may remain disabled only as emergency isolation while failback is unresolved or during an owner-directed incident; if the exact prior release was restored but its read-only acceptance fails, leave it enabled, mark acceptance unproven, and retain the lease; unresolved cases are not reported as successful recovery
+
+#### Scenario: Restoration capability is verified before a routine release
+
+- **WHEN** a routine release cannot read back the exact starting image/version, the expected scheduler-backed `default` policy, or a state with no active Container rollout
+- **THEN** it stops before any Worker or Container mutation and reports a bounded deployment failure
 
 ### Requirement: Release summaries distinguish evidence and cleanup state
 

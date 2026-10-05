@@ -45,11 +45,30 @@ Object named `nemlig-production`, and at most one sleeping `lite` Container. The
 legacy `PlanStorage` class, namespace binding and migration history are retained
 only to preserve existing records and rollback: its handler returns 410 without
 storage access, and the application no longer forwards saved-shopping requests.
-Do not delete that namespace or stored records as part of a routine deployment. The Worker
-is disabled by default. No app-local operation quota, rate throttle, tier budget,
-usage counter or automatic daily breaker remains. Protocol/profile distinctions
-serve only credential gating and diagnostics. The manual kill switch still
-stops new MCP work before backend access.
+Do not delete that namespace or stored records as part of a routine deployment.
+The Worker is enabled during normal operation and every non-recovery release,
+including the local read-only acceptance path. `MCP_ENABLED=false` is an
+emergency kill switch, not a normal release staging state. Only explicit
+recovery or incident handling may deploy a disabled version. On a known routine
+acceptance failure, release automation may temporarily disable that
+known-failing candidate as emergency isolation, but must then attempt one exact,
+bounded restoration of the last recorded enabled Worker and immutable
+Container image; it must not treat “candidate disabled” as successful recovery.
+If exact restoration cannot be proven, preserve the lease and recovery evidence.
+Disablement may persist only while failback is unresolved or during an explicit
+owner-directed emergency response. If exact failback restores the prior release
+but its acceptance fails, leave it enabled, mark acceptance unproven, and retain
+the lease. No app-local operation quota, rate throttle, tier budget, usage
+counter or automatic daily breaker remains. Protocol/profile distinctions serve
+only credential gating and diagnostics.
+
+Routine failback uses Cloudflare's Containers rollout API for this repository's
+`Container`-class application (the scheduler-backed `default` policy). Before
+deploying a candidate, automation read-verifies that policy, the recorded image
+digest/version, and absence of an active rollout. If the application no longer
+matches that supported model, deployment stops before Worker mutation; do not
+silently switch to a different rollout API or disable the service as routine
+staging.
 
 The Worker CPU and subrequest limits are 100 ms and 8. Every request has a
 90-second total deadline. Auth0 is capped at 5 seconds, Durable Object control
@@ -61,10 +80,12 @@ contract.
 
 ## First deployment and current setup
 
-The account plan, Auth0 API, encrypted secrets, disabled first deployment, and
-custom hostname steps below are complete. Keep the procedure for reproduction
-and disaster recovery. The current enabled version was deployed only after the
-disabled endpoint and no-running-Container state were verified.
+The account plan, Auth0 API, encrypted secrets, initial deployment, and custom
+hostname steps below are complete. Keep the procedure for historical
+reproduction and disaster recovery. Its disabled-first sequence describes the
+original bootstrap only; it is not the procedure for routine releases. Normal
+releases stay enabled, and global disablement is reserved for emergency
+isolation or explicit recovery.
 
 1. Activate Workers Paid and configure account-wide budget notifications at USD
    10 (warning) and USD 20 (urgent). These are delayed informational alerts, not
@@ -103,7 +124,8 @@ disabled endpoint and no-running-Container state were verified.
    deployment is verified; then remove them as a separate owner-controlled
    secret cleanup. They must never be reused for an invitee.
 
-6. Keep `MCP_ENABLED=false`, validate, then deploy:
+6. For a never-before-deployed Worker only, validate and perform the initial
+   deployment. Do not use a disabled staging deploy for a routine release:
 
    ```sh
    pnpm --filter nemlig-assistant cloudflare:check
@@ -111,10 +133,9 @@ disabled endpoint and no-running-Container state were verified.
    ```
 
 7. The repository configures `nemlig-mcp.broesby.dk` as a Worker custom domain.
-   Confirm both that URL and the workers.dev fallback return `MCP temporarily
-   disabled` before changing `MCP_ENABLED`. Then set it to `true`, deploy, and
-   test health, Auth0 rejection, one authenticated MCP handshake, usage
-   inspection, and one read-only tool call.
+   For bootstrap, set `MCP_ENABLED=true` as soon as required secrets and
+   configuration are ready, then test health, Auth0 rejection, one
+   authenticated MCP handshake, usage inspection, and one read-only tool call.
 
    Configure the private ChatGPT app with the production `/mcp` URL, OAuth with
    Dynamic Client Registration, and the default `use:nemlig-assistant` scope.
@@ -830,8 +851,16 @@ does not authorize a basket mutation.
 
 ## Roll back
 
-Disable first. In Cloudflare Deployments, select the last recorded verified
-deployment and roll it back, or redeploy its exact Git commit with:
+Use the protected production recovery path to restore the last recorded
+verified Worker and Container image while keeping service available. Do not
+disable the app as a routine rollback step. If there is an active incident that
+requires containment, `MCP_ENABLED=false` is emergency isolation only; preserve
+the recovery evidence and restore an accepted enabled release as soon as the
+incident permits. Never perform a blind rollback or weaken authorization.
+
+For owner-directed emergency recovery, select the last recorded verified
+deployment in Cloudflare or redeploy its exact Git commit only through the
+repository's protected recovery procedure:
 
 ```sh
 git switch --detach VERIFIED_COMMIT
@@ -840,9 +869,10 @@ pnpm --filter nemlig-assistant cloudflare:check
 pnpm --filter nemlig-assistant exec wrangler deploy --env production
 ```
 
-Keep `MCP_ENABLED=false` until the rolled-back revision, its compatible private
-configuration, Auth0 rejection and read-only flow are verified. Never roll back
-by weakening authorization or creating another Container.
+Verify the restored revision, its compatible private configuration, Auth0
+rejection and read-only flow. Clear emergency isolation only after the accepted
+service is proven. Never roll back by weakening authorization or creating
+another Container.
 
 ## Remove the deployment
 
