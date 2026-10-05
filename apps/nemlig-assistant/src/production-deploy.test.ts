@@ -100,10 +100,12 @@ const recoveryDeps = (journal: Record<string, unknown>, currentVersion: string, 
   let liveEnabled = currentEnabled;
   let remoteParent = typeof journal.remoteCommit === "string" ? journal.remoteCommit : "cccccccccccccccccccccccccccccccccccccccc";
   let remoteHead = "dddddddddddddddddddddddddddddddddddddddd";
+  let nextCommit = 14;
   let currentJournal = JSON.stringify(journal);
   const tree = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
   const blob = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
   const run: CommandRunner = async (command, args, runOptions) => {
+    if (command === "git" && args.includes("--git-common-dir")) return "/tmp";
     if (command === "pnpm" && args.includes("rollback") && options.rollbackTo) {
       liveVersion = options.rollbackTo.version;
       liveEnabled = options.rollbackTo.enabled;
@@ -137,7 +139,7 @@ const recoveryDeps = (journal: Record<string, unknown>, currentVersion: string, 
       return JSON.stringify({ sha: blob });
     }
     if (args[0] === "api" && args[1] === "--method" && args[2] === "POST" && path.endsWith("git/trees")) return JSON.stringify({ sha: tree });
-    if (args[0] === "api" && args[1] === "--method" && args[2] === "POST" && path.endsWith("git/commits")) return JSON.stringify({ sha: "dddddddddddddddddddddddddddddddddddddddd" });
+    if (args[0] === "api" && args[1] === "--method" && args[2] === "POST" && path.endsWith("git/commits")) return JSON.stringify({ sha: (nextCommit++).toString(16).padStart(40, "0") });
     if (args[0] === "api" && args[1] === "--method" && args[2] === "PATCH" && path.includes("git/refs/heads/codex-lock/nemlig-production")) {
       remoteParent = remoteHead;
       remoteHead = JSON.parse(runOptions?.input ?? "{}").sha;
@@ -164,6 +166,70 @@ const terminalJournal = (extra: Record<string, unknown> = {}) => ({
     { phase: "rollback", kind: "result", at: "2026-09-05T12:00:05.000Z", version: startingId },
   ], ...extra,
 });
+
+const interruptedContainerRestoreJournal = (extra: Record<string, unknown> = {}) => ({
+  ...terminalJournal(),
+  completedAt: "2026-10-05T13:58:48.863Z", remoteCommit: "cccccccccccccccccccccccccccccccccccccccc", startingRevision: commit,
+  startingApplicationVersion: 25, enabledApplicationVersion: 26, disabledApplicationVersion: 26,
+  enabledVersion: enabledId, enabledImage: candidateImage, disabledVersion: disabledId, disabledImage: candidateImage,
+  failure: "container_instance_timeout", rollback: "failed", lastVerifiedState: "unknown",
+  checks: ["starting_state_recorded", "disabled_version", "enabled_version", "container_rollout"],
+  transitions: [
+    { phase: "enable_deploy", kind: "intent", at: "2026-10-05T13:50:00.000Z", version: startingId },
+    { phase: "enable_deploy", kind: "result", at: "2026-10-05T13:51:00.000Z", version: enabledId },
+    { phase: "rollback", kind: "intent", at: "2026-10-05T13:56:00.000Z", version: enabledId },
+    { phase: "rollback", kind: "result", at: "2026-10-05T13:57:00.000Z", version: disabledId },
+    { phase: "container_restore", kind: "intent", at: "2026-10-05T13:58:00.000Z", version: enabledId },
+  ],
+  ...extra,
+});
+
+const interruptedContainerRestoreDeps = (journal: Record<string, unknown>, options: { updatedAt?: string; failRestore?: boolean } = {}) => {
+  let applicationImage = `registry.cloudflare.com/${accountId}/nemlig-mcp-cloudflare-production-nemligmcpcontainer-production@${candidateImage}`;
+  let applicationVersion = 26;
+  let running = false;
+  let rollouts = 0;
+  const deps = recoveryDeps(journal, disabledId, false, {
+    image: candidateImage, applicationVersion, rollbackTo: { version: startingId, enabled: true },
+  });
+  deps.env = { CLOUDFLARE_ACCOUNT_ID: accountId, CLOUDFLARE_API_TOKEN: "test-token",
+    NEMLIG_MCP_AUTH0_ISSUER: "https://everyday-assistants.eu.auth0.com/", NEMLIG_MCP_PUBLIC_URL: "https://nemlig-mcp.broesby.dk/mcp",
+    NEMLIG_MCP_SERVICE_CLIENT_ID: "service-client", NEMLIG_MCP_SERVICE_CLIENT_SECRET: "test-secret", NEMLIG_CI_ACCEPTANCE_READY: "true" };
+  const originalRun = deps.run;
+  deps.run = async (command, args, runOptions) => {
+    if (command === "pnpm" && args.includes("info")) return JSON.stringify({
+      id: applicationId, name: "nemlig-mcp-cloudflare-production-nemligmcpcontainer-production", instances: 1,
+      configuration: { image: applicationImage }, version: applicationVersion,
+    });
+    if (command === "pnpm" && args.includes("instances")) return JSON.stringify([{
+      id: "durable-object", name: "nemlig-production", state: running ? "running" : "inactive", version: running ? applicationVersion : null,
+    }]);
+    if (command === "pnpm" && args.some((arg) => arg.startsWith("production:"))) {
+      if (args.includes("initialize-only") || args.includes("production:probe")) running = true;
+      return "";
+    }
+    return originalRun(command, args, runOptions);
+  };
+  deps.fetcher = async (input, init) => {
+    const url = String(input);
+    if (url.includes("api.cloudflare.com") && url.endsWith("/rollouts") && init?.method === "POST") {
+      rollouts += 1;
+      if (options.failRestore) throw new Error("response lost after restore request");
+      const body = JSON.parse(String(init.body)) as { target_configuration: { image: string } };
+      applicationImage = body.target_configuration.image;
+      applicationVersion += 1;
+      return Response.json({ success: true, result: { id: "rollout-restore-test" } });
+    }
+    if (url.includes("api.cloudflare.com")) return Response.json({ success: true, result: {
+      id: applicationId, configuration: { image: applicationImage }, version: applicationVersion,
+      scheduling_policy: "default", active_rollout_id: null,
+      updated_at: options.updatedAt ?? "2026-10-05T13:50:00.000Z",
+    } });
+    return new Response("MCP temporarily disabled", { status: 503 });
+  };
+  deps.issueServiceToken = async () => "test-machine-token";
+  return { deps, get rollouts() { return rollouts; } };
+};
 
 interface Call {
   command: string;
@@ -2386,6 +2452,61 @@ test("interrupted disabled deploy drift retains the lease without provider mutat
   }
 });
 
+test("interrupted Container restore reconciles the exact prior enabled release and accepts it before finalizing", async () => {
+  const journal = interruptedContainerRestoreJournal();
+  const recovery = interruptedContainerRestoreDeps(journal);
+  const { deps } = recovery;
+  let rollbacks = 0;
+  const run = deps.run;
+  deps.run = async (command, args, options) => {
+    if (command === "pnpm" && args.includes("rollback")) rollbacks += 1;
+    return run(command, args, options);
+  };
+  const result = await reconcilePendingRollback(journal.operationId, deps, true, true);
+  assert.deepEqual(result, { operation: journal.operationId, originalRunnerStopped: true, reconciled: true, reason: "eligible", state: "restored" });
+  assert.equal(recovery.rollouts, 1);
+  assert.equal(rollbacks, 1);
+  const inspected = await inspectDeploymentRecovery(journal.operationId, deps, true);
+  assert.deepEqual(inspected, { operation: journal.operationId, originalRunnerStopped: true, cleanupEligible: true, reason: "eligible", state: "restored" });
+  assert.equal(await finalizeDeploymentRecovery(journal.operationId, deps, true, true), true);
+  assert.equal(rollbacks, 1, "finalization performs no additional Worker mutation");
+});
+
+test("an uncertain interrupted Container restore is recorded once and never reposted", async () => {
+  const journal = interruptedContainerRestoreJournal();
+  const recovery = interruptedContainerRestoreDeps(journal, { failRestore: true });
+  const { deps } = recovery;
+  const saved: Array<Record<string, unknown>> = [];
+  const run = deps.run;
+  deps.run = async (command, args, options) => {
+    if (command === "gh" && args[0] === "api" && args[1] === "--method" && args[2] === "POST" && args.some((arg) => arg.endsWith("git/blobs"))) {
+      const request = JSON.parse(options?.input ?? "{}") as { content?: string };
+      if (request.content) saved.push(JSON.parse(Buffer.from(request.content, "base64").toString("utf8")) as Record<string, unknown>);
+    }
+    return run(command, args, options);
+  };
+  const first = await reconcilePendingRollback(journal.operationId, deps, true, true);
+  assert.equal(first.reconciled, false);
+  assert.equal(recovery.rollouts, 1);
+  assert.equal(saved.at(-1)?.recoveryFailure, "cloudflare_container_restore_uncertain");
+  const persisted = await inspectDeploymentRecovery(journal.operationId, deps, true);
+  assert.equal(persisted.cleanupEligible, false);
+  const second = await reconcilePendingRollback(journal.operationId, deps, true, true);
+  assert.equal(second.reconciled, false);
+  assert.equal(recovery.rollouts, 1, "the persisted one-attempt marker forbids a second POST");
+});
+
+test("interrupted Container restore requires evidence that Cloudflare had not applied the old intent", async () => {
+  const journal = interruptedContainerRestoreJournal();
+  const recovery = interruptedContainerRestoreDeps(journal, { updatedAt: "2026-10-05T13:59:00.000Z" });
+  const { deps } = recovery;
+  const result = await reconcilePendingRollback(journal.operationId, deps, true, true);
+  assert.equal(result.reconciled, false);
+  assert.equal(recovery.rollouts, 0);
+  const stored = await inspectDeploymentRecovery(journal.operationId, deps, true);
+  assert.equal(stored.cleanupEligible, false);
+});
+
 test("failed enable intent can release its lease only after exact readback of the unchanged disabled start", async () => {
   const pending = terminalJournal({
     outcome: "failed", rollback: "not_needed", lastVerifiedState: "unknown", failure: "command_failed",
@@ -2559,11 +2680,22 @@ test("finalization refuses to delete a lease whose remote head changes during pr
 
 test("incomplete or contradictory terminal journals never become cleanup-eligible", async () => {
   const operation = "44444444-4444-4444-8444-444444444444";
+  const restoreMissingAcceptance = interruptedContainerRestoreJournal({
+    restoredApplicationVersion: 27, rollback: "restored", lastVerifiedState: "restored",
+    checks: ["container_restore_reconciliation_attempted", "starting_version_restored", "edge_acceptance"],
+    transitions: [
+      ...interruptedContainerRestoreJournal().transitions,
+      { phase: "container_restore", kind: "result", at: "2026-10-05T14:00:00.000Z", version: enabledId },
+      { phase: "worker_restore", kind: "intent", at: "2026-10-05T14:01:00.000Z", version: startingId },
+      { phase: "worker_restore", kind: "result", at: "2026-10-05T14:02:00.000Z", version: startingId },
+    ],
+  });
   for (const journal of [
     terminalJournal({ completedAt: undefined }),
     terminalJournal({ checks: [] }),
     terminalJournal({ lastVerifiedState: "enabled" }),
     terminalJournal({ transitions: [...terminalJournal().transitions.slice(0, -1), { phase: "rollback", kind: "result", at: "2026-09-05T12:00:05.000Z", version: enabledId }] }),
+    restoreMissingAcceptance,
   ]) {
     const inspection = await inspectDeploymentRecovery(operation, recoveryDeps(journal, startingId, true), true);
     assert.equal(inspection.cleanupEligible, false);

@@ -312,9 +312,9 @@ not a fresh real-family Nemlig or ChatGPT acceptance claim.
    ```
 
    If the saved release artifact and original-runner-stopped evidence are
-   available, a protected reconciliation dispatch can prove the exact disabled
-   Worker/Container state, append the missing transition result, and then
-   release the lease without deploying again:
+   available, a protected reconciliation dispatch can prove and complete only
+   the exact interrupted transition recorded in the journal, then release the
+   lease after enabled edge and service acceptance:
 
    ```sh
    gh workflow run nemlig-production.yml --ref main \
@@ -328,6 +328,17 @@ not a fresh real-family Nemlig or ChatGPT acceptance claim.
    are disabled and the Container remains unchanged/inactive before finalizing.
    Drift or an uncertain rollback keeps the lease; the recovery path never
    retries the rollback.
+
+   If the saved journal ends at `container_restore:intent` after the known
+   Container convergence timeout, reconciliation requires the exact disabled
+   candidate Worker, exact candidate image/version, no active rollout, both
+   disabled routes, and Cloudflare's application `updated_at` earlier than the
+   recorded restore intent. It persists a one-attempt marker before issuing the
+   exact starting-image rollout. If the attempt may already have run, it only
+   accepts exact restored-image readback; it never repeats the POST. It then
+   journals the exact starting-Worker rollback, verifies the restored image and
+   Worker, and runs read-only edge and authenticated service acceptance. Any
+   drift, uncertain mutation, or failed acceptance retains the lease.
 
    If the saved journal contains only a `disabled_deploy` intent after a
    disabled-route probe failure, reconciliation can close the operation only
@@ -365,9 +376,13 @@ It takes an exclusive lock shared by linked worktrees and atomically creates
 `refs/heads/codex-lock/nemlig-production` for a unique operation UUID, not the
 source SHA. The ref contains a bounded public-safe recovery journal. Releases
 keep `MCP_ENABLED=true` while Wrangler activates the new Worker and rolls the
-Container image. If a candidate fails bounded acceptance after rollout,
-recovery deploys the same image with `MCP_ENABLED=false` and no second Container
-rollout. The MCP HTTP transport is stateless: modern clients do not depend on
+Container image. If a routine candidate fails bounded acceptance or Container
+convergence, automation keeps the Worker enabled while it attempts one exact
+restoration of the prior accepted Container image and Worker. It never deploys
+`MCP_ENABLED=false` for routine failback; that switch is reserved for explicit
+emergency isolation. Interrupted mutations are reconciled from the durable
+journal and exact provider readback, without replaying uncertain writes. The
+MCP HTTP transport is stateless: modern clients do not depend on
 session IDs, and production acceptance does not probe obsolete session-recovery
 behavior. The journal records the starting version, the exact enabled transition, the resulting Container image, and the bounded edge and
 authenticated read-only checks.

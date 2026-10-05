@@ -307,7 +307,11 @@ test("manual recovery can reconcile an exact pending rollback and release its le
   assert.match(reconcile, /\["disabled", "restored"\]\.includes\(inspection\.state\)/u);
   assert.match(reconcile, /CLOUDFLARE_API_TOKEN:/u);
   assert.match(reconcile, /GH_TOKEN:/u);
-  assert.doesNotMatch(reconcile, /NEMLIG_MCP_SERVICE_CLIENT_SECRET/u);
+  assert.match(reconcile, /NEMLIG_MCP_SERVICE_CLIENT_ID: "\$\{\{ vars\.NEMLIG_MCP_SERVICE_CLIENT_ID \}\}"/u);
+  assert.match(reconcile, /NEMLIG_MCP_SERVICE_CLIENT_SECRET: "\$\{\{ secrets\.NEMLIG_MCP_SERVICE_CLIENT_SECRET \}\}"/u);
+  assert.match(reconcile, /NEMLIG_CI_ACCEPTANCE_READY: "\$\{\{ vars\.NEMLIG_CI_ACCEPTANCE_READY \}\}"/u);
+  assert.doesNotMatch(section(source, "  release-gate:"), /NEMLIG_MCP_SERVICE_CLIENT_SECRET/u);
+  assert.doesNotMatch(section(source, "  retention:"), /NEMLIG_MCP_SERVICE_CLIENT_SECRET/u);
 });
 
 test("routine recovery finalizes only after its artifact is saved", async () => {
