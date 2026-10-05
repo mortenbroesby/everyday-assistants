@@ -98,6 +98,78 @@ ownership and public release are deliberately deferred.
 Candidate libraries and their adoption status are tracked in the
 [Dependency Landscape](docs/dependency-landscape.md).
 
+### Codex-assisted frontend refactoring
+
+Use the repository-local skills for these focused tasks:
+
+- **Composition Patterns** — component structure and composition problems.
+- **Code Simplifier** — scoped readability and maintainability improvements.
+- **React Best Practices** — relevant React performance concerns; do not optimize speculatively during every cleanup.
+- **Verification Before Completion** — gather current command output before claiming completion.
+
+Example:
+
+> Use $vercel-composition-patterns and $code-simplifier to review <path>. Follow AGENTS.md, identify concrete opportunities, preserve behavior, and keep changes scoped. Use $verification-before-completion before reporting completion.
+
+Before refactoring, trace the implementation, callers, data flow, and tests;
+identify a concrete maintenance problem. Prefer the smallest correct change,
+existing utilities, native features, and existing dependencies. Do not add an
+abstraction just to reduce line count or match a pattern. Preserve behavior,
+public APIs, accessibility, validation, error handling, security, feature-flag
+behavior, and package boundaries unless the task authorizes a change. Follow
+the installed framework and architecture; upstream examples do not authorize
+Next.js APIs, React-version-specific features, or replacement libraries.
+
+Do not manually edit generated code. The current app uses TypeScript 5.9.3 and
+an inline DOM/HTML view; it has no React, React DOM, Next.js, or Orval setup.
+The Nemlig API manifest
+(`apps/nemlig-assistant/nemlig-api.openapi.json`) is maintained as documentation,
+not generated client code. Build output under `apps/*/dist/` and coverage output
+under `apps/*/coverage/` are generated; the coverage script excludes
+`src/**/generated/**`, `src/**/*.generated.ts`, `release/**/generated/**`, and
+`release/**/*.generated.ts`.
+
+For a future refactor, record the relevant verification baseline, add focused
+tests when behavior is uncovered, make small changes, and rerun the applicable
+checks. Separate pre-existing failures from regressions and report anything
+unverified. Current commands run from the repository root; inspect the app's
+scripts before choosing a narrower set:
+
+| Check | Command | Working directory |
+| --- | --- | --- |
+| App lint | `pnpm --filter nemlig-assistant lint` | Repository root |
+| App build | `pnpm --filter nemlig-assistant build` | Repository root |
+| App types | `pnpm --filter nemlig-assistant check` | Repository root |
+| App tests | `pnpm --filter nemlig-assistant test` | Repository root |
+| App smoke | `pnpm --filter nemlig-assistant smoke` | Repository root |
+| Repository verification | `pnpm verify` | Repository root |
+| OpenSpec validation, when applicable | `pnpm spec:validate` | Repository root |
+
+Node and pnpm versions are Node 22.23.1 and pnpm 9.15.9. The current app is
+TypeScript with ESLint; no standalone formatter command/configuration or
+frontend testing framework is configured. Do not add one for cleanup work.
+
+The requested skills are copied locally under `.agents/skills/`; the installer
+lockfile is `skills-lock.json`. Installed upstream revisions:
+
+| Skills | Source | Revision |
+| --- | --- | --- |
+| `vercel-composition-patterns`, `vercel-react-best-practices` | [vercel-labs/agent-skills](https://github.com/vercel-labs/agent-skills) | `063bee94c3f4df8453406c830b0a7df0f2860278` |
+| `code-simplifier` | [getsentry/skills](https://github.com/getsentry/skills) | `d18b7aa8ba878354e5c348310230e652f7690f9c` |
+| `verification-before-completion` | [obra/superpowers](https://github.com/obra/superpowers) | `8ca22dba9a94f28898bbce59f2537ff4d87c747d` |
+
+Code Simplifier has one local adaptation: its project-standards section now
+defers to applicable `AGENTS.md`/`AGENTS.override.md`, repository conventions,
+and lint/format configuration instead of CLAUDE.md and hard-coded style rules.
+The Sentry and Superpowers root license notices are retained inside their
+selected skill directories. The Vercel skills declare MIT in `SKILL.md`; their
+upstream repository at the recorded revision has no root `LICENSE` file.
+When updating skills, review upstream changes at the new revision, install only
+these four skills, inspect copied references and licenses, retain the generated
+`skills-lock.json`, and reapply this adaptation before accepting an updated
+Code Simplifier. No automatic update is configured. Verify runtime discovery
+with `/skills` in a fresh Codex session.
+
 ## ⚖️ License
 
 [MIT](LICENSE)

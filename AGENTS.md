@@ -21,6 +21,10 @@ Load only the specialized guidance that matches the task.
 
 | Task intent | Load |
 | --- | --- |
+| Component structure or composition problems | [Composition Patterns](.agents/skills/vercel-composition-patterns/SKILL.md) |
+| Scoped readability or maintainability improvements | [Code Simplifier](.agents/skills/code-simplifier/SKILL.md) |
+| Relevant React performance concerns | [React Best Practices](.agents/skills/vercel-react-best-practices/SKILL.md) |
+| Verify evidence before reporting completion | [Verification Before Completion](.agents/skills/verification-before-completion/SKILL.md) |
 | Explore or clarify before committing to a change | [OpenSpec explore](.agents/skills/openspec-compact/explore/SKILL.md) |
 | Propose a non-trivial feature or architecture change | [OpenSpec propose](.agents/skills/openspec-compact/propose/SKILL.md) |
 | Revise an existing OpenSpec plan | [OpenSpec update](.agents/skills/openspec-compact/update-change/SKILL.md) |
@@ -35,6 +39,10 @@ Load only the specialized guidance that matches the task.
 | Nemlig production, deployment, or provider work | [Nemlig production](apps/nemlig-assistant/.codex/skills/nemlig-production/SKILL.md) |
 
 Selecting guidance never grants authority for the action it describes.
+
+For frontend refactoring, also follow the scoped expectations and actual
+repository verification commands in
+[Codex-assisted frontend refactoring](README.md#codex-assisted-frontend-refactoring).
 
 ## Issue and OpenSpec ownership
 
