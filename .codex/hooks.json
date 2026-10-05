@@ -1,0 +1,17 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "^exec_command$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$(git rev-parse --show-toplevel)/.agents/hooks/jcodemunch-advisory.mjs\"",
+            "timeout": 5,
+            "statusMessage": "Checking whether repository intelligence would help"
+          }
+        ]
+      }
+    ]
+  }
+}

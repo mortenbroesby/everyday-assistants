@@ -81,18 +81,24 @@ make reindexing or SCIP setup a routine task requirement.
 If JCodeMunch will be queried again after edits, refresh only the edited paths
 first: use its exposed edit-registration capability, or its surgical
 single-file indexing capability when registration is unavailable. Batch paths
-when supported. Do not add a lifecycle hook or reindex the whole repository
-for this purpose.
+when supported. Do not reindex the whole repository for this purpose.
 
 ## Dynamic behavior and boundaries
 
-In the current Codex setup, this skill is the native conditional routing point:
-an agent selects it only after an actual repository-intelligence signal. There
-is no Codex lifecycle hook here that can inspect an agent's future read and
-conditionally replace it with an MCP call. Do not add commit hooks, edit hooks,
-wrappers, classifiers, or background indexing to simulate one—those would tax
-ordinary work and run too late to guide exploration. JCodeMunch's installed
-automatic hooks are for Claude Code, not Codex.
+Codex supports repository-local lifecycle hooks. This repository uses one
+advisory `PreToolUse` hook for search-shaped `exec_command` calls. It adapts
+the same escalation boundary as JCodeMunch's Claude hook without spawning its
+slow command-line handler. The hook reminds Codex to consider JCodeMunch when
+the search has become a relationship question; the skill retains the exact
+worktree and freshness preflight. It neither blocks the native command nor
+invokes an MCP tool on the agent's behalf.
+
+The hook deliberately does not run for ordinary shell commands, direct small
+reads, edits, commits, or session start. It does not index, watch files, or
+reindex after every edit. The skill remains the decision point for semantic
+questions that a tool-name hook cannot recognize. Do not add a classifier,
+background indexing, or strict enforcement: targeted native search remains a
+valid and common first step.
 
 JCodeMunch complements the applicable implementation/refactoring skill and
 verification; it does not replace either. It never authorizes edits, external
