@@ -179,7 +179,7 @@ const interruptedContainerRestoreJournal = (extra: Record<string, unknown> = {})
     { phase: "enable_deploy", kind: "result", at: "2026-10-05T13:51:00.000Z", version: enabledId },
     { phase: "rollback", kind: "intent", at: "2026-10-05T13:56:00.000Z", version: enabledId },
     { phase: "rollback", kind: "result", at: "2026-10-05T13:57:00.000Z", version: disabledId },
-    { phase: "container_restore", kind: "intent", at: "2026-10-05T13:58:00.000Z", version: enabledId },
+    { phase: "container_restore", kind: "intent", at: "2026-10-05T13:58:00.000Z", version: disabledId },
   ],
   ...extra,
 });

@@ -1012,7 +1012,7 @@ const pendingInterruptedContainerRestore = (journal: DeploymentJournal): boolean
     && enableResult?.phase === "enable_deploy" && enableResult.kind === "result" && enableResult.version === journal.enabledVersion
     && rollbackIntent?.phase === "rollback" && rollbackIntent.kind === "intent" && rollbackIntent.version === journal.enabledVersion
     && rollbackResult?.phase === "rollback" && rollbackResult.kind === "result" && rollbackResult.version === journal.disabledVersion
-    && containerIntent?.phase === "container_restore" && containerIntent.kind === "intent" && containerIntent.version === journal.enabledVersion
+    && containerIntent?.phase === "container_restore" && containerIntent.kind === "intent" && containerIntent.version === journal.disabledVersion
     && (journal.transitions.length === 5 || (journal.transitions.length === 6 && containerResult?.phase === "container_restore"
       && containerResult.kind === "result" && containerResult.version === journal.enabledVersion)
       || (journal.transitions.length === 7 && containerResult?.phase === "container_restore"

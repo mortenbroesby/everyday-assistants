@@ -328,12 +328,14 @@ jobs:
           if result=$(pnpm --silent --filter nemlig-assistant production:deploy -- reconcile-recovery "$RECONCILE_OPERATION" --evidence-saved --original-runner-stopped); then
             node --input-type=module -e '
               const result = JSON.parse(process.argv[1]);
+              console.log(JSON.stringify({ event: "recovery_reconciliation", reconciled: result.reconciled, reason: result.reason, state: result.state }));
               if (result.reconciled !== true || !["disabled", "restored"].includes(result.state)) process.exit(1);
             ' "$result"
           else
             inspection=$(pnpm --silent --filter nemlig-assistant production:deploy -- inspect-recovery "$RECONCILE_OPERATION" --original-runner-stopped)
             node --input-type=module -e '
               const inspection = JSON.parse(process.argv[1]);
+              console.log(JSON.stringify({ event: "recovery_reconciliation_inspection", cleanupEligible: inspection.cleanupEligible, reason: inspection.reason, state: inspection.state }));
               if (inspection.cleanupEligible !== true || !["disabled", "restored"].includes(inspection.state)) process.exit(1);
             ' "$inspection"
           fi

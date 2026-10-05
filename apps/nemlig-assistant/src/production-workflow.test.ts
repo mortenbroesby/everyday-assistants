@@ -303,7 +303,9 @@ test("manual recovery can reconcile an exact pending rollback and release its le
   assert.match(reconcile, /production:deploy -- inspect-recovery "\$RECONCILE_OPERATION" --original-runner-stopped/u);
   assert.match(reconcile, /production:deploy -- finalize "\$RECONCILE_OPERATION" --evidence-saved --original-runner-stopped/u);
   assert.match(reconcile, /result\.reconciled !== true \|\| !\["disabled", "restored"\]\.includes\(result\.state\)/u);
+  assert.match(reconcile, /event: "recovery_reconciliation", reconciled: result\.reconciled, reason: result\.reason, state: result\.state/u);
   assert.match(reconcile, /cleanupEligible !== true/u);
+  assert.match(reconcile, /event: "recovery_reconciliation_inspection", cleanupEligible: inspection\.cleanupEligible, reason: inspection\.reason, state: inspection\.state/u);
   assert.match(reconcile, /\["disabled", "restored"\]\.includes\(inspection\.state\)/u);
   assert.match(reconcile, /CLOUDFLARE_API_TOKEN:/u);
   assert.match(reconcile, /GH_TOKEN:/u);
