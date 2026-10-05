@@ -22,18 +22,18 @@ Load only the specialized guidance that matches the task.
 | Task intent | Load |
 | --- | --- |
 | Component structure or composition problems | [Composition Patterns](.agents/skills/vercel-composition-patterns/SKILL.md) |
-| Scoped readability or maintainability improvements | [Code Simplifier](.agents/skills/code-simplifier/SKILL.md) |
+| Polish recently modified code for readability | [Code Simplifier](.agents/skills/code-simplifier/SKILL.md) |
 | Relevant React performance concerns | [React Best Practices](.agents/skills/vercel-react-best-practices/SKILL.md) |
 | Verify evidence before reporting completion | [Verification Before Completion](.agents/skills/verification-before-completion/SKILL.md) |
-| Explore or clarify before committing to a change | [OpenSpec explore](.agents/skills/openspec-compact/explore/SKILL.md) |
-| Propose a non-trivial feature or architecture change | [OpenSpec propose](.agents/skills/openspec-compact/propose/SKILL.md) |
-| Revise an existing OpenSpec plan | [OpenSpec update](.agents/skills/openspec-compact/update-change/SKILL.md) |
-| Implement an approved OpenSpec change | [OpenSpec apply](.agents/skills/openspec-compact/apply-change/SKILL.md) |
-| Sync or archive an implemented OpenSpec change | [OpenSpec sync](.agents/skills/openspec-compact/sync-specs/SKILL.md) or [archive](.agents/skills/openspec-compact/archive-change/SKILL.md) |
+| Explore or clarify before committing to a change | [OpenSpec explore](.agents/skills/openspec-explore/SKILL.md) |
+| Propose a non-trivial feature or architecture change | [OpenSpec propose](.agents/skills/openspec-propose/SKILL.md) |
+| Revise an existing OpenSpec plan | [OpenSpec update](.agents/skills/openspec-update-change/SKILL.md) |
+| Implement an approved OpenSpec change | [OpenSpec apply](.agents/skills/openspec-apply-change/SKILL.md) |
+| Sync or archive an implemented OpenSpec change | [OpenSpec sync](.agents/skills/openspec-sync-specs/SKILL.md) or [archive](.agents/skills/openspec-archive-change/SKILL.md) |
 | Decide what is next or identify parked work | [Roadmap triage](.agents/skills/roadmap-triage/SKILL.md) |
-| Simplify working code without behavior change | [Code simplification](.agents/skills/code-simplification-compact/SKILL.md) |
-| Explicit functional refactor | [Functional refactoring](.agents/skills/functional-refactoring-compact/SKILL.md) |
-| Explicit Gang of Four pattern question | [Design pattern](.agents/skills/design-pattern-compact/SKILL.md) |
+| Dedicated behavior-preserving simplification | [Code Simplification](.agents/skills/code-simplification/SKILL.md) |
+| Explicit functional refactor | [Functional refactoring](.agents/skills/functional-refactoring/SKILL.md) |
+| Explicit Gang of Four pattern question | [Design pattern](.agents/skills/design-pattern/SKILL.md) |
 | Any Nemlig app work | [Nemlig instructions](apps/nemlig-assistant/AGENTS.md) |
 | Nemlig product search, review, or basket operation | [Nemlig basket](apps/nemlig-assistant/.codex/skills/nemlig-basket/SKILL.md) |
 | Nemlig production, deployment, or provider work | [Nemlig production](apps/nemlig-assistant/.codex/skills/nemlig-production/SKILL.md) |

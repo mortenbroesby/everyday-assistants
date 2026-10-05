@@ -103,7 +103,8 @@ Candidate libraries and their adoption status are tracked in the
 Use the repository-local skills for these focused tasks:
 
 - **Composition Patterns** — component structure and composition problems.
-- **Code Simplifier** — scoped readability and maintainability improvements.
+- **Code Simplifier** — polish recently modified code for readability.
+- **Code Simplification** — a dedicated behavior-preserving simplification with characterization and incremental verification.
 - **React Best Practices** — relevant React performance concerns; do not optimize speculatively during every cleanup.
 - **Verification Before Completion** — gather current command output before claiming completion.
 
@@ -161,6 +162,15 @@ lockfile is `skills-lock.json`. Installed upstream revisions:
 Code Simplifier has one local adaptation: its project-standards section now
 defers to applicable `AGENTS.md`/`AGENTS.override.md`, repository conventions,
 and lint/format configuration instead of CLAUDE.md and hard-coded style rules.
+The nine repository refactoring and OpenSpec skills were restored from commit
+`901d5a93083ac70f46d9a4e4a4c766e9f4ab25c4` (before compaction). Their
+historical content is retained with three current-policy updates: Code
+Simplification follows applicable agent instructions and repository style;
+OpenSpec explore uses the repository's ordinary-work authorization; OpenSpec
+archive requires complete work and the CLI archive command. Review these local
+updates when changing the restored skills. Use `$code-simplifier` for a small
+polish pass on touched code and `$code-simplification` for an explicit
+behavior-preserving refactor.
 The Sentry and Superpowers root license notices are retained inside their
 selected skill directories. The Vercel skills declare MIT in `SKILL.md`; their
 upstream repository at the recorded revision has no root `LICENSE` file.
