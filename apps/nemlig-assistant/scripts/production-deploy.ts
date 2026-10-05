@@ -1115,6 +1115,12 @@ export async function reconcilePendingRollback(
       const applicationId = journal.startingContainerId!;
       const targetImage = `registry.cloudflare.com/${deps.env.CLOUDFLARE_ACCOUNT_ID}/${containerApplication}@${journal.startingImage}`;
       const candidateImage = `registry.cloudflare.com/${deps.env.CLOUDFLARE_ACCOUNT_ID}/${containerApplication}@${journal.enabledImage}`;
+      const retainFailure = async (error: unknown): Promise<RecoveryReconciliation> => {
+        journal.recoveryFailure = error instanceof DeployFailure && deploymentFailureReasons.has(error.code) ? error.code : "unexpected_failure";
+        if (error instanceof AcceptanceFailure && error.evidence) journal.acceptanceFailure = error.evidence;
+        try { await appendRemoteJournal(deps, repo.nameWithOwner, journal); } catch { /* retain the lease even when the diagnostic append is uncertain */ }
+        return denied("provider_drift");
+      };
       let current: CurrentDeployment;
       let application: ContainerApplicationReadback;
       try {
