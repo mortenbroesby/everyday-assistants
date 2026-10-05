@@ -350,15 +350,19 @@ rollout. The MCP HTTP transport is stateless: modern clients do not depend on
 session IDs, and production acceptance does not probe obsolete session-recovery
 behavior. The journal records the starting version, the exact enabled transition, the resulting Container image, and the bounded edge and
 authenticated read-only checks.
-During a routine rollout, the machine fixture first compares the release version
-reported by its authenticated MCP connection with the checked-out candidate.
-A previous backend release is retried within a fixed 17-minute maximum, capped
-earlier to leave five minutes of the operation deadline for rollback. Other
-fixture failures keep their shorter retry budget. A passing fixture must also
-have one running instance at the candidate application version; a configured
-image or inactive instance alone is not acceptance. This check does not restart
-or force-replace a Container, and its synthetic reads do not prove ChatGPT UI
-rendering or owner shopping acceptance.
+During a routine rollout, the edge probe and an initialize-only authenticated
+MCP handshake run before the full service fixture. The handshake wakes the
+Container; the workflow then requires a running instance at the exact candidate
+application version before starting the full fixture. That fixture compares
+the MCP server release with the checked-out candidate, and the workflow checks
+the running instance version again afterward. A previous backend release is
+retried within a fixed 17-minute maximum, capped earlier to leave eight minutes
+of the 25-minute operation deadline for rollback. The initialize-only check
+uses a shorter bound with the same eight-minute reserve; other fixture failures
+keep their shorter retry budget. A configured image or inactive instance alone
+is not acceptance. These checks do not restart or force-replace a Container,
+and their synthetic reads do not prove ChatGPT UI rendering or owner shopping
+acceptance.
 It never prepares or applies a proposal and never mutates a basket, favorite, or
 saved list.
 
