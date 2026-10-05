@@ -27,7 +27,7 @@ Load only the specialized guidance that matches the task.
 | Implement an approved OpenSpec change | [OpenSpec apply](.agents/skills/openspec-compact/apply-change/SKILL.md) |
 | Sync or archive an implemented OpenSpec change | [OpenSpec sync](.agents/skills/openspec-compact/sync-specs/SKILL.md) or [archive](.agents/skills/openspec-compact/archive-change/SKILL.md) |
 | Decide what is next or identify parked work | [Roadmap triage](.agents/skills/roadmap-triage/SKILL.md) |
-| Repository context is uncertain or cross-cutting | [JCodeMunch routing](.agents/skills/jcodemunch-routing/SKILL.md) |
+| Local context and targeted search leave repository context uncertain or cross-cutting | [JCodeMunch routing](.agents/skills/jcodemunch-routing/SKILL.md) |
 | Simplify working code without behavior change | [Code simplification](.agents/skills/code-simplification-compact/SKILL.md) |
 | Explicit functional refactor | [Functional refactoring](.agents/skills/functional-refactoring-compact/SKILL.md) |
 | Explicit Gang of Four pattern question | [Design pattern](.agents/skills/design-pattern-compact/SKILL.md) |

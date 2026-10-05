@@ -34,6 +34,19 @@ JCodeMunch when the relationship question is already clear, and to use Git,
 PR, or OpenSpec history only when repository evidence still leaves intent
 unclear.
 
+## Verify the target before trusting it
+
+Once the decision is to use JCodeMunch, resolve the current checkout first.
+Use its returned repository identifier for every following call. Continue only
+when the resolved source root is this checkout (or the intentionally selected
+repository boundary) and the index is fresh enough for the decision. A broad
+home-directory index, another worktree, a missing index, or an index older than
+the relevant checkout is unavailable evidence, not a fallback answer.
+
+When that preflight fails, use a local fallback. Refresh or create an index
+only when this particular relationship question justifies it; do not make
+indexing a startup, commit, or routine-edit step.
+
 ## Retrieve the minimum useful evidence
 
 Start with the smallest tool that answers the question:
@@ -53,11 +66,23 @@ retrieve facts already in the active context. JCodeMunch can help with indexed
 configuration, documentation, ownership, and change evidence as well as code,
 but a short known non-code file is still cheaper to read directly.
 
+Use only the capability already exposed for the question. If a focused
+capability such as deletion safety or blast radius is deferred, ask Codex to
+load that single JCodeMunch capability; do not widen the server to its full
+tool tier just to discover it. If the capability cannot be loaded, say so and
+use the smallest reliable local fallback.
+
 Prefer compiler/SCIP-backed findings when the tool says that such evidence is
 available and fresh. Treat non-SCIP results as useful structured evidence, not
 proof. If the selected repository or index is stale, missing, or the MCP tools
 are unavailable, say so and use the smallest reliable local fallback; do not
 make reindexing or SCIP setup a routine task requirement.
+
+If JCodeMunch will be queried again after edits, refresh only the edited paths
+first: use its exposed edit-registration capability, or its surgical
+single-file indexing capability when registration is unavailable. Batch paths
+when supported. Do not add a lifecycle hook or reindex the whole repository
+for this purpose.
 
 ## Dynamic behavior and boundaries
 
@@ -89,6 +114,7 @@ against representative cases:
 | Several targeted searches do not establish callers or ownership | Escalate to JCodeMunch |
 | Strange defensive code | JCodeMunch first; history only if intent remains unclear |
 
-For a consequential decision, record the focused query, the relationship it
-established, and any freshness limitation. That is enough to assess usefulness
-without building benchmark infrastructure or measuring every routine change.
+For a consequential decision, record the focused query, the resolved index
+identity/freshness, the relationship it established, and any capability or
+freshness limitation. That is enough to assess usefulness without building
+benchmark infrastructure or measuring every routine change.
