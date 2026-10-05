@@ -305,6 +305,7 @@ test("manual recovery can reconcile an exact pending rollback and release its le
   assert.match(reconcile, /result\.reconciled !== true \|\| !\["disabled", "restored"\]\.includes\(result\.state\)/u);
   assert.match(reconcile, /event: "recovery_reconciliation", reconciled: result\.reconciled, reason: result\.reason, state: result\.state/u);
   assert.match(reconcile, /reasons\.has\(result\?\.reason\) \? result\.reason : "result_unavailable"/u);
+  assert.match(reconcile, /"provider_outcome_unknown"/u);
   assert.match(reconcile, /event: "recovery_reconciliation",[\s\S]*?reason: reasons\.has\(result\?\.reason\)/u);
   assert.match(reconcile, /cleanupEligible !== true/u);
   assert.match(reconcile, /event: "recovery_reconciliation_inspection", cleanupEligible: inspection\.cleanupEligible, reason: inspection\.reason, state: inspection\.state/u);

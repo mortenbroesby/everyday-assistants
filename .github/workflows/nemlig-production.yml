@@ -333,7 +333,7 @@ jobs:
             ' "$result"
           else
             node --input-type=module -e '
-              const reasons = new Set(["eligible", "operation_mismatch", "runner_not_stopped", "pending_or_unknown", "provider_drift", "journal_head_changed", "journal_missing", "journal_invalid"]);
+              const reasons = new Set(["eligible", "operation_mismatch", "runner_not_stopped", "pending_or_unknown", "provider_outcome_unknown", "provider_drift", "journal_head_changed", "journal_missing", "journal_invalid"]);
               let result;
               try { result = JSON.parse(process.argv[1]); } catch { /* report only a fixed unavailable category */ }
               console.log(JSON.stringify({

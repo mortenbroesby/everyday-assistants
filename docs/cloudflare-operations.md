@@ -435,11 +435,22 @@ pnpm --filter nemlig-assistant production:deploy -- reconcile-recovery OPERATION
 pnpm --filter nemlig-assistant production:deploy -- finalize OPERATION_UUID --evidence-saved --original-runner-stopped
 ```
 
-Reconciliation is narrower than deployment: it accepts only the explicitly
-supported interrupted phases when current Worker, configuration, registry
-image, application version, inactive instance and both disabled routes match
-exactly. It appends the observed terminal result to the remote journal; it
-never deploys, rolls back, or changes a Container.
+Reconciliation is narrower than deployment and never starts a new routine
+candidate release. For an interrupted `container_restore`, it never creates
+another rollout: `updated_at` is not proof that an earlier POST was not
+accepted. The [documented Containers rollout API](https://developers.cloudflare.com/api/resources/containers/subresources/applications/subresources/rollouts/)
+documents rollout creation, but no rollout list/get operation or idempotency
+contract that can resolve a lost POST response. If the exact starting image and
+a newer application version are already read back with no active rollout,
+reconciliation may record that observed completion, restore the recorded Worker
+and run read-only acceptance. If the candidate image remains current, it records
+`cloudflare_container_restore_uncertain`, reports `provider_outcome_unknown`,
+and retains the lease. Recheck through protected reconciliation only after
+authoritative provider state changes; never clear the lease or replay the POST
+based on an absent active rollout or timestamp. This case currently requires
+provider-side investigation if the exact restore result never becomes visible.
+Other supported recovery phases still require their exact journal and provider
+readback before the terminal result is appended.
 
 Inspection is read-only and uses four bounded Worker/Container metadata reads;
 for a disabled target it also confirms both public routes still return the fixed
