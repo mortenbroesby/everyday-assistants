@@ -8,7 +8,7 @@ license: MIT
 
 ## Routing
 
-- General readability cleanup uses `code-simplification`.
+- General cleanup and readability refactoring use `code-simplifier` as the primary guidance.
 - Explicit functional-core or effect-boundary work uses this skill.
 - An explicit Gang of Four question or demonstrated pattern-shaped problem uses `design-pattern`; read only the relevant pattern reference.
 - Do not invoke all three skills by default.

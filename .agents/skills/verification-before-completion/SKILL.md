@@ -17,18 +17,19 @@ description: Use when about to claim work is complete, fixed, or passing, before
 NO COMPLETION CLAIMS WITHOUT FRESH VERIFICATION EVIDENCE
 ```
 
-If you haven't run the verification command in this message, you cannot claim it passes.
+Use fresh evidence for the specific claim and changed scope; do not claim a check
+passed unless you ran that complete, relevant check after the last relevant edit.
 
 ## The Gate Function
 
 ```
 BEFORE claiming any status or expressing satisfaction:
 
-1. IDENTIFY: What command proves this claim?
-2. RUN: Execute the FULL command (fresh, complete)
-3. READ: Full output, check exit code, count failures
-4. VERIFY: Does output confirm the claim?
-   - If NO: State actual status with evidence
+1. IDENTIFY: What check proves this specific claim at the changed scope?
+2. RUN: Execute the complete, relevant check after the last relevant edit.
+3. READ: Inspect its output and result; note failures or incomplete work.
+4. VERIFY: Does the evidence support the claim, and only that claim?
+   - If NO: State actual status with evidence and limits
    - If YES: State claim WITH evidence
 5. ONLY THEN: Make the claim
 
@@ -68,7 +69,7 @@ Skip any step = lying, not verifying
 | "Linter passed" | Linter ≠ compiler |
 | "Agent said success" | Verify independently |
 | "I'm tired" | Exhaustion ≠ excuse |
-| "Partial check is enough" | Partial proves nothing |
+| "A partial check proves the full claim" | It supports only the checked scope |
 | "Different words so rule doesn't apply" | Spirit over letter |
 
 ## Key Patterns

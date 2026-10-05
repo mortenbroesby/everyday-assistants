@@ -1,11 +1,11 @@
 ---
 name: vercel-composition-patterns
 description:
-  React composition patterns that scale. Use when refactoring components with
-  boolean prop proliferation, building flexible component libraries, or
-  designing reusable APIs. Triggers on tasks involving compound components,
-  render props, context providers, or component architecture. Includes React 19
-  API changes.
+  React component API, composition, or state-ownership guidance. Use for an
+  observed architecture problem such as boolean-prop proliferation or an
+  inflexible component API. Do not invoke for routine edits merely because a
+  file contains React. Includes React 19 API guidance; check the installed
+  React version before applying it.
 license: MIT
 metadata:
   author: vercel

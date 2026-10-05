@@ -1,6 +1,6 @@
 ---
 name: code-simplifier
-description: Simplifies and refines code for clarity, consistency, and maintainability while preserving all functionality. Use when asked to "simplify code", "clean up code", "refactor for clarity", "improve readability", or review recently modified code for elegance. Focuses on project-specific best practices.
+description: Primary guidance for simplifying or refactoring existing implementation while preserving behavior. Use for cleanup, readability, maintainability, duplication, redundant abstractions, or unnecessary complexity; follow repository-specific conventions.
 ---
 
 <!--
@@ -32,11 +32,8 @@ Simplify code structure by:
 
 - Reducing unnecessary complexity and nesting
 - Eliminating redundant code and abstractions
-- Improving readability through clear variable and function names
-- Consolidating related logic
-- Removing unnecessary comments that describe obvious code
-- **Avoiding nested ternary operators** - prefer switch statements or if/else chains for multiple conditions
-- Choosing clarity over brevity - explicit code is often better than overly compact code
+- Naming concepts clearly when existing names obscure their purpose
+- Consolidating logic only when that makes responsibilities easier to follow
 
 ### 4. Maintain Balance
 
@@ -51,48 +48,52 @@ Avoid over-simplification that could:
 
 ### 5. Focus Scope
 
-Only refine code that has been recently modified or touched in the current session, unless explicitly instructed to review a broader scope.
+Stay within the requested scope. Do not expand a narrow fix into adjacent
+cleanup; when asked to review a broader area, trace its actual consumers.
 
-## Refinement Process
+## Repository cleanup sequence
 
-1. **Identify** the recently modified code sections
-2. **Analyze** for opportunities to improve elegance and consistency
-3. **Apply** project-specific best practices and coding standards
-4. **Ensure** all functionality remains unchanged
-5. **Verify** the refined code is simpler and more maintainable
-6. **Document** only significant changes that affect understanding
+For requested cleanup or refactoring, use these prompts without turning a
+trivial change into process:
+
+1. **Understand and characterize:** trace affected callers, consumers, data,
+   effects, contracts, and safety constraints. Existing tests are enough when
+   they cover the behavior at risk; add focused characterization only for
+   important uncovered behavior the change could break.
+2. **Challenge:** ask whether complexity is obsolete, unreachable, duplicated,
+   already solved by a native capability, repository utility, or installed
+   dependency. Check whether abstractions and compatibility code have a
+   demonstrated reason or consumer. If significant deletion or restructuring
+   has unclear intent, inspect relevant callers/tests, `git log`/`git blame`,
+   the originating issue/PR or OpenSpec decision, and later changes. Treat
+   history as evidence of intent, then verify that the rationale still applies;
+   do not require archaeology for ordinary cleanup.
+3. **Simplify:** prefer deletion, direct code, and reuse before invention, but
+   do not apply that order mechanically. Make a coherent change that materially
+   reduces complexity. A no-op is valid when no concrete improvement exists.
+4. **Verify and reassess:** run checks that support the claim after the last
+   relevant edit. Separate prior failures from regressions, report limits, and
+   confirm complexity decreased without weakening behavior or safety.
+
+Cross-file changes and new abstractions are appropriate when they resolve an
+observed coupling, effect, testing, or maintenance problem. Follow task and
+repository instructions over generic skill examples.
 
 ## Examples
 
-### Before: Nested Ternaries
+### Example: Replace nesting only when it obscures the decision
 
 ```typescript
 const status = isLoading ? 'loading' : hasError ? 'error' : isComplete ? 'complete' : 'idle';
 ```
 
-### After: Clear Switch Statement
+### After: Direct Branches
 
 ```typescript
-function getStatus(isLoading: boolean, hasError: boolean, isComplete: boolean): string {
-  if (isLoading) return 'loading';
-  if (hasError) return 'error';
-  if (isComplete) return 'complete';
-  return 'idle';
-}
-```
-
-### Before: Overly Compact
-
-```typescript
-const result = arr.filter(x => x > 0).map(x => x * 2).reduce((a, b) => a + b, 0);
-```
-
-### After: Clear Steps
-
-```typescript
-const positiveNumbers = arr.filter(x => x > 0);
-const doubled = positiveNumbers.map(x => x * 2);
-const sum = doubled.reduce((a, b) => a + b, 0);
+let status = 'idle';
+if (isComplete) status = 'complete';
+if (hasError) status = 'error';
+if (isLoading) status = 'loading';
 ```
 
 ### Before: Redundant Abstraction

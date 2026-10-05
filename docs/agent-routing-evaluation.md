@@ -1,93 +1,155 @@
-# Agent routing evaluation
+# Agent refactoring setup evaluation
 
-This record tests whether the repository's agent guidance is easier to navigate
-without pretending that a documentation check proves end-to-end agent quality.
-It compares the `origin/main` baseline, the first implementation on PR #38, and
-the simplified revision.
+This document describes a small repeatable eval for the repository-local
+refactoring setup. It measures decisions and outcomes, not just instruction
+size or whether routes exist.
 
-## Design inputs
+## Historical routing measurements
 
-The owner-provided scheduled AI briefs from 9–11 September 2026 emphasized five
-relevant practices: keep model selection outside repository policy, prefer
-native Git/worktree isolation, load tools and skills only when relevant, enforce
-mechanical behavior with deterministic checks, and judge changes by whole-task
-outcomes rather than prompt or token size alone.
+The byte counts and compact-skill routes in the issue #64 comparison below
+record the 2026 issue #64 snapshot; they are not measurements or routes for PR
+#181. PR #181 restored the full skills. Keep that history as context only.
+Current routes are in [AGENTS.md](../AGENTS.md). This document does not add
+instructions to ordinary task context.
 
-Two primary references support the durable parts of that direction:
+At issue #64's implementation baseline, root `AGENTS.md` was 6,078 bytes and
+the two lifecycle files were 5,351 bytes. The later compact route inventory was
+15,810 bytes across root guidance, lifecycle gates, the Nemlig router, and
+compact selected skills. These figures describe that earlier snapshot, not the
+current skill set or runtime discovery. Static byte counts cannot establish
+that agents follow instructions or complete code changes better.
 
-- [AGENTS.md](https://agents.md/) defines a schema-free Markdown convention,
-  recommends nested files for large repositories, and gives the closest file
-  precedence within its scope.
-- [GitHub's guidance for effective repository instructions](https://docs.github.com/en/copilot/tutorials/optimize-ai-usage)
-  recommends short, specific, repository-grounded guidance and deterministic
-  tests or linters for behavior that can actually be checked.
+## Refactoring eval cases
 
-## Static comparison
+Use these eight cases when materially changing `AGENTS.md`, cleanup skill
+versions, routing descriptions, prompts, or models. Run the same task prompt on
+baseline and candidate in disposable worktrees, changing one variable at a
+time: hold model, prompt, and repository revision fixed for setup changes; hold
+the setup fixed for model changes. Record the repository SHA, model,
+`skills-lock.json` revisions, skill files actually read, patch, checks, and
+outcome. Do not apply eval changes to the working branch.
 
-Measurements use UTF-8 bytes and physical lines. At issue #64's implementation
-baseline, root `AGENTS.md` was 6,078 bytes and the two lifecycle files were
-5,351 bytes. The current measurements include the reduced lifecycle files.
+| # | Scenario and fixture | Expected result / failure signal |
+| ---: | --- | --- |
+| 1 | **Reuse an installed dependency.** Revisit the historical release argument parser in `release/agent.ts` at the P2 pre-adoption baseline (`152e997`); Commander was already installed. | Identify and reuse Commander while preserving parsing and error behavior. Fail for a new parser/dependency or a migration without characterization. |
+| 2 | **Calculation beside I/O.** Use the P2 plan-calculation/effect-boundary investigation in `openspec/changes/p2-simplify-nemlig-maintenance/evidence.md`. | Characterize ordering, bounds, and outputs; split only if a real dependency/effect is removed or meaningful no-I/O testing results. A justified no-op passes. |
+| 3 | **One-implementation abstraction.** Ask whether to add a service/factory/interface around one existing MCP operation in `src/mcp.ts`. | Prefer direct code unless a demonstrated consumer, effect boundary, or testing problem benefits. Fail for speculative DI, wrappers, registries, or generic helpers. |
+| 4 | **Apparently unused export.** Inspect a candidate export and its import graph, package `bin` entries, tsdown entries, Wrangler bindings, scripts, and compatibility callers before proposing deletion. | State evidence and any unresolved dynamic/public consumers; preserve until deletion is proven safe. Fail for grep-only deletion or treating an internal search as proof of no external consumer. |
+| 5 | **Intentional safety complexity.** Review `src/proposals.ts` and its tests for authorization, expiry, replay, fresh validation, and mutation behavior. | Preserve safety and provider-call invariants; simplify only if evidence shows the invariant remains. Fail for weaker checks, retries, or changed write authority. |
+| 6 | **React composition problem.** Use a small TSX fixture with one component combining several independent boolean modes, callbacks, and sibling-owned state. | Route to Composition Patterns for the observed API/state problem; preserve behavior and use only rules compatible with the fixture's React version. Fail for a provider/context rewrite without a concrete boundary. |
+| 7 | **Measured React performance issue.** Use a fixture plus Profiler evidence of an expensive list rerendering after unrelated parent state changes. | Route to React Best Practices for the measured rendering/data-flow concern; make the smallest evidence-based change. Fail for memoization or framework migration without evidence. |
+| 8 | **Negative control.** Make a trivial, one-line correction with no maintenance problem or architectural change. | Do not activate cleanup or React architecture skills, expand scope, or add tests without a behavior risk. Use Verification Before Completion only if making a completion claim. |
 
-| Design | Routing entry set | Lines | Bytes | Result |
-| --- | --- | ---: | ---: | --- |
-| `origin/main` baseline | root `AGENTS.md` | 96 | 6,078 | Direct routes, but repeated global policy and large selected skills |
-| First PR #38 design | root + mandatory workflow + JSON manifest | 495 | 21,753 | Explicit coverage, but four hops and a validator that proves catalog consistency rather than navigation quality |
-| Issue #64 compact design | root + lifecycle + nearest app router | measured below | measured below | Direct routes, narrow scoped contracts, compact skills, no parser or manifest |
+Fixed inputs for the React cases:
 
-Current UTF-8 byte measurements for the recurring entry set:
+```tsx
+function ProductSurface({
+  showSearch, showFilters, showSelected, compact, busy,
+  query, setQuery, filters, setFilters, selected, onSelect,
+}) {
+  return <section className={compact ? "compact" : "wide"}>
+    {showSearch && <Search value={query} onChange={setQuery} />}
+    {showFilters && <Filters value={filters} onChange={setFilters} />}
+    {showSelected && <SelectedItems value={selected} onSelect={onSelect} />}
+    {busy && <Spinner />}
+  </section>;
+}
+```
 
-| Entry set | Bytes |
-| --- | ---: |
-| Root router | 4,361 |
-| Definition of Ready + Done | 3,170 |
-| Nemlig app router | 1,512 |
-| Compact generic skills | 2,360 |
-| Compact OpenSpec skills and shared adapter note | 4,407 |
-| Total before task-specific context | 15,810 |
+For case 6, include two callers that need different combinations and own
+different query/filter state; the task is to improve the component API and state
+ownership without changing visible behavior. For case 7, use a `ProductList`
+that renders 800 expensive rows from stable `products` and `selectedIds` props;
+attach a Profiler observation that toggling an unrelated help panel rerenders
+all rows and commits in 40 ms. Require a before/after measurement and preserve
+selection behavior. Keep these fixtures outside app source and dependencies.
 
-The compact generic/OpenSpec skills replace 88,983 bytes of selected static
-prose at the previous measured sizes; the exact aggregate depends on which
-single route is selected. The total above is a worst-case routing inventory,
-not a claim that every task loads every skill.
+For each case, check these outcomes: behavior and safety preserved; correct
+skill routing; reuse/deletion considered before invention; no unrelated scope or
+unnecessary architecture; verification matches the changed surface and follows
+the last relevant edit; complexity decreased or a reasoned no-op was chosen.
+Record a short pass/fail rationale for each outcome and the specific failure
+signals above. Compare outcome patterns and human interventions across baseline
+and candidate; eight cases are too few for a reliable aggregate quality score.
+Use static assertions for route paths, unique skill names, required local
+references, and package/framework facts; human review remains necessary for
+behavior preservation and actual complexity reduction. No harness or CI job is
+proposed.
 
-Issue #64 keeps the direct routing model and removes repeated global policy and
-static textbook/workflow prose. The compact selected guidance is measured below;
-the old files are not reachable from the routing table.
+## Knip: separate evaluation only if a candidate appears
 
-## Representative route check
+TypeScript's `noUnusedLocals` and `noUnusedParameters`, plus ESLint, check
+declarations in configured files. They do not identify every unreachable file,
+unused export, or dependency. Knip can analyze those through an entry-to-module
+graph, but a useful result here depends on correctly modeling the three tsdown
+entries, four package `bin` aliases, workspace and package scripts, Wrangler
+Worker/Durable Object bindings, workflow-invoked scripts, tests, and dynamic
+imports. An incomplete graph can report live exports or dependencies as unused;
+entry exports are excluded by default and enabling them broadly can over-report
+supported package interfaces. See Knip's [entry discovery], [configuration],
+and [false-positive guidance].
 
-Root guidance and the two lifecycle gates apply to every repository task. The
-table lists only the additional file an agent should load for each example.
+The P2 dependency inventory found all installed dependencies used, and its
+design defers unused-code tooling until a native-check gap or concrete candidate
+is demonstrated. Do not add Knip to this PR, dependencies, or CI. If a specific
+suspected dead file/export/dependency emerges, run a separate disposable,
+read-only trial with package/Worker/workflow entry points reviewed first; prove
+each candidate against runtime, package, and host consumers before removing it.
 
-| Representative task | Expected additional guidance | Unrelated skills required |
-| --- | --- | ---: |
-| Edit ordinary repository documentation | nearest scoped `AGENTS.md`, if any | 0 |
-| Explore a feature before committing to it | `.agents/skills/openspec-compact/explore/SKILL.md` | 0 |
-| Propose a non-trivial feature | `.agents/skills/openspec-compact/propose/SKILL.md` | 0 |
-| Revise an existing OpenSpec plan | `.agents/skills/openspec-compact/update-change/SKILL.md` | 0 |
-| Implement an approved OpenSpec change | `.agents/skills/openspec-compact/apply-change/SKILL.md` | 0 |
-| Identify parked work and recommend the next epic | `.agents/skills/roadmap-triage/SKILL.md` | 0 |
-| Simplify working code without changing behavior | `.agents/skills/code-simplification-compact/SKILL.md` | 0 |
-| Work on Nemlig production readiness | `apps/nemlig-assistant/AGENTS.md` and its `nemlig-production` skill | 0 |
-| Search or change a Nemlig basket | `apps/nemlig-assistant/AGENTS.md` and its `nemlig-basket` skill | 0 |
+[entry discovery]: https://knip.dev/explanations/entry-files
+[configuration]: https://knip.dev/reference/configuration
+[false-positive guidance]: https://knip.dev/guides/handling-issues
 
-A focused link audit resolved all fifteen relative links in root `AGENTS.md` and
-the app-local skill index. A separate search found no named runtime persona in
-the active routing guidance. These checks should be rerun when routes change;
-they do not justify a permanent validation framework today.
+## Repository agent harness assessment
 
-## What this proves
+Keep harness work small and separate from this skills-and-guidance PR. Existing
+TypeScript, ESLint, and tests already prove several important properties.
 
-- Common tasks have a direct, human-readable route.
-- Scoped work loads only the relevant local contract and skill.
-- The revised entry point stays near the baseline size and is substantially
-  smaller than the rejected manifest design.
-- The route targets existed at the reviewed revision.
+### Executable architecture
 
-## What this does not prove
+The P2 maintenance work removed a real MCP/HTTP-to-CLI dependency ([design](../openspec/changes/p2-simplify-nemlig-maintenance/design.md), [evidence](../openspec/changes/p2-simplify-nemlig-maintenance/evidence.md)). The package import smoke blocks `fetch` while importing CLI/MCP/HTTP entrypoints, but does not enforce dependency direction. This PR now adds a scoped core ESLint `no-restricted-imports` rule preventing `src/mcp.ts`, `src/http.ts`, and `src/cloudflare-worker.ts` from statically importing `./cli.js`; an invalid-import probe confirmed the rule rejects that edge. It guards direct imports only, so no broader graph tool is warranted. There is no generated source or Orval output to protect; `dist/` and coverage are already documented as generated.
 
-Static route coverage does not prove that an agent will follow instructions or
-complete a task better. Over the next real epics, note task success, human
-interventions, avoidable tool retries, elapsed time, and total cost. Change the
-guidance again only when those observations reveal a recurring failure that a
-repository instruction or skill can plausibly fix.
+### Executable behavioral invariants
+
+Existing focused tests directly check the critical basket mutation contract:
+
+- `proposals.test.ts`: exact-review authorization, connection and expiry, basket
+  drift, fresh product checks, zero writes on rejection, single use, and no
+  replay after uncertainty; its HTTP fixture checks sequential/partial writes.
+- `client.test.ts` and `runtime.test.ts`: mutation single-attempt behavior,
+  retryable reads, and bounded session refresh. `product-review.test.ts` checks
+  revision/submission invalidation. Production acceptance tests preserve the
+  read-only profile and import safety.
+
+These tests assert effects and request counts, so they are stronger than prose
+for preserving the encoded invariants. They cannot prove a human approved the
+exact review; that interaction boundary must not be claimed from unit tests.
+
+### Code archaeology and mutation testing
+
+A separate `code-archaeology` skill is not justified: the existing Code
+Simplifier now includes a conditional history check for significant changes
+with unclear intent. It directs Codex to callers/tests, `git log`/`git blame`,
+originating issue/PR or OpenSpec decisions, and later changes without requiring
+archaeology for ordinary cleanup.
+
+A one-time mutation experiment ran in disposable copies without installing
+tools. The focused proposal/client baseline passed 67/67; all four mutants were
+killed: weakening the authorization-kind guard, bypassing basket fingerprints,
+using cached instead of fresh apply-time product data, and enabling provider
+write retries. The lost-response HTTP fixture caught the retry mutant; the 503
+assertion alone did not. The experiment exposed that the basket-drift test's
+zero-write assertion was skipped when its error assertion failed, so the test
+now checks write count before matching the error. Re-running that mutant fails
+specifically at `mutations === 0` (actual 1). Keep this as evidence, not a
+permanent Stryker, CI, or mutation-suite dependency.
+
+### What this lets Codex stop remembering
+
+Tests can enforce authorization, stale-state rejection, fresh apply-time
+validation, single-use proposals, no uncertain-write replay, bounded read
+retries, and import-time side-effect safety. A narrow CLI-import rule could
+enforce the remaining demonstrated dependency direction. Reject a general
+dependency graph, generated-code guard, mandatory archaeology, or permanent
+mutation platform; none has enough repository-specific signal to justify its
+maintenance.

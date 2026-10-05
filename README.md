@@ -100,29 +100,21 @@ Candidate libraries and their adoption status are tracked in the
 
 ### Codex-assisted frontend refactoring
 
-Use the repository-local skills for these focused tasks:
-
-- **Composition Patterns** — component structure and composition problems.
-- **Code Simplifier** — polish recently modified code for readability.
-- **Code Simplification** — a dedicated behavior-preserving simplification with characterization and incremental verification.
-- **React Best Practices** — relevant React performance concerns; do not optimize speculatively during every cleanup.
-- **Verification Before Completion** — gather current command output before claiming completion.
+Use **Code Simplifier** for general cleanup and refactoring. Add **Composition
+Patterns** for React component, API, or state architecture, and **React Best
+Practices** only for a relevant React implementation or performance concern.
+Use **Verification Before Completion** before claiming success. Repository
+policy and cleanup workflow live in [AGENTS.md](AGENTS.md); the skills provide
+specialized guidance.
 
 Example:
 
-> Use $vercel-composition-patterns and $code-simplifier to review <path>. Follow AGENTS.md, identify concrete opportunities, preserve behavior, and keep changes scoped. Use $verification-before-completion before reporting completion.
-
-Before refactoring, trace the implementation, callers, data flow, and tests;
-identify a concrete maintenance problem. Prefer the smallest correct change,
-existing utilities, native features, and existing dependencies. Do not add an
-abstraction just to reduce line count or match a pattern. Preserve behavior,
-public APIs, accessibility, validation, error handling, security, feature-flag
-behavior, and package boundaries unless the task authorizes a change. Follow
-the installed framework and architecture; upstream examples do not authorize
-Next.js APIs, React-version-specific features, or replacement libraries.
+> Use $code-simplifier to review <path>. Follow AGENTS.md, identify concrete complexity, preserve behavior, and keep the change scoped. If React component/API/state architecture is involved, also use $vercel-composition-patterns; use $vercel-react-best-practices only for a relevant observed React concern. Use $verification-before-completion before reporting completion.
 
 Do not manually edit generated code. The current app uses TypeScript 5.9.3 and
-an inline DOM/HTML view; it has no React, React DOM, Next.js, or Orval setup.
+an inline DOM/HTML view, with no React, Next.js, or Orval integration. The React
+skills remain installed for future React work. Inspect the target package and
+follow its actual framework versions and architecture.
 The Nemlig API manifest
 (`apps/nemlig-assistant/nemlig-api.openapi.json`) is maintained as documentation,
 not generated client code. Build output under `apps/*/dist/` and coverage output
@@ -130,11 +122,8 @@ under `apps/*/coverage/` are generated; the coverage script excludes
 `src/**/generated/**`, `src/**/*.generated.ts`, `release/**/generated/**`, and
 `release/**/*.generated.ts`.
 
-For a future refactor, record the relevant verification baseline, add focused
-tests when behavior is uncovered, make small changes, and rerun the applicable
-checks. Separate pre-existing failures from regressions and report anything
-unverified. Current commands run from the repository root; inspect the app's
-scripts before choosing a narrower set:
+Validation commands run from the repository root. Choose checks for the changed
+surface, and inspect app scripts before selecting a narrower command:
 
 | Check | Command | Working directory |
 | --- | --- | --- |
@@ -149,9 +138,12 @@ scripts before choosing a narrower set:
 Node and pnpm versions are Node 22.23.1 and pnpm 9.15.9. The current app is
 TypeScript with ESLint; no standalone formatter command/configuration or
 frontend testing framework is configured. Do not add one for cleanup work.
+`pnpm verify` runs the app's lint, build, type check, coverage, and smoke
+commands. Choose checks for the changed surface; documentation- and
+instruction-only changes do not need this application-wide command.
 
-The requested skills are copied locally under `.agents/skills/`; the installer
-lockfile is `skills-lock.json`. Installed upstream revisions:
+The four selected skills are copied locally under `.agents/skills/`; the
+installer lockfile is `skills-lock.json`. Installed upstream revisions:
 
 | Skills | Source | Revision |
 | --- | --- | --- |
@@ -159,26 +151,28 @@ lockfile is `skills-lock.json`. Installed upstream revisions:
 | `code-simplifier` | [getsentry/skills](https://github.com/getsentry/skills) | `d18b7aa8ba878354e5c348310230e652f7690f9c` |
 | `verification-before-completion` | [obra/superpowers](https://github.com/obra/superpowers) | `8ca22dba9a94f28898bbce59f2537ff4d87c747d` |
 
-Code Simplifier has one local adaptation: its project-standards section now
-defers to applicable `AGENTS.md`/`AGENTS.override.md`, repository conventions,
-and lint/format configuration instead of CLAUDE.md and hard-coded style rules.
+Local adaptations: Code Simplifier follows applicable agent files and repository
+standards, adds a scoped cleanup sequence and conditional history review for
+significant changes with unclear intent, and avoids examples that impose style
+rewrites; the Vercel descriptions narrow activation to observed React concerns;
+Verification Before Completion matches evidence to the specific claim and
+changed scope. Preserve these adaptations when reviewing upstream updates.
 The nine repository refactoring and OpenSpec skills were restored from commit
 `901d5a93083ac70f46d9a4e4a4c766e9f4ab25c4` (before compaction). Their
-historical content is retained with three current-policy updates: Code
-Simplification follows applicable agent instructions and repository style;
-OpenSpec explore uses the repository's ordinary-work authorization; OpenSpec
-archive requires complete work and the CLI archive command. Review these local
-updates when changing the restored skills. Use `$code-simplifier` for a small
-polish pass on touched code and `$code-simplification` for an explicit
-behavior-preserving refactor.
+historical content is retained with current-policy updates: general cleanup
+routes to Code Simplifier, the legacy Code Simplification skill is explicit-only
+and follows repository style, OpenSpec explore uses ordinary-work authorization,
+and OpenSpec archive requires complete work and the CLI archive command. Review
+these local updates when changing the restored skills. The proposed refactoring
+eval cases are in [Agent routing evaluation](docs/agent-routing-evaluation.md).
 The Sentry and Superpowers root license notices are retained inside their
 selected skill directories. The Vercel skills declare MIT in `SKILL.md`; their
 upstream repository at the recorded revision has no root `LICENSE` file.
-When updating skills, review upstream changes at the new revision, install only
-these four skills, inspect copied references and licenses, retain the generated
-`skills-lock.json`, and reapply this adaptation before accepting an updated
-Code Simplifier. No automatic update is configured. Verify runtime discovery
-with `/skills` in a fresh Codex session.
+To update skills deliberately, review the upstream changes at the intended
+revision before installing; install only these four, inspect copied references
+and license notices, and retain the generated `skills-lock.json`. Reapply and
+review the local adaptations before accepting changes. No automatic update is configured.
+Verify runtime discovery with `/skills` in a fresh Codex session.
 
 ## ⚖️ License
 
