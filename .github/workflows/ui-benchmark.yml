@@ -23,5 +23,5 @@ jobs:
           node-version: 24.13.0
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm exec playwright install --with-deps chrome
+      - run: pnpm --filter nemlig-assistant exec playwright install --with-deps chrome
       - run: pnpm --filter nemlig-assistant bench:review-ui -- --runs 5
