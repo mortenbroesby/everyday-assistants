@@ -27,7 +27,7 @@ Load only the specialized guidance that matches the task.
 
 | Task intent | Load |
 | --- | --- |
-| Requested cleanup or refactoring of existing implementation | [Code Simplifier](.agents/skills/code-simplifier/SKILL.md) |
+| Cleanup/refactoring, non-obvious complexity rationale, or an explicit read-only deletion audit | [Code Simplifier](.agents/skills/code-simplifier/SKILL.md) |
 | Observed React component API, composition, or state-ownership problem | [Composition Patterns](.agents/skills/vercel-composition-patterns/SKILL.md); add Code Simplifier only when cleanup is also requested |
 | Concrete React rendering, data-flow, or performance concern | [React Best Practices](.agents/skills/vercel-react-best-practices/SKILL.md); do not invoke for routine React edits or speculative optimization |
 | Before claiming work is complete, fixed, or passing | [Verification Before Completion](.agents/skills/verification-before-completion/SKILL.md) |
@@ -55,7 +55,8 @@ behavior; do not optimize line or file counts. For requested cleanup, follow
 Code Simplifier's repository-specific guidance and introduce abstractions only
 for demonstrated problems. A split must demonstrably remove an import
 dependency, isolate a side effect, enable meaningful testing, or reduce another
-concrete complexity; otherwise leave code together.
+concrete complexity; otherwise leave code together. A deletion audit reports
+findings only; it does not authorize edits or deletion.
 
 ## Issue and OpenSpec ownership
 

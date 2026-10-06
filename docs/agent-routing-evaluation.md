@@ -35,10 +35,14 @@ outcome. Do not apply eval changes to the working branch.
 | 2 | **Calculation beside I/O.** Use the P2 plan-calculation/effect-boundary investigation in `openspec/changes/p2-simplify-nemlig-maintenance/evidence.md`. | Characterize ordering, bounds, and outputs; split only if a real dependency/effect is removed or meaningful no-I/O testing results. A justified no-op passes. |
 | 3 | **One-implementation abstraction.** Ask whether to add a service/factory/interface around one existing MCP operation in `src/mcp.ts`. | Prefer direct code unless a demonstrated consumer, effect boundary, or testing problem benefits. Fail for speculative DI, wrappers, registries, or generic helpers. |
 | 4 | **Apparently unused export.** Inspect a candidate export and its import graph, package `bin` entries, tsdown entries, Wrangler bindings, scripts, and compatibility callers before proposing deletion. | State evidence and any unresolved dynamic/public consumers; preserve until deletion is proven safe. Fail for grep-only deletion or treating an internal search as proof of no external consumer. |
-| 5 | **Intentional safety complexity.** Review `src/proposals.ts` and its tests for authorization, expiry, replay, fresh validation, and mutation behavior. | Preserve safety and provider-call invariants; simplify only if evidence shows the invariant remains. Fail for weaker checks, retries, or changed write authority. |
+| 5 | **Intentional safety complexity.** Review `src/proposals.ts` and its tests for authorization, expiry, replay, fresh validation, and mutation behavior. | Gather current evidence for the guard's purpose and preserve it while still required. Do not invent historical rationale; fail for weaker checks, retries, or changed write authority. |
 | 6 | **React composition problem.** Use a small TSX fixture with one component combining several independent boolean modes, callbacks, and sibling-owned state. | Route to Composition Patterns for the observed API/state problem; preserve behavior and use only rules compatible with the fixture's React version. Fail for a provider/context rewrite without a concrete boundary. |
 | 7 | **Measured React performance issue.** Use a fixture plus Profiler evidence of an expensive list rerendering after unrelated parent state changes. | Route to React Best Practices for the measured rendering/data-flow concern; make the smallest evidence-based change. Fail for memoization or framework migration without evidence. |
-| 8 | **Negative control.** Make a trivial, one-line correction with no maintenance problem or architectural change. | Do not activate cleanup or React architecture skills, expand scope, or add tests without a behavior risk. Use Verification Before Completion only if making a completion claim. |
+| 8 | **Negative control.** Make a trivial, one-line correction with no maintenance problem or architectural change. | Do not activate cleanup/archaeology, deletion-audit, or counterfactual-review workflows; do not expand scope or add tests without a behavior risk. Use Verification Before Completion only if making a completion claim. |
+| 9 | **Temporary compatibility path with an old removal date.** Review its current consumers and the evidence cited by the original decision. | Treat the date as a review trigger only. Require the observable removal condition and current compatibility evidence; fail for deletion based only on age or a closed issue. |
+| 10 | **Explicit read-only deletion audit.** Ask what maintenance can be removed from one named subsystem with an apparently obsolete fallback. | Return no more than five ranked candidates, evidence, uncertainty/contracts, and the smallest next proof step. Make no edits or deletions; fail for repository-wide inventory, static-reference-only proof, or confident claims without evidence. |
+| 11 | **Substantial refactor moving responsibilities across files.** Compare before/after concepts and maintenance obligations. | Report what was removed, added, retained, and why the result is easier to understand, verify, or change. Fail if file movement alone is called simplification or important retained complexity is hidden. |
+| 12 | **Conditional counterfactual review.** Review a significant deletion with the original task, source, diff, contracts, and checks. | Identify concrete evidence-backed objections or clearly state that no material objection is supported. Fail for manufactured stylistic criticism, speculative requirements, or mechanically applied suggestions. |
 
 Fixed inputs for the React cases:
 
@@ -143,11 +147,11 @@ exact review; that interaction boundary must not be claimed from unit tests.
 
 ### Code archaeology and mutation testing
 
-A separate `code-archaeology` skill is not justified: the existing Code
-Simplifier now includes a conditional history check for significant changes
-with unclear intent. It directs Codex to callers/tests, `git log`/`git blame`,
-originating issue/PR or OpenSpec decisions, and later changes without requiring
-archaeology for ordinary cleanup.
+A separate `code-archaeology` skill is still not justified. Code Simplifier
+contains the conditional evidence workflow for significant changes with unclear
+intent and an explicitly invoked, read-only deletion-audit mode. Ordinary
+cleanup bypasses both; review guidance is conditional on material deletion,
+restructuring, or uncertain safety.
 
 A one-time mutation experiment ran in disposable copies without installing
 tools. The focused proposal/client baseline passed 67/67; all four mutants were
