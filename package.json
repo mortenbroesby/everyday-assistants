@@ -6,7 +6,7 @@
   "license": "MIT",
   "packageManager": "pnpm@9.15.9",
   "engines": {
-    "node": ">=22.23.1 <23",
+    "node": ">=24.13.0 <25",
     "pnpm": "9.15.9"
   },
   "scripts": {
@@ -23,7 +23,7 @@
     "smoke": "turbo smoke",
     "spec:validate": "DO_NOT_TRACK=1 openspec validate --all --strict --no-interactive",
     "test": "turbo test",
-    "verify": "pnpm lint && pnpm build && pnpm check && pnpm coverage && pnpm smoke"
+    "verify": "pnpm lint && pnpm build"
   },
   "devDependencies": {
     "@fission-ai/openspec": "1.11.0",

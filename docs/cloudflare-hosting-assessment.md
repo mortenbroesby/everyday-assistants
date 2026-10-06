@@ -45,7 +45,7 @@ Nemlig
 Legacy plan-storage Durable Object: retained inactive, no application routing
 ```
 
-This is the smallest safe migration. A Container preserves the existing Node 22
+This is the smallest safe migration. A Container preserves the existing Node 24
 HTTP process, Streamable HTTP/SSE session state and filesystem-capable runtime.
 A direct Worker would require transport, process, and
 persistence changes before it could preserve all current tools.
@@ -69,7 +69,7 @@ a separate Worker-native evaluation.
 
 | Area | Evidence | Hosting consequence |
 | --- | --- | --- |
-| Runtime | [`package.json`](../apps/nemlig-assistant/package.json) requires Node `>=22.23.1 <23`; [`tsdown.config.ts`](../apps/nemlig-assistant/tsdown.config.ts) emits Node 22 ESM bundles. | A Node Container is a direct runtime match. Workers Node compatibility is incomplete. |
+| Runtime | [`package.json`](../apps/nemlig-assistant/package.json) requires Node `>=24.13.0 <25`; [`tsdown.config.ts`](../apps/nemlig-assistant/tsdown.config.ts) emits Node 24 ESM bundles. | A Node Container is a direct runtime match. Workers Node compatibility is incomplete. |
 | Entry points | The package exposes CLI, stdio MCP, and HTTP MCP entry points. [`http.ts`](../apps/nemlig-assistant/src/http.ts) calls `app.listen`. | Host only the existing HTTP MCP entry point. It needs a configurable internal bind address instead of its current fixed `127.0.0.1`. |
 | Process state | [`http.ts`](../apps/nemlig-assistant/src/http.ts) stores MCP transports by session ID in a `Map`. [`client.ts`](../apps/nemlig-assistant/src/client.ts) stores cookies, token, user ID, product metadata, and timeslot in memory. | One fixed Container preserves state while awake. Sleep/restart drops sessions and login cache; the client must reinitialize and the app can log in again. |
 | Proposal safety | [`proposals.ts`](../apps/nemlig-assistant/src/proposals.ts) stores short-lived proposals and completed/invalid/indeterminate results in memory. Hosted transports for the configured owner share one service so approval survives a normal ChatGPT reconnect; local stdio remains session-bound. Mutation application is mutex-protected, and indeterminate outcomes explicitly say not to retry. | Proposal state is intentionally restart-discardable. A restart fails closed because an approval ID is no longer found. Preserve the owner binding and no-retry behavior. Serialize expensive/mutation admission globally in the fixed object. |

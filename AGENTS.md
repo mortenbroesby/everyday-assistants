@@ -21,20 +21,35 @@ Load only the specialized guidance that matches the task.
 
 | Task intent | Load |
 | --- | --- |
-| Explore or clarify before committing to a change | [OpenSpec explore](.agents/skills/openspec-compact/explore/SKILL.md) |
-| Propose a non-trivial feature or architecture change | [OpenSpec propose](.agents/skills/openspec-compact/propose/SKILL.md) |
-| Revise an existing OpenSpec plan | [OpenSpec update](.agents/skills/openspec-compact/update-change/SKILL.md) |
-| Implement an approved OpenSpec change | [OpenSpec apply](.agents/skills/openspec-compact/apply-change/SKILL.md) |
-| Sync or archive an implemented OpenSpec change | [OpenSpec sync](.agents/skills/openspec-compact/sync-specs/SKILL.md) or [archive](.agents/skills/openspec-compact/archive-change/SKILL.md) |
+| Requested cleanup or refactoring of existing implementation | [Code Simplifier](.agents/skills/code-simplifier/SKILL.md) |
+| Observed React component API, composition, or state-ownership problem | [Composition Patterns](.agents/skills/vercel-composition-patterns/SKILL.md); add Code Simplifier only when cleanup is also requested |
+| Concrete React rendering, data-flow, or performance concern | [React Best Practices](.agents/skills/vercel-react-best-practices/SKILL.md); do not invoke for routine React edits or speculative optimization |
+| Before claiming work is complete, fixed, or passing | [Verification Before Completion](.agents/skills/verification-before-completion/SKILL.md) |
+| Explore or clarify before committing to a change | [OpenSpec explore](.agents/skills/openspec-explore/SKILL.md) |
+| Propose a non-trivial feature or architecture change | [OpenSpec propose](.agents/skills/openspec-propose/SKILL.md) |
+| Revise an existing OpenSpec plan | [OpenSpec update](.agents/skills/openspec-update-change/SKILL.md) |
+| Implement an approved OpenSpec change | [OpenSpec apply](.agents/skills/openspec-apply-change/SKILL.md) |
+| Sync or archive an implemented OpenSpec change | [OpenSpec sync](.agents/skills/openspec-sync-specs/SKILL.md) or [archive](.agents/skills/openspec-archive-change/SKILL.md) |
 | Decide what is next or identify parked work | [Roadmap triage](.agents/skills/roadmap-triage/SKILL.md) |
-| Simplify working code without behavior change | [Code simplification](.agents/skills/code-simplification-compact/SKILL.md) |
-| Explicit functional refactor | [Functional refactoring](.agents/skills/functional-refactoring-compact/SKILL.md) |
-| Explicit Gang of Four pattern question | [Design pattern](.agents/skills/design-pattern-compact/SKILL.md) |
+| Local context and targeted search leave repository context uncertain or cross-cutting | [JCodeMunch routing](.agents/skills/jcodemunch-routing/SKILL.md) |
+| Explicit functional refactor | [Functional refactoring](.agents/skills/functional-refactoring/SKILL.md) |
+| Explicit Gang of Four pattern question | [Design pattern](.agents/skills/design-pattern/SKILL.md) |
 | Any Nemlig app work | [Nemlig instructions](apps/nemlig-assistant/AGENTS.md) |
 | Nemlig product search, review, or basket operation | [Nemlig basket](apps/nemlig-assistant/.codex/skills/nemlig-basket/SKILL.md) |
 | Nemlig production, deployment, or provider work | [Nemlig production](apps/nemlig-assistant/.codex/skills/nemlig-production/SKILL.md) |
 
-Selecting guidance never grants authority for the action it describes.
+Explicit task requirements and applicable repository instructions take
+precedence over generic skill recommendations. A skill provides expertise; it
+does not expand task scope or authorize unrelated changes.
+
+## Code cleanup
+
+Continuously reduce accidental complexity while preserving intentional
+behavior; do not optimize line or file counts. For requested cleanup, follow
+Code Simplifier's repository-specific guidance and introduce abstractions only
+for demonstrated problems. A split must demonstrably remove an import
+dependency, isolate a side effect, enable meaningful testing, or reduce another
+concrete complexity; otherwise leave code together.
 
 ## Issue and OpenSpec ownership
 
@@ -49,7 +64,7 @@ OpenSpec; surface conflicts rather than choosing silently.
 
 ## Repository invariants
 
-- Use Ponytail full mode for repository code work: understand and trace the real flow first, then prefer YAGNI, reuse, standard/native capabilities, and the smallest correct change. Never simplify away validation, security, data-loss handling, or explicit requirements.
+- Use Ponytail full mode for repository code work. Never simplify away validation, security, data-loss handling, or explicit requirements.
 - Ordinary repository work is authorized in the selected scope. Ask before
   destructive or hard-to-reverse actions, external user-data changes, secrets,
   provider/production mutation, material scope expansion, or material cost.
@@ -57,9 +72,10 @@ OpenSpec; surface conflicts rather than choosing silently.
   authorizes a Nemlig basket mutation. Keep credentials, tokens, cookies,
   profiles, proposals, audits, and support output local and ignored.
 - Assess privacy, security, retries, scaling, storage, egress, logging, and paid
-  effects. Preserve quotas, circuit breakers, kill switches, bounded retries,
-  and fail-closed behavior. If cost may increase, stop with the current and
-  proposed model, drivers, worst credible failure, and cheaper options.
+  effects. Preserve applicable quotas, circuit breakers, kill switches, bounded
+  retries, and fail-closed behavior; do not recreate controls an owning app has
+  explicitly removed. If cost may increase, stop with the current and proposed
+  model, drivers, worst credible failure, and cheaper options.
 
 ## Delivery and release
 

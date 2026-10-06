@@ -9,4 +9,15 @@ export default tseslint.config(
     files: ["src/**/*.{ts,tsx}", "scripts/**/*.ts", "release/**/*.ts", "tsdown.config.ts", "vite.config.ts"],
     rules: { "@typescript-eslint/consistent-type-imports": "error" },
   },
+  {
+    files: ["src/mcp.ts", "src/http.ts", "src/cloudflare-worker.ts"],
+    rules: {
+      "no-restricted-imports": ["error", {
+        paths: [{
+          name: "./cli.js",
+          message: "Server entrypoints must not depend on CLI composition.",
+        }],
+      }],
+    },
+  },
 );
