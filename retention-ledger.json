@@ -190,6 +190,10 @@
   ],
   "cleanup": {
     "commit": "48a9532acb9024777f3315258d29919b1f6fc8e7",
-    "acceptedAt": "2026-10-06T05:29:18.411Z"
+    "acceptedAt": "2026-10-06T05:29:18.411Z",
+    "inFlight": {
+      "digest": "sha256:e4a720072ae7fadff8711078414deefa2b6472edfebb5efcf7703ed66470db23",
+      "tag": "3fd56fb1"
+    }
   }
 }
