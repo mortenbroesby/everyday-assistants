@@ -31,6 +31,7 @@ Load only the specialized guidance that matches the task.
 | Implement an approved OpenSpec change | [OpenSpec apply](.agents/skills/openspec-apply-change/SKILL.md) |
 | Sync or archive an implemented OpenSpec change | [OpenSpec sync](.agents/skills/openspec-sync-specs/SKILL.md) or [archive](.agents/skills/openspec-archive-change/SKILL.md) |
 | Decide what is next or identify parked work | [Roadmap triage](.agents/skills/roadmap-triage/SKILL.md) |
+| Local context and targeted search leave repository context uncertain or cross-cutting | [JCodeMunch routing](.agents/skills/jcodemunch-routing/SKILL.md) |
 | Explicit functional refactor | [Functional refactoring](.agents/skills/functional-refactoring/SKILL.md) |
 | Explicit Gang of Four pattern question | [Design pattern](.agents/skills/design-pattern/SKILL.md) |
 | Any Nemlig app work | [Nemlig instructions](apps/nemlig-assistant/AGENTS.md) |

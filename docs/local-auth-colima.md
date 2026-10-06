@@ -32,7 +32,7 @@ source records and existing encrypted data are not deleted by this reset.
 
 ## Local prerequisites
 
-Use Node `22.23.1`, pnpm `9.15.9`, Wrangler `4.127.1`, and the pinned MCP SDK
+Use Node `24.13.0`, pnpm `9.15.9`, Wrangler `4.127.1`, and the pinned MCP SDK
 and `jose` versions in `apps/nemlig-assistant/package.json`. The active Docker
 context must be Colima, with a running development profile and enough storage
 for the production image. Do not reset Colima, prune shared Docker resources,

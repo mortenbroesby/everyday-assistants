@@ -31,6 +31,7 @@ test("routine releases queue trusted main ancestors; manual dispatch is recovery
   assert.match(trigger, /resume_retention:[\s\S]*?required: false[\s\S]*?type: boolean/m);
   assert.match(trigger, /resume_worker_retention:[\s\S]*?required: false[\s\S]*?type: boolean/m);
   assert.match(trigger, /reconcile_operation:[\s\S]*?required: false[\s\S]*?type: string/m);
+  assert.match(trigger, /authorize_uncertain_container_restore:[\s\S]*?required: false[\s\S]*?type: boolean[\s\S]*?default: false/m);
   assert.doesNotMatch(trigger, /cutover:|finalize_operation:/u);
   assert.match(source, /^concurrency:\n\x20{2}group: nemlig-production\n\x20{2}cancel-in-progress: false\n\x20{2}queue: max$/m);
   assert.match(source, /^permissions:\n(?:\x20{2}#.*\n)*\x20{2}contents: write$/m);
@@ -43,6 +44,7 @@ test("routine releases queue trusted main ancestors; manual dispatch is recovery
   assert.match(gate, /inputs\.resume_retention == true/u);
   assert.match(gate, /inputs\.resume_worker_retention == true/u);
   assert.match(gate, /inputs\.reconcile_operation != ''/u);
+  assert.match(gate, /AUTHORIZE_UNCERTAIN_CONTAINER_RESTORE.*RECOVERY.*RECONCILE_OPERATION/u);
   assert.match(gate, /permissions:\n\s+contents: read\n\s+actions: read/u);
   assert.doesNotMatch(gate, /catch-up|retention-ledger|gh api/u);
   assert.doesNotMatch(gate, /\.cleanup|retention-lease|RETENTION_ENABLED|dryRunFingerprint/u);
@@ -322,12 +324,15 @@ test("manual recovery can reconcile an exact pending rollback and release its le
   assert.match(reconcile, /actions\/checkout@[0-9a-f]{40}/u);
   assert.match(reconcile, /actions\/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6\.0\.0/u);
   assert.match(reconcile, /pnpm install --frozen-lockfile/u);
-  assert.match(reconcile, /production:deploy -- reconcile-recovery "\$RECONCILE_OPERATION" --evidence-saved --original-runner-stopped/u);
+  assert.match(reconcile, /reconcile_args=\(reconcile-recovery "\$RECONCILE_OPERATION" --evidence-saved --original-runner-stopped\)/u);
+  assert.match(reconcile, /reconcile_args\+=\(--authorize-one-container-restore\)/u);
+  assert.match(reconcile, /production:deploy -- "\$\{reconcile_args\[@\]\}"/u);
   assert.match(reconcile, /production:deploy -- inspect-recovery "\$RECONCILE_OPERATION" --original-runner-stopped/u);
   assert.match(reconcile, /production:deploy -- finalize "\$RECONCILE_OPERATION" --evidence-saved --original-runner-stopped/u);
   assert.match(reconcile, /result\.reconciled !== true \|\| !\["disabled", "restored"\]\.includes\(result\.state\)/u);
   assert.match(reconcile, /event: "recovery_reconciliation", reconciled: result\.reconciled, reason: result\.reason, state: result\.state/u);
   assert.match(reconcile, /reasons\.has\(result\?\.reason\) \? result\.reason : "result_unavailable"/u);
+  assert.match(reconcile, /"provider_outcome_unknown"/u);
   assert.match(reconcile, /event: "recovery_reconciliation",[\s\S]*?reason: reasons\.has\(result\?\.reason\)/u);
   assert.match(reconcile, /cleanupEligible !== true/u);
   assert.match(reconcile, /event: "recovery_reconciliation_inspection", cleanupEligible: inspection\.cleanupEligible, reason: inspection\.reason, state: inspection\.state/u);

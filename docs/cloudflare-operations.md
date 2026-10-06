@@ -25,8 +25,9 @@ Production endpoints:
 - `https://nemlig-mcp.broesby.dk/mcp`
 - `https://nemlig-mcp-cloudflare-production.mortenbroesby.workers.dev/mcp`
 
-Both returned HTTP 503 with `MCP temporarily disabled` during the latest
-read-only incident verification. The Worker is
+At 2026-10-05 19:31 UTC, a read-only incident check found both routes returned
+HTTP 503 with `MCP temporarily disabled`. This is a dated observation, not a
+live-status guarantee; recheck both routes before acting. The Worker is
 `nemlig-mcp-cloudflare-production`; the configured Container is `lite`, EU
 placed, sleeps after 10 minutes, and is capped at one instance. The currently
 served policy is not asserted by this source update. Current code accepts only
@@ -330,15 +331,17 @@ not a fresh real-family Nemlig or ChatGPT acceptance claim.
    retries the rollback.
 
    If the saved journal ends at `container_restore:intent` after the known
-   Container convergence timeout, reconciliation requires the exact disabled
-   candidate Worker, exact candidate image/version, no active rollout, both
-   disabled routes, and Cloudflare's application `updated_at` earlier than the
-   recorded restore intent. It persists a one-attempt marker before issuing the
-   exact starting-image rollout. If the attempt may already have run, it only
-   accepts exact restored-image readback; it never repeats the POST. It then
-   journals the exact starting-Worker rollback, verifies the restored image and
-   Worker, and runs read-only edge and authenticated service acceptance. Any
-   drift, uncertain mutation, or failed acceptance retains the lease.
+   Container convergence timeout, ordinary reconciliation never retries the
+   restore POST based on timestamps or a missing active rollout. It reports
+   `provider_outcome_unknown` and retains the lease unless exact restored-image
+   readback proves that request completed. Only a separately and explicitly
+   owner-authorized protected dispatch may request the exact journaled prior
+   image once. It rechecks the disabled candidate Worker, exact candidate
+   image/version, inactive rollout and instance, disabled routes, and lease;
+   it persists a single-use authorization marker before the POST. A crash or
+   uncertain response consumes that authorization and cannot be retried. On
+   verified restore, the workflow continues with the exact starting-Worker
+   rollback and read-only edge/service acceptance; failures retain the lease.
 
    If the saved journal contains only a `disabled_deploy` intent after a
    disabled-route probe failure, reconciliation can close the operation only
@@ -431,15 +434,29 @@ pnpm --filter nemlig-assistant production:deploy -- inspect-recovery OPERATION_U
 pnpm --filter nemlig-assistant production:deploy -- inspect-recovery OPERATION_UUID --original-runner-stopped
 # Only after saving the complete artifact and confirming the original runner stopped:
 pnpm --filter nemlig-assistant production:deploy -- reconcile-recovery OPERATION_UUID --evidence-saved --original-runner-stopped
+# Only with explicit owner authorization for one more request to the exact journaled prior image:
+pnpm --filter nemlig-assistant production:deploy -- reconcile-recovery OPERATION_UUID --evidence-saved --original-runner-stopped --authorize-one-container-restore
 # Only after saving complete final evidence and reconciling the exact state:
 pnpm --filter nemlig-assistant production:deploy -- finalize OPERATION_UUID --evidence-saved --original-runner-stopped
 ```
 
-Reconciliation is narrower than deployment: it accepts only the explicitly
-supported interrupted phases when current Worker, configuration, registry
-image, application version, inactive instance and both disabled routes match
-exactly. It appends the observed terminal result to the remote journal; it
-never deploys, rolls back, or changes a Container.
+Reconciliation is narrower than deployment and never starts a new routine
+candidate release. For an interrupted `container_restore`, it never creates
+another rollout by default: `updated_at` is not proof that an earlier POST was
+not accepted. The explicit one-request authorization above is consumed durably
+before its POST and cannot be reused after an uncertain outcome. The [documented Containers rollout API](https://developers.cloudflare.com/api/resources/containers/subresources/applications/subresources/rollouts/)
+documents rollout creation, but no rollout list/get operation or idempotency
+contract that can resolve a lost POST response. If the exact starting image and
+a newer application version are already read back with no active rollout,
+reconciliation may record that observed completion, restore the recorded Worker
+and run read-only acceptance. If the candidate image remains current, it records
+`cloudflare_container_restore_uncertain`, reports `provider_outcome_unknown`,
+and retains the lease. Never clear the lease or replay a consumed POST based on
+an absent active rollout or timestamp. If a one-shot authorized request also
+remains uncertain, stop and obtain provider-side evidence before further
+mutation.
+Other supported recovery phases still require their exact journal and provider
+readback before the terminal result is appended.
 
 Inspection is read-only and uses four bounded Worker/Container metadata reads;
 for a disabled target it also confirms both public routes still return the fixed

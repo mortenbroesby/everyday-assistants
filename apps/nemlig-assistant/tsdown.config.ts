@@ -7,7 +7,7 @@ const executable = {
   outputOptions: { codeSplitting: false },
   platform: "node",
   sourcemap: true,
-  target: "node22",
+  target: "node24",
 } as const;
 
 export default defineConfig([

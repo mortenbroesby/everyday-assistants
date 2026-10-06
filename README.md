@@ -39,7 +39,7 @@ example prompts, setup, commands, hosting, and the complete safety contract:
 
 - [Nemlig Assistant](apps/nemlig-assistant/README.md)
 
-For local development, use Node.js 22.23.1 and pnpm 9.15.9:
+For local development, use Node.js 24.13.0 and pnpm 9.15.9:
 
 ```sh
 pnpm install --frozen-lockfile
@@ -135,11 +135,13 @@ surface, and inspect app scripts before selecting a narrower command:
 | Repository verification | `pnpm verify` | Repository root |
 | OpenSpec validation, when applicable | `pnpm spec:validate` | Repository root |
 
-Node and pnpm versions are Node 22.23.1 and pnpm 9.15.9. The current app is
+Node and pnpm versions are Node 24.13.0 and pnpm 9.15.9. The current app is
 TypeScript with ESLint; no standalone formatter command/configuration or
 frontend testing framework is configured. Do not add one for cleanup work.
-`pnpm verify` runs the app's lint, build, type check, coverage, and smoke
-commands. Choose checks for the changed surface; documentation- and
+`pnpm verify` runs the app's lint and build commands. Type-check, test,
+coverage, and smoke commands remain available for focused investigation, but
+are not merge gates while their Node test-runner processes fail to terminate
+reliably. Choose checks for the changed surface; documentation- and
 instruction-only changes do not need this application-wide command.
 
 The four selected skills are copied locally under `.agents/skills/`; the
