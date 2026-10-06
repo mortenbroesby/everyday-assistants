@@ -441,6 +441,8 @@ The report includes raw/gzip size, first paint, first product visibility, and
 product-detail disclosure response. Each sample uses a fresh browser context;
 the browser process is reused. External requests are blocked, and the fixture
 cannot call providers or mutate a basket. Timing is advisory, not a CI gate.
+To run the baseline in CI, add the `benchmark:ui` pull request label. That
+separate optional workflow does not change the required verification check.
 
 ### Reverse-engineered Nemlig API
 
