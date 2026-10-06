@@ -25,8 +25,9 @@ Production endpoints:
 - `https://nemlig-mcp.broesby.dk/mcp`
 - `https://nemlig-mcp-cloudflare-production.mortenbroesby.workers.dev/mcp`
 
-Both returned HTTP 503 with `MCP temporarily disabled` during the latest
-read-only incident verification. The Worker is
+At 2026-10-05 19:31 UTC, a read-only incident check found both routes returned
+HTTP 503 with `MCP temporarily disabled`. This is a dated observation, not a
+live-status guarantee; recheck both routes before acting. The Worker is
 `nemlig-mcp-cloudflare-production`; the configured Container is `lite`, EU
 placed, sleeps after 10 minutes, and is capped at one instance. The currently
 served policy is not asserted by this source update. Current code accepts only
