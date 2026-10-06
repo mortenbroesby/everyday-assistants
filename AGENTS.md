@@ -14,6 +14,12 @@ repository routing, invariants, and delivery policy.
 - The nearest `AGENTS.md` adds scope-specific requirements. Loading guidance
   never grants authority for secrets, provider changes, production actions, or
   basket mutations.
+- For work spanning turns or agents, carry forward the accepted outcome, current
+  hypothesis and evidence, completed work, next unresolved question, and owner;
+  revisit the hypothesis after two uninformative attempts.
+- Before delegating or restarting work, state the outcome, scope/exclusions,
+  expected evidence, and integration owner; confirm no active owner already has
+  the same scope.
 
 ## Task routing
 

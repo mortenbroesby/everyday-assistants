@@ -9,10 +9,15 @@ repository, or current external state.
 - **Acceptance:** Define testable success and failure behavior, including
   readback for state changes. Treat the GitHub issue as the task contract.
 - **Authority/dependencies:** Confirm access and prerequisites without exposing
-  credentials. Ask separately before destructive actions, external user data,
-  secrets, material cost, production/provider mutation, or scope expansion.
-- **Bootstrap:** In the assigned worktree use Node 24.13.0, pnpm 9.15.9, and
-  run one `pnpm install --frozen-lockfile`.
+  credentials. For required tools, runtimes, services, or remote access, do a
+  minimal task-specific capability check early and identify a safe fallback if
+  unavailable. Do not bootstrap unrelated services or seek unrelated access.
+  Ask separately before destructive actions, external user data, secrets,
+  material cost, production/provider mutation, or scope expansion.
+- **Bootstrap:** For code/build tasks, use Node 24.13.0 and pnpm 9.15.9 in the
+  assigned worktree and run one `pnpm install --frozen-lockfile`. For
+  documentation- or instruction-only tasks, install dependencies only when a
+  selected check requires them.
 - **Reproducer/plan:** Identify the smallest failing check; reassess after two
   uninformative failures. Use OpenSpec only when a durable contract changes;
   otherwise keep the plan concise.
