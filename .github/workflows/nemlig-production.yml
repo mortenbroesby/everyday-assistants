@@ -28,6 +28,11 @@ on:
         description: Reconcile one saved deployment operation and release its lease
         required: false
         type: string
+      authorize_uncertain_container_restore:
+        description: Consume one explicit authorization to request the exact journaled prior Container image once
+        required: false
+        type: boolean
+        default: false
 
 concurrency:
   group: nemlig-production
@@ -45,6 +50,7 @@ env:
   RESUME_RETENTION: "${{ github.event_name == 'workflow_dispatch' && inputs.resume_retention || false }}"
   RESUME_WORKER_RETENTION: "${{ github.event_name == 'workflow_dispatch' && inputs.resume_worker_retention || false }}"
   RECONCILE_OPERATION: "${{ github.event_name == 'workflow_dispatch' && inputs.reconcile_operation || '' }}"
+  AUTHORIZE_UNCERTAIN_CONTAINER_RESTORE: "${{ github.event_name == 'workflow_dispatch' && inputs.authorize_uncertain_container_restore || false }}"
 
 jobs:
   release-gate:
@@ -95,6 +101,10 @@ jobs:
           fi
           if [[ -n "$RECONCILE_OPERATION" && "$RESUME_WORKER_RETENTION" == "true" ]]; then
             echo "Rollback reconciliation and Worker-version retention resume are mutually exclusive." >&2
+            exit 1
+          fi
+          if [[ "$AUTHORIZE_UNCERTAIN_CONTAINER_RESTORE" == "true" && ("$RECOVERY" != "true" || -z "$RECONCILE_OPERATION") ]]; then
+            echo "One-shot Container restore authorization requires recovery=true and an exact reconcile_operation." >&2
             exit 1
           fi
           if [[ -n "$RECONCILE_OPERATION" && ! "$RECONCILE_OPERATION" =~ ^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$ ]]; then
@@ -323,9 +333,12 @@ jobs:
           NEMLIG_MCP_SERVICE_CLIENT_SECRET: "${{ secrets.NEMLIG_MCP_SERVICE_CLIENT_SECRET }}"
           NEMLIG_CI_ACCEPTANCE_READY: "${{ vars.NEMLIG_CI_ACCEPTANCE_READY }}"
           RECONCILE_OPERATION: "${{ env.RECONCILE_OPERATION }}"
+          AUTHORIZE_UNCERTAIN_CONTAINER_RESTORE: "${{ env.AUTHORIZE_UNCERTAIN_CONTAINER_RESTORE }}"
         run: |
           set -euo pipefail
-          if result=$(pnpm --silent --filter nemlig-assistant production:deploy -- reconcile-recovery "$RECONCILE_OPERATION" --evidence-saved --original-runner-stopped); then
+          reconcile_args=(reconcile-recovery "$RECONCILE_OPERATION" --evidence-saved --original-runner-stopped)
+          if [[ "$AUTHORIZE_UNCERTAIN_CONTAINER_RESTORE" == "true" ]]; then reconcile_args+=(--authorize-one-container-restore); fi
+          if result=$(pnpm --silent --filter nemlig-assistant production:deploy -- "${reconcile_args[@]}"); then
             node --input-type=module -e '
               const result = JSON.parse(process.argv[1]);
               console.log(JSON.stringify({ event: "recovery_reconciliation", reconciled: result.reconciled, reason: result.reason, state: result.state }));
