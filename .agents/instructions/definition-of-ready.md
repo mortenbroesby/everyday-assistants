@@ -11,7 +11,7 @@ repository, or current external state.
 - **Authority/dependencies:** Confirm access and prerequisites without exposing
   credentials. Ask separately before destructive actions, external user data,
   secrets, material cost, production/provider mutation, or scope expansion.
-- **Bootstrap:** In the assigned worktree use Node 22.23.1, pnpm 9.15.9, and
+- **Bootstrap:** In the assigned worktree use Node 24.13.0, pnpm 9.15.9, and
   run one `pnpm install --frozen-lockfile`.
 - **Reproducer/plan:** Identify the smallest failing check; reassess after two
   uninformative failures. Use OpenSpec only when a durable contract changes;

@@ -20,10 +20,10 @@ The system SHALL produce a private ESM npm-format package named `nemlig-assistan
 - **THEN** its server version matches the package manifest and its instructions identify the same version and codename
 
 ### Requirement: Supported build and runtime toolchain
-The repository SHALL build the private installable package with a bundler version compatible with the pinned Node 22.23.1 toolchain, SHALL retain an independent TypeScript type-check, and SHALL use dependency versions that satisfy the declared Node and lint peer ranges.
+The repository SHALL build the private installable package with a bundler version compatible with the pinned Node 24.13.0 toolchain, SHALL retain an independent TypeScript type-check, and SHALL use dependency versions that satisfy the declared Node and lint peer ranges.
 
 #### Scenario: Verify current toolchain
-- **WHEN** CI installs the frozen lockfile under Node 22.23.1 and runs focused and root verification
+- **WHEN** CI installs the frozen lockfile under Node 24.13.0 and runs focused and root verification
 - **THEN** build, type-check, lint, tests, smoke, and package-tarball validation pass without compatibility warnings or undeclared runtime dependencies
 
 #### Scenario: Incompatible latest major exists
