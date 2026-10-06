@@ -1,6 +1,6 @@
 ---
 name: code-simplifier
-description: Primary guidance for simplifying or refactoring existing implementation while preserving behavior. Use for cleanup, readability, maintainability, duplication, redundant abstractions, or unnecessary complexity; follow repository-specific conventions.
+description: Primary guidance for simplifying or refactoring existing implementation while preserving behavior. Use for cleanup, readability, maintainability, duplication, redundant abstractions, explicitly requested read-only deletion audits, or non-obvious defensive/compatibility code whose purpose or retirement condition matters; follow repository conventions.
 ---
 
 <!--
@@ -64,16 +64,79 @@ trivial change into process:
    already solved by a native capability, repository utility, or installed
    dependency. Check whether abstractions and compatibility code have a
    demonstrated reason or consumer. If significant deletion or restructuring
-   has unclear intent, inspect relevant callers/tests, `git log`/`git blame`,
-   the originating issue/PR or OpenSpec decision, and later changes. Treat
-   history as evidence of intent, then verify that the rationale still applies;
-   do not require archaeology for ordinary cleanup.
+   has unclear intent, use the code-archaeology workflow below. Do not require
+   archaeology for ordinary cleanup.
 3. **Simplify:** prefer deletion, direct code, and reuse before invention, but
    do not apply that order mechanically. Make a coherent change that materially
    reduces complexity. A no-op is valid when no concrete improvement exists.
 4. **Verify and reassess:** run checks that support the claim after the last
    relevant edit. Separate prior failures from regressions, report limits, and
    confirm complexity decreased without weakening behavior or safety.
+
+## Preserve rationale and retirement conditions
+
+When introducing or substantially changing non-obvious defensive code,
+compatibility behavior, or an abstraction, establish what current behavior or
+constraint requires it, what could break or become unsafe if it disappeared,
+and what evidence supports that explanation. Do not present a plausible
+explanation as established history; use the code-archaeology workflow below
+when intent is unclear or historical context could change the decision.
+
+When the explanation would help prevent a future incorrect change, preserve the
+reason in the smallest useful place, usually a concise nearby comment or a link
+to an existing test, issue, or OpenSpec decision. Explain why the code is
+necessary; do not narrate obvious implementation details. Use ordinary comments
+and repository conventions, not a custom annotation schema or a comment for
+every function. Recheck existing explanations when the relevant code changes.
+
+For a temporary workaround, compatibility path, migration mechanism, or
+fallback, identify why it is needed, the observable condition that would make
+it unnecessary, and evidence required before removal. When useful to future
+maintainers, record these alongside the existing explanation or decision. A
+date may trigger review but never authorizes deletion. Do not label permanent
+safety requirements temporary; if a removal condition is unknown, say so. Before
+recommending removal, recheck the condition against current code and supported
+consumers; old comments and closed issues alone are insufficient.
+
+## Code archaeology and read-only deletion audits
+
+For significant deletion or restructuring whose intent is unclear, first trace
+current implementation, callers, what relevant tests actually cover,
+public/package/dynamic entry points, and any replacement capability. Use Git
+history, originating issues/PRs, OpenSpec, and later changes when historical
+intent can change the decision. Separate documented historical rationale,
+demonstrated current purpose, inference, and unknowns. History explains how code
+arrived; it does not prove the old reason still applies. Static-reference
+absence and passing tests alone do not prove that an external contract is
+unused.
+
+For an explicitly requested deletion audit (for example, “investigate this
+subsystem and report what we could stop maintaining”), keep it read-only and
+start with the requested scope. Examine the evidence above plus relevant
+entrypoints and tests. Return a ranked list of at most five candidates, each
+with what could disappear, maintenance burden removed, evidence, remaining
+uncertainty/contracts, and the smallest next step to establish safety. Label
+each “well-supported candidate,” “needs more evidence,” or “keep”; concluding
+that nothing should be removed is valid. Report findings only: do not edit code
+or apply deletions. Ordinary cleanup is not an audit, and no scheduling or
+automated deletion mechanism is implied.
+
+## Reassess substantial changes
+
+For a substantial refactor, briefly report:
+
+- **Removed:** concepts, maintenance obligations, duplicated rules, or
+  compatibility paths that disappeared.
+- **Added:** responsibilities, abstractions, dependencies, configuration, or
+  state introduced.
+- **Retained:** important complexity that remains necessary.
+- **Result:** why the implementation is easier to understand, verify, or change,
+  including tradeoffs.
+
+Keep this proportionate; trivial edits need no complexity report. Moving code
+between files alone is not simplification. Preserving an important invariant
+takes priority over making the assessment look favorable. Do not calculate a
+net complexity score or numerical budget.
 
 Cross-file changes and new abstractions are appropriate when they resolve an
 observed coupling, effect, testing, or maintenance problem. Follow task and
