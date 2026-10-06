@@ -560,20 +560,18 @@ test("application revalidates basket and product details before any mutation", a
   }), { id: () => "00000000-0000-4000-8000-000000000008" });
   const changedBasketProposal = await service.prepareAdditions("connection", [{ product_id: 7, quantity: 1 }], { kind: "exact_review" });
   basket = { ...emptyBasket(), productsPrice: 1 };
-  await assert.rejects(
-    service.apply("connection", changedBasketProposal.proposal_id, "additions"),
-    /Basket changed after review/,
-  );
+  const basketError = await service.apply("connection", changedBasketProposal.proposal_id, "additions")
+    .then(() => undefined, error => error);
   assert.equal(mutations, 0);
+  assert.match(String(basketError), /Basket changed after review/);
 
   basket = emptyBasket();
   const changedProductProposal = await service.prepareAdditions("connection", [{ product_id: 7, quantity: 1 }], { kind: "exact_review" });
   currentProduct = { ...product, price: 3 };
-  await assert.rejects(
-    service.apply("connection", changedProductProposal.proposal_id, "additions"),
-    /Product details changed after review/,
-  );
+  const productError = await service.apply("connection", changedProductProposal.proposal_id, "additions")
+    .then(() => undefined, error => error);
   assert.equal(mutations, 0);
+  assert.match(String(productError), /Product details changed after review/);
 });
 
 test("application uses reusable lookup for review and authoritative lookup for apply", async () => {
