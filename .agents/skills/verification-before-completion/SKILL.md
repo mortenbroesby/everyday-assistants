@@ -1,6 +1,6 @@
 ---
 name: verification-before-completion
-description: Use when about to claim work is complete, fixed, or passing, before committing or creating PRs - requires running verification commands and confirming output before making any success claims; evidence before assertions always
+description: Use before claiming work is complete, fixed, or passing, or before committing/creating PRs; run or inspect complete relevant verification evidence and confirm its output
 ---
 
 # Verification Before Completion
@@ -14,11 +14,12 @@ description: Use when about to claim work is complete, fixed, or passing, before
 ## The Iron Law
 
 ```
-NO COMPLETION CLAIMS WITHOUT FRESH VERIFICATION EVIDENCE
+NO COMPLETION CLAIMS WITHOUT VERIFIED EVIDENCE
 ```
 
-Use fresh evidence for the specific claim and changed scope; do not claim a check
-passed unless you ran that complete, relevant check after the last relevant edit.
+Use evidence for the specific claim and changed scope. A completed check remains
+useful while its relevant inputs are unchanged; rerun it after a relevant edit,
+when its result is incomplete or failed, or when a concrete concern remains.
 
 ## The Gate Function
 
@@ -26,7 +27,12 @@ passed unless you ran that complete, relevant check after the last relevant edit
 BEFORE claiming any status or expressing satisfaction:
 
 1. IDENTIFY: What check proves this specific claim at the changed scope?
-2. RUN: Execute the complete, relevant check after the last relevant edit.
+2. RUN or INSPECT: Execute the complete, relevant check after the last relevant
+   edit, or inspect valid evidence already produced for the same inputs. Track
+   the command, working directory, revision and relevant working-tree state,
+   running process/session, and result. A timeout or yielded tool call means the
+   result is unknown or still running. Resume or inspect that process before
+   retrying; do not start a duplicate until the original is confirmed stopped.
 3. READ: Inspect its output and result; note failures or incomplete work.
 4. VERIFY: Does the evidence support the claim, and only that claim?
    - If NO: State actual status with evidence and limits
@@ -55,9 +61,10 @@ Skip any step = lying, not verifying
 - About to commit/push/PR without verification
 - Trusting agent success reports
 - Relying on partial verification
+- Starting duplicate verification while the original process may still be running
 - Thinking "just this once"
 - Tired and wanting work over
-- **ANY wording implying success without having run verification**
+- **ANY wording implying success without having run or inspected relevant evidence**
 
 ## Rationalization Prevention
 
@@ -70,6 +77,8 @@ Skip any step = lying, not verifying
 | "Agent said success" | Verify independently |
 | "I'm tired" | Exhaustion ≠ excuse |
 | "A partial check proves the full claim" | It supports only the checked scope |
+| "A timed-out check failed" | Its result is unknown until the process/output is inspected |
+| Repeating a successful check before every status or delivery step | Reuse it while relevant inputs remain unchanged |
 | "Different words so rule doesn't apply" | Spirit over letter |
 
 ## Key Patterns

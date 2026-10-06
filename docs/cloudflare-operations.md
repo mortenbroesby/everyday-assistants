@@ -696,7 +696,7 @@ probe: health 145 ms, revision 39 ms, OAuth metadata 13 ms, anonymous rejection
 ChatGPT check confirmed the same 32-product basket, no active shopping lists,
 and no mutation. No parallel app, Container, or paid resource was created.
 
-## Verify production features and approved reversible mutations
+## Verify production features and read-only checks
 
 Run the credential-free edge probes at any time:
 
@@ -721,31 +721,9 @@ pnpm --filter nemlig-assistant production:test:features
 unset NEMLIG_MCP_ACCESS_TOKEN
 ```
 
-Stateful acceptance is separate. Prepare both the intended mutation and its
-inverse restoration, show both complete reviews to the owner, and obtain exact
-approval for each. Encode each as an object containing `operation`,
-`prepareArguments`, and the complete `expectedReview`. Supply each serialized
-object twice so an accidental partial environment cannot apply it:
-
-```sh
-read -rs NEMLIG_MCP_ACCESS_TOKEN
-export NEMLIG_MCP_ACCESS_TOKEN
-read -r "NEMLIG_PRODUCTION_MUTATION?Approved mutation JSON: "
-export NEMLIG_PRODUCTION_MUTATION
-export NEMLIG_PRODUCTION_MUTATION_CONFIRMATION="$NEMLIG_PRODUCTION_MUTATION"
-read -r "NEMLIG_PRODUCTION_RESTORATION?Approved restoration JSON: "
-export NEMLIG_PRODUCTION_RESTORATION
-export NEMLIG_PRODUCTION_RESTORATION_CONFIRMATION="$NEMLIG_PRODUCTION_RESTORATION"
-pnpm --filter nemlig-assistant production:test:mutation
-unset NEMLIG_MCP_ACCESS_TOKEN NEMLIG_PRODUCTION_MUTATION \
-  NEMLIG_PRODUCTION_MUTATION_CONFIRMATION NEMLIG_PRODUCTION_RESTORATION \
-  NEMLIG_PRODUCTION_RESTORATION_CONFIRMATION
-```
-
-The command accepts additions, removal, replacement, or clear envelopes, applies
-only the unchanged approved proposal, reads the basket back, applies only the
-separately approved inverse, and requires the final basket fingerprint to equal
-the initial fingerprint. It never retries an indeterminate apply.
+The current app contract permits basket additions only. This app has no live
+mutation acceptance command; it must never remove or decrease basket contents,
+replace items, clear the basket, or perform an inverse basket restoration.
 
 ### 2026-09-01 production-only cleanup verification
 
@@ -760,14 +738,12 @@ as conversation history only.
 The full authenticated feature command was not run because no owner access token
 was available to the repository process. No new ChatGPT prompt, saved plan,
 GitHub issue, proposal apply, or basket mutation was sent. Run
-`production:test:features` when a current owner token is available. Run
-`production:test:mutation` only after both exact change and restoration envelopes
-receive their separate approvals.
+`production:test:features` when a current owner token is available.
 
 This boundary was retained when the tunnel-retirement change was formally
 closed: the automated contracts and credential-free production probe passed,
-while the optional token-backed feature sweep and reversible live mutation
-exercise remain operator-run checks rather than claimed completion evidence.
+while the optional token-backed feature sweep remains an operator-run check
+rather than claimed completion evidence.
 
 ## Inspect sanitized operational evidence
 

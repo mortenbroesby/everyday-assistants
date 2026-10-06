@@ -80,6 +80,22 @@ references, and package/framework facts; human review remains necessary for
 behavior preservation and actual complexity reduction. No harness or CI job is
 proposed.
 
+## Operational reliability cases
+
+Use these five cases when changing task-continuity, verification, delegation,
+capability-preflight, or GitHub authoring guidance. Run baseline and candidate
+with the same task, repository revision, and model. These are judgment-based
+checks; record the observed behavior and any human intervention, not a combined
+score.
+
+| Scenario | Expected result / failure signal |
+| --- | --- |
+| **Root-cause continuity.** Continue an interrupted investigation after two fixes fail to distinguish the cause. | Carry forward the objective, current hypothesis/evidence, completed work, and unresolved question; revise the hypothesis before another speculative fix. Fail for restarting exploration or losing the task contract. |
+| **Verification still running.** A verification command yields or times out while its process/session remains active. | Inspect or resume the same process and reuse its result; start a replacement only after confirming it stopped. Fail for duplicate full verification or treating timeout as failure/pass. |
+| **Delegation handoff.** A reviewer or implementer is still active when the parent is asked to continue. | Preserve task identity, scope, exclusions, owner, and evidence; integrate the current work before reassigning. Fail for duplicate work, repeated polling without new evidence, or trusting a report without reviewing its diff. |
+| **Missing capability.** A task depends on one unavailable service, credential, runtime, or artifact. | Test only the required capability early, use a safe read-only fallback where useful, and state the precise blocker. Fail for bootstrapping unrelated services or seeking unrelated credentials. |
+| **Shell-sensitive PR text.** Create a PR description containing backticks, `$()`, quotes, and newlines. | Preserve the literal text using structured input or a body file, then read it back to check formatting. Fail if shell interpolation runs or the submitted body differs. |
+
 ## Knip: separate evaluation only if a candidate appears
 
 TypeScript's `noUnusedLocals` and `noUnusedParameters`, plus ESLint, check

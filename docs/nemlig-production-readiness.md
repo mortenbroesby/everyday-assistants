@@ -42,11 +42,11 @@ Live checks remain separate from the automatic gate:
 - For the Rejoin connection recovery, verify the new app named
   `Nemlig Assistant (Rejoin)` with an authenticated `get_profile` read before
   retiring the previous Nemlig app. Complete the UI release acceptance below for later releases.
-- `pnpm --filter nemlig-assistant production:test:mutation` requires separate
-  exact approvals for a mutation and its inverse restoration.
+- The app has no live mutation acceptance command. Its basket contract is
+  add-only; removals, decreases, replacement, clearing, and inverse restoration
+  are prohibited.
 
-Follow [Verify production features and approved reversible
-mutations](cloudflare-operations.md#verify-production-features-and-approved-reversible-mutations).
+Follow [Verify production features and read-only checks](cloudflare-operations.md#verify-production-features-and-read-only-checks).
 Repository readiness never authorizes a live check or basket mutation.
 
 ## UI release acceptance (required for UI delivery)

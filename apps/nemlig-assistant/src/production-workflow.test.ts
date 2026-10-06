@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -8,6 +8,7 @@ import test from "node:test";
 const workflowPath = new URL("../../../.github/workflows/nemlig-production.yml", import.meta.url);
 const ciWorkflowPath = new URL("../../../.github/workflows/ci.yml", import.meta.url);
 const retentionScriptPath = new URL("../scripts/production-retention.ts", import.meta.url);
+const routineFinalizerPath = new URL("../scripts/finalize-routine-deployment.mjs", import.meta.url);
 
 const section = (source: string, heading: string): string => {
   const start = source.indexOf(`${heading}\n`);
@@ -107,8 +108,6 @@ test("routine releases queue trusted main ancestors; manual dispatch is recovery
   assert.match(deploy, /if-no-files-found: error/u);
   assert.match(deploy, /retention-days: 7/u);
   assert.match(deploy, /include-hidden-files: true/u);
-  assert.match(deploy, /const alreadyReleasedPreMutationLease = value\.outcome === "failed"\n\s+&& value\.lastVerifiedState === "unchanged"\n\s+&& Array\.isArray\(value\.transitions\) && value\.transitions\.length === 0\n\s+&& !existsSync\(process\.argv\[2\]\);/u);
-  assert.match(deploy, /if \(alreadyReleasedPreMutationLease\) process\.stdout\.write\("released-pre-mutation-lease"\);/u);
   assert.match(deploy, /Skipping finalization after this operation released its unchanged pre-mutation lease\./u);
   assert.doesNotMatch(source, /setup-.*provider|activate|cloudflare\/workers/u);
 
@@ -215,40 +214,64 @@ test("production summary reports accepted deployment with artifact or finalizati
   }
 });
 
-test("workflow finalization executes only an exact-run journal operation", async () => {
+test("workflow runs routine finalization after saving the release artifact with exact finalize arguments", async () => {
   const source = section(await readFile(workflowPath, "utf8"), "  deploy:");
-  const script = source.match(/finalization_target=\$\(node --input-type=module -e '([\s\S]*?)' "\$GITHUB_WORKSPACE\/\.git\/nemlig-production-deploy\/latest\.json" "\$GITHUB_WORKSPACE\/\.git\/nemlig-production-deploy\.lock"\)/u)?.[1];
-  assert.ok(script);
+  const artifactIndex = source.indexOf("- name: Upload bounded release report and deployment journal");
+  const finalizerIndex = source.indexOf("finalize-routine-deployment.mjs");
+  const finalizeIndex = source.indexOf('production:deploy -- finalize "$finalization_target" --evidence-saved --original-runner-stopped');
+  assert.ok(artifactIndex >= 0 && finalizerIndex > artifactIndex && finalizeIndex > finalizerIndex);
+  assert.match(source, /if: \$\{\{ !cancelled\(\) && \(steps\.deploy\.outcome == 'success' \|\| steps\.deploy\.outcome == 'failure'\) && steps\.release-artifact\.outcome == 'success' \}\}/u);
+  assert.match(source, /finalization_target=\$\(node "\$GITHUB_WORKSPACE\/apps\/nemlig-assistant\/scripts\/finalize-routine-deployment\.mjs" \\\n\s+"\$GITHUB_WORKSPACE\/\.git\/nemlig-production-deploy\/latest\.json" \\\n\s+"\$GITHUB_WORKSPACE\/\.git\/nemlig-production-deploy\.lock"\)/u);
+  assert.match(source, /production:deploy -- finalize "\$finalization_target" --evidence-saved --original-runner-stopped/u);
+
+  const invokeFinalizer = (journalPath: string, leasePath: string, env: NodeJS.ProcessEnv) =>
+    spawnSync(process.execPath, [routineFinalizerPath.pathname, journalPath, leasePath], {
+      encoding: "utf8", env: { ...process.env, ...env },
+    });
   const root = await mkdtemp(join(tmpdir(), "nemlig-finalize-workflow-"));
   const path = join(root, "journal.json");
   const lease = join(root, "lease.lock");
+  const directoryPath = join(root, "journal-directory");
   const journal = { operationId: "44444444-4444-4444-8444-444444444444", commit: "a".repeat(40), releaseRunId: 123, releaseRunAttempt: 2, outcome: "failed", lastVerifiedState: "unchanged", transitions: [] };
+  const env = { CANDIDATE_SHA: journal.commit, GITHUB_RUN_ID: "123", GITHUB_RUN_ATTEMPT: "2" };
   try {
+    const missing = invokeFinalizer(path, lease, env);
+    assert.equal(missing.status, 0);
+    assert.equal(missing.stdout, "no-journal");
+    await mkdir(directoryPath);
+    const directory = invokeFinalizer(directoryPath, lease, env);
+    assert.equal(directory.status, 0);
+    assert.equal(directory.stdout, "no-journal");
+
     await writeFile(lease, "owned");
     for (const replacement of [{}, { operationId: "invalid" }, { commit: "b".repeat(40) }, { releaseRunId: 124 }, { releaseRunAttempt: 1 }]) {
       await writeFile(path, JSON.stringify({ ...journal, ...replacement }));
-      const result: ReturnType<typeof spawnSync> = spawnSync(process.execPath, ["--input-type=module", "-e", script, path, lease], {
-        encoding: "utf8", env: { ...process.env, CANDIDATE_SHA: journal.commit, GITHUB_RUN_ID: "123", GITHUB_RUN_ATTEMPT: "2" },
-      });
+      const result = invokeFinalizer(path, lease, env);
       const matches = Object.keys(replacement).length === 0;
       assert.equal(result.status, matches ? 0 : 1);
       assert.equal(result.stdout, matches ? journal.operationId : "");
     }
+
     await rm(lease);
     await writeFile(path, JSON.stringify(journal));
-    const released = spawnSync(process.execPath, ["--input-type=module", "-e", script, path, lease], {
-      encoding: "utf8", env: { ...process.env, CANDIDATE_SHA: journal.commit, GITHUB_RUN_ID: "123", GITHUB_RUN_ATTEMPT: "2" },
-    });
+    const released = invokeFinalizer(path, lease, env);
     assert.equal(released.status, 0);
     assert.equal(released.stdout, "released-pre-mutation-lease");
-    for (const replacement of [{ transitions: [{}] }, { lastVerifiedState: "unknown" }, { outcome: "success" }]) {
+
+    for (const replacement of [
+      { transitions: [{}] },
+      { lastVerifiedState: "unknown" },
+      { outcome: "success" },
+      { outcome: "failed", transitions: "invalid" },
+    ]) {
       await writeFile(path, JSON.stringify({ ...journal, ...replacement }));
-      const result: ReturnType<typeof spawnSync> = spawnSync(process.execPath, ["--input-type=module", "-e", script, path, lease], {
-        encoding: "utf8", env: { ...process.env, CANDIDATE_SHA: journal.commit, GITHUB_RUN_ID: "123", GITHUB_RUN_ATTEMPT: "2" },
-      });
+      const result = invokeFinalizer(path, lease, env);
       assert.equal(result.status, 0);
       assert.equal(result.stdout, journal.operationId);
     }
+
+    await writeFile(path, "not JSON");
+    assert.equal(invokeFinalizer(path, lease, env).status, 1);
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
@@ -329,14 +352,9 @@ test("routine recovery finalizes only after its artifact is saved", async () => 
   const finalize = deploy.indexOf("production:deploy -- finalize");
   assert.ok(upload >= 0 && finalize > upload);
   assert.match(deploy, /if: \$\{\{ !cancelled\(\) && \(steps\.deploy\.outcome == 'success' \|\| steps\.deploy\.outcome == 'failure'\) && steps\.release-artifact\.outcome == 'success' \}\}/u);
-  assert.match(deploy, /\[\[ ! -f "\$GITHUB_WORKSPACE\/\.git\/nemlig-production-deploy\/latest\.json" \]\]/u);
-  assert.match(deploy, /value\.commit !== process\.env\.CANDIDATE_SHA/u);
-  assert.match(deploy, /value\.releaseRunId !== Number\(process\.env\.GITHUB_RUN_ID\)/u);
-  assert.match(deploy, /value\.releaseRunAttempt !== Number\(process\.env\.GITHUB_RUN_ATTEMPT\)/u);
-  assert.match(deploy, /JSON\.parse\(readFileSync\(process\.argv\[1\], "utf8"\)\)/u);
+  assert.ok(deploy.indexOf("finalize-routine-deployment.mjs") > upload);
   assert.match(deploy, /GITHUB_WORKSPACE\/\.git\/nemlig-production-deploy\/latest\.json/u);
   assert.doesNotMatch(deploy, /readFileSync\([^\n]*RUNNER_TEMP\/nemlig-release\.json/u);
-  assert.match(deploy, /\^\[0-9a-f\]\{8\}\(\?:-\[0-9a-f\]\{4\}\)\{3\}-\[0-9a-f\]\{12\}\$/u);
   assert.match(deploy, /finalize "\$finalization_target" --evidence-saved --original-runner-stopped/u);
 
   const finalization = deploy.slice(deploy.lastIndexOf("      - name:", finalize));

@@ -493,24 +493,13 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: "${{ vars.CLOUDFLARE_ACCOUNT_ID }}"
         run: |
           set -euo pipefail
-          if [[ ! -f "$GITHUB_WORKSPACE/.git/nemlig-production-deploy/latest.json" ]]; then
+          finalization_target=$(node "$GITHUB_WORKSPACE/apps/nemlig-assistant/scripts/finalize-routine-deployment.mjs" \
+            "$GITHUB_WORKSPACE/.git/nemlig-production-deploy/latest.json" \
+            "$GITHUB_WORKSPACE/.git/nemlig-production-deploy.lock")
+          if [[ "$finalization_target" == "no-journal" ]]; then
             echo "No owned deployment journal; nothing to finalize."
             exit 0
           fi
-          finalization_target=$(node --input-type=module -e '
-            import { existsSync, readFileSync } from "node:fs";
-            const value = JSON.parse(readFileSync(process.argv[1], "utf8"));
-            if (typeof value.operationId !== "string" || !/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/.test(value.operationId)) process.exit(1);
-            if (value.commit !== process.env.CANDIDATE_SHA
-              || value.releaseRunId !== Number(process.env.GITHUB_RUN_ID)
-              || value.releaseRunAttempt !== Number(process.env.GITHUB_RUN_ATTEMPT)) process.exit(1);
-            const alreadyReleasedPreMutationLease = value.outcome === "failed"
-              && value.lastVerifiedState === "unchanged"
-              && Array.isArray(value.transitions) && value.transitions.length === 0
-              && !existsSync(process.argv[2]);
-            if (alreadyReleasedPreMutationLease) process.stdout.write("released-pre-mutation-lease");
-            else process.stdout.write(value.operationId);
-          ' "$GITHUB_WORKSPACE/.git/nemlig-production-deploy/latest.json" "$GITHUB_WORKSPACE/.git/nemlig-production-deploy.lock")
           if [[ "$finalization_target" == "released-pre-mutation-lease" ]]; then
             echo "Skipping finalization after this operation released its unchanged pre-mutation lease."
             exit 0
