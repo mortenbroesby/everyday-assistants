@@ -112,6 +112,10 @@ The release SHALL build/upload one candidate Container image, verify disabled re
 - **WHEN** required acceptance fails and the candidate still owns production
 - **THEN** the operation restores and verifies the recorded prior compatible state or retains a verified disabled or explicitly unknown state, and reports release failure
 
+#### Scenario: An owner explicitly authorizes one restore after an uncertain result
+- **WHEN** the exact stopped operation, lease, disabled candidate, current Container image/version, and inactive rollout state are verified, and the protected recovery dispatch carries explicit one-shot authorization
+- **THEN** the workflow persists a single-use authorization marker before requesting only the journaled immutable prior image; any ambiguous result retains the lease and the consumed marker prevents another request
+
 ### Requirement: CI has bounded authority and cost
 
 Production delivery SHALL use protected short-lived job credentials and the least supported deployment/service permission scopes. It SHALL have fixed time, request, token-issuance and journal bounds; no scheduled release, automatic mutation retry, new paid service or extra Container. CI MUST NOT invoke mutation acceptance or store owner passwords, browser cookies or owner refresh tokens. Provider and secret setup SHALL remain explicitly approved and recorded as complete only after readback.

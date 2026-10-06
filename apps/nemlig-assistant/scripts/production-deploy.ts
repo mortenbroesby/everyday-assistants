@@ -18,7 +18,7 @@ const ciWorkflowPath = ".github/workflows/ci.yml";
 const customMcp = new URL("https://nemlig-mcp.broesby.dk/mcp");
 const workersMcp = new URL("https://nemlig-mcp-cloudflare-production.mortenbroesby.workers.dev/mcp");
 const containerApplication = "nemlig-mcp-cloudflare-production-nemligmcpcontainer-production";
-export const productionDeployUsage = "pnpm --filter nemlig-assistant production:deploy -- preflight [--recovery] <40-character-main-commit> | [--service|--recovery] <40-character-main-commit> | reconcile-recovery <operation-id> --evidence-saved --original-runner-stopped | finalize <operation-id> --evidence-saved --original-runner-stopped | inspect-recovery <operation-id> [--original-runner-stopped]";
+export const productionDeployUsage = "pnpm --filter nemlig-assistant production:deploy -- preflight [--recovery] <40-character-main-commit> | [--service|--recovery] <40-character-main-commit> | reconcile-recovery <operation-id> --evidence-saved --original-runner-stopped [--authorize-one-container-restore] | finalize <operation-id> --evidence-saved --original-runner-stopped | inspect-recovery <operation-id> [--original-runner-stopped]";
 
 export type VerifiedState = "unchanged" | "disabled" | "enabled" | "restored" | "unknown";
 
@@ -177,7 +177,7 @@ const isoTime = (value: unknown): value is string => {
   return Number.isFinite(date.getTime()) && date.toISOString() === value;
 };
 const imageDigest = /^sha256:[0-9a-f]{64}$/u;
-const journalChecks = new Set(["source_and_auth_preflight", "recovery_source", "exclusive_lease", "starting_state_recorded", "disabled_version", "disabled_routes", "container_inactive", "enabled_version", "image_reused", "container_rollout", "edge_acceptance", "authenticated_read_only_acceptance", "service_fixture_acceptance", "starting_version_restored", "container_restore_reconciliation_attempted"]);
+const journalChecks = new Set(["source_and_auth_preflight", "recovery_source", "exclusive_lease", "starting_state_recorded", "disabled_version", "disabled_routes", "container_inactive", "enabled_version", "image_reused", "container_rollout", "edge_acceptance", "authenticated_read_only_acceptance", "service_fixture_acceptance", "starting_version_restored", "container_restore_reconciliation_attempted", "container_restore_explicit_authorized_retry"]);
 const acceptanceFailureCategories = new Set(["input_invalid", "deadline_exceeded", "edge_failed", "authentication_failed", "transport_failed", "feature_failed", "mutation_failed", "unknown_failure"]);
 const routineRecoveryEligibleFailures = new Set(["container_instance_timeout"]);
 
@@ -276,7 +276,7 @@ export type RecoveryCli =
   | { help: true }
   | { help: false; command: "preflight"; commit: string; recovery: boolean }
   | { help: false; command: "deploy"; commit: string; acceptanceMode?: "service" | "recovery" }
-  | { help: false; command: "reconcile-recovery"; operation: string; evidenceSaved: true; originalRunnerStopped: true }
+  | { help: false; command: "reconcile-recovery"; operation: string; evidenceSaved: true; originalRunnerStopped: true; authorizeOneContainerRestore: boolean }
   | { help: false; command: "finalize"; operation: string; evidenceSaved: true; originalRunnerStopped: true }
   | { help: false; command: "inspect-recovery"; operation: string; originalRunnerStopped: boolean };
 
@@ -287,8 +287,9 @@ export function parseProductionDeployCli(argv: readonly string[]): RecoveryCli {
   if (values[0] === "finalize" && values.length === 4 && operationId.test(values[1] ?? "") && values[2] === "--evidence-saved" && values[3] === "--original-runner-stopped") {
     return { help: false, command: "finalize", operation: values[1]!, evidenceSaved: true, originalRunnerStopped: true };
   }
-  if (values[0] === "reconcile-recovery" && values.length === 4 && operationId.test(values[1] ?? "") && values[2] === "--evidence-saved" && values[3] === "--original-runner-stopped") {
-    return { help: false, command: "reconcile-recovery", operation: values[1]!, evidenceSaved: true, originalRunnerStopped: true };
+  if (values[0] === "reconcile-recovery" && operationId.test(values[1] ?? "") && values[2] === "--evidence-saved" && values[3] === "--original-runner-stopped"
+    && (values.length === 4 || (values.length === 5 && values[4] === "--authorize-one-container-restore"))) {
+    return { help: false, command: "reconcile-recovery", operation: values[1]!, evidenceSaved: true, originalRunnerStopped: true, authorizeOneContainerRestore: values.length === 5 };
   }
   if (values[0] === "inspect-recovery" && operationId.test(values[1] ?? "")
     && (values.length === 2 || (values.length === 3 && values[2] === "--original-runner-stopped"))) {
@@ -583,7 +584,7 @@ const readContainer = async (deps: DeployDependencies, applicationId?: string): 
   return parseContainer(JSON.stringify([{ id: info?.id, name: info?.name, instances: info?.instances, image: configuration?.image, version: info?.version }]));
 };
 
-interface ContainerApplicationReadback { image: string; version: number; schedulingPolicy: string; activeRolloutId?: string; updatedAt?: string }
+interface ContainerApplicationReadback { image: string; version: number; schedulingPolicy: string; activeRolloutId?: string }
 
 const readContainerApplication = async (deps: DeployDependencies, applicationId: string): Promise<ContainerApplicationReadback> => {
   const account = deps.env.CLOUDFLARE_ACCOUNT_ID;
@@ -607,18 +608,15 @@ const readContainerApplication = async (deps: DeployDependencies, applicationId:
   const version = result?.version;
   const schedulingPolicy = result?.scheduling_policy;
   const activeRolloutId = result?.active_rollout_id;
-  const updatedAt = result?.updated_at;
   if (!response.ok || object(envelope)?.success !== true || result?.id !== applicationId
     || typeof image !== "string" || typeof version !== "number" || !Number.isSafeInteger(version) || version < 1
-    || (activeRolloutId !== undefined && activeRolloutId !== null && typeof activeRolloutId !== "string")
-    || (updatedAt !== undefined && (typeof updatedAt !== "string" || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$/u.test(updatedAt) || !Number.isFinite(Date.parse(updatedAt))))) {
+    || (activeRolloutId !== undefined && activeRolloutId !== null && typeof activeRolloutId !== "string")) {
     return fail("cloudflare_container_restore_read_failed");
   }
   if (schedulingPolicy !== "default") return fail("cloudflare_container_restore_unavailable");
   return {
     image, version, schedulingPolicy,
     ...(typeof activeRolloutId === "string" ? { activeRolloutId } : {}),
-    ...(typeof updatedAt === "string" ? { updatedAt } : {}),
   };
 };
 
@@ -857,7 +855,7 @@ const readRemoteJournal = async (deps: DeployDependencies, repository: string): 
   return { head: head as string, parent, journal: parseDeploymentJournal(decoded.toString("utf8")) };
 };
 
-type RecoveryReason = "eligible" | "operation_mismatch" | "runner_not_stopped" | "pending_or_unknown" | "provider_drift" | "journal_head_changed" | "journal_missing" | "journal_invalid";
+type RecoveryReason = "eligible" | "operation_mismatch" | "runner_not_stopped" | "pending_or_unknown" | "provider_outcome_unknown" | "provider_drift" | "journal_head_changed" | "journal_missing" | "journal_invalid";
 export interface RecoveryInspection {
   operation: string;
   originalRunnerStopped: boolean;
@@ -1063,6 +1061,7 @@ export async function reconcilePendingRollback(
   deps: DeployDependencies,
   evidenceSaved: boolean,
   originalRunnerStopped: boolean,
+  authorizeOneContainerRestore = false,
 ): Promise<RecoveryReconciliation> {
   const denied = (reason: RecoveryReason): RecoveryReconciliation => ({
     operation, originalRunnerStopped, reconciled: false, reason, state: "unknown",
@@ -1114,7 +1113,6 @@ export async function reconcilePendingRollback(
       : undefined;
 
     if (pendingInterruptedContainerRestore(journal)) {
-      const [,,,, containerIntent] = journal.transitions;
       journal.remoteCommit = remote.head;
       const applicationId = journal.startingContainerId!;
       const targetImage = `registry.cloudflare.com/${deps.env.CLOUDFLARE_ACCOUNT_ID}/${containerApplication}@${journal.startingImage}`;
@@ -1123,11 +1121,10 @@ export async function reconcilePendingRollback(
         journal.recoveryFailure = error instanceof DeployFailure && deploymentFailureReasons.has(error.code) ? error.code : "unexpected_failure";
         if (error instanceof AcceptanceFailure && error.evidence) journal.acceptanceFailure = error.evidence;
         try { await appendRemoteJournal(deps, repo.nameWithOwner, journal); } catch { /* retain the lease even when the diagnostic append is uncertain */ }
-        return denied("provider_drift");
+        return denied(error instanceof DeployFailure && error.code === "cloudflare_container_restore_uncertain" ? "provider_outcome_unknown" : "provider_drift");
       };
       let current: CurrentDeployment;
       let application: ContainerApplicationReadback;
-      const restoreAttemptWasAlreadyRecorded = journal.checks.includes("container_restore_reconciliation_attempted");
       try {
         current = await readCurrent(deps);
         application = await readContainerApplication(deps, applicationId);
@@ -1146,40 +1143,63 @@ export async function reconcilePendingRollback(
       }
       if (!candidateCurrent && !restoredCurrent) return denied("provider_drift");
 
-      if (candidateCurrent && !restoreAttemptWasAlreadyRecorded) {
-        if (!application.updatedAt || Date.parse(application.updatedAt) >= Date.parse(containerIntent!.at)) return denied("provider_drift");
-        const raw = await readVersion(deps, current.version);
-        try { verifyCandidateVersion(raw, current.version, journal.commit, false); } catch { return denied("provider_drift"); }
-        const container = await readContainer(deps, applicationId);
-        if (container.id !== applicationId || container.image !== journal.enabledImage || container.version !== journal.enabledApplicationVersion) return denied("provider_drift");
-        try { await verifyDisabledRoutes(deps); } catch { return denied("provider_drift"); }
-        if (await readRemoteHead(deps, repo.nameWithOwner) !== remote.head) return denied("journal_head_changed");
-        journal.checks.push("container_restore_reconciliation_attempted");
-        try { await appendRemoteJournal(deps, repo.nameWithOwner, journal); }
-        catch (error) {
-          if (error instanceof DeployFailure && error.code === "remote_journal_parent_invalid") return denied("journal_head_changed");
-          return denied("journal_invalid");
+      if (candidateCurrent) {
+        // Cloudflare exposes no documented rollout lookup/idempotency readback. A
+        // second request is possible only when explicitly authorized and durably
+        // consumed once before POST; later invocations can never replay it.
+        const explicitRetry = "container_restore_explicit_authorized_retry";
+        if (authorizeOneContainerRestore && !journal.checks.includes(explicitRetry)) {
+          const raw = await readVersion(deps, current.version);
+          try { verifyCandidateVersion(raw, current.version, journal.commit, false); } catch { return denied("provider_drift"); }
+          if (!await verifyRecoveryTarget(deps, {
+            version: current.version, containerId: applicationId, image: journal.enabledImage!,
+            applicationVersion: journal.enabledApplicationVersion!, configDigest: versionConfig(raw).digest,
+            enabled: false, requireInactive: true, sourceRevision: journal.commit, state: "disabled",
+          })) return denied("provider_drift");
+          if (await readRemoteHead(deps, repo.nameWithOwner) !== remote.head) return denied("journal_head_changed");
+          journal.checks.push(explicitRetry);
+          try { await appendRemoteJournal(deps, repo.nameWithOwner, journal); }
+          catch (error) {
+            if (error instanceof DeployFailure && error.code === "remote_journal_parent_invalid") return denied("journal_head_changed");
+            return denied("journal_invalid");
+          }
+          await verifyLeaseHead(deps, repo.nameWithOwner, journal);
+          let restoredApplicationVersion: number;
+          try {
+            restoredApplicationVersion = await restoreStartingContainerImage(deps, journal, {
+              id: applicationId, image: journal.enabledImage!, version: journal.enabledApplicationVersion!,
+            });
+          } catch (error) { return retainFailure(error); }
+          try { application = await readContainerApplication(deps, applicationId); }
+          catch { return retainFailure(new DeployFailure("cloudflare_container_restore_uncertain")); }
+          let restoredContainer: ContainerState;
+          try { restoredContainer = await readContainer(deps, applicationId); }
+          catch { return retainFailure(new DeployFailure("cloudflare_container_restore_uncertain")); }
+          if (application.image !== targetImage || application.version !== restoredApplicationVersion || application.activeRolloutId
+            || restoredContainer.id !== applicationId || restoredContainer.image !== journal.startingImage
+            || restoredContainer.version !== restoredApplicationVersion) return denied("provider_drift");
+          journal.restoredApplicationVersion = restoredApplicationVersion;
+          journal.transitions.push({ phase: "container_restore", kind: "result", at: deps.now().toISOString(), version: journal.enabledVersion });
+          try { await appendRemoteJournal(deps, repo.nameWithOwner, journal); }
+          catch (error) {
+            if (error instanceof DeployFailure && error.code === "remote_journal_parent_invalid") return denied("journal_head_changed");
+            return denied("journal_invalid");
+          }
+          restoredCurrent = true;
+        } else {
+          // Record the unknown result while retaining the lease. In particular, an
+          // already-consumed explicit authorization is never accepted a second time.
+          if (journal.recoveryFailure !== "cloudflare_container_restore_uncertain") {
+            journal.recoveryFailure = "cloudflare_container_restore_uncertain";
+            try { await appendRemoteJournal(deps, repo.nameWithOwner, journal); }
+            catch (error) {
+              if (error instanceof DeployFailure && error.code === "remote_journal_parent_invalid") return denied("journal_head_changed");
+              return denied("journal_invalid");
+            }
+          }
+          return denied("provider_outcome_unknown");
         }
-        await verifyLeaseHead(deps, repo.nameWithOwner, journal);
-        let restoredApplicationVersion: number;
-        try {
-          restoredApplicationVersion = await restoreStartingContainerImage(deps, journal, {
-            id: applicationId, image: journal.enabledImage!, version: journal.enabledApplicationVersion!,
-          });
-        } catch (error) { return retainFailure(error); }
-        const restoredContainer = await readContainer(deps, applicationId);
-        if (restoredContainer.id !== applicationId || restoredContainer.image !== journal.startingImage
-          || restoredContainer.version !== restoredApplicationVersion) return denied("provider_drift");
-        journal.restoredApplicationVersion = restoredApplicationVersion;
-        journal.transitions.push({ phase: "container_restore", kind: "result", at: deps.now().toISOString(), version: journal.enabledVersion });
-        try { await appendRemoteJournal(deps, repo.nameWithOwner, journal); }
-        catch (error) {
-          if (error instanceof DeployFailure && error.code === "remote_journal_parent_invalid") return denied("journal_head_changed");
-          return denied("journal_invalid");
-        }
-        application = await readContainerApplication(deps, applicationId);
       }
-      if (candidateCurrent && restoreAttemptWasAlreadyRecorded) return denied("provider_drift");
       if (!journal.restoredApplicationVersion) {
         if (!restoredCurrent || application.version <= journal.enabledApplicationVersion!) return denied("provider_drift");
         journal.restoredApplicationVersion = application.version;
@@ -1369,7 +1389,7 @@ const knownTerminal = (journal: DeploymentJournal): boolean => {
     && ["disabled_routes", "container_inactive"].every((check) => journal.checks.includes(check));
   return journal.lastVerifiedState === "restored" && result.version === journal.startingVersion
     && journal.checks.includes("starting_version_restored")
-    && (!journal.checks.includes("container_restore_reconciliation_attempted")
+    && (!["container_restore_reconciliation_attempted", "container_restore_explicit_authorized_retry"].some((check) => journal.checks.includes(check))
       || ["edge_acceptance", "service_fixture_acceptance"].every((check) => journal.checks.includes(check)))
     && ((journal.rollback === "restored" && ["rollback", "worker_restore"].includes(result.phase))
       || (journal.rollback === "not_needed" && result.phase === "enable_deploy"));
@@ -1382,7 +1402,12 @@ export async function inspectDeploymentRecovery(operation: string, deps: DeployD
     const { journal } = await readRemoteJournal(deps, repo.nameWithOwner);
     const expected = expectedRecovery(journal);
     if (journal.operationId !== operation) return { operation, originalRunnerStopped, cleanupEligible: false, reason: "operation_mismatch", state: "unknown" };
-    if (!knownTerminal(journal) || !expected) return { operation, originalRunnerStopped, cleanupEligible: false, reason: "pending_or_unknown", state: "unknown" };
+    if (!knownTerminal(journal) || !expected) {
+      const reason = pendingInterruptedContainerRestore(journal)
+        && journal.recoveryFailure === "cloudflare_container_restore_uncertain"
+        ? "provider_outcome_unknown" : "pending_or_unknown";
+      return { operation, originalRunnerStopped, cleanupEligible: false, reason, state: "unknown" };
+    }
     if (!await verifyRecoveryTarget(deps, expected)) {
       return { operation, originalRunnerStopped, cleanupEligible: false, reason: "provider_drift", state: "unknown" };
     }
@@ -2177,7 +2202,7 @@ async function main(): Promise<void> {
     sleep: async (milliseconds) => await new Promise((resolvePromise) => setTimeout(resolvePromise, milliseconds)), now: () => new Date(),
   };
   if (input.command === "reconcile-recovery") {
-    const result = await reconcilePendingRollback(input.operation, deps, input.evidenceSaved, input.originalRunnerStopped);
+    const result = await reconcilePendingRollback(input.operation, deps, input.evidenceSaved, input.originalRunnerStopped, input.authorizeOneContainerRestore);
     process.removeListener("SIGINT", abort);
     process.removeListener("SIGTERM", abort);
     if (!result.reconciled) process.exitCode = 1;
