@@ -64,7 +64,7 @@ OpenSpec; surface conflicts rather than choosing silently.
 
 ## Repository invariants
 
-- Use Ponytail full mode for repository code work. Never simplify away validation, security, data-loss handling, or explicit requirements.
+- Never simplify away validation, security, data-loss handling, or explicit requirements.
 - Ordinary repository work is authorized in the selected scope. Ask before
   destructive or hard-to-reverse actions, external user-data changes, secrets,
   provider/production mutation, material scope expansion, or material cost.
