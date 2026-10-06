@@ -426,6 +426,22 @@ pnpm --filter nemlig-assistant smoke:package
 
 Tests use synthetic HTTP responses and never access a real Nemlig account.
 
+Compare the current product viewer with a self-contained HTML candidate using
+the same synthetic products:
+
+```sh
+pnpm --filter nemlig-assistant bench:review-ui -- --runs 10
+pnpm --filter nemlig-assistant bench:review-ui -- --runs 10 --candidate path/to/candidate.html
+```
+
+Google Chrome must be installed. The report records its version so runs can be
+compared against the same browser build.
+
+The report includes raw/gzip size, first paint, first product visibility, and
+product-detail disclosure response. Each sample uses a fresh browser context;
+the browser process is reused. External requests are blocked, and the fixture
+cannot call providers or mutate a basket. Timing is advisory, not a CI gate.
+
 ### Reverse-engineered Nemlig API
 
 [`nemlig-api.openapi.json`](nemlig-api.openapi.json) is the canonical,
