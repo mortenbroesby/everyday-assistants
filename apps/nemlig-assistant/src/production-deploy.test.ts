@@ -184,9 +184,11 @@ const interruptedContainerRestoreJournal = (extra: Record<string, unknown> = {})
   ...extra,
 });
 
-const interruptedContainerRestoreDeps = (journal: Record<string, unknown>, options: { updatedAt?: string; failRestore?: boolean } = {}) => {
-  let applicationImage = `registry.cloudflare.com/${accountId}/nemlig-mcp-cloudflare-production-nemligmcpcontainer-production@${candidateImage}`;
-  let applicationVersion = 26;
+const interruptedContainerRestoreDeps = (journal: Record<string, unknown>, options: { updatedAt?: string; alreadyRestored?: boolean; restoreOutcomeUnknown?: boolean } = {}) => {
+  let applicationImage = options.alreadyRestored
+    ? `registry.cloudflare.com/${accountId}/nemlig-mcp-cloudflare-production-nemligmcpcontainer-production@${image}`
+    : `registry.cloudflare.com/${accountId}/nemlig-mcp-cloudflare-production-nemligmcpcontainer-production@${candidateImage}`;
+  let applicationVersion = options.alreadyRestored ? 27 : 26;
   let running = false;
   let rollouts = 0;
   const deps = recoveryDeps(journal, disabledId, false, {
@@ -214,7 +216,7 @@ const interruptedContainerRestoreDeps = (journal: Record<string, unknown>, optio
     const url = String(input);
     if (url.includes("api.cloudflare.com") && url.endsWith("/rollouts") && init?.method === "POST") {
       rollouts += 1;
-      if (options.failRestore) throw new Error("response lost after restore request");
+      if (options.restoreOutcomeUnknown) throw new Error("connection ended after request write");
       const body = JSON.parse(String(init.body)) as { target_configuration: { image: string } };
       applicationImage = body.target_configuration.image;
       applicationVersion += 1;
@@ -2155,7 +2157,10 @@ test("recovery commands reject forged arguments before I/O", () => {
     help: false, command: "finalize", operation, evidenceSaved: true, originalRunnerStopped: true,
   });
   assert.deepEqual(parseProductionDeployCli(["reconcile-recovery", operation, "--evidence-saved", "--original-runner-stopped"]), {
-    help: false, command: "reconcile-recovery", operation, evidenceSaved: true, originalRunnerStopped: true,
+    help: false, command: "reconcile-recovery", operation, evidenceSaved: true, originalRunnerStopped: true, authorizeOneContainerRestore: false,
+  });
+  assert.deepEqual(parseProductionDeployCli(["reconcile-recovery", operation, "--evidence-saved", "--original-runner-stopped", "--authorize-one-container-restore"]), {
+    help: false, command: "reconcile-recovery", operation, evidenceSaved: true, originalRunnerStopped: true, authorizeOneContainerRestore: true,
   });
   assert.throws(() => parseProductionDeployCli(["finalize", operation, "--evidence-saved"]));
   assert.deepEqual(parseProductionDeployCli(["inspect-recovery", "44444444-4444-4444-8444-444444444444"]), {
@@ -2167,7 +2172,7 @@ test("recovery commands reject forged arguments before I/O", () => {
   assert.deepEqual(parseProductionDeployCli(["--recovery", commit]), {
     help: false, command: "deploy", commit, acceptanceMode: "recovery",
   });
-  for (const argv of [["finalize", "44444444-4444-4444-8444-444444444444"], ["finalize", commit, "--evidence-saved"], ["reconcile-recovery", operation, "--evidence-saved"], ["inspect-recovery", commit], ["--service-cutover", commit]]) {
+  for (const argv of [["finalize", "44444444-4444-4444-8444-444444444444"], ["finalize", commit, "--evidence-saved"], ["reconcile-recovery", operation, "--evidence-saved"], ["reconcile-recovery", operation, "--evidence-saved", "--original-runner-stopped", "--unknown"], ["inspect-recovery", commit], ["--service-cutover", commit]]) {
     assert.throws(() => parseProductionDeployCli(argv));
   }
 });
@@ -2452,9 +2457,9 @@ test("interrupted disabled deploy drift retains the lease without provider mutat
   }
 });
 
-test("interrupted Container restore reconciles the exact prior enabled release and accepts it before finalizing", async () => {
+test("interrupted Container restore reconciles only after readback proves the exact prior image is already restored", async () => {
   const journal = interruptedContainerRestoreJournal();
-  const recovery = interruptedContainerRestoreDeps(journal);
+  const recovery = interruptedContainerRestoreDeps(journal, { alreadyRestored: true });
   const { deps } = recovery;
   let rollbacks = 0;
   const run = deps.run;
@@ -2464,7 +2469,7 @@ test("interrupted Container restore reconciles the exact prior enabled release a
   };
   const result = await reconcilePendingRollback(journal.operationId, deps, true, true);
   assert.deepEqual(result, { operation: journal.operationId, originalRunnerStopped: true, reconciled: true, reason: "eligible", state: "restored" });
-  assert.equal(recovery.rollouts, 1);
+  assert.equal(recovery.rollouts, 0, "reconciliation must not create a second Container rollout");
   assert.equal(rollbacks, 1);
   const inspected = await inspectDeploymentRecovery(journal.operationId, deps, true);
   assert.deepEqual(inspected, { operation: journal.operationId, originalRunnerStopped: true, cleanupEligible: true, reason: "eligible", state: "restored" });
@@ -2472,39 +2477,75 @@ test("interrupted Container restore reconciles the exact prior enabled release a
   assert.equal(rollbacks, 1, "finalization performs no additional Worker mutation");
 });
 
-test("an uncertain interrupted Container restore is recorded once and never reposted", async () => {
-  const journal = interruptedContainerRestoreJournal();
-  const recovery = interruptedContainerRestoreDeps(journal, { failRestore: true });
+test("ordinary reconciliation never retries an uncertain Container restore based on timestamps", async () => {
+  for (const updatedAt of ["2026-10-05T13:50:00.000Z", "2026-10-05T14:05:00.000Z"]) {
+    const journal = interruptedContainerRestoreJournal();
+    const recovery = interruptedContainerRestoreDeps(journal, { updatedAt });
+    const { deps } = recovery;
+    const saved: Array<Record<string, unknown>> = [];
+    const run = deps.run;
+    deps.run = async (command, args, options) => {
+      if (command === "gh" && args[0] === "api" && args[1] === "--method" && args[2] === "POST" && args.some((arg) => arg.endsWith("git/blobs"))) {
+        const request = JSON.parse(options?.input ?? "{}") as { content?: string };
+        if (request.content) saved.push(JSON.parse(Buffer.from(request.content, "base64").toString("utf8")) as Record<string, unknown>);
+      }
+      return run(command, args, options);
+    };
+    const first = await reconcilePendingRollback(journal.operationId, deps, true, true);
+    assert.deepEqual(first, {
+      operation: journal.operationId, originalRunnerStopped: true, reconciled: false,
+      reason: "provider_outcome_unknown", state: "unknown",
+    });
+    assert.equal(recovery.rollouts, 0, `timestamp ${updatedAt} must not authorize another rollout`);
+    assert.equal(saved.at(-1)?.recoveryFailure, "cloudflare_container_restore_uncertain");
+    assert.equal(saved.some((value) => Array.isArray(value.checks) && value.checks.includes("container_restore_explicit_authorized_retry")), false);
+    const persisted = await inspectDeploymentRecovery(journal.operationId, deps, true);
+    assert.equal(persisted.cleanupEligible, false);
+    assert.equal(persisted.reason, "provider_outcome_unknown");
+    const journalWrites = saved.length;
+    const second = await reconcilePendingRollback(journal.operationId, deps, true, true);
+    assert.equal(second.reconciled, false);
+    assert.equal(second.reason, "provider_outcome_unknown");
+    assert.equal(recovery.rollouts, 0, "repeated reconciliation never retries an unresolved provider mutation");
+    assert.equal(saved.length, journalWrites, "repeated inspection does not append identical uncertainty evidence");
+  }
+});
+
+test("explicit one-shot restore authorization is durably consumed before one exact-image request", async () => {
+  const journal = interruptedContainerRestoreJournal({ recoveryFailure: "cloudflare_container_restore_uncertain",
+    checks: ["starting_state_recorded", "disabled_version", "enabled_version", "container_rollout", "container_restore_reconciliation_attempted"] });
+  const recovery = interruptedContainerRestoreDeps(journal, { restoreOutcomeUnknown: true });
   const { deps } = recovery;
   const saved: Array<Record<string, unknown>> = [];
+  const timeline: string[] = [];
   const run = deps.run;
   deps.run = async (command, args, options) => {
     if (command === "gh" && args[0] === "api" && args[1] === "--method" && args[2] === "POST" && args.some((arg) => arg.endsWith("git/blobs"))) {
       const request = JSON.parse(options?.input ?? "{}") as { content?: string };
-      if (request.content) saved.push(JSON.parse(Buffer.from(request.content, "base64").toString("utf8")) as Record<string, unknown>);
+      if (request.content) {
+        const value = JSON.parse(Buffer.from(request.content, "base64").toString("utf8")) as Record<string, unknown>;
+        saved.push(value);
+        if (Array.isArray(value.checks) && value.checks.includes("container_restore_explicit_authorized_retry")) timeline.push("authorization_persisted");
+      }
     }
     return run(command, args, options);
   };
-  const first = await reconcilePendingRollback(journal.operationId, deps, true, true);
-  assert.equal(first.reconciled, false);
-  assert.equal(recovery.rollouts, 1);
+  const fetcher = deps.fetcher;
+  deps.fetcher = async (input, init) => {
+    if (String(input).endsWith("/rollouts") && init?.method === "POST") timeline.push("provider_post");
+    return fetcher(input, init);
+  };
+  const result = await reconcilePendingRollback(journal.operationId, deps, true, true, true);
+  assert.deepEqual(result, { operation: journal.operationId, originalRunnerStopped: true, reconciled: false, reason: "provider_outcome_unknown", state: "unknown" });
+  assert.equal(recovery.rollouts, 1, "explicit authorization is spent on at most one restore request");
+  assert.ok(saved.some((value) => Array.isArray(value.checks) && value.checks.includes("container_restore_explicit_authorized_retry")),
+    "the single-use authorization marker is persisted before the provider request");
+  assert.ok(timeline.indexOf("authorization_persisted") >= 0 && timeline.indexOf("authorization_persisted") < timeline.indexOf("provider_post"));
   assert.equal(saved.at(-1)?.recoveryFailure, "cloudflare_container_restore_uncertain");
-  const persisted = await inspectDeploymentRecovery(journal.operationId, deps, true);
-  assert.equal(persisted.cleanupEligible, false);
-  const second = await reconcilePendingRollback(journal.operationId, deps, true, true);
+  const second = await reconcilePendingRollback(journal.operationId, deps, true, true, true);
   assert.equal(second.reconciled, false);
-  assert.equal(recovery.rollouts, 1, "the persisted one-attempt marker forbids a second POST");
-});
-
-test("interrupted Container restore requires evidence that Cloudflare had not applied the old intent", async () => {
-  const journal = interruptedContainerRestoreJournal();
-  const recovery = interruptedContainerRestoreDeps(journal, { updatedAt: "2026-10-05T13:59:00.000Z" });
-  const { deps } = recovery;
-  const result = await reconcilePendingRollback(journal.operationId, deps, true, true);
-  assert.equal(result.reconciled, false);
-  assert.equal(recovery.rollouts, 0);
-  const stored = await inspectDeploymentRecovery(journal.operationId, deps, true);
-  assert.equal(stored.cleanupEligible, false);
+  assert.equal(second.reason, "provider_outcome_unknown");
+  assert.equal(recovery.rollouts, 1, "a consumed authorization cannot issue another restore even when explicitly requested again");
 });
 
 test("failed enable intent can release its lease only after exact readback of the unchanged disabled start", async () => {
