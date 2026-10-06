@@ -302,6 +302,10 @@ The MCP surface is organized around household actions:
   reconsider accepted products, append new products, navigate, finish shopping, or
   prepare submission with `update_product_review`. Show can recover the active
   conversation review without its opaque reference. Repeated starts preserve it.
+- For an explicit visual product search or review, search exact products first
+  and start or update this local selection; use the visual actual-basket action
+  only when the user means products already in Nemlig. Tool success alone does
+  not prove that a client rendered the selection viewer.
 - Submit those exact Ready lines after a clear conversational add instruction
   or the viewer's separate on-screen exact confirmation: `submit_product_review`.
   Ready acceptance alone is not provider-write authorization. The protected

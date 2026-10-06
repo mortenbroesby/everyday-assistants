@@ -629,6 +629,10 @@ test("MCP exposes independent discovery, exact details, and one shared product v
     assert.match(instructions, /Never check out, pay, order, or select delivery slots/);
     assert.match(instructions, /Normal edits use update_product_review directly; do not repeat searches or starts to restore the card/u);
     assert.match(instructions, /show_my_basket_visually to inspect the actual basket/u);
+    assert.match(instructions, /explicitly wants to find, review, or choose products visually.*start_product_review once/u);
+    assert.match(instructions, /If a selection already exists.*update_product_review show.*Append newly found products.*current review ID and revision/u);
+    assert.match(instructions, /show_my_basket_visually for the actual Nemlig basket/u);
+    assert.match(instructions, /A successful tool result does not prove that the client rendered the viewer/u);
     assert.match(instructions, /image URLs do not prove cards rendered/u);
     assert.doesNotMatch(instructions, /Suggest an improvement|GitHub issue/);
     assert.match(tools.get("find_groceries") ?? "", /current Nemlig catalogue independently/);
@@ -671,6 +675,115 @@ test("MCP exposes independent discovery, exact details, and one shared product v
     assert.match(JSON.stringify(details?.inputSchema), /product_id/u);
     assert.match(JSON.stringify(direct?.inputSchema), /concise Danish catalogue phrase/u);
   });
+});
+
+test("visual product discovery routes exact fixture results into the local selection viewer", async () => {
+  const fixtureProducts = [
+    { ...product, id: 401, name: "Conference pear", isDairy: false, isRefrigerated: false },
+    { ...product, id: 402, name: "Organic banana", isDairy: false, isRefrigerated: false },
+  ];
+  let searchCalls = 0;
+  let startCalls = 0;
+  let basketReads = 0;
+  let basketWrites = 0;
+  const provider = fakeClient({
+    searchProducts: async (query) => {
+      searchCalls++;
+      assert.equal(query, "pear and banana");
+      return fixtureProducts;
+    },
+    getProduct: async (id) => fixtureProducts.find(({ id: candidateId }) => candidateId === id) ?? fixtureProducts[0],
+    getCart: async () => { basketReads++; throw new Error("visual selection must not read the actual basket"); },
+    addToCart: async () => { basketWrites++; throw new Error("visual selection must not write to the actual basket"); },
+  });
+
+  await withMcpClient(createMcpServer(provider, testCredentials), async (mcp) => {
+    const originalCallTool = mcp.callTool.bind(mcp);
+    mcp.callTool = async (params, options) => {
+      if (params.name === "start_product_review") startCalls++;
+      return originalCallTool(params, options);
+    };
+    const found = await mcp.callTool({ name: "find_groceries", arguments: { search_term: "pear and banana" } });
+    assert.equal(found.isError, undefined, toolText(found));
+    const ids = (found.structuredContent as { result: Array<{ id: number }> }).result.map(({ id }) => id);
+    assert.deepEqual(ids, [401, 402]);
+    const searchTool = (await mcp.listTools()).tools.find(({ name }) => name === "find_groceries");
+    const startTool = (await mcp.listTools()).tools.find(({ name }) => name === "start_product_review");
+    assert.equal((searchTool?._meta as { ui?: { resourceUri?: string } } | undefined)?.ui?.resourceUri, undefined);
+    assert.equal((startTool?._meta as { ui?: { resourceUri?: string } } | undefined)?.ui?.resourceUri, PRODUCT_VIEWER_RESOURCE_URI);
+
+    const started = await mcp.callTool({ name: "start_product_review", arguments: { items: ids.map(product_id => ({ product_id, quantity: 1 })) } });
+    assert.equal(started.isError, undefined, toolText(started));
+    const initial = (started.structuredContent as { review: ProductReviewSnapshot }).review;
+    assert.deepEqual(initial.items.map(({ product_id, state }) => [product_id, state]), [[401, "needs-review"], [402, "needs-review"]]);
+    const shown = await mcp.callTool({ name: "update_product_review", arguments: { action: { kind: "show" } } });
+    assert.equal(shown.isError, undefined, toolText(shown));
+    const current = (shown.structuredContent as { review: ProductReviewSnapshot }).review;
+    assert.equal(current.review_id, initial.review_id);
+    assert.deepEqual(current.items.map(({ product_id, state }) => [product_id, state]), [[401, "needs-review"], [402, "needs-review"]]);
+  });
+  assert.equal(searchCalls, 1);
+  assert.equal(startCalls, 1);
+  assert.equal(basketReads, 0);
+  assert.equal(basketWrites, 0);
+});
+
+test("appending an exact search result preserves Ready and showing the selection does not restart discovery", async () => {
+  const pear = { ...product, id: 411, name: "Green pear", isDairy: false, isRefrigerated: false };
+  const banana = { ...product, id: 412, name: "Banana", isDairy: false, isRefrigerated: false };
+  const searched: string[] = [];
+  let startCalls = 0;
+  let basketReads = 0;
+  let basketWrites = 0;
+  const provider = fakeClient({
+    searchProducts: async (query) => {
+      searched.push(query);
+      return query === "pear" ? [pear] : [banana];
+    },
+    getProduct: async (id) => [pear, banana].find(({ id: candidateId }) => candidateId === id) ?? pear,
+    getCart: async () => { basketReads++; throw new Error("local selection must not read the actual basket"); },
+    addToCart: async () => { basketWrites++; throw new Error("local selection must not write to the actual basket"); },
+  });
+
+  await withMcpClient(createMcpServer(provider, testCredentials), async (mcp) => {
+    const originalCallTool = mcp.callTool.bind(mcp);
+    mcp.callTool = async (params, options) => {
+      if (params.name === "start_product_review") startCalls++;
+      return originalCallTool(params, options);
+    };
+    const firstSearch = await mcp.callTool({ name: "find_groceries", arguments: { search_term: "pear" } });
+    const firstId = (firstSearch.structuredContent as { result: Array<{ id: number }> }).result[0]!.id;
+    const started = await mcp.callTool({ name: "start_product_review", arguments: { items: [{ product_id: firstId, quantity: 1 }] } });
+    let review = (started.structuredContent as { review: ProductReviewSnapshot }).review;
+    const accepted = await mcp.callTool({ name: "update_product_review", arguments: {
+      review_id: review.review_id, revision: review.revision, action: { kind: "accept", product_ids: [firstId] },
+    } });
+    review = (accepted.structuredContent as { review: ProductReviewSnapshot }).review;
+    assert.equal(review.items[0]?.state, "ready");
+
+    const secondSearch = await mcp.callTool({ name: "find_groceries", arguments: { search_term: "banana" } });
+    const secondId = (secondSearch.structuredContent as { result: Array<{ id: number }> }).result[0]!.id;
+    const appended = await mcp.callTool({ name: "update_product_review", arguments: {
+      review_id: review.review_id, revision: review.revision,
+      action: { kind: "add", items: [{ product_id: secondId, quantity: 2 }] },
+    } });
+    review = (appended.structuredContent as { review: ProductReviewSnapshot }).review;
+    assert.deepEqual(review.items.map(({ product_id, quantity, state }) => [product_id, quantity, state]), [
+      [411, 1, "ready"], [412, 2, "needs-review"],
+    ]);
+
+    const shown = await mcp.callTool({ name: "update_product_review", arguments: { action: { kind: "show" } } });
+    const current = (shown.structuredContent as { review: ProductReviewSnapshot }).review;
+    assert.equal(current.review_id, review.review_id);
+    assert.equal(current.revision, review.revision);
+    assert.deepEqual(current.items.map(({ product_id, quantity, state }) => [product_id, quantity, state]), [
+      [411, 1, "ready"], [412, 2, "needs-review"],
+    ]);
+  });
+  assert.deepEqual(searched, ["pear", "banana"]);
+  assert.equal(startCalls, 1);
+  assert.equal(basketReads, 0);
+  assert.equal(basketWrites, 0);
 });
 
 test("MCP basket viewer uses basket summaries without fetching product details", async () => {

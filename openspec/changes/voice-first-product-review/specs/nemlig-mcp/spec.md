@@ -115,6 +115,21 @@ boundary and the machine-readable feature inventory.
   the provider response without an application result cap when count is omitted,
   and it creates no local review or basket change
 
+#### Scenario: User wants to review found products visually
+- **WHEN** the user explicitly asks to find or choose products visually
+- **THEN** the assistant searches for the exact products, starts the local
+  selection once with returned IDs and quantities, and presents In Review without
+  reading or changing the actual Nemlig basket
+
+#### Scenario: User adds visually found products to an existing selection
+- **WHEN** a local selection already exists
+- **THEN** the assistant shows it or appends exact returned IDs with its current
+  revision, preserving Ready products and using no duplicate start or search
+
+#### Scenario: User asks to see products already in Nemlig
+- **WHEN** the user asks to inspect the actual Nemlig basket
+- **THEN** the assistant uses the actual-basket view
+
 #### Scenario: Search another way after alternatives are insufficient
 - **WHEN** alternatives for one product are empty or irrelevant and the user asks
   to look up a broader or otherwise different phrase
