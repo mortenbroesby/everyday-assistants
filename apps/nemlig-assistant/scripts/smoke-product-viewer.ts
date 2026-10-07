@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { mkdir, readFile } from "node:fs/promises";
 import { createServer } from "node:http";
+import { resolve } from "node:path";
 import { chromium } from "playwright";
 
 declare global {
@@ -25,6 +26,7 @@ declare global {
 }
 
 const html = await readFile(new URL("../dist/picker.html", import.meta.url), "utf8");
+const screenshotDirectory = process.env.NEMLIG_UI_SCREENSHOT_DIR;
 const fixtureView = (id: number, name: string) => ({
   context: "review", status: "complete", product: {
     id, name, price: 12, unit_price: 24, unit: "kr/kg", unit_size: "500 g", currency: "DKK",
@@ -105,6 +107,13 @@ try {
     else { externalRequests.push(route.request().url()); await route.abort(); }
   });
   const page = await context.newPage();
+  const capture = async (name: string) => {
+    if (!screenshotDirectory) return;
+    await mkdir(screenshotDirectory, { recursive: true });
+    const path = resolve(screenshotDirectory, `${name}.png`);
+    await page.screenshot({ path });
+    console.log(`Synthetic viewer mockup: ${path}`);
+  };
   page.setDefaultTimeout(10_000);
   page.setDefaultNavigationTimeout(10_000);
   const errors: string[] = [];
@@ -126,6 +135,7 @@ try {
   assert.equal(await frame.getByText("Synthetic milk").count(), 1);
   assert.equal(await frame.getByText("Organic").count(), 2, "organic badge missing");
   assert.equal(await frame.getByText("Offer").count(), 2, "offer badge missing");
+  await capture("to-decide");
   const milkCard = frame.locator(".product-card").filter({ hasText: "Synthetic milk" });
   const milkDisclosure = milkCard.locator(".product-summary");
   const summaryLayout = await milkDisclosure.evaluate((button) => {
@@ -138,9 +148,11 @@ try {
   const milkFact = milkCard.locator(".product-fact").first();
   await milkFact.locator("summary").click();
   assert.equal(await milkFact.evaluate((node: HTMLDetailsElement) => node.open), true, "nested product fact did not open");
+  await capture("product-expanded");
   await page.evaluate(() => window.setReadyForDisclosure(true));
   await frame.getByRole("button", { name: /Ready \(1\)/ }).click();
   await frame.getByRole("heading", { name: "Ready" }).waitFor();
+  await capture("ready");
   await frame.getByRole("button", { name: /To decide \(1\)/ }).click();
   await frame.getByRole("heading", { name: "To decide" }).waitFor();
   assert.equal(await milkDisclosure.getAttribute("aria-expanded"), "true", "review navigation lost the open product disclosure");
@@ -153,6 +165,8 @@ try {
   assert.equal(await milkDisclosure.getAttribute("aria-expanded"), "false", "a different review inherited the previous card disclosure state");
   assert.equal(await milkFact.evaluate((node: HTMLDetailsElement) => node.open), false, "a different review inherited the previous nested fact state");
   await milkCard.getByRole("button", { name: "Choose alternative" }).click();
+  await frame.getByRole("heading", { name: "Current product" }).waitFor();
+  await capture("alternatives");
   const alternativesQuery = frame.getByRole("searchbox", { name: "Search for more products" });
   assert.equal(await alternativesQuery.inputValue(), "Synthetic milk", "the current product search query was not shown");
   await alternativesQuery.fill("custom milk query");
@@ -246,6 +260,7 @@ try {
   await frame.getByRole("heading", { name: "Confirm the exact Nemlig change" }).waitFor();
   await frame.getByText("2 × Synthetic milk").waitFor();
   await frame.getByText("3 × Synthetic alternative").waitFor();
+  await capture("confirmation");
   await frame.getByRole("button", { name: "Review exact change" }).click();
   await frame.getByRole("button", { name: "Cancel" }).click();
   assert.equal(await page.evaluate(() => window.submissionAttempts), 0, "opening and cancelling exact confirmation submitted a review");
@@ -269,6 +284,7 @@ try {
   const callsBeforeVerifiedCompletion = await page.evaluate(() => window.calls.length);
   await page.evaluate(() => window.sendSubmitted());
   await frame.getByText("Nemlig confirmed this Draft list was added successfully.").waitFor();
+  await capture("success");
   assert.equal(await page.evaluate((before) => window.calls.slice(before).filter((call) => call.name === "submit_product_review").length, callsBeforeVerifiedCompletion), 0, "verified completion replayed submission");
   await page.evaluate(() => window.sendMalformed());
   await frame.getByRole("alert").waitFor();
@@ -282,9 +298,14 @@ try {
   assert.equal(await page.evaluate(() => window.submissionAttempts), 1, "continuing a submitted Draft list retried the old submission");
   await page.evaluate(() => window.sendEnded());
   await frame.getByText("Your local Draft list was discarded.").waitFor();
+  await capture("empty");
   assert.equal(await frame.locator('input[type="checkbox"]').count(), 0, "authoritative ended notification left active controls");
   await page.evaluate(() => window.sendUnavailable());
-  assert.equal(await frame.getByRole("button", { name: "Start new Draft list" }).count(), 0, "discarded review snapshot was resurrected after an unavailable notification");
+  await frame.getByRole("heading", { name: "Start a new Draft list" }).waitFor();
+  await frame.getByText("This temporary Draft list is no longer available. Ask in chat before starting a new Draft list. Previous choices or submission approval are not restored.").waitFor();
+  await capture("unavailable");
+  assert.equal(await frame.getByRole("button", { name: "Prepare exact change" }).count(), 0, "unavailable notification restored the discarded review actions");
+  assert.equal(await frame.locator('input[type="checkbox"]').count(), 0, "unavailable notification restored discarded review controls");
   assert.equal(await page.evaluate(() => window.providerWrites), 0, "synthetic browser smoke reached a provider write");
   assert.deepEqual(externalRequests, [], "built UI requested a network resource outside the synthetic host");
   assert.deepEqual(errors, [], "React UI raised browser errors");
