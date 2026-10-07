@@ -92,17 +92,29 @@ it back to To decide and invalidate pending submission approval.
 - **AND** a previously submitted or uncertain snapshot directs the user to inspect the actual basket instead of offering automatic recovery
 
 ### Requirement: Persistent local review interaction
-An explicitly activated review frame SHALL remain active across confirmed
-same-review edits and destination changes while it stays mounted. Initial,
-remounted, foreign-review and retired cards SHALL remain inactive until their
-explicit current-conversation activation. Older host snapshots SHALL NOT
-replace a newer confirmed review revision.
+The newest explicitly rendered review frame SHALL open directly on its current
+products and remain active across confirmed same-review edits and destination
+changes while it stays mounted. A new render SHALL supersede older card
+authority, even when the draft revision has not changed. Retired resource
+versions SHALL be inert. Older host snapshots SHALL NOT replace a newer
+confirmed review revision.
 
 #### Scenario: Local change returns a host result
 - **WHEN** an activated frame accepts products, changes quantities, navigates,
   or resolves alternatives and receives a matching current snapshot
 - **THEN** the same frame renders the updated destination without requiring
   `Open current review` again
+
+#### Scenario: An older card submits an action
+- **WHEN** a card uses a view token superseded by a later render of the same
+  conversation Draft list
+- **THEN** the server rejects the action before local edits or provider work
+- **AND** the stale card becomes a compact read-only notice after that rejection
+
+#### Scenario: A new Draft list view is rendered
+- **WHEN** the user explicitly opens the current Draft list in a new view
+- **THEN** products appear immediately and older views lose authority even if
+  the current Draft list revision is unchanged
 
 #### Scenario: Confirm exact submission in the viewer
 - **WHEN** the user explicitly confirms the current prepared lines, quantities,

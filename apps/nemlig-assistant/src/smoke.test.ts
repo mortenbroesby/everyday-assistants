@@ -90,15 +90,17 @@ test("local CLI help and MCP surface need no credentials or network", async () =
     assert.equal(serverInfo.title, "Nemlig Assistant");
     assert.equal(serverInfo.icons, undefined);
     assert.deepEqual(
-      (await client.listTools()).tools.map((tool) => tool.name).sort(),
+      (await client.listTools()).tools
+        .filter((tool) => !tool._meta?.ui || ((tool._meta.ui as { visibility?: string[] }).visibility ?? []).includes("model"))
+        .map((tool) => tool.name).sort(),
       [
         "check_nemlig_connection",
         "find_groceries",
         "get_profile",
         "show_my_basket",
         "start_product_review",
-        "submit_product_review",
-        "update_product_review",
+        "submit_product_review_conversation",
+        "update_product_review_conversation",
       ],
     );
   } finally {
@@ -164,16 +166,16 @@ test("discovery reaches an approved draft submission and verified Nemlig basket"
     } });
     assert.notEqual(started.isError, true);
     const initial = (started.structuredContent as { review: { review_id: string; revision: number } }).review;
-    const accepted = await mcp.callTool({ name: "update_product_review", arguments: {
+    const accepted = await mcp.callTool({ name: "update_product_review_conversation", arguments: {
       review_id: initial.review_id, revision: initial.revision,
       action: { kind: "accept", product_ids: [101, 201, 301] },
     } });
     const ready = (accepted.structuredContent as { review: { review_id: string; revision: number } }).review;
-    const prepared = await mcp.callTool({ name: "update_product_review", arguments: {
+    const prepared = await mcp.callTool({ name: "update_product_review_conversation", arguments: {
       review_id: ready.review_id, revision: ready.revision, action: { kind: "prepare_submission" },
     } });
     const draft = (prepared.structuredContent as { review: { review_id: string; revision: number; submission: { submission_id: string } } }).review;
-    const applied = await mcp.callTool({ name: "submit_product_review", arguments: {
+    const applied = await mcp.callTool({ name: "submit_product_review_conversation", arguments: {
       review_id: draft.review_id, revision: draft.revision, submission_id: draft.submission.submission_id,
     } });
     assert.notEqual(applied.isError, true);
@@ -181,7 +183,7 @@ test("discovery reaches an approved draft submission and verified Nemlig basket"
     assert.deepEqual(basket.items.map(({ id, quantity }) => [id, quantity]), [[101, 3], [201, 1], [301, 2]]);
     assert.ok(reads >= 2);
 
-    const replay = await mcp.callTool({ name: "submit_product_review", arguments: {
+    const replay = await mcp.callTool({ name: "submit_product_review_conversation", arguments: {
       review_id: draft.review_id, revision: draft.revision, submission_id: draft.submission.submission_id,
     } });
     assert.equal(replay.isError, true);
@@ -215,17 +217,17 @@ test("an indeterminate draft submission is attempted once", async () => {
   try {
     const started = await mcp.callTool({ name: "start_product_review", arguments: { items: [{ product_id: 401, quantity: 1 }] } });
     const initial = (started.structuredContent as { review: { review_id: string; revision: number } }).review;
-    const accepted = await mcp.callTool({ name: "update_product_review", arguments: {
+    const accepted = await mcp.callTool({ name: "update_product_review_conversation", arguments: {
       review_id: initial.review_id, revision: initial.revision, action: { kind: "accept", product_ids: [401] },
     } });
     const ready = (accepted.structuredContent as { review: { review_id: string; revision: number } }).review;
-    const prepared = await mcp.callTool({ name: "update_product_review", arguments: {
+    const prepared = await mcp.callTool({ name: "update_product_review_conversation", arguments: {
       review_id: ready.review_id, revision: ready.revision, action: { kind: "prepare_submission" },
     } });
     const draft = (prepared.structuredContent as { review: { review_id: string; revision: number; submission: { submission_id: string } } }).review;
     const args = { review_id: draft.review_id, revision: draft.revision, submission_id: draft.submission.submission_id };
-    assert.equal((await mcp.callTool({ name: "submit_product_review", arguments: args })).isError, true);
-    assert.equal((await mcp.callTool({ name: "submit_product_review", arguments: args })).isError, true);
+    assert.equal((await mcp.callTool({ name: "submit_product_review_conversation", arguments: args })).isError, true);
+    assert.equal((await mcp.callTool({ name: "submit_product_review_conversation", arguments: args })).isError, true);
     assert.equal(writes, 1);
   } finally {
     await close();

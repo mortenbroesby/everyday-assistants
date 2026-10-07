@@ -21,9 +21,11 @@ const viewerResource = (uri: string) => ({ contents: [{
 }] });
 
 const userToolMetadata = {
-  start_product_review: { ui: { resourceUri: PRODUCT_VIEWER_RESOURCE_URI }, "openai/outputTemplate": PRODUCT_VIEWER_RESOURCE_URI, "openai/widgetAccessible": true },
-  update_product_review: { ui: { resourceUri: PRODUCT_VIEWER_RESOURCE_URI }, "openai/outputTemplate": PRODUCT_VIEWER_RESOURCE_URI, "openai/widgetAccessible": true },
-  submit_product_review: { ui: { resourceUri: PRODUCT_VIEWER_RESOURCE_URI, visibility: ["model"] }, "openai/outputTemplate": PRODUCT_VIEWER_RESOURCE_URI },
+  start_product_review: { ui: { resourceUri: PRODUCT_VIEWER_RESOURCE_URI, visibility: ["model"] }, "openai/outputTemplate": PRODUCT_VIEWER_RESOURCE_URI },
+  update_product_review_conversation: { ui: { visibility: ["model"] } },
+  submit_product_review_conversation: { ui: { visibility: ["model"] } },
+  update_product_review: { ui: { visibility: ["app"] }, "openai/widgetAccessible": true },
+  submit_product_review: { ui: { visibility: ["app"] }, "openai/widgetAccessible": true },
 };
 const withUserToolMetadata = (tools: Array<{ name: string }>) => tools.map((tool) => ({
   ...tool,
@@ -85,7 +87,7 @@ test("service acceptance has a closed read-only fixture inventory and denies bas
     },
     callTool: async ({ name }) => {
       calls.push(name);
-      if (["start_product_review", "update_product_review", "submit_product_review"].includes(name)) return { isError: true };
+      if (["start_product_review", "update_product_review_conversation", "submit_product_review_conversation"].includes(name)) return { isError: true };
       if (name === "find_groceries") return { structuredContent: { result: [{ id: 7 }] } };
       if (name === "show_my_basket") return { structuredContent: { items: [] } };
       return { structuredContent: { result: [] } };
@@ -93,9 +95,9 @@ test("service acceptance has a closed read-only fixture inventory and denies bas
   };
   const report = await verifyServiceAcceptanceFeatures(client);
   assert.deepEqual(calls, [
-    "find_groceries", "show_my_basket", "start_product_review", "update_product_review", "submit_product_review",
+    "find_groceries", "show_my_basket", "start_product_review", "update_product_review_conversation", "submit_product_review_conversation",
   ]);
-  assert.deepEqual(report.denied, ["start_product_review", "update_product_review", "submit_product_review"]);
+  assert.deepEqual(report.denied, ["start_product_review", "update_product_review_conversation", "submit_product_review_conversation"]);
   assert.deepEqual(resourceReads, [PRODUCT_VIEWER_RESOURCE_URI]);
   assert.equal(report.requestCount, 8);
 });
@@ -139,7 +141,7 @@ test("service acceptance closes its inventory when Apps are disabled", async () 
     readResource: async ({ uri }) => viewerResource(uri),
     callTool: async ({ name }) => {
       calls.push(name);
-      if (["start_product_review", "update_product_review", "submit_product_review"].includes(name)) return { isError: true };
+      if (["start_product_review", "update_product_review_conversation", "submit_product_review_conversation"].includes(name)) return { isError: true };
       if (name === "find_groceries") return { structuredContent: { result: [{ id: 7 }] } };
       if (name === "show_my_basket") return { structuredContent: { items: [] } };
       return { structuredContent: { result: [] } };
@@ -156,13 +158,13 @@ test("service acceptance accepts only explicit HTTP 403 transport denials", asyn
     listResources: async () => ({ resources: serviceAcceptanceResourceInventory.map((uri) => ({ uri })) }),
     readResource: async ({ uri }: { uri: string }) => viewerResource(uri),
     callTool: async ({ name }: { name: string }) => {
-      if (["start_product_review", "update_product_review", "submit_product_review"].includes(name)) throw { status: 403 };
+      if (["start_product_review", "update_product_review_conversation", "submit_product_review_conversation"].includes(name)) throw { status: 403 };
       if (name === "find_groceries") return { structuredContent: { result: [{ id: 7 }] } };
       if (name === "show_my_basket") return { structuredContent: { items: [] } };
       return { structuredContent: { result: [] } };
     },
   };
-  assert.deepEqual((await verifyServiceAcceptanceFeatures(client)).denied, ["start_product_review", "update_product_review", "submit_product_review"]);
+  assert.deepEqual((await verifyServiceAcceptanceFeatures(client)).denied, ["start_product_review", "update_product_review_conversation", "submit_product_review_conversation"]);
   const failed = { ...client, callTool: async ({ name }: { name: string }) => {
     if (name === "start_product_review") throw { status: 500 };
     return await client.callTool({ name });

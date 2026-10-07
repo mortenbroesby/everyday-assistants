@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { isDeepStrictEqual } from "node:util";
 import { serviceAcceptanceResourceInventory, serviceAcceptanceToolInventory } from "./mcp.js";
-import { PRODUCT_VIEWER_MIME_TYPE, PRODUCT_VIEWER_RESOURCE_DOMAINS, PRODUCT_VIEWER_RESOURCE_METADATA, PRODUCT_VIEWER_RESOURCE_URI, renderProductViewerHtml } from "./product-viewer.js";
+import { PRODUCT_VIEWER_MIME_TYPE, PRODUCT_VIEWER_RESOURCE_DOMAINS, PRODUCT_VIEWER_RESOURCE_URI, renderProductViewerHtml } from "./product-viewer.js";
 import { RETIRED_PRODUCT_VIEWER_RESOURCE_URIS } from "./product-viewer-identity.js";
 import { NEMLIG_CODENAME, NEMLIG_VERSION } from "./runtime.js";
 
@@ -12,8 +12,9 @@ interface ToolResult {
 
 export const productionToolInventory = {
   readOnly: ["find_groceries", "check_nemlig_connection", "get_profile", "show_my_basket"],
-  localState: ["start_product_review", "update_product_review"],
-  externalState: ["submit_product_review"],
+  localState: ["start_product_review", "update_product_review_conversation"],
+  externalState: ["submit_product_review_conversation"],
+  appActions: ["update_product_review", "submit_product_review"],
 } as const;
 
 export const productionResourceInventory = [PRODUCT_VIEWER_RESOURCE_URI, ...RETIRED_PRODUCT_VIEWER_RESOURCE_URIS] as const;
@@ -92,20 +93,23 @@ export function assertProductionInventory(
   assert.deepEqual(resources.map(({ uri }) => uri).sort(), [...productionResourceInventory].sort(), "Production MCP resource inventory drifted");
   for (const name of prohibitedProductionTools) assert.equal(tools.some((tool) => tool.name === name), false, `Prohibited production capability advertised: ${name}`);
   const metadata = new Map(tools.map(({ name, _meta }) => [name, _meta]));
-  for (const name of ["start_product_review", "update_product_review", "submit_product_review"] as const) {
+  for (const name of ["start_product_review", "update_product_review_conversation", "submit_product_review_conversation"] as const) {
     const actual = metadata.get(name);
     assert.ok(actual && typeof actual === "object", `Production ${name} metadata drifted`);
     const value = actual as Record<string, unknown>;
-    const expectedUi = name === "submit_product_review"
+    const expectedUi = name === "start_product_review"
       ? { resourceUri: PRODUCT_VIEWER_RESOURCE_URI, visibility: ["model"] }
-      : PRODUCT_VIEWER_RESOURCE_METADATA.ui;
+      : { visibility: ["model"] };
     assert.deepEqual(value.ui, expectedUi, `Production ${name} UI metadata drifted`);
-    assert.equal(value["openai/outputTemplate"], PRODUCT_VIEWER_RESOURCE_URI, `Production ${name} output template metadata drifted`);
-    if (name === "submit_product_review") {
-      assert.equal(value["openai/widgetAccessible"], undefined, `Production ${name} widget accessibility metadata drifted`);
-    } else {
-      assert.equal(value["openai/widgetAccessible"], true, `Production ${name} widget accessibility metadata drifted`);
-    }
+    assert.equal(value["openai/outputTemplate"], name === "start_product_review" ? PRODUCT_VIEWER_RESOURCE_URI : undefined, `Production ${name} output template metadata drifted`);
+    assert.equal(value["openai/widgetAccessible"], undefined, `Model-visible ${name} must not be callable by old widget cards`);
+  }
+  for (const name of ["update_product_review", "submit_product_review"] as const) {
+    const value = metadata.get(name) as Record<string, unknown> | undefined;
+    assert.ok(value, `Production ${name} metadata drifted`);
+    assert.deepEqual(value.ui, { visibility: ["app"] }, `Production ${name} must remain app-only`);
+    assert.equal(value["openai/outputTemplate"], undefined, `Production ${name} must not create another UI card`);
+    assert.equal(value["openai/widgetAccessible"], true, `Production ${name} must be callable by the current widget`);
   }
 }
 
@@ -288,7 +292,7 @@ export async function verifyServiceAcceptanceFeatures(
   assert.ok(productId, "Service product search returned no usable product");
   basket(await call("show_my_basket"), "show_my_basket");
   const denied: string[] = [];
-  for (const name of ["start_product_review", "update_product_review", "submit_product_review"]) {
+  for (const name of ["start_product_review", "update_product_review_conversation", "submit_product_review_conversation"]) {
     try {
       requestCount += 1;
       const result = await withinTotalDeadline(name, () => client.callTool({ name, arguments: {} }));

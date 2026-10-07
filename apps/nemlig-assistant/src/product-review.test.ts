@@ -127,6 +127,19 @@ test("session drafts survive an hour, repeated starts preserve them, and explici
   assert.notEqual(restarted.review_id, draft.review_id);
 });
 
+test("each rendered draft view supersedes older cards for that conversation", async () => {
+  const service = new ProductReviewService(client);
+  const draft = await service.start("owner", [{ product_id: 1, quantity: 1 }]);
+  const first = service.createView("owner", draft.review_id);
+  const second = service.createView("owner", draft.review_id);
+
+  assert.notEqual(first.view_id, second.view_id);
+  assert.doesNotThrow(() => service.assertCurrentView("owner", draft.review_id, second.view_id));
+  assert.throws(() => service.assertCurrentView("owner", draft.review_id, first.view_id), /out of date/i);
+  assert.throws(() => service.assertCurrentView("another-owner", draft.review_id, second.view_id), /unavailable/i);
+  assert.deepEqual(service.show("owner", draft.review_id), draft);
+});
+
 test("adding exact products is atomic, reviewable, and bounded; older idle sessions are evicted", async () => {
   const service = new ProductReviewService(client);
   const draft = await service.start("owner-1", [{ product_id: 1, quantity: 1 }]);

@@ -240,4 +240,4 @@ The integration SHALL route product discovery to `find_groceries`, current provi
 
 #### Scenario: User asks to continue deciding
 - **WHEN** a Draft list already exists
-- **THEN** the assistant uses `update_product_review` show to recover it without starting another list or reading the Nemlig basket as a substitute
+- **THEN** the assistant uses `update_product_review_conversation` show to recover it without starting another list or reading the Nemlig basket as a substitute
