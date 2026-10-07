@@ -5,7 +5,7 @@ import { chromium } from "playwright";
 
 declare global {
   interface Window {
-    calls: Array<{ name: string; args: { action?: { kind?: string; product_id?: number; quantity?: number } } }>;
+    calls: Array<{ name: string; args: { action?: { kind?: string; product_id?: number; quantity?: number; query?: string } } }>;
     hostErrors: string[];
     providerWrites: number;
     failNext: boolean;
