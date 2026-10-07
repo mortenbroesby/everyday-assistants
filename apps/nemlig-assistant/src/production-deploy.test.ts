@@ -1807,6 +1807,11 @@ test("successful deployment finalizes from its stateful remote journal chain", a
   try {
     const report = await deployProduction(commit, deps);
     assert.equal(report.outcome, "success");
+    const run = deps.run;
+    deps.run = async (command, args, options) => {
+      if (command === "pnpm" && args.includes("instances")) throw new Error("accepted terminal cleanup must not re-read Container lifecycle");
+      return await run(command, args, options);
+    };
     assert.equal(await finalizeDeploymentRecovery(report.operationId, deps, true, true), true);
     assert.equal(calls.filter(({ command, args }) => command === "gh" && args.includes("DELETE")).length, 1);
     await assert.rejects(access(join(root, "nemlig-production-deploy.lock")));
