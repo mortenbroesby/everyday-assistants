@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024" role="img" aria-label="MoJo Shopper icon">
+  <rect width="1024" height="1024" rx="220" fill="#F2762E"/>
+  <path d="M384 402v-62c0-71 57-128 128-128s128 57 128 128v62" fill="none" stroke="#FFFFFF" stroke-width="76" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="236" y="386" width="552" height="420" rx="68" fill="#FFFFFF"/>
+  <path d="M348 700V492h56l108 138 108-138h56v208h-58V589l-78 101h-56l-78-101v111z" fill="#F2762E"/>
+</svg>

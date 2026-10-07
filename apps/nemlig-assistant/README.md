@@ -1,4 +1,4 @@
-# Nemlig Assistant
+# MoJo Shopper
 
 <p align="center">
   Search current Nemlig products and make precisely authorized basket changes.
@@ -26,7 +26,7 @@
 
 ## Your grocery copilot, with you still in charge
 
-Nemlig Assistant is an unofficial Node.js and TypeScript assistant for
+MoJo Shopper is an unofficial Node.js and TypeScript assistant for
 nemlig.com. It helps you move from “we need groceries” to a reviewed proposal
 with current products, prices, a temporary Draft list, and exact quantities.
 
@@ -47,7 +47,7 @@ Once connected, try prompts like:
 - “Compare the cheese in my basket with this cheaper alternative.”
 - “Show my Nemlig basket.”
 - “Add the Ready products from my Draft list to my Nemlig basket.”
-- “Which Nemlig Assistant version and codename are running?”
+- “Which MoJo Shopper version and codename are running?”
 
 Search and Nemlig basket reads remain read-only. A clear conversational request to
 add the current unchanged Ready draft list authorizes that exact prepared
@@ -121,13 +121,17 @@ Provider descriptions, declarations, and item details are converted from HTML
 to bounded plain text, including Danish characters and entities. Scripts,
 styles, images and link destinations are omitted; conversion does not fetch
 additional resources.
-The shared product viewer opens directly on its products and has compact,
-expandable rows. **To decide** contains
+The shared product viewer opens directly on its products. Each row keeps a
+visible product image, readable name, brand/package details, quantity, and line
+price together on narrow screens; factual disclosures stay collapsed until
+opened. **To decide** contains
 unresolved products; **Ready** contains exact accepted products. Select one or
-more To decide rows, then add them to Ready in one local action. Adjust
-quantities or remove products in either view. Choose alternatives only from To
-decide; choosing a replacement does not accept it automatically. Alternatives
-show every distinct eligible product in the provider response, and allow a
+more To decide rows, then add them to Ready in one local action. In Ready,
+adjust quantities directly; open a row to move it back or remove it from the
+local Draft list after confirmation. This never changes the Nemlig basket. Choose
+alternatives only from To decide; choosing a replacement does not accept it
+automatically. Alternatives show every distinct eligible product in the provider
+response, and allow a
 deliberate follow-up search when none fit. A search response is not a claim that
 the entire Nemlig catalogue was enumerated. These local operations also work
 through conversation, including “everything except the ricotta and cucumbers is
@@ -138,10 +142,11 @@ draft list `show`, not new searches, repeated details or a second start; failed 
 Once explicitly opened, the same current draft list frame stays active across
 confirmed local edits and destination changes. Compatible draft lists and open
 product rows remain in place. Rows show product, package, quantity and line
-price first. Expanded rows contain collapsed **Varebeskrivelse**,
-**Varedeklaration**, and **Detaljer om varen** sections; opening them makes no
-tool call. **Remove all Ready products** removes those products from the local
-draft list after confirmation, without touching the real Nemlig basket.
+price first. Expanded rows contain quantity and local row actions, plus
+collapsed **Varebeskrivelse**, **Varedeklaration**, and **Detaljer om varen**
+sections; opening them makes no tool call. **Prepare exact change** shows the
+exact products and quantities before any separately authorized Nemlig basket
+addition.
 
 Voice and touch use one private temporary draft per ChatGPT conversation, identified
 by the host session metadata and authenticated principal. There is no hourly expiry.
@@ -304,7 +309,7 @@ The MCP surface is organized around household actions:
   Ready acceptance alone is not provider-write authorization. The protected
   tool uses only the unchanged prepared lines; ambiguous scope or changed Ready
   IDs/quantities requires clarification.
-- Nemlig Assistant is strictly add-only for the real
+- MoJo Shopper is strictly add-only for the real
   basket: it cannot remove, decrease, replace, swap, or clear products. If two
   units are already present and two more are authorized, the resulting line is
   four units. The provider accepts an absolute quantity, so the assistant
@@ -317,7 +322,7 @@ The MCP surface is organized around household actions:
   render action: it opens the current products immediately. Use it once while a
   current card is usable; repeat it only to reopen a stale card or when asked,
   since each call renders a new card and invalidates the previous card's actions.
-  ChatGPT may retain older message cards in the conversation; Nemlig Assistant
+  ChatGPT may retain older message cards in the conversation; MoJo Shopper
   leaves that history to the host and makes superseded cards read-only.
   Each rendered view has a conversation-bound server token. The familiar
   `update_product_review` and `submit_product_review` actions require the newest
@@ -329,7 +334,7 @@ The MCP surface is organized around household actions:
   only after the existing exact confirmation; it never calls Nemlig directly.
   `update_product_review_conversation show` remains the headless way to recover current state.
 
-After this connection recovery, use the app named `Nemlig Assistant (Rejoin)`.
+After this connection recovery, use the app named `MoJo Shopper`.
 For ordinary later releases, use **Refresh** on that app so ChatGPT rediscovers
 tools, schemas, instructions, and resources. Create a replacement only for a
 deliberate integration reset, then retire the previous Nemlig app after the
@@ -386,8 +391,9 @@ Use only the printed synthetic credentials, click **Connect**, then
 renderer, signed cookie and single-use CSRF store with no OAuth/Nemlig access.
 It is not a live owner-connection or native ChatGPT acceptance test.
 
-The MCP server advertises the original orange bitten-dot icon and the display
-name `Nemlig Assistant` to clients that render standard MCP app metadata.
+The MCP server advertises the MoJo Shopper bag-and-M icon and the display name
+`MoJo Shopper` to clients that render standard MCP app metadata. The ChatGPT
+plugin listing uses its own logo and composer-icon fields.
 
 Creating or changing identity, hosting, DNS, runtime secrets, or paid resources
 is an owner-controlled infrastructure action. Nemlig credentials must stay out

@@ -16,7 +16,7 @@ import { RETIRED_PRODUCT_VIEWER_RESOURCE_URIS } from "./product-viewer-identity.
 import { NEMLIG_CODENAME, NEMLIG_VERSION } from "./runtime.js";
 
 const expectedProductViewerResources = [
-  { uri: PRODUCT_VIEWER_RESOURCE_URI, name: "nemlig-product-viewer", title: "Your draft list", description: "Product results and the shared local shopping draft list supplied by Nemlig Assistant.", mimeType: "text/html;profile=mcp-app" },
+  { uri: PRODUCT_VIEWER_RESOURCE_URI, name: "nemlig-product-viewer", title: "Your draft list", description: "Product results and the shared local shopping draft list supplied by MoJo Shopper.", mimeType: "text/html;profile=mcp-app" },
   ...RETIRED_PRODUCT_VIEWER_RESOURCE_URIS.map((uri, index) => ({ uri, name: `nemlig-retired-product-viewer-v${index}`, title: "Updated draft list", description: "This retired draft list card is inert and contains no shopping data.", mimeType: "text/html;profile=mcp-app" })),
 ];
 
