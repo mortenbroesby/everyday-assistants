@@ -86,7 +86,7 @@ Every provider-backed MCP tool SHALL use an authenticated client for the current
 - **THEN** the tool does not retry the mutation
 
 ### Requirement: Complete production feature acceptance
-The system SHALL provide an automated, read-only production acceptance workflow that verifies the exact advertised six-tool user catalog and shared resource inventory against the hosted service. It SHALL exercise authenticated product search and actual Nemlig basket inspection, and SHALL fail on inventory drift without starting a Draft list or applying a real basket mutation.
+The system SHALL provide an automated, read-only production acceptance workflow that verifies the exact advertised seven-tool user catalog and shared resource inventory against the hosted service. It SHALL exercise live authenticated profile identity, product search, and actual Nemlig basket inspection, and SHALL fail on inventory drift without starting a Draft list or applying a real basket mutation.
 
 #### Scenario: Read-only production acceptance runs
 - **WHEN** the operator runs production acceptance with valid owner authentication
@@ -136,15 +136,15 @@ The repository SHALL provide a deterministic, credentials-free smoke scenario co
 - **WHEN** the simulated write or readback becomes indeterminate
 - **THEN** the submission is not retried and the user is directed to inspect the actual Nemlig basket
 
-### Requirement: Six-tool shopping surface
-The user MCP catalog SHALL advertise exactly `check_nemlig_connection`, `find_groceries`, `show_my_basket`, `start_product_review`, `update_product_review`, and `submit_product_review`. Search and actual-basket reads SHALL remain read-only. The start/update tools SHALL change only the temporary Draft list; only the protected submit tool MAY add to the actual Nemlig basket. Retired tool names SHALL return the standard unknown-tool response without provider mutation.
+### Requirement: Seven-tool shopping surface
+The user MCP catalog SHALL advertise exactly `check_nemlig_connection`, `find_groceries`, `get_profile`, `show_my_basket`, `start_product_review`, `update_product_review`, and `submit_product_review`. `get_profile`, search, and actual-basket reads SHALL remain read-only. The start/update tools SHALL change only the temporary Draft list; only the protected submit tool MAY add to the actual Nemlig basket. Retired tool names SHALL return the standard unknown-tool response without provider mutation.
 
 #### Scenario: Tools are listed
 - **WHEN** a user MCP client lists tools
-- **THEN** it sees exactly the six named tools with complete schemas and behavior-matched annotations
+- **THEN** it sees exactly the seven named tools with complete schemas and behavior-matched annotations
 
 #### Scenario: Retired tool is called
-- **WHEN** a client calls `get_profile`, `show_my_basket_visually`, `review_items_to_add`, `add_approved_items`, or another retired tool name
+- **WHEN** a client calls `show_my_basket_visually`, `review_items_to_add`, `add_approved_items`, or another retired tool name
 - **THEN** the server reports an unknown tool and performs no provider operation
 
 #### Scenario: Search and basket are inspected

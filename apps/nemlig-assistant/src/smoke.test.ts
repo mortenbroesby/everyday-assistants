@@ -94,6 +94,7 @@ test("local CLI help and MCP surface need no credentials or network", async () =
       [
         "check_nemlig_connection",
         "find_groceries",
+        "get_profile",
         "show_my_basket",
         "start_product_review",
         "submit_product_review",

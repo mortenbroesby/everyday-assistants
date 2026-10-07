@@ -13,7 +13,7 @@ import type { ProductReviewSnapshot } from "./product-review.js";
 import { BasketProposalService } from "./proposals.js";
 import { PRODUCT_VIEWER_RESOURCE_URI } from "./product-viewer.js";
 import { RETIRED_PRODUCT_VIEWER_RESOURCE_URIS } from "./product-viewer-identity.js";
-import { NEMLIG_RELEASE_IDENTITY } from "./runtime.js";
+import { NEMLIG_CODENAME, NEMLIG_VERSION } from "./runtime.js";
 
 const expectedProductViewerResources = [
   { uri: PRODUCT_VIEWER_RESOURCE_URI, name: "nemlig-product-viewer", title: "Your draft list", description: "Product results and the shared local shopping draft list supplied by Nemlig Assistant.", mimeType: "text/html;profile=mcp-app" },
@@ -215,6 +215,7 @@ const toolText = (result: unknown): string =>
 const friendlyCatalog = [
   ["check_nemlig_connection", "Check my Nemlig connection", true, false, []],
   ["find_groceries", "Search Nemlig products", true, false, ["search_term", "result_count"]],
+  ["get_profile", "Get my Nemlig profile", true, false, []],
   ["show_my_basket", "Show my Nemlig basket", true, false, []],
   ["start_product_review", "Start your draft list", false, false, ["items"]],
   ["submit_product_review", "Add explicitly requested Ready products to Nemlig", false, false, ["review_id", "revision", "submission_id"]],
@@ -227,7 +228,7 @@ const formerToolNames = [
   "apply_cart_additions", "prepare_cart_removal", "apply_cart_removal", "prepare_cart_replacement",
   "apply_cart_replacement", "prepare_cart_clear", "apply_cart_clear", "pick_products", "suggest_an_improvement",
   "choose_products_visually",
-  "get_profile", "show_my_basket_visually", "review_items_to_add", "add_approved_items",
+  "show_my_basket_visually", "review_items_to_add", "add_approved_items",
   "reconnect_nemlig_assistant", "get_grocery_details", "show_my_favorites", "show_grocery_sections", "browse_grocery_section",
   "save_my_shopping_plan", "continue_my_shopping_plan", "show_my_shopping_lists", "save_my_shopping_list",
   "copy_my_shopping_list", "set_my_shopping_list_status", "shop_from_my_list", "migrate_my_saved_plan",
@@ -248,6 +249,32 @@ test("product tags retain only positively supported organic facts", () => {
   assert.deepEqual(rankProducts([], "mælk"), []);
 });
 
+test("profile exposes the live runtime release without provider access", async () => {
+  let providerCalls = 0;
+  const client = fakeClient({
+    isLoggedIn: () => { providerCalls += 1; return true; },
+    login: async () => { providerCalls += 1; },
+    getCart: async () => { providerCalls += 1; return basket; },
+  });
+  await withMcpClient(createMcpServer(client, testCredentials, undefined, undefined, {
+    principalKey: "auth0|profile-owner",
+    policyRevision: "test-v1",
+  }), async (mcp) => {
+    const tool = (await mcp.listTools()).tools.find(({ name }) => name === "get_profile");
+    assert.deepEqual(tool?._meta, {
+      "openai/profile": true,
+      securitySchemes: [{ type: "oauth2", scopes: ["use:nemlig-assistant"] }],
+    });
+    const result = await mcp.callTool({ name: "get_profile", arguments: {} });
+    assert.equal(result.isError, undefined);
+    assert.deepEqual(result.structuredContent, {
+      id: "auth0|profile-owner",
+      release: { version: NEMLIG_VERSION, codename: NEMLIG_CODENAME },
+    });
+  });
+  assert.equal(providerCalls, 0);
+});
+
 test("MCP exposes the complete friendly catalog and clean missing-credential errors", async () => {
   const client = fakeClient({ isLoggedIn: () => false });
   await withMcpClient(createMcpServer(client, async () => undefined), async (mcp) => {
@@ -257,7 +284,7 @@ test("MCP exposes the complete friendly catalog and clean missing-credential err
       const tool = tools.find((candidate) => candidate.name === name);
       assert.equal(tool?.title, title, name);
       assert.ok(tool?.description, `${name} needs a description`);
-      assert.deepEqual(tool?.annotations, { readOnlyHint, destructiveHint, openWorldHint: true }, name);
+      assert.deepEqual(tool?.annotations, { readOnlyHint, destructiveHint, openWorldHint: name !== "get_profile" }, name);
       assert.deepEqual(tool?._meta?.securitySchemes, [{ type: "oauth2", scopes: ["use:nemlig-assistant"] }], name);
       const properties = (tool?.inputSchema as { properties?: Record<string, { description?: string }> }).properties ?? {};
       assert.deepEqual(Object.keys(properties).sort(), [...inputs].sort(), `${name} inputs drifted`);
@@ -473,7 +500,10 @@ test("every MCP tool has complete schemas, accurate annotations, and safe server
       assert.equal(byName.get(name)?.annotations?.readOnlyHint, false, name);
       assert.equal(byName.get(name)?.annotations?.destructiveHint, false, name);
     }
-    assert.equal(mcp.getInstructions()?.startsWith(`Current release: ${NEMLIG_RELEASE_IDENTITY}.`), true);
+    assert.match(mcp.getInstructions() ?? "", /^Search Nemlig products with find_groceries/u);
+    assert.equal((mcp.getInstructions() ?? "").includes("Current release:"), false);
+    assert.equal((mcp.getInstructions() ?? "").includes(NEMLIG_VERSION), false);
+    assert.equal((mcp.getInstructions() ?? "").includes(NEMLIG_CODENAME), false);
     assert.match(mcp.getInstructions() ?? "", /The real Nemlig basket is add-only/u);
     assert.match(mcp.getInstructions() ?? "", /Local draft list edits never write to Nemlig/u);
     assert.doesNotMatch(

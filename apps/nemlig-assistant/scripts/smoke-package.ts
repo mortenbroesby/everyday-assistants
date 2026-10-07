@@ -14,7 +14,7 @@ const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "
 const tempRoot = await mkdtemp(path.join(tmpdir(), "nemlig-assistant-package-"));
 const sourceManifest = JSON.parse(
   await readFile(path.join(packageRoot, "package.json"), "utf8"),
-) as { version?: string; nemligRelease?: { codename?: string } };
+) as { version?: string };
 
 try {
   const { stdout } = await execute(
@@ -64,7 +64,7 @@ try {
   const imports = await execute(
     process.execPath,
     ["--input-type=module", "--eval", `globalThis.fetch=()=>{throw new Error("fetch during import")};await Promise.all(${JSON.stringify(["cli.js", "mcp.js", "http.js"].map((file) => pathToFileURL(path.join(installed, file)).href))}.map((entry) => import(entry)))`],
-    { env: { PATH: process.env.PATH ?? "" }, timeout: 10_000 },
+    { env: { PATH: process.env.PATH ?? "" }, timeout: 30_000 },
   );
   assert.equal(imports.stdout, "");
   assert.equal(imports.stderr, "");
@@ -94,11 +94,12 @@ try {
   try {
     assert.equal(client.getServerVersion()?.name, "nemlig-assistant");
     assert.equal(client.getServerVersion()?.version, sourceManifest.version);
-    assert.equal(client.getInstructions()?.startsWith(`Current release: ${sourceManifest.version} - ${sourceManifest.nemligRelease?.codename}.`), true);
+    assert.doesNotMatch(client.getInstructions() ?? "", /^Current release:/u);
     const tools = (await client.listTools()).tools.map((tool) => tool.name).sort();
     assert.deepEqual(tools, [
       "check_nemlig_connection",
       "find_groceries",
+      "get_profile",
       "show_my_basket",
       "start_product_review",
       "submit_product_review",

@@ -213,9 +213,9 @@ changing Worker authentication or recreating the MCP endpoint.
 4. Prefer repairing the existing association. If the association is
    demonstrably unrecoverable, use the approved one-connector CIMD replacement
    procedure. Do not create a parallel connector or second MCP URL.
-5. For release 6.0.0 and later, refresh metadata and verify that the six-tool
-   catalog is exposed before attempting a user conversation. The historical
-   `get_profile` check below applies only to earlier releases.
+5. For release 6.1.0 and later, refresh metadata and verify that the seven-tool
+   catalog, including `get_profile`, is exposed before attempting a user
+   conversation.
 6. Perform one bounded, fresh authenticated MCP discovery and correlate it
    with the privacy-safe Worker sequence above. Test provider access separately
    with `check_nemlig_connection` when credentials are provisioned.

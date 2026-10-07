@@ -7,7 +7,7 @@ import {
 } from "./production-acceptance.js";
 import { serviceAcceptanceResourceInventory, serviceAcceptanceToolInventory } from "./mcp.js";
 import { PRODUCT_VIEWER_MIME_TYPE, PRODUCT_VIEWER_RESOURCE_URI, renderProductViewerHtml } from "./product-viewer.js";
-import { NEMLIG_VERSION } from "./runtime.js";
+import { NEMLIG_CODENAME, NEMLIG_VERSION } from "./runtime.js";
 
 const userToolMetadata = {
   start_product_review: { ui: { resourceUri: PRODUCT_VIEWER_RESOURCE_URI }, "openai/outputTemplate": PRODUCT_VIEWER_RESOURCE_URI, "openai/widgetAccessible": true },
@@ -61,6 +61,7 @@ function readonlyClient(): AcceptanceClient {
     listResources: async () => ({ resources: productionResourceInventory.map((uri) => ({ uri })) }),
     readResource: async ({ uri }) => ({ contents: [{ uri, mimeType: PRODUCT_VIEWER_MIME_TYPE, text: renderProductViewerHtml(), _meta: { ui: { csp: { connectDomains: [], resourceDomains: ["https://nemlig.com", "https://www.nemlig.com"] }, prefersBorder: true } } }] }),
     callTool: async ({ name }) => {
+      if (name === "get_profile") return { structuredContent: { id: "profile", release: { version: NEMLIG_VERSION, codename: NEMLIG_CODENAME } } };
       if (name === "find_groceries") return { structuredContent: { result: [{ id: 7 }] } };
       return { structuredContent: { items: [] } };
     },
