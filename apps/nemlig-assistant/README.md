@@ -391,7 +391,7 @@ Use only the printed synthetic credentials, click **Connect**, then
 renderer, signed cookie and single-use CSRF store with no OAuth/Nemlig access.
 It is not a live owner-connection or native ChatGPT acceptance test.
 
-The MCP server advertises the MoJo Shopper bag-and-M icon and the display name
+The MCP server advertises the MoJo Shopper grocery-basket icon and the display name
 `MoJo Shopper` to clients that render standard MCP app metadata. The ChatGPT
 plugin listing uses its own logo and composer-icon fields.
 
