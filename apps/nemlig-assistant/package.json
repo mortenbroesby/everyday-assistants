@@ -46,8 +46,6 @@
     "prepack": "pnpm build",
     "production:probe": "tsx scripts/production-acceptance.ts --edge-only",
     "production:deploy": "tsx scripts/production-deploy.ts",
-    "production:retention": "tsx scripts/production-retention.ts",
-    "publish:deployment-release": "tsx scripts/publish-release.ts",
     "production:test:features": "tsx scripts/production-acceptance.ts",
     "release:apply": "tsx release/agent.ts --apply",
     "release:plan": "tsx release/agent.ts",

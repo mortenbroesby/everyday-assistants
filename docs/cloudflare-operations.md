@@ -1,24 +1,10 @@
 # Cloudflare operations for Nemlig MCP
 
-Production state is time-sensitive. Verify the current workflow journal,
-Worker, routes and Container before any operation; historical version IDs and
-acceptance below are not current-state proof. On 2026-09-27, [recovery run
-36320068876](https://github.com/mortenbroesby/everyday-assistants/actions/runs/36320068876)
-restored the last accepted source SHA `94a9a3c` after the `476dd92` service
-fixture failed and its fail-closed rollback returned both MCP routes to 503.
-The recovery deploy passed edge and service acceptance; live route readback
-showed 401 for anonymous MCP requests, and a fresh ChatGPT conversation
-completed profile, sections, and catalogue reads without basket writes.
-The run's separate post-deploy image-retention job failed; do not infer
-retention completion or rerun cleanup from the successful deploy. Preserve
-the `476dd92` fixture failure as unresolved until its precise inventory or
-transport boundary is proven. Before any further recovery, establish that
-the prior runner stopped and the exact Worker/Container state is safe.
-Read-only reconciliation of the saved recovery journal and current ledger
-reproduced `image_retention_ledger_commit_conflict`: recovery rebuilt the same
-`94a9a3c` source into a different accepted image. A distinct acceptance time
-is now part of the ledger event identity; this code change does not itself
-reconcile the live interrupted retention lease or prove cleanup completion.
+Production state is time-sensitive. For releases, follow **Automated
+production release** below. After a failed or interrupted release, use
+**Correct a failed deployment** to inspect current provider state before any
+separately reviewed corrective deployment. Historical incident records below
+are evidence only, not current instructions.
 
 Production endpoints:
 
@@ -48,29 +34,12 @@ legacy `PlanStorage` class, namespace binding and migration history are retained
 only to preserve existing records and rollback: its handler returns 410 without
 storage access, and the application no longer forwards saved-shopping requests.
 Do not delete that namespace or stored records as part of a routine deployment.
-The Worker is enabled during normal operation and every non-recovery release,
-including the local read-only acceptance path. `MCP_ENABLED=false` is an
-emergency kill switch, not a normal release staging state. Only explicit
-recovery or incident handling may deploy a disabled version. On a known routine
-acceptance failure, release automation may temporarily disable that
-known-failing candidate as emergency isolation, but must then attempt one exact,
-bounded restoration of the last recorded enabled Worker and immutable
-Container image; it must not treat “candidate disabled” as successful recovery.
-If exact restoration cannot be proven, preserve the lease and recovery evidence.
-Disablement may persist only while failback is unresolved or during an explicit
-owner-directed emergency response. If exact failback restores the prior release
-but its acceptance fails, leave it enabled, mark acceptance unproven, and retain
-the lease. No app-local operation quota, rate throttle, tier budget, usage
-counter or automatic daily breaker remains. Protocol/profile distinctions serve
-only credential gating and diagnostics.
-
-Routine failback uses Cloudflare's Containers rollout API for this repository's
-`Container`-class application (the scheduler-backed `default` policy). Before
-deploying a candidate, automation read-verifies that policy, the recorded image
-digest/version, and absence of an active rollout. If the application no longer
-matches that supported model, deployment stops before Worker mutation; do not
-silently switch to a different rollout API or disable the service as routine
-staging.
+The Worker stays enabled during routine delivery; `MCP_ENABLED=false` is a
+manual emergency kill switch. A failed deployment is not automatically rolled
+back or disabled. Inspect the live Worker, Container image/version and rollout
+state before deciding on a corrective action. Routine preflight verifies the
+supported `Container` model, current configuration, and absence of an active
+rollout. No lease or journal records release state.
 
 The Worker CPU and subrequest limits are 100 ms and 8. Every request has a
 90-second total deadline. Auth0 is capped at 5 seconds, Durable Object control
@@ -252,28 +221,47 @@ responses.
 
 ## Automated production release
 
-Routine releases use the **Nemlig production** workflow with the exact SHA from
-a successful trusted CI run, provided that SHA remains in current `main`
-history. The workflow does
-not require a semantic-version bump, codename allocation, release-note file, or
-GitHub prerelease. The package's human-facing codename metadata remains part of
-the runtime identity for now, but it is not deployment eligibility or provider
-authority.
+The **Nemlig production** workflow runs after successful CI for a push to
+`main`. It uses that run's exact commit, requires the commit to remain in current
+`main` history, and keeps all deployment credentials inside the protected
+`nemlig-production` environment. The owner approves the pull request before
+merge; the successful main-CI merge is the routine release decision.
 
-The owner approves the pull request before merge. A successful push to `main`
-then enters the protected production environment automatically; that merge is
-the routine human release decision. The workflow keeps the safety boundary in
-the privileged job: exact-SHA checkout, frozen install, pinned actions,
-queued serialized execution, bounded timeouts, protected credentials, one-Container
-limits, effective configuration checks, revision readback, and read-only edge
-and service acceptance. It never requests an owner access token, password, or
-browser session.
+GitHub Actions concurrency (`group: nemlig-production`, no cancellation,
+queued runs) is the only release serialization. The workflow is intentionally
+limited to exact-source validation, frozen dependency installation, build,
+Cloudflare access checks, deploy, and bounded read-only acceptance. The deploy
+command also verifies the exact CI run and protected environment, the existing
+Worker configuration and single Container model, the candidate revision and
+image readback, and edge plus authenticated service behavior. It never requests
+an owner access token, password, or browser session, and it never prepares or
+applies a proposal or mutates a basket.
 
-GitHub's queued workflow run is the release event consumer. Cloudflare does not
-provide a Worker-plus-Container completion callback that proves this workflow's
-exact revision, image, application version, edge revision, and authenticated
-MCP fixture; Workers Builds events and generic notifications are therefore not
-substitutes for the bounded readback and acceptance checks below.
+There is no production lease or lock, deployment journal, recovery artifact,
+predecessor cleanup, rollback, manual recovery command, or automatic image or
+Worker-version pruning. A failed or cancelled run stays failed. It does not
+restore or redeploy another version. Inspect the current Worker version,
+Container image/version and rollout state in Cloudflare before deciding on a
+separately reviewed corrective deployment. A later queued release relies on
+that current provider preflight and does not wait for a saved predecessor record.
+
+The workflow's read-only synthetic acceptance is not owner or ChatGPT UI
+acceptance. UI-bearing releases still need the separate
+[ChatGPT UI acceptance](nemlig-production-readiness.md#ui-release-acceptance-required-for-ui-delivery).
+No image or Worker history is deleted automatically; any future cleanup needs a
+separately reviewed process.
+
+The command can be run against a trusted, green main SHA when supervised
+terminal execution is needed:
+
+```sh
+pnpm --filter nemlig-assistant production:deploy -- --service CANDIDATE_COMMIT
+```
+
+This command verifies the exact checked-out SHA, current main ancestry, trusted
+CI provenance, and protected environment before it asks Cloudflare to deploy.
+A deployment failure is reported and returned; there is no automated restore
+or durable recovery state.
 
 Historical observation (not current delivery evidence): the latest routine
 technical acceptance recorded at the time of this note completed for repository SHA
@@ -282,317 +270,8 @@ technical acceptance recorded at the time of this note completed for repository 
 Read-only provider verification found enabled Worker version
 `3c0a0cef-e011-4c09-9ed8-4c34e3da8b8a`, application version `74`, and image
 `sha256:c6280f16f769c88dfcadbf731d2e514cdbb0aedc290e0b3f66b0d1b8f45e0d3b`.
-The edge probe passed health, revision, OAuth metadata, anonymous rejection,
-and foreign-origin rejection. This is synthetic technical and edge acceptance,
-not a fresh real-family Nemlig or ChatGPT acceptance claim.
-
-### Repeatable release
-
-1. Merge an approved change only after its required CI is green. Each eligible
-   successful main-CI run queues the exact tested SHA; it does not substitute a
-   later tip SHA. A later unaccepted main tip does not strand that candidate
-   while it remains in current main history.
-2. Credential-free preflight rechecks the repository, exact CI provenance,
-   that the candidate is still an ancestor of current `main`, and the protected
-   environment before the privileged job. A candidate already superseded by a
-   deployed descendant stops before provider mutation. It also reads the shared
-   production lease: a held lease reports `blocked_by_existing_lease` with the
-   candidate and lease head. For a queued trusted `main` candidate only, the
-   same protected deploy job may finalize a predecessor only when its exact
-   recorded GitHub run attempt is complete, its unexpired
-   `nemlig-production-release` artifact contains the same journal as the lease,
-   and terminal acceptance plus exact Worker/configuration/image/application
-   readback match that journal and lease head. It reads back lease absence,
-   repeats its own exact-source preflight, and acquires a fresh lease before
-   deployment. Missing evidence, pending acceptance, drift, or an unknown
-   mutation leave the predecessor lease intact and the candidate blocked—there
-   is no automatic rollout, restore, rollback, or retry. Atomic lease
-   acquisition remains the authoritative race check immediately before mutation.
-3. The protected job builds and deploys the exact SHA, records the bounded
-   report and journal, runs the configured edge/service acceptance, and
-   automatically finalizes a known terminal routine run after the artifact is
-   saved. An uncertain state, failed artifact, or provider drift keeps
-   recovery ownership for explicit inspection. UI-bearing releases also require
-   [ChatGPT UI acceptance](nemlig-production-readiness.md#ui-release-acceptance-required-for-ui-delivery)
-   before being reported delivered; the workflow cannot refresh the owner's
-   installed ChatGPT app metadata.
-4. Routine delivery starts automatically after successful CI. A queued routine
-   candidate can perform the narrow terminal predecessor finalization described
-   above; manual dispatch is otherwise reserved for recovery to a previously
-   green `main` ancestor or for reconciling one explicitly identified pending
-   rollback. GitHub's
-   native concurrency queue retains at most 100 pending runs and orders them by
-   when they began waiting, not by source-event dispatch time. There is no
-   hourly catch-up job, durable delivery queue, or automatic replay layer; this
-   rare platform queue limit is accepted rather than adding custom machinery.
-   If GitHub rejects a run at that limit, use the protected recovery workflow
-   for the current green `main` SHA after confirming the queued deploy state.
-
-   ```sh
-   git fetch origin main
-   sha=$(git rev-parse origin/main)
-   gh workflow run nemlig-production.yml --ref main -f commit="$sha" -f recovery=true
-   ```
-
-   If the saved release artifact and original-runner-stopped evidence are
-   available, a protected reconciliation dispatch can prove and complete only
-   the exact interrupted transition recorded in the journal, then release the
-   lease after enabled edge and service acceptance:
-
-   ```sh
-   gh workflow run nemlig-production.yml --ref main \
-     -f commit="$sha" -f recovery=true -f reconcile_operation="$operation"
-   ```
-
-   If the saved journal contains only an `enable_deploy` intent, protected
-   reconciliation first requires exact readback of that candidate Worker and
-   the unchanged, inactive starting Container. Only then may it journal and
-   roll back to the recorded starting Worker; it must verify both public routes
-   are disabled and the Container remains unchanged/inactive before finalizing.
-   Drift or an uncertain rollback keeps the lease; the recovery path never
-   retries the rollback.
-
-   If the saved journal ends at `container_restore:intent` after the known
-   Container convergence timeout, ordinary reconciliation never retries the
-   restore POST based on timestamps or a missing active rollout. It reports
-   `provider_outcome_unknown` and retains the lease unless exact restored-image
-   readback proves that request completed. Only a separately and explicitly
-   owner-authorized protected dispatch may request the exact journaled prior
-   image once. It rechecks either the disabled legacy candidate or the enabled
-   routine candidate, its exact candidate image/version, inactive rollout,
-   matching configuration and instance state, and lease; the disabled form
-   additionally requires disabled routes and an inactive instance. It persists
-   a single-use authorization marker before the POST. A crash or
-   uncertain response consumes that authorization and cannot be retried. On
-   verified restore, the workflow continues with the exact starting-Worker
-   rollback and read-only edge/service acceptance; failures retain the lease.
-
-   If the saved journal contains only a `disabled_deploy` intent after a
-   disabled-route probe failure, reconciliation can close the operation only
-   when the current Worker is the exact disabled candidate SHA, its versioned
-   registry tag resolves to the exact current Container image, configuration
-   and Container identity match the journal, the Container is inactive, and
-   both routes return the fixed disabled response. It appends the missing
-   disabled result without deploying or rolling back; any mismatch retains the
-   lease. Deployment checks both public routes as a pair up to six times with
-   five-second spacing to tolerate transient edge propagation, and fail closed
-   after that bounded window.
-
-5. If the run is canceled, fails, or leaves a lease, download its artifact and
-   run `inspect-recovery` with that artifact's operation UUID. Continue only
-   when inspection proves a terminal matching state; never retry the deployment
-   or delete the lease based on its age.
-
-The shared command also supports supervised terminal execution with those same scoped CI credentials:
-
-```sh
-pnpm --filter nemlig-assistant production:deploy -- preflight CANDIDATE_COMMIT
-pnpm --filter nemlig-assistant production:deploy -- --service CANDIDATE_COMMIT
-```
-
-Routine service acceptance is part of the automatic workflow; there is no
-manual cutover or finalization mode. Recovery remains explicit and accepts only
-a previously green ancestor of current `main`.
-
-The command verifies local HEAD, refreshed remote `main` ancestry, exact-head CI, and the
-required main-only environment before issuing one bounded machine token or
-changing Cloudflare. Token validation checks signature, issuer, audience, exact
-identity/scope and remaining expiry. Fixture checks prove runtime transport and
-isolation; they do not prove live Nemlig or ChatGPT behavior.
-It takes an exclusive lock shared by linked worktrees and atomically creates
-`refs/heads/codex-lock/nemlig-production` for a unique operation UUID, not the
-source SHA. The ref contains a bounded public-safe recovery journal. Releases
-keep `MCP_ENABLED=true` while Wrangler activates the new Worker and rolls the
-Container image. If a routine candidate fails bounded acceptance or Container
-convergence, automation keeps the Worker enabled while it attempts one exact
-restoration of the prior accepted Container image and Worker. It never deploys
-`MCP_ENABLED=false` for routine failback; that switch is reserved for explicit
-emergency isolation. Interrupted mutations are reconciled from the durable
-journal and exact provider readback, without replaying uncertain writes. The
-MCP HTTP transport is stateless: modern clients do not depend on
-session IDs, and production acceptance does not probe obsolete session-recovery
-behavior. The journal records the starting version, the exact enabled transition, the resulting Container image, and the bounded edge and
-authenticated read-only checks.
-During a routine rollout, the edge probe and an initialize-only authenticated
-MCP handshake run before the full service fixture. The handshake wakes the
-Container; the workflow then requires a running instance at the exact candidate
-application version before starting the full fixture. That fixture compares
-the MCP server release with the checked-out candidate, and the workflow checks
-the running instance version again afterward. A previous backend release is
-retried within a fixed 17-minute maximum, capped earlier to leave eight minutes
-of the 25-minute operation deadline for rollback. The initialize-only check
-uses a shorter bound with the same eight-minute reserve; other fixture failures
-keep their shorter retry budget. A configured image or inactive instance alone
-is not acceptance. These checks do not restart or force-replace a Container,
-and their synthetic reads do not prove ChatGPT UI rendering or owner shopping
-acceptance.
-It never prepares or applies a proposal and never mutates a basket, favorite, or
-saved list.
-
-The remote journal is authoritative; the common Git directory's
-`nemlig-production-deploy/latest.json` is a local mirror. Snapshots contain only
-operation/run identifiers, source/version IDs, image digests, timestamps,
-allowlisted checks and failure categories, and intent/result state. Each snapshot
-is limited to 8 KiB and 32 transitions. Remote intent and its local mirror must
-persist before a provider mutation. An uncertain command or failed result write
-retains ownership without retrying or automatically rolling back that command.
-The operation has a 25-minute deadline; cancellation terminates the command's
-process group before returning.
-
-After the deployment command stops and the bounded report artifact is saved, a
-non-cancelled completed deploy invokes exact-state finalization automatically,
-including a failed release whose rollback is verified. The saved journal must
-match the candidate SHA, workflow run ID and attempt. Finalization alone decides
-whether the state is terminal; successful lease release does not turn a failed
-deployment into acceptance or authorize retention. An uncertain
-operation, failed artifact upload, pending intent, unknown state or drift retains
-both leases for explicit inspection and finalization. Finalization requires the exact operation UUID,
-complete terminal evidence, matching current Worker/configuration/application/instance and unchanged remote
-journal head. Missing evidence, pending intent, unknown state or drift blocks
-cleanup. A legacy source-SHA lease also blocks new releases; never steal it or
-delete it on an age/TTL assumption.
-
-```sh
-pnpm --filter nemlig-assistant production:deploy -- inspect-recovery OPERATION_UUID
-# Only after independently confirming the original runner has stopped:
-pnpm --filter nemlig-assistant production:deploy -- inspect-recovery OPERATION_UUID --original-runner-stopped
-# Only after saving the complete artifact and confirming the original runner stopped:
-pnpm --filter nemlig-assistant production:deploy -- reconcile-recovery OPERATION_UUID --evidence-saved --original-runner-stopped
-# Only with explicit owner authorization for one more request to the exact journaled prior image:
-pnpm --filter nemlig-assistant production:deploy -- reconcile-recovery OPERATION_UUID --evidence-saved --original-runner-stopped --authorize-one-container-restore
-# Only after saving complete final evidence and reconciling the exact state:
-pnpm --filter nemlig-assistant production:deploy -- finalize OPERATION_UUID --evidence-saved --original-runner-stopped
-```
-
-Reconciliation is narrower than deployment and never starts a new routine
-candidate release. For an interrupted `container_restore`, it never creates
-another rollout by default: `updated_at` is not proof that an earlier POST was
-not accepted. The explicit one-request authorization above is consumed durably
-before its POST and cannot be reused after an uncertain outcome. The [documented Containers rollout API](https://developers.cloudflare.com/api/resources/containers/subresources/applications/subresources/rollouts/)
-documents rollout creation, but no rollout list/get operation or idempotency
-contract that can resolve a lost POST response. If the exact starting image and
-a newer application version are already read back with no active rollout,
-reconciliation may record that observed completion, restore the recorded Worker
-and run read-only acceptance. If the candidate image remains current, it records
-`cloudflare_container_restore_uncertain`, reports `provider_outcome_unknown`,
-and retains the lease. Never clear the lease or replay a consumed POST based on
-an absent active rollout or timestamp. If a one-shot authorized request also
-remains uncertain, stop and obtain provider-side evidence before further
-mutation.
-Other supported recovery phases still require their exact journal and provider
-readback before the terminal result is appended.
-
-Inspection is read-only and uses bounded Worker/Container metadata reads. A
-fully accepted enabled terminal state, or an explicitly restored terminal state
-with its recorded edge and service acceptance, does not take a new transient
-Container-instance lifecycle sample during cleanup; it still re-verifies the
-exact Worker, configuration, image, application version, and journal head.
-Other recovery states retain the lifecycle check. For a disabled target it also
-confirms both public routes still return the fixed 503 response. A
-completed runner and saved artifact cannot make pending or unknown work
-cleanup-eligible. Do not rerun an uncertain release or manually continue its upload steps. GitHub ref deletion has
-no compare-and-swap parameter: the final read/delete pair cannot fence an
-out-of-protocol actor replacing the ref in that interval. All release clients
-must honor the no-steal rule.
-
-Both inspection and finalization require the applicable recorded application
-version, configuration digest and starting enabled flag. Old or incomplete journals remain readable but
-cannot authorize cleanup. Enabled recovery permits the fixed inactive assignment
-or one matching running instance; disabled recovery requires both public routes
-to remain disabled and the Container instance to be inactive. Neither
-operation wakes or polls a Container. Finalization independently requires both
-evidence-saved and stopped-runner attestations, then rechecks the remote head.
-Rollback and failure recovery also verify configuration, image, application
-version and instance state before claiming a known result. A Worker-only rollback
-is not proof of image restoration. These local safeguards do not authorize a
-production mutation.
-
-Wrangler's Container list can lag an active rollout. Use
-`wrangler containers list --env production --json` only to discover the single
-application ID, then use `wrangler containers info APPLICATION_ID --env production --json`
-for authoritative image and application-version reads. Match that version to
-the single accepted instance before reporting convergence.
-
-The production workflow runs image retention immediately after exact runtime
-acceptance. It requires two identical complete inventory/reference snapshots in
-that run, then deletes safe surplus tags from the exact production registry
-repository one at a time, rechecking active/recovery references and the
-tag-to-digest mapping before each delete and requiring fresh inventory readback
-afterward. Registry layer garbage collection and ledger completion happen only
-after the plan is satisfied. Uncertain results stop for an explicit resume; they
-do not trigger a blind retry, deployment rollback, or kill-switch change. The
-The operation also inspects Container instance versions before planning: active
-instances must match the current application version, and provisioning,
-stopping, mixed-version, or otherwise unknown states hold cleanup.
-
-Cleanup claims the same `codex-lock/nemlig-production` ref used by production
-deployments, so local supervised deploys and post-deploy pruning cannot overlap.
-Each tag deletion first records a durable in-flight tag/digest intent. If a
-runner disappears, the next operation may reclaim only a retention-owned lock
-whose prior GitHub run is complete; it reads the registry before continuing.
-An absent tag resolves the old intent, while a still-present tag remains
-uncertain and is never blindly deleted again. A deployment-owned or malformed
-lock is not taken over.
-
-The retention job uses short-lived pull credentials for inventory and requests
-push credentials only after the two snapshots match and deletion begins. A
-GitHub ledger branch records accepted releases and cleanup checkpoints.
-`NEMLIG_CONTAINER_IMAGE_RETENTION_COUNT` defaults to 10 distinct accepted
-images. If cleanup is interrupted or uncertain, use the protected workflow's
-`resume_retention` input with the accepted commit SHA after the previous run has
-finished; the operation re-reads current state before continuing. The job does
-not remove Worker deployments/versions, secrets, Durable Object state, Container
-applications, or any other registry repository. Deployment still keeps the
-existing one `lite` Container and bounded-work safeguards; image pruning does not add
-runtime capacity or perform basket/order/payment/delivery operations.
-
-The workflow summary separates deployment, technical acceptance, owner
-acceptance, retention cleanup, and traffic measurement. Owner acceptance is
-always reported as not run by CI, and configured routing is not presented as
-measured request traffic. Cleanup is `complete` only when the retention report
-proves completion; protected or untracked images are reported as
-`held/incomplete` with their safe reasons and digests. A missing retention
-report, dry run, unstable inventory, failed operation, or uncertain delete is
-reported separately and preserves the non-zero retention exit status. A
-missing `retention-ledger.json` fails closed when the ledger branch already
-exists; only a branch created by the current run may initialize an empty ledger.
-
-Worker-version retention is a separate policy from Container-image retention.
-After a successful image-retention stage, the protected workflow takes the
-same `codex-lock/nemlig-production` lease, lists every production Worker
-version through the paginated Cloudflare API, calculates a fixed UTC cutoff of
-48 hours, and considers only older versions for deletion. The current serving
-version and recovery references derived from the exact deployment journal are
-always protected; operator-supplied recovery IDs require explicit reviewed
-resume evidence. Each deletion records a bounded durable Worker report before
-and after the provider request, is revalidated against a fresh complete list,
-and must be absent on readback. An uncertain response holds the lease and
-stops without a blind retry; use the protected workflow's
-`resume_worker_retention` input only after reconciling the durable report and
-provider state. The one-time historical cleanup is not evidence that this
-policy has run, and no Worker-version deletion is authorized by local tests
-alone.
-
-### Configuration and recovery disposition
-
-The current production binding inventory is intentionally small. Active
-runtime consumers are `MCP_ENABLED`, timeout variables, the Auth0
-issuer/audience and public URL, the service-acceptance identity, the credential
-key version, `NEMLIG_MCP_PRINCIPALS`, and the `NEMLIG_MCP_CONTAINER` and
-`NEMLIG_PLAN_STORAGE` Durable Object bindings. The HTTP host/port values are
-consumed by the Container auth bootstrap and are validated even though the
-Worker supplies the fixed production values. `PlanStorage` is dormant for
-current shopping behavior but retained for schema/tombstone compatibility and
-rollback; its removal is not part of deployment cleanup.
-
-`MCP_MINIMAL_AUTH_ENABLED` and `NEMLIG_MCP_AUTH_CANARY` are legacy dashboard
-bindings: the exact production deploy removes them from the active plaintext
-configuration and tests reject their redeployment. Encrypted principal data,
-the credential-key binding, Durable Object migrations, and rollback material
-remain required. The deployment lease, remote journal, local artifact mirror,
-and retention lease are all still consumed by runner-loss recovery; their
-ownership and readback checks are not redundant and must not be replaced by
-age or TTL decisions.
+This historical synthetic edge/service acceptance is not fresh production or
+family acceptance evidence.
 
 ## Emergency disable and re-enable
 
@@ -626,9 +305,10 @@ same disabled version, reverified HTTP 503 and no running Container, then restor
 
 The dated deployment and acceptance observations below are historical evidence,
 not current incident instructions or permanent live-state claims. For current
-state use the exact-SHA workflow summary, fresh read-only provider inventory,
-and the recovery procedures above; do not repeat an old rollback, credential
-repair, or cleanup action merely because it appears in this archive.
+state use the exact-SHA workflow summary and fresh read-only provider
+inventory; follow **Correct a failed deployment** for failures. Do not repeat
+an old rollback, credential repair, or cleanup action merely because it appears
+in this archive.
 
 The 2026-09-01 hosted-app acceptance deployed disabled version
 `3e24b2b8-596c-4494-b338-593ba9478fa0`, observed HTTP 503 on both routes and an
@@ -886,30 +566,15 @@ If any identity, credential or state boundary is uncertain, keep
 the invitee disabled and restore the last verified policy. Invitee activation
 does not authorize a basket mutation.
 
-## Roll back
+## Correct a failed deployment
 
-Use the protected production recovery path to restore the last recorded
-verified Worker and Container image while keeping service available. Do not
-disable the app as a routine rollback step. If there is an active incident that
-requires containment, `MCP_ENABLED=false` is emergency isolation only; preserve
-the recovery evidence and restore an accepted enabled release as soon as the
-incident permits. Never perform a blind rollback or weaken authorization.
-
-For owner-directed emergency recovery, select the last recorded verified
-deployment in Cloudflare or redeploy its exact Git commit only through the
-repository's protected recovery procedure:
-
-```sh
-git switch --detach VERIFIED_COMMIT
-pnpm install --frozen-lockfile
-pnpm --filter nemlig-assistant cloudflare:check
-pnpm --filter nemlig-assistant exec wrangler deploy --env production
-```
-
-Verify the restored revision, its compatible private configuration, Auth0
-rejection and read-only flow. Clear emergency isolation only after the accepted
-service is proven. Never roll back by weakening authorization or creating
-another Container.
+There is no automated rollback or recovery workflow. Before changing
+production after a failed or interrupted release, inspect the live Worker,
+Container image/application version, rollout state, and read-only edge behavior
+in Cloudflare. Do not infer the active state from the workflow result alone.
+Choose a corrective deployment only after the actual state and target revision
+are understood and reviewed. Emergency disable remains a separate manual
+containment action.
 
 ## Remove the deployment
 
