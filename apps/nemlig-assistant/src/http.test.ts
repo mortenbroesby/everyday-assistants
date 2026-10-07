@@ -198,7 +198,7 @@ test("HTTP MCP advertises Auth0, rejects anonymous and foreign origins, and pres
       resource: config.publicUrl.href,
       authorization_servers: [config.issuer.href],
       scopes_supported: [config.requiredScope],
-      resource_name: "MoJo Shopper",
+      resource_name: "Nemlig Assistant",
     });
     const health = await (await fetch(`${base}/healthz`)).json();
     const readiness = await (await fetch(`${base}/readyz`)).json();

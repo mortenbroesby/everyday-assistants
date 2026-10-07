@@ -53,7 +53,7 @@ const isJoseValidationError = (error: unknown): boolean => {
 };
 
 export const oauthReconnectChallenge = (publicUrl: URL): string =>
-  `Bearer resource_metadata="${getOAuthProtectedResourceMetadataUrl(publicUrl)}", error="invalid_token", error_description="Reconnect MoJo Shopper to continue"`;
+  `Bearer resource_metadata="${getOAuthProtectedResourceMetadataUrl(publicUrl)}", error="invalid_token", error_description="Reconnect Nemlig Assistant to continue"`;
 
 const invalidAccessToken = (): OAuthError => new OAuthError("invalid_token", "Invalid access token");
 
