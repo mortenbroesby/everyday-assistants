@@ -269,6 +269,12 @@ limits, effective configuration checks, revision readback, and read-only edge
 and service acceptance. It never requests an owner access token, password, or
 browser session.
 
+GitHub's queued workflow run is the release event consumer. Cloudflare does not
+provide a Worker-plus-Container completion callback that proves this workflow's
+exact revision, image, application version, edge revision, and authenticated
+MCP fixture; Workers Builds events and generic notifications are therefore not
+substitutes for the bounded readback and acceptance checks below.
+
 Historical observation (not current delivery evidence): the latest routine
 technical acceptance recorded at the time of this note completed for repository SHA
 `d5e62e6d5259e50ff668d26652a977009add565d` in [protected workflow
@@ -291,10 +297,16 @@ not a fresh real-family Nemlig or ChatGPT acceptance claim.
    environment before the privileged job. A candidate already superseded by a
    deployed descendant stops before provider mutation. It also reads the shared
    production lease: a held lease reports `blocked_by_existing_lease` with the
-   candidate and lease head, then skips deploy, finalization, and retention.
-   That is not a successful deployment or a live-revision check; resolve it
-   only through explicit protected reconciliation. Atomic lease acquisition
-   remains the authoritative race check immediately before mutation.
+   candidate and lease head. For a queued trusted `main` candidate only, the
+   workflow may inspect and finalize that predecessor when its unexpired
+   `nemlig-production-release` artifact, completed GitHub runner, saved journal,
+   terminal acceptance, exact Worker/configuration/image/application readback,
+   and lease head all match. It then reads back the deleted remote ref, repeats
+   its own exact-source preflight, and acquires a fresh lease before deployment.
+   Missing evidence, pending acceptance, drift, or an unknown mutation leave
+   the predecessor lease intact and the candidate blocked—there is no automatic
+   rollout, restore, rollback, or retry. Atomic lease acquisition remains the
+   authoritative race check immediately before mutation.
 3. The protected job builds and deploys the exact SHA, records the bounded
    report and journal, runs the configured edge/service acceptance, and
    automatically finalizes a known terminal routine run after the artifact is
@@ -303,9 +315,11 @@ not a fresh real-family Nemlig or ChatGPT acceptance claim.
    [ChatGPT UI acceptance](nemlig-production-readiness.md#ui-release-acceptance-required-for-ui-delivery)
    before being reported delivered; the workflow cannot refresh the owner's
    installed ChatGPT app metadata.
-4. Routine delivery starts automatically after successful CI. Manual dispatch
-   is reserved for recovery to a previously green `main` ancestor or for
-   reconciling one explicitly identified pending rollback. GitHub's
+4. Routine delivery starts automatically after successful CI. A queued routine
+   candidate can perform the narrow terminal predecessor finalization described
+   above; manual dispatch is otherwise reserved for recovery to a previously
+   green `main` ancestor or for reconciling one explicitly identified pending
+   rollback. GitHub's
    native concurrency queue retains at most 100 pending runs and orders them by
    when they began waiting, not by source-event dispatch time. There is no
    hourly catch-up job, durable delivery queue, or automatic replay layer; this
@@ -467,9 +481,14 @@ mutation.
 Other supported recovery phases still require their exact journal and provider
 readback before the terminal result is appended.
 
-Inspection is read-only and uses four bounded Worker/Container metadata reads;
-for a disabled target it also confirms both public routes still return the fixed
-503 response. A stopped-runner attestation cannot make pending or unknown work
+Inspection is read-only and uses bounded Worker/Container metadata reads. A
+fully accepted enabled terminal state, or an explicitly restored terminal state
+with its recorded edge and service acceptance, does not take a new transient
+Container-instance lifecycle sample during cleanup; it still re-verifies the
+exact Worker, configuration, image, application version, and journal head.
+Other recovery states retain the lifecycle check. For a disabled target it also
+confirms both public routes still return the fixed 503 response. A
+completed runner and saved artifact cannot make pending or unknown work
 cleanup-eligible. Do not rerun an uncertain release or manually continue its upload steps. GitHub ref deletion has
 no compare-and-swap parameter: the final read/delete pair cannot fence an
 out-of-protocol actor replacing the ref in that interval. All release clients

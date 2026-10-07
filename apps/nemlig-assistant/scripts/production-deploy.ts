@@ -1490,10 +1490,14 @@ const knownTerminal = (journal: DeploymentJournal): boolean => {
       || (journal.rollback === "not_needed" && result.phase === "enable_deploy"));
 };
 
-const restoredAcceptanceMakesLifecycleReadRedundant = (journal: DeploymentJournal): boolean =>
-  journal.lastVerifiedState === "restored"
-  && ["container_restore_explicit_authorized_retry", "starting_version_restored", "edge_acceptance", "service_fixture_acceptance"]
-    .every((check) => journal.checks.includes(check));
+const acceptedTerminalMakesLifecycleReadRedundant = (journal: DeploymentJournal): boolean =>
+  (journal.lastVerifiedState === "enabled"
+    && knownTerminal(journal)
+    && journal.checks.includes("edge_acceptance")
+    && (journal.checks.includes("authenticated_read_only_acceptance") || journal.checks.includes("service_fixture_acceptance")))
+  || (journal.lastVerifiedState === "restored"
+    && ["container_restore_explicit_authorized_retry", "starting_version_restored", "edge_acceptance", "service_fixture_acceptance"]
+      .every((check) => journal.checks.includes(check)));
 
 export async function inspectDeploymentRecovery(operation: string, deps: DeployDependencies, originalRunnerStopped = false): Promise<RecoveryInspection> {
   if (!operationId.test(operation)) return { operation, originalRunnerStopped, cleanupEligible: false, reason: "operation_mismatch", state: "unknown" };
@@ -1508,7 +1512,7 @@ export async function inspectDeploymentRecovery(operation: string, deps: DeployD
         ? "provider_outcome_unknown" : "pending_or_unknown";
       return { operation, originalRunnerStopped, cleanupEligible: false, reason, state: "unknown" };
     }
-    if (!await verifyRecoveryTarget(deps, expected, !restoredAcceptanceMakesLifecycleReadRedundant(journal))) {
+    if (!await verifyRecoveryTarget(deps, expected, !acceptedTerminalMakesLifecycleReadRedundant(journal))) {
       return { operation, originalRunnerStopped, cleanupEligible: false, reason: "provider_drift", state: "unknown" };
     }
     if (!originalRunnerStopped) return { operation, originalRunnerStopped, cleanupEligible: false, reason: "runner_not_stopped", state: expected.state };
@@ -1547,7 +1551,7 @@ export async function finalizeDeploymentRecovery(operation: string, deps: Deploy
   const { journal } = remote;
   const expected = expectedRecovery(journal);
   if (journal.operationId !== operation || !knownTerminal(journal) || !expected) return false;
-  if (!await verifyRecoveryTarget(deps, expected, !restoredAcceptanceMakesLifecycleReadRedundant(journal))) return false;
+  if (!await verifyRecoveryTarget(deps, expected, !acceptedTerminalMakesLifecycleReadRedundant(journal))) return false;
   // Compare the containing ref head, never journal.remoteCommit supplied by the blob.
   return releaseDeploymentLeases(deps, repo.nameWithOwner, remote.head, operation);
 }
