@@ -383,3 +383,94 @@ endpoint. A simultaneous change made directly on Nemlig.com after our last read
 but before its absolute setter is an external race the assistant cannot
 eliminate; do not claim cross-client atomicity. The assistant itself must never
 intentionally submit zero or a quantity at or below its last observed line.
+
+## 8 October staged visual refinement
+
+The current React viewer (`src/picker/product-viewer.tsx`) already uses the
+authoritative snapshot and performs local editing through the existing
+revision-checked tool path. The refinement therefore changes the composition,
+hierarchy, copy and native controls in that component; it does not add a second
+browser business model or another page/router.
+
+### Story gates
+
+Before Story 1, record a bounded native ChatGPT v8 baseline: served resource
+URI, explicit activation, a local destination change, and whether the mounted
+frame remains visible. This is an evidence gate, not a reason to delay a
+presentational fix indefinitely. If the host fails before the viewer loads,
+record that boundary and test the story locally; do not invent a viewer
+workaround.
+
+Each story has the same release boundary: one focused PR, the normal local
+tests and browser smoke, versioned viewer identity/release evidence when viewer
+HTML changes, exact-head CI, merge/release, then a separately recorded native
+ChatGPT smoke before the next story begins. A failed or unavailable native
+smoke blocks the next story but does not rewrite the completed local evidence.
+
+1. **Compact product-row foundation.** Rework existing To decide and Ready
+   rows for scanability—image, name, pack/brand, quantity and line price—while
+   retaining accessible native disclosure controls and the existing supplied
+   facts. There are no server or provider calls for expanding a row or factual
+   detail. This story does not add new destinations or actions.
+2. **Local selection action hierarchy.** Make batch acceptance the sole To
+   decide acceptance path and make Ready's existing per-row move-back/remove
+   paths discoverable through expansion. Remove redundant summary/banner or
+   action clutter rather than adding controls. Keep the one relevant primary
+   action in each state; local destructive operations retain an explicit local
+   confirmation and name that they never alter the Nemlig basket.
+3. **Contextual alternatives comparison.** Keep the current product distinct
+   without an internal divider, show returned alternatives as immediately
+   comparable product information rather than a second hidden accordion, and
+   preserve the existing current-candidate-only replacement path. No candidate
+   can be accepted implicitly.
+4. **Outcome and entry states.** Simplify exact confirmation, success,
+   unavailable and empty views. Empty starter suggestions are conversational
+   suggestions only unless a standard host follow-up/message API is verified;
+   they never start provider work or mutate a selection by themselves. A
+   compact overflow menu may contain only already-supported local actions.
+   It must not claim that it can close the host card or open nemlig.com until
+   that exact host capability is observed and tested.
+
+### Interaction decisions
+
+- Use native buttons, `<details>` or their equivalent accessible controls for
+  every in-view disclosure. Checkboxes stop propagation from row expansion.
+  Presentational expansion, selection and scroll state may be local; membership,
+  quantity, state, revisions, alternatives and submission remain server-owned.
+- The ready count belongs in the destination tab, not in a second green
+  summary banner. A card must not show an action that does not apply to its
+  destination or mode.
+- Ready does not offer alternatives. Expanded Ready rows expose only local
+  remove and return-to-To-decide actions; expanding To decide exposes quantity,
+  supplied factual information and alternative choice. The actual basket write
+  remains in the exact confirmation path.
+- Alternative cards show the supplied comparison facts immediately. Long
+  declaration/detail text may retain labelled factual disclosures, but the
+  row's identity, size, price, unit price and relevant badges are not hidden
+  behind an additional product accordion.
+- Success is a distinct verified outcome. Empty is the zero-selection entry
+  surface, not a replacement for verified success.
+
+### Rejected approaches
+
+- **New UI resource or client router:** rejected; the current viewer resource
+  and server snapshot are sufficient and another lifecycle creates new cached
+  resource and state risks.
+- **Automatic reopen/close behavior:** rejected; it would hide a host lifecycle
+  failure and cannot prove a mounted card persists. Continue to diagnose a
+  demonstrated lifecycle fault at the host/viewer boundary.
+- **Direct empty-state provider actions or a second submit tool:** rejected;
+  conversational starters and presentation affordances cannot bypass the
+  existing exact authorization, freshness, single-use, readback and no-retry
+  boundary.
+
+### Risks / trade-offs
+
+- **A visual simplification hides a necessary safety step** → Keep exact
+  prepared confirmation and local-clear confirmation visible in their relevant
+  contexts; assert actions and provider-call counts in existing loopback tests.
+- **A cached viewer mismatches a changed resource** → follow existing resource
+  versioning and retired-resource rules; native acceptance records the served
+  URI rather than assuming a refresh succeeded.
+- **A host control is unavailable** → render the correct static/conversational
+  fallback and do not add speculative APIs, message heuristics or `requestClose`.
