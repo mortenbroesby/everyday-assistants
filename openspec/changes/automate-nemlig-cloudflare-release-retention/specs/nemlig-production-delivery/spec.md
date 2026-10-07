@@ -56,7 +56,12 @@ Routine delivery SHALL verify the exact deployed source revision, health, OAuth 
 #### Scenario: A new Worker reaches a previous Container image during rollout
 
 - **WHEN** the enabled Worker reports the candidate revision but the authenticated MCP connection still identifies an earlier backend release, or the candidate instance has not started
-- **THEN** an authenticated MCP initialization verifies the server package release without calling tools or reading resources, acceptance waits within a fixed budget for the exact candidate application version to be running, and only then exercises the read-only service fixture; final running-version, Worker revision, image, and lease checks remain required, and any exhaustion fails closed without authorizing image retention
+- **THEN** a connection-only authenticated MCP wake performs no tool/resource/provider operation, acceptance waits within a fixed budget for the exact candidate application version to be running, then verifies the server package release without calling tools or reading resources, and only then exercises the read-only service fixture; final running-version, Worker revision, image, and lease checks remain required, and any exhaustion fails closed without authorizing image retention
+
+#### Scenario: A candidate differs from its prior release while an interrupted restore is reconciled
+
+- **WHEN** an exact recorded candidate Worker/image/application tuple is still live and its configuration digest differs from the prior accepted release
+- **THEN** protected reconciliation may use that candidate tuple to authorize its single recorded immutable-image restore, but it MUST prove the prior digest only after the prior Worker/image pair has been restored; a different Worker version, source revision, enabled state, image, application version, or active rollout fails closed without a restore request
 
 #### Scenario: Final running-instance convergence is diagnosable without widening provider reads
 

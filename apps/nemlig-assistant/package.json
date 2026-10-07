@@ -1,6 +1,6 @@
 {
   "name": "nemlig-assistant",
-  "version": "6.1.5",
+  "version": "6.1.6",
   "private": true,
   "description": "Safe local Nemlig Assistant CLI and MCP server",
   "type": "module",
@@ -90,6 +90,6 @@
     "wrangler": "4.127.1"
   },
   "nemligRelease": {
-    "codename": "Beacon"
+    "codename": "Waypoint"
   }
 }
