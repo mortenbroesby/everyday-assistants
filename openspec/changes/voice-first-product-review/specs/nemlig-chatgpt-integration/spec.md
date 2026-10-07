@@ -1,112 +1,53 @@
 ## MODIFIED Requirements
 
 ### Requirement: Shared product viewer and exact basket review
-The integration SHALL use one shared product presentation for conversational and
-touch review. Local Ready is a shortlist of resolved products, not the actual
-Nemlig basket. Both input modes SHALL address exact products in the same temporary
-draft and support acceptance, changes, removal, quantities and safe navigation.
-Actual submission SHALL use the existing exact proposal/apply safety engine.
-A clear conversational add instruction authorizes only the unchanged current
-Ready payload; the viewer still requires its exact on-screen confirmation.
+The integration SHALL use one shared product presentation for conversational and touch decisions in the temporary Draft list. Ready SHALL be a local selection of accepted products, not the actual Nemlig basket. Both input modes SHALL address exact products in the same Draft list and support acceptance, changes, removal, quantities, and safe navigation. Business state SHALL remain server-authoritative. Actual submission SHALL use the existing exact proposal safety engine only after a clear instruction to add the unchanged Ready items or explicit approval of the exact prepared effect.
 
 #### Scenario: Product review is operated by voice
-- **WHEN** the user accepts some products, changes another, or requests remaining
-  unresolved items conversationally
-- **THEN** the resulting snapshot matches the equivalent touch operations
-
-#### Scenario: User approves the exact basket review
-- **WHEN** the user requests submission and approves the exact current review
-- **THEN** the integration performs fresh validation, single-use application and
-  verified basket readback without clearing unrelated Nemlig basket lines
-
-#### Scenario: Viewer is unavailable
-- **WHEN** the client cannot render or operate the resource
-- **THEN** the same snapshot, product facts, explicit submission review and local
-  operations remain available through structured tools and conversation
+- **WHEN** the user accepts some products, changes another, or requests remaining To decide items conversationally
+- **THEN** the resulting Draft list snapshot matches the equivalent touch operations
 
 #### Scenario: Complete product result is shown
-- **WHEN** a search or exact lookup contains resolved products
-- **THEN** every product appears once with its supported exact facts and context;
-  local draft controls never apply provider mutations or imply approval; the
-  separate protected submission confirmation may apply an exact prepared change
+- **WHEN** a search contains resolved products
+- **THEN** every product appears once with its supported exact facts and context, without an automatic provider call or implied approval; Draft list controls make no provider mutation
 
-### Requirement: Direct normal ChatGPT use
-
-The system SHALL support independent product search, exact product lookup,
- basket inspection, exact basket review, and authorized protected apply in normal
-ChatGPT conversations without requiring Codex, a saved planner, or a picker.
-Selected local review results render through one shared product viewer, with
-complete conversational structured/text fallbacks.
-
-#### Scenario: User searches for products
-
-- **WHEN** the private app is available and the user asks for products by an
-  open-ended term such as “salmiak,” including while another selection product
-  or alternatives view exists
-- **THEN** ChatGPT receives richly detailed products in provider order and may
-  summarize them without mounting a viewer or binding the query to that product;
-  search leaves existing selection membership unchanged
-
-#### Scenario: Catalogue search fails
-- **WHEN** the provider returns an HTTP error instead of a successful search response
-- **THEN** ChatGPT explains that the search failed, not that no products matched;
-  a successful empty response is reported separately and neither outcome changes
-  local selection or actual basket
+#### Scenario: User authorizes the exact basket addition
+- **WHEN** the user clearly requests addition of the unchanged Ready items or explicitly approves the exact prepared effect
+- **THEN** protected submission performs fresh validation, single-use application, and verified basket readback without clearing unrelated Nemlig lines or retrying an uncertain write
 
 #### Scenario: Viewer is unavailable
+- **WHEN** the client cannot render MCP Apps
+- **THEN** the same Draft list snapshot, product facts, explicit submission effect, and local operations remain available through structured tools and conversation
 
+### Requirement: Direct normal ChatGPT use
+The system SHALL support independent product search, actual Nemlig basket inspection, temporary Draft list choices, and explicitly authorized Ready submission in normal ChatGPT conversations without requiring Codex, a saved planner, or a picker. Draft list results MAY render through one shared product viewer, with complete conversational structured and text fallbacks.
+
+#### Scenario: User searches for products
+- **WHEN** the private app is available and the user asks for products
+- **THEN** ChatGPT receives richly detailed products in provider order and may summarize them without mounting a viewer, then explicitly open one Draft list for selected products
+
+#### Scenario: Viewer is unavailable
 - **WHEN** the client cannot render the optional shared viewer
-- **THEN** ChatGPT continues with the same structured and readable product data
-  without requiring UI
+- **THEN** ChatGPT continues with the same structured and readable product data without requiring UI
 
-#### Scenario: User approves an exact addition
-
-- **WHEN** the user explicitly approves an unchanged exact review
-- **THEN** ChatGPT can invoke the protected apply tool and receive verified
-  basket readback
-
+#### Scenario: User authorizes an exact addition
+- **WHEN** the user clearly requests the unchanged Ready items or explicitly approves the exact prepared effect
+- **THEN** ChatGPT can invoke protected Draft list submission and receive verified Nemlig basket readback
 
 ### Requirement: Human-friendly shopping conversation
-
-The direct ChatGPT integration SHALL describe products, basket changes, and
-verified results like a household shopping assistant rather than a transaction
-log. It SHALL distinguish local selection changes from Nemlig changes. A clear
-conversational instruction to add the current Ready selection authorizes only
-that unchanged exact prepared payload; other actual basket changes require
-explicit approval of the exact unchanged proposal.
+The direct ChatGPT integration SHALL describe products, Draft list decisions, Nemlig basket changes, and verified results like a household shopping assistant rather than a transaction log. It SHALL distinguish local choices from provider state and require a clear user instruction for the exact unchanged Ready addition before a basket write.
 
 #### Scenario: ChatGPT reviews a prepared change
-
-- **WHEN** ChatGPT receives a valid basket proposal without exact user authorization
-- **THEN** it presents a clean summary of what would change and asks one simple
-  approval question without showing opaque protocol fields by default
-
-#### Scenario: User already instructed an exact Ready addition
-- **WHEN** the user clearly asks to add the current Ready selection to the real
-  Nemlig basket and the Ready IDs/quantities remain unchanged during preparation
-- **THEN** the assistant applies exactly the freshly prepared payload without
-  repeating a redundant conversational approval question
-- **AND** if scope is ambiguous or any Ready line changed after that instruction,
-  it asks which exact current products and quantities the user means instead
+- **WHEN** a Draft list submission is prepared without a clear instruction to add the unchanged Ready items
+- **THEN** ChatGPT presents the exact effect in plain language and asks for approval without showing opaque protocol fields by default
 
 #### Scenario: User requests product comparison
-
 - **WHEN** the user asks to see or compare products
-- **THEN** ChatGPT presents current names, brands, package sizes, prices,
-  descriptions, supported facts, and safe images when available without
-  changing the basket
+- **THEN** ChatGPT presents current names, brands, package sizes, prices, descriptions, supported facts, and safe images when available without changing the basket
 
 #### Scenario: ChatGPT confirms a verified result
-
-- **WHEN** explicitly approved basket additions succeed and fresh readback
-  matches
-- **THEN** ChatGPT confirms the resulting shopping outcome without narrating
-  proposal lifecycle or protocol mechanics
-
-#### Scenario: Host initializes or fails
-- **WHEN** the host supports the standard MCP Apps bridge
-- **THEN** the viewer initializes before receiving results, renders explicit tool
-  errors or cancellation, and offers a conversational fallback after loading times out
+- **WHEN** explicitly authorized basket additions succeed and fresh readback matches
+- **THEN** ChatGPT confirms the resulting shopping outcome without narrating proposal lifecycle or protocol mechanics
 
 ## ADDED Requirements
 

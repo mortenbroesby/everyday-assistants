@@ -10,18 +10,9 @@ interface ToolResult {
 }
 
 export const productionToolInventory = {
-  readOnly: [
-    "find_groceries", "get_profile", "show_my_favorites", "show_grocery_sections",
-    "browse_grocery_section", "check_nemlig_connection", "reconnect_nemlig_assistant", "show_my_basket", "show_my_basket_visually", "get_grocery_details",
-  ],
-  prepareOnly: [
-    "review_items_to_add",
-  ],
+  readOnly: ["find_groceries", "check_nemlig_connection", "show_my_basket"],
   localState: ["start_product_review", "update_product_review"],
-  externalState: [
-    "submit_product_review",
-    "add_approved_items",
-  ],
+  externalState: ["submit_product_review"],
 } as const;
 
 export const productionResourceInventory = [PRODUCT_VIEWER_RESOURCE_URI, ...RETIRED_PRODUCT_VIEWER_RESOURCE_URIS] as const;
@@ -95,7 +86,7 @@ export function assertProductionInventory(
   assert.deepEqual(resources.map(({ uri }) => uri).sort(), [...productionResourceInventory].sort(), "Production MCP resource inventory drifted");
   for (const name of prohibitedProductionTools) assert.equal(tools.some((tool) => tool.name === name), false, `Prohibited production capability advertised: ${name}`);
   const metadata = new Map(tools.map(({ name, _meta }) => [name, _meta]));
-  for (const name of ["show_my_basket_visually", "start_product_review", "update_product_review", "submit_product_review"] as const) {
+  for (const name of ["start_product_review", "update_product_review", "submit_product_review"] as const) {
     const actual = metadata.get(name);
     assert.ok(actual && typeof actual === "object", `Production ${name} metadata drifted`);
     const value = actual as Record<string, unknown>;
@@ -106,10 +97,8 @@ export function assertProductionInventory(
     assert.equal(value["openai/outputTemplate"], PRODUCT_VIEWER_RESOURCE_URI, `Production ${name} output template metadata drifted`);
     if (name === "submit_product_review") {
       assert.equal(value["openai/widgetAccessible"], undefined, `Production ${name} widget accessibility metadata drifted`);
-    } else if (name !== "show_my_basket_visually") {
-      assert.equal(value["openai/widgetAccessible"], true, `Production ${name} widget accessibility metadata drifted`);
     } else {
-      assert.equal(value["openai/widgetAccessible"], undefined, `Production ${name} widget accessibility metadata drifted`);
+      assert.equal(value["openai/widgetAccessible"], true, `Production ${name} widget accessibility metadata drifted`);
     }
   }
 }
@@ -239,18 +228,9 @@ export async function verifyReadOnlyProductionFeatures(
   const searched = await call<{ result?: Array<{ id?: number }> }>("find_groceries", { search_term: "banan", result_count: 3 });
   const productIds = (searched.result ?? []).flatMap(({ id }) => typeof id === "number" && Number.isInteger(id) && id > 0 ? [id] : []);
   assert.ok(productIds.length, "Production product search returned no usable product");
-  await call("get_grocery_details", { product_id: productIds[0] });
-  const favorites = await call<{ result?: unknown[] }>("show_my_favorites", { search_term: "banan", result_count: 1, page: 1 });
-  assert.ok(Array.isArray(favorites.result) && favorites.result.length <= 1, "Favorites acceptance exceeded one result");
-  const departments = await call<{ departments?: Array<{ id?: string }> }>("show_grocery_sections");
-  const departmentId = departments.departments?.find(({ id }) => id)?.id;
-  if (departmentId) await call("browse_grocery_section", { section: departmentId, result_count: 3, page: 1 });
-  else unavailable.push("browse_grocery_section:no_section");
 
   const current = await call<Basket>("show_my_basket");
   assert.ok(Array.isArray(current.items), "show_my_basket returned no basket items");
-  const visual = await call<Basket>("show_my_basket_visually");
-  assert.ok(Array.isArray(visual.items), "show_my_basket_visually returned no basket items");
   return { exercised, unavailable };
 }
 
@@ -296,16 +276,9 @@ export async function verifyServiceAcceptanceFeatures(
   const searched = content<{ result?: Array<{ id?: number }> }>(await call("find_groceries", { search_term: "banan", result_count: 1 }), "find_groceries");
   const productId = searched.result?.find(({ id }) => typeof id === "number")?.id;
   assert.ok(productId, "Service product search returned no usable product");
-  content(await call("get_grocery_details", { product_id: productId }), "get_grocery_details");
-  content(await call("show_my_favorites", { search_term: "banan", result_count: 1, page: 1 }), "show_my_favorites");
-  const sections = content<{ departments?: Array<{ id?: string }> }>(await call("show_grocery_sections"), "show_grocery_sections");
-  const section = sections.departments?.find(({ id }) => id)?.id;
-  assert.ok(section, "Service grocery sections returned no usable section");
-  content(await call("browse_grocery_section", { section, result_count: 1, page: 1 }), "browse_grocery_section");
   basket(await call("show_my_basket"), "show_my_basket");
-  basket(await call("show_my_basket_visually"), "show_my_basket_visually");
   const denied: string[] = [];
-  for (const name of ["review_items_to_add", "add_approved_items"]) {
+  for (const name of ["start_product_review", "update_product_review", "submit_product_review"]) {
     try {
       requestCount += 1;
       const result = await withinTotalDeadline(name, () => client.callTool({ name, arguments: {} }));

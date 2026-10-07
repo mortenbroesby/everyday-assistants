@@ -97,28 +97,15 @@ The system SHALL advertise annotations that match each tool's actual behavior an
 - **THEN** no provider-basket replacement application tool is available
 
 ### Requirement: Approval remains explicit
+Connection access, app creation, proposal preparation, this OpenSpec, implementation work, product search, candidate visibility, and local Ready status SHALL NOT count as authorization to change the Nemlig basket. A clear user instruction to add the unchanged current Ready items or explicit approval of the exact prepared effect SHALL be required. Rendering or accepting a product in the Draft list SHALL NOT authorize a provider write.
 
-Tunnel access, app creation, proposal preparation, this OpenSpec, implementation work, product search, and candidate visibility SHALL NOT count as approval to apply a basket change. A clear user instruction to add the exact current unchanged Ready selection authorizes only the matching positive addition payload; other additions require explicit approval of the exact unchanged proposal. The viewer remains display-only and cannot approve or apply a proposal. No approval authorizes actual-basket removal, replacement, swap, quantity decrease, or clearing.
+#### Scenario: Exact Ready addition is authorized
+- **WHEN** the user clearly requests addition of unchanged Ready items or approves the exact prepared effect
+- **THEN** the model may call `submit_product_review` once subject to every proposal invariant
 
-#### Scenario: Exact proposal is approved
-
-- **WHEN** the user explicitly approves an exact unchanged additions proposal
-- **THEN** the model may invoke its apply tool once subject to every proposal invariant
-
-#### Scenario: User directly instructs adding the unchanged Ready selection
-
-- **WHEN** the user clearly instructs the assistant to add the exact current unchanged Ready selection
-- **THEN** that instruction authorizes only that exact positive addition payload without a redundant second conversational approval
-
-#### Scenario: Proposal exists without explicit approval
-
-- **WHEN** a valid proposal exists but the user has neither explicitly approved it nor clearly instructed the exact unchanged Ready selection to be added
-- **THEN** the model does not invoke its apply tool
-
-#### Scenario: Destructive provider change is requested
-
-- **WHEN** the user asks to remove, replace, swap, decrease, or clear actual Nemlig basket contents
-- **THEN** the assistant explains that the real basket is add-only through Nemlig Assistant and leaves it unchanged, regardless of approval
+#### Scenario: Ready items exist without authorization
+- **WHEN** Ready items exist but the user has not instructed their addition
+- **THEN** the model does not call `submit_product_review`
 
 ## REMOVED Requirements
 

@@ -61,18 +61,18 @@ test("viewer resource is accessible, self-contained, and uses only local review 
   const html = renderProductViewerHtml();
 
   assert.match(html, /<html lang="en">/u);
-  assert.match(html, /<title>Your Nemlig selection<\/title>/u);
-  assert.match(html, /aria-label="Selection destinations"/u);
-  assert.match(html, /Open current selection/u);
+  assert.match(html, /<title>Your draft list<\/title>/u);
+  assert.match(html, /aria-label="Draft list destinations"/u);
+  assert.match(html, /Open current draft list/u);
   assert.match(html, /To decide/u);
   assert.match(html, /Search for more products/u);
-  assert.match(html, /No new alternatives for this selection/u);
-  assert.match(html, /Loaded the current selection/u);
-  assert.match(html, /current selection to check its state/u);
-  assert.match(html, /Could not load the selection/u);
-  assert.match(html, /No current selection was returned/u);
-  assert.match(html, /reopen your current selection/u);
-  assert.match(html, /Open the current selection again when the connection is available/u);
+  assert.match(html, /No new alternatives for this draft list/u);
+  assert.match(html, /Loaded the current draft list/u);
+  assert.match(html, /current draft list to check its state/u);
+  assert.match(html, /Could not load the draft list/u);
+  assert.match(html, /No current draft list was returned/u);
+  assert.match(html, /reopen your current draft list/u);
+  assert.match(html, /Open the current draft list again when the connection is available/u);
   assert.match(html, /Inspect the actual Nemlig basket in conversation before preparing another Nemlig basket change/u);
   assert.match(html, /Inspect in conversation/u);
   assert.match(html, /Review exact change/u);

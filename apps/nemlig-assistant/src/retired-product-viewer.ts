@@ -2,16 +2,16 @@
 export function renderRetiredProductViewerHtml(): string {
   return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Selection card updated</title>
+<title>Draft list card updated</title>
 <style>body{font:16px system-ui,sans-serif;margin:0;padding:20px;color:#202124}main{max-width:38rem;margin:auto}button{font:inherit;padding:10px 14px;border:0;border-radius:8px;background:#176b45;color:white;cursor:pointer}p{line-height:1.5}</style></head>
-<body><main><h1>This selection card is retired</h1><p>Use your current Nemlig selection to continue. This card does not load or change shopping data.</p>
-<button id="open" type="button">Open current selection</button><p id="fallback" hidden>In the conversation, ask: “Open my current Nemlig selection.”</p></main>
+<body><main><h1>This draft list card is retired</h1><p>Use your current Draft list to continue. This card does not load or change shopping data.</p>
+<button id="open" type="button">Open current draft list</button><p id="fallback" hidden>In the conversation, ask: “Open my current Draft list.”</p></main>
 <script>
 (() => {
   "use strict";
   const button = document.getElementById("open");
   const fallback = document.getElementById("fallback");
-  const prompt = "Open my current Nemlig selection.";
+  const prompt = "Open my current Draft list.";
   let requestNumber = 0;
   const request = (method, params, timeoutMs) => new Promise((resolve, reject) => {
     const id = "retired-selection-" + (++requestNumber);
@@ -37,7 +37,7 @@ export function renderRetiredProductViewerHtml(): string {
   button.addEventListener("click", async () => {
     if (button.disabled) return;
     button.disabled = true;
-    button.textContent = "Opening current selection…";
+    button.textContent = "Opening current draft list…";
     if (window.openai && typeof window.openai.sendFollowUpMessage === "function") {
       let timer;
       try {
@@ -60,8 +60,8 @@ export function renderRetiredProductViewerHtml(): string {
       window.parent.postMessage({ jsonrpc: "2.0", method: "ui/notifications/initialized", params: {} }, "*");
     } catch {
       button.disabled = false;
-      button.textContent = "Open current selection";
-      showFallback("In the conversation, ask: “Open my current Nemlig selection.”");
+      button.textContent = "Open current draft list";
+      showFallback("In the conversation, ask: “Open my current Draft list.”");
       return;
     }
     try {

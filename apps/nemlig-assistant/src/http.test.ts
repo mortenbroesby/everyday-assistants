@@ -129,7 +129,7 @@ test("loopback MCP bursts use encrypted credential admission without usage limit
       assert.notEqual(result.isError, true);
     }
     for (let index = 0; index < 30; index += 1) {
-      const result = await client.callTool({ name: "add_approved_items", arguments: { approved_review: "missing-review" } });
+      const result = await client.callTool({ name: "submit_product_review", arguments: { review_id: "00000000-0000-4000-8000-000000000000", revision: 1, submission_id: "00000000-0000-4000-8000-000000000000" } });
       assert.equal(result.isError, true, "rate removal must not bypass exact approval");
     }
     assert.equal(reads, 501);
@@ -286,177 +286,12 @@ test("HTTP service acceptance uses signed machine identity and its fixed fixture
         listResources: async () => client.listResources(),
         readResource: async (request) => client.readResource(request),
       });
-      assert.equal(report.requestCount, 12);
+      assert.equal(report.requestCount, 8);
       await client.close();
     } finally {
       server.closeAllConnections();
       await new Promise<void>((resolve, reject) => server.close((error?: Error) => error ? reject(error) : resolve()));
     }
-  }
-});
-
-test("HTTP MCP preserves an owner proposal across authenticated transport reconnects", async () => {
-  const product = {
-    id: 7, name: "Banan", price: 2.5, unit: "2,50 kr/stk.", unitPrice: 2.5,
-    unitSize: "1 stk.", brand: "Test", category: "Frugt", subcategory: "Bananer",
-    imageUrl: "", available: true, labels: [], isOrganic: false, isFrozen: false,
-    isRefrigerated: false, isDairy: false, isLactoseFree: false, isGlutenFree: true,
-    isVegan: true, isOnDiscount: false,
-  };
-  const empty = { items: [], productsPrice: 0, deliveryPrice: 39, numberOfProducts: 0, deliveryTime: "Tomorrow" };
-  const applied = {
-    ...empty,
-    items: [{ id: 7, name: product.name, quantity: 1, total: 2.5 }],
-    productsPrice: 2.5,
-    numberOfProducts: 1,
-  };
-  let changed = false;
-  const client = {
-    isLoggedIn: () => true,
-    login: async () => undefined,
-    searchProducts: async () => [],
-    getProduct: async () => product,
-    getFreshProduct: async () => product,
-    listFavorites: async () => [],
-    listDepartments: async () => [],
-    browseDepartment: async () => ({ products: [], page: 1, hasNext: false }),
-    getCart: async () => changed ? applied : empty,
-    addToCart: async () => { changed = true; return applied; },
-  };
-  const proposalStores = new Map<string, BasketProposalService>();
-  const app = createHttpApp(config, oauth, {
-    verifyAccessToken: async (token) => ({
-      token, clientId: "chatgpt", scopes: [config.requiredScope],
-      expiresAt: Date.now() / 1000 + 300, extra: { subject: token === "guest" ? "auth0|guest" : ownerSubject },
-    }),
-  }, (principal) => {
-    const proposals = new BasketProposalService(client);
-    proposalStores.set(principal.principal_key, proposals);
-    return { client, proposals };
-  });
-  const server = app.listen(0, config.host);
-  await new Promise<void>((resolve, reject) => {
-    server.once("listening", resolve);
-    server.once("error", reject);
-  });
-  const endpoint = new URL(`http://${config.host}:${(server.address() as AddressInfo).port}/mcp`);
-  const connect = async (token = "test") => {
-    const client = modernClient("reconnect-test");
-    const transport = new StreamableHTTPClientTransport(endpoint, {
-      requestInit: { headers: await familyHeaders(token) },
-    });
-    await client.connect(transport);
-    return client;
-  };
-  try {
-    const first = await connect();
-    const prepared = await first.callTool({
-      name: "review_items_to_add",
-      arguments: { items: [{ product: 7, quantity: 1 }], authorization: "exact_review" },
-    });
-    const proposalId = (prepared.structuredContent as { proposal_id: string }).proposal_id;
-    await first.close();
-
-    const guest = await connect("guest");
-    const refused = await guest.callTool({ name: "add_approved_items", arguments: { approved_review: proposalId } });
-    assert.equal(refused.isError, true);
-    assert.equal(changed, false);
-    await guest.close();
-
-    const second = await connect();
-    const result = await second.callTool({ name: "add_approved_items", arguments: { approved_review: proposalId } });
-    assert.equal(result.isError, undefined);
-    assert.equal(changed, true);
-    assert.equal((result.structuredContent as { basket: { items: unknown[] } }).basket.items.length, 1);
-    assert.equal(proposalStores.size, 2);
-    await second.close();
-  } finally {
-    server.closeAllConnections();
-    await new Promise<void>((resolve, reject) => server.close((error?: Error) => error ? reject(error) : resolve()));
-  }
-});
-
-test("modern HTTP requests preserve a basket review across fresh clients and server instances", async () => {
-  const product = {
-    id: 17, name: "Havregryn", price: 18, unit: "18,00 kr/stk.", unitPrice: 18,
-    unitSize: "1 kg", brand: "Test", category: "Kolonial", subcategory: "Morgenmad",
-    imageUrl: "", available: true, labels: [], isOrganic: false, isFrozen: false,
-    isRefrigerated: false, isDairy: false, isLactoseFree: true, isGlutenFree: false,
-    isVegan: true, isOnDiscount: false,
-  };
-  const empty = { items: [], productsPrice: 0, deliveryPrice: 39, numberOfProducts: 0, deliveryTime: "Tomorrow" };
-  const applied = {
-    ...empty,
-    items: [{ id: 17, name: product.name, quantity: 1, total: 18 }],
-    productsPrice: 18,
-    numberOfProducts: 1,
-  };
-  let addCalls = 0;
-  const shopper: ShoppingClient = {
-    isLoggedIn: () => true,
-    login: async () => undefined,
-    searchProducts: async () => [product],
-    getProduct: async () => product,
-    getFreshProduct: async () => product,
-    listFavorites: async () => [],
-    listDepartments: async () => [],
-    browseDepartment: async () => ({ products: [], page: 1, hasNext: false }),
-    getCart: async () => addCalls ? applied : empty,
-    addToCart: async () => { addCalls += 1; return applied; },
-  };
-  const contexts = new Map<string, { client: ShoppingClient; proposals: BasketProposalService }>();
-  let contextCreates = 0;
-  const app = createHttpApp(config, oauth, {
-    verifyAccessToken: async (token) => ({
-      token, clientId: "chatgpt", scopes: [config.requiredScope], expiresAt: Date.now() / 1000 + 300,
-      extra: { subject: token === "guest" ? "auth0|guest" : ownerSubject },
-    }),
-  }, (principal) => {
-    contextCreates += 1;
-    const context = { client: shopper, proposals: new BasketProposalService(shopper) };
-    contexts.set(principal.principal_key, context);
-    return context;
-  });
-  const server = app.listen(0, config.host);
-  await new Promise<void>((resolve, reject) => {
-    server.once("listening", resolve);
-    server.once("error", reject);
-  });
-  const endpoint = new URL(`http://${config.host}:${(server.address() as AddressInfo).port}/mcp`);
-  const connect = async (token: string) => {
-    const client = modernClient("modern-review-test");
-    await client.connect(new StreamableHTTPClientTransport(endpoint, {
-      requestInit: { headers: await familyHeaders(token) },
-    }));
-    assert.equal(client.getNegotiatedProtocolVersion(), "2026-07-28");
-    return client;
-  };
-  try {
-    const reviewer = await connect("owner");
-    const prepared = await reviewer.callTool({
-      name: "review_items_to_add",
-      arguments: { items: [{ product: 17, quantity: 1 }], authorization: "exact_review" },
-    });
-    const proposalId = (prepared.structuredContent as { proposal_id: string }).proposal_id;
-    await reviewer.close();
-
-    const otherPrincipal = await connect("guest");
-    const refused = await otherPrincipal.callTool({ name: "add_approved_items", arguments: { approved_review: proposalId } });
-    assert.equal(refused.isError, true);
-    assert.equal(addCalls, 0);
-    await otherPrincipal.close();
-
-    const approver = await connect("owner");
-    const result = await approver.callTool({ name: "add_approved_items", arguments: { approved_review: proposalId } });
-    assert.equal(result.isError, undefined);
-    assert.equal(addCalls, 1);
-    assert.deepEqual((result.structuredContent as { basket: { items: unknown[] } }).basket.items, applied.items);
-    assert.equal(contextCreates, 2);
-    assert.equal(contexts.size, 2);
-    await approver.close();
-  } finally {
-    server.closeAllConnections();
-    await new Promise<void>((resolve, reject) => server.close((error?: Error) => error ? reject(error) : resolve()));
   }
 });
 
@@ -513,12 +348,8 @@ test("HTTP MCP creates bounded isolated clients, credentials, baskets, favourite
     const guest = await connect("guest");
     const ownerBasket = await owner.callTool({ name: "show_my_basket", arguments: {} });
     const guestBasket = await guest.callTool({ name: "show_my_basket", arguments: {} });
-    const ownerFavourites = await owner.callTool({ name: "show_my_favorites", arguments: {} });
-    const guestFavourites = await guest.callTool({ name: "show_my_favorites", arguments: {} });
     assert.match(JSON.stringify(ownerBasket.structuredContent), /owner-basket/u);
     assert.match(JSON.stringify(guestBasket.structuredContent), /guest-basket/u);
-    assert.match(JSON.stringify(ownerFavourites.structuredContent), /owner-favourite/u);
-    assert.match(JSON.stringify(guestFavourites.structuredContent), /guest-favourite/u);
     assert.deepEqual(logins.sort(), [
       "guest@example.test:guest-secret",
       "owner@example.test:owner-secret",
@@ -654,9 +485,6 @@ test("credential-free discovery preserves an active review while credential rota
 
     await discovery.connect(new StreamableHTTPClientTransport(endpoint, { requestInit: { headers: { authorization: "Bearer owner" } } }));
     await discovery.listTools();
-    const profile = await discovery.callTool({ name: "get_profile", arguments: {} });
-    assert.equal(profile.isError, undefined);
-    assert.deepEqual(profile.structuredContent, { id: "a".repeat(32) });
     const shown = await reviewer.callTool({ _meta, name: "update_product_review", arguments: { review_id: review.review_id, action: { kind: "show" } } });
     assert.equal(shown.isError, undefined, "credential-free discovery must not discard the active review");
     assert.deepEqual((shown.structuredContent as { review: unknown }).review, review);
@@ -672,35 +500,6 @@ test("credential-free discovery preserves an active review while credential rota
     assert.equal(invalidated.isError, true, "actual credential rotation must still discard the old review");
   } finally {
     await Promise.all([reviewer.close(), discovery.close(), rotated.close()]);
-    server.closeAllConnections();
-    await new Promise<void>((resolve, reject) => server.close((error?: Error) => error ? reject(error) : resolve()));
-  }
-});
-
-test("current family authenticated profile works without a provider credential", async () => {
-  const key = Buffer.alloc(32, 7).toString("base64url");
-  const familyPolicy = parsePrincipalPolicy(JSON.stringify({ ...principalPolicy, revision: "profile-v3" }));
-  const app = createHttpApp({ ...config, principalPolicy: familyPolicy, credentialKey: key, credentialKeyVersion: "one" }, oauth, {
-    verifyAccessToken: async (token) => ({
-      token, clientId: "chatgpt", scopes: [config.requiredScope], expiresAt: Date.now() / 1000 + 300, extra: { subject: ownerSubject },
-    }),
-  });
-  const server = app.listen(0, config.host);
-  await new Promise<void>((resolve, reject) => { server.once("listening", resolve); server.once("error", reject); });
-  const endpoint = new URL(`http://${config.host}:${(server.address() as AddressInfo).port}/mcp`);
-  try {
-    for (const protocolVersion of ["2025-06-18", "2026-07-28"] as const) {
-      const mcp = new Client({ name: "profile-without-provider", version: "1.0.0" }, {
-        versionNegotiation: { mode: protocolVersion === "2025-06-18" ? "legacy" : { pin: protocolVersion } },
-      });
-      const transport = new StreamableHTTPClientTransport(endpoint, { requestInit: { headers: { authorization: "Bearer owner" } } });
-      await mcp.connect(transport);
-      const result = await mcp.callTool({ name: "get_profile", arguments: {} });
-      assert.deepEqual(result.structuredContent, { id: "a".repeat(32) });
-      assert.equal(result.isError, undefined);
-      await mcp.close();
-    }
-  } finally {
     server.closeAllConnections();
     await new Promise<void>((resolve, reject) => server.close((error?: Error) => error ? reject(error) : resolve()));
   }

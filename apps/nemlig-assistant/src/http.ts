@@ -41,14 +41,12 @@ const serviceContext = (): PrincipalContext => {
 };
 
 const isCredentialFreeRequest = (request: Request): boolean => {
-  // Protocol and profile discovery must work before provider credential onboarding.
+  // Protocol discovery must work before provider credential onboarding.
   const body = request.body;
   if (!body || typeof body !== "object" || Array.isArray(body)) return false;
   const method = (body as { method?: unknown }).method;
   if (typeof method !== "string") return false;
-  if (method !== "tools/call") return true;
-  const params = (body as { params?: unknown }).params;
-  return !!params && typeof params === "object" && !Array.isArray(params) && (params as { name?: unknown }).name === "get_profile";
+  return method !== "tools/call";
 };
 
 type Request = IncomingMessage & { auth?: AuthInfo; body?: unknown; get(name: string): string | undefined };

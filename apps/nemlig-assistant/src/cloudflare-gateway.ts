@@ -12,7 +12,7 @@ import type { Principal } from "./principal-policy.js";
 import { Auth0InfrastructureError, oauthReconnectChallenge } from "./auth0.js";
 import { PRODUCT_VIEWER_RESOURCE_URI, RETIRED_PRODUCT_VIEWER_RESOURCE_URIS } from "./product-viewer-identity.js";
 
-export type OperationClass = "protocol" | "profile" | "useful";
+export type OperationClass = "protocol" | "useful";
 export const INTERNAL_CREDENTIAL_HEADERS = [
   "x-nemlig-credential-envelope",
   "x-nemlig-principal-key",
@@ -57,12 +57,7 @@ class BoundaryTimeoutError extends Error {
 
 const serviceTools = new Set([
   "find_groceries",
-  "get_grocery_details",
-  "show_my_favorites",
-  "show_grocery_sections",
-  "browse_grocery_section",
   "show_my_basket",
-  "show_my_basket_visually",
 ]);
 const serviceResources = new Set([PRODUCT_VIEWER_RESOURCE_URI, ...RETIRED_PRODUCT_VIEWER_RESOURCE_URIS]);
 
@@ -87,15 +82,12 @@ const isServiceRequestAllowed = async (request: Request): Promise<boolean> => {
   return false;
 };
 
-/** Separates protocol/profile credential handling, not shopping price classes. */
+/** Separates protocol handling from shopping operations. */
 export function classifyMcpMessage(value: unknown): OperationClass {
   if (!value || typeof value !== "object" || Array.isArray(value)) return "useful";
   const message = value as { method?: unknown; params?: unknown };
   if (typeof message.method !== "string") return "useful";
   if (message.method !== "tools/call") return "protocol";
-  const params = message.params;
-  const name = params && typeof params === "object" && "name" in params ? (params as { name?: unknown }).name : undefined;
-  if (name === "get_profile") return "profile";
   return "useful";
 }
 

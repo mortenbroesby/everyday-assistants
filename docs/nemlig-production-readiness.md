@@ -34,13 +34,13 @@ Live checks remain separate from the automatic gate:
   token. Its bounded JSON report separates requested source from the observed
   revision and includes correlation IDs and the last completed boundary.
 - `pnpm --filter nemlig-assistant production:test:features` requires a current
-  owner token and a 90-second total budget. It exercises read-only paths,
-  including catalogue planning and at most one favorite result, without
+  owner token and a 90-second total budget. It exercises the retained search
+  and actual-basket read paths, without
   list writes, proposal preparation/application, feature requests, or basket
   mutation. Obsolete usage/reset endpoints no longer exist; no tier or
   count-based admission evidence is required.
 - For the Rejoin connection recovery, verify the new app named
-  `Nemlig Assistant (Rejoin)` with an authenticated `get_profile` read before
+  `Nemlig Assistant (Rejoin)` with authenticated six-tool discovery before
   retiring the previous Nemlig app. Complete the UI release acceptance below for later releases.
 - The app has no live mutation acceptance command. Its basket contract is
   add-only; removals, decreases, replacement, clearing, and inverse restoration

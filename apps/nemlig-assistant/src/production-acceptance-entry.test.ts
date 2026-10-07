@@ -10,7 +10,6 @@ import { PRODUCT_VIEWER_MIME_TYPE, PRODUCT_VIEWER_RESOURCE_URI, renderProductVie
 import { NEMLIG_VERSION } from "./runtime.js";
 
 const userToolMetadata = {
-  show_my_basket_visually: { ui: { resourceUri: PRODUCT_VIEWER_RESOURCE_URI }, "openai/outputTemplate": PRODUCT_VIEWER_RESOURCE_URI },
   start_product_review: { ui: { resourceUri: PRODUCT_VIEWER_RESOURCE_URI }, "openai/outputTemplate": PRODUCT_VIEWER_RESOURCE_URI, "openai/widgetAccessible": true },
   update_product_review: { ui: { resourceUri: PRODUCT_VIEWER_RESOURCE_URI }, "openai/outputTemplate": PRODUCT_VIEWER_RESOURCE_URI, "openai/widgetAccessible": true },
   submit_product_review: { ui: { resourceUri: PRODUCT_VIEWER_RESOURCE_URI, visibility: ["model"] }, "openai/outputTemplate": PRODUCT_VIEWER_RESOURCE_URI },
@@ -48,11 +47,9 @@ function serviceClient(): AcceptanceClient {
     listResources: async () => ({ resources: serviceAcceptanceResourceInventory.map((uri) => ({ uri })) }),
     readResource: async ({ uri }) => ({ contents: [{ uri, mimeType: PRODUCT_VIEWER_MIME_TYPE, text: renderProductViewerHtml(), _meta: { ui: { csp: { connectDomains: [], resourceDomains: ["https://nemlig.com", "https://www.nemlig.com"] }, prefersBorder: true } } }] }),
     callTool: async ({ name }) => {
-      if (["review_items_to_add", "add_approved_items"].includes(name)) return { isError: true };
+      if (["start_product_review", "update_product_review", "submit_product_review"].includes(name)) return { isError: true };
       if (name === "find_groceries") return { structuredContent: { result: [{ id: 7 }] } };
-      if (name === "get_grocery_details") return { structuredContent: { result: { id: 7, name: "Milk" } } };
-      if (name === "show_grocery_sections") return { structuredContent: { departments: [{ id: "fruit" }] } };
-      if (name === "show_my_basket" || name === "show_my_basket_visually") return { structuredContent: { items: [] } };
+      if (name === "show_my_basket") return { structuredContent: { items: [] } };
       return { structuredContent: { result: [] } };
     },
   };
@@ -65,10 +62,6 @@ function readonlyClient(): AcceptanceClient {
     readResource: async ({ uri }) => ({ contents: [{ uri, mimeType: PRODUCT_VIEWER_MIME_TYPE, text: renderProductViewerHtml(), _meta: { ui: { csp: { connectDomains: [], resourceDomains: ["https://nemlig.com", "https://www.nemlig.com"] }, prefersBorder: true } } }] }),
     callTool: async ({ name }) => {
       if (name === "find_groceries") return { structuredContent: { result: [{ id: 7 }] } };
-      if (name === "get_grocery_details") return { structuredContent: { result: { id: 7, name: "Milk" } } };
-      if (name === "show_my_favorites") return { structuredContent: { result: [] } };
-      if (name === "show_grocery_sections") return { structuredContent: { departments: [{ id: "fruit" }] } };
-      if (name === "browse_grocery_section") return { structuredContent: { result: [] } };
       return { structuredContent: { items: [] } };
     },
   };
@@ -431,7 +424,7 @@ test("stale viewer HTML produces bounded feature evidence instead of parsing HTM
 test("service inventory drift identifies the failed list without exposing its contents", async () => {
   const entry = await import("../scripts/production-acceptance.js");
   for (const [kind, failed, boundary] of [
-    ["tool", "service_tool_inventory_mismatch", "service_tool_inventory_read_m7f_x1"],
+    ["tool", "service_tool_inventory_mismatch", "service_tool_inventory_read_m3_x1"],
     ["resource", "service_resource_inventory_mismatch", "service_resource_inventory_read"],
   ] as const) {
     const client = serviceClient();
@@ -457,17 +450,17 @@ test("service inventory drift identifies the failed list without exposing its co
   }
 });
 
-test("service inventory evidence distinguishes a missing visual tool from an unexpected tool", async () => {
+test("service inventory evidence distinguishes a missing basket tool from an unexpected tool", async () => {
   const entry = await import("../scripts/production-acceptance.js");
   const client = serviceClient();
   client.listTools = async () => ({ tools: serviceAcceptanceToolInventory
-    .filter((name) => name !== "show_my_basket_visually")
+    .filter((name) => name !== "show_my_basket")
     .map((name) => ({ name })) });
   const report = await entry.run(["--service"], {
     NEMLIG_PRODUCTION_MCP_URL: "https://nemlig-mcp.example.test/mcp",
     NEMLIG_MCP_SERVICE_ACCESS_TOKEN: "test-token",
   }, { fetcher: edgeFetcher([]), connect: async () => ({ client, serverVersion: NEMLIG_VERSION, close: async () => undefined }) });
-  assert.equal(report.lastCompletedBoundary, "service_tool_inventory_read_m40_x0");
+  assert.equal(report.lastCompletedBoundary, "service_tool_inventory_read_m2_x0");
   assert.deepEqual(report.failed, ["service_tool_inventory_mismatch"]);
 });
 

@@ -55,7 +55,7 @@ export class ProductReviewService {
     if (this.drafts.size + this.startingOwners.size < 8) return;
     const oldest = [...this.drafts.entries()].find(([, draft]) => !draft.busy &&
       draft.snapshot.submission?.status !== "submitted" && draft.snapshot.submission?.status !== "uncertain");
-    if (!oldest) throw new NemligError("Active product review limit reached. Finish an in-progress review and try again.");
+    if (!oldest) throw new NemligError("Active draft list limit reached. Finish an in-progress draft list and try again.");
     const [id, draft] = oldest;
     this.drafts.delete(id);
     this.activeByOwner.delete(draft.owner);
@@ -64,7 +64,7 @@ export class ProductReviewService {
   private get(owner: string, id: string): StoredReview {
     const draft = this.drafts.get(id);
     if (!draft || draft.owner !== owner) {
-      throw new NemligError("Product review unavailable. Use update_product_review show without an old review_id or revision to find this conversation's active review; never replay the failed edit. If none remains, ask before starting a new review.");
+      throw new NemligError("Draft list unavailable. Use update_product_review show without an old review_id or revision to find this conversation's active draft list; never replay the failed edit. If none remains, ask before starting a new draft list.");
     }
     return draft;
   }
@@ -93,7 +93,7 @@ export class ProductReviewService {
   async start(owner: string, items: Array<{ product_id: number; quantity: number }>, signal?: AbortSignal): Promise<ProductReviewSnapshot> {
     const activeId = this.activeByOwner.get(owner);
     if (activeId) return structuredClone(this.get(owner, activeId).snapshot);
-    if (this.startingOwners.has(owner)) throw new NemligError("A product review is starting. Refresh it after the current request finishes.");
+    if (this.startingOwners.has(owner)) throw new NemligError("A draft list is starting. Refresh it after the current request finishes.");
     if (!items.length || items.length > 50 || new Set(items.map(i => i.product_id)).size !== items.length ||
       items.some(i => !validPositive(i.product_id) || !validPositive(i.quantity))) {
       throw new NemligError("Provide 1–50 unique exact products with positive integer quantities.");
@@ -135,7 +135,7 @@ export class ProductReviewService {
     const previousReadySelection = readySelection(stored.snapshot.items);
     const itemFor = (productId: number): ReviewItem => {
       const item = draft.items.find(row => row.product_id === productId);
-      if (!item) throw new NemligError("Exact product is not in this review.");
+      if (!item) throw new NemligError("Exact product is not in this draft list.");
       return item;
     };
     try {
@@ -145,7 +145,7 @@ export class ProductReviewService {
           if (!action.product_ids.length || new Set(action.product_ids).size !== action.product_ids.length) throw new NemligError("Select unique exact products.");
           const selected = action.product_ids.map(itemFor);
           if (action.kind === "accept") {
-            if (selected.some(item => item.state !== "needs-review")) throw new NemligError("Only In Review products can be accepted into Ready.");
+            if (selected.some(item => item.state !== "needs-review")) throw new NemligError("Only To decide products can be accepted into Ready.");
             if (selected.some(item => !available(item.view))) throw new NemligError("Unavailable products cannot be accepted. Choose an available alternative.");
             selected.forEach(item => { item.state = "ready"; });
           } else {
@@ -156,7 +156,7 @@ export class ProductReviewService {
         case "revisit": {
           if (!action.product_ids.length || new Set(action.product_ids).size !== action.product_ids.length) throw new NemligError("Select unique exact products.");
           const selected = action.product_ids.map(itemFor);
-          if (selected.some(item => item.state !== "ready")) throw new NemligError("Only Ready products can be moved back to In Review.");
+          if (selected.some(item => item.state !== "ready")) throw new NemligError("Only Ready products can be moved back to To decide.");
           selected.forEach(item => { item.state = "needs-review"; });
           break;
         }
@@ -193,7 +193,7 @@ export class ProductReviewService {
           break;
         case "alternatives": {
           const target = itemFor(action.product_id);
-          if (target.state !== "needs-review") throw new NemligError("Move a Ready product to In Review before choosing alternatives.");
+          if (target.state !== "needs-review") throw new NemligError("Move a Ready product to To decide before choosing alternatives.");
           if (action.limit !== undefined && !validPositive(action.limit)) throw new NemligError("Alternative limit must be a positive integer.");
           const results = await resolveDetailedProductSearch(this.client, action.query, action.limit, { signal });
           const existingIds = new Set(draft.items.map(item => item.product_id));
@@ -214,7 +214,7 @@ export class ProductReviewService {
           if (draft.alternatives?.product_id !== target.product_id) throw new NemligError("Open alternatives for this exact product first.");
           const replacement = draft.alternatives.views.find(view => view.status === "complete" && view.product.id === action.replacement_id);
           if (!replacement || !available(replacement)) throw new NemligError("Choose an available exact returned alternative.");
-          if (draft.items.some(item => item !== target && item.product_id === action.replacement_id)) throw new NemligError("This product already exists in the local review. Adjust its quantity instead.");
+          if (draft.items.some(item => item !== target && item.product_id === action.replacement_id)) throw new NemligError("This product already exists in the draft list. Adjust its quantity instead.");
           target.product_id = action.replacement_id;
           target.view = replacement;
           target.state = "needs-review";
@@ -245,8 +245,8 @@ export class ProductReviewService {
 
   private lock(owner: string, id: string, revision: number): StoredReview {
     const stored = this.get(owner, id);
-    if (stored.busy) throw new NemligError("A review operation is in progress. Refresh after it finishes.");
-    if (stored.snapshot.revision !== revision) throw new NemligError("Selection revision is stale. Show the current selection before choosing your next action; never replay the failed edit.");
+    if (stored.busy) throw new NemligError("A draft list operation is in progress. Refresh after it finishes.");
+    if (stored.snapshot.revision !== revision) throw new NemligError("Draft list revision is stale. Show the current draft list before choosing your next action; never replay the failed edit.");
     stored.busy = true;
     this.touch(stored);
     return stored;
@@ -276,7 +276,7 @@ export class ProductReviewService {
     try {
       const submission = stored.snapshot.submission;
       if (!submission || submission.status !== "prepared" || submission.submission_id !== submissionId || !stored.proposalId) {
-        throw new NemligError("Submission is absent, changed, or already attempted. Refresh the review.");
+        throw new NemligError("Submission is absent, changed, or already attempted. Refresh the draft list.");
       }
       if (Date.parse(submission.expires_at) <= this.now()) throw new NemligError("Submission expired. Prepare a fresh exact review for approval.");
       // Record uncertainty before crossing the provider boundary; never silently retry.

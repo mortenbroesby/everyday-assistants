@@ -67,6 +67,8 @@ and [issue #81](https://github.com/mortenbroesby/everyday-assistants/issues/81)
 for the root cause, external correction, and sanitized production evidence.
 Provider-backed functionality and longer-term reliability remain separate
 work; do not infer them from this acceptance.
+Release 6.0.0 retires `get_profile`; authenticated MCP discovery replaces that
+historical connector check for new releases.
 
 **Epic outcome:** Restore a repeatably reconnectable, cloud-only ChatGPT app and
 close the incident with privacy-safe evidence that identifies the last completed
