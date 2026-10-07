@@ -1,4 +1,7 @@
-import { useEffect, useState } from "react";
+import { Badge } from "@openai/apps-sdk-ui/components/Badge";
+import { Button } from "@openai/apps-sdk-ui/components/Button";
+import { EmptyMessage } from "@openai/apps-sdk-ui/components/EmptyMessage";
+import { useEffect, useId, useState } from "react";
 import { useApp } from "@modelcontextprotocol/ext-apps/react";
 import type { ProductView } from "../product-presentation.js";
 import { safeNemligImageUrl } from "../product-presentation.js";
@@ -73,6 +76,8 @@ function money(value: unknown): string {
 
 function ProductCard({ view }: { view: ProductView }) {
   const [imageFailed, setImageFailed] = useState(false);
+  const [expanded, setExpanded] = useState(false);
+  const detailId = useId();
   if (view.status !== "complete") {
     return <article className="product-card"><p>Product {view.product_id ?? "details"} details unavailable.</p></article>;
   }
@@ -85,8 +90,8 @@ function ProductCard({ view }: { view: ProductView }) {
   const facts = product.details?.filter(({ key, value }) => key.trim() && value.trim()) ?? [];
 
   return <article className="product-card">
-    <details className="product-details">
-      <summary className="product-summary">
+    <div className="product-details">
+      <Button color="secondary" variant="ghost" pill={false} block className="product-summary" aria-expanded={expanded} aria-controls={detailId} onClick={() => setExpanded((value) => !value)}>
         {imageUrl && !imageFailed
           ? <img className="product-image" src={imageUrl} alt={product.name ?? "Product"} onError={() => setImageFailed(true)} />
           : <span className="product-image product-image-fallback" aria-hidden="true">No image</span>}
@@ -95,18 +100,18 @@ function ProductCard({ view }: { view: ProductView }) {
           <span className="product-meta">{[product.brand, product.unit_size].filter(Boolean).join(" · ") || "Package details unavailable"}</span>
           <span className="product-meta">{product.unit_price === undefined ? product.unit ?? "Unit price unavailable" : `${money(product.unit_price)}${product.unit ? ` · ${product.unit}` : ""}`}</span>
           {quantity !== undefined && <span className="product-quantity">{quantity} ×</span>}
-          {product.available === false && <span className="product-meta">Unavailable</span>}
-          {product.available === undefined && <span className="product-meta">Availability unknown</span>}
+          {product.available === false && <Badge color="danger">Unavailable</Badge>}
+          {product.available === undefined && <Badge color="warning">Availability unknown</Badge>}
         </span>
-      </summary>
-      <div className="product-expanded">
+      </Button>
+      <div id={detailId} className="product-expanded" hidden={!expanded}>
         <p>Product ID: {product.id ?? "Unknown"}</p>
         {product.description && <details className="product-fact"><summary>Varebeskrivelse</summary><p>{product.description}</p></details>}
         {product.declaration && <details className="product-fact"><summary>Varedeklaration</summary><p>{product.declaration}</p></details>}
         {facts.length > 0 && <details className="product-fact"><summary>Detaljer om varen</summary>{facts.map(({ key, value }) => <p key={`${key}:${value}`}>{key}: {value}</p>)}</details>}
         {quantity !== undefined && <p>{view.context === "basket" ? "Basket" : "Selection"} quantity: {quantity} · Line total: {money(view.context === "basket" ? view.basket?.line_total : view.review?.line_total)}</p>}
       </div>
-    </details>
+    </div>
   </article>;
 }
 
@@ -123,7 +128,7 @@ export function ProductViewer() {
         ? <p className="status" role="status">Interactive local review is not implemented in this candidate. The current production viewer remains unchanged.</p>
         : state.views?.length
           ? <section className="product-list" aria-label="Product results">{state.views.map((view, index) => <ProductCard key={`${view.status === "complete" ? view.product.id : view.product_id}-${index}`} view={view} />)}</section>
-          : <p className="empty" role="status">{actualBasket ? "Your Nemlig basket is empty." : "No products found."}</p>}
+          : <div className="empty" role="status"><EmptyMessage><EmptyMessage.Title>{actualBasket ? "Your Nemlig basket is empty." : "No products found."}</EmptyMessage.Title></EmptyMessage></div>}
     {actualBasket && state.payload.unenriched_count ? <p className="status">{state.payload.unenriched_count} basket lines do not have current product details.</p> : null}
   </main></div>;
 }

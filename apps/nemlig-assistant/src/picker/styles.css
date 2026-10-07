@@ -1,3 +1,7 @@
+@import "tailwindcss";
+@import "@openai/apps-sdk-ui/css";
+@source "../../node_modules/@openai/apps-sdk-ui";
+
 :root {
   color-scheme: light dark;
   font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
@@ -19,10 +23,8 @@ h1 { margin: 8px 0 5px; text-align: center; font-size: 1.15rem; font-weight: 650
 .product-list { display: grid; }
 .product-card { display: flex; align-items: flex-start; gap: 3px; padding: 9px 0; border-bottom: 1px solid var(--line); }
 .product-details { flex: 1; min-width: 0; }
-.product-summary { display: grid; grid-template-columns: 44px minmax(0, 1fr) 12px; gap: 8px; min-height: 54px; align-items: center; list-style: none; cursor: pointer; }
-.product-summary::-webkit-details-marker { display: none; }
-.product-summary::after { content: "⌄"; color: var(--muted); }
-.product-details[open] > .product-summary::after { content: "⌃"; }
+.product-summary { display: grid; grid-template-columns: 44px minmax(0, 1fr); gap: 8px; min-height: 54px; height: auto; align-items: center; justify-content: stretch; padding: 0; color: inherit; text-align: left; white-space: normal; }
+.product-summary:hover { background: transparent; }
 .product-image { display: grid; width: 44px; height: 48px; place-items: center; border-radius: 6px; background: var(--soft); object-fit: contain; font-size: .6rem; }
 .product-image-fallback { color: var(--muted); text-align: center; }
 .product-copy { display: grid; min-width: 0; gap: 2px; }
