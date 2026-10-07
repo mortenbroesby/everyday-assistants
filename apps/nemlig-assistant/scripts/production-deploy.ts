@@ -586,6 +586,8 @@ const readContainer = async (deps: DeployDependencies, applicationId?: string): 
 
 interface ContainerApplicationReadback { image: string; version: number; schedulingPolicy: string; activeRolloutId?: string }
 
+interface ContainerVersionConfiguration { image: string; logsEnabled: boolean }
+
 const readContainerApplication = async (deps: DeployDependencies, applicationId: string): Promise<ContainerApplicationReadback> => {
   const account = deps.env.CLOUDFLARE_ACCOUNT_ID;
   const token = deps.env.CLOUDFLARE_API_TOKEN;
@@ -620,6 +622,35 @@ const readContainerApplication = async (deps: DeployDependencies, applicationId:
   };
 };
 
+/** Read the immutable configuration of the exact application version being restored. */
+const readContainerVersionConfiguration = async (
+  deps: DeployDependencies, applicationId: string, version: number,
+): Promise<ContainerVersionConfiguration> => {
+  const account = deps.env.CLOUDFLARE_ACCOUNT_ID;
+  const token = deps.env.CLOUDFLARE_API_TOKEN;
+  if (!account || !/^[0-9a-f]{32}$/u.test(account) || !token) fail("cloudflare_container_restore_unavailable");
+  let response: Response;
+  try {
+    response = await deps.fetcher(`https://api.cloudflare.com/client/v4/accounts/${account}/containers/applications/${applicationId}/versions`, {
+      headers: { Authorization: `Bearer ${token}` }, signal: deps.signal,
+    });
+  } catch { return fail("cloudflare_container_restore_read_failed"); }
+  let envelope: unknown;
+  try {
+    const raw = await response.text();
+    if (Buffer.byteLength(raw, "utf8") > 1024 * 1024) return fail("cloudflare_container_restore_read_failed");
+    envelope = JSON.parse(raw) as unknown;
+  } catch { return fail("cloudflare_container_restore_read_failed"); }
+  const result = object(envelope)?.result;
+  if (!response.ok || object(envelope)?.success !== true || !Array.isArray(result)) return fail("cloudflare_container_restore_read_failed");
+  const match = result.map(object).find((entry) => entry?.version === version);
+  const configuration = object(match?.configuration);
+  const image = configuration?.image;
+  const logsEnabled = object(object(configuration?.observability)?.logs)?.enabled;
+  if (typeof image !== "string" || typeof logsEnabled !== "boolean") return fail("cloudflare_container_restore_read_failed");
+  return { image, logsEnabled };
+};
+
 const restoreStartingContainerImage = async (
   deps: DeployDependencies, journal: DeploymentJournal, expectedCurrent: ContainerState,
 ): Promise<number> => {
@@ -632,11 +663,24 @@ const restoreStartingContainerImage = async (
   const candidateImage = `registry.cloudflare.com/${account}/${containerApplication}@${journal.enabledImage}`;
   if (before.image !== candidateImage || before.version !== expectedCurrent.version || before.activeRolloutId) fail("cloudflare_deployment_drift");
   const targetImage = `registry.cloudflare.com/${account}/${containerApplication}@${journal.startingImage}`;
+  const startingApplicationVersion: number = journal.startingApplicationVersion ?? fail("cloudflare_container_restore_unavailable");
+  const prior = await readContainerVersionConfiguration(deps, applicationId, startingApplicationVersion);
+  if (prior.image !== targetImage) fail("cloudflare_deployment_drift");
   let response: Response;
   try {
     response = await deps.fetcher(`https://api.cloudflare.com/client/v4/accounts/${account}/containers/applications/${applicationId}/rollouts`, {
       method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ description: `Restore known accepted release after ${journal.commit.slice(0, 7)} acceptance failure`, strategy: "rolling", target_configuration: { image: targetImage } }),
+      body: JSON.stringify({
+        description: `Restore known accepted release after ${journal.commit.slice(0, 7)} acceptance failure`,
+        kind: "full_auto",
+        step_percentage: 100,
+        strategy: "rolling",
+        target_configuration: {
+          image: targetImage,
+          instance_type: "lite",
+          observability: { logs: { enabled: prior.logsEnabled } },
+        },
+      }),
       signal: deps.signal,
     });
   } catch { return fail("cloudflare_container_restore_uncertain"); }
@@ -1297,14 +1341,12 @@ export async function reconcilePendingRollback(
         await retryAcceptance(deps, ["production:test:features", "--service", "--initialize-only", "--wake-only"], {
           NEMLIG_MCP_SERVICE_ACCESS_TOKEN: serviceToken, NEMLIG_EXPECTED_REVISION: journal.startingRevision!,
         }, 1, "read_only", "service", "service_fixture_acceptance_failed", 120_000, 1);
-        await waitForAcceptedInstance(deps, applicationId, journal.restoredApplicationVersion!, true, true, "restored_container_convergence", 36);
         await retryAcceptance(deps, ["production:test:features", "--service", "--initialize-only"], {
           NEMLIG_MCP_SERVICE_ACCESS_TOKEN: serviceToken, NEMLIG_EXPECTED_REVISION: journal.startingRevision!,
         }, 1, "read_only", "service", "service_fixture_acceptance_failed", 120_000, 1);
         await retryAcceptance(deps, ["production:test:features", "--service"], {
           NEMLIG_MCP_SERVICE_ACCESS_TOKEN: serviceToken, NEMLIG_EXPECTED_REVISION: journal.startingRevision!,
         }, 1, "read_only", "service", "service_fixture_acceptance_failed", 120_000, 1);
-        await waitForAcceptedInstance(deps, applicationId, journal.restoredApplicationVersion!, true, true, "restored_container_acceptance", 36);
         if (await readRemoteHead(deps, repo.nameWithOwner) !== journal.remoteCommit) return denied("journal_head_changed");
         journal.checks = [...new Set([...journal.checks, "starting_version_restored", "edge_acceptance", "service_fixture_acceptance"])];
         journal.lastVerifiedState = "restored";
@@ -1611,14 +1653,10 @@ const sleepAbortably = async (deps: DeployDependencies, durationMs = 5_000): Pro
 };
 
 const acceptanceCommandTimeoutMs = 120_000;
-const containerConvergenceAttemptCount = 36;
-const containerConvergencePollIntervalMs = 5_000;
-const containerConvergenceReserveMs = (containerConvergenceAttemptCount - 1) * containerConvergencePollIntervalMs;
 // Cloudflare activates the Worker before its Container rollout completes. The
-// wake waits for evidence from the candidate rather than an arbitrary startup
-// delay, but cannot consume the time required to prove the candidate or fail
-// back safely.
-const serviceStartupEvidenceReserveMs = acceptanceCommandTimeoutMs + (2 * containerConvergenceReserveMs);
+// strict MCP initialization is the candidate-start proof, so reserve one
+// bounded request for it rather than polling a post-request lifecycle state.
+const serviceStartupEvidenceReserveMs = acceptanceCommandTimeoutMs;
 
 const waitForInactive = async (deps: DeployDependencies, applicationId: string): Promise<void> => {
   for (let attempt = 0; attempt < 36; attempt += 1) {
@@ -1648,102 +1686,6 @@ const runningInstanceVersion = (raw: string, minimumVersion: number): number | n
 
 const runningInstanceMatches = (raw: string, expectedVersion: number): boolean =>
   runningInstanceVersion(raw, expectedVersion) === expectedVersion;
-
-const waitForAcceptedInstance = async (deps: DeployDependencies, applicationId: string, minimumVersion: number, requireRunning = false, reportDiagnostic = false, diagnosticEvent = "container_acceptance_convergence", maxPolls = containerConvergenceAttemptCount): Promise<number | null> => {
-  const startedAt = deps.now().getTime();
-  let polls = 0;
-  let observedVersion: number | null = null;
-  let state: string | null = null;
-  let firstState: string | null = null;
-  let firstObservedVersion: number | null = null;
-  let observations = 0;
-  const stateCounts = { inactive: 0, running: 0, provisioning: 0, stopping: 0, stopped: 0, invalid: 0 };
-  const versionCounts = { missing: 0, older: 0, expected: 0, newer: 0 };
-  const recordObservation = (): void => {
-    if (observations === 0) {
-      firstState = state;
-      firstObservedVersion = observedVersion;
-    }
-    observations += 1;
-    stateCounts[state as keyof typeof stateCounts] += 1;
-    const category = observedVersion === null ? "missing"
-      : observedVersion < minimumVersion ? "older"
-        : observedVersion === minimumVersion ? "expected" : "newer";
-    versionCounts[category] += 1;
-  };
-  const report = (result: "accepted" | "inactive" | "timeout" | "invalid_inventory" | "read_failed" | "version_drift") => {
-    if (!reportDiagnostic) return;
-    try {
-      const elapsed = deps.now().getTime() - startedAt;
-      const diagnostic = JSON.stringify({
-        event: diagnosticEvent,
-        expectedVersion: minimumVersion,
-        firstState,
-        firstObservedVersion,
-        observedVersion,
-        state,
-        stateCounts,
-        versionCounts,
-        polls,
-        result,
-        elapsedMs: Number.isFinite(elapsed) ? Math.max(0, Math.min(6 * 60 * 60 * 1000, Math.floor(elapsed))) : 0,
-      });
-      if (deps.diagnostic) deps.diagnostic(diagnostic);
-      else console.error(diagnostic);
-    } catch {
-      // Diagnostics are best-effort and must not replace the deployment result.
-    }
-  };
-  for (let attempt = 0; attempt < maxPolls; attempt += 1) {
-    deps.signal?.throwIfAborted();
-    polls += 1;
-    let raw: string;
-    try {
-      raw = await wrangler(deps, ["containers", "instances", applicationId, "--json"]);
-    } catch (error) {
-      report("read_failed");
-      throw error;
-    }
-    let inactive: boolean;
-    let version: number | null = null;
-    try {
-      const parsed = JSON.parse(raw) as unknown;
-      const row = Array.isArray(parsed) && parsed.length === 1 ? object(parsed[0]) : undefined;
-      const states = ["inactive", "running", "provisioning", "stopping", "stopped"];
-      state = row && typeof row.state === "string" && states.includes(row.state) ? row.state : "invalid";
-      observedVersion = row && typeof row.version === "number" && Number.isSafeInteger(row.version) && row.version > 0
-        ? row.version : null;
-      inactive = instancesInactive(raw);
-      if (!inactive) version = runningInstanceVersion(raw, minimumVersion);
-      recordObservation();
-    } catch (error) {
-      state = "invalid";
-      observedVersion = null;
-      recordObservation();
-      report("invalid_inventory");
-      throw error;
-    }
-    if (inactive) {
-      if (!requireRunning) {
-        report("inactive");
-        return null;
-      }
-      if (attempt + 1 < maxPolls) await sleepAbortably(deps, containerConvergencePollIntervalMs);
-      continue;
-    }
-    if (version !== null) {
-      if (version !== minimumVersion) {
-        report("version_drift");
-        fail("cloudflare_deployment_drift");
-      }
-      report("accepted");
-      return version;
-    }
-    if (attempt + 1 < maxPolls) await sleepAbortably(deps, containerConvergencePollIntervalMs);
-  }
-  report("timeout");
-  return fail("container_instance_timeout");
-};
 
 const waitForCandidateContainer = async (deps: DeployDependencies, workerVersion: string, starting: ContainerState, image: string): Promise<ContainerState> => {
   for (let attempt = 0; attempt < 36; attempt += 1) {
@@ -2050,8 +1992,7 @@ export async function deployProduction(commit: string, inputDeps: DeployDependen
       journal.checks.push("enabled_version", "image_reused");
       await transition("enable_deploy", "result", enabledId);
     }
-    // Initialize MCP to wake the Container, then prove the exact candidate application version before its feature fixture.
-    let preAcceptanceRunningVersion: number | null;
+    // Initialize MCP, then prove its exact server version before the fixture.
     if (service) {
       const restoreReserveMs = 12 * 60_000;
       const edgeBudget = Math.max(0, Math.min(60_000, operationDeadlineAt - deps.now().getTime() - restoreReserveMs));
@@ -2060,13 +2001,11 @@ export async function deployProduction(commit: string, inputDeps: DeployDependen
         NEMLIG_MCP_SERVICE_ACCESS_TOKEN: serviceToken, NEMLIG_EXPECTED_REVISION: commit,
       }, 12, "read_only", "service", "service_fixture_acceptance_failed",
       Math.max(0, operationDeadlineAt - deps.now().getTime() - restoreReserveMs - serviceStartupEvidenceReserveMs));
-      preAcceptanceRunningVersion = await waitForAcceptedInstance(deps, enabledContainer.id, enabledContainer.version, true, true, "container_pre_fixture_convergence");
       await retryAcceptance(deps, ["production:test:features", "--service", "--initialize-only"], {
         NEMLIG_MCP_SERVICE_ACCESS_TOKEN: serviceToken, NEMLIG_EXPECTED_REVISION: commit,
       }, 12, "read_only", "service", "service_fixture_acceptance_failed",
       Math.max(0, operationDeadlineAt - deps.now().getTime() - restoreReserveMs - serviceStartupEvidenceReserveMs));
     } else {
-      preAcceptanceRunningVersion = await waitForAcceptedInstance(deps, enabledContainer.id, enabledContainer.version);
       await retryAcceptance(deps, ["production:probe"], { NEMLIG_EXPECTED_REVISION: commit }, 12, "edge", "edge", "edge_acceptance_failed");
     }
     await retryAcceptance(deps, ["production:test:features", ...(service ? ["--service"] : [])],
@@ -2074,14 +2013,11 @@ export async function deployProduction(commit: string, inputDeps: DeployDependen
       "read_only", service ? "service" : "live-user",
       service ? "service_fixture_acceptance_failed" : "authenticated_read_only_acceptance_failed",
       service ? Math.max(0, Math.min(11 * 60_000, operationDeadlineAt - deps.now().getTime() - 12 * 60_000)) : undefined);
-    const runningVersion = await waitForAcceptedInstance(deps, enabledContainer.id, enabledContainer.version, service, true);
     await verifyCurrent(deps, enabledId);
     await verifyLeaseHead(deps, repository, journal);
     const provenContainer = await readContainer(deps, enabledContainer.id);
     if (provenContainer.id !== enabledContainer.id || provenContainer.image !== candidateImage
-      || provenContainer.version !== enabledContainer.version
-      || (preAcceptanceRunningVersion !== null && preAcceptanceRunningVersion !== provenContainer.version)
-      || (runningVersion !== null && runningVersion !== provenContainer.version)) {
+      || provenContainer.version !== enabledContainer.version) {
       fail("cloudflare_deployment_drift");
     }
     journal.enabledVersion = enabledId;
@@ -2158,26 +2094,20 @@ export async function deployProduction(commit: string, inputDeps: DeployDependen
           restoredReleaseProven = true;
 
           await retryAcceptance(deps, ["production:probe"], { NEMLIG_EXPECTED_REVISION: starting.revision }, 1, "edge", "edge", "edge_acceptance_failed", 120_000);
-          let restoredPreAcceptanceVersion: number | null;
           if (service) {
             await retryAcceptance(deps, ["production:test:features", "--service", "--initialize-only"], {
               NEMLIG_MCP_SERVICE_ACCESS_TOKEN: serviceToken, NEMLIG_EXPECTED_REVISION: starting.revision,
             }, 1, "read_only", "service", "service_fixture_acceptance_failed", 120_000, 1);
-            restoredPreAcceptanceVersion = await waitForAcceptedInstance(deps, restoredContainer.id, restoredContainer.version, true, true, "restored_container_convergence", 12);
-          } else {
-            restoredPreAcceptanceVersion = await waitForAcceptedInstance(deps, restoredContainer.id, restoredContainer.version, false, true, "restored_container_convergence", 12);
           }
           await retryAcceptance(deps, ["production:test:features", ...(service ? ["--service"] : [])],
             service ? { NEMLIG_MCP_SERVICE_ACCESS_TOKEN: serviceToken, NEMLIG_EXPECTED_REVISION: starting.revision } : {},
             1, "read_only", service ? "service" : "live-user",
             service ? "service_fixture_acceptance_failed" : "authenticated_read_only_acceptance_failed",
             service ? 120_000 : undefined);
-          const restoredRunningVersion = await waitForAcceptedInstance(deps, restoredContainer.id, restoredContainer.version, service, true, "restored_container_acceptance", 12);
           await verifyCurrent(deps, starting.id);
           await verifyLeaseHead(deps, repository, journal);
           const finalRestoredContainer = await readContainer(deps, restoredContainer.id);
-          if (finalRestoredContainer.image !== journal.startingImage || finalRestoredContainer.version !== restoredApplicationVersion
-            || restoredPreAcceptanceVersion !== restoredApplicationVersion || restoredRunningVersion !== restoredApplicationVersion) {
+          if (finalRestoredContainer.image !== journal.startingImage || finalRestoredContainer.version !== restoredApplicationVersion) {
             fail("cloudflare_deployment_drift");
           }
           journal.checks.push("starting_version_restored");
