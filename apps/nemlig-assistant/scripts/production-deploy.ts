@@ -1057,7 +1057,14 @@ type InterruptedContainerRestoreMode = "disabled" | "enabled";
 
 const interruptedContainerRestoreMode = (journal: DeploymentJournal): InterruptedContainerRestoreMode | undefined => {
   const [enableIntent, enableResult, rollbackIntent, rollbackResult, containerIntent, containerResult, workerIntent, workerResult] = journal.transitions;
-  const common = journal.outcome === "failed" && journal.lastVerifiedState === "unknown" && journal.rollback === "failed"
+  // Older direct routine restores recorded the Worker and immutable Container
+  // image as restored before their final authenticated service proof ran. They
+  // are not terminal until that proof is appended, but the exact completed
+  // transcript is safe to resume without issuing another provider mutation.
+  const unacceptedRestoredDirectRoutine = journal.lastVerifiedState === "restored" && journal.rollback === "restored"
+    && !journal.checks.includes("starting_version_restored");
+  const common = journal.outcome === "failed"
+    && ((journal.lastVerifiedState === "unknown" && journal.rollback === "failed") || unacceptedRestoredDirectRoutine)
     && journal.startingEnabled === true && Boolean(journal.startingVersion && journal.startingRevision && journal.startingImage
       && journal.startingApplicationVersion && journal.startingContainerId && journal.startingConfigDigest
       && journal.enabledVersion && journal.enabledImage && journal.enabledApplicationVersion)

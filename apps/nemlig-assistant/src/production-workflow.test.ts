@@ -109,13 +109,18 @@ test("routine releases queue trusted main ancestors; manual dispatch is recovery
   assert.match(reconcileBlocked, /run\.status !== "completed"/u);
   assert.match(reconcileBlocked, /actions\/runs\/\$release_run_id\/artifacts\?per_page=100/u);
   assert.match(reconcileBlocked, /artifact\?\.name === "nemlig-production-release" && artifact\.expired === false/u);
+  assert.match(reconcileBlocked, /reconcile-recovery "\$operation" --evidence-saved --original-runner-stopped/u);
   assert.match(reconcileBlocked, /inspect-recovery "\$operation" --original-runner-stopped/u);
   assert.match(reconcileBlocked, /production:deploy -- finalize "\$operation" --evidence-saved --original-runner-stopped/u);
+  assert.match(reconcileBlocked, /result\.reconciled !== true/u);
+  assert.match(reconcileBlocked, /NEMLIG_MCP_SERVICE_CLIENT_ID: "\$\{\{ vars\.NEMLIG_MCP_SERVICE_CLIENT_ID \}\}"/u);
+  assert.match(reconcileBlocked, /NEMLIG_MCP_SERVICE_CLIENT_SECRET: "\$\{\{ secrets\.NEMLIG_MCP_SERVICE_CLIENT_SECRET \}\}"/u);
+  assert.match(reconcileBlocked, /NEMLIG_CI_ACCEPTANCE_READY: "\$\{\{ vars\.NEMLIG_CI_ACCEPTANCE_READY \}\}"/u);
   assert.match(reconcileBlocked, /inspection\.cleanupEligible !== true/u);
   assert.match(reconcileBlocked, /\["enabled", "disabled", "restored"\]\.includes\(inspection\.state\)/u);
   assert.match(reconcileBlocked, /gh api --include "repos\/\$GITHUB_REPOSITORY\/git\/ref\/heads\/codex-lock\/nemlig-production"/u);
   assert.match(reconcileBlocked, /grep -qE '\^HTTP\/\[0-9\.\]\+ 404 '/u);
-  assert.doesNotMatch(reconcileBlocked, /reconcile-recovery|authorize-one-container-restore|\brollback\b/u);
+  assert.doesNotMatch(reconcileBlocked, /authorize-one-container-restore|\brollback\b/u);
 
   assert.match(deploy, /needs: \[release-gate, preflight, reconcile_blocked\]/u);
   assert.match(deploy, /always\(\) &&[\s\S]*?needs\.release-gate\.outputs\.deploy == 'true'/u);
