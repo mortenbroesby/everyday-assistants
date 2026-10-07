@@ -394,12 +394,13 @@ browser business model or another page/router.
 
 ### Story gates
 
-Before Story 1, record a bounded native ChatGPT v8 baseline: served resource
-URI, explicit activation, a local destination change, and whether the mounted
-frame remains visible. This is an evidence gate, not a reason to delay a
-presentational fix indefinitely. If the host fails before the viewer loads,
-record that boundary and test the story locally; do not invent a viewer
-workaround.
+Before Story 1, verify and record the resource URI actually served in native
+ChatGPT (expected baseline: v8; do not infer it from source or `main`). Then
+explicitly activate the viewer, perform one local destination navigation or
+edit, and record whether the same mounted frame remains visible. If the host
+serves another URI or fails before the viewer loads, record the exact boundary
+and reconcile the baseline before drawing lifecycle conclusions. Test the story
+locally without inventing a viewer workaround.
 
 Each story has the same release boundary: one focused PR, the normal local
 tests and browser smoke, versioned viewer identity/release evidence when viewer

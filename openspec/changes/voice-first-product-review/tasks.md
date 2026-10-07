@@ -250,10 +250,12 @@ metadata-readback, and historical-card evidence.
 
 ## 13. Staged visual refinement (8 October 2026)
 
-**Story gate:** Before Story 1, record a bounded native ChatGPT v8 baseline:
-served resource URI, explicit activation, one local navigation/edit and whether
-the same mounted frame remains visible. A host failure before the viewer loads
-is recorded as a host boundary, not papered over in the viewer.
+**Story gate:** Before Story 1, verify and record the resource URI actually
+served in native ChatGPT (expected baseline: v8; do not infer it from source or
+`main`), explicit activation, one local navigation/edit, and whether the same
+mounted frame remains visible. If another URI is served or the host fails
+before the viewer loads, record the exact boundary and reconcile the baseline
+before drawing lifecycle conclusions; do not paper over it in the viewer.
 
 ### Story 1 — compact row foundation (one PR)
 
@@ -265,9 +267,11 @@ is recorded as a host boundary, not papered over in the viewer.
   pack/brand, quantity and line price while keeping only the supplied factual
   disclosures; verify 320px/375px layout, focus visibility, unavailable rows,
   and no new business-state/client fetch path.
-- [ ] 13.3 Version the changed viewer resource and update the scoped feature
-  inventory/release note; run focused viewer/browser smoke, strict OpenSpec
+- [ ] 13.3 Bump the viewer resource URI when its HTML changes and update the
+  scoped feature inventory. Run focused viewer/browser smoke, strict OpenSpec
   validation and applicable repository gates, then prepare one reviewable PR.
+  Use the verified-main deployment path after merge; add package identity or
+  release-note changes only when the package release policy requires them.
 - [ ] 13.4 After merge/release, perform and record native ChatGPT Story 1 smoke
   for expansion, factual disclosure, quantity persistence and a mounted-frame
   check. Do not start Story 2 until this result is pass or an exact host block
