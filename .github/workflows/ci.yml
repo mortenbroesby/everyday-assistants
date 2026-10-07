@@ -25,3 +25,7 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm nemlig:production:ready
+      - run: pnpm check
+      - run: pnpm test
+      - run: pnpm --filter nemlig-assistant exec playwright install --with-deps chrome
+      - run: pnpm --filter nemlig-assistant smoke:review-ui

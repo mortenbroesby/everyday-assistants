@@ -139,7 +139,7 @@ live Nemlig submission or native v5 host acceptance was attempted.
 - [x] 9.2 Keep alternatives in In Review, batch acceptance, remove-all-Ready semantics, and protected Ready-only submission; add service regressions.
 - [x] 9.3 Refine the existing lightweight viewer with compact rows, disclosures, quantity, empty/success states and same-frame navigation; add executable viewer and mobile browser checks.
 - [x] 9.4 Version the resource, update docs/release note, pass repository gates, commit/push one scoped PR and verify exact-head CI.
-- [ ] 9.5 After a separately approved release, verify the v6 mounted experience in native ChatGPT; do not infer this from local tests.
+- [ ] 9.5 After a separately approved release, verify the registered React v8 mounted experience in native ChatGPT; do not infer this from local tests.
 
 9.4 was completed by PR #149, tested at
 `a1ebed07f94565a46b3662c77fdc440bad23e2c9` and merged as

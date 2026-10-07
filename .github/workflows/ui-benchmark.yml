@@ -27,7 +27,6 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter nemlig-assistant exec playwright install --with-deps chrome
       - run: pnpm --filter nemlig-assistant build
-      - run: pnpm --filter nemlig-assistant smoke:review-ui
       - name: Run UI benchmark
         id: benchmark
         env:
