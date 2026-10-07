@@ -240,7 +240,7 @@ export async function handleGatewayRequest(
     if (url.pathname === `/.well-known/oauth-protected-resource${config.publicUrl.pathname}`) {
       return finish(json({
         resource: config.publicUrl.href,
-        resource_name: "Nemlig Assistant",
+        resource_name: "MoJo Shopper",
         authorization_servers: [config.issuer.href],
         scopes_supported: [config.requiredScope],
         bearer_methods_supported: ["header"],
