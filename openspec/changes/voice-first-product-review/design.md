@@ -395,7 +395,8 @@ browser business model or another page/router.
 ### Story gates
 
 Before Story 1, verify and record the resource URI actually served in native
-ChatGPT (expected baseline: v8; do not infer it from source or `main`). Then
+ChatGPT (current-source target: v10; do not infer the served URI from source or
+`main`). Then
 explicitly activate the viewer, perform one local destination navigation or
 edit, and record whether the same mounted frame remains visible. If the host
 serves another URI or fails before the viewer loads, record the exact boundary

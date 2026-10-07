@@ -141,7 +141,7 @@ frontend architecture is in scope.
 
 ## Staged visual refinement (8 October 2026)
 
-The registered React v8 viewer is functionally capable of local selection,
+The current-source React viewer is functionally capable of local selection,
 contextual alternatives, protected submission, and recovery. Recent household
 testing identified a presentation problem rather than a missing shopping
 protocol: the same page can expose several competing actions, Ready rows do not

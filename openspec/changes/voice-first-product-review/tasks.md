@@ -251,11 +251,12 @@ metadata-readback, and historical-card evidence.
 ## 13. Staged visual refinement (8 October 2026)
 
 **Story gate:** Before Story 1, verify and record the resource URI actually
-served in native ChatGPT (expected baseline: v8; do not infer it from source or
-`main`), explicit activation, one local navigation/edit, and whether the same
-mounted frame remains visible. If another URI is served or the host fails
-before the viewer loads, record the exact boundary and reconcile the baseline
-before drawing lifecycle conclusions; do not paper over it in the viewer.
+served in native ChatGPT (current-source target: v10; do not infer the served
+URI from source or `main`), explicit activation, one local navigation/edit,
+and whether the same mounted frame remains visible. If the host serves another
+URI or fails before the viewer loads, record the exact boundary and reconcile
+the baseline before drawing lifecycle conclusions; do not paper over it in the
+viewer.
 
 ### Story 1 — compact row foundation (one PR)
 
