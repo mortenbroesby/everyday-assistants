@@ -95,7 +95,16 @@ try {
   });
   await candidate.getByText("Candidate product").waitFor();
   await candidate.getByText("Product ID: 42").waitFor({ state: "hidden" });
-  await candidate.locator(".product-summary").click();
+  const productToggle = candidate.locator(".product-summary");
+  assert.equal(await productToggle.evaluate((element) => element.tagName), "BUTTON", "product expansion does not use the SDK button component");
+  assert.equal(await productToggle.getAttribute("aria-expanded"), "false");
+  await productToggle.click();
+  assert.equal(await productToggle.getAttribute("aria-expanded"), "true");
+  await candidate.getByText("Product ID: 42").waitFor();
+  await productToggle.click();
+  assert.equal(await productToggle.getAttribute("aria-expanded"), "false");
+  await candidate.getByText("Product ID: 42").waitFor({ state: "hidden" });
+  await productToggle.click();
   await candidate.locator(".product-fact > summary").first().click();
   await candidate.getByText("Synthetic detail for the browser smoke test.").waitFor();
   assert.deepEqual(await page.evaluate(() => window.hostEvents), ["initialized"], "candidate did not complete the MCP Apps initialization handshake");

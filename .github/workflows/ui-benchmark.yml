@@ -26,4 +26,16 @@ jobs:
       - run: pnpm --filter nemlig-assistant exec playwright install --with-deps chrome
       - run: pnpm --filter nemlig-assistant build:ui
       - run: pnpm --filter nemlig-assistant smoke:ui-candidate
-      - run: pnpm --filter nemlig-assistant bench:review-ui -- --runs 5 --candidate .candidate-dist/picker.html
+      - name: Run paired UI benchmark
+        id: benchmark
+        env:
+          BENCHMARK_COMMIT: ${{ github.event.pull_request.head.sha }}
+        run: pnpm --filter nemlig-assistant bench:review-ui -- --runs 5 --candidate .candidate-dist/picker.html --output .candidate-dist/ui-benchmark.json
+      - name: Upload benchmark report
+        if: ${{ always() && steps.benchmark.outcome == 'success' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ui-benchmark-pr-${{ github.event.pull_request.number }}-${{ github.sha }}
+          path: apps/nemlig-assistant/.candidate-dist/ui-benchmark.json
+          if-no-files-found: error
+          retention-days: 90
