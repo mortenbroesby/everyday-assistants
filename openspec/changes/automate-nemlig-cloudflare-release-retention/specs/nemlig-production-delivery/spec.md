@@ -14,6 +14,16 @@ An eligible successful trusted CI run for a commit still in default-branch histo
 - **WHEN** the candidate is no longer in current main history, a newer revision is already deployed, or another production operation owns the lease
 - **THEN** the stale or concurrent operation does not mutate production or replace the owner's recovery state
 
+#### Scenario: A routine candidate finds an existing recovery lease
+
+- **WHEN** source, exact-main CI, and environment checks pass but the shared remote production lease already exists
+- **THEN** the workflow records a bounded `blocked_by_existing_lease` result, does not issue a production credential or create a local deployment journal, and skips deploy, finalization, and retention; the summary identifies the candidate and lease head, states that the live revision was not verified, and directs the operator to explicit reconciliation
+
+#### Scenario: A lease appears after preflight
+
+- **WHEN** a remote lease is absent at routine preflight but becomes present before mutation
+- **THEN** atomic lease acquisition remains authoritative and the routine operation stops without replacing the lease owner's state
+
 #### Scenario: A pull request is tested
 
 - **WHEN** untrusted pull-request code runs verification
@@ -82,6 +92,11 @@ Routine delivery SHALL verify the exact deployed source revision, health, OAuth 
 
 - **WHEN** a stopped release runner leaves a `container_restore` intent and the original operation, exact starting image/version, disabled Worker, and current provider state can be read back
 - **THEN** protected reconciliation never repeats the rollout POST; it may continue only when authoritative reads show the exact starting image at a newer application version with no active rollout, then restores the exact starting enabled Worker, records bounded evidence, and releases the lease only after read-only acceptance and exact readback
+
+#### Scenario: A restored direct failback resumes after Worker restoration
+
+- **WHEN** exact readback already proves the recorded starting image and Worker were restored, but service acceptance has not yet completed
+- **THEN** reconciliation recognizes the complete direct-restore transcript, performs no additional Container or Worker mutation, and reruns service acceptance against the package version recorded at the journal's starting source revision; a mismatched, missing, or invalid source identity retains the lease
 
 #### Scenario: The outcome of an interrupted container restore is unknown
 

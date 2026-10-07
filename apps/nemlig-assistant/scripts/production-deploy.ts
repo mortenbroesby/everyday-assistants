@@ -999,15 +999,33 @@ const pendingInterruptedEnableRollbackTarget = (journal: DeploymentJournal): Rec
   };
 };
 
-const pendingInterruptedContainerRestore = (journal: DeploymentJournal): boolean => {
+type InterruptedContainerRestoreMode = "disabled" | "enabled";
+
+const interruptedContainerRestoreMode = (journal: DeploymentJournal): InterruptedContainerRestoreMode | undefined => {
   const [enableIntent, enableResult, rollbackIntent, rollbackResult, containerIntent, containerResult, workerIntent, workerResult] = journal.transitions;
-  return journal.outcome === "failed" && journal.lastVerifiedState === "unknown" && journal.rollback === "failed"
-    && journal.failure === "container_instance_timeout" && journal.startingEnabled === true
-    && Boolean(journal.startingVersion && journal.startingRevision && journal.startingImage && journal.startingApplicationVersion
-      && journal.startingContainerId && journal.startingConfigDigest && journal.enabledVersion && journal.enabledImage
-      && journal.enabledApplicationVersion && journal.disabledVersion && journal.disabledImage && journal.disabledApplicationVersion)
+  const common = journal.outcome === "failed" && journal.lastVerifiedState === "unknown" && journal.rollback === "failed"
+    && journal.startingEnabled === true && Boolean(journal.startingVersion && journal.startingRevision && journal.startingImage
+      && journal.startingApplicationVersion && journal.startingContainerId && journal.startingConfigDigest
+      && journal.enabledVersion && journal.enabledImage && journal.enabledApplicationVersion)
     && enableIntent?.phase === "enable_deploy" && enableIntent.kind === "intent" && enableIntent.version === journal.startingVersion
-    && enableResult?.phase === "enable_deploy" && enableResult.kind === "result" && enableResult.version === journal.enabledVersion
+    && enableResult?.phase === "enable_deploy" && enableResult.kind === "result" && enableResult.version === journal.enabledVersion;
+  if (!common) return undefined;
+  const directContainerIntent = rollbackIntent?.phase === "container_restore" && rollbackIntent.kind === "intent"
+    && rollbackIntent.version === journal.enabledVersion;
+  const directRestoreTransitionsComplete = directContainerIntent && (journal.transitions.length === 3
+    || (journal.transitions.length === 4 && rollbackResult?.phase === "container_restore"
+      && rollbackResult.kind === "result" && rollbackResult.version === journal.enabledVersion)
+    || (journal.transitions.length === 5 && rollbackResult?.phase === "container_restore"
+      && rollbackResult.kind === "result" && rollbackResult.version === journal.enabledVersion
+      && containerIntent?.phase === "worker_restore" && containerIntent.kind === "intent" && containerIntent.version === journal.startingVersion)
+    || (journal.transitions.length === 6 && rollbackResult?.phase === "container_restore"
+      && rollbackResult.kind === "result" && rollbackResult.version === journal.enabledVersion
+      && containerIntent?.phase === "worker_restore" && containerIntent.kind === "intent" && containerIntent.version === journal.startingVersion
+      && containerResult?.phase === "worker_restore" && containerResult.kind === "result" && containerResult.version === journal.startingVersion));
+  const directRoutineRestore = journal.failure === "service_fixture_acceptance_failed" && directRestoreTransitionsComplete;
+  if (directRoutineRestore) return "enabled";
+  const disabledRestore = journal.failure === "container_instance_timeout"
+    && Boolean(journal.disabledVersion && journal.disabledImage && journal.disabledApplicationVersion)
     && rollbackIntent?.phase === "rollback" && rollbackIntent.kind === "intent" && rollbackIntent.version === journal.enabledVersion
     && rollbackResult?.phase === "rollback" && rollbackResult.kind === "result" && rollbackResult.version === journal.disabledVersion
     && containerIntent?.phase === "container_restore" && containerIntent.kind === "intent" && containerIntent.version === journal.disabledVersion
@@ -1020,7 +1038,10 @@ const pendingInterruptedContainerRestore = (journal: DeploymentJournal): boolean
         && containerResult.kind === "result" && containerResult.version === journal.enabledVersion
         && workerIntent?.phase === "worker_restore" && workerIntent.kind === "intent" && workerIntent.version === journal.startingVersion
         && workerResult?.phase === "worker_restore" && workerResult.kind === "result" && workerResult.version === journal.startingVersion));
+  return disabledRestore ? "disabled" : undefined;
 };
+
+const pendingInterruptedContainerRestore = (journal: DeploymentJournal): boolean => interruptedContainerRestoreMode(journal) !== undefined;
 
 const pendingInterruptedDisabledDeploy = (journal: DeploymentJournal): boolean => {
   const [intent] = journal.transitions;
@@ -1112,7 +1133,8 @@ export async function reconcilePendingRollback(
         enabled: journal.startingEnabled, state: "restored" }
       : undefined;
 
-    if (pendingInterruptedContainerRestore(journal)) {
+    const interruptedRestoreMode = interruptedContainerRestoreMode(journal);
+    if (interruptedRestoreMode) {
       journal.remoteCommit = remote.head;
       const applicationId = journal.startingContainerId!;
       const targetImage = `registry.cloudflare.com/${deps.env.CLOUDFLARE_ACCOUNT_ID}/${containerApplication}@${journal.startingImage}`;
@@ -1129,7 +1151,9 @@ export async function reconcilePendingRollback(
         current = await readCurrent(deps);
         application = await readContainerApplication(deps, applicationId);
       } catch { return denied("provider_drift"); }
-      const candidateCurrent = current.version === journal.disabledVersion && application.image === candidateImage
+      const candidateVersion = interruptedRestoreMode === "enabled" ? journal.enabledVersion : journal.disabledVersion;
+      const candidateEnabled = interruptedRestoreMode === "enabled";
+      const candidateCurrent = current.version === candidateVersion && application.image === candidateImage
         && application.version === journal.enabledApplicationVersion && !application.activeRolloutId;
       let restoredCurrent = application.image === targetImage && application.version > journal.enabledApplicationVersion!;
       if (restoredCurrent && application.activeRolloutId) {
@@ -1150,11 +1174,12 @@ export async function reconcilePendingRollback(
         const explicitRetry = "container_restore_explicit_authorized_retry";
         if (authorizeOneContainerRestore && !journal.checks.includes(explicitRetry)) {
           const raw = await readVersion(deps, current.version);
-          try { verifyCandidateVersion(raw, current.version, journal.commit, false); } catch { return denied("provider_drift"); }
+          try { verifyCandidateVersion(raw, current.version, journal.commit, candidateEnabled); } catch { return denied("provider_drift"); }
           if (!await verifyRecoveryTarget(deps, {
             version: current.version, containerId: applicationId, image: journal.enabledImage!,
-            applicationVersion: journal.enabledApplicationVersion!, configDigest: versionConfig(raw).digest,
-            enabled: false, requireInactive: true, sourceRevision: journal.commit, state: "disabled",
+            applicationVersion: journal.enabledApplicationVersion!, configDigest: journal.startingConfigDigest!,
+            enabled: candidateEnabled, requireInactive: !candidateEnabled, sourceRevision: journal.commit,
+            state: candidateEnabled ? "enabled" : "disabled",
           })) return denied("provider_drift");
           if (await readRemoteHead(deps, repo.nameWithOwner) !== remote.head) return denied("journal_head_changed");
           journal.checks.push(explicitRetry);
@@ -1217,14 +1242,22 @@ export async function reconcilePendingRollback(
         try {
           candidate = await readCurrent(deps);
           const raw = await readVersion(deps, candidate.version);
-          verifyCandidateVersion(raw, candidate.version, journal.commit, false);
-          if (candidate.version !== journal.disabledVersion) return denied("provider_drift");
-          const disabledTarget: RecoveryTarget = {
-            version: journal.disabledVersion!, containerId: applicationId, image: journal.startingImage!,
-            applicationVersion: journal.restoredApplicationVersion!, configDigest: versionConfig(raw).digest,
-            enabled: false, requireInactive: true, sourceRevision: journal.commit, state: "disabled",
-          };
-          if (!await verifyRecoveryTarget(deps, disabledTarget)) return denied("provider_drift");
+          verifyCandidateVersion(raw, candidate.version, journal.commit, candidateEnabled);
+          if (interruptedRestoreMode === "disabled") {
+            if (candidate.version !== journal.disabledVersion) return denied("provider_drift");
+            const disabledTarget: RecoveryTarget = {
+              version: journal.disabledVersion!, containerId: applicationId, image: journal.startingImage!,
+              applicationVersion: journal.restoredApplicationVersion!, configDigest: journal.startingConfigDigest!,
+              enabled: false, requireInactive: true, sourceRevision: journal.commit, state: "disabled",
+            };
+            if (!await verifyRecoveryTarget(deps, disabledTarget)) return denied("provider_drift");
+          } else {
+            if (candidate.version !== journal.enabledVersion || versionConfig(raw).digest !== journal.startingConfigDigest
+              || parseVersionState(raw, candidate.version).enabled !== true) return denied("provider_drift");
+            const restoredContainer = await readContainer(deps, applicationId);
+            if (restoredContainer.id !== applicationId || restoredContainer.image !== journal.startingImage
+              || restoredContainer.version !== journal.restoredApplicationVersion) return denied("provider_drift");
+          }
         } catch { return denied("provider_drift"); }
         if (await readRemoteHead(deps, repo.nameWithOwner) !== journal.remoteCommit) return denied("journal_head_changed");
         journal.transitions.push({ phase: "worker_restore", kind: "intent", at: deps.now().toISOString(), version: journal.startingVersion });
@@ -1517,13 +1550,21 @@ const verifyGithubEnvironment = async (deps: DeployDependencies, repository: str
   if (policies.length !== 1 || policies[0]?.name !== "main" || policies[0]?.type !== "branch") fail("github_environment_not_ready");
 };
 
+export type ProductionPreflight =
+  | { state: "ready"; commit: string; ciRunId: number }
+  | { state: "blocked_by_existing_lease"; commit: string; ciRunId: number; leaseHead: string };
+
 /** Read-only exact-main CI and main-only environment proof for the deployment workflow. */
-export async function preflightProductionDeploy(commit: string, deps: DeployDependencies, sourceMode: SourceMode = "routine"): Promise<{ commit: string; ciRunId: number }> {
+export async function preflightProductionDeploy(commit: string, deps: DeployDependencies, sourceMode: SourceMode = "routine"): Promise<ProductionPreflight> {
   if (!fullSha.test(commit)) fail("invalid_commit");
   const repo = await repoIdentity(deps);
   const ciRunId = await verifySource(deps, commit, repo, sourceMode);
   await verifyGithubEnvironment(deps, repo.nameWithOwner);
-  return { commit, ciRunId };
+  if (sourceMode === "routine") {
+    const leaseHead = await readRemoteHead(deps, repo.nameWithOwner);
+    if (leaseHead) return { state: "blocked_by_existing_lease", commit, ciRunId, leaseHead };
+  }
+  return { state: "ready", commit, ciRunId };
 }
 
 const verifyDisabledRoutes = async (deps: DeployDependencies): Promise<void> => {

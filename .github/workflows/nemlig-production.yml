@@ -336,6 +336,19 @@ jobs:
           AUTHORIZE_UNCERTAIN_CONTAINER_RESTORE: "${{ env.AUTHORIZE_UNCERTAIN_CONTAINER_RESTORE }}"
         run: |
           set -euo pipefail
+          git fetch origin refs/heads/codex-lock/nemlig-production:refs/remotes/origin/codex-lock/nemlig-production
+          recovery_journal=$(git show origin/codex-lock/nemlig-production:journal.json)
+          recovery_revision=$(node --input-type=module -e '
+            const journal = JSON.parse(process.argv[1]);
+            if (!/^[0-9a-f]{40}$/.test(journal.startingRevision ?? "")) process.exit(1);
+            console.log(journal.startingRevision);
+          ' "$recovery_journal")
+          recovery_manifest=$(git show "$recovery_revision:apps/nemlig-assistant/package.json")
+          export NEMLIG_EXPECTED_SERVICE_VERSION=$(node --input-type=module -e '
+            const manifest = JSON.parse(process.argv[1]);
+            if (typeof manifest.version !== "string" || !/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(manifest.version)) process.exit(1);
+            console.log(manifest.version);
+          ' "$recovery_manifest")
           reconcile_args=(reconcile-recovery "$RECONCILE_OPERATION" --evidence-saved --original-runner-stopped)
           if [[ "$AUTHORIZE_UNCERTAIN_CONTAINER_RESTORE" == "true" ]]; then reconcile_args+=(--authorize-one-container-restore); fi
           if result=$(pnpm --silent --filter nemlig-assistant production:deploy -- "${reconcile_args[@]}"); then
@@ -370,6 +383,9 @@ jobs:
     if: needs.release-gate.outputs.deploy == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    outputs:
+      readiness: "${{ steps.production_preflight.outputs.readiness }}"
+      lease_head: "${{ steps.production_preflight.outputs.lease_head }}"
     permissions:
       contents: read
       actions: read
@@ -399,20 +415,41 @@ jobs:
           node-version: 24.13.0
       - name: Install frozen dependencies
         run: pnpm install --frozen-lockfile
-      - name: Run credential-free source and environment preflight
+      - name: Run credential-free source, environment, and lease preflight
+        id: production_preflight
         env:
           GH_TOKEN: "${{ github.token }}"
         run: |
           set -euo pipefail
           if [[ "$RECOVERY" == "true" ]]; then
-            pnpm --filter nemlig-assistant production:deploy -- preflight --recovery "$CANDIDATE_SHA"
+            result=$(pnpm --silent --filter nemlig-assistant production:deploy -- preflight --recovery "$CANDIDATE_SHA")
           else
-            pnpm --filter nemlig-assistant production:deploy -- preflight "$CANDIDATE_SHA"
+            result=$(pnpm --silent --filter nemlig-assistant production:deploy -- preflight "$CANDIDATE_SHA")
           fi
+          node --input-type=module -e '
+            import { appendFileSync } from "node:fs";
+            const result = JSON.parse(process.argv[1]);
+            const output = process.env.GITHUB_OUTPUT;
+            if (!output || !/^[0-9a-f]{40}$/.test(result.commit)) process.exit(1);
+            if (result.state === "ready" && Number.isSafeInteger(result.ciRunId)) {
+              appendFileSync(output, "readiness=ready\\nlease_head=\\n");
+              process.exit(0);
+            }
+            if (result.state === "blocked_by_existing_lease" && Number.isSafeInteger(result.ciRunId) && /^[0-9a-f]{40}$/.test(result.leaseHead)) {
+              appendFileSync(output, `readiness=blocked_by_existing_lease\\nlease_head=${result.leaseHead}\\n`);
+              console.log("## Routine deployment blocked by existing production lease");
+              console.log(`- Candidate: ${result.commit}`);
+              console.log(`- Lease head: ${result.leaseHead}`);
+              console.log("- Deployment not attempted; live revision not verified.");
+              console.log("- Next action: explicitly reconcile the saved production operation.");
+              process.exit(0);
+            }
+            process.exit(1);
+          ' "$result" >> "$GITHUB_STEP_SUMMARY"
 
   deploy:
     needs: [release-gate, preflight]
-    if: needs.release-gate.outputs.deploy == 'true'
+    if: needs.release-gate.outputs.deploy == 'true' && needs.preflight.outputs.readiness == 'ready'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     environment:

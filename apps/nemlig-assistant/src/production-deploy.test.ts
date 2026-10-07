@@ -130,10 +130,6 @@ const recoveryDeps = (journal: Record<string, unknown>, currentVersion: string, 
     if (args[0] === "repo") return JSON.stringify({ nameWithOwner: "mortenbroesby/everyday-assistants", url: "https://github.com/mortenbroesby/everyday-assistants" });
     if (args[0] === "api" && args[1] === "--method" && args[2] === "DELETE") { remoteHead = ""; return ""; }
     const path = args.find((value) => value.startsWith("repos/")) ?? "";
-    if (path.includes("git/ref/")) return remoteHead;
-    if (path.includes("git/commits/")) return JSON.stringify({ tree: { sha: tree }, parents: remoteParent ? [{ sha: remoteParent }] : [] });
-    if (path.includes("git/trees/")) return JSON.stringify({ tree: [{ path: "journal.json", type: "blob", mode: "100644", sha: blob }] });
-    if (path.includes("git/blobs/")) return JSON.stringify({ encoding: "base64", content: Buffer.from(currentJournal).toString("base64") });
     if (args[0] === "api" && args[1] === "--method" && args[2] === "POST" && path.endsWith("git/blobs")) {
       currentJournal = Buffer.from(JSON.parse(runOptions?.input ?? "{}").content, "base64").toString("utf8");
       return JSON.stringify({ sha: blob });
@@ -145,6 +141,10 @@ const recoveryDeps = (journal: Record<string, unknown>, currentVersion: string, 
       remoteHead = JSON.parse(runOptions?.input ?? "{}").sha;
       return JSON.stringify({ object: { sha: remoteHead } });
     }
+    if (path.includes("git/ref/")) return remoteHead;
+    if (path.includes("git/commits/")) return JSON.stringify({ tree: { sha: tree }, parents: remoteParent ? [{ sha: remoteParent }] : [] });
+    if (path.includes("git/trees/")) return JSON.stringify({ tree: [{ path: "journal.json", type: "blob", mode: "100644", sha: blob }] });
+    if (path.includes("git/blobs/")) return JSON.stringify({ encoding: "base64", content: Buffer.from(currentJournal).toString("base64") });
     throw new Error("unexpected gh api");
   };
   return { repoRoot: ".", packageRoot: ".", env: { CLOUDFLARE_ACCOUNT_ID: accountId }, run,
@@ -184,14 +184,25 @@ const interruptedContainerRestoreJournal = (extra: Record<string, unknown> = {})
   ...extra,
 });
 
-const interruptedContainerRestoreDeps = (journal: Record<string, unknown>, options: { updatedAt?: string; alreadyRestored?: boolean; restoreOutcomeUnknown?: boolean } = {}) => {
+const directInterruptedContainerRestoreJournal = (extra: Record<string, unknown> = {}) => interruptedContainerRestoreJournal({
+  disabledVersion: null, disabledImage: null, disabledApplicationVersion: null,
+  failure: "service_fixture_acceptance_failed",
+  transitions: [
+    { phase: "enable_deploy", kind: "intent", at: "2026-10-05T13:50:00.000Z", version: startingId },
+    { phase: "enable_deploy", kind: "result", at: "2026-10-05T13:51:00.000Z", version: enabledId },
+    { phase: "container_restore", kind: "intent", at: "2026-10-05T13:58:00.000Z", version: enabledId },
+  ],
+  ...extra,
+});
+
+const interruptedContainerRestoreDeps = (journal: Record<string, unknown>, options: { updatedAt?: string; alreadyRestored?: boolean; restoreOutcomeUnknown?: boolean; direct?: boolean; workerRestored?: boolean; active?: boolean } = {}) => {
   let applicationImage = options.alreadyRestored
     ? `registry.cloudflare.com/${accountId}/nemlig-mcp-cloudflare-production-nemligmcpcontainer-production@${image}`
     : `registry.cloudflare.com/${accountId}/nemlig-mcp-cloudflare-production-nemligmcpcontainer-production@${candidateImage}`;
   let applicationVersion = options.alreadyRestored ? 27 : 26;
   let running = false;
   let rollouts = 0;
-  const deps = recoveryDeps(journal, disabledId, false, {
+  const deps = recoveryDeps(journal, options.direct && !options.workerRestored ? enabledId : options.direct ? startingId : disabledId, options.direct === true, {
     image: candidateImage, applicationVersion, rollbackTo: { version: startingId, enabled: true },
   });
   deps.env = { CLOUDFLARE_ACCOUNT_ID: accountId, CLOUDFLARE_API_TOKEN: "test-token",
@@ -224,7 +235,7 @@ const interruptedContainerRestoreDeps = (journal: Record<string, unknown>, optio
     }
     if (url.includes("api.cloudflare.com")) return Response.json({ success: true, result: {
       id: applicationId, configuration: { image: applicationImage }, version: applicationVersion,
-      scheduling_policy: "default", active_rollout_id: null,
+      scheduling_policy: "default", active_rollout_id: options.active ? "rollout-active" : null,
       updated_at: options.updatedAt ?? "2026-10-05T13:50:00.000Z",
     } });
     return new Response("MCP temporarily disabled", { status: 503 });
@@ -608,7 +619,7 @@ test("deployment arguments and provider JSON fail closed", () => {
 test("preflight requires the exact main-only production environment before any provider action", async () => {
   const { deps, calls, root } = await fixture();
   try {
-    assert.deepEqual(await preflightProductionDeploy(commit, deps), { commit, ciRunId: 456 });
+    assert.deepEqual(await preflightProductionDeploy(commit, deps), { state: "ready", commit, ciRunId: 456 });
     assert.equal(calls.some(({ command }) => command === "pnpm"), false);
     assert.ok(calls.some(({ args }) => args.some((value) => value.endsWith("/environments/nemlig-production"))));
   } finally { await rm(root, { recursive: true, force: true }); }
@@ -618,7 +629,7 @@ test("recovery preflight accepts a previously green main ancestor and records th
   const newerMain = "b".repeat(40);
   const { deps, calls, root } = await fixture({ remoteMain: newerMain });
   try {
-    assert.deepEqual(await preflightProductionDeploy(commit, deps, "recovery"), { commit, ciRunId: 456 });
+    assert.deepEqual(await preflightProductionDeploy(commit, deps, "recovery"), { state: "ready", commit, ciRunId: 456 });
     assert.ok(calls.some(({ command, args }) => command === "git" && args[0] === "merge-base" && args[1] === "--is-ancestor"));
   } finally { await rm(root, { recursive: true, force: true }); }
 });
@@ -627,8 +638,33 @@ test("routine preflight accepts a trusted green ancestor that remains in current
   const newerMain = "b".repeat(40);
   const { deps, calls, root } = await fixture({ remoteMain: newerMain });
   try {
-    assert.deepEqual(await preflightProductionDeploy(commit, deps), { commit, ciRunId: 456 });
+    assert.deepEqual(await preflightProductionDeploy(commit, deps), { state: "ready", commit, ciRunId: 456 });
     assert.ok(calls.some(({ command, args }) => command === "git" && args[0] === "merge-base" && args[2] === commit && args[3] === "origin/main"));
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test("routine preflight reports an existing shared lease without issuing provider work", async () => {
+  const { deps, calls, root } = await fixture({ sharedLease: { ref: previousCommit } });
+  try {
+    assert.deepEqual(await preflightProductionDeploy(commit, deps), {
+      state: "blocked_by_existing_lease", commit, ciRunId: 456, leaseHead: previousCommit,
+    });
+    assert.equal(calls.some(({ command }) => command === "pnpm" || command === "docker"), false);
+    assert.equal(calls.some(({ command, args }) => command === "gh" && args[0] === "api" && args.includes("POST")), false);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test("routine preflight fails closed when the shared lease cannot be read", async () => {
+  const { deps, root } = await fixture();
+  const run = deps.run;
+  deps.run = async (command, args, options) => {
+    if (command === "gh" && args[0] === "api" && args.some((value) => value.includes("git/ref/heads/codex-lock/nemlig-production"))) {
+      throw new Error("unavailable");
+    }
+    return await run(command, args, options);
+  };
+  try {
+    await assert.rejects(preflightProductionDeploy(commit, deps), /remote_journal_invalid/u);
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
@@ -2479,6 +2515,52 @@ test("interrupted Container restore reconciles only after readback proves the ex
   assert.deepEqual(inspected, { operation: journal.operationId, originalRunnerStopped: true, cleanupEligible: true, reason: "eligible", state: "restored" });
   assert.equal(await finalizeDeploymentRecovery(journal.operationId, deps, true, true), true);
   assert.equal(rollbacks, 1, "finalization performs no additional Worker mutation");
+});
+
+test("interrupted enabled restore reconciles the direct routine transcript after exact prior-image readback", async () => {
+  const journal = directInterruptedContainerRestoreJournal();
+  const recovery = interruptedContainerRestoreDeps(journal, { direct: true, alreadyRestored: true });
+  const result = await reconcilePendingRollback(journal.operationId, recovery.deps, true, true);
+  assert.deepEqual(result, { operation: journal.operationId, originalRunnerStopped: true, reconciled: true, reason: "eligible", state: "restored" });
+  assert.equal(recovery.rollouts, 0, "readback of a completed restore must not create another Container rollout");
+});
+
+test("interrupted enabled restore resumes acceptance after its Worker restore was already recorded", async () => {
+  const journal = directInterruptedContainerRestoreJournal({
+    restoredApplicationVersion: 27,
+    transitions: [
+      { phase: "enable_deploy", kind: "intent", at: "2026-10-05T13:50:00.000Z", version: startingId },
+      { phase: "enable_deploy", kind: "result", at: "2026-10-05T13:51:00.000Z", version: enabledId },
+      { phase: "container_restore", kind: "intent", at: "2026-10-05T13:58:00.000Z", version: enabledId },
+      { phase: "container_restore", kind: "result", at: "2026-10-05T13:59:00.000Z", version: enabledId },
+      { phase: "worker_restore", kind: "intent", at: "2026-10-05T14:00:00.000Z", version: startingId },
+      { phase: "worker_restore", kind: "result", at: "2026-10-05T14:01:00.000Z", version: startingId },
+    ],
+  });
+  assert.doesNotThrow(() => parseDeploymentJournal(JSON.stringify(journal)));
+  const recovery = interruptedContainerRestoreDeps(journal, { direct: true, alreadyRestored: true, workerRestored: true });
+  const result = await reconcilePendingRollback(journal.operationId, recovery.deps, true, true);
+  assert.deepEqual(result, { operation: journal.operationId, originalRunnerStopped: true, reconciled: true, reason: "eligible", state: "restored" });
+  assert.equal(recovery.rollouts, 0, "resuming acceptance must not create another Container rollout");
+});
+
+test("direct enabled restore consumes one explicit authorization before an uncertain exact-image retry", async () => {
+  const journal = directInterruptedContainerRestoreJournal({ recoveryFailure: "cloudflare_container_restore_uncertain" });
+  const recovery = interruptedContainerRestoreDeps(journal, { direct: true, restoreOutcomeUnknown: true });
+  const first = await reconcilePendingRollback(journal.operationId, recovery.deps, true, true, true);
+  assert.deepEqual(first, { operation: journal.operationId, originalRunnerStopped: true, reconciled: false, reason: "provider_outcome_unknown", state: "unknown" });
+  assert.equal(recovery.rollouts, 1);
+  const second = await reconcilePendingRollback(journal.operationId, recovery.deps, true, true, true);
+  assert.deepEqual(second, { operation: journal.operationId, originalRunnerStopped: true, reconciled: false, reason: "provider_outcome_unknown", state: "unknown" });
+  assert.equal(recovery.rollouts, 1, "a consumed direct-restore authorization must never be replayed");
+});
+
+test("direct enabled restore refuses active rollout drift without a second provider mutation", async () => {
+  const journal = directInterruptedContainerRestoreJournal({ recoveryFailure: "cloudflare_container_restore_uncertain" });
+  const recovery = interruptedContainerRestoreDeps(journal, { direct: true, active: true });
+  const result = await reconcilePendingRollback(journal.operationId, recovery.deps, true, true, true);
+  assert.deepEqual(result, { operation: journal.operationId, originalRunnerStopped: true, reconciled: false, reason: "provider_drift", state: "unknown" });
+  assert.equal(recovery.rollouts, 0);
 });
 
 test("ordinary reconciliation never retries an uncertain Container restore based on timestamps", async () => {
