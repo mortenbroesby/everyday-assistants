@@ -289,7 +289,12 @@ not a fresh real-family Nemlig or ChatGPT acceptance claim.
 2. Credential-free preflight rechecks the repository, exact CI provenance,
    that the candidate is still an ancestor of current `main`, and the protected
    environment before the privileged job. A candidate already superseded by a
-   deployed descendant stops before provider mutation.
+   deployed descendant stops before provider mutation. It also reads the shared
+   production lease: a held lease reports `blocked_by_existing_lease` with the
+   candidate and lease head, then skips deploy, finalization, and retention.
+   That is not a successful deployment or a live-revision check; resolve it
+   only through explicit protected reconciliation. Atomic lease acquisition
+   remains the authoritative race check immediately before mutation.
 3. The protected job builds and deploys the exact SHA, records the bounded
    report and journal, runs the configured edge/service acceptance, and
    automatically finalizes a known terminal routine run after the artifact is

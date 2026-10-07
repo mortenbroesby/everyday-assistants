@@ -619,7 +619,7 @@ test("deployment arguments and provider JSON fail closed", () => {
 test("preflight requires the exact main-only production environment before any provider action", async () => {
   const { deps, calls, root } = await fixture();
   try {
-    assert.deepEqual(await preflightProductionDeploy(commit, deps), { commit, ciRunId: 456 });
+    assert.deepEqual(await preflightProductionDeploy(commit, deps), { state: "ready", commit, ciRunId: 456 });
     assert.equal(calls.some(({ command }) => command === "pnpm"), false);
     assert.ok(calls.some(({ args }) => args.some((value) => value.endsWith("/environments/nemlig-production"))));
   } finally { await rm(root, { recursive: true, force: true }); }
@@ -629,7 +629,7 @@ test("recovery preflight accepts a previously green main ancestor and records th
   const newerMain = "b".repeat(40);
   const { deps, calls, root } = await fixture({ remoteMain: newerMain });
   try {
-    assert.deepEqual(await preflightProductionDeploy(commit, deps, "recovery"), { commit, ciRunId: 456 });
+    assert.deepEqual(await preflightProductionDeploy(commit, deps, "recovery"), { state: "ready", commit, ciRunId: 456 });
     assert.ok(calls.some(({ command, args }) => command === "git" && args[0] === "merge-base" && args[1] === "--is-ancestor"));
   } finally { await rm(root, { recursive: true, force: true }); }
 });
@@ -638,8 +638,33 @@ test("routine preflight accepts a trusted green ancestor that remains in current
   const newerMain = "b".repeat(40);
   const { deps, calls, root } = await fixture({ remoteMain: newerMain });
   try {
-    assert.deepEqual(await preflightProductionDeploy(commit, deps), { commit, ciRunId: 456 });
+    assert.deepEqual(await preflightProductionDeploy(commit, deps), { state: "ready", commit, ciRunId: 456 });
     assert.ok(calls.some(({ command, args }) => command === "git" && args[0] === "merge-base" && args[2] === commit && args[3] === "origin/main"));
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test("routine preflight reports an existing shared lease without issuing provider work", async () => {
+  const { deps, calls, root } = await fixture({ sharedLease: { ref: previousCommit } });
+  try {
+    assert.deepEqual(await preflightProductionDeploy(commit, deps), {
+      state: "blocked_by_existing_lease", commit, ciRunId: 456, leaseHead: previousCommit,
+    });
+    assert.equal(calls.some(({ command }) => command === "pnpm" || command === "docker"), false);
+    assert.equal(calls.some(({ command, args }) => command === "gh" && args[0] === "api" && args.includes("POST")), false);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test("routine preflight fails closed when the shared lease cannot be read", async () => {
+  const { deps, root } = await fixture();
+  const run = deps.run;
+  deps.run = async (command, args, options) => {
+    if (command === "gh" && args[0] === "api" && args.some((value) => value.includes("git/ref/heads/codex-lock/nemlig-production"))) {
+      throw new Error("unavailable");
+    }
+    return await run(command, args, options);
+  };
+  try {
+    await assert.rejects(preflightProductionDeploy(commit, deps), /remote_journal_invalid/u);
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 

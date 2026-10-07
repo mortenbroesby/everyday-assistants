@@ -1539,13 +1539,21 @@ const verifyGithubEnvironment = async (deps: DeployDependencies, repository: str
   if (policies.length !== 1 || policies[0]?.name !== "main" || policies[0]?.type !== "branch") fail("github_environment_not_ready");
 };
 
+export type ProductionPreflight =
+  | { state: "ready"; commit: string; ciRunId: number }
+  | { state: "blocked_by_existing_lease"; commit: string; ciRunId: number; leaseHead: string };
+
 /** Read-only exact-main CI and main-only environment proof for the deployment workflow. */
-export async function preflightProductionDeploy(commit: string, deps: DeployDependencies, sourceMode: SourceMode = "routine"): Promise<{ commit: string; ciRunId: number }> {
+export async function preflightProductionDeploy(commit: string, deps: DeployDependencies, sourceMode: SourceMode = "routine"): Promise<ProductionPreflight> {
   if (!fullSha.test(commit)) fail("invalid_commit");
   const repo = await repoIdentity(deps);
   const ciRunId = await verifySource(deps, commit, repo, sourceMode);
   await verifyGithubEnvironment(deps, repo.nameWithOwner);
-  return { commit, ciRunId };
+  if (sourceMode === "routine") {
+    const leaseHead = await readRemoteHead(deps, repo.nameWithOwner);
+    if (leaseHead) return { state: "blocked_by_existing_lease", commit, ciRunId, leaseHead };
+  }
+  return { state: "ready", commit, ciRunId };
 }
 
 const verifyDisabledRoutes = async (deps: DeployDependencies): Promise<void> => {
