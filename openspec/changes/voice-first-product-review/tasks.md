@@ -306,7 +306,7 @@ viewer.
   browser business state; show supplied comparison facts directly and retain
   the existing search, back and replace actions. Verify replacement preserves
   quantity, returns to To decide, and requires later batch acceptance.
-- [ ] 13.11 Version/release Story 3 in one PR after focused tests, loopback
+- [x] 13.11 Version/release Story 3 in one PR after focused tests, loopback
   browser smoke, strict OpenSpec validation and applicable repository gates.
 - [ ] 13.12 After merge/release, perform and record native ChatGPT Story 3
   smoke: search, refine search, compare, select, replace, return, and accept.
