@@ -20,7 +20,6 @@ const viewerResource = (uri: string) => ({ contents: [{
 }] });
 
 const userToolMetadata = {
-  show_my_basket_visually: { ui: { resourceUri: PRODUCT_VIEWER_RESOURCE_URI }, "openai/outputTemplate": PRODUCT_VIEWER_RESOURCE_URI },
   start_product_review: { ui: { resourceUri: PRODUCT_VIEWER_RESOURCE_URI }, "openai/outputTemplate": PRODUCT_VIEWER_RESOURCE_URI, "openai/widgetAccessible": true },
   update_product_review: { ui: { resourceUri: PRODUCT_VIEWER_RESOURCE_URI }, "openai/outputTemplate": PRODUCT_VIEWER_RESOURCE_URI, "openai/widgetAccessible": true },
   submit_product_review: { ui: { resourceUri: PRODUCT_VIEWER_RESOURCE_URI, visibility: ["model"] }, "openai/outputTemplate": PRODUCT_VIEWER_RESOURCE_URI },
@@ -50,30 +49,22 @@ test("production acceptance omits removed saved-storage tools while retaining di
     listTools: async () => ({ tools: withUserToolMetadata(retainedTools) }),
     listResources: async () => ({ resources: productionResourceInventory.map((uri) => ({ uri })) }),
     readResource: async ({ uri }) => viewerResource(uri),
-    callTool: async ({ name, arguments: args }) => {
+    callTool: async ({ name }) => {
       calls.push(name);
       if (name === "find_groceries") {
         return { structuredContent: { result: [{ id: 7 }, { id: 8 }] } };
       }
-      if (name === "get_grocery_details") return { structuredContent: { result: { id: args.product_id, name: "Milk" } } };
-      if (name === "show_my_favorites") {
-        assert.equal(args.result_count, 1);
-        return { structuredContent: { result: [] } };
-      }
-      if (name === "browse_grocery_section") return { structuredContent: { result: [] } };
-      if (name === "show_grocery_sections") return { structuredContent: { departments: [{ id: "fruit" }] } };
-      if (name === "show_my_basket" || name === "show_my_basket_visually") return { structuredContent: { items: [] } };
+      if (name === "show_my_basket") return { structuredContent: { items: [] } };
       return { structuredContent: { applicable: false } };
     },
   };
 
   const report = await verifyReadOnlyProductionFeatures(client);
   assert.deepEqual(calls, [
-    "find_groceries", "get_grocery_details", "show_my_favorites", "show_grocery_sections",
-    "browse_grocery_section", "show_my_basket", "show_my_basket_visually",
+    "find_groceries", "show_my_basket",
   ]);
   for (const forbidden of [
-    ...productionToolInventory.prepareOnly,
+    ...productionToolInventory.localState,
     ...productionToolInventory.externalState,
   ]) assert.equal(calls.includes(forbidden), false, `Read-only acceptance called ${forbidden}`);
   for (const removed of removedStorageTools) assert.equal(calls.includes(removed), false, `Read-only acceptance called removed ${removed}`);
@@ -92,22 +83,19 @@ test("service acceptance has a closed read-only fixture inventory and denies bas
     },
     callTool: async ({ name }) => {
       calls.push(name);
-      if (["review_items_to_add", "add_approved_items"].includes(name)) return { isError: true };
+      if (["start_product_review", "update_product_review", "submit_product_review"].includes(name)) return { isError: true };
       if (name === "find_groceries") return { structuredContent: { result: [{ id: 7 }] } };
-      if (name === "get_grocery_details") return { structuredContent: { result: { id: 7, name: "Milk" } } };
-      if (name === "show_grocery_sections") return { structuredContent: { departments: [{ id: "fruit" }] } };
-      if (name === "show_my_basket" || name === "show_my_basket_visually") return { structuredContent: { items: [] } };
+      if (name === "show_my_basket") return { structuredContent: { items: [] } };
       return { structuredContent: { result: [] } };
     },
   };
   const report = await verifyServiceAcceptanceFeatures(client);
   assert.deepEqual(calls, [
-    "find_groceries", "get_grocery_details", "show_my_favorites", "show_grocery_sections", "browse_grocery_section", "show_my_basket", "show_my_basket_visually",
-    "review_items_to_add", "add_approved_items",
+    "find_groceries", "show_my_basket", "start_product_review", "update_product_review", "submit_product_review",
   ]);
-  assert.deepEqual(report.denied, ["review_items_to_add", "add_approved_items"]);
+  assert.deepEqual(report.denied, ["start_product_review", "update_product_review", "submit_product_review"]);
   assert.deepEqual(resourceReads, [PRODUCT_VIEWER_RESOURCE_URI]);
-  assert.equal(report.requestCount, 12);
+  assert.equal(report.requestCount, 8);
 });
 
 test("regular read-only acceptance verifies the exact viewer resource and user tool metadata", async () => {
@@ -115,12 +103,8 @@ test("regular read-only acceptance verifies the exact viewer resource and user t
     listTools: async () => ({ tools: withUserToolMetadata(retainedTools) }),
     listResources: async () => ({ resources: productionResourceInventory.map((uri) => ({ uri })) }),
     readResource: async ({ uri }) => viewerResource(uri),
-    callTool: async ({ name, arguments: args }) => {
+    callTool: async ({ name }) => {
       if (name === "find_groceries") return { structuredContent: { result: [{ id: 7 }] } };
-      if (name === "show_grocery_sections") return { structuredContent: { departments: [{ id: "fruit" }] } };
-      if (name === "show_my_favorites") return { structuredContent: { result: [] } };
-      if (name === "browse_grocery_section") return { structuredContent: { result: [] } };
-      if (name === "get_grocery_details") return { structuredContent: { result: { id: args.product_id } } };
       return { structuredContent: { items: [] } };
     },
   };
@@ -152,16 +136,15 @@ test("service acceptance closes its inventory when Apps are disabled", async () 
     readResource: async ({ uri }) => viewerResource(uri),
     callTool: async ({ name }) => {
       calls.push(name);
-      if (["review_items_to_add", "add_approved_items"].includes(name)) return { isError: true };
+      if (["start_product_review", "update_product_review", "submit_product_review"].includes(name)) return { isError: true };
       if (name === "find_groceries") return { structuredContent: { result: [{ id: 7 }] } };
-      if (name === "show_grocery_sections") return { structuredContent: { departments: [{ id: "fruit" }] } };
-      if (name === "show_my_basket" || name === "show_my_basket_visually") return { structuredContent: { items: [] } };
+      if (name === "show_my_basket") return { structuredContent: { items: [] } };
       return { structuredContent: { result: [] } };
     },
   };
   const report = await verifyServiceAcceptanceFeatures(client);
-  assert.equal(calls.includes("get_grocery_details"), true);
-  assert.equal(report.requestCount, 12);
+  assert.equal(calls.includes("show_my_basket"), true);
+  assert.equal(report.requestCount, 8);
 });
 
 test("service acceptance accepts only explicit HTTP 403 transport denials", async () => {
@@ -170,16 +153,15 @@ test("service acceptance accepts only explicit HTTP 403 transport denials", asyn
     listResources: async () => ({ resources: serviceAcceptanceResourceInventory.map((uri) => ({ uri })) }),
     readResource: async ({ uri }: { uri: string }) => viewerResource(uri),
     callTool: async ({ name }: { name: string }) => {
-      if (["review_items_to_add", "add_approved_items"].includes(name)) throw { status: 403 };
+      if (["start_product_review", "update_product_review", "submit_product_review"].includes(name)) throw { status: 403 };
       if (name === "find_groceries") return { structuredContent: { result: [{ id: 7 }] } };
-      if (name === "show_grocery_sections") return { structuredContent: { departments: [{ id: "fruit" }] } };
-      if (name === "show_my_basket" || name === "show_my_basket_visually") return { structuredContent: { items: [] } };
+      if (name === "show_my_basket") return { structuredContent: { items: [] } };
       return { structuredContent: { result: [] } };
     },
   };
-  assert.deepEqual((await verifyServiceAcceptanceFeatures(client)).denied, ["review_items_to_add", "add_approved_items"]);
+  assert.deepEqual((await verifyServiceAcceptanceFeatures(client)).denied, ["start_product_review", "update_product_review", "submit_product_review"]);
   const failed = { ...client, callTool: async ({ name }: { name: string }) => {
-    if (name === "review_items_to_add") throw { status: 500 };
+    if (name === "start_product_review") throw { status: 500 };
     return await client.callTool({ name });
   } };
   await assert.rejects(verifyServiceAcceptanceFeatures(failed), /precise HTTP 403/u);

@@ -14,7 +14,7 @@ test("voice and touch share exact local edits, reject stale/foreign references, 
   const initial = await service.start("owner", [{ product_id: 1, quantity: 2 }, { product_id: 2, quantity: 1 }]);
   const accepted = await service.update("owner", initial.review_id, initial.revision, { kind: "accept", product_ids: [1] });
   assert.deepEqual(accepted.items.map(i => i.state), ["ready", "needs-review"]);
-  await assert.rejects(service.update("owner", initial.review_id, accepted.revision, { kind: "accept", product_ids: [1] }), /Only In Review/i);
+  await assert.rejects(service.update("owner", initial.review_id, accepted.revision, { kind: "accept", product_ids: [1] }), /Only To decide/i);
   assert.equal(service.show("owner", initial.review_id).revision, accepted.revision);
   await assert.rejects(service.update("owner", initial.review_id, initial.revision, { kind: "remove", product_ids: [1] }), /stale/i);
   assert.throws(() => service.show("stranger", initial.review_id), /unavailable/i);

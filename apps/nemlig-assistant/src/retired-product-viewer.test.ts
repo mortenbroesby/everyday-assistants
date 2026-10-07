@@ -15,12 +15,12 @@ test("retired viewer identities cover the stable and previous versioned URIs", (
   ]);
 });
 
-test("retired viewer is inert and offers a conversation route to the current selection", () => {
+test("retired viewer is inert and offers a conversation route to the current draft list", () => {
   const html = renderRetiredProductViewerHtml();
-  assert.match(html, /This selection card is retired/u);
-  assert.match(html, /Open current selection/u);
+  assert.match(html, /This draft list card is retired/u);
+  assert.match(html, /Open current draft list/u);
   assert.match(html, /ui\/message/u);
   assert.match(html, /sendFollowUpMessage/u);
-  assert.match(html, /Open my current Nemlig selection/u);
+  assert.match(html, /Open my current Draft list/u);
   assert.doesNotMatch(html, /tools\/call|callTool|hydrate|fetch\(/u);
 });

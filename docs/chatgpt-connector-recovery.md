@@ -35,7 +35,7 @@ them before changing anything:
 | Human permission | `use:nemlig-assistant` |
 | OAuth flow | Authorization Code with S256 PKCE |
 | Client registration | ChatGPT's public CIMD metadata imported as an Auth0 third-party client |
-| Accepted operation | Authenticated, read-only `get_profile` with empty input |
+| Accepted operation at the time | Authenticated, read-only `get_profile` with empty input |
 
 The Worker is a protected resource server. Auth0 and the OAuth-capable client
 own browser login, authorization-code exchange, PKCE, refresh, and client
@@ -213,10 +213,12 @@ changing Worker authentication or recreating the MCP endpoint.
 4. Prefer repairing the existing association. If the association is
    demonstrably unrecoverable, use the approved one-connector CIMD replacement
    procedure. Do not create a parallel connector or second MCP URL.
-5. Refresh metadata and verify that `get_profile` is exposed before attempting
-   a user conversation.
-6. Perform one bounded, fresh read-only `get_profile` call and correlate it
-   with the privacy-safe Worker sequence above.
+5. For release 6.0.0 and later, refresh metadata and verify that the six-tool
+   catalog is exposed before attempting a user conversation. The historical
+   `get_profile` check below applies only to earlier releases.
+6. Perform one bounded, fresh authenticated MCP discovery and correlate it
+   with the privacy-safe Worker sequence above. Test provider access separately
+   with `check_nemlig_connection` when credentials are provisioned.
 7. Stop changing authentication after that call succeeds. Treat provider
    access, shopping functionality, and long-term refresh behavior as separate
    tests.

@@ -97,18 +97,9 @@ try {
     assert.equal(client.getInstructions()?.startsWith(`Current release: ${sourceManifest.version} - ${sourceManifest.nemligRelease?.codename}.`), true);
     const tools = (await client.listTools()).tools.map((tool) => tool.name).sort();
     assert.deepEqual(tools, [
-      "add_approved_items",
-      "browse_grocery_section",
       "check_nemlig_connection",
       "find_groceries",
-      "get_grocery_details",
-      "get_profile",
-      "reconnect_nemlig_assistant",
-      "review_items_to_add",
-      "show_grocery_sections",
       "show_my_basket",
-      "show_my_basket_visually",
-      "show_my_favorites",
       "start_product_review",
       "submit_product_review",
       "update_product_review",

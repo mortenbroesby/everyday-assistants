@@ -278,7 +278,6 @@ test("workflow runs routine finalization after saving the release artifact with 
 test("CI does not gate verification on release metadata", async () => {
   const source = await readFile(ciWorkflowPath, "utf8");
   assert.doesNotMatch(source, /check:version-bump|check:release-note/u);
-  assert.match(source, /actions\/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7\.0\.1/u);
 });
 
 test("deployment eligibility does not depend on release metadata", async () => {

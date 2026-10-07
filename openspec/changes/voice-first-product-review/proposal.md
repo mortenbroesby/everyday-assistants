@@ -1,5 +1,8 @@
 ## Why
 
+**Later tool and naming decision (7 October 2026):**
+[`slim-nemlig-mcp-surface`](../slim-nemlig-mcp-surface/proposal.md) supersedes this change's tool-retention and “Your Nemlig selection” decisions. The Draft list, To decide, Ready, and Nemlig basket names and six-tool catalog are the current target. Historical completed work and remaining live-acceptance tasks below are preserved as evidence.
+
 Portfolio status (29 September 2026, #114): Current v6 implementation is integrated. Native historical/recovery acceptance owner: #137; deployment evidence is separately reused from #96. Preserve unchecked host gates and the existing lightweight viewer.
 See [portfolio evidence](../../../docs/openspec-portfolio-reconciliation.md).
 

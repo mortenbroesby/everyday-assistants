@@ -275,7 +275,7 @@ export default {
         const container = getContainer(containerNamespace(env), FIXED_CONTAINER_NAME);
         return container.admit({ principalKey: principal.principal_key }, {
           revision: config.principalPolicy.revision,
-        }, operation !== "protocol" && operation !== "profile"
+        }, operation !== "protocol"
           && !isVerifiedServicePrincipal(principal, config));
       },
       async forward(original, _operation, _config, deadline, admission) {
