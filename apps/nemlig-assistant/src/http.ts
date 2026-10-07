@@ -98,7 +98,7 @@ export function createHttpApp(
     oauthMetadata: oauth,
     resourceServerUrl: config.publicUrl,
     scopesSupported: [config.requiredScope],
-    resourceName: "Nemlig Assistant",
+    resourceName: "MoJo Shopper",
   }));
   app.get("/healthz", (_req: Request, res: Response) => res.json({ status: "ok" }));
   app.get("/readyz", (_req: Request, res: Response) => res.json({ status: "ready" }));
