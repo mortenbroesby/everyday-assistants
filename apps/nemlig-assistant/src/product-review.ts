@@ -27,7 +27,7 @@ export type ProductReviewAction =
   | { kind: "navigate"; destination: ReviewDestination }
   | { kind: "alternatives"; product_id: number; query: string; limit?: number }
   | { kind: "replace"; product_id: number; replacement_id: number };
-interface StoredReview { owner: string; busy: boolean; snapshot: ProductReviewSnapshot; proposalId?: string }
+interface StoredReview { owner: string; busy: boolean; snapshot: ProductReviewSnapshot; proposalId?: string; viewId?: string }
 type ReviewProposals = Pick<BasketProposalService, "prepareAdditions" | "apply">;
 
 const validPositive = (value: number): boolean => Number.isSafeInteger(value) && value > 0;
@@ -64,7 +64,7 @@ export class ProductReviewService {
   private get(owner: string, id: string): StoredReview {
     const draft = this.drafts.get(id);
     if (!draft || draft.owner !== owner) {
-      throw new NemligError("Draft list unavailable. Use update_product_review show without an old review_id or revision to find this conversation's active draft list; never replay the failed edit. If none remains, ask before starting a new draft list.");
+      throw new NemligError("Draft list unavailable. Use update_product_review_conversation show without an old review_id or revision to find this conversation's active draft list; never replay the failed edit. If none remains, ask before starting a new draft list.");
     }
     return draft;
   }
@@ -73,6 +73,22 @@ export class ProductReviewService {
     const stored = this.get(owner, id);
     this.touch(stored);
     return structuredClone(stored.snapshot);
+  }
+
+  /** A new rendered card supersedes every older card for this conversation. */
+  createView(owner: string, id: string): { review: ProductReviewSnapshot; view_id: string } {
+    const stored = this.get(owner, id);
+    const view_id = randomUUID();
+    stored.viewId = view_id;
+    this.touch(stored);
+    return { review: structuredClone(stored.snapshot), view_id };
+  }
+
+  assertCurrentView(owner: string, id: string, viewId: string): void {
+    const stored = this.get(owner, id);
+    if (!stored.viewId || stored.viewId !== viewId) {
+      throw new NemligError("This Draft list card is out of date. Use the newest card before making changes.");
+    }
   }
 
   active(owner: string): ProductReviewSnapshot | undefined {

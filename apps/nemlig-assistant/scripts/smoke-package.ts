@@ -96,15 +96,17 @@ try {
     assert.equal(client.getServerVersion()?.name, "nemlig-assistant");
     assert.equal(client.getServerVersion()?.version, sourceManifest.version);
     assert.doesNotMatch(client.getInstructions() ?? "", /^Current release:/u);
-    const tools = (await client.listTools()).tools.map((tool) => tool.name).sort();
+    const tools = (await client.listTools()).tools
+      .filter((tool) => !tool._meta?.ui || ((tool._meta.ui as { visibility?: string[] }).visibility ?? []).includes("model"))
+      .map((tool) => tool.name).sort();
     assert.deepEqual(tools, [
       "check_nemlig_connection",
       "find_groceries",
       "get_profile",
       "show_my_basket",
       "start_product_review",
-      "submit_product_review",
-      "update_product_review",
+      "submit_product_review_conversation",
+      "update_product_review_conversation",
     ]);
     assert.doesNotMatch(tools.join("\n"), /add_to_cart|remove_from_cart|replace_cart_line|clear_cart/);
     assert.doesNotMatch(tools.join("\n"), /recipe|checkout|order|payment/i);
@@ -113,10 +115,10 @@ try {
     const resource = viewer.contents[0];
     assert.ok(resource && "text" in resource);
     assert.equal(resource.mimeType, "text/html;profile=mcp-app");
-    assert.equal(PRODUCT_VIEWER_RESOURCE_URI, "ui://nemlig/product-viewer-v8.html");
+    assert.equal(PRODUCT_VIEWER_RESOURCE_URI, "ui://nemlig/product-viewer-v9.html");
     assert.match(resource.text, /Nemlig confirmed this Draft list was added successfully\./u);
     const packagedViewer = await readFile(path.join(tempRoot, "node_modules", "nemlig-assistant", "dist", "picker.html"), "utf8");
-    assert.equal(resource.text, packagedViewer, "installed MCP server did not serve the packaged v8 viewer artifact");
+    assert.equal(resource.text, packagedViewer, "installed MCP server did not serve the packaged v9 viewer artifact");
   } finally {
     await client.close();
   }
