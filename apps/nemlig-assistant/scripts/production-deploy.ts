@@ -946,21 +946,31 @@ const expectedRecovery = (journal: DeploymentJournal): RecoveryTarget | undefine
   return undefined;
 };
 
-/** Metadata-only proof: four bounded reads, no instance wake or convergence retry. */
-const verifyRecoveryTarget = async (deps: DeployDependencies, expected: RecoveryTarget): Promise<string | undefined> => {
+/** Exact Worker and Container readback; terminal acceptance can make lifecycle rereads redundant. */
+const verifyRecoveryTarget = async (
+  deps: DeployDependencies,
+  expected: RecoveryTarget,
+  requireInstanceRead = true,
+): Promise<string | undefined> => {
   const current = await readCurrent(deps);
   const raw = await readVersion(deps, current.version);
   const state = parseVersionState(raw, current.version);
   verifyCandidateVersion(raw, current.version, expected.sourceRevision ?? state.revision, expected.enabled ?? state.enabled);
   const container = await readContainer(deps, expected.containerId);
-  const instances = await wrangler(deps, ["containers", "instances", container.id, "--json"]);
-  const instanceMatches = expected.requireInactive
-    ? instancesInactive(instances)
-    : instancesInactive(instances) || (state.enabled && runningInstanceMatches(instances, expected.applicationVersion));
+  let lifecycleMatches = true;
+  if (requireInstanceRead) {
+    // This is deliberately evaluated only for a pre-acceptance recovery proof.
+    // A successful authenticated service check may wake a Container after it has
+    // established the exact revision, image and application version.
+    const instances = await wrangler(deps, ["containers", "instances", container.id, "--json"]);
+    lifecycleMatches = expected.requireInactive
+      ? instancesInactive(instances)
+      : instancesInactive(instances) || (state.enabled && runningInstanceMatches(instances, expected.applicationVersion));
+  }
   const exactMetadata = (expected.version === undefined || current.version === expected.version) && (expected.enabled === undefined || state.enabled === expected.enabled)
     && container.id === expected.containerId && container.image === expected.image && container.version === expected.applicationVersion
     && (expected.configDigest === undefined || versionConfig(raw).digest === expected.configDigest)
-    && instanceMatches;
+    && lifecycleMatches;
   if (!exactMetadata) return undefined;
   if (expected.enabled === false) {
     try { await verifyDisabledRoutes(deps); } catch { return undefined; }
@@ -1480,6 +1490,11 @@ const knownTerminal = (journal: DeploymentJournal): boolean => {
       || (journal.rollback === "not_needed" && result.phase === "enable_deploy"));
 };
 
+const restoredAcceptanceMakesLifecycleReadRedundant = (journal: DeploymentJournal): boolean =>
+  journal.lastVerifiedState === "restored"
+  && ["container_restore_explicit_authorized_retry", "starting_version_restored", "edge_acceptance", "service_fixture_acceptance"]
+    .every((check) => journal.checks.includes(check));
+
 export async function inspectDeploymentRecovery(operation: string, deps: DeployDependencies, originalRunnerStopped = false): Promise<RecoveryInspection> {
   if (!operationId.test(operation)) return { operation, originalRunnerStopped, cleanupEligible: false, reason: "operation_mismatch", state: "unknown" };
   try {
@@ -1493,7 +1508,7 @@ export async function inspectDeploymentRecovery(operation: string, deps: DeployD
         ? "provider_outcome_unknown" : "pending_or_unknown";
       return { operation, originalRunnerStopped, cleanupEligible: false, reason, state: "unknown" };
     }
-    if (!await verifyRecoveryTarget(deps, expected)) {
+    if (!await verifyRecoveryTarget(deps, expected, !restoredAcceptanceMakesLifecycleReadRedundant(journal))) {
       return { operation, originalRunnerStopped, cleanupEligible: false, reason: "provider_drift", state: "unknown" };
     }
     if (!originalRunnerStopped) return { operation, originalRunnerStopped, cleanupEligible: false, reason: "runner_not_stopped", state: expected.state };
@@ -1532,7 +1547,7 @@ export async function finalizeDeploymentRecovery(operation: string, deps: Deploy
   const { journal } = remote;
   const expected = expectedRecovery(journal);
   if (journal.operationId !== operation || !knownTerminal(journal) || !expected) return false;
-  if (!await verifyRecoveryTarget(deps, expected)) return false;
+  if (!await verifyRecoveryTarget(deps, expected, !restoredAcceptanceMakesLifecycleReadRedundant(journal))) return false;
   // Compare the containing ref head, never journal.remoteCommit supplied by the blob.
   return releaseDeploymentLeases(deps, repo.nameWithOwner, remote.head, operation);
 }

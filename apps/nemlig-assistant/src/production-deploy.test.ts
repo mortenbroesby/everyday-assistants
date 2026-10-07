@@ -2255,6 +2255,7 @@ test("a restored direct transcript resumes edge acceptance without another Conta
     failure: "edge_acceptance_failed",
     recoveryFailure: "edge_acceptance_failed",
     restoredApplicationVersion: 27,
+    checks: ["starting_state_recorded", "enabled_version", "container_rollout", "container_restore_explicit_authorized_retry"],
     transitions: [
       { phase: "enable_deploy", kind: "intent", at: "2026-10-05T13:50:00.000Z", version: startingId },
       { phase: "enable_deploy", kind: "result", at: "2026-10-05T13:51:00.000Z", version: enabledId },
@@ -2268,6 +2269,15 @@ test("a restored direct transcript resumes edge acceptance without another Conta
   const result = await reconcilePendingRollback(journal.operationId, recovery.deps, true, true);
   assert.deepEqual(result, { operation: journal.operationId, originalRunnerStopped: true, reconciled: true, reason: "eligible", state: "restored" });
   assert.equal(recovery.rollouts, 0, "read-only acceptance recovery must not request another Container rollout");
+  const run = recovery.deps.run;
+  recovery.deps.run = async (command, args, options) => {
+    if (command === "pnpm" && args.includes("instances")) throw new Error("terminal cleanup must not re-read Container lifecycle");
+    return await run(command, args, options);
+  };
+  assert.deepEqual(await inspectDeploymentRecovery(journal.operationId, recovery.deps, true), {
+    operation: journal.operationId, originalRunnerStopped: true, cleanupEligible: true, reason: "eligible", state: "restored",
+  });
+  assert.equal(await finalizeDeploymentRecovery(journal.operationId, recovery.deps, true, true), true);
 });
 
 test("direct enabled restore consumes one explicit authorization before an uncertain exact-image retry", async () => {
