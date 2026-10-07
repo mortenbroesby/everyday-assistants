@@ -138,3 +138,21 @@ is the completed baseline. This follow-up addresses the confirmed current-viewer
 fold race; #137 native historical-card acceptance and #96 production evidence
 remain separate. No provider basket mutation, credential, deployment or new
 frontend architecture is in scope.
+
+## Staged visual refinement (8 October 2026)
+
+The current-source React viewer is functionally capable of local selection,
+contextual alternatives, protected submission, and recovery. Recent household
+testing identified a presentation problem rather than a missing shopping
+protocol: the same page can expose several competing actions, Ready rows do not
+make their local edit paths discoverable enough, and comparison/detail states
+do not consistently show the right amount of product evidence.
+
+This follow-up refines the existing viewer in independently releasable stories.
+Each story is one scoped PR: merge it, release it through the normal path, and
+record a native ChatGPT smoke result before beginning the next story. It does
+not add a frontend framework, router, browser-owned business state, polling,
+provider calls, tool-catalog redesign, or a new basket-write path. Host-only
+ideas (for example, sending a starter prompt, closing a card, or opening an
+external site) remain absent or conversational text until the exact supported
+host API has been demonstrated.

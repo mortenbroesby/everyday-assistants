@@ -247,3 +247,88 @@ metadata-readback, and historical-card evidence.
 - [ ] 12.3 After a separately approved release, verify the registered resource
   and historical cards in native ChatGPT. Local evidence does not complete
   task 9.5 or this host-acceptance gate.
+
+## 13. Staged visual refinement (8 October 2026)
+
+**Story gate:** Before Story 1, verify and record the resource URI actually
+served in native ChatGPT (current-source target: v10; do not infer the served
+URI from source or `main`), explicit activation, one local navigation/edit,
+and whether the same mounted frame remains visible. If the host serves another
+URI or fails before the viewer loads, record the exact boundary and reconcile
+the baseline before drawing lifecycle conclusions; do not paper over it in the
+viewer.
+
+### Story 1 — compact row foundation (one PR)
+
+- [ ] 13.1 Characterize the current row/disclosure behavior with focused
+  React/viewer tests, including keyboard operation, checkbox-versus-row click,
+  missing image, long name, supplied factual sections and zero tool/provider
+  calls on disclosure.
+- [ ] 13.2 Refine existing To decide and Ready row layout for image, identity,
+  pack/brand, quantity and line price while keeping only the supplied factual
+  disclosures; verify 320px/375px layout, focus visibility, unavailable rows,
+  and no new business-state/client fetch path.
+- [ ] 13.3 Bump the viewer resource URI when its HTML changes and update the
+  scoped feature inventory. Run focused viewer/browser smoke, strict OpenSpec
+  validation and applicable repository gates, then prepare one reviewable PR.
+  Use the verified-main deployment path after merge; add package identity or
+  release-note changes only when the package release policy requires them.
+- [ ] 13.4 After merge/release, perform and record native ChatGPT Story 1 smoke
+  for expansion, factual disclosure, quantity persistence and a mounted-frame
+  check. Do not start Story 2 until this result is pass or an exact host block
+  is documented and accepted.
+
+### Story 2 — local selection action hierarchy (one PR)
+
+- [ ] 13.5 Add focused failing coverage for redundant/invalid state actions,
+  then make To decide batch acceptance its only acceptance path and make Ready
+  row expansion expose only existing move-back/remove paths; verify that local
+  removal remains confirmed and makes zero provider basket calls.
+- [ ] 13.6 Remove redundant Ready banner/summary and action clutter, retaining
+  one destination-appropriate primary action and clear local-versus-Nemlig
+  basket wording; verify batch accept, revisit, removal, quantity flush and
+  stale-revision recovery preserve server authority.
+- [ ] 13.7 Version/release the Story 2 viewer change through one PR after
+  focused tests, loopback browser smoke, strict OpenSpec validation and the
+  applicable repository gate; record exact revision and CI evidence.
+- [ ] 13.8 After merge/release, perform and record native ChatGPT Story 2 smoke:
+  select → accept → Ready → quantity → move back → To decide, plus one
+  conversational edit/readback. Do not start Story 3 until this is pass or an
+  exact host block is documented and accepted.
+
+### Story 3 — contextual alternatives comparison (one PR)
+
+- [ ] 13.9 Add focused coverage for immediately scannable returned alternatives,
+  long-form factual disclosures, no current-product internal divider, empty and
+  unavailable results, current-candidate-only replacement, and no implicit
+  Ready acceptance.
+- [ ] 13.10 Refine the existing alternatives destination without new provider or
+  browser business state; show supplied comparison facts directly and retain
+  the existing search, back and replace actions. Verify replacement preserves
+  quantity, returns to To decide, and requires later batch acceptance.
+- [ ] 13.11 Version/release Story 3 in one PR after focused tests, loopback
+  browser smoke, strict OpenSpec validation and applicable repository gates.
+- [ ] 13.12 After merge/release, perform and record native ChatGPT Story 3
+  smoke: search, refine search, compare, select, replace, return, and accept.
+  Confirm empty/error paths remain honest. Do not start Story 4 until this is
+  pass or an exact host block is documented and accepted.
+
+### Story 4 — entry and outcome states (one PR)
+
+- [ ] 13.13 Characterize the existing prepared, cancel, verified-success,
+  uncertain, unavailable, empty and ended-draft states. Determine any standard
+  host follow-up, close or external-link capability from current official
+  documentation and native evidence before adding such a control; omit it if
+  not proven.
+- [ ] 13.14 Simplify the existing confirmation/outcome hierarchy and add only
+  supported empty-state conversational suggestions or compact local overflow
+  actions. Verify exact confirmation, cancel, single-use submission, readback,
+  no automatic retry, local-only discard and complete text fallback remain
+  unchanged.
+- [ ] 13.15 Version/release Story 4 in one PR after focused tests, fake-provider
+  protected-submit smoke, loopback browser smoke, strict OpenSpec validation
+  and applicable repository gates.
+- [ ] 13.16 After merge/release, perform and record native ChatGPT Story 4
+  smoke for empty/end, prepared confirmation/cancel and verified/uncertain
+  presentation. A real Nemlig addition remains separately authorized; do not
+  use it as this story's default test.

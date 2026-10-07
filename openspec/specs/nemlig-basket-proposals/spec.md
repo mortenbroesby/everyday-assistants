@@ -156,11 +156,11 @@ Connection access, app creation, proposal preparation, this OpenSpec, implementa
 
 #### Scenario: Exact Ready addition is authorized
 - **WHEN** the user clearly requests addition of unchanged Ready items or approves the exact prepared effect
-- **THEN** the model may call `submit_product_review` once subject to every proposal invariant
+- **THEN** the model may call `submit_product_review_conversation` once subject to every proposal invariant
 
 #### Scenario: Ready items exist without authorization
 - **WHEN** Ready items exist but the user has not instructed their addition
-- **THEN** the model does not call `submit_product_review`
+- **THEN** the model does not call `submit_product_review_conversation`
 
 ### Requirement: No autonomous checkout
 
@@ -172,7 +172,7 @@ The proposal protocol SHALL NOT prepare or apply checkout, payment, purchase, or
 - **THEN** the service refuses the unsupported operation and does not mutate the basket or order
 
 ### Requirement: Draft list is the model-visible addition path
-The model-visible provider-basket write path SHALL use `start_product_review` or `update_product_review` to prepare exact Ready lines and `submit_product_review` to apply only an authorized unchanged submission. It SHALL preserve positive-addition semantics, fresh validation, principal binding, single-use authority, serialization, verified readback, and no automatic retry after an uncertain write. Direct provider-basket prepare and apply tools SHALL NOT be advertised.
+The model-visible provider-basket write path SHALL use `start_product_review` or `update_product_review_conversation` to prepare exact Ready lines and `submit_product_review_conversation` to apply only an authorized unchanged submission. It SHALL preserve positive-addition semantics, fresh validation, principal binding, single-use authority, serialization, verified readback, and no automatic retry after an uncertain write. Direct provider-basket prepare and apply tools SHALL NOT be advertised.
 
 #### Scenario: Ready addition is authorized
 - **WHEN** the user clearly asks to add the unchanged Ready Draft list or approves the exact prepared effect

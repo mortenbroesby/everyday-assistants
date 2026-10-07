@@ -91,7 +91,7 @@ test("MCP submission smoke searches, prepares only accepted lines, and verifies 
     assert.equal(started.isError, undefined);
     let review = (started.structuredContent as { review: ProductReviewSnapshot }).review;
     const update = async (action: Record<string, unknown>) => {
-      const response = await mcp.callTool({ name: "update_product_review", arguments: { review_id: review.review_id, revision: review.revision, action } });
+      const response = await mcp.callTool({ name: "update_product_review_conversation", arguments: { review_id: review.review_id, revision: review.revision, action } });
       assert.equal(response.isError, undefined, JSON.stringify(response.content));
       review = (response.structuredContent as { review: ProductReviewSnapshot }).review;
       return review;
@@ -112,14 +112,14 @@ test("MCP submission smoke searches, prepares only accepted lines, and verifies 
     assert.equal(JSON.stringify(prepared.review).includes("Unresolved tea"), false);
     assert.equal(JSON.stringify(prepared.review).includes('"product_id":8'), false);
 
-    const wrongReference = await mcp.callTool({ name: "submit_product_review", arguments: {
+    const wrongReference = await mcp.callTool({ name: "submit_product_review_conversation", arguments: {
       review_id: review.review_id, revision: review.revision, submission_id: "00000000-0000-4000-8000-000000000000",
     } });
     assert.equal(wrongReference.isError, true, "only the exact prepared submission can be applied");
     assert.equal(providerWrites, 0);
     // Simulate the separate conversational approval turn for these exact lines.
     // User approval is the model's responsibility, not a boolean invented by this test.
-    const submitted = await mcp.callTool({ name: "submit_product_review", arguments: {
+    const submitted = await mcp.callTool({ name: "submit_product_review_conversation", arguments: {
       review_id: review.review_id, revision: review.revision, submission_id: prepared.submission_id,
     } });
     assert.equal(submitted.isError, undefined, JSON.stringify(submitted.content));
@@ -135,7 +135,7 @@ test("MCP submission smoke searches, prepares only accepted lines, and verifies 
     assert.equal(providerWrites, 1);
     assert.deepEqual((await provider.getCart()).items.map(({ id, quantity }) => [id, quantity]), [[99, 2], [7, 3]], "verified provider readback preserves unrelated lines");
 
-    const duplicate = await mcp.callTool({ name: "submit_product_review", arguments: {
+    const duplicate = await mcp.callTool({ name: "submit_product_review_conversation", arguments: {
       review_id: review.review_id, revision: review.revision, submission_id: prepared.submission_id,
     } });
     assert.equal(duplicate.isError, true, "the same approved submission cannot be applied twice");

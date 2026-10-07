@@ -83,7 +83,7 @@ test("unauthenticated requests never reach authentication backends or the Contai
     forward: async () => { calls += 1; return new Response("unexpected"); },
   });
   assert.equal(response.status, 401);
-  assert.match(response.headers.get("www-authenticate") ?? "", /^Bearer resource_metadata="https:\/\/mcp\.example\.test\/\.well-known\/oauth-protected-resource\/mcp", error="invalid_token", error_description="Reconnect Nemlig Assistant to continue"$/u);
+  assert.match(response.headers.get("www-authenticate") ?? "", /^Bearer resource_metadata="https:\/\/mcp\.example\.test\/\.well-known\/oauth-protected-resource\/mcp", error="invalid_token", error_description="Reconnect MoJo Shopper to continue"$/u);
   assert.equal(calls, 0);
 });
 
@@ -187,7 +187,7 @@ test("service acceptance denies forbidden calls before admission and Container f
   let admitted = 0;
   let forwarded = 0;
   const service = { subject: "service-client@clients", principal_key: "s".repeat(32), enabled: true };
-  const response = await handleGatewayRequest(mcpRequest({ method: "tools/call", params: { name: "submit_product_review" } }), {
+  const response = await handleGatewayRequest(mcpRequest({ method: "tools/call", params: { name: "submit_product_review_conversation" } }), {
     ...env,
     NEMLIG_MCP_SERVICE_ACCEPTANCE_ENABLED: "true",
     NEMLIG_MCP_SERVICE_CLIENT_ID: "service-client",
@@ -410,10 +410,10 @@ test("a stalled request body is cancelled at the total deadline", async () => {
 });
 
 test("local review and actual submission share useful admission", () => {
-  for (const name of ["start_product_review", "update_product_review"]) {
+  for (const name of ["start_product_review", "update_product_review_conversation"]) {
     assert.equal(classifyMcpMessage({ method: "tools/call", params: { name } }), "useful");
   }
-  assert.equal(classifyMcpMessage({ method: "tools/call", params: { name: "submit_product_review" } }), "useful");
+  assert.equal(classifyMcpMessage({ method: "tools/call", params: { name: "submit_product_review_conversation" } }), "useful");
 });
 
 test("backend timeout is returned without retry", async () => {

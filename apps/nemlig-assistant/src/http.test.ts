@@ -129,7 +129,7 @@ test("loopback MCP bursts use encrypted credential admission without usage limit
       assert.notEqual(result.isError, true);
     }
     for (let index = 0; index < 30; index += 1) {
-      const result = await client.callTool({ name: "submit_product_review", arguments: { review_id: "00000000-0000-4000-8000-000000000000", revision: 1, submission_id: "00000000-0000-4000-8000-000000000000" } });
+      const result = await client.callTool({ name: "submit_product_review_conversation", arguments: { review_id: "00000000-0000-4000-8000-000000000000", revision: 1, submission_id: "00000000-0000-4000-8000-000000000000" } });
       assert.equal(result.isError, true, "rate removal must not bypass exact approval");
     }
     assert.equal(reads, 501);
@@ -198,7 +198,7 @@ test("HTTP MCP advertises Auth0, rejects anonymous and foreign origins, and pres
       resource: config.publicUrl.href,
       authorization_servers: [config.issuer.href],
       scopes_supported: [config.requiredScope],
-      resource_name: "Nemlig Assistant",
+      resource_name: "MoJo Shopper",
     });
     const health = await (await fetch(`${base}/healthz`)).json();
     const readiness = await (await fetch(`${base}/readyz`)).json();
@@ -359,15 +359,15 @@ test("HTTP MCP creates bounded isolated clients, credentials, baskets, favourite
     const review = (started.structuredContent as { review: { review_id: string; revision: number } }).review;
     const secondOwner = await connect("owner");
     try {
-      const otherChat = await secondOwner.callTool({ _meta: { "openai/session": "shop-b" }, name: "update_product_review", arguments: { ...review, action: { kind: "show" } } });
+      const otherChat = await secondOwner.callTool({ _meta: { "openai/session": "shop-b" }, name: "update_product_review_conversation", arguments: { ...review, action: { kind: "show" } } });
       assert.equal(otherChat.isError, true, "same authenticated account in a different chat cannot access the local selection");
-      const noSession = await secondOwner.callTool({ name: "update_product_review", arguments: { ...review, action: { kind: "show" } } });
+      const noSession = await secondOwner.callTool({ name: "update_product_review_conversation", arguments: { ...review, action: { kind: "show" } } });
       assert.equal(noSession.isError, true, "stateless requests without conversation context must fail closed");
-      const accepted = await secondOwner.callTool({ _meta: { "openai/session": "shop-a" }, name: "update_product_review", arguments: { ...review, action: { kind: "accept", product_ids: [1] } } });
+      const accepted = await secondOwner.callTool({ _meta: { "openai/session": "shop-a" }, name: "update_product_review_conversation", arguments: { ...review, action: { kind: "accept", product_ids: [1] } } });
       assert.equal(accepted.isError, undefined);
-      const shown = await owner.callTool({ _meta: { "openai/session": "shop-a" }, name: "update_product_review", arguments: { review_id: review.review_id, action: { kind: "show" } } });
+      const shown = await owner.callTool({ _meta: { "openai/session": "shop-a" }, name: "update_product_review_conversation", arguments: { review_id: review.review_id, action: { kind: "show" } } });
       assert.equal((shown.structuredContent as { review: { items: Array<{ state: string }> } }).review.items[0]?.state, "ready");
-      const denied = await guest.callTool({ _meta: { "openai/session": "shop-a" }, name: "update_product_review", arguments: { review_id: review.review_id, action: { kind: "show" } } });
+      const denied = await guest.callTool({ _meta: { "openai/session": "shop-a" }, name: "update_product_review_conversation", arguments: { review_id: review.review_id, action: { kind: "show" } } });
       assert.equal(denied.isError, true);
     } finally { await secondOwner.close(); }
     assert.equal(clients.size, 2);
@@ -485,7 +485,7 @@ test("credential-free discovery preserves an active review while credential rota
 
     await discovery.connect(new StreamableHTTPClientTransport(endpoint, { requestInit: { headers: { authorization: "Bearer owner" } } }));
     await discovery.listTools();
-    const shown = await reviewer.callTool({ _meta, name: "update_product_review", arguments: { review_id: review.review_id, action: { kind: "show" } } });
+    const shown = await reviewer.callTool({ _meta, name: "update_product_review_conversation", arguments: { review_id: review.review_id, action: { kind: "show" } } });
     assert.equal(shown.isError, undefined, "credential-free discovery must not discard the active review");
     assert.deepEqual((shown.structuredContent as { review: unknown }).review, review);
     assert.equal(providerReads, 1, "discovery and showing retained state must not reread products");
@@ -496,7 +496,7 @@ test("credential-free discovery preserves an active review while credential rota
       config.credentialKey,
     );
     await rotated.connect(new StreamableHTTPClientTransport(endpoint, { requestInit: { headers: { authorization: "Bearer owner", ...envelopeHeaders(next) } } }));
-    const invalidated = await rotated.callTool({ _meta, name: "update_product_review", arguments: { review_id: review.review_id, action: { kind: "show" } } });
+    const invalidated = await rotated.callTool({ _meta, name: "update_product_review_conversation", arguments: { review_id: review.review_id, action: { kind: "show" } } });
     assert.equal(invalidated.isError, true, "actual credential rotation must still discard the old review");
   } finally {
     await Promise.all([reviewer.close(), discovery.close(), rotated.close()]);
