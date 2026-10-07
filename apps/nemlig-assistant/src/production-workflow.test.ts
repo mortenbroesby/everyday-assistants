@@ -117,6 +117,12 @@ test("routine releases queue trusted main ancestors; manual dispatch is recovery
   assert.match(deploy, /Skipping finalization after this operation released its unchanged pre-mutation lease\./u);
   assert.doesNotMatch(source, /setup-.*provider|activate|cloudflare\/workers/u);
 
+  const reconcile = section(source, "  reconcile:");
+  assert.match(reconcile, /git fetch origin refs\/heads\/codex-lock\/nemlig-production:refs\/remotes\/origin\/codex-lock\/nemlig-production/u);
+  assert.match(reconcile, /journal\.startingRevision/u);
+  assert.match(reconcile, /git show "\$recovery_revision:apps\/nemlig-assistant\/package\.json"/u);
+  assert.match(reconcile, /NEMLIG_EXPECTED_SERVICE_VERSION/u);
+
   assert.match(retention, /needs: \[release-gate, preflight, deploy\]/u);
   assert.match(retention, /needs\.release-gate\.outputs\.retention == 'true' \|\| needs\.release-gate\.outputs\.worker_retention == 'true' \|\|\s+\(needs\.release-gate\.outputs\.deploy == 'true' && needs\.deploy\.result == 'success'\)/u);
   assert.doesNotMatch(retention, /needs\.preflight\.outputs\.readiness/u);

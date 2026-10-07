@@ -38,6 +38,15 @@ const required = (env: Environment, name: string): string => {
   return value;
 };
 
+const expectedServiceVersion = (env: Environment): string => {
+  const configured = env.NEMLIG_EXPECTED_SERVICE_VERSION?.trim();
+  if (!configured) return NEMLIG_VERSION;
+  if (!/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/u.test(configured)) {
+    throw new Error("NEMLIG_EXPECTED_SERVICE_VERSION must be a package version");
+  }
+  return configured;
+};
+
 const parseArgs = (argv: string[]): { edgeOnly: boolean; service: boolean; initializeOnly: boolean } => {
   let edgeOnly = false;
   let service = false;
@@ -199,7 +208,7 @@ export async function main(
     try {
       if (options.service) {
         if (progress) progress.lastCompletedBoundary = "service_runtime_version_read";
-        if (connected.serverVersion !== NEMLIG_VERSION) throw new ServiceRuntimeVersionMismatchError();
+        if (connected.serverVersion !== expectedServiceVersion(env)) throw new ServiceRuntimeVersionMismatchError();
         if (options.initializeOnly) {
           outcome = { profile: "service", observedRevision, required: ["service_runtime"], passed: ["service_runtime"], unavailable: [], lastCompletedBoundary: "service_runtime_version_read", correlationIds: [] };
         } else {
