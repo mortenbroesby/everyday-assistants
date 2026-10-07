@@ -206,6 +206,9 @@ try {
   await frame.getByRole("button", { name: "Add selected to Ready (1)" }).click();
   await frame.getByRole("button", { name: /Ready \(1\)/ }).waitFor();
   await page.evaluate(() => window.sendCancel());
+  await frame.getByText(
+    "Request cancelled. Continue in conversation to confirm the current Draft list before continuing.",
+  ).waitFor();
   assert.equal(await frame.locator('input[type="checkbox"]').count(), 0, "cancellation left active review controls");
   await page.evaluate(() => window.sendDuplicate());
   assert.equal(await frame.locator('input[type="checkbox"]').count(), 0, "unsolicited snapshot reactivated a cancelled view");
