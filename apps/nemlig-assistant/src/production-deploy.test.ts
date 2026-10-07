@@ -195,7 +195,7 @@ const directInterruptedContainerRestoreJournal = (extra: Record<string, unknown>
   ...extra,
 });
 
-const interruptedContainerRestoreDeps = (journal: Record<string, unknown>, options: { updatedAt?: string; alreadyRestored?: boolean; restoreOutcomeUnknown?: boolean; direct?: boolean; workerRestored?: boolean; active?: boolean } = {}) => {
+const interruptedContainerRestoreDeps = (journal: Record<string, unknown>, options: { updatedAt?: string; alreadyRestored?: boolean; restoreOutcomeUnknown?: boolean; direct?: boolean; workerRestored?: boolean; active?: boolean; candidateConfigDrift?: boolean } = {}) => {
   let applicationImage = options.alreadyRestored
     ? `registry.cloudflare.com/${accountId}/nemlig-mcp-cloudflare-production-nemligmcpcontainer-production@${image}`
     : `registry.cloudflare.com/${accountId}/nemlig-mcp-cloudflare-production-nemligmcpcontainer-production@${candidateImage}`;
@@ -221,7 +221,10 @@ const interruptedContainerRestoreDeps = (journal: Record<string, unknown>, optio
       if (args.includes("initialize-only") || args.includes("production:probe")) running = true;
       return "";
     }
-    return originalRun(command, args, runOptions);
+    const result = await originalRun(command, args, runOptions);
+    return options.candidateConfigDrift && command === "pnpm" && args.includes("versions") && args.includes(enabledId)
+      ? result.replace('"name":"NEMLIG_MCP_CREDENTIAL_KEY_VERSION","text":"one"', '"name":"NEMLIG_MCP_CREDENTIAL_KEY_VERSION","text":"two"')
+      : result;
   };
   deps.fetcher = async (input, init) => {
     const url = String(input);
@@ -452,9 +455,11 @@ async function fixture(options: {
     }
     if (args[0] === "production:test:features") {
       const initializeOnly = args.includes("--initialize-only");
-      if (initializeOnly) initializationReads += 1;
-      else featureReads += 1;
-      if (initializeOnly && ((options.staleRuntimeReads ?? 0) >= initializationReads || options.staleRuntimeForever)) {
+      const wakeOnly = args.includes("--wake-only");
+      if (initializeOnly) {
+        if (!wakeOnly) initializationReads += 1;
+      } else featureReads += 1;
+      if (initializeOnly && !wakeOnly && ((options.staleRuntimeReads ?? 0) >= initializationReads || options.staleRuntimeForever)) {
         throw Object.assign(new Error("previous runtime"), { acceptanceFailure: {
           stage: "read_only", profile: "service", category: "feature_failed",
           lastCompletedBoundary: "service_runtime_version_read", correlationIds: [],
@@ -982,7 +987,7 @@ test("enabled acceptance retries while the Container service converges", async (
   try {
     assert.equal((await deployProduction(commit, deps)).outcome, "success");
     const acceptanceCalls = calls.filter(({ args }) => args[0] === "production:test:features");
-    assert.equal(acceptanceCalls.filter(({ args }) => args.includes("--initialize-only")).length, 1);
+    assert.equal(acceptanceCalls.filter(({ args }) => args.includes("--initialize-only")).length, 2);
     assert.equal(acceptanceCalls.filter(({ args }) => !args.includes("--initialize-only")).length, 2);
   } finally { await rm(root, { recursive: true, force: true }); }
 });
@@ -1002,14 +1007,16 @@ test("service release waits through previous backend versions before accepting t
     const report = await deployProduction(commit, deps);
     assert.equal(report.outcome, "success");
     const acceptanceCalls = calls.filter(({ args }) => args[0] === "production:test:features");
-    assert.equal(acceptanceCalls.filter(({ args }) => args.includes("--initialize-only")).length, 6);
+    assert.equal(acceptanceCalls.filter(({ args }) => args.includes("--initialize-only")).length, 7);
     assert.equal(acceptanceCalls.filter(({ args }) => !args.includes("--initialize-only")).length, 1);
     assert.ok(now > 60_000, "candidate startup remains bounded but is not cut off at one minute");
-    const initializationIndex = calls.findIndex(({ args }) => args[0] === "production:test:features" && args.includes("--initialize-only"));
-    const candidateInstanceIndex = calls.findIndex(({ args }, index) => index > initializationIndex && args.includes("containers") && args.includes("instances"));
+    const wakeIndex = calls.findIndex(({ args }) => args[0] === "production:test:features" && args.includes("--wake-only"));
+    const candidateInstanceIndex = calls.findIndex(({ args }, index) => index > wakeIndex && args.includes("containers") && args.includes("instances"));
+    const strictInitializationIndex = calls.findIndex(({ args }, index) => index > candidateInstanceIndex
+      && args[0] === "production:test:features" && args.includes("--initialize-only") && !args.includes("--wake-only"));
     const fixtureIndex = calls.findIndex(({ args }) => args[0] === "production:test:features" && !args.includes("--initialize-only"));
-    assert.ok(initializationIndex >= 0 && candidateInstanceIndex > initializationIndex && fixtureIndex > candidateInstanceIndex,
-      "the exact candidate instance must be observed after MCP initialization and before the full fixture");
+    assert.ok(wakeIndex >= 0 && candidateInstanceIndex > wakeIndex && strictInitializationIndex > candidateInstanceIndex && fixtureIndex > strictInitializationIndex,
+      "the exact candidate instance must be observed after a connection-only wake and before strict runtime validation or the fixture");
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
@@ -1151,8 +1158,10 @@ test("previous backend version is bounded and cannot authorize release or cleanu
     assert.equal(report.rollback, "restored");
     assert.equal(report.lastVerifiedState, "restored");
     assert.equal(report.acceptanceFailure?.lastCompletedBoundary, "service_runtime_version_read");
-    assert.equal(calls.filter(({ args }) => args[0] === "production:test:features" && args.includes("--initialize-only")).length, 181,
-      "the restore performs one bounded initialize after 180 candidate convergence reads");
+    assert.equal(calls.filter(({ args }) => args[0] === "production:test:features" && args.includes("--wake-only")).length, 1,
+      "the candidate gets one connection-only wake before the bounded strict version checks");
+    assert.equal(calls.filter(({ args }) => args[0] === "production:test:features" && args.includes("--initialize-only")).length, 182,
+      "the restore performs one bounded strict initialize after 180 candidate convergence reads and one connection-only wake");
     assert.equal(calls.filter(({ args }) => args[0] === "production:test:features" && !args.includes("--initialize-only")).length, 0);
     assert.equal(report.checks.includes("service_fixture_acceptance"), false);
   } finally { await rm(root, { recursive: true, force: true }); }
@@ -2555,6 +2564,14 @@ test("direct enabled restore consumes one explicit authorization before an uncer
   assert.equal(recovery.rollouts, 1, "a consumed direct-restore authorization must never be replayed");
 });
 
+test("direct enabled restore permits a different candidate configuration while preserving exact candidate identity", async () => {
+  const journal = directInterruptedContainerRestoreJournal({ recoveryFailure: "cloudflare_container_restore_uncertain" });
+  const recovery = interruptedContainerRestoreDeps(journal, { direct: true, candidateConfigDrift: true });
+  const result = await reconcilePendingRollback(journal.operationId, recovery.deps, true, true, true);
+  assert.deepEqual(result, { operation: journal.operationId, originalRunnerStopped: true, reconciled: true, reason: "eligible", state: "restored" });
+  assert.equal(recovery.rollouts, 1, "the approved restore is issued only after exact candidate Worker/image/application proof");
+});
+
 test("direct enabled restore refuses active rollout drift without a second provider mutation", async () => {
   const journal = directInterruptedContainerRestoreJournal({ recoveryFailure: "cloudflare_container_restore_uncertain" });
   const recovery = interruptedContainerRestoreDeps(journal, { direct: true, active: true });
@@ -2946,13 +2963,16 @@ test("service deployment never reads owner credentials and issues one token befo
     assert.ok(acceptance);
     assert.deepEqual(acceptance.args, ["production:test:features", "--service"]);
     assert.equal(acceptance.env?.NEMLIG_MCP_SERVICE_ACCESS_TOKEN, "machine-token");
-    const initialization = calls.find(({ args }) => args.includes("--initialize-only"));
+    const wake = calls.find(({ args }) => args.includes("--wake-only"));
+    const initialization = calls.find(({ args }) => args.includes("--initialize-only") && !args.includes("--wake-only"));
+    assert.deepEqual(wake?.args, ["production:test:features", "--service", "--initialize-only", "--wake-only"]);
     assert.deepEqual(initialization?.args, ["production:test:features", "--service", "--initialize-only"]);
+    assert.equal(wake?.env?.NEMLIG_MCP_SERVICE_ACCESS_TOKEN, "machine-token");
     assert.equal(initialization?.env?.NEMLIG_MCP_SERVICE_ACCESS_TOKEN, "machine-token");
     for (const call of calls) {
       assert.equal(call.env?.NEMLIG_MCP_ACCESS_TOKEN, undefined);
       assert.equal(call.env?.NEMLIG_MCP_SERVICE_CLIENT_SECRET, undefined);
-      if (call !== acceptance && call !== initialization) assert.equal(call.env?.NEMLIG_MCP_SERVICE_ACCESS_TOKEN, undefined);
+      if (call !== acceptance && call !== wake && call !== initialization) assert.equal(call.env?.NEMLIG_MCP_SERVICE_ACCESS_TOKEN, undefined);
     }
     assert.doesNotMatch(JSON.stringify(report), /machine-token|machine-secret/);
   } finally { await rm(root, { recursive: true, force: true }); }

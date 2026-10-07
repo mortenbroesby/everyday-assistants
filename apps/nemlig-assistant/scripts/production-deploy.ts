@@ -877,7 +877,7 @@ interface RecoveryTarget {
   containerId: string;
   image: string;
   applicationVersion: number;
-  configDigest: string;
+  configDigest?: string;
   sourceRevision?: string;
   enabled?: boolean;
   requireInactive?: boolean;
@@ -915,7 +915,7 @@ const verifyRecoveryTarget = async (deps: DeployDependencies, expected: Recovery
     : instancesInactive(instances) || (state.enabled && runningInstanceMatches(instances, expected.applicationVersion));
   const exactMetadata = (expected.version === undefined || current.version === expected.version) && (expected.enabled === undefined || state.enabled === expected.enabled)
     && container.id === expected.containerId && container.image === expected.image && container.version === expected.applicationVersion
-    && versionConfig(raw).digest === expected.configDigest
+    && (expected.configDigest === undefined || versionConfig(raw).digest === expected.configDigest)
     && instanceMatches;
   if (!exactMetadata) return undefined;
   if (expected.enabled === false) {
@@ -1177,7 +1177,7 @@ export async function reconcilePendingRollback(
           try { verifyCandidateVersion(raw, current.version, journal.commit, candidateEnabled); } catch { return denied("provider_drift"); }
           if (!await verifyRecoveryTarget(deps, {
             version: current.version, containerId: applicationId, image: journal.enabledImage!,
-            applicationVersion: journal.enabledApplicationVersion!, configDigest: journal.startingConfigDigest!,
+            applicationVersion: journal.enabledApplicationVersion!,
             enabled: candidateEnabled, requireInactive: !candidateEnabled, sourceRevision: journal.commit,
             state: candidateEnabled ? "enabled" : "disabled",
           })) return denied("provider_drift");
@@ -1247,13 +1247,12 @@ export async function reconcilePendingRollback(
             if (candidate.version !== journal.disabledVersion) return denied("provider_drift");
             const disabledTarget: RecoveryTarget = {
               version: journal.disabledVersion!, containerId: applicationId, image: journal.startingImage!,
-              applicationVersion: journal.restoredApplicationVersion!, configDigest: journal.startingConfigDigest!,
+              applicationVersion: journal.restoredApplicationVersion!,
               enabled: false, requireInactive: true, sourceRevision: journal.commit, state: "disabled",
             };
             if (!await verifyRecoveryTarget(deps, disabledTarget)) return denied("provider_drift");
           } else {
-            if (candidate.version !== journal.enabledVersion || versionConfig(raw).digest !== journal.startingConfigDigest
-              || parseVersionState(raw, candidate.version).enabled !== true) return denied("provider_drift");
+            if (candidate.version !== journal.enabledVersion || parseVersionState(raw, candidate.version).enabled !== true) return denied("provider_drift");
             const restoredContainer = await readContainer(deps, applicationId);
             if (restoredContainer.id !== applicationId || restoredContainer.image !== journal.startingImage
               || restoredContainer.version !== journal.restoredApplicationVersion) return denied("provider_drift");
@@ -1295,10 +1294,13 @@ export async function reconcilePendingRollback(
       try {
         const serviceToken = await (deps.issueServiceToken ?? issueServiceToken)(deps.env, { fetcher: deps.fetcher, signal: deps.signal });
         await retryAcceptance(deps, ["production:probe"], { NEMLIG_EXPECTED_REVISION: journal.startingRevision! }, 1, "edge", "edge", "edge_acceptance_failed", 120_000);
-        await retryAcceptance(deps, ["production:test:features", "--service", "--initialize-only"], {
+        await retryAcceptance(deps, ["production:test:features", "--service", "--initialize-only", "--wake-only"], {
           NEMLIG_MCP_SERVICE_ACCESS_TOKEN: serviceToken, NEMLIG_EXPECTED_REVISION: journal.startingRevision!,
         }, 1, "read_only", "service", "service_fixture_acceptance_failed", 120_000, 1);
         await waitForAcceptedInstance(deps, applicationId, journal.restoredApplicationVersion!, true, true, "restored_container_convergence", 36);
+        await retryAcceptance(deps, ["production:test:features", "--service", "--initialize-only"], {
+          NEMLIG_MCP_SERVICE_ACCESS_TOKEN: serviceToken, NEMLIG_EXPECTED_REVISION: journal.startingRevision!,
+        }, 1, "read_only", "service", "service_fixture_acceptance_failed", 120_000, 1);
         await retryAcceptance(deps, ["production:test:features", "--service"], {
           NEMLIG_MCP_SERVICE_ACCESS_TOKEN: serviceToken, NEMLIG_EXPECTED_REVISION: journal.startingRevision!,
         }, 1, "read_only", "service", "service_fixture_acceptance_failed", 120_000, 1);
@@ -2054,11 +2056,15 @@ export async function deployProduction(commit: string, inputDeps: DeployDependen
       const restoreReserveMs = 12 * 60_000;
       const edgeBudget = Math.max(0, Math.min(60_000, operationDeadlineAt - deps.now().getTime() - restoreReserveMs));
       await retryAcceptance(deps, ["production:probe"], { NEMLIG_EXPECTED_REVISION: commit }, 12, "edge", "edge", "edge_acceptance_failed", edgeBudget);
-      await retryAcceptance(deps, ["production:test:features", "--service", "--initialize-only"], {
+      await retryAcceptance(deps, ["production:test:features", "--service", "--initialize-only", "--wake-only"], {
         NEMLIG_MCP_SERVICE_ACCESS_TOKEN: serviceToken, NEMLIG_EXPECTED_REVISION: commit,
       }, 12, "read_only", "service", "service_fixture_acceptance_failed",
       Math.max(0, operationDeadlineAt - deps.now().getTime() - restoreReserveMs - serviceStartupEvidenceReserveMs));
       preAcceptanceRunningVersion = await waitForAcceptedInstance(deps, enabledContainer.id, enabledContainer.version, true, true, "container_pre_fixture_convergence");
+      await retryAcceptance(deps, ["production:test:features", "--service", "--initialize-only"], {
+        NEMLIG_MCP_SERVICE_ACCESS_TOKEN: serviceToken, NEMLIG_EXPECTED_REVISION: commit,
+      }, 12, "read_only", "service", "service_fixture_acceptance_failed",
+      Math.max(0, operationDeadlineAt - deps.now().getTime() - restoreReserveMs - serviceStartupEvidenceReserveMs));
     } else {
       preAcceptanceRunningVersion = await waitForAcceptedInstance(deps, enabledContainer.id, enabledContainer.version);
       await retryAcceptance(deps, ["production:probe"], { NEMLIG_EXPECTED_REVISION: commit }, 12, "edge", "edge", "edge_acceptance_failed");

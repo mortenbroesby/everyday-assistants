@@ -47,10 +47,11 @@ const expectedServiceVersion = (env: Environment): string => {
   return configured;
 };
 
-const parseArgs = (argv: string[]): { edgeOnly: boolean; service: boolean; initializeOnly: boolean } => {
+const parseArgs = (argv: string[]): { edgeOnly: boolean; service: boolean; initializeOnly: boolean; wakeOnly: boolean } => {
   let edgeOnly = false;
   let service = false;
   let initializeOnly = false;
+  let wakeOnly = false;
   for (const argument of argv) {
     if (argument === "--edge-only") {
       if (edgeOnly) throw new Error("--edge-only must not be repeated");
@@ -61,13 +62,17 @@ const parseArgs = (argv: string[]): { edgeOnly: boolean; service: boolean; initi
     } else if (argument === "--initialize-only") {
       if (initializeOnly) throw new Error("--initialize-only must not be repeated");
       initializeOnly = true;
+    } else if (argument === "--wake-only") {
+      if (wakeOnly) throw new Error("--wake-only must not be repeated");
+      wakeOnly = true;
     } else {
       throw new Error(`Unknown acceptance argument: ${argument}`);
     }
   }
   if (edgeOnly && (service || initializeOnly)) throw new Error("--edge-only cannot be combined with service acceptance");
   if (initializeOnly && !service) throw new Error("--initialize-only requires --service");
-  return { edgeOnly, service, initializeOnly };
+  if (wakeOnly && (!service || !initializeOnly)) throw new Error("--wake-only requires --service --initialize-only");
+  return { edgeOnly, service, initializeOnly, wakeOnly };
 };
 
 const abortable = async <T>(label: string, work: Promise<T>, signal: AbortSignal): Promise<T> => {
@@ -208,8 +213,10 @@ export async function main(
     try {
       if (options.service) {
         if (progress) progress.lastCompletedBoundary = "service_runtime_version_read";
-        if (connected.serverVersion !== expectedServiceVersion(env)) throw new ServiceRuntimeVersionMismatchError();
-        if (options.initializeOnly) {
+        if (!options.wakeOnly && connected.serverVersion !== expectedServiceVersion(env)) throw new ServiceRuntimeVersionMismatchError();
+        if (options.wakeOnly) {
+          outcome = { profile: "service", observedRevision, required: ["service_wake"], passed: ["service_wake"], unavailable: [], lastCompletedBoundary: "service_runtime_version_read", correlationIds: [] };
+        } else if (options.initializeOnly) {
           outcome = { profile: "service", observedRevision, required: ["service_runtime"], passed: ["service_runtime"], unavailable: [], lastCompletedBoundary: "service_runtime_version_read", correlationIds: [] };
         } else {
           const report = await verifyServiceAcceptanceFeatures(connected.client, {
