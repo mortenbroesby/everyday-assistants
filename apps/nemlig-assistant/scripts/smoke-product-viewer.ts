@@ -184,6 +184,7 @@ try {
   await frame.getByRole("button", { name: "Increase quantity of Synthetic alternative" }).click();
   const beforePrepare = await page.evaluate(() => window.calls.length);
   await frame.getByRole("button", { name: "Prepare exact change" }).click();
+  await page.waitForFunction((before) => window.calls.slice(before).some((call) => call.args.action?.kind === "prepare_submission"), beforePrepare);
   const prepareCalls = await page.evaluate((before) => window.calls.slice(before).map((call) => call.args.action), beforePrepare);
   assert.deepEqual(prepareCalls, [
     { kind: "quantity", product_id: 1, quantity: 2 },
