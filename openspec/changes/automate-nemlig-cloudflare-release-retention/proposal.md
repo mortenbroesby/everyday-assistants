@@ -1,5 +1,7 @@
 ## Why
 
+Status: Superseded on 2026-10-07 by the owner-approved routine-only production delivery in `openspec/changes/remove-production-release-leases/`. The earlier lease, journal, recovery, and automatic-retention design is no longer current policy. Preserve this change as historical evidence; do not resume its incomplete tasks without a new decision.
+
 Portfolio status (29 September 2026, #114): Active, exclusively owned by #96. Shipped implementation is not missing code; current deployment/retention evidence and protected exceptions remain that issue's gates.
 See [portfolio evidence](../../../docs/openspec-portfolio-reconciliation.md).
 

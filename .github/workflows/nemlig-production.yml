@@ -4,35 +4,6 @@ on:
   workflow_run:
     workflows: [CI]
     types: [completed]
-  workflow_dispatch:
-    inputs:
-      commit:
-        description: Full green main ancestor SHA to deploy for recovery
-        required: true
-        type: string
-      recovery:
-        description: Confirm this is an incident recovery deployment
-        required: true
-        type: boolean
-      resume_retention:
-        description: Resume interrupted image cleanup without deploying
-        required: false
-        type: boolean
-        default: false
-      resume_worker_retention:
-        description: Resume an interrupted Worker-version cleanup without deploying
-        required: false
-        type: boolean
-        default: false
-      reconcile_operation:
-        description: Reconcile one saved deployment operation and release its lease
-        required: false
-        type: string
-      authorize_uncertain_container_restore:
-        description: Consume one explicit authorization to request the exact journaled prior Container image once
-        required: false
-        type: boolean
-        default: false
 
 concurrency:
   group: nemlig-production
@@ -40,445 +11,61 @@ concurrency:
   queue: max
 
 permissions:
-  # The protected deploy/finalize jobs create and delete the bounded recovery
-  # ref. Jobs that do not need that capability keep their narrower permissions.
-  contents: write
-
-env:
-  CANDIDATE_SHA: "${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || (github.event_name == 'workflow_dispatch' && inputs.commit) || github.sha }}"
-  RECOVERY: "${{ github.event_name == 'workflow_dispatch' && inputs.recovery || false }}"
-  RESUME_RETENTION: "${{ github.event_name == 'workflow_dispatch' && inputs.resume_retention || false }}"
-  RESUME_WORKER_RETENTION: "${{ github.event_name == 'workflow_dispatch' && inputs.resume_worker_retention || false }}"
-  RECONCILE_OPERATION: "${{ github.event_name == 'workflow_dispatch' && inputs.reconcile_operation || '' }}"
-  AUTHORIZE_UNCERTAIN_CONTAINER_RESTORE: "${{ github.event_name == 'workflow_dispatch' && inputs.authorize_uncertain_container_restore || false }}"
+  contents: read
 
 jobs:
   release-gate:
     if: >-
-      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && (inputs.recovery == true || inputs.resume_retention == true || inputs.resume_worker_retention == true || inputs.reconcile_operation != '')) ||
-      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' &&
-      github.event.workflow_run.event == 'push' && github.event.workflow_run.head_branch == 'main')
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'main'
     runs-on: ubuntu-latest
-    timeout-minutes: 2
-    permissions:
-      contents: read
-      actions: read
+    timeout-minutes: 3
     outputs:
-      deploy: "${{ steps.approval.outputs.deploy }}"
-      retention: "${{ steps.approval.outputs.retention || 'false' }}"
-      retention_commit: "${{ steps.approval.outputs.retention_commit }}"
-      worker_retention: "${{ steps.approval.outputs.worker_retention || 'false' }}"
-      reconcile: "${{ steps.approval.outputs.reconcile || 'false' }}"
+      candidate_sha: ${{ steps.candidate.outputs.sha }}
     steps:
-      - name: Checkout main history
+      - name: Checkout current main history
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6.0.1
         with:
           ref: main
           persist-credentials: false
           fetch-depth: 0
-      - name: Check main candidate ancestry
-        id: approval
+      - name: Validate exact successful CI candidate
+        id: candidate
         env:
-          CANDIDATE_SHA: "${{ env.CANDIDATE_SHA }}"
+          CANDIDATE_SHA: ${{ github.event.workflow_run.head_sha }}
+          CI_WORKFLOW: ${{ github.event.workflow_run.name }}
         run: |
           set -euo pipefail
+          [[ "$CI_WORKFLOW" == "CI" ]]
           [[ "$CANDIDATE_SHA" =~ ^[0-9a-f]{40}$ ]]
-          if [[ "$RECOVERY" == "true" && "$RESUME_RETENTION" == "true" ]]; then
-            echo "Recovery deployment and retention resume are mutually exclusive." >&2
-            exit 1
-          fi
-          if [[ "$RECOVERY" == "true" && "$RESUME_WORKER_RETENTION" == "true" ]] || [[ "$RESUME_RETENTION" == "true" && "$RESUME_WORKER_RETENTION" == "true" ]]; then
-            echo "Only one recovery or retention-resume mode may be selected." >&2
-            exit 1
-          fi
-          if [[ -n "$RECONCILE_OPERATION" && "$RECOVERY" != "true" ]]; then
-            echo "Rollback reconciliation requires explicit recovery=true." >&2
-            exit 1
-          fi
-          if [[ -n "$RECONCILE_OPERATION" && "$RESUME_RETENTION" == "true" ]]; then
-            echo "Rollback reconciliation and retention resume are mutually exclusive." >&2
-            exit 1
-          fi
-          if [[ -n "$RECONCILE_OPERATION" && "$RESUME_WORKER_RETENTION" == "true" ]]; then
-            echo "Rollback reconciliation and Worker-version retention resume are mutually exclusive." >&2
-            exit 1
-          fi
-          if [[ "$AUTHORIZE_UNCERTAIN_CONTAINER_RESTORE" == "true" && ("$RECOVERY" != "true" || -z "$RECONCILE_OPERATION") ]]; then
-            echo "One-shot Container restore authorization requires recovery=true and an exact reconcile_operation." >&2
-            exit 1
-          fi
-          if [[ -n "$RECONCILE_OPERATION" && ! "$RECONCILE_OPERATION" =~ ^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$ ]]; then
-            echo "Rollback reconciliation requires a valid operation UUID." >&2
-            exit 1
-          fi
           git fetch origin refs/heads/main:refs/remotes/origin/main
-          if ! git merge-base --is-ancestor "$CANDIDATE_SHA" origin/main; then
-            echo "Candidate must remain in current main history." >&2
-            exit 1
-          fi
-          git checkout --detach "$CANDIDATE_SHA"
-          if [[ "$RESUME_RETENTION" == "true" ]]; then
-            echo "deploy=false" >> "$GITHUB_OUTPUT"
-            echo "retention=true" >> "$GITHUB_OUTPUT"
-            echo "retention_commit=$CANDIDATE_SHA" >> "$GITHUB_OUTPUT"
-            echo "worker_retention=false" >> "$GITHUB_OUTPUT"
-            echo "reconcile=false" >> "$GITHUB_OUTPUT"
-          elif [[ "$RESUME_WORKER_RETENTION" == "true" ]]; then
-            echo "deploy=false" >> "$GITHUB_OUTPUT"
-            echo "retention=false" >> "$GITHUB_OUTPUT"
-            echo "worker_retention=true" >> "$GITHUB_OUTPUT"
-            echo "reconcile=false" >> "$GITHUB_OUTPUT"
-          elif [[ -n "$RECONCILE_OPERATION" ]]; then
-            echo "deploy=false" >> "$GITHUB_OUTPUT"
-            echo "retention=false" >> "$GITHUB_OUTPUT"
-            echo "worker_retention=false" >> "$GITHUB_OUTPUT"
-            echo "reconcile=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "deploy=true" >> "$GITHUB_OUTPUT"
-            echo "retention=false" >> "$GITHUB_OUTPUT"
-            echo "worker_retention=false" >> "$GITHUB_OUTPUT"
-            echo "reconcile=false" >> "$GITHUB_OUTPUT"
-          fi
-
-  retention:
-    needs: [release-gate, preflight, deploy]
-    if: >-
-      always() &&
-      (needs.release-gate.outputs.retention == 'true' || needs.release-gate.outputs.worker_retention == 'true' ||
-      (needs.release-gate.outputs.deploy == 'true' && needs.deploy.result == 'success'))
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    environment:
-      name: nemlig-production
-    permissions:
-      contents: write
-      actions: read
-    steps:
-      - name: Checkout main history
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6.0.1
-        with:
-          ref: main
-          persist-credentials: false
-          fetch-depth: 0
-      - name: Checkout exact accepted candidate
-        run: |
-          set -euo pipefail
-          [[ "$CANDIDATE_SHA" =~ ^[0-9a-f]{40}$ ]]
           git merge-base --is-ancestor "$CANDIDATE_SHA" origin/main
-          git checkout --detach "$CANDIDATE_SHA"
-          [[ "$(git rev-parse HEAD)" == "$CANDIDATE_SHA" ]]
-      - name: Set up pnpm
-        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
-        with:
-          version: 9.15.9
-          run_install: false
-      - name: Set up Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6.0.0
-        with:
-          node-version: 24.13.0
-      - name: Install frozen dependencies
-        id: install
-        run: pnpm install --frozen-lockfile
-      - name: Download accepted deployment evidence
-        if: ${{ always() && needs.deploy.result != 'skipped' }}
-        continue-on-error: true
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          name: nemlig-production-release
-          path: ${{ runner.temp }}/nemlig-production-release
-      - name: Retain accepted production images
-        id: retention_summary
-        if: ${{ always() && steps.install.outcome == 'success' }}
-        env:
-          GH_TOKEN: "${{ github.token }}"
-          CLOUDFLARE_API_TOKEN: "${{ secrets.CLOUDFLARE_API_TOKEN }}"
-          CLOUDFLARE_ACCOUNT_ID: "${{ vars.CLOUDFLARE_ACCOUNT_ID }}"
-          DEPLOY_RESULT: "${{ needs.deploy.result }}"
-          CANDIDATE_SHA: "${{ env.CANDIDATE_SHA }}"
-          NEMLIG_CONTAINER_IMAGE_RETENTION_COUNT: "${{ vars.NEMLIG_CONTAINER_IMAGE_RETENTION_COUNT || '10' }}"
-        run: |
-          set -euo pipefail
-          retention_report="$RUNNER_TEMP/nemlig-retention.json"
-          retention_status=0
-          if [[ "$DEPLOY_RESULT" == "success" ]]; then
-            mapfile -t journals < <(find "$RUNNER_TEMP/nemlig-production-release" -type f -name latest.json -print)
-            if [[ "${#journals[@]}" -ne 1 ]]; then
-              printf '{"commit":"%s","outcome":"failed","failure":"acceptance_evidence_missing"}\n' "$CANDIDATE_SHA" > "$retention_report"
-              retention_status=1
-            else
-              pnpm --silent --filter nemlig-assistant production:retention -- accept "$CANDIDATE_SHA" "${journals[0]}" > "$retention_report" || retention_status=$?
-            fi
-          elif [[ "${{ needs.release-gate.outputs.retention }}" == "true" ]]; then
-            pnpm --silent --filter nemlig-assistant production:retention -- resume "${{ needs.release-gate.outputs.retention_commit }}" > "$retention_report" || retention_status=$?
-          elif [[ "${{ needs.release-gate.outputs.worker_retention }}" == "true" ]]; then
-            printf '{"commit":"%s","outcome":"skipped","failure":"worker_retention_resume"}\n' "$CANDIDATE_SHA" > "$retention_report"
-          fi
-          release_journal=""
-          if [[ -d "$RUNNER_TEMP/nemlig-production-release" ]]; then
-            mapfile -t release_journals < <(find "$RUNNER_TEMP/nemlig-production-release" -type f -name latest.json -print)
-            if [[ "${#release_journals[@]}" -eq 1 ]]; then release_journal="${release_journals[0]}"; fi
-          fi
-          summary_args=(--commit "$CANDIDATE_SHA" --retention "$retention_report")
-          if [[ -n "$release_journal" ]]; then summary_args+=(--release "$release_journal"); fi
-          pnpm --silent --filter nemlig-assistant exec tsx scripts/production-summary.ts -- "${summary_args[@]}" >> "$GITHUB_STEP_SUMMARY" || true
-          exit "$retention_status"
-      - name: Retain old Worker versions
-        id: worker_version_retention
-        if: ${{ always() && ((needs.deploy.result == 'success' && steps.retention_summary.outcome == 'success') || needs.release-gate.outputs.worker_retention == 'true') }}
-        env:
-          GH_TOKEN: "${{ github.token }}"
-          CLOUDFLARE_API_TOKEN: "${{ secrets.CLOUDFLARE_API_TOKEN }}"
-          CLOUDFLARE_ACCOUNT_ID: "${{ vars.CLOUDFLARE_ACCOUNT_ID }}"
-          NEMLIG_WORKER_VERSION_RECOVERY_IDS: "${{ vars.NEMLIG_WORKER_VERSION_RECOVERY_IDS }}"
-          NEMLIG_WORKER_VERSION_RECOVERY_REVIEWED: "${{ vars.NEMLIG_WORKER_VERSION_RECOVERY_REVIEWED }}"
-        run: |
-          set -euo pipefail
-          worker_commit="$CANDIDATE_SHA"
-          if [[ "${{ needs.release-gate.outputs.worker_retention }}" == "true" ]]; then
-            lock_content=$(gh api "repos/${GITHUB_REPOSITORY}/contents/worker-version-retention.json?ref=codex-lock%2Fnemlig-production" --jq '.content' 2>/dev/null || true)
-            if [[ -n "$lock_content" ]]; then
-              durable_report=$(printf '%s' "$lock_content" | base64 -d 2>/dev/null || true)
-              retention_run_id=$(printf '%s' "$durable_report" | jq -r '.runId // empty' 2>/dev/null || true)
-              durable_commit=$(printf '%s' "$durable_report" | jq -r '.commit // empty' 2>/dev/null || true)
-              if [[ "$durable_commit" =~ ^[0-9a-f]{40}$ ]]; then worker_commit="$durable_commit"; fi
-              if [[ "$retention_run_id" =~ ^[1-9][0-9]*$ ]]; then
-                gh run download "$retention_run_id" --name nemlig-production-release --dir "$RUNNER_TEMP/nemlig-production-release" >/dev/null 2>&1 || true
-              fi
-            fi
-          fi
-          worker_report="$RUNNER_TEMP/nemlig-worker-retention.json"
-          worker_status=0
-          worker_args=(--commit "$worker_commit")
-          if [[ "${{ needs.release-gate.outputs.worker_retention }}" == "true" ]]; then worker_args+=(--resume); fi
-          if [[ -d "$RUNNER_TEMP/nemlig-production-release" ]]; then
-            mapfile -t worker_journals < <(find "$RUNNER_TEMP/nemlig-production-release" -type f -name latest.json -print)
-            if [[ "${#worker_journals[@]}" -eq 1 ]]; then worker_args+=(--journal "${worker_journals[0]}"); fi
-          fi
-          pnpm --silent --filter nemlig-assistant exec tsx scripts/worker-version-retention.ts -- "${worker_args[@]}" > "$worker_report" || worker_status=$?
-          if jq -e '.cleanupComplete == true' "$worker_report" >/dev/null 2>&1; then
-            echo "### Worker version retention" >> "$GITHUB_STEP_SUMMARY"
-            echo "- Policy: fixed UTC 48-hour cutoff" >> "$GITHUB_STEP_SUMMARY"
-            echo "- Cleanup: complete" >> "$GITHUB_STEP_SUMMARY"
-          else
-            echo "### Worker version retention" >> "$GITHUB_STEP_SUMMARY"
-            echo "- Policy: fixed UTC 48-hour cutoff" >> "$GITHUB_STEP_SUMMARY"
-            echo "- Cleanup: uncertain or incomplete; preserve the active/recovery references and reconcile before retrying" >> "$GITHUB_STEP_SUMMARY"
-          fi
-          exit "$worker_status"
-      - name: Upload Worker retention evidence
-        if: ${{ always() && steps.worker_version_retention.outcome != 'skipped' }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: nemlig-worker-retention-${{ github.run_id }}-${{ github.run_attempt }}
-          path: ${{ runner.temp }}/nemlig-worker-retention.json
-          if-no-files-found: warn
-          retention-days: 7
-      - name: Report retention precondition failure
-        if: ${{ always() && steps.retention_summary.outcome == 'skipped' }}
-        run: |
-          {
-            echo "## Nemlig production release summary"
-            echo "- Deployment: unknown (deployment evidence job did not complete)"
-            echo "- Technical acceptance: unknown (not proven)"
-            echo "- Owner acceptance: not run (CI synthetic acceptance is not owner proof)"
-            echo "- Cleanup: uncertain (retention evidence step did not run)"
-            echo "- Cleanup next action: hold cleanup and reconcile the exact prior operation and provider state before retrying."
-            echo "- Traffic allocation: configured state is not measured by this summary; request rate is not inferred"
-            echo "- Protected holds: unknown/invalid hold inventory"
-          } >> "$GITHUB_STEP_SUMMARY"
-
-  reconcile:
-    needs: release-gate
-    if: needs.release-gate.outputs.reconcile == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    environment:
-      name: nemlig-production
-    permissions:
-      contents: write
-      actions: read
-    steps:
-      - name: Checkout main history
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6.0.1
-        with:
-          ref: main
-          persist-credentials: false
-          fetch-depth: 0
-      - name: Checkout exact recovery candidate
-        run: |
-          set -euo pipefail
-          [[ "$CANDIDATE_SHA" =~ ^[0-9a-f]{40}$ ]]
-          git merge-base --is-ancestor "$CANDIDATE_SHA" origin/main
-          git checkout --detach "$CANDIDATE_SHA"
-          [[ "$(git rev-parse HEAD)" == "$CANDIDATE_SHA" ]]
-      - name: Set up pnpm
-        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
-        with:
-          version: 9.15.9
-          run_install: false
-      - name: Set up Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6.0.0
-        with:
-          node-version: 24.13.0
-      - name: Install frozen dependencies
-        run: pnpm install --frozen-lockfile
-      - name: Reconcile exact saved deployment state and release lease
-        env:
-          GH_TOKEN: "${{ github.token }}"
-          CLOUDFLARE_API_TOKEN: "${{ secrets.CLOUDFLARE_API_TOKEN }}"
-          CLOUDFLARE_ACCOUNT_ID: "${{ vars.CLOUDFLARE_ACCOUNT_ID }}"
-          NEMLIG_MCP_AUTH0_ISSUER: https://everyday-assistants.eu.auth0.com/
-          NEMLIG_MCP_PUBLIC_URL: https://nemlig-mcp.broesby.dk/mcp
-          NEMLIG_MCP_SERVICE_CLIENT_ID: "${{ vars.NEMLIG_MCP_SERVICE_CLIENT_ID }}"
-          NEMLIG_MCP_SERVICE_CLIENT_SECRET: "${{ secrets.NEMLIG_MCP_SERVICE_CLIENT_SECRET }}"
-          NEMLIG_CI_ACCEPTANCE_READY: "${{ vars.NEMLIG_CI_ACCEPTANCE_READY }}"
-          RECONCILE_OPERATION: "${{ env.RECONCILE_OPERATION }}"
-          AUTHORIZE_UNCERTAIN_CONTAINER_RESTORE: "${{ env.AUTHORIZE_UNCERTAIN_CONTAINER_RESTORE }}"
-        run: |
-          set -euo pipefail
-          git fetch origin refs/heads/codex-lock/nemlig-production:refs/remotes/origin/codex-lock/nemlig-production
-          recovery_journal=$(git show origin/codex-lock/nemlig-production:journal.json)
-          recovery_revision=$(node --input-type=module -e '
-            const journal = JSON.parse(process.argv[1]);
-            if (!/^[0-9a-f]{40}$/.test(journal.startingRevision ?? "")) process.exit(1);
-            console.log(journal.startingRevision);
-          ' "$recovery_journal")
-          recovery_manifest=$(git show "$recovery_revision:apps/nemlig-assistant/package.json")
-          export NEMLIG_EXPECTED_SERVICE_VERSION=$(node --input-type=module -e '
-            const manifest = JSON.parse(process.argv[1]);
-            if (typeof manifest.version !== "string" || !/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(manifest.version)) process.exit(1);
-            console.log(manifest.version);
-          ' "$recovery_manifest")
-          reconcile_args=(reconcile-recovery "$RECONCILE_OPERATION" --evidence-saved --original-runner-stopped)
-          if [[ "$AUTHORIZE_UNCERTAIN_CONTAINER_RESTORE" == "true" ]]; then reconcile_args+=(--authorize-one-container-restore); fi
-          if result=$(pnpm --silent --filter nemlig-assistant production:deploy -- "${reconcile_args[@]}"); then
-            node --input-type=module -e '
-              const result = JSON.parse(process.argv[1]);
-              console.log(JSON.stringify({ event: "recovery_reconciliation", reconciled: result.reconciled, reason: result.reason, state: result.state }));
-              if (result.reconciled !== true || !["disabled", "restored"].includes(result.state)) process.exit(1);
-            ' "$result"
-          else
-            node --input-type=module -e '
-              const reasons = new Set(["eligible", "operation_mismatch", "runner_not_stopped", "pending_or_unknown", "provider_outcome_unknown", "provider_drift", "journal_head_changed", "journal_missing", "journal_invalid"]);
-              let result;
-              try { result = JSON.parse(process.argv[1]); } catch { /* report only a fixed unavailable category */ }
-              console.log(JSON.stringify({
-                event: "recovery_reconciliation",
-                reconciled: result?.reconciled === true,
-                reason: reasons.has(result?.reason) ? result.reason : "result_unavailable",
-                state: ["disabled", "restored"].includes(result?.state) ? result.state : "unknown",
-              }));
-            ' "${result:-}"
-            inspection=$(pnpm --silent --filter nemlig-assistant production:deploy -- inspect-recovery "$RECONCILE_OPERATION" --original-runner-stopped)
-            node --input-type=module -e '
-              const inspection = JSON.parse(process.argv[1]);
-              console.log(JSON.stringify({ event: "recovery_reconciliation_inspection", cleanupEligible: inspection.cleanupEligible, reason: inspection.reason, state: inspection.state }));
-              if (inspection.cleanupEligible !== true || !["disabled", "restored"].includes(inspection.state)) process.exit(1);
-            ' "$inspection"
-          fi
-          pnpm --filter nemlig-assistant production:deploy -- finalize "$RECONCILE_OPERATION" --evidence-saved --original-runner-stopped
-
-  preflight:
-    needs: release-gate
-    if: needs.release-gate.outputs.deploy == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    outputs:
-      readiness: "${{ steps.production_preflight.outputs.readiness }}"
-      lease_head: "${{ steps.production_preflight.outputs.lease_head }}"
-    permissions:
-      contents: read
-      actions: read
-    steps:
-      - name: Checkout main history
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6.0.1
-        with:
-          ref: main
-          persist-credentials: false
-          fetch-depth: 0
-      - name: Verify candidate SHA
-        run: |
-          set -euo pipefail
-          [[ "$CANDIDATE_SHA" =~ ^[0-9a-f]{40}$ ]]
-          git rev-parse --verify "$CANDIDATE_SHA^{commit}" >/dev/null
-          git merge-base --is-ancestor "$CANDIDATE_SHA" origin/main
-          git checkout --detach "$CANDIDATE_SHA"
-          [[ "$(git rev-parse HEAD)" == "$CANDIDATE_SHA" ]]
-      - name: Set up pnpm
-        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
-        with:
-          version: 9.15.9
-          run_install: false
-      - name: Set up Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6.0.0
-        with:
-          node-version: 24.13.0
-      - name: Install frozen dependencies
-        run: pnpm install --frozen-lockfile
-      - name: Run credential-free source, environment, and lease preflight
-        id: production_preflight
-        env:
-          GH_TOKEN: "${{ github.token }}"
-        run: |
-          set -euo pipefail
-          if [[ "$RECOVERY" == "true" ]]; then
-            result=$(pnpm --silent --filter nemlig-assistant production:deploy -- preflight --recovery "$CANDIDATE_SHA")
-          else
-            result=$(pnpm --silent --filter nemlig-assistant production:deploy -- preflight "$CANDIDATE_SHA")
-          fi
-          preflight_state=$(node --input-type=module -e '
-            const result = JSON.parse(process.argv[1]);
-            if (!/^[0-9a-f]{40}$/.test(result.commit)) process.exit(1);
-            if (result.state === "ready" && Number.isSafeInteger(result.ciRunId)) {
-              console.log("ready");
-              process.exit();
-            }
-            if (result.state === "blocked_by_existing_lease" && Number.isSafeInteger(result.ciRunId) && /^[0-9a-f]{40}$/.test(result.leaseHead)) {
-              console.log(`blocked:${result.leaseHead}`);
-              process.exit();
-            }
-            process.exit(1);
-          ' "$result")
-          if [[ "$preflight_state" == "ready" ]]; then
-            printf 'readiness=ready\n' >> "$GITHUB_OUTPUT"
-            echo "- Preflight: ready" >> "$GITHUB_STEP_SUMMARY"
-          elif [[ "$preflight_state" =~ ^blocked:([0-9a-f]{40})$ ]]; then
-            printf 'readiness=blocked_by_existing_lease\nlease_head=%s\n' "${BASH_REMATCH[1]}" >> "$GITHUB_OUTPUT"
-            {
-              echo "## Routine deployment blocked by existing production lease"
-              echo "- Candidate: $CANDIDATE_SHA"
-              echo "- Lease head: ${BASH_REMATCH[1]}"
-              echo "- Deployment not attempted; live revision not verified."
-              echo "- The protected deploy job will check the exact completed predecessor attempt and terminal evidence before continuing."
-            } >> "$GITHUB_STEP_SUMMARY"
-          else
-            exit 1
-          fi
+          printf 'sha=%s\n' "$CANDIDATE_SHA" >> "$GITHUB_OUTPUT"
+          printf '%s\n' "Deploy candidate: `$CANDIDATE_SHA`" >> "$GITHUB_STEP_SUMMARY"
 
   deploy:
-    needs: [release-gate, preflight]
-    if: >-
-      needs.release-gate.outputs.deploy == 'true' &&
-      (needs.preflight.outputs.readiness == 'ready' ||
-      (github.event_name == 'workflow_run' && needs.preflight.outputs.readiness == 'blocked_by_existing_lease'))
+    needs: release-gate
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    permissions:
+      actions: read
+      contents: read
     environment:
       name: nemlig-production
-    permissions:
-      contents: write
-      actions: read
     steps:
-      - name: Checkout main history
+      - name: Checkout exact approved main commit
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6.0.1
         with:
           ref: main
           persist-credentials: false
           fetch-depth: 0
-      - name: Checkout exact validated candidate
+      - name: Confirm candidate remains in main
+        env:
+          CANDIDATE_SHA: ${{ needs.release-gate.outputs.candidate_sha }}
         run: |
           set -euo pipefail
-          [[ "$CANDIDATE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          git fetch origin refs/heads/main:refs/remotes/origin/main
           git merge-base --is-ancestor "$CANDIDATE_SHA" origin/main
           git checkout --detach "$CANDIDATE_SHA"
           [[ "$(git rev-parse HEAD)" == "$CANDIDATE_SHA" ]]
@@ -493,158 +80,24 @@ jobs:
           node-version: 24.13.0
       - name: Install frozen dependencies
         run: pnpm install --frozen-lockfile
-      - name: Finalize a proven terminal predecessor lease
-        if: github.event_name == 'workflow_run' && needs.preflight.outputs.readiness == 'blocked_by_existing_lease'
-        env:
-          GH_TOKEN: "${{ github.token }}"
-          CLOUDFLARE_API_TOKEN: "${{ secrets.CLOUDFLARE_API_TOKEN }}"
-          CLOUDFLARE_ACCOUNT_ID: "${{ vars.CLOUDFLARE_ACCOUNT_ID }}"
-          LEASE_HEAD: "${{ needs.preflight.outputs.lease_head }}"
-        run: |
-          set -euo pipefail
-          [[ "$LEASE_HEAD" =~ ^[0-9a-f]{40}$ ]]
-          git fetch origin refs/heads/codex-lock/nemlig-production:refs/remotes/origin/codex-lock/nemlig-production
-          [[ "$(git rev-parse origin/codex-lock/nemlig-production)" == "$LEASE_HEAD" ]]
-          journal=$(git show origin/codex-lock/nemlig-production:journal.json)
-          mapfile -t journal_fields < <(node --input-type=module -e '
-            const journal = JSON.parse(process.argv[1]);
-            const integer = (value) => Number.isSafeInteger(value) && value > 0;
-            if (!/^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/.test(journal.operationId ?? "")
-              || !/^[0-9a-f]{40}$/.test(journal.commit ?? "")
-              || !integer(journal.releaseRunId) || !integer(journal.releaseRunAttempt)) process.exit(1);
-            console.log(journal.operationId);
-            console.log(journal.releaseRunId);
-            console.log(journal.releaseRunAttempt);
-          ' "$journal")
-          [[ "${#journal_fields[@]}" -eq 3 ]]
-          operation="${journal_fields[0]}"
-          release_run_id="${journal_fields[1]}"
-          release_run_attempt="${journal_fields[2]}"
-          owner_attempt=$(gh run view "$release_run_id" --attempt "$release_run_attempt" --repo "$GITHUB_REPOSITORY" --json status,attempt)
-          node --input-type=module -e '
-            const attempt = JSON.parse(process.argv[1]);
-            if (attempt.status !== "completed" || attempt.attempt !== Number(process.argv[2])) process.exit(1);
-          ' "$owner_attempt" "$release_run_attempt"
-          evidence_dir="$RUNNER_TEMP/predecessor-release-evidence"
-          mkdir -p "$evidence_dir"
-          gh run download "$release_run_id" --repo "$GITHUB_REPOSITORY" --name nemlig-production-release --dir "$evidence_dir"
-          mapfile -t evidence_journals < <(find "$evidence_dir" -type f -name latest.json -print)
-          [[ "${#evidence_journals[@]}" -eq 1 ]]
-          node --input-type=module -e '
-            import { readFileSync } from "node:fs";
-            const canonical = (value) => Array.isArray(value) ? value.map(canonical)
-              : value && typeof value === "object" ? Object.fromEntries(Object.keys(value).sort().map((key) => [key, canonical(value[key])]))
-              : value;
-            const lease = JSON.parse(process.argv[1]);
-            const saved = JSON.parse(readFileSync(process.argv[2], "utf8"));
-            if (JSON.stringify(canonical(lease)) !== JSON.stringify(canonical(saved))) process.exit(1);
-          ' "$journal" "${evidence_journals[0]}"
-          inspection=$(pnpm --silent --filter nemlig-assistant production:deploy -- inspect-recovery "$operation" --original-runner-stopped)
-          node --input-type=module -e '
-            const inspection = JSON.parse(process.argv[1]);
-            if (inspection.operation !== process.argv[2] || inspection.cleanupEligible !== true) process.exit(1);
-            if (!["enabled", "disabled", "restored"].includes(inspection.state)) process.exit(1);
-          ' "$inspection" "$operation"
-          pnpm --filter nemlig-assistant production:deploy -- finalize "$operation" --evidence-saved --original-runner-stopped
-          echo "- Previous terminal lease: exact attempt and journal artifact verified; provider state matched; lease absence read back." >> "$GITHUB_STEP_SUMMARY"
-      - name: Recheck candidate after terminal predecessor cleanup
-        if: needs.preflight.outputs.readiness == 'blocked_by_existing_lease'
-        env:
-          GH_TOKEN: "${{ github.token }}"
-        run: |
-          set -euo pipefail
-          result=$(pnpm --silent --filter nemlig-assistant production:deploy -- preflight "$CANDIDATE_SHA")
-          node --input-type=module -e '
-            const result = JSON.parse(process.argv[1]);
-            if (result.state !== "ready" || !Number.isSafeInteger(result.ciRunId)) process.exit(1);
-          ' "$result"
       - name: Build candidate
         run: pnpm --filter nemlig-assistant build
       - name: Verify Cloudflare release access
         env:
-          CLOUDFLARE_API_TOKEN: "${{ secrets.CLOUDFLARE_API_TOKEN }}"
-          CLOUDFLARE_ACCOUNT_ID: "${{ vars.CLOUDFLARE_ACCOUNT_ID }}"
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
         run: |
           pnpm --filter nemlig-assistant exec wrangler deployments list --env production --json >/dev/null
           pnpm --filter nemlig-assistant exec wrangler containers list --env production --json >/dev/null
-      - name: Deploy exact approved merge
-        id: deploy
+      - name: Deploy and verify exact candidate
         env:
-          GH_TOKEN: "${{ github.token }}"
-          CLOUDFLARE_API_TOKEN: "${{ secrets.CLOUDFLARE_API_TOKEN }}"
-          CLOUDFLARE_ACCOUNT_ID: "${{ vars.CLOUDFLARE_ACCOUNT_ID }}"
+          GH_TOKEN: ${{ github.token }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
           NEMLIG_MCP_AUTH0_ISSUER: https://everyday-assistants.eu.auth0.com/
           NEMLIG_MCP_PUBLIC_URL: https://nemlig-mcp.broesby.dk/mcp
-          NEMLIG_MCP_SERVICE_CLIENT_ID: "${{ vars.NEMLIG_MCP_SERVICE_CLIENT_ID }}"
-          NEMLIG_MCP_SERVICE_CLIENT_SECRET: "${{ secrets.NEMLIG_MCP_SERVICE_CLIENT_SECRET }}"
-          NEMLIG_CI_ACCEPTANCE_READY: "${{ vars.NEMLIG_CI_ACCEPTANCE_READY }}"
-        run: |
-          set -euo pipefail
-          if [[ "$RECOVERY" == "true" ]]; then
-            pnpm --silent --filter nemlig-assistant production:deploy -- --recovery "$CANDIDATE_SHA"
-          else
-            pnpm --silent --filter nemlig-assistant production:deploy -- --service "$CANDIDATE_SHA"
-          fi >"$RUNNER_TEMP/nemlig-release.json"
-      - name: Upload bounded release report and deployment journal
-        id: release-artifact
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: nemlig-production-release
-          path: |
-            ${{ runner.temp }}/nemlig-release.json
-            .git/nemlig-production-deploy/latest.json
-          if-no-files-found: error
-          retention-days: 7
-          include-hidden-files: true
-      - name: Finalize routine deployment recovery
-        id: finalize
-        if: ${{ !cancelled() && (steps.deploy.outcome == 'success' || steps.deploy.outcome == 'failure') && steps.release-artifact.outcome == 'success' }}
-        env:
-          GH_TOKEN: "${{ github.token }}"
-          CLOUDFLARE_API_TOKEN: "${{ secrets.CLOUDFLARE_API_TOKEN }}"
-          CLOUDFLARE_ACCOUNT_ID: "${{ vars.CLOUDFLARE_ACCOUNT_ID }}"
-        run: |
-          set -euo pipefail
-          finalization_target=$(node "$GITHUB_WORKSPACE/apps/nemlig-assistant/scripts/finalize-routine-deployment.mjs" \
-            "$GITHUB_WORKSPACE/.git/nemlig-production-deploy/latest.json" \
-            "$GITHUB_WORKSPACE/.git/nemlig-production-deploy.lock")
-          if [[ "$finalization_target" == "no-journal" ]]; then
-            echo "No owned deployment journal; nothing to finalize."
-            exit 0
-          fi
-          if [[ "$finalization_target" == "released-pre-mutation-lease" ]]; then
-            echo "Skipping finalization after this operation released its unchanged pre-mutation lease."
-            exit 0
-          fi
-          pnpm --filter nemlig-assistant production:deploy -- finalize "$finalization_target" --evidence-saved --original-runner-stopped
-      - name: Summarize incomplete production delivery
-        if: >-
-          ${{ always() && (steps.deploy.outcome == 'failure' || steps.deploy.outcome == 'cancelled' ||
-          steps.release-artifact.outcome == 'failure' || steps.release-artifact.outcome == 'cancelled' ||
-          steps.finalize.outcome == 'failure' || steps.finalize.outcome == 'cancelled' ||
-          (cancelled() && steps.deploy.outcome == 'success' && steps.release-artifact.outcome == 'success')) }}
-        env:
-          DEPLOY_OUTCOME: "${{ steps.deploy.outcome }}"
-          RELEASE_ARTIFACT_OUTCOME: "${{ steps.release-artifact.outcome }}"
-          FINALIZATION_OUTCOME: "${{ steps.finalize.outcome }}"
-        run: |
-          set -euo pipefail
-          retention_report="$RUNNER_TEMP/nemlig-retention-not-run.json"
-          reason=deployment_not_accepted
-          if [[ "$DEPLOY_OUTCOME" == "cancelled" ]]; then
-            reason=release_interrupted
-          elif [[ "$DEPLOY_OUTCOME" == "success" ]]; then
-            if [[ "$RELEASE_ARTIFACT_OUTCOME" != "success" ]]; then
-              reason=release_evidence_not_saved
-            elif [[ "$FINALIZATION_OUTCOME" == "cancelled" || "$FINALIZATION_OUTCOME" == "skipped" ]]; then
-              reason=release_interrupted
-            else
-              reason=finalization_incomplete
-            fi
-          fi
-          printf '{"commit":"%s","outcome":"not_run","reason":"%s"}\n' "$CANDIDATE_SHA" "$reason" > "$retention_report"
-          summary_args=(--commit "$CANDIDATE_SHA" --retention "$retention_report")
-          release_journal="$GITHUB_WORKSPACE/.git/nemlig-production-deploy/latest.json"
-          if [[ -f "$release_journal" ]]; then summary_args+=(--release "$release_journal"); fi
-          pnpm --silent --filter nemlig-assistant exec tsx scripts/production-summary.ts -- "${summary_args[@]}" >> "$GITHUB_STEP_SUMMARY"
+          NEMLIG_MCP_SERVICE_CLIENT_ID: ${{ vars.NEMLIG_MCP_SERVICE_CLIENT_ID }}
+          NEMLIG_MCP_SERVICE_CLIENT_SECRET: ${{ secrets.NEMLIG_MCP_SERVICE_CLIENT_SECRET }}
+          NEMLIG_CI_ACCEPTANCE_READY: ${{ vars.NEMLIG_CI_ACCEPTANCE_READY }}
+          CANDIDATE_SHA: ${{ needs.release-gate.outputs.candidate_sha }}
+        run: pnpm --filter nemlig-assistant production:deploy -- --service "$CANDIDATE_SHA"

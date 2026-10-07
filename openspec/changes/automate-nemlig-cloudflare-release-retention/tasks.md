@@ -1,3 +1,10 @@
+# Superseded
+
+This change was superseded on 2026-10-07 by
+[`remove-production-release-leases`](../remove-production-release-leases/).
+Unchecked cleanup, recovery, and live-proof tasks below are historical records,
+not active authorization to restore the retired machinery.
+
 ## 1. Baseline and mismatch (#97)
 
 - [x] 1.1 Record current main SHA, workflow trigger/topology, current environment protections, package gates, and every manual or skip/supersession path.
