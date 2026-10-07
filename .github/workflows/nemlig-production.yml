@@ -426,26 +426,34 @@ jobs:
           else
             result=$(pnpm --silent --filter nemlig-assistant production:deploy -- preflight "$CANDIDATE_SHA")
           fi
-          node --input-type=module -e '
-            import { appendFileSync } from "node:fs";
+          preflight_state=$(node --input-type=module -e '
             const result = JSON.parse(process.argv[1]);
-            const output = process.env.GITHUB_OUTPUT;
-            if (!output || !/^[0-9a-f]{40}$/.test(result.commit)) process.exit(1);
+            if (!/^[0-9a-f]{40}$/.test(result.commit)) process.exit(1);
             if (result.state === "ready" && Number.isSafeInteger(result.ciRunId)) {
-              appendFileSync(output, "readiness=ready\\nlease_head=\\n");
-              process.exit(0);
+              console.log("ready");
+              process.exit();
             }
             if (result.state === "blocked_by_existing_lease" && Number.isSafeInteger(result.ciRunId) && /^[0-9a-f]{40}$/.test(result.leaseHead)) {
-              appendFileSync(output, `readiness=blocked_by_existing_lease\\nlease_head=${result.leaseHead}\\n`);
-              console.log("## Routine deployment blocked by existing production lease");
-              console.log(`- Candidate: ${result.commit}`);
-              console.log(`- Lease head: ${result.leaseHead}`);
-              console.log("- Deployment not attempted; live revision not verified.");
-              console.log("- Next action: explicitly reconcile the saved production operation.");
-              process.exit(0);
+              console.log(`blocked:${result.leaseHead}`);
+              process.exit();
             }
             process.exit(1);
-          ' "$result" >> "$GITHUB_STEP_SUMMARY"
+          ' "$result")
+          if [[ "$preflight_state" == "ready" ]]; then
+            printf 'readiness=ready\n' >> "$GITHUB_OUTPUT"
+            echo "- Preflight: ready" >> "$GITHUB_STEP_SUMMARY"
+          elif [[ "$preflight_state" =~ ^blocked:([0-9a-f]{40})$ ]]; then
+            printf 'readiness=blocked_by_existing_lease\nlease_head=%s\n' "${BASH_REMATCH[1]}" >> "$GITHUB_OUTPUT"
+            {
+              echo "## Routine deployment blocked by existing production lease"
+              echo "- Candidate: $CANDIDATE_SHA"
+              echo "- Lease head: ${BASH_REMATCH[1]}"
+              echo "- Deployment not attempted; live revision not verified."
+              echo "- Next action: explicitly reconcile the saved production operation."
+            } >> "$GITHUB_STEP_SUMMARY"
+          else
+            exit 1
+          fi
 
   deploy:
     needs: [release-gate, preflight]

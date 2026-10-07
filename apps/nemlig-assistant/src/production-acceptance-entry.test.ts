@@ -179,6 +179,25 @@ test("service initialization wakes and version-checks the backend without callin
   assert.equal(report.lastCompletedBoundary, "service_runtime_version_read");
 });
 
+test("service wake only connects and closes an earlier backend without treating it as accepted", async () => {
+  const events: string[] = [];
+  const client = serviceClient();
+  client.listTools = async () => { events.push("list-tools"); throw new Error("wake must not list tools"); };
+  client.listResources = async () => { events.push("list-resources"); throw new Error("wake must not list resources"); };
+  const entry = await import("../scripts/production-acceptance.js");
+  const report = await entry.main(["--service", "--initialize-only", "--wake-only"], {
+    NEMLIG_PRODUCTION_MCP_URL: "https://nemlig-mcp.example.test/mcp",
+    NEMLIG_MCP_SERVICE_ACCESS_TOKEN: "service-token",
+  }, {
+    fetcher: edgeFetcher([]),
+    connect: async () => ({ serverVersion: "0.0.1", client, close: async () => { events.push("close"); } }),
+  });
+  assert.deepEqual(events, ["close"]);
+  assert.deepEqual(report.required, ["service_wake"]);
+  assert.deepEqual(report.passed, ["service_wake"]);
+  assert.equal(report.lastCompletedBoundary, "service_runtime_version_read");
+});
+
 test("service initialization rejects a previous server release without touching fixture tools", async () => {
   const entry = await import("../scripts/production-acceptance.js");
   const client = serviceClient();
@@ -285,6 +304,7 @@ test("removed production basket mutation mode is unavailable before network or c
   await assert.rejects(entry.main(["--mutation"], {}, dependencies), /Unknown acceptance argument/u);
   await assert.rejects(entry.main(["--edge-only", "--edge-only"], {}, dependencies), /must not be repeated/u);
   await assert.rejects(entry.main(["--initialize-only"], {}, dependencies), /requires --service/u);
+  await assert.rejects(entry.main(["--service", "--wake-only"], {}, dependencies), /requires --service --initialize-only/u);
   await assert.rejects(entry.main(["--edge-only", "--service", "--initialize-only"], {}, dependencies), /cannot be combined/u);
   await assert.rejects(entry.main(["--unknown"], {}, dependencies), /Unknown acceptance argument/u);
   await assert.rejects(entry.main(["positional"], {}, dependencies), /Unknown acceptance argument/u);

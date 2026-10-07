@@ -25,12 +25,18 @@ export function parseCodenameLedger(contents: string | null, allowHistoricalDupl
 
 export function validateCodenameLedger(base: string | null, current: string | null, identity: PackageIdentity, releaseBearing: boolean): void {
   const previous = parseCodenameLedger(base, true);
-  const candidate = parseCodenameLedger(current);
+  // A historical ledger can already contain a duplicate public codename. A
+  // later release must not rewrite that history merely to become publishable;
+  // it must append a new, unique identity instead.
+  const candidate = parseCodenameLedger(current, true);
   if (!releaseBearing) {
     if (base !== current) throw new Error("Non-release changes cannot change the codename ledger.");
     return;
   }
   if (!identity.codename) throw new Error("Candidate codename is missing from the ledger identity.");
+  if (previous.some((entry) => entry.codename.toLowerCase() === identity.codename!.toLowerCase())) {
+    throw new Error("Codename ledger cannot reuse a historical codename for a new release.");
+  }
   if (candidate.length !== previous.length + 1) throw new Error("Codename ledger must append exactly the candidate version and codename.");
   const priorNameCounts = new Map<string, number>();
   for (const entry of previous) {

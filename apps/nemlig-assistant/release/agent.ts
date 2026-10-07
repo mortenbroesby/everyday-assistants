@@ -223,13 +223,13 @@ export async function createReleasePlan(options: PlanOptions): Promise<ReleasePl
   let targetLedger = baseLedger;
   let ledgerError: string | null = null;
   try {
-    const previous = parseCodenameLedger(baseLedger);
+    const previous = parseCodenameLedger(baseLedger, true);
     if (releaseBearing) {
       if (targetCodename!.toLowerCase() === baseCodename?.toLowerCase()) throw new Error("Release codename cannot reuse its parent's codename.");
       targetLedger = ["version,codename", ...previous.map(({ version, codename }) => `${version},${codename}`), `${targetVersion},${targetCodename}`].join("\n");
-      parseCodenameLedger(targetLedger);
+      parseCodenameLedger(targetLedger, true);
       if (options.mergedCandidate) validateCodenameLedger(baseLedger, currentLedger, current, true);
-      else if (currentLedger !== targetLedger && JSON.stringify(parseCodenameLedger(currentLedger)) !== JSON.stringify(previous)) {
+      else if (currentLedger !== targetLedger && JSON.stringify(parseCodenameLedger(currentLedger, true)) !== JSON.stringify(previous)) {
         throw new Error("Codename ledger has an inconsistent candidate mapping.");
       }
     } else validateCodenameLedger(baseLedger, currentLedger, current, false);

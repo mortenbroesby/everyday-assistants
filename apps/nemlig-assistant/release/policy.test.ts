@@ -48,6 +48,16 @@ test("a release can repair only historical duplicate codename rows", () => {
   );
 });
 
+test("a release can append a unique codename without rewriting a historical duplicate", () => {
+  const legacy = "version,codename\n4.19.0,Clarity\n5.0.0,Unhurried\n6.0.0,Clarity";
+  const next = legacy + "\n6.1.0,Pulse";
+  assert.doesNotThrow(() => validateCodenameLedger(legacy, next, { version: "6.1.0", codename: "Pulse" }, true));
+  assert.throws(
+    () => validateCodenameLedger(legacy, legacy + "\n6.1.0,Clarity", { version: "6.1.0", codename: "Clarity" }, true),
+    /reuse a historical codename/u,
+  );
+});
+
 test("manifest identities permit absent historical metadata but reject malformed candidate metadata", () => {
   const version = "1.2.3-alpha.4";
   assert.deepEqual(readPackageIdentity(JSON.stringify({ version }), "fixture"), { version, codename: null });
