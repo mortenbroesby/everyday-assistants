@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { isDeepStrictEqual } from "node:util";
 import { serviceAcceptanceResourceInventory, serviceAcceptanceToolInventory } from "./mcp.js";
-import { PRODUCT_VIEWER_MIME_TYPE, PRODUCT_VIEWER_RESOURCE_METADATA, PRODUCT_VIEWER_RESOURCE_URI, renderProductViewerHtml } from "./product-viewer.js";
+import { PRODUCT_VIEWER_MIME_TYPE, PRODUCT_VIEWER_RESOURCE_DOMAINS, PRODUCT_VIEWER_RESOURCE_METADATA, PRODUCT_VIEWER_RESOURCE_URI, renderProductViewerHtml } from "./product-viewer.js";
 import { RETIRED_PRODUCT_VIEWER_RESOURCE_URIS } from "./product-viewer-identity.js";
 import { NEMLIG_CODENAME, NEMLIG_VERSION } from "./runtime.js";
 
@@ -140,7 +140,7 @@ const assertProductViewerResource = (viewer: { contents: unknown[] }, label: str
   const ui = (viewerRecord._meta as Record<string, unknown>).ui;
   assert.ok(ui && typeof ui === "object", `${label} product-viewer UI metadata is missing`);
   const metadata = ui as Record<string, unknown>;
-  assert.deepEqual(metadata.csp, { connectDomains: [], resourceDomains: ["https://nemlig.com", "https://www.nemlig.com"] }, `${label} product-viewer CSP metadata drifted`);
+  assert.deepEqual(metadata.csp, { connectDomains: [], resourceDomains: [...PRODUCT_VIEWER_RESOURCE_DOMAINS] }, `${label} product-viewer CSP metadata drifted`);
   assert.equal(metadata.prefersBorder, true, `${label} product-viewer border metadata drifted`);
 };
 

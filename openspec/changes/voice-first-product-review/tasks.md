@@ -139,7 +139,7 @@ live Nemlig submission or native v5 host acceptance was attempted.
 - [x] 9.2 Keep alternatives in In Review, batch acceptance, remove-all-Ready semantics, and protected Ready-only submission; add service regressions.
 - [x] 9.3 Refine the existing lightweight viewer with compact rows, disclosures, quantity, empty/success states and same-frame navigation; add executable viewer and mobile browser checks.
 - [x] 9.4 Version the resource, update docs/release note, pass repository gates, commit/push one scoped PR and verify exact-head CI.
-- [ ] 9.5 After a separately approved release, verify the v6 mounted experience in native ChatGPT; do not infer this from local tests.
+- [ ] 9.5 After a separately approved release, verify the registered React v8 mounted experience in native ChatGPT; do not infer this from local tests.
 
 9.4 was completed by PR #149, tested at
 `a1ebed07f94565a46b3662c77fdc440bad23e2c9` and merged as
@@ -147,9 +147,9 @@ live Nemlig submission or native v5 host acceptance was attempted.
 Exact-head CI run `36346228455` passed. Its recorded loopback continuous-flow
 checks at 320px and 375px made zero provider basket calls. This credits the
 implementation gate only; 9.5 and the native historical/recovery gates remain
-open. The current resource is v6, with v4/v5 now retired; #137's historical v4
-case must not be mistaken for current-renderer acceptance or an instruction to
-redeploy the old v4 release.
+open. The current resource was v6 at that checkpoint, with v4/v5 then retired;
+#137's historical v4 case must not be mistaken for current-renderer acceptance
+or an instruction to redeploy the old v4 release.
 
 ## 10. Discovery, selection language, and current-card continuity
 
@@ -236,3 +236,14 @@ metadata-readback, and historical-card evidence.
 - [x] 11.4 Update README/tool inventory and relevant tests; run focused gates,
   strict OpenSpec validation, browser/MCP smoke, and `pnpm verify`; push the
   change to draft PR #164 without merging or deploying.
+
+## 12. Registered React viewer migration update (7 October 2026)
+
+- [x] 12.1 Register the self-contained React v8 resource, keep v7 inert, and
+  retain server-owned review state and exact submission confirmation.
+- [x] 12.2 Restore supported review controls, safe quantity flush, explicit
+  continuation after verified submit, and authoritative end handling in the
+  React artifact with synthetic/loopback browser coverage.
+- [ ] 12.3 After a separately approved release, verify the registered resource
+  and historical cards in native ChatGPT. Local evidence does not complete
+  task 9.5 or this host-acceptance gate.

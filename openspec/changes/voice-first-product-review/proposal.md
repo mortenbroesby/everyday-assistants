@@ -3,8 +3,14 @@
 **Later tool and naming decision (7 October 2026):**
 [`slim-nemlig-mcp-surface`](../slim-nemlig-mcp-surface/proposal.md) supersedes this change's tool-retention and “Your Nemlig selection” decisions. The Draft list, To decide, Ready, and Nemlig basket names and six-tool catalog are the current target. Historical completed work and remaining live-acceptance tasks below are preserved as evidence.
 
-Portfolio status (29 September 2026, #114): Current v6 implementation is integrated. Native historical/recovery acceptance owner: #137; deployment evidence is separately reused from #96. Preserve unchecked host gates and the existing lightweight viewer.
+Portfolio status (29 September 2026, #114): Current v6 implementation was integrated. Native historical/recovery acceptance owner: #137; deployment evidence is separately reused from #96. Preserve unchecked host gates.
 See [portfolio evidence](../../../docs/openspec-portfolio-reconciliation.md).
+
+Implementation update (7 October 2026, PR #193): the registered product-viewer
+resource now uses the self-contained React v8 artifact and v7 resolves to an
+inert retired notice. This supersedes the earlier lightweight-viewer status;
+the native mounted/historical-card acceptance in task 9.5 remains unchecked
+until a separately approved release and host verification.
 
 Issue #113 requires a conversational product review surface with optional touch
 controls. The current shared viewer can display products but cannot represent

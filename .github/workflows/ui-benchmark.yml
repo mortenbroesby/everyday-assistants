@@ -2,18 +2,20 @@ name: UI benchmark (opt-in)
 
 on:
   pull_request:
-    types: [labeled]
+    types: [labeled, synchronize]
 
 permissions:
   contents: read
 
 jobs:
   product-viewer:
-    if: github.event.label.name == 'benchmark:ui'
+    if: github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'benchmark:ui')
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
       - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
         with:
           version: 9.15.9
@@ -24,4 +26,18 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter nemlig-assistant exec playwright install --with-deps chrome
-      - run: pnpm --filter nemlig-assistant bench:review-ui -- --runs 5
+      - run: pnpm --filter nemlig-assistant build
+      - name: Run UI benchmark
+        id: benchmark
+        env:
+          BENCHMARK_CHECKOUT_REF: ${{ github.event.pull_request.head.sha }}
+          BENCHMARK_PR_HEAD: ${{ github.event.pull_request.head.sha }}
+        run: pnpm --filter nemlig-assistant bench:review-ui -- --runs 5 --output .comparison/ui-benchmark.json
+      - name: Upload benchmark report
+        if: ${{ always() && steps.benchmark.outcome == 'success' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ui-benchmark-pr-${{ github.event.pull_request.number }}-${{ github.sha }}
+          path: apps/nemlig-assistant/.comparison/ui-benchmark.json
+          if-no-files-found: error
+          retention-days: 90

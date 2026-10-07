@@ -6,11 +6,10 @@ still needs a small, evidence-backed use case and the normal verification gate.
 
 | Dependency | Purpose | Adoption | Current status | Adoption gate |
 | --- | --- | --- | --- | --- |
-| React / React DOM 19.2.3 | Declarative Nemlig visual rendering | Adopted for the Nemlig UI foundation | Build-time only; bundled into the self-contained MCP Apps resource | Keep one root per resource; add routing or state libraries only for a measured need |
-| OpenAI Apps SDK UI 0.2.2 | OpenAI-aligned controls, tokens, and stylesheet | Adopted for the Nemlig UI foundation | Build-time only; `Button` and `Badge` are bundled | Reuse the shared foundation and local design showcase before adding another visual interaction |
-| Tailwind CSS / Vite plugin 4.1.18 | Compile Apps SDK UI and the small shared stylesheet | Adopted for browser builds | Build-time only; replaces the separate Tailwind CLI stage | Keep authored CSS limited to shared layout and proven presentation needs |
-| MCP ext-apps 1.7.5 | MCP Apps host handshake, messages, styling, fonts, safe areas, and resize lifecycle | Adopted for the Nemlig UI foundation | Build-time only; official React hooks are bundled into the picker | Retain one host owner and executable cleanup/remount coverage until a compatible protocol upgrade is separately proven |
-| Vite 7.3.6 / React plugin 5.2.0 / single-file plugin 2.3.3 | Supported browser HTML, React, and self-contained resource build | Adopted for browser builds | Build-time only; tsdown remains the Node bundler | Keep one real HTML entry and no post-build asset mutation; upgrade the pinned cohort together |
+| React / React DOM 19.2.3 | Declarative Nemlig visual rendering | Adopted for product viewer | Build-only; `dist/picker.html` is the packaged and registered v8 MCP resource | Keep browser dependencies out of the Node runtime; preserve behavior coverage in the built-artifact synthetic host smoke |
+| MCP ext-apps 2.0.3 | MCP Apps iframe protocol lifecycle and React host/result hooks | Adopted for product viewer | `useApp` owns host connection, result/cancel callbacks, tool actions, and SDK auto-resize; no extra resize observer | Preserve explicit activation and fail-closed behavior across reconnect, stale, foreign, and malformed host results |
+| `@openai/apps-sdk-ui` 0.2.2 / Tailwind 4.1.18 | ChatGPT controls, status badges, empty state, and host design tokens | Adopted for product viewer | Build-only; viewer uses `Button`, `Badge`, and `EmptyMessage`; styling is bundled into the single HTML resource | Keep host theme variables with system fallbacks and keep the current CSP/network boundary |
+| Vite 7.3.6 / React plugin 5.2.0 / single-file plugin 2.3.3 | Build React viewer as self-contained HTML | Adopted for browser resource | Vite emits `dist/picker.html` after tsdown cleans/builds Node artifacts; package smoke reads this same asset | No external executable/styles/chunks; version the MCP resource URI when behavior or code changes |
 | tsdown 0.22.14 | Compile the Node CLI, MCP, and HTTP entry points | Retained for Node builds | Browser CSS/IIFE work was removed from tsdown | Reassess only when one supported tool can replace both pipelines without custom assembly |
 | Native TypeScript | Readonly data transformations, discriminated unions, explicit Promise/resource handling | Baseline | Already used; no new dependency | Remains the fallback unless a candidate demonstrates a measured maintenance improvement |
 | [Effect](https://effect.website/) | Structured lifetime for basket-aware batch product discovery | Adopted at one server boundary | Stable 3.22.2 coordinates the basket read and at most three catalogue reads; plain TypeScript remains the default elsewhere | Keep it scoped to planning reads and retain only while fatal queue-stop, cancellation, and quiescence remain simpler than a native replacement; it is not part of the picker |
@@ -18,13 +17,27 @@ still needs a small, evidence-backed use case and the normal verification gate.
 | [ts-pattern](https://github.com/gvergnaud/ts-pattern) | Exhaustive structured pattern matching | Conditional | Not installed | Consider only when real branching is clearer than a native discriminated-union switch and type-check cost is acceptable |
 | Effect Micro | Smaller Effect-style runtime | Deferred | Current v3 documentation marks it experimental; not installed | Reconsider only after stable support and a measured need; do not adopt in the current comparison |
 
-## Production Nemlig UI evidence
+## Nemlig UI evidence
 
 - All browser packages are MIT-licensed and exactly pinned. They remain development dependencies; the packed Node runtime does not install them.
-- The production self-contained artifact is 754,910 bytes raw and 186,920 bytes gzip. Two consecutive locked builds produced SHA-256 `383b925c337bfea15933d476c7de55167f0b052d9028e75e67ab4291c5287761`.
-- Executable code and application styling are embedded. There is no external application script, stylesheet, dynamic JavaScript chunk, or API fetch. CSP permits only the two approved Nemlig image origins and the exact optional `https://cdn.openai.com` font origin.
-- The local synthetic showcase reuses the production view for reviewed, sending, selected, loading, empty, and connection-error states. Browser inspection verified light/dark operation, 44 px actions, and a 320 px stage whose scroll width remains 320 px.
-- The 1,500,000-byte raw and 350,000-byte gzip limits are project budgets. No authoritative OpenAI host-size ceiling was found, so built-artifact and maintained-host acceptance remain the compatibility proof.
+- Resource `ui://nemlig/product-viewer-v8.html` serves the self-contained React viewer. The previous v7 URI remains in the retired-resource inventory.
+- The browser smoke drives the built asset through a synthetic MCP Apps host and fake product data. It checks activation, local review actions, alternatives, quantity flush, exact prepare/confirm/submit boundaries, uncertainty, remount, foreign snapshots, and stale recovery without provider writes.
+- The package build includes the single HTML asset beside the Node MCP server. The MCP server reads the built file rather than assembling or rewriting browser output.
+- Paired benchmark evidence is from the successful [PR #193 benchmark run](https://github.com/mortenbroesby/everyday-assistants/actions/runs/37578315194), checked out at PR head `4fee6125e33e49603d76a04777481f6133e022c1`. It compared the pinned v7 HTML fixture from `6b42384028eb5dc9f0addb0b97acadcab1509404` with the built React v8 artifact.
+
+| Measure | v7 | React v8 |
+| --- | ---: | ---: |
+| First contentful paint, median / p95 | 64 / 72 ms | 216 / 220 ms |
+| First product DOM insertion, median / p95 | 36 / 43.6 ms | 171 / 180.7 ms |
+| DOMContentLoaded, median / p95 | 47.7 / 61.5 ms | 148.4 / 154.7 ms |
+| Resource artifact, raw / gzip | 41,966 / 11,150 B | 580,184 / 149,030 B |
+
+The run used Google Chrome 155, five fresh browser contexts per renderer,
+375×812 CSS pixels at DPR 2, and the same synthetic same-origin parent/iframe
+host and child-frame timing path for both renderers. First product is measured
+at DOM insertion, not paint. This is local synthetic evidence; it does not
+establish native ChatGPT, mobile-network, or hosted acceptance. Task 9.5 remains
+unchecked pending a separately approved release and native-host verification.
 
 ## Comparison notes
 
