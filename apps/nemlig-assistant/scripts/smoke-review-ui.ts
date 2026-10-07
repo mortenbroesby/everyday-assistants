@@ -18,12 +18,18 @@ let simulatedSubmissions = 0;
 let nextSubmissionStatus: "submitted" | "uncertain" = "submitted";
 let unknownPriceScenario = false;
 const denied = async (): Promise<never> => { writes++; throw new Error("Provider basket write forbidden in this smoke"); };
-const product = (id: number): Product => ({ id, name: `Smoke product ${id}`, price: unknownPriceScenario && id === 1 ? undefined : id * 5, available: true,
+const product = (id: number): Product => ({ id, name: `Smoke product ${id}`, price: unknownPriceScenario && id === 1 ? undefined : id * 5, available: id === 4 ? false : true,
   unit: "kr/kg", unitPrice: id * 5, unitSize: "1 kg", brand: "Fixture", category: "Test", subcategory: "Test", imageUrl: "", labels: [],
-  isOrganic: false, isFrozen: false, isRefrigerated: false, isDairy: false, isLactoseFree: false, isGlutenFree: false, isVegan: false, isOnDiscount: false });
+  description: id === 3 ? "Long factual description for the alternatives comparison smoke." : undefined,
+  isOrganic: id === 3, isFrozen: false, isRefrigerated: false, isDairy: false, isLactoseFree: false, isGlutenFree: false, isVegan: false, isOnDiscount: false });
 const catalogue = {
   isLoggedIn: () => true, login: async () => {}, getProduct: async (id: number) => product(id),
-  getFreshProduct: async (id: number) => product(id), searchProducts: async () => [product(1), product(2), product(3)],
+  getFreshProduct: async (id: number) => product(id), searchProducts: async (query: string) => {
+    if (query === "search-error") throw new Error("Synthetic alternative search failure");
+    if (query === "empty") return [];
+    if (query === "unavailable") return [product(4)];
+    return [product(1), product(2), product(3)];
+  },
   getCart: async () => { basketReads++; return { items: [], productsPrice: 0, deliveryPrice: 0, numberOfProducts: 0, deliveryTime: "smoke" }; },
   addToCart: denied,
 } as unknown as ShoppingClient;
@@ -40,11 +46,11 @@ const mcpHandler = toNodeHandler(handler);
 const client = new Client({ name: "review-ui-smoke", version: "1" }, { versionNegotiation: { mode: { pin: "2026-07-28" } } });
 const page = `<!doctype html><html><body><h1>Selection recovery smoke</h1>
 <button id="start">Start sample selection</button><button id="reset">Simulate server restart</button><button id="replace">Create current selection without updating card</button>
-<button id="run">Run regression smoke</button><button id="flow">Run continuous local flow</button><button id="retired">Show retired v7 card</button><output id="status">Ready</output><iframe id="viewer" src="/viewer" style="width:100%;height:760px"></iframe>
+<button id="run">Run regression smoke</button><button id="flow">Run continuous local flow</button><button id="alternatives">Run alternatives comparison smoke</button><button id="retired">Show retired v7 card</button><output id="status">Ready</output><iframe id="viewer" src="/viewer" style="width:100%;height:760px"></iframe>
 <script>
 const frame = document.getElementById('viewer'), status = document.getElementById('status');
 let transcript, offline = false, initialized = false, conversationMessages = 0;
-const widgetCalls = [];
+const widgetCalls = [], widgetResults = [];
 const publish = () => frame.contentWindow.postMessage({jsonrpc:'2.0',method:'ui/notifications/tool-result',params:transcript},location.origin);
 const call = args => fetch('/call', {method:'POST',body:JSON.stringify(args)}).then(r=>r.json());
 document.getElementById('start').onclick = async () => {
@@ -64,6 +70,7 @@ window.addEventListener('message',async event=>{
  if(m.method==='tools/call'){
   widgetCalls.push(m.params);
   const result=offline ? {isError:true,content:[{type:'text',text:'Service Unavailable: private trace'}]} : await call(m.params);
+  widgetResults.push({name:m.params.name,isError:result.isError===true,text:(result.content||[]).filter(content=>content.type==='text').map(content=>content.text).join(' ')});
   // Reproduce ChatGPT wrapping a tool error as a JSON-RPC exception.
   const response=result.isError ? {error:{code:-32602,message:'Error code: INVALID_ARGUMENT; Error calling MCP tool: '+result.content.map(c=>c.text||'').join(' ')}} : {result};
   frame.contentWindow.postMessage({jsonrpc:'2.0',id:m.id,...response},location.origin);
@@ -282,6 +289,60 @@ document.getElementById('flow').onclick = async () => {
   status.textContent='PASS: activation, row selection, no-call selection, Ready action hierarchy, confirmed local removals, alternative return, two-row flush, stale prepared no-submit, verified-submit continuation, uncertain block and explicit-edit recovery, confirmed end/restart, 320/375px; provider basket writes 0';
  } catch(error){status.textContent='FAIL: '+error.message+' | screen: '+(doc()?.querySelector('#title')?.textContent||'unavailable')+' | controls: '+[...(doc()?.querySelectorAll('button')||[])].map(button=>button.textContent.trim()+(button.disabled?' [disabled]':'')).join('; ')+' | widget calls: '+widgetCalls.map(call=>call.name+':'+(call.arguments.action?.kind||'start')).join(',');} finally{run.disabled=false;}
 };
+document.getElementById('alternatives').onclick = async () => {
+ const run=document.getElementById('alternatives'); run.disabled=true;
+ const doc=()=>frame.contentDocument;
+ const check=(condition,label)=>{if(!condition)throw new Error(label);};
+ const wait=async predicate=>{const until=Date.now()+15000;while(!predicate()){if(Date.now()>until)throw new Error('Timed out: '+(doc()?.querySelector('main')?.innerText||'no viewer main'));await new Promise(r=>setTimeout(r,25));}};
+ const button=label=>[...doc().querySelectorAll('button')].find(control=>control.textContent===label);
+ const click=label=>{const control=button(label);check(control&&!control.disabled,'Missing enabled control: '+label);control.click();};
+ const open=()=>check(!button('Open current Draft list'),'The alternatives review unexpectedly became inactive');
+ const search=async query=>{const field=doc().querySelector('#alternative-query');check(field,'Alternative search input disappeared');field.value=query;field.dispatchEvent(new Event('input',{bubbles:true}));field.form.requestSubmit();};
+ try {
+  status.textContent='Checking alternatives comparison';
+  await fetch('/reset',{method:'POST'}); widgetCalls.length=0; widgetResults.length=0; initialized=false;
+  transcript=await call({name:'start_product_review',arguments:{items:[{product_id:1,quantity:2},{product_id:2,quantity:1}]}});
+  frame.src='/viewer'; await wait(()=>initialized&&doc()?.querySelector('main.viewer'));
+  publish(); await wait(()=>button('To decide (2)')&&!button('To decide (2)').disabled);
+  const target=[...doc().querySelectorAll('.product-list article')].find(row=>row.textContent.includes('Smoke product 1'));
+  check(target,'Current product row missing before alternatives');
+  target.querySelector('button[aria-expanded]')?.click(); click('Choose alternative');
+  await wait(()=>doc().querySelector('#title')?.textContent==='Choose an alternative'); open();
+  const currentSection=doc().querySelector('.alternatives-current');
+  const currentCard=currentSection?.querySelector('.product-card');
+  check(currentSection&&currentCard,'Current product was not shown as a distinct comparison section');
+  check(getComputedStyle(currentCard).borderBottomWidth==='0px','Current product retained an internal divider');
+  const candidate=[...doc().querySelectorAll('.alternative-options .product-card')].find(row=>row.textContent.includes('Smoke product 3'));
+  check(candidate,'Returned alternative was missing');
+  check(!candidate.querySelector('button.product-summary'),'Alternative facts remained hidden behind a product accordion');
+  check(candidate.textContent.includes('Fixture')&&candidate.textContent.includes('1 kg')&&candidate.textContent.includes('15.00 kr')&&candidate.textContent.includes('Organic'),'Alternative comparison omitted supplied product facts');
+  const description=candidate.querySelector('.product-fact summary'); check(description,'Long factual description disclosure missing'); description.click();
+  await wait(()=>candidate.textContent.includes('Long factual description for the alternatives comparison smoke.'));
+  let currentReview=(await call({name:'update_product_review_conversation',arguments:{action:{kind:'show'}}})).structuredContent.review;
+  check(currentReview.destination==='alternatives'&&currentReview.items.every(item=>item.state==='needs-review'),'Opening alternatives implicitly accepted a product');
+  candidate.querySelector('input[type=radio]')?.click(); click('Use selected alternative');
+  await wait(()=>doc().querySelector('#title')?.textContent==='To decide'&&!button('To decide (2)')?.disabled);
+  currentReview=(await call({name:'update_product_review_conversation',arguments:{action:{kind:'show'}}})).structuredContent.review;
+  const replacement=currentReview.items.find(item=>item.product_id===3);
+  check(replacement?.quantity===2&&replacement.state==='needs-review'&&currentReview.items.find(item=>item.product_id===2)?.quantity===1,'Replacement changed the wrong candidate or lost the requested quantity');
+  check(currentReview.items.every(item=>item.state==='needs-review')&&button('Ready (0)'),'Replacement implicitly accepted an item into Ready');
+  const replacementRow=[...doc().querySelectorAll('.product-list article')].find(row=>row.textContent.includes('Smoke product 3'));
+  replacementRow?.querySelector('button[aria-expanded]')?.click(); click('Choose alternative');
+  await wait(()=>doc().querySelector('#title')?.textContent==='Choose an alternative');
+  await search('unavailable'); await wait(()=>doc().querySelector('.alternative-options')?.textContent.includes('Smoke product 4'));
+  const unavailable=[...doc().querySelectorAll('.alternative-options .product-card')].find(row=>row.textContent.includes('Smoke product 4'));
+  check(unavailable?.querySelector('input[type=radio]:disabled')&&unavailable.textContent.includes('Unavailable'),'Unavailable alternative could be selected or was not labeled');
+  await search('empty'); await wait(()=>doc().querySelector('.alternatives-empty'));
+  check(doc().querySelector('#alternative-query')&&doc().querySelector('.alternatives-empty')?.textContent.includes('No alternatives were returned'),'Empty search was hidden or represented as a failure');
+  await search('search-error');
+  await wait(()=>doc().querySelector('#title')?.textContent==='Your Draft list'&&doc().querySelector('main')?.textContent.includes('We could not confirm this action'));
+  check(!doc().querySelector('.alternatives-empty'),'Search failure was mislabeled as a successful empty result');
+  currentReview=(await call({name:'update_product_review_conversation',arguments:{action:{kind:'show'}}})).structuredContent.review;
+  check(currentReview.items.every(item=>item.state==='needs-review'&&item.quantity>0),'Alternative search changed the authoritative local selection');
+  check((await fetch('/stats').then(r=>r.json())).basketWrites===0,'Alternative comparison called a provider basket write');
+  status.textContent='PASS: direct comparison facts, long disclosure, current divider, unavailable/empty/error results, no implicit acceptance; provider basket writes 0';
+ } catch(error){status.textContent='FAIL: '+error.message+' | screen: '+(doc()?.querySelector('#title')?.textContent||'unavailable')+' | alternatives: '+(doc()?.querySelector('.alternatives')?.textContent||'none')+' | tool results: '+widgetResults.map(result=>result.name+':'+result.isError+':'+result.text).join(' | ');} finally{run.disabled=false;}
+};
 </script></body></html>`;
 const server = createServer((req, res) => {
   if (req.url === "/mcp") { void mcpHandler(req, res); return; }
@@ -352,6 +413,8 @@ try {
   await waitForResult("MCP adapter recovery flow");
   await browserPage.locator("#flow").click();
   await waitForResult("MCP adapter continuous flow");
+  await browserPage.locator("#alternatives").click();
+  await waitForResult("MCP adapter alternatives comparison");
   const stats = await browserPage.evaluate(async () => fetch("/stats").then(async (response) => await response.json() as { providerBasketCalls: number; basketWrites: number }));
   if (stats.basketWrites !== 0 || writes !== 0) throw new Error(`Fake provider basket write boundary crossed: ${JSON.stringify(stats)}`);
 } finally {

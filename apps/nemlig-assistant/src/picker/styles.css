@@ -50,6 +50,13 @@ h1 { margin: 8px 0 5px; text-align: center; font-size: 1.15rem; font-weight: 650
 .alternatives form { align-items: end; }
 .alternatives label { width: 100%; }
 .alternatives input { flex: 1; min-width: 0; min-height: 44px; padding: 8px; border: 1px solid var(--line); border-radius: 8px; color: inherit; background: transparent; }
+.alternatives-current { padding: 8px 10px; border-radius: 12px; background: var(--soft); }
+.alternatives-current .product-card { padding-bottom: 0; border-bottom: 0; }
+.alternative-options { margin-top: 16px; }
+.alternative-options > h2, .alternatives-current > h2 { margin: 0 0 6px; font-size: .95rem; font-weight: 650; }
+.product-comparison-summary { width: 100%; min-width: 0; padding: 6px; }
+.product-comparison .product-expanded { padding: 6px; }
+.alternatives-empty { color: var(--muted); font-size: .85rem; }
 .product-fact { padding: 8px 0; border-top: 1px solid var(--line); }
 .product-fact > summary { display: flex; min-height: 44px; align-items: center; cursor: pointer; }
 :focus-visible { outline: 3px solid #4b94dd; outline-offset: 2px; }

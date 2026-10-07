@@ -71,6 +71,8 @@ test("Ready lines cannot choose alternatives until moved back; replacement remai
   assert.deepEqual(service.show("owner", draft.review_id), draft);
   draft = await service.update("owner", draft.review_id, draft.revision, { kind: "revisit", product_ids: [1] });
   draft = await service.update("owner", draft.review_id, draft.revision, { kind: "alternatives", product_id: 1, query: "alternative" });
+  await assert.rejects(service.update("owner", draft.review_id, draft.revision, { kind: "replace", product_id: 1, replacement_id: 4 }), /exact returned alternative/i);
+  assert.deepEqual(service.show("owner", draft.review_id), draft, "a non-candidate replacement must leave the draft unchanged");
   draft = await service.update("owner", draft.review_id, draft.revision, { kind: "replace", product_id: 1, replacement_id: 3 });
   assert.equal(draft.items[0]?.state, "needs-review");
   assert.equal(draft.items[0]?.quantity, 2);
