@@ -8,7 +8,7 @@
  * Keep this module renderer-free so the Cloudflare gateway does not bundle the
  * self-contained browser program merely to validate a resource URI.
  */
-export const PRODUCT_VIEWER_RESOURCE_VERSION = "7";
+export const PRODUCT_VIEWER_RESOURCE_VERSION = "8";
 export const PRODUCT_VIEWER_RESOURCE_URI = `ui://nemlig/product-viewer-v${PRODUCT_VIEWER_RESOURCE_VERSION}.html`;
 
 /** Previously published identities stay readable so cached clients get a safe migration page. */
@@ -20,4 +20,5 @@ export const RETIRED_PRODUCT_VIEWER_RESOURCE_URIS = [
   "ui://nemlig/product-viewer-v4.html",
   "ui://nemlig/product-viewer-v5.html",
   "ui://nemlig/product-viewer-v6.html",
+  "ui://nemlig/product-viewer-v7.html",
 ] as const;

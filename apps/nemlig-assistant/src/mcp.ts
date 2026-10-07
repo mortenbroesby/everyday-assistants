@@ -23,7 +23,7 @@ import {
   basketPayload,
 } from "./proposals.js";
 import { IMAGE_ORIGINS, createProductViewFromSummary, createProductViews, type ProductSummaryFacts, type ProductView } from "./product-presentation.js";
-import { PRODUCT_VIEWER_MIME_TYPE, PRODUCT_VIEWER_RESOURCE_METADATA, PRODUCT_VIEWER_RESOURCE_URI, productViewsToText, renderProductViewerHtml } from "./product-viewer.js";
+import { PRODUCT_VIEWER_MIME_TYPE, PRODUCT_VIEWER_RESOURCE_DOMAINS, PRODUCT_VIEWER_RESOURCE_METADATA, PRODUCT_VIEWER_RESOURCE_URI, productViewsToText, renderProductViewerHtml } from "./product-viewer.js";
 import { RETIRED_PRODUCT_VIEWER_RESOURCE_URIS } from "./product-viewer-identity.js";
 import { renderRetiredProductViewerHtml } from "./retired-product-viewer.js";
 import { ProductReviewService } from "./product-review.js";
@@ -264,7 +264,7 @@ The local draft list is conversation-scoped and temporary. If it is unavailable,
     "nemlig-product-viewer",
     PRODUCT_VIEWER_RESOURCE_URI,
     { title: "Your draft list", description: "Product results and the shared local shopping draft list supplied by Nemlig Assistant.", mimeType: PRODUCT_VIEWER_MIME_TYPE },
-    async (uri) => ({ contents: [{ uri: uri.href, mimeType: PRODUCT_VIEWER_MIME_TYPE, text: renderProductViewerHtml(), _meta: { ui: { csp: { connectDomains: [], resourceDomains: ["https://nemlig.com", "https://www.nemlig.com"] }, prefersBorder: true } } }] }),
+    async (uri) => ({ contents: [{ uri: uri.href, mimeType: PRODUCT_VIEWER_MIME_TYPE, text: renderProductViewerHtml(), _meta: { ui: { csp: { connectDomains: [], resourceDomains: [...PRODUCT_VIEWER_RESOURCE_DOMAINS] }, prefersBorder: true } } }] }),
   );
   for (const [index, uri] of RETIRED_PRODUCT_VIEWER_RESOURCE_URIS.entries()) {
     server.registerResource(

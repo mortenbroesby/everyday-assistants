@@ -38,6 +38,7 @@ try {
     "dist/http.js.map",
     "dist/mcp.js",
     "dist/mcp.js.map",
+    "dist/picker.html",
     "package.json",
   ]);
   assert.doesNotMatch(packedPaths.join("\n"), /test|credential|token|cookie|\.auth|python/i);
@@ -112,8 +113,10 @@ try {
     const resource = viewer.contents[0];
     assert.ok(resource && "text" in resource);
     assert.equal(resource.mimeType, "text/html;profile=mcp-app");
-    assert.match(resource.text, /el\("details"/u);
-    assert.match(resource.text, /window\.openai\.toolOutput/u);
+    assert.equal(PRODUCT_VIEWER_RESOURCE_URI, "ui://nemlig/product-viewer-v8.html");
+    assert.match(resource.text, /Nemlig confirmed this Draft list was added successfully\./u);
+    const packagedViewer = await readFile(path.join(tempRoot, "node_modules", "nemlig-assistant", "dist", "picker.html"), "utf8");
+    assert.equal(resource.text, packagedViewer, "installed MCP server did not serve the packaged v8 viewer artifact");
   } finally {
     await client.close();
   }

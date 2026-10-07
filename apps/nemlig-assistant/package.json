@@ -28,8 +28,8 @@
     "nemlig-mcp-http": "dist/http.js"
   },
   "scripts": {
-    "build": "tsdown",
-    "build:ui": "vite build && tsx scripts/check-react-candidate.ts",
+    "build": "tsdown && vite build && tsx scripts/check-product-viewer.ts",
+    "build:ui": "vite build && tsx scripts/check-product-viewer.ts",
     "check:api": "node scripts/check-api-manifest.mjs",
     "check": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.ui.json --noEmit",
     "cloudflare:check": "wrangler deploy --dry-run --env production",
@@ -53,8 +53,9 @@
     "release:plan": "tsx release/agent.ts",
     "release:retry:check": "tsx release/retry.ts",
     "smoke": "tsx --test src/smoke.test.ts",
-    "smoke:review-ui": "tsx scripts/smoke-review-ui.ts",
-    "smoke:ui-candidate": "tsx scripts/smoke-react-candidate.ts",
+    "smoke:review-ui": "pnpm smoke:review-ui:adapter && pnpm smoke:review-ui:artifact",
+    "smoke:review-ui:adapter": "tsx scripts/smoke-review-ui.ts",
+    "smoke:review-ui:artifact": "tsx scripts/smoke-product-viewer.ts",
     "smoke:onboarding": "tsx scripts/smoke-onboarding.ts",
     "smoke:package": "tsx scripts/smoke-package.ts",
     "test": "tsx --test src/*.test.ts release/*.test.ts scripts/*.test.mjs",

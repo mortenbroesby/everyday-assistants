@@ -544,7 +544,7 @@ test("MCP distinguishes the draft list from the actual Nemlig basket", async () 
     const viewer = await mcp.readResource({ uri: PRODUCT_VIEWER_RESOURCE_URI });
     assert.equal(viewer.contents[0]?.mimeType, "text/html;profile=mcp-app");
     assert.ok(viewer.contents[0] && "text" in viewer.contents[0]);
-    if (viewer.contents[0] && "text" in viewer.contents[0]) assert.match(viewer.contents[0].text, /Your draft list/u);
+    if (viewer.contents[0] && "text" in viewer.contents[0]) assert.match(viewer.contents[0].text, /Your Nemlig Draft list/u);
     assert.match(JSON.stringify((await mcp.listTools()).tools.find((tool) => tool.name === "find_groceries")?.inputSchema), /concise Danish catalogue phrase/u);
   });
 });

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { Script } from "node:vm";
+import { gzipSync } from "node:zlib";
 import type { ProductView } from "./product-presentation.js";
 import {
   PRODUCT_VIEWER_MIME_TYPE,
@@ -12,146 +12,35 @@ import {
 } from "./product-viewer.js";
 
 const complete: ProductView = {
-  context: "review",
-  status: "complete",
-  product: {
-    id: 7,
-    name: "Mælk <script>alert(1)</script>",
-    price: 12,
-    unit_price: 12,
-    unit: "12 kr/l",
-    unit_size: "1 l",
-    category: "Køl",
-    subcategory: "Mejeri",
-    currency: "DKK",
-    brand: "Test",
-    description: "Fresh product details.",
-    declaration: "Milk, vitamin D.",
-    details: [{ key: "Fat", value: "1.5%" }],
-    labels: ["Laktosefri", "Økologisk"],
-    available: true,
-    is_organic: true,
-    is_frozen: false,
-    is_on_discount: false,
-    image_url: undefined,
-    tags: ["organic"],
-  },
-  review: { kind: "review", quantity: 2, approved: false },
+  context: "review", status: "complete", product: {
+    id: 7, name: "Mælk", price: 12, unit_price: 12, unit: "12 kr/l", unit_size: "1 l",
+    currency: "DKK", brand: "Fresh", available: true, is_organic: false, is_frozen: false,
+    is_on_discount: false, image_url: undefined, labels: [], tags: [], details: [{ key: "Fat", value: "1.5%" }],
+  }, review: { kind: "review", quantity: 2, approved: false },
 };
 
-test("viewer exposes one MCP Apps resource identity and a complete headless fallback", () => {
-  assert.equal(PRODUCT_VIEWER_RESOURCE_VERSION, "7");
-  assert.equal(PRODUCT_VIEWER_RESOURCE_URI, "ui://nemlig/product-viewer-v7.html");
+test("v8 viewer identity and complete headless fallback stay in sync", () => {
+  assert.equal(PRODUCT_VIEWER_RESOURCE_VERSION, "8");
+  assert.equal(PRODUCT_VIEWER_RESOURCE_URI, "ui://nemlig/product-viewer-v8.html");
   assert.equal(PRODUCT_VIEWER_MIME_TYPE, "text/html;profile=mcp-app");
   assert.deepEqual(PRODUCT_VIEWER_RESOURCE_METADATA, {
     ui: { resourceUri: PRODUCT_VIEWER_RESOURCE_URI },
     "openai/outputTemplate": PRODUCT_VIEWER_RESOURCE_URI,
   });
-  assert.match(productViewsToText([complete]), /Mælk/u);
-  assert.match(productViewsToText([complete]), /Fresh product details/u);
-  assert.match(productViewsToText([complete]), /approved no/u);
-  assert.match(productViewsToText([complete]), /12 kr\/l/u);
-  assert.match(productViewsToText([complete]), /Fat: 1\.5%/u);
-  assert.match(productViewsToText([complete]), /category: Køl \/ Mejeri/u);
+  const text = productViewsToText([complete]);
+  for (const fact of ["Mælk", "Fresh", "approved no", "12 kr/l", "Fat: 1.5%", "draft list quantity 2"]) assert.match(text, new RegExp(fact, "u"));
   assert.match(productViewsToText([{ context: "search", status: "unavailable", product_id: 9 }]), /9/u);
   assert.equal(productViewsToText([]), "No products found.");
 });
 
-test("viewer resource is accessible, self-contained, and uses only local review plus protected submission actions", () => {
+test("served resource is the bounded self-contained React build", () => {
   const html = renderProductViewerHtml();
-
   assert.match(html, /<html lang="en">/u);
-  assert.match(html, /<title>Your draft list<\/title>/u);
-  assert.match(html, /aria-label="Draft list destinations"/u);
-  assert.match(html, /Open current draft list/u);
-  assert.match(html, /To decide/u);
-  assert.match(html, /Search for more products/u);
-  assert.match(html, /No new alternatives for this draft list/u);
-  assert.match(html, /Loaded the current draft list/u);
-  assert.match(html, /current draft list to check its state/u);
-  assert.match(html, /Could not load the draft list/u);
-  assert.match(html, /No current draft list was returned/u);
-  assert.match(html, /reopen your current draft list/u);
-  assert.match(html, /Open the current draft list again when the connection is available/u);
-  assert.match(html, /Inspect the actual Nemlig basket in conversation before preparing another Nemlig basket change/u);
-  assert.match(html, /Inspect in conversation/u);
-  assert.match(html, /Review exact change/u);
-  assert.match(html, /Exact Nemlig submission confirmation/u);
-  assert.doesNotMatch(html, /Open current review|Open the current review|Shopping review|Find or refine alternatives|No alternatives returned|Could not load the review|current shopping review|preparing a new review|Review in conversation|Open it again when/u);
-  assert.match(html, /role="status"/u);
-  assert.match(html, /aria-live="polite"/u);
-  assert.match(html, /aria-label="Product results"/u);
-  assert.match(html, /event.source !== window.parent/u);
-  assert.match(html, /ui\/notifications\/tool-result/u);
-  assert.match(html, /Array\.isArray\(value\.result\)/u);
-  assert.match(html, /window\.openai\.toolOutput/u);
-  assert.match(html, /product\.brand/u);
-  assert.match(html, /Product ID: /u);
-  assert.match(html, /product\.unit/u);
-  assert.match(html, /product\.unit_price/u);
-  assert.match(html, /product\.declaration/u);
-  assert.match(html, /product\.details/u);
-  assert.match(html, /el\("details"/u);
-  assert.match(html, /el\("summary"/u);
-  assert.match(html, /product\.declaration/u);
-  assert.match(html, /product\.details/u);
-  assert.match(html, /quantityControl/u);
-  assert.doesNotMatch(html, /\b(fetch|XMLHttpRequest|WebSocket)\b/u);
-  assert.match(html, /callTool\("update_product_review"/u);
-  assert.match(html, /callTool\("submit_product_review"/u);
-  assert.doesNotMatch(html, /callTool\("(?:add_approved_items|remove_approved_item|make_approved_item_swap|empty_approved_basket)"/u);
-  assert.match(html, /Add " \+ selected\.size \+ " to Ready/u);
-  assert.match(html, /Varebeskrivelse|Varedeklaration|Detaljer om varen/u);
-  assert.doesNotMatch(html, /Add to local Basket/u);
-  assert.match(html, /Inspect in conversation/u);
-  assert.match(html, /Add to Nemlig/u);
+  assert.match(html, /Your Nemlig Draft list/u);
+  assert.match(html, /react-dom/u);
   assert.doesNotMatch(html, /<script\s+src=/u);
-});
-
-test("viewer handles missing and unsafe images through text and safe-origin checks", () => {
-  const html = renderProductViewerHtml();
-
-  assert.match(html, /Unknown price/u);
-  assert.match(html, /safeImageOrigins/u);
-  assert.match(html, /product\.available === undefined/u);
-  assert.match(html, /image\.addEventListener\("error"/u);
-  assert.match(html, /textContent/u);
-  assert.match(html, /Product details unavailable/u);
-  assert.match(html, /https:\/\/nemlig\.com/u);
-  assert.doesNotMatch(html, /tracking\.example/u);
-});
-
-
-test("the self-contained browser program is valid JavaScript", () => {
-  const script = renderProductViewerHtml().split("<script>")[1]!.split("</script>")[0]!;
-  assert.doesNotThrow(() => new Script(script));
-});
-
-test("viewer initializes the standard host bridge and reports failed results instead of waiting forever", async () => {
-  const nodes = new Map<string, { textContent: string; hidden: boolean }>();
-  const listeners = new Map<string, (event: unknown) => void>();
-  const sent: Array<{ id?: string; method?: string; params?: unknown }> = [];
-  const timers = new Map<number, () => void>();
-  const parent = { postMessage: (message: typeof sent[number]) => sent.push(message) };
-  const node = (id: string) => { if (!nodes.has(id)) nodes.set(id, { textContent: "", hidden: false }); return nodes.get(id)!; };
-  const context = {
-    document: { getElementById: node },
-    window: { parent, addEventListener: (name: string, fn: (event: unknown) => void) => listeners.set(name, fn) },
-    setTimeout: (fn: () => void) => { const id = timers.size + 1; timers.set(id, fn); return id; },
-    clearTimeout: (id: number) => timers.delete(id),
-    Map, Set, URL,
-  };
-  new Script(renderProductViewerHtml().split("<script>")[1]!.split("</script>")[0]!).runInNewContext(context);
-  const initialize = sent.find(message => message.method === "ui/initialize");
-  assert.ok(initialize, "standards-only hosts wait for the app handshake before sending results");
-  const message = listeners.get("message")!;
-  message({ source: {}, data: { jsonrpc: "2.0", id: initialize.id, result: { protocolVersion: "2026-01-26" } } });
-  assert.equal(sent.some(m => m.method === "ui/notifications/initialized"), false, "ignore foreign frames");
-  message({ source: parent, data: { jsonrpc: "2.0", id: initialize.id, result: { protocolVersion: "2026-01-26", hostCapabilities: {} } } });
-  await new Promise(resolve => setImmediate(resolve));
-  assert.ok(sent.some(m => m.method === "ui/notifications/initialized"));
-  message({ source: parent, data: { jsonrpc: "2.0", method: "ui/notifications/tool-result", params: { isError: true, content: [{ type: "text", text: "Reconnect Nemlig to continue." }] } } });
-  assert.match(node("status").textContent, /Reconnect Nemlig/u);
-  for (const timer of timers.values()) timer();
-  assert.match(node("status").textContent, /Reconnect Nemlig/u, "late loading timeout must not overwrite the actual error");
+  assert.doesNotMatch(html, /<link[^>]+rel=["']?stylesheet/u);
+  assert.doesNotMatch(html, /\bfetch\s*\(/u);
+  assert.ok(Buffer.byteLength(html) <= 1_500_000, "viewer exceeds its project raw-size budget");
+  assert.ok(gzipSync(html).byteLength <= 350_000, "viewer exceeds its project gzip-size budget");
 });

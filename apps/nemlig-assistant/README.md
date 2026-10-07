@@ -412,31 +412,27 @@ pnpm --filter nemlig-assistant smoke:package
 
 Tests use synthetic HTTP responses and never access a real Nemlig account.
 
-Compare the current product viewer with a self-contained HTML candidate using
-the same synthetic products:
+The MCP resource is the versioned React viewer built into `dist/picker.html`.
+The package build includes that exact self-contained file and the browser smoke
+drives it through a synthetic MCP host with a fake catalogue:
 
 ```sh
 pnpm --filter nemlig-assistant bench:review-ui -- --runs 10
-pnpm --filter nemlig-assistant build:ui
-pnpm --filter nemlig-assistant smoke:ui-candidate
-pnpm --filter nemlig-assistant bench:review-ui -- --runs 10 --candidate .candidate-dist/picker.html
+pnpm --filter nemlig-assistant build
+pnpm --filter nemlig-assistant smoke:review-ui
 ```
 
 Google Chrome must be installed. The report records its version so runs can be
 compared against the same browser build.
 
-The report includes raw/gzip size, first paint, first product visibility, and
-product-detail disclosure response. Each sample uses a fresh browser context;
-the browser process is reused. External requests are blocked, and the fixture
-cannot call providers or mutate a basket. Timing is advisory, not a CI gate.
-The React artifact is an isolated read-only candidate for product lists and
-basket snapshots. Its interactive local-review controls are not implemented,
-and it is not served to users. The current self-contained viewer remains the
-production resource. Run the candidate browser smoke and paired benchmark with
-the `benchmark:ui` pull request label; this optional workflow does not change
-the required verification check. Consider promoting a new versioned resource
-only after interactive review parity, host acceptance, and paired performance
-evidence are reviewed.
+The benchmark records raw/gzip size, first contentful paint, first product DOM
+insertion (not paint), load milestones, and product-detail disclosure response
+against synthetic product data in equivalent same-origin parent/iframe hosts.
+Each sample uses a fresh browser context; the browser process is reused.
+External requests are blocked. The separate browser smoke exercises review
+actions and submission confirmation with synthetic host responses; it forbids
+provider writes. Timing is advisory, not a CI gate. Host acceptance remains a
+separate release gate.
 
 ### Reverse-engineered Nemlig API
 

@@ -1,0 +1,7 @@
+{
+  "resourceUri": "ui://nemlig/product-viewer-v7.html",
+  "sourceCommit": "6b42384028eb5dc9f0addb0b97acadcab1509404",
+  "sourceFile": "apps/nemlig-assistant/src/product-viewer.ts",
+  "generatedBy": "renderProductViewerHtml() from the PR base, captured as a static HTML benchmark fixture",
+  "sha256": "5901fffc0c820a050d7ad9b2d2fa4eac206953b9a2acd162cd8782c08423e14c"
+}

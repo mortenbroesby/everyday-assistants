@@ -12,7 +12,7 @@ export default defineConfig({
     cssCodeSplit: false,
     emptyOutDir: false,
     modulePreload: false,
-    outDir: ".candidate-dist",
+    outDir: "dist",
     rollupOptions: { input: fileURLToPath(new URL("picker.html", import.meta.url)) },
     target: "baseline-widely-available",
   },

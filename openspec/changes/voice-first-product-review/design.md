@@ -184,11 +184,12 @@ MCP contract. Do not add a `basket` alias, representation selector, projection
 or stored-state migration. Existing fetched v5 resource URIs become inert.
 Already-cached v5 JavaScript cannot be rewritten by the server; if it tries to
 send obsolete `basket` actions, the new schema rejects them without a mutation.
-The v6 viewer receives only canonical Ready review snapshots. Native historical
-card behavior remains a separate acceptance item and is not proven locally.
+The versioned viewer receives only canonical Ready review snapshots. Native
+historical card behavior remains a separate acceptance item and is not proven
+locally.
 Never change the actual Nemlig basket schema or provider proposal semantics.
 
-The v6 viewer keeps product and factual disclosures, checkboxes, focus and
+The viewer keeps product and factual disclosures, checkboxes, focus and
 scroll as presentation state. Selection alone makes no tool call. One bulk
 accept action handles selected products; there is no per-row acceptance
 button. Compact rows show image, name, pack/brand, quantity and line price.
@@ -202,9 +203,19 @@ End still discards the whole draft. A zero-product draft or ended draft shows a
 purpose-built conversational starting state. A verified submission gets its
 own success presentation; uncertain outcomes retain the no-retry boundary.
 
-Changing viewer HTML requires a v6 URI per the resource cache policy. Retire
-v5 as an inert resource while preserving older retired URIs. Deployment and
-native ChatGPT acceptance remain separate from local implementation evidence.
+Changing viewer HTML requires a new URI per the resource cache policy. Each
+versioned implementation retains the applicable retired-resource protections.
+Deployment and native ChatGPT acceptance remain separate from local
+implementation evidence.
+
+## 7 October 2026 registered React viewer update
+
+PR #193 switches the registered resource to the self-contained React v8
+artifact and retires v7 as an inert notice. The React view preserves the
+server-owned review snapshot, exact prepare and confirmation boundary, and
+read-only conversation fallback. Local browser/MCP evidence does not complete
+task 9.5: native mounted/historical-card acceptance remains unchecked until a
+separately approved release and host verification.
 
 ## 29 September follow-up: discovery, language, and historical snapshot race
 
