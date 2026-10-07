@@ -11,6 +11,7 @@ import {
 } from "./production-acceptance.js";
 import { serviceAcceptanceResourceInventory, serviceAcceptanceToolInventory } from "./mcp.js";
 import { PRODUCT_VIEWER_MIME_TYPE, PRODUCT_VIEWER_RESOURCE_URI, renderProductViewerHtml } from "./product-viewer.js";
+import { NEMLIG_CODENAME, NEMLIG_VERSION } from "./runtime.js";
 
 const viewerResource = (uri: string) => ({ contents: [{
   uri,
@@ -51,6 +52,7 @@ test("production acceptance omits removed saved-storage tools while retaining di
     readResource: async ({ uri }) => viewerResource(uri),
     callTool: async ({ name }) => {
       calls.push(name);
+      if (name === "get_profile") return { structuredContent: { id: "profile", release: { version: NEMLIG_VERSION, codename: NEMLIG_CODENAME } } };
       if (name === "find_groceries") {
         return { structuredContent: { result: [{ id: 7 }, { id: 8 }] } };
       }
@@ -61,7 +63,7 @@ test("production acceptance omits removed saved-storage tools while retaining di
 
   const report = await verifyReadOnlyProductionFeatures(client);
   assert.deepEqual(calls, [
-    "find_groceries", "show_my_basket",
+    "get_profile", "find_groceries", "show_my_basket",
   ]);
   for (const forbidden of [
     ...productionToolInventory.localState,
@@ -104,6 +106,7 @@ test("regular read-only acceptance verifies the exact viewer resource and user t
     listResources: async () => ({ resources: productionResourceInventory.map((uri) => ({ uri })) }),
     readResource: async ({ uri }) => viewerResource(uri),
     callTool: async ({ name }) => {
+      if (name === "get_profile") return { structuredContent: { id: "profile", release: { version: NEMLIG_VERSION, codename: NEMLIG_CODENAME } } };
       if (name === "find_groceries") return { structuredContent: { result: [{ id: 7 }] } };
       return { structuredContent: { items: [] } };
     },

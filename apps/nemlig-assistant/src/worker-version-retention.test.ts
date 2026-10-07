@@ -67,7 +67,8 @@ test("Worker recovery references come from the deployment journal", () => {
 });
 
 test("Wrangler runs from the package root where its dependency is installed", async () => {
-  const output = await runWranglerCommand(["--version"], process.env, AbortSignal.timeout(30_000), 30_000);
+  // Local pnpm/Wrangler startup can take more than 30 seconds under the Node test runner.
+  const output = await runWranglerCommand(["--version"], process.env, AbortSignal.timeout(60_000), 60_000);
   assert.match(output, /^\d+\.\d+\.\d+/u);
 });
 

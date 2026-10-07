@@ -5,7 +5,7 @@ export type ReleaseKind = "none" | "patch" | "minor" | "major";
 export type PublishKind = Exclude<ReleaseKind, "none">;
 export { parseCodename, readPackageIdentity, type PackageIdentity } from "../src/release-identity.js";
 
-export function parseCodenameLedger(contents: string | null): { version: string; codename: string }[] {
+export function parseCodenameLedger(contents: string | null, allowHistoricalDuplicateNames = false): { version: string; codename: string }[] {
   if (contents === null) return [];
   const [header, ...rows] = contents.replace(/\n$/u, "").split("\n");
   if (header !== "version,codename") throw new Error("Invalid codename ledger header.");
@@ -15,7 +15,7 @@ export function parseCodenameLedger(contents: string | null): { version: string;
     const [version, codename, extra] = row.split(",");
     if (!version || !codename || extra !== undefined) throw new Error("Invalid codename ledger row.");
     parseVersion(version);
-    if (versions.has(version) || names.has(codename.toLowerCase())) throw new Error("Codename ledger reuses a version or codename.");
+    if (versions.has(version) || (!allowHistoricalDuplicateNames && names.has(codename.toLowerCase()))) throw new Error("Codename ledger reuses a version or codename.");
     parseCodename(codename);
     versions.add(version);
     names.add(codename.toLowerCase());
@@ -24,15 +24,27 @@ export function parseCodenameLedger(contents: string | null): { version: string;
 }
 
 export function validateCodenameLedger(base: string | null, current: string | null, identity: PackageIdentity, releaseBearing: boolean): void {
-  const previous = parseCodenameLedger(base);
+  const previous = parseCodenameLedger(base, true);
   const candidate = parseCodenameLedger(current);
   if (!releaseBearing) {
     if (base !== current) throw new Error("Non-release changes cannot change the codename ledger.");
     return;
   }
   if (!identity.codename) throw new Error("Candidate codename is missing from the ledger identity.");
-  const expected = [...previous, identity];
-  if (JSON.stringify(candidate) !== JSON.stringify(expected)) throw new Error("Codename ledger must append exactly the candidate version and codename.");
+  if (candidate.length !== previous.length + 1) throw new Error("Codename ledger must append exactly the candidate version and codename.");
+  const priorNameCounts = new Map<string, number>();
+  for (const entry of previous) {
+    const key = entry.codename.toLowerCase();
+    priorNameCounts.set(key, (priorNameCounts.get(key) ?? 0) + 1);
+  }
+  for (const [index, entry] of previous.entries()) {
+    const actual = candidate[index];
+    if (!actual || actual.version !== entry.version) throw new Error("Codename ledger must preserve historical version order.");
+    if (priorNameCounts.get(entry.codename.toLowerCase()) === 1 && actual.codename !== entry.codename) {
+      throw new Error("Codename ledger cannot rewrite a unique historical codename.");
+    }
+  }
+  if (JSON.stringify(candidate.at(-1)) !== JSON.stringify(identity)) throw new Error("Codename ledger must append exactly the candidate version and codename.");
 }
 
 export interface VersionParts {
@@ -182,7 +194,7 @@ export function classifyPaths(changedFiles: readonly string[]): {
 } {
   const packagePrefix = "apps/nemlig-assistant/";
   const releaseFiles = changedFiles.filter((filePath) =>
-    new RegExp(`^${packagePrefix}(?:package\\.json|tsdown\\.config\\.ts|src/(?!.*\\.test\\.ts$).+)$`, "u").test(filePath),
+    new RegExp(`^${packagePrefix}(?:package\\.json|tsdown\\.config\\.ts|scripts/production-deploy\\.ts|src/(?!.*\\.test\\.ts$).+)$`, "u").test(filePath),
   );
   if (releaseFiles.length > 0 && changedFiles.includes("pnpm-lock.yaml")) releaseFiles.push("pnpm-lock.yaml");
   const internalFiles = changedFiles.filter((filePath) =>

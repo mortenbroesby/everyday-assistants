@@ -522,8 +522,9 @@ This README is the user-facing inventory of shipped feature sets:
 - explicit protected submission of resolved local products
 - on-screen exact submission confirmation with conversational fallback
 - CLI favorites, department browsing, and exact product details
-- six MCP tools for connection check, detailed search, actual basket read,
-  Draft list start/update, and protected Ready submission
+- seven MCP tools for live profile/release identity, connection check, detailed
+  search, actual basket read, Draft list start/update, and protected Ready
+  submission
 - exact prepare/authorize/submit basket additions
 - easy-to-understand ChatGPT tool names and descriptions
 - human-friendly basket reviews and verified results

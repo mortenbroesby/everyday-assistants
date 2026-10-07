@@ -13,7 +13,7 @@ import {
 import {
   ensureLoggedIn,
   getClient,
-  NEMLIG_RELEASE_IDENTITY,
+  NEMLIG_CODENAME,
   NEMLIG_VERSION,
   withAuthenticatedReadRetry,
 } from "./runtime.js";
@@ -228,7 +228,7 @@ export function createMcpServer(
     },
     {
       instructions:
-        `Current release: ${NEMLIG_RELEASE_IDENTITY}. Search Nemlig products with find_groceries, read the actual basket with show_my_basket, and use the temporary conversation draft list to review products before adding them.
+        `Search Nemlig products with find_groceries, read the actual basket with show_my_basket, and use the temporary conversation draft list to review products before adding them.
 
 The real Nemlig basket is add-only. Never remove, decrease, replace, swap, clear, check out, pay, order, or select delivery slots. An added quantity is additional units, not a new absolute total. Local draft list edits never write to Nemlig.
 
@@ -288,6 +288,26 @@ The local draft list is conversation-scoped and temporary. If it is unavailable,
 
   const runAuthenticatedRead = async <Result>(operation: string, action: () => Promise<Result>) =>
     runMcpOperation(operation, () => withAuthenticatedReadRetry(client, loadCredentials, action));
+
+  registerTool(
+    "get_profile",
+    {
+      title: "Get my Nemlig profile",
+      description: "Show the authenticated profile and the live assistant release handling this request. This does not contact Nemlig or change shopping data.",
+      inputSchema: z.object({}),
+      outputSchema: z.object({
+        id: z.string().trim().min(1),
+        release: z.object({ version: z.string().trim().min(1), codename: z.string().trim().min(1) }).strict(),
+      }).strict(),
+      annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
+      _meta: { "openai/profile": true },
+    },
+    async () => {
+      const id = requestContext?.principalKey;
+      if (!id) return { isError: true, content: [{ type: "text" as const, text: "Authenticated profile unavailable." }] };
+      return success({ id, release: { version: NEMLIG_VERSION, codename: NEMLIG_CODENAME } });
+    },
+  );
 
   registerTool(
     "check_nemlig_connection",

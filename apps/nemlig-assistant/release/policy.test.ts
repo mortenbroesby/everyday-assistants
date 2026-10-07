@@ -37,6 +37,17 @@ test("codename ledgers preserve one unique name and version per release", () => 
   assert.throws(() => validateCodenameLedger(base, next, { version: "4.8.0", codename: "Callsign" }, false), /Non-release/i);
 });
 
+test("a release can repair only historical duplicate codename rows", () => {
+  const legacy = "version,codename\n4.19.0,Clarity\n5.0.0,Unhurried\n6.0.0,Clarity";
+  const repaired = "version,codename\n4.19.0,Lucid\n5.0.0,Unhurried\n6.0.0,Clarity\n6.1.0,Pulse";
+  assert.throws(() => parseCodenameLedger(legacy), /reuses/u);
+  assert.doesNotThrow(() => validateCodenameLedger(legacy, repaired, { version: "6.1.0", codename: "Pulse" }, true));
+  assert.throws(
+    () => validateCodenameLedger(legacy, "version,codename\n4.19.0,Lucid\n5.0.0,Changed\n6.0.0,Clarity\n6.1.0,Pulse", { version: "6.1.0", codename: "Pulse" }, true),
+    /historical codename/u,
+  );
+});
+
 test("manifest identities permit absent historical metadata but reject malformed candidate metadata", () => {
   const version = "1.2.3-alpha.4";
   assert.deepEqual(readPackageIdentity(JSON.stringify({ version }), "fixture"), { version, codename: null });
@@ -78,6 +89,7 @@ test("package paths and conventional commits produce scoped release decisions", 
     ["docs", ["README.md", "openspec/config.yaml"], [{ subject: "docs: clarify" }], "none"],
     ["other assistants", ["apps/other-assistant/src/index.ts"], [{ subject: "feat: other" }], "none"],
     ["internal", ["apps/nemlig-assistant/release/policy.test.ts"], [{ subject: "test: policy" }], "none"],
+    ["production delivery", ["apps/nemlig-assistant/scripts/production-deploy.ts"], [{ subject: "fix: deployment" }], "patch"],
     ["runtime fix", ["apps/nemlig-assistant/src/client.ts"], [{ subject: "fix: client" }], "patch"],
     ["runtime feature", ["apps/nemlig-assistant/src/client.ts"], [{ subject: "feat: client" }], "minor"],
     ["runtime break", ["apps/nemlig-assistant/src/client.ts"], [{ subject: "feat!: client" }], "major"],
