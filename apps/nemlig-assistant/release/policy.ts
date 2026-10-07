@@ -194,7 +194,7 @@ export function classifyPaths(changedFiles: readonly string[]): {
 } {
   const packagePrefix = "apps/nemlig-assistant/";
   const releaseFiles = changedFiles.filter((filePath) =>
-    new RegExp(`^${packagePrefix}(?:package\\.json|tsdown\\.config\\.ts|src/(?!.*\\.test\\.ts$).+)$`, "u").test(filePath),
+    new RegExp(`^${packagePrefix}(?:package\\.json|tsdown\\.config\\.ts|scripts/production-deploy\\.ts|src/(?!.*\\.test\\.ts$).+)$`, "u").test(filePath),
   );
   if (releaseFiles.length > 0 && changedFiles.includes("pnpm-lock.yaml")) releaseFiles.push("pnpm-lock.yaml");
   const internalFiles = changedFiles.filter((filePath) =>

@@ -1938,7 +1938,7 @@ export async function deployProduction(commit: string, inputDeps: DeployDependen
       await verifyLeaseHead(deps, repository, journal);
       providerMutation = true;
       mutationUncertain = true;
-      const enabledOutput = await wrangler(deps, ["deploy", ...deployVars(configured, true, commit),
+      const enabledOutput = await wrangler(deps, ["deploy", ...deployVars(configured, true, commit), "--containers-rollout", "immediate",
         "--message", `Automated production release at ${commit.slice(0, 7)}`], 600_000);
       mutationUncertain = false;
       enabledId = deployedVersionFromOutput(enabledOutput);
