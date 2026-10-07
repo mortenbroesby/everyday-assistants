@@ -81,15 +81,21 @@ test("routine releases queue trusted main ancestors; manual dispatch is recovery
   assert.match(preflight, /needs\.release-gate\.outputs\.deploy == 'true'/u);
   assert.match(preflight, /timeout-minutes: 30/u);
   assert.match(preflight, /permissions:\n\s+contents: read\n\s+actions: read/u);
+  assert.match(preflight, /outputs:\n\s+readiness: "\$\{\{ steps\.production_preflight\.outputs\.readiness \}\}"\n\s+lease_head: "\$\{\{ steps\.production_preflight\.outputs\.lease_head \}\}"/u);
   assert.match(preflight, /actions\/checkout@[0-9a-f]{40}/u);
   assert.match(preflight, /persist-credentials: false/u);
   assert.match(preflight, /pnpm install --frozen-lockfile/u);
   assert.match(preflight, /production:deploy -- preflight "\$CANDIDATE_SHA"/u);
   assert.match(preflight, /production:deploy -- preflight --recovery "\$CANDIDATE_SHA"/u);
+  assert.match(preflight, /id: production_preflight/u);
+  assert.match(preflight, /state === "blocked_by_existing_lease"/u);
+  assert.match(preflight, /readiness=blocked_by_existing_lease/u);
+  assert.match(preflight, /Deployment not attempted; live revision not verified\./u);
+  assert.match(preflight, /explicitly reconcile the saved production operation/u);
   assert.match(preflight, /env:\n\s+GH_TOKEN:/u);
 
   assert.match(deploy, /needs: \[release-gate, preflight\]/u);
-  assert.match(deploy, /needs\.release-gate\.outputs\.deploy == 'true'/u);
+  assert.match(deploy, /needs\.release-gate\.outputs\.deploy == 'true' && needs\.preflight\.outputs\.readiness == 'ready'/u);
   assert.match(deploy, /environment:\n\s+name: nemlig-production/u);
   assert.match(deploy, /permissions:\n\s+contents: write\n\s+actions: read/u);
   assert.match(deploy, /pnpm install --frozen-lockfile/u);
@@ -113,6 +119,7 @@ test("routine releases queue trusted main ancestors; manual dispatch is recovery
 
   assert.match(retention, /needs: \[release-gate, preflight, deploy\]/u);
   assert.match(retention, /needs\.release-gate\.outputs\.retention == 'true' \|\| needs\.release-gate\.outputs\.worker_retention == 'true' \|\|\s+\(needs\.release-gate\.outputs\.deploy == 'true' && needs\.deploy\.result == 'success'\)/u);
+  assert.doesNotMatch(retention, /needs\.preflight\.outputs\.readiness/u);
   assert.doesNotMatch(retention, /deployment_not_accepted/u);
   assert.match(retention, /environment:\n\s+name: nemlig-production/u);
   assert.match(retention, /permissions:\n\s+contents: write\n\s+actions: read/u);

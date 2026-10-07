@@ -14,6 +14,16 @@ An eligible successful trusted CI run for a commit still in default-branch histo
 - **WHEN** the candidate is no longer in current main history, a newer revision is already deployed, or another production operation owns the lease
 - **THEN** the stale or concurrent operation does not mutate production or replace the owner's recovery state
 
+#### Scenario: A routine candidate finds an existing recovery lease
+
+- **WHEN** source, exact-main CI, and environment checks pass but the shared remote production lease already exists
+- **THEN** the workflow records a bounded `blocked_by_existing_lease` result, does not issue a production credential or create a local deployment journal, and skips deploy, finalization, and retention; the summary identifies the candidate and lease head, states that the live revision was not verified, and directs the operator to explicit reconciliation
+
+#### Scenario: A lease appears after preflight
+
+- **WHEN** a remote lease is absent at routine preflight but becomes present before mutation
+- **THEN** atomic lease acquisition remains authoritative and the routine operation stops without replacing the lease owner's state
+
 #### Scenario: A pull request is tested
 
 - **WHEN** untrusted pull-request code runs verification
