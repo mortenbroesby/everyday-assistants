@@ -12,4 +12,4 @@
 ## 3. Delivery evidence
 
 - [x] 3.1 Run focused tests, production readiness, and required repository verification; record exact commands and results.
-- [ ] 3.2 Commit, push, open one scoped PR, and verify exact-head CI. Merge and conduct one normal exact-SHA production deployment only after review and authorization; verify public revision and routine lease absence separately from native ChatGPT acceptance.
+- [x] 3.2 Commit, push, open one scoped PR, and verify exact-head CI. Merge and conduct one normal exact-SHA production deployment only after review and authorization; verify public revision and routine lease absence separately from native ChatGPT acceptance. (PR #207; exact-main CI 37613228796; automatic production run 37613353405. A subsequent ordinary merge deployment, run 37613916228, deployed `90b60d869f7945926b62997d19596793793c9410`; public revision readback matched and the routine lease was absent on 2026-10-07.)
