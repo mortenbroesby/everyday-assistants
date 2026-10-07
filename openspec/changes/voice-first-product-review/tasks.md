@@ -298,11 +298,11 @@ viewer.
 
 ### Story 3 — contextual alternatives comparison (one PR)
 
-- [ ] 13.9 Add focused coverage for immediately scannable returned alternatives,
+- [x] 13.9 Add focused coverage for immediately scannable returned alternatives,
   long-form factual disclosures, no current-product internal divider, empty and
   unavailable results, current-candidate-only replacement, and no implicit
   Ready acceptance.
-- [ ] 13.10 Refine the existing alternatives destination without new provider or
+- [x] 13.10 Refine the existing alternatives destination without new provider or
   browser business state; show supplied comparison facts directly and retain
   the existing search, back and replace actions. Verify replacement preserves
   quantity, returns to To decide, and requires later batch acceptance.

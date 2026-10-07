@@ -19,9 +19,9 @@ const complete: ProductView = {
   }, review: { kind: "review", quantity: 2, approved: false },
 };
 
-test("v10 viewer identity and complete headless fallback stay in sync", () => {
-  assert.equal(PRODUCT_VIEWER_RESOURCE_VERSION, "10");
-  assert.equal(PRODUCT_VIEWER_RESOURCE_URI, "ui://nemlig/product-viewer-v10.html");
+test("v11 viewer identity and complete headless fallback stay in sync", () => {
+  assert.equal(PRODUCT_VIEWER_RESOURCE_VERSION, "11");
+  assert.equal(PRODUCT_VIEWER_RESOURCE_URI, "ui://nemlig/product-viewer-v11.html");
   assert.equal(PRODUCT_VIEWER_MIME_TYPE, "text/html;profile=mcp-app");
   assert.deepEqual(PRODUCT_VIEWER_RESOURCE_METADATA, {
     ui: { resourceUri: PRODUCT_VIEWER_RESOURCE_URI },
