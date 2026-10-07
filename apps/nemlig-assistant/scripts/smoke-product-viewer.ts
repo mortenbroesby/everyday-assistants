@@ -126,6 +126,11 @@ try {
   assert.equal(await frame.getByText("Offer").count(), 2, "offer badge missing");
   const milkCard = frame.locator(".product-card").filter({ hasText: "Synthetic milk" });
   const milkDisclosure = milkCard.locator(".product-summary");
+  const summaryLayout = await milkDisclosure.evaluate((button) => {
+    const content = button.querySelector(":scope > span");
+    return { button: button.getBoundingClientRect().width, content: content?.getBoundingClientRect().width ?? 0 };
+  });
+  assert.ok(summaryLayout.content >= summaryLayout.button - 2, `product summary content is narrower than its button: ${JSON.stringify(summaryLayout)}`);
   await milkDisclosure.click();
   assert.equal(await milkDisclosure.getAttribute("aria-expanded"), "true", "product disclosure did not open");
   const milkFact = milkCard.locator(".product-fact").first();
