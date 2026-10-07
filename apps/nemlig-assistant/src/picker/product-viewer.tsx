@@ -106,14 +106,17 @@ function ProductCard({ view, item, disabled, onQuantity, onRemove, onRevisit, se
         const next = !disclosureExpanded;
         if (onExpandedChange) onExpandedChange(next); else setLocalExpanded(next);
       }}>
-        {image && !imageFailed ? <img className="product-image" src={image} alt={product.name ?? "Product"} onError={() => setImageFailed(true)} /> : <span className="product-image product-image-fallback" aria-hidden="true">No image</span>}
-        <span className="product-copy"><span className="product-heading"><strong>{productName(view)}</strong><span>{money(quantityTotal)}</span></span>
-          <span className="product-meta">{[product.brand, product.unit_size].filter(Boolean).join(" · ") || "Package details unavailable"}</span>
-          <span className="product-meta">{product.unit_price === undefined ? product.unit ?? "Unit price unavailable" : `${money(product.unit_price)}${product.unit ? ` · ${product.unit}` : ""}`}</span>
-          {quantity !== undefined && <span className="product-quantity">{quantity} ×</span>}
-          {product.is_organic === true && <Badge color="success">Organic</Badge>}{product.is_frozen === true && <Badge color="info">Frozen</Badge>}{product.is_on_discount === true && <Badge color="warning">Offer</Badge>}
-          {product.available === false && <Badge color="danger">Unavailable</Badge>}{product.available === undefined && <Badge color="warning">Availability unknown</Badge>}
-      </span></Button>
+        <span className="product-summary-content">
+          {image && !imageFailed ? <img className="product-image" src={image} alt={product.name ?? "Product"} onError={() => setImageFailed(true)} /> : <span className="product-image product-image-fallback" aria-hidden="true">No image</span>}
+          <span className="product-copy"><span className="product-heading"><strong>{productName(view)}</strong><span>{money(quantityTotal)}</span></span>
+            <span className="product-meta">{[product.brand, product.unit_size].filter(Boolean).join(" · ") || "Package details unavailable"}</span>
+            <span className="product-meta">{product.unit_price === undefined ? product.unit ?? "Unit price unavailable" : `${money(product.unit_price)}${product.unit ? ` · ${product.unit}` : ""}`}</span>
+            {quantity !== undefined && <span className="product-quantity">{quantity} ×</span>}
+            {product.is_organic === true && <Badge color="success">Organic</Badge>}{product.is_frozen === true && <Badge color="info">Frozen</Badge>}{product.is_on_discount === true && <Badge color="warning">Offer</Badge>}
+            {product.available === false && <Badge color="danger">Unavailable</Badge>}{product.available === undefined && <Badge color="warning">Availability unknown</Badge>}
+          </span>
+        </span>
+      </Button>
       <div id={detailsId} className="product-expanded" hidden={!disclosureExpanded}>
         <p>Product ID: {product.id ?? "Unknown"}</p>{product.description && <details className="product-fact" open={expandedFacts?.has("Varebeskrivelse")} onToggle={onFactExpandedChange ? (event) => onFactExpandedChange("Varebeskrivelse", event.currentTarget.open) : undefined}><summary>Varebeskrivelse</summary><p>{product.description}</p></details>}
         {product.declaration && <details className="product-fact" open={expandedFacts?.has("Varedeklaration")} onToggle={onFactExpandedChange ? (event) => onFactExpandedChange("Varedeklaration", event.currentTarget.open) : undefined}><summary>Varedeklaration</summary><p>{product.declaration}</p></details>}
@@ -243,7 +246,7 @@ export function ProductViewer() {
     }
     return true;
   }, [deactivateReview]);
-  const { app: connectedApp, isConnected, error } = useApp({ appInfo: { name: "nemlig-product-viewer", version: "9.0.0" }, capabilities: {}, onAppCreated: (host) => {
+  const { app: connectedApp, isConnected, error } = useApp({ appInfo: { name: "nemlig-product-viewer", version: "10.0.0" }, capabilities: {}, onAppCreated: (host) => {
     host.ontoolresult = (result) => applyPayload(result);
     host.ontoolcancelled = () => { cancellationEpoch.current++; deactivateReview(); setScreen({ kind: "cancelled" }); setMessage("Request cancelled. Continue in conversation when you are ready."); };
     host.onerror = () => { deactivateReview(); setMessage("The Draft list connection failed. Continue in conversation or reopen your current Draft list."); };
