@@ -222,10 +222,12 @@ responses.
 ## Automated production release
 
 The **Nemlig production** workflow runs after successful CI for a push to
-`main`. It uses that run's exact commit, requires the commit to remain in current
-`main` history, and keeps all deployment credentials inside the protected
-`nemlig-production` environment. The owner approves the pull request before
-merge; the successful main-CI merge is the routine release decision.
+`main`. It deploys that run's exact commit only while it is the current `main`
+tip; a CI completion superseded by a later merge is recorded as skipped before
+build or provider access. Re-running CI for the unchanged current tip remains
+safe. Deployment credentials stay inside the protected `nemlig-production`
+environment. The owner approves the pull request before merge; the successful
+main-CI merge is the routine release decision.
 
 GitHub Actions concurrency (`group: nemlig-production`, no cancellation,
 queued runs) is the only release serialization. The workflow is intentionally
