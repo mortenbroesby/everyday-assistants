@@ -148,7 +148,7 @@ document.getElementById('flow').onclick = async () => {
  const wait=async predicate=>{const until=Date.now()+15000;while(!predicate()){if(Date.now()>until)throw new Error('Timed out: '+status.textContent+' | '+(doc()?.querySelector('main')?.innerText||'no viewer main'));await new Promise(r=>setTimeout(r,25));}};
  const click=label=>{const b=button(label);check(b&&!b.disabled,'Missing enabled control: '+label);b.click();};
  const open=()=>check(!button('Open current Draft list'),'The mounted review collapsed');
- const widths=async()=>{const original=frame.style.width;for(const width of [320,375]){frame.style.width=width+'px';await new Promise(requestAnimationFrame);check(doc().documentElement.scrollWidth<=doc().documentElement.clientWidth+1,width+'px viewer overflow');}frame.style.width=original;};
+ const widths=async()=>{const original=frame.style.width;for(const width of [320,375]){frame.style.width=width+'px';await new Promise(requestAnimationFrame);check(doc().documentElement.scrollWidth<=doc().documentElement.clientWidth+1,width+'px viewer overflow');const title=doc().querySelector('.product-heading strong');if(title){const summary=title.closest('.product-summary');check(summary?.querySelector('.product-summary-content')&&getComputedStyle(summary.querySelector('.product-summary-content')).display==='grid',width+'px product summary layout missing');check(title.getBoundingClientRect().width>=64,width+'px product title collapsed to '+title.getBoundingClientRect().width+'px');}}frame.style.width=original;};
  try {
   status.textContent='Starting continuous local flow';
   widgetCalls.length=0;
@@ -215,7 +215,7 @@ document.getElementById('flow').onclick = async () => {
   await wait(()=>text().includes('Your local Draft list was discarded.'));
   transcript=await call({name:'start_product_review',arguments:{items:[{product_id:1,quantity:1},{product_id:2,quantity:2}]}});
   status.textContent='Checking fresh post-discard card';
-  initialized=false; frame.src='/viewer';
+ initialized=false; const viewerLoaded=new Promise(resolve=>frame.addEventListener('load',resolve,{once:true})); frame.src='/viewer'; await viewerLoaded; await wait(()=>initialized);
   await wait(()=>initialized&&button('To decide (2)')&&!button('To decide (2)').disabled);
   await wait(()=>button('To decide (2)')&&!button('To decide (2)').disabled); await widths();
   const availableRow=doc().querySelector('input[type=checkbox][aria-label="Select Smoke product 2"]'); check(availableRow,'Known-price row missing from submitted-continuation setup'); availableRow.click(); click('Add 1 to Ready');
@@ -255,7 +255,7 @@ document.getElementById('flow').onclick = async () => {
   const stats=await fetch('/stats').then(r=>r.json()); check(stats.basketWrites===0,'Provider basket write occurred');
   check(widgetCalls.every(call=>!('representation' in call.arguments)),'Viewer sent a representation selector');
   status.textContent='PASS: activation, select/clear, no-call row selection, unknown and pending Ready totals, alternative return, two-row flush, stale prepared no-submit, verified-submit continuation, uncertain block and explicit-edit recovery, confirmed clear/end/restart, 320/375px; provider basket writes 0';
- } catch(error){status.textContent='FAIL: '+error.message+' | screen: '+(doc()?.querySelector('#title')?.textContent||'unavailable')+' | widget calls: '+widgetCalls.map(call=>call.name+':'+(call.arguments.action?.kind||'start')).join(',');} finally{run.disabled=false;}
+ } catch(error){status.textContent='FAIL: '+error.message+' | screen: '+(doc()?.querySelector('#title')?.textContent||'unavailable')+' | controls: '+[...(doc()?.querySelectorAll('button')||[])].map(button=>button.textContent.trim()+(button.disabled?' [disabled]':'')).join('; ')+' | widget calls: '+widgetCalls.map(call=>call.name+':'+(call.arguments.action?.kind||'start')).join(',');} finally{run.disabled=false;}
 };
 </script></body></html>`;
 const server = createServer((req, res) => {

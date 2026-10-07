@@ -121,8 +121,10 @@ Provider descriptions, declarations, and item details are converted from HTML
 to bounded plain text, including Danish characters and entities. Scripts,
 styles, images and link destinations are omitted; conversion does not fetch
 additional resources.
-The shared product viewer opens directly on its products and has compact,
-expandable rows. **To decide** contains
+The shared product viewer opens directly on its products. Each row keeps a
+visible product image, readable name, brand/package details, quantity, and line
+price together on narrow screens; factual disclosures stay collapsed until
+opened. **To decide** contains
 unresolved products; **Ready** contains exact accepted products. Select one or
 more To decide rows, then add them to Ready in one local action. Adjust
 quantities or remove products in either view. Choose alternatives only from To
