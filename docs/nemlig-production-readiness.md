@@ -56,11 +56,11 @@ its installed tool catalog or rendered the new interface. The release operator
 completes these steps before handing the release to the owner for testing:
 
 1. Verify the exact deployed SHA and automated service acceptance, including the
-   candidate's exact viewer HTML and resource CSP. When the self-contained
-   viewer HTML, JavaScript, or CSS changes, bump
-   `PRODUCT_VIEWER_RESOURCE_VERSION` so the resource URI cannot silently reuse
-   stale host-cached widget content. The machine fixture catalog deliberately
-   excludes local-review and provider-write tools.
+   candidate's exact viewer HTML and resource CSP. The UI uses the stable
+   `ui://nemlig/product-viewer.html` identity; ChatGPT may cache code for that
+   URI, so a deployment does not prove an already-open card loaded new UI code.
+   The machine fixture catalog deliberately excludes local-review and
+   provider-write tools.
 2. In ChatGPT Settings → Plugins → Nemlig Assistant (Rejoin), select Refresh and
    wait for completion. Read back the actual actions: `start_product_review`,
    `update_product_review`, and `submit_product_review` must exist, with the
@@ -69,18 +69,20 @@ completes these steps before handing the release to the owner for testing:
 3. In the intended shopping conversation, open a local review using exact IDs
    from a read-only product result. A successful metadata Refresh does not prove
    that an already-open conversation replaced its installed widget HTML: verify
-   the versioned resource URI and rendered viewer in that conversation. If it
-   retains the old catalog or stale widget, reload it; if necessary use a fresh
-   conversation as prescribed by OpenAI.
+   the stable resource URI and rendered viewer in that conversation. The host
+   may reuse cached code for this URI; if it retains stale UI code, reload it or
+   use a fresh conversation as prescribed by OpenAI.
 4. Verify the rendered review, images, inline details, local acceptance, Basket
    containing only accepted products, and navigation back to Needs review. Test
    contextual alternatives with a bounded search. Do not prepare or submit to
    Nemlig as part of this UI check.
 5. Reopen/remount a historical card: products and shopping controls must remain
-   inactive until **Open current review** reads current state. Advance a review
-   through conversation, then exercise an older already-open card: it must refresh
-   once without replay or raw protocol errors. Verify known retired resources
-   resolve to inert notices; report cached pre-change documents separately.
+   inactive until it reads current state; the read-only snapshot requires the user
+   to choose **Make this card current** before actions become enabled. Advance a
+   review through conversation, then exercise an older already-open card: it must
+   refresh once without replay or raw protocol errors. Verify only the stable
+   resource is registered and older versioned addresses are rejected; report
+   host-cached pre-change documents separately.
    Run the loopback **Run regression smoke** for outages and process restart;
    it complements the native ChatGPT check and never accesses a real basket.
 6. Record deployed SHA, refresh readback, rendered behavior and any failure in

@@ -10,7 +10,7 @@ import {
 import type { AdmissionResult } from "./principal-records.js";
 import type { Principal } from "./principal-policy.js";
 import { Auth0InfrastructureError, oauthReconnectChallenge } from "./auth0.js";
-import { PRODUCT_VIEWER_RESOURCE_URI, RETIRED_PRODUCT_VIEWER_RESOURCE_URIS } from "./product-viewer-identity.js";
+import { PRODUCT_VIEWER_RESOURCE_URI } from "./product-viewer-identity.js";
 
 export type OperationClass = "protocol" | "useful";
 export const INTERNAL_CREDENTIAL_HEADERS = [
@@ -59,7 +59,7 @@ const serviceTools = new Set([
   "find_groceries",
   "show_my_basket",
 ]);
-const serviceResources = new Set([PRODUCT_VIEWER_RESOURCE_URI, ...RETIRED_PRODUCT_VIEWER_RESOURCE_URIS]);
+const serviceResources = new Set([PRODUCT_VIEWER_RESOURCE_URI]);
 
 const isServiceRequestAllowed = async (request: Request): Promise<boolean> => {
   try {

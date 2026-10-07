@@ -20,7 +20,7 @@ still needs a small, evidence-backed use case and the normal verification gate.
 ## Nemlig UI evidence
 
 - All browser packages are MIT-licensed and exactly pinned. They remain development dependencies; the packed Node runtime does not install them.
-- Resource `ui://nemlig/product-viewer-v8.html` serves the self-contained React viewer. The previous v7 URI remains in the retired-resource inventory.
+- Resource `ui://nemlig/product-viewer.html` serves the self-contained React viewer. One stable URI is registered; older versioned URIs are not served.
 - The browser smoke drives the built asset through a synthetic MCP Apps host and fake product data. It checks activation, local review actions, alternatives, quantity flush, exact prepare/confirm/submit boundaries, uncertainty, remount, foreign snapshots, and stale recovery without provider writes.
 - The package build includes the single HTML asset beside the Node MCP server. The MCP server reads the built file rather than assembling or rewriting browser output.
 - Paired benchmark evidence is from the successful [PR #193 benchmark run](https://github.com/mortenbroesby/everyday-assistants/actions/runs/37578315194), checked out at PR head `4fee6125e33e49603d76a04777481f6133e022c1`. It compared the pinned v7 HTML fixture from `6b42384028eb5dc9f0addb0b97acadcab1509404` with the built React v8 artifact.

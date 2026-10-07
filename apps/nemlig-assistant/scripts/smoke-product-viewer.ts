@@ -8,6 +8,7 @@ declare global {
   interface Window {
     calls: Array<{ name: string; args: { action?: { kind?: string; product_id?: number; quantity?: number; query?: string } } }>;
     hostErrors: string[];
+    getViewId: () => string;
     providerWrites: number;
     failNext: boolean;
     failGenericNext: boolean;
@@ -19,6 +20,7 @@ declare global {
     sendMalformed: () => void;
     sendEnded: () => void;
     sendUnavailable: () => void;
+    supersedeAndReload: () => void;
     reopenCurrentReview: () => void;
     setReadyForDisclosure: (ready: boolean) => void;
     replaceReviewIdentity: () => void;
@@ -43,11 +45,11 @@ const fixtureJson = JSON.stringify(initialReview);
 const parentDocument = `<!doctype html><meta charset="utf-8"><title>synthetic MCP host</title>
 <iframe title="viewer" src="/resource" style="width:100%;height:900px;border:0"></iframe>
 <script>
-window.calls=[]; window.providerWrites=0; window.hostErrors=[]; let review=${fixtureJson}; let viewId='synthetic-view-1'; window.submissionAttempts=0; window.failNext=false; window.failGenericNext=false;
+window.calls=[]; window.providerWrites=0; window.hostErrors=[]; let review=${fixtureJson}; let viewId='synthetic-view-1'; let initialViewIdOverride; window.submissionAttempts=0; window.failNext=false; window.failGenericNext=false;
 const alternativeView=${JSON.stringify(fixtureView(3, "Synthetic alternative"))};
 const frame=document.querySelector('iframe');
 const post=(event,message)=>event.source.postMessage(message,location.origin);
-const result=(review)=>({structuredContent:{review,view_id:viewId}});
+const result=(review,presentedViewId=viewId)=>({structuredContent:{review,view_id:presentedViewId}});
 const apply=(action)=>{
  if(action.kind==='show') return result(review);
  if(action.kind==='navigate') review.destination=action.destination;
@@ -68,6 +70,8 @@ window.sendSubmitted=()=>{review.submission.status='submitted';frame.contentWind
 window.sendMalformed=()=>{const malformed=JSON.parse(JSON.stringify(review));malformed.submission.review.lines=[null];frame.contentWindow.postMessage({jsonrpc:'2.0',method:'ui/notifications/tool-result',params:result(malformed)},location.origin)};
 window.sendEnded=()=>frame.contentWindow.postMessage({jsonrpc:'2.0',method:'ui/notifications/tool-result',params:{structuredContent:{ended:true}}},location.origin);
 window.sendUnavailable=()=>frame.contentWindow.postMessage({jsonrpc:'2.0',method:'ui/notifications/tool-result',params:{structuredContent:{unavailable:true}}},location.origin);
+window.getViewId=()=>viewId;
+window.supersedeAndReload=()=>{initialViewIdOverride=viewId;viewId='synthetic-view-'+(Number(viewId.split('-').at(-1))+1);frame.src='/resource'};
 window.setReadyForDisclosure=(ready)=>{review.items.find(item=>item.product_id===2).state=ready?'ready':'needs-review';review.revision++;frame.contentWindow.postMessage({jsonrpc:'2.0',method:'ui/notifications/tool-result',params:result(JSON.parse(JSON.stringify(review)))},location.origin)};
 window.replaceReviewIdentity=()=>{review.review_id='second-synthetic-review';review.revision++;viewId='synthetic-view-2';frame.contentWindow.postMessage({jsonrpc:'2.0',method:'ui/notifications/tool-result',params:result(JSON.parse(JSON.stringify(review)))},location.origin)};
 window.reopenCurrentReview=()=>{viewId='synthetic-view-'+(Number(viewId.split('-').at(-1))+1);frame.contentWindow.postMessage({jsonrpc:'2.0',method:'ui/notifications/tool-result',params:result(JSON.parse(JSON.stringify(review)))},location.origin)};
@@ -75,9 +79,14 @@ window.addEventListener('message',event=>{
  if(event.source!==frame.contentWindow || event.origin!==location.origin) return;
  const message=event.data; if(!message || message.jsonrpc!=='2.0') return;
  if(message.method==='ui/initialize') return post(event,{jsonrpc:'2.0',id:message.id,result:{protocolVersion:message.params.protocolVersion,hostInfo:{name:'synthetic-host',version:'1'},hostCapabilities:{},hostContext:{theme:'light'}}});
- if(message.method==='ui/notifications/initialized') return post(event,{jsonrpc:'2.0',method:'ui/notifications/tool-result',params:result(review)});
+ if(message.method==='ui/notifications/initialized'){const presented=result(review,initialViewIdOverride??viewId);initialViewIdOverride=undefined;return post(event,{jsonrpc:'2.0',method:'ui/notifications/tool-result',params:presented})}
  if(message.method==='tools/call'){
   const {name,arguments:args}=message.params; window.calls.push({name,args});
+  if(name==='update_product_review'&&args.action?.kind==='show'){
+   if(args.activate){viewId='synthetic-view-'+(Number(viewId.split('-').at(-1))+1);return post(event,{jsonrpc:'2.0',id:message.id,result:result(review)})}
+   if(!args.view_id)return post(event,{jsonrpc:'2.0',id:message.id,result:{structuredContent:{review}}});
+   if(args.view_id!==viewId)return post(event,{jsonrpc:'2.0',id:message.id,error:{code:-32602,message:'This Draft list card is out of date'}})
+  }
   if(name==='submit_product_review'){
    window.submissionAttempts++;
    if(window.failNext){window.failNext=false;review.revision++;review.submission.status='uncertain';return post(event,{jsonrpc:'2.0',id:message.id,error:{code:-32000,message:'Write outcome uncertain'}})}
@@ -85,6 +94,7 @@ window.addEventListener('message',event=>{
   }
   if(name==='update_product_review' && args.action?.kind==='accept' && window.failNext){ window.failNext=false; return post(event,{jsonrpc:'2.0',id:message.id,error:{code:-32602,message:'Draft list revision is stale'}}); }
   if(name==='update_product_review' && window.failGenericNext){window.failGenericNext=false;return post(event,{jsonrpc:'2.0',id:message.id,error:{code:-32000,message:'Temporary synthetic failure'}})}
+  if(name==='update_product_review' && args.action?.kind==='show' && !args.view_id) viewId='synthetic-view-'+(Number(viewId.split('-').at(-1))+1);
   try { const response=name==='update_product_review'?apply(args.action):result(review); return post(event,{jsonrpc:'2.0',id:message.id,result:response}); }
   catch(error){window.hostErrors.push(String(error));return post(event,{jsonrpc:'2.0',id:message.id,error:{code:-32603,message:String(error)}})}
  }
@@ -131,6 +141,30 @@ try {
   await page.waitForFunction(() => window.calls.some((call) => call.args.action?.kind === "show"));
   assert.equal(await frame.locator('input[type="checkbox"]').count(), 2, "products were not visible on the first rendered card");
   console.log("Synthetic viewer smoke: direct product display and view validation passed");
+  const callsBeforeInactiveRefresh = await page.evaluate(() => window.calls.length);
+  const staleViewId = await page.evaluate(() => window.getViewId());
+  await page.evaluate(() => window.supersedeAndReload());
+  const currentViewId = await page.evaluate(() => window.getViewId());
+  await frame.getByText("This Draft list card is inactive.").waitFor();
+  await frame.getByText("The current Draft list is shown read-only.").waitFor();
+  await frame.getByRole("button", { name: "Make this card current" }).waitFor();
+  assert.equal(await frame.locator('input[type="checkbox"]').count(), 0, "automatically refreshed card exposed editable product controls");
+  assert.equal(await frame.locator(".product-list article").count(), 2, "stale card did not automatically display the current products");
+  assert.equal(await page.evaluate(() => window.calls.length), callsBeforeInactiveRefresh + 2, "stale card did not validate and then perform one read-only refresh");
+  const automaticRefresh = await page.evaluate(() => window.calls.at(-1));
+  assert.deepEqual(automaticRefresh?.args, { action: { kind: "show" } }, "automatic refresh sent stale authority or mutation arguments");
+  assert.notEqual(currentViewId, staleViewId, "fixture did not make the rendered card stale");
+  assert.equal(await page.evaluate(() => window.getViewId()), currentViewId, "automatic refresh stole current-card authority");
+  await frame.getByRole("button", { name: "Make this card current" }).click();
+  await frame.getByRole("button", { name: /To decide \(2\)/ }).waitFor();
+  await frame.getByText("This Draft list card is inactive.").waitFor({ state: "detached" });
+  const activation = await page.evaluate(() => window.calls.at(-1));
+  assert.equal(await page.evaluate(() => window.calls.length), callsBeforeInactiveRefresh + 3, "explicit activation did not make exactly one additional view call");
+  assert.equal(activation?.name, "update_product_review");
+  assert.deepEqual(activation?.args, { action: { kind: "show" }, activate: true }, "activation sent stale review, revision, or mutation arguments");
+  assert.notEqual(await page.evaluate(() => window.getViewId()), currentViewId, "explicit activation did not rotate the active view token");
+  assert.equal(await frame.locator('input[type="checkbox"]').count(), 2, "refresh did not show the current products in the same card");
+  console.log("Synthetic viewer smoke: stale card auto-refreshes read-only; explicit activation alone acquires authority");
   await frame.getByRole("button", { name: /To decide \(2\)/ }).waitFor();
   assert.equal(await frame.getByText("Synthetic milk").count(), 1);
   assert.equal(await frame.getByText("Organic").count(), 2, "organic badge missing");
