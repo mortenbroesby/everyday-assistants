@@ -131,8 +131,11 @@ adjust quantities directly; open a row to move it back or remove it from the
 local Draft list after confirmation. This never changes the Nemlig basket. Choose
 alternatives only from To decide; choosing a replacement does not accept it
 automatically. Alternatives show every distinct eligible product in the provider
-response with comparison facts visible at a glance, while longer descriptions
-remain disclosed on demand; unavailable results stay visibly unselectable.
+response with comparison facts visible at a glance. The full product row is the
+selection target; the separate **Use selected alternative** action applies that
+choice. Unavailable results stay visibly unselectable. Longer facts use only
+the three collapsed sections **Varebeskrivelse**, **Varedeklaration**, and
+**Detaljer om varen**, with all supplied detail fields grouped in the latter.
 They allow a deliberate follow-up search when none fit. A search response is not
 a claim that the entire Nemlig catalogue was enumerated. These local operations also work
 through conversation, including “everything except the ricotta and cucumbers is
@@ -543,8 +546,8 @@ This README is the user-facing inventory of shipped feature sets:
 - fresh Nemlig authentication before every provider-backed MCP task
 - rich individual short-query product discovery and refinement
 - one shared product presentation with a headless fallback
-- voice/touch To decide and Ready draft list with contextual alternatives and
-  immediately scannable product comparisons
+- voice/touch To decide and Ready draft list with contextual alternatives,
+  full-row alternative selection, and immediately scannable product comparisons
 - persistent in-place review navigation, compact rows, and confirmed local removal
 - complete-per-search alternative results, deliberate follow-up search, and conversation-only draft list edits
 - explicit protected submission of resolved local products

@@ -21,6 +21,8 @@ const denied = async (): Promise<never> => { writes++; throw new Error("Provider
 const product = (id: number): Product => ({ id, name: `Smoke product ${id}`, price: unknownPriceScenario && id === 1 ? undefined : id * 5, available: id === 4 ? false : true,
   unit: "kr/kg", unitPrice: id * 5, unitSize: "1 kg", brand: "Fixture", category: "Test", subcategory: "Test", imageUrl: "", labels: [],
   description: id === 3 ? "Long factual description for the alternatives comparison smoke." : undefined,
+  declaration: id === 3 ? "Ingredients and allergen facts for the alternatives comparison smoke." : undefined,
+  details: id === 3 ? [{ key: "Country of origin", value: "Denmark" }, { key: "Storage", value: "Keep chilled" }] : undefined,
   isOrganic: id === 3, isFrozen: false, isRefrigerated: false, isDairy: false, isLactoseFree: false, isGlutenFree: false, isVegan: false, isOnDiscount: false });
 const catalogue = {
   isLoggedIn: () => true, login: async () => {}, getProduct: async (id: number) => product(id),
@@ -194,12 +196,12 @@ document.getElementById('flow').onclick = async () => {
   status.textContent='Checking alternatives';
   doc().querySelector('.product-list article button[aria-expanded]').click(); click('Choose alternative');
   await wait(()=>doc().querySelector('#title')?.textContent==='Choose an alternative'&&button('Ready (0)')&&!button('Ready (0)').disabled); open();
-  const radio=doc().querySelector('input[type=radio]'); check(radio,'Alternative choice missing'); radio.click();
+  const radio=doc().querySelector('[role=radio]'); check(radio,'Alternative choice missing'); radio.click();
   await wait(()=>button('Use selected alternative')&&!button('Use selected alternative').disabled);
   click('Ready (0)'); await wait(()=>doc().querySelector('#title')?.textContent==='Ready'&&button('Return to existing alternatives')&&!button('Return to existing alternatives').disabled);
   check(!!button('Return to existing alternatives'),'Ready navigation omitted the saved alternatives return action');
   click('Return to existing alternatives'); await wait(()=>doc().querySelector('#title')?.textContent==='Choose an alternative'&&button('Use selected alternative')&&!button('Use selected alternative').disabled);
-  check(doc().querySelector('input[type=radio]')?.checked,'Saved alternative selection was lost on return'); open(); click('Use selected alternative');
+  check(doc().querySelector('[role=radio][aria-checked=true]'),'Saved alternative selection was lost on return'); open(); click('Use selected alternative');
   await wait(()=>doc().querySelector('#title')?.textContent==='To decide'&&button('To decide (2)')&&!button('To decide (2)').disabled); open();
   click('Select all'); await wait(()=>doc().querySelectorAll('input[type=checkbox]:checked').length===2); click('Add selected to Ready (2)');
   await wait(()=>button('Ready (2)')&&!button('Ready (2)').disabled); open();
@@ -316,11 +318,13 @@ document.getElementById('alternatives').onclick = async () => {
   check(candidate,'Returned alternative was missing');
   check(!candidate.querySelector('button.product-summary'),'Alternative facts remained hidden behind a product accordion');
   check(candidate.textContent.includes('Fixture')&&candidate.textContent.includes('1 kg')&&candidate.textContent.includes('15.00 kr')&&candidate.textContent.includes('Organic'),'Alternative comparison omitted supplied product facts');
+  const facts=[...candidate.querySelectorAll('.product-fact summary')].map(summary=>summary.textContent); check(JSON.stringify(facts)===JSON.stringify(['Varebeskrivelse','Varedeklaration','Detaljer om varen']),'Alternative exposed anything other than the three supported factual sections: '+facts.join(', '));
   const description=candidate.querySelector('.product-fact summary'); check(description,'Long factual description disclosure missing'); description.click();
   await wait(()=>candidate.textContent.includes('Long factual description for the alternatives comparison smoke.'));
+  const details=[...candidate.querySelectorAll('.product-fact summary')].find(summary=>summary.textContent==='Detaljer om varen'); check(details,'Grouped product details disclosure missing'); details.click(); await wait(()=>candidate.textContent.includes('Country of origin')&&candidate.textContent.includes('Keep chilled'));
   let currentReview=(await call({name:'update_product_review_conversation',arguments:{action:{kind:'show'}}})).structuredContent.review;
   check(currentReview.destination==='alternatives'&&currentReview.items.every(item=>item.state==='needs-review'),'Opening alternatives implicitly accepted a product');
-  candidate.querySelector('input[type=radio]')?.click(); click('Use selected alternative');
+  const alternativeChoice=candidate.querySelector('[role=radio]'); check(alternativeChoice,'Alternative card was not a direct choice control'); alternativeChoice.click(); await wait(()=>candidate.querySelector('[role=radio]')?.getAttribute('aria-checked')==='true'); click('Use selected alternative');
   await wait(()=>doc().querySelector('#title')?.textContent==='To decide'&&!button('To decide (2)')?.disabled);
   currentReview=(await call({name:'update_product_review_conversation',arguments:{action:{kind:'show'}}})).structuredContent.review;
   const replacement=currentReview.items.find(item=>item.product_id===3);
@@ -331,7 +335,7 @@ document.getElementById('alternatives').onclick = async () => {
   await wait(()=>doc().querySelector('#title')?.textContent==='Choose an alternative');
   await search('unavailable'); await wait(()=>doc().querySelector('.alternative-options')?.textContent.includes('Smoke product 4'));
   const unavailable=[...doc().querySelectorAll('.alternative-options .product-card')].find(row=>row.textContent.includes('Smoke product 4'));
-  check(unavailable?.querySelector('input[type=radio]:disabled')&&unavailable.textContent.includes('Unavailable'),'Unavailable alternative could be selected or was not labeled');
+  check(unavailable?.querySelector('[role=radio]:disabled')&&unavailable.textContent.includes('Unavailable'),'Unavailable alternative could be selected or was not labeled');
   await search('empty'); await wait(()=>doc().querySelector('.alternatives-empty'));
   check(doc().querySelector('#alternative-query')&&doc().querySelector('.alternatives-empty')?.textContent.includes('No alternatives were returned'),'Empty search was hidden or represented as a failure');
   await search('search-error');

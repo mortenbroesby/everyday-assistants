@@ -115,10 +115,10 @@ try {
     const resource = viewer.contents[0];
     assert.ok(resource && "text" in resource);
     assert.equal(resource.mimeType, "text/html;profile=mcp-app");
-    assert.equal(PRODUCT_VIEWER_RESOURCE_URI, "ui://nemlig/product-viewer-v11.html");
+    assert.equal(PRODUCT_VIEWER_RESOURCE_URI, "ui://nemlig/product-viewer-v12.html");
     assert.match(resource.text, /Nemlig confirmed this Draft list was added successfully\./u);
     const packagedViewer = await readFile(path.join(tempRoot, "node_modules", "nemlig-assistant", "dist", "picker.html"), "utf8");
-    assert.equal(resource.text, packagedViewer, "installed MCP server did not serve the packaged v11 viewer artifact");
+    assert.equal(resource.text, packagedViewer, "installed MCP server did not serve the packaged v12 viewer artifact");
   } finally {
     await client.close();
   }
