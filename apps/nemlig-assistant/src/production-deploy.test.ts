@@ -2261,6 +2261,19 @@ test("direct enabled restore consumes one explicit authorization before an uncer
   assert.equal(recovery.rollouts, 1, "a consumed direct-restore authorization must never be replayed");
 });
 
+test("direct liveness-timeout restore recognizes the exact legacy transcript before consuming authorization", async () => {
+  const journal = directInterruptedContainerRestoreJournal({
+    failure: "container_instance_timeout",
+    recoveryFailure: "cloudflare_container_restore_uncertain",
+  });
+  const recovery = interruptedContainerRestoreDeps(journal, { direct: true, restoreOutcomeUnknown: true });
+  const result = await reconcilePendingRollback(journal.operationId, recovery.deps, true, true, true);
+  assert.deepEqual(result, {
+    operation: journal.operationId, originalRunnerStopped: true, reconciled: false, reason: "provider_outcome_unknown", state: "unknown",
+  });
+  assert.equal(recovery.rollouts, 1, "the explicitly authorized exact restore is issued once for the legacy transcript");
+});
+
 test("direct enabled restore permits a different candidate configuration while preserving exact candidate identity", async () => {
   const journal = directInterruptedContainerRestoreJournal({ recoveryFailure: "cloudflare_container_restore_uncertain" });
   const recovery = interruptedContainerRestoreDeps(journal, { direct: true, candidateConfigDrift: true });

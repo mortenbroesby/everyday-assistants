@@ -1066,7 +1066,11 @@ const interruptedContainerRestoreMode = (journal: DeploymentJournal): Interrupte
       && rollbackResult.kind === "result" && rollbackResult.version === journal.enabledVersion
       && containerIntent?.phase === "worker_restore" && containerIntent.kind === "intent" && containerIntent.version === journal.startingVersion
       && containerResult?.phase === "worker_restore" && containerResult.kind === "result" && containerResult.version === journal.startingVersion));
-  const directRoutineRestore = journal.failure === "service_fixture_acceptance_failed" && directRestoreTransitionsComplete;
+  // Before sleeping Containers were accepted after a successful MCP exchange,
+  // the same direct restore path could be recorded as a liveness timeout. The
+  // transcript—not that obsolete failure label—establishes its safe shape.
+  const directRoutineRestore = ["service_fixture_acceptance_failed", "container_instance_timeout"].includes(journal.failure ?? "")
+    && directRestoreTransitionsComplete;
   if (directRoutineRestore) return "enabled";
   const disabledRestore = journal.failure === "container_instance_timeout"
     && Boolean(journal.disabledVersion && journal.disabledImage && journal.disabledApplicationVersion)
