@@ -168,6 +168,40 @@ independently submittable while other products remain In Review.
 - **THEN** the new contract rejects the action without changing the review or
   the real Nemlig basket
 
+### Requirement: Clear, staged review presentation
+The viewer SHALL present the server-authoritative temporary selection with one
+destination-appropriate primary action and compact, accessible product rows.
+To decide acceptance SHALL remain batch-only. Ready rows SHALL expose their
+existing local return-to-To-decide and remove operations through an explicit
+per-row expansion; Ready SHALL not offer alternatives. Opening a product,
+factual disclosure, or presentational selection control SHALL make no tool or
+provider call. The viewer SHALL not duplicate a destination count in a
+redundant summary banner.
+
+#### Scenario: A household member inspects a Ready row
+- **WHEN** the user expands a Ready product
+- **THEN** the row exposes its quantity and the available local move-back or
+  remove controls without an alternative action or real-basket mutation
+
+#### Scenario: A household member compares alternatives
+- **WHEN** the viewer displays alternatives for a To decide product
+- **THEN** each returned alternative visibly identifies the product, pack/size,
+  price, unit price and available relevant badges before selection
+- **AND** factual long-form disclosures may remain separately controllable
+- **AND** choosing the alternative still leaves it To decide
+
+#### Scenario: The selection is empty
+- **WHEN** no local products remain or a draft is ended
+- **THEN** the viewer presents clearly labelled conversational starter
+  suggestions that do not call a provider, create a local product mutation, or
+  claim an unsupported host action
+
+#### Scenario: A local outcome is shown
+- **WHEN** a prepared, verified, unavailable, or uncertain local outcome is
+  rendered
+- **THEN** only its relevant actions are shown, verified success remains a
+  distinct outcome, and uncertainty does not offer automatic retry
+
 ### Requirement: Complete and refinable contextual alternatives
 For an In Review product, an alternatives search without a user-requested
 count SHALL expose every distinct candidate returned by the provider response
