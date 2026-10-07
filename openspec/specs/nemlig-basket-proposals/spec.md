@@ -142,34 +142,6 @@ The system SHALL read the basket immediately after every mutation attempt, retur
 - **WHEN** Nemlig may have changed the basket but verification fails or differs
 - **THEN** the server reports partial or indeterminate success, consumes the proposal, and performs no further mutation
 
-### Requirement: Add-only proposal MCP surface
-
-The model-visible MCP surface SHALL expose only `review_items_to_add` and `add_approved_items` for provider-basket mutation, and SHALL NOT expose a provider-basket remove, replace, or clear capability. Local review edits are not provider-basket operations. Historical clients requesting retired provider tools SHALL receive the standard unknown-tool response.
-
-#### Scenario: Tools are enumerated
-
-- **WHEN** an MCP client lists tools
-- **THEN** it can prepare and apply exact additions but sees no provider-basket remove, replace, or clear tool
-
-#### Scenario: Retired destructive operation is requested
-
-- **WHEN** a client requests a removed provider-basket remove, replace, or clear tool by name
-- **THEN** the MCP server reports that the tool is unavailable and performs no provider mutation
-
-### Requirement: Accurate write annotations
-
-The system SHALL advertise annotations that match each tool's actual behavior and SHALL rely on server-side proposal validation rather than annotations for enforcement.
-
-#### Scenario: Read and preparation tools are inspected
-
-- **WHEN** a discovery, basket-view, or `review_items_to_add` tool is enumerated
-- **THEN** it is marked read-only and non-destructive
-
-#### Scenario: Addition application is inspected
-
-- **WHEN** add_approved_items is enumerated
-- **THEN** it is marked state-changing, non-destructive, and open-world
-
 ### Requirement: Redacted proposal audit
 
 The system SHALL record sanitized proposal creation, invalidation, application, replay, expiry, and indeterminate transitions and SHALL NOT audit raw prompts, secrets, session identifiers, or complete basket contents.
@@ -180,18 +152,15 @@ The system SHALL record sanitized proposal creation, invalidation, application, 
 - **THEN** the audit sink records only the transition, operation, and result class
 
 ### Requirement: Approval remains explicit
+Connection access, app creation, proposal preparation, this OpenSpec, implementation work, product search, candidate visibility, and local Ready status SHALL NOT count as authorization to change the Nemlig basket. A clear user instruction to add the unchanged current Ready items or explicit approval of the exact prepared effect SHALL be required. Rendering or accepting a product in the Draft list SHALL NOT authorize a provider write.
 
-Tunnel access, app creation, proposal preparation, this OpenSpec, implementation work, product search, and candidate visibility SHALL NOT count as approval to apply a basket change. Approval SHALL be an explicit approval of the exact unchanged proposal. The viewer remains display-only and cannot approve or apply a proposal.
+#### Scenario: Exact Ready addition is authorized
+- **WHEN** the user clearly requests addition of unchanged Ready items or approves the exact prepared effect
+- **THEN** the model may call `submit_product_review` once subject to every proposal invariant
 
-#### Scenario: Exact proposal is approved
-
-- **WHEN** the user explicitly approves an exact unchanged proposal
-- **THEN** the model may invoke its apply tool once subject to every proposal invariant
-
-#### Scenario: Proposal exists without explicit approval
-
-- **WHEN** a valid proposal exists but the user has not approved that exact proposal
-- **THEN** the model does not invoke its apply tool
+#### Scenario: Ready items exist without authorization
+- **WHEN** Ready items exist but the user has not instructed their addition
+- **THEN** the model does not call `submit_product_review`
 
 ### Requirement: No autonomous checkout
 
@@ -201,3 +170,14 @@ The proposal protocol SHALL NOT prepare or apply checkout, payment, purchase, or
 
 - **WHEN** a client asks the proposal service to place, pay for, or schedule an order
 - **THEN** the service refuses the unsupported operation and does not mutate the basket or order
+
+### Requirement: Draft list is the model-visible addition path
+The model-visible provider-basket write path SHALL use `start_product_review` or `update_product_review` to prepare exact Ready lines and `submit_product_review` to apply only an authorized unchanged submission. It SHALL preserve positive-addition semantics, fresh validation, principal binding, single-use authority, serialization, verified readback, and no automatic retry after an uncertain write. Direct provider-basket prepare and apply tools SHALL NOT be advertised.
+
+#### Scenario: Ready addition is authorized
+- **WHEN** the user clearly asks to add the unchanged Ready Draft list or approves the exact prepared effect
+- **THEN** the protected submission applies only those positive additions once and returns verified Nemlig basket readback
+
+#### Scenario: Direct legacy addition is attempted
+- **WHEN** a caller invokes `review_items_to_add` or `add_approved_items`
+- **THEN** the tool is unavailable and no provider mutation occurs

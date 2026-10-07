@@ -1,6 +1,6 @@
 {
   "name": "nemlig-assistant",
-  "version": "5.2.2",
+  "version": "6.0.0",
   "private": true,
   "description": "Safe local Nemlig Assistant CLI and MCP server",
   "type": "module",
@@ -56,7 +56,6 @@
     "smoke:review-ui": "tsx scripts/smoke-review-ui.ts",
     "smoke:ui-candidate": "tsx scripts/smoke-react-candidate.ts",
     "smoke:onboarding": "tsx scripts/smoke-onboarding.ts",
-    "smoke:visual-basket": "tsx scripts/smoke-visual-basket.ts",
     "smoke:package": "tsx scripts/smoke-package.ts",
     "test": "tsx --test src/*.test.ts release/*.test.ts scripts/*.test.mjs",
     "coverage": "node scripts/coverage.mjs"
@@ -104,6 +103,6 @@
     "wrangler": "4.127.1"
   },
   "nemligRelease": {
-    "codename": "Page"
+    "codename": "Clarity"
   }
 }

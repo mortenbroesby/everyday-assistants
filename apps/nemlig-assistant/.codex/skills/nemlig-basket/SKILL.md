@@ -45,7 +45,7 @@ pnpm nemlig --help
    replace, swap, or clear its contents, even if asked or explicitly approved;
    explain that the user can manage those actions directly on Nemlig.com. This
    prohibition applies to MCP, CLI, provider APIs, and production tests. Local
-   selection removal and clearing are different operations and remain allowed.
+   draft list removal and clearing are different operations and remain allowed.
 
    A requested quantity is an amount to add, not an absolute final quantity.
    If Nemlig already has two and the user authorizes adding two, the final
@@ -57,13 +57,13 @@ pnpm nemlig --help
    the provider's non-atomic read/set boundary; do not claim cross-client locking.
 
 5. A clear conversational instruction to add the exact unchanged Ready
-   selection is itself authorization for that exact positive addition. Do not
+   draft list is itself authorization for that exact positive addition. Do not
    ask for a redundant second conversational approval. For any other addition,
    obtain approval of the exact unchanged products, added quantities, current
-   prices and resulting basket effects. Local selection or acceptance alone is
+   prices and resulting basket effects. Local draft list or acceptance alone is
    not provider-write authorization. Any changed fact requires a fresh review.
 
-5. Add only approved lines:
+6. Add only approved lines:
 
    ```sh
    pnpm nemlig add <product-id> --quantity <quantity>
@@ -81,29 +81,26 @@ remove or reduce anything, direct them to manage that directly on Nemlig.com.
 ## MCP workflow
 
 Model-visible basket writes never call a direct mutation tool. Additions use
-`review_items_to_add` → exact authorization → `add_approved_items`, or the local
-review's `prepare_submission` → its existing exact confirmation →
-`submit_product_review`. These are the only assistant provider-basket write
-paths and only add positive quantities. A clear instruction to add the exact
-unchanged Ready selection supplies authorization without a redundant second
-chat approval; UI confirmation remains as designed. Both paths preserve fresh
+the draft list's `prepare_submission` → its existing exact confirmation →
+`submit_product_review`. This is the assistant provider-basket write
+path and only adds positive quantities. A clear instruction to add the exact
+unchanged Ready draft list supplies authorization without a redundant second
+chat approval; UI confirmation remains as designed. The path preserves fresh
 validation, principal binding, single-use authority, serialization and verified
 basket readback. Never retry an indeterminate result; inspect the draft and
 actual basket before deliberately creating a fresh addition review.
 The user's clear conversational instruction to add the exact unchanged Ready
-selection is authorization for that prepared payload; do not ask for redundant
-chat approval. Other additions require approval of the exact reviewed change.
-Both paths preserve fresh validation, principal binding, single-use authority,
-serialization and verified basket readback. Never retry an indeterminate
-result; inspect the draft and actual basket before deliberately creating a
-fresh addition review.
+draft list is authorization for that prepared payload; do not ask for redundant
+chat approval. Other additions require approval of the exact prepared change.
+Never retry an indeterminate result; inspect the draft list and actual basket
+before deliberately preparing a fresh addition.
 
-Use `start_product_review` for an explicit new selection. To reopen, first use
+Use `start_product_review` for an explicit new draft list. To reopen, first use
 `update_product_review` with action `show` and no old review ID or revision.
-Only after it reports no active draft may you ask to start fresh. Never replay
-a failed edit or restore old acceptance/submission authority. In Review and
-Ready are local states, not the actual Nemlig basket; alternatives belong only
-to In Review. Local acceptance, removal and ending do not mutate Nemlig.
+Only after it reports no active draft list may you ask to start fresh. Never replay
+a failed edit or restore old acceptance/submission authority. To decide and
+Ready are draft list states, not the actual Nemlig basket; alternatives belong
+only to To decide. Local acceptance, removal and ending do not mutate Nemlig.
 
 For private ChatGPT use, follow `../../../../../docs/cloudflare-operations.md`.
 Identity, infrastructure, and app changes remain owner actions and never

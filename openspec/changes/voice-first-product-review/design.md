@@ -1,5 +1,7 @@
 ## Context
 
+**Current surface:** See [`slim-nemlig-mcp-surface`](../slim-nemlig-mcp-surface/design.md) for the later six-tool and Draft list decisions. Earlier inventory and naming choices below describe the prior implementation and are superseded for this release.
+
 See proposal.md and issue #113. The existing HTML viewer only renders supplied
 facts. MCP HTTP creates a server per request but retains an authenticated
 principal context with a client and proposal service. No shared product review

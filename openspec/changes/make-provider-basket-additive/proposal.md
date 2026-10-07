@@ -1,5 +1,8 @@
 ## Why
 
+**Later MCP decision (7 October 2026):**
+[`slim-nemlig-mcp-surface`](../slim-nemlig-mcp-surface/proposal.md) retires the direct proposal tool pair while retaining the additive proposal engine behind Draft list submission. The add-only provider contract and historical evidence below remain relevant.
+
 Nemlig's observed `AddToBasket` endpoint sets one product's absolute quantity, but the assistant currently treats an approved quantity as the final total. Re-adding an item already in the basket can therefore reduce its quantity, while separate assistant removal, replacement, and clear tools can remove existing basket contents. The household policy is add-only.
 
 ## What Changes

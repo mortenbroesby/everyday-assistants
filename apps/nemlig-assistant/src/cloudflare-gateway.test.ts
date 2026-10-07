@@ -150,7 +150,7 @@ test("shopping and unknown tool requests receive the same useful classification"
   assert.equal(normal.headers.get("x-nemlig-request-id"), "10000000-0000-4000-8000-000000000000");
   assert.equal(classifyMcpMessage({ method: "server/discover" }), "protocol");
   assert.equal(classifyMcpMessage({ method: "future/protocol-method" }), "protocol");
-  assert.equal(classifyMcpMessage({ method: "tools/call", params: { name: "get_profile" } }), "profile");
+  assert.equal(classifyMcpMessage({ method: "tools/call", params: { name: "get_profile" } }), "useful");
   assert.equal(classifyMcpMessage({ method: "tools/call", params: { name: "add_approved_items" } }), "useful");
 });
 
@@ -187,7 +187,7 @@ test("service acceptance denies forbidden calls before admission and Container f
   let admitted = 0;
   let forwarded = 0;
   const service = { subject: "service-client@clients", principal_key: "s".repeat(32), enabled: true };
-  const response = await handleGatewayRequest(mcpRequest({ method: "tools/call", params: { name: "add_approved_items" } }), {
+  const response = await handleGatewayRequest(mcpRequest({ method: "tools/call", params: { name: "submit_product_review" } }), {
     ...env,
     NEMLIG_MCP_SERVICE_ACCEPTANCE_ENABLED: "true",
     NEMLIG_MCP_SERVICE_CLIENT_ID: "service-client",
@@ -217,7 +217,7 @@ test("service acceptance permits retained read-only tools and rejects the legacy
     forward: async () => { forwarded += 1; return new Response("ok"); },
   };
   const discovery = await handleGatewayRequest(mcpRequest({ method: "server/discover" }), serviceEnv, dependencies);
-  const details = await handleGatewayRequest(mcpRequest({ method: "tools/call", params: { name: "get_grocery_details" } }), serviceEnv, dependencies);
+  const details = await handleGatewayRequest(mcpRequest({ method: "tools/call", params: { name: "show_my_basket" } }), serviceEnv, dependencies);
   const legacy = await handleGatewayRequest(mcpRequest({ method: "tools/call", params: { name: "choose_products_visually" } }), serviceEnv, dependencies);
   assert.equal(discovery.status, 200);
   assert.equal(details.status, 200);

@@ -46,9 +46,9 @@ const formatProduct = (view: ProductView): string => {
   ].filter(Boolean).join("; ");
   const category = [product.category, product.subcategory].filter((value) => value?.trim()).join(" / ");
   const context = view.context === "basket"
-    ? `; basket quantity ${formatNumber(view.basket?.quantity) ?? "unknown"}; line total ${formatMoney(view.basket?.line_total)}`
+    ? `; Nemlig basket quantity ${formatNumber(view.basket?.quantity) ?? "unknown"}; line total ${formatMoney(view.basket?.line_total)}`
     : view.context === "review"
-      ? `; selection quantity ${formatNumber(view.review?.quantity) ?? "unknown"}; line total ${formatMoney(view.review?.line_total)}; approved ${view.review?.approved === true ? "yes" : "no"}`
+      ? `; draft list quantity ${formatNumber(view.review?.quantity) ?? "unknown"}; line total ${formatMoney(view.review?.line_total)}; approved ${view.review?.approved === true ? "yes" : "no"}`
       : "";
   const details = product.details?.length
     ? `; ${product.details.map(({ key, value }) => `${key}: ${value}`).join("; ")}`
@@ -71,7 +71,7 @@ export function renderProductViewerHtml(): string {
 <html lang="en">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Your Nemlig selection</title>
+<title>Your draft list</title>
 <style>
 :root { color-scheme: light dark; font: 14px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; --line: #e7eae5; --accent: #426744; --soft: #f1f5ee; --muted: #6b736b; }
 * { box-sizing: border-box; }
@@ -119,10 +119,10 @@ footer > button.quiet { background: transparent; color: var(--muted); font-size:
 </style>
 </head>
 <body><main aria-labelledby="title">
-<nav id="navigation" aria-label="Selection destinations" hidden></nav>
-<h1 id="title" tabindex="-1">Your Nemlig selection</h1>
+<nav id="navigation" aria-label="Draft list destinations" hidden></nav>
+<h1 id="title" tabindex="-1">Your draft list</h1>
 <p id="intro" class="muted">Inspect products here or continue in conversation.</p>
-<p id="status" role="status" aria-live="polite">Loading your Nemlig selection…</p>
+<p id="status" role="status" aria-live="polite">Loading your draft list…</p>
 <div id="context"></div>
 <section id="products" aria-label="Product results"></section>
 <footer id="actions" hidden></footer>
@@ -185,13 +185,13 @@ footer > button.quiet { background: transparent; color: var(--muted); font-size:
       : { review_id: review.review_id, revision: review.revision, action };
     if (!bridgeReady && (!window.openai || typeof window.openai.callTool !== "function")) {
       const descriptions = {
-        restart: "start a new local selection of these products", show: "refresh your local selection", end: "discard this temporary local selection", revisit: "move selected products back to To decide", accept: "accept the selected products into Ready",
+        restart: "start a new local draft list of these products", show: "refresh your local draft list", end: "discard this temporary local draft list", revisit: "move selected products back to To decide", accept: "accept the selected products into Ready",
         remove: "remove the selected products locally", quantity: "change this product's local quantity",
         alternatives: "find alternatives for this product", replace: "use the selected alternative",
         navigate: "open " + (action.destination === "ready" ? "Ready" : action.destination === "alternatives" ? "the current alternatives" : "To decide"),
         prepare_submission: "prepare Ready products before submitting them to Nemlig"
       };
-      await followUp("Please use " + tool + " with " + JSON.stringify(args) + ". This changes only the local selection, not the real Nemlig basket.",
+      await followUp("Please use " + tool + " with " + JSON.stringify(args) + ". This changes only the local draft list, not the real Nemlig basket.",
         "Continue in conversation: ask to " + descriptions[action.kind] + ". No change has been confirmed here.");
       return false;
     }
@@ -202,7 +202,7 @@ footer > button.quiet { background: transparent; color: var(--muted); font-size:
     try {
       const result = await callTool(tool, args);
       if (result && result.isError) throw new Error((result.content || []).filter(c => c.type === "text").map(c => c.text).join(" ") || "Update failed.");
-      if (!receive(result, true)) throw new Error("No updated selection was returned. Refresh before trying again.");
+      if (!receive(result, true)) throw new Error("No updated draft list was returned. Refresh before trying again.");
       applied = true;
       if (action.kind === "prepare_submission" && review?.submission?.status === "prepared") {
         confirmingSubmit = true; renderSubmission();
@@ -213,23 +213,23 @@ footer > button.quiet { background: transparent; color: var(--muted); font-size:
     } catch (error) {
       const message = error && error.message ? error.message : "Update failed.";
       active = false; selected = new Set(); replacement = undefined; confirmingClear = false; confirmingSubmit = false;
-      if (/Product review unavailable|No active shopping review|revision is stale/i.test(message)) {
+      if (/Draft list unavailable|No active draft list|revision is stale/i.test(message)) {
         // Read only: recover the active conversation, never replay the failed edit.
         try {
           const current = await callTool("update_product_review", { action: { kind: "show" } });
-          if (!receive(current, true)) throw new Error("Could not refresh the local selection.");
-          status.textContent = unavailable ? "" : "Loaded the current selection. Your last action was not applied; choose again.";
+          if (!receive(current, true)) throw new Error("Could not refresh the local draft list.");
+          status.textContent = unavailable ? "" : "Loaded the current draft list. Your last action was not applied; choose again.";
         } catch {
-          status.textContent = "We could not load the current selection. Open the current selection again when the connection is available.";
+          status.textContent = "We could not load the current draft list. Open the current draft list again when the connection is available.";
         }
-      } else status.textContent = "We could not confirm this action. Open the current selection to check its state before trying again.";
+      } else status.textContent = "We could not confirm this action. Open the current draft list to check its state before trying again.";
     } finally {
       busy = false;
       if (action.kind === "quantity") {
         pendingQuantities.delete(action.product_id);
         if (!applied) pendingQuantities.clear();
       }
-      // Preserve selection-specific disabled states by rendering the last confirmed snapshot.
+      // Preserve disabled states by rendering the last confirmed snapshot.
       const message = status.textContent;
       renderReview();
       status.textContent = message;
@@ -263,7 +263,7 @@ footer > button.quiet { background: transparent; color: var(--muted); font-size:
   const update = async action => {
     if (action.kind === "quantity") { queueQuantity(action.product_id, action.quantity); return true; }
     if (!await flushQuantities()) {
-      status.textContent = "The quantity change was not saved, so this action was not applied. Check the current selection before continuing.";
+      status.textContent = "The quantity change was not saved, so this action was not applied. Check the current draft list before continuing.";
       return false;
     }
     return updateNow(action);
@@ -271,7 +271,7 @@ footer > button.quiet { background: transparent; color: var(--muted); font-size:
   const submitPrepared = async () => {
     if (!active || submitBlocked || !confirmingSubmit) return;
     if (!await flushQuantities()) {
-      status.textContent = "The quantity change was not saved, so nothing was sent to Nemlig. Check the current selection.";
+      status.textContent = "The quantity change was not saved, so nothing was sent to Nemlig. Check the current draft list.";
       return;
     }
     const submission = review && review.submission;
@@ -358,7 +358,7 @@ footer > button.quiet { background: transparent; color: var(--muted); font-size:
         const quantities = view.context === "basket" ? view.basket : view.review;
         const lineQuantity = item ? displayQuantity(item) : quantities && quantities.quantity;
         const lineTotal = item && typeof product.price === "number" ? lineQuantity * product.price : quantities && quantities.line_total;
-        body.append(el("p", (view.context === "basket" ? "Basket quantity: " : "Selection quantity: ") + (lineQuantity || "Unknown") + " · Line total: " + money(lineTotal)));
+        body.append(el("p", (view.context === "basket" ? "Nemlig basket quantity: " : "Draft list quantity: ") + (lineQuantity || "Unknown") + " · Line total: " + money(lineTotal)));
       }
     }
     if (item && mode !== "alternative") {
@@ -385,7 +385,7 @@ footer > button.quiet { background: transparent; color: var(--muted); font-size:
     footer.replaceChildren(); footer.hidden = !review; if (!review) return;
     if (review.destination === "needs-review") {
       const available = review.items.filter(i => i.state === "needs-review" && canUse(i.view));
-      if (available.length > 1) footer.append(button(selected.size === available.length ? "Clear selection" : "Select all", () => {
+      if (available.length > 1) footer.append(button(selected.size === available.length ? "Clear selected" : "Select all", () => {
         selected = selected.size === available.length ? new Set() : new Set(available.map(i => i.product_id)); renderReview();
       }));
       if (selected.size) {
@@ -404,7 +404,7 @@ footer > button.quiet { background: transparent; color: var(--muted); font-size:
       if (items.length) {
         const clear = button("Remove all Ready products", () => { confirmingClear = true; renderFooter(); });
         clear.className = "quiet"; footer.append(clear);
-        if (confirmingClear) footer.append(el("p", "Remove " + items.length + " Ready products from this selection? Your real Nemlig basket will not change."),
+        if (confirmingClear) footer.append(el("p", "Remove " + items.length + " Ready products from this draft list? Your real Nemlig basket will not change."),
           button("Remove Ready products", () => void update({ kind: "remove", product_ids: items.map(i => i.product_id) })),
           button("Cancel", () => { confirmingClear = false; renderFooter(); }));
       }
@@ -414,10 +414,10 @@ footer > button.quiet { background: transparent; color: var(--muted); font-size:
       replace.disabled = busy || replacement === undefined; footer.append(replace);
       footer.append(button("Back to To decide", () => void update({ kind: "navigate", destination: "needs-review" })));
     }
-    const refresh = button("Refresh selection", () => void update({ kind: "show" })); refresh.className = "quiet";
-    const finish = button("Clear selection and start over", () => {
-      footer.replaceChildren(el("p", "Discard this entire local selection? Your real Nemlig basket will not change."),
-        button("Discard selection", () => void update({ kind: "end" })), button("Keep shopping", renderFooter));
+    const refresh = button("Refresh draft list", () => void update({ kind: "show" })); refresh.className = "quiet";
+    const finish = button("Clear draft list and start over", () => {
+      footer.replaceChildren(el("p", "Discard this entire local draft list? Your real Nemlig basket will not change."),
+        button("Discard draft list", () => void update({ kind: "end" })), button("Keep shopping", renderFooter));
     }); finish.className = "quiet";
     footer.append(refresh, finish);
   };
@@ -435,8 +435,8 @@ footer > button.quiet { background: transparent; color: var(--muted); font-size:
         submissionRoot.append(el("p", "Add " + (lines.length === 1 ? "this product" : "these " + lines.length + " products") + " to your real Nemlig basket for " + money(submission.review.expected_products_price) + "? Only the shown product quantities will be set."));
         submissionRoot.append(button("Cancel", () => { confirmingSubmit = false; renderSubmission(); }), button("Add to Nemlig", () => void submitPrepared(), true));
       } else submissionRoot.append(button("Review exact change", () => { confirmingSubmit = true; renderSubmission(); }, true));
-      submissionRoot.append(button("Inspect in conversation", () => void followUp("Please present the exact prepared Nemlig basket change for selection " + review.review_id + ", revision " + review.revision + ", submission " + submission.submission_id + ", and ask for my explicit approval. Do not submit yet.")));
-    } else submissionRoot.append(el("p", submission.status === "submitted" ? "Nemlig readback verified. Your selection remains available, but this exact submission cannot be repeated." : "The submission outcome is uncertain. Inspect the actual Nemlig basket; do not retry automatically."));
+      submissionRoot.append(button("Inspect in conversation", () => void followUp("Please present the exact prepared Nemlig basket change for draft list " + review.review_id + ", revision " + review.revision + ", submission " + submission.submission_id + ", and ask for my explicit approval. Do not submit yet.")));
+    } else submissionRoot.append(el("p", submission.status === "submitted" ? "Nemlig readback verified. Your draft list remains available, but this exact submission cannot be repeated." : "The submission outcome is uncertain. Inspect the actual Nemlig basket; do not retry automatically."));
   };
   const renderEmpty = () => {
     nav.hidden = true; context.replaceChildren(); root.replaceChildren(); submissionRoot.hidden = true; footer.hidden = true;
@@ -444,9 +444,9 @@ footer > button.quiet { background: transparent; color: var(--muted); font-size:
     intro.textContent = "Ask Nemlig Assistant what you need. We’ll find products and bring them here for you to decide.";
     const panel = el("div", undefined, "empty-state"); panel.append(el("div", "🛒", "icon"));
     for (const [label, prompt] of [
-      ["Plan groceries for the week", "Help me plan groceries for the week and find exact Nemlig products for my selection."],
-      ["Find ingredients for dinner", "Help me find ingredients for dinner and bring exact Nemlig products into my selection."],
-      ["Find products from my shopping list", "Help me find products from my shopping list and start a new Nemlig selection."],
+      ["Plan groceries for the week", "Help me plan groceries for the week and find exact Nemlig products for my draft list."],
+      ["Find ingredients for dinner", "Help me find ingredients for dinner and bring exact Nemlig products into my draft list."],
+      ["Find products from my shopping list", "Help me find products from my shopping list and start a new Nemlig draft list."],
     ]) panel.append(button(label, () => void followUp(prompt, "Ask Nemlig Assistant in conversation: " + label + ".")));
     root.append(panel);
   };
@@ -454,23 +454,23 @@ footer > button.quiet { background: transparent; color: var(--muted); font-size:
     if (!review) { if (received && active) renderEmpty(); return; }
     if (!active) {
       nav.hidden = true; context.replaceChildren(); root.replaceChildren(); submissionRoot.hidden = true;
-      title.textContent = "Your Nemlig selection";
-      intro.textContent = "Open the current selection to continue shopping.";
+      title.textContent = "Your draft list";
+      intro.textContent = "Open the current draft list to continue shopping.";
       footer.hidden = false;
-      footer.replaceChildren(button("Open current selection", () => void update({ kind: "show" }), true));
+      footer.replaceChildren(button("Open current draft list", () => void update({ kind: "show" }), true));
       return;
     }
     if (unavailable) {
       nav.hidden = true; context.replaceChildren(); root.replaceChildren(); submissionRoot.hidden = true;
-      title.textContent = "Start a new selection";
-      intro.textContent = "This temporary selection is no longer available. Refresh can find this conversation’s current selection.";
+      title.textContent = "Start a new draft list";
+      intro.textContent = "This temporary draft list is no longer available. Refresh can find this conversation’s current draft list.";
       footer.hidden = false;
-      footer.replaceChildren(button("Refresh selection", () => void update({ kind: "show" })));
+      footer.replaceChildren(button("Refresh draft list", () => void update({ kind: "show" })));
       if (review.submission && ["submitted", "uncertain"].includes(review.submission.status)) {
         root.append(el("p", "Check your actual Nemlig basket in conversation before starting again. A previous submission may have changed it."));
       } else if (review.items.length) {
-        root.append(el("p", "Start again with these products and quantities. You will need to choose them again; previous selections and submission approval will not be restored."));
-        footer.append(button("Start new selection", () => void update({ kind: "restart" }), true));
+        root.append(el("p", "Start again with these products and quantities. You will need to choose them again; previous draft lists and submission approval will not be restored."));
+        footer.append(button("Start new draft list", () => void update({ kind: "restart" }), true));
       }
       return;
     }
@@ -480,7 +480,7 @@ footer > button.quiet { background: transparent; color: var(--muted); font-size:
       title.textContent = "Added to Nemlig";
       intro.textContent = "Your exact submission was verified against the real Nemlig basket.";
       renderSubmission(); submissionRoot.hidden = false;
-      root.append(button("Continue with selection", () => { showAfterSuccess = true; renderReview(); }));
+      root.append(button("Continue with draft list", () => { showAfterSuccess = true; renderReview(); }));
       return;
     }
     nav.hidden = false; nav.replaceChildren(); context.replaceChildren(); root.replaceChildren();
@@ -500,14 +500,14 @@ footer > button.quiet { background: transparent; color: var(--muted); font-size:
       form.addEventListener("submit", event => { event.preventDefault(); if (form.reportValidity()) void update({ kind: "alternatives", product_id: target.product_id, query: query.value }); });
       context.append(form);
       alternatives.views.forEach(view => root.append(row(view, undefined, "alternative")));
-      if (!alternatives.views.length) root.append(el("p", "No new alternatives for this selection. Search for another product or go back to To decide."));
+      if (!alternatives.views.length) root.append(el("p", "No new alternatives for this draft list. Search for another product or go back to To decide."));
     } else {
       title.textContent = review.destination === "ready" ? "Ready" : "To decide";
       if (review.destination === "needs-review" && review.alternatives) context.append(button("Return to alternatives for " + nameOf(review.items.find(i => i.product_id === review.alternatives.product_id)), () => void update({ kind: "navigate", destination: "alternatives" })));
       const items = review.items.filter(i => i.state === review.destination);
       items.forEach(item => root.append(row(item.view, item, item.state === "needs-review" ? "select" : "ready")));
       if (!items.length) {
-        root.append(el("p", review.destination === "ready" ? "No products are Ready yet. Choose exact products in To decide." : "Everything in this selection is Ready."));
+        root.append(el("p", review.destination === "ready" ? "No products are Ready yet. Choose exact products in To decide." : "Everything in this draft list is Ready."));
         root.append(button(review.destination === "ready" ? "Go to To decide" : "Go to Ready", () => void update({ kind: "navigate", destination: review.destination === "ready" ? "needs-review" : "ready" }), true));
       }
     }
@@ -518,7 +518,7 @@ footer > button.quiet { background: transparent; color: var(--muted); font-size:
     if (payload && payload.isError) {
       received = true;
       active = false; selected = new Set(); replacement = undefined; renderReview();
-      status.textContent = "Could not load the selection. Reconnect Nemlig or try again in conversation.";
+      status.textContent = "Could not load the draft list. Reconnect Nemlig or try again in conversation.";
       return false;
     }
     const value = payload && payload.structuredContent || payload;
@@ -536,7 +536,7 @@ footer > button.quiet { background: transparent; color: var(--muted); font-size:
     }
     if (value.ended) {
       received = true; active = true; unavailable = false; review = undefined; selected = new Set(); expanded = new Set(); factsExpanded = new Set(); confirmingClear = false; confirmingSubmit = false;
-      renderEmpty(); status.textContent = "Your local selection was discarded. Nothing changed in Nemlig."; return true;
+      renderEmpty(); status.textContent = "Your local draft list was discarded. Nothing changed in Nemlig."; return true;
     }
     if (value.review && Array.isArray(value.review.items) && value.review.review_id) {
       const sameReview = review && review.review_id === value.review.review_id;
@@ -582,7 +582,7 @@ footer > button.quiet { background: transparent; color: var(--muted); font-size:
     if (message.method === "ui/notifications/tool-result") {
       const payload = message.params && (message.params.result || message.params);
       if (!receive(payload) && !(payload && payload.isError)) {
-        received = true; status.textContent = "No current selection was returned. Ask to show your current Nemlig selection.";
+        received = true; status.textContent = "No current draft list was returned. Ask to show your current Nemlig draft list.";
       }
     }
     if (message.method === "ui/notifications/tool-cancelled") {
@@ -604,9 +604,9 @@ footer > button.quiet { background: transparent; color: var(--muted); font-size:
           if (height !== lastHeight) { lastHeight = height; notify("ui/notifications/size-changed", { height }); }
         }).observe(document.querySelector("main"));
       }
-    }).catch(() => { if (!received) status.textContent = "The selection could not connect. Continue in conversation or reopen your current selection."; });
+    }).catch(() => { if (!received) status.textContent = "The draft list could not connect. Continue in conversation or reopen your current draft list."; });
   }
-  setTimeout(() => { if (!received) status.textContent = "Products have not arrived. Ask to show your current selection, or reconnect Nemlig if needed."; }, 25000);
+  setTimeout(() => { if (!received) status.textContent = "Products have not arrived. Ask to show your current draft list, or reconnect Nemlig if needed."; }, 25000);
 })();
 </script></body></html>`;
 }
