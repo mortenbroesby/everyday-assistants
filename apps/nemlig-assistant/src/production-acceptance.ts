@@ -3,6 +3,7 @@ import { isDeepStrictEqual } from "node:util";
 import { serviceAcceptanceResourceInventory, serviceAcceptanceToolInventory } from "./mcp.js";
 import { PRODUCT_VIEWER_MIME_TYPE, PRODUCT_VIEWER_RESOURCE_METADATA, PRODUCT_VIEWER_RESOURCE_URI, renderProductViewerHtml } from "./product-viewer.js";
 import { RETIRED_PRODUCT_VIEWER_RESOURCE_URIS } from "./product-viewer-identity.js";
+import { NEMLIG_CODENAME, NEMLIG_VERSION } from "./runtime.js";
 
 interface ToolResult {
   isError?: boolean;
@@ -10,7 +11,7 @@ interface ToolResult {
 }
 
 export const productionToolInventory = {
-  readOnly: ["find_groceries", "check_nemlig_connection", "show_my_basket"],
+  readOnly: ["find_groceries", "check_nemlig_connection", "get_profile", "show_my_basket"],
   localState: ["start_product_review", "update_product_review"],
   externalState: ["submit_product_review"],
 } as const;
@@ -43,6 +44,11 @@ interface Basket {
   delivery_price?: number;
   number_of_products?: number;
   delivery_time?: string;
+}
+
+interface Profile {
+  id?: string;
+  release?: { version?: string; codename?: string };
 }
 
 const content = <T>(result: ToolResult, operation: string): T => {
@@ -224,6 +230,10 @@ export async function verifyReadOnlyProductionFeatures(
     exercised.push(name);
     return content<T>(result, name);
   };
+
+  const profile = await call<Profile>("get_profile");
+  assert.ok(profile.id, "get_profile returned no authenticated profile");
+  assert.deepEqual(profile.release, { version: NEMLIG_VERSION, codename: NEMLIG_CODENAME }, "get_profile release identity drifted");
 
   const searched = await call<{ result?: Array<{ id?: number }> }>("find_groceries", { search_term: "banan", result_count: 3 });
   const productIds = (searched.result ?? []).flatMap(({ id }) => typeof id === "number" && Number.isInteger(id) && id > 0 ? [id] : []);
