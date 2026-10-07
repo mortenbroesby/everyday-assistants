@@ -1393,6 +1393,24 @@ test("waits for candidate digest and numeric application version without disable
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
+test("waits for an old running Container to be replaced before service acceptance", async () => {
+  const { deps, calls, root } = await fixture({ enabledInstanceRows: [
+    [{ id: "instance", name: "nemlig-production", state: "running", version: 25 }],
+    [{ id: "instance", name: "nemlig-production", state: "running", version: 26 }],
+  ] });
+  deps.acceptanceMode = "service";
+  deps.env.NEMLIG_CI_ACCEPTANCE_READY = "true";
+  deps.env.NEMLIG_MCP_SERVICE_CLIENT_ID = "service-client";
+  deps.issueServiceToken = async () => "machine-token";
+  try {
+    assert.equal((await deployProduction(commit, deps)).outcome, "success");
+    const firstInstanceRead = calls.findIndex(({ args }) => args.includes("containers") && args.includes("instances"));
+    const firstServiceAcceptance = calls.findIndex(({ args }) => args[0] === "production:test:features");
+    assert.ok(firstInstanceRead >= 0);
+    assert.ok(firstServiceAcceptance > firstInstanceRead);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
 test("accepts an unchanged Container when the candidate digest matches the starting image", async () => {
   const { deps, root } = await fixture({ candidateMatchesStarting: true });
   try {
@@ -1408,8 +1426,8 @@ test("accepts the short-lived Container becoming inactive after service acceptan
   }]] });
   try {
     assert.equal((await deployProduction(commit, deps)).outcome, "success");
-    assert.equal(calls.some(({ args }) => args.includes("containers") && args.includes("instances")), false,
-      "post-request instance liveness is not a release acceptance condition");
+    assert.equal(calls.some(({ args }) => args.includes("containers") && args.includes("instances")), true,
+      "pre-acceptance convergence permits an inactive instance");
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
