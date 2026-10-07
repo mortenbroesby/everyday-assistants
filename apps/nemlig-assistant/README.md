@@ -177,7 +177,9 @@ pnpm --filter nemlig-assistant ui:mockup
 ```
 
 It builds the viewer and uses the same synthetic MCP host as the browser smoke
-to write `to-decide.png`, `product-expanded.png`, and `ready.png` beneath
+to write `to-decide.png`, `product-expanded.png`, `ready.png`,
+`alternatives.png`, `confirmation.png`, `success.png`, `empty.png`, and
+`unavailable.png` beneath
 `apps/nemlig-assistant/.codex/ui-mockups/`. These images are local and ignored:
 they contain only fixture products, make no external requests, and never access
 the real Nemlig basket. This is a design-review bootstrap, not ChatGPT-host

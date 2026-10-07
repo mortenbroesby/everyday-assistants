@@ -165,6 +165,8 @@ try {
   assert.equal(await milkDisclosure.getAttribute("aria-expanded"), "false", "a different review inherited the previous card disclosure state");
   assert.equal(await milkFact.evaluate((node: HTMLDetailsElement) => node.open), false, "a different review inherited the previous nested fact state");
   await milkCard.getByRole("button", { name: "Choose alternative" }).click();
+  await frame.getByRole("heading", { name: "Current product" }).waitFor();
+  await capture("alternatives");
   const alternativesQuery = frame.getByRole("searchbox", { name: "Search for more products" });
   assert.equal(await alternativesQuery.inputValue(), "Synthetic milk", "the current product search query was not shown");
   await alternativesQuery.fill("custom milk query");
@@ -257,6 +259,7 @@ try {
   await frame.getByRole("heading", { name: "Confirm the exact Nemlig change" }).waitFor();
   await frame.getByText("2 × Synthetic milk").waitFor();
   await frame.getByText("3 × Synthetic alternative").waitFor();
+  await capture("confirmation");
   await frame.getByRole("button", { name: "Review exact change" }).click();
   await frame.getByRole("button", { name: "Cancel" }).click();
   assert.equal(await page.evaluate(() => window.submissionAttempts), 0, "opening and cancelling exact confirmation submitted a review");
@@ -280,6 +283,7 @@ try {
   const callsBeforeVerifiedCompletion = await page.evaluate(() => window.calls.length);
   await page.evaluate(() => window.sendSubmitted());
   await frame.getByText("Nemlig confirmed this Draft list was added successfully.").waitFor();
+  await capture("success");
   assert.equal(await page.evaluate((before) => window.calls.slice(before).filter((call) => call.name === "submit_product_review").length, callsBeforeVerifiedCompletion), 0, "verified completion replayed submission");
   await page.evaluate(() => window.sendMalformed());
   await frame.getByRole("alert").waitFor();
@@ -293,9 +297,11 @@ try {
   assert.equal(await page.evaluate(() => window.submissionAttempts), 1, "continuing a submitted Draft list retried the old submission");
   await page.evaluate(() => window.sendEnded());
   await frame.getByText("Your local Draft list was discarded.").waitFor();
+  await capture("empty");
   assert.equal(await frame.locator('input[type="checkbox"]').count(), 0, "authoritative ended notification left active controls");
   await page.evaluate(() => window.sendUnavailable());
   await frame.getByRole("button", { name: "Refresh Draft list" }).waitFor();
+  await capture("unavailable");
   assert.equal(await frame.getByRole("button", { name: "Start new Draft list" }).count(), 0, "discarded review snapshot was resurrected after an unavailable notification");
   assert.equal(await page.evaluate(() => window.providerWrites), 0, "synthetic browser smoke reached a provider write");
   assert.deepEqual(externalRequests, [], "built UI requested a network resource outside the synthetic host");
