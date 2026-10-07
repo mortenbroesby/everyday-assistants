@@ -952,10 +952,13 @@ test("enabled acceptance retries while the Container service converges", async (
 });
 
 test("service release waits through previous backend versions before accepting the candidate", async () => {
-  const { deps, calls, root } = await fixture({ staleRuntimeReads: 14, enabledInstanceRows: [
+  const { deps, calls, root } = await fixture({ staleRuntimeReads: 5, enabledInstanceRows: [
     [{ id: "instance", name: "nemlig-production", state: "inactive", version: null }],
     [{ id: "instance", name: "nemlig-production", state: "running", version: 26 }],
   ] });
+  let now = 0;
+  deps.now = () => new Date(now);
+  deps.sleep = async (milliseconds) => { now += milliseconds; };
   deps.acceptanceMode = "service";
   deps.env = { CLOUDFLARE_ACCOUNT_ID: accountId, CLOUDFLARE_API_TOKEN: "test-cloudflare-token", NEMLIG_MCP_SERVICE_CLIENT_ID: "service-client", NEMLIG_MCP_SERVICE_CLIENT_SECRET: "machine-secret", NEMLIG_CI_ACCEPTANCE_READY: "true" };
   deps.issueServiceToken = async () => "machine-token";
@@ -963,8 +966,9 @@ test("service release waits through previous backend versions before accepting t
     const report = await deployProduction(commit, deps);
     assert.equal(report.outcome, "success");
     const acceptanceCalls = calls.filter(({ args }) => args[0] === "production:test:features");
-    assert.equal(acceptanceCalls.filter(({ args }) => args.includes("--initialize-only")).length, 15);
+    assert.equal(acceptanceCalls.filter(({ args }) => args.includes("--initialize-only")).length, 6);
     assert.equal(acceptanceCalls.filter(({ args }) => !args.includes("--initialize-only")).length, 1);
+    assert.ok(now > 60_000, "candidate startup remains bounded but is not cut off at one minute");
     const initializationIndex = calls.findIndex(({ args }) => args[0] === "production:test:features" && args.includes("--initialize-only"));
     const candidateInstanceIndex = calls.findIndex(({ args }, index) => index > initializationIndex && args.includes("containers") && args.includes("instances"));
     const fixtureIndex = calls.findIndex(({ args }) => args[0] === "production:test:features" && !args.includes("--initialize-only"));
