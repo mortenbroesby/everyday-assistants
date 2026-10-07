@@ -298,15 +298,16 @@ not a fresh real-family Nemlig or ChatGPT acceptance claim.
    deployed descendant stops before provider mutation. It also reads the shared
    production lease: a held lease reports `blocked_by_existing_lease` with the
    candidate and lease head. For a queued trusted `main` candidate only, the
-   workflow may inspect and finalize that predecessor when its unexpired
-   `nemlig-production-release` artifact, completed GitHub runner, saved journal,
-   terminal acceptance, exact Worker/configuration/image/application readback,
-   and lease head all match. It then reads back the deleted remote ref, repeats
-   its own exact-source preflight, and acquires a fresh lease before deployment.
-   Missing evidence, pending acceptance, drift, or an unknown mutation leave
-   the predecessor lease intact and the candidate blocked—there is no automatic
-   rollout, restore, rollback, or retry. Atomic lease acquisition remains the
-   authoritative race check immediately before mutation.
+   same protected deploy job may finalize a predecessor only when its exact
+   recorded GitHub run attempt is complete, its unexpired
+   `nemlig-production-release` artifact contains the same journal as the lease,
+   and terminal acceptance plus exact Worker/configuration/image/application
+   readback match that journal and lease head. It reads back lease absence,
+   repeats its own exact-source preflight, and acquires a fresh lease before
+   deployment. Missing evidence, pending acceptance, drift, or an unknown
+   mutation leave the predecessor lease intact and the candidate blocked—there
+   is no automatic rollout, restore, rollback, or retry. Atomic lease
+   acquisition remains the authoritative race check immediately before mutation.
 3. The protected job builds and deploys the exact SHA, records the bounded
    report and journal, runs the configured edge/service acceptance, and
    automatically finalizes a known terminal routine run after the artifact is

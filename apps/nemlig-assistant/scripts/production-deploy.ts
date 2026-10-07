@@ -946,6 +946,22 @@ const expectedRecovery = (journal: DeploymentJournal): RecoveryTarget | undefine
   return undefined;
 };
 
+const packageVersionAtRevision = async (deps: DeployDependencies, revision: string): Promise<string> => {
+  let exactRevision = revision;
+  if (!fullSha.test(exactRevision)) {
+    try { exactRevision = (await runAt(deps, deps.repoRoot, "git", ["rev-parse", "--verify", `${revision}^{commit}`])).trim(); }
+    catch { return fail("recovery_source_invalid"); }
+  }
+  if (!fullSha.test(exactRevision)) return fail("recovery_source_invalid");
+  let manifest: Record<string, unknown> | undefined;
+  try {
+    manifest = object(json(await runAt(deps, deps.repoRoot, "git", ["show", `${exactRevision}:apps/nemlig-assistant/package.json`]), "recovery_source_invalid"));
+  } catch { return fail("recovery_source_invalid"); }
+  const version = manifest?.version;
+  if (typeof version !== "string" || !/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/u.test(version)) return fail("recovery_source_invalid");
+  return version;
+};
+
 /** Exact Worker and Container readback; terminal acceptance can make lifecycle rereads redundant. */
 const verifyRecoveryTarget = async (
   deps: DeployDependencies,
@@ -1539,6 +1555,7 @@ const releaseDeploymentLeases = async (
 ): Promise<boolean> => {
   if (await readRemoteHead(deps, repository) !== remoteHead) return false;
   await runAt(deps, deps.repoRoot, "gh", ["api", "--method", "DELETE", `repos/${repository}/git/refs/heads/codex-lock/nemlig-production`]);
+  if (await readRemoteHead(deps, repository) !== undefined) return false;
   let lock = localLock;
   if (!lock) {
     const common = deps.stateRoot ?? await runAt(deps, deps.repoRoot, "git", ["rev-parse", "--git-common-dir"]);
@@ -1893,6 +1910,7 @@ export async function deployProduction(commit: string, inputDeps: DeployDependen
   let providerMutation = false;
   let mutationUncertain = false;
   let starting: VersionState | undefined;
+  let startingServiceVersion: string | undefined;
   let startingContainer: ContainerState | undefined;
   let configured: EffectiveConfig | undefined;
   let repository = "";
@@ -1940,6 +1958,7 @@ export async function deployProduction(commit: string, inputDeps: DeployDependen
       if (!clientId || configured.vars.get("NEMLIG_MCP_SERVICE_ACCEPTANCE_ENABLED") !== "true"
         || configured.vars.get("NEMLIG_MCP_SERVICE_CLIENT_ID") !== clientId) fail("service_acceptance_not_ready");
     }
+    startingServiceVersion = service ? await packageVersionAtRevision(deps, starting.revision) : undefined;
     startingContainer = await readContainer(deps);
     journal.startingVersion = starting.id;
     journal.startingRevision = starting.revision;
@@ -2156,10 +2175,15 @@ export async function deployProduction(commit: string, inputDeps: DeployDependen
           if (service) {
             await retryAcceptance(deps, ["production:test:features", "--service", "--initialize-only"], {
               NEMLIG_MCP_SERVICE_ACCESS_TOKEN: serviceToken, NEMLIG_EXPECTED_REVISION: starting.revision,
+              NEMLIG_EXPECTED_SERVICE_VERSION: startingServiceVersion!,
             }, 1, "read_only", "service", "service_fixture_acceptance_failed", 120_000, 1);
           }
           await retryAcceptance(deps, ["production:test:features", ...(service ? ["--service"] : [])],
-            service ? { NEMLIG_MCP_SERVICE_ACCESS_TOKEN: serviceToken, NEMLIG_EXPECTED_REVISION: starting.revision } : {},
+            service ? {
+              NEMLIG_MCP_SERVICE_ACCESS_TOKEN: serviceToken,
+              NEMLIG_EXPECTED_REVISION: starting.revision,
+              NEMLIG_EXPECTED_SERVICE_VERSION: startingServiceVersion!,
+            } : {},
             1, "read_only", service ? "service" : "live-user",
             service ? "service_fixture_acceptance_failed" : "authenticated_read_only_acceptance_failed",
             service ? 120_000 : undefined);

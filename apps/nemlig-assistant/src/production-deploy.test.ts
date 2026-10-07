@@ -141,7 +141,10 @@ const recoveryDeps = (journal: Record<string, unknown>, currentVersion: string, 
       remoteHead = JSON.parse(runOptions?.input ?? "{}").sha;
       return JSON.stringify({ object: { sha: remoteHead } });
     }
-    if (path.includes("git/ref/")) return remoteHead;
+    if (path.includes("git/ref/")) {
+      if (!remoteHead) throw Object.assign(new Error("not found"), { status: 404 });
+      return remoteHead;
+    }
     if (path.includes("git/commits/")) return JSON.stringify({ tree: { sha: tree }, parents: remoteParent ? [{ sha: remoteParent }] : [] });
     if (path.includes("git/trees/")) return JSON.stringify({ tree: [{ path: "journal.json", type: "blob", mode: "100644", sha: blob }] });
     if (path.includes("git/blobs/")) return JSON.stringify({ encoding: "base64", content: Buffer.from(currentJournal).toString("base64") });
@@ -289,6 +292,7 @@ async function fixture(options: {
   driftBeforeEnable?: boolean;
   failDisabledDeploy?: boolean;
   failFeatures?: boolean;
+  failRestoredFeatures?: boolean;
   failCandidateFeatures?: boolean;
   failFeaturesOnce?: boolean;
   staleRuntimeReads?: number;
@@ -302,6 +306,7 @@ async function fixture(options: {
   disabledApplicationIdDrift?: boolean;
   restoredInstanceRows?: unknown[];
   rollbackApplicationVersionDrift?: boolean;
+  startingServiceVersion?: string;
   enabledInstanceRows?: unknown[][];
   candidateInstancesNeverStart?: boolean;
   postProofWorkerDrift?: boolean;
@@ -439,6 +444,9 @@ async function fixture(options: {
       if (options.malformedManifest) return JSON.stringify({ Descriptor: { digest: "latest" } });
       return JSON.stringify({ Descriptor: { digest: options.candidateMatchesStarting ? image : candidateImage } });
     }
+    if (commandName === "git" && args[0] === "rev-parse" && args[1] === "--verify" && args[2]?.endsWith("^{commit}")) {
+      return args[2].slice(0, -"^{commit}".length).length === 7 ? previousCommit : args[2].slice(0, -"^{commit}".length);
+    }
     if (commandName === "git" && args[0] === "rev-parse" && args[1] === "HEAD") return options.head ?? commit;
     if (commandName === "git" && args[0] === "rev-parse" && args[1] === "origin/main") {
       remoteReads += 1;
@@ -451,6 +459,9 @@ async function fixture(options: {
         if (options.recoveryAncestor === false || (options.remoteAfterPreflight && sourceAncestryReads > 1)) throw new Error("candidate is not on main");
       }
       if (args[3] === commit && options.deployedRevisionNotAncestor) throw new Error("deployed revision is newer than candidate");
+    }
+    if (commandName === "git" && args[0] === "show" && args[1]?.endsWith(":apps/nemlig-assistant/package.json")) {
+      return JSON.stringify({ version: options.startingServiceVersion ?? "6.1.9" });
     }
     if (commandName === "git") return "";
     if (commandName !== "pnpm") throw new Error("unexpected command");
@@ -466,7 +477,8 @@ async function fixture(options: {
       if (initializeOnly) {
         if (!wakeOnly) initializationReads += 1;
       } else featureReads += 1;
-      if (initializeOnly && !wakeOnly && ((options.staleRuntimeReads ?? 0) >= initializationReads || options.staleRuntimeForever)) {
+      if (initializeOnly && !wakeOnly && current === enabledId
+        && ((options.staleRuntimeReads ?? 0) >= initializationReads || options.staleRuntimeForever)) {
         throw Object.assign(new Error("previous runtime"), { acceptanceFailure: {
           stage: "read_only", profile: "service", category: "feature_failed",
           lastCompletedBoundary: "service_runtime_version_read", correlationIds: [],
@@ -474,7 +486,8 @@ async function fixture(options: {
       }
       if (!initializeOnly && options.failCandidateFeatures && current === enabledId) throw new Error("candidate acceptance failed");
       if (!initializeOnly && options.failFeaturesOnce && featureReads === 1) throw new Error("container not converged");
-      if (!initializeOnly && options.failFeatures) throw new Error("acceptance failed");
+      if (!initializeOnly && options.failFeatures && current === enabledId) throw new Error("acceptance failed");
+      if (!initializeOnly && options.failRestoredFeatures && current === startingId) throw new Error("restored acceptance failed");
       if (!initializeOnly && options.localFinalMirrorFailure) {
         await rm(join(root, "nemlig-production-deploy", "latest.json"));
         await mkdir(join(root, "nemlig-production-deploy", "latest.json"));
@@ -1024,7 +1037,10 @@ test("previous backend version is bounded and cannot authorize release or cleanu
       "the candidate gets one connection-only wake before the bounded strict version checks");
     assert.equal(calls.filter(({ args }) => args[0] === "production:test:features" && args.includes("--initialize-only")).length, 182,
       "the restore performs one bounded strict initialize after 180 candidate convergence reads and one connection-only wake");
-    assert.equal(calls.filter(({ args }) => args[0] === "production:test:features" && !args.includes("--initialize-only")).length, 0);
+    const restoredReadOnlyChecks = calls.filter(({ args, env }) => args[0] === "production:test:features"
+      && !args.includes("--initialize-only") && env?.NEMLIG_EXPECTED_SERVICE_VERSION !== undefined);
+    assert.equal(restoredReadOnlyChecks.length, 1);
+    assert.equal(restoredReadOnlyChecks[0]?.env?.NEMLIG_EXPECTED_SERVICE_VERSION, "6.1.9");
     assert.equal(report.checks.includes("service_fixture_acceptance"), false);
   } finally { await rm(root, { recursive: true, force: true }); }
 });
@@ -1042,6 +1058,7 @@ test("stale runtime followed by transport timeouts preserves the rollback reserv
   let features = 0;
   deps.run = async (command, args, options) => {
     if (command === "pnpm" && args[0] === "production:test:features") {
+      if (options?.env?.NEMLIG_EXPECTED_REVISION !== commit) return await run(command, args, options);
       features += 1;
       if (features === 1) throw Object.assign(new Error("previous runtime"), { acceptanceFailure: {
         stage: "read_only", profile: "service", category: "feature_failed",
@@ -1500,7 +1517,7 @@ test("incomplete disabled evidence remains unknown, while completed disabled pro
 });
 
 test("routine acceptance failure failbacks to the starting release without reporting the candidate accepted", async () => {
-  const { deps, calls, root } = await fixture({ failFeatures: true });
+  const { deps, calls, root } = await fixture({ failFeatures: true, failRestoredFeatures: true });
   try {
     const report = await deployProduction(commit, deps);
     assert.equal(report.outcome, "failed");
@@ -1839,7 +1856,7 @@ test("successful deployment finalizes from its stateful remote journal chain", a
 });
 
 test("failed candidate and starting-release acceptance keep the lease held", async () => {
-  const { deps, calls, root } = await fixture({ failFeatures: true });
+  const { deps, calls, root } = await fixture({ failFeatures: true, failRestoredFeatures: true });
   try {
     const report = await deployProduction(commit, deps);
     assert.equal(report.outcome, "failed");
@@ -1909,7 +1926,10 @@ test("finalize accepts GitHub's empty successful DELETE only after the exact rem
     if (args[0] === "repo") return JSON.stringify({ nameWithOwner: "mortenbroesby/everyday-assistants", url: "https://github.com/mortenbroesby/everyday-assistants" });
     if (args.includes("DELETE")) { head = ""; return ""; }
     const path = args.find((value) => value.startsWith("repos/")) ?? "";
-    if (path.includes("git/ref/")) return head;
+    if (path.includes("git/ref/")) {
+      if (!head) throw Object.assign(new Error("not found"), { status: 404 });
+      return head;
+    }
     if (path.includes("git/commits/")) return JSON.stringify({ tree: { sha: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" }, parents: [{ sha: "dddddddddddddddddddddddddddddddddddddddd" }] });
     if (path.includes("git/trees/")) return JSON.stringify({ tree: [{ path: "journal.json", type: "blob", mode: "100644", sha: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" }] });
     if (path.includes("git/blobs/")) {
@@ -2609,6 +2629,25 @@ test("finalization refuses to delete a lease whose remote head changes during pr
   assert.equal(deletes, 0);
 });
 
+test("finalization reports incomplete when deleted lease absence cannot be read back", async () => {
+  const journal = terminalJournal({ startingEnabled: true });
+  const deps = recoveryDeps(journal, startingId, true);
+  const run = deps.run;
+  let deleted = false;
+  deps.run = async (command, args, options) => {
+    if (command === "gh" && args[0] === "api" && args.includes("DELETE")) {
+      deleted = true;
+      return "";
+    }
+    if (deleted && command === "gh" && args[0] === "api" && args.some((arg) => arg.includes("git/ref/heads/codex-lock/nemlig-production"))) {
+      return "c".repeat(40);
+    }
+    return await run(command, args, options);
+  };
+  assert.equal(await finalizeDeploymentRecovery(journal.operationId, deps, true, true), false);
+  assert.equal(deleted, true);
+});
+
 test("incomplete or contradictory terminal journals never become cleanup-eligible", async () => {
   const operation = "44444444-4444-4444-8444-444444444444";
   const restoreMissingAcceptance = interruptedContainerRestoreJournal({
@@ -2846,7 +2885,7 @@ test("recovery service releases can deploy a green main ancestor without cutover
 });
 
 test("a routine acceptance failure restores the exact prior Container configuration and Worker before the final lease record", async () => {
-  const { deps, calls, root } = await fixture({ failCandidateFeatures: true });
+  const { deps, calls, root } = await fixture({ failCandidateFeatures: true, startingServiceVersion: "6.1.8" });
   const fetch = deps.fetcher;
   let rolloutBody: unknown;
   deps.fetcher = async (input, init) => {
@@ -2883,13 +2922,17 @@ test("a routine acceptance failure restores the exact prior Container configurat
       "enable_deploy:intent", "enable_deploy:result",
       "container_restore:intent", "container_restore:result", "worker_restore:intent", "worker_restore:result",
     ]);
+    const restoredServiceChecks = calls.filter(({ command, args, env }) => command === "pnpm"
+      && args[0] === "production:test:features" && env?.NEMLIG_EXPECTED_SERVICE_VERSION !== undefined);
+    assert.equal(restoredServiceChecks.length, 2);
+    assert.ok(restoredServiceChecks.every(({ env }) => env?.NEMLIG_EXPECTED_SERVICE_VERSION === "6.1.8"));
     assert.equal(await finalizeDeploymentRecovery(report.operationId, deps, true, true), true);
     assert.equal(report.outcome, "failed", "restoring a prior release does not turn the candidate into an accepted release");
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
 test("a restored Worker whose own read-only acceptance fails stays enabled but cannot finalize the lease", async () => {
-  const { deps, root } = await fixture({ failFeatures: true });
+  const { deps, root } = await fixture({ failFeatures: true, failRestoredFeatures: true });
   deps.env = { ...deps.env, NEMLIG_CI_ACCEPTANCE_READY: "true", NEMLIG_MCP_SERVICE_CLIENT_ID: "service-client" };
   deps.acceptanceMode = "service";
   deps.issueServiceToken = async () => "machine-token";

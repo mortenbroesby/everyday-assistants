@@ -38,7 +38,6 @@ test("routine releases queue trusted main ancestors; manual dispatch is recovery
 
   const gate = section(source, "  release-gate:");
   const preflight = section(source, "  preflight:");
-  const reconcileBlocked = section(source, "  reconcile_blocked:");
   const deploy = section(source, "  deploy:");
   const retention = section(source, "  retention:");
   assert.match(gate, /inputs\.recovery == true/u);
@@ -62,7 +61,7 @@ test("routine releases queue trusted main ancestors; manual dispatch is recovery
   assert.doesNotMatch(gate, /pull-requests: read|deploy:nemlig-production|\/pulls|merge_commit_sha/u);
   assert.match(gate, /actions\/checkout@[0-9a-f]{40}/u);
   assert.doesNotMatch(source, /ref: "\$\{\{ env\.CANDIDATE_SHA \}\}"/u);
-  for (const job of [gate, preflight, reconcileBlocked, deploy, retention, section(source, "  reconcile:")]) {
+  for (const job of [gate, preflight, deploy, retention, section(source, "  reconcile:")]) {
     assert.match(job, /ref: main/u);
     assert.match(job, /fetch-depth: 0/u);
     assert.match(job, /git merge-base --is-ancestor "\$CANDIDATE_SHA" origin\/main/u);
@@ -95,40 +94,28 @@ test("routine releases queue trusted main ancestors; manual dispatch is recovery
   assert.match(preflight, /preflight_state=\$\(node --input-type=module/u);
   assert.doesNotMatch(preflight, /appendFileSync\(output/u);
   assert.match(preflight, /Deployment not attempted; live revision not verified\./u);
-  assert.match(preflight, /explicitly reconcile the saved production operation/u);
+  assert.match(preflight, /protected deploy job will check the exact completed predecessor attempt/u);
   assert.match(preflight, /env:\n\s+GH_TOKEN:/u);
 
-  assert.match(reconcileBlocked, /needs: \[release-gate, preflight\]/u);
-  assert.match(reconcileBlocked, /github\.event_name == 'workflow_run'/u);
-  assert.match(reconcileBlocked, /needs\.preflight\.outputs\.readiness == 'blocked_by_existing_lease'/u);
-  assert.match(reconcileBlocked, /environment:\n\s+name: nemlig-production/u);
-  assert.match(reconcileBlocked, /permissions:\n\s+contents: write\n\s+actions: read/u);
-  assert.match(reconcileBlocked, /LEASE_HEAD: "\$\{\{ needs\.preflight\.outputs\.lease_head \}\}"/u);
-  assert.match(reconcileBlocked, /journal\.releaseRunId/u);
-  assert.match(reconcileBlocked, /gh run view "\$release_run_id" --repo "\$GITHUB_REPOSITORY" --json status,conclusion/u);
-  assert.match(reconcileBlocked, /run\.status !== "completed"/u);
-  assert.match(reconcileBlocked, /actions\/runs\/\$release_run_id\/artifacts\?per_page=100/u);
-  assert.match(reconcileBlocked, /artifact\?\.name === "nemlig-production-release" && artifact\.expired === false/u);
-  assert.match(reconcileBlocked, /reconcile-recovery "\$operation" --evidence-saved --original-runner-stopped/u);
-  assert.match(reconcileBlocked, /inspect-recovery "\$operation" --original-runner-stopped/u);
-  assert.match(reconcileBlocked, /production:deploy -- finalize "\$operation" --evidence-saved --original-runner-stopped/u);
-  assert.match(reconcileBlocked, /result\.reconciled !== true/u);
-  assert.match(reconcileBlocked, /NEMLIG_MCP_SERVICE_CLIENT_ID: "\$\{\{ vars\.NEMLIG_MCP_SERVICE_CLIENT_ID \}\}"/u);
-  assert.match(reconcileBlocked, /NEMLIG_MCP_SERVICE_CLIENT_SECRET: "\$\{\{ secrets\.NEMLIG_MCP_SERVICE_CLIENT_SECRET \}\}"/u);
-  assert.match(reconcileBlocked, /NEMLIG_CI_ACCEPTANCE_READY: "\$\{\{ vars\.NEMLIG_CI_ACCEPTANCE_READY \}\}"/u);
-  assert.match(reconcileBlocked, /inspection\.cleanupEligible !== true/u);
-  assert.match(reconcileBlocked, /\["enabled", "disabled", "restored"\]\.includes\(inspection\.state\)/u);
-  assert.match(reconcileBlocked, /gh api --include "repos\/\$GITHUB_REPOSITORY\/git\/ref\/heads\/codex-lock\/nemlig-production"/u);
-  assert.match(reconcileBlocked, /grep -qE '\^HTTP\/\[0-9\.\]\+ 404 '/u);
-  assert.doesNotMatch(reconcileBlocked, /authorize-one-container-restore|\brollback\b/u);
-
-  assert.match(deploy, /needs: \[release-gate, preflight, reconcile_blocked\]/u);
-  assert.match(deploy, /always\(\) &&[\s\S]*?needs\.release-gate\.outputs\.deploy == 'true'/u);
-  assert.match(deploy, /needs\.preflight\.outputs\.readiness == 'ready' \|\| needs\.reconcile_blocked\.outputs\.reconciled == 'true'/u);
+  assert.doesNotMatch(source, /^ {2}reconcile_blocked:/mu);
+  assert.match(deploy, /needs: \[release-gate, preflight\]/u);
+  assert.match(deploy, /needs\.release-gate\.outputs\.deploy == 'true'/u);
+  assert.match(deploy, /needs\.preflight\.outputs\.readiness == 'ready'[\s\S]*?github\.event_name == 'workflow_run'[\s\S]*?needs\.preflight\.outputs\.readiness == 'blocked_by_existing_lease'/u);
+  const terminalCleanup = deploy.slice(deploy.indexOf("- name: Finalize a proven terminal predecessor lease"));
+  assert.ok(terminalCleanup.indexOf("- name: Recheck candidate after terminal predecessor cleanup") > 0);
+  assert.match(terminalCleanup, /gh run view "\$release_run_id" --attempt "\$release_run_attempt" --repo "\$GITHUB_REPOSITORY" --json status,attempt/u);
+  assert.match(terminalCleanup, /attempt\.status !== "completed" \|\| attempt\.attempt !== Number\(process\.argv\[2\]\)/u);
+  assert.match(terminalCleanup, /gh run download "\$release_run_id" --repo "\$GITHUB_REPOSITORY" --name nemlig-production-release/u);
+  assert.match(terminalCleanup, /canonical\(lease\).*canonical\(saved\)/u);
+  assert.match(terminalCleanup, /production:deploy -- inspect-recovery "\$operation" --original-runner-stopped/u);
+  assert.match(terminalCleanup, /production:deploy -- finalize "\$operation" --evidence-saved --original-runner-stopped/u);
+  assert.match(terminalCleanup, /CLOUDFLARE_API_TOKEN:/u);
+  assert.doesNotMatch(terminalCleanup, /reconcile-recovery|authorize-one-container-restore|\brollback\b/u);
   assert.match(deploy, /environment:\n\s+name: nemlig-production/u);
   assert.match(deploy, /permissions:\n\s+contents: write\n\s+actions: read/u);
   assert.match(deploy, /pnpm install --frozen-lockfile/u);
   assert.match(deploy, /Recheck candidate after terminal predecessor cleanup/u);
+  assert.match(deploy, /if: needs\.preflight\.outputs\.readiness == 'blocked_by_existing_lease'/u);
   assert.match(deploy, /production:deploy -- preflight "\$CANDIDATE_SHA"/u);
   assert.match(deploy, /result\.state !== "ready" \|\| !Number\.isSafeInteger\(result\.ciRunId\)/u);
   assert.match(deploy, /pnpm --filter nemlig-assistant build/u);
@@ -393,7 +380,7 @@ test("manual recovery can reconcile an exact pending rollback and release its le
 test("routine recovery finalizes only after its artifact is saved", async () => {
   const deploy = section(await readFile(workflowPath, "utf8"), "  deploy:");
   const upload = deploy.indexOf("uses: actions/upload-artifact@");
-  const finalize = deploy.indexOf("production:deploy -- finalize");
+  const finalize = deploy.indexOf("production:deploy -- finalize \"$finalization_target\"");
   assert.ok(upload >= 0 && finalize > upload);
   assert.match(deploy, /if: \$\{\{ !cancelled\(\) && \(steps\.deploy\.outcome == 'success' \|\| steps\.deploy\.outcome == 'failure'\) && steps\.release-artifact\.outcome == 'success' \}\}/u);
   assert.ok(deploy.indexOf("finalize-routine-deployment.mjs") > upload);
