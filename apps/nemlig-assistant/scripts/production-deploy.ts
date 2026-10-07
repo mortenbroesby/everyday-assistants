@@ -1567,6 +1567,16 @@ const sleepAbortably = async (deps: DeployDependencies, durationMs = 5_000): Pro
   });
 };
 
+const acceptanceCommandTimeoutMs = 120_000;
+const containerConvergenceAttemptCount = 36;
+const containerConvergencePollIntervalMs = 5_000;
+const containerConvergenceReserveMs = (containerConvergenceAttemptCount - 1) * containerConvergencePollIntervalMs;
+// Cloudflare activates the Worker before its Container rollout completes. The
+// wake waits for evidence from the candidate rather than an arbitrary startup
+// delay, but cannot consume the time required to prove the candidate or fail
+// back safely.
+const serviceStartupEvidenceReserveMs = acceptanceCommandTimeoutMs + (2 * containerConvergenceReserveMs);
+
 const waitForInactive = async (deps: DeployDependencies, applicationId: string): Promise<void> => {
   for (let attempt = 0; attempt < 36; attempt += 1) {
     deps.signal?.throwIfAborted();
@@ -1596,7 +1606,7 @@ const runningInstanceVersion = (raw: string, minimumVersion: number): number | n
 const runningInstanceMatches = (raw: string, expectedVersion: number): boolean =>
   runningInstanceVersion(raw, expectedVersion) === expectedVersion;
 
-const waitForAcceptedInstance = async (deps: DeployDependencies, applicationId: string, minimumVersion: number, requireRunning = false, reportDiagnostic = false, diagnosticEvent = "container_acceptance_convergence", maxPolls = 36): Promise<number | null> => {
+const waitForAcceptedInstance = async (deps: DeployDependencies, applicationId: string, minimumVersion: number, requireRunning = false, reportDiagnostic = false, diagnosticEvent = "container_acceptance_convergence", maxPolls = containerConvergenceAttemptCount): Promise<number | null> => {
   const startedAt = deps.now().getTime();
   let polls = 0;
   let observedVersion: number | null = null;
@@ -1675,7 +1685,7 @@ const waitForAcceptedInstance = async (deps: DeployDependencies, applicationId: 
         report("inactive");
         return null;
       }
-      if (attempt + 1 < maxPolls) await sleepAbortably(deps);
+      if (attempt + 1 < maxPolls) await sleepAbortably(deps, containerConvergencePollIntervalMs);
       continue;
     }
     if (version !== null) {
@@ -1686,7 +1696,7 @@ const waitForAcceptedInstance = async (deps: DeployDependencies, applicationId: 
       report("accepted");
       return version;
     }
-    if (attempt + 1 < maxPolls) await sleepAbortably(deps);
+    if (attempt + 1 < maxPolls) await sleepAbortably(deps, containerConvergencePollIntervalMs);
   }
   report("timeout");
   return fail("container_instance_timeout");
@@ -1751,7 +1761,7 @@ const retryAcceptance = async (
     if (remainingMs() <= 0) throw new AcceptanceFailure(failure, lastEvidence);
     try {
       await runAt(deps, deps.packageRoot, "pnpm", args, {
-        timeoutMs: Math.min(120_000, remainingMs()), env, captureFailureStdout: (stdout) => parseAcceptanceFailure(stdout, profile, stage),
+        timeoutMs: Math.min(acceptanceCommandTimeoutMs, remainingMs()), env, captureFailureStdout: (stdout) => parseAcceptanceFailure(stdout, profile, stage),
       });
       if (remainingMs() <= 0) throw new AcceptanceFailure(failure, lastEvidence);
       return;
@@ -2006,7 +2016,7 @@ export async function deployProduction(commit: string, inputDeps: DeployDependen
       await retryAcceptance(deps, ["production:test:features", "--service", "--initialize-only"], {
         NEMLIG_MCP_SERVICE_ACCESS_TOKEN: serviceToken, NEMLIG_EXPECTED_REVISION: commit,
       }, 12, "read_only", "service", "service_fixture_acceptance_failed",
-      Math.max(0, Math.min(60_000, operationDeadlineAt - deps.now().getTime() - restoreReserveMs)));
+      Math.max(0, operationDeadlineAt - deps.now().getTime() - restoreReserveMs - serviceStartupEvidenceReserveMs));
       preAcceptanceRunningVersion = await waitForAcceptedInstance(deps, enabledContainer.id, enabledContainer.version, true, true, "container_pre_fixture_convergence");
     } else {
       preAcceptanceRunningVersion = await waitForAcceptedInstance(deps, enabledContainer.id, enabledContainer.version);
