@@ -10,9 +10,11 @@ import { PRODUCT_VIEWER_MIME_TYPE, PRODUCT_VIEWER_RESOURCE_URI, renderProductVie
 import { NEMLIG_CODENAME, NEMLIG_VERSION } from "./runtime.js";
 
 const userToolMetadata = {
-  start_product_review: { ui: { resourceUri: PRODUCT_VIEWER_RESOURCE_URI }, "openai/outputTemplate": PRODUCT_VIEWER_RESOURCE_URI, "openai/widgetAccessible": true },
-  update_product_review: { ui: { resourceUri: PRODUCT_VIEWER_RESOURCE_URI }, "openai/outputTemplate": PRODUCT_VIEWER_RESOURCE_URI, "openai/widgetAccessible": true },
-  submit_product_review: { ui: { resourceUri: PRODUCT_VIEWER_RESOURCE_URI, visibility: ["model"] }, "openai/outputTemplate": PRODUCT_VIEWER_RESOURCE_URI },
+  start_product_review: { ui: { resourceUri: PRODUCT_VIEWER_RESOURCE_URI, visibility: ["model"] }, "openai/outputTemplate": PRODUCT_VIEWER_RESOURCE_URI },
+  update_product_review_conversation: { ui: { visibility: ["model"] } },
+  submit_product_review_conversation: { ui: { visibility: ["model"] } },
+  update_product_review: { ui: { visibility: ["app"] }, "openai/widgetAccessible": true },
+  submit_product_review: { ui: { visibility: ["app"] }, "openai/widgetAccessible": true },
 };
 const withUserToolMetadata = (tools: Array<{ name: string }>) => tools.map((tool) => ({
   ...tool,
@@ -47,7 +49,7 @@ function serviceClient(): AcceptanceClient {
     listResources: async () => ({ resources: serviceAcceptanceResourceInventory.map((uri) => ({ uri })) }),
     readResource: async ({ uri }) => ({ contents: [{ uri, mimeType: PRODUCT_VIEWER_MIME_TYPE, text: renderProductViewerHtml(), _meta: { ui: { csp: { connectDomains: [], resourceDomains: ["https://nemlig.com", "https://www.nemlig.com"] }, prefersBorder: true } } }] }),
     callTool: async ({ name }) => {
-      if (["start_product_review", "update_product_review", "submit_product_review"].includes(name)) return { isError: true };
+      if (["start_product_review", "update_product_review_conversation", "submit_product_review_conversation"].includes(name)) return { isError: true };
       if (name === "find_groceries") return { structuredContent: { result: [{ id: 7 }] } };
       if (name === "show_my_basket") return { structuredContent: { items: [] } };
       return { structuredContent: { result: [] } };

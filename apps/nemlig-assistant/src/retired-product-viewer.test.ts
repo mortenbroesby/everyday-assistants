@@ -13,15 +13,14 @@ test("retired viewer identities cover the stable and previous versioned URIs", (
     "ui://nemlig/product-viewer-v5.html",
     "ui://nemlig/product-viewer-v6.html",
     "ui://nemlig/product-viewer-v7.html",
+    "ui://nemlig/product-viewer-v8.html",
   ]);
 });
 
-test("retired viewer is inert and offers a conversation route to the current draft list", () => {
+test("retired viewer is inert and leaves recovery to the conversation", () => {
   const html = renderRetiredProductViewerHtml();
-  assert.match(html, /This draft list card is retired/u);
-  assert.match(html, /Open current draft list/u);
-  assert.match(html, /ui\/message/u);
-  assert.match(html, /sendFollowUpMessage/u);
-  assert.match(html, /Open my current Draft list/u);
+  assert.match(html, /This Draft list card is out of date/u);
+  assert.match(html, /read-only/u);
+  assert.doesNotMatch(html, /<button|sendFollowUpMessage|ui\/message/u);
   assert.doesNotMatch(html, /tools\/call|callTool|hydrate|fetch\(/u);
 });

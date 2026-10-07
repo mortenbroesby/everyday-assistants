@@ -13,8 +13,8 @@ type Review = {
   alternatives?: { product_id: number; query: string; views: ProductView[] };
   submission?: { status: "prepared" | "submitted" | "uncertain"; submission_id: string; review: { lines?: Array<{ product_id: number; quantity: number; name?: string; unit_size?: string; item_price?: number; line_total?: number }>; expected_products_price?: number } };
 };
-type Payload = { views?: ProductView[]; products?: ProductView[]; result?: ProductView[]; items?: unknown[]; detail_limit?: number; unenriched_count?: number; review?: Review; unavailable?: boolean; ended?: boolean };
-type Screen = { kind: "loading" } | { kind: "error"; message: string } | { kind: "cancelled" } | { kind: "products"; payload: Payload; views: ProductView[] } | { kind: "review"; review: Review; active: boolean } | { kind: "unavailable"; review?: Review } | { kind: "empty"; message?: string };
+type Payload = { views?: ProductView[]; products?: ProductView[]; result?: ProductView[]; items?: unknown[]; detail_limit?: number; unenriched_count?: number; review?: Review; view_id?: string; unavailable?: boolean; ended?: boolean };
+type Screen = { kind: "loading" } | { kind: "error"; message: string } | { kind: "cancelled" } | { kind: "stale" } | { kind: "products"; payload: Payload; views: ProductView[] } | { kind: "review"; review: Review; view_id?: string; active: boolean } | { kind: "unavailable"; review?: Review } | { kind: "empty"; message?: string };
 
 declare global {
   interface Window { openai?: { toolOutput?: unknown } }
@@ -61,7 +61,10 @@ function readPayload(value: unknown): Screen | undefined {
   if (Array.isArray(value) && value.every(isProductView)) return { kind: "products", payload: { views: value }, views: value };
   if (!isRecord(value)) return undefined;
   const envelope = isRecord(value.structuredContent) ? value.structuredContent : value;
-  if (isRecord(envelope.review) && isReview(envelope.review)) return { kind: "review", review: envelope.review, active: false };
+  if (isRecord(envelope.review) && isReview(envelope.review)) {
+    const view_id = typeof envelope.view_id === "string" ? envelope.view_id : undefined;
+    return { kind: "review", review: envelope.review, ...(view_id ? { view_id } : {}), active: Boolean(view_id) };
+  }
   if (envelope.unavailable === true) return { kind: "unavailable" };
   if (envelope.ended === true) return { kind: "empty", message: "Your local Draft list was discarded. Nothing changed in Nemlig." };
   const candidate = Array.isArray(envelope.views) ? envelope.views : Array.isArray(envelope.products) ? envelope.products : Array.isArray(envelope.result) ? envelope.result : undefined;
@@ -127,7 +130,7 @@ export function ProductViewer() {
     const initial = typeof window === "undefined" ? undefined : readPayload(window.openai?.toolOutput);
     return initial ?? { kind: "loading" };
   });
-  const activeReview = useRef<{ review: Review; active: boolean } | undefined>(screen.kind === "review" ? { review: screen.review, active: false } : undefined);
+  const activeReview = useRef<{ review: Review; view_id?: string; active: boolean } | undefined>(screen.kind === "review" ? screen : undefined);
   const lastConfirmedReview = useRef<Review | undefined>(screen.kind === "review" ? screen.review : undefined);
   const callLock = useRef(false);
   const cancellationEpoch = useRef(0);
@@ -173,7 +176,7 @@ export function ProductViewer() {
     setConfirmEnd(false);
     const current = activeReview.current;
     if (current) {
-      const inactive = { review: current.review, active: false };
+      const inactive = { ...current, active: false };
       activeReview.current = inactive;
       setScreen({ kind: "review", ...inactive });
     }
@@ -185,6 +188,7 @@ export function ProductViewer() {
     if (!next) { deactivateReview(); setScreen({ kind: "error", message: "Nemlig returned a response this view could not read. Continue in conversation to inspect the current state." }); return false; }
     const previous = activeReview.current;
     if (next.kind === "review") {
+      if (!current && previous && !previous.active && next.view_id && next.view_id === previous.view_id) return true;
       if (!current && previous?.active && previous.review.review_id !== next.review.review_id) return true;
       const sameReview = previous?.review.review_id === next.review.review_id;
       if (!sameReview) setReviewDisclosures(new Map());
@@ -195,7 +199,8 @@ export function ProductViewer() {
           && previous.review.submission.submission_id === next.review.submission.submission_id;
         if (!verifiedCompletion) return true;
       }
-      const state = { review: next.review, active: current || (sameReview && previous.active) };
+      const view_id = next.view_id ?? previous?.view_id;
+      const state = { review: next.review, ...(view_id ? { view_id } : {}), active: Boolean(view_id) && (current || Boolean(next.view_id) || (sameReview && previous.active)) };
       activeReview.current = state;
       lastConfirmedReview.current = next.review;
       const submissionChanged = !sameReview || next.review.submission?.submission_id !== previous?.review.submission?.submission_id;
@@ -238,7 +243,7 @@ export function ProductViewer() {
     }
     return true;
   }, [deactivateReview]);
-  const { app: connectedApp, isConnected, error } = useApp({ appInfo: { name: "nemlig-product-viewer", version: "8.0.0" }, capabilities: {}, onAppCreated: (host) => {
+  const { app: connectedApp, isConnected, error } = useApp({ appInfo: { name: "nemlig-product-viewer", version: "9.0.0" }, capabilities: {}, onAppCreated: (host) => {
     host.ontoolresult = (result) => applyPayload(result);
     host.ontoolcancelled = () => { cancellationEpoch.current++; deactivateReview(); setScreen({ kind: "cancelled" }); setMessage("Request cancelled. Continue in conversation when you are ready."); };
     host.onerror = () => { deactivateReview(); setMessage("The Draft list connection failed. Continue in conversation or reopen your current Draft list."); };
@@ -260,12 +265,23 @@ export function ProductViewer() {
       setMessage(""); return true;
     } catch (cause) {
       const text = cause instanceof Error ? cause.message : "Update failed";
-      if (recovery && /stale|unavailable|no active draft/i.test(text)) {
+      if (/out of date|unavailable/i.test(text)) {
+        deactivateReview();
+        activeReview.current = undefined;
+        setScreen({ kind: "stale" });
+        setMessage("");
+      } else if (recovery && /stale|no active draft/i.test(text)) {
         deactivateReview();
         setSelected(new Set());
         setReplacement(undefined);
-        try { const fresh = await connectedApp.callServerTool({ name: "update_product_review", arguments: { action: { kind: "show" } } }); if (!fresh.isError && requestEpoch === cancellationEpoch.current) applyPayload(fresh, true); }
-        catch { /* The last confirmed snapshot remains visible without replaying the failed action. */ }
+        const latest = activeReview.current;
+        try {
+          if (latest?.view_id) {
+            const fresh = await connectedApp.callServerTool({ name: "update_product_review", arguments: { view_id: latest.view_id, review_id: latest.review.review_id, revision: latest.review.revision, action: { kind: "show" } } });
+            if (!fresh.isError && requestEpoch === cancellationEpoch.current) applyPayload(fresh, true);
+            else { activeReview.current = undefined; setScreen({ kind: "stale" }); }
+          } else { activeReview.current = undefined; setScreen({ kind: "stale" }); }
+        } catch { activeReview.current = undefined; setScreen({ kind: "stale" }); }
         setMessage("Your last action was not applied. The current Draft list was refreshed; choose again.");
       } else {
         deactivateReview();
@@ -280,12 +296,24 @@ export function ProductViewer() {
       for (const resolve of callIdleWaiters.current.splice(0)) resolve();
     }
   };
+  const validatedViewId = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    const latest = activeReview.current;
+    if (!connectedApp || !isConnected || !latest?.view_id || validatedViewId.current === latest.view_id) return;
+    validatedViewId.current = latest.view_id;
+    void call("update_product_review", {
+      view_id: latest.view_id,
+      review_id: latest.review.review_id,
+      revision: latest.review.revision,
+      action: { kind: "show" },
+    }, false);
+  }, [connectedApp, isConnected, call]);
   const review = screen.kind === "review" ? screen.review : undefined;
   const active = screen.kind === "review" && screen.active;
   const update = async (action: Record<string, unknown>) => {
     const latest = activeReview.current;
-    if (!latest?.active || callLock.current) return false;
-    const result = await call("update_product_review", { review_id: latest.review.review_id, revision: latest.review.revision, action });
+    if (!latest?.active || !latest.view_id || callLock.current) return false;
+    const result = await call("update_product_review", { view_id: latest.view_id, review_id: latest.review.review_id, revision: latest.review.revision, action });
     if (result && action.kind === "prepare_submission") setConfirmSubmit(false);
     return result;
   };
@@ -315,7 +343,8 @@ export function ProductViewer() {
           removePendingQuantity(product_id, quantity);
           continue;
         }
-        const ok = await call("update_product_review", { review_id: latest.review.review_id, revision: latest.review.revision, action: { kind: "quantity", product_id, quantity } });
+        if (!latest.view_id) return false;
+        const ok = await call("update_product_review", { view_id: latest.view_id, review_id: latest.review.review_id, revision: latest.review.revision, action: { kind: "quantity", product_id, quantity } });
         if (!ok) return false;
         const confirmed = activeReview.current?.review.items.find((item) => item.product_id === product_id)?.quantity;
         if (confirmed !== quantity) return false;
@@ -384,11 +413,12 @@ export function ProductViewer() {
     <p className="intro">{review && active ? (safeTitle === "Ready" ? "These exact products are ready to send to Nemlig." : safeTitle === "Choose an alternative" ? "Compare available options for this product." : "Choose exact products to move into Ready.") : basket ? "Your current Nemlig basket. This view cannot change it." : "Inspect product details here or continue in conversation."}</p>
     {review && <nav className="destination-tabs" aria-label="Draft list destinations"><Button color="secondary" aria-current={review.destination === "needs-review" ? "page" : undefined} disabled={editsBlocked || !active} onClick={() => void navigate("needs-review")}>To decide ({review.items.filter((item) => item.state === "needs-review").length})</Button><Button color="secondary" aria-current={review.destination === "ready" ? "page" : undefined} disabled={editsBlocked || !active} onClick={() => void navigate("ready")}>Ready ({review.items.filter((item) => item.state === "ready").length})</Button>{review.alternatives && review.destination !== "alternatives" && <Button color="secondary" disabled={editsBlocked || !active} onClick={() => void navigate("alternatives")}>Return to existing alternatives</Button>}</nav>}
     {screen.kind === "loading" && <p className="status" role="status">Loading your Nemlig selection…</p>}
-    {screen.kind === "error" && <section className="status"><p role="alert">{screen.message}</p><Button color="secondary" disabled={busy} onClick={() => void call("update_product_review", { action: { kind: "show" } })}>Refresh Draft list</Button></section>}
-    {screen.kind === "cancelled" && <section className="status"><p>Request cancelled. Refresh the Draft list to confirm its current state before continuing.</p><Button color="secondary" disabled={busy} onClick={() => void call("update_product_review", { action: { kind: "show" } })}>Refresh Draft list</Button></section>}
+    {screen.kind === "error" && <section className="status"><p role="alert">{screen.message}</p><p>Continue in conversation to inspect the current Draft list.</p></section>}
+    {screen.kind === "cancelled" && <section className="status"><p>Request cancelled. Continue in conversation to confirm the current Draft list before continuing.</p></section>}
+    {screen.kind === "stale" && <section className="status"><p>This Draft list card is out of date and cannot make changes. Use the newest card or ask in chat to reopen the current Draft list.</p></section>}
     {!isConnected && screen.kind === "loading" && <p className="status" role="status">{error ? "Could not connect to the Draft list host." : "Connecting to Nemlig…"}</p>}
-    {screen.kind === "review" && !active && <section className="status"><p>Open the current Draft list to continue. This historical card does not restore editing controls.</p><Button color="secondary" disabled={busy} onClick={() => void call("update_product_review", { action: { kind: "show" } })}>Open current Draft list</Button></section>}
-    {screen.kind === "unavailable" && <section className="status"><p>This temporary Draft list is no longer available. Refresh to find this conversation’s current Draft list.</p><Button color="secondary" disabled={busy} onClick={() => void call("update_product_review", { action: { kind: "show" } })}>Refresh Draft list</Button>{screen.review?.items.length && !submitBlocked && !submitBlockedRef.current && screen.review.submission?.status !== "submitted" && screen.review.submission?.status !== "uncertain" ? <Button color="secondary" disabled={busy} onClick={() => void call("start_product_review", { items: screen.review!.items.map(({ product_id, quantity }) => ({ product_id, quantity })) })}>Start new Draft list</Button> : screen.review?.submission?.status === "submitted" || screen.review?.submission?.status === "uncertain" || submitBlocked ? <><p>Inspect the actual Nemlig basket in conversation before starting another Draft list.</p><Button color="secondary" disabled={busy} onClick={() => void sendFollowUp("Inspect the actual Nemlig basket before starting another Draft list. Do not restore previous submission approval.")}>Inspect Nemlig basket in conversation</Button></> : null}</section>}
+    {screen.kind === "review" && !active && <section className="status"><p>This Draft list card is inactive. Ask in chat to reopen the current Draft list.</p></section>}
+    {screen.kind === "unavailable" && <section className="status"><p>This temporary Draft list is no longer available. Ask in chat before starting a new Draft list. Previous choices or submission approval are not restored.</p></section>}
     {review && active && review.destination === "alternatives" && review.alternatives && <section className="alternatives"><h2>Current product</h2>{review.items.filter((item) => item.product_id === review.alternatives?.product_id).map((item) => <ProductCard key={item.product_id} view={item.view} disabled={busy} {...reviewDisclosureProps(item.product_id)} />)}<form key={`${review.review_id}:${review.alternatives.product_id}:${review.alternatives.query}`} onSubmit={(event) => { event.preventDefault(); const target = review.alternatives!.product_id; const query = String(new FormData(event.currentTarget).get("query") ?? ""); if (query.trim()) void update({ kind: "alternatives", product_id: target, query: query.slice(0, 200) }); }}><label htmlFor="alternative-query">Search for more products</label><input id="alternative-query" name="query" type="search" maxLength={200} defaultValue={review.alternatives.query} /><Button color="secondary" type="submit" disabled={editsBlocked}>Search products</Button></form></section>}
     {screen.kind === "products" && screen.views.length > 0 && <section className="product-list" aria-label="Product results">{screen.views.map((view, index) => <ProductCard key={`${view.status === "complete" ? view.product.id : view.product_id}:${index}`} view={view} disabled={busy} />)}</section>}
     {review && active && review.items.length > 0 && review.destination !== "alternatives" && <section className="product-list" aria-label={`${safeTitle} products`}>
@@ -452,7 +482,9 @@ export function ProductViewer() {
             return;
           }
           submitBlockedRef.current = true; setSubmitBlocked(true); setConfirmSubmit(false);
-          const success = await call("submit_product_review", { review_id: confirmed.review_id, revision: confirmed.revision, submission_id: confirmed.submission.submission_id }, false);
+          const latest = activeReview.current;
+          if (!latest?.view_id) return;
+          const success = await call("submit_product_review", { view_id: latest.view_id, review_id: confirmed.review_id, revision: confirmed.revision, submission_id: confirmed.submission.submission_id }, false);
           if (!success) setMessage("Submission outcome is uncertain. Inspect the actual Nemlig basket; do not retry automatically.");
         })}>Add to Nemlig</Button></> : <Button color="secondary" disabled={busy} onClick={() => setConfirmSubmit(true)}>Review exact change</Button>}
       </section>}
