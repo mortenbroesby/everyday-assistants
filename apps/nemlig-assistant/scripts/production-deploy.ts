@@ -1714,6 +1714,26 @@ const runningInstanceVersion = (raw: string, minimumVersion: number): number | n
 const runningInstanceMatches = (raw: string, expectedVersion: number): boolean =>
   runningInstanceVersion(raw, expectedVersion) === expectedVersion;
 
+/**
+ * Before an MCP call can wake or query a Container, prove that a pre-existing
+ * instance has finished the candidate rollout. An inactive application is
+ * valid: the first authenticated call will start the candidate image.
+ */
+const waitForAcceptedInstance = async (deps: DeployDependencies, applicationId: string, expectedVersion: number): Promise<void> => {
+  for (let attempt = 0; attempt < 36; attempt += 1) {
+    deps.signal?.throwIfAborted();
+    const raw = await wrangler(deps, ["containers", "instances", applicationId, "--json"]);
+    if (instancesInactive(raw)) return;
+    const version = runningInstanceVersion(raw, expectedVersion);
+    if (version !== null) {
+      if (version !== expectedVersion) fail("cloudflare_deployment_drift");
+      return;
+    }
+    if (attempt < 35) await sleepAbortably(deps);
+  }
+  fail("container_instance_timeout");
+};
+
 const waitForCandidateContainer = async (deps: DeployDependencies, workerVersion: string, starting: ContainerState, image: string): Promise<ContainerState> => {
   for (let attempt = 0; attempt < 36; attempt += 1) {
     await verifyCurrent(deps, workerVersion);
@@ -2019,6 +2039,11 @@ export async function deployProduction(commit: string, inputDeps: DeployDependen
       journal.checks.push("enabled_version", "image_reused");
       await transition("enable_deploy", "result", enabledId);
     }
+    // The Worker becomes live before Cloudflare replaces an existing Container.
+    // Do not let authenticated MCP acceptance repeatedly query the previous
+    // process: first prove either the candidate instance is running or there
+    // is no instance yet for the first request to start.
+    await waitForAcceptedInstance(deps, enabledContainer.id, enabledContainer.version);
     // Initialize MCP, then prove its exact server version before the fixture.
     if (service) {
       const restoreReserveMs = 12 * 60_000;
