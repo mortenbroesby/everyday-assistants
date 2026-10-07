@@ -117,6 +117,7 @@ function ProductCard({ view, item, disabled, onQuantity, onRemove, onRevisit, se
   const product = view.product;
   const image = safeNemligImageUrl(product.image_url);
   const quantityTotal = quantity !== undefined && typeof product.price === "number" ? quantity * product.price : product.price;
+  const suppliedDetails = product.details?.filter((fact) => fact.key.trim() && fact.value.trim()) ?? [];
   const summary = <span className="product-summary-content">
     {image && !imageFailed ? <img className="product-image" src={image} alt={product.name ?? "Product"} onError={() => setImageFailed(true)} /> : <span className="product-image product-image-fallback" aria-hidden="true">No image</span>}
     <span className="product-copy"><span className="product-heading"><strong>{productName(view)}</strong><span>{money(quantityTotal)}</span></span>
@@ -129,17 +130,25 @@ function ProductCard({ view, item, disabled, onQuantity, onRemove, onRevisit, se
   </span>;
   return <article className={`product-card${comparison ? " product-comparison" : ""}`}>
     {onSelected && <label className="product-select"><input type="checkbox" aria-label={`Select ${productName(view)}`} disabled={disabled || !isUsable(view)} checked={selected === true} onChange={(event) => onSelected(event.currentTarget.checked)} /></label>}
-    {onChoice && <label className="product-select"><input type="radio" name="replacement" aria-label={`Choose ${productName(view)}`} disabled={disabled || !isUsable(view)} checked={choice === true} onChange={onChoice} /></label>}
     <div className="product-details">
-      {comparison ? <div className="product-comparison-summary">{summary}</div> : <Button color="secondary" variant="ghost" pill={false} block className="product-summary" aria-expanded={disclosureExpanded} aria-controls={detailsId} onClick={() => {
+      {comparison ? onChoice ? <button type="button" className="product-comparison-summary alternative-choice" role="radio" aria-checked={choice === true} aria-label={`Choose ${productName(view)}`} disabled={disabled || !isUsable(view)} onClick={onChoice} onKeyDown={(event) => {
+        const direction = event.key === "ArrowRight" || event.key === "ArrowDown" ? 1 : event.key === "ArrowLeft" || event.key === "ArrowUp" ? -1 : 0;
+        if (!direction && event.key !== "Home" && event.key !== "End") return;
+        const choices = [...(event.currentTarget.closest('[role="radiogroup"]')?.querySelectorAll<HTMLButtonElement>('[role="radio"]:not(:disabled)') ?? [])];
+        const current = choices.indexOf(event.currentTarget);
+        if (current < 0 || choices.length === 0) return;
+        event.preventDefault();
+        const next = event.key === "Home" ? 0 : event.key === "End" ? choices.length - 1 : (current + direction + choices.length) % choices.length;
+        choices[next]?.focus();
+        choices[next]?.click();
+      }}>{summary}<span className="alternative-choice-state" aria-hidden="true">{choice ? "Selected" : "Select"}</span></button> : <div className="product-comparison-summary">{summary}</div> : <Button color="secondary" variant="ghost" pill={false} block className="product-summary" aria-expanded={disclosureExpanded} aria-controls={detailsId} onClick={() => {
         const next = !disclosureExpanded;
         if (onExpandedChange) onExpandedChange(next); else setLocalExpanded(next);
       }}>{summary}</Button>}
       <div id={detailsId} className="product-expanded" hidden={!comparison && !disclosureExpanded}>
-        {!comparison && <p>Product ID: {product.id ?? "Unknown"}</p>}{product.description && <details className="product-fact" open={expandedFacts?.has("Varebeskrivelse")} onToggle={onFactExpandedChange ? (event) => onFactExpandedChange("Varebeskrivelse", event.currentTarget.open) : undefined}><summary>Varebeskrivelse</summary><p>{product.description}</p></details>}
+        {product.description && <details className="product-fact" open={expandedFacts?.has("Varebeskrivelse")} onToggle={onFactExpandedChange ? (event) => onFactExpandedChange("Varebeskrivelse", event.currentTarget.open) : undefined}><summary>Varebeskrivelse</summary><p>{product.description}</p></details>}
         {product.declaration && <details className="product-fact" open={expandedFacts?.has("Varedeklaration")} onToggle={onFactExpandedChange ? (event) => onFactExpandedChange("Varedeklaration", event.currentTarget.open) : undefined}><summary>Varedeklaration</summary><p>{product.declaration}</p></details>}
-        {product.details?.filter((fact) => fact.key.trim() && fact.value.trim()).map(({ key, value }) => <details className="product-fact" key={`${key}:${value}`} open={expandedFacts?.has(`${key}:${value}`)} onToggle={onFactExpandedChange ? (event) => onFactExpandedChange(`${key}:${value}`, event.currentTarget.open) : undefined}><summary>{key}</summary><p>{value}</p></details>)}
-        {(view.context === "basket" || view.context === "review" || item) && <p>{view.context === "basket" ? "Nemlig basket" : "Draft list"} quantity: {quantity ?? "Unknown"} · Line total: {money(item && typeof product.price === "number" ? item.quantity * product.price : view.context === "basket" ? view.basket?.line_total : view.context === "review" ? view.review?.line_total : undefined)}</p>}
+        {suppliedDetails.length > 0 && <details className="product-fact" open={expandedFacts?.has("Detaljer om varen")} onToggle={onFactExpandedChange ? (event) => onFactExpandedChange("Detaljer om varen", event.currentTarget.open) : undefined}><summary>Detaljer om varen</summary><dl className="product-fact-list">{suppliedDetails.map(({ key, value }) => <div key={`${key}:${value}`}><dt>{key}</dt><dd>{value}</dd></div>)}</dl></details>}
         {readyActions}
       </div>
       {reviewControls}
@@ -444,11 +453,11 @@ export function ProductViewer() {
       </form>
       <section className="alternative-options" aria-labelledby="alternative-options-title">
         <h2 id="alternative-options-title">Alternatives</h2>
-        {review.alternatives.views.length === 0 ? <p className="alternatives-empty" role="status">No alternatives were returned. Try another search.</p> : review.alternatives.views.map((view, index) => {
+        {review.alternatives.views.length === 0 ? <p className="alternatives-empty" role="status">No alternatives were returned. Try another search.</p> : <div role="radiogroup" aria-labelledby="alternative-options-title">{review.alternatives.views.map((view, index) => {
           const id = view.status === "complete" ? view.product.id : view.product_id;
           return <ProductCard key={`${id}:${index}`} view={view} disabled={editsBlocked} comparison {...(id === undefined ? {} : reviewDisclosureProps(id))} choice={replacement === id} onChoice={() => setReplacement(id)} />;
-        })}
-        <Button color="secondary" disabled={editsBlocked || replacement === undefined} onClick={() => { const target = review.alternatives!.product_id; if (replacement !== undefined) void update({ kind: "replace", product_id: target, replacement_id: replacement }); }}>Use selected alternative</Button>
+        })}</div>}
+        <Button color="primary" disabled={editsBlocked || replacement === undefined} onClick={() => { const target = review.alternatives!.product_id; if (replacement !== undefined) void update({ kind: "replace", product_id: target, replacement_id: replacement }); }}>Use selected alternative</Button>
         <Button color="secondary" disabled={editsBlocked} onClick={() => void navigate("needs-review")}>Back to To decide</Button>
       </section>
     </section>}
