@@ -9,6 +9,7 @@
 **/.env
 **/.env.*
 **/.codex/local-auth/
+**/.codex/ui-mockups/
 **/*.pem
 **/*.key
 /.env

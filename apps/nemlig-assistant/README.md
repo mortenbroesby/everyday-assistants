@@ -170,6 +170,19 @@ only when the stale edit was not replayed, restart cleared acceptance while
 preserving quantities, and provider basket calls remained zero. No credentials
 are required; provider basket access is denied by the fixture.
 
+For a reproducible visual review of the current viewer, run:
+
+```sh
+pnpm --filter nemlig-assistant ui:mockup
+```
+
+It builds the viewer and uses the same synthetic MCP host as the browser smoke
+to write `to-decide.png`, `product-expanded.png`, and `ready.png` beneath
+`apps/nemlig-assistant/.codex/ui-mockups/`. These images are local and ignored:
+they contain only fixture products, make no external requests, and never access
+the real Nemlig basket. This is a design-review bootstrap, not ChatGPT-host
+acceptance.
+
 Product disclosures, navigation and ordinary local edits do not fetch Nemlig;
 adding new exact products hydrates only those products, and
 explicit alternatives searches hydrate every unique eligible result in the

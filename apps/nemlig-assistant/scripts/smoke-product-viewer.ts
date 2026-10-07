@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { mkdir, readFile } from "node:fs/promises";
 import { createServer } from "node:http";
+import { resolve } from "node:path";
 import { chromium } from "playwright";
 
 declare global {
@@ -24,6 +25,7 @@ declare global {
 }
 
 const html = await readFile(new URL("../dist/picker.html", import.meta.url), "utf8");
+const screenshotDirectory = process.env.NEMLIG_UI_SCREENSHOT_DIR;
 const fixtureView = (id: number, name: string) => ({
   context: "review", status: "complete", product: {
     id, name, price: 12, unit_price: 24, unit: "kr/kg", unit_size: "500 g", currency: "DKK",
@@ -103,6 +105,13 @@ try {
     else { externalRequests.push(route.request().url()); await route.abort(); }
   });
   const page = await context.newPage();
+  const capture = async (name: string) => {
+    if (!screenshotDirectory) return;
+    await mkdir(screenshotDirectory, { recursive: true });
+    const path = resolve(screenshotDirectory, `${name}.png`);
+    await page.screenshot({ path });
+    console.log(`Synthetic viewer mockup: ${path}`);
+  };
   page.setDefaultTimeout(10_000);
   page.setDefaultNavigationTimeout(10_000);
   const errors: string[] = [];
@@ -124,6 +133,7 @@ try {
   assert.equal(await frame.getByText("Synthetic milk").count(), 1);
   assert.equal(await frame.getByText("Organic").count(), 2, "organic badge missing");
   assert.equal(await frame.getByText("Offer").count(), 2, "offer badge missing");
+  await capture("to-decide");
   const milkCard = frame.locator(".product-card").filter({ hasText: "Synthetic milk" });
   const milkDisclosure = milkCard.locator(".product-summary");
   const summaryLayout = await milkDisclosure.evaluate((button) => {
@@ -136,9 +146,11 @@ try {
   const milkFact = milkCard.locator(".product-fact").first();
   await milkFact.locator("summary").click();
   assert.equal(await milkFact.evaluate((node: HTMLDetailsElement) => node.open), true, "nested product fact did not open");
+  await capture("product-expanded");
   await page.evaluate(() => window.setReadyForDisclosure(true));
   await frame.getByRole("button", { name: /Ready \(1\)/ }).click();
   await frame.getByRole("heading", { name: "Ready" }).waitFor();
+  await capture("ready");
   await frame.getByRole("button", { name: /To decide \(1\)/ }).click();
   await frame.getByRole("heading", { name: "To decide" }).waitFor();
   assert.equal(await milkDisclosure.getAttribute("aria-expanded"), "true", "review navigation lost the open product disclosure");
