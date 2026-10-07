@@ -184,14 +184,25 @@ const interruptedContainerRestoreJournal = (extra: Record<string, unknown> = {})
   ...extra,
 });
 
-const interruptedContainerRestoreDeps = (journal: Record<string, unknown>, options: { updatedAt?: string; alreadyRestored?: boolean; restoreOutcomeUnknown?: boolean } = {}) => {
+const directInterruptedContainerRestoreJournal = (extra: Record<string, unknown> = {}) => interruptedContainerRestoreJournal({
+  disabledVersion: null, disabledImage: null, disabledApplicationVersion: null,
+  failure: "service_fixture_acceptance_failed",
+  transitions: [
+    { phase: "enable_deploy", kind: "intent", at: "2026-10-05T13:50:00.000Z", version: startingId },
+    { phase: "enable_deploy", kind: "result", at: "2026-10-05T13:51:00.000Z", version: enabledId },
+    { phase: "container_restore", kind: "intent", at: "2026-10-05T13:58:00.000Z", version: enabledId },
+  ],
+  ...extra,
+});
+
+const interruptedContainerRestoreDeps = (journal: Record<string, unknown>, options: { updatedAt?: string; alreadyRestored?: boolean; restoreOutcomeUnknown?: boolean; direct?: boolean; active?: boolean } = {}) => {
   let applicationImage = options.alreadyRestored
     ? `registry.cloudflare.com/${accountId}/nemlig-mcp-cloudflare-production-nemligmcpcontainer-production@${image}`
     : `registry.cloudflare.com/${accountId}/nemlig-mcp-cloudflare-production-nemligmcpcontainer-production@${candidateImage}`;
   let applicationVersion = options.alreadyRestored ? 27 : 26;
   let running = false;
   let rollouts = 0;
-  const deps = recoveryDeps(journal, disabledId, false, {
+  const deps = recoveryDeps(journal, options.direct ? enabledId : disabledId, options.direct === true, {
     image: candidateImage, applicationVersion, rollbackTo: { version: startingId, enabled: true },
   });
   deps.env = { CLOUDFLARE_ACCOUNT_ID: accountId, CLOUDFLARE_API_TOKEN: "test-token",
@@ -224,7 +235,7 @@ const interruptedContainerRestoreDeps = (journal: Record<string, unknown>, optio
     }
     if (url.includes("api.cloudflare.com")) return Response.json({ success: true, result: {
       id: applicationId, configuration: { image: applicationImage }, version: applicationVersion,
-      scheduling_policy: "default", active_rollout_id: null,
+      scheduling_policy: "default", active_rollout_id: options.active ? "rollout-active" : null,
       updated_at: options.updatedAt ?? "2026-10-05T13:50:00.000Z",
     } });
     return new Response("MCP temporarily disabled", { status: 503 });
@@ -2479,6 +2490,33 @@ test("interrupted Container restore reconciles only after readback proves the ex
   assert.deepEqual(inspected, { operation: journal.operationId, originalRunnerStopped: true, cleanupEligible: true, reason: "eligible", state: "restored" });
   assert.equal(await finalizeDeploymentRecovery(journal.operationId, deps, true, true), true);
   assert.equal(rollbacks, 1, "finalization performs no additional Worker mutation");
+});
+
+test("interrupted enabled restore reconciles the direct routine transcript after exact prior-image readback", async () => {
+  const journal = directInterruptedContainerRestoreJournal();
+  const recovery = interruptedContainerRestoreDeps(journal, { direct: true, alreadyRestored: true });
+  const result = await reconcilePendingRollback(journal.operationId, recovery.deps, true, true);
+  assert.deepEqual(result, { operation: journal.operationId, originalRunnerStopped: true, reconciled: true, reason: "eligible", state: "restored" });
+  assert.equal(recovery.rollouts, 0, "readback of a completed restore must not create another Container rollout");
+});
+
+test("direct enabled restore consumes one explicit authorization before an uncertain exact-image retry", async () => {
+  const journal = directInterruptedContainerRestoreJournal({ recoveryFailure: "cloudflare_container_restore_uncertain" });
+  const recovery = interruptedContainerRestoreDeps(journal, { direct: true, restoreOutcomeUnknown: true });
+  const first = await reconcilePendingRollback(journal.operationId, recovery.deps, true, true, true);
+  assert.deepEqual(first, { operation: journal.operationId, originalRunnerStopped: true, reconciled: false, reason: "provider_outcome_unknown", state: "unknown" });
+  assert.equal(recovery.rollouts, 1);
+  const second = await reconcilePendingRollback(journal.operationId, recovery.deps, true, true, true);
+  assert.deepEqual(second, { operation: journal.operationId, originalRunnerStopped: true, reconciled: false, reason: "provider_outcome_unknown", state: "unknown" });
+  assert.equal(recovery.rollouts, 1, "a consumed direct-restore authorization must never be replayed");
+});
+
+test("direct enabled restore refuses active rollout drift without a second provider mutation", async () => {
+  const journal = directInterruptedContainerRestoreJournal({ recoveryFailure: "cloudflare_container_restore_uncertain" });
+  const recovery = interruptedContainerRestoreDeps(journal, { direct: true, active: true });
+  const result = await reconcilePendingRollback(journal.operationId, recovery.deps, true, true, true);
+  assert.deepEqual(result, { operation: journal.operationId, originalRunnerStopped: true, reconciled: false, reason: "provider_drift", state: "unknown" });
+  assert.equal(recovery.rollouts, 0);
 });
 
 test("ordinary reconciliation never retries an uncertain Container restore based on timestamps", async () => {

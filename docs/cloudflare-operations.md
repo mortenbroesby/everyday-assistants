@@ -338,9 +338,11 @@ not a fresh real-family Nemlig or ChatGPT acceptance claim.
    `provider_outcome_unknown` and retains the lease unless exact restored-image
    readback proves that request completed. Only a separately and explicitly
    owner-authorized protected dispatch may request the exact journaled prior
-   image once. It rechecks the disabled candidate Worker, exact candidate
-   image/version, inactive rollout and instance, disabled routes, and lease;
-   it persists a single-use authorization marker before the POST. A crash or
+   image once. It rechecks either the disabled legacy candidate or the enabled
+   routine candidate, its exact candidate image/version, inactive rollout,
+   matching configuration and instance state, and lease; the disabled form
+   additionally requires disabled routes and an inactive instance. It persists
+   a single-use authorization marker before the POST. A crash or
    uncertain response consumes that authorization and cannot be retried. On
    verified restore, the workflow continues with the exact starting-Worker
    rollback and read-only edge/service acceptance; failures retain the lease.
