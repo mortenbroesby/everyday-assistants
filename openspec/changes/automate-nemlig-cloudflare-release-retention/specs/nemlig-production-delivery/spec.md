@@ -93,6 +93,11 @@ Routine delivery SHALL verify the exact deployed source revision, health, OAuth 
 - **WHEN** a stopped release runner leaves a `container_restore` intent and the original operation, exact starting image/version, disabled Worker, and current provider state can be read back
 - **THEN** protected reconciliation never repeats the rollout POST; it may continue only when authoritative reads show the exact starting image at a newer application version with no active rollout, then restores the exact starting enabled Worker, records bounded evidence, and releases the lease only after read-only acceptance and exact readback
 
+#### Scenario: A restored direct failback resumes after Worker restoration
+
+- **WHEN** exact readback already proves the recorded starting image and Worker were restored, but service acceptance has not yet completed
+- **THEN** reconciliation recognizes the complete direct-restore transcript, performs no additional Container or Worker mutation, and reruns service acceptance against the package version recorded at the journal's starting source revision; a mismatched, missing, or invalid source identity retains the lease
+
 #### Scenario: The outcome of an interrupted container restore is unknown
 
 - **WHEN** the candidate image remains current after a `container_restore` intent, including when the provider application timestamp predates that intent

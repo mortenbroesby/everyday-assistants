@@ -336,6 +336,19 @@ jobs:
           AUTHORIZE_UNCERTAIN_CONTAINER_RESTORE: "${{ env.AUTHORIZE_UNCERTAIN_CONTAINER_RESTORE }}"
         run: |
           set -euo pipefail
+          git fetch origin refs/heads/codex-lock/nemlig-production:refs/remotes/origin/codex-lock/nemlig-production
+          recovery_journal=$(git show origin/codex-lock/nemlig-production:journal.json)
+          recovery_revision=$(node --input-type=module -e '
+            const journal = JSON.parse(process.argv[1]);
+            if (!/^[0-9a-f]{40}$/.test(journal.startingRevision ?? "")) process.exit(1);
+            console.log(journal.startingRevision);
+          ' "$recovery_journal")
+          recovery_manifest=$(git show "$recovery_revision:apps/nemlig-assistant/package.json")
+          export NEMLIG_EXPECTED_SERVICE_VERSION=$(node --input-type=module -e '
+            const manifest = JSON.parse(process.argv[1]);
+            if (typeof manifest.version !== "string" || !/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(manifest.version)) process.exit(1);
+            console.log(manifest.version);
+          ' "$recovery_manifest")
           reconcile_args=(reconcile-recovery "$RECONCILE_OPERATION" --evidence-saved --original-runner-stopped)
           if [[ "$AUTHORIZE_UNCERTAIN_CONTAINER_RESTORE" == "true" ]]; then reconcile_args+=(--authorize-one-container-restore); fi
           if result=$(pnpm --silent --filter nemlig-assistant production:deploy -- "${reconcile_args[@]}"); then

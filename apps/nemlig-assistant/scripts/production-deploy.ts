@@ -1010,8 +1010,19 @@ const interruptedContainerRestoreMode = (journal: DeploymentJournal): Interrupte
     && enableIntent?.phase === "enable_deploy" && enableIntent.kind === "intent" && enableIntent.version === journal.startingVersion
     && enableResult?.phase === "enable_deploy" && enableResult.kind === "result" && enableResult.version === journal.enabledVersion;
   if (!common) return undefined;
-  const directRoutineRestore = journal.failure === "service_fixture_acceptance_failed" && journal.transitions.length === 3
-    && rollbackIntent?.phase === "container_restore" && rollbackIntent.kind === "intent" && rollbackIntent.version === journal.enabledVersion;
+  const directContainerIntent = rollbackIntent?.phase === "container_restore" && rollbackIntent.kind === "intent"
+    && rollbackIntent.version === journal.enabledVersion;
+  const directRestoreTransitionsComplete = directContainerIntent && (journal.transitions.length === 3
+    || (journal.transitions.length === 4 && rollbackResult?.phase === "container_restore"
+      && rollbackResult.kind === "result" && rollbackResult.version === journal.enabledVersion)
+    || (journal.transitions.length === 5 && rollbackResult?.phase === "container_restore"
+      && rollbackResult.kind === "result" && rollbackResult.version === journal.enabledVersion
+      && containerIntent?.phase === "worker_restore" && containerIntent.kind === "intent" && containerIntent.version === journal.startingVersion)
+    || (journal.transitions.length === 6 && rollbackResult?.phase === "container_restore"
+      && rollbackResult.kind === "result" && rollbackResult.version === journal.enabledVersion
+      && containerIntent?.phase === "worker_restore" && containerIntent.kind === "intent" && containerIntent.version === journal.startingVersion
+      && containerResult?.phase === "worker_restore" && containerResult.kind === "result" && containerResult.version === journal.startingVersion));
+  const directRoutineRestore = journal.failure === "service_fixture_acceptance_failed" && directRestoreTransitionsComplete;
   if (directRoutineRestore) return "enabled";
   const disabledRestore = journal.failure === "container_instance_timeout"
     && Boolean(journal.disabledVersion && journal.disabledImage && journal.disabledApplicationVersion)

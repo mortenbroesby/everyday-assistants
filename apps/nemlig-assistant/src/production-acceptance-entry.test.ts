@@ -218,6 +218,18 @@ test("service acceptance rejects a previous backend release before listing tools
   assert.notEqual(NEMLIG_VERSION, "4.17.0");
 });
 
+test("service acceptance can verify a recorded restored package version", async () => {
+  const entry = await import("../scripts/production-acceptance.js");
+  const report = await entry.main(["--service", "--initialize-only"], {
+    NEMLIG_MCP_SERVICE_ACCESS_TOKEN: "service-token",
+    NEMLIG_EXPECTED_SERVICE_VERSION: "6.0.0",
+  }, {
+    fetcher: edgeFetcher([]),
+    connect: async () => ({ client: serviceClient(), serverVersion: "6.0.0", close: async () => undefined }),
+  });
+  assert.deepEqual(report.passed, ["service_runtime"]);
+});
+
 test("service acceptance does not depend on legacy expired-session recovery", async () => {
   const sessionRequests: string[] = [];
   const calls: string[] = [];

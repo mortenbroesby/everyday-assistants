@@ -130,10 +130,6 @@ const recoveryDeps = (journal: Record<string, unknown>, currentVersion: string, 
     if (args[0] === "repo") return JSON.stringify({ nameWithOwner: "mortenbroesby/everyday-assistants", url: "https://github.com/mortenbroesby/everyday-assistants" });
     if (args[0] === "api" && args[1] === "--method" && args[2] === "DELETE") { remoteHead = ""; return ""; }
     const path = args.find((value) => value.startsWith("repos/")) ?? "";
-    if (path.includes("git/ref/")) return remoteHead;
-    if (path.includes("git/commits/")) return JSON.stringify({ tree: { sha: tree }, parents: remoteParent ? [{ sha: remoteParent }] : [] });
-    if (path.includes("git/trees/")) return JSON.stringify({ tree: [{ path: "journal.json", type: "blob", mode: "100644", sha: blob }] });
-    if (path.includes("git/blobs/")) return JSON.stringify({ encoding: "base64", content: Buffer.from(currentJournal).toString("base64") });
     if (args[0] === "api" && args[1] === "--method" && args[2] === "POST" && path.endsWith("git/blobs")) {
       currentJournal = Buffer.from(JSON.parse(runOptions?.input ?? "{}").content, "base64").toString("utf8");
       return JSON.stringify({ sha: blob });
@@ -145,6 +141,10 @@ const recoveryDeps = (journal: Record<string, unknown>, currentVersion: string, 
       remoteHead = JSON.parse(runOptions?.input ?? "{}").sha;
       return JSON.stringify({ object: { sha: remoteHead } });
     }
+    if (path.includes("git/ref/")) return remoteHead;
+    if (path.includes("git/commits/")) return JSON.stringify({ tree: { sha: tree }, parents: remoteParent ? [{ sha: remoteParent }] : [] });
+    if (path.includes("git/trees/")) return JSON.stringify({ tree: [{ path: "journal.json", type: "blob", mode: "100644", sha: blob }] });
+    if (path.includes("git/blobs/")) return JSON.stringify({ encoding: "base64", content: Buffer.from(currentJournal).toString("base64") });
     throw new Error("unexpected gh api");
   };
   return { repoRoot: ".", packageRoot: ".", env: { CLOUDFLARE_ACCOUNT_ID: accountId }, run,
@@ -195,14 +195,14 @@ const directInterruptedContainerRestoreJournal = (extra: Record<string, unknown>
   ...extra,
 });
 
-const interruptedContainerRestoreDeps = (journal: Record<string, unknown>, options: { updatedAt?: string; alreadyRestored?: boolean; restoreOutcomeUnknown?: boolean; direct?: boolean; active?: boolean } = {}) => {
+const interruptedContainerRestoreDeps = (journal: Record<string, unknown>, options: { updatedAt?: string; alreadyRestored?: boolean; restoreOutcomeUnknown?: boolean; direct?: boolean; workerRestored?: boolean; active?: boolean } = {}) => {
   let applicationImage = options.alreadyRestored
     ? `registry.cloudflare.com/${accountId}/nemlig-mcp-cloudflare-production-nemligmcpcontainer-production@${image}`
     : `registry.cloudflare.com/${accountId}/nemlig-mcp-cloudflare-production-nemligmcpcontainer-production@${candidateImage}`;
   let applicationVersion = options.alreadyRestored ? 27 : 26;
   let running = false;
   let rollouts = 0;
-  const deps = recoveryDeps(journal, options.direct ? enabledId : disabledId, options.direct === true, {
+  const deps = recoveryDeps(journal, options.direct && !options.workerRestored ? enabledId : options.direct ? startingId : disabledId, options.direct === true, {
     image: candidateImage, applicationVersion, rollbackTo: { version: startingId, enabled: true },
   });
   deps.env = { CLOUDFLARE_ACCOUNT_ID: accountId, CLOUDFLARE_API_TOKEN: "test-token",
@@ -2523,6 +2523,25 @@ test("interrupted enabled restore reconciles the direct routine transcript after
   const result = await reconcilePendingRollback(journal.operationId, recovery.deps, true, true);
   assert.deepEqual(result, { operation: journal.operationId, originalRunnerStopped: true, reconciled: true, reason: "eligible", state: "restored" });
   assert.equal(recovery.rollouts, 0, "readback of a completed restore must not create another Container rollout");
+});
+
+test("interrupted enabled restore resumes acceptance after its Worker restore was already recorded", async () => {
+  const journal = directInterruptedContainerRestoreJournal({
+    restoredApplicationVersion: 27,
+    transitions: [
+      { phase: "enable_deploy", kind: "intent", at: "2026-10-05T13:50:00.000Z", version: startingId },
+      { phase: "enable_deploy", kind: "result", at: "2026-10-05T13:51:00.000Z", version: enabledId },
+      { phase: "container_restore", kind: "intent", at: "2026-10-05T13:58:00.000Z", version: enabledId },
+      { phase: "container_restore", kind: "result", at: "2026-10-05T13:59:00.000Z", version: enabledId },
+      { phase: "worker_restore", kind: "intent", at: "2026-10-05T14:00:00.000Z", version: startingId },
+      { phase: "worker_restore", kind: "result", at: "2026-10-05T14:01:00.000Z", version: startingId },
+    ],
+  });
+  assert.doesNotThrow(() => parseDeploymentJournal(JSON.stringify(journal)));
+  const recovery = interruptedContainerRestoreDeps(journal, { direct: true, alreadyRestored: true, workerRestored: true });
+  const result = await reconcilePendingRollback(journal.operationId, recovery.deps, true, true);
+  assert.deepEqual(result, { operation: journal.operationId, originalRunnerStopped: true, reconciled: true, reason: "eligible", state: "restored" });
+  assert.equal(recovery.rollouts, 0, "resuming acceptance must not create another Container rollout");
 });
 
 test("direct enabled restore consumes one explicit authorization before an uncertain exact-image retry", async () => {
