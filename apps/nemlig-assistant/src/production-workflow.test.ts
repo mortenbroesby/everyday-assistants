@@ -90,6 +90,9 @@ test("routine releases queue trusted main ancestors; manual dispatch is recovery
   assert.match(preflight, /id: production_preflight/u);
   assert.match(preflight, /state === "blocked_by_existing_lease"/u);
   assert.match(preflight, /readiness=blocked_by_existing_lease/u);
+  assert.match(preflight, /printf 'readiness=ready\\n' >> "\$GITHUB_OUTPUT"/u);
+  assert.match(preflight, /preflight_state=\$\(node --input-type=module/u);
+  assert.doesNotMatch(preflight, /appendFileSync\(output/u);
   assert.match(preflight, /Deployment not attempted; live revision not verified\./u);
   assert.match(preflight, /explicitly reconcile the saved production operation/u);
   assert.match(preflight, /env:\n\s+GH_TOKEN:/u);
