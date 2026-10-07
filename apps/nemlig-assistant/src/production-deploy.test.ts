@@ -2934,7 +2934,7 @@ test("routine service releases keep the public routes enabled during the Contain
     const deploys = calls.filter(({ args }) => args.includes("deploy"));
     assert.equal(deploys.length, 1);
     assert.ok(deploys[0]?.args.includes("MCP_ENABLED:true"));
-    assert.equal(deploys[0]?.args.includes("--containers-rollout"), false);
+    assert.deepEqual(deploys[0]?.args.slice(deploys[0]?.args.indexOf("--containers-rollout"), deploys[0]?.args.indexOf("--containers-rollout") + 2), ["--containers-rollout", "immediate"]);
     assert.equal(calls.some(({ args }) => args.includes("MCP_ENABLED:false")), false);
     assert.deepEqual(report.transitions.map(({ phase, kind }) => `${phase}:${kind}`), [
       "enable_deploy:intent", "enable_deploy:result",
