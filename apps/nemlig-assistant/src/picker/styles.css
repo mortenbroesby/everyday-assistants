@@ -38,6 +38,9 @@ h1 { margin: 8px 0 5px; text-align: center; font-size: 1.15rem; font-weight: 650
 .product-quantity { justify-self: start; padding: 1px 7px; border-radius: 999px; background: var(--soft); color: var(--accent); font-size: .78rem; font-weight: 650; }
 .product-expanded { padding: 12px 0 4px; overflow-wrap: anywhere; }
 .review-controls, .quantity-control, .review-footer, .alternatives form { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 10px; }
+.ready-row-actions { padding-top: 10px; border-top: 1px solid var(--line); }
+.local-confirmation { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 10px; border-radius: 10px; background: var(--soft); }
+.local-confirmation p { flex-basis: 100%; margin: 0; color: var(--muted); font-size: .82rem; }
 .review-footer { display: block; padding-top: 10px; }
 .review-footer > button { margin-right: 8px; margin-bottom: 8px; }
 .destination-tabs { display: flex; gap: 8px; padding: 4px; margin-bottom: 10px; background: var(--soft); border-radius: 12px; }
