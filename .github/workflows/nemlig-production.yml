@@ -495,12 +495,17 @@ jobs:
           node-version: 24.13.0
       - name: Install frozen dependencies
         run: pnpm install --frozen-lockfile
-      - name: Finalize a proven terminal predecessor only
+      - name: Reconcile and finalize a stopped predecessor
         id: reconcile
         env:
           GH_TOKEN: "${{ github.token }}"
           CLOUDFLARE_API_TOKEN: "${{ secrets.CLOUDFLARE_API_TOKEN }}"
           CLOUDFLARE_ACCOUNT_ID: "${{ vars.CLOUDFLARE_ACCOUNT_ID }}"
+          NEMLIG_MCP_AUTH0_ISSUER: https://everyday-assistants.eu.auth0.com/
+          NEMLIG_MCP_PUBLIC_URL: https://nemlig-mcp.broesby.dk/mcp
+          NEMLIG_MCP_SERVICE_CLIENT_ID: "${{ vars.NEMLIG_MCP_SERVICE_CLIENT_ID }}"
+          NEMLIG_MCP_SERVICE_CLIENT_SECRET: "${{ secrets.NEMLIG_MCP_SERVICE_CLIENT_SECRET }}"
+          NEMLIG_CI_ACCEPTANCE_READY: "${{ vars.NEMLIG_CI_ACCEPTANCE_READY }}"
           LEASE_HEAD: "${{ needs.preflight.outputs.lease_head }}"
         run: |
           set -euo pipefail
@@ -528,6 +533,12 @@ jobs:
             const artifacts = JSON.parse(process.argv[1]).artifacts;
             if (!Array.isArray(artifacts) || !artifacts.some((artifact) => artifact?.name === "nemlig-production-release" && artifact.expired === false)) process.exit(1);
           ' "$artifacts"
+          reconciliation=$(pnpm --silent --filter nemlig-assistant production:deploy -- reconcile-recovery "$operation" --evidence-saved --original-runner-stopped)
+          node --input-type=module -e '
+            const result = JSON.parse(process.argv[1]);
+            if (result.operation !== process.argv[2] || result.reconciled !== true) process.exit(1);
+            if (!["disabled", "restored"].includes(result.state)) process.exit(1);
+          ' "$reconciliation" "$operation"
           inspection=$(pnpm --silent --filter nemlig-assistant production:deploy -- inspect-recovery "$operation" --original-runner-stopped)
           node --input-type=module -e '
             const inspection = JSON.parse(process.argv[1]);

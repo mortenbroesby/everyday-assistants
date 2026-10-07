@@ -2273,6 +2273,30 @@ test("interrupted enabled restore resumes acceptance after its Worker restore wa
   assert.equal(recovery.rollouts, 0, "resuming acceptance must not create another Container rollout");
 });
 
+test("a restored direct transcript without service acceptance is reconciled before its lease can be finalized", async () => {
+  const journal = directInterruptedContainerRestoreJournal({
+    rollback: "restored",
+    lastVerifiedState: "restored",
+    restoredApplicationVersion: 27,
+    checks: ["starting_state_recorded", "enabled_version", "container_rollout"],
+    transitions: [
+      { phase: "enable_deploy", kind: "intent", at: "2026-10-05T13:50:00.000Z", version: startingId },
+      { phase: "enable_deploy", kind: "result", at: "2026-10-05T13:51:00.000Z", version: enabledId },
+      { phase: "container_restore", kind: "intent", at: "2026-10-05T13:58:00.000Z", version: enabledId },
+      { phase: "container_restore", kind: "result", at: "2026-10-05T13:59:00.000Z", version: enabledId },
+      { phase: "worker_restore", kind: "intent", at: "2026-10-05T14:00:00.000Z", version: startingId },
+      { phase: "worker_restore", kind: "result", at: "2026-10-05T14:01:00.000Z", version: startingId },
+    ],
+  });
+  const recovery = interruptedContainerRestoreDeps(journal, { direct: true, alreadyRestored: true, workerRestored: true });
+  const result = await reconcilePendingRollback(journal.operationId, recovery.deps, true, true);
+  assert.deepEqual(result, { operation: journal.operationId, originalRunnerStopped: true, reconciled: true, reason: "eligible", state: "restored" });
+  assert.equal(recovery.rollouts, 0, "reconciliation of a restored pair must not create another Container rollout");
+  assert.deepEqual(await inspectDeploymentRecovery(journal.operationId, recovery.deps, true), {
+    operation: journal.operationId, originalRunnerStopped: true, cleanupEligible: true, reason: "eligible", state: "restored",
+  });
+});
+
 test("a restored direct transcript resumes edge acceptance without another Container rollout", async () => {
   const journal = directInterruptedContainerRestoreJournal({
     failure: "edge_acceptance_failed",
