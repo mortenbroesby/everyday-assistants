@@ -1069,7 +1069,7 @@ const interruptedContainerRestoreMode = (journal: DeploymentJournal): Interrupte
   // Before sleeping Containers were accepted after a successful MCP exchange,
   // the same direct restore path could be recorded as a liveness timeout. The
   // transcript—not that obsolete failure label—establishes its safe shape.
-  const directRoutineRestore = ["service_fixture_acceptance_failed", "container_instance_timeout"].includes(journal.failure ?? "")
+  const directRoutineRestore = ["service_fixture_acceptance_failed", "container_instance_timeout", "edge_acceptance_failed"].includes(journal.failure ?? "")
     && directRestoreTransitionsComplete;
   if (directRoutineRestore) return "enabled";
   const disabledRestore = journal.failure === "container_instance_timeout"
@@ -1341,7 +1341,11 @@ export async function reconcilePendingRollback(
       }
       try {
         const serviceToken = await (deps.issueServiceToken ?? issueServiceToken)(deps.env, { fetcher: deps.fetcher, signal: deps.signal });
-        await retryAcceptance(deps, ["production:probe"], { NEMLIG_EXPECTED_REVISION: journal.startingRevision! }, 1, "edge", "edge", "edge_acceptance_failed", 120_000);
+        // A Worker rollback can become visible at the edge a few seconds after
+        // exact Worker/Container readback. Retry that credential-free probe
+        // within the existing bounded acceptance window before retaining an
+        // otherwise restored pair as unresolved.
+        await retryAcceptance(deps, ["production:probe"], { NEMLIG_EXPECTED_REVISION: journal.startingRevision! }, 3, "edge", "edge", "edge_acceptance_failed", 120_000);
         await retryAcceptance(deps, ["production:test:features", "--service", "--initialize-only", "--wake-only"], {
           NEMLIG_MCP_SERVICE_ACCESS_TOKEN: serviceToken, NEMLIG_EXPECTED_REVISION: journal.startingRevision!,
         }, 1, "read_only", "service", "service_fixture_acceptance_failed", 120_000, 1);

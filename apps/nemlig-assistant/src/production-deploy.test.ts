@@ -2250,6 +2250,26 @@ test("interrupted enabled restore resumes acceptance after its Worker restore wa
   assert.equal(recovery.rollouts, 0, "resuming acceptance must not create another Container rollout");
 });
 
+test("a restored direct transcript resumes edge acceptance without another Container rollout", async () => {
+  const journal = directInterruptedContainerRestoreJournal({
+    failure: "edge_acceptance_failed",
+    recoveryFailure: "edge_acceptance_failed",
+    restoredApplicationVersion: 27,
+    transitions: [
+      { phase: "enable_deploy", kind: "intent", at: "2026-10-05T13:50:00.000Z", version: startingId },
+      { phase: "enable_deploy", kind: "result", at: "2026-10-05T13:51:00.000Z", version: enabledId },
+      { phase: "container_restore", kind: "intent", at: "2026-10-05T13:58:00.000Z", version: enabledId },
+      { phase: "container_restore", kind: "result", at: "2026-10-05T13:59:00.000Z", version: enabledId },
+      { phase: "worker_restore", kind: "intent", at: "2026-10-05T14:00:00.000Z", version: startingId },
+      { phase: "worker_restore", kind: "result", at: "2026-10-05T14:01:00.000Z", version: startingId },
+    ],
+  });
+  const recovery = interruptedContainerRestoreDeps(journal, { direct: true, alreadyRestored: true, workerRestored: true });
+  const result = await reconcilePendingRollback(journal.operationId, recovery.deps, true, true);
+  assert.deepEqual(result, { operation: journal.operationId, originalRunnerStopped: true, reconciled: true, reason: "eligible", state: "restored" });
+  assert.equal(recovery.rollouts, 0, "read-only acceptance recovery must not request another Container rollout");
+});
+
 test("direct enabled restore consumes one explicit authorization before an uncertain exact-image retry", async () => {
   const journal = directInterruptedContainerRestoreJournal({ recoveryFailure: "cloudflare_container_restore_uncertain" });
   const recovery = interruptedContainerRestoreDeps(journal, { direct: true, restoreOutcomeUnknown: true });
