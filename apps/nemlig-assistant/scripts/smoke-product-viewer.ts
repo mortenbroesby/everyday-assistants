@@ -18,6 +18,8 @@ declare global {
     sendMalformed: () => void;
     sendEnded: () => void;
     sendUnavailable: () => void;
+    setReadyForDisclosure: (ready: boolean) => void;
+    replaceReviewIdentity: () => void;
   }
 }
 
@@ -63,6 +65,8 @@ window.sendSubmitted=()=>{review.submission.status='submitted';frame.contentWind
 window.sendMalformed=()=>{const malformed=JSON.parse(JSON.stringify(review));malformed.submission.review.lines=[null];frame.contentWindow.postMessage({jsonrpc:'2.0',method:'ui/notifications/tool-result',params:{structuredContent:{review:malformed}}},location.origin)};
 window.sendEnded=()=>frame.contentWindow.postMessage({jsonrpc:'2.0',method:'ui/notifications/tool-result',params:{structuredContent:{ended:true}}},location.origin);
 window.sendUnavailable=()=>frame.contentWindow.postMessage({jsonrpc:'2.0',method:'ui/notifications/tool-result',params:{structuredContent:{unavailable:true}}},location.origin);
+window.setReadyForDisclosure=(ready)=>{review.items.find(item=>item.product_id===2).state=ready?'ready':'needs-review';review.revision++;frame.contentWindow.postMessage({jsonrpc:'2.0',method:'ui/notifications/tool-result',params:{structuredContent:{review:JSON.parse(JSON.stringify(review))}}},location.origin)};
+window.replaceReviewIdentity=()=>{review.review_id='second-synthetic-review';review.revision++};
 window.addEventListener('message',event=>{
  if(event.source!==frame.contentWindow || event.origin!==location.origin) return;
  const message=event.data; if(!message || message.jsonrpc!=='2.0') return;
@@ -120,6 +124,48 @@ try {
   assert.equal(await frame.getByText("Synthetic milk").count(), 1);
   assert.equal(await frame.getByText("Organic").count(), 2, "organic badge missing");
   assert.equal(await frame.getByText("Offer").count(), 2, "offer badge missing");
+  const milkCard = frame.locator(".product-card").filter({ hasText: "Synthetic milk" });
+  const milkDisclosure = milkCard.locator(".product-summary");
+  await milkDisclosure.click();
+  assert.equal(await milkDisclosure.getAttribute("aria-expanded"), "true", "product disclosure did not open");
+  const milkFact = milkCard.locator(".product-fact").first();
+  await milkFact.locator("summary").click();
+  assert.equal(await milkFact.evaluate((node: HTMLDetailsElement) => node.open), true, "nested product fact did not open");
+  await page.evaluate(() => window.setReadyForDisclosure(true));
+  await frame.getByRole("button", { name: /Ready \(1\)/ }).click();
+  await frame.getByRole("heading", { name: "Ready" }).waitFor();
+  await frame.getByRole("button", { name: /To decide \(1\)/ }).click();
+  await frame.getByRole("heading", { name: "To decide" }).waitFor();
+  assert.equal(await milkDisclosure.getAttribute("aria-expanded"), "true", "review navigation lost the open product disclosure");
+  assert.equal(await milkFact.evaluate((node: HTMLDetailsElement) => node.open), true, "review navigation lost the open nested fact disclosure");
+  await page.evaluate(() => window.setReadyForDisclosure(false));
+  await frame.getByRole("button", { name: /To decide \(2\)/ }).waitFor();
+  await page.evaluate(() => window.sendCancel());
+  await frame.getByRole("button", { name: "Refresh Draft list" }).waitFor();
+  await page.evaluate(() => window.replaceReviewIdentity());
+  await frame.getByRole("button", { name: "Refresh Draft list" }).click();
+  await frame.getByRole("button", { name: /To decide \(2\)/ }).waitFor();
+  assert.equal(await milkDisclosure.getAttribute("aria-expanded"), "false", "a different review inherited the previous card disclosure state");
+  assert.equal(await milkFact.evaluate((node: HTMLDetailsElement) => node.open), false, "a different review inherited the previous nested fact state");
+  await milkCard.getByRole("button", { name: "Choose alternative" }).click();
+  const alternativesQuery = frame.getByRole("searchbox", { name: "Search for more products" });
+  assert.equal(await alternativesQuery.inputValue(), "Synthetic milk", "the current product search query was not shown");
+  await alternativesQuery.fill("custom milk query");
+  const beforeAlternativeSearch = await page.evaluate(() => window.calls.length);
+  await frame.getByRole("button", { name: "Search products" }).click();
+  await page.waitForFunction((before) => window.calls.slice(before).some((call) => call.args.action?.kind === "alternatives" && call.args.action.query === "custom milk query"), beforeAlternativeSearch);
+  await alternativesQuery.fill("");
+  assert.equal(await alternativesQuery.inputValue(), "", "clearing the alternatives query restored stale server text");
+  const alternativeCallsBeforeEmptySearch = await page.evaluate(() => window.calls.filter((call) => call.args.action?.kind === "alternatives").length);
+  await frame.getByRole("button", { name: "Search products" }).click();
+  assert.equal(await page.evaluate(() => window.calls.filter((call) => call.args.action?.kind === "alternatives").length), alternativeCallsBeforeEmptySearch, "an empty alternatives query sent a stale search");
+  await frame.getByRole("button", { name: /To decide \(2\)/ }).click();
+  const oatsCard = frame.locator(".product-card").filter({ hasText: "Synthetic oats" });
+  await oatsCard.getByRole("button", { name: "Choose alternative" }).click();
+  await frame.getByRole("heading", { name: "Current product" }).waitFor();
+  assert.equal(await frame.getByRole("searchbox", { name: "Search for more products" }).inputValue(), "Synthetic oats", "an earlier product's query leaked into the new alternative target");
+  await frame.getByRole("button", { name: /To decide \(2\)/ }).click();
+  await frame.getByRole("heading", { name: "To decide" }).waitFor();
   await frame.getByRole("button", { name: "Select all" }).click();
   assert.equal(await frame.locator('input[type="checkbox"]:checked').count(), 2, "Select all omitted a usable row");
   await frame.getByRole("button", { name: "Clear selection" }).click();

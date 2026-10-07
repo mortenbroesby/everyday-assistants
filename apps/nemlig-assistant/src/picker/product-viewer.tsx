@@ -71,14 +71,17 @@ function readPayload(value: unknown): Screen | undefined {
 function money(value: unknown): string { return typeof value === "number" && Number.isFinite(value) ? `${value.toFixed(2)} kr` : "Unknown price"; }
 function productName(view: ProductView, id?: number): string { return view.status === "complete" ? view.product.name ?? `Product ${view.product.id ?? id ?? "details unavailable"}` : `Product ${view.product_id ?? id ?? "details"}`; }
 function isUsable(view: ProductView): boolean { return view.status === "complete" && view.product.available === true; }
+const EMPTY_REVIEW_FACTS = new Set<string>();
 
-function ProductCard({ view, item, disabled, onQuantity, onRemove, onRevisit, selected, onSelected, choice, onChoice, onOpenAlternatives }: {
+function ProductCard({ view, item, disabled, onQuantity, onRemove, onRevisit, selected, onSelected, choice, onChoice, onOpenAlternatives, expanded, onExpandedChange, expandedFacts, onFactExpandedChange }: {
   view: ProductView; item?: ReviewItem; disabled: boolean; onQuantity?: (quantity: number) => void; onRemove?: () => void; onRevisit?: () => void;
   selected?: boolean; onSelected?: (selected: boolean) => void; choice?: boolean; onChoice?: () => void; onOpenAlternatives?: () => void;
+  expanded?: boolean; onExpandedChange?: (expanded: boolean) => void; expandedFacts?: ReadonlySet<string>; onFactExpandedChange?: (factKey: string, expanded: boolean) => void;
 }) {
-  const [expanded, setExpanded] = useState(false);
+  const [localExpanded, setLocalExpanded] = useState(false);
   const [imageFailed, setImageFailed] = useState(false);
   const detailsId = useId();
+  const disclosureExpanded = expanded ?? localExpanded;
   const quantity = item?.quantity ?? (view.status === "complete" ? (view.context === "basket" ? view.basket?.quantity : view.context === "review" ? view.review?.quantity : undefined) : undefined);
   const count = quantity ?? 0;
   const reviewControls = item && <div className="review-controls"><div className="quantity-control"><span>Quantity</span><Button color="secondary" aria-label={`Decrease quantity of ${productName(view, item.product_id)}`} disabled={disabled || count <= 1} onClick={() => onQuantity?.(count - 1)}>−</Button><span aria-live="polite">{count}</span><Button color="secondary" aria-label={`Increase quantity of ${productName(view, item.product_id)}`} disabled={disabled || count >= Number.MAX_SAFE_INTEGER} onClick={() => onQuantity?.(count + 1)}>+</Button></div>
@@ -96,7 +99,10 @@ function ProductCard({ view, item, disabled, onQuantity, onRemove, onRevisit, se
     {onSelected && <label className="product-select"><input type="checkbox" aria-label={`Select ${productName(view)}`} disabled={disabled || !isUsable(view)} checked={selected === true} onChange={(event) => onSelected(event.currentTarget.checked)} /></label>}
     {onChoice && <label className="product-select"><input type="radio" name="replacement" aria-label={`Choose ${productName(view)}`} disabled={disabled || !isUsable(view)} checked={choice === true} onChange={onChoice} /></label>}
     <div className="product-details">
-      <Button color="secondary" variant="ghost" pill={false} block className="product-summary" aria-expanded={expanded} aria-controls={detailsId} onClick={() => setExpanded((current) => !current)}>
+      <Button color="secondary" variant="ghost" pill={false} block className="product-summary" aria-expanded={disclosureExpanded} aria-controls={detailsId} onClick={() => {
+        const next = !disclosureExpanded;
+        if (onExpandedChange) onExpandedChange(next); else setLocalExpanded(next);
+      }}>
         {image && !imageFailed ? <img className="product-image" src={image} alt={product.name ?? "Product"} onError={() => setImageFailed(true)} /> : <span className="product-image product-image-fallback" aria-hidden="true">No image</span>}
         <span className="product-copy"><span className="product-heading"><strong>{productName(view)}</strong><span>{money(quantityTotal)}</span></span>
           <span className="product-meta">{[product.brand, product.unit_size].filter(Boolean).join(" · ") || "Package details unavailable"}</span>
@@ -105,10 +111,10 @@ function ProductCard({ view, item, disabled, onQuantity, onRemove, onRevisit, se
           {product.is_organic === true && <Badge color="success">Organic</Badge>}{product.is_frozen === true && <Badge color="info">Frozen</Badge>}{product.is_on_discount === true && <Badge color="warning">Offer</Badge>}
           {product.available === false && <Badge color="danger">Unavailable</Badge>}{product.available === undefined && <Badge color="warning">Availability unknown</Badge>}
       </span></Button>
-      <div id={detailsId} className="product-expanded" hidden={!expanded}>
-        <p>Product ID: {product.id ?? "Unknown"}</p>{product.description && <details className="product-fact"><summary>Varebeskrivelse</summary><p>{product.description}</p></details>}
-        {product.declaration && <details className="product-fact"><summary>Varedeklaration</summary><p>{product.declaration}</p></details>}
-        {product.details?.filter((fact) => fact.key.trim() && fact.value.trim()).map(({ key, value }) => <details className="product-fact" key={`${key}:${value}`}><summary>{key}</summary><p>{value}</p></details>)}
+      <div id={detailsId} className="product-expanded" hidden={!disclosureExpanded}>
+        <p>Product ID: {product.id ?? "Unknown"}</p>{product.description && <details className="product-fact" open={expandedFacts?.has("Varebeskrivelse")} onToggle={onFactExpandedChange ? (event) => onFactExpandedChange("Varebeskrivelse", event.currentTarget.open) : undefined}><summary>Varebeskrivelse</summary><p>{product.description}</p></details>}
+        {product.declaration && <details className="product-fact" open={expandedFacts?.has("Varedeklaration")} onToggle={onFactExpandedChange ? (event) => onFactExpandedChange("Varedeklaration", event.currentTarget.open) : undefined}><summary>Varedeklaration</summary><p>{product.declaration}</p></details>}
+        {product.details?.filter((fact) => fact.key.trim() && fact.value.trim()).map(({ key, value }) => <details className="product-fact" key={`${key}:${value}`} open={expandedFacts?.has(`${key}:${value}`)} onToggle={onFactExpandedChange ? (event) => onFactExpandedChange(`${key}:${value}`, event.currentTarget.open) : undefined}><summary>{key}</summary><p>{value}</p></details>)}
         {(view.context === "basket" || view.context === "review" || item) && <p>{view.context === "basket" ? "Nemlig basket" : "Draft list"} quantity: {quantity ?? "Unknown"} · Line total: {money(item && typeof product.price === "number" ? item.quantity * product.price : view.context === "basket" ? view.basket?.line_total : view.context === "review" ? view.review?.line_total : undefined)}</p>}
       </div>
       {reviewControls}
@@ -126,8 +132,8 @@ export function ProductViewer() {
   const callLock = useRef(false);
   const cancellationEpoch = useRef(0);
   const [selected, setSelected] = useState<Set<number>>(() => new Set());
+  const [reviewDisclosures, setReviewDisclosures] = useState<Map<number, { expanded: boolean; facts: Set<string> }>>(() => new Map());
   const [replacement, setReplacement] = useState<number>();
-  const [query, setQuery] = useState("");
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
   const [confirmSubmit, setConfirmSubmit] = useState(false);
@@ -181,6 +187,7 @@ export function ProductViewer() {
     if (next.kind === "review") {
       if (!current && previous?.active && previous.review.review_id !== next.review.review_id) return true;
       const sameReview = previous?.review.review_id === next.review.review_id;
+      if (!sameReview) setReviewDisclosures(new Map());
       if (sameReview && next.review.revision < previous.review.revision) return true;
       if (!current && previous?.active && sameReview && next.review.revision === previous.review.revision) {
         const verifiedCompletion = previous.review.submission?.status === "uncertain"
@@ -225,6 +232,7 @@ export function ProductViewer() {
         submitBlockedRef.current = false;
         setSubmitBlocked(false);
         setContinueSubmitted(false);
+        setReviewDisclosures(new Map());
       }
       setScreen(next);
     }
@@ -349,6 +357,27 @@ export function ProductViewer() {
     setConfirmEnd(false);
     if (await flushQuantities()) await update({ kind: "end" });
   };
+  const reviewDisclosureProps = (productId: number) => {
+    const disclosure = reviewDisclosures.get(productId);
+    return {
+      expanded: disclosure?.expanded ?? false,
+      onExpandedChange: (expanded: boolean) => setReviewDisclosures((previous) => {
+        const next = new Map(previous);
+        const current = previous.get(productId) ?? { expanded: false, facts: new Set<string>() };
+        next.set(productId, { ...current, expanded });
+        return next;
+      }),
+      expandedFacts: disclosure?.facts ?? EMPTY_REVIEW_FACTS,
+      onFactExpandedChange: (factKey: string, expanded: boolean) => setReviewDisclosures((previous) => {
+        const next = new Map(previous);
+        const current = previous.get(productId) ?? { expanded: false, facts: new Set<string>() };
+        const facts = new Set(current.facts);
+        if (expanded) facts.add(factKey); else facts.delete(factKey);
+        next.set(productId, { ...current, facts });
+        return next;
+      }),
+    };
+  };
 
   return <div className="app-frame"><main className="viewer" aria-labelledby="title">
     <h1 id="title">{review && active ? (review.items.length ? safeTitle : "What should we shop for?") : basket ? "Actual Nemlig basket" : screen.kind === "unavailable" ? "Start a new Draft list" : screen.kind === "review" ? "Your Draft list" : "Nemlig products"}</h1>
@@ -360,7 +389,7 @@ export function ProductViewer() {
     {!isConnected && screen.kind === "loading" && <p className="status" role="status">{error ? "Could not connect to the Draft list host." : "Connecting to Nemlig…"}</p>}
     {screen.kind === "review" && !active && <section className="status"><p>Open the current Draft list to continue. This historical card does not restore editing controls.</p><Button color="secondary" disabled={busy} onClick={() => void call("update_product_review", { action: { kind: "show" } })}>Open current Draft list</Button></section>}
     {screen.kind === "unavailable" && <section className="status"><p>This temporary Draft list is no longer available. Refresh to find this conversation’s current Draft list.</p><Button color="secondary" disabled={busy} onClick={() => void call("update_product_review", { action: { kind: "show" } })}>Refresh Draft list</Button>{screen.review?.items.length && !submitBlocked && !submitBlockedRef.current && screen.review.submission?.status !== "submitted" && screen.review.submission?.status !== "uncertain" ? <Button color="secondary" disabled={busy} onClick={() => void call("start_product_review", { items: screen.review!.items.map(({ product_id, quantity }) => ({ product_id, quantity })) })}>Start new Draft list</Button> : screen.review?.submission?.status === "submitted" || screen.review?.submission?.status === "uncertain" || submitBlocked ? <><p>Inspect the actual Nemlig basket in conversation before starting another Draft list.</p><Button color="secondary" disabled={busy} onClick={() => void sendFollowUp("Inspect the actual Nemlig basket before starting another Draft list. Do not restore previous submission approval.")}>Inspect Nemlig basket in conversation</Button></> : null}</section>}
-    {review && active && review.destination === "alternatives" && review.alternatives && <section className="alternatives"><h2>Current product</h2>{review.items.filter((item) => item.product_id === review.alternatives?.product_id).map((item) => <ProductCard key={item.product_id} view={item.view} disabled={busy} />)}<form onSubmit={(event) => { event.preventDefault(); const target = review.alternatives!.product_id; if (query.trim()) void update({ kind: "alternatives", product_id: target, query: query.slice(0, 200) }); }}><label htmlFor="alternative-query">Search for more products</label><input id="alternative-query" type="search" maxLength={200} value={query || review.alternatives.query} onChange={(event) => setQuery(event.currentTarget.value)} /><Button color="secondary" type="submit" disabled={editsBlocked}>Search products</Button></form></section>}
+    {review && active && review.destination === "alternatives" && review.alternatives && <section className="alternatives"><h2>Current product</h2>{review.items.filter((item) => item.product_id === review.alternatives?.product_id).map((item) => <ProductCard key={item.product_id} view={item.view} disabled={busy} {...reviewDisclosureProps(item.product_id)} />)}<form key={`${review.review_id}:${review.alternatives.product_id}:${review.alternatives.query}`} onSubmit={(event) => { event.preventDefault(); const target = review.alternatives!.product_id; const query = String(new FormData(event.currentTarget).get("query") ?? ""); if (query.trim()) void update({ kind: "alternatives", product_id: target, query: query.slice(0, 200) }); }}><label htmlFor="alternative-query">Search for more products</label><input id="alternative-query" name="query" type="search" maxLength={200} defaultValue={review.alternatives.query} /><Button color="secondary" type="submit" disabled={editsBlocked}>Search products</Button></form></section>}
     {screen.kind === "products" && screen.views.length > 0 && <section className="product-list" aria-label="Product results">{screen.views.map((view, index) => <ProductCard key={`${view.status === "complete" ? view.product.id : view.product_id}:${index}`} view={view} disabled={busy} />)}</section>}
     {review && active && review.items.length > 0 && review.destination !== "alternatives" && <section className="product-list" aria-label={`${safeTitle} products`}>
       {review.items.filter((item) => item.state === review.destination).map((item) => {
@@ -370,6 +399,7 @@ export function ProductViewer() {
         return <ProductCard
           key={item.product_id}
           view={item.view}
+          {...reviewDisclosureProps(item.product_id)}
           item={{ ...item, quantity: pendingQuantities.get(item.product_id) ?? item.quantity }}
           disabled={editsBlocked}
           selected={selected.has(item.product_id)}
@@ -395,7 +425,7 @@ export function ProductViewer() {
       </>}
       {selected.size > 0 && <Button color="secondary" disabled={editsBlocked} onClick={() => afterFlush({ kind: "accept", product_ids: [...selected] })}>Add {selected.size} to Ready</Button>}
     </footer>}
-    {review && active && review.destination === "alternatives" && review.alternatives && <section className="review-footer"><h2>Alternatives</h2>{review.alternatives.views.map((view, index) => { const id = view.status === "complete" ? view.product.id : view.product_id; return <ProductCard key={`${id}:${index}`} view={view} disabled={editsBlocked} choice={replacement === id} onChoice={() => setReplacement(id)} />; })}<Button color="secondary" disabled={editsBlocked || replacement === undefined} onClick={() => { const target = review.alternatives!.product_id; if (replacement !== undefined) void update({ kind: "replace", product_id: target, replacement_id: replacement }); }}>Use selected alternative</Button><Button color="secondary" disabled={editsBlocked} onClick={() => void navigate("needs-review")}>Back to To decide</Button></section>}
+    {review && active && review.destination === "alternatives" && review.alternatives && <section className="review-footer"><h2>Alternatives</h2>{review.alternatives.views.map((view, index) => { const id = view.status === "complete" ? view.product.id : view.product_id; return <ProductCard key={`${id}:${index}`} view={view} disabled={editsBlocked} {...(id === undefined ? {} : reviewDisclosureProps(id))} choice={replacement === id} onChoice={() => setReplacement(id)} />; })}<Button color="secondary" disabled={editsBlocked || replacement === undefined} onClick={() => { const target = review.alternatives!.product_id; if (replacement !== undefined) void update({ kind: "replace", product_id: target, replacement_id: replacement }); }}>Use selected alternative</Button><Button color="secondary" disabled={editsBlocked} onClick={() => void navigate("needs-review")}>Back to To decide</Button></section>}
     {review && active && review.destination === "ready" && <footer className="review-footer">
       {(() => {
         const ready = review.items.filter((item) => item.state === "ready");
