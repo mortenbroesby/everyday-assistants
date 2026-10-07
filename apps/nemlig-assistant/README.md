@@ -126,10 +126,12 @@ visible product image, readable name, brand/package details, quantity, and line
 price together on narrow screens; factual disclosures stay collapsed until
 opened. **To decide** contains
 unresolved products; **Ready** contains exact accepted products. Select one or
-more To decide rows, then add them to Ready in one local action. Adjust
-quantities or remove products in either view. Choose alternatives only from To
-decide; choosing a replacement does not accept it automatically. Alternatives
-show every distinct eligible product in the provider response, and allow a
+more To decide rows, then add them to Ready in one local action. In Ready,
+adjust quantities directly; open a row to move it back or remove it from the
+local Draft list after confirmation. This never changes the Nemlig basket. Choose
+alternatives only from To decide; choosing a replacement does not accept it
+automatically. Alternatives show every distinct eligible product in the provider
+response, and allow a
 deliberate follow-up search when none fit. A search response is not a claim that
 the entire Nemlig catalogue was enumerated. These local operations also work
 through conversation, including “everything except the ricotta and cucumbers is
@@ -140,10 +142,11 @@ draft list `show`, not new searches, repeated details or a second start; failed 
 Once explicitly opened, the same current draft list frame stays active across
 confirmed local edits and destination changes. Compatible draft lists and open
 product rows remain in place. Rows show product, package, quantity and line
-price first. Expanded rows contain collapsed **Varebeskrivelse**,
-**Varedeklaration**, and **Detaljer om varen** sections; opening them makes no
-tool call. **Remove all Ready products** removes those products from the local
-draft list after confirmation, without touching the real Nemlig basket.
+price first. Expanded rows contain quantity and local row actions, plus
+collapsed **Varebeskrivelse**, **Varedeklaration**, and **Detaljer om varen**
+sections; opening them makes no tool call. **Prepare exact change** shows the
+exact products and quantities before any separately authorized Nemlig basket
+addition.
 
 Voice and touch use one private temporary draft per ChatGPT conversation, identified
 by the host session metadata and authenticated principal. There is no hourly expiry.
