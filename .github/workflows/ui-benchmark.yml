@@ -24,4 +24,6 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter nemlig-assistant exec playwright install --with-deps chrome
-      - run: pnpm --filter nemlig-assistant bench:review-ui -- --runs 5
+      - run: pnpm --filter nemlig-assistant build:ui
+      - run: pnpm --filter nemlig-assistant smoke:ui-candidate
+      - run: pnpm --filter nemlig-assistant bench:review-ui -- --runs 5 --candidate .candidate-dist/picker.html

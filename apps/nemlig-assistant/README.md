@@ -431,7 +431,9 @@ the same synthetic products:
 
 ```sh
 pnpm --filter nemlig-assistant bench:review-ui -- --runs 10
-pnpm --filter nemlig-assistant bench:review-ui -- --runs 10 --candidate path/to/candidate.html
+pnpm --filter nemlig-assistant build:ui
+pnpm --filter nemlig-assistant smoke:ui-candidate
+pnpm --filter nemlig-assistant bench:review-ui -- --runs 10 --candidate .candidate-dist/picker.html
 ```
 
 Google Chrome must be installed. The report records its version so runs can be
@@ -441,8 +443,14 @@ The report includes raw/gzip size, first paint, first product visibility, and
 product-detail disclosure response. Each sample uses a fresh browser context;
 the browser process is reused. External requests are blocked, and the fixture
 cannot call providers or mutate a basket. Timing is advisory, not a CI gate.
-To run the baseline in CI, add the `benchmark:ui` pull request label. That
-separate optional workflow does not change the required verification check.
+The React artifact is an isolated read-only candidate for product lists and
+basket snapshots. Its interactive local-review controls are not implemented,
+and it is not served to users. The current self-contained viewer remains the
+production resource. Run the candidate browser smoke and paired benchmark with
+the `benchmark:ui` pull request label; this optional workflow does not change
+the required verification check. Consider promoting a new versioned resource
+only after interactive review parity, host acceptance, and paired performance
+evidence are reviewed.
 
 ### Reverse-engineered Nemlig API
 

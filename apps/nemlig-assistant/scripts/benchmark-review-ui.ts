@@ -145,9 +145,9 @@ async function measureOne(browser: Browser, renderer: Renderer, url: string): Pr
     page.on("pageerror", (error) => pageErrors.push(error.message));
     await page.goto(url, { waitUntil: "load" });
     await page.waitForFunction((name) => document.querySelector("main article")?.textContent?.includes(name) === true, PRODUCT_NAME);
-    const summary = page.locator("#products article > details > summary.row").first();
+    const summary = page.locator("main article > details > summary").first();
     await page.evaluate(() => {
-      const disclosure = document.querySelector<HTMLDetailsElement>("#products article > details");
+      const disclosure = document.querySelector<HTMLDetailsElement>("main article > details");
       if (!disclosure) throw new Error("The first product has no details disclosure.");
       disclosure.querySelector("summary")?.addEventListener("click", () => {
         performance.mark("benchmark:disclosure-start");

@@ -2,6 +2,7 @@
 .turbo/
 /apps/*/node_modules/
 /apps/*/dist/
+/apps/*/.candidate-dist/
 /apps/*/coverage/
 **/.dev.vars
 **/.dev.vars.*
