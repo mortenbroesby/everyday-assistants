@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="da">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Nemlig Assistant — look and feel</title>
+</head>
+<body>
+<style>
+  #nemlig-review-visual {
+    color-scheme: light dark;
+    width: min(100%, 420px);
+    margin: 0 auto;
+    font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  }
+  #nemlig-review-visual * { box-sizing: border-box; }
+  #nemlig-review-visual button, #nemlig-review-visual input { font: inherit; }
+  #nemlig-review-visual .nv-shell {
+    --nv-ink: light-dark(#18251a, #f1f6f1);
+    --nv-muted: light-dark(#627168, #acb9ae);
+    --nv-line: light-dark(#dfe8e0, #344137);
+    --nv-bg: light-dark(#f4f7f3, #111813);
+    --nv-paper: light-dark(#ffffff, #18221b);
+    --nv-well: light-dark(#edf4ed, #253228);
+    --nv-green: light-dark(#1b7140, #78d99d);
+    --nv-green-ink: light-dark(#ffffff, #112517);
+    --nv-green-soft: light-dark(#e2f2e6, #1e422b);
+    --nv-warm: light-dark(#fff5df, #3d311a);
+    --nv-shadow: light-dark(rgb(20 48 28 / 10%), rgb(0 0 0 / 30%));
+    color: var(--nv-ink);
+    background: var(--nv-bg);
+    border: 1px solid var(--nv-line);
+    border-radius: 26px;
+    overflow: hidden;
+    box-shadow: 0 18px 44px var(--nv-shadow);
+    min-height: 650px;
+  }
+  #nemlig-review-visual .nv-app { padding: 15px 14px 116px; }
+  #nemlig-review-visual .nv-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 0 2px 17px; }
+  #nemlig-review-visual .nv-brand { display: flex; gap: 9px; align-items: center; }
+  #nemlig-review-visual .nv-brand-mark { display: grid; width: 30px; height: 30px; place-items: center; color: var(--nv-green-ink); background: var(--nv-green); border-radius: 10px; font-weight: 700; }
+  #nemlig-review-visual .nv-brand strong, #nemlig-review-visual h1, #nemlig-review-visual h2, #nemlig-review-visual p { margin: 0; }
+  #nemlig-review-visual .nv-brand strong { display: block; font-size: 13px; font-weight: 650; }
+  #nemlig-review-visual .nv-brand span { display: block; margin-top: 1px; color: var(--nv-muted); font-size: 11px; }
+  #nemlig-review-visual .nv-more { display: grid; width: 42px; height: 42px; place-items: center; color: var(--nv-muted); border: 1px solid var(--nv-line); border-radius: 13px; background: var(--nv-paper); cursor: pointer; }
+  #nemlig-review-visual .nv-more:focus-visible, #nemlig-review-visual button:focus-visible, #nemlig-review-visual summary:focus-visible { outline: 3px solid var(--nv-green); outline-offset: 2px; }
+  #nemlig-review-visual .nv-heading { margin: 0 4px 14px; }
+  #nemlig-review-visual h1 { font-size: 24px; line-height: 1.15; letter-spacing: -.035em; font-weight: 650; }
+  #nemlig-review-visual .nv-heading p { margin-top: 5px; color: var(--nv-muted); font-size: 13px; line-height: 1.45; }
+  #nemlig-review-visual .nv-tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; padding: 4px; margin-bottom: 17px; border-radius: 14px; background: var(--nv-well); }
+  #nemlig-review-visual .nv-tab { min-height: 42px; border: 0; border-radius: 10px; color: var(--nv-muted); background: transparent; cursor: pointer; font-size: 12px; font-weight: 600; }
+  #nemlig-review-visual .nv-tab[aria-selected="true"] { color: var(--nv-ink); background: var(--nv-paper); box-shadow: 0 1px 4px var(--nv-shadow); }
+  #nemlig-review-visual .nv-pane[hidden] { display: none; }
+  #nemlig-review-visual .nv-section-line { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; margin: 0 4px 8px; }
+  #nemlig-review-visual .nv-section-line h2 { font-size: 13px; font-weight: 650; }
+  #nemlig-review-visual .nv-section-line span { color: var(--nv-muted); font-size: 11px; }
+  #nemlig-review-visual .nv-list { border-top: 1px solid var(--nv-line); }
+  #nemlig-review-visual .nv-row { position: relative; display: grid; grid-template-columns: 26px 62px minmax(0, 1fr); gap: 9px; padding: 12px 2px; border-bottom: 1px solid var(--nv-line); }
+  #nemlig-review-visual .nv-check { display: grid; min-height: 62px; place-items: center; }
+  #nemlig-review-visual .nv-check input { width: 18px; height: 18px; accent-color: var(--nv-green); }
+  #nemlig-review-visual .nv-thumb { display: grid; width: 62px; height: 62px; place-items: center; overflow: hidden; border-radius: 15px; background: var(--nv-well); font-size: 31px; }
+  #nemlig-review-visual .nv-row-main { min-width: 0; text-align: left; border: 0; color: inherit; background: transparent; cursor: pointer; padding: 1px 0 0; }
+  #nemlig-review-visual .nv-name-price { display: flex; align-items: start; justify-content: space-between; gap: 8px; }
+  #nemlig-review-visual .nv-name-price strong { min-width: 0; font-size: 13px; line-height: 1.35; font-weight: 650; }
+  #nemlig-review-visual .nv-name-price b { flex: none; font-size: 13px; font-variant-numeric: tabular-nums; }
+  #nemlig-review-visual .nv-meta { margin-top: 3px; color: var(--nv-muted); font-size: 11px; line-height: 1.4; }
+  #nemlig-review-visual .nv-quantity { display: inline-flex; margin-top: 7px; color: var(--nv-green); font-size: 12px; font-weight: 650; }
+  #nemlig-review-visual .nv-row-expanded { grid-column: 2 / -1; display: grid; gap: 9px; padding: 1px 0 4px; }
+  #nemlig-review-visual .nv-row-expanded[hidden] { display: none; }
+  #nemlig-review-visual .nv-quantity-box { display: flex; align-items: center; justify-content: space-between; padding: 8px 0; border-top: 1px solid var(--nv-line); border-bottom: 1px solid var(--nv-line); font-size: 12px; }
+  #nemlig-review-visual .nv-stepper { display: inline-flex; align-items: center; gap: 4px; }
+  #nemlig-review-visual .nv-icon-button { width: 34px; height: 34px; color: var(--nv-green); border: 1px solid var(--nv-line); border-radius: 10px; background: var(--nv-paper); cursor: pointer; font-size: 18px; }
+  #nemlig-review-visual .nv-stepper output { width: 24px; text-align: center; font-variant-numeric: tabular-nums; font-weight: 650; }
+  #nemlig-review-visual details { border-bottom: 1px solid var(--nv-line); }
+  #nemlig-review-visual summary { display: flex; min-height: 40px; align-items: center; list-style: none; cursor: pointer; font-size: 12px; font-weight: 600; }
+  #nemlig-review-visual summary::-webkit-details-marker { display: none; }
+  #nemlig-review-visual summary::after { margin-left: auto; content: "+"; color: var(--nv-muted); font-size: 17px; font-weight: 400; }
+  #nemlig-review-visual details[open] summary::after { content: "−"; }
+  #nemlig-review-visual details p { padding: 0 0 10px; color: var(--nv-muted); font-size: 11px; line-height: 1.45; }
+  #nemlig-review-visual .nv-link { width: max-content; min-height: 38px; padding: 0; color: var(--nv-green); border: 0; background: transparent; cursor: pointer; font-size: 12px; font-weight: 650; }
+  #nemlig-review-visual .nv-empty { padding: 18px 4px; color: var(--nv-muted); text-align: center; font-size: 12px; }
+  #nemlig-review-visual .nv-ready-summary { padding: 15px; margin-bottom: 10px; border-radius: 16px; background: var(--nv-green-soft); }
+  #nemlig-review-visual .nv-ready-summary strong { display: block; font-size: 13px; }
+  #nemlig-review-visual .nv-ready-summary span { display: block; margin-top: 4px; color: var(--nv-muted); font-size: 11px; }
+  #nemlig-review-visual .nv-ready-row { display: grid; grid-template-columns: 52px minmax(0, 1fr) auto; gap: 9px; padding: 11px 2px; border-bottom: 1px solid var(--nv-line); }
+  #nemlig-review-visual .nv-ready-row .nv-thumb { width: 52px; height: 52px; border-radius: 13px; font-size: 26px; }
+  #nemlig-review-visual .nv-ready-row strong { display: block; font-size: 13px; }
+  #nemlig-review-visual .nv-ready-row small { display: block; margin-top: 3px; color: var(--nv-muted); font-size: 11px; }
+  #nemlig-review-visual .nv-ready-row b { align-self: start; font-size: 13px; }
+  #nemlig-review-visual .nv-sticky { position: absolute; right: 0; bottom: 0; left: 0; display: grid; gap: 9px; padding: 12px 14px max(14px, env(safe-area-inset-bottom, 0px)); border-top: 1px solid var(--nv-line); background: color-mix(in srgb, var(--nv-paper) 94%, transparent); backdrop-filter: blur(14px); }
+  #nemlig-review-visual .nv-sticky-copy { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; color: var(--nv-muted); font-size: 11px; }
+  #nemlig-review-visual .nv-sticky-copy strong { color: var(--nv-ink); font-size: 12px; }
+  #nemlig-review-visual .nv-primary { min-height: 46px; padding: 10px 14px; color: var(--nv-green-ink); border: 0; border-radius: 13px; background: var(--nv-green); cursor: pointer; font-size: 13px; font-weight: 700; }
+  #nemlig-review-visual .nv-secondary { min-height: 42px; padding: 9px 12px; color: var(--nv-green); border: 1px solid var(--nv-line); border-radius: 12px; background: var(--nv-paper); cursor: pointer; font-size: 12px; font-weight: 650; }
+  #nemlig-review-visual .nv-panel .nv-row { margin: 0 0 10px; padding: 11px; border: 1px solid var(--nv-line); border-radius: 18px; background: var(--nv-paper); box-shadow: 0 5px 16px var(--nv-shadow); }
+  #nemlig-review-visual .nv-panel .nv-list { display: grid; gap: 10px; border: 0; }
+  #nemlig-review-visual .nv-panel .nv-row-expanded { margin-top: 5px; }
+  #nemlig-review-visual .nv-panel .nv-section-line { padding-bottom: 3px; }
+  #nemlig-review-visual .nv-panel .nv-ready-row { margin-bottom: 9px; padding: 11px; border: 1px solid var(--nv-line); border-radius: 16px; background: var(--nv-paper); }
+  #nemlig-review-visual .nv-panel .nv-warm-note { margin: 0 0 11px; padding: 11px 12px; border-radius: 14px; background: var(--nv-warm); color: var(--nv-muted); font-size: 11px; line-height: 1.45; }
+  #nemlig-review-visual .nv-panel .nv-warm-note strong { color: var(--nv-ink); }
+  @media (max-width: 340px) {
+    #nemlig-review-visual .nv-shell { border-radius: 20px; }
+    #nemlig-review-visual .nv-app { padding-inline: 11px; }
+    #nemlig-review-visual .nv-row { grid-template-columns: 23px 56px minmax(0, 1fr); gap: 7px; }
+    #nemlig-review-visual .nv-thumb { width: 56px; height: 56px; font-size: 27px; }
+    #nemlig-review-visual .nv-name-price { display: grid; gap: 2px; }
+    #nemlig-review-visual .nv-name-price b { text-align: left; }
+  }
+</style>
+
+<div id="nemlig-review-visual">
+  <div class="viz-carousel" aria-label="Nemlig shopping review visual directions" data-previous-label="Previous direction" data-next-label="Next direction">
+    <section data-variant="Focused list" aria-label="Focused list review design">
+      <div class="nv-shell nv-list-led">
+        <div class="nv-app">
+          <header class="nv-top"><div class="nv-brand"><span class="nv-brand-mark" aria-hidden="true">n</span><div><strong>Your Nemlig selection</strong><span>Local shopping workspace</span></div></div><button class="nv-more" type="button" aria-label="More local selection options">•••</button></header>
+          <div class="nv-heading"><h1>Choose your products</h1><p>Review exact products before moving them to Ready.</p></div>
+          <nav class="nv-tabs" aria-label="Shopping destinations"><button class="nv-tab" type="button" aria-selected="true" data-tab="review">To decide <span>(3)</span></button><button class="nv-tab" type="button" aria-selected="false" data-tab="ready">Ready <span>(2)</span></button></nav>
+          <section class="nv-pane" data-pane="review">
+            <div class="nv-section-line"><h2>To decide</h2><span>3 products</span></div>
+            <div class="nv-list">
+              <article class="nv-row"><label class="nv-check"><input type="checkbox" aria-label="Select Arla minimælk" checked></label><div class="nv-thumb" aria-hidden="true">🥛</div><button class="nv-row-main" type="button" aria-expanded="false"><span class="nv-name-price"><strong>Arla minimælk</strong><b>14,95 kr.</b></span><span class="nv-meta">Arla · 1 L · 14,95 kr./L</span><span class="nv-quantity">1 ×</span></button><div class="nv-row-expanded" hidden><div class="nv-quantity-box"><span>Quantity</span><span class="nv-stepper"><button class="nv-icon-button" type="button" aria-label="Decrease quantity">−</button><output>1</output><button class="nv-icon-button" type="button" aria-label="Increase quantity">+</button></span></div><details><summary>Varebeskrivelse</summary><p>Pasteurised Danish low-fat milk for everyday use.</p></details><details><summary>Varedeklaration</summary><p>Milk.</p></details><details><summary>Detaljer om varen</summary><p>Keep refrigerated at no more than 5 °C.</p></details><button class="nv-link" type="button">Choose alternative</button></div></article>
+              <article class="nv-row"><label class="nv-check"><input type="checkbox" aria-label="Select Lurpak smørbar"></label><div class="nv-thumb" aria-hidden="true">🧈</div><button class="nv-row-main" type="button" aria-expanded="false"><span class="nv-name-price"><strong>Lurpak smørbar</strong><b>29,95 kr.</b></span><span class="nv-meta">Lurpak · 200 g · 149,75 kr./kg</span><span class="nv-quantity">2 ×</span></button><div class="nv-row-expanded" hidden><div class="nv-quantity-box"><span>Quantity</span><span class="nv-stepper"><button class="nv-icon-button" type="button" aria-label="Decrease quantity">−</button><output>2</output><button class="nv-icon-button" type="button" aria-label="Increase quantity">+</button></span></div><details><summary>Varebeskrivelse</summary><p>Spreadable butter blend.</p></details><details><summary>Varedeklaration</summary><p>Butter and rapeseed oil.</p></details><button class="nv-link" type="button">Choose alternative</button></div></article>
+              <article class="nv-row"><label class="nv-check"><input type="checkbox" aria-label="Select Økologiske bananer" checked></label><div class="nv-thumb" aria-hidden="true">🍌</div><button class="nv-row-main" type="button" aria-expanded="false"><span class="nv-name-price"><strong>Økologiske bananer</strong><b>18,00 kr.</b></span><span class="nv-meta">Økologisk · 1 kg · 18,00 kr./kg</span><span class="nv-quantity">1 ×</span></button><div class="nv-row-expanded" hidden><div class="nv-quantity-box"><span>Quantity</span><span class="nv-stepper"><button class="nv-icon-button" type="button" aria-label="Decrease quantity">−</button><output>1</output><button class="nv-icon-button" type="button" aria-label="Increase quantity">+</button></span></div><details><summary>Varebeskrivelse</summary><p>Organic bananas, sold by weight.</p></details><details><summary>Detaljer om varen</summary><p>Store at room temperature.</p></details><button class="nv-link" type="button">Choose alternative</button></div></article>
+            </div>
+          </section>
+          <section class="nv-pane" data-pane="ready" hidden><div class="nv-ready-summary"><strong>2 products ready · 89,85 kr.</strong><span>1 product is still waiting for your decision.</span></div><div class="nv-ready-row"><div class="nv-thumb" aria-hidden="true">🥖</div><div><strong>Surdejsbrød</strong><small>1 × · 29,95 kr.</small></div><b>29,95 kr.</b></div><div class="nv-ready-row"><div class="nv-thumb" aria-hidden="true">🧀</div><div><strong>Havarti ost</strong><small>2 × · 29,95 kr.</small></div><b>59,90 kr.</b></div></section>
+        </div>
+        <footer class="nv-sticky"><div class="nv-sticky-copy"><strong><span data-selected-count>2</span> selected</strong><span>Only local changes</span></div><button class="nv-primary" type="button" data-action="accept">Add 2 to Ready</button></footer>
+      </div>
+    </section>
+
+    <section data-variant="Calm panels" aria-label="Calm panel review design" hidden>
+      <div class="nv-shell nv-panel">
+        <div class="nv-app">
+          <header class="nv-top"><div class="nv-brand"><span class="nv-brand-mark" aria-hidden="true">n</span><div><strong>Your Nemlig selection</strong><span>Local shopping workspace</span></div></div><button class="nv-more" type="button" aria-label="More local selection options">•••</button></header>
+          <div class="nv-heading"><h1>A calmer way to decide</h1><p>Compact product facts, clear next actions, no extra steps.</p></div>
+          <nav class="nv-tabs" aria-label="Shopping destinations"><button class="nv-tab" type="button" aria-selected="true" data-tab="review">To decide <span>(3)</span></button><button class="nv-tab" type="button" aria-selected="false" data-tab="ready">Ready <span>(2)</span></button></nav>
+          <section class="nv-pane" data-pane="review"><div class="nv-warm-note"><strong>2 selected</strong> for Ready. Selecting a row never changes your real Nemlig basket.</div><div class="nv-section-line"><h2>To decide</h2><span>Tap a product for details</span></div><div class="nv-list">
+            <article class="nv-row"><label class="nv-check"><input type="checkbox" aria-label="Select Arla minimælk" checked></label><div class="nv-thumb" aria-hidden="true">🥛</div><button class="nv-row-main" type="button" aria-expanded="false"><span class="nv-name-price"><strong>Arla minimælk</strong><b>14,95 kr.</b></span><span class="nv-meta">Arla · 1 L · 14,95 kr./L</span><span class="nv-quantity">1 ×</span></button><div class="nv-row-expanded" hidden><div class="nv-quantity-box"><span>Quantity</span><span class="nv-stepper"><button class="nv-icon-button" type="button" aria-label="Decrease quantity">−</button><output>1</output><button class="nv-icon-button" type="button" aria-label="Increase quantity">+</button></span></div><details><summary>Varebeskrivelse</summary><p>Pasteurised Danish low-fat milk for everyday use.</p></details><details><summary>Varedeklaration</summary><p>Milk.</p></details><button class="nv-link" type="button">Choose alternative</button></div></article>
+            <article class="nv-row"><label class="nv-check"><input type="checkbox" aria-label="Select Lurpak smørbar"></label><div class="nv-thumb" aria-hidden="true">🧈</div><button class="nv-row-main" type="button" aria-expanded="false"><span class="nv-name-price"><strong>Lurpak smørbar</strong><b>29,95 kr.</b></span><span class="nv-meta">Lurpak · 200 g · 149,75 kr./kg</span><span class="nv-quantity">2 ×</span></button><div class="nv-row-expanded" hidden><div class="nv-quantity-box"><span>Quantity</span><span class="nv-stepper"><button class="nv-icon-button" type="button" aria-label="Decrease quantity">−</button><output>2</output><button class="nv-icon-button" type="button" aria-label="Increase quantity">+</button></span></div><details><summary>Varebeskrivelse</summary><p>Spreadable butter blend.</p></details><details><summary>Varedeklaration</summary><p>Butter and rapeseed oil.</p></details><button class="nv-link" type="button">Choose alternative</button></div></article>
+            <article class="nv-row"><label class="nv-check"><input type="checkbox" aria-label="Select Økologiske bananer" checked></label><div class="nv-thumb" aria-hidden="true">🍌</div><button class="nv-row-main" type="button" aria-expanded="false"><span class="nv-name-price"><strong>Økologiske bananer</strong><b>18,00 kr.</b></span><span class="nv-meta">Økologisk · 1 kg · 18,00 kr./kg</span><span class="nv-quantity">1 ×</span></button><div class="nv-row-expanded" hidden><div class="nv-quantity-box"><span>Quantity</span><span class="nv-stepper"><button class="nv-icon-button" type="button" aria-label="Decrease quantity">−</button><output>1</output><button class="nv-icon-button" type="button" aria-label="Increase quantity">+</button></span></div><details><summary>Varebeskrivelse</summary><p>Organic bananas, sold by weight.</p></details><details><summary>Detaljer om varen</summary><p>Store at room temperature.</p></details><button class="nv-link" type="button">Choose alternative</button></div></article>
+          </div></section>
+          <section class="nv-pane" data-pane="ready" hidden><div class="nv-ready-summary"><strong>2 products ready · 89,85 kr.</strong><span>1 product remains in To decide and will not be sent.</span></div><div class="nv-ready-row"><div class="nv-thumb" aria-hidden="true">🥖</div><div><strong>Surdejsbrød</strong><small>1 × · 29,95 kr.</small></div><b>29,95 kr.</b></div><div class="nv-ready-row"><div class="nv-thumb" aria-hidden="true">🧀</div><div><strong>Havarti ost</strong><small>2 × · 29,95 kr.</small></div><b>59,90 kr.</b></div></section>
+        </div>
+        <footer class="nv-sticky"><div class="nv-sticky-copy"><strong><span data-selected-count>2</span> selected</strong><span>Selection stays local</span></div><button class="nv-primary" type="button" data-action="accept">Add 2 to Ready</button></footer>
+      </div>
+    </section>
+  </div>
+</div>
+
+<script>
+  (() => {
+    const root = document.getElementById("nemlig-review-visual");
+    if (!root) return;
+    root.querySelectorAll(".nv-shell").forEach((shell) => {
+      const updateSelection = () => {
+        const selected = [...shell.querySelectorAll('.nv-check input')].filter((input) => input.checked).length;
+        shell.querySelectorAll('[data-selected-count]').forEach((node) => { node.textContent = String(selected); });
+        shell.querySelectorAll('[data-action="accept"]').forEach((button) => { button.textContent = selected ? `Add ${selected} to Ready` : "Choose products for Ready"; button.disabled = selected === 0; });
+      };
+      shell.querySelectorAll('.nv-check input').forEach((input) => input.addEventListener('change', updateSelection));
+      shell.querySelectorAll('.nv-row-main').forEach((button) => button.addEventListener('click', () => {
+        const expanded = button.getAttribute('aria-expanded') === 'true';
+        button.setAttribute('aria-expanded', String(!expanded));
+        const detail = button.parentElement?.querySelector('.nv-row-expanded');
+        if (detail) detail.hidden = expanded;
+      }));
+      shell.querySelectorAll('.nv-stepper').forEach((stepper) => {
+        const output = stepper.querySelector('output');
+        const [minus, plus] = stepper.querySelectorAll('button');
+        minus?.addEventListener('click', () => { if (output) output.textContent = String(Math.max(1, Number(output.textContent) - 1)); });
+        plus?.addEventListener('click', () => { if (output) output.textContent = String(Number(output.textContent) + 1); });
+      });
+      shell.querySelectorAll('.nv-tab').forEach((tab) => tab.addEventListener('click', () => {
+        const target = tab.getAttribute('data-tab');
+        shell.querySelectorAll('.nv-tab').forEach((candidate) => candidate.setAttribute('aria-selected', String(candidate === tab)));
+        shell.querySelectorAll('.nv-pane').forEach((pane) => { pane.hidden = pane.getAttribute('data-pane') !== target; });
+        const action = shell.querySelector('[data-action="accept"]');
+        const copy = shell.querySelector('.nv-sticky-copy');
+        if (target === 'ready') {
+          if (action) action.textContent = 'Send to Nemlig basket';
+          if (copy) copy.innerHTML = '<strong>2 products ready · 89,85 kr.</strong><span>1 still to decide</span>';
+        } else {
+          updateSelection();
+          if (copy) copy.innerHTML = `<strong><span data-selected-count>${[...shell.querySelectorAll('.nv-check input')].filter((input) => input.checked).length}</span> selected</strong><span>Only local changes</span>`;
+        }
+      }));
+      updateSelection();
+    });
+  })();
+</script>
+</body>
+</html>
