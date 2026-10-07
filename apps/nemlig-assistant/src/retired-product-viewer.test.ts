@@ -16,6 +16,7 @@ test("retired viewer identities cover the stable and previous versioned URIs", (
     "ui://nemlig/product-viewer-v8.html",
     "ui://nemlig/product-viewer-v9.html",
     "ui://nemlig/product-viewer-v10.html",
+    "ui://nemlig/product-viewer-v11.html",
   ]);
 });
 

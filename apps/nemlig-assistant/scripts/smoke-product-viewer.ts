@@ -235,7 +235,7 @@ try {
     const diagnostics = await page.evaluate(() => ({ calls: window.calls, hostErrors: window.hostErrors, frames: [...document.querySelector('iframe')!.contentDocument!.querySelectorAll('main')].map((node) => node.innerText) }));
     throw new Error(`Alternative screen failed. Calls: ${JSON.stringify(diagnostics)}. UI: ${state}`, { cause: error });
   });
-  await frame.getByRole("radio", { name: "Choose Synthetic alternative" }).check();
+  await frame.getByRole("radio", { name: "Choose Synthetic alternative" }).click();
   await frame.getByRole("button", { name: "Use selected alternative" }).click();
   await frame.getByRole("button", { name: /To decide \(1\)/ }).waitFor();
   await frame.getByRole("checkbox", { name: "Select Synthetic alternative" }).check().catch(async (error: unknown) => {
