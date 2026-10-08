@@ -296,6 +296,14 @@ paper over it in the viewer.
   wells are controlled by co-located Emotion styles. The built browser smoke
   verifies those visual-control boundaries, state-specific control placement and
   zero provider writes.
+- [x] 13.2a Add a local Storybook visual-contract surface for the component
+  suite. Use deterministic server-shaped fixtures for the shared primitives and
+  compact 320px/375px To decide, Ready, alternatives, factual-detail and
+  unavailable presentations. Build it locally; do not mock a host bridge, call
+  a tool/provider, add a cloud visual-testing service, or claim native ChatGPT
+  evidence from stories. Evidence: Storybook 10.6.1 builds the five fixed
+  visual-contract stories under `src/picker/components/`; a local Chrome
+  browser smoke loaded the 320px To decide story and its primary action.
 - [ ] 13.3 Release Story 1 through the current stable viewer URI without a URI
   bump. Update the scoped feature inventory and run focused viewer/browser
   smoke, strict OpenSpec validation and applicable repository gates, then

@@ -439,6 +439,15 @@ with the React components using Emotion and continue to use host CSS variables
 for theming. The accepted runtime style injection must remain free of
 user-supplied CSS values and external stylesheet fetches.
 
+The suite also has a local Storybook as its visual contract surface. Stories
+use deterministic, server-shaped fixture data to show the shared primitives and
+the approved narrow To decide, Ready, alternatives, factual-detail, and
+unavailable presentations. Storybook validates the component composition and
+gives a reviewer a stable visual reference; it does not initialize the MCP Apps
+bridge, call tools or providers, replace the built-viewer smoke, or establish
+native ChatGPT acceptance. The existing synthetic-host screenshots remain the
+artifact-level visual evidence.
+
 ### Story gates
 
 Before Story 1, record the actual production baseline: release identity,

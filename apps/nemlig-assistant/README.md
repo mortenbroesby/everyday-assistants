@@ -203,6 +203,19 @@ they contain only fixture products, make no external requests, and never access
 the real Nemlig basket. This is a design-review bootstrap, not ChatGPT-host
 acceptance.
 
+For component-level visual review, run:
+
+```sh
+pnpm --filter nemlig-assistant storybook
+```
+
+The local Storybook uses deterministic product fixtures for the shared viewer
+components and the narrow To decide, Ready, alternatives, factual-detail, and
+unavailable presentations. `pnpm --filter nemlig-assistant build:storybook`
+checks that those stories build. It is a component visual contract, not an MCP
+Apps host simulation or evidence of native ChatGPT rendering; retain the
+built-viewer smoke and post-release host smoke for those boundaries.
+
 Product disclosures, navigation and ordinary local edits do not fetch Nemlig;
 adding new exact products hydrates only those products, and
 explicit alternatives searches hydrate every unique eligible result in the

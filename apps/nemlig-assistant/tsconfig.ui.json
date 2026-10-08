@@ -5,6 +5,6 @@
     "moduleResolution": "Bundler",
     "jsx": "react-jsx"
   },
-  "include": ["src/picker", "vite.config.ts"],
+  "include": ["src/picker", ".storybook", "vite.config.ts"],
   "exclude": []
 }
