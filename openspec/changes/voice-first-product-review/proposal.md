@@ -28,10 +28,11 @@ unresolved choices, navigate contextual alternatives, or express user actions.
 - Supersede the current viewer's prohibition on user-action controls without
   restoring retired whole-list planning, saved lists, or a separate UI workflow.
 
-Goal and acceptance are owned by GitHub issue #113. This change records only the
-new durable contracts and design decisions. It now also includes the owner's
-follow-up discovery, conversational authorization, and debounce refinements in
-this same product outcome and draft PR. Non-goals include onboarding,
+The historical product-review outcome originated in GitHub issue #113. The
+active visual-convergence delivery contract is GitHub issue #228. This change
+records the durable contracts and design decisions. It now also includes the
+owner's follow-up discovery, conversational authorization, and debounce
+refinements in this same product outcome and draft PR. Non-goals include onboarding,
 meal/recipe planning, checkout, payment, delivery slots, authentication redesign,
 new state-management dependencies, and unrelated deployment work.
 
@@ -139,20 +140,70 @@ fold race; #137 native historical-card acceptance and #96 production evidence
 remain separate. No provider basket mutation, credential, deployment or new
 frontend architecture is in scope.
 
-## Staged visual refinement (8 October 2026)
+## Approved visual convergence plan (8 October 2026)
+
+### End goal
+
+Nemlig Assistant delivers one coherent, polished **Draft list** interface in
+ChatGPT. A user opening a current card sees the same compact visual language
+and interaction hierarchy across **To decide**, **Ready**, expanded product
+facts, alternatives, empty/ended drafts, prepared confirmation, verified
+success, unavailable, and uncertain outcomes. The design references are not a
+second product or a parallel UI: each implemented state must converge on this
+one viewer.
+
+The end goal is reached only when every state below is implemented in the
+viewer, covered by built-viewer evidence, and smoke-tested in native ChatGPT on
+desktop and phone after its story is released. A prototype, local iframe, or
+successful deployment alone is not proof of visual delivery.
+
+### Approved visual target and boundaries
+
+The 2026-10-07 state gallery is the primary visual reference. Apply the
+current product language — **Draft list**, **To decide**, **Ready**, and
+**Nemlig basket** — rather than its superseded selection wording. Do not carry
+forward the competing green Ready-summary/banner variant.
+
+- To decide has compact, scannable collapsed rows. Quantity, local removal and
+  alternative choice appear only after that product is expanded. Selection is
+  batch acceptance only and never expands the row.
+- Ready keeps direct visible quantity editing for quick confirmation changes.
+  It has no redundant checkboxes and no alternatives action; its local
+  move-back/remove paths remain explicit and safe.
+- The visual change must preserve server-authoritative membership, quantities,
+  revision checks, alternatives, submission authority, stale recovery,
+  add-only provider-basket semantics, and text/headless fallback.
+- This change does not add a framework, router, browser business-state store,
+  polling, provider reads for presentation, tool-catalog redesign, new
+  submission path, or speculative host controls.
+
+### Shared component layer
+
+Story 1 establishes a small viewer-local presentational component layer before
+the state pages diverge further. It owns reusable product-row, price/metadata,
+quantity-control, disclosure, destination-tab, action-footer, and status/outcome
+building blocks. Components receive server snapshot data and intent callbacks;
+they do not own draft membership, quantities, revisions, submission authority,
+or provider calls. Reuse these primitives across To decide, Ready, alternatives,
+and outcome pages instead of adding view-specific copies. Do not add a component
+library dependency or turn this into a general cross-application design system.
+
+### Delivery and cache boundary
+
+This refinement uses the currently registered stable viewer URI. Resource URI
+and ChatGPT cache policy are a separate evidence-driven concern: do not bump or
+reuse a URI merely to force refresh as part of a styling story. Every native
+smoke must instead record the served resource metadata, current release
+identity, explicit Refresh result when metadata changed, and a newly rendered
+current card. Historical already-rendered cards remain safely inert; they are
+not expected to restyle in place.
 
 The current-source React viewer is functionally capable of local selection,
-contextual alternatives, protected submission, and recovery. Recent household
-testing identified a presentation problem rather than a missing shopping
-protocol: the same page can expose several competing actions, Ready rows do not
-make their local edit paths discoverable enough, and comparison/detail states
-do not consistently show the right amount of product evidence.
-
-This follow-up refines the existing viewer in independently releasable stories.
-Each story is one scoped PR: merge it, release it through the normal path, and
-record a native ChatGPT smoke result before beginning the next story. It does
-not add a frontend framework, router, browser-owned business state, polling,
-provider calls, tool-catalog redesign, or a new basket-write path. Host-only
-ideas (for example, sending a starter prompt, closing a card, or opening an
-external site) remain absent or conversational text until the exact supported
-host API has been demonstrated.
+contextual alternatives, protected submission, and recovery. The preserved
+gallery is a design reference, not evidence that its complete visual system was
+ever shipped. This follow-up closes that implementation gap through
+independently releasable stories. Each story is one scoped PR: merge it, release
+it through the normal path, and record the required native ChatGPT smoke before
+beginning the next story. Host-only ideas (for example, sending a starter
+prompt, closing a card, or opening an external site) remain absent or
+conversational text until the exact supported host API has been demonstrated.

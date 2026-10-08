@@ -392,34 +392,68 @@ revision-checked tool path. The refinement therefore changes the composition,
 hierarchy, copy and native controls in that component; it does not add a second
 browser business model or another page/router.
 
+### End-state contract
+
+The user opens one current Draft-list workspace and encounters one consistent
+visual system, not an older functional viewer beside a more polished prototype.
+The primary reference is
+`apps/nemlig-assistant/design/mockups/2026-10-07/nemlig-review-state-gallery.html`,
+with these approved corrections:
+
+- use Draft list / To decide / Ready / Nemlig basket vocabulary;
+- omit the gallery's competing green Ready-summary/banner;
+- keep To decide quantity, local removal and alternative choice inside expanded
+  product details;
+- keep Ready quantity controls directly visible and omit Ready checkboxes;
+- preserve accurate package/unit/line-price distinctions and all existing
+  protected local/provider behavior.
+
+The gallery is a visual reference, not runtime evidence or a license to add
+unsupported host actions. The companion look-and-feel exploration is secondary
+when it conflicts with this contract.
+
+### Component architecture
+
+Story 1 first extracts a small viewer-local presentational component layer.
+Shared primitives cover product rows, product identity/price metadata, quantity
+controls, factual disclosures, destination tabs, action footers, and status or
+outcome surfaces. They receive server-owned snapshots and intent callbacks only;
+they never store business state or issue provider calls. Reuse them across every
+state before adding state-specific composition. No external component library,
+new framework, router, or cross-application design-system package is added.
+
 ### Story gates
 
-Before Story 1, verify and record the resource URI actually served in native
-ChatGPT (current-source target: v10; do not infer the served URI from source or
-`main`). Then
-explicitly activate the viewer, perform one local destination navigation or
-edit, and record whether the same mounted frame remains visible. If the host
-serves another URI or fails before the viewer loads, record the exact boundary
-and reconcile the baseline before drawing lifecycle conclusions. Test the story
-locally without inventing a viewer workaround.
+Before Story 1, record the actual production baseline: release identity,
+registered resource metadata, a fresh current-card render, one local navigation
+or edit, and whether the same mounted frame remains visible. Do not infer a
+served card's HTML from `main`, a resource read, or a successful deployment.
+If the host serves stale metadata/content or fails before the viewer loads,
+record that boundary and fix it separately; do not paper over it in the viewer.
 
-Each story has the same release boundary: one focused PR, the normal local
-tests and browser smoke, versioned viewer identity/release evidence when viewer
-HTML changes, exact-head CI, merge/release, then a separately recorded native
-ChatGPT smoke before the next story begins. A failed or unavailable native
-smoke blocks the next story but does not rewrite the completed local evidence.
+Each story has the same release boundary: one focused PR, targeted tests and
+built-viewer/browser smoke, exact-head CI, merge/release, then separately
+recorded native ChatGPT smoke on desktop and phone before the next story
+begins. The stable resource URI remains unchanged during these visual stories.
+Record the URI and release identity as evidence; a historical card is not
+expected to change in place. A failed or unavailable native smoke blocks the
+next story but does not rewrite completed local evidence.
 
-1. **Compact product-row foundation.** Rework existing To decide and Ready
-   rows for scanability—image, name, pack/brand, quantity and line price—while
-   retaining accessible native disclosure controls and the existing supplied
-   facts. There are no server or provider calls for expanding a row or factual
-   detail. This story does not add new destinations or actions.
+1. **Compact product-row foundation.** Establish the shared presentational
+   primitives, then rework existing To decide and Ready rows for
+   scanability—image, name, pack/brand, quantity and line price—while retaining
+   accessible native disclosure controls and the existing supplied facts. To
+   decide hides quantity/local action controls until expansion; Ready keeps
+   direct visible quantity adjustment. There are no server or provider calls for
+   expanding a row or factual detail. This story does not add new destinations
+   or actions.
 2. **Local selection action hierarchy.** Make batch acceptance the sole To
-   decide acceptance path and make Ready's existing per-row move-back/remove
-   paths discoverable through expansion. Remove redundant summary/banner or
-   action clutter rather than adding controls. Keep the one relevant primary
-   action in each state; local destructive operations retain an explicit local
-   confirmation and name that they never alter the Nemlig basket.
+   decide acceptance path. Ready has no checkboxes; its existing per-row
+   move-back/remove paths remain discoverable without hiding direct quantity
+   editing. Remove redundant summary/banner or action clutter rather than
+   adding controls. Keep the one relevant primary action in each state; local
+   destructive operations retain an explicit local confirmation and name that
+   they never alter the Nemlig basket.
 3. **Contextual alternatives comparison.** Keep the current product distinct
    without an internal divider, show returned alternatives as immediately
    comparable product information rather than a second hidden accordion, and
@@ -442,10 +476,11 @@ smoke blocks the next story but does not rewrite the completed local evidence.
 - The ready count belongs in the destination tab, not in a second green
   summary banner. A card must not show an action that does not apply to its
   destination or mode.
-- Ready does not offer alternatives. Expanded Ready rows expose only local
-  remove and return-to-To-decide actions; expanding To decide exposes quantity,
-  supplied factual information and alternative choice. The actual basket write
-  remains in the exact confirmation path.
+- Ready does not offer alternatives or checkboxes. It keeps direct quantity
+  controls and exposes only local remove and return-to-To-decide actions.
+  Expanding To decide exposes quantity, supplied factual information and
+  alternative choice. The actual basket write remains in the exact confirmation
+  path.
 - Alternative cards show the supplied comparison facts immediately. Long
   declaration/detail text may retain labelled factual disclosures, but the
   row's identity, size, price, unit price and relevant badges are not hidden
@@ -471,8 +506,9 @@ smoke blocks the next story but does not rewrite the completed local evidence.
 - **A visual simplification hides a necessary safety step** → Keep exact
   prepared confirmation and local-clear confirmation visible in their relevant
   contexts; assert actions and provider-call counts in existing loopback tests.
-- **A cached viewer mismatches a changed resource** → follow existing resource
-  versioning and retired-resource rules; native acceptance records the served
-  URI rather than assuming a refresh succeeded.
+- **A cached viewer mismatches a changed resource** → keep the stable URI for
+  this approved visual sequence, record native metadata/release/card evidence,
+  and investigate cache/resource policy separately rather than using a styling
+  release to force a URI change.
 - **A host control is unavailable** → render the correct static/conversational
   fallback and do not add speculative APIs, message heuristics or `requestClose`.

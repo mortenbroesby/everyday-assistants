@@ -248,31 +248,48 @@ metadata-readback, and historical-card evidence.
   and historical cards in native ChatGPT. Local evidence does not complete
   task 9.5 or this host-acceptance gate.
 
-## 13. Staged visual refinement (8 October 2026)
+## 13. Approved visual convergence (8 October 2026)
 
-**Story gate:** Before Story 1, verify and record the resource URI actually
-served in native ChatGPT (current-source target: v10; do not infer the served
-URI from source or `main`), explicit activation, one local navigation/edit,
-and whether the same mounted frame remains visible. If the host serves another
-URI or fails before the viewer loads, record the exact boundary and reconcile
-the baseline before drawing lifecycle conclusions; do not paper over it in the
-viewer.
+**End goal:** Ship one coherent polished Draft-list viewer whose To decide,
+Ready, details, alternatives, empty/ended, confirmation and outcome states use
+the approved gallery's compact visual language. The required vocabulary is
+Draft list / To decide / Ready / Nemlig basket. To decide action controls are
+expanded; Ready quantity controls are directly visible; the green Ready summary
+banner and Ready checkboxes are excluded. Existing safety and server authority
+remain unchanged.
+
+- [x] 13.0 Reconcile the approved end goal, primary gallery, rejected variant,
+  component architecture, story ownership, native desktop/phone gates, and
+  separate stable-URI/cache boundary in this OpenSpec planning PR. Record that
+  the gallery is a reference, not shipped-widget evidence.
+
+**Story gate:** Before Story 1, record the current production release identity,
+registered resource metadata, a newly rendered current native card, explicit
+activation, one local navigation/edit, and whether the same mounted frame
+remains visible. Do not infer any of this from `main`, a resource read, or a
+deployment result. If the host serves stale metadata/content or fails before
+the viewer loads, record the exact boundary and resolve it separately; do not
+paper over it in the viewer.
 
 ### Story 1 — compact row foundation (one PR)
 
 - [ ] 13.1 Characterize the current row/disclosure behavior with focused
   React/viewer tests, including keyboard operation, checkbox-versus-row click,
   missing image, long name, supplied factual sections and zero tool/provider
-  calls on disclosure.
-- [ ] 13.2 Refine existing To decide and Ready row layout for image, identity,
-  pack/brand, quantity and line price while keeping only the supplied factual
-  disclosures; verify 320px/375px layout, focus visibility, unavailable rows,
-  and no new business-state/client fetch path.
-- [ ] 13.3 Bump the viewer resource URI when its HTML changes and update the
-  scoped feature inventory. Run focused viewer/browser smoke, strict OpenSpec
-  validation and applicable repository gates, then prepare one reviewable PR.
-  Use the verified-main deployment path after merge; add package identity or
-  release-note changes only when the package release policy requires them.
+  calls on disclosure. Identify the first viewer-local shared presentational
+  primitives and characterize their intent/callback boundaries.
+- [ ] 13.2 Build the viewer-local shared presentational components, then refine
+  To decide and Ready row layout for image, identity, pack/brand, quantity and
+  line price while keeping only the supplied factual disclosures. Keep To
+  decide action controls expanded and Ready quantity controls directly visible;
+  verify 320px/375px layout, focus visibility, unavailable rows, reuse across
+  states, and no new business-state/client fetch path.
+- [ ] 13.3 Release Story 1 through the current stable viewer URI without a URI
+  bump. Update the scoped feature inventory and run focused viewer/browser
+  smoke, strict OpenSpec validation and applicable repository gates, then
+  prepare one reviewable PR. Use the verified-main deployment path after merge;
+  add package identity or release-note changes only when package policy requires
+  them.
 - [ ] 13.4 After merge/release, perform and record native ChatGPT Story 1 smoke
   for expansion, factual disclosure, quantity persistence and a mounted-frame
   check. Do not start Story 2 until this result is pass or an exact host block
@@ -281,16 +298,18 @@ viewer.
 ### Story 2 — local selection action hierarchy (one PR)
 
 - [ ] 13.5 Add focused failing coverage for redundant/invalid state actions,
-  then make To decide batch acceptance its only acceptance path and make Ready
-  row expansion expose only existing move-back/remove paths; verify that local
-  removal remains confirmed and makes zero provider basket calls.
+  then make To decide batch acceptance its only acceptance path. Remove Ready
+  checkboxes while retaining its directly visible quantity controls and existing
+  move-back/remove paths; verify that local removal remains confirmed and makes
+  zero provider basket calls.
 - [ ] 13.6 Remove redundant Ready banner/summary and action clutter, retaining
   one destination-appropriate primary action and clear local-versus-Nemlig
   basket wording; verify batch accept, revisit, removal, quantity flush and
   stale-revision recovery preserve server authority.
-- [ ] 13.7 Version/release the Story 2 viewer change through one PR after
-  focused tests, loopback browser smoke, strict OpenSpec validation and the
-  applicable repository gate; record exact revision and CI evidence.
+- [ ] 13.7 Release the Story 2 viewer change through one PR and the current
+  stable URI after focused tests, loopback browser smoke, strict OpenSpec
+  validation and the applicable repository gate; record exact revision, CI,
+  resource metadata and native-card evidence.
 - [ ] 13.8 After merge/release, perform and record native ChatGPT Story 2 smoke:
   select → accept → Ready → quantity → move back → To decide, plus one
   conversational edit/readback. Do not start Story 3 until this is pass or an
@@ -311,8 +330,10 @@ viewer.
   Consolidate supplied long-form facts into only Varebeskrivelse,
   Varedeklaration and Detaljer om varen, and cover the three-section limit in
   the loopback browser smoke.
-- [x] 13.11 Version/release Story 3 in one PR after focused tests, loopback
-  browser smoke, strict OpenSpec validation and applicable repository gates.
+- [x] 13.11 Story 3 behavior was released in one PR after focused tests,
+  loopback browser smoke, strict OpenSpec validation and applicable repository
+  gates. Its visual convergence is completed through Stories 1 and 3 native
+  acceptance, not inferred from this historical release evidence.
 - [ ] 13.12 After merge/release, perform and record native ChatGPT Story 3
   smoke: search, refine search, compare, select, replace, return, and accept.
   Confirm empty/error paths remain honest. Do not start Story 4 until this is
@@ -330,9 +351,10 @@ viewer.
   actions. Verify exact confirmation, cancel, single-use submission, readback,
   no automatic retry, local-only discard and complete text fallback remain
   unchanged.
-- [ ] 13.15 Version/release Story 4 in one PR after focused tests, fake-provider
-  protected-submit smoke, loopback browser smoke, strict OpenSpec validation
-  and applicable repository gates.
+- [ ] 13.15 Release Story 4 through the current stable URI in one PR after
+  focused tests, fake-provider protected-submit smoke, loopback browser smoke,
+  strict OpenSpec validation and applicable repository gates. Record exact
+  revision, CI, resource metadata and native-card evidence.
 - [ ] 13.16 After merge/release, perform and record native ChatGPT Story 4
   smoke for empty/end, prepared confirmation/cancel and verified/uncertain
   presentation. A real Nemlig addition remains separately authorized; do not
