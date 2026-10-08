@@ -12,10 +12,10 @@ import {
 import {
   clearCredentials,
   getCredentials,
-  promptCredentials,
   saveCredentials,
   type Credentials,
 } from "./config.js";
+import { promptCredentials } from "./credential-prompt.js";
 import { ensureLoggedIn, getClient, NEMLIG_VERSION } from "./runtime.js";
 
 export { ensureLoggedIn, getClient, NEMLIG_VERSION } from "./runtime.js";
