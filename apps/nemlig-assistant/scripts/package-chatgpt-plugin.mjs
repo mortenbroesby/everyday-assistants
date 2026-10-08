@@ -8,16 +8,14 @@ import { fileURLToPath } from "node:url";
 
 const appRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const sourceRoot = resolve(appRoot, "chatgpt-plugin-source");
-const packageRoot = resolve(sourceRoot, "nemlig-assistant");
+const packageRoot = resolve(sourceRoot, "nemlig-shopping");
 const pluginPath = resolve(packageRoot, "plugin.json");
-const codexPluginPath = resolve(packageRoot, ".codex-plugin/plugin.json");
-const appManifestPath = resolve(packageRoot, ".app.json");
-const hostedAppPath = resolve(packageRoot, "hosted-app.json");
+const appPath = resolve(packageRoot, ".app.json");
+const mcpPath = resolve(packageRoot, "mcp.json");
 const cloudflareConfigPath = resolve(appRoot, "wrangler.jsonc");
 const plugin = readJson(pluginPath);
-const codexPlugin = readJson(codexPluginPath);
-const appManifest = readJson(appManifestPath);
-const hostedApp = readJson(hostedAppPath);
+const app = readJson(appPath);
+const mcp = readJson(mcpPath);
 const cloudflareConfig = readJson(cloudflareConfigPath);
 const { outputPath } = parseArgs(process.argv.slice(2), plugin.version);
 
@@ -33,11 +31,11 @@ const temporaryDirectory = mkdtempSync(join(outputDirectory, ".nemlig-plugin-"))
 const temporaryArchive = join(temporaryDirectory, "package.zip");
 
 try {
-  const stagedPackageRoot = join(temporaryDirectory, "nemlig-assistant");
+  const stagedPackageRoot = join(temporaryDirectory, plugin.name);
   cpSync(packageRoot, stagedPackageRoot, { recursive: true });
   mkdirSync(join(stagedPackageRoot, "cloudflare"));
   copyFileSync(cloudflareConfigPath, join(stagedPackageRoot, "cloudflare/wrangler.jsonc"));
-  execFileSync("zip", ["-q", "-r", "-X", temporaryArchive, "nemlig-assistant"], {
+  execFileSync("zip", ["-q", "-r", "-X", temporaryArchive, plugin.name], {
     cwd: temporaryDirectory,
   });
   execFileSync("unzip", ["-tq", temporaryArchive]);
@@ -55,7 +53,7 @@ function readJson(path) {
 function parseArgs(args, version) {
   if (args.length === 0) {
     return {
-      outputPath: resolve(appRoot, "dist/plugin", `nemlig-assistant-${version}.zip`),
+      outputPath: resolve(appRoot, "dist/plugin", `nemlig-shopping-${version}.zip`),
     };
   }
 
@@ -67,26 +65,12 @@ function parseArgs(args, version) {
 }
 
 function validate() {
-  if (!plugin.name || !plugin.version) {
-    throw new Error("plugin.json must define a name and version.");
+  if (plugin.name !== "nemlig-shopping" || !/^\d+\.\d+\.\d+$/.test(plugin.version)) {
+    throw new Error("plugin.json must define the package name and a semantic version.");
   }
 
-  if (plugin.author?.email || codexPlugin.author?.email) {
+  if (plugin.author?.email) {
     throw new Error("Do not package the private export's author email in this public repository.");
-  }
-
-  if (
-    codexPlugin.name !== plugin.name ||
-    codexPlugin.version !== plugin.version ||
-    codexPlugin.description !== plugin.description ||
-    JSON.stringify(codexPlugin.keywords) !== JSON.stringify(plugin.keywords) ||
-    codexPlugin.author?.name !== plugin.author?.name ||
-    codexPlugin.apps !== plugin.extensions?.["com.openai"]?.apps ||
-    codexPlugin.skills !== "./skills" ||
-    JSON.stringify(codexPlugin.interface) !==
-      JSON.stringify(plugin.extensions?.["com.openai"]?.interface)
-  ) {
-    throw new Error("plugin.json and .codex-plugin/plugin.json are out of sync.");
   }
 
   const shortDescription = plugin.extensions?.["com.openai"]?.interface?.shortDescription;
@@ -100,13 +84,12 @@ function validate() {
   }
 
   const openAi = plugin.extensions?.["com.openai"];
-  if (openAi?.apps !== "./.app.json") {
-    throw new Error("The OpenAI app binding must point to ./.app.json.");
-  }
-
-  const app = appManifest.apps?.[plugin.name];
-  if (!app?.id || app.required !== true) {
-    throw new Error(".app.json must require the existing Nemlig Assistant app.");
+  if (
+    openAi?.apps !== "./.app.json" ||
+    app.apps?.["nemlig-assistant"]?.id !== "asdk_app_6ac7995a68648191bafab7459ab55953" ||
+    app.apps["nemlig-assistant"].required !== true
+  ) {
+    throw new Error("The package must bind to the registered Nemlig MCP app.");
   }
 
   const production = cloudflareConfig.env?.production;
@@ -117,17 +100,14 @@ function validate() {
     route.custom_domain === true && route.pattern === hostedOrigin?.hostname,
   );
   if (
-    hostedApp.appId !== app.id ||
-    hostedApp.mcpUrl !== hostedUrl ||
-    hostedApp.oauthIssuer !== productionVars?.NEMLIG_MCP_AUTH0_ISSUER ||
-    hostedApp.oauthAudience !== productionVars?.NEMLIG_MCP_AUTH0_AUDIENCE ||
-    hostedApp.cloudflareWorker !== production?.name ||
-    hostedApp.cloudflareCustomDomain !== hostedOrigin?.hostname ||
-    hostedApp.repositoryConfig !== "apps/nemlig-assistant/wrangler.jsonc" ||
-    hostedApp.archiveConfig !== "cloudflare/wrangler.jsonc" ||
+    mcp.mcpServers?.nemlig?.type !== "streamable-http" ||
+    mcp.mcpServers.nemlig.url !== hostedUrl ||
+    hostedOrigin?.protocol !== "https:" ||
+    productionVars?.NEMLIG_MCP_AUTH0_AUDIENCE !== hostedUrl ||
+    !productionVars?.NEMLIG_MCP_AUTH0_ISSUER?.startsWith("https://") ||
     !hasCustomDomain
   ) {
-    throw new Error("hosted-app.json must match the app binding and production Cloudflare configuration.");
+    throw new Error("mcp.json must match the production HTTPS MCP URL and OAuth resource settings.");
   }
 
   const icon = openAi.interface?.logo;
@@ -136,6 +116,7 @@ function validate() {
   }
 
   const iconBytes = readFileSync(resolve(packageRoot, icon.slice(2)));
+  const connectorIconBytes = readFileSync(resolve(packageRoot, "assets/connector-icon.png"));
   const pngSignature = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
   if (
     !iconBytes.subarray(0, pngSignature.length).equals(pngSignature) ||
@@ -143,6 +124,14 @@ function validate() {
     iconBytes.readUInt32BE(20) !== 1024
   ) {
     throw new Error("The configured icon must be a valid 1024 x 1024 PNG.");
+  }
+  if (
+    !connectorIconBytes.subarray(0, pngSignature.length).equals(pngSignature) ||
+    connectorIconBytes.readUInt32BE(16) !== 256 ||
+    connectorIconBytes.readUInt32BE(20) !== 256 ||
+    connectorIconBytes.length > 10_000
+  ) {
+    throw new Error("The ChatGPT MCP connector icon must be a 256 x 256 PNG below 10 KB.");
   }
 
   const serverSource = readFileSync(resolve(appRoot, "src/mcp.ts"), "utf8");
