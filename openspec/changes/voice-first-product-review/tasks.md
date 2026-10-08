@@ -273,17 +273,24 @@ paper over it in the viewer.
 
 ### Story 1 — compact row foundation (one PR)
 
-- [ ] 13.1 Characterize the current row/disclosure behavior with focused
+- [x] 13.1 Characterize the current row/disclosure behavior with focused
   React/viewer tests, including keyboard operation, checkbox-versus-row click,
   missing image, long name, supplied factual sections and zero tool/provider
   calls on disclosure. Identify the first viewer-local shared presentational
-  primitives and characterize their intent/callback boundaries.
-- [ ] 13.2 Build the viewer-local shared presentational components, then refine
+  primitives and characterize their intent/callback boundaries. Evidence:
+  `scripts/smoke-product-viewer.ts` exercises keyboard expansion, independent
+  checkbox selection, safe image fallback, long-name 320px/375px layout,
+  factual disclosures, and zero host calls; presentational callbacks are
+  isolated in `src/picker/viewer-components.tsx`.
+- [x] 13.2 Build the viewer-local shared presentational components, then refine
   To decide and Ready row layout for image, identity, pack/brand, quantity and
   line price while keeping only the supplied factual disclosures. Keep To
   decide action controls expanded and Ready quantity controls directly visible;
   verify 320px/375px layout, focus visibility, unavailable rows, reuse across
-  states, and no new business-state/client fetch path.
+  states, and no new business-state/client fetch path. Evidence:
+  `ProductSummary`, `QuantityControl`, `ProductFacts`, `DestinationTabs`, and
+  `ActionFooter` are viewer-local presentational components; the built browser
+  smoke verifies the state-specific control placement and zero provider writes.
 - [ ] 13.3 Release Story 1 through the current stable viewer URI without a URI
   bump. Update the scoped feature inventory and run focused viewer/browser
   smoke, strict OpenSpec validation and applicable repository gates, then

@@ -169,19 +169,22 @@ independently submittable while other products remain In Review.
   the real Nemlig basket
 
 ### Requirement: Clear, staged review presentation
-The viewer SHALL present the server-authoritative temporary selection with one
+The viewer SHALL present the server-authoritative temporary Draft list with one
 destination-appropriate primary action and compact, accessible product rows.
-To decide acceptance SHALL remain batch-only. Ready rows SHALL expose their
-existing local return-to-To-decide and remove operations through an explicit
-per-row expansion; Ready SHALL not offer alternatives. Opening a product,
-factual disclosure, or presentational selection control SHALL make no tool or
-provider call. The viewer SHALL not duplicate a destination count in a
-redundant summary banner.
+To decide acceptance SHALL remain batch-only; its quantity, local removal and
+alternative controls SHALL appear only after the product row is expanded. Ready
+rows SHALL keep quantity controls directly visible and expose their existing
+local return-to-To-decide and remove operations through an explicit per-row
+expansion; Ready SHALL not offer alternatives. Opening a product, factual
+disclosure, or presentational selection control SHALL make no tool or provider
+call. The viewer SHALL not duplicate a destination count in a redundant summary
+banner.
 
 #### Scenario: A household member inspects a Ready row
-- **WHEN** the user expands a Ready product
-- **THEN** the row exposes its quantity and the available local move-back or
-  remove controls without an alternative action or real-basket mutation
+- **WHEN** the user views a Ready product
+- **THEN** its quantity controls remain directly visible, and expansion exposes
+  the available local move-back or remove controls without an alternative
+  action or real-basket mutation
 
 #### Scenario: A household member compares alternatives
 - **WHEN** the viewer displays alternatives for a To decide product
@@ -234,15 +237,15 @@ NOT claim that one provider response exhausts the catalogue.
   Review, and requires separate local acceptance before it enters Ready
 
 ### Requirement: Shopping workspace language
-The viewer SHALL identify the temporary workspace as **Your Nemlig selection**,
-label unresolved products **To decide** and accepted products **Ready**, and
-offer **Open current selection** for explicit activation. It SHALL identify the
+The viewer SHALL identify the temporary workspace as **Draft list**, label
+unresolved products **To decide** and accepted products **Ready**, and offer a
+clear Draft-list activation action for inactive cards. It SHALL identify the
 real Nemlig basket separately so a local edit is not mistaken for a provider
 mutation. These labels SHALL NOT change review state values or approval rules.
 
 #### Scenario: User returns to an inactive historical card
 - **WHEN** the card needs explicit activation before showing current products
-- **THEN** its action says Open current selection and the resulting workspace
+- **THEN** its action identifies the Draft list and the resulting workspace
   shows To decide and Ready for the two local product states
 
 #### Scenario: User sees the real basket

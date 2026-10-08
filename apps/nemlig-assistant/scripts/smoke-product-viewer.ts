@@ -20,6 +20,7 @@ declare global {
     sendMalformed: () => void;
     sendEnded: () => void;
     sendUnavailable: () => void;
+    sendUnavailableProduct: () => void;
     supersedeAndReload: () => void;
     reopenCurrentReview: () => void;
     setReadyForDisclosure: (ready: boolean) => void;
@@ -29,6 +30,7 @@ declare global {
 
 const html = await readFile(new URL("../dist/picker.html", import.meta.url), "utf8");
 const screenshotDirectory = process.env.NEMLIG_UI_SCREENSHOT_DIR;
+const longOatsName = "Synthetic oats with an intentionally long product name that must wrap safely";
 const fixtureView = (id: number, name: string) => ({
   context: "review", status: "complete", product: {
     id, name, price: 12, unit_price: 24, unit: "kr/kg", unit_size: "500 g", currency: "DKK",
@@ -39,7 +41,7 @@ const fixtureView = (id: number, name: string) => ({
 });
 const initialReview = {
   review_id: "synthetic-review", revision: 1, destination: "needs-review",
-  items: [1, 2].map((id) => ({ product_id: id, quantity: id, state: "needs-review", view: fixtureView(id, id === 1 ? "Synthetic milk" : "Synthetic oats") })),
+  items: [1, 2].map((id) => ({ product_id: id, quantity: id, state: "needs-review", view: fixtureView(id, id === 1 ? "Synthetic milk" : longOatsName) })),
 };
 const fixtureJson = JSON.stringify(initialReview);
 const parentDocument = `<!doctype html><meta charset="utf-8"><title>synthetic MCP host</title>
@@ -70,6 +72,7 @@ window.sendSubmitted=()=>{review.submission.status='submitted';frame.contentWind
 window.sendMalformed=()=>{const malformed=JSON.parse(JSON.stringify(review));malformed.submission.review.lines=[null];frame.contentWindow.postMessage({jsonrpc:'2.0',method:'ui/notifications/tool-result',params:result(malformed)},location.origin)};
 window.sendEnded=()=>frame.contentWindow.postMessage({jsonrpc:'2.0',method:'ui/notifications/tool-result',params:{structuredContent:{ended:true}}},location.origin);
 window.sendUnavailable=()=>frame.contentWindow.postMessage({jsonrpc:'2.0',method:'ui/notifications/tool-result',params:{structuredContent:{unavailable:true}}},location.origin);
+window.sendUnavailableProduct=()=>frame.contentWindow.postMessage({jsonrpc:'2.0',method:'ui/notifications/tool-result',params:{structuredContent:{views:[{context:'search',status:'unavailable',product_id:404}]}}},location.origin);
 window.getViewId=()=>viewId;
 window.supersedeAndReload=()=>{initialViewIdOverride=viewId;viewId='synthetic-view-'+(Number(viewId.split('-').at(-1))+1);frame.src='/resource'};
 window.setReadyForDisclosure=(ready)=>{review.items.find(item=>item.product_id===2).state=ready?'ready':'needs-review';review.revision++;frame.contentWindow.postMessage({jsonrpc:'2.0',method:'ui/notifications/tool-result',params:result(JSON.parse(JSON.stringify(review)))},location.origin)};
@@ -172,20 +175,34 @@ try {
   await capture("to-decide");
   const milkCard = frame.locator(".product-card").filter({ hasText: "Synthetic milk" });
   const milkDisclosure = milkCard.locator(".product-summary");
+  const milkCheckbox = milkCard.getByRole("checkbox", { name: "Select Synthetic milk" });
+  assert.equal(await milkCard.getByRole("button", { name: "Increase quantity of Synthetic milk" }).count(), 0, "a collapsed To decide row exposed quantity controls");
+  assert.equal(await milkCard.getByRole("button", { name: "Choose alternative" }).count(), 0, "a collapsed To decide row exposed alternative controls");
+  assert.equal(await milkCard.locator(".product-image-fallback").count(), 1, "a rejected image URL did not render the safe image fallback");
+  await milkCheckbox.check();
+  assert.equal(await milkDisclosure.getAttribute("aria-expanded"), "false", "checking a product row expanded it");
+  await milkCheckbox.uncheck();
+  const callsBeforeDisclosure = await page.evaluate(() => window.calls.length);
   const summaryLayout = await milkDisclosure.evaluate((button) => {
     const content = button.querySelector(":scope > span");
     return { button: button.getBoundingClientRect().width, content: content?.getBoundingClientRect().width ?? 0 };
   });
   assert.ok(summaryLayout.content >= summaryLayout.button - 16, `product summary content is narrower than its button beyond the expected inner padding: ${JSON.stringify(summaryLayout)}`);
-  await milkDisclosure.click();
+  await milkDisclosure.focus();
+  await page.keyboard.press("Enter");
   assert.equal(await milkDisclosure.getAttribute("aria-expanded"), "true", "product disclosure did not open");
+  assert.equal(await milkCard.getByRole("button", { name: "Increase quantity of Synthetic milk" }).count(), 1, "an expanded To decide row did not expose quantity controls");
+  assert.equal(await milkCard.getByRole("button", { name: "Choose alternative" }).count(), 1, "an expanded To decide row did not expose alternative controls");
   const milkFact = milkCard.locator(".product-fact").first();
   await milkFact.locator("summary").click();
   assert.equal(await milkFact.evaluate((node: HTMLDetailsElement) => node.open), true, "nested product fact did not open");
+  assert.equal(await page.evaluate(() => window.calls.length), callsBeforeDisclosure, "product disclosure performed a tool call");
   await capture("product-expanded");
   await page.evaluate(() => window.setReadyForDisclosure(true));
   await frame.getByRole("button", { name: /Ready \(1\)/ }).click();
   await frame.getByRole("heading", { name: "Ready" }).waitFor();
+  const readyOatsCard = frame.locator(".product-card").filter({ hasText: longOatsName });
+  assert.equal(await readyOatsCard.getByRole("button", { name: `Increase quantity of ${longOatsName}` }).count(), 1, "a collapsed Ready row did not keep direct quantity controls");
   await capture("ready");
   await frame.getByRole("button", { name: /To decide \(1\)/ }).click();
   await frame.getByRole("heading", { name: "To decide" }).waitFor();
@@ -198,6 +215,7 @@ try {
   await frame.getByRole("button", { name: /To decide \(2\)/ }).waitFor();
   assert.equal(await milkDisclosure.getAttribute("aria-expanded"), "false", "a different review inherited the previous card disclosure state");
   assert.equal(await milkFact.evaluate((node: HTMLDetailsElement) => node.open), false, "a different review inherited the previous nested fact state");
+  await milkDisclosure.click();
   await milkCard.getByRole("button", { name: "Choose alternative" }).click();
   await frame.getByRole("heading", { name: "Current product" }).waitFor();
   await capture("alternatives");
@@ -213,10 +231,11 @@ try {
   await frame.getByRole("button", { name: "Search products" }).click();
   assert.equal(await page.evaluate(() => window.calls.filter((call) => call.args.action?.kind === "alternatives").length), alternativeCallsBeforeEmptySearch, "an empty alternatives query sent a stale search");
   await frame.getByRole("button", { name: /To decide \(2\)/ }).click();
-  const oatsCard = frame.locator(".product-card").filter({ hasText: "Synthetic oats" });
+  const oatsCard = frame.locator(".product-card").filter({ hasText: longOatsName });
+  await oatsCard.locator(".product-summary").click();
   await oatsCard.getByRole("button", { name: "Choose alternative" }).click();
   await frame.getByRole("heading", { name: "Current product" }).waitFor();
-  assert.equal(await frame.getByRole("searchbox", { name: "Search for more products" }).inputValue(), "Synthetic oats", "an earlier product's query leaked into the new alternative target");
+  assert.equal(await frame.getByRole("searchbox", { name: "Search for more products" }).inputValue(), longOatsName, "an earlier product's query leaked into the new alternative target");
   await frame.getByRole("button", { name: /To decide \(2\)/ }).click();
   await frame.getByRole("heading", { name: "To decide" }).waitFor();
   await frame.getByRole("button", { name: "Select all" }).click();
@@ -263,6 +282,7 @@ try {
   await page.evaluate(() => window.reopenCurrentReview());
   await frame.getByRole("button", { name: /To decide \(1\)/ }).waitFor();
   await frame.getByRole("button", { name: /To decide \(1\)/ }).click();
+  await frame.locator(".product-card").locator(".product-summary").first().click();
   await frame.getByRole("button", { name: "Choose alternative" }).click();
   await frame.getByRole("heading", { name: "Current product" }).waitFor().catch(async (error: unknown) => {
     const state = await frame.locator("main").innerText();
@@ -340,6 +360,9 @@ try {
   await capture("unavailable");
   assert.equal(await frame.getByRole("button", { name: "Prepare exact change" }).count(), 0, "unavailable notification restored the discarded review actions");
   assert.equal(await frame.locator('input[type="checkbox"]').count(), 0, "unavailable notification restored discarded review controls");
+  await page.evaluate(() => window.sendUnavailableProduct());
+  await frame.getByText("Product 404 details unavailable.").waitFor();
+  assert.equal(await frame.locator('input[type="checkbox"]').count(), 0, "an unavailable product rendered selectable review controls");
   assert.equal(await page.evaluate(() => window.providerWrites), 0, "synthetic browser smoke reached a provider write");
   assert.deepEqual(externalRequests, [], "built UI requested a network resource outside the synthetic host");
   assert.deepEqual(errors, [], "React UI raised browser errors");
