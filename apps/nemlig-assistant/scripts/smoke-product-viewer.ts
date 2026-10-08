@@ -217,7 +217,8 @@ try {
   assert.equal(await readyOatsCard.getByRole("button", { name: `Increase quantity of ${longOatsName}` }).count(), 1, "a collapsed Ready row did not keep direct quantity controls");
   for (let press = 0; press < 8; press++) await readyOatsCard.getByRole("button", { name: `Increase quantity of ${longOatsName}` }).click();
   await frame.getByText("10 ×").waitFor();
-  await page.waitForTimeout(2_200);
+  // Leave ample scheduling headroom before the 2.5-second debounce expires.
+  await page.waitForTimeout(500);
   assert.equal(await page.evaluate(() => window.calls.length), callsBeforeReadyTab, "quantity persisted before the 2.5-second quiet interval");
   await page.waitForFunction((before) => window.calls.slice(before).filter((call) => call.args.action?.kind === "quantity").length === 1, callsBeforeReadyTab);
   assert.deepEqual(await page.evaluate((before) => window.calls.slice(before).map((call) => call.args.action), callsBeforeReadyTab), [{ kind: "quantity", product_id: 2, quantity: 10 }], "rapid quantity presses did not coalesce to one final update");
