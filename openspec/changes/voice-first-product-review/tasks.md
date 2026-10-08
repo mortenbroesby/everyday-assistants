@@ -453,12 +453,12 @@ existing do-not-retry copy. Current official ChatGPT UI documentation confirms
 standard `ui/message`/follow-up messaging, while close and external-link APIs
 remain optional host-specific extensions. This story uses only the already
 implemented `ui/message` bridge for starter suggestions; it adds no close,
-external-link, or provider action. The v15 artifact smoke now proves an empty
+external-link, or provider action. The v15 artifact smoke proves an empty
 or ended draft exposes no tabs or destructive actions, sends one bounded
 conversational starter with zero tool/provider calls, preserves exact prepared
 confirmation and cancel-with-zero-submit, presents verified success separately,
 and blocks uncertain outcomes without retry.
-- [x] 13.20 Release Story 4 through the current versioned stable URI in one PR after
+- [ ] 13.20 Release Story 4 through the current versioned stable URI in one PR after
   focused tests, fake-provider protected-submit smoke, loopback browser smoke,
   strict OpenSpec validation and applicable repository gates. Record exact
   revision, CI, resource metadata and native-card evidence.
@@ -482,3 +482,16 @@ checkout, payment, or ordering action was selected. The native empty/end and
 verified/uncertain presentation cases remain unchecked: ending the persisted
 local Draft list is a destructive host action, and verified/uncertain provider
 outcomes require a separately authorized real addition or controlled fault.
+
+Visual correction follow-up (8 October 2026): the current native v15 empty
+card still rendered the generic `Nemlig products` shell rather than the
+approved Draft-list workspace language. That functional empty/end observation
+does not establish visual convergence. The shared v16 correction makes the
+shell consistently identify **Nemlig Assistant** and **Draft list**, removes
+duplicate generic headings from empty and terminal outcome surfaces, and keeps
+the existing outcome actions and text fallback unchanged. Its built-artifact
+smoke exercises activation, selection, alternatives, quantity flush, protected
+confirmation, verified and uncertain outcomes, ended-empty presentation, zero
+provider writes, and no external requests. The v16 release and a newly rendered
+native current-card comparison remain required before Story 4 delivery can be
+claimed.

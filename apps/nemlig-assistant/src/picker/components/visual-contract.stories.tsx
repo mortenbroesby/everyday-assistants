@@ -1,7 +1,7 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import type { ReactNode } from "react";
 import type { ProductView } from "../../product-presentation.js";
-import { ActionFooter, DestinationTabs, DraftListStarters, OutcomeSurface, ProductFacts, ProductSummary, ProductSummaryButton, QuantityControl, ViewerButton } from "./index.js";
+import { ActionFooter, DestinationTabs, DraftListStarters, OutcomeSurface, ProductFacts, ProductSummary, ProductSummaryButton, QuantityControl, ViewerButton, ViewerShell } from "./index.js";
 
 const milk: ProductView = {
   context: "review",
@@ -35,7 +35,7 @@ const milk: ProductView = {
 const unavailable: ProductView = { context: "review", status: "unavailable", product_id: 99 };
 
 function Frame({ children, width = 375 }: { children: ReactNode; width?: number }) {
-  return <div className="app-frame"><main className="viewer" style={{ maxWidth: width }}><h1>Draft list</h1>{children}</main></div>;
+  return <ViewerShell title="Draft list" maxWidth={width}>{children}</ViewerShell>;
 }
 
 function ProductRow({ view = milk, quantity = 2, expanded = false, ready = false }: {

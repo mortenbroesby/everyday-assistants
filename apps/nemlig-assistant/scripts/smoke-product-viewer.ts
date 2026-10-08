@@ -144,6 +144,10 @@ try {
   console.log("Synthetic viewer smoke: React resource initialized");
   await frame.getByRole("button", { name: /To decide \(2\)/ }).waitFor();
   await page.waitForFunction(() => window.calls.some((call) => call.args.action?.kind === "show"));
+  const viewerShell = frame.locator('[data-viewer-component="viewer-shell"]');
+  assert.equal(await viewerShell.count(), 1, "the built viewer did not render its shared Nemlig Assistant shell");
+  assert.equal(await viewerShell.getByText("Nemlig Assistant", { exact: true }).count(), 1, "the viewer did not identify the Nemlig Assistant workspace");
+  assert.equal(await viewerShell.getByText("Draft list", { exact: true }).count(), 1, "the viewer shell did not identify the local Draft list");
   assert.equal(await frame.locator('input[type="checkbox"]').count(), 2, "products were not visible on the first rendered card");
   console.log("Synthetic viewer smoke: direct product display and view validation passed");
   const callsBeforeInactiveRefresh = await page.evaluate(() => window.calls.length);
@@ -363,8 +367,8 @@ try {
   assert.equal(await frame.getByRole("button", { name: "Review exact Nemlig change" }).count(), 0, "uncertain submission offered a retry");
   const callsBeforeVerifiedCompletion = await page.evaluate(() => window.calls.length);
   await page.evaluate(() => window.sendSubmitted());
-  await frame.getByRole("heading", { name: "Added to Nemlig basket" }).waitFor();
-  await frame.getByText("Nemlig confirmed the addition").waitFor();
+  await frame.getByRole("heading", { name: "Nemlig confirmed the addition" }).waitFor();
+  assert.equal(await frame.locator("#title").count(), 0, "verified success repeated an unnecessary screen heading above its outcome");
   await capture("success");
   assert.equal(await page.evaluate((before) => window.calls.slice(before).filter((call) => call.name === "submit_product_review").length, callsBeforeVerifiedCompletion), 0, "verified completion replayed submission");
   await page.evaluate(() => window.sendMalformed());
@@ -379,6 +383,7 @@ try {
   assert.equal(await page.evaluate(() => window.submissionAttempts), 1, "continuing a submitted Draft list retried the old submission");
   await page.evaluate(() => window.sendEnded());
   await frame.getByRole("heading", { name: "What should we shop for?" }).waitFor();
+  assert.equal(await frame.locator("#title").count(), 0, "empty Draft list repeated an unnecessary screen heading above its starter surface");
   await frame.getByText("Your local Draft list was discarded.").waitFor();
   assert.equal(await frame.getByRole("button", { name: /To decide/ }).count(), 0, "an empty Draft list retained destination navigation");
   assert.equal(await frame.getByText("More Draft list actions").count(), 0, "an empty Draft list retained local destructive actions");
