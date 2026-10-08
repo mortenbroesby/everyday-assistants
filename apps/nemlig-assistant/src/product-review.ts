@@ -61,6 +61,21 @@ export class ProductReviewService {
     this.activeByOwner.delete(draft.owner);
   }
 
+  private readItems(items: Array<{ product_id: number; quantity: number }>, signal?: AbortSignal): Promise<ReviewItem[]> {
+    return runReadPool(items, async (item, readSignal): Promise<ReviewItem> => {
+      let view: ProductView;
+      try {
+        const product = await this.client.getProduct(item.product_id, readSignal);
+        if (product.id !== item.product_id) throw new NemligError("Product identity mismatch.");
+        view = createProductView(product, { kind: "details" });
+      } catch (error) {
+        if (readSignal.aborted || isAuthenticationFailure(error)) throw error;
+        view = { context: "details", status: "unavailable", product_id: item.product_id };
+      }
+      return { ...item, state: "needs-review", view };
+    }, { signal });
+  }
+
   private get(owner: string, id: string): StoredReview {
     const draft = this.drafts.get(id);
     if (!draft || draft.owner !== owner) {
@@ -118,18 +133,7 @@ export class ProductReviewService {
     this.makeRoom();
     this.startingOwners.add(owner);
     try {
-      const rows = await runReadPool(items, async (item, readSignal): Promise<ReviewItem> => {
-        let view: ProductView;
-        try {
-          const product = await this.client.getProduct(item.product_id, readSignal);
-          if (product.id !== item.product_id) throw new NemligError("Product identity mismatch.");
-          view = createProductView(product, { kind: "details" });
-        } catch (error) {
-          if (readSignal.aborted || isAuthenticationFailure(error)) throw error;
-          view = { context: "details", status: "unavailable", product_id: item.product_id };
-        }
-        return { ...item, state: "needs-review", view };
-      }, { signal });
+      const rows = await this.readItems(items, signal);
       const snapshot: ProductReviewSnapshot = {
         review_id: randomUUID(), revision: 1, destination: "needs-review", items: rows,
       };
@@ -184,18 +188,7 @@ export class ProductReviewService {
             draft.items.length + action.items.length > 50) {
             throw new NemligError("Add 1–50 new unique exact products with positive integer quantities, up to 50 products in total.");
           }
-          const rows = await runReadPool(action.items, async (item, readSignal): Promise<ReviewItem> => {
-            let view: ProductView;
-            try {
-              const product = await this.client.getProduct(item.product_id, readSignal);
-              if (product.id !== item.product_id) throw new NemligError("Product identity mismatch.");
-              view = createProductView(product, { kind: "details" });
-            } catch (error) {
-              if (readSignal.aborted || isAuthenticationFailure(error)) throw error;
-              view = { context: "details", status: "unavailable", product_id: item.product_id };
-            }
-            return { ...item, state: "needs-review", view };
-          }, { signal });
+          const rows = await this.readItems(action.items, signal);
           draft.items.push(...rows);
           draft.destination = "needs-review";
           break;
