@@ -335,14 +335,17 @@ The MCP surface is organized around household actions:
   bounded read-only provider check and reports missing credentials, provider
   reauthentication, or provider unavailability separately.
 - See the actual Nemlig basket: `show_my_basket`.
-- Build a local draft list: `start_product_review`; refresh, accept, change, remove,
+- Show or build a local draft list: `start_product_review`; refresh, accept, change, remove,
   reconsider accepted products, append new products, navigate, finish shopping, or
   prepare submission with `update_product_review_conversation`. Show can recover the active
   conversation review without its opaque reference. Repeated starts preserve it.
-- For an explicit visual product search or review, search exact products first
-  and start or update this draft list. Use `show_my_basket` when the user means
-  products already in Nemlig. Tool success alone does not prove that a client
-  rendered the draft list viewer.
+- For a visual product request, search exact products and open the native Draft
+  list without requiring the user to name a tool. This changes only local review
+  state. Omit `items` to reopen an existing list, and add newly found products
+  through `update_product_review_conversation`. If the user forbids local Draft
+  state, explain the native view's requirement and give a concise text result.
+  Use `show_my_basket` when the user means products already in Nemlig. Tool
+  success alone does not prove that a client rendered the Draft list viewer.
 - Submit those exact Ready lines after a clear conversational add instruction
   or the viewer's separate on-screen exact confirmation:
   `submit_product_review_conversation`.
