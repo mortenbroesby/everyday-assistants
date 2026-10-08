@@ -1,0 +1,110 @@
+{
+  "schemaVersion": 1,
+  "tool": {
+    "name": "knip",
+    "version": "6.40.0"
+  },
+  "generatedFrom": "cf3fde4e551c922db251f73386296b1123c70efb",
+  "findings": [
+    {
+      "category": "exports",
+      "file": "apps/nemlig-assistant/src/config.ts",
+      "id": "16ed98945016beade167296d643f6e2ffea7ffd0bcb3e7a47a987fae4e8e39e2"
+    },
+    {
+      "category": "types",
+      "file": "apps/nemlig-assistant/src/proposals.ts",
+      "id": "20ebccb09e7dca544bc25202e4fa2e434927e8f5c337711f6aa9b189dec6f0d8"
+    },
+    {
+      "category": "types",
+      "file": "apps/nemlig-assistant/release/policy.ts",
+      "id": "295686b49aba351127f71819b0929445b4aba91a633b40923862888501237f74"
+    },
+    {
+      "category": "exports",
+      "file": "apps/nemlig-assistant/release/policy.ts",
+      "id": "2973d5124bcdaefd29b41a757c745157d6856c321c0dde75df7e45e82693f68a"
+    },
+    {
+      "category": "exports",
+      "file": "apps/nemlig-assistant/src/read-coordination.ts",
+      "id": "36ca3e0544e8810bdc340b3eda59192802619f1ce5eedfcda5d4c1bae035778b"
+    },
+    {
+      "category": "exports",
+      "file": "apps/nemlig-assistant/src/client.ts",
+      "id": "3a61abebda8d5a50a8473906cfe97cad1647fbb0dc862ff5c48ad1f503426d71"
+    },
+    {
+      "category": "exports",
+      "file": "apps/nemlig-assistant/src/production-acceptance.ts",
+      "id": "4029283499b113a4c3db572d0dfe58ad98a19afedee497953deb9d5d7a980172"
+    },
+    {
+      "category": "exports",
+      "file": "apps/nemlig-assistant/src/cloudflare-gateway.ts",
+      "id": "41b3c1c6580d3342c67333d3bcba4d3131b9ea2291a985d63a67b5fe6489dee5"
+    },
+    {
+      "category": "exports",
+      "file": "apps/nemlig-assistant/src/cloudflare-observability.ts",
+      "id": "4e407e4141e182b0284c6085d1dfe8146e65517d67e394deb7448134af8dd83d"
+    },
+    {
+      "category": "exports",
+      "file": "apps/nemlig-assistant/scripts/service-token.ts",
+      "id": "507c7488fb50b45acb6150281244a81d7d028601ce3b5c7525db81fc7654a2f2"
+    },
+    {
+      "category": "exports",
+      "file": "apps/nemlig-assistant/src/client.ts",
+      "id": "6c882084064e7b692b7a26a8e16778401aac4480f6378db8aed215aa153807c7"
+    },
+    {
+      "category": "types",
+      "file": "apps/nemlig-assistant/src/product-review.ts",
+      "id": "7ce84107a36e26d2967721d264792fb6ce63c6b6ba9c22b61aeb1a4eda77ef52"
+    },
+    {
+      "category": "types",
+      "file": "apps/nemlig-assistant/src/product-review.ts",
+      "id": "8dfcde4a31f936bf769dcb6baa34ae1cb8b5a200e8faee5bd473f6e9f093b853"
+    },
+    {
+      "category": "exports",
+      "file": "apps/nemlig-assistant/src/client.ts",
+      "id": "ac57bd3926982f5136d1b4f9111b54cfb41ed57e1d0e828957f3dc662720c98b"
+    },
+    {
+      "category": "exports",
+      "file": "apps/nemlig-assistant/release/policy.ts",
+      "id": "c327de2cb08698daaeaea83b2d8f73e9513a1e95e6c2e4e608cf77152f11ef60"
+    },
+    {
+      "category": "files",
+      "file": "apps/nemlig-assistant/scripts/benchmark-product-text.ts",
+      "id": "c5528f6b23a7c849205d5267c7f6fc5e62747369cebdefefb0deb8bb8a50ff48"
+    },
+    {
+      "category": "exports",
+      "file": "apps/nemlig-assistant/src/read-coordination.ts",
+      "id": "d70f10b9dada8d19f702e811e9b67700ac5cdd891e4e6dcdbb57172d1b80d529"
+    },
+    {
+      "category": "types",
+      "file": "apps/nemlig-assistant/src/product-discovery.ts",
+      "id": "e9dee892064e479904bb2db0003f2416e2b04fbcb89d971d0d2a64f1c1872d41"
+    },
+    {
+      "category": "exports",
+      "file": "apps/nemlig-assistant/release/policy.ts",
+      "id": "ebadfe612e93d8e8517fe027116b2674af96cd4c04c16e927f68b13155adc521"
+    },
+    {
+      "category": "exports",
+      "file": "apps/nemlig-assistant/src/product-discovery.ts",
+      "id": "ee2702e332f25c0b5a1560e54a62d53aa7ecffcf4236cdb7e103ad9b26f971ae"
+    }
+  ]
+}

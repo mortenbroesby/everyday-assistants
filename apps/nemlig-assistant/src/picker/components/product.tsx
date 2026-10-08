@@ -36,13 +36,13 @@ export const ProductSummaryButton = styled(ViewerButton)({
   "&:hover:not(:disabled)": { background: "var(--soft)" },
 });
 
-export function StatusChip({ children }: { children: string }) {
+function StatusChip({ children }: { children: string }) {
   return <StatusChipVisual data-viewer-component="status-chip">{children}</StatusChipVisual>;
 }
 
 const StatusChipVisual = styled.span({ display: "inline-flex", width: "fit-content", alignItems: "center", minHeight: 20, padding: "2px 6px", borderRadius: 999, color: "var(--accent)", background: "var(--soft)", fontSize: ".68rem", fontWeight: 650, lineHeight: 1 });
 
-export function ProductStatusChips({ view }: { view: ProductView }) {
+function ProductStatusChips({ view }: { view: ProductView }) {
   if (view.status !== "complete") return null;
   const product = view.product;
   const chips = [

@@ -96,25 +96,41 @@ score.
 | **Missing capability.** A task depends on one unavailable service, credential, runtime, or artifact. | Test only the required capability early, use a safe read-only fallback where useful, and state the precise blocker. Fail for bootstrapping unrelated services or seeking unrelated credentials. |
 | **Shell-sensitive PR text.** Create a PR description containing backticks, `$()`, quotes, and newlines. | Preserve the literal text using structured input or a body file, then read it back to check formatting. Fail if shell interpolation runs or the submitted body differs. |
 
-## Knip: separate evaluation only if a candidate appears
+## Knip: bounded unused-code regression tracking
 
 TypeScript's `noUnusedLocals` and `noUnusedParameters`, plus ESLint, check
 declarations in configured files. They do not identify every unreachable file,
-unused export, or dependency. Knip can analyze those through an entry-to-module
-graph, but a useful result here depends on correctly modeling the three tsdown
-entries, four package `bin` aliases, workspace and package scripts, Wrangler
-Worker/Durable Object bindings, workflow-invoked scripts, tests, and dynamic
-imports. An incomplete graph can report live exports or dependencies as unused;
-entry exports are excluded by default and enabling them broadly can over-report
-supported package interfaces. See Knip's [entry discovery], [configuration],
-and [false-positive guidance].
+unused export, runtime dependency, development dependency, or optional peer
+dependency. Knip analyzes those through an entry-to-module graph and discovers
+this package's binaries, scripts, workflow commands, Worker and UI tooling
+natively. A single explicit entry covers the documented ChatGPT plugin-packaging
+script, which is invoked outside package scripts. Every proposed deletion still
+requires runtime, package, and host-consumer proof.
 
-The P2 dependency inventory found all installed dependencies used, and its
-design defers unused-code tooling until a native-check gap or concrete candidate
-is demonstrated. Do not add Knip to this PR, dependencies, or CI. If a specific
-suspected dead file/export/dependency emerges, run a separate disposable,
-read-only trial with package/Worker/workflow entry points reviewed first; prove
-each candidate against runtime, package, and host consumers before removing it.
+`pnpm code-health` compares the current Knip result with the committed,
+main-SHA baseline. Pull requests read that baseline from their target branch,
+not from the proposed change. It distinguishes stable identities, rather than
+counts, so a same-count replacement is a regression. Existing findings are
+honest baseline debt; new findings fail CI, while resolved findings are
+reported. The command cannot modify source, fix findings, or refresh the
+baseline. Only the explicit reviewed `pnpm code-health:baseline` command writes
+a baseline, and only while `HEAD` is the current `origin/main` commit. The
+one-time `--bootstrap` form also requires that the branch has no Nemlig app
+differences from `origin/main`; it records that target commit, never the branch
+SHA. Both forms require a clean working tree before Knip scans. To record an
+intentional resolution without accepting new findings, run the reviewed
+`pnpm code-health:baseline -- --prune` command. It can run on current `main`,
+or on a clean PR branch that has merged current `origin/main` and whose existing
+baseline was generated from an ancestor of that target. It can only remove
+findings; Git history retains the removed identity and a later reintroduction
+fails CI.
+
+Agents should inspect a relevant result, avoid unrelated baseline cleanup, and
+prove any deletion independently. Do not add broad ignores merely to quiet the
+scanner or regenerate the baseline to clear a regression. This is a local,
+read-only CI check: it does not create GitHub reports or receive write
+permissions. Scanner diagnostics are sanitized rather than copied into logs;
+finding identities retain only category, file, and a hash.
 
 [entry discovery]: https://knip.dev/explanations/entry-files
 [configuration]: https://knip.dev/reference/configuration
