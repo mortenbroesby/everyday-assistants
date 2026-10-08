@@ -89,7 +89,7 @@ document.getElementById('run').onclick = async () => {
   while(!predicate()){if(Date.now()>until)throw new Error('Timed out: '+status.textContent); await new Promise(r=>setTimeout(r,25));}
  };
   const click = label => { const b=button(label); check(b && !b.disabled,'Missing enabled control: '+label); b.click(); };
-  const select = async () => { await wait(()=>doc().querySelector('input[type=checkbox]')); doc().querySelector('input[type=checkbox]').click(); };
+  const select = async () => { await wait(()=>doc().querySelector('input[type=checkbox]:not(:disabled)')); doc().querySelector('input[type=checkbox]:not(:disabled)').click(); await wait(()=>button('Add selected to Ready (1)')); };
   try {
   await fetch('/reset',{method:'POST'});
   widgetCalls.length=0; await document.getElementById('start').onclick();
@@ -98,17 +98,19 @@ document.getElementById('run').onclick = async () => {
   check(widgetCalls.length===beforeDirectView+1&&widgetCalls.at(-1).arguments.action?.kind==='show'&&doc().querySelectorAll('.product-list article').length===2,'New card did not show products directly or validate its view');
   await select(); click('Add selected to Ready (1)'); await wait(()=>button('Ready (1)') && !button('Ready (1)').disabled);
   check(!button('Open current Draft list'),'New card retained the obsolete open CTA');
-  click('Ready (1)'); await wait(()=>doc().querySelector('#title')?.textContent==='Ready' && !button('Ready (1)').disabled);
+  const beforeReadyTab=widgetCalls.length; click('Ready (1)'); await wait(()=>doc().querySelector('#title')?.textContent==='Ready' && !button('Ready (1)').disabled);
+  check(widgetCalls.length===beforeReadyTab,'Ready tab called the review service');
   check(!button('Choose alternative'),'Ready offered alternatives');
   const canonical=(await call({name:'update_product_review_conversation',arguments:{action:{kind:'show'}}})).structuredContent.review;
-  check(canonical.destination==='ready'&&canonical.items.find(item=>item.product_id===1)?.state==='ready','Wire review is not canonical Ready');
+  check(canonical.destination==='needs-review'&&canonical.items.find(item=>item.product_id===1)?.state==='ready','A local Ready tab changed server destination or acceptance');
   check(!button('Open current Draft list'),'Ready navigation collapsed the mounted frame');
-  click('To decide (1)'); await wait(()=>doc().querySelector('#title')?.textContent==='To decide' && !button('To decide (1)').disabled);
+  const beforeToDecideTab=widgetCalls.length; click('To decide (1)'); await wait(()=>doc().querySelector('#title')?.textContent==='To decide' && !button('To decide (1)').disabled);
+  check(widgetCalls.length===beforeToDecideTab,'To decide tab called the review service');
   check(!!button('Choose alternative'),'To decide omitted alternatives');
   check(!button('Open current Draft list'),'Return navigation collapsed the mounted frame');
   status.textContent='Checking remount'; const beforeMount=widgetCalls.length;
   frame.src='/viewer'; await wait(()=>widgetCalls.length===beforeMount+1&&widgetCalls.at(-1).arguments.action?.kind==='show');
-  await wait(()=>button('Ready (1)') && !button('Ready (1)').disabled);
+  await wait(()=>button('To decide (1)') && !button('To decide (1)').disabled);
   check(widgetCalls.length===beforeMount+1&&widgetCalls.at(-1).arguments.action?.kind==='show','Remount did not validate and refresh the current view');
   status.textContent='Checking stale revision without replay';
   const current=(await call({name:'update_product_review_conversation',arguments:{action:{kind:'show'}}})).structuredContent.review;
@@ -117,7 +119,7 @@ document.getElementById('run').onclick = async () => {
   await select(); click('Add selected to Ready (1)'); await wait(()=>text().includes('Your last action was not applied'));
   check(widgetCalls.length===beforeConflict+2,'Conflict must make one edit attempt and one read');
   check(widgetCalls.at(-1).arguments.action.kind==='show','Conflict recovery was not read-only');
-  check(button('Ready (1)') && !doc().querySelector('input:checked'),'Conflict changed acceptance');
+  check(button('To decide (1)') && !doc().querySelector('input:checked'),'Conflict changed acceptance');
   status.textContent='Checking connection failure'; await select(); offline=true; click('Add selected to Ready (1)'); await wait(()=>text().includes('This Draft list card is out of date'));
   check(!doc().querySelector('input') && !/INVALID_ARGUMENT|private trace/.test(text()),'Failure leaked details or editable snapshot');
   check(!button('Add selected to Ready (1)')&&!button('Remove from Draft list')&&!doc().querySelector('input'),'Stale view retained draft-edit controls after its request failed');
@@ -243,8 +245,8 @@ document.getElementById('flow').onclick = async () => {
   transcript=await call({name:'start_product_review',arguments:{items:[{product_id:1,quantity:1},{product_id:2,quantity:2}]}});
   status.textContent='Checking fresh post-discard card';
  initialized=false; const viewerLoaded=new Promise(resolve=>frame.addEventListener('load',resolve,{once:true})); frame.src='/viewer'; await viewerLoaded; await wait(()=>initialized);
-  await wait(()=>initialized&&button('To decide (2)')&&!button('To decide (2)').disabled);
-  await wait(()=>button('To decide (2)')&&!button('To decide (2)').disabled); await widths();
+  await wait(()=>initialized&&button('To decide (2)')&&!button('To decide (2)').disabled&&doc().querySelector('input[type=checkbox]:not(:disabled)'));
+  await wait(()=>button('To decide (2)')&&!button('To decide (2)').disabled&&doc().querySelector('input[type=checkbox]:not(:disabled)')); await widths();
   const availableRow=doc().querySelector('input[type=checkbox][aria-label="Select Smoke product 2"]'); check(availableRow,'Known-price row missing from submitted-continuation setup'); availableRow.click(); click('Add selected to Ready (1)');
   await wait(()=>button('Ready (1)')&&!button('Ready (1)').disabled); open(); click('Ready (1)'); await wait(()=>doc().querySelector('#title')?.textContent==='Ready'&&!button('Ready (1)').disabled); open();
   click('Prepare exact change'); await wait(()=>doc().querySelector('.submission h2')?.textContent==='Confirm the exact Nemlig change'); open();
@@ -268,7 +270,8 @@ document.getElementById('flow').onclick = async () => {
   transcript=await call({name:'start_product_review',arguments:{items:[{product_id:1,quantity:1},{product_id:2,quantity:2}]}});
   check(!transcript.structuredContent.review.submission,'Fresh viewer restored a previous uncertain submission');
   initialized=false; const recoveryViewerLoaded=new Promise(resolve=>frame.addEventListener('load',resolve,{once:true})); frame.src='/viewer'; await recoveryViewerLoaded;
-  await wait(()=>initialized&&button('Prepare exact change')&&!button('Prepare exact change').disabled);
+  await wait(()=>initialized&&button('Ready (1)')&&!button('Ready (1)').disabled); click('Ready (1)');
+  await wait(()=>button('Prepare exact change')&&!button('Prepare exact change').disabled);
   check(!button('Add to Nemlig'),'Reopening an edited uncertain review restored its old confirmation');
   check(widgetCalls.filter(call=>call.name==='submit_product_review').length===1,'Reopening an edited uncertain review automatically submitted it');
   click('Prepare exact change'); await wait(()=>doc().querySelector('.submission h2')?.textContent==='Confirm the exact Nemlig change'); open();
@@ -300,10 +303,10 @@ document.getElementById('alternatives').onclick = async () => {
   await fetch('/reset',{method:'POST'}); widgetCalls.length=0; widgetResults.length=0; initialized=false;
   transcript=await call({name:'start_product_review',arguments:{items:[{product_id:1,quantity:2},{product_id:2,quantity:1}]}});
   frame.src='/viewer'; await wait(()=>initialized&&doc()?.querySelector('main.viewer'));
-  publish(); await wait(()=>button('To decide (2)')&&!button('To decide (2)').disabled);
+  publish(); await wait(()=>button('To decide (2)')&&!button('To decide (2)').disabled&&!doc().querySelector('button[aria-expanded]')?.disabled);
   const target=[...doc().querySelectorAll('.product-list article')].find(row=>row.textContent.includes('Smoke product 1'));
   check(target,'Current product row missing before alternatives');
-  target.querySelector('button[aria-expanded]')?.click(); click('Choose alternative');
+  target.querySelector('button[aria-expanded]')?.click(); await wait(()=>button('Choose alternative')&&!button('Choose alternative').disabled); click('Choose alternative');
   await wait(()=>doc().querySelector('#title')?.textContent==='Choose an alternative'); open();
   const currentSection=doc().querySelector('.alternatives-current');
   const currentCard=currentSection?.querySelector('.product-card');

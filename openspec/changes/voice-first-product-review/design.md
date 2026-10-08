@@ -149,9 +149,14 @@ that frame is active. Initial/remounted frames remain inactive. Do not
 auto-reopen, request close, or infer card age.
 
 Keep presentation-only selection and disclosure state across same-review
-updates where the corresponding product remains. Server snapshots continue to
-own destination, alternatives context and counts. Avoid a second widget or
-browser-owned business state. Basket rows emphasize image, name, pack/brand,
+updates where the corresponding product remains. The mounted viewer owns its
+currently visible To decide/Ready/available-alternatives destination and
+changes it synchronously without an MCP call. Server snapshots continue to own
+products, membership, quantities, revisions, alternatives context and counts;
+an alternatives destination is available only while that supplied context still
+exists. A server mutation can select the appropriate presentation destination
+when it produces a changed snapshot, but ordinary tab changes do not persist a
+destination. Avoid a second widget or browser-owned business state. Basket rows emphasize image, name, pack/brand,
 quantity and line price, with catalogue metadata in details, following the
 current Nemlig catalogue hierarchy.
 
@@ -272,17 +277,25 @@ concise Danish phrase after inspecting results. It should explain material
 category differences, such as butter versus margarine, and describe the
 queries performed instead of claiming exhaustive catalogue coverage.
 
-### 29 September follow-up: quantity batching and clarification continuity
+### 8 October follow-up: local workspace and quantity batching
 
 Quantity +/- presses update the displayed quantity and line total immediately,
 but persist through the existing revision-checked selection update after a
-400 ms quiet interval. A burst for one product sends only its final quantity.
-Before navigation, another mutation, prepare, or submit, flush any pending
-quantity first and serialize the next action after its confirmed revision.
+2.5 second quiet interval. A burst for one product sends only its final
+quantity. Changing a local destination never flushes pending quantity edits or
+waits for an MCP result. Before a business mutation, prepare, submit, or end,
+flush any pending quantity first and serialize the next action after its
+confirmed revision.
 Optimistic quantities are presentation-only; an error or stale revision clears
 them, uses at most the existing read-only recovery, and never replays a failed
 edit or submits an unconfirmed quantity. Submission always uses the server's
 current Ready rows and the protected exact proposal path.
+
+Unmounting or losing the active frame clears an unconfirmed local quantity
+instead of issuing a background mutation. This keeps the server authoritative
+and prevents an old retained card from applying an edit after its authority has
+ended. The UI reports the normal recovery state rather than claiming that a
+discarded optimistic value persisted.
 
 The clarification regression has an application cause, not a proven ChatGPT
 host lifecycle cause: a conversational add of a new To decide item moves the

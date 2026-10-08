@@ -20,8 +20,8 @@ const complete: ProductView = {
 };
 
 test("versioned viewer identity and complete headless fallback stay in sync", () => {
-  assert.equal(PRODUCT_VIEWER_RESOURCE_VERSION, "13");
-  assert.equal(PRODUCT_VIEWER_RESOURCE_URI, "ui://nemlig/product-viewer-v13.html");
+  assert.equal(PRODUCT_VIEWER_RESOURCE_VERSION, "14");
+  assert.equal(PRODUCT_VIEWER_RESOURCE_URI, "ui://nemlig/product-viewer-v14.html");
   assert.equal(PRODUCT_VIEWER_MIME_TYPE, "text/html;profile=mcp-app");
   assert.deepEqual(PRODUCT_VIEWER_RESOURCE_METADATA, {
     ui: { resourceUri: PRODUCT_VIEWER_RESOURCE_URI },
