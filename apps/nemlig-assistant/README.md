@@ -163,14 +163,20 @@ provide a reliable notification when a conversation is closed.
 They are not saved shopping plans or named lists. Transcript cards start inactive:
 **Open current draft list** reads this conversation’s current draft before showing
 products or shopping controls. Reloading an old message does not restore its
-historical draft list. A stale edit refreshes once without replaying it; connection
-failures hide editing controls until you explicitly reopen current state.
+historical draft list. When a current viewer detects a stale card, it automatically
+reads and displays the current list in that same card, read-only. **Make this card
+current** explicitly gives it a fresh view token; this does not edit the list or basket.
+If the list is gone, the card asks before starting over. Cards already cached by ChatGPT
+cannot gain this behavior; ask in chat to reopen the list from those older cards. A
+stale edit refreshes once without replaying it; connection failures hide editing
+controls until you explicitly reopen current state.
 If the draft is gone, **Start new draft list** rechecks the original products and
 quantities without restoring acceptance or submission approval. Submitted or
 uncertain snapshots instead direct you to inspect the actual basket.
-Known retired viewer addresses serve inactive notices, not obsolete controls.
-ChatGPT may retain previously cached documents; the server cannot remove those
-transcript cards. Refresh app metadata and explicitly open the current draft list.
+Only the stable viewer address is served; older versioned addresses are no
+longer registered. ChatGPT may retain previously cached documents; the server
+cannot remove those transcript cards. Refresh app metadata so new cards use the
+current viewer.
 
 Run `pnpm --filter nemlig-assistant smoke:review-ui`, open its loopback URL,
 and click **Run regression smoke**. The real MCP adapter and fake catalogue
@@ -344,10 +350,13 @@ The MCP surface is organized around household actions:
   ChatGPT may retain older message cards in the conversation; MoJo Shopper
   leaves that history to the host and makes superseded cards read-only.
   Each rendered view has a conversation-bound server token. The familiar
-  `update_product_review` and `submit_product_review` actions require the newest
-  token; cached older cards omit it and are rejected before the handler runs.
-  Model-side text actions use the `_conversation` tool names. Retired viewer
-  versions show an inert notice with no action button.
+  Edits through `update_product_review` and `submit_product_review` require the newest
+  view token. A stale card can omit it only for a read-only `show`; the explicit
+  **Make this card current** action issues a new token without recreating a missing
+  draft.
+  Model-side text actions use the `_conversation` tool names. The MCP server
+  serves one stable viewer URI; older versioned resource addresses are no longer
+  registered.
   The viewer initializes the MCP Apps bridge and reports connection failures.
   It can edit the server-owned Draft list and call the protected submission path
   only after the existing exact confirmation; it never calls Nemlig directly.
@@ -446,7 +455,10 @@ pnpm --filter nemlig-assistant smoke:package
 
 Tests use synthetic HTTP responses and never access a real Nemlig account.
 
-The MCP resource is the versioned React viewer built into `dist/picker.html`.
+The MCP resource uses one stable URI and serves the React viewer built into
+`dist/picker.html`. ChatGPT may cache UI code by URI, so a stable URI does not
+guarantee that an already-open card loads changed UI code; card data refresh is
+handled separately by the viewer.
 The package build includes that exact self-contained file and the browser smoke
 drives it through a synthetic MCP host with a fake catalogue:
 

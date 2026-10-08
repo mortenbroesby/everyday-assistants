@@ -42,13 +42,12 @@ const uncertainProposals = {
 } as unknown as BasketProposalService;
 const makeServer = () => createMcpServer(catalogue, async () => undefined, process.env, uncertainProposals);
 let current = makeServer();
-const retiredV7 = "ui://nemlig/product-viewer-v7.html";
 const handler = createMcpHandler(() => current, { legacy: "reject" });
 const mcpHandler = toNodeHandler(handler);
 const client = new Client({ name: "review-ui-smoke", version: "1" }, { versionNegotiation: { mode: { pin: "2026-07-28" } } });
 const page = `<!doctype html><html><body><h1>Selection recovery smoke</h1>
 <button id="start">Start sample selection</button><button id="reset">Simulate server restart</button><button id="replace">Create current selection without updating card</button>
-<button id="run">Run regression smoke</button><button id="flow">Run continuous local flow</button><button id="alternatives">Run alternatives comparison smoke</button><button id="retired">Show retired v7 card</button><output id="status">Ready</output><iframe id="viewer" src="/viewer" style="width:100%;height:760px"></iframe>
+<button id="run">Run regression smoke</button><button id="flow">Run continuous local flow</button><button id="alternatives">Run alternatives comparison smoke</button><output id="status">Ready</output><iframe id="viewer" src="/viewer" style="width:100%;height:760px"></iframe>
 <script>
 const frame = document.getElementById('viewer'), status = document.getElementById('status');
 let transcript, offline = false, initialized = false, conversationMessages = 0;
@@ -60,7 +59,6 @@ document.getElementById('start').onclick = async () => {
  publish();
  status.textContent='Selection shown';
 };
-document.getElementById('retired').onclick = () => { frame.src='/retired'; status.textContent='Retired card: no shopping calls'; };
 document.getElementById('replace').onclick = async () => { await call({name:'start_product_review',arguments:{items:[{product_id:3,quantity:4}]}}); status.textContent='Current selection created; old card retained'; };
 document.getElementById('reset').onclick = async () => { await fetch('/reset',{method:'POST'}); status.textContent='Server restarted; old card retained'; };
 window.addEventListener('message',async event=>{
@@ -96,12 +94,7 @@ document.getElementById('run').onclick = async () => {
   await fetch('/reset',{method:'POST'});
   widgetCalls.length=0; await document.getElementById('start').onclick();
   await wait(()=>widgetCalls.length===1&&widgetCalls[0].arguments.action?.kind==='show');
-  status.textContent='Checking retired v7 resource'; frame.src='/retired';
-  await wait(()=>doc()?.querySelector('h1')?.textContent==='This Draft list card is out of date');
-  check(doc().querySelector('h1')?.textContent==='This Draft list card is out of date'&&!doc().querySelector('.product-list'),'Retired v7 hydrated selection data');
-  const retiredStats=await fetch('/stats').then(r=>r.json());
-  check(widgetCalls.length===1&&retiredStats.providerBasketCalls===0&&!doc().querySelector('button'),'Retired v7 exposed an action or made shopping calls');
-  status.textContent='Checking direct product display'; const beforeDirectView=widgetCalls.length; frame.src='/viewer'; await wait(()=>button('To decide (2)') && !button('To decide (2)').disabled);
+  status.textContent='Checking direct product display'; const beforeDirectView=widgetCalls.length; frame.contentWindow.location.reload(); await wait(()=>widgetCalls.length===beforeDirectView+1 && button('To decide (2)') && !button('To decide (2)').disabled);
   check(widgetCalls.length===beforeDirectView+1&&widgetCalls.at(-1).arguments.action?.kind==='show'&&doc().querySelectorAll('.product-list article').length===2,'New card did not show products directly or validate its view');
   await select(); click('Add selected to Ready (1)'); await wait(()=>button('Ready (1)') && !button('Ready (1)').disabled);
   check(!button('Open current Draft list'),'New card retained the obsolete open CTA');
@@ -127,7 +120,7 @@ document.getElementById('run').onclick = async () => {
   check(button('Ready (1)') && !doc().querySelector('input:checked'),'Conflict changed acceptance');
   status.textContent='Checking connection failure'; await select(); offline=true; click('Add selected to Ready (1)'); await wait(()=>text().includes('This Draft list card is out of date'));
   check(!doc().querySelector('input') && !/INVALID_ARGUMENT|private trace/.test(text()),'Failure leaked details or editable snapshot');
-  check(!doc().querySelector('button'),'Stale view retained action controls after its request failed');
+  check(!button('Add selected to Ready (1)')&&!button('Remove from Draft list')&&!doc().querySelector('input'),'Stale view retained draft-edit controls after its request failed');
   offline=false;
   status.textContent='Checking process restart'; await fetch('/reset',{method:'POST'});
   const restarted=await call({name:'start_product_review',arguments:{items:[{product_id:1,quantity:3},{product_id:2,quantity:2}]}});
@@ -143,7 +136,7 @@ document.getElementById('run').onclick = async () => {
   check(prepared.basketReads===1&&prepared.basketWrites===0,'Prepare crossed the wrong provider boundary');
   check(!!button('Review exact change') && !button('Add to Nemlig'),'The prepared change was shown before explicit confirmation');
   check(widgetCalls.every(call=>!('representation' in call.arguments)),'Viewer sent a representation selector');
-  status.textContent='PASS: retired v7, inactive mount, remount, stale revision, outage, restart, finish, prepare only; one fake basket read, zero writes';
+  status.textContent='PASS: inactive mount, remount, stale revision, outage, restart, finish, prepare only; one fake basket read, zero writes';
  } catch(error) { status.textContent='FAIL: '+error.message+' | viewer: '+(doc()?.body?.innerText||'no iframe document')+' | widget calls: '+JSON.stringify(widgetCalls); }
  finally { offline=false; run.disabled=false; }
 };
@@ -352,8 +345,8 @@ const server = createServer((req, res) => {
   if (req.url === "/mcp") { void mcpHandler(req, res); return; }
   void (async () => {
     if (req.url === "/") { res.setHeader("content-type", "text/html"); res.end(page); return; }
-    if (req.url === "/viewer" || req.url === "/retired") {
-      const resource = (await client.readResource({ uri: req.url === "/retired" ? retiredV7 : PRODUCT_VIEWER_RESOURCE_URI })).contents[0];
+    if (req.url === "/viewer") {
+      const resource = (await client.readResource({ uri: PRODUCT_VIEWER_RESOURCE_URI })).contents[0];
       res.setHeader("content-type", "text/html"); res.end(resource && "text" in resource ? resource.text : "Missing viewer"); return;
     }
     if (req.url === "/reset" && req.method === "POST") { current = makeServer(); basketReads = 0; writes = 0; preparedForSimulation = undefined; simulatedSubmitted = undefined; simulatedSubmissions = 0; nextSubmissionStatus = "submitted"; unknownPriceScenario = false; res.end("reset"); return; }
