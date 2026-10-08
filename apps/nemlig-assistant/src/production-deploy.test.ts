@@ -162,7 +162,7 @@ async function fixture(options: { failFeatures?: boolean; failFeatureAttempts?: 
           profile: "service",
           failureCategory: "feature_failed",
           failed: ["service_resource_inventory_mismatch"],
-          lastCompletedBoundary: "service_resource_inventory_read_missing_17_unexpected_1",
+          lastCompletedBoundary: "service_resource_inventory_read_missing_18_unexpected_1",
           correlationIds: [],
         });
         const failure = new Error("candidate acceptance failed") as Error & { acceptanceFailure?: unknown };
@@ -283,9 +283,9 @@ test("acceptance retry exhaustion emits one bounded final diagnostic with attemp
     assert.equal(report.outcome, "failed");
     assert.equal(report.failure, "service_fixture_acceptance_failed");
     assert.equal(report.acceptanceFailure?.failureCode, "service_resource_inventory_mismatch");
-    assert.equal(report.acceptanceFailure?.lastCompletedBoundary, "service_resource_inventory_read_missing_17_unexpected_1");
+    assert.equal(report.acceptanceFailure?.lastCompletedBoundary, "service_resource_inventory_read_missing_18_unexpected_1");
     assert.equal(diagnostics.length, 1);
-    assert.match(diagnostics[0]!, /acceptance_final_failure_code=service_resource_inventory_mismatch attempts=12 last_completed_boundary=service_resource_inventory_read_missing_17_unexpected_1/u);
+    assert.match(diagnostics[0]!, /acceptance_final_failure_code=service_resource_inventory_mismatch attempts=12 last_completed_boundary=service_resource_inventory_read_missing_18_unexpected_1/u);
     assert.doesNotMatch(diagnostics[0]!, /private\.example|secret|token=/u);
     assert.equal(calls.filter(({ args }) => args[0] === "production:test:features" && !args.includes("--initialize-only")).length, 12);
   } finally {

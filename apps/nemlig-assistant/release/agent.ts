@@ -227,7 +227,9 @@ export async function createReleasePlan(options: PlanOptions): Promise<ReleasePl
     if (releaseBearing) {
       if (targetCodename!.toLowerCase() === baseCodename?.toLowerCase()) throw new Error("Release codename cannot reuse its parent's codename.");
       targetLedger = ["version,codename", ...previous.map(({ version, codename }) => `${version},${codename}`), `${targetVersion},${targetCodename}`].join("\n");
-      parseCodenameLedger(targetLedger, true);
+      // This validates the proposed append as well as preserving legacy rows.
+      // Planning must reject a reused name before apply can write it.
+      validateCodenameLedger(baseLedger, targetLedger, { version: targetVersion, codename: targetCodename! }, true);
       if (options.mergedCandidate) validateCodenameLedger(baseLedger, currentLedger, current, true);
       else if (currentLedger !== targetLedger && JSON.stringify(parseCodenameLedger(currentLedger, true)) !== JSON.stringify(previous)) {
         throw new Error("Codename ledger has an inconsistent candidate mapping.");

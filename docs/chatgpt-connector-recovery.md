@@ -70,6 +70,21 @@ when a tool calls Nemlig. It is not the ChatGPT OAuth login. Routine server
 releases deploy the reviewed Worker and Container application through the
 repository workflow, not by uploading a plugin ZIP.
 
+## Viewer identity and forward-only cutover
+
+The live Draft list resource has one permanent identity:
+`ui://nemlig/draft-list.html`. The former unversioned product-viewer URI and
+v1-v16 are permanently inert, read-only resources. Do not rotate a URI to try
+to invalidate a ChatGPT cache, and do not infer current rendered code from a
+successful deployment, resource read, or metadata refresh.
+
+For the approved forward-only cutover, first deploy reviewed code and retain
+the exact source/artifact evidence. The operator then cleanly installs or
+reconnects the intended existing MCP endpoint and opens a new chat. Record the
+installed descriptor and the native build marker separately. Do not automate
+disconnect, consent, OAuth registration, provider login, or retry loops. Old
+cards remain unsupported: a host-cached document cannot be erased remotely.
+
 Use evidence to select the layer before changing it:
 
 1. Confirm the actual ChatGPT connection, exposed action, and configured MCP

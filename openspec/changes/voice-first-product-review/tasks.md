@@ -350,9 +350,10 @@ zero provider writes. Native Story 2 acceptance remains 13.8.
 Native cache observation (8 October 2026): a fresh ChatGPT conversation after
 tool refresh still rendered the earlier unversioned viewer artifact, including
 a Ready checkbox that current source forbids. The deployed source and tool
-metadata were current; no real Nemlig basket was accessed or changed. Future
-viewer-content releases therefore use a new versioned resource URI and leave
-previous published identities registered only as inert, read-only documents.
+metadata were current; no real Nemlig basket was accessed or changed. This
+historical observation motivated `stabilize-chatgpt-viewer-identity`, which
+supersedes URI rotation with one permanent identity, retired prior identities,
+and an operator-managed forward-only cutover.
 
 - [x] 13.7 Release the Story 2 viewer change with a new versioned viewer URI,
   retaining prior published identities as inert read-only resources, after

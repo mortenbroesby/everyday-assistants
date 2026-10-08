@@ -208,10 +208,10 @@ End still discards the whole draft. A zero-product draft or ended draft shows a
 purpose-built conversational starting state. A verified submission gets its
 own success presentation; uncertain outcomes retain the no-retry boundary.
 
-Changing viewer HTML requires a new URI per the resource cache policy. Each
-versioned implementation retains the applicable retired-resource protections.
-Deployment and native ChatGPT acceptance remain separate from local
-implementation evidence.
+The permanent viewer identity and retirement policy are owned by
+`stabilize-chatgpt-viewer-identity`. Visual changes must remain compatible with
+that identity; do not rotate it as a cache workaround. Deployment and native
+ChatGPT acceptance remain separate from local implementation evidence.
 
 ## 7 October 2026 registered React viewer update
 
@@ -374,9 +374,9 @@ Keep internal `review_id`, `needs-review`, and MCP tool IDs for this scoped
 change because their semantics stay correct. This is a copy decision, not a
 compatibility layer. Continue to call the provider state the **Nemlig basket**.
 Check mobile, screen reader labels, tool titles, empty state, errors and
-conversational prompts for contradictory wording. Viewer content changes
-require the next versioned resource URI and release note under repository
-policy; no release is part of this planning PR.
+conversational prompts for contradictory wording. Viewer content changes retain
+the permanent identity defined by `stabilize-chatgpt-viewer-identity` and follow
+the release-note policy; no release is part of this planning PR.
 
 ### Add-only Nemlig basket invariant
 

@@ -1,35 +1,35 @@
 ## 1. Contract and regression boundary
 
-- [ ] 1.1 Reconcile current main, published viewer inventory, and overlapping
+- [x] 1.1 Reconcile current main, published viewer inventory, and overlapping
   voice-first-product-review requirements; record the integration SHA and verify
   that the new permanent URI has never been published.
-- [ ] 1.2 Add focused failing coverage for matching permanent descriptor aliases,
+- [x] 1.2 Add focused failing coverage for matching permanent descriptor aliases,
   current packaged resource delivery, and every prior identity returning an
   inert document with zero provider calls.
 
 ## 2. Minimal implementation
 
-- [ ] 2.1 Register the permanent identity and permanently retire the prior
+- [x] 2.1 Register the permanent identity and permanently retire the prior
   inventory; verify focused resource/catalog tests and existing artifact
   validation pass without external scripts, styles, imports, or fetches.
-- [ ] 2.2 Add the non-secret native build marker and exact served-artifact
+- [x] 2.2 Add the non-secret native build marker and exact served-artifact
   identity; verify the packaged HTML, resource response, and recorded digest
   agree without modifying the business-state contract.
-- [ ] 2.3 Add one bounded resources/read diagnostic event at the existing
+- [x] 2.3 Add one bounded resources/read diagnostic event at the existing
   authenticated boundary; test current/retired/other classification, null
   artifact identity for non-current responses, request-local correlation,
   no raw URI/payload/secret fields, no provider calls, and clean stdio output.
 
 ## 3. Safety and integration verification
 
-- [ ] 3.1 Run or extend the existing synthetic viewer smoke for current-state
+- [x] 3.1 Run or extend the existing synthetic viewer smoke for current-state
   refresh with cached compatible code, duplicate/older/foreign snapshots,
   explicit activation, stale view/revision rejection, unavailable drafts,
   cancellation, and conversation isolation; record each result.
-- [ ] 3.2 Run existing protected-submission regressions with fake providers;
+- [x] 3.2 Run existing protected-submission regressions with fake providers;
   verify exact authorization, freshness, single use, additive quantities,
   readback, and uncertain-write no retry remain intact.
-- [ ] 3.3 Update connector recovery guidance, README feature inventory, and
+- [x] 3.3 Update connector recovery guidance, README feature inventory, and
   conflicting voice-first-product-review URI policies; verify all identify
   the permanent URI, operator-only cutover, unsupported historical identities,
   and separate code/data freshness.
@@ -61,3 +61,18 @@
   boundary and keep delivery pending without another URI bump or autonomous
   reconnect; otherwise reconcile the earlier native gaps as superseded and
   sync/archive the change with its acceptance evidence.
+
+## Implementation evidence (8 October 2026)
+
+- Current integration base: `fdb5ebf`; `ui://nemlig/draft-list.html` was absent
+  from that published inventory. The historical unversioned URI and v1-v16
+  identities are all now explicit inert resources.
+- Focused regressions passed after initially failing against the prior v16
+  identity. The package artifact is self-contained and its SHA-256 is derived
+  from the exact HTML delivered by the current resource.
+- `pnpm --filter nemlig-assistant smoke:review-ui:artifact` passed. The
+  protected loopback/HTTP/production-acceptance suite passed with fake
+  providers only; no real basket or provider access occurred.
+- Strict OpenSpec validation and `pnpm verify` passed. Exact-head CI,
+  deployment, clean connection cutover, and two native fresh-chat runs remain
+  pending under tasks 3.4 through 5.3.

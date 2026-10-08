@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { CloudflareEnv } from "./cloudflare-config.js";
-import { attachAdmissionCredential, classifyMcpMessage, handleGatewayRequest, type GatewayDependencies, type OperationClass } from "./cloudflare-gateway.js";
-import type { GatewayRequestEvent } from "./cloudflare-observability.js";
+import { attachAdmissionCredential, classifyMcpMessage, classifyViewerResourceRead, handleGatewayRequest, type GatewayDependencies, type OperationClass } from "./cloudflare-gateway.js";
+import type { GatewayRequestEvent, ViewerResourceReadEvent } from "./cloudflare-observability.js";
 import { parsePrincipalPolicy } from "./principal-policy.js";
 import { Auth0InfrastructureError } from "./auth0.js";
 import { PRODUCT_VIEWER_RESOURCE_URI } from "./product-viewer.js";
@@ -259,6 +259,30 @@ test("service acceptance may read current and inert retired product viewer resou
   assert.equal(forbidden.status, 403);
   assert.equal(stale.status, 403);
   assert.equal(forwarded, 1 + RETIRED_PRODUCT_VIEWER_RESOURCE_URIS.length);
+});
+
+test("authenticated resource reads emit bounded binding evidence and never expose the internal artifact header", async () => {
+  const events: ViewerResourceReadEvent[] = [];
+  const dependencies: GatewayDependencies = {
+    authenticate: async () => principal,
+    admit: async () => ({ admitted: true }),
+    forward: async () => new Response("ok", { headers: { "x-nemlig-viewer-artifact-id": "a".repeat(64) } }),
+    viewerEvent: (event) => events.push(event),
+    requestId: () => "10000000-0000-4000-8000-000000000000",
+  };
+  const current = await handleGatewayRequest(mcpRequest({ method: "resources/read", params: { uri: PRODUCT_VIEWER_RESOURCE_URI } }), env, dependencies);
+  const retired = await handleGatewayRequest(mcpRequest({ method: "resources/read", params: { uri: RETIRED_PRODUCT_VIEWER_RESOURCE_URIS[0] } }), env, dependencies);
+  const other = await handleGatewayRequest(mcpRequest({ method: "resources/read", params: { uri: "ui://other.example.test/view.html" } }), env, dependencies);
+
+  assert.equal(current.headers.get("x-nemlig-viewer-artifact-id"), null);
+  assert.equal(retired.headers.get("x-nemlig-viewer-artifact-id"), null);
+  assert.equal(other.headers.get("x-nemlig-viewer-artifact-id"), null);
+  assert.deepEqual(events, [
+    { schema_version: 1, event: "viewer_resource_read", correlation_id: "10000000-0000-4000-8000-000000000000", uri_class: "current", artifact_id: "a".repeat(64) },
+    { schema_version: 1, event: "viewer_resource_read", correlation_id: "10000000-0000-4000-8000-000000000000", uri_class: "retired", artifact_id: null },
+    { schema_version: 1, event: "viewer_resource_read", correlation_id: "10000000-0000-4000-8000-000000000000", uri_class: "other", artifact_id: null },
+  ]);
+  assert.equal(classifyViewerResourceRead({ method: "tools/call", params: { name: "find_groceries" } }), undefined);
 });
 
 test("unauthorized and credential-required requests never reach the Container", async () => {

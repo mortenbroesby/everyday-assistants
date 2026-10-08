@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   parseGatewayRequestEvent,
+  parseViewerResourceReadEvent,
   shouldEmitGatewayRequestEvent,
   type GatewayRequestEvent,
 } from "./cloudflare-observability.js";
@@ -40,4 +41,20 @@ test("every privacy-safe terminal event is emitted for bounded diagnosis", () =>
   assert.equal(events.every(shouldEmitGatewayRequestEvent), true);
   assert.equal(shouldEmitGatewayRequestEvent({ ...safeEvent, outcome: "authentication_rejected" }), true);
   assert.equal(shouldEmitGatewayRequestEvent({ ...safeEvent, outcome: "backend_timeout" }), true);
+});
+
+test("viewer binding evidence permits only a URI class, served artifact digest, and request-local correlation", () => {
+  const event = {
+    schema_version: 1 as const,
+    event: "viewer_resource_read" as const,
+    correlation_id: "00000000-0000-4000-8000-000000000000",
+    uri_class: "current" as const,
+    artifact_id: "a".repeat(64),
+  };
+  assert.deepEqual(parseViewerResourceReadEvent(event), event);
+  for (const sensitiveKey of ["uri", "body", "headers", "token", "principal", "session", "chat", "shopping_data"]) {
+    assert.throws(() => parseViewerResourceReadEvent({ ...event, [sensitiveKey]: "representative-secret-value" }));
+  }
+  assert.deepEqual(parseViewerResourceReadEvent({ ...event, uri_class: "retired", artifact_id: null }), { ...event, uri_class: "retired", artifact_id: null });
+  assert.throws(() => parseViewerResourceReadEvent({ ...event, artifact_id: "not-a-digest" }));
 });

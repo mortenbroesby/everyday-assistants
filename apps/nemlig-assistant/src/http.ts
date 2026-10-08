@@ -9,6 +9,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { Auth0InfrastructureError, createAuth0Verifier, fetchAuth0Metadata, loadAuth0Config, SERVICE_ACCEPTANCE_SCOPE, type Auth0Config } from "./auth0.js";
 import { NemligClient, type ShoppingClient } from "./client.js";
 import { createMcpServer, serviceAcceptanceToolInventory } from "./mcp.js";
+import { PRODUCT_VIEWER_RESOURCE_URI, readProductViewerArtifact } from "./product-viewer.js";
 import { ProductReviewService } from "./product-review.js";
 import { BasketProposalService } from "./proposals.js";
 import { findEnabledPrincipal, MAX_PRINCIPALS, type Principal } from "./principal-policy.js";
@@ -213,6 +214,10 @@ export function createHttpApp(
       if (!authInfo) return res.status(403).json({ error: "principal_not_allowed" });
       requestContexts.set(authInfo, { context, principal, credentials, service: Boolean(service) });
       try {
+        const resourceRead = req.method === "POST" && req.body && typeof req.body === "object" && !Array.isArray(req.body)
+          && (req.body as { method?: unknown }).method === "resources/read"
+          && (req.body as { params?: { uri?: unknown } }).params?.uri === PRODUCT_VIEWER_RESOURCE_URI;
+        if (resourceRead) res.setHeader("x-nemlig-viewer-artifact-id", readProductViewerArtifact().artifactId);
         await nodeHandler(req, res, req.body);
       } finally {
         requestContexts.delete(authInfo);
