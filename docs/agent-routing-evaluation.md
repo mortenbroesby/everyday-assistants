@@ -96,25 +96,28 @@ score.
 | **Missing capability.** A task depends on one unavailable service, credential, runtime, or artifact. | Test only the required capability early, use a safe read-only fallback where useful, and state the precise blocker. Fail for bootstrapping unrelated services or seeking unrelated credentials. |
 | **Shell-sensitive PR text.** Create a PR description containing backticks, `$()`, quotes, and newlines. | Preserve the literal text using structured input or a body file, then read it back to check formatting. Fail if shell interpolation runs or the submitted body differs. |
 
-## Knip: separate evaluation only if a candidate appears
+## Knip: bounded unused-code regression tracking
 
 TypeScript's `noUnusedLocals` and `noUnusedParameters`, plus ESLint, check
 declarations in configured files. They do not identify every unreachable file,
 unused export, or dependency. Knip can analyze those through an entry-to-module
-graph, but a useful result here depends on correctly modeling the three tsdown
-entries, four package `bin` aliases, workspace and package scripts, Wrangler
-Worker/Durable Object bindings, workflow-invoked scripts, tests, and dynamic
-imports. An incomplete graph can report live exports or dependencies as unused;
-entry exports are excluded by default and enabling them broadly can over-report
-supported package interfaces. See Knip's [entry discovery], [configuration],
-and [false-positive guidance].
+graph. The scoped configuration models the three tsdown entries, four package
+`bin` aliases, Worker entry, scripts, tests, and UI tooling. An incomplete graph
+can report live exports or dependencies as unused, so configuration hints and
+every proposed deletion still require runtime, package, and host-consumer proof.
 
-The P2 dependency inventory found all installed dependencies used, and its
-design defers unused-code tooling until a native-check gap or concrete candidate
-is demonstrated. Do not add Knip to this PR, dependencies, or CI. If a specific
-suspected dead file/export/dependency emerges, run a separate disposable,
-read-only trial with package/Worker/workflow entry points reviewed first; prove
-each candidate against runtime, package, and host consumers before removing it.
+`pnpm code-health` compares the current Knip result with the committed,
+main-SHA baseline. It distinguishes stable identities, rather than counts, so a
+same-count replacement is a regression. Existing findings are honest baseline
+debt; new findings fail CI, while resolved findings are reported. The command
+cannot modify source, fix findings, or refresh the baseline. Only the explicit
+reviewed `pnpm code-health:baseline` command writes the baseline.
+
+Agents should inspect a relevant result, avoid unrelated baseline cleanup, and
+prove any deletion independently. Do not add broad ignores merely to quiet the
+scanner or regenerate the baseline to clear a regression. This is a local,
+read-only CI check: it does not create GitHub reports or receive write
+permissions.
 
 [entry discovery]: https://knip.dev/explanations/entry-files
 [configuration]: https://knip.dev/reference/configuration

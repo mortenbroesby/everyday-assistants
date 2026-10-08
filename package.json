@@ -12,6 +12,8 @@
   "scripts": {
     "build": "turbo build",
     "check": "turbo check",
+    "code-health": "node scripts/nemlig-code-health.mjs check",
+    "code-health:baseline": "node scripts/nemlig-code-health.mjs baseline",
     "coverage": "turbo coverage && node apps/nemlig-assistant/scripts/coverage.mjs --validate",
     "nemlig": "pnpm --filter nemlig-assistant cli",
     "nemlig:production:ready": "pnpm spec:validate && pnpm privacy:check && pnpm verify && pnpm --filter nemlig-assistant smoke:package && pnpm --filter nemlig-assistant cloudflare:check",
@@ -28,6 +30,7 @@
   "devDependencies": {
     "@fission-ai/openspec": "1.11.0",
     "husky": "9.1.7",
+    "knip": "6.40.0",
     "turbo": "^2.8.0"
   }
 }
