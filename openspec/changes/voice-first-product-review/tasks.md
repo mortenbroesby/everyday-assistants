@@ -354,15 +354,26 @@ metadata were current; no real Nemlig basket was accessed or changed. Future
 viewer-content releases therefore use a new versioned resource URI and leave
 previous published identities registered only as inert, read-only documents.
 
-- [ ] 13.7 Release the Story 2 viewer change through one PR and a new versioned
-  viewer URI, retaining prior published identities as inert read-only resources,
-  after focused tests, loopback browser smoke, strict OpenSpec validation and
-  the applicable repository gate; record exact revision, CI, resource metadata
-  and native-card evidence.
+- [x] 13.7 Release the Story 2 viewer change with a new versioned viewer URI,
+  retaining prior published identities as inert read-only resources, after
+  focused tests, loopback browser smoke, strict OpenSpec validation and the
+  applicable repository gate; record exact revision, CI, resource metadata and
+  native-card evidence.
 - [ ] 13.8 After merge/release, perform and record native ChatGPT Story 2 smoke:
   select → accept → Ready → quantity → move back → To decide, plus one
   conversational edit/readback. Do not start Story 3 until this is pass or an
   exact host block is documented and accepted.
+
+Story 2 release evidence (8 October 2026): PR #237 delivered the interaction
+change as `98c6656b2856f4cbc2d79e5be804411565103e47`; the subsequent,
+cache-specific PR #240 completed the viewer release boundary as
+`cf3fde4e551c922db251f73386296b1123c70efb`. Release 6.2.1 **Juniper** made
+`ui://nemlig/product-viewer-v13.html` current and retained all earlier
+identities as inert resources. PR #240 recorded focused tests, adapter and
+artifact loopback smoke, strict OpenSpec validation, `pnpm verify`, exact-head
+CI `37806714338`, and automatic production deployment `37807052043`. The
+native cached-card observation above is evidence of the cache boundary, not
+completion of the separate native smoke in 13.8.
 
 ### Story 3 — contextual alternatives comparison (one PR)
 
@@ -458,7 +469,7 @@ or ended draft exposes no tabs or destructive actions, sends one bounded
 conversational starter with zero tool/provider calls, preserves exact prepared
 confirmation and cancel-with-zero-submit, presents verified success separately,
 and blocks uncertain outcomes without retry.
-- [ ] 13.20 Release Story 4 through the current versioned stable URI in one PR after
+- [x] 13.20 Release Story 4 through the current versioned stable URI in one PR after
   focused tests, fake-provider protected-submit smoke, loopback browser smoke,
   strict OpenSpec validation and applicable repository gates. Record exact
   revision, CI, resource metadata and native-card evidence.
@@ -510,3 +521,13 @@ version bump, deployment, reconnect, or app replacement, capture the
 authenticated `tools/list` descriptor, read its advertised URI, and compare it
 with the URI requested by the host. Story 4 native visual acceptance therefore
 remains unchecked.
+
+Story 4 final release evidence (8 October 2026): the v16 visual correction
+merged as PR #248, `6496dbe0f78e48f5754317c9fd6d323748020363` (release 6.2.4
+**Nectar**), made `ui://nemlig/product-viewer-v16.html` current, and retired v15
+as an inert resource. PR #248 recorded focused viewer/MCP tests, synthetic
+artifact and adapter smoke, strict OpenSpec validation, `pnpm verify`, the
+changed-code hook, and release-note/version validation. Exact-head CI
+`37838248110` and automatic production deployment `37838972759` passed. The
+fresh native card did not bind v16, so 13.21 remains unchecked rather than
+inferring host acceptance from this release evidence.
