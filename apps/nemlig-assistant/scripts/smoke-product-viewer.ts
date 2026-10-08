@@ -23,7 +23,7 @@ declare global {
     sendUnavailableProduct: () => void;
     supersedeAndReload: () => void;
     reopenCurrentReview: () => void;
-    setReadyForDisclosure: (ready: boolean) => void;
+    setReadyForDisclosure: (ready: boolean, quantity?: number) => void;
     replaceReviewIdentity: () => void;
   }
 }
@@ -75,7 +75,7 @@ window.sendUnavailable=()=>frame.contentWindow.postMessage({jsonrpc:'2.0',method
 window.sendUnavailableProduct=()=>frame.contentWindow.postMessage({jsonrpc:'2.0',method:'ui/notifications/tool-result',params:{structuredContent:{views:[{context:'search',status:'unavailable',product_id:404}]}}},location.origin);
 window.getViewId=()=>viewId;
 window.supersedeAndReload=()=>{initialViewIdOverride=viewId;viewId='synthetic-view-'+(Number(viewId.split('-').at(-1))+1);frame.src='/resource'};
-window.setReadyForDisclosure=(ready)=>{review.items.find(item=>item.product_id===2).state=ready?'ready':'needs-review';review.revision++;frame.contentWindow.postMessage({jsonrpc:'2.0',method:'ui/notifications/tool-result',params:result(JSON.parse(JSON.stringify(review)))},location.origin)};
+window.setReadyForDisclosure=(ready,quantity)=>{const item=review.items.find(item=>item.product_id===2);item.state=ready?'ready':'needs-review';if(quantity!==undefined)item.quantity=quantity;review.revision++;frame.contentWindow.postMessage({jsonrpc:'2.0',method:'ui/notifications/tool-result',params:result(JSON.parse(JSON.stringify(review)))},location.origin)};
 window.replaceReviewIdentity=()=>{review.review_id='second-synthetic-review';review.revision++;viewId='synthetic-view-2';frame.contentWindow.postMessage({jsonrpc:'2.0',method:'ui/notifications/tool-result',params:result(JSON.parse(JSON.stringify(review)))},location.origin)};
 window.reopenCurrentReview=()=>{viewId='synthetic-view-'+(Number(viewId.split('-').at(-1))+1);frame.contentWindow.postMessage({jsonrpc:'2.0',method:'ui/notifications/tool-result',params:result(JSON.parse(JSON.stringify(review)))},location.origin)};
 window.addEventListener('message',event=>{
@@ -209,16 +209,26 @@ try {
   assert.equal(await page.evaluate(() => window.calls.length), callsBeforeDisclosure, "product disclosure performed a tool call");
   await capture("product-expanded");
   await page.evaluate(() => window.setReadyForDisclosure(true));
+  const callsBeforeReadyTab = await page.evaluate(() => window.calls.length);
   await frame.getByRole("button", { name: /Ready \(1\)/ }).click();
   await frame.getByRole("heading", { name: "Ready" }).waitFor();
+  assert.equal(await page.evaluate(() => window.calls.length), callsBeforeReadyTab, "Ready tab performed an MCP call");
   const readyOatsCard = frame.locator(".product-card").filter({ hasText: longOatsName });
   assert.equal(await readyOatsCard.getByRole("button", { name: `Increase quantity of ${longOatsName}` }).count(), 1, "a collapsed Ready row did not keep direct quantity controls");
+  for (let press = 0; press < 8; press++) await readyOatsCard.getByRole("button", { name: `Increase quantity of ${longOatsName}` }).click();
+  await frame.getByText("10 ×").waitFor();
+  await page.waitForTimeout(2_200);
+  assert.equal(await page.evaluate(() => window.calls.length), callsBeforeReadyTab, "quantity persisted before the 2.5-second quiet interval");
+  await page.waitForFunction((before) => window.calls.slice(before).filter((call) => call.args.action?.kind === "quantity").length === 1, callsBeforeReadyTab);
+  assert.deepEqual(await page.evaluate((before) => window.calls.slice(before).map((call) => call.args.action), callsBeforeReadyTab), [{ kind: "quantity", product_id: 2, quantity: 10 }], "rapid quantity presses did not coalesce to one final update");
   await capture("ready");
+  const callsBeforeToDecideTab = await page.evaluate(() => window.calls.length);
   await frame.getByRole("button", { name: /To decide \(1\)/ }).click();
   await frame.getByRole("heading", { name: "To decide" }).waitFor();
+  assert.equal(await page.evaluate(() => window.calls.length), callsBeforeToDecideTab, "To decide tab performed an MCP call");
   assert.equal(await milkDisclosure.getAttribute("aria-expanded"), "true", "review navigation lost the open product disclosure");
   assert.equal(await milkFact.evaluate((node: HTMLDetailsElement) => node.open), true, "review navigation lost the open nested fact disclosure");
-  await page.evaluate(() => window.setReadyForDisclosure(false));
+  await page.evaluate(() => window.setReadyForDisclosure(false, 2));
   await frame.getByRole("button", { name: /To decide \(2\)/ }).waitFor();
   await page.evaluate(() => window.sendCancel());
   await page.evaluate(() => window.replaceReviewIdentity());
@@ -261,9 +271,11 @@ try {
   assert.equal(await frame.getByText("Foreign product").count(), 0, "foreign review displaced the active Draft list");
   const callsBeforeRemount = await page.evaluate(() => window.calls.length);
   await page.locator('iframe[title="viewer"]').evaluate((element: HTMLIFrameElement) => element.contentWindow?.location.reload());
-  await frame.getByRole("button", { name: /To decide \(2\)/ }).waitFor();
+  await frame.getByRole("heading", { name: "Current product" }).waitFor();
   await page.waitForFunction((before) => window.calls.slice(before).some((call) => call.args.action?.kind === "show"), callsBeforeRemount);
   assert.equal(await page.evaluate((before) => window.calls.slice(before).filter((call) => call.args.action?.kind === "show").length, callsBeforeRemount), 1, "remount did not validate the current view exactly once");
+  await frame.getByRole("button", { name: /To decide \(2\)/ }).click();
+  await frame.getByRole("checkbox", { name: "Select Synthetic milk" }).waitFor();
   await page.evaluate(() => { window.failNext = true; });
   await frame.getByRole("checkbox", { name: "Select Synthetic milk" }).check();
   const callsBeforeConflict = await page.evaluate(() => window.calls.length);

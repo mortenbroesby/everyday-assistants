@@ -388,23 +388,57 @@ previous published identities registered only as inert, read-only documents.
   Confirm empty/error paths remain honest. Do not start Story 4 until this is
   pass or an exact host block is documented and accepted.
 
+### Story 3a — local workspace continuity (one PR)
+
+- [x] 13.13 Add focused failing viewer and loopback-browser coverage proving
+  that To decide/Ready/current alternatives tabs switch synchronously inside
+  the mounted frame with no MCP call, quantity flush, provider access, or reset
+  of applicable disclosure/selection state. Verify a server mutation still
+  converges the presentation to its returned authoritative snapshot. Evidence:
+  the built-artifact smoke asserts zero calls for To decide/Ready switches;
+  the loopback MCP adapter smoke asserts the same behavior against the real
+  draft service.
+- [x] 13.14 Make destination selection browser-presentational while retaining
+  server authority for products, membership, quantities, revisions, alternatives
+  context, and submission state. Retain safe inactive/historical-card behavior;
+  do not add a router, a second browser business model, or automatic reopen.
+  Evidence: the viewer retains only the mounted destination while server
+  snapshots remain the source for all business fields and recovery state.
+- [x] 13.15 Change rapid quantity persistence to a 2.5-second quiet interval.
+  Verify immediate optimistic quantity/total feedback, eight rapid presses
+  producing one final revision-checked update, a business mutation/prepare/
+  submit/end flushing in revision order, and cancellation/recovery dropping an
+  unconfirmed edit without replay or provider basket access. Evidence: the
+  built-artifact smoke verifies eight presses remain local before 2.5 seconds
+  and produce one final quantity action; both browser smokes retain protected
+  flush ordering and zero fake-provider basket writes.
+- [ ] 13.16 Release Story 3a through a newly versioned viewer URI after focused
+  viewer and loopback-browser smoke, strict OpenSpec validation and applicable
+  repository gates. Record exact revision, CI, resource metadata and native
+  evidence; #241 alternatives relevance is a non-blocking separate usability
+  issue, not a Story 3a acceptance failure.
+- [ ] 13.17 After merge/release, refresh the connected app and perform native
+  ChatGPT smoke: one mounted viewer switches To decide → Ready → To decide,
+  then rapid quantity presses settle once after 2.5 seconds. Do not access or
+  modify the real Nemlig basket.
+
 ### Story 4 — entry and outcome states (one PR)
 
-- [ ] 13.13 Characterize the existing prepared, cancel, verified-success,
+- [ ] 13.18 Characterize the existing prepared, cancel, verified-success,
   uncertain, unavailable, empty and ended-draft states. Determine any standard
   host follow-up, close or external-link capability from current official
   documentation and native evidence before adding such a control; omit it if
   not proven.
-- [ ] 13.14 Simplify the existing confirmation/outcome hierarchy and add only
+- [ ] 13.19 Simplify the existing confirmation/outcome hierarchy and add only
   supported empty-state conversational suggestions or compact local overflow
   actions. Verify exact confirmation, cancel, single-use submission, readback,
   no automatic retry, local-only discard and complete text fallback remain
   unchanged.
-- [ ] 13.15 Release Story 4 through the current stable URI in one PR after
+- [ ] 13.20 Release Story 4 through the current stable URI in one PR after
   focused tests, fake-provider protected-submit smoke, loopback browser smoke,
   strict OpenSpec validation and applicable repository gates. Record exact
   revision, CI, resource metadata and native-card evidence.
-- [ ] 13.16 After merge/release, perform and record native ChatGPT Story 4
+- [ ] 13.21 After merge/release, perform and record native ChatGPT Story 4
   smoke for empty/end, prepared confirmation/cancel and verified/uncertain
   presentation. A real Nemlig addition remains separately authorized; do not
   use it as this story's default test.
