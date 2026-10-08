@@ -246,9 +246,9 @@ document.getElementById('flow').onclick = async () => {
   const availableRow=doc().querySelector('input[type=checkbox][aria-label="Select Smoke product 2"]'); check(availableRow,'Known-price row missing from submitted-continuation setup'); availableRow.click(); click('Add selected to Ready (1)');
   await wait(()=>button('Ready (1)')&&!button('Ready (1)').disabled); open(); click('Ready (1)'); await wait(()=>doc().querySelector('#title')?.textContent==='Ready'&&!button('Ready (1)').disabled); open();
   click('Prepare exact change'); await wait(()=>doc().querySelector('.submission h2')?.textContent==='Confirm the exact Nemlig change'); open();
-  check(button('Review exact change')?.getAttribute('data-color')==='primary'&&!button('Prepare exact change'),'Prepared review did not promote Review as the sole next primary action');
+  check(button('Review exact change')?.classList.contains('viewer-button--primary')&&!button('Prepare exact change'),'Prepared review did not promote Review as the sole next primary action');
   click('Review exact change'); await wait(()=>button('Add to Nemlig')&&!button('Add to Nemlig').disabled);
-  check(button('Add to Nemlig')?.getAttribute('data-color')==='primary','Explicitly reviewed submission did not promote Add to Nemlig as the next primary action');
+  check(button('Add to Nemlig')?.classList.contains('viewer-button--primary'),'Explicitly reviewed submission did not promote Add to Nemlig as the next primary action');
   await fetch('/uncertain-next',{method:'POST'}); click('Add to Nemlig');
   status.textContent='Checking uncertain submission';
   await wait(()=>text().includes('Submission outcome is uncertain. Inspect the actual Nemlig basket; do not retry automatically.'));

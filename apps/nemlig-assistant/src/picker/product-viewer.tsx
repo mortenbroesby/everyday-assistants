@@ -1,9 +1,7 @@
-import { Button } from "@openai/apps-sdk-ui/components/Button";
-import { EmptyMessage } from "@openai/apps-sdk-ui/components/EmptyMessage";
 import { useApp, useHostStyles } from "@modelcontextprotocol/ext-apps/react";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import type { ProductView } from "../product-presentation.js";
-import { ActionFooter, DestinationTabs, isUsable, money, ProductFacts, productName, ProductSummary, QuantityControl } from "./viewer-components.js";
+import { ActionFooter, DestinationTabs, isUsable, money, ProductFacts, productName, ProductSummary, QuantityControl, ViewerButton as Button } from "./viewer-components.js";
 
 type ReviewItem = { product_id: number; quantity: number; state: "needs-review" | "ready"; view: ProductView };
 type Review = {
@@ -108,7 +106,7 @@ function ProductCard({ view, item, disabled, onQuantity, onRemove, onRevisit, se
   if (view.status !== "complete") return <article className={`product-card${comparison ? " product-comparison" : ""}`}>
     {onSelected && <label className="product-select"><input type="checkbox" aria-label={`Select ${productName(view, item?.product_id)}`} disabled={disabled || !isUsable(view)} checked={selected === true} onChange={(event) => onSelected(event.currentTarget.checked)} /></label>}
     <div className="product-details">
-      <Button color="secondary" variant="ghost" pill={false} block className="product-summary" aria-expanded={disclosureExpanded} aria-controls={detailsId} onClick={() => {
+      <Button color="secondary" variant="ghost" block className="product-summary" aria-expanded={disclosureExpanded} aria-controls={detailsId} onClick={() => {
         const next = !disclosureExpanded;
         if (onExpandedChange) onExpandedChange(next); else setLocalExpanded(next);
       }}><ProductSummary view={view} /></Button>
@@ -134,7 +132,7 @@ function ProductCard({ view, item, disabled, onQuantity, onRemove, onRevisit, se
         const next = event.key === "Home" ? 0 : event.key === "End" ? choices.length - 1 : (current + direction + choices.length) % choices.length;
         choices[next]?.focus();
         choices[next]?.click();
-      }}>{summary}<span className="alternative-choice-state" aria-hidden="true">{choice ? "Selected" : "Select"}</span></button> : <div className="product-comparison-summary">{summary}</div> : <Button color="secondary" variant="ghost" pill={false} block className="product-summary" aria-expanded={disclosureExpanded} aria-controls={detailsId} onClick={() => {
+      }}>{summary}<span className="alternative-choice-state" aria-hidden="true">{choice ? "Selected" : "Select"}</span></button> : <div className="product-comparison-summary">{summary}</div> : <Button color="secondary" variant="ghost" block className="product-summary" aria-expanded={disclosureExpanded} aria-controls={detailsId} onClick={() => {
         const next = !disclosureExpanded;
         if (onExpandedChange) onExpandedChange(next); else setLocalExpanded(next);
       }}>{summary}</Button>}
@@ -550,9 +548,9 @@ export function ProductViewer() {
       </section>}
       {message && review.submission?.status !== "uncertain" && <p className="status" role="status">{message}</p>}
     </ActionFooter>}
-    {review && active && review.items.length === 0 && <section className="empty"><EmptyMessage><EmptyMessage.Title>Your Draft list is empty.</EmptyMessage.Title></EmptyMessage><p>Continue in conversation to add products or start a new Draft list. Nothing changed in Nemlig.</p><Button color="secondary" disabled={busy} onClick={() => void sendFollowUp("Help me start a new Draft list from products we discuss. Do not restore previous choices.")}>Continue in conversation</Button></section>}
+    {review && active && review.items.length === 0 && <section className="empty"><h2>Your Draft list is empty.</h2><p>Continue in conversation to add products or start a new Draft list. Nothing changed in Nemlig.</p><Button color="secondary" disabled={busy} onClick={() => void sendFollowUp("Help me start a new Draft list from products we discuss. Do not restore previous choices.")}>Continue in conversation</Button></section>}
     {review && active && review.submission?.status !== "uncertain" && <ActionFooter><Button color="secondary" disabled={editsBlocked || busy} onClick={() => setConfirmEnd(true)}>End Draft list</Button>{confirmEnd && <section className="submission"><p>Discard this local Draft list? The Nemlig basket will not change.</p><Button color="secondary" disabled={busy} onClick={() => setConfirmEnd(false)}>Keep Draft list</Button><Button color="secondary" disabled={busy} onClick={() => void endDraft()}>Confirm discard Draft list</Button></section>}</ActionFooter>}
-    {screen.kind === "empty" && <div className="empty"><EmptyMessage><EmptyMessage.Title>{screen.message ?? "No products found."}</EmptyMessage.Title></EmptyMessage><p>Continue in conversation to inspect the Nemlig basket or start a new Draft list.</p><Button color="secondary" disabled={busy} onClick={() => void sendFollowUp("Help me continue shopping or inspect my Nemlig basket. Do not restore a discarded Draft list.")}>Continue in conversation</Button></div>}
+    {screen.kind === "empty" && <section className="empty"><h2>{screen.message ?? "No products found."}</h2><p>Continue in conversation to inspect the Nemlig basket or start a new Draft list.</p><Button color="secondary" disabled={busy} onClick={() => void sendFollowUp("Help me continue shopping or inspect my Nemlig basket. Do not restore a discarded Draft list.")}>Continue in conversation</Button></section>}
     {screen.kind === "products" && screen.views.length === 0 && <div className="empty" role="status">{basket ? "Your Nemlig basket is empty." : "No products found."}</div>}
     {productPayload?.unenriched_count ? <p className="status">{productPayload.unenriched_count} basket lines do not have current product details.</p> : null}
     {message && screen.kind !== "error" && screen.kind !== "stale" && !(screen.kind === "review" && !active) && !(review?.destination === "ready") && <p className="status" role="status">{message}</p>}

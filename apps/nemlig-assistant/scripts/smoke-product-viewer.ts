@@ -172,6 +172,15 @@ try {
   assert.equal(await frame.getByText("Synthetic milk").count(), 1);
   assert.equal(await frame.getByText("Organic").count(), 2, "organic badge missing");
   assert.equal(await frame.getByText("Offer").count(), 2, "offer badge missing");
+  const statusChip = frame.locator(".product-status-chip").first();
+  assert.equal(await frame.locator(".product-status-chip").count(), 4, "product status facts were not rendered as viewer-local chips");
+  const chipLayout = await statusChip.evaluate((chip) => ({
+    chipWidth: chip.getBoundingClientRect().width,
+    containerWidth: chip.parentElement?.getBoundingClientRect().width ?? 0,
+  }));
+  assert.ok(chipLayout.chipWidth < chipLayout.containerWidth, `product status facts expanded into full-width controls: ${JSON.stringify(chipLayout)}`);
+  const tabs = frame.locator(".destination-tabs-segments");
+  assert.equal(await tabs.getAttribute("data-viewer-control"), "segmented-tabs", "destination navigation did not use the viewer-local segmented control");
   await capture("to-decide");
   const milkCard = frame.locator(".product-card").filter({ hasText: "Synthetic milk" });
   const milkDisclosure = milkCard.locator(".product-summary");

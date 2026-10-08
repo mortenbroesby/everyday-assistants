@@ -1,6 +1,4 @@
-import { Badge } from "@openai/apps-sdk-ui/components/Badge";
-import { Button } from "@openai/apps-sdk-ui/components/Button";
-import { useState, type ReactNode } from "react";
+import { forwardRef, useState, type ButtonHTMLAttributes, type ReactNode } from "react";
 import type { ProductView } from "../product-presentation.js";
 import { safeNemligImageUrl } from "../product-presentation.js";
 
@@ -16,6 +14,39 @@ export function productName(view: ProductView, id?: number): string {
 
 export function isUsable(view: ProductView): boolean {
   return view.status === "complete" && view.product.available === true;
+}
+
+type ViewerButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
+  color?: "primary" | "secondary";
+  variant?: "ghost";
+  block?: boolean;
+};
+
+/** Viewer-local controls deliberately avoid host UI-kit layout defaults. */
+export const ViewerButton = forwardRef<HTMLButtonElement, ViewerButtonProps>(function ViewerButton({
+  color = "secondary", variant, block, className, type = "button", ...props
+}, ref) {
+  const classes = [
+    "viewer-button",
+    `viewer-button--${color}`,
+    variant && `viewer-button--${variant}`,
+    block && "viewer-button--block",
+    className,
+  ].filter(Boolean).join(" ");
+  return <button ref={ref} type={type} className={classes} {...props} />;
+});
+
+function ProductStatusChips({ view }: { view: ProductView }) {
+  if (view.status !== "complete") return null;
+  const product = view.product;
+  const chips = [
+    product.is_organic === true && "Organic",
+    product.is_frozen === true && "Frozen",
+    product.is_on_discount === true && "Offer",
+    product.available === false && "Unavailable",
+    product.available === undefined && "Availability unknown",
+  ].filter((chip): chip is string => Boolean(chip));
+  return chips.length ? <span className="product-status-chips">{chips.map((chip) => <span key={chip} className="product-status-chip">{chip}</span>)}</span> : null;
 }
 
 export function ProductSummary({ view, quantity }: { view: ProductView; quantity?: number }) {
@@ -34,8 +65,7 @@ export function ProductSummary({ view, quantity }: { view: ProductView; quantity
       <span className="product-meta">{[product.brand, product.unit_size].filter(Boolean).join(" · ") || "Package details unavailable"}</span>
       <span className="product-meta">{product.unit_price === undefined ? product.unit ?? "Unit price unavailable" : `${money(product.unit_price)}${product.unit ? ` · ${product.unit}` : ""}`}</span>
       {quantity !== undefined && <span className="product-quantity">{quantity} ×</span>}
-      {product.is_organic === true && <Badge color="success">Organic</Badge>}{product.is_frozen === true && <Badge color="info">Frozen</Badge>}{product.is_on_discount === true && <Badge color="warning">Offer</Badge>}
-      {product.available === false && <Badge color="danger">Unavailable</Badge>}{product.available === undefined && <Badge color="warning">Availability unknown</Badge>}
+      <ProductStatusChips view={view} />
     </span>
   </span>;
 }
@@ -44,9 +74,9 @@ export function QuantityControl({ label, quantity, disabled, onQuantity }: {
   label: string; quantity: number; disabled: boolean; onQuantity?: (quantity: number) => void;
 }) {
   return <div className="quantity-control"><span>Quantity</span>
-    <Button color="secondary" aria-label={`Decrease quantity of ${label}`} disabled={disabled || quantity <= 1} onClick={() => onQuantity?.(quantity - 1)}>−</Button>
+    <ViewerButton color="secondary" aria-label={`Decrease quantity of ${label}`} disabled={disabled || quantity <= 1} onClick={() => onQuantity?.(quantity - 1)}>−</ViewerButton>
     <span aria-live="polite">{quantity}</span>
-    <Button color="secondary" aria-label={`Increase quantity of ${label}`} disabled={disabled || quantity >= Number.MAX_SAFE_INTEGER} onClick={() => onQuantity?.(quantity + 1)}>+</Button>
+    <ViewerButton color="secondary" aria-label={`Increase quantity of ${label}`} disabled={disabled || quantity >= Number.MAX_SAFE_INTEGER} onClick={() => onQuantity?.(quantity + 1)}>+</ViewerButton>
   </div>;
 }
 
@@ -68,9 +98,11 @@ export function DestinationTabs({ destination, toDecideCount, readyCount, hasAlt
   onNavigate: (destination: "needs-review" | "ready" | "alternatives") => void;
 }) {
   return <nav className="destination-tabs" aria-label="Draft list destinations">
-    <Button color="secondary" aria-current={destination === "needs-review" ? "page" : undefined} disabled={disabled} onClick={() => onNavigate("needs-review")}>To decide ({toDecideCount})</Button>
-    <Button color="secondary" aria-current={destination === "ready" ? "page" : undefined} disabled={disabled} onClick={() => onNavigate("ready")}>Ready ({readyCount})</Button>
-    {hasAlternatives && destination !== "alternatives" && <Button color="secondary" disabled={disabled} onClick={() => onNavigate("alternatives")}>Return to existing alternatives</Button>}
+    <span className="destination-tabs-segments" data-viewer-control="segmented-tabs">
+      <ViewerButton color="secondary" aria-current={destination === "needs-review" ? "page" : undefined} disabled={disabled} onClick={() => onNavigate("needs-review")}>To decide ({toDecideCount})</ViewerButton>
+      <ViewerButton color="secondary" aria-current={destination === "ready" ? "page" : undefined} disabled={disabled} onClick={() => onNavigate("ready")}>Ready ({readyCount})</ViewerButton>
+    </span>
+    {hasAlternatives && destination !== "alternatives" && <ViewerButton color="secondary" variant="ghost" className="destination-tabs-return" disabled={disabled} onClick={() => onNavigate("alternatives")}>Return to existing alternatives</ViewerButton>}
   </nav>;
 }
 

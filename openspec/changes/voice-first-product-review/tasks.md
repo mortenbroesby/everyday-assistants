@@ -288,9 +288,13 @@ paper over it in the viewer.
   decide action controls expanded and Ready quantity controls directly visible;
   verify 320px/375px layout, focus visibility, unavailable rows, reuse across
   states, and no new business-state/client fetch path. Evidence:
-  `ProductSummary`, `QuantityControl`, `ProductFacts`, `DestinationTabs`, and
-  `ActionFooter` are viewer-local presentational components; the built browser
-  smoke verifies the state-specific control placement and zero provider writes.
+  `ProductSummary`, `QuantityControl`, `ProductFacts`, `DestinationTabs`,
+  `ActionFooter` and native `ViewerButton` are viewer-local presentational
+  components. The viewer deliberately has no Apps SDK visual component-kit or
+  Tailwind dependency: content-sized status chips, segmented destinations and
+  soft image wells are controlled by local CSS. The built browser smoke verifies
+  those visual-control boundaries, state-specific control placement and zero
+  provider writes.
 - [ ] 13.3 Release Story 1 through the current stable viewer URI without a URI
   bump. Update the scoped feature inventory and run focused viewer/browser
   smoke, strict OpenSpec validation and applicable repository gates, then

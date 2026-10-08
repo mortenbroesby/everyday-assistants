@@ -419,8 +419,12 @@ Shared primitives cover product rows, product identity/price metadata, quantity
 controls, factual disclosures, destination tabs, action footers, and status or
 outcome surfaces. They receive server-owned snapshots and intent callbacks only;
 they never store business state or issue provider calls. Reuse them across every
-state before adding state-specific composition. No external component library,
-new framework, router, or cross-application design-system package is added.
+state before adding state-specific composition. The viewer uses native HTML
+buttons, controls, status chips and disclosures styled locally; it does not use
+a host component kit whose layout defaults can override the approved gallery.
+`@modelcontextprotocol/ext-apps` remains the host bridge and source of theme,
+font and safe-area context. No external component library, new framework,
+router, or cross-application design-system package is added.
 
 ### Story gates
 

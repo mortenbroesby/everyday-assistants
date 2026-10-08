@@ -124,7 +124,9 @@ additional resources.
 The shared product viewer opens directly on its products. Each row keeps a
 visible product image, readable name, brand/package details, quantity, and line
 price together on narrow screens; factual disclosures stay collapsed until
-opened. **To decide** contains
+opened. Its buttons, status chips and compact row styling are viewer-local
+native controls so the approved hierarchy does not depend on host component-kit
+defaults. **To decide** contains
 unresolved products; **Ready** contains exact accepted products. Select one or
 more To decide rows, then add them to Ready in one local action. In Ready,
 adjust quantities directly; open a row to move it back or remove it from the
