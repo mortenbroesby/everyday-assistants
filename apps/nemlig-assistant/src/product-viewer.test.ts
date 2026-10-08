@@ -20,8 +20,8 @@ const complete: ProductView = {
 };
 
 test("versioned viewer identity and complete headless fallback stay in sync", () => {
-  assert.equal(PRODUCT_VIEWER_RESOURCE_VERSION, "15");
-  assert.equal(PRODUCT_VIEWER_RESOURCE_URI, "ui://nemlig/product-viewer-v15.html");
+  assert.equal(PRODUCT_VIEWER_RESOURCE_VERSION, "16");
+  assert.equal(PRODUCT_VIEWER_RESOURCE_URI, "ui://nemlig/product-viewer-v16.html");
   assert.equal(PRODUCT_VIEWER_MIME_TYPE, "text/html;profile=mcp-app");
   assert.deepEqual(PRODUCT_VIEWER_RESOURCE_METADATA, {
     ui: { resourceUri: PRODUCT_VIEWER_RESOURCE_URI },
@@ -36,7 +36,7 @@ test("versioned viewer identity and complete headless fallback stay in sync", ()
 test("served resource is the bounded self-contained React build", () => {
   const html = renderProductViewerHtml();
   assert.match(html, /<html lang="en">/u);
-  assert.match(html, /Your Nemlig Draft list/u);
+  assert.match(html, /Nemlig Assistant Draft list/u);
   assert.match(html, /react-dom/u);
   assert.doesNotMatch(html, /<script\s+src=/u);
   assert.doesNotMatch(html, /<link[^>]+rel=["']?stylesheet/u);

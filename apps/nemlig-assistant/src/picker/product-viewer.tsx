@@ -1,7 +1,7 @@
 import { useApp, useHostStyles } from "@modelcontextprotocol/ext-apps/react";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import type { ProductView } from "../product-presentation.js";
-import { ActionFooter, DestinationTabs, DraftListOverflow, DraftListStarters, isUsable, money, OutcomeSurface, ProductFacts, productName, ProductSummary, ProductSummaryButton, QuantityControl, ViewerButton as Button } from "./components/index.js";
+import { ActionFooter, DestinationTabs, DraftListOverflow, DraftListStarters, isUsable, money, OutcomeSurface, ProductFacts, productName, ProductSummary, ProductSummaryButton, QuantityControl, ViewerButton as Button, ViewerShell } from "./components/index.js";
 
 type ReviewItem = { product_id: number; quantity: number; state: "needs-review" | "ready"; view: ProductView };
 type Review = {
@@ -471,9 +471,11 @@ export function ProductViewer() {
     };
   };
 
-  return <div className="app-frame"><main className="viewer" aria-labelledby="title">
-    <h1 id="title">{review && active && terminalSubmission ? review.submission?.status === "submitted" ? "Added to Nemlig basket" : "Check your Nemlig basket" : review && active ? (review.items.length ? safeTitle : "What should we shop for?") : basket ? "Actual Nemlig basket" : screen.kind === "unavailable" ? "Draft list unavailable" : screen.kind === "review" ? "Your Draft list" : "Nemlig products"}</h1>
-    {!terminalSubmission && <p className="intro">{review && active ? (review.items.length === 0 ? "Start another local Draft list in conversation." : safeTitle === "Ready" ? "Adjust quantities directly. Open a product to move it back or remove it. Prepare the exact change before adding anything to Nemlig." : safeTitle === "Choose an alternative" ? "Compare available options for this product." : "Select products to move them into Ready. Open a product for details.") : basket ? "Your current Nemlig basket. This view cannot change it." : "Inspect product details here or continue in conversation."}</p>}
+  const title = review && active && terminalSubmission ? review.submission?.status === "submitted" ? "Added to Nemlig basket" : "Check your Nemlig basket" : review && active ? (review.items.length ? safeTitle : "What should we shop for?") : basket ? "Actual Nemlig basket" : screen.kind === "unavailable" ? "Draft list unavailable" : screen.kind === "review" ? "Your Draft list" : "Products";
+  const intro = !terminalSubmission ? review && active ? (review.items.length === 0 ? "Start another local Draft list in conversation." : safeTitle === "Ready" ? "Adjust quantities directly. Open a product to move it back or remove it. Prepare the exact change before adding anything to Nemlig." : safeTitle === "Choose an alternative" ? "Compare available options for this product." : "Select products to move them into Ready. Open a product for details.") : basket ? "Your current Nemlig basket. This view cannot change it." : "Inspect product details here or continue in conversation." : undefined;
+  const outcomeOnly = terminalSubmission || screen.kind === "empty" || review && active && review.items.length === 0;
+
+  return <ViewerShell title={outcomeOnly ? undefined : title} intro={outcomeOnly ? undefined : intro}>
     {review && review.items.length > 0 && !terminalSubmission && <DestinationTabs
       destination={destination ?? review.destination}
       toDecideCount={review.items.filter((item) => item.state === "needs-review").length}
@@ -577,5 +579,5 @@ export function ProductViewer() {
     {screen.kind === "products" && screen.views.length === 0 && <div className="empty" role="status">{basket ? "Your Nemlig basket is empty." : "No products found."}</div>}
     {productPayload?.unenriched_count ? <p className="status">{productPayload.unenriched_count} basket lines do not have current product details.</p> : null}
     {message && screen.kind !== "error" && screen.kind !== "stale" && !(screen.kind === "review" && !active) && destination !== "ready" && <p className="status" role="status">{message}</p>}
-  </main></div>;
+  </ViewerShell>;
 }
