@@ -1,6 +1,6 @@
 # ChatGPT plugin package source
 
-This directory contains the unpacked source for the private Nemlig Assistant
+This directory contains the unpacked source for the Nemlig Assistant
 plugin archive. Edit `nemlig-assistant/` here, then build and validate a fresh
 ZIP from the repository root:
 
@@ -13,7 +13,7 @@ The archive is written to the ignored
 
 ```sh
 node apps/nemlig-assistant/scripts/package-chatgpt-plugin.mjs \
-  --output ~/Downloads/nemlig-assistant-private-draft.zip
+  --output ~/Downloads/nemlig-assistant.zip
 ```
 
 The packager checks the two manifests agree, the existing app binding is

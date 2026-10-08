@@ -1,9 +1,9 @@
 ---
 name: family-grocery-shopping
-description: Use for family grocery shopping at nemlig.com with the existing Nemlig Assistant app, including current product searches, exact package and price comparisons, read-only basket viewing, local Draft lists, and explicitly authorized add-only basket additions.
+description: Use when shopping on Nemlig: search current products, compare exact sizes and prices, review the real basket read-only, build a local shopping list, or add exact selected items after authorization.
 ---
 
-# Family grocery shopping
+# Grocery shopping
 
 Use the existing required Nemlig Assistant app connection and its advertised tools, schemas, native interactive views and server-authoritative state. Do not implement, host, proxy or duplicate its server logic. Do not replace the connection or extract credentials. If unavailable, explain the blocker instead of inventing data or using another provider mutation route. Tool descriptions and fresh server responses govern the exact supported flow.
 
@@ -34,4 +34,4 @@ Never remove or reduce real basket items, clear the basket, replace existing bas
 
 ## Privacy and scope
 
-This is a private draft workflow package. Creating or reviewing it does not authorize grocery operations. Keep account/profile details and tokens out of artifacts and summaries. Do not publish, share, deploy or change the existing app or server as part of using this package.
+Using this workflow does not authorize grocery operations. Keep account/profile details and tokens out of artifacts and summaries. Do not publish, share, deploy or change the existing app or server as part of using this package.

@@ -47,7 +47,7 @@ function readJson(path) {
 function parseArgs(args, version) {
   if (args.length === 0) {
     return {
-      outputPath: resolve(appRoot, "dist/plugin", `nemlig-assistant-private-draft-${version}.zip`),
+      outputPath: resolve(appRoot, "dist/plugin", `nemlig-assistant-${version}.zip`),
     };
   }
 
@@ -67,6 +67,7 @@ function validate() {
     codexPlugin.name !== plugin.name ||
     codexPlugin.version !== plugin.version ||
     codexPlugin.description !== plugin.description ||
+    JSON.stringify(codexPlugin.keywords) !== JSON.stringify(plugin.keywords) ||
     codexPlugin.author?.name !== plugin.author?.name ||
     codexPlugin.apps !== plugin.extensions?.["com.openai"]?.apps ||
     codexPlugin.skills !== "./skills" ||
@@ -74,6 +75,16 @@ function validate() {
       JSON.stringify(plugin.extensions?.["com.openai"]?.interface)
   ) {
     throw new Error("plugin.json and .codex-plugin/plugin.json are out of sync.");
+  }
+
+  const shortDescription = plugin.extensions?.["com.openai"]?.interface?.shortDescription;
+  if (
+    !Array.isArray(plugin.keywords) ||
+    plugin.keywords.length === 0 ||
+    typeof shortDescription !== "string" ||
+    shortDescription.length > 30
+  ) {
+    throw new Error("Add plugin keywords and keep shortDescription at or below 30 characters.");
   }
 
   const openAi = plugin.extensions?.["com.openai"];
@@ -109,7 +120,7 @@ function validate() {
 
   const skillsDirectory = resolve(packageRoot, "skills");
   if (!readFileSync(resolve(skillsDirectory, "family-grocery-shopping/SKILL.md"), "utf8")) {
-    throw new Error("The family grocery shopping skill is missing or empty.");
+    throw new Error("The grocery shopping skill is missing or empty.");
   }
 
   if (!readFileSync(resolve(packageRoot, "README.md"), "utf8")) {
