@@ -4,13 +4,8 @@
     "name": "knip",
     "version": "6.40.0"
   },
-  "generatedFrom": "98c6656b2856f4cbc2d79e5be804411565103e47",
+  "generatedFrom": "cf3fde4e551c922db251f73386296b1123c70efb",
   "findings": [
-    {
-      "category": "exports",
-      "file": "apps/nemlig-assistant/src/picker/components/index.ts",
-      "id": "13afb0b5e8dcfd56298e9e4c0b60725491132f79d82e547d26f3fdd1063968cf"
-    },
     {
       "category": "exports",
       "file": "apps/nemlig-assistant/src/config.ts",
@@ -63,18 +58,8 @@
     },
     {
       "category": "exports",
-      "file": "apps/nemlig-assistant/src/picker/components/product.tsx",
-      "id": "53bffe5549290088aee987958bcf57bbda31174310a012b43bee8a17b5d4d927"
-    },
-    {
-      "category": "exports",
       "file": "apps/nemlig-assistant/src/client.ts",
       "id": "6c882084064e7b692b7a26a8e16778401aac4480f6378db8aed215aa153807c7"
-    },
-    {
-      "category": "exports",
-      "file": "apps/nemlig-assistant/src/picker/components/index.ts",
-      "id": "6e4c6fbe4fcd0648b38593461479f05493bfcf90e4968fcfa18a30144a644595"
     },
     {
       "category": "types",
@@ -87,19 +72,9 @@
       "id": "8dfcde4a31f936bf769dcb6baa34ae1cb8b5a200e8faee5bd473f6e9f093b853"
     },
     {
-      "category": "types",
-      "file": "apps/nemlig-assistant/src/picker/components/index.ts",
-      "id": "90269fe74ad90cbe9eff1400afc2af9bc3ef0a54e29040d6efb15fe36bc1e8a5"
-    },
-    {
       "category": "exports",
       "file": "apps/nemlig-assistant/src/client.ts",
       "id": "ac57bd3926982f5136d1b4f9111b54cfb41ed57e1d0e828957f3dc662720c98b"
-    },
-    {
-      "category": "exports",
-      "file": "apps/nemlig-assistant/src/picker/components/product.tsx",
-      "id": "b8a423338622dc33cd9bb8399447ccd1d92215dd7c3316ac817f7fa0edf1d9c7"
     },
     {
       "category": "exports",
