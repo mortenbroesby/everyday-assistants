@@ -70,9 +70,9 @@ export type ProductView = {
   readonly product_id?: number;
 };
 
-export function rankProducts(products: Product[], query: string): ProductCandidate[] {
-  void query;
-  const candidates = products.map((product) => ({
+const productCandidate = (product: Product): ProductCandidate => {
+  const organic = product.isOrganic || product.labels.some((label) => label.toLocaleLowerCase("da-DK").includes("øko"));
+  return {
     id: product.id,
     name: product.name,
     price: product.price,
@@ -81,23 +81,24 @@ export function rankProducts(products: Product[], query: string): ProductCandida
     unit_size: product.unitSize || undefined,
     category: product.category || undefined,
     subcategory: product.subcategory || undefined,
-    currency: "DKK" as const,
+    currency: "DKK",
     ...(product.description ? { description: product.description } : {}),
     ...(product.declaration ? { declaration: product.declaration } : {}),
     ...(product.details?.length ? { details: product.details } : {}),
     brand: product.brand || undefined,
     available: product.available,
-    is_organic: product.isOrganic || product.labels.some((label) => label.toLocaleLowerCase("da-DK").includes("øko")),
+    is_organic: organic,
     is_frozen: product.isFrozen,
     is_on_discount: product.isOnDiscount,
     image_url: safeNemligImageUrl(product.imageUrl),
     labels: [...product.labels],
-    tags: [] as string[],
-  }));
-  return candidates.map((product) => ({
-    ...product,
-    tags: product.is_organic ? [...product.tags, "organic"] : product.tags,
-  }));
+    tags: organic ? ["organic"] : [],
+  };
+};
+
+export function rankProducts(products: Product[], query: string): ProductCandidate[] {
+  void query;
+  return products.map(productCandidate);
 }
 
 /** Adapts facts already present in basket/review output; it never fetches details. */
@@ -141,24 +142,14 @@ export function createProductView(
   item: DetailedProductSearchItem | Product,
   context: ProductViewContext,
 ): ProductView {
-  if ("status" in item) {
-    if (item.status !== "hydrated") return { context: context.kind, status: "unavailable", ...(item.productId === undefined ? {} : { product_id: item.productId }) };
-    const candidate = rankProducts([item.product], item.product.name ?? "")[0];
-    if (!candidate) return { context: context.kind, status: "unavailable", product_id: item.productId };
-    return {
-      context: context.kind,
-      status: "complete",
-      product: candidate,
-      ...(context.kind === "basket" ? { basket: context } : {}),
-      ...(context.kind === "review" ? { review: context } : {}),
-    };
+  if ("status" in item && item.status !== "hydrated") {
+    return { context: context.kind, status: "unavailable", ...(item.productId === undefined ? {} : { product_id: item.productId }) };
   }
-  const candidate = rankProducts([item], item.name ?? "")[0];
-  if (!candidate) return { context: context.kind, status: "unavailable" };
+  const product = "status" in item ? item.product : item;
   return {
     context: context.kind,
     status: "complete",
-    product: candidate,
+    product: productCandidate(product),
     ...(context.kind === "basket" ? { basket: context } : {}),
     ...(context.kind === "review" ? { review: context } : {}),
   };
