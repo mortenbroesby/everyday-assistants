@@ -28,8 +28,17 @@ test("read pool rejects invalid concurrency before starting work", async () => {
 });
 
 test("read pool accepts serial concurrency", async () => {
-  const result = await runReadPool([1, 2], async (value) => value * 10, { concurrency: 1 });
+  let active = 0;
+  let maximum = 0;
+  const result = await runReadPool([1, 2], async (value) => {
+    active += 1;
+    maximum = Math.max(maximum, active);
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    active -= 1;
+    return value * 10;
+  }, { concurrency: 1 });
   assert.deepEqual(result, [10, 20]);
+  assert.equal(maximum, 1);
 });
 
 test("read pool rejects a pre-aborted caller without starting work", async () => {
