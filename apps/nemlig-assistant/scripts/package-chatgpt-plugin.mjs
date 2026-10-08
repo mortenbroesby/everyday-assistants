@@ -1,8 +1,8 @@
 #!/usr/bin/env node
-/* global Buffer, console, process */
+/* global Buffer, URL, console, process */
 
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, renameSync } from "node:fs";
+import { cpSync, copyFileSync, mkdtempSync, mkdirSync, readFileSync, rmSync, renameSync } from "node:fs";
 import { dirname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -12,9 +12,13 @@ const packageRoot = resolve(sourceRoot, "nemlig-assistant");
 const pluginPath = resolve(packageRoot, "plugin.json");
 const codexPluginPath = resolve(packageRoot, ".codex-plugin/plugin.json");
 const appManifestPath = resolve(packageRoot, ".app.json");
+const hostedAppPath = resolve(packageRoot, "hosted-app.json");
+const cloudflareConfigPath = resolve(appRoot, "wrangler.jsonc");
 const plugin = readJson(pluginPath);
 const codexPlugin = readJson(codexPluginPath);
 const appManifest = readJson(appManifestPath);
+const hostedApp = readJson(hostedAppPath);
+const cloudflareConfig = readJson(cloudflareConfigPath);
 const { outputPath } = parseArgs(process.argv.slice(2), plugin.version);
 
 validate();
@@ -29,8 +33,12 @@ const temporaryDirectory = mkdtempSync(join(outputDirectory, ".nemlig-plugin-"))
 const temporaryArchive = join(temporaryDirectory, "package.zip");
 
 try {
+  const stagedPackageRoot = join(temporaryDirectory, "nemlig-assistant");
+  cpSync(packageRoot, stagedPackageRoot, { recursive: true });
+  mkdirSync(join(stagedPackageRoot, "cloudflare"));
+  copyFileSync(cloudflareConfigPath, join(stagedPackageRoot, "cloudflare/wrangler.jsonc"));
   execFileSync("zip", ["-q", "-r", "-X", temporaryArchive, "nemlig-assistant"], {
-    cwd: sourceRoot,
+    cwd: temporaryDirectory,
   });
   execFileSync("unzip", ["-tq", temporaryArchive]);
   renameSync(temporaryArchive, outputPath);
@@ -61,6 +69,10 @@ function parseArgs(args, version) {
 function validate() {
   if (!plugin.name || !plugin.version) {
     throw new Error("plugin.json must define a name and version.");
+  }
+
+  if (plugin.author?.email || codexPlugin.author?.email) {
+    throw new Error("Do not package the private export's author email in this public repository.");
   }
 
   if (
@@ -95,6 +107,27 @@ function validate() {
   const app = appManifest.apps?.[plugin.name];
   if (!app?.id || app.required !== true) {
     throw new Error(".app.json must require the existing Nemlig Assistant app.");
+  }
+
+  const production = cloudflareConfig.env?.production;
+  const productionVars = production?.vars;
+  const hostedUrl = productionVars?.NEMLIG_MCP_PUBLIC_URL;
+  const hostedOrigin = typeof hostedUrl === "string" ? new URL(hostedUrl) : null;
+  const hasCustomDomain = production?.routes?.some((route) =>
+    route.custom_domain === true && route.pattern === hostedOrigin?.hostname,
+  );
+  if (
+    hostedApp.appId !== app.id ||
+    hostedApp.mcpUrl !== hostedUrl ||
+    hostedApp.oauthIssuer !== productionVars?.NEMLIG_MCP_AUTH0_ISSUER ||
+    hostedApp.oauthAudience !== productionVars?.NEMLIG_MCP_AUTH0_AUDIENCE ||
+    hostedApp.cloudflareWorker !== production?.name ||
+    hostedApp.cloudflareCustomDomain !== hostedOrigin?.hostname ||
+    hostedApp.repositoryConfig !== "apps/nemlig-assistant/wrangler.jsonc" ||
+    hostedApp.archiveConfig !== "cloudflare/wrangler.jsonc" ||
+    !hasCustomDomain
+  ) {
+    throw new Error("hosted-app.json must match the app binding and production Cloudflare configuration.");
   }
 
   const icon = openAi.interface?.logo;
