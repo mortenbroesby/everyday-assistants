@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { Product } from "./client.js";
-import { createProductView, createProductViewFromSummary, createProductViews } from "./product-presentation.js";
+import { createProductView, createProductViewFromSummary, createProductViews, rankProducts } from "./product-presentation.js";
 
 const product = (overrides: Partial<Product> = {}): Product => ({
   id: 7, name: "Mælk", price: 12, unit: "12 kr/l", unitPrice: 12, unitSize: "1 l", brand: "Test",
@@ -112,4 +112,78 @@ test("product views do not attach heuristic comparison claims", () => {
   const single = createProductView(product({ id: 7 }), { kind: "details" });
   assert.equal(single.status, "complete");
   if (single.status === "complete") assert.deepEqual(single.product.tags, []);
+});
+
+test("product candidates preserve label order and current Danish organic and discount heuristics", () => {
+  const organicLabels = [
+    { name: "empty labels", labels: [], matches: false },
+    { name: "uppercase Danish substring", labels: ["KAMPAGNE ØKOLOGISK"], matches: true },
+    { name: "mixed-case Danish substring", labels: ["Mælk øKo-mærket"], matches: true },
+    { name: "ordered multiple labels", labels: ["Dansk", "ØKo valg", "Tilbud"], matches: true },
+    { name: "nonmatching label", labels: ["Dansk"], matches: false },
+  ];
+  for (const isOrganic of [true, false, undefined]) {
+    for (const labelCase of organicLabels) {
+      const candidate = rankProducts([product({ isOrganic, labels: labelCase.labels })], "")[0]!;
+      const expectedOrganic = Boolean(isOrganic || labelCase.matches);
+      assert.equal(candidate.is_organic, expectedOrganic, `${String(isOrganic)} with ${labelCase.name}`);
+      assert.deepEqual(candidate.tags, expectedOrganic ? ["organic"] : [], `${String(isOrganic)} with ${labelCase.name}`);
+      assert.deepEqual(candidate.labels, labelCase.labels);
+      assert.notStrictEqual(candidate.labels, labelCase.labels);
+    }
+  }
+
+  for (const isOnDiscount of [true, false, undefined]) {
+    for (const labels of [["TILBUD"], ["Rabatkode"]]) {
+      const candidate = rankProducts([product({ isOnDiscount, labels })], "")[0]!;
+      assert.equal(candidate.is_on_discount, isOnDiscount);
+    }
+  }
+});
+
+test("summary product views preserve optional labels and organic label precedence", () => {
+  const organicLabels = [
+    { name: "absent labels", labels: undefined, matches: false },
+    { name: "empty labels", labels: [], matches: false },
+    { name: "uppercase Danish substring", labels: ["KAMPAGNE ØKOLOGISK"], matches: true },
+    { name: "mixed-case Danish substring", labels: ["Mælk øKo-mærket"], matches: true },
+    { name: "ordered multiple labels", labels: ["Dansk", "ØKo valg", "Tilbud"], matches: true },
+    { name: "nonmatching label", labels: ["Dansk"], matches: false },
+  ];
+  for (const is_organic of [true, false, undefined]) {
+    for (const labelCase of organicLabels) {
+      const view = createProductViewFromSummary({ is_organic, labels: labelCase.labels }, { kind: "basket" });
+      assert.ok(view.status === "complete");
+      const expectedOrganic = labelCase.matches ? true : is_organic;
+      const expectedTag = is_organic ?? labelCase.matches;
+      assert.equal(view.product.is_organic, expectedOrganic, `${String(is_organic)} with ${labelCase.name}`);
+      assert.deepEqual(view.product.tags, expectedTag ? ["organic"] : [], `${String(is_organic)} with ${labelCase.name}`);
+      assert.deepEqual(view.product.labels, labelCase.labels ?? []);
+      if (labelCase.labels) assert.notStrictEqual(view.product.labels, labelCase.labels);
+    }
+  }
+});
+
+test("summary organic label inference preserves the false-flag tag asymmetry", () => {
+  const asymmetry = createProductViewFromSummary({ is_organic: false, labels: ["Øko-mærket"] }, { kind: "basket" });
+  assert.ok(asymmetry.status === "complete");
+  assert.equal(asymmetry.product.is_organic, true);
+  assert.deepEqual(asymmetry.product.tags, []);
+});
+
+test("summary product views preserve discount flags ahead of Danish label fallback", () => {
+  const discountLabels = [
+    { name: "absent labels", labels: undefined, matches: false },
+    { name: "empty labels", labels: [], matches: false },
+    { name: "uppercase TILBUD substring", labels: ["SOMMER TILBUD EXTRA"], matches: true },
+    { name: "mixed-case TILBUD substring", labels: ["Sommer tIlBuD"], matches: true },
+    { name: "nonmatching label", labels: ["Rabatkode"], matches: false },
+  ];
+  for (const is_on_discount of [true, false, undefined]) {
+    for (const labelCase of discountLabels) {
+      const view = createProductViewFromSummary({ is_on_discount, labels: labelCase.labels }, { kind: "basket" });
+      assert.ok(view.status === "complete");
+      assert.equal(view.product.is_on_discount, is_on_discount ?? (labelCase.matches || undefined), `${String(is_on_discount)} with ${labelCase.name}`);
+    }
+  }
 });
