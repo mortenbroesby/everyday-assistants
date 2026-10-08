@@ -282,8 +282,7 @@ export function ProductViewer() {
   } });
   useHostStyles(connectedApp, connectedApp?.getHostContext());
   useEffect(() => () => { if (quantityTimer.current) clearTimeout(quantityTimer.current); connectedApp?.close(); }, [connectedApp]);
-
-  const call = async (name: string, args: Record<string, unknown>, recovery = true, adoptPresentationDestination = false): Promise<boolean> => {
+  const call = async (name: string, args: Record<string, unknown>, recovery = true, adoptPresentationDestination = false, uncertainOnFailure = false): Promise<boolean> => {
     if (!connectedApp || !isConnected) { setMessage(error ? "The Draft list could not connect. Continue in conversation or reopen the current Draft list." : "Connecting to the current Nemlig Draft list…"); return false; }
     if (callLock.current) return false;
     callLock.current = true;
@@ -333,7 +332,7 @@ export function ProductViewer() {
           } else { activeReview.current = undefined; setScreen({ kind: "stale" }); }
         } catch { activeReview.current = undefined; setScreen({ kind: "stale" }); }
         setMessage("Your last action was not applied. The current Draft list was refreshed; choose again.");
-      } else if (!recovery && /uncertain/i.test(text)) {
+      } else if (!recovery && (uncertainOnFailure || /uncertain/i.test(text))) {
         submitBlockedRef.current = true;
         setSubmitBlocked(true);
         setConfirmSubmit(false);
@@ -488,8 +487,8 @@ export function ProductViewer() {
     {screen.kind === "cancelled" && <section className="status"><p>Request cancelled. Continue in conversation to confirm the current Draft list before continuing.</p></section>}
     {screen.kind === "stale" && <section className="status"><p>This Draft list card is out of date and cannot make changes.</p><Button color="primary" disabled={activatingCurrent} onClick={() => void activateCurrentDraftList()}>{activatingCurrent ? "Loading…" : "Load current Draft list"}</Button>{message && <p role="status">{message}</p>}</section>}
     {!isConnected && screen.kind === "loading" && <p className="status" role="status">{error ? "Could not connect to the Draft list host." : "Connecting to Nemlig…"}</p>}
-    {screen.kind === "review" && review && !active && <section className="status"><p>This Draft list card is inactive. {review.items.length ? "The current Draft list is shown read-only." : "No current Draft list is available."}</p>{review.items.length > 0 && <Button color="primary" disabled={activatingCurrent || busy} onClick={() => void activateCurrentDraftList()}>{activatingCurrent ? "Loading…" : "Make this card current"}</Button>}{message && <p role="status">{message}</p>}</section>}
-    {review && !active && review.items.length > 0 && <section className="product-list" aria-label="Current Draft list, read only">{review.items.map((item) => <ProductCard key={item.product_id} view={item.view} disabled />)}</section>}
+    {screen.kind === "review" && review && !active && !terminalSubmission && <section className="status"><p>This Draft list card is inactive. {review.items.length ? "The current Draft list is shown read-only." : "No current Draft list is available."}</p>{review.items.length > 0 && <Button color="primary" disabled={activatingCurrent || busy} onClick={() => void activateCurrentDraftList()}>{activatingCurrent ? "Loading…" : "Make this card current"}</Button>}{message && <p role="status">{message}</p>}</section>}
+    {review && !active && !terminalSubmission && review.items.length > 0 && <section className="product-list" aria-label="Current Draft list, read only">{review.items.map((item) => <ProductCard key={item.product_id} view={item.view} disabled />)}</section>}
     {screen.kind === "unavailable" && <section className="status"><p>This temporary Draft list is no longer available. Ask in chat before starting a new Draft list. Previous choices or submission approval are not restored.</p></section>}
     {review && active && !terminalSubmission && destination === "alternatives" && review.alternatives && <section className="alternatives">
       <section className="alternatives-current" aria-labelledby="current-product-title">
@@ -545,11 +544,11 @@ export function ProductViewer() {
       </>}
       {selected.size > 0 && <Button color="primary" disabled={editsBlocked} onClick={() => afterFlush({ kind: "accept", product_ids: [...selected] })}>Add selected to Ready ({selected.size})</Button>}
     </ActionFooter>}
-    {review && active && terminalSubmission && review.submission?.status === "submitted" && <OutcomeSurface tone="success" title="Nemlig confirmed the addition">
+    {review && terminalSubmission && review.submission?.status === "submitted" && <OutcomeSurface tone="success" title="Nemlig confirmed the addition">
       <p role="status">Only the prepared products were added. Your real Nemlig basket was verified after the addition.</p>
       <Button color="secondary" disabled={busy} onClick={() => setContinueSubmitted(true)}>Continue with Draft list</Button>
     </OutcomeSurface>}
-    {review && active && terminalSubmission && uncertainSubmission && <OutcomeSurface tone="warning" title="We could not verify the addition">
+    {review && terminalSubmission && uncertainSubmission && <OutcomeSurface tone="warning" title="We could not verify the addition">
       <p role="status">Inspect the actual Nemlig basket before making another request. Nemlig Assistant will not retry automatically.</p>
       <Button color="secondary" disabled={busy} onClick={() => void sendFollowUp("Inspect the actual Nemlig basket for this uncertain Draft list submission. Do not retry or add anything.")}>Inspect Nemlig basket in conversation</Button>
     </OutcomeSurface>}
@@ -566,7 +565,7 @@ export function ProductViewer() {
           submitBlockedRef.current = true; setSubmitBlocked(true); setConfirmSubmit(false);
           const latest = activeReview.current;
           if (!latest?.view_id) return;
-          const success = await call("submit_product_review", { view_id: latest.view_id, review_id: confirmed.review_id, revision: confirmed.revision, submission_id: confirmed.submission.submission_id }, false);
+          const success = await call("submit_product_review", { view_id: latest.view_id, review_id: confirmed.review_id, revision: confirmed.revision, submission_id: confirmed.submission.submission_id }, false, false, true);
           if (!success) setMessage("Submission outcome is uncertain. Inspect the actual Nemlig basket; do not retry automatically.");
         })}>Add to Nemlig</Button></> : <Button color="primary" disabled={busy} onClick={() => setConfirmSubmit(true)}>Add to Nemlig basket</Button>}
       </OutcomeSurface>}

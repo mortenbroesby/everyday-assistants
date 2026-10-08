@@ -160,7 +160,7 @@ document.getElementById('flow').onclick = async () => {
   await fetch('/reset',{method:'POST'});
   await fetch('/unknown-price',{method:'POST'});
   transcript=await call({name:'update_product_review_conversation',arguments:{action:{kind:'show'}}}); publish();
-  await wait(()=>['What should we shop for?','Start a new Draft list'].includes(doc().querySelector('#title')?.textContent ?? '')); await widths();
+  await wait(()=>['What should we shop for?','Draft list unavailable'].includes(doc().querySelector('#title')?.textContent ?? '')); await widths();
   await document.getElementById('start').onclick();
   await wait(()=>button('To decide (2)'));
   await wait(()=>button('To decide (2)')&&!button('To decide (2)').disabled); await widths();
@@ -237,11 +237,11 @@ document.getElementById('flow').onclick = async () => {
     await wait(()=>doc().querySelectorAll('.product-list article').length===remaining-1);
   }
   status.textContent='Checking draft list completion';
-  await wait(()=>text().includes('Your Draft list is empty.')); open();
+  await wait(()=>text().includes('Your local Draft list is empty.')); open();
   const emptyReview=(await call({name:'update_product_review_conversation',arguments:{action:{kind:'show'}}})).structuredContent.review;
   check(emptyReview.items.length===0,'Confirmed local row removals did not clear the Ready list');
-  click('End Draft list'); await wait(()=>button('Confirm discard Draft list')); open(); click('Confirm discard Draft list');
-  await wait(()=>text().includes('Your local Draft list was discarded.'));
+  check(!button('End Draft list'),'Empty Draft list retained an unnecessary destructive control');
+  await call({name:'update_product_review_conversation',arguments:{review_id:emptyReview.review_id,revision:emptyReview.revision,action:{kind:'end'}}});
   transcript=await call({name:'start_product_review',arguments:{items:[{product_id:1,quantity:1},{product_id:2,quantity:2}]}});
   status.textContent='Checking fresh post-discard card';
  initialized=false; const viewerLoaded=new Promise(resolve=>frame.addEventListener('load',resolve,{once:true})); frame.src='/viewer'; await viewerLoaded; await wait(()=>initialized);
@@ -259,7 +259,7 @@ document.getElementById('flow').onclick = async () => {
   check(!button('Review exact Nemlig change'),'Uncertain submission allowed another prepare before an explicit edit');
   check(!button('Open current Draft list') || doc().querySelectorAll('input[type=checkbox]').length===0,'Ambiguous submission retained stale edit controls');
   frame.contentWindow.postMessage({jsonrpc:'2.0',method:'ui/notifications/tool-cancelled',params:{reason:'Reopen only after explicit current-state inspection'}},location.origin);
-  await wait(()=>doc().querySelectorAll('input[type=checkbox]').length===0 && text().includes('Request cancelled'));
+  await wait(()=>doc().querySelectorAll('input[type=checkbox]').length===0 && text().includes('We could not verify the addition'));
   transcript=await call({name:'start_product_review',arguments:{items:[{product_id:1,quantity:1},{product_id:2,quantity:2}]}}); publish();
   status.textContent='Checking recovery after uncertain write';
   const uncertainSnapshot=(await call({name:'update_product_review_conversation',arguments:{action:{kind:'show'}}})).structuredContent.review;
