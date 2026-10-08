@@ -175,10 +175,11 @@ controls until you explicitly reopen current state.
 If the draft is gone, **Start new draft list** rechecks the original products and
 quantities without restoring acceptance or submission approval. Submitted or
 uncertain snapshots instead direct you to inspect the actual basket.
-Only the stable viewer address is served; older versioned addresses are no
-longer registered. ChatGPT may retain previously cached documents; the server
-cannot remove those transcript cards. Refresh app metadata so new cards use the
-current viewer.
+The viewer resource URI is versioned whenever its self-contained UI changes.
+Older addresses resolve only to inert, read-only notices, so cached historical
+cards cannot regain shopping controls. ChatGPT may retain previously cached
+documents; the server cannot remove those transcript cards. Refresh app metadata
+so new cards use the current viewer URI.
 
 Run `pnpm --filter nemlig-assistant smoke:review-ui`, open its loopback URL,
 and click **Run regression smoke**. The real MCP adapter and fake catalogue
@@ -374,8 +375,8 @@ The MCP surface is organized around household actions:
   **Make this card current** action issues a new token without recreating a missing
   draft.
   Model-side text actions use the `_conversation` tool names. The MCP server
-  serves one stable viewer URI; older versioned resource addresses are no longer
-  registered.
+  serves a versioned viewer URI; older resource addresses are inert and cannot
+  change shopping state.
   The viewer initializes the MCP Apps bridge and reports connection failures.
   It can edit the server-owned Draft list and call the protected submission path
   only after the existing exact confirmation; it never calls Nemlig directly.
@@ -474,10 +475,10 @@ pnpm --filter nemlig-assistant smoke:package
 
 Tests use synthetic HTTP responses and never access a real Nemlig account.
 
-The MCP resource uses one stable URI and serves the React viewer built into
-`dist/picker.html`. ChatGPT may cache UI code by URI, so a stable URI does not
-guarantee that an already-open card loads changed UI code; card data refresh is
-handled separately by the viewer.
+The MCP resource uses a versioned URI and serves the React viewer built into
+`dist/picker.html`. Every self-contained viewer change receives a new URI so a
+fresh card cannot pair current tool data with cached UI code. Existing cards are
+handled separately by the viewer and historical resource URIs are inert.
 The package build includes that exact self-contained file and the browser smoke
 drives it through a synthetic MCP host with a fake catalogue:
 

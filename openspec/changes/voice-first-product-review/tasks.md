@@ -346,10 +346,19 @@ acceptance, no-call selection, Ready action hierarchy, quantity flush,
 stale-prepared recovery, confirmed local removal, and zero fake-provider basket
 writes; the built artifact smoke passed the equivalent synthetic MCP flow with
 zero provider writes. Native Story 2 acceptance remains 13.8.
-- [ ] 13.7 Release the Story 2 viewer change through one PR and the current
-  stable URI after focused tests, loopback browser smoke, strict OpenSpec
-  validation and the applicable repository gate; record exact revision, CI,
-  resource metadata and native-card evidence.
+
+Native cache observation (8 October 2026): a fresh ChatGPT conversation after
+tool refresh still rendered the earlier unversioned viewer artifact, including
+a Ready checkbox that current source forbids. The deployed source and tool
+metadata were current; no real Nemlig basket was accessed or changed. Future
+viewer-content releases therefore use a new versioned resource URI and leave
+previous published identities registered only as inert, read-only documents.
+
+- [ ] 13.7 Release the Story 2 viewer change through one PR and a new versioned
+  viewer URI, retaining prior published identities as inert read-only resources,
+  after focused tests, loopback browser smoke, strict OpenSpec validation and
+  the applicable repository gate; record exact revision, CI, resource metadata
+  and native-card evidence.
 - [ ] 13.8 After merge/release, perform and record native ChatGPT Story 2 smoke:
   select → accept → Ready → quantity → move back → To decide, plus one
   conversational edit/readback. Do not start Story 3 until this is pass or an
