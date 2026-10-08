@@ -458,7 +458,7 @@ or ended draft exposes no tabs or destructive actions, sends one bounded
 conversational starter with zero tool/provider calls, preserves exact prepared
 confirmation and cancel-with-zero-submit, presents verified success separately,
 and blocks uncertain outcomes without retry.
-- [x] 13.20 Release Story 4 through the current stable URI in one PR after
+- [x] 13.20 Release Story 4 through the current versioned stable URI in one PR after
   focused tests, fake-provider protected-submit smoke, loopback browser smoke,
   strict OpenSpec validation and applicable repository gates. Record exact
   revision, CI, resource metadata and native-card evidence.
