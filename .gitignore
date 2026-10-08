@@ -10,6 +10,7 @@
 **/.env.*
 **/.codex/local-auth/
 **/.codex/ui-mockups/
+**/.codex/storybook-static/
 **/*.pem
 **/*.key
 /.env

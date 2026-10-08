@@ -419,8 +419,34 @@ Shared primitives cover product rows, product identity/price metadata, quantity
 controls, factual disclosures, destination tabs, action footers, and status or
 outcome surfaces. They receive server-owned snapshots and intent callbacks only;
 they never store business state or issue provider calls. Reuse them across every
-state before adding state-specific composition. No external component library,
-new framework, router, or cross-application design-system package is added.
+state before adding state-specific composition. The viewer uses native HTML
+buttons, controls, status chips and disclosures styled locally; it does not use
+a host component kit whose layout defaults can override the approved gallery.
+`@modelcontextprotocol/ext-apps` remains the host bridge and source of theme,
+font and safe-area context. No external visual component kit, new framework,
+router, or cross-application design-system package is added. Emotion is the
+deliberate viewer-local styling runtime, not a component kit.
+
+The component suite lives in `src/picker/components/` with one explicit public
+barrel (`index.ts`). It is an in-app React library rather than a new workspace
+package because the viewer is the only current runtime consumer. Its boundary
+is deliberate: exported components may compose supplied product facts and
+presentational callbacks, but they may not call MCP tools, fetch providers, or
+own review membership, quantities, revisions, submission authority or other
+business state. Reconsider extracting a workspace package only when a second
+runtime consumer demonstrates concrete duplication. Its styles are co-located
+with the React components using Emotion and continue to use host CSS variables
+for theming. The accepted runtime style injection must remain free of
+user-supplied CSS values and external stylesheet fetches.
+
+The suite also has a local Storybook as its visual contract surface. Stories
+use deterministic, server-shaped fixture data to show the shared primitives and
+the approved narrow To decide, Ready, alternatives, factual-detail, and
+unavailable presentations. Storybook validates the component composition and
+gives a reviewer a stable visual reference; it does not initialize the MCP Apps
+bridge, call tools or providers, replace the built-viewer smoke, or establish
+native ChatGPT acceptance. The existing synthetic-host screenshots remain the
+artifact-level visual evidence.
 
 ### Story gates
 

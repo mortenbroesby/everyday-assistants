@@ -1,5 +1,4 @@
 import react from "@vitejs/plugin-react";
-import tailwindcss from "@tailwindcss/vite";
 import { fileURLToPath } from "node:url";
 import { defineConfig } from "vite";
 import { viteSingleFile } from "vite-plugin-singlefile";
@@ -7,7 +6,7 @@ import { viteSingleFile } from "vite-plugin-singlefile";
 export default defineConfig({
   base: "./",
   publicDir: false,
-  plugins: [react(), tailwindcss(), viteSingleFile()],
+  plugins: [react(), viteSingleFile()],
   build: {
     cssCodeSplit: false,
     emptyOutDir: false,

@@ -1,2 +1,5 @@
 packages:
   - "apps/*"
+
+catalog:
+  vite-plus: 0.2.0

@@ -281,16 +281,29 @@ paper over it in the viewer.
   `scripts/smoke-product-viewer.ts` exercises keyboard expansion, independent
   checkbox selection, safe image fallback, long-name 320px/375px layout,
   factual disclosures, and zero host calls; presentational callbacks are
-  isolated in `src/picker/viewer-components.tsx`.
+  isolated in `src/picker/components/`.
 - [x] 13.2 Build the viewer-local shared presentational components, then refine
   To decide and Ready row layout for image, identity, pack/brand, quantity and
   line price while keeping only the supplied factual disclosures. Keep To
   decide action controls expanded and Ready quantity controls directly visible;
   verify 320px/375px layout, focus visibility, unavailable rows, reuse across
   states, and no new business-state/client fetch path. Evidence:
-  `ProductSummary`, `QuantityControl`, `ProductFacts`, `DestinationTabs`, and
-  `ActionFooter` are viewer-local presentational components; the built browser
-  smoke verifies the state-specific control placement and zero provider writes.
+  The in-app component suite at `src/picker/components/` exports
+  `ProductSummary`, `QuantityControl`, `ProductFacts`, `DestinationTabs`,
+  `ActionFooter`, `StatusChip` and native `ViewerButton` through one public
+  barrel. It deliberately has no Apps SDK visual component-kit or Tailwind
+  dependency: content-sized status chips, segmented destinations and soft image
+  wells are controlled by co-located Emotion styles. The built browser smoke
+  verifies those visual-control boundaries, state-specific control placement and
+  zero provider writes.
+- [x] 13.2a Add a local Storybook visual-contract surface for the component
+  suite. Use deterministic server-shaped fixtures for the shared primitives and
+  compact 320px/375px To decide, Ready, alternatives, factual-detail and
+  unavailable presentations. Build it locally; do not mock a host bridge, call
+  a tool/provider, add a cloud visual-testing service, or claim native ChatGPT
+  evidence from stories. Evidence: Storybook 10.6.1 builds the five fixed
+  visual-contract stories under `src/picker/components/`; a local Chrome
+  browser smoke loaded the 320px To decide story and its primary action.
 - [ ] 13.3 Release Story 1 through the current stable viewer URI without a URI
   bump. Update the scoped feature inventory and run focused viewer/browser
   smoke, strict OpenSpec validation and applicable repository gates, then

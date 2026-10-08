@@ -124,7 +124,9 @@ additional resources.
 The shared product viewer opens directly on its products. Each row keeps a
 visible product image, readable name, brand/package details, quantity, and line
 price together on narrow screens; factual disclosures stay collapsed until
-opened. **To decide** contains
+opened. Its buttons, status chips and compact row styling are viewer-local
+native controls, grouped in the picker component suite, so the approved
+hierarchy does not depend on host component-kit defaults. **To decide** contains
 unresolved products; **Ready** contains exact accepted products. Select one or
 more To decide rows, then add them to Ready in one local action. In Ready,
 adjust quantities directly; open a row to move it back or remove it from the
@@ -200,6 +202,19 @@ to write `to-decide.png`, `product-expanded.png`, `ready.png`,
 they contain only fixture products, make no external requests, and never access
 the real Nemlig basket. This is a design-review bootstrap, not ChatGPT-host
 acceptance.
+
+For component-level visual review, run:
+
+```sh
+pnpm --filter nemlig-assistant storybook
+```
+
+The local Storybook uses deterministic product fixtures for the shared viewer
+components and the narrow To decide, Ready, alternatives, factual-detail, and
+unavailable presentations. `pnpm --filter nemlig-assistant build:storybook`
+checks that those stories build. It is a component visual contract, not an MCP
+Apps host simulation or evidence of native ChatGPT rendering; retain the
+built-viewer smoke and post-release host smoke for those boundaries.
 
 Product disclosures, navigation and ordinary local edits do not fetch Nemlig;
 adding new exact products hydrates only those products, and
