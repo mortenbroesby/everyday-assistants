@@ -21,6 +21,8 @@ const denied = async (): Promise<never> => { writes++; throw new Error("Provider
 const product = (id: number): Product => ({ id, name: `Smoke product ${id}`, price: unknownPriceScenario && id === 1 ? undefined : id * 5, available: id === 4 ? false : true,
   unit: "kr/kg", unitPrice: id * 5, unitSize: "1 kg", brand: "Fixture", category: "Test", subcategory: "Test", imageUrl: "", labels: [],
   description: id === 3 ? "Long factual description for the alternatives comparison smoke." : undefined,
+  declaration: id === 3 ? "Ingredients and allergen facts for the alternatives comparison smoke." : undefined,
+  details: id === 3 ? [{ key: "Country of origin", value: "Denmark" }, { key: "Storage", value: "Keep chilled" }] : undefined,
   isOrganic: id === 3, isFrozen: false, isRefrigerated: false, isDairy: false, isLactoseFree: false, isGlutenFree: false, isVegan: false, isOnDiscount: false });
 const catalogue = {
   isLoggedIn: () => true, login: async () => {}, getProduct: async (id: number) => product(id),
@@ -40,13 +42,12 @@ const uncertainProposals = {
 } as unknown as BasketProposalService;
 const makeServer = () => createMcpServer(catalogue, async () => undefined, process.env, uncertainProposals);
 let current = makeServer();
-const retiredV7 = "ui://nemlig/product-viewer-v7.html";
 const handler = createMcpHandler(() => current, { legacy: "reject" });
 const mcpHandler = toNodeHandler(handler);
 const client = new Client({ name: "review-ui-smoke", version: "1" }, { versionNegotiation: { mode: { pin: "2026-07-28" } } });
 const page = `<!doctype html><html><body><h1>Selection recovery smoke</h1>
 <button id="start">Start sample selection</button><button id="reset">Simulate server restart</button><button id="replace">Create current selection without updating card</button>
-<button id="run">Run regression smoke</button><button id="flow">Run continuous local flow</button><button id="alternatives">Run alternatives comparison smoke</button><button id="retired">Show retired v7 card</button><output id="status">Ready</output><iframe id="viewer" src="/viewer" style="width:100%;height:760px"></iframe>
+<button id="run">Run regression smoke</button><button id="flow">Run continuous local flow</button><button id="alternatives">Run alternatives comparison smoke</button><output id="status">Ready</output><iframe id="viewer" src="/viewer" style="width:100%;height:760px"></iframe>
 <script>
 const frame = document.getElementById('viewer'), status = document.getElementById('status');
 let transcript, offline = false, initialized = false, conversationMessages = 0;
@@ -58,7 +59,6 @@ document.getElementById('start').onclick = async () => {
  publish();
  status.textContent='Selection shown';
 };
-document.getElementById('retired').onclick = () => { frame.src='/retired'; status.textContent='Retired card: no shopping calls'; };
 document.getElementById('replace').onclick = async () => { await call({name:'start_product_review',arguments:{items:[{product_id:3,quantity:4}]}}); status.textContent='Current selection created; old card retained'; };
 document.getElementById('reset').onclick = async () => { await fetch('/reset',{method:'POST'}); status.textContent='Server restarted; old card retained'; };
 window.addEventListener('message',async event=>{
@@ -94,12 +94,7 @@ document.getElementById('run').onclick = async () => {
   await fetch('/reset',{method:'POST'});
   widgetCalls.length=0; await document.getElementById('start').onclick();
   await wait(()=>widgetCalls.length===1&&widgetCalls[0].arguments.action?.kind==='show');
-  status.textContent='Checking retired v7 resource'; frame.src='/retired';
-  await wait(()=>doc()?.querySelector('h1')?.textContent==='This Draft list card is out of date');
-  check(doc().querySelector('h1')?.textContent==='This Draft list card is out of date'&&!doc().querySelector('.product-list'),'Retired v7 hydrated selection data');
-  const retiredStats=await fetch('/stats').then(r=>r.json());
-  check(widgetCalls.length===1&&retiredStats.providerBasketCalls===0&&!doc().querySelector('button'),'Retired v7 exposed an action or made shopping calls');
-  status.textContent='Checking direct product display'; const beforeDirectView=widgetCalls.length; frame.src='/viewer'; await wait(()=>button('To decide (2)') && !button('To decide (2)').disabled);
+  status.textContent='Checking direct product display'; const beforeDirectView=widgetCalls.length; frame.contentWindow.location.reload(); await wait(()=>widgetCalls.length===beforeDirectView+1 && button('To decide (2)') && !button('To decide (2)').disabled);
   check(widgetCalls.length===beforeDirectView+1&&widgetCalls.at(-1).arguments.action?.kind==='show'&&doc().querySelectorAll('.product-list article').length===2,'New card did not show products directly or validate its view');
   await select(); click('Add selected to Ready (1)'); await wait(()=>button('Ready (1)') && !button('Ready (1)').disabled);
   check(!button('Open current Draft list'),'New card retained the obsolete open CTA');
@@ -125,7 +120,7 @@ document.getElementById('run').onclick = async () => {
   check(button('Ready (1)') && !doc().querySelector('input:checked'),'Conflict changed acceptance');
   status.textContent='Checking connection failure'; await select(); offline=true; click('Add selected to Ready (1)'); await wait(()=>text().includes('This Draft list card is out of date'));
   check(!doc().querySelector('input') && !/INVALID_ARGUMENT|private trace/.test(text()),'Failure leaked details or editable snapshot');
-  check(!doc().querySelector('button'),'Stale view retained action controls after its request failed');
+  check(!button('Add selected to Ready (1)')&&!button('Remove from Draft list')&&!doc().querySelector('input'),'Stale view retained draft-edit controls after its request failed');
   offline=false;
   status.textContent='Checking process restart'; await fetch('/reset',{method:'POST'});
   const restarted=await call({name:'start_product_review',arguments:{items:[{product_id:1,quantity:3},{product_id:2,quantity:2}]}});
@@ -141,7 +136,7 @@ document.getElementById('run').onclick = async () => {
   check(prepared.basketReads===1&&prepared.basketWrites===0,'Prepare crossed the wrong provider boundary');
   check(!!button('Review exact change') && !button('Add to Nemlig'),'The prepared change was shown before explicit confirmation');
   check(widgetCalls.every(call=>!('representation' in call.arguments)),'Viewer sent a representation selector');
-  status.textContent='PASS: retired v7, inactive mount, remount, stale revision, outage, restart, finish, prepare only; one fake basket read, zero writes';
+  status.textContent='PASS: inactive mount, remount, stale revision, outage, restart, finish, prepare only; one fake basket read, zero writes';
  } catch(error) { status.textContent='FAIL: '+error.message+' | viewer: '+(doc()?.body?.innerText||'no iframe document')+' | widget calls: '+JSON.stringify(widgetCalls); }
  finally { offline=false; run.disabled=false; }
 };
@@ -194,12 +189,12 @@ document.getElementById('flow').onclick = async () => {
   status.textContent='Checking alternatives';
   doc().querySelector('.product-list article button[aria-expanded]').click(); click('Choose alternative');
   await wait(()=>doc().querySelector('#title')?.textContent==='Choose an alternative'&&button('Ready (0)')&&!button('Ready (0)').disabled); open();
-  const radio=doc().querySelector('input[type=radio]'); check(radio,'Alternative choice missing'); radio.click();
+  const radio=doc().querySelector('[role=radio]'); check(radio,'Alternative choice missing'); radio.click();
   await wait(()=>button('Use selected alternative')&&!button('Use selected alternative').disabled);
   click('Ready (0)'); await wait(()=>doc().querySelector('#title')?.textContent==='Ready'&&button('Return to existing alternatives')&&!button('Return to existing alternatives').disabled);
   check(!!button('Return to existing alternatives'),'Ready navigation omitted the saved alternatives return action');
   click('Return to existing alternatives'); await wait(()=>doc().querySelector('#title')?.textContent==='Choose an alternative'&&button('Use selected alternative')&&!button('Use selected alternative').disabled);
-  check(doc().querySelector('input[type=radio]')?.checked,'Saved alternative selection was lost on return'); open(); click('Use selected alternative');
+  check(doc().querySelector('[role=radio][aria-checked=true]'),'Saved alternative selection was lost on return'); open(); click('Use selected alternative');
   await wait(()=>doc().querySelector('#title')?.textContent==='To decide'&&button('To decide (2)')&&!button('To decide (2)').disabled); open();
   click('Select all'); await wait(()=>doc().querySelectorAll('input[type=checkbox]:checked').length===2); click('Add selected to Ready (2)');
   await wait(()=>button('Ready (2)')&&!button('Ready (2)').disabled); open();
@@ -316,11 +311,13 @@ document.getElementById('alternatives').onclick = async () => {
   check(candidate,'Returned alternative was missing');
   check(!candidate.querySelector('button.product-summary'),'Alternative facts remained hidden behind a product accordion');
   check(candidate.textContent.includes('Fixture')&&candidate.textContent.includes('1 kg')&&candidate.textContent.includes('15.00 kr')&&candidate.textContent.includes('Organic'),'Alternative comparison omitted supplied product facts');
+  const facts=[...candidate.querySelectorAll('.product-fact summary')].map(summary=>summary.textContent); check(JSON.stringify(facts)===JSON.stringify(['Varebeskrivelse','Varedeklaration','Detaljer om varen']),'Alternative exposed anything other than the three supported factual sections: '+facts.join(', '));
   const description=candidate.querySelector('.product-fact summary'); check(description,'Long factual description disclosure missing'); description.click();
   await wait(()=>candidate.textContent.includes('Long factual description for the alternatives comparison smoke.'));
+  const details=[...candidate.querySelectorAll('.product-fact summary')].find(summary=>summary.textContent==='Detaljer om varen'); check(details,'Grouped product details disclosure missing'); details.click(); await wait(()=>candidate.textContent.includes('Country of origin')&&candidate.textContent.includes('Keep chilled'));
   let currentReview=(await call({name:'update_product_review_conversation',arguments:{action:{kind:'show'}}})).structuredContent.review;
   check(currentReview.destination==='alternatives'&&currentReview.items.every(item=>item.state==='needs-review'),'Opening alternatives implicitly accepted a product');
-  candidate.querySelector('input[type=radio]')?.click(); click('Use selected alternative');
+  const alternativeChoice=candidate.querySelector('[role=radio]'); check(alternativeChoice,'Alternative card was not a direct choice control'); alternativeChoice.click(); await wait(()=>candidate.querySelector('[role=radio]')?.getAttribute('aria-checked')==='true'); click('Use selected alternative');
   await wait(()=>doc().querySelector('#title')?.textContent==='To decide'&&!button('To decide (2)')?.disabled);
   currentReview=(await call({name:'update_product_review_conversation',arguments:{action:{kind:'show'}}})).structuredContent.review;
   const replacement=currentReview.items.find(item=>item.product_id===3);
@@ -331,7 +328,7 @@ document.getElementById('alternatives').onclick = async () => {
   await wait(()=>doc().querySelector('#title')?.textContent==='Choose an alternative');
   await search('unavailable'); await wait(()=>doc().querySelector('.alternative-options')?.textContent.includes('Smoke product 4'));
   const unavailable=[...doc().querySelectorAll('.alternative-options .product-card')].find(row=>row.textContent.includes('Smoke product 4'));
-  check(unavailable?.querySelector('input[type=radio]:disabled')&&unavailable.textContent.includes('Unavailable'),'Unavailable alternative could be selected or was not labeled');
+  check(unavailable?.querySelector('[role=radio]:disabled')&&unavailable.textContent.includes('Unavailable'),'Unavailable alternative could be selected or was not labeled');
   await search('empty'); await wait(()=>doc().querySelector('.alternatives-empty'));
   check(doc().querySelector('#alternative-query')&&doc().querySelector('.alternatives-empty')?.textContent.includes('No alternatives were returned'),'Empty search was hidden or represented as a failure');
   await search('search-error');
@@ -348,8 +345,8 @@ const server = createServer((req, res) => {
   if (req.url === "/mcp") { void mcpHandler(req, res); return; }
   void (async () => {
     if (req.url === "/") { res.setHeader("content-type", "text/html"); res.end(page); return; }
-    if (req.url === "/viewer" || req.url === "/retired") {
-      const resource = (await client.readResource({ uri: req.url === "/retired" ? retiredV7 : PRODUCT_VIEWER_RESOURCE_URI })).contents[0];
+    if (req.url === "/viewer") {
+      const resource = (await client.readResource({ uri: PRODUCT_VIEWER_RESOURCE_URI })).contents[0];
       res.setHeader("content-type", "text/html"); res.end(resource && "text" in resource ? resource.text : "Missing viewer"); return;
     }
     if (req.url === "/reset" && req.method === "POST") { current = makeServer(); basketReads = 0; writes = 0; preparedForSimulation = undefined; simulatedSubmitted = undefined; simulatedSubmissions = 0; nextSubmissionStatus = "submitted"; unknownPriceScenario = false; res.end("reset"); return; }

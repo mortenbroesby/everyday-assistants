@@ -12,12 +12,10 @@ import { productionToolInventory } from "./production-acceptance.js";
 import type { ProductReviewSnapshot } from "./product-review.js";
 import { BasketProposalService } from "./proposals.js";
 import { PRODUCT_VIEWER_RESOURCE_URI } from "./product-viewer.js";
-import { RETIRED_PRODUCT_VIEWER_RESOURCE_URIS } from "./product-viewer-identity.js";
 import { NEMLIG_CODENAME, NEMLIG_VERSION } from "./runtime.js";
 
 const expectedProductViewerResources = [
   { uri: PRODUCT_VIEWER_RESOURCE_URI, name: "nemlig-product-viewer", title: "Your draft list", description: "Product results and the shared local shopping draft list supplied by Nemlig Assistant.", mimeType: "text/html;profile=mcp-app" },
-  ...RETIRED_PRODUCT_VIEWER_RESOURCE_URIS.map((uri, index) => ({ uri, name: `nemlig-retired-product-viewer-v${index}`, title: "Updated draft list", description: "This retired draft list card is inert and contains no shopping data.", mimeType: "text/html;profile=mcp-app" })),
 ];
 
 const basket: Basket = {
@@ -346,15 +344,7 @@ test("service acceptance exposes only its fixed read-only tool inventory", async
     const expected = expectedVariant;
     assert.deepEqual((await mcp.listTools()).tools.map(({ name }) => name).sort(), [...expected].sort());
     assert.deepEqual((await mcp.listResources()).resources, expectedProductViewerResources);
-    for (const uri of RETIRED_PRODUCT_VIEWER_RESOURCE_URIS) {
-      const retired = await mcp.readResource({ uri });
-      const body = retired.contents[0];
-      assert.ok(body && "text" in body);
-      if (body && "text" in body) {
-        assert.match(body.text, /This Draft list card is out of date/u);
-        assert.doesNotMatch(body.text, /tools\/call|callTool|hydrate|fetch\(/u);
-      }
-    }
+    await assert.rejects(mcp.readResource({ uri: "ui://nemlig/product-viewer-v-old.html" }), /resource/iu);
     await assert.rejects(mcp.callTool({ name: "add_approved_items", arguments: { approved_review: "00000000-0000-4000-8000-000000000000" } }), /not found/iu);
   });
   assert.equal(calls, 0);
@@ -802,13 +792,34 @@ test("only the newest Draft list card can invoke widget actions", async () => {
     assert.equal(oldEdit.isError, true);
     assert.match(toolText(oldEdit), /out of date/u);
 
+    const preview = await mcp.callTool({ name: "update_product_review", arguments: { action: { kind: "show" } } });
+    assert.equal(preview.isError, undefined, toolText(preview));
+    const readOnlySnapshot = preview.structuredContent as { review: ProductReviewSnapshot; view_id?: string };
+    assert.equal(readOnlySnapshot.review.review_id, latest.review.review_id);
+    assert.deepEqual(readOnlySnapshot.review.items, latest.review.items);
+    assert.equal(readOnlySnapshot.view_id, undefined, "automatic refresh acquired card authority");
+    const stillCurrent = await mcp.callTool({ name: "update_product_review", arguments: {
+      view_id: latest.view_id, review_id: latest.review.review_id, revision: latest.review.revision, action: { kind: "show" },
+    } });
+    assert.equal(stillCurrent.isError, undefined, toolText(stillCurrent));
+    assert.equal((stillCurrent.structuredContent as { view_id: string }).view_id, latest.view_id, "read-only refresh displaced the current card");
+    const refreshed = await mcp.callTool({ name: "update_product_review", arguments: { action: { kind: "show" }, activate: true } });
+    assert.equal(refreshed.isError, undefined, toolText(refreshed));
+    const refreshedView = refreshed.structuredContent as { review: ProductReviewSnapshot; view_id: string };
+    assert.equal(refreshedView.review.review_id, latest.review.review_id);
+    assert.deepEqual(refreshedView.review.items, latest.review.items);
+    assert.notEqual(refreshedView.view_id, latest.view_id);
+    const missingTokenEdit = await mcp.callTool({ name: "update_product_review", arguments: { action: { kind: "remove", product_ids: [7] } } });
+    assert.equal(missingTokenEdit.isError, true);
+    assert.match(toolText(missingTokenEdit), /current Draft list view_id is required/u);
+
     const currentEdit = await mcp.callTool({ name: "update_product_review", arguments: {
-      view_id: latest.view_id, review_id: latest.review.review_id, revision: latest.review.revision,
+      view_id: refreshedView.view_id, review_id: refreshedView.review.review_id, revision: refreshedView.review.revision,
       action: { kind: "navigate", destination: "ready" },
     } });
     assert.equal(currentEdit.isError, undefined, toolText(currentEdit));
     const current = currentEdit.structuredContent as { review: ProductReviewSnapshot; view_id: string };
-    assert.equal(current.view_id, latest.view_id);
+    assert.equal(current.view_id, refreshedView.view_id);
     assert.deepEqual(current.review.items.map(({ product_id }) => product_id), [7]);
 
     const oldSubmit = await mcp.callTool({ name: "submit_product_review", arguments: {
@@ -986,6 +997,9 @@ test("lost and ended review recovery reports absence, finds the current draft, a
     assert.equal(absent.isError, undefined, toolText(absent));
     assert.deepEqual(absent.structuredContent, { unavailable: true });
     assert.match(toolText(absent), /Ask before starting a new draft list/u);
+    const unavailableWidgetRefresh = await mcp.callTool({ name: "update_product_review", arguments: { action: { kind: "show" }, activate: true } });
+    assert.equal(unavailableWidgetRefresh.isError, undefined, toolText(unavailableWidgetRefresh));
+    assert.deepEqual(unavailableWidgetRefresh.structuredContent, { unavailable: true }, "refresh silently recreated a lost draft");
     const restarted = await mcp.callTool({ name: "start_product_review", arguments: { items: stale.items.map(({ product_id, quantity }) => ({ product_id, quantity })) } });
     const current = (restarted.structuredContent as { review: ProductReviewSnapshot }).review;
     assert.notEqual(current.review_id, stale.review_id);

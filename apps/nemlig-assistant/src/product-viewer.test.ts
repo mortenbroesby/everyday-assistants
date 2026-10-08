@@ -5,7 +5,6 @@ import type { ProductView } from "./product-presentation.js";
 import {
   PRODUCT_VIEWER_MIME_TYPE,
   PRODUCT_VIEWER_RESOURCE_METADATA,
-  PRODUCT_VIEWER_RESOURCE_VERSION,
   PRODUCT_VIEWER_RESOURCE_URI,
   productViewsToText,
   renderProductViewerHtml,
@@ -19,9 +18,8 @@ const complete: ProductView = {
   }, review: { kind: "review", quantity: 2, approved: false },
 };
 
-test("v11 viewer identity and complete headless fallback stay in sync", () => {
-  assert.equal(PRODUCT_VIEWER_RESOURCE_VERSION, "11");
-  assert.equal(PRODUCT_VIEWER_RESOURCE_URI, "ui://nemlig/product-viewer-v11.html");
+test("stable viewer identity and complete headless fallback stay in sync", () => {
+  assert.equal(PRODUCT_VIEWER_RESOURCE_URI, "ui://nemlig/product-viewer.html");
   assert.equal(PRODUCT_VIEWER_MIME_TYPE, "text/html;profile=mcp-app");
   assert.deepEqual(PRODUCT_VIEWER_RESOURCE_METADATA, {
     ui: { resourceUri: PRODUCT_VIEWER_RESOURCE_URI },

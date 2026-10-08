@@ -24,8 +24,6 @@ import {
 } from "./proposals.js";
 import { IMAGE_ORIGINS, createProductViewFromSummary, createProductViews, type ProductSummaryFacts, type ProductView } from "./product-presentation.js";
 import { PRODUCT_VIEWER_MIME_TYPE, PRODUCT_VIEWER_RESOURCE_DOMAINS, PRODUCT_VIEWER_RESOURCE_METADATA, PRODUCT_VIEWER_RESOURCE_URI, productViewsToText, renderProductViewerHtml } from "./product-viewer.js";
-import { RETIRED_PRODUCT_VIEWER_RESOURCE_URIS } from "./product-viewer-identity.js";
-import { renderRetiredProductViewerHtml } from "./retired-product-viewer.js";
 import { ProductReviewService } from "./product-review.js";
 import { resolveDetailedProductSearch } from "./product-discovery.js";
 import { NEMLIG_ASSISTANT_ICON } from "./nemlig-assistant-icon.js";
@@ -46,7 +44,7 @@ export interface McpRequestContext {
 export const serviceAcceptanceToolInventory = [
   "find_groceries", "show_my_basket",
 ] as const;
-export const serviceAcceptanceResourceInventory = [PRODUCT_VIEWER_RESOURCE_URI, ...RETIRED_PRODUCT_VIEWER_RESOURCE_URIS] as const;
+export const serviceAcceptanceResourceInventory = [PRODUCT_VIEWER_RESOURCE_URI] as const;
 
 const candidateSchema = z.object({
   id: z.number().int().positive().optional(),
@@ -234,7 +232,7 @@ export function createMcpServer(
 
 The real Nemlig basket is add-only. Never remove, decrease, replace, swap, clear, check out, pay, order, or select delivery slots. An added quantity is additional units, not a new absolute total. Local draft list edits never write to Nemlig.
 
-For product discovery, use a concise Danish catalogue phrase; preserve a distinctive brand when useful. Search returns detailed candidates from one provider response, not the entire catalogue. An empty result differs from a failed search. Search and conversation edits do not open cards. When the user wants a visual Draft list, call start_product_review with exact returned IDs; it opens the current list directly. Use it once for the current visual list. Repeating it renders another card, preserves the list, and replaces older card authority; repeat only to reopen a stale card or when the user asks to see it again. Widget edits stay in the same card. Use update_product_review_conversation and submit_product_review_conversation for model-side text/data operations. The legacy update_product_review and submit_product_review names now require the newest card's view token, so cached older cards cannot act. After a stale edit, show current state and never replay the edit.
+For product discovery, use a concise Danish catalogue phrase; preserve a distinctive brand when useful. Search returns detailed candidates from one provider response, not the entire catalogue. An empty result differs from a failed search. Search and conversation edits do not open cards. When the user wants a visual Draft list, call start_product_review with exact returned IDs; it opens the current list directly. Use it once for the current visual list. Repeating it renders another card, preserves the list, and replaces older card authority; repeat only to reopen a stale card or when the user asks to see it again. When reopening the existing list, first use update_product_review_conversation show without a review ID; if no active list remains, tell the user and ask before starting over. A stale card may automatically read and display the active list without a view token, but remains read-only. Only an explicit user action may activate that card and issue a new view token; it never starts a missing list. Widget edits stay in the same card. Use update_product_review_conversation and submit_product_review_conversation for model-side text/data operations. The legacy update_product_review and submit_product_review names require the newest card's view token for edits, so cached older cards cannot edit. After a stale edit, show current state and never replay the edit.
 
 Only Ready lines may be prepared for the real basket. A clear instruction to add the unchanged current Ready draft list authorizes exactly that prepared payload without another chat approval; local Ready status or a request merely to inspect does not. If product IDs, quantities, or scope are unclear or changed after the instruction, ask for exact approval. For a model-side add, call submit_product_review_conversation only with the current review ID, revision, and submission ID. The widget submit action additionally requires its newest view token. Fresh validation and verified basket readback are mandatory. After an uncertain write, inspect the draft list and actual basket; never retry automatically.
 
@@ -268,14 +266,6 @@ The local draft list is conversation-scoped and temporary. If it is unavailable,
     { title: "Your draft list", description: "Product results and the shared local shopping draft list supplied by Nemlig Assistant.", mimeType: PRODUCT_VIEWER_MIME_TYPE },
     async (uri) => ({ contents: [{ uri: uri.href, mimeType: PRODUCT_VIEWER_MIME_TYPE, text: renderProductViewerHtml(), _meta: { ui: { csp: { connectDomains: [], resourceDomains: [...PRODUCT_VIEWER_RESOURCE_DOMAINS] }, prefersBorder: true } } }] }),
   );
-  for (const [index, uri] of RETIRED_PRODUCT_VIEWER_RESOURCE_URIS.entries()) {
-    server.registerResource(
-      `nemlig-retired-product-viewer-v${index}`,
-      uri,
-      { title: "Updated draft list", description: "This retired draft list card is inert and contains no shopping data.", mimeType: PRODUCT_VIEWER_MIME_TYPE },
-      async (resourceUri) => ({ contents: [{ uri: resourceUri.href, mimeType: PRODUCT_VIEWER_MIME_TYPE, text: renderRetiredProductViewerHtml(), _meta: { ui: { csp: { connectDomains: [], resourceDomains: [] }, prefersBorder: true } } }] }),
-    );
-  }
   const localConnectionId = randomUUID();
   const connectionId = (sessionId: string | undefined): string =>
     requestContext ? `${requestContext.principalKey}\0${requestContext.policyRevision}` : sessionId ?? localConnectionId;
@@ -438,18 +428,27 @@ The local draft list is conversation-scoped and temporary. If it is unavailable,
       : runMcpOperation("update_product_review_conversation", perform);
   });
 
-  // Keep the legacy names for cached cards, but require the current view token.
-  // Old cards submit without it and fail schema validation before any action runs.
+  // Keep these names for already-open cards. Tokenless show stays read-only;
+  // every mutation requires the current view token.
   registerTool("update_product_review", {
     title: "Update the current Draft list view",
-    description: "Internal UI action for the newest rendered Draft list only. Older card view IDs are rejected before any local change.",
-    inputSchema: z.object({ view_id: z.string().uuid(), review_id: z.string().uuid(), revision: z.number().int().positive(), action: reviewActionSchema }),
-    outputSchema: z.union([z.object({ review: reviewSnapshotSchema, view_id: z.string().uuid() }), z.object({ ended: z.literal(true) }), z.object({ unavailable: z.literal(true) })]),
+    description: "Internal UI action for the current Draft list. Edits require the newest rendered view token; older card view IDs are rejected before any local change. A show without view or draft IDs reads the current conversation draft without authority. Only the explicit activate option, used after a user click, issues a new view token; neither show nor activate can change or recreate the draft.",
+    inputSchema: z.object({ view_id: z.string().uuid().optional(), review_id: z.string().uuid().optional(), revision: z.number().int().positive().optional(), action: reviewActionSchema, activate: z.boolean().optional() }),
+    outputSchema: z.union([z.object({ review: reviewSnapshotSchema, view_id: z.string().uuid().optional() }), z.object({ ended: z.literal(true) }), z.object({ unavailable: z.literal(true) })]),
     annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true },
     _meta: { ui: { visibility: ["app"] }, "openai/widgetAccessible": true },
-  }, ({ view_id, review_id, revision, action }, ctx) => {
+  }, ({ view_id, review_id, revision, action, activate }, ctx) => {
     const perform = async () => {
       const owner = reviewOwner(ctx);
+      if (action.kind === "show" && (!view_id || !review_id || revision === undefined)) {
+        // Stale-card lifecycle reads stay read-only; only a deliberate user action may take authority.
+        const current = await updateDraft(owner, undefined, undefined, action, ctx.mcpReq.signal);
+        return success(activate && current.review ? reviews.createView(owner, current.review.review_id) : current);
+      }
+      if (activate) throw new NemligError("Only show can activate the current Draft list view.");
+      if (!view_id || !review_id || revision === undefined) {
+        throw new NemligError("A current Draft list view_id is required for this action.");
+      }
       reviews.assertCurrentView(owner, review_id, view_id);
       const result = await updateDraft(owner, review_id, revision, action, ctx.mcpReq.signal);
       return success(result.review ? { ...result, view_id } : result);

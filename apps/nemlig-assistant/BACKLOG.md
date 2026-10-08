@@ -171,12 +171,12 @@ This item does not authorize a live proposal apply or any basket mutation.
 
 ## P1 — predictable automated production deployment
 
-**Status:** Being completed by GitHub issue #96; code/readiness gates are in progress, with live acceptance and retention proof pending the next exact-main release after recovery-lease reconciliation.
+**Status:** The lease, journal, recovery, and automatic-retention design was retired by the owner on 2026-10-07 and is being replaced by the routine-only serialized deploy in `remove-production-release-leases`. The previous live-acceptance and cleanup gates no longer authorize rebuilding that machinery; issue #96 still needs an explicit disposition after this change lands.
 
 **Epic outcome:** An approved green merge to `main` is the routine deploy action.
-The protected workflow deploys and verifies the exact SHA, records bounded
-evidence, and prunes only verified surplus Container images after acceptance.
-Manual dispatch is reserved for exceptional recovery.
+The protected workflow builds, deploys, and verifies the exact SHA. Failed or
+interrupted deployments require manual state inspection; image and Worker
+history are left untouched.
 
 ### Story P1.D1 — automatically admit and serialize approved releases
 
@@ -184,20 +184,21 @@ Manual dispatch is reserved for exceptional recovery.
   credentials out of pull-request jobs and inside the protected environment.
 - [x] Revalidate exact SHA provenance and prevent stale or queued candidates
   from overwriting newer production.
-- [x] Serialize hosted deploy and retention work with the shared remote lease;
-  never take over an active or unknown operation.
+- [x] Serialize hosted deployment with GitHub Actions concurrency. The former
+  shared remote lease was removed on 2026-10-07.
 
 ### Story P1.D2 — automate deploy and read-only acceptance
 
-- [x] Replace historical cutover inputs with one routine workflow path and an
-  explicit recovery-only dispatch.
-- [x] Expose a protected reconciliation dispatch for a saved pending rollback;
-  it proves the exact disabled state before releasing the recovery lease and
-  never redeploys the candidate.
+- [x] Replace historical cutover inputs with one routine workflow path; all
+  recovery dispatch and persistent release state were retired on 2026-10-07.
+- [x] Historical implementation: protected reconciliation for a saved pending
+  rollback. Superseded on 2026-10-07 when the owner retired recovery and
+  durable deployment state.
 - [x] Preserve bounded runtime acceptance and the manual kill switch,
   authentication-before-wake, EU `lite` placement and one-Container ceiling.
-- [ ] Prove the exact merged SHA reaches live read-only acceptance after the
-  unresolved production journal is safely reconciled.
+- [ ] Prove the exact merged SHA reaches live read-only acceptance. This
+  remains a separate issue #96 delivery question and no longer depends on
+  reconciling a saved journal.
 
 ### Story P1.D3 — retain images safely and make evidence recoverable
 
@@ -208,10 +209,10 @@ Manual dispatch is reserved for exceptional recovery.
   to ten accepted images immediately after deployment acceptance.
 - [x] Pass focused failure-path tests, strict specs, privacy, `pnpm verify`,
   package smoke, and credential-free production readiness.
-- [ ] After the unresolved production journal is reconciled, prove post-
-  acceptance cleanup reaches ten images or explain protected/uncertain holds.
-- [ ] Integrate exact-head green `main`, prove production acceptance and
-  retention, then sync and archive the OpenSpec change.
+- Automatic image and Worker-version cleanup is retired. Do not resume these
+  historical tasks without a new separately reviewed design.
+- [ ] Reconcile issue #96's remaining delivery question after the routine-only
+  workflow lands; image/Worker retention is retired and is not a release gate.
 
 ## P1 — prove the kill switch and cost-containment safety net
 

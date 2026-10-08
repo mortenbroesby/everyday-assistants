@@ -2,7 +2,6 @@ import assert from "node:assert/strict";
 import { isDeepStrictEqual } from "node:util";
 import { serviceAcceptanceResourceInventory, serviceAcceptanceToolInventory } from "./mcp.js";
 import { PRODUCT_VIEWER_MIME_TYPE, PRODUCT_VIEWER_RESOURCE_DOMAINS, PRODUCT_VIEWER_RESOURCE_URI, renderProductViewerHtml } from "./product-viewer.js";
-import { RETIRED_PRODUCT_VIEWER_RESOURCE_URIS } from "./product-viewer-identity.js";
 import { NEMLIG_CODENAME, NEMLIG_VERSION } from "./runtime.js";
 
 interface ToolResult {
@@ -17,7 +16,7 @@ export const productionToolInventory = {
   appActions: ["update_product_review", "submit_product_review"],
 } as const;
 
-export const productionResourceInventory = [PRODUCT_VIEWER_RESOURCE_URI, ...RETIRED_PRODUCT_VIEWER_RESOURCE_URIS] as const;
+export const productionResourceInventory = [PRODUCT_VIEWER_RESOURCE_URI] as const;
 export const prohibitedProductionTools = ["checkout", "place_order", "pay", "change_delivery_slot"] as const;
 
 type ToolName = typeof productionToolInventory[keyof typeof productionToolInventory][number];

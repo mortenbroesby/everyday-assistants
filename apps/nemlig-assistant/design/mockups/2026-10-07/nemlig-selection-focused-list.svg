@@ -1,0 +1,57 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="390" height="844" viewBox="0 0 390 844">
+  <rect width="390" height="844" fill="#151918"/>
+  <rect x="14" y="14" width="362" height="816" rx="26" fill="#0e1713" stroke="#294034"/>
+  <rect x="34" y="35" width="34" height="34" rx="10" fill="#8be0aa"/>
+  <text x="80" y="50" fill="#f5fbf6" font-family="Arial, sans-serif" font-size="14" font-weight="700">Your Nemlig selection</text>
+  <text x="80" y="66" fill="#aebbb2" font-family="Arial, sans-serif" font-size="11">Local shopping workspace</text>
+  <rect x="324" y="32" width="34" height="34" rx="12" fill="#18241e" stroke="#31473a"/>
+  <text x="332" y="54" fill="#aebbb2" font-family="Arial, sans-serif" font-size="18">•••</text>
+  <text x="34" y="112" fill="#f5fbf6" font-family="Arial, sans-serif" font-size="25" font-weight="700">Choose your products</text>
+  <text x="34" y="133" fill="#b2bdb5" font-family="Arial, sans-serif" font-size="12">Review exact products before moving them to Ready.</text>
+  <rect x="34" y="154" width="322" height="52" rx="14" fill="#243329"/>
+  <rect x="37" y="157" width="157" height="46" rx="12" fill="#14241c"/>
+  <text x="76" y="185" fill="#f5fbf6" font-family="Arial, sans-serif" font-size="13" font-weight="700">To decide (3)</text>
+  <text x="243" y="185" fill="#cad5cc" font-family="Arial, sans-serif" font-size="13" font-weight="700">Ready (2)</text>
+  <text x="34" y="242" fill="#f5fbf6" font-family="Arial, sans-serif" font-size="15" font-weight="700">To decide</text>
+  <text x="299" y="242" fill="#b2bdb5" font-family="Arial, sans-serif" font-size="12">3 products</text>
+  <line x1="34" y1="251" x2="356" y2="251" stroke="#294034"/>
+  <rect x="36" y="273" width="18" height="18" rx="3" fill="#8be0aa"/>
+  <path d="M40 282l4 4 7-9" fill="none" stroke="#173321" stroke-width="2"/>
+  <rect x="66" y="264" width="62" height="62" rx="14" fill="#28362d"/>
+  <rect x="89" y="276" width="16" height="36" rx="7" fill="#eff0ed"/>
+  <ellipse cx="97" cy="276" rx="8" ry="3" fill="#d6d9d5"/>
+  <text x="139" y="282" fill="#f5fbf6" font-family="Arial, sans-serif" font-size="15" font-weight="700">Arla minimælk</text>
+  <text x="285" y="282" fill="#f5fbf6" font-family="Arial, sans-serif" font-size="13" font-weight="700">14,95 kr.</text>
+  <text x="139" y="307" fill="#aebbb2" font-family="Arial, sans-serif" font-size="11">Arla · 1 L · 14,95 kr./L</text>
+  <text x="328" y="307" fill="#8be0aa" font-family="Arial, sans-serif" font-size="12" font-weight="700">1 ×</text>
+  <line x1="66" y1="340" x2="356" y2="340" stroke="#294034"/>
+  <text x="66" y="369" fill="#f5fbf6" font-family="Arial, sans-serif" font-size="13" font-weight="700">Quantity</text>
+  <rect x="256" y="348" width="33" height="33" rx="10" fill="#18241e" stroke="#31473a"/>
+  <text x="268" y="370" fill="#8be0aa" font-family="Arial, sans-serif" font-size="20">−</text>
+  <text x="305" y="370" fill="#f5fbf6" font-family="Arial, sans-serif" font-size="14" font-weight="700">1</text>
+  <rect x="321" y="348" width="33" height="33" rx="10" fill="#18241e" stroke="#31473a"/>
+  <text x="331" y="370" fill="#8be0aa" font-family="Arial, sans-serif" font-size="20">+</text>
+  <line x1="66" y1="397" x2="356" y2="397" stroke="#294034"/>
+  <text x="66" y="428" fill="#f5fbf6" font-family="Arial, sans-serif" font-size="13" font-weight="700">Varebeskrivelse</text>
+  <text x="342" y="428" fill="#c9d3cc" font-family="Arial, sans-serif" font-size="20">+</text>
+  <line x1="66" y1="444" x2="356" y2="444" stroke="#294034"/>
+  <text x="66" y="475" fill="#f5fbf6" font-family="Arial, sans-serif" font-size="13" font-weight="700">Varedeklaration</text>
+  <text x="342" y="475" fill="#c9d3cc" font-family="Arial, sans-serif" font-size="20">+</text>
+  <line x1="66" y1="491" x2="356" y2="491" stroke="#294034"/>
+  <text x="66" y="522" fill="#f5fbf6" font-family="Arial, sans-serif" font-size="13" font-weight="700">Detaljer om varen</text>
+  <text x="342" y="522" fill="#c9d3cc" font-family="Arial, sans-serif" font-size="20">+</text>
+  <text x="66" y="570" fill="#8be0aa" font-family="Arial, sans-serif" font-size="13" font-weight="700">Choose alternative</text>
+  <line x1="66" y1="600" x2="356" y2="600" stroke="#294034"/>
+  <rect x="36" y="620" width="18" height="18" rx="3" fill="#25332a" stroke="#65746b"/>
+  <rect x="66" y="612" width="62" height="62" rx="14" fill="#28362d"/>
+  <rect x="80" y="635" width="34" height="13" rx="5" fill="#f6d771" transform="rotate(-15 97 641)"/>
+  <text x="139" y="631" fill="#f5fbf6" font-family="Arial, sans-serif" font-size="15" font-weight="700">Lurpak smørbar</text>
+  <text x="285" y="631" fill="#f5fbf6" font-family="Arial, sans-serif" font-size="13" font-weight="700">29,95 kr.</text>
+  <text x="139" y="655" fill="#aebbb2" font-family="Arial, sans-serif" font-size="11">Lurpak · 200 g · 149,75 kr./kg</text>
+  <text x="328" y="655" fill="#8be0aa" font-family="Arial, sans-serif" font-size="12" font-weight="700">2 ×</text>
+  <rect x="34" y="740" width="322" height="66" rx="18" fill="#173a28" stroke="#396d4b"/>
+  <text x="54" y="765" fill="#d9f4e2" font-family="Arial, sans-serif" font-size="14" font-weight="700">2 selected</text>
+  <text x="54" y="785" fill="#a9cdb4" font-family="Arial, sans-serif" font-size="11">Only local changes</text>
+  <rect x="203" y="753" width="136" height="39" rx="12" fill="#8be0aa"/>
+  <text x="220" y="778" fill="#11321e" font-family="Arial, sans-serif" font-size="12" font-weight="700">Add 2 to Ready</text>
+</svg>

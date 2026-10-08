@@ -306,6 +306,11 @@ viewer.
   browser business state; show supplied comparison facts directly and retain
   the existing search, back and replace actions. Verify replacement preserves
   quantity, returns to To decide, and requires later batch acceptance.
+- [x] 13.10a Correct the alternatives interaction so the comparison row itself
+  is an accessible, visibly selected choice; retain the explicit replace action.
+  Consolidate supplied long-form facts into only Varebeskrivelse,
+  Varedeklaration and Detaljer om varen, and cover the three-section limit in
+  the loopback browser smoke.
 - [x] 13.11 Version/release Story 3 in one PR after focused tests, loopback
   browser smoke, strict OpenSpec validation and applicable repository gates.
 - [ ] 13.12 After merge/release, perform and record native ChatGPT Story 3
