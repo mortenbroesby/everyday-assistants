@@ -352,7 +352,9 @@ try {
   await frame.getByRole("button", { name: "Review exact Nemlig change" }).click();
   await frame.getByRole("button", { name: "Add to Nemlig basket" }).click();
   await page.evaluate(() => { window.failNext = true; });
+  const submitCallsBeforeUncertain = await page.evaluate(() => window.calls.length);
   await frame.getByRole("button", { name: "Add to Nemlig" }).click();
+  await page.waitForFunction((before) => window.calls.slice(before).some((call) => call.name === "submit_product_review"), submitCallsBeforeUncertain);
   await frame.getByText("We could not verify the addition").waitFor();
   assert.equal(await page.evaluate(() => window.submissionAttempts), 1, "explicit submission was not attempted exactly once");
   assert.equal(await frame.locator('input[type="checkbox"]').count(), 0, "uncertain submission left review editing active");
