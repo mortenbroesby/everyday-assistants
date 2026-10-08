@@ -225,10 +225,10 @@ explicit alternatives searches hydrate every unique eligible result in the
 single provider response with three concurrent reads and bounded provider
 deadlines/retries. This does not enumerate the whole catalogue.
 
-When you are happy with Ready, choose **Send to Nemlig basket**.
+When you are happy with Ready, choose **Review exact Nemlig change**.
 This prepares fresh exact product prices and quantities and shows the separate
-on-screen confirmation. Inspect the prepared lines, then confirm in the viewer
-to submit from the viewer. In conversation, a clear instruction to add the
+on-screen confirmation. Inspect the prepared lines, then choose **Add to Nemlig
+basket** and confirm the exact addition in the viewer. In conversation, a clear instruction to add the
 current Ready draft list is itself authorization for only those unchanged
 prepared lines; if you only ask to prepare/inspect, or the intended products or
 quantities are unclear or have changed, the assistant must ask before submitting.
