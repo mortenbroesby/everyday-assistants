@@ -3,7 +3,7 @@
   "author": {
     "name": "Morten & Josephine Broesby-Olsen"
   },
-  "description": "Search groceries on Nemlig and compare products, package sizes, and prices.",
+  "description": "Search and compare Nemlig groceries, review a Draft list, and add selected items only after authorization.",
   "extensions": {
     "com.openai": {
       "apps": "./.app.json",
@@ -13,17 +13,17 @@
         ],
         "category": "Productivity",
         "composerIcon": "./assets/icon.png",
-        "defaultPrompt": "Help me find groceries on Nemlig. Ask what I'm looking for, then compare matching products by exact size, current price, and unit price where available.",
+        "defaultPrompt": "Help me find groceries for my shopping list.",
         "developerName": "Morten & Josephine Broesby-Olsen",
         "displayName": "Nemlig Assistant",
         "logo": "./assets/icon.png",
-        "longDescription": "Find products in Nemlig's catalogue, compare exact package sizes, current prices and unit prices, and prepare a shopping list for review. Items are added to your basket only after you authorize the exact selection.",
-        "shortDescription": "Grocery shopping"
+        "longDescription": "Search Nemlig products, compare package sizes and prices, and review a local Draft list. Add selected items to the basket only after authorization.",
+        "shortDescription": "Shop groceries on Nemlig"
       }
     }
   },
-  "name": "nemlig-assistant",
-  "version": "0.1.4",
+  "name": "nemlig-shopping",
+  "version": "0.1.2",
   "keywords": [
     "groceries",
     "grocery shopping",
