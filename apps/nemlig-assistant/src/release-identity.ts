@@ -1,5 +1,5 @@
 export function parseCodename(codename: string): string {
-  if (!/^[A-Z][a-z]{1,23}$/u.test(codename) || codename.trim() !== codename) {
+  if (!/^[A-Z][a-z]{1,23}$/u.test(codename)) {
     throw new Error(`Invalid Nemlig release codename "${codename}".`);
   }
   return codename;
