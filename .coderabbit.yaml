@@ -1,0 +1,41 @@
+reviews:
+  profile: quiet
+  request_changes_workflow: false
+  allow_author_approval: false
+  high_level_summary: false
+  sequence_diagrams: false
+  suggested_labels: false
+  suggested_reviewers: false
+  in_progress_fortune: false
+  enable_prompt_for_ai_agents: false
+  auto_review:
+    enabled: true
+    auto_incremental_review: true
+  path_filters:
+    - "!pnpm-lock.yaml"
+    - "!**/dist/**"
+    - "!**/.candidate-dist/**"
+    - "!**/coverage/**"
+  pre_merge_checks:
+    docstrings:
+      mode: "off"
+    title:
+      mode: "off"
+    description:
+      mode: "off"
+    issue_assessment:
+      mode: "off"
+  finishing_touches:
+    docstrings:
+      enabled: false
+    unit_tests:
+      enabled: false
+    autofix:
+      enabled: false
+    fix_ci:
+      enabled: false
+    resolve_merge_conflict:
+      enabled: false
+  tools:
+    eslint:
+      enabled: false
