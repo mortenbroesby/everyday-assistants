@@ -6,14 +6,19 @@ const workflowPath = new URL("../../../.github/workflows/nemlig-production.yml",
 const deployScriptPath = new URL("../scripts/production-deploy.ts", import.meta.url);
 const packagePath = new URL("../package.json", import.meta.url);
 
-test("production workflow queues successful exact-main CI releases without cancellation", async () => {
+test("production workflow deploys only the current successful main CI candidate", async () => {
   const source = await readFile(workflowPath, "utf8");
+  const releaseGate = source.slice(source.indexOf("  release-gate:"), source.indexOf("\n  deploy:"));
   assert.match(source, /^\x20{2}workflow_run:\n\x20{4}workflows: \[CI\]\n\x20{4}types: \[completed\]/m);
   assert.match(source, /^concurrency:\n\x20{2}group: nemlig-production\n\x20{2}cancel-in-progress: false\n\x20{2}queue: max$/m);
   assert.match(source, /workflow_run\.conclusion == 'success'/u);
   assert.match(source, /workflow_run\.event == 'push'/u);
   assert.match(source, /workflow_run\.head_branch == 'main'/u);
-  assert.match(source, /git merge-base --is-ancestor "\$CANDIDATE_SHA" origin\/main/u);
+  assert.match(releaseGate, /CURRENT_MAIN_SHA="\$\(git rev-parse origin\/main\)"/u);
+  assert.match(releaseGate, /if \[\[ "\$CANDIDATE_SHA" != "\$CURRENT_MAIN_SHA" \]\]; then[\s\S]*?Skipping superseded CI candidate[\s\S]*?deploy=false/u);
+  assert.doesNotMatch(releaseGate, /git merge-base --is-ancestor "\$CANDIDATE_SHA" origin\/main/u);
+  assert.match(source, /echo "deploy=true" >> "\$GITHUB_OUTPUT"/u);
+  assert.match(source, /deploy:\n\s+needs: release-gate\n\s+if: needs\.release-gate\.outputs\.deploy == 'true'/u);
   assert.doesNotMatch(source, /workflow_dispatch|schedule:|pull_request:/u);
 });
 

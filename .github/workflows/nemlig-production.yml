@@ -23,6 +23,7 @@ jobs:
     timeout-minutes: 3
     outputs:
       candidate_sha: ${{ steps.candidate.outputs.sha }}
+      deploy: ${{ steps.candidate.outputs.deploy }}
     steps:
       - name: Checkout current main history
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6.0.1
@@ -40,12 +41,19 @@ jobs:
           [[ "$CI_WORKFLOW" == "CI" ]]
           [[ "$CANDIDATE_SHA" =~ ^[0-9a-f]{40}$ ]]
           git fetch origin refs/heads/main:refs/remotes/origin/main
-          git merge-base --is-ancestor "$CANDIDATE_SHA" origin/main
+          CURRENT_MAIN_SHA="$(git rev-parse origin/main)"
+          if [[ "$CANDIDATE_SHA" != "$CURRENT_MAIN_SHA" ]]; then
+            printf '%s\n' "Skipping superseded CI candidate: $CANDIDATE_SHA (current main: $CURRENT_MAIN_SHA)" >> "$GITHUB_STEP_SUMMARY"
+            echo "deploy=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           printf 'sha=%s\n' "$CANDIDATE_SHA" >> "$GITHUB_OUTPUT"
-          printf '%s\n' "Deploy candidate: `$CANDIDATE_SHA`" >> "$GITHUB_STEP_SUMMARY"
+          echo "deploy=true" >> "$GITHUB_OUTPUT"
+          printf '%s\n' "Deploy candidate: $CANDIDATE_SHA" >> "$GITHUB_STEP_SUMMARY"
 
   deploy:
     needs: release-gate
+    if: needs.release-gate.outputs.deploy == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
