@@ -60,10 +60,19 @@ function scan() {
   return findingsFrom(JSON.parse(stdout));
 }
 
-function snapshot(findings) {
+function snapshot(findings, bootstrap) {
   const head = execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim();
   const main = execFileSync("git", ["rev-parse", "origin/main"], { cwd: root, encoding: "utf8" }).trim();
-  if (head !== main) throw new Error("Code-health baselines may only be generated from the current origin/main commit.");
+  const mergeBase = execFileSync("git", ["merge-base", "HEAD", "origin/main"], { cwd: root, encoding: "utf8" }).trim();
+  let appChanges = false;
+  try {
+    execFileSync("git", ["diff", "--quiet", "origin/main...HEAD", "--", "apps/nemlig-assistant"], { cwd: root });
+  } catch {
+    appChanges = true;
+  }
+  if (head !== main && (!bootstrap || mergeBase !== main || appChanges)) {
+    throw new Error("Code-health baselines may only be generated from origin/main, or with --bootstrap from a branch whose app source matches origin/main.");
+  }
   return { schemaVersion: 1, tool: { name: "knip", version: "6.40.0" }, generatedFrom: main, findings };
 }
 
@@ -72,15 +81,17 @@ function summary(result) {
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  const mode = process.argv[2];
-  const baselineArgument = process.argv[3] === "--baseline" ? process.argv[4] : undefined;
+  const arguments_ = process.argv.slice(2).filter((argument) => argument !== "--");
+  const mode = arguments_[0];
+  const baselineArgument = arguments_[1] === "--baseline" ? arguments_[2] : undefined;
   if (mode === "baseline") {
-    if (baselineArgument) throw new Error("Baseline generation does not accept a baseline override.");
+    const bootstrap = arguments_[1] === "--bootstrap";
+    if (arguments_.length !== (bootstrap ? 2 : 1)) throw new Error("Usage: nemlig-code-health.mjs baseline [--bootstrap]");
     mkdirSync(resolve(root, ".code-health"), { recursive: true });
-    writeFileSync(baselinePath, `${JSON.stringify(snapshot(scan()), null, 2)}\n`);
+    writeFileSync(baselinePath, `${JSON.stringify(snapshot(scan(), bootstrap), null, 2)}\n`);
     console.log(`Wrote ${baselinePath}`);
   } else if (mode === "check") {
-    if (process.argv.length > (baselineArgument ? 5 : 3)) throw new Error("Usage: nemlig-code-health.mjs check [--baseline <path>]");
+    if (arguments_.length !== (baselineArgument ? 3 : 1)) throw new Error("Usage: nemlig-code-health.mjs check [--baseline <path>]");
     const baseline = validateBaseline(JSON.parse(readFileSync(baselineArgument ?? baselinePath, "utf8")));
     const result = compareFindings(baseline.findings, scan());
     console.log(summary(result));

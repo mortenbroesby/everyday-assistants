@@ -4,7 +4,7 @@
     "name": "knip",
     "version": "6.40.0"
   },
-  "generatedFrom": "223eed757061994f0f175e5e0950d07ba8d54ba2",
+  "generatedFrom": "b886e8da69f501091a8b469de9349a9d52a21904",
   "findings": [
     {
       "category": "exports",

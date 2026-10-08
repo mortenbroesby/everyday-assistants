@@ -112,7 +112,10 @@ counts, so a same-count replacement is a regression. Existing findings are
 honest baseline debt; new findings fail CI, while resolved findings are
 reported. The command cannot modify source, fix findings, or refresh the
 baseline. Only the explicit reviewed `pnpm code-health:baseline` command writes
-a baseline, and only while `HEAD` is the current `origin/main` commit.
+a baseline, and only while `HEAD` is the current `origin/main` commit. The
+one-time `--bootstrap` form also requires that the branch has no Nemlig app
+differences from `origin/main`; it records that target commit, never the branch
+SHA.
 
 Agents should inspect a relevant result, avoid unrelated baseline cleanup, and
 prove any deletion independently. Do not add broad ignores merely to quiet the
