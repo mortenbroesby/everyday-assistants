@@ -1,0 +1,24 @@
+{
+  "apps": "./.app.json",
+  "interface": {
+    "capabilities": [
+      "Interactive"
+    ],
+    "category": "Productivity",
+    "composerIcon": "./assets/icon.png",
+    "defaultPrompt": "Find Danish oat milk options, show current exact package sizes and prices, and compare by unit price.",
+    "developerName": "Morten & Josephine Broesby-Olsen",
+    "displayName": "Nemlig Assistant",
+    "logo": "./assets/icon.png",
+    "longDescription": "Private family grocery shopping using the existing Nemlig Assistant connection. Compare current exact package sizes, prices and unit prices, review a temporary Draft list, and add only through the existing exact preparation and authorization flow. No basket removals, reductions, checkout or payment.",
+    "shortDescription": "Family grocery shopping"
+  },
+  "name": "nemlig-assistant",
+  "version": "0.1.2",
+  "description": "Private draft family grocery shopping workflow reusing the existing Nemlig Assistant app.",
+  "author": {
+    "name": "Morten & Josephine Broesby-Olsen"
+  },
+  "keywords": [],
+  "skills": "./skills"
+}

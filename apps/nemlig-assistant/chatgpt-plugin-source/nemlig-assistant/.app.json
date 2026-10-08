@@ -1,0 +1,8 @@
+{
+  "apps": {
+    "nemlig-assistant": {
+      "id": "asdk_app_6ab5680715148191a4e7cebd0ab47123",
+      "required": true
+    }
+  }
+}
