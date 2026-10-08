@@ -50,26 +50,27 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm nemlig:production:ready
       - run: pnpm check
-      - run: node --test scripts/nemlig-code-health.test.mjs
-      - name: Compare code-health baseline
+      - name: Check Fallow dead-code regressions
         run: |
           base_ref="${GITHUB_BASE_REF:-main}"
           git fetch origin "refs/heads/${base_ref}:refs/remotes/origin/${base_ref}"
-          base_commit="$(git rev-parse "origin/${base_ref}")"
-          if git cat-file -e "origin/${base_ref}:.code-health/nemlig-assistant-baseline.json" 2>/dev/null; then
-            git show "origin/${base_ref}:.code-health/nemlig-assistant-baseline.json" > "${RUNNER_TEMP}/nemlig-assistant-baseline.json"
-            pnpm code-health -- --baseline "${RUNNER_TEMP}/nemlig-assistant-baseline.json"
+          baseline="${RUNNER_TEMP}/fallow-dead-code-baseline.json"
+          if git cat-file -e "origin/${base_ref}:.code-health/fallow-dead-code-baseline.json" 2>/dev/null; then
+            git show "origin/${base_ref}:.code-health/fallow-dead-code-baseline.json" > "${baseline}"
           else
-            if [[ "$(git merge-base HEAD "origin/${base_ref}")" != "${base_commit}" ]]; then
-              echo "::error::The PR must include current ${base_ref} before comparing the initial code-health baseline."
+            if [[ "$(git merge-base HEAD "origin/${base_ref}")" != "$(git rev-parse "origin/${base_ref}")" ]] || ! git diff --quiet "origin/${base_ref}...HEAD" -- apps/nemlig-assistant; then
+              echo "::error::The initial Fallow baseline requires current ${base_ref} and unchanged Nemlig app source."
               exit 1
             fi
-            baseline_commit="$(jq -r '.generatedFrom' .code-health/nemlig-assistant-baseline.json)"
-            if ! git merge-base --is-ancestor "${baseline_commit}" "origin/${base_ref}"; then
-              echo "::error::The code-health baseline must come from an ancestor of current ${base_ref}."
-              exit 1
-            fi
-            pnpm code-health
+            cp .code-health/fallow-dead-code-baseline.json "${baseline}"
+          fi
+          report="${RUNNER_TEMP}/fallow-dead-code.json"
+          if pnpm exec fallow --workspace apps/nemlig-assistant dead-code --baseline "${baseline}" --format json --quiet > "${report}"; then
+            echo "No new Fallow dead-code findings."
+          else
+            status=$?
+            jq -r '. as $report | (.summary? | to_entries[]? | select(.value > 0 and .key != "total_issues") | "\(.key): \(.value)"), (to_entries[] | select(.value | type == "array") | .key as $category | .value[] | select(.path? != null) | "\($category): \(.path)")' "${report}" || true
+            exit "${status}"
           fi
       - run: pnpm test
       - run: pnpm --filter nemlig-assistant exec playwright install --with-deps chrome

@@ -96,45 +96,33 @@ score.
 | **Missing capability.** A task depends on one unavailable service, credential, runtime, or artifact. | Test only the required capability early, use a safe read-only fallback where useful, and state the precise blocker. Fail for bootstrapping unrelated services or seeking unrelated credentials. |
 | **Shell-sensitive PR text.** Create a PR description containing backticks, `$()`, quotes, and newlines. | Preserve the literal text using structured input or a body file, then read it back to check formatting. Fail if shell interpolation runs or the submitted body differs. |
 
-## Knip: bounded unused-code regression tracking
+## Fallow: bounded dead-code regression tracking
 
-TypeScript's `noUnusedLocals` and `noUnusedParameters`, plus ESLint, check
-declarations in configured files. They do not identify every unreachable file,
-unused export, runtime dependency, development dependency, or optional peer
-dependency. Knip analyzes those through an entry-to-module graph and discovers
-this package's binaries, scripts, workflow commands, Worker and UI tooling
-natively. A single explicit entry covers the documented ChatGPT plugin-packaging
-script, which is invoked outside package scripts. Every proposed deletion still
-requires runtime, package, and host-consumer proof.
+TypeScript and ESLint check declarations in configured files; Fallow also
+checks unused files, exports, types, and dependencies across the module graph.
+The [Fallow config](../.fallowrc.json) marks the documented plugin-packaging
+script as a manual entry point and excludes its two generated `picker.html` URLs
+from unresolved-import findings. The exclusions match those exact URL strings
+wherever they occur, so revisit them if another file uses the same strings.
+Proposed deletions still require consumer and contract evidence.
 
-`pnpm code-health` compares the current Knip result with the committed,
-main-SHA baseline. Pull requests read that baseline from their target branch,
-not from the proposed change. It distinguishes stable identities, rather than
-counts, so a same-count replacement is a regression. Existing findings are
-honest baseline debt; new findings fail CI, while resolved findings are
-reported. The command cannot modify source, fix findings, or refresh the
-baseline. Only the explicit reviewed `pnpm code-health:baseline` command writes
-a baseline, and only while `HEAD` is the current `origin/main` commit. The
-one-time `--bootstrap` form also requires that the branch has no Nemlig app
-differences from `origin/main`; it records that target commit, never the branch
-SHA. Both forms require a clean working tree before Knip scans. To record an
-intentional resolution without accepting new findings, run the reviewed
-`pnpm code-health:baseline -- --prune` command. It can run on current `main`,
-or on a clean PR branch that has merged current `origin/main` and whose existing
-baseline was generated from an ancestor of that target. It can only remove
-findings; Git history retains the removed identity and a later reintroduction
-fails CI.
+CI compares Nemlig dead-code findings against the committed
+[Fallow baseline](../.code-health/fallow-dead-code-baseline.json) from the PR's
+target branch, so editing the baseline in a later PR cannot accept new findings.
+For this first baseline only, CI requires current target-branch history and no
+Nemlig app changes. Existing findings are tracked debt; new findings fail the
+check, including unused development and optional dependencies. The separate
+Fallow PR audit remains report-only.
 
-Agents should inspect a relevant result, avoid unrelated baseline cleanup, and
-prove any deletion independently. Do not add broad ignores merely to quiet the
-scanner or regenerate the baseline to clear a regression. This is a local,
-read-only CI check: it does not create GitHub reports or receive write
-permissions. Scanner diagnostics are sanitized rather than copied into logs;
-finding identities retain only category, file, and a hash.
+After resolving baseline debt, review the findings and deliberately regenerate
+the baseline on a clean, current `main`:
 
-[entry discovery]: https://knip.dev/explanations/entry-files
-[configuration]: https://knip.dev/reference/configuration
-[false-positive guidance]: https://knip.dev/guides/handling-issues
+```sh
+pnpm exec fallow --workspace apps/nemlig-assistant dead-code --save-baseline .code-health/fallow-dead-code-baseline.json
+```
+
+Existing findings make this command exit 1 even when it writes the file; inspect
+its diff before committing. Do not rebaseline to accept a regression.
 
 ## Repository agent harness assessment
 

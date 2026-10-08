@@ -1,3 +1,9 @@
 {
-  "ignorePatterns": ["!.agents/**"]
+  "entry": ["apps/nemlig-assistant/scripts/package-chatgpt-plugin.mjs"],
+  "ignorePatterns": ["!.agents/**"],
+  "ignoreUnresolvedImports": ["./picker.html", "../dist/picker.html"],
+  "rules": {
+    "unused-dev-dependencies": "error",
+    "unused-optional-dependencies": "error"
+  }
 }

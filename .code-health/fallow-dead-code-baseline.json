@@ -1,0 +1,83 @@
+{
+  "kind": "dead-code",
+  "analysis_identity": {
+    "mode": "syntactic",
+    "semantic_schema_version": 1,
+    "capabilities": [],
+    "project_config_hash": "",
+    "backend_family": "",
+    "completeness": "complete"
+  },
+  "identity": "dc1",
+  "scope_reasons": [
+    "workspace"
+  ],
+  "unused_files": [
+    "unused-file:apps/nemlig-assistant/scripts/benchmark-product-text.ts"
+  ],
+  "unused_exports": [
+    "unused-export:apps/nemlig-assistant/release/policy.ts:classifyPaths",
+    "unused-export:apps/nemlig-assistant/release/policy.ts:compareVersions",
+    "unused-export:apps/nemlig-assistant/release/policy.ts:formatVersion",
+    "unused-export:apps/nemlig-assistant/scripts/service-token.ts:SERVICE_ACCEPTANCE_SCOPE",
+    "unused-export:apps/nemlig-assistant/src/client.ts:API_BASE_URL",
+    "unused-export:apps/nemlig-assistant/src/client.ts:NEMLIG_READ_MAX_RETRIES",
+    "unused-export:apps/nemlig-assistant/src/client.ts:normalizeBasket",
+    "unused-export:apps/nemlig-assistant/src/cloudflare-gateway.ts:INTERNAL_CREDENTIAL_HEADERS",
+    "unused-export:apps/nemlig-assistant/src/cloudflare-observability.ts:gatewayRequestEventSchema",
+    "unused-export:apps/nemlig-assistant/src/config.ts:credentialsFile",
+    "unused-export:apps/nemlig-assistant/src/product-discovery.ts:ProductDiscoveryDeadlineError",
+    "unused-export:apps/nemlig-assistant/src/production-acceptance.ts:prohibitedProductionTools",
+    "unused-export:apps/nemlig-assistant/src/read-coordination.ts:DEFAULT_READ_CONCURRENCY",
+    "unused-export:apps/nemlig-assistant/src/read-coordination.ts:abortReason"
+  ],
+  "unused_types": [
+    "unused-type:apps/nemlig-assistant/release/policy.ts:PublishKind",
+    "unused-type:apps/nemlig-assistant/src/proposals.ts:ProposalLine"
+  ],
+  "private_type_leaks": [],
+  "deprecated_exports_in_use": [],
+  "unused_dependencies": [],
+  "unused_dev_dependencies": [],
+  "circular_dependencies": [],
+  "re_export_cycles": [],
+  "package_cycles": [],
+  "unused_optional_dependencies": [],
+  "unused_enum_members": [],
+  "unused_class_members": [
+    "unused-class-member:apps/nemlig-assistant/src/client.ts:NemligClient:getSessionGeneration",
+    "unused-class-member:apps/nemlig-assistant/src/production-acceptance.ts:ProductViewerHtmlMismatchError:code"
+  ],
+  "unused_store_members": [],
+  "unprovided_injects": [],
+  "unrendered_components": [],
+  "unused_component_props": [],
+  "absent_component_props": [],
+  "unused_component_emits": [],
+  "unused_component_inputs": [],
+  "unused_component_outputs": [],
+  "unused_svelte_events": [],
+  "unused_server_actions": [],
+  "unused_load_data_keys": [],
+  "unresolved_imports": [],
+  "unlisted_dependencies": [],
+  "duplicate_exports": [],
+  "type_only_dependencies": [],
+  "test_only_dependencies": [],
+  "dev_dependencies_in_production": [],
+  "boundary_violations": [],
+  "boundary_coverage_violations": [],
+  "boundary_call_violations": [],
+  "policy_violations": [],
+  "stale_suppressions": [],
+  "unused_catalog_entries": [],
+  "empty_catalog_groups": [],
+  "unresolved_catalog_references": [],
+  "unused_dependency_overrides": [],
+  "misconfigured_dependency_overrides": [],
+  "invalid_client_exports": [],
+  "mixed_client_server_barrels": [],
+  "misplaced_directives": [],
+  "route_collisions": [],
+  "dynamic_segment_name_conflicts": []
+}
