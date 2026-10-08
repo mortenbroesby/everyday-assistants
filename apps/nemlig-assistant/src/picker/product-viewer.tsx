@@ -501,12 +501,14 @@ export function ProductViewer() {
           {...reviewDisclosureProps(item.product_id)}
           item={{ ...item, quantity: pendingQuantities.get(item.product_id) ?? item.quantity }}
           disabled={editsBlocked}
-          selected={selected.has(item.product_id)}
-          onSelected={(checked) => setSelected((previous) => {
-            const next = new Set(previous);
-            if (checked) next.add(item.product_id); else next.delete(item.product_id);
-            return next;
-          })}
+          {...(item.state === "needs-review" ? {
+            selected: selected.has(item.product_id),
+            onSelected: (checked: boolean) => setSelected((previous) => {
+              const next = new Set(previous);
+              if (checked) next.add(item.product_id); else next.delete(item.product_id);
+              return next;
+            }),
+          } : {})}
           onQuantity={(quantity) => setQuantity(item, quantity)}
           onRemove={() => afterFlush({ kind: "remove", product_ids: [item.product_id] })}
           onRevisit={item.state === "ready" ? () => afterFlush({ kind: "revisit", product_ids: [item.product_id] }) : undefined}
