@@ -15,11 +15,7 @@
 body { margin: 0; overflow-x: clip; background: var(--surface); color: var(--ink); }
 button, input { font: inherit; }
 button { appearance: none; }
-.app-frame { min-width: 0; padding: max(10px, env(safe-area-inset-top, 0px)) max(10px, env(safe-area-inset-right, 0px)) max(14px, env(safe-area-inset-bottom, 0px)) max(10px, env(safe-area-inset-left, 0px)); }
-.viewer { width: min(100%, 560px); margin: 0 auto; }
-h1 { margin: 6px 4px 5px; font-size: 1.45rem; font-weight: 650; letter-spacing: -.035em; }
 h2 { margin: 0; font-size: .95rem; font-weight: 650; }
-.intro { max-width: 42ch; margin: 0 4px 14px; color: var(--muted); font-size: .84rem; }
 .status, .empty { color: var(--muted); font-size: .84rem; }
 .product-list { display: grid; }
 .product-card { display: flex; align-items: flex-start; gap: 7px; padding: 10px 2px; border-bottom: 1px solid var(--line); }

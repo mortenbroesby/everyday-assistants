@@ -265,7 +265,7 @@ The local draft list is conversation-scoped and temporary. If it is unavailable,
   server.registerResource(
     "nemlig-product-viewer",
     PRODUCT_VIEWER_RESOURCE_URI,
-    { title: "Your draft list", description: "Product results and the shared local shopping draft list supplied by Nemlig Assistant.", mimeType: PRODUCT_VIEWER_MIME_TYPE },
+    { title: "Nemlig Assistant", description: "Products and the shared local Draft list supplied by Nemlig Assistant.", mimeType: PRODUCT_VIEWER_MIME_TYPE },
     async (uri) => ({ contents: [{ uri: uri.href, mimeType: PRODUCT_VIEWER_MIME_TYPE, text: renderProductViewerHtml(), _meta: { ui: { csp: { connectDomains: [], resourceDomains: [...PRODUCT_VIEWER_RESOURCE_DOMAINS] }, prefersBorder: true } } }] }),
   );
   for (const [index, uri] of RETIRED_PRODUCT_VIEWER_RESOURCE_URIS.entries()) {

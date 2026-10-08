@@ -6,7 +6,7 @@ import { renderRetiredProductViewerHtml } from "./retired-product-viewer.js";
 test("retired viewer identities cover the stable and prior versioned URIs", () => {
   assert.deepEqual(RETIRED_PRODUCT_VIEWER_RESOURCE_URIS, [
     "ui://nemlig/product-viewer.html",
-    ...Array.from({ length: 14 }, (_, index) => `ui://nemlig/product-viewer-v${index + 1}.html`),
+    ...Array.from({ length: 15 }, (_, index) => `ui://nemlig/product-viewer-v${index + 1}.html`),
   ]);
 });
 
