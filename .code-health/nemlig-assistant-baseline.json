@@ -4,7 +4,7 @@
     "name": "knip",
     "version": "6.40.0"
   },
-  "generatedFrom": "b886e8da69f501091a8b469de9349a9d52a21904",
+  "generatedFrom": "98c6656b2856f4cbc2d79e5be804411565103e47",
   "findings": [
     {
       "category": "exports",
@@ -115,11 +115,6 @@
       "category": "exports",
       "file": "apps/nemlig-assistant/src/read-coordination.ts",
       "id": "d70f10b9dada8d19f702e811e9b67700ac5cdd891e4e6dcdbb57172d1b80d529"
-    },
-    {
-      "category": "files",
-      "file": "apps/nemlig-assistant/scripts/package-chatgpt-plugin.mjs",
-      "id": "dd6a8c36dce18653d35ee5969395724b9234e692d1fd16e04c4da3c5bc5abae1"
     },
     {
       "category": "types",
