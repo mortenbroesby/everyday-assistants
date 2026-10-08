@@ -1,5 +1,6 @@
 /node_modules/
 .turbo/
+/.fallow/
 /apps/*/node_modules/
 /apps/*/dist/
 /apps/*/.candidate-dist/
