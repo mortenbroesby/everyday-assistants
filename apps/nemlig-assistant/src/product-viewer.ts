@@ -3,7 +3,7 @@ import { fileURLToPath } from "node:url";
 import type { ProductView } from "./product-presentation.js";
 import { PRODUCT_VIEWER_RESOURCE_URI } from "./product-viewer-identity.js";
 
-export { PRODUCT_VIEWER_RESOURCE_URI } from "./product-viewer-identity.js";
+export { PRODUCT_VIEWER_RESOURCE_URI, PRODUCT_VIEWER_RESOURCE_VERSION } from "./product-viewer-identity.js";
 export const PRODUCT_VIEWER_MIME_TYPE = "text/html;profile=mcp-app";
 export const PRODUCT_VIEWER_RESOURCE_DOMAINS = Object.freeze([
   "https://nemlig.com", "https://www.nemlig.com",

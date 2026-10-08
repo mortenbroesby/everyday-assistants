@@ -34,7 +34,7 @@ app, also apply this file. Then select the matching app-local skill:
   provider changes, secrets, or material cost. The owner explicitly removed all
   app-local request and usage quotas; do not reintroduce them as family tiers.
 - For ChatGPT connector, OAuth, stale-card, served-UI, or provider-search
-  failures, read `docs/chatgpt-connector-recovery.md` before changing anything.
+  failures, read `../../docs/chatgpt-connector-recovery.md` before changing anything.
   Treat the ChatGPT connection, Cloudflare Worker/Container, Auth0, and Nemlig
   owner session as separate boundaries; change only the layer supported by
   evidence. A server release does not imply a plugin ZIP update, and a gateway
