@@ -1,0 +1,14 @@
+{
+  "testRunner": "tap",
+  "plugins": ["@stryker-mutator/tap-runner"],
+  "mutate": ["src/release-identity.ts", "src/read-coordination.ts"],
+  "tap": {
+    "testFiles": ["src/release-identity.test.ts", "src/read-coordination.test.ts"],
+    "nodeArgs": ["--test-reporter=tap", "--import", "tsx"]
+  },
+  "concurrency": 1,
+  "dryRunTimeoutMinutes": 2,
+  "timeoutMS": 5000,
+  "reporters": ["clear-text", "progress", "html", "json"],
+  "thresholds": { "high": 80, "low": 60, "break": null }
+}

@@ -5,3 +5,5 @@ dist/
 .product-discovery/
 node_modules/
 /.wrangler/
+/.stryker-tmp/
+/reports/mutation/
