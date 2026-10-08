@@ -21,6 +21,15 @@ test("shared product view carries context without creating a second product or b
   assert.equal("basket" in view, false);
 });
 
+test("hydrated and direct products produce the same review view", () => {
+  const item = product();
+  const context = { kind: "review" as const, quantity: 2, line_total: 24, approved: false };
+  assert.deepEqual(
+    createProductView({ status: "hydrated", productId: 7, product: item }, context),
+    createProductView(item, context),
+  );
+});
+
 test("product projection keeps provider facts but never invents comparative rankings", () => {
   const views = createProductViews([
     product({ id: 7, name: "Mælk", price: undefined, unit: "per liter", labels: ["Øko", "Dansk"] }),

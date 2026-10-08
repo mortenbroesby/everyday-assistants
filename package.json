@@ -29,6 +29,7 @@
   },
   "devDependencies": {
     "@fission-ai/openspec": "1.11.0",
+    "fallow": "3.32.0",
     "husky": "9.1.7",
     "knip": "6.40.0",
     "turbo": "^2.8.0"

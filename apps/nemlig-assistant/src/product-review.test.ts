@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { Product } from "./client.js";
+import { NemligError, type Product } from "./client.js";
 import { ProductReviewService } from "./product-review.js";
 
 const product = (id: number): Product => ({
@@ -276,4 +276,23 @@ test("failed hydration remains visible and cannot enter Ready", async () => {
   assert.equal(draft.items[0]?.view.status, "unavailable");
   await assert.rejects(service.update("owner", draft.review_id, draft.revision, { kind: "accept", product_ids: [1] }), /unavailable/i);
   assert.deepEqual(service.show("owner", draft.review_id), draft);
+});
+
+test("start and add share exact-product hydration and propagate authentication failures", async () => {
+  const service = new ProductReviewService({
+    ...client,
+    getProduct: async (id) => {
+      if (id === 2) return product(99);
+      if (id === 3) throw new NemligError("Session expired", 401);
+      return product(id);
+    },
+  });
+  const draft = await service.start("owner", [{ product_id: 1, quantity: 1 }, { product_id: 2, quantity: 1 }]);
+  assert.equal(draft.items[1]?.view.status, "unavailable");
+  const added = await service.update("owner", draft.review_id, draft.revision, { kind: "add", items: [{ product_id: 4, quantity: 1 }] });
+  assert.equal(added.items[2]?.view.status, "complete");
+  await assert.rejects(service.update("owner", draft.review_id, added.revision, { kind: "add", items: [{ product_id: 3, quantity: 1 }] }), /Session expired/u);
+  assert.deepEqual(service.show("owner", draft.review_id), added);
+  await assert.rejects(service.start("another-owner", [{ product_id: 3, quantity: 1 }]), /Session expired/u);
+  assert.equal(service.active("another-owner"), undefined);
 });
