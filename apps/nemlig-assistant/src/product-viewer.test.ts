@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { gzipSync } from "node:zlib";
+import { validateProductViewerArtifact } from "../scripts/product-viewer-artifact.js";
 import type { ProductView } from "./product-presentation.js";
 import {
   PRODUCT_VIEWER_MIME_TYPE,
@@ -118,9 +118,34 @@ test("served resource is the bounded self-contained React build", () => {
   assert.match(html, /<html lang="en">/u);
   assert.match(html, /Nemlig Assistant Draft list/u);
   assert.match(html, /react-dom/u);
-  assert.doesNotMatch(html, /<script\s+src=/u);
-  assert.doesNotMatch(html, /<link[^>]+rel=["']?stylesheet/u);
-  assert.doesNotMatch(html, /\bfetch\s*\(/u);
-  assert.ok(Buffer.byteLength(html) <= 1_500_000, "viewer exceeds its project raw-size budget");
-  assert.ok(gzipSync(html).byteLength <= 350_000, "viewer exceeds its project gzip-size budget");
+  validateProductViewerArtifact(html);
+});
+
+test("artifact policy rejects external dependencies, dynamic loading, fetches, placeholders, and oversized HTML", () => {
+  const rejected = [
+    ['<script src="https://example.test/app.js"></script>', "viewer contains an external script"],
+    ['<link rel="stylesheet" href="https://example.test/app.css">', "viewer contains an external stylesheet"],
+    ["import(\"./chunk.js\")", "viewer contains a dynamic import"],
+    ['fetch("/api")', "viewer contains an application fetch"],
+    ["Interactive local review is not implemented", "candidate placeholder remains in the production viewer"],
+  ] as const;
+
+  for (const [html, message] of rejected) {
+    assert.throws(() => validateProductViewerArtifact(html), new RegExp(message, "u"));
+  }
+  assert.throws(
+    () => validateProductViewerArtifact("x".repeat(1_500_001)),
+    /React viewer exceeds the raw HTML budget/u,
+  );
+
+  let state = 1;
+  const lowCompressionHtmlBytes = Buffer.allocUnsafe(500_000);
+  for (let index = 0; index < 500_000; index += 1) {
+    state = (1664525 * state + 1013904223) >>> 0;
+    lowCompressionHtmlBytes[index] = 32 + (state % 95);
+  }
+  assert.throws(
+    () => validateProductViewerArtifact(lowCompressionHtmlBytes.toString("ascii")),
+    /React viewer exceeds the gzip HTML budget/u,
+  );
 });
