@@ -495,3 +495,18 @@ confirmation, verified and uncertain outcomes, ended-empty presentation, zero
 provider writes, and no external requests. The v16 release and a newly rendered
 native current-card comparison remain required before Story 4 delivery can be
 claimed.
+
+Native host boundary observation (8 October 2026): production main
+`6496dbe0f78e48f5754317c9fd6d323748020363` was released with v16 as the only
+current viewer identity, and the source advertises that URI through both
+`openai/outputTemplate` and `ui.resourceUri` for `start_product_review`. A new
+ChatGPT Work conversation using the mapped Nemlig Assistant app created a
+local-only Draft list without accessing the real basket, but the embedded app
+document was the exact inert retired-viewer HTML (“This selection card is out of
+date”). This does not prove a server fallback or a fresh resource fetch: the
+tool result contains no result-level URI override, so the unresolved boundary
+is the installed ChatGPT descriptor/resource binding. Before another viewer
+version bump, deployment, reconnect, or app replacement, capture the
+authenticated `tools/list` descriptor, read its advertised URI, and compare it
+with the URI requested by the host. Story 4 native visual acceptance therefore
+remains unchecked.
