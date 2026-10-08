@@ -1,57 +1,50 @@
-# ChatGPT plugin package source
+# Nemlig Assistant plugin source
 
-This directory contains the unpacked source for the Nemlig Assistant
-plugin archive. Edit `nemlig-assistant/` here, then build and validate a fresh
-ZIP from the repository root:
+The `nemlig-shopping/` directory is the source for the private ChatGPT plugin.
+It contains the package manifest, the registered ChatGPT MCP app binding, the
+portable remote MCP endpoint, the shopping skill, and the repository icon. It
+does not contain credentials or deploy the Cloudflare Worker.
+
+From the repository root, build the ZIP with:
 
 ```sh
 node apps/nemlig-assistant/scripts/package-chatgpt-plugin.mjs
 ```
 
-The archive is written to the ignored
-`apps/nemlig-assistant/dist/plugin/` directory. To choose a download location:
+The output is `apps/nemlig-assistant/dist/plugin/nemlig-shopping-0.1.2.zip`.
+To rebuild the tracked upload artifact after changing the source:
 
 ```sh
 node apps/nemlig-assistant/scripts/package-chatgpt-plugin.mjs \
-  --output ~/Downloads/nemlig-assistant.zip
+  --output apps/nemlig-assistant/chatgpt-plugin-archives/nemlig-shopping-0.1.2.zip
 ```
 
-The packager checks the two manifests agree, the existing app binding is
-required, `hosted-app.json` matches the app binding and production Cloudflare
-URL/Worker configuration, the logo and composer icon point to the same
-package-local 1024×1024 PNG that the existing MCP app uses, the skill and
-package README exist, private author email is absent, the canonical
-`wrangler.jsonc` is included in the archive as `nemlig-assistant/cloudflare/`,
-and the resulting ZIP passes `unzip -t`.
+The packager checks the endpoint against `wrangler.jsonc`, the local skill and
+icons, and ZIP integrity. It also snapshots the canonical Worker configuration
+under `cloudflare/` for restore reference; the ZIP does not apply that config.
+`assets/icon.png` is the package logo;
+`assets/connector-icon.png` is a 256 x 256 copy of that repository icon sized
+for ChatGPT's 10 KB custom MCP form. The server's OAuth discovery and actual
+tool/UI behavior still need live connection checks. Keep the plugin private
+and unshared.
 
-To refresh the committed full package archive after changing source:
+OpenAI's [connection guide](https://developers.openai.com/plugins/deploy/connect-chatgpt)
+and [package guide](https://developers.openai.com/plugins/build/plugins) define
+the setup:
 
-```sh
-node apps/nemlig-assistant/scripts/package-chatgpt-plugin.mjs \
-  --output apps/nemlig-assistant/chatgpt-plugin-archives/nemlig-assistant-0.1.4.zip
-```
+1. In ChatGPT Plugins, add a custom MCP server with the production `/mcp` URL
+   from `wrangler.jsonc`. Use OAuth with the discovered Auth0 endpoints,
+   Client Identifier Metadata Document registration, and the advertised
+   `use:nemlig-assistant` scope. Use `assets/connector-icon.png` for the icon.
+2. Copy the new `plugin_asdk_app_…` ID from its ChatGPT URL. In `.app.json`,
+   bind the corresponding `asdk_app_…` ID; update the packager's binding check.
+3. Increase `plugin.json`'s version, build the ZIP, and create or update the
+   private package plugin through Plugin Creator. Connect the account, then
+   test a read-only tool in a new ChatGPT Work conversation.
 
-The current live archive was downloaded and compared with this tracked source.
-Its active plugin files match the source; the empty legacy skill directory was
-excluded, and the optional author email from the original private export is
-omitted from the public repository. This PR adds the hosted-app restore
-reference and Cloudflare config snapshot to that package. The existing app ID
-remains in `.app.json` so the archive keeps its required binding to the app
-already configured in ChatGPT.
-This package contains the plugin wrapper, shopping skill, icon, non-secret
-hosted-app restore reference, and a snapshot of the canonical Cloudflare
-Worker configuration. It does not contain ChatGPT's hosted renderer or the
-remote MCP server implementation. The server and its UI remain maintained
-under `src/` and use the existing app build workflow; Cloudflare secrets stay
-provider-managed.
-
-The archive is a complete package for import/creation in one upload. Updating
-an existing Plugin Creator release uses an overlay; omitted files are not
-deleted automatically. A newly created account plugin may receive a new
-Plugin Creator record ID, while `.app.json` continues to bind the same existing
-hosted app.
-
-The generated uploadable ZIP is committed at
-`apps/nemlig-assistant/chatgpt-plugin-archives/nemlig-assistant-0.1.4.zip`.
-Rebuild and validate it after changing the source or hosted-app configuration;
-the archive is a complete package, not a delta update.
+The separate ChatGPT app registration holds OAuth settings and the connected
+account. The ZIP cannot recreate that hosted registration by itself. It binds
+the registered app to the shopping skill and portable MCP settings. ChatGPT
+Work web currently exposes the registered app; the package page offers an
+"Open in desktop app" link. Updating the ZIP does not update the remote
+server; deploy that separately through the repository's existing workflow.
