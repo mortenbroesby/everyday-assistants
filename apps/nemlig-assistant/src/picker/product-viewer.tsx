@@ -10,6 +10,7 @@ type Review = {
   alternatives?: { product_id: number; query: string; views: ProductView[] };
   submission?: { status: "prepared" | "submitted" | "uncertain"; submission_id: string; review: { lines?: Array<{ product_id: number; quantity: number; name?: string; unit_size?: string; item_price?: number; line_total?: number }>; expected_products_price?: number } };
 };
+type PresentationDestination = Review["destination"];
 type Payload = { views?: ProductView[]; products?: ProductView[]; result?: ProductView[]; items?: unknown[]; detail_limit?: number; unenriched_count?: number; review?: Review; view_id?: string; unavailable?: boolean; ended?: boolean };
 type Screen = { kind: "loading" } | { kind: "error"; message: string } | { kind: "cancelled" } | { kind: "stale" } | { kind: "products"; payload: Payload; views: ProductView[] } | { kind: "review"; review: Review; view_id?: string; active: boolean } | { kind: "unavailable"; review?: Review } | { kind: "empty"; message?: string };
 
@@ -152,6 +153,7 @@ export function ProductViewer() {
     if (initial?.kind === "review") return { ...initial, active: false };
     return initial ?? { kind: "loading" };
   });
+  const [presentationDestination, setPresentationDestination] = useState<PresentationDestination | undefined>(() => screen.kind === "review" ? screen.review.destination : undefined);
   const activeReview = useRef<{ review: Review; view_id?: string; active: boolean } | undefined>(screen.kind === "review" ? screen : undefined);
   const lastConfirmedReview = useRef<Review | undefined>(screen.kind === "review" ? screen.review : undefined);
   const validatedViewId = useRef<string | undefined>(undefined);
@@ -205,7 +207,7 @@ export function ProductViewer() {
     }
     setConfirmSubmit(false);
   }, []);
-  const applyPayload = useCallback((payload: unknown, current = false) => {
+  const applyPayload = useCallback((payload: unknown, current = false, adoptPresentationDestination = false) => {
     if (isRecord(payload) && payload.isError === true) { deactivateReview(); setScreen({ kind: "error", message: "Could not load the Draft list. Reconnect Nemlig or try again in conversation." }); return false; }
     const next = readPayload(payload);
     if (!next) { deactivateReview(); setScreen({ kind: "error", message: "Nemlig returned a response this view could not read. Continue in conversation to inspect the current state." }); return false; }
@@ -242,6 +244,11 @@ export function ProductViewer() {
         setSubmitBlocked(uncertain);
       }
       setScreen({ kind: "review", ...state });
+      setPresentationDestination((visible) => {
+        if (!sameReview || adoptPresentationDestination) return next.review.destination;
+        if (visible === "alternatives" && !next.review.alternatives) return next.review.destination;
+        return visible ?? next.review.destination;
+      });
       setMessage("");
       setSelected((chosen) => sameReview ? new Set([...chosen].filter((id) => next.review.items.some((item) => item.product_id === id && item.state === "needs-review"))) : new Set());
       setReplacement((chosen) => sameReview && next.review.alternatives?.views.some((view) => view.status === "complete" && view.product.id === chosen) ? chosen : undefined);
@@ -249,6 +256,7 @@ export function ProductViewer() {
     } else if (next.kind === "unavailable") {
       deactivateReview();
       activeReview.current = undefined;
+      setPresentationDestination(undefined);
       setScreen({ kind: "unavailable", review: previous?.review ?? lastConfirmedReview.current });
     } else {
       if (next.kind !== "empty" && !current && previous?.active) return true;
@@ -256,6 +264,7 @@ export function ProductViewer() {
       if (next.kind === "empty") {
         deactivateReview();
         activeReview.current = undefined;
+        setPresentationDestination(undefined);
         lastConfirmedReview.current = undefined;
         submitBlockedRef.current = false;
         setSubmitBlocked(false);
@@ -274,7 +283,7 @@ export function ProductViewer() {
   useHostStyles(connectedApp, connectedApp?.getHostContext());
   useEffect(() => () => { if (quantityTimer.current) clearTimeout(quantityTimer.current); connectedApp?.close(); }, [connectedApp]);
 
-  const call = async (name: string, args: Record<string, unknown>, recovery = true): Promise<boolean> => {
+  const call = async (name: string, args: Record<string, unknown>, recovery = true, adoptPresentationDestination = false): Promise<boolean> => {
     if (!connectedApp || !isConnected) { setMessage(error ? "The Draft list could not connect. Continue in conversation or reopen the current Draft list." : "Connecting to the current Nemlig Draft list…"); return false; }
     if (callLock.current) return false;
     callLock.current = true;
@@ -286,7 +295,7 @@ export function ProductViewer() {
       if (result.isError) throw new Error((result.content ?? []).filter((content) => content.type === "text").map((content) => content.text).join(" ") || "Update failed");
       const next = readPayload(result);
       if (next?.kind === "review" && next.view_id) validatedViewId.current = next.view_id;
-      if (!applyPayload(result, true)) throw new Error("Could not confirm the updated Draft list.");
+      if (!applyPayload(result, true, adoptPresentationDestination)) throw new Error("Could not confirm the updated Draft list.");
       setMessage(""); return true;
     } catch (cause) {
       const text = cause instanceof Error ? cause.message : "Update failed";
@@ -362,7 +371,7 @@ export function ProductViewer() {
   const update = async (action: Record<string, unknown>) => {
     const latest = activeReview.current;
     if (!latest?.active || !latest.view_id || callLock.current) return false;
-    const result = await call("update_product_review", { view_id: latest.view_id, review_id: latest.review.review_id, revision: latest.review.revision, action });
+    const result = await call("update_product_review", { view_id: latest.view_id, review_id: latest.review.review_id, revision: latest.review.revision, action }, true, action.kind === "alternatives" || action.kind === "replace");
     if (result && action.kind === "prepare_submission") setConfirmSubmit(false);
     return result;
   };
@@ -374,7 +383,7 @@ export function ProductViewer() {
     quantityTimer.current = setTimeout(() => {
       quantityTimer.current = undefined;
       void flushQuantities();
-    }, 400);
+    }, 2_500);
   };
   const flushQuantities = async () => {
     if (quantityTimer.current) clearTimeout(quantityTimer.current);
@@ -407,11 +416,15 @@ export function ProductViewer() {
     quantityFlush.current = tracked;
     return tracked;
   };
-  const navigate = async (destination: "needs-review" | "ready" | "alternatives") => { if (await flushQuantities()) await update({ kind: "navigate", destination }); };
   const afterFlush = (action: Record<string, unknown>) => {
     void flushQuantities().then(async (ok) => { if (ok) await update(action); });
   };
-  const safeTitle = review?.destination === "ready" ? "Ready" : review?.destination === "alternatives" ? "Choose an alternative" : "To decide";
+  const destination = review ? presentationDestination ?? review.destination : undefined;
+  const navigate = (next: PresentationDestination) => {
+    if (next === "alternatives" && !review?.alternatives) return;
+    setPresentationDestination(next);
+  };
+  const safeTitle = destination === "ready" ? "Ready" : destination === "alternatives" ? "Choose an alternative" : "To decide";
   const productPayload = screen.kind === "products" ? screen.payload : undefined;
   const basket = productPayload?.detail_limit !== undefined && Array.isArray(productPayload.items);
   const uncertainSubmission = submitBlocked || review?.submission?.status === "uncertain";
@@ -456,12 +469,12 @@ export function ProductViewer() {
     <h1 id="title">{review && active ? (review.items.length ? safeTitle : "What should we shop for?") : basket ? "Actual Nemlig basket" : screen.kind === "unavailable" ? "Start a new Draft list" : screen.kind === "review" ? "Your Draft list" : "Nemlig products"}</h1>
     <p className="intro">{review && active ? (safeTitle === "Ready" ? "Adjust quantities directly. Open a product to move it back or remove it. Prepare the exact change before adding anything to Nemlig." : safeTitle === "Choose an alternative" ? "Compare available options for this product." : "Select products to move them into Ready. Open a product for details.") : basket ? "Your current Nemlig basket. This view cannot change it." : "Inspect product details here or continue in conversation."}</p>
     {review && <DestinationTabs
-      destination={review.destination}
+      destination={destination ?? review.destination}
       toDecideCount={review.items.filter((item) => item.state === "needs-review").length}
       readyCount={review.items.filter((item) => item.state === "ready").length}
       hasAlternatives={Boolean(review.alternatives)}
-      disabled={editsBlocked || !active}
-      onNavigate={(destination) => void navigate(destination)}
+      disabled={uncertainSubmission || !active}
+      onNavigate={navigate}
     />}
     {screen.kind === "loading" && <p className="status" role="status">Loading your Nemlig selection…</p>}
     {screen.kind === "error" && <section className="status"><p role="alert">{screen.message}</p><p>Continue in conversation to inspect the current Draft list.</p></section>}
@@ -471,7 +484,7 @@ export function ProductViewer() {
     {screen.kind === "review" && review && !active && <section className="status"><p>This Draft list card is inactive. {review.items.length ? "The current Draft list is shown read-only." : "No current Draft list is available."}</p>{review.items.length > 0 && <Button color="primary" disabled={activatingCurrent || busy} onClick={() => void activateCurrentDraftList()}>{activatingCurrent ? "Loading…" : "Make this card current"}</Button>}{message && <p role="status">{message}</p>}</section>}
     {review && !active && review.items.length > 0 && <section className="product-list" aria-label="Current Draft list, read only">{review.items.map((item) => <ProductCard key={item.product_id} view={item.view} disabled />)}</section>}
     {screen.kind === "unavailable" && <section className="status"><p>This temporary Draft list is no longer available. Ask in chat before starting a new Draft list. Previous choices or submission approval are not restored.</p></section>}
-    {review && active && review.destination === "alternatives" && review.alternatives && <section className="alternatives">
+    {review && active && destination === "alternatives" && review.alternatives && <section className="alternatives">
       <section className="alternatives-current" aria-labelledby="current-product-title">
         <h2 id="current-product-title">Current product</h2>
         {review.items.filter((item) => item.product_id === review.alternatives?.product_id).map((item) => <ProductCard key={item.product_id} view={item.view} disabled={busy} {...reviewDisclosureProps(item.product_id)} />)}
@@ -486,12 +499,12 @@ export function ProductViewer() {
           return <ProductCard key={`${id}:${index}`} view={view} disabled={editsBlocked} comparison {...(id === undefined ? {} : reviewDisclosureProps(id))} choice={replacement === id} onChoice={() => setReplacement(id)} />;
         })}</div>}
         <Button color="primary" disabled={editsBlocked || replacement === undefined} onClick={() => { const target = review.alternatives!.product_id; if (replacement !== undefined) void update({ kind: "replace", product_id: target, replacement_id: replacement }); }}>Use selected alternative</Button>
-        <Button color="secondary" disabled={editsBlocked} onClick={() => void navigate("needs-review")}>Back to To decide</Button>
+        <Button color="secondary" disabled={uncertainSubmission} onClick={() => navigate("needs-review")}>Back to To decide</Button>
       </section>
     </section>}
     {screen.kind === "products" && screen.views.length > 0 && <section className="product-list" aria-label="Product results">{screen.views.map((view, index) => <ProductCard key={`${view.status === "complete" ? view.product.id : view.product_id}:${index}`} view={view} disabled={busy} />)}</section>}
-    {review && active && review.items.length > 0 && review.destination !== "alternatives" && <section className="product-list" aria-label={`${safeTitle} products`}>
-      {review.items.filter((item) => item.state === review.destination).map((item) => {
+    {review && active && review.items.length > 0 && destination !== "alternatives" && <section className="product-list" aria-label={`${safeTitle} products`}>
+      {review.items.filter((item) => item.state === destination).map((item) => {
         const alternativeQuery = item.view.status === "complete"
           ? (item.view.product.subcategory ?? item.view.product.name ?? String(item.product_id)).slice(0, 200)
           : String(item.product_id);
@@ -519,13 +532,13 @@ export function ProductViewer() {
         />;
       })}
     </section>}
-    {review && active && review.destination === "needs-review" && <ActionFooter>
+    {review && active && destination === "needs-review" && <ActionFooter>
       {review.items.some((item) => item.state === "needs-review" && isUsable(item.view)) && <>
         <Button color="secondary" disabled={editsBlocked} onClick={() => setSelected(new Set(review.items.filter((item) => item.state === "needs-review" && isUsable(item.view)).map((item) => item.product_id)))}>Select all</Button>
       </>}
       {selected.size > 0 && <Button color="primary" disabled={editsBlocked} onClick={() => afterFlush({ kind: "accept", product_ids: [...selected] })}>Add selected to Ready ({selected.size})</Button>}
     </ActionFooter>}
-    {review && active && review.destination === "ready" && <ActionFooter>
+    {review && active && destination === "ready" && <ActionFooter>
       {review.submission?.status === "submitted" ? <>
         <p className="status" role="status">Nemlig confirmed this Draft list was added successfully.</p>
         {!continueSubmitted && <Button color="secondary" disabled={busy} onClick={() => setContinueSubmitted(true)}>Continue with Draft list</Button>}
@@ -555,6 +568,6 @@ export function ProductViewer() {
     {screen.kind === "empty" && <section className="empty"><h2>{screen.message ?? "No products found."}</h2><p>Continue in conversation to inspect the Nemlig basket or start a new Draft list.</p><Button color="secondary" disabled={busy} onClick={() => void sendFollowUp("Help me continue shopping or inspect my Nemlig basket. Do not restore a discarded Draft list.")}>Continue in conversation</Button></section>}
     {screen.kind === "products" && screen.views.length === 0 && <div className="empty" role="status">{basket ? "Your Nemlig basket is empty." : "No products found."}</div>}
     {productPayload?.unenriched_count ? <p className="status">{productPayload.unenriched_count} basket lines do not have current product details.</p> : null}
-    {message && screen.kind !== "error" && screen.kind !== "stale" && !(screen.kind === "review" && !active) && !(review?.destination === "ready") && <p className="status" role="status">{message}</p>}
+    {message && screen.kind !== "error" && screen.kind !== "stale" && !(screen.kind === "review" && !active) && destination !== "ready" && <p className="status" role="status">{message}</p>}
   </main></div>;
 }

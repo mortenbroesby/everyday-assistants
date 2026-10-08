@@ -3,7 +3,7 @@
  * metadata. Bump this identity whenever the self-contained viewer changes so
  * a new card cannot pair a current tool result with stale viewer JavaScript.
  */
-export const PRODUCT_VIEWER_RESOURCE_VERSION = "13";
+export const PRODUCT_VIEWER_RESOURCE_VERSION = "14";
 export const PRODUCT_VIEWER_RESOURCE_URI = `ui://nemlig/product-viewer-v${PRODUCT_VIEWER_RESOURCE_VERSION}.html`;
 
 /** Previously published identities remain readable, but never receive live shopping controls. */
@@ -21,4 +21,5 @@ export const RETIRED_PRODUCT_VIEWER_RESOURCE_URIS = [
   "ui://nemlig/product-viewer-v10.html",
   "ui://nemlig/product-viewer-v11.html",
   "ui://nemlig/product-viewer-v12.html",
+  "ui://nemlig/product-viewer-v13.html",
 ] as const;

@@ -31,8 +31,8 @@ unresolved choices, navigate contextual alternatives, or express user actions.
 The historical product-review outcome originated in GitHub issue #113. The
 active visual-convergence delivery contract is GitHub issue #228. This change
 records the durable contracts and design decisions. It now also includes the
-owner's follow-up discovery, conversational authorization, and debounce
-refinements in this same product outcome and draft PR. Non-goals include onboarding,
+owner's follow-up discovery, conversational authorization, and browser-local
+workspace/debounce refinements in this same product outcome and draft PR. Non-goals include onboarding,
 meal/recipe planning, checkout, payment, delivery slots, authentication redesign,
 new state-management dependencies, and unrelated deployment work.
 
@@ -62,7 +62,7 @@ Coordinate overlapping canonical specs and backlog sections before edits.
 
 No live provider, basket, account, secret, or production mutation is authorized by
 this repository implementation. Reuse bounded provider reads and existing quotas;
-rendering, disclosures and navigation must not create provider request fan-out.
+rendering, disclosures and browser-local destination changes must not create provider request fan-out.
 Any added hydration must have an explicit bounded request model before apply.
 
 ## Owner decision

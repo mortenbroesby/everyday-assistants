@@ -106,17 +106,41 @@ it back to In Review and invalidate pending submission approval.
 
 ### Requirement: Persistent local review interaction
 An explicitly activated review frame SHALL remain active across confirmed
-same-review edits and destination changes while it stays mounted. Initial,
+same-review edits while it stays mounted. Its To decide, Ready, and currently
+available alternatives destinations SHALL be browser-presentational state and
+switch synchronously without an MCP call or a quantity flush. Initial,
 remounted and retired cards SHALL remain inactive until their explicit
 current-conversation activation. A foreign-review snapshot SHALL NOT activate
 an inactive frame or displace a different draft already confirmed in an active
 frame. Older host snapshots SHALL NOT replace a newer confirmed review revision.
 
 #### Scenario: Local change returns a host result
-- **WHEN** an activated frame accepts products, changes quantities, navigates,
-  or resolves alternatives and receives a matching current snapshot
+- **WHEN** an activated frame accepts products, changes quantities, or resolves
+  alternatives and receives a matching current snapshot
 - **THEN** the same frame renders the updated destination without requiring
   `Open current selection` again
+
+#### Scenario: A household member switches local destinations
+- **WHEN** an activated frame switches between To decide, Ready, and an already
+  available alternatives context
+- **THEN** the mounted frame updates immediately without an MCP call, provider
+  read/write, or quantity flush
+- **AND** the local selection, disclosure, and scroll/focus state remain where
+  practical until a server snapshot makes them inapplicable
+
+#### Scenario: A household member rapidly changes a quantity
+- **WHEN** a user makes repeated +/- changes to one product and then leaves it
+  unchanged for 2.5 seconds
+- **THEN** the visible quantity and totals update immediately and exactly one
+  revision-checked local quantity update persists the final value
+- **AND** a subsequent business mutation, prepare, submit, or end flushes the
+  final quantity before it proceeds
+
+#### Scenario: An optimistic quantity loses its active frame
+- **WHEN** an unconfirmed quantity edit loses the active frame through
+  cancellation, remount, or recovery
+- **THEN** the browser does not send it in the background or replay it later
+- **AND** the next visible quantity comes from the authoritative snapshot
 
 #### Scenario: Old draft notification follows explicit activation
 - **WHEN** an inactive historical card for A explicitly fetches current draft B
