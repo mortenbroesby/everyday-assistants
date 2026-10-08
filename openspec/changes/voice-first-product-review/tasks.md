@@ -412,28 +412,52 @@ previous published identities registered only as inert, read-only documents.
   built-artifact smoke verifies eight presses remain local before 2.5 seconds
   and produce one final quantity action; both browser smokes retain protected
   flush ordering and zero fake-provider basket writes.
-- [ ] 13.16 Release Story 3a through a newly versioned viewer URI after focused
+- [x] 13.16 Release Story 3a through a newly versioned viewer URI after focused
   viewer and loopback-browser smoke, strict OpenSpec validation and applicable
   repository gates. Record exact revision, CI, resource metadata and native
   evidence; #241 alternatives relevance is a non-blocking separate usability
   issue, not a Story 3a acceptance failure.
-- [ ] 13.17 After merge/release, refresh the connected app and perform native
+- [x] 13.17 After merge/release, refresh the connected app and perform native
   ChatGPT smoke: one mounted viewer switches To decide → Ready → To decide,
   then rapid quantity presses settle once after 2.5 seconds. Do not access or
   modify the real Nemlig basket.
 
+Story 3a delivery evidence (8 October 2026): PR #242 merged as
+`b1208cce83d82fe281f29ea653bd9e22dc672564`; exact-main CI
+`37817300825` and automatic production deployment `37817641905` passed.
+Version 6.2.2 **Kestrel** registered `ui://nemlig/product-viewer-v14.html`
+with v13 retained as inert. After an explicit connected-app tools refresh, a
+fresh native ChatGPT conversation created one local Banan-only Draft list.
+The same mounted card completed select → Ready → To decide with no visible
+`Updating…` state for either tab switch. Three rapid quantity presses rendered
+4 × immediately, then performed one local update after the 2.5-second quiet
+interval. No prepare, submit, or real Nemlig basket action was selected.
+
 ### Story 4 — entry and outcome states (one PR)
 
-- [ ] 13.18 Characterize the existing prepared, cancel, verified-success,
+- [x] 13.18 Characterize the existing prepared, cancel, verified-success,
   uncertain, unavailable, empty and ended-draft states. Determine any standard
   host follow-up, close or external-link capability from current official
   documentation and native evidence before adding such a control; omit it if
   not proven.
-- [ ] 13.19 Simplify the existing confirmation/outcome hierarchy and add only
+- [x] 13.19 Simplify the existing confirmation/outcome hierarchy and add only
   supported empty-state conversational suggestions or compact local overflow
   actions. Verify exact confirmation, cancel, single-use submission, readback,
   no automatic retry, local-only discard and complete text fallback remain
   unchanged.
+
+Story 4 characterization and local evidence (8 October 2026): the existing
+viewer rendered active empty drafts with destination tabs and an End footer,
+and treated an uncertain submit error as a generic inactive card despite its
+existing do-not-retry copy. Current official ChatGPT UI documentation confirms
+standard `ui/message`/follow-up messaging, while close and external-link APIs
+remain optional host-specific extensions. This story uses only the already
+implemented `ui/message` bridge for starter suggestions; it adds no close,
+external-link, or provider action. The v15 artifact smoke now proves an empty
+or ended draft exposes no tabs or destructive actions, sends one bounded
+conversational starter with zero tool/provider calls, preserves exact prepared
+confirmation and cancel-with-zero-submit, presents verified success separately,
+and blocks uncertain outcomes without retry.
 - [ ] 13.20 Release Story 4 through the current stable URI in one PR after
   focused tests, fake-provider protected-submit smoke, loopback browser smoke,
   strict OpenSpec validation and applicable repository gates. Record exact

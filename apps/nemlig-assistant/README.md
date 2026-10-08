@@ -150,9 +150,10 @@ confirmed local edits and destination changes. Compatible draft lists and open
 product rows remain in place. Rows show product, package, quantity and line
 price first. Expanded rows contain quantity and local row actions, plus
 collapsed **Varebeskrivelse**, **Varedeklaration**, and **Detaljer om varen**
-sections; opening them makes no tool call. **Prepare exact change** shows the
-exact products and quantities before any separately authorized Nemlig basket
-addition.
+sections; opening them makes no tool call. **Review exact Nemlig change**
+prepares the exact products and quantities before any separately authorized
+Nemlig basket addition. Empty or ended Draft lists instead offer conversational
+shopping starters; they do not call Nemlig or change the local selection.
 
 Voice and touch use one private temporary draft per ChatGPT conversation, identified
 by the host session metadata and authenticated principal. There is no hourly expiry.
@@ -211,8 +212,9 @@ pnpm --filter nemlig-assistant storybook
 ```
 
 The local Storybook uses deterministic product fixtures for the shared viewer
-components and the narrow To decide, Ready, alternatives, factual-detail, and
-unavailable presentations. `pnpm --filter nemlig-assistant build:storybook`
+components and the narrow To decide, Ready, alternatives, factual-detail,
+unavailable, prepared-confirmation, verified-success, and empty presentations.
+`pnpm --filter nemlig-assistant build:storybook`
 checks that those stories build. It is a component visual contract, not an MCP
 Apps host simulation or evidence of native ChatGPT rendering; retain the
 built-viewer smoke and post-release host smoke for those boundaries.
@@ -223,10 +225,10 @@ explicit alternatives searches hydrate every unique eligible result in the
 single provider response with three concurrent reads and bounded provider
 deadlines/retries. This does not enumerate the whole catalogue.
 
-When you are happy with Ready, choose **Send to Nemlig basket**.
+When you are happy with Ready, choose **Review exact Nemlig change**.
 This prepares fresh exact product prices and quantities and shows the separate
-on-screen confirmation. Inspect the prepared lines, then confirm in the viewer
-to submit from the viewer. In conversation, a clear instruction to add the
+on-screen confirmation. Inspect the prepared lines, then choose **Add to Nemlig
+basket** and confirm the exact addition in the viewer. In conversation, a clear instruction to add the
 current Ready draft list is itself authorization for only those unchanged
 prepared lines; if you only ask to prepare/inspect, or the intended products or
 quantities are unclear or have changed, the assistant must ask before submitting.

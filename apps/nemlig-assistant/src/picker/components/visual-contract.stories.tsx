@@ -1,7 +1,7 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import type { ReactNode } from "react";
 import type { ProductView } from "../../product-presentation.js";
-import { ActionFooter, DestinationTabs, ProductFacts, ProductSummary, ProductSummaryButton, QuantityControl, ViewerButton } from "./index.js";
+import { ActionFooter, DestinationTabs, DraftListStarters, OutcomeSurface, ProductFacts, ProductSummary, ProductSummaryButton, QuantityControl, ViewerButton } from "./index.js";
 
 const milk: ProductView = {
   context: "review",
@@ -115,4 +115,16 @@ export const FactualDetails: Story = { render: () => <Frame><ProductRow expanded
 
 export const Unavailable: Story = {
   render: () => <Frame><p className="intro">The returned data is incomplete, so this row stays honest and non-actionable.</p><section className="product-list"><ProductRow view={unavailable} quantity={1} /></section></Frame>,
+};
+
+export const PreparedConfirmation: Story = {
+  render: () => <Frame><OutcomeSurface title="Ready to add to Nemlig basket"><p>2 × Arla ØKO Minimælk · 12,95 kr. each · 25,90 kr.</p><p>Expected product total: 25,90 kr.</p><ViewerButton color="primary">Add to Nemlig basket</ViewerButton></OutcomeSurface></Frame>,
+};
+
+export const VerifiedSuccess: Story = {
+  render: () => <Frame><OutcomeSurface tone="success" title="Nemlig confirmed the addition"><p>Only the prepared products were added. Your real Nemlig basket was verified after the addition.</p><ViewerButton color="secondary">Continue with Draft list</ViewerButton></OutcomeSurface></Frame>,
+};
+
+export const EmptyDraftList: Story = {
+  render: () => <Frame><DraftListStarters onChoose={() => undefined} /></Frame>,
 };

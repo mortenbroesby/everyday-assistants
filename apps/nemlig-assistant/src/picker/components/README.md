@@ -2,7 +2,7 @@
 
 This is the private React component library for the Nemlig Assistant picker.
 It owns reusable viewer presentation only: native controls, product summaries,
-supplied factual disclosures, navigation and layout helpers.
+supplied factual disclosures, navigation, outcome/entry surfaces, and layout helpers.
 
 Components receive server-owned snapshots and callbacks. They must not call MCP
 tools, fetch providers, own review membership/quantity/revision state, or
