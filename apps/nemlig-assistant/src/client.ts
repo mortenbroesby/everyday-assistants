@@ -1,6 +1,9 @@
 import { createHash, randomUUID } from "node:crypto";
 import { compile } from "html-to-text";
 import { z } from "zod";
+import { NemligError } from "./nemlig-error.js";
+
+export { NemligError } from "./nemlig-error.js";
 
 export const API_BASE_URL = "https://www.nemlig.com/webapi";
 export const SEARCH_GATEWAY_URL = "https://webapi.prod.knl.nemlig.it/searchgateway/api";
@@ -13,14 +16,6 @@ const recordsSchema = z.array(recordSchema);
 const DAIRY_KEYWORDS = ["mælk", "ost", "fløde", "yoghurt", "smør", "skyr"];
 const DEFAULT_PRODUCT_TIMESTAMP = "AAAAAAAA-YFA_17hS";
 const DEFAULT_CORRELATION_ID = "YFA_17hS";
-
-export class NemligError extends Error {
-  override readonly name: string = "NemligError";
-
-  constructor(message: string, readonly status?: number) {
-    super(message);
-  }
-}
 
 /** A failure known to occur before the provider's basket-write request was dispatched. */
 export class BasketPreflightError extends NemligError {

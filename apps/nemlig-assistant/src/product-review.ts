@@ -1,6 +1,6 @@
 import type { BasketProposalService, ApplyResult } from "./proposals.js";
 import { randomUUID } from "node:crypto";
-import { NemligError } from "./client.js";
+import { NemligError } from "./nemlig-error.js";
 import { isAuthenticationFailure, resolveDetailedProductSearch, type ProductDiscoveryClient } from "./product-discovery.js";
 import { createProductView, type ProductView } from "./product-presentation.js";
 import { runReadPool } from "./read-coordination.js";

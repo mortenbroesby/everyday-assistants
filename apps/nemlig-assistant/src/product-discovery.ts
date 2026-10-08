@@ -1,5 +1,6 @@
 import { Effect } from "effect";
-import { NemligError, type Product } from "./client.js";
+import type { Product } from "./client.js";
+import { NemligError } from "./nemlig-error.js";
 import { createReadScope, runAbortableEffect, type SettledRead } from "./read-coordination.js";
 
 export interface ProductDiscoveryClient {
