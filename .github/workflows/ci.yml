@@ -9,6 +9,20 @@ permissions:
   contents: read
 
 jobs:
+  fallow:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6.0.1
+        with:
+          fetch-depth: 0
+      - name: Fallow changed-code report
+        uses: fallow-rs/fallow@aaaec796f5449810b9ecf82ed7e62b775d4d1ef3 # v3.32.0
+        with:
+          command: audit
+          version: 3.32.0
+          fail-on-issues: false
+
   verify:
     runs-on: ubuntu-latest
     steps:

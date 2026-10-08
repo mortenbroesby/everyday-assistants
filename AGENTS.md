@@ -28,6 +28,7 @@ Load only the specialized guidance that matches the task.
 | Task intent | Load |
 | --- | --- |
 | Cleanup/refactoring, non-obvious complexity rationale, or an explicit read-only deletion audit | [Code Simplifier](.agents/skills/code-simplifier/SKILL.md) |
+| Targeted evidence on unused code, dependencies, duplication, complexity, or PR changed-code risk | [Fallow](.agents/skills/fallow/SKILL.md); verify findings against actual consumers and contracts |
 | Observed React component API, composition, or state-ownership problem | [Composition Patterns](.agents/skills/vercel-composition-patterns/SKILL.md); add Code Simplifier only when cleanup is also requested |
 | Concrete React rendering, data-flow, or performance concern | [React Best Practices](.agents/skills/vercel-react-best-practices/SKILL.md); do not invoke for routine React edits or speculative optimization |
 | Before claiming work is complete, fixed, or passing | [Verification Before Completion](.agents/skills/verification-before-completion/SKILL.md) |
