@@ -1,0 +1,8 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema-jsonc.json",
+  "workspaces": {
+    "apps/nemlig-assistant": {
+      "entry": ["scripts/package-chatgpt-plugin.mjs"]
+    }
+  }
+}

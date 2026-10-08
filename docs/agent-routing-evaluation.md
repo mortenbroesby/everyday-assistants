@@ -100,10 +100,12 @@ score.
 
 TypeScript's `noUnusedLocals` and `noUnusedParameters`, plus ESLint, check
 declarations in configured files. They do not identify every unreachable file,
-unused export, or dependency. Knip analyzes those through an entry-to-module
-graph and discovers this package's binaries, scripts, workflow commands, Worker
-and UI tooling natively. Every proposed deletion still requires runtime,
-package, and host-consumer proof.
+unused export, runtime dependency, development dependency, or optional peer
+dependency. Knip analyzes those through an entry-to-module graph and discovers
+this package's binaries, scripts, workflow commands, Worker and UI tooling
+natively. A single explicit entry covers the documented ChatGPT plugin-packaging
+script, which is invoked outside package scripts. Every proposed deletion still
+requires runtime, package, and host-consumer proof.
 
 `pnpm code-health` compares the current Knip result with the committed,
 main-SHA baseline. Pull requests read that baseline from their target branch,
@@ -115,13 +117,17 @@ baseline. Only the explicit reviewed `pnpm code-health:baseline` command writes
 a baseline, and only while `HEAD` is the current `origin/main` commit. The
 one-time `--bootstrap` form also requires that the branch has no Nemlig app
 differences from `origin/main`; it records that target commit, never the branch
-SHA.
+SHA. Both forms require a clean working tree before Knip scans. To record an
+intentional resolution without accepting new findings, run the reviewed
+`pnpm code-health:baseline -- --prune` command on current `main`; Git history
+retains the removed identity and a later reintroduction fails CI.
 
 Agents should inspect a relevant result, avoid unrelated baseline cleanup, and
 prove any deletion independently. Do not add broad ignores merely to quiet the
 scanner or regenerate the baseline to clear a regression. This is a local,
 read-only CI check: it does not create GitHub reports or receive write
-permissions.
+permissions. Scanner diagnostics are sanitized rather than copied into logs;
+finding identities retain only category, file, and a hash.
 
 [entry discovery]: https://knip.dev/explanations/entry-files
 [configuration]: https://knip.dev/reference/configuration

@@ -1,13 +1,12 @@
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = resolve(import.meta.dirname, "..");
 const baselinePath = resolve(root, ".code-health/nemlig-assistant-baseline.json");
-const knip = resolve(root, "node_modules/knip/bin/knip.js");
-const categories = ["files", "dependencies", "exports", "types"];
+const categories = ["files", "dependencies", "devDependencies", "optionalPeerDependencies", "exports", "types"];
 
 const idFor = (category, file, name) => createHash("sha256").update(`${category}\0${file}\0${name}`).digest("hex");
 
@@ -29,6 +28,23 @@ export function findingsFrom(report) {
     }
   }
   return [...new Map(findings.map((finding) => [finding.id, finding])).values()].sort((left, right) => left.id.localeCompare(right.id));
+}
+
+export function scan({ cwd = root, runner = spawnSync } = {}) {
+  const result = runner(process.execPath, [
+    resolve(cwd, "node_modules/knip/bin/knip.js"),
+    "--workspace", "nemlig-assistant",
+    "--include", categories.join(","),
+    "--reporter", "json",
+    "--no-progress",
+    "--no-exit-code",
+  ], { cwd, encoding: "utf8" });
+  if (result.error || result.signal || result.status !== 0) throw new Error("Code-health scan failed.");
+  try {
+    return findingsFrom(JSON.parse(result.stdout));
+  } catch {
+    throw new Error("Code-health scan returned invalid JSON.");
+  }
 }
 
 export function validateBaseline(baseline) {
@@ -55,12 +71,10 @@ export function compareFindings(baseline, current) {
   };
 }
 
-function scan() {
-  const stdout = execFileSync(process.execPath, [knip, "--workspace", "nemlig-assistant", "--include", categories.join(","), "--reporter", "json", "--no-progress", "--no-exit-code"], { cwd: root, encoding: "utf8" });
-  return findingsFrom(JSON.parse(stdout));
-}
-
-function snapshot(findings, bootstrap) {
+function baselineContext(bootstrap) {
+  if (execFileSync("git", ["status", "--porcelain=v1", "--untracked-files=all"], { cwd: root, encoding: "utf8" }).trim()) {
+    throw new Error("Code-health baseline generation requires a clean working tree.");
+  }
   const head = execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim();
   const main = execFileSync("git", ["rev-parse", "origin/main"], { cwd: root, encoding: "utf8" }).trim();
   const mergeBase = execFileSync("git", ["merge-base", "HEAD", "origin/main"], { cwd: root, encoding: "utf8" }).trim();
@@ -73,22 +87,36 @@ function snapshot(findings, bootstrap) {
   if (head !== main && (!bootstrap || mergeBase !== main || appChanges)) {
     throw new Error("Code-health baselines may only be generated from origin/main, or with --bootstrap from a branch whose app source matches origin/main.");
   }
-  return { schemaVersion: 1, tool: { name: "knip", version: "6.40.0" }, generatedFrom: main, findings };
+  return main;
+}
+
+export function pruneFindings(baseline, current) {
+  const result = compareFindings(baseline, current);
+  if (result.new.length) throw new Error("Code-health baseline pruning cannot accept new findings.");
+  return current;
+}
+
+function snapshot(bootstrap) {
+  const main = baselineContext(bootstrap);
+  return { schemaVersion: 1, tool: { name: "knip", version: "6.40.0" }, generatedFrom: main, findings: scan() };
 }
 
 function summary(result) {
   return JSON.stringify({ known: result.known.length, new: result.new.length, resolved: result.resolved.length, newFindings: result.new }, null, 2);
 }
 
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
+if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url))) {
   const arguments_ = process.argv.slice(2).filter((argument) => argument !== "--");
   const mode = arguments_[0];
   const baselineArgument = arguments_[1] === "--baseline" ? arguments_[2] : undefined;
   if (mode === "baseline") {
     const bootstrap = arguments_[1] === "--bootstrap";
-    if (arguments_.length !== (bootstrap ? 2 : 1)) throw new Error("Usage: nemlig-code-health.mjs baseline [--bootstrap]");
+    const prune = arguments_[1] === "--prune";
+    if (arguments_.length !== (bootstrap || prune ? 2 : 1)) throw new Error("Usage: nemlig-code-health.mjs baseline [--bootstrap|--prune]");
+    const snapshotValue = snapshot(bootstrap);
+    if (prune) snapshotValue.findings = pruneFindings(validateBaseline(JSON.parse(readFileSync(baselinePath, "utf8"))).findings, snapshotValue.findings);
     mkdirSync(resolve(root, ".code-health"), { recursive: true });
-    writeFileSync(baselinePath, `${JSON.stringify(snapshot(scan(), bootstrap), null, 2)}\n`);
+    writeFileSync(baselinePath, `${JSON.stringify(snapshotValue, null, 2)}\n`);
     console.log(`Wrote ${baselinePath}`);
   } else if (mode === "check") {
     if (arguments_.length !== (baselineArgument ? 3 : 1)) throw new Error("Usage: nemlig-code-health.mjs check [--baseline <path>]");
