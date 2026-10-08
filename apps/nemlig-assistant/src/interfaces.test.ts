@@ -15,7 +15,7 @@ import { PRODUCT_VIEWER_RESOURCE_URI } from "./product-viewer.js";
 import { NEMLIG_CODENAME, NEMLIG_VERSION } from "./runtime.js";
 
 const expectedProductViewerResources = [
-  { uri: PRODUCT_VIEWER_RESOURCE_URI, name: "nemlig-product-viewer", title: "Your draft list", description: "Product results and the shared local shopping draft list supplied by MoJo Shopper.", mimeType: "text/html;profile=mcp-app" },
+  { uri: PRODUCT_VIEWER_RESOURCE_URI, name: "nemlig-product-viewer", title: "Your draft list", description: "Product results and the shared local shopping draft list supplied by Nemlig Assistant.", mimeType: "text/html;profile=mcp-app" },
 ];
 
 const basket: Basket = {
