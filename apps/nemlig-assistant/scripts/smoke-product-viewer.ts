@@ -7,6 +7,7 @@ import { chromium } from "playwright";
 declare global {
   interface Window {
     calls: Array<{ name: string; args: { action?: { kind?: string; product_id?: number; quantity?: number; query?: string } } }>;
+    messages: string[];
     hostErrors: string[];
     getViewId: () => string;
     providerWrites: number;
@@ -47,7 +48,7 @@ const fixtureJson = JSON.stringify(initialReview);
 const parentDocument = `<!doctype html><meta charset="utf-8"><title>synthetic MCP host</title>
 <iframe title="viewer" src="/resource" style="width:100%;height:900px;border:0"></iframe>
 <script>
-window.calls=[]; window.providerWrites=0; window.hostErrors=[]; let review=${fixtureJson}; let viewId='synthetic-view-1'; let initialViewIdOverride; window.submissionAttempts=0; window.failNext=false; window.failGenericNext=false;
+window.calls=[]; window.messages=[]; window.providerWrites=0; window.hostErrors=[]; let review=${fixtureJson}; let viewId='synthetic-view-1'; let initialViewIdOverride; window.submissionAttempts=0; window.failNext=false; window.failGenericNext=false;
 const alternativeView=${JSON.stringify(fixtureView(3, "Synthetic alternative"))};
 const frame=document.querySelector('iframe');
 const post=(event,message)=>event.source.postMessage(message,location.origin);
@@ -83,6 +84,7 @@ window.addEventListener('message',event=>{
  const message=event.data; if(!message || message.jsonrpc!=='2.0') return;
  if(message.method==='ui/initialize') return post(event,{jsonrpc:'2.0',id:message.id,result:{protocolVersion:message.params.protocolVersion,hostInfo:{name:'synthetic-host',version:'1'},hostCapabilities:{},hostContext:{theme:'light'}}});
  if(message.method==='ui/notifications/initialized'){const presented=result(review,initialViewIdOverride??viewId);initialViewIdOverride=undefined;return post(event,{jsonrpc:'2.0',method:'ui/notifications/tool-result',params:presented})}
+ if(message.method==='ui/message'){window.messages.push(message.params.content.map(block=>block.type==='text'?block.text:'').join(''));return post(event,{jsonrpc:'2.0',id:message.id,result:{}})}
  if(message.method==='tools/call'){
   const {name,arguments:args}=message.params; window.calls.push({name,args});
   if(name==='update_product_review'&&args.action?.kind==='show'){
@@ -325,7 +327,7 @@ try {
   await frame.getByRole("button", { name: "Increase quantity of Synthetic milk" }).click();
   await frame.getByRole("button", { name: "Increase quantity of Synthetic alternative" }).click();
   const beforePrepare = await page.evaluate(() => window.calls.length);
-  await frame.getByRole("button", { name: "Prepare exact change" }).click();
+  await frame.getByRole("button", { name: "Review exact Nemlig change" }).click();
   await page.waitForFunction((before) => window.calls.slice(before).some((call) => call.args.action?.kind === "prepare_submission"), beforePrepare);
   const prepareCalls = await page.evaluate((before) => window.calls.slice(before).map((call) => call.args.action), beforePrepare);
   assert.deepEqual(prepareCalls, [
@@ -333,54 +335,63 @@ try {
     { kind: "quantity", product_id: 3, quantity: 3 },
     { kind: "prepare_submission" },
   ], "both quantities were not serialized before prepare inside one debounce window");
-  await frame.getByRole("heading", { name: "Confirm the exact Nemlig change" }).waitFor();
+  await frame.getByRole("heading", { name: "Ready to add to Nemlig basket" }).waitFor();
   await frame.getByText("2 × Synthetic milk").waitFor();
   await frame.getByText("3 × Synthetic alternative").waitFor();
   await capture("confirmation");
-  await frame.getByRole("button", { name: "Review exact change" }).click();
+  await frame.getByRole("button", { name: "Add to Nemlig basket" }).click();
   await frame.getByRole("button", { name: "Cancel" }).click();
   assert.equal(await page.evaluate(() => window.submissionAttempts), 0, "opening and cancelling exact confirmation submitted a review");
-  await frame.getByRole("button", { name: "Review exact change" }).click();
+  await frame.getByRole("button", { name: "Add to Nemlig basket" }).click();
   const attemptsBeforeStaleConfirmation = await page.evaluate(() => window.submissionAttempts);
   await frame.getByRole("button", { name: "Increase quantity of Synthetic milk" }).click();
   await frame.getByRole("button", { name: "Add to Nemlig" }).evaluate((button: HTMLButtonElement) => button.click());
   await frame.getByText("The prepared change changed while quantities were being saved.").waitFor();
   assert.equal(await page.evaluate(() => window.submissionAttempts), attemptsBeforeStaleConfirmation, "stale prepared review was submitted after quantity flush");
-  await frame.getByRole("button", { name: "Prepare exact change" }).waitFor();
-  await frame.getByRole("button", { name: "Prepare exact change" }).click();
-  await frame.getByRole("button", { name: "Review exact change" }).click();
+  await frame.getByRole("button", { name: "Review exact Nemlig change" }).waitFor();
+  await frame.getByRole("button", { name: "Review exact Nemlig change" }).click();
+  await frame.getByRole("button", { name: "Add to Nemlig basket" }).click();
   await page.evaluate(() => { window.failNext = true; });
   await frame.getByRole("button", { name: "Add to Nemlig" }).click();
-  await frame.getByText("Submission outcome is uncertain").waitFor();
+  await frame.getByText("We could not verify the addition").waitFor();
   assert.equal(await page.evaluate(() => window.submissionAttempts), 1, "explicit submission was not attempted exactly once");
   assert.equal(await frame.locator('input[type="checkbox"]').count(), 0, "uncertain submission left review editing active");
   await page.evaluate(() => window.reopenCurrentReview());
-  await frame.getByText("Submission outcome is uncertain").waitFor();
-  assert.equal(await frame.getByRole("button", { name: "Prepare exact change" }).count(), 0, "uncertain submission offered a retry");
+  await frame.getByText("We could not verify the addition").waitFor();
+  assert.equal(await frame.getByRole("button", { name: "Review exact Nemlig change" }).count(), 0, "uncertain submission offered a retry");
   const callsBeforeVerifiedCompletion = await page.evaluate(() => window.calls.length);
   await page.evaluate(() => window.sendSubmitted());
-  await frame.getByText("Nemlig confirmed this Draft list was added successfully.").waitFor();
+  await frame.getByRole("heading", { name: "Added to Nemlig basket" }).waitFor();
+  await frame.getByText("Nemlig confirmed the addition").waitFor();
   await capture("success");
   assert.equal(await page.evaluate((before) => window.calls.slice(before).filter((call) => call.name === "submit_product_review").length, callsBeforeVerifiedCompletion), 0, "verified completion replayed submission");
   await page.evaluate(() => window.sendMalformed());
   await frame.getByRole("alert").waitFor();
   assert.equal(await frame.locator('input[type="checkbox"]').count(), 0, "malformed nested submission left actions active");
   await page.evaluate(() => window.reopenCurrentReview());
-  await frame.getByRole("button", { name: /Ready \(2\)/ }).waitFor();
   await frame.getByRole("button", { name: "Continue with Draft list" }).click();
+  await frame.getByRole("button", { name: /Ready \(2\)/ }).waitFor();
   await frame.getByRole("button", { name: "Increase quantity of Synthetic milk" }).click();
   await frame.getByText("4 ×").waitFor();
-  await frame.getByRole("button", { name: "Prepare exact change" }).waitFor();
+  await frame.getByRole("button", { name: "Review exact Nemlig change" }).waitFor();
   assert.equal(await page.evaluate(() => window.submissionAttempts), 1, "continuing a submitted Draft list retried the old submission");
   await page.evaluate(() => window.sendEnded());
+  await frame.getByRole("heading", { name: "What should we shop for?" }).waitFor();
   await frame.getByText("Your local Draft list was discarded.").waitFor();
+  assert.equal(await frame.getByRole("button", { name: /To decide/ }).count(), 0, "an empty Draft list retained destination navigation");
+  assert.equal(await frame.getByText("More Draft list actions").count(), 0, "an empty Draft list retained local destructive actions");
+  const callsBeforeStarter = await page.evaluate(() => window.calls.length);
+  await frame.getByRole("button", { name: "Find a product" }).click();
+  await page.waitForFunction(() => window.messages.length === 1);
+  assert.equal(await page.evaluate(() => window.calls.length), callsBeforeStarter, "an empty-state starter called a server tool directly");
+  assert.match(await page.evaluate(() => window.messages[0]), /new local Draft list/u, "empty-state starter did not send a bounded conversational request");
   await capture("empty");
   assert.equal(await frame.locator('input[type="checkbox"]').count(), 0, "authoritative ended notification left active controls");
   await page.evaluate(() => window.sendUnavailable());
-  await frame.getByRole("heading", { name: "Start a new Draft list" }).waitFor();
+  await frame.getByRole("heading", { name: "Draft list unavailable" }).waitFor();
   await frame.getByText("This temporary Draft list is no longer available. Ask in chat before starting a new Draft list. Previous choices or submission approval are not restored.").waitFor();
   await capture("unavailable");
-  assert.equal(await frame.getByRole("button", { name: "Prepare exact change" }).count(), 0, "unavailable notification restored the discarded review actions");
+  assert.equal(await frame.getByRole("button", { name: "Review exact Nemlig change" }).count(), 0, "unavailable notification restored the discarded review actions");
   assert.equal(await frame.locator('input[type="checkbox"]').count(), 0, "unavailable notification restored discarded review controls");
   await page.evaluate(() => window.sendUnavailableProduct());
   await frame.getByText("Product 404 details unavailable.").waitFor();

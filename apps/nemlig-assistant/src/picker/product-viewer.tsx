@@ -1,7 +1,7 @@
 import { useApp, useHostStyles } from "@modelcontextprotocol/ext-apps/react";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import type { ProductView } from "../product-presentation.js";
-import { ActionFooter, DestinationTabs, isUsable, money, ProductFacts, productName, ProductSummary, ProductSummaryButton, QuantityControl, ViewerButton as Button } from "./components/index.js";
+import { ActionFooter, DestinationTabs, DraftListOverflow, DraftListStarters, isUsable, money, OutcomeSurface, ProductFacts, productName, ProductSummary, ProductSummaryButton, QuantityControl, ViewerButton as Button } from "./components/index.js";
 
 type ReviewItem = { product_id: number; quantity: number; state: "needs-review" | "ready"; view: ProductView };
 type Review = {
@@ -333,6 +333,11 @@ export function ProductViewer() {
           } else { activeReview.current = undefined; setScreen({ kind: "stale" }); }
         } catch { activeReview.current = undefined; setScreen({ kind: "stale" }); }
         setMessage("Your last action was not applied. The current Draft list was refreshed; choose again.");
+      } else if (!recovery && /uncertain/i.test(text)) {
+        submitBlockedRef.current = true;
+        setSubmitBlocked(true);
+        setConfirmSubmit(false);
+        setMessage("Submission outcome is uncertain. Inspect the actual Nemlig basket; do not retry automatically.");
       } else {
         deactivateReview();
         setPendingQuantities(new Map());
@@ -429,6 +434,8 @@ export function ProductViewer() {
   const basket = productPayload?.detail_limit !== undefined && Array.isArray(productPayload.items);
   const uncertainSubmission = submitBlocked || review?.submission?.status === "uncertain";
   const editsBlocked = busy || uncertainSubmission || review?.submission?.status === "submitted" && !continueSubmitted;
+  const terminalSubmission = uncertainSubmission || review?.submission?.status === "submitted" && !continueSubmitted;
+  const hasActiveProducts = Boolean(review && active && review.items.length > 0);
   const sendFollowUp = async (text: string) => {
     if (!connectedApp || !isConnected) { setMessage("Continue in conversation to inspect or start a Draft list."); return; }
     try {
@@ -466,9 +473,9 @@ export function ProductViewer() {
   };
 
   return <div className="app-frame"><main className="viewer" aria-labelledby="title">
-    <h1 id="title">{review && active ? (review.items.length ? safeTitle : "What should we shop for?") : basket ? "Actual Nemlig basket" : screen.kind === "unavailable" ? "Start a new Draft list" : screen.kind === "review" ? "Your Draft list" : "Nemlig products"}</h1>
-    <p className="intro">{review && active ? (safeTitle === "Ready" ? "Adjust quantities directly. Open a product to move it back or remove it. Prepare the exact change before adding anything to Nemlig." : safeTitle === "Choose an alternative" ? "Compare available options for this product." : "Select products to move them into Ready. Open a product for details.") : basket ? "Your current Nemlig basket. This view cannot change it." : "Inspect product details here or continue in conversation."}</p>
-    {review && <DestinationTabs
+    <h1 id="title">{review && active && terminalSubmission ? review.submission?.status === "submitted" ? "Added to Nemlig basket" : "Check your Nemlig basket" : review && active ? (review.items.length ? safeTitle : "What should we shop for?") : basket ? "Actual Nemlig basket" : screen.kind === "unavailable" ? "Draft list unavailable" : screen.kind === "review" ? "Your Draft list" : "Nemlig products"}</h1>
+    {!terminalSubmission && <p className="intro">{review && active ? (review.items.length === 0 ? "Start another local Draft list in conversation." : safeTitle === "Ready" ? "Adjust quantities directly. Open a product to move it back or remove it. Prepare the exact change before adding anything to Nemlig." : safeTitle === "Choose an alternative" ? "Compare available options for this product." : "Select products to move them into Ready. Open a product for details.") : basket ? "Your current Nemlig basket. This view cannot change it." : "Inspect product details here or continue in conversation."}</p>}
+    {review && review.items.length > 0 && !terminalSubmission && <DestinationTabs
       destination={destination ?? review.destination}
       toDecideCount={review.items.filter((item) => item.state === "needs-review").length}
       readyCount={review.items.filter((item) => item.state === "ready").length}
@@ -484,7 +491,7 @@ export function ProductViewer() {
     {screen.kind === "review" && review && !active && <section className="status"><p>This Draft list card is inactive. {review.items.length ? "The current Draft list is shown read-only." : "No current Draft list is available."}</p>{review.items.length > 0 && <Button color="primary" disabled={activatingCurrent || busy} onClick={() => void activateCurrentDraftList()}>{activatingCurrent ? "Loading…" : "Make this card current"}</Button>}{message && <p role="status">{message}</p>}</section>}
     {review && !active && review.items.length > 0 && <section className="product-list" aria-label="Current Draft list, read only">{review.items.map((item) => <ProductCard key={item.product_id} view={item.view} disabled />)}</section>}
     {screen.kind === "unavailable" && <section className="status"><p>This temporary Draft list is no longer available. Ask in chat before starting a new Draft list. Previous choices or submission approval are not restored.</p></section>}
-    {review && active && destination === "alternatives" && review.alternatives && <section className="alternatives">
+    {review && active && !terminalSubmission && destination === "alternatives" && review.alternatives && <section className="alternatives">
       <section className="alternatives-current" aria-labelledby="current-product-title">
         <h2 id="current-product-title">Current product</h2>
         {review.items.filter((item) => item.product_id === review.alternatives?.product_id).map((item) => <ProductCard key={item.product_id} view={item.view} disabled={busy} {...reviewDisclosureProps(item.product_id)} />)}
@@ -503,7 +510,7 @@ export function ProductViewer() {
       </section>
     </section>}
     {screen.kind === "products" && screen.views.length > 0 && <section className="product-list" aria-label="Product results">{screen.views.map((view, index) => <ProductCard key={`${view.status === "complete" ? view.product.id : view.product_id}:${index}`} view={view} disabled={busy} />)}</section>}
-    {review && active && review.items.length > 0 && destination !== "alternatives" && <section className="product-list" aria-label={`${safeTitle} products`}>
+    {review && active && !terminalSubmission && review.items.length > 0 && destination !== "alternatives" && <section className="product-list" aria-label={`${safeTitle} products`}>
       {review.items.filter((item) => item.state === destination).map((item) => {
         const alternativeQuery = item.view.status === "complete"
           ? (item.view.product.subcategory ?? item.view.product.name ?? String(item.product_id)).slice(0, 200)
@@ -532,21 +539,23 @@ export function ProductViewer() {
         />;
       })}
     </section>}
-    {review && active && destination === "needs-review" && <ActionFooter>
+    {review && active && !terminalSubmission && destination === "needs-review" && <ActionFooter>
       {review.items.some((item) => item.state === "needs-review" && isUsable(item.view)) && <>
         <Button color="secondary" disabled={editsBlocked} onClick={() => setSelected(new Set(review.items.filter((item) => item.state === "needs-review" && isUsable(item.view)).map((item) => item.product_id)))}>Select all</Button>
       </>}
       {selected.size > 0 && <Button color="primary" disabled={editsBlocked} onClick={() => afterFlush({ kind: "accept", product_ids: [...selected] })}>Add selected to Ready ({selected.size})</Button>}
     </ActionFooter>}
-    {review && active && destination === "ready" && <ActionFooter>
-      {review.submission?.status === "submitted" ? <>
-        <p className="status" role="status">Nemlig confirmed this Draft list was added successfully.</p>
-        {!continueSubmitted && <Button color="secondary" disabled={busy} onClick={() => setContinueSubmitted(true)}>Continue with Draft list</Button>}
-      </> : review.submission?.status === "uncertain" ? <>
-        <p className="status" role="status">Submission outcome is uncertain. Inspect the actual Nemlig basket; do not retry automatically.</p>
-        <Button color="secondary" disabled={busy} onClick={() => void sendFollowUp("Inspect the actual Nemlig basket for this uncertain Draft list submission. Do not retry or add anything.")}>Inspect Nemlig basket in conversation</Button>
-      </> : review.submission?.status !== "prepared" && <Button color="primary" disabled={editsBlocked || !review.items.some((item) => item.state === "ready")} onClick={() => afterFlush({ kind: "prepare_submission" })}>Prepare exact change</Button>}
-      {review.submission?.status === "prepared" && <section className="submission"><h2>Confirm the exact Nemlig change</h2>{review.submission.review.lines?.map((line) => <p key={line.product_id}>{line.quantity} × {line.name ?? `Product ${line.product_id}`} · {money(line.item_price)} each · {money(line.line_total)}</p>)}<p>Expected product total: {money(review.submission.review.expected_products_price)}</p>
+    {review && active && terminalSubmission && review.submission?.status === "submitted" && <OutcomeSurface tone="success" title="Nemlig confirmed the addition">
+      <p role="status">Only the prepared products were added. Your real Nemlig basket was verified after the addition.</p>
+      <Button color="secondary" disabled={busy} onClick={() => setContinueSubmitted(true)}>Continue with Draft list</Button>
+    </OutcomeSurface>}
+    {review && active && terminalSubmission && uncertainSubmission && <OutcomeSurface tone="warning" title="We could not verify the addition">
+      <p role="status">Inspect the actual Nemlig basket before making another request. Nemlig Assistant will not retry automatically.</p>
+      <Button color="secondary" disabled={busy} onClick={() => void sendFollowUp("Inspect the actual Nemlig basket for this uncertain Draft list submission. Do not retry or add anything.")}>Inspect Nemlig basket in conversation</Button>
+    </OutcomeSurface>}
+    {review && active && !terminalSubmission && destination === "ready" && <ActionFooter>
+      {review.submission?.status !== "prepared" && <Button color="primary" disabled={editsBlocked || !review.items.some((item) => item.state === "ready")} onClick={() => afterFlush({ kind: "prepare_submission" })}>Review exact Nemlig change</Button>}
+      {review.submission?.status === "prepared" && <OutcomeSurface title="Ready to add to Nemlig basket">{review.submission.review.lines?.map((line) => <p key={line.product_id}>{line.quantity} × {line.name ?? `Product ${line.product_id}`} · {money(line.item_price)} each · {money(line.line_total)}</p>)}<p>Expected product total: {money(review.submission.review.expected_products_price)}</p>
         {submitBlocked ? <p>Inspect the actual Nemlig basket in conversation before preparing another change.</p> : confirmSubmit ? <><p>Add only these exact quantities to the Nemlig basket?</p><Button color="secondary" onClick={() => setConfirmSubmit(false)}>Cancel</Button><Button color="primary" disabled={busy} onClick={() => void flushQuantities().then(async (ok) => {
           const confirmed = activeReview.current?.review;
           if (!ok || !confirmed?.submission || confirmed.review_id !== review.review_id || confirmed.revision !== review.revision || confirmed.submission.status !== "prepared" || confirmed.submission.submission_id !== review.submission?.submission_id || callLock.current) {
@@ -559,13 +568,13 @@ export function ProductViewer() {
           if (!latest?.view_id) return;
           const success = await call("submit_product_review", { view_id: latest.view_id, review_id: confirmed.review_id, revision: confirmed.revision, submission_id: confirmed.submission.submission_id }, false);
           if (!success) setMessage("Submission outcome is uncertain. Inspect the actual Nemlig basket; do not retry automatically.");
-        })}>Add to Nemlig</Button></> : <Button color="primary" disabled={busy} onClick={() => setConfirmSubmit(true)}>Review exact change</Button>}
-      </section>}
+        })}>Add to Nemlig</Button></> : <Button color="primary" disabled={busy} onClick={() => setConfirmSubmit(true)}>Add to Nemlig basket</Button>}
+      </OutcomeSurface>}
       {message && review.submission?.status !== "uncertain" && <p className="status" role="status">{message}</p>}
     </ActionFooter>}
-    {review && active && review.items.length === 0 && <section className="empty"><h2>Your Draft list is empty.</h2><p>Continue in conversation to add products or start a new Draft list. Nothing changed in Nemlig.</p><Button color="secondary" disabled={busy} onClick={() => void sendFollowUp("Help me start a new Draft list from products we discuss. Do not restore previous choices.")}>Continue in conversation</Button></section>}
-    {review && active && review.submission?.status !== "uncertain" && <ActionFooter><Button color="secondary" disabled={editsBlocked || busy} onClick={() => setConfirmEnd(true)}>End Draft list</Button>{confirmEnd && <section className="submission"><p>Discard this local Draft list? The Nemlig basket will not change.</p><Button color="secondary" disabled={busy} onClick={() => setConfirmEnd(false)}>Keep Draft list</Button><Button color="secondary" disabled={busy} onClick={() => void endDraft()}>Confirm discard Draft list</Button></section>}</ActionFooter>}
-    {screen.kind === "empty" && <section className="empty"><h2>{screen.message ?? "No products found."}</h2><p>Continue in conversation to inspect the Nemlig basket or start a new Draft list.</p><Button color="secondary" disabled={busy} onClick={() => void sendFollowUp("Help me continue shopping or inspect my Nemlig basket. Do not restore a discarded Draft list.")}>Continue in conversation</Button></section>}
+    {review && active && !terminalSubmission && review.items.length === 0 && <DraftListStarters message="Your local Draft list is empty. Nothing changed in Nemlig." onChoose={(prompt) => void sendFollowUp(prompt)} />}
+    {review && active && !terminalSubmission && hasActiveProducts && <DraftListOverflow><Button color="secondary" disabled={editsBlocked || busy} onClick={() => setConfirmEnd(true)}>End Draft list</Button>{confirmEnd && <section className="submission"><p>Discard this local Draft list? The Nemlig basket will not change.</p><Button color="secondary" disabled={busy} onClick={() => setConfirmEnd(false)}>Keep Draft list</Button><Button color="secondary" disabled={busy} onClick={() => void endDraft()}>Confirm discard Draft list</Button></section>}</DraftListOverflow>}
+    {screen.kind === "empty" && <DraftListStarters message={screen.message ?? "Your local Draft list is empty. Nothing changed in Nemlig."} onChoose={(prompt) => void sendFollowUp(prompt)} />}
     {screen.kind === "products" && screen.views.length === 0 && <div className="empty" role="status">{basket ? "Your Nemlig basket is empty." : "No products found."}</div>}
     {productPayload?.unenriched_count ? <p className="status">{productPayload.unenriched_count} basket lines do not have current product details.</p> : null}
     {message && screen.kind !== "error" && screen.kind !== "stale" && !(screen.kind === "review" && !active) && destination !== "ready" && <p className="status" role="status">{message}</p>}
