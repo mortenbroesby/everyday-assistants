@@ -30,6 +30,7 @@ export interface AcceptanceFailureEvidence {
   category: "input_invalid" | "deadline_exceeded" | "edge_failed" | "authentication_failed" | "transport_failed" | "feature_failed" | "mutation_failed" | "unknown_failure";
   lastCompletedBoundary: string;
   correlationIds: string[];
+  failureCode?: string;
 }
 
 interface RunOptions {
@@ -81,7 +82,7 @@ class CommandFailure extends DeployFailure {
   constructor(code: string, readonly status?: number, readonly acceptanceFailure?: AcceptanceFailureEvidence, readonly diagnostic?: string) { super(code); }
 }
 class AcceptanceFailure extends DeployFailure {
-  constructor(code: string, readonly evidence?: AcceptanceFailureEvidence) { super(code); }
+  constructor(code: string, readonly evidence?: AcceptanceFailureEvidence, readonly attempts = 0) { super(code); }
 }
 const fail = (code: string): never => { throw new DeployFailure(code); };
 export const commandFailureDiagnostic = (stderr: string): string | undefined => {
@@ -94,12 +95,13 @@ const json = (raw: string, code: string): unknown => { try { return JSON.parse(r
 const object = (value: unknown): Record<string, unknown> | undefined => value !== null && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : undefined;
 const validAcceptanceFailure = (value: unknown): value is AcceptanceFailureEvidence => {
   const evidence = object(value);
-  return Boolean(evidence && Object.keys(evidence).every((key) => ["stage", "profile", "category", "lastCompletedBoundary", "correlationIds"].includes(key))
+  return Boolean(evidence && Object.keys(evidence).every((key) => ["stage", "profile", "category", "lastCompletedBoundary", "correlationIds", "failureCode"].includes(key))
     && (evidence.stage === "edge" || evidence.stage === "read_only")
     && (evidence.profile === "edge" || evidence.profile === "service" || evidence.profile === "live-user")
     && ((evidence.stage === "edge") === (evidence.profile === "edge"))
     && typeof evidence.category === "string" && acceptanceFailureCategories.has(evidence.category)
     && typeof evidence.lastCompletedBoundary === "string" && /^[A-Za-z0-9_:-]{1,64}$/u.test(evidence.lastCompletedBoundary)
+    && (evidence.failureCode === undefined || (typeof evidence.failureCode === "string" && /^[a-z0-9_]{1,64}$/u.test(evidence.failureCode)))
     && Array.isArray(evidence.correlationIds) && evidence.correlationIds.length <= 16
     && evidence.correlationIds.every((id) => typeof id === "string" && /^[A-Za-z0-9_-]{1,128}$/u.test(id)));
 };
@@ -498,6 +500,8 @@ const verifySource = async (deps: DeployDependencies, commit: string, repo: { na
   if (head !== commit || status !== "") fail("source_revision_mismatch");
   try { await runAt(deps, deps.repoRoot, "git", ["merge-base", "--is-ancestor", commit, "origin/main"]); }
   catch { fail("source_revision_mismatch"); }
+  if (deps.env.GITHUB_EVENT_NAME === "workflow_run"
+    && await runAt(deps, deps.repoRoot, "git", ["rev-parse", "origin/main"]) !== commit) fail("source_revision_mismatch");
   const workflows = json(await runAt(deps, deps.repoRoot, "gh", [
     "workflow", "list", "--repo", repo.nameWithOwner, "--all", "--limit", "100", "--json", "id,name,path,state",
   ]), "github_ci_workflow_invalid");
@@ -528,6 +532,14 @@ const verifySource = async (deps: DeployDependencies, commit: string, repo: { na
   const verify = jobs.filter((job) => job.name === "verify");
   if (verify.length !== 1 || verify[0]?.status !== "completed" || verify[0]?.conclusion !== "success") fail("exact_head_ci_not_green");
   return trustedRun.databaseId as number;
+};
+
+const verifyAutomaticCandidateIsCurrentMain = async (deps: DeployDependencies, commit: string, repo: { url: string }): Promise<void> => {
+  if (deps.env.GITHUB_EVENT_NAME !== "workflow_run") return;
+  await runAt(deps, deps.repoRoot, "git", ["-c", "credential.helper=!gh auth git-credential", "fetch", repo.url, "main:refs/remotes/origin/main"]);
+  try { await runAt(deps, deps.repoRoot, "git", ["merge-base", "--is-ancestor", commit, "origin/main"]); }
+  catch { fail("source_revision_mismatch"); }
+  if (await runAt(deps, deps.repoRoot, "git", ["rev-parse", "origin/main"]) !== commit) fail("source_revision_mismatch");
 };
 
 const githubEnvironment = async (deps: DeployDependencies, repository: string, path: string): Promise<Record<string, unknown>> => {
@@ -648,11 +660,9 @@ const parseAcceptanceFailure = (stdout: string | undefined, profile: AcceptanceF
     const evidence: AcceptanceFailureEvidence = {
       stage, profile, category: value.failureCategory as AcceptanceFailureEvidence["category"],
       lastCompletedBoundary: value.lastCompletedBoundary, correlationIds: value.correlationIds as string[],
+      failureCode: value.failed[0] as string,
     };
     if (!validAcceptanceFailure(evidence)) return undefined;
-    // The report's failure identifier is allowlisted above; print only that
-    // identifier, never child stdout, request data, or authentication details.
-    console.error(`acceptance_failure_code=${value.failed[0]}`);
     return evidence;
   }
   return undefined;
@@ -670,16 +680,18 @@ const retryAcceptance = async (
   staleRuntimeAttemptLimit = 180,
 ): Promise<void> => {
   let lastEvidence: AcceptanceFailureEvidence | undefined;
+  let attemptsMade = 0;
   const convergenceDeadline = runtimeConvergenceMs === undefined ? undefined : deps.now().getTime() + runtimeConvergenceMs;
   const remainingMs = (): number => convergenceDeadline === undefined ? Infinity : convergenceDeadline - deps.now().getTime();
   let staleRuntimeAttempts = 0;
   for (let attempt = 0; attempt < attempts;) {
-    if (remainingMs() <= 0) throw new AcceptanceFailure(failure, lastEvidence);
+    if (remainingMs() <= 0) throw new AcceptanceFailure(failure, lastEvidence, attemptsMade);
     try {
+      attemptsMade += 1;
       await runAt(deps, deps.packageRoot, "pnpm", args, {
         timeoutMs: Math.min(acceptanceCommandTimeoutMs, remainingMs()), env, captureFailureStdout: (stdout) => parseAcceptanceFailure(stdout, profile, stage),
       });
-      if (remainingMs() <= 0) throw new AcceptanceFailure(failure, lastEvidence);
+      if (remainingMs() <= 0) throw new AcceptanceFailure(failure, lastEvidence, attemptsMade);
       return;
     } catch (error) {
       if (error instanceof AcceptanceFailure) throw error;
@@ -692,10 +704,10 @@ const retryAcceptance = async (
       if (staleRuntime) staleRuntimeAttempts += 1;
       else attempt += 1;
       if ((staleRuntime && (runtimeConvergenceMs === undefined || staleRuntimeAttempts >= staleRuntimeAttemptLimit)) || attempt >= attempts || remainingMs() <= 0) {
-        throw new AcceptanceFailure(failure, lastEvidence);
+        throw new AcceptanceFailure(failure, lastEvidence, attemptsMade);
       }
       const delayMs = staleRuntime ? 15_000 : 5_000;
-      if (remainingMs() <= delayMs) throw new AcceptanceFailure(failure, lastEvidence);
+      if (remainingMs() <= delayMs) throw new AcceptanceFailure(failure, lastEvidence, attemptsMade);
       await sleepAbortably(deps, delayMs);
     }
   }
@@ -756,6 +768,7 @@ export async function deployProduction(commit: string, inputDeps: DeployDependen
     report.checks.push("starting_runtime_verified");
 
     await verifyCurrent(deps, starting.version);
+    await verifyAutomaticCandidateIsCurrentMain(deps, commit, repo);
     const output = await wrangler(deps, ["deploy", ...deployVars(configured, true, commit), "--containers-rollout", "immediate",
       "--message", `Automated production release at ${commit.slice(0, 7)}`], 600_000);
     const enabledId = deployedVersionFromOutput(output);
@@ -797,8 +810,12 @@ export async function deployProduction(commit: string, inputDeps: DeployDependen
   } catch (error) {
     if (error instanceof CommandFailure && error.diagnostic) console.error(error.diagnostic);
     report.failure = error instanceof DeployFailure && deploymentFailureReasons.has(error.code) ? error.code : "unexpected_failure";
-    if (error instanceof AcceptanceFailure && error.evidence) report.acceptanceFailure = error.evidence;
-    console.error(report.failure);
+    if (error instanceof AcceptanceFailure) {
+      if (error.evidence) report.acceptanceFailure = error.evidence;
+      const failureCode = error.evidence?.failureCode ?? error.code;
+      const boundary = error.evidence?.lastCompletedBoundary ?? "unknown";
+      console.error(`acceptance_final_failure_code=${failureCode} attempts=${error.attempts} last_completed_boundary=${boundary}`);
+    } else console.error(report.failure);
   } finally {
     clearTimeout(deadline);
     inputDeps.signal?.removeEventListener("abort", abort);

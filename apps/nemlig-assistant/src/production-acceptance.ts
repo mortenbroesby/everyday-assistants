@@ -269,7 +269,20 @@ export async function verifyServiceAcceptanceFeatures(
   }
   const resources = await listResourcesOrEmpty(client, withinTotalDeadline, "Service");
   options.onBoundary?.("service_resource_inventory_read");
-  if (!isDeepStrictEqual(resources.map(({ uri }) => uri).sort(), [...serviceAcceptanceResourceInventory].sort())) throw new ServiceInventoryMismatchError("service_resource_inventory_mismatch");
+  const expectedResources = new Map<string, number>();
+  for (const uri of serviceAcceptanceResourceInventory) expectedResources.set(uri, (expectedResources.get(uri) ?? 0) + 1);
+  let unexpectedResourceCount = 0;
+  for (const { uri } of resources) {
+    const expectedCount = expectedResources.get(uri) ?? 0;
+    if (expectedCount === 0) unexpectedResourceCount += 1;
+    else expectedResources.set(uri, expectedCount - 1);
+  }
+  const missingResourceCount = [...expectedResources.values()].reduce((total, count) => total + count, 0);
+  if (missingResourceCount || unexpectedResourceCount) {
+    const boundedCount = (count: number): string => Math.min(count, 99).toString();
+    throw new ServiceInventoryMismatchError("service_resource_inventory_mismatch",
+      `service_resource_inventory_read_missing_${boundedCount(missingResourceCount)}_unexpected_${boundedCount(unexpectedResourceCount)}`);
+  }
 
   assert.ok(client.readResource, "Service product-viewer resource reader is required");
   const viewer = await withinTotalDeadline("product viewer resource", () => client.readResource!({ uri: PRODUCT_VIEWER_RESOURCE_URI }));

@@ -82,13 +82,16 @@ const config = (path: string) => ({
 
 interface Call { command: string; args: readonly string[] }
 
-async function fixture(options: { failFeatures?: boolean } = {}): Promise<{ deps: DeployDependencies; calls: Call[]; root: string }> {
+async function fixture(options: { failFeatures?: boolean; failFeatureAttempts?: number; advanceMainBeforeDeploy?: boolean } = {}): Promise<{ deps: DeployDependencies; calls: Call[]; root: string }> {
   const root = await mkdtemp(join(tmpdir(), "nemlig-production-deploy-"));
   await writeFile(join(root, "wrangler.jsonc"), "{}", "utf8");
   const calls: Call[] = [];
   let current = startingId;
   let applicationVersion = 25;
-  const run: CommandRunner = async (command, args) => {
+  let originMain = commit;
+  let fetchCount = 0;
+  let featureFailuresRemaining = options.failFeatureAttempts ?? 0;
+  const run: CommandRunner = async (command, args, runOptions) => {
     calls.push({ command, args: [...args] });
     if (command === "gh" && args[0] === "repo") return JSON.stringify({
       nameWithOwner: "mortenbroesby/everyday-assistants",
@@ -116,8 +119,14 @@ async function fixture(options: { failFeatures?: boolean } = {}): Promise<{ deps
     }
     if (command === "gh") return "";
     if (command === "git" && args[0] === "rev-parse" && args[1] === "HEAD") return commit;
+    if (command === "git" && args[0] === "rev-parse" && args[1] === "origin/main") return originMain;
     if (command === "git" && args[0] === "status") return "";
     if (command === "git" && args[0] === "merge-base") return "";
+    if (command === "git" && args.includes("fetch")) {
+      fetchCount += 1;
+      if (options.advanceMainBeforeDeploy && fetchCount > 1) originMain = previousCommit;
+      return "";
+    }
     if (command === "git") return "";
     if (command === "docker") return JSON.stringify({ Descriptor: { digest: candidateImage } });
     if (command !== "pnpm") throw new Error(`unexpected command: ${command}`);
@@ -146,6 +155,20 @@ async function fixture(options: { failFeatures?: boolean } = {}): Promise<{ deps
     }
     if (args[0] === "production:probe") return "edge ok";
     if (args[0] === "production:test:features") {
+      if (featureFailuresRemaining > 0 && !args.includes("--initialize-only")) {
+        featureFailuresRemaining -= 1;
+        const acceptanceReport = JSON.stringify({
+          schema: 1,
+          profile: "service",
+          failureCategory: "feature_failed",
+          failed: ["service_resource_inventory_mismatch"],
+          lastCompletedBoundary: "service_resource_inventory_read_missing_1_unexpected_1",
+          correlationIds: [],
+        });
+        const failure = new Error("candidate acceptance failed") as Error & { acceptanceFailure?: unknown };
+        failure.acceptanceFailure = runOptions?.captureFailureStdout?.(acceptanceReport);
+        throw failure;
+      }
       if (options.failFeatures && !args.includes("--initialize-only")) throw new Error("candidate acceptance failed");
       return "features ok";
     }
@@ -237,5 +260,83 @@ test("failed acceptance fails the run and does not start a rollback", async () =
     assert.equal(report.outcome, "failed");
     assert.equal(report.failure, "service_fixture_acceptance_failed");
     assert.equal(calls.some(({ args }) => args.includes("rollback")), false);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test("acceptance retry exhaustion emits one bounded final diagnostic with attempts and boundary", async () => {
+  const { deps, calls, root } = await fixture({ failFeatureAttempts: 12 });
+  const diagnostics: string[] = [];
+  const originalError = console.error;
+  console.error = (...values: unknown[]) => diagnostics.push(values.join(" "));
+  try {
+    deps.acceptanceMode = "service";
+    deps.env = {
+      CLOUDFLARE_ACCOUNT_ID: accountId,
+      CLOUDFLARE_API_TOKEN: "test-cloudflare-token",
+      GITHUB_ACTIONS: "true",
+      GITHUB_EVENT_NAME: "workflow_run",
+      NEMLIG_MCP_SERVICE_CLIENT_ID: "service-client",
+      NEMLIG_MCP_SERVICE_CLIENT_SECRET: "machine-secret",
+      NEMLIG_CI_ACCEPTANCE_READY: "true",
+    };
+    const report = await deployProduction(commit, deps);
+    assert.equal(report.outcome, "failed");
+    assert.equal(report.failure, "service_fixture_acceptance_failed");
+    assert.equal(report.acceptanceFailure?.failureCode, "service_resource_inventory_mismatch");
+    assert.equal(report.acceptanceFailure?.lastCompletedBoundary, "service_resource_inventory_read_missing_1_unexpected_1");
+    assert.equal(diagnostics.length, 1);
+    assert.match(diagnostics[0]!, /acceptance_final_failure_code=service_resource_inventory_mismatch attempts=12 last_completed_boundary=service_resource_inventory_read_missing_1_unexpected_1/u);
+    assert.doesNotMatch(diagnostics[0]!, /private\.example|secret|token=/u);
+    assert.equal(calls.filter(({ args }) => args[0] === "production:test:features" && !args.includes("--initialize-only")).length, 12);
+  } finally {
+    console.error = originalError;
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("acceptance succeeds after a retry without emitting a failure diagnostic", async () => {
+  const { deps, calls, root } = await fixture({ failFeatureAttempts: 1 });
+  const diagnostics: string[] = [];
+  const originalError = console.error;
+  console.error = (...values: unknown[]) => diagnostics.push(values.join(" "));
+  try {
+    deps.acceptanceMode = "service";
+    deps.env = {
+      CLOUDFLARE_ACCOUNT_ID: accountId,
+      CLOUDFLARE_API_TOKEN: "test-cloudflare-token",
+      GITHUB_ACTIONS: "true",
+      GITHUB_EVENT_NAME: "workflow_run",
+      NEMLIG_MCP_SERVICE_CLIENT_ID: "service-client",
+      NEMLIG_MCP_SERVICE_CLIENT_SECRET: "machine-secret",
+      NEMLIG_CI_ACCEPTANCE_READY: "true",
+    };
+    const report = await deployProduction(commit, deps);
+    assert.equal(report.outcome, "success");
+    assert.equal(diagnostics.length, 0);
+    assert.equal(calls.filter(({ args }) => args[0] === "production:test:features" && !args.includes("--initialize-only")).length, 2);
+  } finally {
+    console.error = originalError;
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("automatic workflow-run release rechecks current main before provider mutation", async () => {
+  const { deps, calls, root } = await fixture({ advanceMainBeforeDeploy: true });
+  try {
+    deps.acceptanceMode = "service";
+    deps.env = {
+      CLOUDFLARE_ACCOUNT_ID: accountId,
+      CLOUDFLARE_API_TOKEN: "test-cloudflare-token",
+      GITHUB_ACTIONS: "true",
+      GITHUB_EVENT_NAME: "workflow_run",
+      NEMLIG_MCP_SERVICE_CLIENT_ID: "service-client",
+      NEMLIG_MCP_SERVICE_CLIENT_SECRET: "machine-secret",
+      NEMLIG_CI_ACCEPTANCE_READY: "true",
+    };
+    const report = await deployProduction(commit, deps);
+    assert.equal(report.outcome, "failed");
+    assert.equal(report.failure, "source_revision_mismatch");
+    assert.equal(calls.some(({ command, args }) => command === "pnpm" && args[0] === "exec" && args[1] === "wrangler" && args[2] === "deploy"), false);
+    assert.equal(calls.filter(({ command, args }) => command === "git" && args.includes("fetch")).length, 2);
   } finally { await rm(root, { recursive: true, force: true }); }
 });
