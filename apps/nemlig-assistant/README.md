@@ -343,7 +343,8 @@ The MCP surface is organized around household actions:
   list without requiring the user to name a tool. This changes only local review
   state. Omit `items` to reopen an existing list, and add newly found products
   through `update_product_review_conversation`. If the user forbids local Draft
-  state, explain the native view's requirement and give a concise text result.
+  state and later asks for a visual view, explain the conflict and ask whether
+  to allow local state; give a concise text result until then.
   Use `show_my_basket` when the user means products already in Nemlig. Tool
   success alone does not prove that a client rendered the Draft list viewer.
 - Submit those exact Ready lines after a clear conversational add instruction

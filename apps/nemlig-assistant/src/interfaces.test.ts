@@ -502,6 +502,7 @@ test("every MCP tool has complete schemas, accurate annotations, and safe server
     assert.match(mcp.getInstructions() ?? "", /The real Nemlig basket is add-only/u);
     assert.match(mcp.getInstructions() ?? "", /Local draft list edits never write to Nemlig/u);
     assert.match(mcp.getInstructions() ?? "", /asks to see products visually.*native Draft list/u);
+    assert.match(mcp.getInstructions() ?? "", /visual request conflicts.*ask whether to allow it/u);
     assert.doesNotMatch(
       JSON.stringify({ tools, instructions: mcp.getInstructions() }),
       /password|cookie|bearer|access[_-]?token|api[_-]?key|session[_-]?id/iu,
