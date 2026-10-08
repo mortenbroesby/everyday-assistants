@@ -16,7 +16,8 @@ export function findingsFrom(report) {
   for (const issue of report.issues) {
     if (!issue || typeof issue !== "object") throw new Error("Knip returned an invalid issue.");
     const file = issue.file;
-    if (typeof file !== "string" || !file.startsWith("apps/nemlig-assistant/")) throw new Error("Knip returned a finding outside Nemlig Assistant.");
+    if (typeof file !== "string") throw new Error("Knip returned an invalid issue file.");
+    if (!file.startsWith("apps/nemlig-assistant/")) continue;
     for (const category of categories) {
       const values = issue[category] ?? [];
       if (!Array.isArray(values)) throw new Error(`Knip returned an invalid ${category} collection.`);

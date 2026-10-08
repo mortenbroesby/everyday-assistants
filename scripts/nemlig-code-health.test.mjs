@@ -17,6 +17,15 @@ test("normalizes supported Knip categories into stable identities", () => {
   assert.deepEqual(first, second);
 });
 
+test("skips findings outside Nemlig Assistant before validating their categories", () => {
+  const issue = { file: "apps/nemlig-assistant/src/example.ts", exports: [{ name: "unusedExport" }] };
+  assert.deepEqual(findingsFrom({ issues: [
+    { file: "package.json", dependencies: "invalid collection" },
+    issue,
+    { file: "apps/other-assistant/src/example.ts", exports: [{}] },
+  ] }), findingsFrom({ issues: [issue] }));
+});
+
 test("compares identities so equal counts cannot conceal a replacement", () => {
   const baseline = findingsFrom({ issues: [{ file: "apps/nemlig-assistant/src/old.ts", files: [{ name: "apps/nemlig-assistant/src/old.ts" }] }] });
   const current = findingsFrom({ issues: [{ file: "apps/nemlig-assistant/src/new.ts", files: [{ name: "apps/nemlig-assistant/src/new.ts" }] }] });
@@ -41,6 +50,11 @@ test("does not persist or report raw symbol and dependency names", () => {
 
 test("fails closed for incompatible Knip reports and malformed baselines", () => {
   assert.throws(() => findingsFrom({}), /incompatible report/);
+  for (const file of [undefined, null, 42, {}]) {
+    assert.throws(() => findingsFrom({ issues: [{ file }] }));
+  }
+  assert.throws(() => findingsFrom({ issues: [{ file: "apps/nemlig-assistant/src/example.ts", exports: "invalid collection" }] }), /invalid exports collection/);
+  assert.throws(() => findingsFrom({ issues: [{ file: "apps/nemlig-assistant/src/example.ts", exports: [{}] }] }), /invalid exports finding/);
   assert.throws(() => validateBaseline({ schemaVersion: 1, tool: { name: "knip", version: "6.40.0" }, generatedFrom: "f".repeat(40), findings: [{ category: "files", file: "apps/nemlig-assistant/src/example.ts", id: "not-a-hash" }] }), /invalid finding/);
 });
 
@@ -61,6 +75,21 @@ test("sanitizes scanner warnings, failures, and malformed output", () => {
     assert.ok(error instanceof Error);
     assert.doesNotMatch(error.message, new RegExp(marker));
   }
+});
+
+test("real Knip retains conventional entrypoints alongside plugin packaging", () => {
+  withFixture((fixture) => {
+    mutateManifest(fixture, (manifest) => { delete manifest.bin; });
+    writeFileSync(join(fixture, "knip.jsonc"), readFileSync(join(root, "knip.jsonc")));
+    writeFileSync(join(fixture, "apps/nemlig-assistant/main.ts"), "export const rootEntry = true;\n");
+    mkdirSync(join(fixture, "apps/nemlig-assistant/scripts"));
+    writeFileSync(join(fixture, "apps/nemlig-assistant/scripts/package-chatgpt-plugin.mjs"), "export const packagePlugin = true;\n");
+    const findings = scan({ cwd: fixture });
+    assert.ok(findings.some((finding) => finding.file === "apps/nemlig-assistant/src/internal.ts"));
+    for (const file of ["main.ts", "src/index.ts", "scripts/package-chatgpt-plugin.mjs"]) {
+      assert.ok(!findings.some((finding) => finding.file === `apps/nemlig-assistant/${file}`), file);
+    }
+  });
 });
 
 test("real Knip reporter rejects synthetic unused runtime and development dependencies", () => {
