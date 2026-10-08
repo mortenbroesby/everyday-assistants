@@ -58,6 +58,11 @@
     },
     {
       "category": "exports",
+      "file": "apps/nemlig-assistant/scripts/service-token.ts",
+      "id": "507c7488fb50b45acb6150281244a81d7d028601ce3b5c7525db81fc7654a2f2"
+    },
+    {
+      "category": "exports",
       "file": "apps/nemlig-assistant/src/picker/components/product.tsx",
       "id": "53bffe5549290088aee987958bcf57bbda31174310a012b43bee8a17b5d4d927"
     },

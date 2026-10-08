@@ -27,7 +27,20 @@ jobs:
       - run: pnpm nemlig:production:ready
       - run: pnpm check
       - run: node --test scripts/nemlig-code-health.test.mjs
-      - run: pnpm code-health
+      - name: Compare code-health baseline
+        run: |
+          base_ref="${GITHUB_BASE_REF:-main}"
+          git fetch origin "refs/heads/${base_ref}:refs/remotes/origin/${base_ref}"
+          base_commit="$(git rev-parse "origin/${base_ref}")"
+          if git cat-file -e "origin/${base_ref}:.code-health/nemlig-assistant-baseline.json" 2>/dev/null; then
+            git show "origin/${base_ref}:.code-health/nemlig-assistant-baseline.json" > "${RUNNER_TEMP}/nemlig-assistant-baseline.json"
+            pnpm code-health -- --baseline "${RUNNER_TEMP}/nemlig-assistant-baseline.json"
+          else
+            [[ "$(git merge-base HEAD "origin/${base_ref}")" == "${base_commit}" ]]
+            git diff --quiet "origin/${base_ref}...HEAD" -- apps/nemlig-assistant
+            [[ "$(jq -r '.generatedFrom' .code-health/nemlig-assistant-baseline.json)" == "${base_commit}" ]]
+            pnpm code-health
+          fi
       - run: pnpm test
       - run: pnpm --filter nemlig-assistant exec playwright install --with-deps chrome
       - run: pnpm --filter nemlig-assistant smoke:review-ui

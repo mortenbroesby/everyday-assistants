@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { compareFindings, findingsFrom } from "./nemlig-code-health.mjs";
+import { compareFindings, findingsFrom, validateBaseline } from "./nemlig-code-health.mjs";
 
 test("normalizes only supported Knip categories into stable identities", () => {
   const first = findingsFrom({ issues: [{ file: "apps/nemlig-assistant/src/example.ts", files: [{ name: "apps/nemlig-assistant/src/example.ts" }], exports: [{ name: "unusedExport" }], types: [{ name: "UnusedType" }], dependencies: ["unused-package"] }] });
@@ -25,4 +25,9 @@ test("does not persist or report raw symbol and dependency names", () => {
 
 test("rejects a finding that is outside the approved app scope", () => {
   assert.throws(() => findingsFrom({ issues: [{ file: "scripts/private.ts", files: [{ name: "scripts/private.ts" }] }] }), /outside Nemlig Assistant/);
+});
+
+test("fails closed for an incompatible Knip report and malformed baseline", () => {
+  assert.throws(() => findingsFrom({}), /incompatible report/);
+  assert.throws(() => validateBaseline({ schemaVersion: 1, tool: { name: "knip", version: "6.40.0" }, generatedFrom: "f".repeat(40), findings: [{ category: "files", file: "apps/nemlig-assistant/src/example.ts", id: "not-a-hash" }] }), /invalid finding/);
 });

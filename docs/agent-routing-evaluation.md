@@ -100,18 +100,19 @@ score.
 
 TypeScript's `noUnusedLocals` and `noUnusedParameters`, plus ESLint, check
 declarations in configured files. They do not identify every unreachable file,
-unused export, or dependency. Knip can analyze those through an entry-to-module
-graph. The scoped configuration models the three tsdown entries, four package
-`bin` aliases, Worker entry, scripts, tests, and UI tooling. An incomplete graph
-can report live exports or dependencies as unused, so configuration hints and
-every proposed deletion still require runtime, package, and host-consumer proof.
+unused export, or dependency. Knip analyzes those through an entry-to-module
+graph and discovers this package's binaries, scripts, workflow commands, Worker
+and UI tooling natively. Every proposed deletion still requires runtime,
+package, and host-consumer proof.
 
 `pnpm code-health` compares the current Knip result with the committed,
-main-SHA baseline. It distinguishes stable identities, rather than counts, so a
-same-count replacement is a regression. Existing findings are honest baseline
-debt; new findings fail CI, while resolved findings are reported. The command
-cannot modify source, fix findings, or refresh the baseline. Only the explicit
-reviewed `pnpm code-health:baseline` command writes the baseline.
+main-SHA baseline. Pull requests read that baseline from their target branch,
+not from the proposed change. It distinguishes stable identities, rather than
+counts, so a same-count replacement is a regression. Existing findings are
+honest baseline debt; new findings fail CI, while resolved findings are
+reported. The command cannot modify source, fix findings, or refresh the
+baseline. Only the explicit reviewed `pnpm code-health:baseline` command writes
+a baseline, and only while `HEAD` is the current `origin/main` commit.
 
 Agents should inspect a relevant result, avoid unrelated baseline cleanup, and
 prove any deletion independently. Do not add broad ignores merely to quiet the
