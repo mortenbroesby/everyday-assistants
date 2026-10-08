@@ -1,8 +1,10 @@
 reviews:
-  profile: quiet
+  profile: chill
   request_changes_workflow: false
   allow_author_approval: false
   high_level_summary: false
+  changed_files_summary: false
+  estimate_code_review_effort: false
   sequence_diagrams: false
   suggested_labels: false
   suggested_reviewers: false
@@ -29,6 +31,8 @@ reviews:
     docstrings:
       enabled: false
     unit_tests:
+      enabled: false
+    simplify:
       enabled: false
     autofix:
       enabled: false
