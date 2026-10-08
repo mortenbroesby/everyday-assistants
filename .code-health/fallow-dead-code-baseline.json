@@ -12,9 +12,7 @@
   "scope_reasons": [
     "workspace"
   ],
-  "unused_files": [
-    "unused-file:apps/nemlig-assistant/scripts/benchmark-product-text.ts"
-  ],
+  "unused_files": [],
   "unused_exports": [
     "unused-export:apps/nemlig-assistant/release/policy.ts:classifyPaths",
     "unused-export:apps/nemlig-assistant/release/policy.ts:compareVersions",

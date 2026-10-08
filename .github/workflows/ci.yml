@@ -69,7 +69,11 @@ jobs:
             echo "No new Fallow dead-code findings."
           else
             status=$?
-            jq -r '. as $report | (.summary? | to_entries[]? | select(.value > 0 and .key != "total_issues") | "\(.key): \(.value)"), (to_entries[] | select(.value | type == "array") | .key as $category | .value[] | select(.path? != null) | "\($category): \(.path)")' "${report}" || true
+            jq -r '
+              . as $report
+              | (.summary? | to_entries[]? | select(.value > 0 and .key != "total_issues") | "\(.key): \(.value)"),
+                ($report.summary? | keys[]? as $category | $report[$category][]? | select(.path? != null) | "\($category): \(.path)")
+            ' "${report}" || true
             exit "${status}"
           fi
       - run: pnpm test
