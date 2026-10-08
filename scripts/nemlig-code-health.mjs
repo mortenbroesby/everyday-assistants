@@ -71,7 +71,7 @@ export function compareFindings(baseline, current) {
   };
 }
 
-function baselineContext(bootstrap) {
+function baselineContext({ bootstrap = false, baseline } = {}) {
   if (execFileSync("git", ["status", "--porcelain=v1", "--untracked-files=all"], { cwd: root, encoding: "utf8" }).trim()) {
     throw new Error("Code-health baseline generation requires a clean working tree.");
   }
@@ -84,10 +84,17 @@ function baselineContext(bootstrap) {
   } catch {
     appChanges = true;
   }
-  if (head !== main && (!bootstrap || mergeBase !== main || appChanges)) {
-    throw new Error("Code-health baselines may only be generated from origin/main, or with --bootstrap from a branch whose app source matches origin/main.");
+  if (head === main) return main;
+  if (bootstrap && mergeBase === main && !appChanges) return main;
+  if (baseline && mergeBase === main) {
+    try {
+      execFileSync("git", ["merge-base", "--is-ancestor", baseline.generatedFrom, main], { cwd: root });
+      return main;
+    } catch {
+      // A baseline from an unrelated history cannot be safely pruned on this branch.
+    }
   }
-  return main;
+  throw new Error("Code-health baselines may only be generated from origin/main, with --bootstrap from a branch whose app source matches origin/main, or with --prune from a branch based on origin/main using an approved ancestor baseline.");
 }
 
 export function pruneFindings(baseline, current) {
@@ -96,8 +103,8 @@ export function pruneFindings(baseline, current) {
   return current;
 }
 
-function snapshot(bootstrap) {
-  const main = baselineContext(bootstrap);
+function snapshot(options) {
+  const main = baselineContext(options);
   return { schemaVersion: 1, tool: { name: "knip", version: "6.40.0" }, generatedFrom: main, findings: scan() };
 }
 
@@ -113,8 +120,9 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
     const bootstrap = arguments_[1] === "--bootstrap";
     const prune = arguments_[1] === "--prune";
     if (arguments_.length !== (bootstrap || prune ? 2 : 1)) throw new Error("Usage: nemlig-code-health.mjs baseline [--bootstrap|--prune]");
-    const snapshotValue = snapshot(bootstrap);
-    if (prune) snapshotValue.findings = pruneFindings(validateBaseline(JSON.parse(readFileSync(baselinePath, "utf8"))).findings, snapshotValue.findings);
+    const baseline = prune ? validateBaseline(JSON.parse(readFileSync(baselinePath, "utf8"))) : undefined;
+    const snapshotValue = snapshot({ bootstrap, baseline });
+    if (baseline) snapshotValue.findings = pruneFindings(baseline.findings, snapshotValue.findings);
     mkdirSync(resolve(root, ".code-health"), { recursive: true });
     writeFileSync(baselinePath, `${JSON.stringify(snapshotValue, null, 2)}\n`);
     console.log(`Wrote ${baselinePath}`);

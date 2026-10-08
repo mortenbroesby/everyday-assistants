@@ -37,7 +37,6 @@ jobs:
             pnpm code-health -- --baseline "${RUNNER_TEMP}/nemlig-assistant-baseline.json"
           else
             [[ "$(git merge-base HEAD "origin/${base_ref}")" == "${base_commit}" ]]
-            git diff --quiet "origin/${base_ref}...HEAD" -- apps/nemlig-assistant
             [[ "$(jq -r '.generatedFrom' .code-health/nemlig-assistant-baseline.json)" == "${base_commit}" ]]
             pnpm code-health
           fi

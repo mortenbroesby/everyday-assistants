@@ -110,6 +110,22 @@ test("baseline generation rejects modified, staged, and untracked inputs", () =>
   }
 });
 
+test("a clean branch can only refresh an ancestor baseline by pruning", () => {
+  withGitFixture((fixture) => {
+    const generatedFrom = execFileSync("git", ["rev-parse", "HEAD"], { cwd: fixture, encoding: "utf8" }).trim();
+    writeBaseline(fixture, scan({ cwd: fixture }), generatedFrom);
+    execFileSync("git", ["add", ".code-health/nemlig-assistant-baseline.json"], { cwd: fixture });
+    execFileSync("git", ["commit", "-m", "baseline"], { cwd: fixture });
+    execFileSync("git", ["checkout", "-b", "prune-branch"], { cwd: fixture });
+    writeFileSync(join(fixture, "apps/nemlig-assistant/src/index.ts"), "import \"./internal.js\";\n// Refactored without changing the Knip result.\nexport const used = true;\n");
+    execFileSync("git", ["add", "apps/nemlig-assistant/src/index.ts"], { cwd: fixture });
+    execFileSync("git", ["commit", "-m", "app cleanup"], { cwd: fixture });
+    const result = spawnSync(process.execPath, [join(fixture, "scripts/nemlig-code-health.mjs"), "baseline", "--prune"], { cwd: fixture, encoding: "utf8" });
+    assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+    assert.equal(JSON.parse(readFileSync(join(fixture, ".code-health/nemlig-assistant-baseline.json"), "utf8")).generatedFrom, generatedFrom);
+  });
+});
+
 test("wrapper command does not leak scanner stdout or stderr", () => {
   const marker = "synthetic-private-command-marker";
   withFixture((fixture) => {
@@ -166,9 +182,9 @@ function withGitFixture(run) {
   });
 }
 
-function writeBaseline(fixture, findings) {
+function writeBaseline(fixture, findings, generatedFrom = "f".repeat(40)) {
   mkdirSync(join(fixture, ".code-health"), { recursive: true });
-  writeFileSync(join(fixture, ".code-health/nemlig-assistant-baseline.json"), `${JSON.stringify({ schemaVersion: 1, tool: { name: "knip", version: "6.40.0" }, generatedFrom: "f".repeat(40), findings }, null, 2)}\n`);
+  writeFileSync(join(fixture, ".code-health/nemlig-assistant-baseline.json"), `${JSON.stringify({ schemaVersion: 1, tool: { name: "knip", version: "6.40.0" }, generatedFrom, findings }, null, 2)}\n`);
 }
 
 function mutateManifest(fixture, mutate) {

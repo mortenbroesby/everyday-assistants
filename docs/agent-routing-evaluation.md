@@ -119,8 +119,11 @@ one-time `--bootstrap` form also requires that the branch has no Nemlig app
 differences from `origin/main`; it records that target commit, never the branch
 SHA. Both forms require a clean working tree before Knip scans. To record an
 intentional resolution without accepting new findings, run the reviewed
-`pnpm code-health:baseline -- --prune` command on current `main`; Git history
-retains the removed identity and a later reintroduction fails CI.
+`pnpm code-health:baseline -- --prune` command. It can run on current `main`,
+or on a clean PR branch that has merged current `origin/main` and whose existing
+baseline was generated from an ancestor of that target. It can only remove
+findings; Git history retains the removed identity and a later reintroduction
+fails CI.
 
 Agents should inspect a relevant result, avoid unrelated baseline cleanup, and
 prove any deletion independently. Do not add broad ignores merely to quiet the
