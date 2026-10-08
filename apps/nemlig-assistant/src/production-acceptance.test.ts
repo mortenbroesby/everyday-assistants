@@ -102,6 +102,35 @@ test("service acceptance has a closed read-only fixture inventory and denies bas
   assert.equal(report.requestCount, 8);
 });
 
+test("service resource inventory failures report bounded counts without exposing URIs", async () => {
+  const privateUri = "https://private.example.test/resources/secret?token=must-not-appear";
+  const client: AcceptanceClient = {
+    listTools: async () => ({ tools: serviceAcceptanceToolInventory.map((name) => ({ name })) }),
+    listResources: async () => ({ resources: [] }),
+    readResource: async ({ uri }) => viewerResource(uri),
+    callTool: async () => ({ isError: true }),
+  };
+  const assertMismatch = async (resources: Array<{ uri: string }>, counts: string): Promise<void> => {
+    await assert.rejects(verifyServiceAcceptanceFeatures({
+      ...client,
+      listResources: async () => ({ resources }),
+    }), (error: unknown) => {
+      assert.ok(error instanceof Error);
+      assert.equal((error as Error & { code?: string }).code, "service_resource_inventory_mismatch");
+      assert.equal((error as Error & { lastCompletedBoundary?: string }).lastCompletedBoundary, `service_resource_inventory_read_${counts}`);
+      assert.doesNotMatch(`${error.message} ${(error as Error & { lastCompletedBoundary: string }).lastCompletedBoundary}`, /private\.example|secret|token=|product-viewer\.html/u);
+      return true;
+    });
+  };
+
+  await assertMismatch([], "missing_1_unexpected_0");
+  await assertMismatch([{ uri: privateUri }], "missing_1_unexpected_1");
+  await assertMismatch([
+    ...serviceAcceptanceResourceInventory.map((uri) => ({ uri })),
+    ...Array.from({ length: 120 }, (_, index) => ({ uri: `${privateUri}/${index}` })),
+  ], "missing_0_unexpected_99");
+});
+
 test("regular read-only acceptance verifies the exact viewer resource and user tool metadata", async () => {
   const client: AcceptanceClient = {
     listTools: async () => ({ tools: withUserToolMetadata(retainedTools) }),
