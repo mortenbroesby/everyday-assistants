@@ -56,33 +56,37 @@ its installed tool catalog or rendered the new interface. The release operator
 completes these steps before handing the release to the owner for testing:
 
 1. Verify the exact deployed SHA and automated service acceptance, including the
-   candidate's exact viewer HTML and resource CSP. The UI uses the stable
-   `ui://nemlig/product-viewer.html` identity; ChatGPT may cache code for that
-   URI, so a deployment does not prove an already-open card loaded new UI code.
-   The machine fixture catalog deliberately excludes local-review and
-   provider-write tools.
-2. In ChatGPT Settings → Plugins → Nemlig Assistant (Rejoin), select Refresh and
-   wait for completion. Read back the actual actions: `start_product_review`,
+   candidate's exact viewer HTML and resource CSP. Read the current versioned
+   viewer URI from `start_product_review` metadata; do not infer it from an old
+   runbook, card title, or app Version Id. Published identities older than the
+   current viewer remain registered only as inert, read-only documents. The
+   machine fixture catalog deliberately excludes local-review and provider-write
+   tools.
+2. In ChatGPT Settings → Plugins → Nemlig Assistant, select Refresh and wait for
+   completion. Read back the actual actions: `start_product_review`,
    `update_product_review`, and `submit_product_review` must exist, with the
-   current schemas and resource metadata. Clicking Refresh or seeing an unchanged
-   app Version Id is not evidence of completion.
-3. In the intended shopping conversation, open a local review using exact IDs
+   current schemas and resource metadata. For `start_product_review`, record both
+   `openai/outputTemplate` and `ui.resourceUri`, then read that exact advertised
+   resource. Clicking Refresh or seeing an unchanged app Version Id is not
+   evidence of completion.
+3. In the intended shopping conversation, open a local Draft list using exact IDs
    from a read-only product result. A successful metadata Refresh does not prove
    that an already-open conversation replaced its installed widget HTML: verify
-   the stable resource URI and rendered viewer in that conversation. The host
-   may reuse cached code for this URI; if it retains stale UI code, reload it or
-   use a fresh conversation as prescribed by OpenAI.
-4. Verify the rendered review, images, inline details, local acceptance, Basket
-   containing only accepted products, and navigation back to Needs review. Test
-   contextual alternatives with a bounded search. Do not prepare or submit to
-   Nemlig as part of this UI check.
-5. Reopen/remount a historical card: products and shopping controls must remain
-   inactive until it reads current state; the read-only snapshot requires the user
-   to choose **Make this card current** before actions become enabled. Advance a
-   review through conversation, then exercise an older already-open card: it must
-   refresh once without replay or raw protocol errors. Verify only the stable
-   resource is registered and older versioned addresses are rejected; report
-   host-cached pre-change documents separately.
+   the current advertised resource URI and rendered viewer in that conversation.
+   A fresh conversation alone is also insufficient: it can inherit an older
+   installed tool descriptor. If the rendered document is an inert retired card,
+   capture the installed descriptor and the resource URI ChatGPT requested before
+   retrying, redeploying, reconnecting, or bumping the viewer identity.
+4. Verify the rendered Draft list, images, inline details, local acceptance,
+   Ready containing only accepted products, and navigation back to To decide.
+   Test contextual alternatives with a bounded search. Do not prepare or submit
+   to Nemlig as part of this UI check.
+5. Reopen/remount a historical card: retired identities must be inert and expose
+   no shopping controls. The user reopens the current Draft list conversationally;
+   a historical card must not reactivate itself or replay a prior edit. Verify the
+   current versioned resource and every retired resource are registered, and that
+   retired resources render an inert document; report a host-cached or
+   host-selected retired document separately from application behavior.
    Run the loopback **Run regression smoke** for outages and process restart;
    it complements the native ChatGPT check and never accesses a real basket.
 6. Record deployed SHA, refresh readback, rendered behavior and any failure in
