@@ -110,7 +110,8 @@ export class ProductReviewService {
     const activeId = this.activeByOwner.get(owner);
     if (activeId) return structuredClone(this.get(owner, activeId).snapshot);
     if (this.startingOwners.has(owner)) throw new NemligError("A draft list is starting. Refresh it after the current request finishes.");
-    if (!items.length || items.length > 50 || new Set(items.map(i => i.product_id)).size !== items.length ||
+    if (!items.length) throw new NemligError("No active Draft list to show. Find exact products and provide them to start a new Draft list.");
+    if (items.length > 50 || new Set(items.map(i => i.product_id)).size !== items.length ||
       items.some(i => !validPositive(i.product_id) || !validPositive(i.quantity))) {
       throw new NemligError("Provide 1–50 unique exact products with positive integer quantities.");
     }

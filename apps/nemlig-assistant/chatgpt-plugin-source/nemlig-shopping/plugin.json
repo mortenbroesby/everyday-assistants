@@ -13,7 +13,7 @@
         ],
         "category": "Productivity",
         "composerIcon": "./assets/icon.png",
-        "defaultPrompt": "Help me find groceries for my shopping list.",
+        "defaultPrompt": "Show my current Draft list if one exists; otherwise offer choices to find groceries, compare products, or view my basket.",
         "developerName": "Morten & Josephine Broesby-Olsen",
         "displayName": "Nemlig Assistant",
         "logo": "./assets/icon.png",
@@ -23,7 +23,7 @@
     }
   },
   "name": "nemlig-shopping",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "keywords": [
     "groceries",
     "grocery shopping",
