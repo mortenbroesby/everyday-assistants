@@ -33,7 +33,7 @@
   conflicting voice-first-product-review URI policies; verify all identify
   the permanent URI, operator-only cutover, unsupported historical identities,
   and separate code/data freshness.
-- [ ] 3.4 Run strict OpenSpec validation, one representative artifact/browser
+- [x] 3.4 Run strict OpenSpec validation, one representative artifact/browser
   smoke, and final pnpm verify; review the final diff for scope and privacy,
   then record exact revision and check results.
 
@@ -75,4 +75,8 @@
   providers only; no real basket or provider access occurred.
 - Strict OpenSpec validation and `pnpm verify` passed. Exact-head CI,
   deployment, clean connection cutover, and two native fresh-chat runs remain
-  pending under tasks 3.4 through 5.3.
+  pending under tasks 4.1 through 5.3.
+- Local verification revision: `7b61e8a23a7dda833c543c6b6ddab141218f925a`.
+  It passed `pnpm verify`, `smoke:review-ui:artifact`, focused resource/gateway
+  coverage, protected fake-provider regressions, the full package test suite,
+  release-note/version eligibility, and strict OpenSpec validation.
