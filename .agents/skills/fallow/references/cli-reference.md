@@ -1006,7 +1006,7 @@ Audits changed files for dead code, complexity, duplication, and styling. Return
 | `--dupes-baseline` | `string` | - | Baseline file (produced by `fallow dupes --save-baseline`). Pre-existing clone groups are excluded from the verdict. |
 | `--max-crap` | `string` | - | Forwarded to the health sub-analysis. Functions meeting or exceeding this CRAP score cause audit to fail. Same formula as `health --max-crap`. Pair with coverage data for accurate per-function CRAP. |
 | `--coverage` | `string` | - | Path to Istanbul coverage data (`coverage-final.json`) or raw V8 coverage (a `NODE_V8_COVERAGE` directory or one V8 JSON file) for accurate per-function CRAP scores in the health sub-analysis. Same formats and semantics as `health --coverage`. Also configurable via `FALLOW_COVERAGE`, then `health.coverage` (the same chain as `fallow health`). Relative paths resolve against `--root`. |
-| `--coverage-root` | `string` | - | Absolute prefix to strip from file paths in coverage data before prepending the project root. Also configurable via `FALLOW_COVERAGE_ROOT`, then `health.coverageRoot`. Use when coverage was generated under a different checkout root in CI / Docker (e.g., `/home/runner/work/myapp` on GitHub Actions). |
+| `--coverage-root` | `string` | - | Absolute prefix to strip from file paths in coverage data before prepending the project root. Also configurable via `FALLOW_COVERAGE_ROOT`, then `health.coverageRoot`. Use when coverage was generated under a different checkout root in CI / Docker (e.g., `/workspace/myapp` in a build container). |
 | `--no-css` | `bool` | `false` | Disable styling analytics in audit |
 | `--css-deep` | `bool` | `false` | Enable deep CSS analysis for audit explicitly: project-wide styling reachability, narrowed back to changed anchors. Deep CSS is on by default; use this to override `audit.cssDeep = false` |
 | `--no-css-deep` | `bool` | `false` | Disable deep CSS analysis while keeping local styling analytics on |
@@ -1790,7 +1790,7 @@ Under `--production` the evidence block also carries `test_only_reference`. It i
 | `--git-sha <SHA>` | string | `git rev-parse HEAD` | Commit SHA this inventory is keyed to. Max 64 chars; `[A-Za-z0-9._-]` only. |
 | `--allow-dirty` | bool | `false` | Silence the warning when the working tree has uncommitted changes. |
 | `--exclude-paths <GLOB>` | glob | none | Additional globs to skip (repeatable), applied after the configured fallow ignore rules. |
-| `--path-prefix <PREFIX>` | string | none | Prefix prepended to every emitted `filePath` so inventory matches runtime paths. Required for containerized deployments (runtime reports `/app/src/*` while the walker emits `src/*`). Common values: `/app`, `/workspace`, `/usr/src/app`, `/var/task`, `/home/runner/work/<repo>/<repo>`. Must start with `/`. |
+| `--path-prefix <PREFIX>` | string | none | Prefix prepended to every emitted `filePath` so inventory matches runtime paths. Required for containerized deployments (runtime reports `/app/src/*` while the walker emits `src/*`). Common values: `/app`, `/workspace`, `/usr/src/app`, `/var/task`. Must start with `/`. |
 | `--dry-run` | bool | `false` | Print what would be uploaded and exit. No network call. |
 | `--ignore-upload-errors` | bool | `false` | Treat upload failures as warnings (exit 0). Validation errors still fail hard. |
 

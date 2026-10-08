@@ -8,12 +8,14 @@ The corresponding upstream release tag is `v3.32.0` at commit
 `SKILL.md` SHA-256 is
 `bbd8e7e4df4bdd12f62ccb146c2e38923b9168b94e58b138cc2e9ddf3c40e48a`.
 
-Local adaptations are limited to the frontmatter description and repository
-note near the start of `SKILL.md`. All supporting references are copied intact.
+Local adaptations are the frontmatter description and repository note near the
+start of `SKILL.md`, plus two neutral path examples in
+`references/cli-reference.md` to satisfy the repository privacy check. Other
+supporting references are copied intact.
 The included MIT notice comes from `fallow-rs/fallow-skills`.
 
 To update deliberately: upgrade the pinned package, compare its full skill
 directory with this copy, review upstream changes, copy the complete directory,
-then reapply the local description and note. Check local links and the PR audit
+then reapply the local adaptations. Check local links and the PR audit
 before committing. Do not run `fallow agent install` to refresh this skill: it
 also adds extra skills, MCP registrations, hooks, and AGENTS.md blocks.
