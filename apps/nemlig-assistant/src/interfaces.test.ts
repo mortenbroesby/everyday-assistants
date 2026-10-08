@@ -11,7 +11,7 @@ import { createMcpServer, NEMLIG_CONNECT_URL, rankProducts, safeNemligImageUrl, 
 import { productionToolInventory } from "./production-acceptance.js";
 import type { ProductReviewSnapshot } from "./product-review.js";
 import { BasketProposalService } from "./proposals.js";
-import { PRODUCT_VIEWER_RESOURCE_URI } from "./product-viewer.js";
+import { PRODUCT_VIEWER_RESOURCE_URI, readProductViewerArtifact } from "./product-viewer.js";
 import { RETIRED_PRODUCT_VIEWER_RESOURCE_URIS } from "./product-viewer-identity.js";
 import { NEMLIG_CODENAME, NEMLIG_VERSION } from "./runtime.js";
 
@@ -582,7 +582,10 @@ test("MCP distinguishes the draft list from the actual Nemlig basket", async () 
     const viewer = await mcp.readResource({ uri: PRODUCT_VIEWER_RESOURCE_URI });
     assert.equal(viewer.contents[0]?.mimeType, "text/html;profile=mcp-app");
     assert.ok(viewer.contents[0] && "text" in viewer.contents[0]);
-    if (viewer.contents[0] && "text" in viewer.contents[0]) assert.match(viewer.contents[0].text, /Nemlig Assistant Draft list/u);
+    if (viewer.contents[0] && "text" in viewer.contents[0]) {
+      assert.match(viewer.contents[0].text, /Nemlig Assistant Draft list/u);
+      assert.equal(viewer.contents[0].text, readProductViewerArtifact().html);
+    }
     for (const uri of RETIRED_PRODUCT_VIEWER_RESOURCE_URIS) {
       const retiredViewer = await mcp.readResource({ uri });
       assert.equal(retiredViewer.contents[0]?.mimeType, "text/html;profile=mcp-app", uri);

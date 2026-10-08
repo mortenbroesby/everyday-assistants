@@ -3,9 +3,11 @@ import {
   classifyGatewayMethod,
   classifyGatewayRoute,
   parseGatewayRequestEvent,
+  parseViewerResourceReadEvent,
   shouldEmitGatewayRequestEvent,
   type GatewayOutcome,
   type GatewayRequestEvent,
+  type ViewerResourceReadEvent,
 } from "./cloudflare-observability.js";
 import type { AdmissionResult } from "./principal-records.js";
 import type { Principal } from "./principal-policy.js";
@@ -13,7 +15,9 @@ import { Auth0InfrastructureError, oauthReconnectChallenge } from "./auth0.js";
 import { PRODUCT_VIEWER_RESOURCE_URI, RETIRED_PRODUCT_VIEWER_RESOURCE_URIS } from "./product-viewer-identity.js";
 
 export type OperationClass = "protocol" | "useful";
-export const INTERNAL_CREDENTIAL_HEADERS = [
+export type ViewerResourceClass = "current" | "retired" | "other";
+const INTERNAL_VIEWER_ARTIFACT_HEADER = "x-nemlig-viewer-artifact-id";
+const INTERNAL_CREDENTIAL_HEADERS = [
   "x-nemlig-credential-envelope",
   "x-nemlig-principal-key",
   "x-nemlig-policy-revision",
@@ -45,6 +49,7 @@ export interface GatewayDependencies {
   admit(operation: OperationClass, principal: Principal, config: GatewayConfig, deadline: GatewayDeadline): Promise<AdmissionResult>;
   forward(request: Request, operation: OperationClass, config: GatewayConfig, deadline: GatewayDeadline, admission: AdmissionResult): Promise<Response>;
   event?(event: GatewayRequestEvent): void;
+  viewerEvent?(event: ViewerResourceReadEvent): void;
   now?(): number;
   requestId?(): string;
 }
@@ -91,6 +96,17 @@ export function classifyMcpMessage(value: unknown): OperationClass {
   return "useful";
 }
 
+/** Classifies only known resource identities; the raw URI never leaves this function. */
+export function classifyViewerResourceRead(value: unknown): ViewerResourceClass | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const message = value as { method?: unknown; params?: unknown };
+  if (message.method !== "resources/read" || !message.params || typeof message.params !== "object" || Array.isArray(message.params)) return undefined;
+  const uri = (message.params as { uri?: unknown }).uri;
+  if (uri === PRODUCT_VIEWER_RESOURCE_URI) return "current";
+  if (typeof uri === "string" && RETIRED_PRODUCT_VIEWER_RESOURCE_URIS.includes(uri as typeof RETIRED_PRODUCT_VIEWER_RESOURCE_URIS[number])) return "retired";
+  return "other";
+}
+
 const json = (body: unknown, status = 200): Response => new Response(JSON.stringify(body), {
   status,
   headers: { "content-type": "application/json" },
@@ -132,6 +148,13 @@ const withRequestId = (response: Response, requestId: string): Response => {
   return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
 };
 
+const withoutInternalViewerArtifactHeader = (response: Response): Response => {
+  if (!response.headers.has(INTERNAL_VIEWER_ARTIFACT_HEADER)) return response;
+  const headers = new Headers(response.headers);
+  headers.delete(INTERNAL_VIEWER_ARTIFACT_HEADER);
+  return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
+};
+
 async function withinBoundary<T>(
   work: (deadline: GatewayDeadline) => Promise<T>,
   maximumMs: number,
@@ -157,7 +180,7 @@ async function withinBoundary<T>(
   }
 }
 
-interface ClassifiedRequest { operation: OperationClass; request: Request }
+interface ClassifiedRequest { operation: OperationClass; request: Request; viewerResource?: ViewerResourceClass }
 
 const classifyRequest = async (request: Request, signal: AbortSignal): Promise<ClassifiedRequest | Response> => {
   if (request.method === "GET" || request.method === "DELETE") return { operation: "protocol", request };
@@ -170,9 +193,11 @@ const classifyRequest = async (request: Request, signal: AbortSignal): Promise<C
   try {
     const body = await readBoundedBody(request, signal);
     if (body instanceof Response) return body;
+    const message = JSON.parse(body);
     return {
-      operation: classifyMcpMessage(JSON.parse(body)),
+      operation: classifyMcpMessage(message),
       request: new Request(request, { body }),
+      viewerResource: classifyViewerResourceRead(message),
     };
   } catch (error) {
     if (signal.aborted) throw error;
@@ -310,7 +335,20 @@ export async function handleGatewayRequest(
         (deadline) => dependencies.forward(classified.request, classified.operation, config, deadline, admission),
         config.backendTimeoutMs, remainingMs, totalController.signal, "backend_timeout",
       );
-      return finish(response, response.status >= 400 ? "backend_rejected"
+      if (classified.viewerResource) {
+        const candidate = classified.viewerResource === "current"
+          ? response.headers.get(INTERNAL_VIEWER_ARTIFACT_HEADER)
+          : null;
+        dependencies.viewerEvent?.(parseViewerResourceReadEvent({
+          schema_version: 1,
+          event: "viewer_resource_read",
+          correlation_id: requestId,
+          uri_class: classified.viewerResource,
+          artifact_id: candidate && /^[a-f0-9]{64}$/u.test(candidate) ? candidate : null,
+        }));
+      }
+      const publicResponse = withoutInternalViewerArtifactHeader(response);
+      return finish(publicResponse, publicResponse.status >= 400 ? "backend_rejected"
         : classified.operation === "protocol" ? "protocol_completed" : "completed");
     } catch (error) {
       const outcome = error instanceof BoundaryTimeoutError

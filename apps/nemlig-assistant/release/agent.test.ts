@@ -118,6 +118,23 @@ test("release planning is read-only and apply persists only the manifest and led
   }
 });
 
+test("release planning rejects a codename used by any historical release before it can be applied", async () => {
+  const { repo } = await fixture();
+  try {
+    await ledger(repo, "0.0.9", "Callsign");
+    git(repo, "add", ".");
+    git(repo, "commit", "-qm", "chore: historical release identity");
+    const base = git(repo, "rev-parse", "HEAD");
+    await writeFile(path.join(repo, "apps/nemlig-assistant/src/client.ts"), "export const value = 2;\n");
+    const plan = await createReleasePlan({ codename: "Callsign", repoRoot: repo, baseRef: base, mainRef: base, registry: { status: "unpublished" } });
+    assert.equal(plan.transactionAction, "reject");
+    assert.match(plan.transactionReason, /reuse a historical codename/u);
+    assert.throws(() => applyReleasePlan(repo, plan), /reuse a historical codename/u);
+  } finally {
+    await rm(repo, { recursive: true, force: true });
+  }
+});
+
 test("ledger-only changes cannot allocate a name and stale ledger edits cannot be overwritten", async () => {
   const { repo, base } = await fixture();
   try {

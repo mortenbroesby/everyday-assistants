@@ -460,7 +460,7 @@ test("service inventory drift identifies the failed list without exposing its co
   const entry = await import("../scripts/production-acceptance.js");
   for (const [kind, failed, boundary] of [
     ["tool", "service_tool_inventory_mismatch", "service_tool_inventory_read_m3_x1"],
-    ["resource", "service_resource_inventory_mismatch", "service_resource_inventory_read_missing_17_unexpected_1"],
+    ["resource", "service_resource_inventory_mismatch", "service_resource_inventory_read_missing_18_unexpected_1"],
   ] as const) {
     const client = serviceClient();
     if (kind === "tool") {

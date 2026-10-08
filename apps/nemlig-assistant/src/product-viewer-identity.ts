@@ -1,10 +1,9 @@
 /**
- * Hosts can cache an MCP Apps resource by URI independently of the tool
- * metadata. Bump this identity whenever the self-contained viewer changes so
- * a new card cannot pair a current tool result with stale viewer JavaScript.
+ * The one forward-only viewer identity. It is deliberately stable: hosts may
+ * cache a resource URI independently of tool metadata, so version churn makes
+ * it easier to bind a current result to an obsolete card.
  */
-export const PRODUCT_VIEWER_RESOURCE_VERSION = "16";
-export const PRODUCT_VIEWER_RESOURCE_URI = `ui://nemlig/product-viewer-v${PRODUCT_VIEWER_RESOURCE_VERSION}.html`;
+export const PRODUCT_VIEWER_RESOURCE_URI = "ui://nemlig/draft-list.html";
 
 /** Previously published identities remain readable, but never receive live shopping controls. */
 export const RETIRED_PRODUCT_VIEWER_RESOURCE_URIS = [
@@ -24,4 +23,5 @@ export const RETIRED_PRODUCT_VIEWER_RESOURCE_URIS = [
   "ui://nemlig/product-viewer-v13.html",
   "ui://nemlig/product-viewer-v14.html",
   "ui://nemlig/product-viewer-v15.html",
+  "ui://nemlig/product-viewer-v16.html",
 ] as const;

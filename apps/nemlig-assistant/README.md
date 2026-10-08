@@ -176,11 +176,13 @@ controls until you explicitly reopen current state.
 If the draft is gone, **Start new draft list** rechecks the original products and
 quantities without restoring acceptance or submission approval. Submitted or
 uncertain snapshots instead direct you to inspect the actual basket.
-The viewer resource URI is versioned whenever its self-contained UI changes.
-Older addresses resolve only to inert, read-only notices, so cached historical
-cards cannot regain shopping controls. ChatGPT may retain previously cached
-documents; the server cannot remove those transcript cards. Refresh app metadata
-so new cards use the current viewer URI.
+The viewer uses the permanent `ui://nemlig/draft-list.html` identity. Every
+previous product-viewer address resolves only to an inert, read-only notice, so
+historical cards cannot regain shopping controls. ChatGPT may retain previously
+cached documents; the server cannot remove those transcript cards. A release,
+resource read, and native rendered build are separate facts: the supported
+recovery path is an operator-managed clean connection cutover followed by a new
+chat, not another URI bump.
 
 Run `pnpm --filter nemlig-assistant smoke:review-ui`, open its loopback URL,
 and click **Run regression smoke**. The real MCP adapter and fake catalogue
@@ -477,10 +479,11 @@ pnpm --filter nemlig-assistant smoke:package
 
 Tests use synthetic HTTP responses and never access a real Nemlig account.
 
-The MCP resource uses a versioned URI and serves the React viewer built into
-`dist/picker.html`. Every self-contained viewer change receives a new URI so a
-fresh card cannot pair current tool data with cached UI code. Existing cards are
-handled separately by the viewer and historical resource URIs are inert.
+The MCP resource uses the permanent `ui://nemlig/draft-list.html` identity and
+serves the React viewer built into `dist/picker.html`. Existing cards are
+handled separately by the viewer and every historical product-viewer URI is
+inert. Do not use a new URI as a cache workaround; code delivery, resource
+reads, and native rendering are recorded as separate evidence.
 The package build includes that exact self-contained file and the browser smoke
 drives it through a synthetic MCP host with a fake catalogue:
 

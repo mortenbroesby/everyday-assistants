@@ -3,11 +3,12 @@ import test from "node:test";
 import { validateProductViewerArtifact } from "../scripts/product-viewer-artifact.js";
 import type { ProductView } from "./product-presentation.js";
 import {
+  PRODUCT_VIEWER_BUILD_MARKER,
   PRODUCT_VIEWER_MIME_TYPE,
   PRODUCT_VIEWER_RESOURCE_METADATA,
-  PRODUCT_VIEWER_RESOURCE_VERSION,
   PRODUCT_VIEWER_RESOURCE_URI,
   productViewsToText,
+  readProductViewerArtifact,
   renderProductViewerHtml,
 } from "./product-viewer.js";
 
@@ -19,9 +20,8 @@ const complete: ProductView = {
   }, review: { kind: "review", quantity: 2, approved: false },
 };
 
-test("versioned viewer identity and complete headless fallback stay in sync", () => {
-  assert.equal(PRODUCT_VIEWER_RESOURCE_VERSION, "16");
-  assert.equal(PRODUCT_VIEWER_RESOURCE_URI, "ui://nemlig/product-viewer-v16.html");
+test("permanent viewer identity and complete headless fallback stay in sync", () => {
+  assert.equal(PRODUCT_VIEWER_RESOURCE_URI, "ui://nemlig/draft-list.html");
   assert.equal(PRODUCT_VIEWER_MIME_TYPE, "text/html;profile=mcp-app");
   assert.deepEqual(PRODUCT_VIEWER_RESOURCE_METADATA, {
     ui: { resourceUri: PRODUCT_VIEWER_RESOURCE_URI },
@@ -114,9 +114,12 @@ test("headless product text preserves multiple rows and unavailable outputs exac
 });
 
 test("served resource is the bounded self-contained React build", () => {
-  const html = renderProductViewerHtml();
+  const { artifactId, html } = readProductViewerArtifact();
   assert.match(html, /<html lang="en">/u);
   assert.match(html, /Nemlig Assistant Draft list/u);
+  assert.match(html, new RegExp(`name="nemlig-viewer-build" content="${PRODUCT_VIEWER_BUILD_MARKER}"`, "u"));
+  assert.match(artifactId, /^[a-f0-9]{64}$/u);
+  assert.equal(html, renderProductViewerHtml());
   assert.match(html, /react-dom/u);
   validateProductViewerArtifact(html);
 });

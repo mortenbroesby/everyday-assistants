@@ -1,10 +1,12 @@
 import { existsSync, readFileSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import type { ProductView } from "./product-presentation.js";
 import { PRODUCT_VIEWER_RESOURCE_URI } from "./product-viewer-identity.js";
 
-export { PRODUCT_VIEWER_RESOURCE_URI, PRODUCT_VIEWER_RESOURCE_VERSION } from "./product-viewer-identity.js";
+export { PRODUCT_VIEWER_RESOURCE_URI } from "./product-viewer-identity.js";
 export const PRODUCT_VIEWER_MIME_TYPE = "text/html;profile=mcp-app";
+export const PRODUCT_VIEWER_BUILD_MARKER = "draft-list-stable-1";
 export const PRODUCT_VIEWER_RESOURCE_DOMAINS = Object.freeze([
   "https://nemlig.com", "https://www.nemlig.com",
 ]);
@@ -69,14 +71,26 @@ export function productViewsToText(views: readonly ProductView[]): string {
   return views.map((view, index) => `${index + 1}. ${formatProduct(view)}`).join("\n");
 }
 
-/** Serves the exact self-contained artifact included in the package. */
-export function renderProductViewerHtml(): string {
+export interface ProductViewerArtifact {
+  readonly html: string;
+  /** SHA-256 of the exact self-contained HTML returned by the current resource. */
+  readonly artifactId: string;
+}
+
+/** Reads the exact self-contained artifact included in the package. */
+export function readProductViewerArtifact(): ProductViewerArtifact {
   const builtArtifact = new URL("./picker.html", import.meta.url);
   const sourceTestArtifact = new URL("../dist/picker.html", import.meta.url);
   const path = existsSync(builtArtifact) ? builtArtifact : sourceTestArtifact;
   try {
-    return readFileSync(fileURLToPath(path), "utf8");
+    const html = readFileSync(fileURLToPath(path), "utf8");
+    return { html, artifactId: createHash("sha256").update(html).digest("hex") };
   } catch {
     throw new Error("The React product viewer is not built. Run `pnpm build` before starting the MCP server.");
   }
+}
+
+/** Serves the exact self-contained artifact included in the package. */
+export function renderProductViewerHtml(): string {
+  return readProductViewerArtifact().html;
 }

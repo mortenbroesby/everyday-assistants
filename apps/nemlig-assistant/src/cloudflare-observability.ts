@@ -31,7 +31,7 @@ const outcomeSchema = z.enum([
   "backend_failed",
 ]);
 
-export const gatewayRequestEventSchema = z.object({
+const gatewayRequestEventSchema = z.object({
   schema_version: z.literal(2),
   event: z.literal("gateway_request_terminal"),
   request_id: z.string().uuid(),
@@ -50,8 +50,23 @@ export type GatewayRoute = GatewayRequestEvent["route"];
 export type GatewayMethod = GatewayRequestEvent["method"];
 export type GatewayOutcome = GatewayRequestEvent["outcome"];
 
+/** Bounded resource-binding evidence. It never contains a raw URI or user data. */
+const viewerResourceReadEventSchema = z.object({
+  schema_version: z.literal(1),
+  event: z.literal("viewer_resource_read"),
+  correlation_id: z.string().uuid(),
+  uri_class: z.enum(["current", "retired", "other"]),
+  artifact_id: z.string().regex(/^[a-f0-9]{64}$/u).nullable(),
+}).strict();
+
+export type ViewerResourceReadEvent = z.infer<typeof viewerResourceReadEventSchema>;
+
 export function parseGatewayRequestEvent(value: unknown): GatewayRequestEvent {
   return gatewayRequestEventSchema.parse(value);
+}
+
+export function parseViewerResourceReadEvent(value: unknown): ViewerResourceReadEvent {
+  return viewerResourceReadEventSchema.parse(value);
 }
 
 export function classifyGatewayRoute(pathname: string): GatewayRoute {

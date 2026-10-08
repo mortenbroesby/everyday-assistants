@@ -6,7 +6,7 @@ import { DurableObject } from "cloudflare:workers";
 import { createAuth0Verifier, fetchAuth0Metadata, SERVICE_ACCEPTANCE_SCOPE, type Auth0Config } from "./auth0.js";
 import { FIXED_CONTAINER_NAME, loadGatewayConfig, type CloudflareEnv, type GatewayConfig } from "./cloudflare-config.js";
 import { attachAdmissionCredential, handleGatewayRequest, type GatewayDeadline } from "./cloudflare-gateway.js";
-import { parseGatewayRequestEvent, type GatewayRequestEvent } from "./cloudflare-observability.js";
+import { parseGatewayRequestEvent, parseViewerResourceReadEvent, type GatewayRequestEvent, type ViewerResourceReadEvent } from "./cloudflare-observability.js";
 import type { AdmissionPrincipal, AdmissionResult, AdmissionPolicy } from "./principal-records.js";
 import { findEnabledPrincipal, type Principal } from "./principal-policy.js";
 import { admitPrincipalRequest, consumePortalCsrf, findPrincipalRecord, getCredentialRecord, replaceCredentialRecord, revokeCredentialRecord, setPrincipalStatus } from "./principal-records.js";
@@ -74,6 +74,10 @@ const isVerifiedServicePrincipal = (principal: Principal, config: GatewayConfig)
 
 const requestEvent = (event: GatewayRequestEvent): void => {
   console.log(JSON.stringify(parseGatewayRequestEvent(event)));
+};
+
+const viewerResourceReadEvent = (event: ViewerResourceReadEvent): void => {
+  console.log(JSON.stringify(parseViewerResourceReadEvent(event)));
 };
 
 const lifecycleEvent = (
@@ -271,6 +275,7 @@ export default {
         return getContainer(containerNamespace(env), FIXED_CONTAINER_NAME).principal(configured);
       },
       event: requestEvent,
+      viewerEvent: viewerResourceReadEvent,
       async admit(operation, principal, config) {
         const container = getContainer(containerNamespace(env), FIXED_CONTAINER_NAME);
         return container.admit({ principalKey: principal.principal_key }, {
