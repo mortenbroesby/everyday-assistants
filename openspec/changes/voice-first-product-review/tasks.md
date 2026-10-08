@@ -458,7 +458,7 @@ or ended draft exposes no tabs or destructive actions, sends one bounded
 conversational starter with zero tool/provider calls, preserves exact prepared
 confirmation and cancel-with-zero-submit, presents verified success separately,
 and blocks uncertain outcomes without retry.
-- [ ] 13.20 Release Story 4 through the current stable URI in one PR after
+- [x] 13.20 Release Story 4 through the current versioned stable URI in one PR after
   focused tests, fake-provider protected-submit smoke, loopback browser smoke,
   strict OpenSpec validation and applicable repository gates. Record exact
   revision, CI, resource metadata and native-card evidence.
@@ -466,3 +466,19 @@ and blocks uncertain outcomes without retry.
   smoke for empty/end, prepared confirmation/cancel and verified/uncertain
   presentation. A real Nemlig addition remains separately authorized; do not
   use it as this story's default test.
+
+Story 4 release evidence (8 October 2026): PR #243 merged as
+`831d4530755a1441a25f3c8849fef6b4e7ddae4a`; exact-head CI
+`37826541715` and the automatic production deployment `37827418243` passed.
+Release 6.2.3 **Linden** registered `ui://nemlig/product-viewer-v15.html` and
+retired v14 as an inert resource. After an explicit connected-app tools refresh,
+a fresh native ChatGPT conversation rendered the current Draft list, completed
+To decide → Ready → To decide in the same mounted card, persisted a debounced
+local quantity change, displayed the exact prepared change, and returned to it
+after Cancel with no submission. The same current card displayed the contextual
+alternatives surface and returned a selected replacement to To decide without
+implicit Ready acceptance. No Add to Nemlig action, provider basket mutation,
+checkout, payment, or ordering action was selected. The native empty/end and
+verified/uncertain presentation cases remain unchecked: ending the persisted
+local Draft list is a destructive host action, and verified/uncertain provider
+outcomes require a separately authorized real addition or controlled fault.
