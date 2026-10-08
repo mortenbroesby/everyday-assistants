@@ -174,6 +174,7 @@ document.getElementById('flow').onclick = async () => {
   click('Ready (1)'); await wait(()=>doc().querySelector('#title')?.textContent==='Ready'&&!button('Ready (1)').disabled); open(); await widths();
   const readySummary=doc().querySelector('[data-viewer-component="action-footer"]')?.textContent||'';
   check(!readySummary.includes('products ready'),'Ready retained a redundant count summary: '+readySummary);
+  check(!doc().querySelector('.product-list input[type=checkbox]'),'Ready retained a batch-selection checkbox');
   check(!button('Choose alternative'),'Ready offered alternatives');
   status.textContent='Checking Ready quantity';
   doc().querySelector('.product-list article button[aria-expanded]').click();
