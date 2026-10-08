@@ -1,0 +1,36 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "author": {
+    "name": "Morten & Josephine Broesby-Olsen"
+  },
+  "description": "Search groceries on Nemlig and compare products, package sizes, and prices.",
+  "extensions": {
+    "com.openai": {
+      "apps": "./.app.json",
+      "interface": {
+        "capabilities": [
+          "Interactive"
+        ],
+        "category": "Productivity",
+        "composerIcon": "./assets/icon.png",
+        "defaultPrompt": "Help me find groceries on Nemlig. Ask what I'm looking for, then compare matching products by exact size, current price, and unit price where available.",
+        "developerName": "Morten & Josephine Broesby-Olsen",
+        "displayName": "Nemlig Assistant",
+        "logo": "./assets/icon.png",
+        "longDescription": "Find products in Nemlig's catalogue, compare exact package sizes, current prices and unit prices, and prepare a shopping list for review. Items are added to your basket only after you authorize the exact selection.",
+        "shortDescription": "Grocery shopping"
+      }
+    }
+  },
+  "name": "nemlig-assistant",
+  "version": "0.1.4",
+  "keywords": [
+    "groceries",
+    "grocery shopping",
+    "food",
+    "product search",
+    "price comparison",
+    "shopping list",
+    "Nemlig"
+  ]
+}
