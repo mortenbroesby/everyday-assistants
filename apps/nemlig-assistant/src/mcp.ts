@@ -24,6 +24,8 @@ import {
 } from "./proposals.js";
 import { IMAGE_ORIGINS, createProductViewFromSummary, createProductViews, type ProductSummaryFacts, type ProductView } from "./product-presentation.js";
 import { PRODUCT_VIEWER_MIME_TYPE, PRODUCT_VIEWER_RESOURCE_DOMAINS, PRODUCT_VIEWER_RESOURCE_METADATA, PRODUCT_VIEWER_RESOURCE_URI, productViewsToText, renderProductViewerHtml } from "./product-viewer.js";
+import { RETIRED_PRODUCT_VIEWER_RESOURCE_URIS } from "./product-viewer-identity.js";
+import { renderRetiredProductViewerHtml } from "./retired-product-viewer.js";
 import { ProductReviewService } from "./product-review.js";
 import { resolveDetailedProductSearch } from "./product-discovery.js";
 import { NEMLIG_ASSISTANT_ICON } from "./nemlig-assistant-icon.js";
@@ -44,7 +46,7 @@ export interface McpRequestContext {
 export const serviceAcceptanceToolInventory = [
   "find_groceries", "show_my_basket",
 ] as const;
-export const serviceAcceptanceResourceInventory = [PRODUCT_VIEWER_RESOURCE_URI] as const;
+export const serviceAcceptanceResourceInventory = [PRODUCT_VIEWER_RESOURCE_URI, ...RETIRED_PRODUCT_VIEWER_RESOURCE_URIS] as const;
 
 const candidateSchema = z.object({
   id: z.number().int().positive().optional(),
@@ -266,6 +268,14 @@ The local draft list is conversation-scoped and temporary. If it is unavailable,
     { title: "Your draft list", description: "Product results and the shared local shopping draft list supplied by Nemlig Assistant.", mimeType: PRODUCT_VIEWER_MIME_TYPE },
     async (uri) => ({ contents: [{ uri: uri.href, mimeType: PRODUCT_VIEWER_MIME_TYPE, text: renderProductViewerHtml(), _meta: { ui: { csp: { connectDomains: [], resourceDomains: [...PRODUCT_VIEWER_RESOURCE_DOMAINS] }, prefersBorder: true } } }] }),
   );
+  for (const [index, uri] of RETIRED_PRODUCT_VIEWER_RESOURCE_URIS.entries()) {
+    server.registerResource(
+      `nemlig-retired-product-viewer-v${index}`,
+      uri,
+      { title: "Updated draft list", description: "This retired draft list card is inert and contains no shopping data.", mimeType: PRODUCT_VIEWER_MIME_TYPE },
+      async (resource) => ({ contents: [{ uri: resource.href, mimeType: PRODUCT_VIEWER_MIME_TYPE, text: renderRetiredProductViewerHtml() }] }),
+    );
+  }
   const localConnectionId = randomUUID();
   const connectionId = (sessionId: string | undefined): string =>
     requestContext ? `${requestContext.principalKey}\0${requestContext.policyRevision}` : sessionId ?? localConnectionId;

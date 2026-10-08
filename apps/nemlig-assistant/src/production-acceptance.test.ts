@@ -123,8 +123,8 @@ test("service resource inventory failures report bounded counts without exposing
     });
   };
 
-  await assertMismatch([], "missing_1_unexpected_0");
-  await assertMismatch([{ uri: privateUri }], "missing_1_unexpected_1");
+  await assertMismatch([], "missing_14_unexpected_0");
+  await assertMismatch([{ uri: privateUri }], "missing_14_unexpected_1");
   await assertMismatch([
     ...serviceAcceptanceResourceInventory.map((uri) => ({ uri })),
     ...Array.from({ length: 120 }, (_, index) => ({ uri: `${privateUri}/${index}` })),
