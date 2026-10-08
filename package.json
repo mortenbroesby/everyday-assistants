@@ -22,7 +22,7 @@
     "privacy:check": "node --test scripts/check-public-tree.test.mjs && node scripts/check-public-tree.mjs",
     "smoke": "turbo smoke",
     "spec:validate": "DO_NOT_TRACK=1 openspec validate --all --strict --no-interactive",
-    "test": "turbo test",
+    "test": "turbo test && node --test scripts/fallow-git-hook.test.mjs",
     "verify": "pnpm lint && pnpm build"
   },
   "devDependencies": {
