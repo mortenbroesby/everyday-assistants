@@ -1,5 +1,5 @@
 ---
-name: family-grocery-shopping
+name: grocery-shopping
 description: Use when shopping on Nemlig: search current products, compare exact sizes and prices, review the real basket read-only, build a local shopping list, or add exact selected items after authorization.
 ---
 

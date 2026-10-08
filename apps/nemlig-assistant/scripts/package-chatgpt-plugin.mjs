@@ -119,7 +119,7 @@ function validate() {
   }
 
   const skillsDirectory = resolve(packageRoot, "skills");
-  if (!readFileSync(resolve(skillsDirectory, "family-grocery-shopping/SKILL.md"), "utf8")) {
+  if (!readFileSync(resolve(skillsDirectory, "grocery-shopping/SKILL.md"), "utf8")) {
     throw new Error("The grocery shopping skill is missing or empty.");
   }
 
