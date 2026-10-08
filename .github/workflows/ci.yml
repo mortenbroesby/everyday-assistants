@@ -36,8 +36,15 @@ jobs:
             git show "origin/${base_ref}:.code-health/nemlig-assistant-baseline.json" > "${RUNNER_TEMP}/nemlig-assistant-baseline.json"
             pnpm code-health -- --baseline "${RUNNER_TEMP}/nemlig-assistant-baseline.json"
           else
-            [[ "$(git merge-base HEAD "origin/${base_ref}")" == "${base_commit}" ]]
-            [[ "$(jq -r '.generatedFrom' .code-health/nemlig-assistant-baseline.json)" == "${base_commit}" ]]
+            if [[ "$(git merge-base HEAD "origin/${base_ref}")" != "${base_commit}" ]]; then
+              echo "::error::The PR must include current ${base_ref} before comparing the initial code-health baseline."
+              exit 1
+            fi
+            baseline_commit="$(jq -r '.generatedFrom' .code-health/nemlig-assistant-baseline.json)"
+            if ! git merge-base --is-ancestor "${baseline_commit}" "origin/${base_ref}"; then
+              echo "::error::The code-health baseline must come from an ancestor of current ${base_ref}."
+              exit 1
+            fi
             pnpm code-health
           fi
       - run: pnpm test

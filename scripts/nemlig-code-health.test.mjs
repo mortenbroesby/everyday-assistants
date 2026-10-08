@@ -44,6 +44,20 @@ test("fails closed for incompatible Knip reports and malformed baselines", () =>
   assert.throws(() => validateBaseline({ schemaVersion: 1, tool: { name: "knip", version: "6.40.0" }, generatedFrom: "f".repeat(40), findings: [{ category: "files", file: "apps/nemlig-assistant/src/example.ts", id: "not-a-hash" }] }), /invalid finding/);
 });
 
+test("ignores issues from other workspaces while validating Nemlig issues", () => {
+  const report = { issues: [
+    { file: "package.json", dependencies: ["unrelated"] },
+    { file: "apps/nemlig-assistant/src/example.ts", exports: [{ name: "unusedExport" }] },
+  ] };
+  assert.equal(findingsFrom(report).length, 1);
+  assert.throws(() => findingsFrom({ issues: [{ file: "apps/nemlig-assistant/src/example.ts", exports: "invalid" }] }), /invalid exports collection/);
+});
+
+test("distinguishes valid JSON with invalid Knip structure from malformed JSON", () => {
+  const result = { status: 0, stdout: JSON.stringify({ issues: [{ file: "apps/nemlig-assistant/src/example.ts", exports: "invalid" }] }), stderr: "" };
+  assert.throws(() => scan({ runner: () => result }), /Knip returned an invalid exports collection/);
+});
+
 test("sanitizes scanner warnings, failures, and malformed output", () => {
   const marker = "synthetic-private-scanner-marker";
   const success = JSON.stringify({ issues: [{ file: "apps/nemlig-assistant/src/example.ts", exports: [{ name: marker }] }] });
@@ -90,6 +104,15 @@ test("real Knip reporter rejects a new unused export while baseline debt alone p
     assertCheckFailsWithoutMarker(fixture, "syntheticPrivateExport");
     writeFileSync(internal, "export const existing = true;\n");
     assertCheckPasses(fixture);
+  });
+});
+
+test("custom packaging entry keeps Knip's default main entry", () => {
+  withFixture((fixture) => {
+    writeFileSync(join(fixture, "knip.jsonc"), readFileSync(join(root, "knip.jsonc")));
+    writeFileSync(join(fixture, "apps/nemlig-assistant/src/main.ts"), "export const applicationEntry = true;\n");
+    const findings = scan({ cwd: fixture });
+    assert.ok(!findings.some((finding) => finding.category === "files" && finding.file === "apps/nemlig-assistant/src/main.ts"));
   });
 });
 

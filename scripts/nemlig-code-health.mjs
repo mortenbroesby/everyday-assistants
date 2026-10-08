@@ -16,7 +16,8 @@ export function findingsFrom(report) {
   for (const issue of report.issues) {
     if (!issue || typeof issue !== "object") throw new Error("Knip returned an invalid issue.");
     const file = issue.file;
-    if (typeof file !== "string" || !file.startsWith("apps/nemlig-assistant/")) throw new Error("Knip returned a finding outside Nemlig Assistant.");
+    if (typeof file !== "string") throw new Error("Knip returned an invalid issue.");
+    if (!file.startsWith("apps/nemlig-assistant/")) continue;
     for (const category of categories) {
       const values = issue[category] ?? [];
       if (!Array.isArray(values)) throw new Error(`Knip returned an invalid ${category} collection.`);
@@ -40,11 +41,13 @@ export function scan({ cwd = root, runner = spawnSync } = {}) {
     "--no-exit-code",
   ], { cwd, encoding: "utf8" });
   if (result.error || result.signal || result.status !== 0) throw new Error("Code-health scan failed.");
+  let report;
   try {
-    return findingsFrom(JSON.parse(result.stdout));
+    report = JSON.parse(result.stdout);
   } catch {
     throw new Error("Code-health scan returned invalid JSON.");
   }
+  return findingsFrom(report);
 }
 
 export function validateBaseline(baseline) {
