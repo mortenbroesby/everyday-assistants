@@ -304,28 +304,48 @@ paper over it in the viewer.
   evidence from stories. Evidence: Storybook 10.6.1 builds the five fixed
   visual-contract stories under `src/picker/components/`; a local Chrome
   browser smoke loaded the 320px To decide story and its primary action.
-- [ ] 13.3 Release Story 1 through the current stable viewer URI without a URI
+- [x] 13.3 Release Story 1 through the current stable viewer URI without a URI
   bump. Update the scoped feature inventory and run focused viewer/browser
   smoke, strict OpenSpec validation and applicable repository gates, then
   prepare one reviewable PR. Use the verified-main deployment path after merge;
   add package identity or release-note changes only when package policy requires
   them.
-- [ ] 13.4 After merge/release, perform and record native ChatGPT Story 1 smoke
+- [x] 13.4 After merge/release, perform and record native ChatGPT Story 1 smoke
   for expansion, factual disclosure, quantity persistence and a mounted-frame
   check. Do not start Story 2 until this result is pass or an exact host block
   is documented and accepted.
 
+Story 1 delivery evidence (8 October 2026): PR #233 merged as
+`223eed757061994f0f175e5e0950d07ba8d54ba2`; its rerun production workflow
+`37787755193` passed and the served application was read back at that SHA. In a
+fresh native ChatGPT conversation, a local one-product Draft list rendered the
+current To decide/Ready viewer. The product row and all three supplied factual
+sections expanded in place. A local quantity increment persisted from 1 to 2
+through Ready → To decide while the same mounted viewer frame remained visible.
+No real Nemlig basket was accessed or changed. This is native Story 1 evidence;
+it does not establish the separate historical-card acceptance work.
+
 ### Story 2 — local selection action hierarchy (one PR)
 
-- [ ] 13.5 Add focused failing coverage for redundant/invalid state actions,
+- [x] 13.5 Add focused failing coverage for redundant/invalid state actions,
   then make To decide batch acceptance its only acceptance path. Remove Ready
   checkboxes while retaining its directly visible quantity controls and existing
   move-back/remove paths; verify that local removal remains confirmed and makes
   zero provider basket calls.
-- [ ] 13.6 Remove redundant Ready banner/summary and action clutter, retaining
+- [x] 13.6 Remove redundant Ready banner/summary and action clutter, retaining
   one destination-appropriate primary action and clear local-versus-Nemlig
   basket wording; verify batch accept, revisit, removal, quantity flush and
   stale-revision recovery preserve server authority.
+
+Story 2 implementation evidence (8 October 2026): the adapter browser smoke
+now asserts that a Ready product list has no batch-selection checkbox. The
+viewer supplies checkbox selection only for To decide items, retaining directly
+visible Ready quantity controls and the existing expanded-row Move to To decide
+and confirmed local removal paths. The focused adapter smoke passed batch
+acceptance, no-call selection, Ready action hierarchy, quantity flush,
+stale-prepared recovery, confirmed local removal, and zero fake-provider basket
+writes; the built artifact smoke passed the equivalent synthetic MCP flow with
+zero provider writes. Native Story 2 acceptance remains 13.8.
 - [ ] 13.7 Release the Story 2 viewer change through one PR and the current
   stable URI after focused tests, loopback browser smoke, strict OpenSpec
   validation and the applicable repository gate; record exact revision, CI,
