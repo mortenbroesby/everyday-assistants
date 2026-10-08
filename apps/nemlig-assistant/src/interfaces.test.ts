@@ -16,7 +16,7 @@ import { RETIRED_PRODUCT_VIEWER_RESOURCE_URIS } from "./product-viewer-identity.
 import { NEMLIG_CODENAME, NEMLIG_VERSION } from "./runtime.js";
 
 const expectedProductViewerResources = [
-  { uri: PRODUCT_VIEWER_RESOURCE_URI, name: "nemlig-product-viewer", title: "Your draft list", description: "Product results and the shared local shopping draft list supplied by Nemlig Assistant.", mimeType: "text/html;profile=mcp-app" },
+  { uri: PRODUCT_VIEWER_RESOURCE_URI, name: "nemlig-product-viewer", title: "Nemlig Assistant", description: "Products and the shared local Draft list supplied by Nemlig Assistant.", mimeType: "text/html;profile=mcp-app" },
   ...RETIRED_PRODUCT_VIEWER_RESOURCE_URIS.map((uri, index) => ({ uri, name: `nemlig-retired-product-viewer-v${index}`, title: "Updated draft list", description: "This retired draft list card is inert and contains no shopping data.", mimeType: "text/html;profile=mcp-app" })),
 ];
 
@@ -582,7 +582,7 @@ test("MCP distinguishes the draft list from the actual Nemlig basket", async () 
     const viewer = await mcp.readResource({ uri: PRODUCT_VIEWER_RESOURCE_URI });
     assert.equal(viewer.contents[0]?.mimeType, "text/html;profile=mcp-app");
     assert.ok(viewer.contents[0] && "text" in viewer.contents[0]);
-    if (viewer.contents[0] && "text" in viewer.contents[0]) assert.match(viewer.contents[0].text, /Your Nemlig Draft list/u);
+    if (viewer.contents[0] && "text" in viewer.contents[0]) assert.match(viewer.contents[0].text, /Nemlig Assistant Draft list/u);
     for (const uri of RETIRED_PRODUCT_VIEWER_RESOURCE_URIS) {
       const retiredViewer = await mcp.readResource({ uri });
       assert.equal(retiredViewer.contents[0]?.mimeType, "text/html;profile=mcp-app", uri);
