@@ -31,6 +31,7 @@ test("pruning resolved findings makes a later reintroduction fail", () => {
   const pruned = pruneFindings([finding], []);
   assert.deepEqual(pruned, []);
   assert.equal(compareFindings(pruned, [finding]).new.length, 1);
+  assert.throws(() => pruneFindings([], [finding]), /cannot accept new findings/);
 });
 
 test("does not persist or report raw symbol and dependency names", () => {
