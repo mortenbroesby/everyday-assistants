@@ -26,7 +26,7 @@ import { IMAGE_ORIGINS, createProductViewFromSummary, createProductViews, type P
 import { PRODUCT_VIEWER_MIME_TYPE, PRODUCT_VIEWER_RESOURCE_DOMAINS, PRODUCT_VIEWER_RESOURCE_METADATA, PRODUCT_VIEWER_RESOURCE_URI, productViewsToText, renderProductViewerHtml } from "./product-viewer.js";
 import { ProductReviewService } from "./product-review.js";
 import { resolveDetailedProductSearch } from "./product-discovery.js";
-import { MOJO_SHOPPER_ICON } from "./mojo-shopper-icon.js";
+import { NEMLIG_ASSISTANT_ICON } from "./nemlig-assistant-icon.js";
 
 export const NEMLIG_CONNECT_URL = "https://nemlig-mcp.broesby.dk/connect";
 export const NEMLIG_IMAGE_ORIGINS = IMAGE_ORIGINS;
@@ -222,9 +222,9 @@ export function createMcpServer(
   const server = new McpServer(
     {
       name: "nemlig-assistant",
-      title: "MoJo Shopper",
+      title: "Nemlig Assistant",
       version: NEMLIG_VERSION,
-      icons: [{ src: MOJO_SHOPPER_ICON, mimeType: "image/svg+xml", sizes: ["1024x1024"] }],
+      icons: [{ src: NEMLIG_ASSISTANT_ICON, mimeType: "image/svg+xml", sizes: ["1024x1024"] }],
     },
     {
       instructions:
@@ -263,7 +263,7 @@ The local draft list is conversation-scoped and temporary. If it is unavailable,
   server.registerResource(
     "nemlig-product-viewer",
     PRODUCT_VIEWER_RESOURCE_URI,
-    { title: "Your draft list", description: "Product results and the shared local shopping draft list supplied by MoJo Shopper.", mimeType: PRODUCT_VIEWER_MIME_TYPE },
+    { title: "Your draft list", description: "Product results and the shared local shopping draft list supplied by Nemlig Assistant.", mimeType: PRODUCT_VIEWER_MIME_TYPE },
     async (uri) => ({ contents: [{ uri: uri.href, mimeType: PRODUCT_VIEWER_MIME_TYPE, text: renderProductViewerHtml(), _meta: { ui: { csp: { connectDomains: [], resourceDomains: [...PRODUCT_VIEWER_RESOURCE_DOMAINS] }, prefersBorder: true } } }] }),
   );
   const localConnectionId = randomUUID();

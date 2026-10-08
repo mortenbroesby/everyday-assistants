@@ -82,7 +82,7 @@ test("unauthenticated requests never reach authentication backends or the Contai
     forward: async () => { calls += 1; return new Response("unexpected"); },
   });
   assert.equal(response.status, 401);
-  assert.match(response.headers.get("www-authenticate") ?? "", /^Bearer resource_metadata="https:\/\/mcp\.example\.test\/\.well-known\/oauth-protected-resource\/mcp", error="invalid_token", error_description="Reconnect MoJo Shopper to continue"$/u);
+  assert.match(response.headers.get("www-authenticate") ?? "", /^Bearer resource_metadata="https:\/\/mcp\.example\.test\/\.well-known\/oauth-protected-resource\/mcp", error="invalid_token", error_description="Reconnect Nemlig Assistant to continue"$/u);
   assert.equal(calls, 0);
 });
 
