@@ -423,8 +423,21 @@ state before adding state-specific composition. The viewer uses native HTML
 buttons, controls, status chips and disclosures styled locally; it does not use
 a host component kit whose layout defaults can override the approved gallery.
 `@modelcontextprotocol/ext-apps` remains the host bridge and source of theme,
-font and safe-area context. No external component library, new framework,
-router, or cross-application design-system package is added.
+font and safe-area context. No external visual component kit, new framework,
+router, or cross-application design-system package is added. Emotion is the
+deliberate viewer-local styling runtime, not a component kit.
+
+The component suite lives in `src/picker/components/` with one explicit public
+barrel (`index.ts`). It is an in-app React library rather than a new workspace
+package because the viewer is the only current runtime consumer. Its boundary
+is deliberate: exported components may compose supplied product facts and
+presentational callbacks, but they may not call MCP tools, fetch providers, or
+own review membership, quantities, revisions, submission authority or other
+business state. Reconsider extracting a workspace package only when a second
+runtime consumer demonstrates concrete duplication. Its styles are co-located
+with the React components using Emotion and continue to use host CSS variables
+for theming. The accepted runtime style injection must remain free of
+user-supplied CSS values and external stylesheet fetches.
 
 ### Story gates
 

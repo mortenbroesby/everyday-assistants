@@ -281,20 +281,21 @@ paper over it in the viewer.
   `scripts/smoke-product-viewer.ts` exercises keyboard expansion, independent
   checkbox selection, safe image fallback, long-name 320px/375px layout,
   factual disclosures, and zero host calls; presentational callbacks are
-  isolated in `src/picker/viewer-components.tsx`.
+  isolated in `src/picker/components/`.
 - [x] 13.2 Build the viewer-local shared presentational components, then refine
   To decide and Ready row layout for image, identity, pack/brand, quantity and
   line price while keeping only the supplied factual disclosures. Keep To
   decide action controls expanded and Ready quantity controls directly visible;
   verify 320px/375px layout, focus visibility, unavailable rows, reuse across
   states, and no new business-state/client fetch path. Evidence:
+  The in-app component suite at `src/picker/components/` exports
   `ProductSummary`, `QuantityControl`, `ProductFacts`, `DestinationTabs`,
-  `ActionFooter` and native `ViewerButton` are viewer-local presentational
-  components. The viewer deliberately has no Apps SDK visual component-kit or
-  Tailwind dependency: content-sized status chips, segmented destinations and
-  soft image wells are controlled by local CSS. The built browser smoke verifies
-  those visual-control boundaries, state-specific control placement and zero
-  provider writes.
+  `ActionFooter`, `StatusChip` and native `ViewerButton` through one public
+  barrel. It deliberately has no Apps SDK visual component-kit or Tailwind
+  dependency: content-sized status chips, segmented destinations and soft image
+  wells are controlled by co-located Emotion styles. The built browser smoke
+  verifies those visual-control boundaries, state-specific control placement and
+  zero provider writes.
 - [ ] 13.3 Release Story 1 through the current stable viewer URI without a URI
   bump. Update the scoped feature inventory and run focused viewer/browser
   smoke, strict OpenSpec validation and applicable repository gates, then

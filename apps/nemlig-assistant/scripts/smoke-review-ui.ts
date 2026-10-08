@@ -125,8 +125,8 @@ document.getElementById('run').onclick = async () => {
   status.textContent='Checking process restart'; await fetch('/reset',{method:'POST'});
   const restarted=await call({name:'start_product_review',arguments:{items:[{product_id:1,quantity:3},{product_id:2,quantity:2}]}});
   transcript=restarted; publish();
-  await wait(()=>button('To decide (2)') && !button('To decide (2)').disabled);
-  check(button('Ready (0)') && !doc().querySelector('input:checked') && [...doc().querySelectorAll('.product-list .product-quantity')].some(node=>node.textContent.startsWith('3')),'Restart restored acceptance or lost the explicitly supplied quantities');
+  await wait(()=>button('To decide (2)') && !button('To decide (2)').disabled && [...doc().querySelectorAll('[data-viewer-component="product-quantity"]')].some(node=>node.textContent.startsWith('3')));
+  check(button('Ready (0)') && !doc().querySelector('input:checked') && [...doc().querySelectorAll('[data-viewer-component="product-quantity"]')].some(node=>node.textContent.startsWith('3')),'Restart restored acceptance or lost the explicitly supplied quantities');
   status.textContent='Checking exact prepare only';
   await select(); click('Add selected to Ready (1)'); await wait(()=>button('Ready (1)')&&!button('Ready (1)').disabled);
   click('Ready (1)'); await wait(()=>doc().querySelector('#title')?.textContent==='Ready'&&!button('Ready (1)').disabled);
@@ -150,7 +150,7 @@ document.getElementById('flow').onclick = async () => {
  const wait=async predicate=>{const until=Date.now()+15000;while(!predicate()){if(Date.now()>until)throw new Error('Timed out: '+status.textContent+' | '+(doc()?.querySelector('main')?.innerText||'no viewer main'));await new Promise(r=>setTimeout(r,25));}};
  const click=label=>{const b=button(label);check(b&&!b.disabled,'Missing enabled control: '+label);b.click();};
  const open=()=>check(!button('Open current Draft list'),'The mounted review collapsed');
- const widths=async()=>{const original=frame.style.width;for(const width of [320,375]){frame.style.width=width+'px';await new Promise(requestAnimationFrame);check(doc().documentElement.scrollWidth<=doc().documentElement.clientWidth+1,width+'px viewer overflow');const title=doc().querySelector('.product-heading strong');if(title){const summary=title.closest('.product-summary');check(summary?.querySelector('.product-summary-content')&&getComputedStyle(summary.querySelector('.product-summary-content')).display==='grid',width+'px product summary layout missing');check(title.getBoundingClientRect().width>=64,width+'px product title collapsed to '+title.getBoundingClientRect().width+'px');}}frame.style.width=original;};
+ const widths=async()=>{const original=frame.style.width;for(const width of [320,375]){frame.style.width=width+'px';await new Promise(requestAnimationFrame);check(doc().documentElement.scrollWidth<=doc().documentElement.clientWidth+1,width+'px viewer overflow');const summary=doc().querySelector('[data-viewer-component="product-summary"]');const title=summary?.querySelector('strong');if(title){check(summary?.querySelector('span')&&getComputedStyle(summary.querySelector('span')).display==='grid',width+'px product summary layout missing');check(title.getBoundingClientRect().width>=64,width+'px product title collapsed to '+title.getBoundingClientRect().width+'px');}}frame.style.width=original;};
  try {
   status.textContent='Starting continuous local flow';
   widgetCalls.length=0;
@@ -162,6 +162,7 @@ document.getElementById('flow').onclick = async () => {
   await document.getElementById('start').onclick();
   await wait(()=>button('To decide (2)'));
   await wait(()=>button('To decide (2)')&&!button('To decide (2)').disabled); await widths();
+  await wait(()=>button('Select all')&&!button('Select all').disabled);
   click('Select all'); await wait(()=>doc().querySelectorAll('input[type=checkbox]:checked').length===2); check(doc().querySelectorAll('input[type=checkbox]:checked').length===2,'Select all omitted a usable row');
   doc().querySelector('input[type=checkbox]:checked').click(); await wait(()=>doc().querySelectorAll('input[type=checkbox]:checked').length===1); check(doc().querySelectorAll('input[type=checkbox]:checked').length===1,'Unchecking one row changed another selection');
   doc().querySelector('input[type=checkbox]:not(:checked)').click(); await wait(()=>doc().querySelectorAll('input[type=checkbox]:checked').length===2);
@@ -171,13 +172,13 @@ document.getElementById('flow').onclick = async () => {
   click('Add selected to Ready (1)');
   await wait(()=>button('Ready (1)')&&!button('Ready (1)').disabled); open();
   click('Ready (1)'); await wait(()=>doc().querySelector('#title')?.textContent==='Ready'&&!button('Ready (1)').disabled); open(); await widths();
-  const readySummary=doc().querySelector('.review-footer')?.textContent||'';
+  const readySummary=doc().querySelector('[data-viewer-component="action-footer"]')?.textContent||'';
   check(!readySummary.includes('products ready'),'Ready retained a redundant count summary: '+readySummary);
   check(!button('Choose alternative'),'Ready offered alternatives');
   status.textContent='Checking Ready quantity';
   doc().querySelector('.product-list article button[aria-expanded]').click();
-  const plus=doc().querySelector('.product-list article .quantity-control button:last-of-type'); check(plus,'Quantity control missing'); plus.click();
-  await wait(()=>doc().querySelector('.product-list .product-quantity')?.textContent?.startsWith('2')); open();
+  const plus=doc().querySelector('.product-list article [data-viewer-component="quantity-control"] button:last-of-type'); check(plus,'Quantity control missing'); plus.click();
+  await wait(()=>doc().querySelector('[data-viewer-component="product-quantity"]')?.textContent?.startsWith('2')); open();
   doc().querySelector('.product-list article button[aria-expanded]').click();
   await wait(()=>doc().querySelector('.product-list article button[aria-expanded]')?.getAttribute('aria-expanded')==='false');
   status.textContent='Checking move back to To decide';
@@ -201,8 +202,8 @@ document.getElementById('flow').onclick = async () => {
   click('Ready (2)'); await wait(()=>doc().querySelector('#title')?.textContent==='Ready'&&!button('Ready (2)').disabled); open();
   status.textContent='Checking two-row debounce flush';
   const readyRows=[...doc().querySelectorAll('.product-list article')];
-  const firstPlus=readyRows.find(row=>row.textContent.includes('Smoke product 2'))?.querySelector('.quantity-control button:last-of-type');
-  const secondPlus=readyRows.find(row=>row.textContent.includes('Smoke product 3'))?.querySelector('.quantity-control button:last-of-type');
+  const firstPlus=readyRows.find(row=>row.textContent.includes('Smoke product 2'))?.querySelector('[data-viewer-component="quantity-control"] button:last-of-type');
+  const secondPlus=readyRows.find(row=>row.textContent.includes('Smoke product 3'))?.querySelector('[data-viewer-component="quantity-control"] button:last-of-type');
   check(firstPlus&&secondPlus,'Ready product quantity controls missing');
   const beforeBatch=widgetCalls.length; firstPlus.click(); secondPlus.click();
   click('Prepare exact change');
@@ -211,7 +212,7 @@ document.getElementById('flow').onclick = async () => {
   check(batchCalls.length===3&&batchCalls[0].kind==='quantity'&&batchCalls[0].product_id===2&&batchCalls[1].kind==='quantity'&&batchCalls[1].product_id===3&&batchCalls[2].kind==='prepare_submission','Two row quantities did not reach the real review service in sequence before prepare'); open();
   status.textContent='Checking stale prepared review';
   click('Review exact change');
-  const stalePlus=[...doc().querySelectorAll('.product-list article')].find(row=>row.textContent.includes('Smoke product 2'))?.querySelector('.quantity-control button:last-of-type'); check(stalePlus,'Prepared product quantity control missing');
+  const stalePlus=[...doc().querySelectorAll('.product-list article')].find(row=>row.textContent.includes('Smoke product 2'))?.querySelector('[data-viewer-component="quantity-control"] button:last-of-type'); check(stalePlus,'Prepared product quantity control missing');
   const beforeStale=widgetCalls.length; stalePlus.click();
   await wait(()=>widgetCalls.slice(beforeStale).some(call=>call.name==='update_product_review'&&call.arguments.action?.kind==='quantity')&&!doc().querySelector('.submission h2'));
   check(!widgetCalls.slice(beforeStale).some(call=>call.name==='submit_product_review'),'Stale prepared review reached submit_product_review'); open();
@@ -246,9 +247,9 @@ document.getElementById('flow').onclick = async () => {
   const availableRow=doc().querySelector('input[type=checkbox][aria-label="Select Smoke product 2"]'); check(availableRow,'Known-price row missing from submitted-continuation setup'); availableRow.click(); click('Add selected to Ready (1)');
   await wait(()=>button('Ready (1)')&&!button('Ready (1)').disabled); open(); click('Ready (1)'); await wait(()=>doc().querySelector('#title')?.textContent==='Ready'&&!button('Ready (1)').disabled); open();
   click('Prepare exact change'); await wait(()=>doc().querySelector('.submission h2')?.textContent==='Confirm the exact Nemlig change'); open();
-  check(button('Review exact change')?.classList.contains('viewer-button--primary')&&!button('Prepare exact change'),'Prepared review did not promote Review as the sole next primary action');
+  check(button('Review exact change')?.getAttribute('data-viewer-tone')==='primary'&&!button('Prepare exact change'),'Prepared review did not promote Review as the sole next primary action');
   click('Review exact change'); await wait(()=>button('Add to Nemlig')&&!button('Add to Nemlig').disabled);
-  check(button('Add to Nemlig')?.classList.contains('viewer-button--primary'),'Explicitly reviewed submission did not promote Add to Nemlig as the next primary action');
+  check(button('Add to Nemlig')?.getAttribute('data-viewer-tone')==='primary','Explicitly reviewed submission did not promote Add to Nemlig as the next primary action');
   await fetch('/uncertain-next',{method:'POST'}); click('Add to Nemlig');
   status.textContent='Checking uncertain submission';
   await wait(()=>text().includes('Submission outcome is uncertain. Inspect the actual Nemlig basket; do not retry automatically.'));
@@ -265,8 +266,8 @@ document.getElementById('flow').onclick = async () => {
   check(!editedReview.submission,'Explicit quantity edit retained the uncertain submission authority');
   transcript=await call({name:'start_product_review',arguments:{items:[{product_id:1,quantity:1},{product_id:2,quantity:2}]}});
   check(!transcript.structuredContent.review.submission,'Fresh viewer restored a previous uncertain submission');
-  initialized=false; frame.src='/viewer';
-  await wait(()=>button('Prepare exact change')&&!button('Prepare exact change').disabled);
+  initialized=false; const recoveryViewerLoaded=new Promise(resolve=>frame.addEventListener('load',resolve,{once:true})); frame.src='/viewer'; await recoveryViewerLoaded;
+  await wait(()=>initialized&&button('Prepare exact change')&&!button('Prepare exact change').disabled);
   check(!button('Add to Nemlig'),'Reopening an edited uncertain review restored its old confirmation');
   check(widgetCalls.filter(call=>call.name==='submit_product_review').length===1,'Reopening an edited uncertain review automatically submitted it');
   click('Prepare exact change'); await wait(()=>doc().querySelector('.submission h2')?.textContent==='Confirm the exact Nemlig change'); open();
@@ -309,12 +310,12 @@ document.getElementById('alternatives').onclick = async () => {
   check(getComputedStyle(currentCard).borderBottomWidth==='0px','Current product retained an internal divider');
   const candidate=[...doc().querySelectorAll('.alternative-options .product-card')].find(row=>row.textContent.includes('Smoke product 3'));
   check(candidate,'Returned alternative was missing');
-  check(!candidate.querySelector('button.product-summary'),'Alternative facts remained hidden behind a product accordion');
+  check(!candidate.querySelector('[data-viewer-component="product-summary"]'),'Alternative facts remained hidden behind a product accordion');
   check(candidate.textContent.includes('Fixture')&&candidate.textContent.includes('1 kg')&&candidate.textContent.includes('15.00 kr')&&candidate.textContent.includes('Organic'),'Alternative comparison omitted supplied product facts');
-  const facts=[...candidate.querySelectorAll('.product-fact summary')].map(summary=>summary.textContent); check(JSON.stringify(facts)===JSON.stringify(['Varebeskrivelse','Varedeklaration','Detaljer om varen']),'Alternative exposed anything other than the three supported factual sections: '+facts.join(', '));
-  const description=candidate.querySelector('.product-fact summary'); check(description,'Long factual description disclosure missing'); description.click();
+  const facts=[...candidate.querySelectorAll('[data-viewer-component="product-fact"] summary')].map(summary=>summary.textContent); check(JSON.stringify(facts)===JSON.stringify(['Varebeskrivelse','Varedeklaration','Detaljer om varen']),'Alternative exposed anything other than the three supported factual sections: '+facts.join(', '));
+  const description=candidate.querySelector('[data-viewer-component="product-fact"] summary'); check(description,'Long factual description disclosure missing'); description.click();
   await wait(()=>candidate.textContent.includes('Long factual description for the alternatives comparison smoke.'));
-  const details=[...candidate.querySelectorAll('.product-fact summary')].find(summary=>summary.textContent==='Detaljer om varen'); check(details,'Grouped product details disclosure missing'); details.click(); await wait(()=>candidate.textContent.includes('Country of origin')&&candidate.textContent.includes('Keep chilled'));
+  const details=[...candidate.querySelectorAll('[data-viewer-component="product-fact"] summary')].find(summary=>summary.textContent==='Detaljer om varen'); check(details,'Grouped product details disclosure missing'); details.click(); await wait(()=>candidate.textContent.includes('Country of origin')&&candidate.textContent.includes('Keep chilled'));
   let currentReview=(await call({name:'update_product_review_conversation',arguments:{action:{kind:'show'}}})).structuredContent.review;
   check(currentReview.destination==='alternatives'&&currentReview.items.every(item=>item.state==='needs-review'),'Opening alternatives implicitly accepted a product');
   const alternativeChoice=candidate.querySelector('[role=radio]'); check(alternativeChoice,'Alternative card was not a direct choice control'); alternativeChoice.click(); await wait(()=>candidate.querySelector('[role=radio]')?.getAttribute('aria-checked')==='true'); click('Use selected alternative');

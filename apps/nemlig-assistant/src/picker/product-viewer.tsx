@@ -1,7 +1,7 @@
 import { useApp, useHostStyles } from "@modelcontextprotocol/ext-apps/react";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import type { ProductView } from "../product-presentation.js";
-import { ActionFooter, DestinationTabs, isUsable, money, ProductFacts, productName, ProductSummary, QuantityControl, ViewerButton as Button } from "./viewer-components.js";
+import { ActionFooter, DestinationTabs, isUsable, money, ProductFacts, productName, ProductSummary, ProductSummaryButton, QuantityControl, ViewerButton as Button } from "./components/index.js";
 
 type ReviewItem = { product_id: number; quantity: number; state: "needs-review" | "ready"; view: ProductView };
 type Review = {
@@ -106,10 +106,10 @@ function ProductCard({ view, item, disabled, onQuantity, onRemove, onRevisit, se
   if (view.status !== "complete") return <article className={`product-card${comparison ? " product-comparison" : ""}`}>
     {onSelected && <label className="product-select"><input type="checkbox" aria-label={`Select ${productName(view, item?.product_id)}`} disabled={disabled || !isUsable(view)} checked={selected === true} onChange={(event) => onSelected(event.currentTarget.checked)} /></label>}
     <div className="product-details">
-      <Button color="secondary" variant="ghost" block className="product-summary" aria-expanded={disclosureExpanded} aria-controls={detailsId} onClick={() => {
+      <ProductSummaryButton color="secondary" variant="ghost" data-viewer-component="product-summary" aria-expanded={disclosureExpanded} aria-controls={detailsId} onClick={() => {
         const next = !disclosureExpanded;
         if (onExpandedChange) onExpandedChange(next); else setLocalExpanded(next);
-      }}><ProductSummary view={view} /></Button>
+      }}><ProductSummary view={view} /></ProductSummaryButton>
       <div id={detailsId} className="product-expanded" hidden={!disclosureExpanded}>
         {item && <p>{item.quantity} ×</p>}
         {item?.state === "needs-review" && reviewControls}
@@ -132,10 +132,10 @@ function ProductCard({ view, item, disabled, onQuantity, onRemove, onRevisit, se
         const next = event.key === "Home" ? 0 : event.key === "End" ? choices.length - 1 : (current + direction + choices.length) % choices.length;
         choices[next]?.focus();
         choices[next]?.click();
-      }}>{summary}<span className="alternative-choice-state" aria-hidden="true">{choice ? "Selected" : "Select"}</span></button> : <div className="product-comparison-summary">{summary}</div> : <Button color="secondary" variant="ghost" block className="product-summary" aria-expanded={disclosureExpanded} aria-controls={detailsId} onClick={() => {
+      }}>{summary}<span className="alternative-choice-state" aria-hidden="true">{choice ? "Selected" : "Select"}</span></button> : <div className="product-comparison-summary">{summary}</div> : <ProductSummaryButton color="secondary" variant="ghost" data-viewer-component="product-summary" aria-expanded={disclosureExpanded} aria-controls={detailsId} onClick={() => {
         const next = !disclosureExpanded;
         if (onExpandedChange) onExpandedChange(next); else setLocalExpanded(next);
-      }}>{summary}</Button>}
+      }}>{summary}</ProductSummaryButton>}
       <div id={detailsId} className="product-expanded" hidden={!comparison && !disclosureExpanded}>
         <ProductFacts view={view} expandedFacts={expandedFacts} onFactExpandedChange={onFactExpandedChange} />
         {item?.state === "needs-review" && reviewControls}

@@ -78,6 +78,8 @@
   },
   "devDependencies": {
     "@cloudflare/workers-types": "5.20260831.1",
+    "@emotion/react": "11.14.0",
+    "@emotion/styled": "11.14.1",
     "@eslint/js": "^10.0.1",
     "@modelcontextprotocol/ext-apps": "2.0.3",
     "@types/html-to-text": "9.0.4",

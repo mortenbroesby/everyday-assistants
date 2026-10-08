@@ -172,22 +172,23 @@ try {
   assert.equal(await frame.getByText("Synthetic milk").count(), 1);
   assert.equal(await frame.getByText("Organic").count(), 2, "organic badge missing");
   assert.equal(await frame.getByText("Offer").count(), 2, "offer badge missing");
-  const statusChip = frame.locator(".product-status-chip").first();
-  assert.equal(await frame.locator(".product-status-chip").count(), 4, "product status facts were not rendered as viewer-local chips");
+  const statusChip = frame.locator('[data-viewer-component="status-chip"]').first();
+  assert.ok(await frame.locator('style[data-emotion]').count() > 0, "the built viewer did not inject its co-located Emotion styles");
+  assert.equal(await frame.locator('[data-viewer-component="status-chip"]').count(), 4, "product status facts were not rendered as viewer-local chips");
   const chipLayout = await statusChip.evaluate((chip) => ({
     chipWidth: chip.getBoundingClientRect().width,
     containerWidth: chip.parentElement?.getBoundingClientRect().width ?? 0,
   }));
   assert.ok(chipLayout.chipWidth < chipLayout.containerWidth, `product status facts expanded into full-width controls: ${JSON.stringify(chipLayout)}`);
-  const tabs = frame.locator(".destination-tabs-segments");
+  const tabs = frame.locator('[data-viewer-control="segmented-tabs"]');
   assert.equal(await tabs.getAttribute("data-viewer-control"), "segmented-tabs", "destination navigation did not use the viewer-local segmented control");
   await capture("to-decide");
   const milkCard = frame.locator(".product-card").filter({ hasText: "Synthetic milk" });
-  const milkDisclosure = milkCard.locator(".product-summary");
+  const milkDisclosure = milkCard.locator('[data-viewer-component="product-summary"]');
   const milkCheckbox = milkCard.getByRole("checkbox", { name: "Select Synthetic milk" });
   assert.equal(await milkCard.getByRole("button", { name: "Increase quantity of Synthetic milk" }).count(), 0, "a collapsed To decide row exposed quantity controls");
   assert.equal(await milkCard.getByRole("button", { name: "Choose alternative" }).count(), 0, "a collapsed To decide row exposed alternative controls");
-  assert.equal(await milkCard.locator(".product-image-fallback").count(), 1, "a rejected image URL did not render the safe image fallback");
+  assert.equal(await milkCard.locator('[data-viewer-component="image-fallback"]').count(), 1, "a rejected image URL did not render the safe image fallback");
   await milkCheckbox.check();
   assert.equal(await milkDisclosure.getAttribute("aria-expanded"), "false", "checking a product row expanded it");
   await milkCheckbox.uncheck();
@@ -202,7 +203,7 @@ try {
   assert.equal(await milkDisclosure.getAttribute("aria-expanded"), "true", "product disclosure did not open");
   assert.equal(await milkCard.getByRole("button", { name: "Increase quantity of Synthetic milk" }).count(), 1, "an expanded To decide row did not expose quantity controls");
   assert.equal(await milkCard.getByRole("button", { name: "Choose alternative" }).count(), 1, "an expanded To decide row did not expose alternative controls");
-  const milkFact = milkCard.locator(".product-fact").first();
+  const milkFact = milkCard.locator('[data-viewer-component="product-fact"]').first();
   await milkFact.locator("summary").click();
   assert.equal(await milkFact.evaluate((node: HTMLDetailsElement) => node.open), true, "nested product fact did not open");
   assert.equal(await page.evaluate(() => window.calls.length), callsBeforeDisclosure, "product disclosure performed a tool call");
@@ -241,7 +242,7 @@ try {
   assert.equal(await page.evaluate(() => window.calls.filter((call) => call.args.action?.kind === "alternatives").length), alternativeCallsBeforeEmptySearch, "an empty alternatives query sent a stale search");
   await frame.getByRole("button", { name: /To decide \(2\)/ }).click();
   const oatsCard = frame.locator(".product-card").filter({ hasText: longOatsName });
-  await oatsCard.locator(".product-summary").click();
+  await oatsCard.locator('[data-viewer-component="product-summary"]').click();
   await oatsCard.getByRole("button", { name: "Choose alternative" }).click();
   await frame.getByRole("heading", { name: "Current product" }).waitFor();
   assert.equal(await frame.getByRole("searchbox", { name: "Search for more products" }).inputValue(), longOatsName, "an earlier product's query leaked into the new alternative target");
@@ -291,7 +292,7 @@ try {
   await page.evaluate(() => window.reopenCurrentReview());
   await frame.getByRole("button", { name: /To decide \(1\)/ }).waitFor();
   await frame.getByRole("button", { name: /To decide \(1\)/ }).click();
-  await frame.locator(".product-card").locator(".product-summary").first().click();
+  await frame.locator(".product-card").locator('[data-viewer-component="product-summary"]').first().click();
   await frame.getByRole("button", { name: "Choose alternative" }).click();
   await frame.getByRole("heading", { name: "Current product" }).waitFor().catch(async (error: unknown) => {
     const state = await frame.locator("main").innerText();

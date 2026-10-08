@@ -59,7 +59,7 @@ try {
   assert.equal(manifest.name, "nemlig-assistant");
   assert.equal(manifest.version, sourceManifest.version);
   assert.deepEqual(Object.keys(manifest.bin ?? {}).sort(), ["nemlig", "nemlig-assistant", "nemlig-mcp", "nemlig-mcp-http"]);
-  for (const browserBuildInput of ["@modelcontextprotocol/ext-apps", "react", "react-dom"]) assert.equal(manifest.dependencies?.[browserBuildInput], undefined);
+  for (const browserBuildInput of ["@emotion/react", "@emotion/styled", "@modelcontextprotocol/ext-apps", "react", "react-dom"]) assert.equal(manifest.dependencies?.[browserBuildInput], undefined);
 
   const installed = path.join(tempRoot, "node_modules", "nemlig-assistant", "dist");
   const imports = await execute(
