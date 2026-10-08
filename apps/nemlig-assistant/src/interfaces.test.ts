@@ -12,10 +12,12 @@ import { productionToolInventory } from "./production-acceptance.js";
 import type { ProductReviewSnapshot } from "./product-review.js";
 import { BasketProposalService } from "./proposals.js";
 import { PRODUCT_VIEWER_RESOURCE_URI } from "./product-viewer.js";
+import { RETIRED_PRODUCT_VIEWER_RESOURCE_URIS } from "./product-viewer-identity.js";
 import { NEMLIG_CODENAME, NEMLIG_VERSION } from "./runtime.js";
 
 const expectedProductViewerResources = [
   { uri: PRODUCT_VIEWER_RESOURCE_URI, name: "nemlig-product-viewer", title: "Your draft list", description: "Product results and the shared local shopping draft list supplied by Nemlig Assistant.", mimeType: "text/html;profile=mcp-app" },
+  ...RETIRED_PRODUCT_VIEWER_RESOURCE_URIS.map((uri, index) => ({ uri, name: `nemlig-retired-product-viewer-v${index}`, title: "Updated draft list", description: "This retired draft list card is inert and contains no shopping data.", mimeType: "text/html;profile=mcp-app" })),
 ];
 
 const basket: Basket = {
@@ -543,6 +545,15 @@ test("MCP distinguishes the draft list from the actual Nemlig basket", async () 
     assert.equal(viewer.contents[0]?.mimeType, "text/html;profile=mcp-app");
     assert.ok(viewer.contents[0] && "text" in viewer.contents[0]);
     if (viewer.contents[0] && "text" in viewer.contents[0]) assert.match(viewer.contents[0].text, /Your Nemlig Draft list/u);
+    for (const uri of RETIRED_PRODUCT_VIEWER_RESOURCE_URIS) {
+      const retiredViewer = await mcp.readResource({ uri });
+      assert.equal(retiredViewer.contents[0]?.mimeType, "text/html;profile=mcp-app", uri);
+      assert.ok(retiredViewer.contents[0] && "text" in retiredViewer.contents[0], uri);
+      if (retiredViewer.contents[0] && "text" in retiredViewer.contents[0]) {
+        assert.match(retiredViewer.contents[0].text, /read-only/u, uri);
+        assert.doesNotMatch(retiredViewer.contents[0].text, /<button|tools\/call|callTool|fetch\(/iu, uri);
+      }
+    }
     assert.match(JSON.stringify((await mcp.listTools()).tools.find((tool) => tool.name === "find_groceries")?.inputSchema), /concise Danish catalogue phrase/u);
   });
 });
