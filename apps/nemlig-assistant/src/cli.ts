@@ -12,19 +12,14 @@ import {
 import {
   clearCredentials,
   getCredentials,
-  promptCredentials,
   saveCredentials,
   type Credentials,
 } from "./config.js";
+import { promptCredentials } from "./credential-prompt.js";
 import { ensureLoggedIn, getClient, NEMLIG_VERSION } from "./runtime.js";
 
 export { ensureLoggedIn, getClient, NEMLIG_VERSION } from "./runtime.js";
 export type { ShoppingClient } from "./client.js";
-
-interface SignalSource {
-  once(event: "SIGINT", listener: () => void): unknown;
-  removeListener(event: "SIGINT", listener: () => void): unknown;
-}
 
 interface CliDependencies {
   client: ShoppingClient;
@@ -33,7 +28,6 @@ interface CliDependencies {
   save: (credentials: Credentials) => Promise<void>;
   clear: () => Promise<void>;
   out: (message: string) => void;
-  signals: SignalSource;
 }
 
 const positiveInteger = (value: string): number => {
@@ -80,6 +74,11 @@ const formatProduct = (product: Product): string => {
   ].join("\n");
 };
 
+const formatProductList = (products: Product[], emptyMessage: string): string =>
+  products.length
+    ? ["ID       Name                          Price    Size       Status", ...products.map(formatProduct)].join("\n")
+    : emptyMessage;
+
 export function createProgram(overrides: Partial<CliDependencies> = {}): Command {
   const dependencies: CliDependencies = {
     client: getClient(),
@@ -88,7 +87,6 @@ export function createProgram(overrides: Partial<CliDependencies> = {}): Command
     save: saveCredentials,
     clear: clearCredentials,
     out: console.log,
-    signals: process,
     ...overrides,
   };
   const program = new Command()
@@ -127,11 +125,7 @@ export function createProgram(overrides: Partial<CliDependencies> = {}): Command
     .option("-l, --limit <number>", "Ask Nemlig for this many results", positiveInteger)
     .action(async (query: string, options: { limit?: number }) => {
       const products = await dependencies.client.searchProducts(query, options.limit);
-      dependencies.out(
-        products.length
-          ? ["ID       Name                          Price    Size       Status", ...products.map(formatProduct)].join("\n")
-          : "No products found.",
-      );
+      dependencies.out(formatProductList(products, "No products found."));
     });
 
   program
@@ -156,11 +150,7 @@ export function createProgram(overrides: Partial<CliDependencies> = {}): Command
       );
       const matches = query === undefined ? favorites : matchFavorites(favorites, query);
       const products = matches.slice((options.page - 1) * options.limit, options.page * options.limit);
-      dependencies.out(
-        products.length
-          ? ["ID       Name                          Price    Size       Status", ...products.map(formatProduct)].join("\n")
-          : "No favorites found.",
-      );
+      dependencies.out(formatProductList(products, "No favorites found."));
     });
 
   program.command("departments").description("List current Nemlig department IDs.").action(async () => {

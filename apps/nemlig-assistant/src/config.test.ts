@@ -3,7 +3,7 @@ import { mkdtemp, readFile, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { clearCredentials, getCredentials, promptCredentials, saveCredentials } from "./config.js";
+import { clearCredentials, getCredentials, saveCredentials } from "./config.js";
 
 test("credentials prefer a complete environment pair and tolerate malformed files", async (t) => {
   const directory = await mkdtemp(join(tmpdir(), "nemlig-config-"));
@@ -37,8 +37,4 @@ test("saved credentials and their directory are owner-only, then clear cleanly",
   assert.match(await readFile(file, "utf8"), /person@example\.test/);
   await clearCredentials(file);
   assert.equal(await getCredentials(file, {}), undefined);
-});
-
-test("interactive credential collection fails cleanly without a terminal", async () => {
-  await assert.rejects(promptCredentials(), /Run `pnpm nemlig login --save` in a terminal/);
 });

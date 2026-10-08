@@ -34,7 +34,7 @@ const formatProduct = (view: ProductView): string => {
     product.unit, product.unit_size,
     product.available === undefined ? "availability unknown" : product.available ? "available" : "unavailable",
   ].filter((value): value is string => Boolean(value));
-  const labels = product.labels.length ? `; labels: ${product.labels.join(", ")}` : "";
+  const labels = product.labels.length ? `labels: ${product.labels.join(", ")}` : "";
   const classifications = [
     product.is_organic === undefined ? undefined : `organic ${product.is_organic ? "yes" : "no"}`,
     product.is_frozen === undefined ? undefined : `frozen ${product.is_frozen ? "yes" : "no"}`,
@@ -42,15 +42,25 @@ const formatProduct = (view: ProductView): string => {
   ].filter(Boolean).join("; ");
   const category = [product.category, product.subcategory].filter((value) => value?.trim()).join(" / ");
   const context = view.context === "basket"
-    ? `; Nemlig basket quantity ${formatNumber(view.basket?.quantity) ?? "unknown"}; line total ${formatMoney(view.basket?.line_total)}`
+    ? `Nemlig basket quantity ${formatNumber(view.basket?.quantity) ?? "unknown"}; line total ${formatMoney(view.basket?.line_total)}`
     : view.context === "review"
-      ? `; draft list quantity ${formatNumber(view.review?.quantity) ?? "unknown"}; line total ${formatMoney(view.review?.line_total)}; approved ${view.review?.approved === true ? "yes" : "no"}`
+      ? `draft list quantity ${formatNumber(view.review?.quantity) ?? "unknown"}; line total ${formatMoney(view.review?.line_total)}; approved ${view.review?.approved === true ? "yes" : "no"}`
       : "";
-  const details = product.details?.length ? `; ${product.details.map(({ key, value }) => `${key}: ${value}`).join("; ")}` : "";
-  const description = product.description ? `; description: ${product.description}` : "";
-  const declaration = product.declaration ? `; declaration: ${product.declaration}` : "";
-  const unitPrice = product.unit_price === undefined ? "" : `; unit price ${formatMoney(product.unit_price)} ${product.currency}${product.unit ? ` (${product.unit})` : ""}`;
-  return `${facts.join(" — ")}${category ? `; category: ${category}` : ""}${classifications ? `; ${classifications}` : ""}${unitPrice}${labels}${context}${description}${declaration}${details}.`;
+  const details = product.details?.length ? product.details.map(({ key, value }) => `${key}: ${value}`).join("; ") : "";
+  const description = product.description ? `description: ${product.description}` : "";
+  const declaration = product.declaration ? `declaration: ${product.declaration}` : "";
+  const unitPrice = product.unit_price === undefined ? "" : `unit price ${formatMoney(product.unit_price)} ${product.currency}${product.unit ? ` (${product.unit})` : ""}`;
+  const content = [
+    category ? `category: ${category}` : "",
+    classifications,
+    unitPrice,
+    labels,
+    context,
+    description,
+    declaration,
+    details,
+  ].filter(Boolean);
+  return `${facts.join(" — ")}${content.length ? `; ${content.join("; ")}` : ""}.`;
 };
 
 /** Complete headless result retained when the host cannot display the UI resource. */

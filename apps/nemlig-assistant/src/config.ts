@@ -1,11 +1,9 @@
-import passwordPrompt from "@inquirer/password";
 import { chmod, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
-import { createInterface } from "node:readline/promises";
 import { z } from "zod";
 
-const credentialsSchema = z.object({ username: z.string().min(1), password: z.string().min(1) });
+export const credentialsSchema = z.object({ username: z.string().min(1), password: z.string().min(1) });
 
 export type Credentials = z.infer<typeof credentialsSchema>;
 
@@ -46,19 +44,4 @@ export async function saveCredentials(
 
 export async function clearCredentials(file = credentialsFile()): Promise<void> {
   await rm(file, { force: true });
-}
-
-export async function promptCredentials(username?: string): Promise<Credentials> {
-  if (!process.stdin.isTTY || !process.stdout.isTTY) {
-    throw new Error("No Nemlig credentials configured. Run `pnpm nemlig login --save` in a terminal.");
-  }
-
-  const readline = createInterface({ input: process.stdin, output: process.stdout });
-  try {
-    const email = username?.trim() || (await readline.question("Email: ")).trim();
-    const password = await passwordPrompt({ message: "Password", mask: "*" });
-    return credentialsSchema.parse({ username: email, password });
-  } finally {
-    readline.close();
-  }
 }

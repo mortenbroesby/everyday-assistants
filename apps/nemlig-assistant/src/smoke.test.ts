@@ -39,6 +39,11 @@ test("server modules do not depend on the executable CLI entry point", async () 
   }
 });
 
+test("credential storage module stays independent of terminal prompt dependencies", async () => {
+  const source = await readFile(new URL("./config.ts", import.meta.url), "utf8");
+  assert.doesNotMatch(source, /(?:from\s+|import\s*)["'](?:@inquirer\/password|node:readline\/promises)["']/u);
+});
+
 test("source CLI, MCP, and HTTP modules import without starting work", async () => {
   const { stderr, stdout } = await execute(
     process.execPath,

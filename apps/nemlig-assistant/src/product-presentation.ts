@@ -70,8 +70,11 @@ export type ProductView = {
   readonly product_id?: number;
 };
 
+const hasLabelSubstring = (labels: readonly string[] | undefined, substring: string): boolean =>
+  labels?.some((label) => label.toLocaleLowerCase("da-DK").includes(substring)) ?? false;
+
 const productCandidate = (product: Product): ProductCandidate => {
-  const organic = product.isOrganic || product.labels.some((label) => label.toLocaleLowerCase("da-DK").includes("øko"));
+  const organic = product.isOrganic || hasLabelSubstring(product.labels, "øko");
   return {
     id: product.id,
     name: product.name,
@@ -106,6 +109,7 @@ export function createProductViewFromSummary(
   facts: ProductSummaryFacts,
   context: Extract<ProductViewContext, { readonly kind: "basket" | "review" }>,
 ): ProductView {
+  const hasOrganicLabel = hasLabelSubstring(facts.labels, "øko");
   const product: ProductCandidate = {
     id: facts.id,
     name: facts.name,
@@ -118,12 +122,12 @@ export function createProductViewFromSummary(
     currency: "DKK",
     brand: undefined,
     available: facts.available,
-    is_organic: facts.is_organic === true || facts.labels?.some((label) => label.toLocaleLowerCase("da-DK").includes("øko")) ? true : facts.is_organic,
+    is_organic: facts.is_organic === true || hasOrganicLabel ? true : facts.is_organic,
     is_frozen: facts.is_frozen,
-    is_on_discount: facts.is_on_discount ?? (facts.labels?.some((label) => label.toLocaleLowerCase("da-DK").includes("tilbud")) || undefined),
+    is_on_discount: facts.is_on_discount ?? (hasLabelSubstring(facts.labels, "tilbud") || undefined),
     image_url: undefined,
     labels: [...(facts.labels ?? [])],
-    tags: (facts.is_organic ?? facts.labels?.some((label) => label.toLocaleLowerCase("da-DK").includes("øko"))) ? ["organic"] : [],
+    tags: (facts.is_organic ?? hasOrganicLabel) ? ["organic"] : [],
   };
   return {
     context: context.kind,

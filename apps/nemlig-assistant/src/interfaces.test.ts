@@ -95,6 +95,44 @@ test("CLI favorites authenticates and prints the existing product format", async
   assert.match(output.join("\n"), /7/);
 });
 
+test("CLI search and favorites preserve product list output and empty messages", async () => {
+  const secondProduct: Product = {
+    ...product,
+    id: 8,
+    name: "Bananer",
+    price: 9,
+    unitSize: "1 kg",
+    available: false,
+    brand: "",
+    category: "",
+    isRefrigerated: false,
+    isOrganic: false,
+    isDairy: false,
+  };
+  const expectedList = [
+    "ID       Name                          Price    Size       Status",
+    "7        Økologisk mælk                12.50    1 liter    ✓ In Stock",
+    "         Test | Køl | [Køl] | [Øko] | [Dairy]",
+    "8        Bananer                       9.00     1 kg       ✗ Sold Out",
+  ].join("\n");
+  const run = async (command: "search" | "favorites", products: Product[]) => {
+    const output: string[] = [];
+    const client = fakeClient({
+      searchProducts: async () => products,
+      listFavorites: async () => products,
+    });
+    await createProgram({ client, out: (message) => output.push(message) }).parseAsync(
+      command === "search" ? ["node", "nemlig", command, "mælk"] : ["node", "nemlig", command],
+    );
+    return output;
+  };
+
+  assert.deepEqual(await run("search", [product, secondProduct]), [expectedList]);
+  assert.deepEqual(await run("favorites", [product, secondProduct]), [expectedList]);
+  assert.deepEqual(await run("search", []), ["No products found."]);
+  assert.deepEqual(await run("favorites", []), ["No favorites found."]);
+});
+
 test("CLI favorites searches Danish names without touching the basket", async () => {
   const output: string[] = [];
   let requestedLimit: number | undefined;

@@ -2,6 +2,7 @@
 /* global Buffer, URL, console, process */
 
 import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { cpSync, copyFileSync, mkdtempSync, mkdirSync, readFileSync, rmSync, renameSync } from "node:fs";
 import { dirname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -134,10 +135,10 @@ function validate() {
     throw new Error("The ChatGPT MCP connector icon must be a 256 x 256 PNG below 10 KB.");
   }
 
-  const serverSource = readFileSync(resolve(appRoot, "src/mcp.ts"), "utf8");
-  const embeddedIcon = serverSource.match(/export const NEMLIG_ICON\s*=\s*"data:image\/png;base64,([^"]+)"/);
-  if (!embeddedIcon || !Buffer.from(embeddedIcon[1], "base64").equals(iconBytes)) {
-    throw new Error("The plugin icon must match the icon configured by the existing MCP app.");
+  // Pin the reviewed plugin artwork independently of the separate MCP handshake icon.
+  const expectedIconSha256 = "4f7d00a3df3b5729e5d008e05191a00effd755587e3ea631bb3f36adb6e78315";
+  if (createHash("sha256").update(iconBytes).digest("hex") !== expectedIconSha256) {
+    throw new Error("The plugin icon must match the pinned plugin artwork.");
   }
 
   const skillsDirectory = resolve(packageRoot, "skills");
