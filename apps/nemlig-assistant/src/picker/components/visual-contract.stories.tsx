@@ -258,6 +258,9 @@ function DraftListWalkthroughStory() {
   const [destination, setDestination] =
     useState<Review["destination"]>("needs-review");
   const [selected, setSelected] = useState<Set<number>>(new Set());
+  const [reviewDisclosures, setReviewDisclosures] = useState<
+    ViewerPageProps["reviewDisclosures"]
+  >(new Map());
   const [replacement, setReplacement] = useState<number>();
   const [confirmSubmit, setConfirmSubmit] = useState(false);
   const [confirmEnd, setConfirmEnd] = useState(false);
@@ -287,10 +290,36 @@ function DraftListWalkthroughStory() {
         maxWidth: 375,
         presentationDestination: destination,
         selected,
+        reviewDisclosures,
         replacement,
         confirmSubmit,
         confirmEnd,
         onNavigate: setDestination,
+        onDisclosureChange: (productId, expanded) =>
+          setReviewDisclosures((previous) => {
+            const next = new Map(previous);
+            next.set(productId, {
+              expanded,
+              facts: previous.get(productId)?.facts ?? new Set(),
+            });
+            return next;
+          }),
+        onFactExpandedChange: (productId, factKey, expanded) =>
+          setReviewDisclosures((previous) => {
+            const current = previous.get(productId) ?? {
+              expanded: false,
+              facts: new Set<string>(),
+            };
+            const facts = new Set(current.facts);
+            if (expanded) {
+              facts.add(factKey);
+            } else {
+              facts.delete(factKey);
+            }
+            const next = new Map(previous);
+            next.set(productId, { ...current, facts });
+            return next;
+          }),
         onSelected: (productId, checked) =>
           setSelected((previous) =>
             toggleSelection(previous, productId, checked),

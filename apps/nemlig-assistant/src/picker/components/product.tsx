@@ -70,11 +70,12 @@ const ProductMeta = styled.span({
   overflowWrap: "anywhere",
 });
 const ProductQuantity = styled.span({
-  justifySelf: "start",
+  width: "100%",
   marginTop: 2,
   color: "var(--accent)",
   fontSize: ".8rem",
   fontWeight: 650,
+  textAlign: "right",
 });
 const Chips = styled.span({
   display: "flex",

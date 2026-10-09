@@ -5,9 +5,16 @@ import { ViewerButton } from "./button.js";
 const ViewerRoot = styled.div({
   minWidth: 0,
   padding:
-    "max(20px, env(safe-area-inset-top, 0px)) max(20px, env(safe-area-inset-right, 0px)) max(20px, env(safe-area-inset-bottom, 0px)) max(20px, env(safe-area-inset-left, 0px)",
+    "env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px) env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px)",
 });
-const Viewer = styled.main({ width: "min(100%, 560px)", margin: "0 auto" });
+const Viewer = styled.main({
+  width: "min(calc(100% - 32px), 560px)",
+  margin: "16px auto",
+  padding: 16,
+  border: "1px solid var(--line)",
+  borderRadius: 20,
+  background: "var(--surface)",
+});
 const ScreenHeading = styled.h1({
   margin: "0 4px 5px",
   fontSize: "1.45rem",
