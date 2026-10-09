@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { VerifiedPartialAdditionsError } from "./proposals.js";
 import { NemligError, type Product } from "./client.js";
 import { MAX_DRAFT_PRODUCTS, ProductReviewService } from "./product-review.js";
 
@@ -540,6 +541,52 @@ test("submission hides provider references, invalidates edits, and retains verif
     /inspect/i,
   );
   assert.equal(writes, 2);
+});
+
+test("a verified partial addition remains blocked with its confirmed count", async () => {
+  const proposals = {
+    prepareAdditions: async () => ({
+      applicable: true as const,
+      proposal_id: "private-provider-reference",
+      operation: "additions" as const,
+      connection_bound: true as const,
+      issued_at: new Date(0).toISOString(),
+      expires_at: new Date(Date.now() + 900_000).toISOString(),
+      basket_fingerprint: "private",
+      review: { lines: [{ product_id: 1, quantity: 1, item_price: 5 }] },
+    }),
+    apply: async () => {
+      throw new VerifiedPartialAdditionsError(
+        1,
+        "Earlier verified additions: Product 1. The next write failed its basket preflight; no later write was sent.",
+      );
+    },
+  };
+  const service = new ProductReviewService(client, { proposals });
+  let draft = await service.start("owner", [{ product_id: 1, quantity: 1 }]);
+  draft = await service.update("owner", draft.review_id, draft.revision, {
+    kind: "accept",
+    product_ids: [1],
+  });
+  draft = await service.prepare("owner", draft.review_id, draft.revision);
+
+  await assert.rejects(
+    service.submit(
+      "owner",
+      draft.review_id,
+      draft.revision,
+      draft.submission!.submission_id,
+    ),
+    /no later write was sent/i,
+  );
+
+  const partial = service.show("owner", draft.review_id);
+  assert.equal(partial.submission?.status, "partial");
+  assert.equal(partial.submission?.verified_additions, 1);
+  await assert.rejects(
+    service.prepare("owner", draft.review_id, partial.revision),
+    /inspect/i,
+  );
 });
 
 test("clarification edits to To decide preserve the exact prepared Ready submission; Ready changes invalidate it", async () => {

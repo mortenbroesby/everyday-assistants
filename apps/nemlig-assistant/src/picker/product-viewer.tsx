@@ -66,11 +66,15 @@ function isReview(value: unknown): value is Review {
   if (value.submission !== undefined) {
     if (
       !isRecord(value.submission) ||
-      !["prepared", "submitted", "uncertain"].includes(
+      !["prepared", "submitted", "uncertain", "partial"].includes(
         String(value.submission.status),
       ) ||
       typeof value.submission.submission_id !== "string" ||
-      !isRecord(value.submission.review)
+      !isRecord(value.submission.review) ||
+      (value.submission.verified_additions !== undefined &&
+        (typeof value.submission.verified_additions !== "number" ||
+          !Number.isSafeInteger(value.submission.verified_additions) ||
+          value.submission.verified_additions < 1))
     ) {
       return false;
     }
@@ -412,7 +416,8 @@ export function ProductViewer() {
         setContinueSubmitted((continued) => continued && preserveContinuation);
         if (
           next.review.submission?.status === "submitted" ||
-          next.review.submission?.status === "uncertain"
+          next.review.submission?.status === "uncertain" ||
+          next.review.submission?.status === "partial"
         ) {
           const uncertain = next.review.submission.status === "uncertain";
           submitBlockedRef.current = uncertain;
@@ -835,6 +840,31 @@ export function ProductViewer() {
       true,
     );
     if (!success) {
+      try {
+        if (connectedApp) {
+          const current = await connectedApp.callServerTool({
+            name: "update_product_review",
+            arguments: {
+              view_id: latest.view_id,
+              review_id: confirmed.review_id,
+              revision: confirmed.revision,
+              action: { kind: "show" },
+            },
+          });
+          if (!current.isError && applyPayload(current, true)) {
+            const snapshot = readPayload(current);
+            if (
+              snapshot?.kind === "review" &&
+              snapshot.review.submission?.status === "partial"
+            ) {
+              setMessage("");
+              return;
+            }
+          }
+        }
+      } catch {
+        // The original failure remains safely uncertain when its local state cannot be re-read.
+      }
       setMessage(
         "Submission outcome is uncertain. Inspect the actual Nemlig basket; do not retry automatically.",
       );

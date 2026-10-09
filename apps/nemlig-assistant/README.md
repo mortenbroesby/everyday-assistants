@@ -174,8 +174,10 @@ cannot gain this behavior; ask in chat to reopen the list from those older cards
 stale edit refreshes once without replaying it; connection failures hide editing
 controls until you explicitly reopen current state.
 If the draft is gone, **Start new draft list** rechecks the original products and
-quantities without restoring acceptance or submission approval. Submitted or
-uncertain snapshots instead direct you to inspect the actual basket.
+quantities without restoring acceptance or submission approval. Submitted,
+uncertain, or known-partial snapshots instead direct you to inspect the actual
+basket; a known partial result says how many additions were verified and that
+no later write was sent.
 The viewer uses the permanent `ui://nemlig/shell.html` identity. The previous
 `ui://nemlig/draft-list.html` address and every earlier product-viewer address
 resolve only to an inert, read-only notice, so historical cards cannot regain
@@ -243,7 +245,9 @@ The quantities of those products are set in Nemlig; unrelated basket lines stay
 unchanged and To decide items are excluded. Editing the draft invalidates
 the pending submission. Verified success has its own screen; the local draft list
 remains available for continued shopping. If the result is uncertain, inspect
-the actual Nemlig basket before preparing another submission. There is no automatic retry.
+the actual Nemlig basket before preparing another submission. A known partial
+result records the verified count and stops before any later write. There is no
+automatic retry.
 
 Interactive ChatGPT hosts use their tool bridge. Other hosts retain the complete
 structured/text results and equivalent conversational requests; the viewer never

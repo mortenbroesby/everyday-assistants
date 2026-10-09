@@ -10,6 +10,7 @@ import {
   basketFingerprint,
   BasketProposalService,
   type ProposalAuditEvent,
+  VerifiedPartialAdditionsError,
 } from "./proposals.js";
 
 const product: Product = {
@@ -295,7 +296,15 @@ test("real client stops a multi-line proposal when the basket drifts between wri
 
   await assert.rejects(
     service.apply("connection", prepared.proposal_id, "additions"),
-    /Earlier verified additions: Banan\..*basket changed before the next write.*no later write was sent/u,
+    (error: unknown) => {
+      assert.ok(error instanceof VerifiedPartialAdditionsError);
+      assert.equal(error.verifiedAdditions, 1);
+      assert.match(
+        error.message,
+        /Earlier verified additions: Banan\..*basket changed before the next write.*no later write was sent/u,
+      );
+      return true;
+    },
   );
   assert.deepEqual(fixture.posts, [
     {
