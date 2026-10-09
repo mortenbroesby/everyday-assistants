@@ -1,5 +1,6 @@
 /** Loopback-only browser smoke host: real MCP adapter + review service, fake catalogue. */
 import { createServer } from "node:http";
+import { readFile } from "node:fs/promises";
 import type { AddressInfo } from "node:net";
 import {
   Client,
@@ -13,6 +14,31 @@ import type { Product, ShoppingClient } from "../src/client.js";
 import type { ProductReviewSnapshot } from "../src/product-review.js";
 import { BasketProposalService } from "../src/proposals.js";
 import { PRODUCT_VIEWER_RESOURCE_URI } from "../src/product-viewer.js";
+
+const viewerStaticRoot = new URL(
+  "../dist/ui-static/ui/nemlig/",
+  import.meta.url,
+);
+const viewerManifest = JSON.parse(
+  await readFile(new URL("manifest.json", viewerStaticRoot), "utf8"),
+) as { js: { url: string }; css: { url: string } };
+const viewerAssets = new Map(
+  await Promise.all(
+    [viewerManifest.js, viewerManifest.css].map(
+      async (asset) =>
+        [
+          asset.url,
+          await readFile(
+            new URL(asset.url.slice("/ui/nemlig/".length), viewerStaticRoot),
+          ),
+        ] as const,
+    ),
+  ),
+);
+const viewerManifestText = await readFile(
+  new URL("manifest.json", viewerStaticRoot),
+  "utf8",
+);
 
 let basketReads = 0,
   writes = 0;
@@ -593,9 +619,39 @@ await client.connect(
 console.log(`Review UI smoke: ${origin}`);
 const browser = await chromium.launch({ headless: true, channel: "chrome" });
 try {
-  const browserPage = await browser.newPage({
+  const browserContext = await browser.newContext({
     viewport: { width: 375, height: 860 },
   });
+  await browserContext.route("**/*", async (route) => {
+    const url = new URL(route.request().url());
+    if (
+      url.origin === "https://nemlig-mcp.broesby.dk" &&
+      url.pathname.startsWith("/ui/nemlig/")
+    ) {
+      const body =
+        url.pathname === "/ui/nemlig/manifest.json"
+          ? viewerManifestText
+          : viewerAssets.get(url.pathname);
+      await route.fulfill({
+        status: body ? 200 : 404,
+        body: body ?? "missing",
+        headers: {
+          "access-control-allow-origin": "*",
+          "cache-control": url.pathname.endsWith("manifest.json")
+            ? "no-store"
+            : "public, max-age=31536000, immutable",
+          "content-type": url.pathname.endsWith(".js")
+            ? "text/javascript; charset=utf-8"
+            : url.pathname.endsWith(".css")
+              ? "text/css; charset=utf-8"
+              : "application/json",
+        },
+      });
+    } else {
+      await route.continue();
+    }
+  });
+  const browserPage = await browserContext.newPage();
   browserPage.setDefaultTimeout(10_000);
   browserPage.setDefaultNavigationTimeout(10_000);
   await browserPage.goto(origin, { waitUntil: "domcontentloaded" });

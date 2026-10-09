@@ -62,6 +62,21 @@
   reconnect; otherwise reconcile the earlier native gaps as superseded and
   sync/archive the change with its acceptance evidence.
 
+## 6. Stable shell and static bundle follow-up
+
+- [ ] 6.1 Move the live binding to `ui://nemlig/shell.html` and retire
+  `ui://nemlig/draft-list.html` plus the historical viewer URIs as inert.
+- [ ] 6.2 Package a small shell and same-origin no-store manifest with
+  content-addressed JS/CSS, matching SRI, bounded load failure, and an explicit
+  retry; load the current bundle only when the shell mounts.
+- [ ] 6.3 Serve only the generated `/ui/nemlig/` static directory through the
+  existing Worker's asset handling without routing asset requests through MCP
+  or waking the Container; keep MCP auth and unknown-binding checks unchanged.
+- [ ] 6.4 Verify the content-addressed manifest, shell/asset provenance,
+  retired-resource behavior, fake-provider browser flow, package contents,
+  strict OpenSpec, and `pnpm verify`. Deployment and native acceptance remain
+  separate.
+
 ## Implementation evidence (8 October 2026)
 
 - Current integration base: `fdb5ebf`; `ui://nemlig/draft-list.html` was absent

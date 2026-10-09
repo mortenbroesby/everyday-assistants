@@ -348,7 +348,7 @@ async function measureOne(
 
 async function main(): Promise<void> {
   const { outputPath, runs } = parseOptions(process.argv.slice(2));
-  const [v7Html, v7MetadataText, v8Html] = await Promise.all([
+  const [v7Html, v7MetadataText, manifestText] = await Promise.all([
     readFile(
       new URL("./fixtures/product-viewer-v7.html", import.meta.url),
       "utf8",
@@ -357,8 +357,21 @@ async function main(): Promise<void> {
       new URL("./fixtures/product-viewer-v7.json", import.meta.url),
       "utf8",
     ),
-    readFile(new URL("../dist/picker.html", import.meta.url), "utf8"),
+    readFile(
+      new URL("../dist/ui-static/ui/nemlig/manifest.json", import.meta.url),
+      "utf8",
+    ),
   ]);
+  const manifest = JSON.parse(manifestText) as {
+    js: { url: string };
+    css: { url: string };
+  };
+  const staticRoot = new URL("../dist/ui-static/", import.meta.url);
+  const [js, css] = await Promise.all([
+    readFile(new URL(manifest.js.url.slice(1), staticRoot), "utf8"),
+    readFile(new URL(manifest.css.url.slice(1), staticRoot), "utf8"),
+  ]);
+  const v8Html = `<!doctype html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>${css}</style></head><body><div id="root"></div><script type="module">${js}</script></body></html>`;
   const v7Metadata = JSON.parse(v7MetadataText) as {
     resourceUri?: string;
     sourceCommit?: string;

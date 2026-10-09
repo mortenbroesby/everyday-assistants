@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import test from "node:test";
 import { validateProductViewerArtifact } from "../scripts/product-viewer-artifact.js";
+import { createViewerAssets } from "../scripts/viewer-assets.js";
 import type { ProductView } from "./product-presentation.js";
 import {
   PRODUCT_VIEWER_BUILD_MARKER,
@@ -37,7 +39,7 @@ const complete: ProductView = {
 };
 
 test("permanent viewer identity and complete headless fallback stay in sync", () => {
-  assert.equal(PRODUCT_VIEWER_RESOURCE_URI, "ui://nemlig/draft-list.html");
+  assert.equal(PRODUCT_VIEWER_RESOURCE_URI, "ui://nemlig/shell.html");
   assert.equal(PRODUCT_VIEWER_MIME_TYPE, "text/html;profile=mcp-app");
   assert.deepEqual(PRODUCT_VIEWER_RESOURCE_METADATA, {
     ui: { resourceUri: PRODUCT_VIEWER_RESOURCE_URI },
@@ -222,39 +224,60 @@ test("headless product text preserves multiple rows and unavailable outputs exac
   assert.equal(productViewsToText([]), "No products found.");
 });
 
-test("served resource is the bounded self-contained React build", () => {
+test("served resource is a bounded stable shell with current-on-mount loading", () => {
   const { artifactId, html } = readProductViewerArtifact();
   assert.match(html, /<html lang="en">/u);
-  assert.match(html, /Nemlig Assistant Draft list/u);
+  assert.match(html, /Loading the current Draft list/u);
   assert.match(
     html,
     new RegExp(
-      `name="nemlig-viewer-build" content="${PRODUCT_VIEWER_BUILD_MARKER}"`,
+      `name="nemlig-viewer-shell" content="${PRODUCT_VIEWER_BUILD_MARKER}"`,
       "u",
     ),
   );
   assert.match(artifactId, /^[a-f0-9]{64}$/u);
   assert.equal(html, renderProductViewerHtml());
-  assert.match(html, /react-dom/u);
+  assert.match(html, /\/ui\/nemlig\/manifest\.json/u);
+  assert.match(html, /cache:"no-store",credentials:"omit"/u);
+  assert.doesNotMatch(html, /setInterval|hot.swap|serviceWorker/u);
   validateProductViewerArtifact(html);
 });
 
-test("artifact policy rejects external dependencies, dynamic loading, fetches, placeholders, and oversized HTML", () => {
+test("asset manifest content-addresses and integrity-binds the extracted bundle", () => {
+  const built = createViewerAssets(
+    '<script type="module">console.log("current")</script><style>body{color:red}</style>',
+  );
+  for (const [url, source] of built.files) {
+    const extension = url.endsWith(".js") ? "js" : "css";
+    const bytes = Buffer.from(source);
+    const digest = createHash("sha256").update(bytes).digest();
+    assert.equal(
+      url,
+      `/ui/nemlig/assets/${Buffer.from(digest).toString("hex")}.${extension}`,
+    );
+    assert.equal(
+      built.manifest[extension].integrity,
+      `sha256-${Buffer.from(digest).toString("base64")}`,
+    );
+  }
+  assert.throws(
+    () => createViewerAssets("<script></script>"),
+    /one bundled UI script/u,
+  );
+});
+
+test("shell policy rejects fixed external dependencies, dynamic loading, and oversized HTML", () => {
   const rejected = [
     [
       '<script src="https://example.test/app.js"></script>',
-      "viewer contains an external script",
+      "stable shell contains a fixed external script",
     ],
     [
       '<link rel="stylesheet" href="https://example.test/app.css">',
-      "viewer contains an external stylesheet",
+      "stable shell contains a fixed external stylesheet",
     ],
     ['import("./chunk.js")', "viewer contains a dynamic import"],
-    ['fetch("/api")', "viewer contains an application fetch"],
-    [
-      "Interactive local review is not implemented",
-      "candidate placeholder remains in the production viewer",
-    ],
+    ['fetch("/api")', "stable shell may fetch only its current manifest"],
   ] as const;
 
   for (const [html, message] of rejected) {
@@ -264,19 +287,21 @@ test("artifact policy rejects external dependencies, dynamic loading, fetches, p
     );
   }
   assert.throws(
-    () => validateProductViewerArtifact("x".repeat(1_500_001)),
-    /React viewer exceeds the raw HTML budget/u,
+    () => validateProductViewerArtifact("x".repeat(16_385)),
+    /stable viewer shell exceeds the raw HTML budget/u,
   );
 
   let state = 1;
-  const lowCompressionHtmlBytes = Buffer.allocUnsafe(500_000);
-  for (let index = 0; index < 500_000; index += 1) {
+  const lowCompressionHtmlBytes = Buffer.allocUnsafe(9_000);
+  for (let index = 0; index < 9_000; index += 1) {
     state = (1664525 * state + 1013904223) >>> 0;
     lowCompressionHtmlBytes[index] = 32 + (state % 95);
   }
   assert.throws(
     () =>
-      validateProductViewerArtifact(lowCompressionHtmlBytes.toString("ascii")),
-    /React viewer exceeds the gzip HTML budget/u,
+      validateProductViewerArtifact(
+        `${renderProductViewerHtml()}${lowCompressionHtmlBytes.toString("ascii")}`,
+      ),
+    /stable viewer shell exceeds the gzip budget/u,
   );
 });

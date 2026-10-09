@@ -176,13 +176,15 @@ controls until you explicitly reopen current state.
 If the draft is gone, **Start new draft list** rechecks the original products and
 quantities without restoring acceptance or submission approval. Submitted or
 uncertain snapshots instead direct you to inspect the actual basket.
-The viewer uses the permanent `ui://nemlig/draft-list.html` identity. Every
-previous product-viewer address resolves only to an inert, read-only notice, so
-historical cards cannot regain shopping controls. ChatGPT may retain previously
-cached documents; the server cannot remove those transcript cards. A release,
-resource read, and native rendered build are separate facts: the supported
-recovery path is an operator-managed clean connection cutover followed by a new
-chat, not another URI bump.
+The viewer uses the permanent `ui://nemlig/shell.html` identity. The previous
+`ui://nemlig/draft-list.html` address and every earlier product-viewer address
+resolve only to an inert, read-only notice, so historical cards cannot regain
+shopping controls. The stable shell loads the current same-origin,
+content-addressed UI bundle when it mounts; an active card never swaps code or
+replays shopping work. ChatGPT may retain previously cached documents; the
+server cannot remove those transcript cards. A release, resource read, and
+native rendered build are separate facts: the supported recovery path is an
+operator-managed clean connection cutover followed by a new chat.
 
 Run `pnpm --filter nemlig-assistant smoke:review-ui`, open its loopback URL,
 and click **Run regression smoke**. The real MCP adapter and fake catalogue
@@ -481,13 +483,14 @@ pnpm --filter nemlig-assistant smoke:package
 
 Tests use synthetic HTTP responses and never access a real Nemlig account.
 
-The MCP resource uses the permanent `ui://nemlig/draft-list.html` identity and
-serves the React viewer built into `dist/picker.html`. Existing cards are
-handled separately by the viewer and every historical product-viewer URI is
-inert. Do not use a new URI as a cache workaround; code delivery, resource
-reads, and native rendering are recorded as separate evidence.
-The package build includes that exact self-contained file and the browser smoke
-drives it through a synthetic MCP host with a fake catalogue:
+The MCP resource uses the permanent `ui://nemlig/shell.html` identity. Its
+small HTML shell fetches `/ui/nemlig/manifest.json` without credentials or
+cache, validates the manifest and same-origin content-addressed JS/CSS with
+SRI, then loads that bundle once for the current mount. The existing Worker
+serves only the generated `/ui/nemlig/` static files; these requests do not
+enter MCP or wake the Container. The manifest and assets ship with the Worker.
+The package includes the shell, manifest, and hashed assets; browser smoke
+drives the real UI through a synthetic MCP host with a fake catalogue:
 
 ```sh
 pnpm --filter nemlig-assistant bench:review-ui -- --runs 10

@@ -5,6 +5,7 @@ import {
   serviceAcceptanceToolInventory,
 } from "./mcp.js";
 import {
+  PRODUCT_VIEWER_CONNECT_DOMAINS,
   PRODUCT_VIEWER_MIME_TYPE,
   PRODUCT_VIEWER_RESOURCE_DOMAINS,
   PRODUCT_VIEWER_RESOURCE_URI,
@@ -282,7 +283,7 @@ const assertProductViewerResource = (
   assert.deepEqual(
     metadata.csp,
     {
-      connectDomains: [],
+      connectDomains: [...PRODUCT_VIEWER_CONNECT_DOMAINS],
       resourceDomains: [...PRODUCT_VIEWER_RESOURCE_DOMAINS],
     },
     `${label} product-viewer CSP metadata drifted`,

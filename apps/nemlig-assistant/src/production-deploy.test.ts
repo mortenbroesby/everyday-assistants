@@ -292,7 +292,7 @@ async function fixture(
           failureCategory: "feature_failed",
           failed: ["service_resource_inventory_mismatch"],
           lastCompletedBoundary:
-            "service_resource_inventory_read_missing_18_unexpected_1",
+            "service_resource_inventory_read_missing_19_unexpected_1",
           correlationIds: [],
         });
         const failure = new Error("candidate acceptance failed") as Error & {
@@ -510,12 +510,12 @@ test("acceptance retry exhaustion emits one bounded final diagnostic with attemp
     );
     assert.equal(
       report.acceptanceFailure?.lastCompletedBoundary,
-      "service_resource_inventory_read_missing_18_unexpected_1",
+      "service_resource_inventory_read_missing_19_unexpected_1",
     );
     assert.equal(diagnostics.length, 1);
     assert.match(
       diagnostics[0]!,
-      /acceptance_final_failure_code=service_resource_inventory_mismatch attempts=12 last_completed_boundary=service_resource_inventory_read_missing_18_unexpected_1/u,
+      /acceptance_final_failure_code=service_resource_inventory_mismatch attempts=12 last_completed_boundary=service_resource_inventory_read_missing_19_unexpected_1/u,
     );
     assert.doesNotMatch(diagnostics[0]!, /private\.example|secret|token=/u);
     assert.equal(

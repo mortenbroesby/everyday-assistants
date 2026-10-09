@@ -9,8 +9,9 @@ not establish which URI was requested or whether a resource read occurred.
 
 The existing viewer already uses server-owned snapshots, current-view tokens,
 revision checks, bounded stale-state recovery, and protected submission.
-Reuse those paths. The packaged artifact is self-contained and its validator
-rejects external scripts/styles, dynamic imports, and application fetches.
+Reuse those paths. The current build is self-contained; the new resource will
+instead be a stable shell with a narrowly validated same-origin manifest and
+content-addressed UI bundle.
 
 Source context:
 
@@ -30,24 +31,26 @@ Source context:
 **Non-Goals:**
 
 - Recovering old chats/cards, migrating draft state or approval, automatic
-  reconnect, new OAuth registration, remote code loading, resource manifests,
-  background polling, durable draft storage, or basket operations.
+  reconnect, new OAuth registration, third-party code loading, a new asset
+  service, background polling, durable draft storage, or basket operations.
 
 ## Decisions
 
 ### One permanent identity
 
-Use `ui://nemlig/draft-list.html`; it is absent from the inspected published
-inventory. Do not reuse the already-retired unversioned product-viewer URI.
-Keep both descriptor aliases equal and retain the existing MIME type and CSP.
+Use `ui://nemlig/shell.html` as the permanent resource. Retire the previously
+current `ui://nemlig/draft-list.html` as well as the unversioned product-viewer
+URI and v1-v16. Keep both descriptor aliases equal and retain the existing MIME
+type.
 
 At implementation, enumerate the published inventory at the integration base
 and retire every prior identity, including any concurrently published identity.
 Keep those registrations inert permanently; do not alias them to live controls.
 
-The URI remains stable across releases. Release/package versions follow normal
-policy but are not cache workarounds. If compatibility cannot be maintained,
-stop for an explicit contract/cutover decision; do not silently rotate the URI.
+The shell URI remains stable across releases. Release/package versions follow
+normal policy but are not cache workarounds. If compatibility cannot be
+maintained, stop for an explicit contract/cutover decision; do not silently
+rotate the URI.
 
 ### Current state does not imply current code
 
@@ -55,12 +58,21 @@ Reuse the existing current-state read and explicit activation paths. Rendering
 starts from authenticated, conversation-scoped server state. Browser state and
 retained results cannot grant authority or restore approval.
 
-A server resource read returns current packaged bytes, but a cached host may
-not read again. Compatible cached renderers must remain safe. Deployment,
-resource-read success, and native loaded-build acceptance are distinct facts.
+A mounted shell reads `/ui/nemlig/manifest.json` with `no-store`, omitted
+credentials, a five-second timeout, and redirects rejected. It accepts only
+same-origin `/ui/nemlig/assets/<sha256>.js` and `.css` paths whose SRI digests
+match their content-addressed names. Those assets are bundled into the existing
+Worker's static-assets directory; MCP and connection routes remain worker-first
+and unchanged, and asset requests do not wake the Container. The manifest and
+assets are deployed with the Worker version, with no separate storage service.
 
-Keep the artifact self-contained. Do not add a remote manifest, script loader,
-dynamic import, result-level template override, or speculative invalidation API.
+Each fresh mount loads the bundle selected by the current manifest once. The
+mounted card never polls, swaps bundles, or remounts shopping work. A cached
+shell therefore gets current compatible code when it is mounted, while active
+quantity edits, selection, typed searches, preparation, confirmation, and
+uncertain outcomes remain with the code that started them. The browser reports
+the shell marker and executing bundle digest separately. Native loaded-build
+acceptance remains separate from deployment and resource-read success.
 
 ### Minimal diagnostic evidence
 
@@ -81,10 +93,10 @@ Reuse existing diagnostic output and retention; add no telemetry service,
 storage, polling, or provider requests. Diagnostics must not affect tool
 authority or protocol correctness. Keep stdout clean for stdio MCP.
 
-Provide a non-secret build marker in the packaged viewer for native inspection.
-The acceptance record pairs that marker with the exact HTML digest. The marker
-identifies a build; it is not an authorization token or independent proof of
-every rendered byte.
+Provide a non-secret shell marker and expose the manifest's bundle digest in the
+mounted document for native inspection. The acceptance record pairs these with
+the shell HTML digest and exact asset integrity digests. None is an
+authorization token or independent proof of every rendered byte.
 
 Record missing host-read evidence honestly. A prefetch can precede the tool
 call; a cached render can produce no read. Do not fabricate a

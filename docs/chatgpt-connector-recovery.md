@@ -73,10 +73,13 @@ repository workflow, not by uploading a plugin ZIP.
 ## Viewer identity and forward-only cutover
 
 The live Draft list resource has one permanent identity:
-`ui://nemlig/draft-list.html`. The former unversioned product-viewer URI and
-v1-v16 are permanently inert, read-only resources. Do not rotate a URI to try
-to invalidate a ChatGPT cache, and do not infer current rendered code from a
-successful deployment, resource read, or metadata refresh.
+`ui://nemlig/shell.html`. The previous `ui://nemlig/draft-list.html`, the former
+unversioned product-viewer URI, and v1-v16 are permanently inert, read-only
+resources. The stable shell loads a same-origin, content-addressed bundle from
+the no-store manifest when mounted; it does not hot-swap code in an active
+shopping card. Do not rotate a URI to try to invalidate a ChatGPT cache, and do
+not infer current rendered code from a successful deployment, resource read,
+or metadata refresh.
 
 For the approved forward-only cutover, first deploy reviewed code and retain
 the exact source/artifact evidence. The operator then cleanly installs or

@@ -575,9 +575,10 @@ next story but does not rewrite completed local evidence.
 
 ### Rejected approaches
 
-- **New UI resource or client router:** rejected; the current viewer resource
-  and server snapshot are sufficient and another lifecycle creates new cached
-  resource and state risks.
+- **Parallel UI resources or client router:** rejected; the shared review
+  snapshot stays under the single resource identity governed by
+  `stabilize-chatgpt-viewer-identity`. That change owns the stable shell and
+  its same-origin bundle delivery without adding another review lifecycle.
 - **Automatic reopen/close behavior:** rejected; it would hide a host lifecycle
   failure and cannot prove a mounted card persists. Continue to diagnose a
   demonstrated lifecycle fault at the host/viewer boundary.

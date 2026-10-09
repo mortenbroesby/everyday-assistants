@@ -3,6 +3,7 @@ import { mkdir, readFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { resolve } from "node:path";
 import { chromium } from "playwright";
+import { readProductViewerArtifact } from "../src/product-viewer.js";
 
 declare global {
   interface Window {
@@ -40,9 +41,28 @@ declare global {
   }
 }
 
-const html = await readFile(
-  new URL("../dist/picker.html", import.meta.url),
+const html = readProductViewerArtifact().html;
+const staticRoot = new URL("../dist/ui-static/ui/nemlig/", import.meta.url);
+const manifestText = await readFile(
+  new URL("manifest.json", staticRoot),
   "utf8",
+);
+const manifest = JSON.parse(manifestText) as {
+  js: { url: string };
+  css: { url: string };
+};
+const assets = new Map(
+  await Promise.all(
+    [manifest.js, manifest.css].map(
+      async (asset) =>
+        [
+          asset.url,
+          await readFile(
+            new URL(asset.url.slice("/ui/nemlig/".length), staticRoot),
+          ),
+        ] as const,
+    ),
+  ),
 );
 const screenshotDirectory = process.env.NEMLIG_UI_SCREENSHOT_DIR;
 const longOatsName =
@@ -147,9 +167,33 @@ window.addEventListener('message',event=>{
 </script>`;
 
 const server = createServer((request, response) => {
-  response
-    .writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
-    .end(request.url === "/resource" ? html : parentDocument);
+  const pathname = new URL(request.url ?? "/", "http://localhost").pathname;
+  if (pathname === "/resource") {
+    response
+      .writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
+      .end(html);
+  } else if (pathname === "/ui/nemlig/manifest.json") {
+    response
+      .writeHead(200, {
+        "Cache-Control": "no-store",
+        "Content-Type": "application/json",
+      })
+      .end(manifestText);
+  } else if (pathname === manifest.js.url || pathname === manifest.css.url) {
+    response
+      .writeHead(200, {
+        "Content-Type": pathname.endsWith(".js")
+          ? "text/javascript; charset=utf-8"
+          : "text/css; charset=utf-8",
+      })
+      .end(assets.get(pathname));
+  } else if (pathname === "/host") {
+    response
+      .writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
+      .end(parentDocument);
+  } else {
+    response.writeHead(404).end();
+  }
 });
 await new Promise<void>((resolve, reject) => {
   server.once("error", reject);
@@ -170,6 +214,36 @@ try {
   await context.route("**/*", async (route) => {
     if (route.request().url().startsWith("http://127.0.0.1:")) {
       await route.continue();
+    } else if (
+      route
+        .request()
+        .url()
+        .startsWith("https://nemlig-mcp.broesby.dk/ui/nemlig/")
+    ) {
+      const url = new URL(route.request().url());
+      const body =
+        url.pathname === "/ui/nemlig/manifest.json"
+          ? manifestText
+          : assets.get(url.pathname);
+      if (!body) {
+        await route.fulfill({ status: 404, body: "missing" });
+      } else {
+        await route.fulfill({
+          status: 200,
+          body,
+          headers: {
+            "access-control-allow-origin": "*",
+            "cache-control": url.pathname.endsWith("manifest.json")
+              ? "no-store"
+              : "public, max-age=31536000, immutable",
+            "content-type": url.pathname.endsWith(".js")
+              ? "text/javascript; charset=utf-8"
+              : url.pathname.endsWith(".css")
+                ? "text/css; charset=utf-8"
+                : "application/json",
+          },
+        });
+      }
     } else {
       externalRequests.push(route.request().url());
       await route.abort();

@@ -10,7 +10,9 @@ import {
   serviceAcceptanceToolInventory,
 } from "./mcp.js";
 import {
+  PRODUCT_VIEWER_CONNECT_DOMAINS,
   PRODUCT_VIEWER_MIME_TYPE,
+  PRODUCT_VIEWER_RESOURCE_DOMAINS,
   PRODUCT_VIEWER_RESOURCE_URI,
   renderProductViewerHtml,
 } from "./product-viewer.js";
@@ -101,11 +103,8 @@ function serviceClient(): AcceptanceClient {
           _meta: {
             ui: {
               csp: {
-                connectDomains: [],
-                resourceDomains: [
-                  "https://nemlig.com",
-                  "https://www.nemlig.com",
-                ],
+                connectDomains: [...PRODUCT_VIEWER_CONNECT_DOMAINS],
+                resourceDomains: [...PRODUCT_VIEWER_RESOURCE_DOMAINS],
               },
               prefersBorder: true,
             },
@@ -149,11 +148,8 @@ function readonlyClient(): AcceptanceClient {
           _meta: {
             ui: {
               csp: {
-                connectDomains: [],
-                resourceDomains: [
-                  "https://nemlig.com",
-                  "https://www.nemlig.com",
-                ],
+                connectDomains: [...PRODUCT_VIEWER_CONNECT_DOMAINS],
+                resourceDomains: [...PRODUCT_VIEWER_RESOURCE_DOMAINS],
               },
               prefersBorder: true,
             },
@@ -860,7 +856,7 @@ test("service inventory drift identifies the failed list without exposing its co
     [
       "resource",
       "service_resource_inventory_mismatch",
-      "service_resource_inventory_read_missing_18_unexpected_1",
+      "service_resource_inventory_read_missing_19_unexpected_1",
     ],
   ] as const) {
     const client = serviceClient();
