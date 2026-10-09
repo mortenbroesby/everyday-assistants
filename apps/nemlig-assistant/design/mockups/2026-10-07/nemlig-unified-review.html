@@ -67,7 +67,7 @@
     #nemlig-unified-review .ur-undo button { min-height: 44px; padding: 0 10px; border: 0; color: var(--green); background: none; font-weight: 700; cursor: pointer; }
     #nemlig-unified-review .ur-footer-copy { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; font-size: 12px; }
     #nemlig-unified-review .ur-footer-copy span { color: var(--muted); font-size: 11px; }
-    #nemlig-unified-review .ur-actions { display: grid; grid-template-columns: minmax(72px, 1fr) minmax(0, 2fr); gap: 8px; }
+    #nemlig-unified-review .ur-actions { display: grid; gap: 8px; }
     #nemlig-unified-review .ur-actions .ur-button { width: 100%; }
     #nemlig-unified-review dialog { width: min(calc(100% - 24px), 390px); max-height: calc(100dvh - 32px); padding: 20px; border: 1px solid var(--line); border-radius: 18px; color: var(--ink); background: var(--paper); box-shadow: 0 18px 44px rgb(0 0 0 / 20%); }
     #nemlig-unified-review dialog::backdrop { background: rgb(0 0 0 / 45%); }
@@ -124,7 +124,7 @@
           <p class="ur-empty" data-empty hidden>Your local basket is empty. Use Undo to restore products.</p>
         </section>
       </main>
-      <footer class="ur-footer"><div class="ur-undo" data-undo hidden role="status"><span data-undo-name></span><button type="button" data-undo-button>Undo</button></div><div class="ur-footer-copy"><strong data-list-summary>5 products · 182,70 kr.</strong><span>Nothing sent yet</span></div><div class="ur-actions"><button class="ur-button" type="button" data-clear aria-label="Clear local basket">Clear</button><button class="ur-button ur-button-primary" type="button" data-preview>Submit to Nemlig</button></div></footer>
+      <footer class="ur-footer"><div class="ur-undo" data-undo hidden role="status"><span data-undo-name></span><button type="button" data-undo-button>Undo</button></div><div class="ur-footer-copy"><strong data-list-summary>5 products · 182,70 kr.</strong><span>Nothing sent yet</span></div><div class="ur-actions"><button class="ur-button ur-button-primary" type="button" data-preview>Submit to Nemlig</button><button class="ur-button" type="button" data-clear aria-label="Clear local basket">Clear</button></div></footer>
     </div>
     <dialog aria-labelledby="ur-confirm-heading"><h2 id="ur-confirm-heading">Submit to Nemlig</h2><p>These exact products would be added after your authorization. This fixture does not contact Nemlig or submit anything.</p><ul class="ur-confirm-lines" data-confirm-lines></ul><button class="ur-button ur-button-primary" type="button" data-close>Back to local basket</button></dialog>
   </div>
