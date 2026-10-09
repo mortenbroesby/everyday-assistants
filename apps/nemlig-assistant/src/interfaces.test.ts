@@ -827,8 +827,8 @@ test("only the newest Draft list card can invoke widget actions", async () => {
     assert.equal(startMetadata["openai/outputTemplate"], PRODUCT_VIEWER_RESOURCE_URI);
     assert.equal(startMetadata["openai/widgetAccessible"], undefined);
     const modelUpdate = tool("update_product_review_conversation")._meta as { ui: { visibility: string[] }; [key: string]: unknown };
-    assert.deepEqual(modelUpdate.ui, { resourceUri: PRODUCT_VIEWER_RESOURCE_URI, visibility: ["model"] });
-    assert.equal(modelUpdate["openai/outputTemplate"], PRODUCT_VIEWER_RESOURCE_URI);
+    assert.deepEqual(modelUpdate.ui.visibility, ["model"]);
+    assert.equal(modelUpdate["openai/outputTemplate"], undefined);
     assert.equal(modelUpdate["openai/widgetAccessible"], undefined);
     for (const name of ["update_product_review", "submit_product_review"]) {
       const metadata = tool(name)._meta as { ui: { visibility: string[] }; [key: string]: unknown };

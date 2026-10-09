@@ -101,3 +101,12 @@
   decide update did not update the already mounted view. Tasks 4.3 and 5.1–5.3
   therefore remain open; no URI rotation, reconnection retry, or automatic
   reopen was attempted.
+- The `cf415ce` follow-up tried associating the conversational update result
+  with the current viewer resource. In a refreshed installed connection and a
+  fresh chat, local To decide → Ready remained in the mounted card, but a
+  conversational Ready → To decide mutation created two new inactive “Update
+  your draft list” cards. The newest card showed the correct server state while
+  the original mounted card remained unchanged. This proves the host rendered
+  replacement cards rather than delivering a state update to the existing
+  iframe. The experiment is being reverted without adding reopen, polling, or
+  URI-rotation behavior; no real basket was accessed or changed.

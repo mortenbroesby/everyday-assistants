@@ -25,7 +25,6 @@ declare global {
     supersedeAndReload: () => void;
     reopenCurrentReview: () => void;
     setReadyForDisclosure: (ready: boolean, quantity?: number) => void;
-    sendConversationRevisit: () => void;
     replaceReviewIdentity: () => void;
   }
 }
@@ -78,7 +77,6 @@ window.sendUnavailableProduct=()=>frame.contentWindow.postMessage({jsonrpc:'2.0'
 window.getViewId=()=>viewId;
 window.supersedeAndReload=()=>{initialViewIdOverride=viewId;viewId='synthetic-view-'+(Number(viewId.split('-').at(-1))+1);frame.src='/resource'};
 window.setReadyForDisclosure=(ready,quantity)=>{const item=review.items.find(item=>item.product_id===2);item.state=ready?'ready':'needs-review';if(quantity!==undefined)item.quantity=quantity;review.revision++;frame.contentWindow.postMessage({jsonrpc:'2.0',method:'ui/notifications/tool-result',params:result(JSON.parse(JSON.stringify(review)))},location.origin)};
-window.sendConversationRevisit=()=>{const item=review.items.find(item=>item.product_id===2);item.state='needs-review';item.quantity=2;review.revision++;frame.contentWindow.postMessage({jsonrpc:'2.0',method:'ui/notifications/tool-result',params:{structuredContent:{review:JSON.parse(JSON.stringify(review))}}},location.origin)};
 window.replaceReviewIdentity=()=>{review.review_id='second-synthetic-review';review.revision++;viewId='synthetic-view-2';frame.contentWindow.postMessage({jsonrpc:'2.0',method:'ui/notifications/tool-result',params:result(JSON.parse(JSON.stringify(review)))},location.origin)};
 window.reopenCurrentReview=()=>{viewId='synthetic-view-'+(Number(viewId.split('-').at(-1))+1);frame.contentWindow.postMessage({jsonrpc:'2.0',method:'ui/notifications/tool-result',params:result(JSON.parse(JSON.stringify(review)))},location.origin)};
 window.addEventListener('message',event=>{
@@ -230,17 +228,14 @@ try {
   await page.waitForFunction((before) => window.calls.slice(before).filter((call) => call.args.action?.kind === "quantity").length === 1, callsBeforeReadyTab);
   assert.deepEqual(await page.evaluate((before) => window.calls.slice(before).map((call) => call.args.action), callsBeforeReadyTab), [{ kind: "quantity", product_id: 2, quantity: 10 }], "rapid quantity presses did not coalesce to one final update");
   await capture("ready");
-  const callsBeforeConversationRevisit = await page.evaluate(() => window.calls.length);
-  await page.evaluate(() => window.sendConversationRevisit());
-  await frame.getByRole("button", { name: /Ready \(0\)/ }).waitFor();
-  assert.equal(await readyOatsCard.count(), 0, "a conversational revisit did not update the mounted Ready view");
-  assert.equal(await page.evaluate(() => window.calls.length), callsBeforeConversationRevisit, "a conversational revisit reopened or called the Draft list tool");
   const callsBeforeToDecideTab = await page.evaluate(() => window.calls.length);
-  await frame.getByRole("button", { name: /To decide \(2\)/ }).click();
+  await frame.getByRole("button", { name: /To decide \(1\)/ }).click();
   await frame.getByRole("heading", { name: "To decide" }).waitFor();
   assert.equal(await page.evaluate(() => window.calls.length), callsBeforeToDecideTab, "To decide tab performed an MCP call");
   assert.equal(await milkDisclosure.getAttribute("aria-expanded"), "true", "review navigation lost the open product disclosure");
   assert.equal(await milkFact.evaluate((node: HTMLDetailsElement) => node.open), true, "review navigation lost the open nested fact disclosure");
+  await page.evaluate(() => window.setReadyForDisclosure(false, 2));
+  await frame.getByRole("button", { name: /To decide \(2\)/ }).waitFor();
   await page.evaluate(() => window.sendCancel());
   await page.evaluate(() => window.replaceReviewIdentity());
   await frame.getByRole("button", { name: /To decide \(2\)/ }).waitFor();
