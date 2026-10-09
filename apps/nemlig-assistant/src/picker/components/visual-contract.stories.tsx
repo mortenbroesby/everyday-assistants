@@ -666,7 +666,12 @@ export const Inactive: Story = {
     page({ kind: "review", review, active: false, view_id: "older-view" }),
 };
 export const ReadOnlyProducts: Story = {
-  render: () => page({ kind: "products", payload: {}, views: [milk, pasta] }),
+  render: () =>
+    page({
+      kind: "products",
+      payload: { detail_limit: 2, items: [], views: [milk, pasta] },
+      views: [milk, pasta],
+    }),
 };
 export const ProductResults: Story = {
   render: () => page({ kind: "products", payload: {}, views: [milk, pasta] }),
