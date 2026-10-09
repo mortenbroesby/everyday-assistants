@@ -1,32 +1,33 @@
-import { createHash, randomUUID } from "node:crypto";
-import { compile } from "html-to-text";
-import { z } from "zod";
-import { NemligError } from "./nemlig-error.js";
+import { createHash, randomUUID } from 'node:crypto';
+import { compile } from 'html-to-text';
+import { z } from 'zod';
+import { NemligError } from './nemlig-error.js';
 
-export { NemligError } from "./nemlig-error.js";
+export { NemligError } from './nemlig-error.js';
 
-export const API_BASE_URL = "https://www.nemlig.com/webapi";
-export const SEARCH_GATEWAY_URL = "https://webapi.prod.knl.nemlig.it/searchgateway/api";
+export const API_BASE_URL = 'https://www.nemlig.com/webapi';
+export const SEARCH_GATEWAY_URL =
+  'https://webapi.prod.knl.nemlig.it/searchgateway/api';
 export const NEMLIG_READ_ATTEMPT_TIMEOUT_MS = 60_000;
 export const NEMLIG_READ_MAX_RETRIES = 1;
 const KNOWN_PRODUCT_LIMIT = 1_000;
 
 const recordSchema = z.record(z.string(), z.unknown());
 const recordsSchema = z.array(recordSchema);
-const DAIRY_KEYWORDS = ["mælk", "ost", "fløde", "yoghurt", "smør", "skyr"];
-const DEFAULT_PRODUCT_TIMESTAMP = "AAAAAAAA-YFA_17hS";
-const DEFAULT_CORRELATION_ID = "YFA_17hS";
+const DAIRY_KEYWORDS = ['mælk', 'ost', 'fløde', 'yoghurt', 'smør', 'skyr'];
+const DEFAULT_PRODUCT_TIMESTAMP = 'AAAAAAAA-YFA_17hS';
+const DEFAULT_CORRELATION_ID = 'YFA_17hS';
 
 /** A failure known to occur before the provider's basket-write request was dispatched. */
 export class BasketPreflightError extends NemligError {
-  override readonly name: string = "BasketPreflightError";
+  override readonly name: string = 'BasketPreflightError';
 }
 
 export class BasketSnapshotChangedError extends BasketPreflightError {
-  override readonly name = "BasketSnapshotChangedError";
+  override readonly name = 'BasketSnapshotChangedError';
 
   constructor() {
-    super("Basket changed since the last verified read.");
+    super('Basket changed since the last verified read.');
   }
 }
 
@@ -56,24 +57,51 @@ export interface Product {
   isOnDiscount: boolean | undefined;
 }
 
-export interface Department { id: string; name: string }
-export interface ProductPage { products: Product[]; page: number; hasNext: boolean }
+export interface Department {
+  id: string;
+  name: string;
+}
+export interface ProductPage {
+  products: Product[];
+  page: number;
+  hasNext: boolean;
+}
 
 export function normalizeDepartments(value: unknown): Department[] {
   const seen = new Set<string>();
   return asRecords(asRecord(value).content).flatMap((entry) => {
     const id = asString(entry.Url) ?? asString(entry.url);
-    const name = asString(entry.Name) ?? asString(entry.Title) ?? asString(entry.name);
-    if (!id || !name || !id.startsWith("/") || id.startsWith("//") || seen.has(id)) return [];
-    seen.add(id); return [{ id, name }];
+    const name =
+      asString(entry.Name) ?? asString(entry.Title) ?? asString(entry.name);
+    if (
+      !id ||
+      !name ||
+      !id.startsWith('/') ||
+      id.startsWith('//') ||
+      seen.has(id)
+    ) {
+      return [];
+    }
+    seen.add(id);
+    return [{ id, name }];
   });
 }
 
-export function matchFavorites(products: Product[], query: string, limit?: number): Product[] {
-  const needle = query.trim().toLocaleLowerCase("da-DK");
-  if (!needle) throw new NemligError("Favorites query is required.");
-  if (limit !== undefined && (!Number.isInteger(limit) || limit < 1)) throw new NemligError("Favorites limit must be positive.");
-  const matches = products.filter((product) => product.name?.toLocaleLowerCase("da-DK").includes(needle));
+export function matchFavorites(
+  products: Product[],
+  query: string,
+  limit?: number,
+): Product[] {
+  const needle = query.trim().toLocaleLowerCase('da-DK');
+  if (!needle) {
+    throw new NemligError('Favorites query is required.');
+  }
+  if (limit !== undefined && (!Number.isInteger(limit) || limit < 1)) {
+    throw new NemligError('Favorites limit must be positive.');
+  }
+  const matches = products.filter((product) =>
+    product.name?.toLocaleLowerCase('da-DK').includes(needle),
+  );
   return limit === undefined ? matches : matches.slice(0, limit);
 }
 
@@ -106,7 +134,7 @@ export const basketFingerprint = (basket: Basket): string => {
     numberOfProducts: basket.numberOfProducts ?? null,
     deliveryTime: basket.deliveryTime ?? null,
   };
-  return createHash("sha256").update(JSON.stringify(stable)).digest("hex");
+  return createHash('sha256').update(JSON.stringify(stable)).digest('hex');
 };
 
 const asRecord = (value: unknown): Record<string, unknown> => {
@@ -118,30 +146,35 @@ const asRecords = (value: unknown): Array<Record<string, unknown>> => {
   return parsed.success ? parsed.data : [];
 };
 const asString = (value: unknown): string | undefined =>
-  typeof value === "string" ? value : undefined;
+  typeof value === 'string' ? value : undefined;
 const asNumber = (value: unknown): number | undefined =>
-  typeof value === "number" && Number.isFinite(value) ? value : undefined;
+  typeof value === 'number' && Number.isFinite(value) ? value : undefined;
 const asId = (value: unknown): number | undefined => {
-  const id = typeof value === "string" && /^\d+$/u.test(value) ? Number(value) : asNumber(value);
-  return id !== undefined && Number.isSafeInteger(id) && id > 0 ? id : undefined;
+  const id =
+    typeof value === 'string' && /^\d+$/u.test(value)
+      ? Number(value)
+      : asNumber(value);
+  return id !== undefined && Number.isSafeInteger(id) && id > 0
+    ? id
+    : undefined;
 };
 
 const convertProductText = compile({
   wordwrap: false,
   selectors: [
-    { selector: "a", options: { ignoreHref: true } },
-    { selector: "img", format: "skip" },
-    { selector: "script", format: "skip" },
-    { selector: "style", format: "skip" },
-    { selector: "h1", options: { uppercase: false } },
-    { selector: "h2", options: { uppercase: false } },
-    { selector: "h3", options: { uppercase: false } },
-    { selector: "h4", options: { uppercase: false } },
-    { selector: "h5", options: { uppercase: false } },
-    { selector: "h6", options: { uppercase: false } },
-    { selector: "ul", format: "block" },
-    { selector: "ol", format: "block" },
-    { selector: "li", format: "block" },
+    { selector: 'a', options: { ignoreHref: true } },
+    { selector: 'img', format: 'skip' },
+    { selector: 'script', format: 'skip' },
+    { selector: 'style', format: 'skip' },
+    { selector: 'h1', options: { uppercase: false } },
+    { selector: 'h2', options: { uppercase: false } },
+    { selector: 'h3', options: { uppercase: false } },
+    { selector: 'h4', options: { uppercase: false } },
+    { selector: 'h5', options: { uppercase: false } },
+    { selector: 'h6', options: { uppercase: false } },
+    { selector: 'ul', format: 'block' },
+    { selector: 'ol', format: 'block' },
+    { selector: 'li', format: 'block' },
   ],
   limits: { maxInputLength: 16_384, maxDepth: 32, maxChildNodes: 1_000 },
 });
@@ -149,18 +182,24 @@ const convertProductText = compile({
 /** Converts untrusted provider markup to bounded plain text without fetching; raw input is capped before parsing. */
 const boundedText = (value: unknown, length: number): string | undefined => {
   const html = asString(value)?.slice(0, 16_384);
-  const text = html ? convertProductText(html).replace(/\s+/gu, " ").trim() : undefined;
+  const text = html
+    ? convertProductText(html).replace(/\s+/gu, ' ').trim()
+    : undefined;
   return text ? text.slice(0, length) : undefined;
 };
 
 const boundedAttributeValue = (value: unknown): string | undefined => {
   const values = (Array.isArray(value) ? value : [value]).slice(0, 20);
-  let text = "";
+  let text = '';
   for (const entry of values) {
     const normalized = boundedText(entry, 300);
-    if (!normalized) continue;
-    text = `${text}${text ? ", " : ""}${normalized}`.slice(0, 300);
-    if (text.length === 300) break;
+    if (!normalized) {
+      continue;
+    }
+    text = `${text}${text ? ', ' : ''}${normalized}`.slice(0, 300);
+    if (text.length === 300) {
+      break;
+    }
   }
   return text ? text.slice(0, 300) : undefined;
 };
@@ -182,71 +221,93 @@ export function normalizeBasket(value: unknown): Basket {
 }
 
 export function normalizeProducts(value: unknown, limit?: number): Product[] {
-  const records = limit === undefined ? asRecords(value) : asRecords(value).slice(0, limit);
-  return records
-    .map((item) => {
-      const availability = asRecord(item.Availability);
-      const labels = Array.isArray(item.Labels)
-        ? item.Labels.filter((label): label is string => typeof label === "string")
-        : [];
-      const labelsLower = labels.map((label) => label.toLocaleLowerCase("da-DK"));
-      const category = asString(item.Category) ?? "";
-      const subcategory = asString(item.SubCategory) ?? "";
-      const description = boundedText(item.Text, 2_000);
-      const declaration = boundedText(item.DeclarationLabel, 4_000);
-      const categoryLower = category.toLocaleLowerCase("da-DK");
-      const subcategoryLower = subcategory.toLocaleLowerCase("da-DK");
-      return {
-        id: asId(item.Id),
-        name: asString(item.Name),
-        price: asNumber(item.Price),
-        unit: asString(item.UnitPrice) ?? "",
-        unitPrice: asNumber(item.UnitPriceCalc),
-        unitSize: asString(item.Description) ?? "",
-        ...(description ? { description } : {}),
-        ...(declaration ? { declaration } : {}),
-        ...(Array.isArray(item.Attributes) ? {
-          details: asRecords(item.Attributes).slice(0, 20).flatMap((attribute) => {
-            if (attribute.IsVisible === false || attribute.Visible === false || attribute.DisplayVisible === false) return [];
-            const key = boundedText(attribute.Key, 100); const value = boundedAttributeValue(attribute.Value);
-            return key && value ? [{ key, value }] : [];
-          }),
-        } : {}),
-        brand: asString(item.Brand) ?? "",
-        category,
-        subcategory,
-        imageUrl: asString(item.PrimaryImage) ?? "",
-        available:
-          availability.IsDeliveryAvailable === false || availability.IsAvailableInStock === false
-            ? false
-            : availability.IsDeliveryAvailable === true && availability.IsAvailableInStock === true
-              ? true
-              : undefined,
-        labels,
-        isOrganic: labelsLower.some((label) => label.includes("øko")) || undefined,
-        isFrozen: categoryLower ? categoryLower === "frost" : undefined,
-        isRefrigerated: categoryLower === "køl",
-        isDairy:
-          categoryLower.includes("mejeri") ||
-          DAIRY_KEYWORDS.some((keyword) => subcategoryLower.includes(keyword)),
-        isLactoseFree: labelsLower.some((label) => label.includes("laktosefri")),
-        isGlutenFree: labelsLower.some((label) => label.includes("glutenfri")),
-        isVegan: labelsLower.some((label) => label.includes("vegan")),
-        isOnDiscount: typeof item.DiscountItem === "boolean"
+  const records =
+    limit === undefined ? asRecords(value) : asRecords(value).slice(0, limit);
+  return records.map((item) => {
+    const availability = asRecord(item.Availability);
+    const labels = Array.isArray(item.Labels)
+      ? item.Labels.filter(
+          (label): label is string => typeof label === 'string',
+        )
+      : [];
+    const labelsLower = labels.map((label) => label.toLocaleLowerCase('da-DK'));
+    const category = asString(item.Category) ?? '';
+    const subcategory = asString(item.SubCategory) ?? '';
+    const description = boundedText(item.Text, 2_000);
+    const declaration = boundedText(item.DeclarationLabel, 4_000);
+    const categoryLower = category.toLocaleLowerCase('da-DK');
+    const subcategoryLower = subcategory.toLocaleLowerCase('da-DK');
+    return {
+      id: asId(item.Id),
+      name: asString(item.Name),
+      price: asNumber(item.Price),
+      unit: asString(item.UnitPrice) ?? '',
+      unitPrice: asNumber(item.UnitPriceCalc),
+      unitSize: asString(item.Description) ?? '',
+      ...(description ? { description } : {}),
+      ...(declaration ? { declaration } : {}),
+      ...(Array.isArray(item.Attributes)
+        ? {
+            details: asRecords(item.Attributes)
+              .slice(0, 20)
+              .flatMap((attribute) => {
+                if (
+                  attribute.IsVisible === false ||
+                  attribute.Visible === false ||
+                  attribute.DisplayVisible === false
+                ) {
+                  return [];
+                }
+                const key = boundedText(attribute.Key, 100);
+                const value = boundedAttributeValue(attribute.Value);
+                return key && value ? [{ key, value }] : [];
+              }),
+          }
+        : {}),
+      brand: asString(item.Brand) ?? '',
+      category,
+      subcategory,
+      imageUrl: asString(item.PrimaryImage) ?? '',
+      available:
+        availability.IsDeliveryAvailable === false ||
+        availability.IsAvailableInStock === false
+          ? false
+          : availability.IsDeliveryAvailable === true &&
+              availability.IsAvailableInStock === true
+            ? true
+            : undefined,
+      labels,
+      isOrganic:
+        labelsLower.some((label) => label.includes('øko')) || undefined,
+      isFrozen: categoryLower ? categoryLower === 'frost' : undefined,
+      isRefrigerated: categoryLower === 'køl',
+      isDairy:
+        categoryLower.includes('mejeri') ||
+        DAIRY_KEYWORDS.some((keyword) => subcategoryLower.includes(keyword)),
+      isLactoseFree: labelsLower.some((label) => label.includes('laktosefri')),
+      isGlutenFree: labelsLower.some((label) => label.includes('glutenfri')),
+      isVegan: labelsLower.some((label) => label.includes('vegan')),
+      isOnDiscount:
+        typeof item.DiscountItem === 'boolean'
           ? item.DiscountItem
-          : typeof item.IsDiscountItem === "boolean" ? item.IsDiscountItem : undefined,
-      };
-    });
+          : typeof item.IsDiscountItem === 'boolean'
+            ? item.IsDiscountItem
+            : undefined,
+    };
+  });
 }
 
 type Fetch = typeof fetch;
 
-const abortReason = (signal: AbortSignal): unknown => signal.reason ?? new DOMException("Read cancelled.", "AbortError");
+const abortReason = (signal: AbortSignal): unknown =>
+  signal.reason ?? new DOMException('Read cancelled.', 'AbortError');
 const throwIfAborted = (signal: AbortSignal | null | undefined): void => {
-  if (signal?.aborted) throw abortReason(signal);
+  if (signal?.aborted) {
+    throw abortReason(signal);
+  }
 };
-const xsrfCookieName = "XSRF-TOKEN";
-const xsrfHeaderName = "X-XSRF-TOKEN";
+const xsrfCookieName = 'XSRF-TOKEN';
+const xsrfHeaderName = 'X-XSRF-TOKEN';
 
 const decodeCookie = (value: string): string | undefined => {
   try {
@@ -277,9 +338,15 @@ export class NemligClient {
   ) {
     const tomorrow = new Date(now);
     tomorrow.setDate(tomorrow.getDate() + 1);
-    const date = [tomorrow.getFullYear(), tomorrow.getMonth() + 1, tomorrow.getDate()]
-      .map((part) => String(part).padStart(part === tomorrow.getFullYear() ? 4 : 2, "0"))
-      .join("");
+    const date = [
+      tomorrow.getFullYear(),
+      tomorrow.getMonth() + 1,
+      tomorrow.getDate(),
+    ]
+      .map((part) =>
+        String(part).padStart(part === tomorrow.getFullYear() ? 4 : 2, '0'),
+      )
+      .join('');
     this.defaultTimeslot = `${date}15-60-240`;
     this.timeslot = this.defaultTimeslot;
   }
@@ -294,12 +361,14 @@ export class NemligClient {
 
   async login(username: string, password: string): Promise<void> {
     this.resetSessionState();
-    if (!username || !password) throw new NemligError("Nemlig username and password are required.");
+    if (!username || !password) {
+      throw new NemligError('Nemlig username and password are required.');
+    }
     try {
       const response = await this.json(
         `${API_BASE_URL}/login`,
         {
-          method: "POST",
+          method: 'POST',
           body: JSON.stringify({
             Username: username,
             Password: password,
@@ -309,70 +378,130 @@ export class NemligClient {
             SaveExistingBasket: false,
           }),
         },
-        "Login",
+        'Login',
         false,
         false,
         false,
       );
       const data = asRecord(response);
       if (data.MergeSuccessful === false) {
-        throw new NemligError("Nemlig requires a basket decision. Resolve it on Nemlig.com; the assistant will not choose a remove or save option.");
+        throw new NemligError(
+          'Nemlig requires a basket decision. Resolve it on Nemlig.com; the assistant will not choose a remove or save option.',
+        );
       }
       if (!data.RedirectUrl && !data.MergeSuccessful) {
-        throw new NemligError("Login failed: invalid credentials");
+        throw new NemligError('Login failed: invalid credentials');
       }
       const timeslot = asString(data.TimeslotUtc);
       await this.refreshSession();
-      if (timeslot) this.timeslot = timeslot;
+      if (timeslot) {
+        this.timeslot = timeslot;
+      }
       this.loggedIn = true;
       this.sessionGeneration += 1;
     } catch (error) {
       this.resetSessionState();
-      throw error instanceof NemligError ? error : new NemligError("Login failed: session bootstrap unavailable.");
+      throw error instanceof NemligError
+        ? error
+        : new NemligError('Login failed: session bootstrap unavailable.');
     }
   }
 
-  async validateCredentials(username: string, password: string, signal?: AbortSignal): Promise<void> {
-    if (!username || !password) throw new NemligError("Nemlig username and password are required.");
-    const response = asRecord(await this.json(`${API_BASE_URL}/login`, {
-      method: "POST",
-      signal,
-      body: JSON.stringify({
-        Username: username, Password: password, CheckForExistingProducts: true,
-        DoMerge: true, AppInstalled: false, SaveExistingBasket: false,
-      }),
-    }, "Validate login", false, false, false));
+  async validateCredentials(
+    username: string,
+    password: string,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    if (!username || !password) {
+      throw new NemligError('Nemlig username and password are required.');
+    }
+    const response = asRecord(
+      await this.json(
+        `${API_BASE_URL}/login`,
+        {
+          method: 'POST',
+          signal,
+          body: JSON.stringify({
+            Username: username,
+            Password: password,
+            CheckForExistingProducts: true,
+            DoMerge: true,
+            AppInstalled: false,
+            SaveExistingBasket: false,
+          }),
+        },
+        'Validate login',
+        false,
+        false,
+        false,
+      ),
+    );
     if (response.MergeSuccessful === false) {
-      throw new NemligError("Nemlig requires a basket decision. Resolve it on Nemlig.com; the assistant will not choose a remove or save option.");
+      throw new NemligError(
+        'Nemlig requires a basket decision. Resolve it on Nemlig.com; the assistant will not choose a remove or save option.',
+      );
     }
-    if (!response.RedirectUrl && !response.MergeSuccessful) throw new NemligError("Login failed: invalid credentials");
-    const token = asRecord(await this.json(`${API_BASE_URL}/Token`, { signal }, "Validate account", false, false, false));
-    if (!asString(token.access_token)) throw new NemligError("Validate account failed: invalid response data.");
+    if (!response.RedirectUrl && !response.MergeSuccessful) {
+      throw new NemligError('Login failed: invalid credentials');
+    }
+    const token = asRecord(
+      await this.json(
+        `${API_BASE_URL}/Token`,
+        { signal },
+        'Validate account',
+        false,
+        false,
+        false,
+      ),
+    );
+    if (!asString(token.access_token)) {
+      throw new NemligError('Validate account failed: invalid response data.');
+    }
   }
 
-  async searchProducts(query: string, limit?: number, signal?: AbortSignal): Promise<Product[]> {
-    if (!query.trim()) throw new NemligError("Search query is required.");
-    if (limit !== undefined && (!Number.isInteger(limit) || limit < 1)) throw new NemligError("Search limit must be positive.");
+  async searchProducts(
+    query: string,
+    limit?: number,
+    signal?: AbortSignal,
+  ): Promise<Product[]> {
+    if (!query.trim()) {
+      throw new NemligError('Search query is required.');
+    }
+    if (limit !== undefined && (!Number.isInteger(limit) || limit < 1)) {
+      throw new NemligError('Search limit must be positive.');
+    }
     throwIfAborted(signal);
-    if (!this.productTimestamp) await this.refreshSession(signal);
+    if (!this.productTimestamp) {
+      await this.refreshSession(signal);
+    }
 
-    const primary = this.rememberProducts(await this.searchGateway(query, limit, signal));
-    if (primary.length || !this.accessToken) return primary;
+    const primary = this.rememberProducts(
+      await this.searchGateway(query, limit, signal),
+    );
+    if (primary.length || !this.accessToken) {
+      return primary;
+    }
 
     const quick = await this.optionalJson(
       `${SEARCH_GATEWAY_URL}/quick?${new URLSearchParams({
         query,
-        correlationId: this.correlationId ?? "",
+        correlationId: this.correlationId ?? '',
       })}`,
-      "Quick search",
+      'Quick search',
       true,
       signal,
     );
     for (const category of asRecords(asRecord(quick).Categories).slice(0, 3)) {
       const path = asString(category.Url);
-      if (!path) continue;
-      const products = this.rememberProducts(await this.productsByCategory(path, limit, 1, signal));
-      if (products.length) return products;
+      if (!path) {
+        continue;
+      }
+      const products = this.rememberProducts(
+        await this.productsByCategory(path, limit, 1, signal),
+      );
+      if (products.length) {
+        return products;
+      }
     }
     return [];
   }
@@ -386,7 +515,9 @@ export class NemligClient {
     this.validateProductId(productId);
     throwIfAborted(signal);
     const known = this.knownProducts.get(productId);
-    if (known && this.hydratedProductIds.has(productId)) return known;
+    if (known && this.hydratedProductIds.has(productId)) {
+      return known;
+    }
     return this.fetchExactProduct(productId, signal);
   }
 
@@ -394,148 +525,291 @@ export class NemligClient {
    * Resolves the exact product from the current catalogue, bypassing this
    * client's observed-product cache for final pre-mutation revalidation.
    */
-  async getFreshProduct(productId: number, signal?: AbortSignal): Promise<Product> {
+  async getFreshProduct(
+    productId: number,
+    signal?: AbortSignal,
+  ): Promise<Product> {
     this.validateProductId(productId);
     return this.fetchExactProduct(productId, signal);
   }
 
   private validateProductId(productId: number): void {
-    if (!Number.isInteger(productId) || productId < 1) throw new NemligError("Product ID must be positive.");
+    if (!Number.isInteger(productId) || productId < 1) {
+      throw new NemligError('Product ID must be positive.');
+    }
   }
 
-  private async fetchExactProduct(productId: number, signal?: AbortSignal): Promise<Product> {
+  private async fetchExactProduct(
+    productId: number,
+    signal?: AbortSignal,
+  ): Promise<Product> {
     throwIfAborted(signal);
-    if (!this.productTimestamp) await this.refreshSession(signal);
-    const endpoint = `${API_BASE_URL}/${this.productTimestamp ?? DEFAULT_PRODUCT_TIMESTAMP}/${this.timeslot}/${this.deliveryZoneId}/${this.userId ?? "0"}/Products/Get`;
+    if (!this.productTimestamp) {
+      await this.refreshSession(signal);
+    }
+    const endpoint = `${API_BASE_URL}/${this.productTimestamp ?? DEFAULT_PRODUCT_TIMESTAMP}/${this.timeslot}/${this.deliveryZoneId}/${this.userId ?? '0'}/Products/Get`;
     let response: Record<string, unknown>;
     try {
-      response = asRecord(await this.json(
-        `${endpoint}?${new URLSearchParams({ id: String(productId) })}`,
-        { signal },
-        `Get product ${productId}`,
-      ));
+      response = asRecord(
+        await this.json(
+          `${endpoint}?${new URLSearchParams({ id: String(productId) })}`,
+          { signal },
+          `Get product ${productId}`,
+        ),
+      );
     } catch (error) {
       if (error instanceof NemligError && error.status === 404) {
-        throw new NemligError(`Product ${productId} could not be resolved exactly.`, 404);
+        throw new NemligError(
+          `Product ${productId} could not be resolved exactly.`,
+          404,
+        );
       }
       throw error;
     }
-    const payload = asRecord(response.Product).Id === undefined ? response : asRecord(response.Product);
+    const payload =
+      asRecord(response.Product).Id === undefined
+        ? response
+        : asRecord(response.Product);
     const product = normalizeProducts([payload], 1)[0];
     if (!product || product.id !== productId) {
-      throw new NemligError(`Product ${productId} could not be resolved exactly.`, 404);
+      throw new NemligError(
+        `Product ${productId} could not be resolved exactly.`,
+        404,
+      );
     }
     return this.rememberProducts([product], true)[0]!;
   }
 
-  async listFavorites(limit?: number, page = 1, signal?: AbortSignal): Promise<Product[]> {
-    this.requireLogin("view favorites");
+  async listFavorites(
+    limit?: number,
+    page = 1,
+    signal?: AbortSignal,
+  ): Promise<Product[]> {
+    this.requireLogin('view favorites');
     throwIfAborted(signal);
-    if (limit !== undefined && (!Number.isInteger(limit) || limit < 1)) throw new NemligError("Favorites limit must be positive.");
-    if (!Number.isInteger(page) || page < 1) throw new NemligError("Favorites page must be positive.");
+    if (limit !== undefined && (!Number.isInteger(limit) || limit < 1)) {
+      throw new NemligError('Favorites limit must be positive.');
+    }
+    if (!Number.isInteger(page) || page < 1) {
+      throw new NemligError('Favorites page must be positive.');
+    }
     const offset = limit === undefined ? 0 : (page - 1) * limit;
-    if (!this.productTimestamp) await this.refreshSession(signal);
+    if (!this.productTimestamp) {
+      await this.refreshSession(signal);
+    }
 
-    const pageUrl = new URL("/favoritter", "https://www.nemlig.com");
-    pageUrl.searchParams.set("GetAsJson", "1");
-    pageUrl.searchParams.set("t", this.timeslot);
-    pageUrl.searchParams.set("d", "1");
-    const favoritesPage = asRecord(await this.json(pageUrl.toString(), { signal }, "Get favorites page"));
+    const pageUrl = new URL('/favoritter', 'https://www.nemlig.com');
+    pageUrl.searchParams.set('GetAsJson', '1');
+    pageUrl.searchParams.set('t', this.timeslot);
+    pageUrl.searchParams.set('d', '1');
+    const favoritesPage = asRecord(
+      await this.json(pageUrl.toString(), { signal }, 'Get favorites page'),
+    );
     const groups = asRecords(favoritesPage.content)
-      .filter((entry) => entry.TemplateName === "productlistshowallspot")
+      .filter((entry) => entry.TemplateName === 'productlistshowallspot')
       .map((entry) => entry.ProductGroupId)
-      .filter((id): id is string | number => typeof id === "string" || typeof id === "number");
+      .filter(
+        (id): id is string | number =>
+          typeof id === 'string' || typeof id === 'number',
+      );
     const products: Product[] = [];
     const seen = new Set<number | string>();
-    const target = limit === undefined ? Number.POSITIVE_INFINITY : offset + limit;
+    const target =
+      limit === undefined ? Number.POSITIVE_INFINITY : offset + limit;
     for (const group of groups) {
       let groupPage = 1;
       const seenPageSignatures = new Set<string>();
       while (products.length < target) {
         throwIfAborted(signal);
-        const pageSize = limit === undefined ? 50 : Math.min(50, target - products.length);
-        const batch = await this.productsByGroup(group, pageSize, "Get favorite products", groupPage, signal);
-        const pageSignature = JSON.stringify(batch.map((product) => product.id ?? null));
-        if (seenPageSignatures.has(pageSignature)) break;
+        const pageSize =
+          limit === undefined ? 50 : Math.min(50, target - products.length);
+        const batch = await this.productsByGroup(
+          group,
+          pageSize,
+          'Get favorite products',
+          groupPage,
+          signal,
+        );
+        const pageSignature = JSON.stringify(
+          batch.map((product) => product.id ?? null),
+        );
+        if (seenPageSignatures.has(pageSignature)) {
+          break;
+        }
         seenPageSignatures.add(pageSignature);
         for (const product of batch) {
-          if (product.id === undefined || seen.has(product.id)) continue;
-          seen.add(product.id); products.push(product);
+          if (product.id === undefined || seen.has(product.id)) {
+            continue;
+          }
+          seen.add(product.id);
+          products.push(product);
         }
-        if (batch.length < pageSize) break;
+        if (batch.length < pageSize) {
+          break;
+        }
         groupPage += 1;
       }
-      if (products.length === target) break;
+      if (products.length === target) {
+        break;
+      }
     }
     return this.rememberProducts(products.slice(offset, target));
   }
 
   async listDepartments(): Promise<Department[]> {
-    const page = await this.optionalJson("https://www.nemlig.com/?GetAsJson=1", "Get departments");
+    const page = await this.optionalJson(
+      'https://www.nemlig.com/?GetAsJson=1',
+      'Get departments',
+    );
     return normalizeDepartments(page);
   }
 
-  async browseDepartment(departmentId: string, limit = 20, page = 1): Promise<ProductPage> {
-    if (!Number.isInteger(limit) || limit < 1) throw new NemligError("Department page size must be positive.");
-    if (!Number.isInteger(page) || page < 1) throw new NemligError("Department page must be positive.");
-    const department = (await this.listDepartments()).find((item) => item.id === departmentId);
-    if (!department) throw new NemligError("Unknown department ID; list departments again.");
-    const products = this.rememberProducts(await this.productsByCategory(department.id, limit, page));
+  async browseDepartment(
+    departmentId: string,
+    limit = 20,
+    page = 1,
+  ): Promise<ProductPage> {
+    if (!Number.isInteger(limit) || limit < 1) {
+      throw new NemligError('Department page size must be positive.');
+    }
+    if (!Number.isInteger(page) || page < 1) {
+      throw new NemligError('Department page must be positive.');
+    }
+    const department = (await this.listDepartments()).find(
+      (item) => item.id === departmentId,
+    );
+    if (!department) {
+      throw new NemligError('Unknown department ID; list departments again.');
+    }
+    const products = this.rememberProducts(
+      await this.productsByCategory(department.id, limit, page),
+    );
     const seen = new Set<number>();
     const unique = products.filter((product) => {
-      if (product.id === undefined) return true;
-      if (seen.has(product.id)) return false;
-      seen.add(product.id); return true;
+      if (product.id === undefined) {
+        return true;
+      }
+      if (seen.has(product.id)) {
+        return false;
+      }
+      seen.add(product.id);
+      return true;
     });
     return { products: unique, page, hasNext: products.length === limit };
   }
 
   async getCart(signal?: AbortSignal): Promise<Basket> {
-    this.requireLogin("view the basket");
+    this.requireLogin('view the basket');
     throwIfAborted(signal);
-    return normalizeBasket(await this.json(`${API_BASE_URL}/basket/GetBasket`, { signal }, "Get basket"));
+    return normalizeBasket(
+      await this.json(
+        `${API_BASE_URL}/basket/GetBasket`,
+        { signal },
+        'Get basket',
+      ),
+    );
   }
 
   /** Add a positive quantity delta; the provider adapter translates it to its absolute-quantity endpoint. */
-  async addToCart(productId: number, quantity = 1, expectedBasket?: Basket): Promise<Basket> {
-    if (!this.loggedIn) throw new BasketPreflightError("Must be logged in to add items.");
-    if (!Number.isInteger(productId) || productId < 1) throw new BasketPreflightError("Product ID must be positive.");
-    if (!Number.isInteger(quantity) || quantity < 1) throw new BasketPreflightError("Quantity must be at least 1.");
+  async addToCart(
+    productId: number,
+    quantity = 1,
+    expectedBasket?: Basket,
+  ): Promise<Basket> {
+    if (!this.loggedIn) {
+      throw new BasketPreflightError('Must be logged in to add items.');
+    }
+    if (!Number.isInteger(productId) || productId < 1) {
+      throw new BasketPreflightError('Product ID must be positive.');
+    }
+    if (!Number.isInteger(quantity) || quantity < 1) {
+      throw new BasketPreflightError('Quantity must be at least 1.');
+    }
     let before: Basket;
     try {
       before = await this.getCart();
     } catch {
-      throw new BasketPreflightError("Basket could not be re-read before addition; no provider write was sent.");
+      throw new BasketPreflightError(
+        'Basket could not be re-read before addition; no provider write was sent.',
+      );
     }
-    if (expectedBasket && basketFingerprint(before) !== basketFingerprint(expectedBasket)) {
+    if (
+      expectedBasket &&
+      basketFingerprint(before) !== basketFingerprint(expectedBasket)
+    ) {
       throw new BasketSnapshotChangedError();
     }
-    if (before.items.some((item) => item.id === undefined || typeof item.quantity !== "number" || !Number.isInteger(item.quantity) || item.quantity < 0)) {
-      throw new BasketPreflightError("Basket lines cannot be verified safely; no provider write was sent.");
+    if (
+      before.items.some(
+        (item) =>
+          item.id === undefined ||
+          typeof item.quantity !== 'number' ||
+          !Number.isInteger(item.quantity) ||
+          item.quantity < 0,
+      )
+    ) {
+      throw new BasketPreflightError(
+        'Basket lines cannot be verified safely; no provider write was sent.',
+      );
     }
-    const matches = before.items.filter((item) => String(item.id) === String(productId));
-    if (matches.length > 1) throw new BasketPreflightError("Duplicate basket lines prevent a safe addition; no provider write was sent.");
+    const matches = before.items.filter(
+      (item) => String(item.id) === String(productId),
+    );
+    if (matches.length > 1) {
+      throw new BasketPreflightError(
+        'Duplicate basket lines prevent a safe addition; no provider write was sent.',
+      );
+    }
     const currentQuantity = matches[0]?.quantity ?? 0;
-    if (!Number.isInteger(currentQuantity) || currentQuantity < 0 || currentQuantity + quantity > Number.MAX_SAFE_INTEGER) {
-      throw new BasketPreflightError("Current basket quantity cannot be increased safely; no provider write was sent.");
+    if (
+      !Number.isInteger(currentQuantity) ||
+      currentQuantity < 0 ||
+      currentQuantity + quantity > Number.MAX_SAFE_INTEGER
+    ) {
+      throw new BasketPreflightError(
+        'Current basket quantity cannot be increased safely; no provider write was sent.',
+      );
     }
     try {
       await this.ensureAntiForgery();
     } catch {
-      throw new BasketPreflightError("Anti-forgery state could not be prepared; no provider write was sent.");
+      throw new BasketPreflightError(
+        'Anti-forgery state could not be prepared; no provider write was sent.',
+      );
     }
     const targetQuantity = currentQuantity + quantity;
-    await this.writeBasket(productId, targetQuantity, "Add to basket");
-    const after = await this.readback("Product was added");
-    const addedLine = after.items.find((item) => String(item.id) === String(productId));
-    if (!addedLine || typeof addedLine.quantity !== "number" || addedLine.quantity < targetQuantity) {
-      throw new NemligError("Basket readback did not confirm the additive quantity; inspect the basket and do not retry.");
+    await this.writeBasket(productId, targetQuantity, 'Add to basket');
+    const after = await this.readback('Product was added');
+    const addedLine = after.items.find(
+      (item) => String(item.id) === String(productId),
+    );
+    if (
+      !addedLine ||
+      typeof addedLine.quantity !== 'number' ||
+      addedLine.quantity < targetQuantity
+    ) {
+      throw new NemligError(
+        'Basket readback did not confirm the additive quantity; inspect the basket and do not retry.',
+      );
     }
     for (const previous of before.items) {
-      if (previous.id === undefined) throw new NemligError("Basket line identity could not be verified; inspect the basket and do not retry.");
-      const current = after.items.find((item) => String(item.id) === String(previous.id));
-      if (!current || typeof current.quantity !== "number" || typeof previous.quantity !== "number" || current.quantity < previous.quantity) {
-        throw new NemligError("A previous basket line was not preserved; inspect the basket and do not retry.");
+      if (previous.id === undefined) {
+        throw new NemligError(
+          'Basket line identity could not be verified; inspect the basket and do not retry.',
+        );
+      }
+      const current = after.items.find(
+        (item) => String(item.id) === String(previous.id),
+      );
+      if (
+        !current ||
+        typeof current.quantity !== 'number' ||
+        typeof previous.quantity !== 'number' ||
+        current.quantity < previous.quantity
+      ) {
+        throw new NemligError(
+          'A previous basket line was not preserved; inspect the basket and do not retry.',
+        );
       }
     }
     return after;
@@ -545,18 +819,26 @@ export class NemligClient {
     try {
       return await this.getCart();
     } catch {
-      throw new NemligError(`${action}, but basket verification failed; stop before further mutations.`);
+      throw new NemligError(
+        `${action}, but basket verification failed; stop before further mutations.`,
+      );
     }
   }
 
-  private async writeBasket(productId: number, quantity: number, operation: string): Promise<void> {
+  private async writeBasket(
+    productId: number,
+    quantity: number,
+    operation: string,
+  ): Promise<void> {
     if (!Number.isSafeInteger(quantity) || quantity < 1) {
-      throw new NemligError("Provider basket quantity must be a positive absolute value.");
+      throw new NemligError(
+        'Provider basket quantity must be a positive absolute value.',
+      );
     }
     await this.json(
       `${API_BASE_URL}/basket/AddToBasket`,
       {
-        method: "POST",
+        method: 'POST',
         body: JSON.stringify({
           ProductId: productId,
           quantity,
@@ -570,7 +852,9 @@ export class NemligClient {
   }
 
   private requireLogin(operation: string): void {
-    if (!this.loggedIn) throw new NemligError(`Must be logged in to ${operation}.`);
+    if (!this.loggedIn) {
+      throw new NemligError(`Must be logged in to ${operation}.`);
+    }
   }
 
   private resetSessionState(): void {
@@ -590,78 +874,138 @@ export class NemligClient {
     const host = new URL(API_BASE_URL).host;
     const existingCookie = this.cookies.get(host)?.get(xsrfCookieName);
     if (existingCookie) {
-      if (!decodeCookie(existingCookie)) throw new NemligError("Get anti-forgery state failed: invalid response data.");
+      if (!decodeCookie(existingCookie)) {
+        throw new NemligError(
+          'Get anti-forgery state failed: invalid response data.',
+        );
+      }
       return;
     }
-    const response = asRecord(await this.json(
-      `${API_BASE_URL}/AntiForgery`,
-      { signal },
-      "Get anti-forgery state",
-      false,
-      false,
-      false,
-    ));
+    const response = asRecord(
+      await this.json(
+        `${API_BASE_URL}/AntiForgery`,
+        { signal },
+        'Get anti-forgery state',
+        false,
+        false,
+        false,
+      ),
+    );
     const cookie = this.cookies.get(host)?.get(xsrfCookieName);
     const value = asString(response.Value);
-    if (response.Header !== xsrfHeaderName || !cookie || !value || decodeCookie(cookie) !== value) {
-      throw new NemligError("Get anti-forgery state failed: invalid response data.");
+    if (
+      response.Header !== xsrfHeaderName ||
+      !cookie ||
+      !value ||
+      decodeCookie(cookie) !== value
+    ) {
+      throw new NemligError(
+        'Get anti-forgery state failed: invalid response data.',
+      );
     }
   }
 
   private async refreshSession(signal?: AbortSignal): Promise<void> {
     throwIfAborted(signal);
-    const token = asRecord(await this.json(`${API_BASE_URL}/Token`, { signal }, "Get token", true));
+    const token = asRecord(
+      await this.json(`${API_BASE_URL}/Token`, { signal }, 'Get token', true),
+    );
     this.accessToken = asString(token.access_token);
-    if (!this.accessToken) throw new NemligError("Get token failed: invalid response data.");
+    if (!this.accessToken) {
+      throw new NemligError('Get token failed: invalid response data.');
+    }
     const settings = asRecord(
-      await this.optionalJson(`${API_BASE_URL}/v2/AppSettings/Website`, "Get app settings", false, signal),
+      await this.optionalJson(
+        `${API_BASE_URL}/v2/AppSettings/Website`,
+        'Get app settings',
+        false,
+        signal,
+      ),
     );
     this.productTimestamp =
-      asString(settings.CombinedProductsAndSitecoreTimestamp) ?? DEFAULT_PRODUCT_TIMESTAMP;
-    this.correlationId = asString(settings.SitecorePublishedStamp) ?? DEFAULT_CORRELATION_ID;
+      asString(settings.CombinedProductsAndSitecoreTimestamp) ??
+      DEFAULT_PRODUCT_TIMESTAMP;
+    this.correlationId =
+      asString(settings.SitecorePublishedStamp) ?? DEFAULT_CORRELATION_ID;
     const user = asRecord(
-      await this.optionalJson(`${API_BASE_URL}/user/GetCurrentUser`, "Get current user", false, signal),
+      await this.optionalJson(
+        `${API_BASE_URL}/user/GetCurrentUser`,
+        'Get current user',
+        false,
+        signal,
+      ),
     );
     const userId = user.DebitorId ?? user.Id;
-    if (typeof userId === "number" || typeof userId === "string") this.userId = String(userId);
+    if (typeof userId === 'number' || typeof userId === 'string') {
+      this.userId = String(userId);
+    }
     const delivery = asRecord(
-      await this.optionalJson(`${API_BASE_URL}/Order/DeliverySpot`, "Get delivery spot", false, signal),
+      await this.optionalJson(
+        `${API_BASE_URL}/Order/DeliverySpot`,
+        'Get delivery spot',
+        false,
+        signal,
+      ),
     );
     this.timeslot = asString(delivery.TimeslotUtc) ?? this.timeslot;
     this.timeslotId = asNumber(delivery.TimeslotId) ?? this.timeslotId;
     this.deliveryZoneId = asId(delivery.DeliveryZoneId) ?? this.deliveryZoneId;
   }
 
-  private async searchGateway(query: string, limit: number | undefined, signal?: AbortSignal): Promise<Product[]> {
-    if (!this.accessToken || !this.productTimestamp) return [];
+  private async searchGateway(
+    query: string,
+    limit: number | undefined,
+    signal?: AbortSignal,
+  ): Promise<Product[]> {
+    if (!this.accessToken || !this.productTimestamp) {
+      return [];
+    }
     const params = new URLSearchParams({
       query,
-      skip: "0",
-      recipeCount: "0",
+      skip: '0',
+      recipeCount: '0',
       timestamp: this.productTimestamp,
       timeslotUtc: this.timeslot,
       deliveryZoneId: String(this.deliveryZoneId),
-      includeFavorites: this.userId ?? "0",
+      includeFavorites: this.userId ?? '0',
       TimeSlotId: String(this.timeslotId),
     });
-    params.set("take", String(limit ?? 20));
+    params.set('take', String(limit ?? 20));
     const response = asRecord(
-      await this.json(`${SEARCH_GATEWAY_URL}/search?${params}`, { signal }, "Search products", true, true),
+      await this.json(
+        `${SEARCH_GATEWAY_URL}/search?${params}`,
+        { signal },
+        'Search products',
+        true,
+        true,
+      ),
     );
     const products = response.Products;
-    return normalizeProducts(Array.isArray(products) ? products : asRecord(products).Products, limit);
+    return normalizeProducts(
+      Array.isArray(products) ? products : asRecord(products).Products,
+      limit,
+    );
   }
 
   private rememberProducts(products: Product[], hydrated = false): Product[] {
     for (const product of products) {
-      if (product.id === undefined) continue;
-      if (!hydrated && this.hydratedProductIds.has(product.id)) continue;
+      if (product.id === undefined) {
+        continue;
+      }
+      if (!hydrated && this.hydratedProductIds.has(product.id)) {
+        continue;
+      }
       this.knownProducts.delete(product.id);
       this.knownProducts.set(product.id, product);
-      if (hydrated) this.hydratedProductIds.add(product.id);
+      if (hydrated) {
+        this.hydratedProductIds.add(product.id);
+      }
       while (this.knownProducts.size > KNOWN_PRODUCT_LIMIT) {
-        const oldest = this.knownProducts.keys().next().value as number | undefined;
-        if (oldest === undefined) break;
+        const oldest = this.knownProducts.keys().next().value as
+          number | undefined;
+        if (oldest === undefined) {
+          break;
+        }
         this.knownProducts.delete(oldest);
         this.hydratedProductIds.delete(oldest);
       }
@@ -669,15 +1013,39 @@ export class NemligClient {
     return products;
   }
 
-  private async productsByCategory(path: string, limit: number | undefined, page = 1, signal?: AbortSignal): Promise<Product[]> {
-    const pageUrl = new URL(path, "https://www.nemlig.com");
-    if (pageUrl.origin !== "https://www.nemlig.com") return [];
-    pageUrl.searchParams.set("GetAsJson", "1");
-    const categoryPage = asRecord(await this.optionalJson(pageUrl.toString(), "Get category", false, signal));
-    const group = asRecords(categoryPage.content).find((entry) => entry.ProductGroupId)?.ProductGroupId;
-    if (typeof group !== "string" && typeof group !== "number") return [];
+  private async productsByCategory(
+    path: string,
+    limit: number | undefined,
+    page = 1,
+    signal?: AbortSignal,
+  ): Promise<Product[]> {
+    const pageUrl = new URL(path, 'https://www.nemlig.com');
+    if (pageUrl.origin !== 'https://www.nemlig.com') {
+      return [];
+    }
+    pageUrl.searchParams.set('GetAsJson', '1');
+    const categoryPage = asRecord(
+      await this.optionalJson(
+        pageUrl.toString(),
+        'Get category',
+        false,
+        signal,
+      ),
+    );
+    const group = asRecords(categoryPage.content).find(
+      (entry) => entry.ProductGroupId,
+    )?.ProductGroupId;
+    if (typeof group !== 'string' && typeof group !== 'number') {
+      return [];
+    }
 
-    return this.productsByGroup(group, limit, "Get category products", page, signal);
+    return this.productsByGroup(
+      group,
+      limit,
+      'Get category products',
+      page,
+      signal,
+    );
   }
 
   private async productsByGroup(
@@ -687,23 +1055,41 @@ export class NemligClient {
     page = 1,
     signal?: AbortSignal,
   ): Promise<Product[]> {
-    const endpoint = `${API_BASE_URL}/${this.productTimestamp ?? DEFAULT_PRODUCT_TIMESTAMP}/${this.timeslot}/1/${this.userId ?? "0"}/Products/GetByProductGroupId`;
+    const endpoint = `${API_BASE_URL}/${this.productTimestamp ?? DEFAULT_PRODUCT_TIMESTAMP}/${this.timeslot}/1/${this.userId ?? '0'}/Products/GetByProductGroupId`;
     const params = new URLSearchParams({
       productGroupId: String(group),
       pageIndex: String(page - 1),
-      sortorder: "default",
+      sortorder: 'default',
     });
-    if (limit !== undefined) params.set("pagesize", String(limit));
-    const response = asRecord(await this.optionalJson(`${endpoint}?${params}`, operation, false, signal));
+    if (limit !== undefined) {
+      params.set('pagesize', String(limit));
+    }
+    const response = asRecord(
+      await this.optionalJson(
+        `${endpoint}?${params}`,
+        operation,
+        false,
+        signal,
+      ),
+    );
     return normalizeProducts(response.Products, limit);
   }
 
-  private async optionalJson(url: string, operation: string, gateway = false, signal?: AbortSignal): Promise<unknown> {
+  private async optionalJson(
+    url: string,
+    operation: string,
+    gateway = false,
+    signal?: AbortSignal,
+  ): Promise<unknown> {
     try {
       return await this.json(url, { signal }, operation, true, gateway);
     } catch (error) {
-      if (signal?.aborted) throw abortReason(signal);
-      if (error instanceof NemligError && error.status === 401) throw error;
+      if (signal?.aborted) {
+        throw abortReason(signal);
+      }
+      if (error instanceof NemligError && error.status === 401) {
+        throw error;
+      }
       return {};
     }
   }
@@ -718,75 +1104,119 @@ export class NemligClient {
   ): Promise<unknown> {
     throwIfAborted(init.signal);
     const target = new URL(url);
-    const targetMethod = (init.method ?? "GET").toUpperCase();
-    const targetIsNemligApi = target.origin === new URL(API_BASE_URL).origin && target.pathname.startsWith("/webapi");
-    if (targetIsNemligApi && !["GET", "HEAD", "OPTIONS"].includes(targetMethod)
-      && !this.cookies.get(target.host)?.has(xsrfCookieName)) {
+    const targetMethod = (init.method ?? 'GET').toUpperCase();
+    const targetIsNemligApi =
+      target.origin === new URL(API_BASE_URL).origin &&
+      target.pathname.startsWith('/webapi');
+    if (
+      targetIsNemligApi &&
+      !['GET', 'HEAD', 'OPTIONS'].includes(targetMethod) &&
+      !this.cookies.get(target.host)?.has(xsrfCookieName)
+    ) {
       await this.ensureAntiForgery(init.signal ?? undefined);
     }
-    for (let attempt = 0; attempt <= (retry ? NEMLIG_READ_MAX_RETRIES : 0); attempt += 1) {
+    for (
+      let attempt = 0;
+      attempt <= (retry ? NEMLIG_READ_MAX_RETRIES : 0);
+      attempt += 1
+    ) {
       throwIfAborted(init.signal);
       const attemptSignal = AbortSignal.timeout(NEMLIG_READ_ATTEMPT_TIMEOUT_MS);
       try {
         const headers = new Headers(init.headers);
-        headers.set("Accept", "application/json, text/plain, */*");
+        headers.set('Accept', 'application/json, text/plain, */*');
         const requestUrl = new URL(url);
-        const api = requestUrl.pathname.startsWith("/webapi");
+        const api = requestUrl.pathname.startsWith('/webapi');
         if (api || gateway) {
-          headers.set("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/143 Safari/537.36");
-          headers.set("Referer", "https://www.nemlig.com/");
+          headers.set(
+            'User-Agent',
+            'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/143 Safari/537.36',
+          );
+          headers.set('Referer', 'https://www.nemlig.com/');
         }
         if (gateway) {
-          headers.set("Origin", "https://www.nemlig.com");
-          headers.set("X-Correlation-Id", randomUUID());
+          headers.set('Origin', 'https://www.nemlig.com');
+          headers.set('X-Correlation-Id', randomUUID());
         } else if (api) {
-          headers.set("Content-Type", "application/json");
-          headers.set("version", "11.201.0");
-          headers.set("platform", "web");
-          headers.set("device-size", "desktop");
+          headers.set('Content-Type', 'application/json');
+          headers.set('version', '11.201.0');
+          headers.set('platform', 'web');
+          headers.set('device-size', 'desktop');
         }
-        if (includeSession && this.accessToken) headers.set("Authorization", `Bearer ${this.accessToken}`);
+        if (includeSession && this.accessToken) {
+          headers.set('Authorization', `Bearer ${this.accessToken}`);
+        }
         const host = requestUrl.host;
-        const sameOriginApi = api && requestUrl.origin === new URL(API_BASE_URL).origin;
+        const sameOriginApi =
+          api && requestUrl.origin === new URL(API_BASE_URL).origin;
         const cookies = this.cookies.get(host);
         if (includeSession && cookies?.size) {
-          headers.set("Cookie", [...cookies].map(([name, value]) => `${name}=${value}`).join("; "));
+          headers.set(
+            'Cookie',
+            [...cookies].map(([name, value]) => `${name}=${value}`).join('; '),
+          );
         } else if (!includeSession && sameOriginApi && cookies) {
-          const antiForgeryCookies = [...cookies].filter(([name]) => name.startsWith("XSRF-"));
+          const antiForgeryCookies = [...cookies].filter(([name]) =>
+            name.startsWith('XSRF-'),
+          );
           if (antiForgeryCookies.length) {
-            headers.set("Cookie", antiForgeryCookies.map(([name, value]) => `${name}=${value}`).join("; "));
+            headers.set(
+              'Cookie',
+              antiForgeryCookies
+                .map(([name, value]) => `${name}=${value}`)
+                .join('; '),
+            );
           }
         }
-        const method = (init.method ?? "GET").toUpperCase();
+        const method = (init.method ?? 'GET').toUpperCase();
         const xsrfValue = cookies?.get(xsrfCookieName);
-        const mutatingMethod = !["GET", "HEAD", "OPTIONS"].includes(method);
-        if (sameOriginApi && mutatingMethod) headers.set("Origin", requestUrl.origin);
-        if (
-          sameOriginApi && mutatingMethod && xsrfValue
-        ) {
+        const mutatingMethod = !['GET', 'HEAD', 'OPTIONS'].includes(method);
+        if (sameOriginApi && mutatingMethod) {
+          headers.set('Origin', requestUrl.origin);
+        }
+        if (sameOriginApi && mutatingMethod && xsrfValue) {
           const decoded = decodeCookie(xsrfValue);
-          if (!decoded) throw new NemligError(`${operation} failed: invalid anti-forgery state.`);
+          if (!decoded) {
+            throw new NemligError(
+              `${operation} failed: invalid anti-forgery state.`,
+            );
+          }
           headers.set(xsrfHeaderName, decoded);
         }
 
-        const signal = init.signal ? AbortSignal.any([init.signal, attemptSignal]) : attemptSignal;
+        const signal = init.signal
+          ? AbortSignal.any([init.signal, attemptSignal])
+          : attemptSignal;
         const response = await this.fetcher(url, {
           ...init,
           headers,
           signal,
         });
         this.captureCookies(host, response.headers);
-        if (!response.ok) throw new NemligError(`${operation} failed (HTTP ${response.status}).`, response.status);
+        if (!response.ok) {
+          throw new NemligError(
+            `${operation} failed (HTTP ${response.status}).`,
+            response.status,
+          );
+        }
         try {
           return await response.json();
         } catch {
-          if (init.signal?.aborted) throw abortReason(init.signal);
+          if (init.signal?.aborted) {
+            throw abortReason(init.signal);
+          }
           throw new NemligError(`${operation} failed: invalid response data.`);
         }
       } catch (error) {
-        if (init.signal?.aborted) throw abortReason(init.signal);
-        if (error instanceof NemligError) throw error;
-        if (init.signal?.aborted || attemptSignal.aborted) break;
+        if (init.signal?.aborted) {
+          throw abortReason(init.signal);
+        }
+        if (error instanceof NemligError) {
+          throw error;
+        }
+        if (init.signal?.aborted || attemptSignal.aborted) {
+          break;
+        }
       }
     }
     throw new NemligError(`${operation} failed: network unavailable.`);
@@ -794,12 +1224,16 @@ export class NemligClient {
 
   private captureCookies(host: string, headers: Headers): void {
     const values = headers.getSetCookie();
-    if (!values.length) return;
+    if (!values.length) {
+      return;
+    }
     const jar = this.cookies.get(host) ?? new Map<string, string>();
     for (const value of values) {
-      const [pair] = value.split(";", 1);
-      const separator = pair?.indexOf("=") ?? -1;
-      if (separator > 0 && pair) jar.set(pair.slice(0, separator), pair.slice(separator + 1));
+      const [pair] = value.split(';', 1);
+      const separator = pair?.indexOf('=') ?? -1;
+      if (separator > 0 && pair) {
+        jar.set(pair.slice(0, separator), pair.slice(separator + 1));
+      }
     }
     this.cookies.set(host, jar);
   }
@@ -808,14 +1242,14 @@ export class NemligClient {
 /** The minimum provider surface shared by CLI, MCP, HTTP, and proposal flows. */
 export type ShoppingClient = Pick<
   NemligClient,
-  | "isLoggedIn"
-  | "login"
-  | "searchProducts"
-  | "getProduct"
-  | "getFreshProduct"
-  | "listFavorites"
-  | "listDepartments"
-  | "browseDepartment"
-  | "getCart"
-  | "addToCart"
+  | 'isLoggedIn'
+  | 'login'
+  | 'searchProducts'
+  | 'getProduct'
+  | 'getFreshProduct'
+  | 'listFavorites'
+  | 'listDepartments'
+  | 'browseDepartment'
+  | 'getCart'
+  | 'addToCart'
 >;

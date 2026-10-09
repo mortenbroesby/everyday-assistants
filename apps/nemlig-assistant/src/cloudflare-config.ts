@@ -1,6 +1,9 @@
-import { parsePrincipalPolicy, type PrincipalPolicy } from "./principal-policy.js";
+import {
+  parsePrincipalPolicy,
+  type PrincipalPolicy,
+} from './principal-policy.js';
 
-export const FIXED_CONTAINER_NAME = "nemlig-production";
+export const FIXED_CONTAINER_NAME = 'nemlig-production';
 
 export interface CloudflareEnv {
   MCP_ENABLED?: string;
@@ -43,11 +46,17 @@ export interface GatewayConfig {
 
 const required = (env: CloudflareEnv, name: keyof CloudflareEnv): string => {
   const value = env[name]?.trim();
-  if (!value) throw new Error(`${name} is required.`);
+  if (!value) {
+    throw new Error(`${name} is required.`);
+  }
   return value;
 };
 
-const boundedInteger = (env: CloudflareEnv, name: keyof CloudflareEnv, maximum: number): number => {
+const boundedInteger = (
+  env: CloudflareEnv,
+  name: keyof CloudflareEnv,
+  maximum: number,
+): number => {
   const value = Number(required(env, name));
   if (!Number.isSafeInteger(value) || value < 1 || value > maximum) {
     throw new Error(`${name} must be an integer from 1 through ${maximum}.`);
@@ -56,27 +65,65 @@ const boundedInteger = (env: CloudflareEnv, name: keyof CloudflareEnv, maximum: 
 };
 
 export function loadGatewayConfig(env: CloudflareEnv): GatewayConfig {
-  const authTimeoutMs = boundedInteger(env, "MCP_AUTH_TIMEOUT_MS", 10_000);
-  const controlTimeoutMs = boundedInteger(env, "MCP_CONTROL_TIMEOUT_MS", 10_000);
-  const totalTimeoutMs = boundedInteger(env, "MCP_TOTAL_TIMEOUT_MS", 120_000);
-  const backendTimeoutMs = boundedInteger(env, "MCP_BACKEND_TIMEOUT_MS", 120_000);
-  if (authTimeoutMs >= totalTimeoutMs) throw new Error("MCP_AUTH_TIMEOUT_MS must be less than MCP_TOTAL_TIMEOUT_MS.");
-  if (controlTimeoutMs >= totalTimeoutMs) throw new Error("MCP_CONTROL_TIMEOUT_MS must be less than MCP_TOTAL_TIMEOUT_MS.");
-  if (backendTimeoutMs >= totalTimeoutMs) throw new Error("MCP_BACKEND_TIMEOUT_MS must be less than MCP_TOTAL_TIMEOUT_MS.");
-  const issuer = new URL(required(env, "NEMLIG_MCP_AUTH0_ISSUER"));
-  const publicUrl = new URL(required(env, "NEMLIG_MCP_PUBLIC_URL"));
+  const authTimeoutMs = boundedInteger(env, 'MCP_AUTH_TIMEOUT_MS', 10_000);
+  const controlTimeoutMs = boundedInteger(
+    env,
+    'MCP_CONTROL_TIMEOUT_MS',
+    10_000,
+  );
+  const totalTimeoutMs = boundedInteger(env, 'MCP_TOTAL_TIMEOUT_MS', 120_000);
+  const backendTimeoutMs = boundedInteger(
+    env,
+    'MCP_BACKEND_TIMEOUT_MS',
+    120_000,
+  );
+  if (authTimeoutMs >= totalTimeoutMs) {
+    throw new Error(
+      'MCP_AUTH_TIMEOUT_MS must be less than MCP_TOTAL_TIMEOUT_MS.',
+    );
+  }
+  if (controlTimeoutMs >= totalTimeoutMs) {
+    throw new Error(
+      'MCP_CONTROL_TIMEOUT_MS must be less than MCP_TOTAL_TIMEOUT_MS.',
+    );
+  }
+  if (backendTimeoutMs >= totalTimeoutMs) {
+    throw new Error(
+      'MCP_BACKEND_TIMEOUT_MS must be less than MCP_TOTAL_TIMEOUT_MS.',
+    );
+  }
+  const issuer = new URL(required(env, 'NEMLIG_MCP_AUTH0_ISSUER'));
+  const publicUrl = new URL(required(env, 'NEMLIG_MCP_PUBLIC_URL'));
   const principalPolicy = parsePrincipalPolicy(env.NEMLIG_MCP_PRINCIPALS);
   const credentialKey = env.NEMLIG_MCP_CREDENTIAL_KEY?.trim();
   const credentialKeyVersion = env.NEMLIG_MCP_CREDENTIAL_KEY_VERSION?.trim();
-  const serviceAcceptanceEnabled = env.NEMLIG_MCP_SERVICE_ACCEPTANCE_ENABLED === "true";
-  if (!credentialKey || !/^[A-Za-z0-9_-]{43}$/u.test(credentialKey)
-    || !credentialKeyVersion || !/^[A-Za-z0-9._-]{1,32}$/u.test(credentialKeyVersion)) {
-    throw new Error("Credential encryption configuration is invalid.");
+  const serviceAcceptanceEnabled =
+    env.NEMLIG_MCP_SERVICE_ACCEPTANCE_ENABLED === 'true';
+  if (
+    !credentialKey ||
+    !/^[A-Za-z0-9_-]{43}$/u.test(credentialKey) ||
+    !credentialKeyVersion ||
+    !/^[A-Za-z0-9._-]{1,32}$/u.test(credentialKeyVersion)
+  ) {
+    throw new Error('Credential encryption configuration is invalid.');
   }
-  if (issuer.protocol !== "https:" || issuer.search || issuer.hash) throw new Error("NEMLIG_MCP_AUTH0_ISSUER must be an HTTPS URL without query or fragment.");
-  if (!issuer.pathname.endsWith("/")) issuer.pathname += "/";
-  if (publicUrl.protocol !== "https:" || publicUrl.pathname !== "/mcp" || publicUrl.search || publicUrl.hash) {
-    throw new Error("NEMLIG_MCP_PUBLIC_URL must be an HTTPS /mcp URL without query or fragment.");
+  if (issuer.protocol !== 'https:' || issuer.search || issuer.hash) {
+    throw new Error(
+      'NEMLIG_MCP_AUTH0_ISSUER must be an HTTPS URL without query or fragment.',
+    );
+  }
+  if (!issuer.pathname.endsWith('/')) {
+    issuer.pathname += '/';
+  }
+  if (
+    publicUrl.protocol !== 'https:' ||
+    publicUrl.pathname !== '/mcp' ||
+    publicUrl.search ||
+    publicUrl.hash
+  ) {
+    throw new Error(
+      'NEMLIG_MCP_PUBLIC_URL must be an HTTPS /mcp URL without query or fragment.',
+    );
   }
   return {
     authTimeoutMs,
@@ -84,15 +131,27 @@ export function loadGatewayConfig(env: CloudflareEnv): GatewayConfig {
     totalTimeoutMs,
     backendTimeoutMs,
     issuer,
-    audience: required(env, "NEMLIG_MCP_AUTH0_AUDIENCE"),
+    audience: required(env, 'NEMLIG_MCP_AUTH0_AUDIENCE'),
     principalPolicy,
-    requiredScope: env.NEMLIG_MCP_REQUIRED_SCOPE?.trim() || "use:nemlig-assistant",
+    requiredScope:
+      env.NEMLIG_MCP_REQUIRED_SCOPE?.trim() || 'use:nemlig-assistant',
     publicUrl,
-    allowedOrigins: (env.NEMLIG_MCP_ALLOWED_ORIGINS ?? "https://chatgpt.com,https://chat.openai.com")
-      .split(",").map((value) => value.trim()).filter(Boolean),
-    revision: env.NEMLIG_MCP_REVISION?.trim() || "development",
+    allowedOrigins: (
+      env.NEMLIG_MCP_ALLOWED_ORIGINS ??
+      'https://chatgpt.com,https://chat.openai.com'
+    )
+      .split(',')
+      .map((value) => value.trim())
+      .filter(Boolean),
+    revision: env.NEMLIG_MCP_REVISION?.trim() || 'development',
     credentialKey,
     credentialKeyVersion,
-    ...(serviceAcceptanceEnabled ? { serviceAcceptance: { clientId: required(env, "NEMLIG_MCP_SERVICE_CLIENT_ID") } } : {}),
+    ...(serviceAcceptanceEnabled
+      ? {
+          serviceAcceptance: {
+            clientId: required(env, 'NEMLIG_MCP_SERVICE_CLIENT_ID'),
+          },
+        }
+      : {}),
   };
 }

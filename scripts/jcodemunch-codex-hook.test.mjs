@@ -3,20 +3,31 @@ import { join } from 'node:path';
 import { spawn } from 'node:child_process';
 import test from 'node:test';
 
-const hook = join(import.meta.dirname, '..', '.agents', 'hooks', 'jcodemunch-advisory.mjs');
+const hook = join(
+  import.meta.dirname,
+  '..',
+  '.agents',
+  'hooks',
+  'jcodemunch-advisory.mjs',
+);
 
-const invoke = (input) => new Promise((resolve, reject) => {
-  const child = spawn(process.execPath, [hook], {
-    stdio: ['pipe', 'pipe', 'pipe'],
+const invoke = (input) =>
+  new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, [hook], {
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
+    let stdout = '';
+    let stderr = '';
+    child.stdout.on('data', (chunk) => {
+      stdout += chunk;
+    });
+    child.stderr.on('data', (chunk) => {
+      stderr += chunk;
+    });
+    child.on('error', reject);
+    child.on('close', (code) => resolve({ code, stdout, stderr }));
+    child.stdin.end(JSON.stringify(input));
   });
-  let stdout = '';
-  let stderr = '';
-  child.stdout.on('data', (chunk) => { stdout += chunk; });
-  child.stderr.on('data', (chunk) => { stderr += chunk; });
-  child.on('error', reject);
-  child.on('close', (code) => resolve({ code, stdout, stderr }));
-  child.stdin.end(JSON.stringify(input));
-});
 
 test('advises only for search-shaped Codex shell commands', async () => {
   const result = await invoke({

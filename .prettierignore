@@ -1,0 +1,11 @@
+dist/
+coverage/
+storybook-static/
+test-results/
+playwright-report/
+.agents/
+docs/
+openspec/
+apps/nemlig-assistant/release/notes/
+*.md
+*.html

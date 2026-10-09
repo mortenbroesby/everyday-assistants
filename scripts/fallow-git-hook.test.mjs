@@ -1,6 +1,13 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { chmodSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  chmodSync,
+  mkdtempSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -66,19 +73,30 @@ test('pre-commit stops before lint when spec validation fails', () => {
   const result = runHook({ specExit: 23 });
   assert.equal(result.status, 23);
   assert.equal(result.signal, null);
-  assert.deepEqual(result.commands, [...commandsBeforeChecks, 'pnpm spec:validate']);
+  assert.deepEqual(result.commands, [
+    ...commandsBeforeChecks,
+    'pnpm spec:validate',
+  ]);
 });
 
 test('pre-commit propagates lint failure', () => {
   const result = runHook({ lintExit: 29 });
   assert.equal(result.status, 29);
   assert.equal(result.signal, null);
-  assert.deepEqual(result.commands, [...commandsBeforeChecks, 'pnpm spec:validate', 'pnpm lint']);
+  assert.deepEqual(result.commands, [
+    ...commandsBeforeChecks,
+    'pnpm spec:validate',
+    'pnpm lint',
+  ]);
 });
 
 test('pre-commit runs checks in order when all commands succeed', () => {
   const result = runHook();
   assert.equal(result.status, 0);
   assert.equal(result.signal, null);
-  assert.deepEqual(result.commands, [...commandsBeforeChecks, 'pnpm spec:validate', 'pnpm lint']);
+  assert.deepEqual(result.commands, [
+    ...commandsBeforeChecks,
+    'pnpm spec:validate',
+    'pnpm lint',
+  ]);
 });

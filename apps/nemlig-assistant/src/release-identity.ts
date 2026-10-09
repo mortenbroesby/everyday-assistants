@@ -11,12 +11,24 @@ export interface PackageIdentity {
 }
 
 /** Missing metadata is a historical baseline; present metadata must identify a valid codename. */
-export function readPackageIdentity(contents: string, label: string): PackageIdentity {
-  const manifest = JSON.parse(contents) as { version?: unknown; nemligRelease?: { codename?: unknown } };
-  if (typeof manifest?.version !== "string" || !manifest.version) throw new Error(`${label} is missing a version string.`);
-  if (!("nemligRelease" in manifest)) return { version: manifest.version, codename: null };
+export function readPackageIdentity(
+  contents: string,
+  label: string,
+): PackageIdentity {
+  const manifest = JSON.parse(contents) as {
+    version?: unknown;
+    nemligRelease?: { codename?: unknown };
+  };
+  if (typeof manifest?.version !== 'string' || !manifest.version) {
+    throw new Error(`${label} is missing a version string.`);
+  }
+  if (!('nemligRelease' in manifest)) {
+    return { version: manifest.version, codename: null };
+  }
   const codename = manifest.nemligRelease?.codename;
-  if (typeof codename !== "string") throw new Error(`${label} is missing a release codename string.`);
+  if (typeof codename !== 'string') {
+    throw new Error(`${label} is missing a release codename string.`);
+  }
   parseCodename(codename);
   return { version: manifest.version, codename };
 }
