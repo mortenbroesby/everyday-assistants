@@ -32,14 +32,19 @@ interface CliDependencies {
 
 const positiveInteger = (value: string): number => {
   const parsed = Number(value);
-  if (!Number.isInteger(parsed) || parsed < 1) throw new InvalidArgumentError("must be a positive integer");
+  if (!Number.isInteger(parsed) || parsed < 1) {
+    throw new InvalidArgumentError("must be a positive integer");
+  }
   return parsed;
 };
 
 export const formatBasket = (basket: Basket): string => {
-  if (!basket.items.length) return "Your basket is empty.\nTotal: 0.00 DKK";
+  if (!basket.items.length) {
+    return "Your basket is empty.\nTotal: 0.00 DKK";
+  }
   const lines = basket.items.map(
-    (item) => `  ${item.quantity ?? 0}x ${item.name ?? "Unknown"} - ${(item.total ?? 0).toFixed(2)} DKK`,
+    (item) =>
+      `  ${item.quantity ?? 0}x ${item.name ?? "Unknown"} - ${(item.total ?? 0).toFixed(2)} DKK`,
   );
   const products = basket.productsPrice ?? 0;
   const delivery = basket.deliveryPrice ?? 0;
@@ -65,7 +70,11 @@ const formatProduct = (product: Product): string => {
     product.isVegan && "Vegan",
     product.isOnDiscount && "Tilbud",
   ].filter(Boolean);
-  const details = [product.brand, product.category, ...tags.map((tag) => `[${tag}]`)]
+  const details = [
+    product.brand,
+    product.category,
+    ...tags.map((tag) => `[${tag}]`),
+  ]
     .filter(Boolean)
     .join(" | ");
   return [
@@ -74,12 +83,20 @@ const formatProduct = (product: Product): string => {
   ].join("\n");
 };
 
-const formatProductList = (products: Product[], emptyMessage: string): string =>
+const formatProductList = (
+  products: Product[],
+  emptyMessage: string,
+): string =>
   products.length
-    ? ["ID       Name                          Price    Size       Status", ...products.map(formatProduct)].join("\n")
+    ? [
+        "ID       Name                          Price    Size       Status",
+        ...products.map(formatProduct),
+      ].join("\n")
     : emptyMessage;
 
-export function createProgram(overrides: Partial<CliDependencies> = {}): Command {
+export function createProgram(
+  overrides: Partial<CliDependencies> = {},
+): Command {
   const dependencies: CliDependencies = {
     client: getClient(),
     credentials: getCredentials,
@@ -91,28 +108,48 @@ export function createProgram(overrides: Partial<CliDependencies> = {}): Command
   };
   const program = new Command()
     .name("nemlig-assistant")
-    .description("Search Nemlig products and manage an explicitly approved basket.")
+    .description(
+      "Search Nemlig products and manage an explicitly approved basket.",
+    )
     .version(NEMLIG_VERSION);
 
   program
     .command("login")
-    .description("Log in interactively without exposing the password in process arguments.")
+    .description(
+      "Log in interactively without exposing the password in process arguments.",
+    )
     .option("-u, --username <email>", "Nemlig.com email")
-    .option("--save", "Save credentials locally with owner-only permissions", false)
+    .option(
+      "--save",
+      "Save credentials locally with owner-only permissions",
+      false,
+    )
     .action(async (options: { username?: string; save: boolean }) => {
       const saved = await dependencies.credentials();
       const credentials =
         saved && (!options.username || options.username === saved.username)
-          ? { username: options.username ?? saved.username, password: saved.password }
+          ? {
+              username: options.username ?? saved.username,
+              password: saved.password,
+            }
           : await dependencies.prompt(options.username);
-      await dependencies.client.login(credentials.username, credentials.password);
-      if (options.save) await dependencies.save(credentials);
-      dependencies.out(`✓ Login successful${options.save ? "; credentials saved" : ""}.`);
+      await dependencies.client.login(
+        credentials.username,
+        credentials.password,
+      );
+      if (options.save) {
+        await dependencies.save(credentials);
+      }
+      dependencies.out(
+        `✓ Login successful${options.save ? "; credentials saved" : ""}.`,
+      );
     });
 
   program
     .command("logout")
-    .description("Remove saved local credentials; this does not change the remote basket.")
+    .description(
+      "Remove saved local credentials; this does not change the remote basket.",
+    )
     .action(async () => {
       await dependencies.clear();
       dependencies.out("✓ Saved credentials cleared.");
@@ -122,9 +159,16 @@ export function createProgram(overrides: Partial<CliDependencies> = {}): Command
     .command("search")
     .description("Search Nemlig products using Danish terms.")
     .argument("<query>", "Product query")
-    .option("-l, --limit <number>", "Ask Nemlig for this many results", positiveInteger)
+    .option(
+      "-l, --limit <number>",
+      "Ask Nemlig for this many results",
+      positiveInteger,
+    )
     .action(async (query: string, options: { limit?: number }) => {
-      const products = await dependencies.client.searchProducts(query, options.limit);
+      const products = await dependencies.client.searchProducts(
+        query,
+        options.limit,
+      );
       dependencies.out(formatProductList(products, "No products found."));
     });
 
@@ -138,43 +182,98 @@ export function createProgram(overrides: Partial<CliDependencies> = {}): Command
 
   program
     .command("favorites")
-    .description("List or search current Nemlig favorites without changing favorites or the basket.")
+    .description(
+      "List or search current Nemlig favorites without changing favorites or the basket.",
+    )
     .argument("[query]", "Danish product name")
-    .option("-l, --limit <number>", "Maximum results per requested page", positiveInteger, 10)
+    .option(
+      "-l, --limit <number>",
+      "Maximum results per requested page",
+      positiveInteger,
+      10,
+    )
     .option("-p, --page <number>", "Results page", positiveInteger, 1)
-    .action(async (query: string | undefined, options: { limit: number; page: number }) => {
-      await ensureLoggedIn(dependencies.client, dependencies.credentials);
-      const favorites = await dependencies.client.listFavorites(
-        query === undefined ? options.limit : undefined,
-        query === undefined ? options.page : 1,
+    .action(
+      async (
+        query: string | undefined,
+        options: { limit: number; page: number },
+      ) => {
+        await ensureLoggedIn(dependencies.client, dependencies.credentials);
+        const favorites = await dependencies.client.listFavorites(
+          query === undefined ? options.limit : undefined,
+          query === undefined ? options.page : 1,
+        );
+        const matches =
+          query === undefined ? favorites : matchFavorites(favorites, query);
+        const products = matches.slice(
+          (options.page - 1) * options.limit,
+          options.page * options.limit,
+        );
+        dependencies.out(formatProductList(products, "No favorites found."));
+      },
+    );
+
+  program
+    .command("departments")
+    .description("List current Nemlig department IDs.")
+    .action(async () => {
+      const departments = await dependencies.client.listDepartments();
+      dependencies.out(
+        departments.length
+          ? departments.map((item) => `${item.id}\t${item.name}`).join("\n")
+          : "No departments found.",
       );
-      const matches = query === undefined ? favorites : matchFavorites(favorites, query);
-      const products = matches.slice((options.page - 1) * options.limit, options.page * options.limit);
-      dependencies.out(formatProductList(products, "No favorites found."));
-    });
-
-  program.command("departments").description("List current Nemlig department IDs.").action(async () => {
-    const departments = await dependencies.client.listDepartments();
-    dependencies.out(departments.length ? departments.map((item) => `${item.id}\t${item.name}`).join("\n") : "No departments found.");
-  });
-
-  program.command("browse").description("Browse one freshly validated Nemlig department.")
-    .argument("<department-id>").option("-l, --limit <number>", "Page size", positiveInteger, 20)
-    .option("-p, --page <number>", "Results page", positiveInteger, 1)
-    .action(async (departmentId: string, options: { limit: number; page: number }) => {
-      const result = await dependencies.client.browseDepartment(departmentId, options.limit, options.page);
-      dependencies.out(result.products.length ? ["ID Name Price Size Status", ...result.products.map(formatProduct), ...(result.hasNext ? [`Next page: ${result.page + 1}`] : [])].join("\n") : "No products found.");
     });
 
   program
+    .command("browse")
+    .description("Browse one freshly validated Nemlig department.")
+    .argument("<department-id>")
+    .option("-l, --limit <number>", "Page size", positiveInteger, 20)
+    .option("-p, --page <number>", "Results page", positiveInteger, 1)
+    .action(
+      async (
+        departmentId: string,
+        options: { limit: number; page: number },
+      ) => {
+        const result = await dependencies.client.browseDepartment(
+          departmentId,
+          options.limit,
+          options.page,
+        );
+        dependencies.out(
+          result.products.length
+            ? [
+                "ID Name Price Size Status",
+                ...result.products.map(formatProduct),
+                ...(result.hasNext ? [`Next page: ${result.page + 1}`] : []),
+              ].join("\n")
+            : "No products found.",
+        );
+      },
+    );
+
+  program
     .command("add")
-    .description("Add more units of an already reviewed and explicitly authorized product, then verify the basket.")
+    .description(
+      "Add more units of an already reviewed and explicitly authorized product, then verify the basket.",
+    )
     .argument("<product-id>", "Numeric Nemlig product ID", positiveInteger)
-    .option("-q, --quantity <number>", "Additional units to add (not the final quantity)", positiveInteger, 1)
+    .option(
+      "-q, --quantity <number>",
+      "Additional units to add (not the final quantity)",
+      positiveInteger,
+      1,
+    )
     .action(async (productId: number, options: { quantity: number }) => {
       await ensureLoggedIn(dependencies.client, dependencies.credentials);
-      const basket = await dependencies.client.addToCart(productId, options.quantity);
-      dependencies.out(`✓ Added ${options.quantity}x product ${productId}.\n${formatBasket(basket)}`);
+      const basket = await dependencies.client.addToCart(
+        productId,
+        options.quantity,
+      );
+      dependencies.out(
+        `✓ Added ${options.quantity}x product ${productId}.\n${formatBasket(basket)}`,
+      );
     });
 
   return program;
@@ -184,11 +283,16 @@ export async function main(argv = process.argv): Promise<void> {
   try {
     await createProgram().parseAsync(argv);
   } catch (error) {
-    console.error(`✗ ${error instanceof Error ? error.message : "Nemlig command failed."}`);
+    console.error(
+      `✗ ${error instanceof Error ? error.message : "Nemlig command failed."}`,
+    );
     process.exitCode = 1;
   }
 }
 
-if (process.argv[1] && ["cli.js", "cli.ts"].includes(basename(realpathSync(process.argv[1])))) {
+if (
+  process.argv[1] &&
+  ["cli.js", "cli.ts"].includes(basename(realpathSync(process.argv[1])))
+) {
   void main();
 }

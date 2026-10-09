@@ -14,9 +14,17 @@ function git(repo: string, ...args: string[]): string {
 
 async function fixture(): Promise<{ repo: string; base: string }> {
   const repo = await mkdtemp(path.join(tmpdir(), "nemlig-release-note-"));
-  await mkdir(path.join(repo, "apps/nemlig-assistant/src"), { recursive: true });
-  await writeFile(path.join(repo, packagePath), '{"name":"nemlig-assistant","version":"0.1.0"}\n');
-  await writeFile(path.join(repo, "apps/nemlig-assistant/src/client.ts"), "export const value = 1;\n");
+  await mkdir(path.join(repo, "apps/nemlig-assistant/src"), {
+    recursive: true,
+  });
+  await writeFile(
+    path.join(repo, packagePath),
+    '{"name":"nemlig-assistant","version":"0.1.0"}\n',
+  );
+  await writeFile(
+    path.join(repo, "apps/nemlig-assistant/src/client.ts"),
+    "export const value = 1;\n",
+  );
   git(repo, "init", "-q");
   git(repo, "config", "user.email", "release-test@example.invalid");
   git(repo, "config", "user.name", "Release Test");
@@ -26,14 +34,33 @@ async function fixture(): Promise<{ repo: string; base: string }> {
 }
 
 async function releaseChange(repo: string, version = "0.1.1"): Promise<void> {
-  await writeFile(path.join(repo, "apps/nemlig-assistant/src/client.ts"), "export const value = 2;\n");
-  await writeFile(path.join(repo, packagePath), `{"name":"nemlig-assistant","version":"${version}","nemligRelease":{"codename":"Callsign"}}\n`);
-  await mkdir(path.join(repo, "apps/nemlig-assistant/release"), { recursive: true });
-  await writeFile(path.join(repo, "apps/nemlig-assistant/release/codenames.csv"), `version,codename\n${version},Callsign\n`);
+  await writeFile(
+    path.join(repo, "apps/nemlig-assistant/src/client.ts"),
+    "export const value = 2;\n",
+  );
+  await writeFile(
+    path.join(repo, packagePath),
+    `{"name":"nemlig-assistant","version":"${version}","nemligRelease":{"codename":"Callsign"}}\n`,
+  );
+  await mkdir(path.join(repo, "apps/nemlig-assistant/release"), {
+    recursive: true,
+  });
+  await writeFile(
+    path.join(repo, "apps/nemlig-assistant/release/codenames.csv"),
+    `version,codename\n${version},Callsign\n`,
+  );
 }
 
-async function note(repo: string, version: string, body = `# Nemlig Assistant ${version} - Callsign\n\n## In plain language\n\nThis release makes publishing safer and easier to recognize.\n\n## Changes\n\n- Fixes the deterministic release gate.\n`): Promise<void> {
-  const notePath = path.join(repo, "apps/nemlig-assistant/release/notes", `${version}.md`);
+async function note(
+  repo: string,
+  version: string,
+  body = `# Nemlig Assistant ${version} - Callsign\n\n## In plain language\n\nThis release makes publishing safer and easier to recognize.\n\n## Changes\n\n- Fixes the deterministic release gate.\n`,
+): Promise<void> {
+  const notePath = path.join(
+    repo,
+    "apps/nemlig-assistant/release/notes",
+    `${version}.md`,
+  );
   await mkdir(path.dirname(notePath), { recursive: true });
   await writeFile(notePath, body);
 }
@@ -42,38 +69,73 @@ test("release notes are required only for exact-range release-bearing candidates
   const { repo, base } = await fixture();
   try {
     await writeFile(path.join(repo, "README.md"), "docs\n");
-    git(repo, "add", "."); git(repo, "commit", "-qm", "docs: clarify");
-    assert.deepEqual(validateReleaseNoteCandidate({ repoRoot: repo, baseRef: base }), { eligible: false });
+    git(repo, "add", ".");
+    git(repo, "commit", "-qm", "docs: clarify");
+    assert.deepEqual(
+      validateReleaseNoteCandidate({ repoRoot: repo, baseRef: base }),
+      { eligible: false },
+    );
 
     await releaseChange(repo);
     await note(repo, "0.1.1");
-    git(repo, "add", "."); git(repo, "commit", "-qm", "fix: runtime");
-    assert.deepEqual(validateReleaseNoteCandidate({ repoRoot: repo, baseRef: base }), {
-      eligible: true,
-      version: "0.1.1",
-      codename: "Callsign",
-      path: "apps/nemlig-assistant/release/notes/0.1.1.md",
-      body: "# Nemlig Assistant 0.1.1 - Callsign\n\n## In plain language\n\nThis release makes publishing safer and easier to recognize.\n\n## Changes\n\n- Fixes the deterministic release gate.\n",
-    });
-  } finally { await rm(repo, { recursive: true, force: true }); }
+    git(repo, "add", ".");
+    git(repo, "commit", "-qm", "fix: runtime");
+    assert.deepEqual(
+      validateReleaseNoteCandidate({ repoRoot: repo, baseRef: base }),
+      {
+        eligible: true,
+        version: "0.1.1",
+        codename: "Callsign",
+        path: "apps/nemlig-assistant/release/notes/0.1.1.md",
+        body: "# Nemlig Assistant 0.1.1 - Callsign\n\n## In plain language\n\nThis release makes publishing safer and easier to recognize.\n\n## Changes\n\n- Fixes the deterministic release gate.\n",
+      },
+    );
+  } finally {
+    await rm(repo, { recursive: true, force: true });
+  }
 });
 
 test("release notes fail closed for missing, malformed, wrong-version, or non-diff notes", async () => {
-  for (const scenario of ["missing", "malformed", "wrong-version", "not-in-diff"] as const) {
+  for (const scenario of [
+    "missing",
+    "malformed",
+    "wrong-version",
+    "not-in-diff",
+  ] as const) {
     const { repo, base: initialBase } = await fixture();
     try {
       let base = initialBase;
       if (scenario === "not-in-diff") {
         await note(repo, "0.1.1");
-        git(repo, "add", "."); git(repo, "commit", "-qm", "chore: old note");
+        git(repo, "add", ".");
+        git(repo, "commit", "-qm", "chore: old note");
         base = git(repo, "rev-parse", "HEAD");
       }
       await releaseChange(repo);
-      if (scenario === "malformed") await note(repo, "0.1.1", "A prose note without an identity heading.\n");
-      if (scenario === "wrong-version") await note(repo, "0.1.1", "# Nemlig Assistant 0.1.2 - Callsign\n\n- Wrong version.\n");
-      git(repo, "add", "."); git(repo, "commit", "-qm", "fix: runtime");
-      assert.throws(() => validateReleaseNoteCandidate({ repoRoot: repo, baseRef: base }), /release note|Markdown|candidate diff/i, scenario);
-    } finally { await rm(repo, { recursive: true, force: true }); }
+      if (scenario === "malformed") {
+        await note(
+          repo,
+          "0.1.1",
+          "A prose note without an identity heading.\n",
+        );
+      }
+      if (scenario === "wrong-version") {
+        await note(
+          repo,
+          "0.1.1",
+          "# Nemlig Assistant 0.1.2 - Callsign\n\n- Wrong version.\n",
+        );
+      }
+      git(repo, "add", ".");
+      git(repo, "commit", "-qm", "fix: runtime");
+      assert.throws(
+        () => validateReleaseNoteCandidate({ repoRoot: repo, baseRef: base }),
+        /release note|Markdown|candidate diff/i,
+        scenario,
+      );
+    } finally {
+      await rm(repo, { recursive: true, force: true });
+    }
   }
 });
 
@@ -83,17 +145,37 @@ test("release notes reject a second version note and oversized Markdown", async 
     await releaseChange(repo);
     await note(repo, "0.1.1");
     await note(repo, "0.1.2");
-    git(repo, "add", "."); git(repo, "commit", "-qm", "fix: runtime");
-    assert.throws(() => validateReleaseNoteCandidate({ repoRoot: repo, baseRef: base }), /exactly one|release note/i);
-  } finally { await rm(repo, { recursive: true, force: true }); }
+    git(repo, "add", ".");
+    git(repo, "commit", "-qm", "fix: runtime");
+    assert.throws(
+      () => validateReleaseNoteCandidate({ repoRoot: repo, baseRef: base }),
+      /exactly one|release note/i,
+    );
+  } finally {
+    await rm(repo, { recursive: true, force: true });
+  }
 
   const oversized = await fixture();
   try {
     await releaseChange(oversized.repo);
-    await note(oversized.repo, "0.1.1", `# Nemlig Assistant 0.1.1 - Callsign\n\n${"x".repeat(8 * 1024)}\n`);
-    git(oversized.repo, "add", "."); git(oversized.repo, "commit", "-qm", "fix: runtime");
-    assert.throws(() => validateReleaseNoteCandidate({ repoRoot: oversized.repo, baseRef: oversized.base }), /too large/i);
-  } finally { await rm(oversized.repo, { recursive: true, force: true }); }
+    await note(
+      oversized.repo,
+      "0.1.1",
+      `# Nemlig Assistant 0.1.1 - Callsign\n\n${"x".repeat(8 * 1024)}\n`,
+    );
+    git(oversized.repo, "add", ".");
+    git(oversized.repo, "commit", "-qm", "fix: runtime");
+    assert.throws(
+      () =>
+        validateReleaseNoteCandidate({
+          repoRoot: oversized.repo,
+          baseRef: oversized.base,
+        }),
+      /too large/i,
+    );
+  } finally {
+    await rm(oversized.repo, { recursive: true, force: true });
+  }
 });
 
 test("release notes reject missing or mismatched codenames", async () => {
@@ -106,9 +188,15 @@ test("release notes reject missing or mismatched codenames", async () => {
     try {
       await releaseChange(repo);
       await note(repo, "0.1.1", `${heading}\n\n- Wrong codename.\n`);
-      git(repo, "add", "."); git(repo, "commit", "-qm", "fix: runtime");
-      assert.throws(() => validateReleaseNoteCandidate({ repoRoot: repo, baseRef: base }), /codename|release note|Markdown/i);
-    } finally { await rm(repo, { recursive: true, force: true }); }
+      git(repo, "add", ".");
+      git(repo, "commit", "-qm", "fix: runtime");
+      assert.throws(
+        () => validateReleaseNoteCandidate({ repoRoot: repo, baseRef: base }),
+        /codename|release note|Markdown/i,
+      );
+    } finally {
+      await rm(repo, { recursive: true, force: true });
+    }
   }
 });
 
@@ -122,8 +210,14 @@ test("codenamed release notes require a short plain-language opening", async () 
     try {
       await releaseChange(repo);
       await note(repo, "0.1.1", body);
-      git(repo, "add", "."); git(repo, "commit", "-qm", "fix: runtime");
-      assert.throws(() => validateReleaseNoteCandidate({ repoRoot: repo, baseRef: base }), /plain language/i);
-    } finally { await rm(repo, { recursive: true, force: true }); }
+      git(repo, "add", ".");
+      git(repo, "commit", "-qm", "fix: runtime");
+      assert.throws(
+        () => validateReleaseNoteCandidate({ repoRoot: repo, baseRef: base }),
+        /plain language/i,
+      );
+    } finally {
+      await rm(repo, { recursive: true, force: true });
+    }
   }
 });

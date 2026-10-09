@@ -1,7 +1,15 @@
 import assert from "node:assert/strict";
 import { isDeepStrictEqual } from "node:util";
-import { serviceAcceptanceResourceInventory, serviceAcceptanceToolInventory } from "./mcp.js";
-import { PRODUCT_VIEWER_MIME_TYPE, PRODUCT_VIEWER_RESOURCE_DOMAINS, PRODUCT_VIEWER_RESOURCE_URI, renderProductViewerHtml } from "./product-viewer.js";
+import {
+  serviceAcceptanceResourceInventory,
+  serviceAcceptanceToolInventory,
+} from "./mcp.js";
+import {
+  PRODUCT_VIEWER_MIME_TYPE,
+  PRODUCT_VIEWER_RESOURCE_DOMAINS,
+  PRODUCT_VIEWER_RESOURCE_URI,
+  renderProductViewerHtml,
+} from "./product-viewer.js";
 import { RETIRED_PRODUCT_VIEWER_RESOURCE_URIS } from "./product-viewer-identity.js";
 import { NEMLIG_CODENAME, NEMLIG_VERSION } from "./runtime.js";
 
@@ -11,16 +19,30 @@ interface ToolResult {
 }
 
 export const productionToolInventory = {
-  readOnly: ["find_groceries", "check_nemlig_connection", "get_profile", "show_my_basket"],
+  readOnly: [
+    "find_groceries",
+    "check_nemlig_connection",
+    "get_profile",
+    "show_my_basket",
+  ],
   localState: ["start_product_review", "update_product_review_conversation"],
   externalState: ["submit_product_review_conversation"],
   appActions: ["update_product_review", "submit_product_review"],
 } as const;
 
-export const productionResourceInventory = [PRODUCT_VIEWER_RESOURCE_URI, ...RETIRED_PRODUCT_VIEWER_RESOURCE_URIS] as const;
-export const prohibitedProductionTools = ["checkout", "place_order", "pay", "change_delivery_slot"] as const;
+export const productionResourceInventory = [
+  PRODUCT_VIEWER_RESOURCE_URI,
+  ...RETIRED_PRODUCT_VIEWER_RESOURCE_URIS,
+] as const;
+export const prohibitedProductionTools = [
+  "checkout",
+  "place_order",
+  "pay",
+  "change_delivery_slot",
+] as const;
 
-type ToolName = typeof productionToolInventory[keyof typeof productionToolInventory][number];
+type ToolName =
+  (typeof productionToolInventory)[keyof typeof productionToolInventory][number];
 
 export interface AcceptanceClient {
   listTools(): Promise<{ tools: Array<{ name: string; _meta?: unknown }> }>;
@@ -54,31 +76,52 @@ interface Profile {
 
 const content = <T>(result: ToolResult, operation: string): T => {
   assert.equal(result.isError, undefined, `${operation} returned an MCP error`);
-  assert.ok(result.structuredContent && typeof result.structuredContent === "object", `${operation} returned no structured content`);
+  assert.ok(
+    result.structuredContent && typeof result.structuredContent === "object",
+    `${operation} returned no structured content`,
+  );
   return result.structuredContent as T;
 };
 
 const basket = (result: ToolResult, operation: string): Basket => {
   const value = content<Basket>(result, operation);
-  assert.ok(Array.isArray(value.items), `${operation} returned no basket items`);
+  assert.ok(
+    Array.isArray(value.items),
+    `${operation} returned no basket items`,
+  );
   return value;
 };
 
 const isServiceForbiddenResponse = (error: unknown): boolean =>
-  !!error && typeof error === "object"
-  && (("status" in error && (error as { status?: unknown }).status === 403)
-    || ("code" in error && (error as { code?: unknown }).code === 403));
+  !!error &&
+  typeof error === "object" &&
+  (("status" in error && (error as { status?: unknown }).status === 403) ||
+    ("code" in error && (error as { code?: unknown }).code === 403));
 
 const listResourcesOrEmpty = async (
   client: AcceptanceClient,
   withinTotalDeadline: <T>(label: string, work: () => Promise<T>) => Promise<T>,
   label: string,
 ): Promise<Array<{ uri: string }>> => {
-  assert.ok(client.listResources, `${label} resource inventory client is required`);
+  assert.ok(
+    client.listResources,
+    `${label} resource inventory client is required`,
+  );
   try {
-    return (await withinTotalDeadline("resource inventory", () => client.listResources!())).resources;
+    return (
+      await withinTotalDeadline("resource inventory", () =>
+        client.listResources!(),
+      )
+    ).resources;
   } catch (error) {
-    if (error && typeof error === "object" && "code" in error && (error as { code?: unknown }).code === -32601) return [];
+    if (
+      error &&
+      typeof error === "object" &&
+      "code" in error &&
+      (error as { code?: unknown }).code === -32601
+    ) {
+      return [];
+    }
     throw error;
   }
 };
@@ -89,27 +132,76 @@ export function assertProductionInventory(
   tools: Array<{ name: string; _meta?: unknown }>,
   resources: Array<{ uri: string }>,
 ): void {
-  assert.deepEqual(tools.map(({ name }) => name).sort(), [...expectedTools].sort(), "Production MCP tool inventory drifted");
-  assert.deepEqual(resources.map(({ uri }) => uri).sort(), [...productionResourceInventory].sort(), "Production MCP resource inventory drifted");
-  for (const name of prohibitedProductionTools) assert.equal(tools.some((tool) => tool.name === name), false, `Prohibited production capability advertised: ${name}`);
-  const metadata = new Map(tools.map(({ name, _meta }) => [name, _meta]));
-  for (const name of ["start_product_review", "update_product_review_conversation", "submit_product_review_conversation"] as const) {
-    const actual = metadata.get(name);
-    assert.ok(actual && typeof actual === "object", `Production ${name} metadata drifted`);
-    const value = actual as Record<string, unknown>;
-    const expectedUi = name === "start_product_review"
-      ? { resourceUri: PRODUCT_VIEWER_RESOURCE_URI, visibility: ["model"] }
-      : { visibility: ["model"] };
-    assert.deepEqual(value.ui, expectedUi, `Production ${name} UI metadata drifted`);
-    assert.equal(value["openai/outputTemplate"], name === "start_product_review" ? PRODUCT_VIEWER_RESOURCE_URI : undefined, `Production ${name} output template metadata drifted`);
-    assert.equal(value["openai/widgetAccessible"], undefined, `Model-visible ${name} must not be callable by old widget cards`);
+  assert.deepEqual(
+    tools.map(({ name }) => name).sort(),
+    [...expectedTools].sort(),
+    "Production MCP tool inventory drifted",
+  );
+  assert.deepEqual(
+    resources.map(({ uri }) => uri).sort(),
+    [...productionResourceInventory].sort(),
+    "Production MCP resource inventory drifted",
+  );
+  for (const name of prohibitedProductionTools) {
+    assert.equal(
+      tools.some((tool) => tool.name === name),
+      false,
+      `Prohibited production capability advertised: ${name}`,
+    );
   }
-  for (const name of ["update_product_review", "submit_product_review"] as const) {
+  const metadata = new Map(tools.map(({ name, _meta }) => [name, _meta]));
+  for (const name of [
+    "start_product_review",
+    "update_product_review_conversation",
+    "submit_product_review_conversation",
+  ] as const) {
+    const actual = metadata.get(name);
+    assert.ok(
+      actual && typeof actual === "object",
+      `Production ${name} metadata drifted`,
+    );
+    const value = actual as Record<string, unknown>;
+    const expectedUi =
+      name === "start_product_review"
+        ? { resourceUri: PRODUCT_VIEWER_RESOURCE_URI, visibility: ["model"] }
+        : { visibility: ["model"] };
+    assert.deepEqual(
+      value.ui,
+      expectedUi,
+      `Production ${name} UI metadata drifted`,
+    );
+    assert.equal(
+      value["openai/outputTemplate"],
+      name === "start_product_review" ? PRODUCT_VIEWER_RESOURCE_URI : undefined,
+      `Production ${name} output template metadata drifted`,
+    );
+    assert.equal(
+      value["openai/widgetAccessible"],
+      undefined,
+      `Model-visible ${name} must not be callable by old widget cards`,
+    );
+  }
+  for (const name of [
+    "update_product_review",
+    "submit_product_review",
+  ] as const) {
     const value = metadata.get(name) as Record<string, unknown> | undefined;
     assert.ok(value, `Production ${name} metadata drifted`);
-    assert.deepEqual(value.ui, { visibility: ["app"] }, `Production ${name} must remain app-only`);
-    assert.equal(value["openai/outputTemplate"], undefined, `Production ${name} must not create another UI card`);
-    assert.equal(value["openai/widgetAccessible"], true, `Production ${name} must be callable by the current widget`);
+    assert.deepEqual(
+      value.ui,
+      { visibility: ["app"] },
+      `Production ${name} must remain app-only`,
+    );
+    assert.equal(
+      value["openai/outputTemplate"],
+      undefined,
+      `Production ${name} must not create another UI card`,
+    );
+    assert.equal(
+      value["openai/widgetAccessible"],
+      true,
+      `Production ${name} must be callable by the current widget`,
+    );
   }
 }
 
@@ -125,27 +217,81 @@ export class ProductViewerHtmlMismatchError extends Error {
 /** Stable, content-free evidence for a machine fixture inventory mismatch. */
 export class ServiceInventoryMismatchError extends Error {
   readonly lastCompletedBoundary: string;
-  constructor(readonly code: "service_tool_inventory_mismatch" | "service_resource_inventory_mismatch", boundary?: string) {
+  constructor(
+    readonly code:
+      "service_tool_inventory_mismatch" | "service_resource_inventory_mismatch",
+    boundary?: string,
+  ) {
     super(code);
-    this.lastCompletedBoundary = boundary ?? (code === "service_tool_inventory_mismatch" ? "service_tool_inventory_read" : "service_resource_inventory_read");
+    this.lastCompletedBoundary =
+      boundary ??
+      (code === "service_tool_inventory_mismatch"
+        ? "service_tool_inventory_read"
+        : "service_resource_inventory_read");
   }
 }
 
-const assertProductViewerResource = (viewer: { contents: unknown[] }, label: string): void => {
-  assert.equal(viewer.contents.length, 1, `${label} product-viewer resource returned an unexpected content count`);
+const assertProductViewerResource = (
+  viewer: { contents: unknown[] },
+  label: string,
+): void => {
+  assert.equal(
+    viewer.contents.length,
+    1,
+    `${label} product-viewer resource returned an unexpected content count`,
+  );
   const viewerContent = viewer.contents[0];
-  assert.ok(viewerContent && typeof viewerContent === "object", `${label} product-viewer resource returned no content object`);
-  const viewerRecord = viewerContent as { uri?: unknown; mimeType?: unknown; text?: unknown; _meta?: unknown };
-  assert.equal(viewerRecord.uri, PRODUCT_VIEWER_RESOURCE_URI, `${label} product-viewer URI did not match the inventory`);
-  assert.equal(viewerRecord.mimeType, PRODUCT_VIEWER_MIME_TYPE, `${label} product-viewer MIME type drifted`);
-  if (viewerRecord.text !== renderProductViewerHtml()) throw new ProductViewerHtmlMismatchError();
-  assert.match(viewerRecord.text as string, /<html[\s\S]*<\/html>/u, `${label} product-viewer resource was not fetchable HTML`);
-  assert.ok(viewerRecord._meta && typeof viewerRecord._meta === "object", `${label} product-viewer resource metadata is missing`);
+  assert.ok(
+    viewerContent && typeof viewerContent === "object",
+    `${label} product-viewer resource returned no content object`,
+  );
+  const viewerRecord = viewerContent as {
+    uri?: unknown;
+    mimeType?: unknown;
+    text?: unknown;
+    _meta?: unknown;
+  };
+  assert.equal(
+    viewerRecord.uri,
+    PRODUCT_VIEWER_RESOURCE_URI,
+    `${label} product-viewer URI did not match the inventory`,
+  );
+  assert.equal(
+    viewerRecord.mimeType,
+    PRODUCT_VIEWER_MIME_TYPE,
+    `${label} product-viewer MIME type drifted`,
+  );
+  if (viewerRecord.text !== renderProductViewerHtml()) {
+    throw new ProductViewerHtmlMismatchError();
+  }
+  assert.match(
+    viewerRecord.text as string,
+    /<html[\s\S]*<\/html>/u,
+    `${label} product-viewer resource was not fetchable HTML`,
+  );
+  assert.ok(
+    viewerRecord._meta && typeof viewerRecord._meta === "object",
+    `${label} product-viewer resource metadata is missing`,
+  );
   const ui = (viewerRecord._meta as Record<string, unknown>).ui;
-  assert.ok(ui && typeof ui === "object", `${label} product-viewer UI metadata is missing`);
+  assert.ok(
+    ui && typeof ui === "object",
+    `${label} product-viewer UI metadata is missing`,
+  );
   const metadata = ui as Record<string, unknown>;
-  assert.deepEqual(metadata.csp, { connectDomains: [], resourceDomains: [...PRODUCT_VIEWER_RESOURCE_DOMAINS] }, `${label} product-viewer CSP metadata drifted`);
-  assert.equal(metadata.prefersBorder, true, `${label} product-viewer border metadata drifted`);
+  assert.deepEqual(
+    metadata.csp,
+    {
+      connectDomains: [],
+      resourceDomains: [...PRODUCT_VIEWER_RESOURCE_DOMAINS],
+    },
+    `${label} product-viewer CSP metadata drifted`,
+  );
+  assert.equal(
+    metadata.prefersBorder,
+    true,
+    `${label} product-viewer border metadata drifted`,
+  );
 };
 
 export interface ProductionFeatureReport {
@@ -165,13 +311,22 @@ export interface AcceptanceDeadlineOptions {
   onBoundary?: (boundary: string) => void;
 }
 
-const abortError = (signal: AbortSignal): Error => signal.reason instanceof Error
-  ? signal.reason
-  : new Error("Production acceptance deadline exceeded");
+const abortError = (signal: AbortSignal): Error =>
+  signal.reason instanceof Error
+    ? signal.reason
+    : new Error("Production acceptance deadline exceeded");
 
-const bounded = async <T>(label: string, work: () => Promise<T>, signal?: AbortSignal): Promise<T> => {
-  if (!signal) return await work();
-  if (signal.aborted) throw abortError(signal);
+const bounded = async <T>(
+  label: string,
+  work: () => Promise<T>,
+  signal?: AbortSignal,
+): Promise<T> => {
+  if (!signal) {
+    return await work();
+  }
+  if (signal.aborted) {
+    throw abortError(signal);
+  }
   let onAbort: (() => void) | undefined;
   const aborted = new Promise<never>((_resolve, reject) => {
     onAbort = () => reject(abortError(signal));
@@ -179,35 +334,51 @@ const bounded = async <T>(label: string, work: () => Promise<T>, signal?: AbortS
   });
   try {
     const result = await Promise.race([work(), aborted]);
-    if (signal.aborted) throw abortError(signal);
+    if (signal.aborted) {
+      throw abortError(signal);
+    }
     return result;
   } catch (error) {
-    if (signal.aborted) throw new Error(`Production acceptance deadline exceeded during ${label}`, { cause: error });
+    if (signal.aborted) {
+      throw new Error(
+        `Production acceptance deadline exceeded during ${label}`,
+        { cause: error },
+      );
+    }
     throw error;
   } finally {
-    if (onAbort) signal.removeEventListener("abort", onAbort);
+    if (onAbort) {
+      signal.removeEventListener("abort", onAbort);
+    }
   }
 };
 
-const createTotalDeadline = (
-  deadline: number,
-  context: string,
-  signal?: AbortSignal,
-): (<T>(label: string, work: () => Promise<T>) => Promise<T>) => async <T>(label: string, work: () => Promise<T>): Promise<T> => {
-  const remaining = deadline - Date.now();
-  assert.ok(remaining > 0, `${context} timed out before ${label}`);
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  try {
-    return await Promise.race([
-      bounded(label, work, signal),
-      new Promise<never>((_resolve, reject) => {
-        timer = setTimeout(() => reject(new Error(`${context} timed out during ${label}`)), remaining);
-      }),
-    ]);
-  } finally {
-    if (timer) clearTimeout(timer);
-  }
-};
+const createTotalDeadline =
+  (
+    deadline: number,
+    context: string,
+    signal?: AbortSignal,
+  ): (<T>(label: string, work: () => Promise<T>) => Promise<T>) =>
+  async <T>(label: string, work: () => Promise<T>): Promise<T> => {
+    const remaining = deadline - Date.now();
+    assert.ok(remaining > 0, `${context} timed out before ${label}`);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      return await Promise.race([
+        bounded(label, work, signal),
+        new Promise<never>((_resolve, reject) => {
+          timer = setTimeout(
+            () => reject(new Error(`${context} timed out during ${label}`)),
+            remaining,
+          );
+        }),
+      ]);
+    } finally {
+      if (timer) {
+        clearTimeout(timer);
+      }
+    }
+  };
 
 export async function verifyReadOnlyProductionFeatures(
   client: AcceptanceClient,
@@ -219,32 +390,61 @@ export async function verifyReadOnlyProductionFeatures(
     options.signal,
   );
   assertProductionInventory(
-    (await withinTotalDeadline("tool inventory", () => client.listTools())).tools,
+    (await withinTotalDeadline("tool inventory", () => client.listTools()))
+      .tools,
     await listResourcesOrEmpty(client, withinTotalDeadline, "Production"),
   );
-  assert.ok(client.readResource, "Production product-viewer resource reader is required");
-  const viewer = await withinTotalDeadline("product viewer resource", () => client.readResource!({ uri: PRODUCT_VIEWER_RESOURCE_URI }));
+  assert.ok(
+    client.readResource,
+    "Production product-viewer resource reader is required",
+  );
+  const viewer = await withinTotalDeadline("product viewer resource", () =>
+    client.readResource!({ uri: PRODUCT_VIEWER_RESOURCE_URI }),
+  );
   assertProductViewerResource(viewer, "Production");
   const exercised: string[] = [];
   const unavailable: string[] = [];
   exercised.push("read product viewer resource");
-  const call = async <T>(name: ToolName, args: Record<string, unknown> = {}): Promise<T> => {
-    assert.ok((productionToolInventory.readOnly as readonly string[]).includes(name), `Read-only acceptance prohibited ${name}`);
-    const result = await withinTotalDeadline(name, () => client.callTool({ name, arguments: args }));
+  const call = async <T>(
+    name: ToolName,
+    args: Record<string, unknown> = {},
+  ): Promise<T> => {
+    assert.ok(
+      (productionToolInventory.readOnly as readonly string[]).includes(name),
+      `Read-only acceptance prohibited ${name}`,
+    );
+    const result = await withinTotalDeadline(name, () =>
+      client.callTool({ name, arguments: args }),
+    );
     exercised.push(name);
     return content<T>(result, name);
   };
 
   const profile = await call<Profile>("get_profile");
   assert.ok(profile.id, "get_profile returned no authenticated profile");
-  assert.deepEqual(profile.release, { version: NEMLIG_VERSION, codename: NEMLIG_CODENAME }, "get_profile release identity drifted");
+  assert.deepEqual(
+    profile.release,
+    { version: NEMLIG_VERSION, codename: NEMLIG_CODENAME },
+    "get_profile release identity drifted",
+  );
 
-  const searched = await call<{ result?: Array<{ id?: number }> }>("find_groceries", { search_term: "banan", result_count: 3 });
-  const productIds = (searched.result ?? []).flatMap(({ id }) => typeof id === "number" && Number.isInteger(id) && id > 0 ? [id] : []);
-  assert.ok(productIds.length, "Production product search returned no usable product");
+  const searched = await call<{ result?: Array<{ id?: number }> }>(
+    "find_groceries",
+    { search_term: "banan", result_count: 3 },
+  );
+  const productIds = (searched.result ?? []).flatMap(({ id }) =>
+    typeof id === "number" && Number.isInteger(id) && id > 0 ? [id] : [],
+  );
+  assert.ok(
+    productIds.length,
+    "Production product search returned no usable product",
+  );
 
   const current = await call<Basket>("show_my_basket");
-  assert.ok(Array.isArray(current.items), "show_my_basket returned no basket items");
+  assert.ok(
+    Array.isArray(current.items),
+    "show_my_basket returned no basket items",
+  );
   return { exercised, unavailable };
 }
 
@@ -258,91 +458,170 @@ export async function verifyServiceAcceptanceFeatures(
     "Service acceptance",
     options.signal,
   );
-  const tools = (await withinTotalDeadline("tool inventory", () => client.listTools())).tools;
+  const tools = (
+    await withinTotalDeadline("tool inventory", () => client.listTools())
+  ).tools;
   options.onBoundary?.("service_tool_inventory_read");
   const names = tools.map(({ name }) => name).sort();
   if (!isDeepStrictEqual(names, [...serviceAcceptanceToolInventory].sort())) {
-    const missing = serviceAcceptanceToolInventory.flatMap((name, index) => names.includes(name) ? [] : [index]);
+    const missing = serviceAcceptanceToolInventory.flatMap((name, index) =>
+      names.includes(name) ? [] : [index],
+    );
     const missingMask = missing.reduce((mask, index) => mask | (1 << index), 0);
-    const unexpectedCount = Math.max(0, names.length - serviceAcceptanceToolInventory.length + missing.length);
-    throw new ServiceInventoryMismatchError("service_tool_inventory_mismatch",
-      `service_tool_inventory_read_m${missingMask.toString(16)}_x${Math.min(unexpectedCount, 99)}`);
+    const unexpectedCount = Math.max(
+      0,
+      names.length - serviceAcceptanceToolInventory.length + missing.length,
+    );
+    throw new ServiceInventoryMismatchError(
+      "service_tool_inventory_mismatch",
+      `service_tool_inventory_read_m${missingMask.toString(16)}_x${Math.min(unexpectedCount, 99)}`,
+    );
   }
-  const resources = await listResourcesOrEmpty(client, withinTotalDeadline, "Service");
+  const resources = await listResourcesOrEmpty(
+    client,
+    withinTotalDeadline,
+    "Service",
+  );
   options.onBoundary?.("service_resource_inventory_read");
   const expectedResources = new Map<string, number>();
-  for (const uri of serviceAcceptanceResourceInventory) expectedResources.set(uri, (expectedResources.get(uri) ?? 0) + 1);
+  for (const uri of serviceAcceptanceResourceInventory) {
+    expectedResources.set(uri, (expectedResources.get(uri) ?? 0) + 1);
+  }
   let unexpectedResourceCount = 0;
   for (const { uri } of resources) {
     const expectedCount = expectedResources.get(uri) ?? 0;
-    if (expectedCount === 0) unexpectedResourceCount += 1;
-    else expectedResources.set(uri, expectedCount - 1);
+    if (expectedCount === 0) {
+      unexpectedResourceCount += 1;
+    } else {
+      expectedResources.set(uri, expectedCount - 1);
+    }
   }
-  const missingResourceCount = [...expectedResources.values()].reduce((total, count) => total + count, 0);
+  const missingResourceCount = [...expectedResources.values()].reduce(
+    (total, count) => total + count,
+    0,
+  );
   if (missingResourceCount || unexpectedResourceCount) {
-    const boundedCount = (count: number): string => Math.min(count, 99).toString();
-    throw new ServiceInventoryMismatchError("service_resource_inventory_mismatch",
-      `service_resource_inventory_read_missing_${boundedCount(missingResourceCount)}_unexpected_${boundedCount(unexpectedResourceCount)}`);
+    const boundedCount = (count: number): string =>
+      Math.min(count, 99).toString();
+    throw new ServiceInventoryMismatchError(
+      "service_resource_inventory_mismatch",
+      `service_resource_inventory_read_missing_${boundedCount(missingResourceCount)}_unexpected_${boundedCount(unexpectedResourceCount)}`,
+    );
   }
 
-  assert.ok(client.readResource, "Service product-viewer resource reader is required");
-  const viewer = await withinTotalDeadline("product viewer resource", () => client.readResource!({ uri: PRODUCT_VIEWER_RESOURCE_URI }));
+  assert.ok(
+    client.readResource,
+    "Service product-viewer resource reader is required",
+  );
+  const viewer = await withinTotalDeadline("product viewer resource", () =>
+    client.readResource!({ uri: PRODUCT_VIEWER_RESOURCE_URI }),
+  );
   options.onBoundary?.("product_viewer_resource_read");
   assertProductViewerResource(viewer, "Service");
 
   const exercised: string[] = [];
   let requestCount = 3;
   exercised.push("read product viewer resource");
-  const call = async (name: string, args: Record<string, unknown> = {}): Promise<ToolResult> => {
+  const call = async (
+    name: string,
+    args: Record<string, unknown> = {},
+  ): Promise<ToolResult> => {
     requestCount += 1;
-    const result = await withinTotalDeadline(name, () => client.callTool({ name, arguments: args }));
+    const result = await withinTotalDeadline(name, () =>
+      client.callTool({ name, arguments: args }),
+    );
     options.onBoundary?.(`service_${name}_returned`);
     exercised.push(name);
     return result;
   };
-  const searched = content<{ result?: Array<{ id?: number }> }>(await call("find_groceries", { search_term: "banan", result_count: 1 }), "find_groceries");
-  const productId = searched.result?.find(({ id }) => typeof id === "number")?.id;
+  const searched = content<{ result?: Array<{ id?: number }> }>(
+    await call("find_groceries", { search_term: "banan", result_count: 1 }),
+    "find_groceries",
+  );
+  const productId = searched.result?.find(
+    ({ id }) => typeof id === "number",
+  )?.id;
   assert.ok(productId, "Service product search returned no usable product");
   basket(await call("show_my_basket"), "show_my_basket");
   const denied: string[] = [];
-  for (const name of ["start_product_review", "update_product_review_conversation", "submit_product_review_conversation"]) {
+  for (const name of [
+    "start_product_review",
+    "update_product_review_conversation",
+    "submit_product_review_conversation",
+  ]) {
     try {
       requestCount += 1;
-      const result = await withinTotalDeadline(name, () => client.callTool({ name, arguments: {} }));
+      const result = await withinTotalDeadline(name, () =>
+        client.callTool({ name, arguments: {} }),
+      );
       options.onBoundary?.(`service_${name}_returned`);
       exercised.push(name);
-      assert.equal(result.isError, true, `Service acceptance allowed forbidden ${name}`);
+      assert.equal(
+        result.isError,
+        true,
+        `Service acceptance allowed forbidden ${name}`,
+      );
     } catch (error) {
-      assert.ok(isServiceForbiddenResponse(error), `Service acceptance failed ${name} without a precise HTTP 403 denial`);
+      assert.ok(
+        isServiceForbiddenResponse(error),
+        `Service acceptance failed ${name} without a precise HTTP 403 denial`,
+      );
       options.onBoundary?.(`service_${name}_denied`);
     }
     denied.push(name);
   }
-  assert.ok(requestCount <= 12, "Service MCP acceptance exceeded its request budget");
+  assert.ok(
+    requestCount <= 12,
+    "Service MCP acceptance exceeded its request budget",
+  );
   return { exercised, denied, requestCount };
 }
 
 export async function verifyProductionEdge(
   origin: URL,
   fetcher: typeof fetch = fetch,
-  options: { stepTimeoutMs?: number; expectedRevision?: string; expectedScopes?: string[]; signal?: AbortSignal } = {},
-): Promise<{ revision: string; lastCompletedBoundary: string; steps: Array<{ boundary: string; latencyMs: number }>; correlationIds: string[] }> {
+  options: {
+    stepTimeoutMs?: number;
+    expectedRevision?: string;
+    expectedScopes?: string[];
+    signal?: AbortSignal;
+  } = {},
+): Promise<{
+  revision: string;
+  lastCompletedBoundary: string;
+  steps: Array<{ boundary: string; latencyMs: number }>;
+  correlationIds: string[];
+}> {
   const stepTimeoutMs = options.stepTimeoutMs ?? 3_000;
   const steps: Array<{ boundary: string; latencyMs: number }> = [];
   const correlationIds: string[] = [];
   let lastCompletedBoundary = "none";
-  const step = async (boundary: string, input: URL, init?: RequestInit): Promise<Response> => {
+  const step = async (
+    boundary: string,
+    input: URL,
+    init?: RequestInit,
+  ): Promise<Response> => {
     const started = Date.now();
     try {
       const timeout = AbortSignal.timeout(stepTimeoutMs);
-      const response = await fetcher(input, { ...init, signal: options.signal ? AbortSignal.any([options.signal, timeout]) : timeout });
+      const response = await fetcher(input, {
+        ...init,
+        signal: options.signal
+          ? AbortSignal.any([options.signal, timeout])
+          : timeout,
+      });
       const correlationId = response.headers.get("x-nemlig-request-id");
-      if (correlationId && /^[A-Za-z0-9_-]{1,128}$/u.test(correlationId)) correlationIds.push(correlationId);
+      if (correlationId && /^[A-Za-z0-9_-]{1,128}$/u.test(correlationId)) {
+        correlationIds.push(correlationId);
+      }
       steps.push({ boundary, latencyMs: Date.now() - started });
       lastCompletedBoundary = boundary;
       return response;
     } catch (error) {
-      throw new Error(`Production edge probe stopped after ${lastCompletedBoundary}; ${boundary} failed or timed out.`, { cause: error });
+      throw new Error(
+        `Production edge probe stopped after ${lastCompletedBoundary}; ${boundary} failed or timed out.`,
+        { cause: error },
+      );
     }
   };
   const health = await step("health", new URL("/healthz", origin));
@@ -350,31 +629,71 @@ export async function verifyProductionEdge(
   assert.deepEqual(await health.json(), { status: "ok", enabled: true });
 
   const revisionResponse = await step("revision", new URL("/revision", origin));
-  assert.equal(revisionResponse.status, 200, "Production revision check failed");
-  const revisionBody = await revisionResponse.json() as { revision?: unknown };
-  assert.equal(typeof revisionBody.revision, "string", "Production revision metadata is missing");
+  assert.equal(
+    revisionResponse.status,
+    200,
+    "Production revision check failed",
+  );
+  const revisionBody = (await revisionResponse.json()) as {
+    revision?: unknown;
+  };
+  assert.equal(
+    typeof revisionBody.revision,
+    "string",
+    "Production revision metadata is missing",
+  );
   const revision = revisionBody.revision as string;
-  if (options.expectedRevision) assert.equal(revision, options.expectedRevision, "Production revision metadata does not match the expected deployment");
+  if (options.expectedRevision) {
+    assert.equal(
+      revision,
+      options.expectedRevision,
+      "Production revision metadata does not match the expected deployment",
+    );
+  }
 
-  const metadata = await step("oauth_metadata", new URL("/.well-known/oauth-protected-resource/mcp", origin));
+  const metadata = await step(
+    "oauth_metadata",
+    new URL("/.well-known/oauth-protected-resource/mcp", origin),
+  );
   assert.equal(metadata.status, 200, "OAuth resource metadata failed");
-  const resource = await metadata.json() as Record<string, unknown>;
+  const resource = (await metadata.json()) as Record<string, unknown>;
   assert.equal(resource.resource, new URL("/mcp", origin).href);
-  assert.deepEqual(resource.scopes_supported, options.expectedScopes ?? ["use:nemlig-assistant"], "OAuth scopes do not match production configuration");
+  assert.deepEqual(
+    resource.scopes_supported,
+    options.expectedScopes ?? ["use:nemlig-assistant"],
+    "OAuth scopes do not match production configuration",
+  );
   assert.deepEqual(resource.bearer_methods_supported, ["header"]);
 
   const anonymous = await step("anonymous_rejection", new URL("/mcp", origin), {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize", params: {} }),
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: 1,
+      method: "initialize",
+      params: {},
+    }),
   });
   assert.equal(anonymous.status, 401, "Anonymous MCP request was not rejected");
 
-  const foreignOrigin = await step("foreign_origin_rejection", new URL("/mcp", origin), {
-    method: "POST",
-    headers: { "content-type": "application/json", origin: "https://example.invalid" },
-    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize", params: {} }),
-  });
+  const foreignOrigin = await step(
+    "foreign_origin_rejection",
+    new URL("/mcp", origin),
+    {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        origin: "https://example.invalid",
+      },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: 1,
+        method: "initialize",
+        params: {},
+      }),
+    },
+  );
   assert.equal(foreignOrigin.status, 403, "Foreign Origin was not rejected");
   return { revision, lastCompletedBoundary, steps, correlationIds };
 }

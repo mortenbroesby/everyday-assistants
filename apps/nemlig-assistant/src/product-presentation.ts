@@ -1,15 +1,25 @@
 import type { Product } from "./client.js";
 import type { DetailedProductSearchItem } from "./product-discovery.js";
 
-export const IMAGE_ORIGINS = ["https://nemlig.com", "https://www.nemlig.com"] as const;
+export const IMAGE_ORIGINS = [
+  "https://nemlig.com",
+  "https://www.nemlig.com",
+] as const;
 
 /** Keep provider-hosted images safe for model-visible product output. */
 export const safeNemligImageUrl = (value: unknown): string | undefined => {
-  if (typeof value !== "string") return undefined;
+  if (typeof value !== "string") {
+    return undefined;
+  }
   try {
     const url = new URL(value);
-    return url.protocol === "https:" && IMAGE_ORIGINS.includes(url.origin as typeof IMAGE_ORIGINS[number]) ? url.href : undefined;
-  } catch { return undefined; }
+    return url.protocol === "https:" &&
+      IMAGE_ORIGINS.includes(url.origin as (typeof IMAGE_ORIGINS)[number])
+      ? url.href
+      : undefined;
+  } catch {
+    return undefined;
+  }
 };
 
 export interface ProductCandidate {
@@ -55,23 +65,45 @@ export interface ProductSummaryFacts {
 
 export type ProductViewContext =
   | { readonly kind: "search" | "details" | "result" }
-  | { readonly kind: "basket"; readonly quantity?: number; readonly line_total?: number }
-  | { readonly kind: "review"; readonly quantity?: number; readonly line_total?: number; readonly approved: boolean };
+  | {
+      readonly kind: "basket";
+      readonly quantity?: number;
+      readonly line_total?: number;
+    }
+  | {
+      readonly kind: "review";
+      readonly quantity?: number;
+      readonly line_total?: number;
+      readonly approved: boolean;
+    };
 
-export type ProductView = {
-  readonly context: ProductViewContext["kind"];
-  readonly status: "complete";
-  readonly product: ProductCandidate;
-  readonly basket?: Extract<ProductViewContext, { readonly kind: "basket" }>;
-  readonly review?: Extract<ProductViewContext, { readonly kind: "review" }>;
-} | {
-  readonly context: ProductViewContext["kind"];
-  readonly status: "unavailable";
-  readonly product_id?: number;
-};
+export type ProductView =
+  | {
+      readonly context: ProductViewContext["kind"];
+      readonly status: "complete";
+      readonly product: ProductCandidate;
+      readonly basket?: Extract<
+        ProductViewContext,
+        { readonly kind: "basket" }
+      >;
+      readonly review?: Extract<
+        ProductViewContext,
+        { readonly kind: "review" }
+      >;
+    }
+  | {
+      readonly context: ProductViewContext["kind"];
+      readonly status: "unavailable";
+      readonly product_id?: number;
+    };
 
-const hasLabelSubstring = (labels: readonly string[] | undefined, substring: string): boolean =>
-  labels?.some((label) => label.toLocaleLowerCase("da-DK").includes(substring)) ?? false;
+const hasLabelSubstring = (
+  labels: readonly string[] | undefined,
+  substring: string,
+): boolean =>
+  labels?.some((label) =>
+    label.toLocaleLowerCase("da-DK").includes(substring),
+  ) ?? false;
 
 const productCandidate = (product: Product): ProductCandidate => {
   const organic = product.isOrganic || hasLabelSubstring(product.labels, "øko");
@@ -99,7 +131,10 @@ const productCandidate = (product: Product): ProductCandidate => {
   };
 };
 
-export function rankProducts(products: Product[], query: string): ProductCandidate[] {
+export function rankProducts(
+  products: Product[],
+  query: string,
+): ProductCandidate[] {
   void query;
   return products.map(productCandidate);
 }
@@ -122,9 +157,12 @@ export function createProductViewFromSummary(
     currency: "DKK",
     brand: undefined,
     available: facts.available,
-    is_organic: facts.is_organic === true || hasOrganicLabel ? true : facts.is_organic,
+    is_organic:
+      facts.is_organic === true || hasOrganicLabel ? true : facts.is_organic,
     is_frozen: facts.is_frozen,
-    is_on_discount: facts.is_on_discount ?? (hasLabelSubstring(facts.labels, "tilbud") || undefined),
+    is_on_discount:
+      facts.is_on_discount ??
+      (hasLabelSubstring(facts.labels, "tilbud") || undefined),
     image_url: undefined,
     labels: [...(facts.labels ?? [])],
     tags: (facts.is_organic ?? hasOrganicLabel) ? ["organic"] : [],
@@ -133,7 +171,15 @@ export function createProductViewFromSummary(
     context: context.kind,
     status: "complete",
     product,
-    ...(context.kind === "basket" ? { basket: { kind: context.kind, quantity: facts.quantity ?? context.quantity, line_total: facts.line_total ?? context.line_total } } : {}),
+    ...(context.kind === "basket"
+      ? {
+          basket: {
+            kind: context.kind,
+            quantity: facts.quantity ?? context.quantity,
+            line_total: facts.line_total ?? context.line_total,
+          },
+        }
+      : {}),
     ...(context.kind === "review" ? { review: context } : {}),
   };
 }
@@ -147,7 +193,11 @@ export function createProductView(
   context: ProductViewContext,
 ): ProductView {
   if ("status" in item && item.status !== "hydrated") {
-    return { context: context.kind, status: "unavailable", ...(item.productId === undefined ? {} : { product_id: item.productId }) };
+    return {
+      context: context.kind,
+      status: "unavailable",
+      ...(item.productId === undefined ? {} : { product_id: item.productId }),
+    };
   }
   const product = "status" in item ? item.product : item;
   return {

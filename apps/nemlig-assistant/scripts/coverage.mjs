@@ -11,12 +11,18 @@ const reportPath = resolve(appRoot, "coverage/coverage.txt");
 export function validateCoverageReport(report) {
   const start = report.indexOf("# start of coverage report");
   const end = report.indexOf("# end of coverage report");
-  if (start < 0 || end <= start) throw new Error("Native coverage summary is missing or empty.");
+  if (start < 0 || end <= start) {
+    throw new Error("Native coverage summary is missing or empty.");
+  }
 
   const summary = report.slice(start, end);
-  if (!/^# all files\s+\|/m.test(summary)) throw new Error("Native coverage summary has no all-files row.");
+  if (!/^# all files\s+\|/m.test(summary)) {
+    throw new Error("Native coverage summary has no all-files row.");
+  }
   if (!/^# (?:src|release)\s+\|/m.test(summary)) {
-    throw new Error("Native coverage summary has no production-source section.");
+    throw new Error(
+      "Native coverage summary has no production-source section.",
+    );
   }
 
   let section;
@@ -24,15 +30,33 @@ export function validateCoverageReport(report) {
   const reportedFiles = [];
   for (const line of summary.split("\n")) {
     const nextSection = line.match(/^# ([^ ].*?)\s+\|/);
-    if (nextSection) section = nextSection[1];
+    if (nextSection) {
+      section = nextSection[1];
+    }
     const file = line.match(/^# {2}(.+?\.(?:[cm]?[jt]sx?))\s+\|/);
-    if (!file) continue;
+    if (!file) {
+      continue;
+    }
     reportedFiles.push(file[1]);
-    if (section === "src" || section === "release") files.push(file[1]);
+    if (section === "src" || section === "release") {
+      files.push(file[1]);
+    }
   }
-  if (files.length === 0) throw new Error("Native coverage summary has no eligible production-source entries.");
-  if (reportedFiles.some((file) => /(?:^|\/)(?:dist|node_modules|generated)(?:\/|$)|\.generated\.|\.test\.|\.spec\./.test(file))) {
-    throw new Error("Native coverage summary includes a test or generated source entry.");
+  if (files.length === 0) {
+    throw new Error(
+      "Native coverage summary has no eligible production-source entries.",
+    );
+  }
+  if (
+    reportedFiles.some((file) =>
+      /(?:^|\/)(?:dist|node_modules|generated)(?:\/|$)|\.generated\.|\.test\.|\.spec\./.test(
+        file,
+      ),
+    )
+  ) {
+    throw new Error(
+      "Native coverage summary includes a test or generated source entry.",
+    );
   }
 }
 
@@ -77,9 +101,13 @@ async function main() {
   });
   await mkdir(dirname(reportPath), { recursive: true });
   await writeFile(reportPath, report);
-  if (code !== 0) process.exitCode = code ?? 1;
+  if (code !== 0) {
+    process.exitCode = code ?? 1;
+  }
   validateCoverageReport(report);
-  console.log("Coverage limitation: Node reports only production source files loaded by this test run; unloaded source files cannot be attributed.");
+  console.log(
+    "Coverage limitation: Node reports only production source files loaded by this test run; unloaded source files cannot be attributed.",
+  );
 }
 
 async function validateSavedReport() {

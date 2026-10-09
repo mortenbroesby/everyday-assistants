@@ -3,11 +3,21 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 import { NemligError } from "./client.js";
 import { ensureLoggedIn as ensureLoggedInFromCli } from "./cli.js";
-import { ensureLoggedIn, getClient, withAuthenticatedReadRetry, NEMLIG_CODENAME, NEMLIG_RELEASE_IDENTITY, NEMLIG_VERSION } from "./runtime.js";
+import {
+  ensureLoggedIn,
+  getClient,
+  withAuthenticatedReadRetry,
+  NEMLIG_CODENAME,
+  NEMLIG_RELEASE_IDENTITY,
+  NEMLIG_VERSION,
+} from "./runtime.js";
 
 test("ensureLoggedIn uses injected credentials and does not prompt", async () => {
   let loggedIn = false;
-  const client: { isLoggedIn(): boolean; login(username: string, password: string): Promise<void> } = {
+  const client: {
+    isLoggedIn(): boolean;
+    login(username: string, password: string): Promise<void>;
+  } = {
     isLoggedIn: () => loggedIn,
     login: async (username, password) => {
       assert.equal(username, "owner@example.test");
@@ -15,10 +25,16 @@ test("ensureLoggedIn uses injected credentials and does not prompt", async () =>
       loggedIn = true;
     },
   };
-  await ensureLoggedIn(client, async () => ({ username: "owner@example.test", password: "secret" }));
+  await ensureLoggedIn(client, async () => ({
+    username: "owner@example.test",
+    password: "secret",
+  }));
   assert.equal(loggedIn, true);
   await assert.rejects(
-    ensureLoggedIn({ ...client, isLoggedIn: () => false }, async () => undefined),
+    ensureLoggedIn(
+      { ...client, isLoggedIn: () => false },
+      async () => undefined,
+    ),
     NemligError,
   );
 });
@@ -28,8 +44,16 @@ test("ensureLoggedIn preserves the CLI export and skips already logged-in client
   let loaded = 0;
   let loggedIn = 0;
   await ensureLoggedIn(
-    { isLoggedIn: () => true, login: async () => { loggedIn += 1; } },
-    async () => { loaded += 1; return undefined; },
+    {
+      isLoggedIn: () => true,
+      login: async () => {
+        loggedIn += 1;
+      },
+    },
+    async () => {
+      loaded += 1;
+      return undefined;
+    },
   );
   assert.equal(loaded, 0);
   assert.equal(loggedIn, 0);
@@ -39,16 +63,26 @@ test("ensureLoggedIn preserves login failures and runtime keeps package identity
   const failure = new Error("login failed");
   await assert.rejects(
     ensureLoggedIn(
-      { isLoggedIn: () => false, login: async () => { throw failure; } },
+      {
+        isLoggedIn: () => false,
+        login: async () => {
+          throw failure;
+        },
+      },
       async () => ({ username: "owner@example.test", password: "secret" }),
     ),
     (error) => error === failure,
   );
   assert.equal(getClient(), getClient());
-  const manifest = JSON.parse(await readFile(new URL("../package.json", import.meta.url), "utf8")) as { version?: unknown; nemligRelease?: { codename?: unknown } };
+  const manifest = JSON.parse(
+    await readFile(new URL("../package.json", import.meta.url), "utf8"),
+  ) as { version?: unknown; nemligRelease?: { codename?: unknown } };
   assert.equal(NEMLIG_VERSION, manifest.version);
   assert.equal(NEMLIG_CODENAME, manifest.nemligRelease?.codename);
-  assert.equal(NEMLIG_RELEASE_IDENTITY, `${manifest.version} - ${manifest.nemligRelease?.codename}`);
+  assert.equal(
+    NEMLIG_RELEASE_IDENTITY,
+    `${manifest.version} - ${manifest.nemligRelease?.codename}`,
+  );
 });
 
 test("read operations reuse a valid session and refresh once after a later 401", async () => {
@@ -87,7 +121,10 @@ test("parallel read operations share one in-flight login", async () => {
       loggedIn = true;
     },
   };
-  const credentials = async () => ({ username: "owner@example.test", password: "secret" });
+  const credentials = async () => ({
+    username: "owner@example.test",
+    password: "secret",
+  });
   const results = await Promise.all([
     withAuthenticatedReadRetry(client, credentials, async () => "first"),
     withAuthenticatedReadRetry(client, credentials, async () => "second"),
@@ -127,7 +164,10 @@ test("a late 401 does not reauthenticate after another read refreshed the sessio
   const client = {
     isLoggedIn: () => true,
     getSessionGeneration: () => generation,
-    login: async () => { logins += 1; generation += 1; },
+    login: async () => {
+      logins += 1;
+      generation += 1;
+    },
   };
   const result = await withAuthenticatedReadRetry(
     client,

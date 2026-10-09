@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { BasketPreflightError, BasketSnapshotChangedError, NemligError as ClientNemligError } from "./client.js";
+import {
+  BasketPreflightError,
+  BasketSnapshotChangedError,
+  NemligError as ClientNemligError,
+} from "./client.js";
 import { NemligError } from "./nemlig-error.js";
 
 test("NemligError preserves its message, name, optional status, and Error identity", () => {

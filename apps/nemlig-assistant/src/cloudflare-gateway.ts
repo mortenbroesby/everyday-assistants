@@ -1,4 +1,8 @@
-import { loadGatewayConfig, type CloudflareEnv, type GatewayConfig } from "./cloudflare-config.js";
+import {
+  loadGatewayConfig,
+  type CloudflareEnv,
+  type GatewayConfig,
+} from "./cloudflare-config.js";
 import {
   classifyGatewayMethod,
   classifyGatewayRoute,
@@ -12,7 +16,10 @@ import {
 import type { AdmissionResult } from "./principal-records.js";
 import type { Principal } from "./principal-policy.js";
 import { Auth0InfrastructureError, oauthReconnectChallenge } from "./auth0.js";
-import { PRODUCT_VIEWER_RESOURCE_URI, RETIRED_PRODUCT_VIEWER_RESOURCE_URIS } from "./product-viewer-identity.js";
+import {
+  PRODUCT_VIEWER_RESOURCE_URI,
+  RETIRED_PRODUCT_VIEWER_RESOURCE_URIS,
+} from "./product-viewer-identity.js";
 
 export type OperationClass = "protocol" | "useful";
 export type ViewerResourceClass = "current" | "retired" | "other";
@@ -25,14 +32,29 @@ const INTERNAL_CREDENTIAL_HEADERS = [
 ] as const;
 
 /** Copies only controller-issued credential headers onto the internal request. */
-export function attachAdmissionCredential(request: Request, admission: AdmissionResult, signal?: AbortSignal): Request {
+export function attachAdmissionCredential(
+  request: Request,
+  admission: AdmissionResult,
+  signal?: AbortSignal,
+): Request {
   const headers = new Headers(request.headers);
-  for (const name of INTERNAL_CREDENTIAL_HEADERS) headers.delete(name);
+  for (const name of INTERNAL_CREDENTIAL_HEADERS) {
+    headers.delete(name);
+  }
   if (admission.admitted && admission.credential) {
-    headers.set("x-nemlig-credential-envelope", btoa(JSON.stringify(admission.credential)));
+    headers.set(
+      "x-nemlig-credential-envelope",
+      btoa(JSON.stringify(admission.credential)),
+    );
     headers.set("x-nemlig-principal-key", admission.credential.principal_key);
-    headers.set("x-nemlig-policy-revision", admission.credential.policy_revision);
-    headers.set("x-nemlig-credential-generation", String(admission.credential.generation));
+    headers.set(
+      "x-nemlig-policy-revision",
+      admission.credential.policy_revision,
+    );
+    headers.set(
+      "x-nemlig-credential-generation",
+      String(admission.credential.generation),
+    );
   }
   return new Request(request, { headers, ...(signal ? { signal } : {}) });
 }
@@ -45,9 +67,24 @@ export interface GatewayDeadline {
 
 /** Provider seams used by the gateway; callers must keep authentication before wake/admission. */
 export interface GatewayDependencies {
-  authenticate(token: string, config: GatewayConfig, deadline: GatewayDeadline): Promise<Principal | undefined>;
-  admit(operation: OperationClass, principal: Principal, config: GatewayConfig, deadline: GatewayDeadline): Promise<AdmissionResult>;
-  forward(request: Request, operation: OperationClass, config: GatewayConfig, deadline: GatewayDeadline, admission: AdmissionResult): Promise<Response>;
+  authenticate(
+    token: string,
+    config: GatewayConfig,
+    deadline: GatewayDeadline,
+  ): Promise<Principal | undefined>;
+  admit(
+    operation: OperationClass,
+    principal: Principal,
+    config: GatewayConfig,
+    deadline: GatewayDeadline,
+  ): Promise<AdmissionResult>;
+  forward(
+    request: Request,
+    operation: OperationClass,
+    config: GatewayConfig,
+    deadline: GatewayDeadline,
+    admission: AdmissionResult,
+  ): Promise<Response>;
   event?(event: GatewayRequestEvent): void;
   viewerEvent?(event: ViewerResourceReadEvent): void;
   now?(): number;
@@ -60,25 +97,38 @@ class BoundaryTimeoutError extends Error {
   }
 }
 
-const serviceTools = new Set([
-  "find_groceries",
-  "show_my_basket",
+const serviceTools = new Set(["find_groceries", "show_my_basket"]);
+const serviceResources = new Set([
+  PRODUCT_VIEWER_RESOURCE_URI,
+  ...RETIRED_PRODUCT_VIEWER_RESOURCE_URIS,
 ]);
-const serviceResources = new Set([PRODUCT_VIEWER_RESOURCE_URI, ...RETIRED_PRODUCT_VIEWER_RESOURCE_URIS]);
 
 const isServiceRequestAllowed = async (request: Request): Promise<boolean> => {
   try {
-    const message = await request.clone().json() as { method?: unknown; params?: unknown };
-    if (message.method === "server/discover" || message.method === "ping"
-      || message.method === "tools/list" || message.method === "resources/list") return true;
+    const message = (await request.clone().json()) as {
+      method?: unknown;
+      params?: unknown;
+    };
+    if (
+      message.method === "server/discover" ||
+      message.method === "ping" ||
+      message.method === "tools/list" ||
+      message.method === "resources/list"
+    ) {
+      return true;
+    }
     if (message.method === "resources/read") {
-      const uri = message.params && typeof message.params === "object"
-        ? (message.params as { uri?: unknown }).uri
-        : undefined;
+      const uri =
+        message.params && typeof message.params === "object"
+          ? (message.params as { uri?: unknown }).uri
+          : undefined;
       return typeof uri === "string" && serviceResources.has(uri);
     }
     if (message.method === "tools/call") {
-      const name = message.params && typeof message.params === "object" ? (message.params as { name?: unknown }).name : undefined;
+      const name =
+        message.params && typeof message.params === "object"
+          ? (message.params as { name?: unknown }).name
+          : undefined;
       return typeof name === "string" && serviceTools.has(name);
     }
   } catch {
@@ -89,47 +139,86 @@ const isServiceRequestAllowed = async (request: Request): Promise<boolean> => {
 
 /** Separates protocol handling from shopping operations. */
 export function classifyMcpMessage(value: unknown): OperationClass {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return "useful";
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return "useful";
+  }
   const message = value as { method?: unknown; params?: unknown };
-  if (typeof message.method !== "string") return "useful";
-  if (message.method !== "tools/call") return "protocol";
+  if (typeof message.method !== "string") {
+    return "useful";
+  }
+  if (message.method !== "tools/call") {
+    return "protocol";
+  }
   return "useful";
 }
 
 /** Classifies only known resource identities; the raw URI never leaves this function. */
-export function classifyViewerResourceRead(value: unknown): ViewerResourceClass | undefined {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+export function classifyViewerResourceRead(
+  value: unknown,
+): ViewerResourceClass | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return undefined;
+  }
   const message = value as { method?: unknown; params?: unknown };
-  if (message.method !== "resources/read" || !message.params || typeof message.params !== "object" || Array.isArray(message.params)) return undefined;
+  if (
+    message.method !== "resources/read" ||
+    !message.params ||
+    typeof message.params !== "object" ||
+    Array.isArray(message.params)
+  ) {
+    return undefined;
+  }
   const uri = (message.params as { uri?: unknown }).uri;
-  if (uri === PRODUCT_VIEWER_RESOURCE_URI) return "current";
-  if (typeof uri === "string" && RETIRED_PRODUCT_VIEWER_RESOURCE_URIS.includes(uri as typeof RETIRED_PRODUCT_VIEWER_RESOURCE_URIS[number])) return "retired";
+  if (uri === PRODUCT_VIEWER_RESOURCE_URI) {
+    return "current";
+  }
+  if (
+    typeof uri === "string" &&
+    RETIRED_PRODUCT_VIEWER_RESOURCE_URIS.includes(
+      uri as (typeof RETIRED_PRODUCT_VIEWER_RESOURCE_URIS)[number],
+    )
+  ) {
+    return "retired";
+  }
   return "other";
 }
 
-const json = (body: unknown, status = 200): Response => new Response(JSON.stringify(body), {
-  status,
-  headers: { "content-type": "application/json" },
-});
+const json = (body: unknown, status = 200): Response =>
+  new Response(JSON.stringify(body), {
+    status,
+    headers: { "content-type": "application/json" },
+  });
 
-const unauthorized = (config: GatewayConfig): Response => new Response("Unauthorized", {
-  status: 401,
-  headers: { "www-authenticate": oauthReconnectChallenge(config.publicUrl) },
-});
+const unauthorized = (config: GatewayConfig): Response =>
+  new Response("Unauthorized", {
+    status: 401,
+    headers: { "www-authenticate": oauthReconnectChallenge(config.publicUrl) },
+  });
 
-const readBoundedBody = async (request: Request, signal: AbortSignal): Promise<string | Response> => {
+const readBoundedBody = async (
+  request: Request,
+  signal: AbortSignal,
+): Promise<string | Response> => {
   const reader = request.body?.getReader();
-  if (!reader) return "";
-  const cancel = () => { void reader.cancel(); };
+  if (!reader) {
+    return "";
+  }
+  const cancel = () => {
+    void reader.cancel();
+  };
   signal.addEventListener("abort", cancel, { once: true });
   const decoder = new TextDecoder();
   let size = 0;
   let body = "";
   try {
     while (true) {
-      if (signal.aborted) throw new DOMException("Request deadline exceeded", "AbortError");
+      if (signal.aborted) {
+        throw new DOMException("Request deadline exceeded", "AbortError");
+      }
       const { done, value } = await reader.read();
-      if (done) return body + decoder.decode();
+      if (done) {
+        return body + decoder.decode();
+      }
       size += value.byteLength;
       if (size > 1_048_576) {
         await reader.cancel();
@@ -145,14 +234,24 @@ const readBoundedBody = async (request: Request, signal: AbortSignal): Promise<s
 const withRequestId = (response: Response, requestId: string): Response => {
   const headers = new Headers(response.headers);
   headers.set("x-nemlig-request-id", requestId);
-  return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
 };
 
 const withoutInternalViewerArtifactHeader = (response: Response): Response => {
-  if (!response.headers.has(INTERNAL_VIEWER_ARTIFACT_HEADER)) return response;
+  if (!response.headers.has(INTERNAL_VIEWER_ARTIFACT_HEADER)) {
+    return response;
+  }
   const headers = new Headers(response.headers);
   headers.delete(INTERNAL_VIEWER_ARTIFACT_HEADER);
-  return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
 };
 
 async function withinBoundary<T>(
@@ -163,7 +262,9 @@ async function withinBoundary<T>(
   boundaryOutcome: GatewayOutcome,
 ): Promise<T> {
   const remaining = remainingMs();
-  if (remaining <= 0 || totalSignal.aborted) throw new BoundaryTimeoutError("request_timeout");
+  if (remaining <= 0 || totalSignal.aborted) {
+    throw new BoundaryTimeoutError("request_timeout");
+  }
   const budget = Math.max(1, Math.min(maximumMs, remaining));
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), budget);
@@ -171,28 +272,60 @@ async function withinBoundary<T>(
   try {
     return await Promise.race([
       work({ signal, remainingMs: budget }),
-      new Promise<never>((_resolve, reject) => signal.addEventListener("abort", () => {
-        reject(new BoundaryTimeoutError(totalSignal.aborted || remaining <= maximumMs ? "request_timeout" : boundaryOutcome));
-      }, { once: true })),
+      new Promise<never>((_resolve, reject) =>
+        signal.addEventListener(
+          "abort",
+          () => {
+            reject(
+              new BoundaryTimeoutError(
+                totalSignal.aborted || remaining <= maximumMs
+                  ? "request_timeout"
+                  : boundaryOutcome,
+              ),
+            );
+          },
+          { once: true },
+        ),
+      ),
     ]);
   } finally {
     clearTimeout(timer);
   }
 }
 
-interface ClassifiedRequest { operation: OperationClass; request: Request; viewerResource?: ViewerResourceClass }
+interface ClassifiedRequest {
+  operation: OperationClass;
+  request: Request;
+  viewerResource?: ViewerResourceClass;
+}
 
-const classifyRequest = async (request: Request, signal: AbortSignal): Promise<ClassifiedRequest | Response> => {
-  if (request.method === "GET" || request.method === "DELETE") return { operation: "protocol", request };
-  if (request.method !== "POST") return new Response("Method not allowed", { status: 405 });
+const classifyRequest = async (
+  request: Request,
+  signal: AbortSignal,
+): Promise<ClassifiedRequest | Response> => {
+  if (request.method === "GET" || request.method === "DELETE") {
+    return { operation: "protocol", request };
+  }
+  if (request.method !== "POST") {
+    return new Response("Method not allowed", { status: 405 });
+  }
   const length = Number(request.headers.get("content-length") ?? "0");
-  if (!Number.isFinite(length) || length < 0 || length > 1_048_576) return new Response("Request too large", { status: 413 });
-  if (!request.headers.get("content-type")?.toLowerCase().startsWith("application/json")) {
+  if (!Number.isFinite(length) || length < 0 || length > 1_048_576) {
+    return new Response("Request too large", { status: 413 });
+  }
+  if (
+    !request.headers
+      .get("content-type")
+      ?.toLowerCase()
+      .startsWith("application/json")
+  ) {
     return new Response("JSON content type required", { status: 415 });
   }
   try {
     const body = await readBoundedBody(request, signal);
-    if (body instanceof Response) return body;
+    if (body instanceof Response) {
+      return body;
+    }
     const message = JSON.parse(body);
     return {
       operation: classifyMcpMessage(message),
@@ -200,7 +333,9 @@ const classifyRequest = async (request: Request, signal: AbortSignal): Promise<C
       viewerResource: classifyViewerResourceRead(message),
     };
   } catch (error) {
-    if (signal.aborted) throw error;
+    if (signal.aborted) {
+      throw error;
+    }
     return new Response("Invalid JSON", { status: 400 });
   }
 };
@@ -235,16 +370,24 @@ export async function handleGatewayRequest(
         denial_reason: denialReason,
         outcome,
         status: response.status,
-        elapsed_ms: Math.min(120_000, Math.max(0, Math.round(now() - startedAt))),
+        elapsed_ms: Math.min(
+          120_000,
+          Math.max(0, Math.round(now() - startedAt)),
+        ),
       });
-      if (shouldEmitGatewayRequestEvent(event)) dependencies.event?.(event);
+      if (shouldEmitGatewayRequestEvent(event)) {
+        dependencies.event?.(event);
+      }
     }
     return withRequestId(response, requestId);
   };
 
   if (env.MCP_ENABLED !== "true") {
     denialReason = "mcp_disabled";
-    return finish(new Response("MCP temporarily disabled", { status: 503 }), "disabled");
+    return finish(
+      new Response("MCP temporarily disabled", { status: 503 }),
+      "disabled",
+    );
   }
 
   let config: GatewayConfig;
@@ -253,35 +396,66 @@ export async function handleGatewayRequest(
     revision = config.revision;
   } catch {
     denialReason = "configuration_invalid";
-    return finish(new Response("MCP configuration invalid", { status: 503 }), "configuration_rejected");
+    return finish(
+      new Response("MCP configuration invalid", { status: 503 }),
+      "configuration_rejected",
+    );
   }
 
   const totalController = new AbortController();
-  const totalTimer = setTimeout(() => totalController.abort(), config.totalTimeoutMs);
+  const totalTimer = setTimeout(
+    () => totalController.abort(),
+    config.totalTimeoutMs,
+  );
   const remainingMs = () => config.totalTimeoutMs - (now() - startedAt);
   try {
-    if (url.pathname === "/healthz") return finish(json({ status: "ok", enabled: true }), "protocol_completed");
-    if (url.pathname === "/revision") return finish(json({ revision: config.revision }), "protocol_completed");
-    if (url.pathname === `/.well-known/oauth-protected-resource${config.publicUrl.pathname}`) {
-      return finish(json({
-        resource: config.publicUrl.href,
-        resource_name: "Nemlig Assistant",
-        authorization_servers: [config.issuer.href],
-        scopes_supported: [config.requiredScope],
-        bearer_methods_supported: ["header"],
-      }), "protocol_completed");
+    if (url.pathname === "/healthz") {
+      return finish(
+        json({ status: "ok", enabled: true }),
+        "protocol_completed",
+      );
+    }
+    if (url.pathname === "/revision") {
+      return finish(json({ revision: config.revision }), "protocol_completed");
+    }
+    if (
+      url.pathname ===
+      `/.well-known/oauth-protected-resource${config.publicUrl.pathname}`
+    ) {
+      return finish(
+        json({
+          resource: config.publicUrl.href,
+          resource_name: "Nemlig Assistant",
+          authorization_servers: [config.issuer.href],
+          scopes_supported: [config.requiredScope],
+          bearer_methods_supported: ["header"],
+        }),
+        "protocol_completed",
+      );
     }
     if (url.pathname !== "/mcp") {
       denialReason = "request_invalid";
-      return finish(new Response("Not found", { status: 404 }), "request_rejected");
+      return finish(
+        new Response("Not found", { status: 404 }),
+        "request_rejected",
+      );
     }
 
     const origin = request.headers.get("origin");
     if (origin && !config.allowedOrigins.includes(origin)) {
       denialReason = "origin_not_allowed";
-      return finish(json({ error: "origin_not_allowed" }, 403), "request_rejected");
+      return finish(
+        json({ error: "origin_not_allowed" }, 403),
+        "request_rejected",
+      );
     }
-    const classified = await withinBoundary((deadline) => classifyRequest(request, deadline.signal), remainingMs(), remainingMs, totalController.signal, "request_timeout");
+    const classified = await withinBoundary(
+      (deadline) => classifyRequest(request, deadline.signal),
+      remainingMs(),
+      remainingMs,
+      totalController.signal,
+      "request_timeout",
+    );
     if (classified instanceof Response) {
       denialReason = "request_invalid";
       return finish(classified, "request_rejected");
@@ -296,71 +470,142 @@ export async function handleGatewayRequest(
     let principal: Principal;
     try {
       const authenticated = await withinBoundary(
-        (deadline) => dependencies.authenticate(match[1] as string, config, deadline),
-        config.authTimeoutMs, remainingMs, totalController.signal, "authentication_timeout",
+        (deadline) =>
+          dependencies.authenticate(match[1] as string, config, deadline),
+        config.authTimeoutMs,
+        remainingMs,
+        totalController.signal,
+        "authentication_timeout",
       );
       if (!authenticated) {
         denialReason = "principal_not_allowed";
-        return finish(json({ error: "principal_not_allowed" }, 403), "request_rejected");
+        return finish(
+          json({ error: "principal_not_allowed" }, 403),
+          "request_rejected",
+        );
       }
       principal = authenticated;
     } catch (error) {
-      if (error instanceof BoundaryTimeoutError) return finish(json({ error: error.outcome }, 504), error.outcome);
+      if (error instanceof BoundaryTimeoutError) {
+        return finish(json({ error: error.outcome }, 504), error.outcome);
+      }
       if (error instanceof Auth0InfrastructureError) {
-        const outcome = error.kind === "timeout" ? "authentication_timeout" : "authentication_unavailable";
-        return finish(json({ error: outcome }, error.kind === "timeout" ? 504 : 503), outcome);
+        const outcome =
+          error.kind === "timeout"
+            ? "authentication_timeout"
+            : "authentication_unavailable";
+        return finish(
+          json({ error: outcome }, error.kind === "timeout" ? 504 : 503),
+          outcome,
+        );
       }
       denialReason = "authentication_failed";
       return finish(unauthorized(config), "authentication_rejected");
     }
-    if (config.serviceAcceptance && principal.subject === `${config.serviceAcceptance.clientId}@clients`
-      && !await isServiceRequestAllowed(classified.request)) {
+    if (
+      config.serviceAcceptance &&
+      principal.subject === `${config.serviceAcceptance.clientId}@clients` &&
+      !(await isServiceRequestAllowed(classified.request))
+    ) {
       denialReason = "principal_not_allowed";
-      return finish(json({ error: "principal_not_allowed" }, 403), "request_rejected");
+      return finish(
+        json({ error: "principal_not_allowed" }, 403),
+        "request_rejected",
+      );
     }
     let admission: AdmissionResult;
     try {
-      admission = await withinBoundary((deadline) => dependencies.admit(classified.operation, principal, config, deadline), config.controlTimeoutMs, remainingMs, totalController.signal, "control_timeout");
+      admission = await withinBoundary(
+        (deadline) =>
+          dependencies.admit(classified.operation, principal, config, deadline),
+        config.controlTimeoutMs,
+        remainingMs,
+        totalController.signal,
+        "control_timeout",
+      );
     } catch (error) {
-      const outcome = error instanceof BoundaryTimeoutError ? error.outcome : "backend_failed";
-      return finish(json({ error: outcome }, outcome.endsWith("timeout") ? 504 : 502), outcome);
+      const outcome =
+        error instanceof BoundaryTimeoutError
+          ? error.outcome
+          : "backend_failed";
+      return finish(
+        json({ error: outcome }, outcome.endsWith("timeout") ? 504 : 502),
+        outcome,
+      );
     }
     if (!admission.admitted) {
       denialReason = admission.reason;
-      return finish(json({ error: "connection_required", connection_url: "https://nemlig-mcp.broesby.dk/connect" },
-        admission.status), "connection_required");
+      return finish(
+        json(
+          {
+            error: "connection_required",
+            connection_url: "https://nemlig-mcp.broesby.dk/connect",
+          },
+          admission.status,
+        ),
+        "connection_required",
+      );
     }
     try {
       const response = await withinBoundary(
-        (deadline) => dependencies.forward(classified.request, classified.operation, config, deadline, admission),
-        config.backendTimeoutMs, remainingMs, totalController.signal, "backend_timeout",
+        (deadline) =>
+          dependencies.forward(
+            classified.request,
+            classified.operation,
+            config,
+            deadline,
+            admission,
+          ),
+        config.backendTimeoutMs,
+        remainingMs,
+        totalController.signal,
+        "backend_timeout",
       );
       if (classified.viewerResource) {
-        const candidate = classified.viewerResource === "current"
-          ? response.headers.get(INTERNAL_VIEWER_ARTIFACT_HEADER)
-          : null;
-        dependencies.viewerEvent?.(parseViewerResourceReadEvent({
-          schema_version: 1,
-          event: "viewer_resource_read",
-          correlation_id: requestId,
-          uri_class: classified.viewerResource,
-          artifact_id: candidate && /^[a-f0-9]{64}$/u.test(candidate) ? candidate : null,
-        }));
+        const candidate =
+          classified.viewerResource === "current"
+            ? response.headers.get(INTERNAL_VIEWER_ARTIFACT_HEADER)
+            : null;
+        dependencies.viewerEvent?.(
+          parseViewerResourceReadEvent({
+            schema_version: 1,
+            event: "viewer_resource_read",
+            correlation_id: requestId,
+            uri_class: classified.viewerResource,
+            artifact_id:
+              candidate && /^[a-f0-9]{64}$/u.test(candidate) ? candidate : null,
+          }),
+        );
       }
       const publicResponse = withoutInternalViewerArtifactHeader(response);
-      return finish(publicResponse, publicResponse.status >= 400 ? "backend_rejected"
-        : classified.operation === "protocol" ? "protocol_completed" : "completed");
+      return finish(
+        publicResponse,
+        publicResponse.status >= 400
+          ? "backend_rejected"
+          : classified.operation === "protocol"
+            ? "protocol_completed"
+            : "completed",
+      );
     } catch (error) {
-      const outcome = error instanceof BoundaryTimeoutError
-        ? error.outcome
-        : error instanceof DOMException && (error.name === "TimeoutError" || error.name === "AbortError")
-          ? "backend_timeout"
-          : "backend_failed";
-      return finish(json({ error: outcome }, outcome.endsWith("timeout") ? 504 : 502), outcome);
+      const outcome =
+        error instanceof BoundaryTimeoutError
+          ? error.outcome
+          : error instanceof DOMException &&
+              (error.name === "TimeoutError" || error.name === "AbortError")
+            ? "backend_timeout"
+            : "backend_failed";
+      return finish(
+        json({ error: outcome }, outcome.endsWith("timeout") ? 504 : 502),
+        outcome,
+      );
     }
   } catch (error) {
-    const outcome = error instanceof BoundaryTimeoutError ? error.outcome : "backend_failed";
-    return finish(json({ error: outcome }, outcome.endsWith("timeout") ? 504 : 502), outcome);
+    const outcome =
+      error instanceof BoundaryTimeoutError ? error.outcome : "backend_failed";
+    return finish(
+      json({ error: outcome }, outcome.endsWith("timeout") ? 504 : 502),
+      outcome,
+    );
   } finally {
     clearTimeout(totalTimer);
   }

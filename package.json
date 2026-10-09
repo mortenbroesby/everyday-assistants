@@ -13,11 +13,13 @@
     "build": "turbo build",
     "check": "turbo check",
     "coverage": "turbo coverage && node apps/nemlig-assistant/scripts/coverage.mjs --validate",
+    "format": "prettier --write package.json prettier.config.mjs scripts apps/nemlig-assistant/package.json apps/nemlig-assistant/eslint.config.mjs apps/nemlig-assistant/tsdown.config.ts apps/nemlig-assistant/vite.config.ts apps/nemlig-assistant/src apps/nemlig-assistant/scripts apps/nemlig-assistant/release apps/nemlig-assistant/.storybook",
+    "format:check": "prettier --check package.json prettier.config.mjs scripts apps/nemlig-assistant/package.json apps/nemlig-assistant/eslint.config.mjs apps/nemlig-assistant/tsdown.config.ts apps/nemlig-assistant/vite.config.ts apps/nemlig-assistant/src apps/nemlig-assistant/scripts apps/nemlig-assistant/release apps/nemlig-assistant/.storybook",
     "nemlig": "pnpm --filter nemlig-assistant cli",
     "nemlig:production:ready": "pnpm spec:validate && pnpm privacy:check && pnpm verify && pnpm --filter nemlig-assistant smoke:package && pnpm --filter nemlig-assistant cloudflare:check",
     "nemlig:release:apply": "pnpm --filter nemlig-assistant release:apply",
     "nemlig:release:plan": "pnpm --filter nemlig-assistant release:plan",
-    "lint": "turbo lint",
+    "lint": "turbo lint && pnpm format:check",
     "prepare": "husky",
     "privacy:check": "node --test scripts/check-public-tree.test.mjs && node scripts/check-public-tree.mjs",
     "smoke": "turbo smoke",
@@ -29,6 +31,7 @@
     "@fission-ai/openspec": "1.11.0",
     "fallow": "3.32.0",
     "husky": "9.1.7",
+    "prettier": "^3.7.4",
     "turbo": "^2.8.0"
   }
 }

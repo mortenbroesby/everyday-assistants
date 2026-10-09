@@ -5,26 +5,36 @@ import { readPackageIdentity } from "./release-identity.js";
 
 let sharedClient: NemligClient | undefined;
 const loginInFlight = new WeakMap<object, Promise<void>>();
-const packageIdentity = readPackageIdentity(readFileSync(new URL("../package.json", import.meta.url), "utf8"), "Nemlig package manifest");
-if (packageIdentity.codename === null) throw new Error("Nemlig package codename is missing.");
+const packageIdentity = readPackageIdentity(
+  readFileSync(new URL("../package.json", import.meta.url), "utf8"),
+  "Nemlig package manifest",
+);
+if (packageIdentity.codename === null) {
+  throw new Error("Nemlig package codename is missing.");
+}
 
 export const NEMLIG_VERSION = packageIdentity.version;
 export const NEMLIG_CODENAME = packageIdentity.codename;
 export const NEMLIG_RELEASE_IDENTITY = `${NEMLIG_VERSION} - ${NEMLIG_CODENAME}`;
 
 /** Lazily creates the process-local provider client without logging in or prompting. */
-export const getClient = (): NemligClient => (sharedClient ??= new NemligClient());
+export const getClient = (): NemligClient =>
+  (sharedClient ??= new NemligClient());
 
 async function login(
   client: Pick<ShoppingClient, "login">,
   loadCredentials: () => Promise<Credentials | undefined>,
 ): Promise<void> {
   const existing = loginInFlight.get(client);
-  if (existing) return existing;
+  if (existing) {
+    return existing;
+  }
   const attempt = (async () => {
     const credentials = await loadCredentials();
     if (!credentials) {
-      throw new NemligError("No Nemlig credentials configured. Run `pnpm nemlig login --save`.");
+      throw new NemligError(
+        "No Nemlig credentials configured. Run `pnpm nemlig login --save`.",
+      );
     }
     await client.login(credentials.username, credentials.password);
   })();
@@ -32,7 +42,9 @@ async function login(
   try {
     await attempt;
   } finally {
-    if (loginInFlight.get(client) === attempt) loginInFlight.delete(client);
+    if (loginInFlight.get(client) === attempt) {
+      loginInFlight.delete(client);
+    }
   }
 }
 
@@ -42,12 +54,16 @@ export async function ensureLoggedIn(
   loadCredentials: () => Promise<Credentials | undefined> = getCredentials,
   fresh = false,
 ): Promise<void> {
-  if (!fresh && client.isLoggedIn()) return;
+  if (!fresh && client.isLoggedIn()) {
+    return;
+  }
   await login(client, loadCredentials);
 }
 
 export async function withAuthenticatedReadRetry<T>(
-  client: Pick<ShoppingClient, "isLoggedIn" | "login"> & { getSessionGeneration?: () => number },
+  client: Pick<ShoppingClient, "isLoggedIn" | "login"> & {
+    getSessionGeneration?: () => number;
+  },
   loadCredentials: () => Promise<Credentials | undefined>,
   action: () => Promise<T>,
 ): Promise<T> {
@@ -59,7 +75,10 @@ export async function withAuthenticatedReadRetry<T>(
     if (!(error instanceof NemligError) || error.status !== 401) {
       throw error;
     }
-    if (sessionGeneration === undefined || client.getSessionGeneration?.() === sessionGeneration) {
+    if (
+      sessionGeneration === undefined ||
+      client.getSessionGeneration?.() === sessionGeneration
+    ) {
       await login(client, loadCredentials);
     }
     return await action();

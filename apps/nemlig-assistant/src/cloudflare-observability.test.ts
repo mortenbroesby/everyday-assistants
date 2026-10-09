@@ -23,13 +23,37 @@ const safeEvent: GatewayRequestEvent = {
 
 test("terminal request evidence accepts only the closed privacy-safe schema", () => {
   assert.deepEqual(parseGatewayRequestEvent(safeEvent), safeEvent);
-  for (const sensitiveKey of ["error", "headers", "body", "query", "token", "cookie", "arguments", "stack", "tier"]) {
-    assert.throws(() => parseGatewayRequestEvent({ ...safeEvent, [sensitiveKey]: "representative-secret-value" }));
+  for (const sensitiveKey of [
+    "error",
+    "headers",
+    "body",
+    "query",
+    "token",
+    "cookie",
+    "arguments",
+    "stack",
+    "tier",
+  ]) {
+    assert.throws(() =>
+      parseGatewayRequestEvent({
+        ...safeEvent,
+        [sensitiveKey]: "representative-secret-value",
+      }),
+    );
   }
   assert.throws(() => parseGatewayRequestEvent({ ...safeEvent, revision: "" }));
-  assert.throws(() => parseGatewayRequestEvent({ ...safeEvent, outcome: "private-provider-response" }));
-  assert.throws(() => parseGatewayRequestEvent({ ...safeEvent, schema_version: 1 }));
-  assert.throws(() => parseGatewayRequestEvent({ ...safeEvent, operation: "expensive" }));
+  assert.throws(() =>
+    parseGatewayRequestEvent({
+      ...safeEvent,
+      outcome: "private-provider-response",
+    }),
+  );
+  assert.throws(() =>
+    parseGatewayRequestEvent({ ...safeEvent, schema_version: 1 }),
+  );
+  assert.throws(() =>
+    parseGatewayRequestEvent({ ...safeEvent, operation: "expensive" }),
+  );
 });
 
 test("every privacy-safe terminal event is emitted for bounded diagnosis", () => {
@@ -39,8 +63,17 @@ test("every privacy-safe terminal event is emitted for bounded diagnosis", () =>
     outcome: "protocol_completed" as const,
   }));
   assert.equal(events.every(shouldEmitGatewayRequestEvent), true);
-  assert.equal(shouldEmitGatewayRequestEvent({ ...safeEvent, outcome: "authentication_rejected" }), true);
-  assert.equal(shouldEmitGatewayRequestEvent({ ...safeEvent, outcome: "backend_timeout" }), true);
+  assert.equal(
+    shouldEmitGatewayRequestEvent({
+      ...safeEvent,
+      outcome: "authentication_rejected",
+    }),
+    true,
+  );
+  assert.equal(
+    shouldEmitGatewayRequestEvent({ ...safeEvent, outcome: "backend_timeout" }),
+    true,
+  );
 });
 
 test("viewer binding evidence permits only a URI class, served artifact digest, and request-local correlation", () => {
@@ -52,9 +85,32 @@ test("viewer binding evidence permits only a URI class, served artifact digest, 
     artifact_id: "a".repeat(64),
   };
   assert.deepEqual(parseViewerResourceReadEvent(event), event);
-  for (const sensitiveKey of ["uri", "body", "headers", "token", "principal", "session", "chat", "shopping_data"]) {
-    assert.throws(() => parseViewerResourceReadEvent({ ...event, [sensitiveKey]: "representative-secret-value" }));
+  for (const sensitiveKey of [
+    "uri",
+    "body",
+    "headers",
+    "token",
+    "principal",
+    "session",
+    "chat",
+    "shopping_data",
+  ]) {
+    assert.throws(() =>
+      parseViewerResourceReadEvent({
+        ...event,
+        [sensitiveKey]: "representative-secret-value",
+      }),
+    );
   }
-  assert.deepEqual(parseViewerResourceReadEvent({ ...event, uri_class: "retired", artifact_id: null }), { ...event, uri_class: "retired", artifact_id: null });
-  assert.throws(() => parseViewerResourceReadEvent({ ...event, artifact_id: "not-a-digest" }));
+  assert.deepEqual(
+    parseViewerResourceReadEvent({
+      ...event,
+      uri_class: "retired",
+      artifact_id: null,
+    }),
+    { ...event, uri_class: "retired", artifact_id: null },
+  );
+  assert.throws(() =>
+    parseViewerResourceReadEvent({ ...event, artifact_id: "not-a-digest" }),
+  );
 });

@@ -24,7 +24,9 @@ const mockFetch = (requests: ExpectedRequest[]): typeof fetch =>
     assert.ok(expected, `Unexpected request: ${url}`);
     assert.match(url, new RegExp(expected.match));
     expected.inspect?.(url, init);
-    return typeof expected.response === "function" ? expected.response() : expected.response;
+    return typeof expected.response === "function"
+      ? expected.response()
+      : expected.response;
   }) as typeof fetch;
 
 const json = (value: unknown, init?: ResponseInit): Response =>
@@ -37,9 +39,18 @@ const antiForgeryRequest = (): ExpectedRequest => ({
   match: "/AntiForgery$",
   response: () => {
     const headers = new Headers({ "content-type": "application/json" });
-    headers.append("set-cookie", "XSRF-TOKEN=anti-forgery-token; Path=/; Secure");
-    headers.append("set-cookie", "XSRF-COOKIE-TOKEN=cookie-token; Path=/; Secure");
-    return new Response(JSON.stringify({ Header: "X-XSRF-TOKEN", Value: "anti-forgery-token" }), { headers });
+    headers.append(
+      "set-cookie",
+      "XSRF-TOKEN=anti-forgery-token; Path=/; Secure",
+    );
+    headers.append(
+      "set-cookie",
+      "XSRF-COOKIE-TOKEN=cookie-token; Path=/; Secure",
+    );
+    return new Response(
+      JSON.stringify({ Header: "X-XSRF-TOKEN", Value: "anti-forgery-token" }),
+      { headers },
+    );
   },
 });
 
@@ -55,7 +66,11 @@ const sessionRequests = (): ExpectedRequest[] => [
   { match: "/user/GetCurrentUser$", response: json({ DebitorId: 42 }) },
   {
     match: "/Order/DeliverySpot$",
-    response: json({ TimeslotUtc: "2026083115-60-240", TimeslotId: 7, DeliveryZoneId: 9 }),
+    response: json({
+      TimeslotUtc: "2026083115-60-240",
+      TimeslotId: 7,
+      DeliveryZoneId: 9,
+    }),
   },
 ];
 
@@ -65,9 +80,21 @@ test("login retains multiple cookies and reuses the session for basket access", 
       match: "/AntiForgery$",
       response: () => {
         const headers = new Headers({ "content-type": "application/json" });
-        headers.append("set-cookie", "XSRF-TOKEN=anti-forgery-value; Path=/; Secure");
-        headers.append("set-cookie", "XSRF-COOKIE-TOKEN=anti-forgery-cookie; Path=/; Secure");
-        return new Response(JSON.stringify({ Header: "X-XSRF-TOKEN", Value: "anti-forgery-value" }), { headers });
+        headers.append(
+          "set-cookie",
+          "XSRF-TOKEN=anti-forgery-value; Path=/; Secure",
+        );
+        headers.append(
+          "set-cookie",
+          "XSRF-COOKIE-TOKEN=anti-forgery-cookie; Path=/; Secure",
+        );
+        return new Response(
+          JSON.stringify({
+            Header: "X-XSRF-TOKEN",
+            Value: "anti-forgery-value",
+          }),
+          { headers },
+        );
       },
     },
     {
@@ -83,16 +110,22 @@ test("login retains multiple cookies and reuses the session for basket access", 
         });
         const headers = new Headers(init?.headers);
         assert.equal(headers.get("x-xsrf-token"), "anti-forgery-value");
-        assert.equal(headers.get("cookie"), "XSRF-TOKEN=anti-forgery-value; XSRF-COOKIE-TOKEN=anti-forgery-cookie");
+        assert.equal(
+          headers.get("cookie"),
+          "XSRF-TOKEN=anti-forgery-value; XSRF-COOKIE-TOKEN=anti-forgery-cookie",
+        );
         assert.equal(headers.get("origin"), "https://www.nemlig.com");
       },
       response: () => {
         const headers = new Headers({ "content-type": "application/json" });
         headers.append("set-cookie", "session=abc; Path=/; Secure");
         headers.append("set-cookie", "member=def; Path=/; Secure");
-        return new Response(JSON.stringify({ RedirectUrl: "/", TimeslotUtc: "login-slot" }), {
-          headers,
-        });
+        return new Response(
+          JSON.stringify({ RedirectUrl: "/", TimeslotUtc: "login-slot" }),
+          {
+            headers,
+          },
+        );
       },
     },
     ...sessionRequests(),
@@ -107,7 +140,10 @@ test("login retains multiple cookies and reuses the session for basket access", 
       response: json({ Lines: [], TotalProductsPrice: 0, DeliveryPrice: 0 }),
     },
   ];
-  const client = new NemligClient(mockFetch(requests), new Date("2026-08-30T08:00:00Z"));
+  const client = new NemligClient(
+    mockFetch(requests),
+    new Date("2026-08-30T08:00:00Z"),
+  );
   await client.login("person@example.test", "never-logged");
   assert.equal(client.isLoggedIn(), true);
   assert.deepEqual((await client.getCart()).items, []);
@@ -123,8 +159,14 @@ test("cold login obtains anti-forgery state before posting credentials", async (
       response: () => {
         const headers = new Headers({ "content-type": "application/json" });
         headers.append("set-cookie", "XSRF-TOKEN=csrf-secret; Path=/; Secure");
-        headers.append("set-cookie", "XSRF-COOKIE-TOKEN=csrf-cookie; Path=/; Secure");
-        return new Response(JSON.stringify({ Header: "X-XSRF-TOKEN", Value: "csrf-secret" }), { headers });
+        headers.append(
+          "set-cookie",
+          "XSRF-COOKIE-TOKEN=csrf-cookie; Path=/; Secure",
+        );
+        return new Response(
+          JSON.stringify({ Header: "X-XSRF-TOKEN", Value: "csrf-secret" }),
+          { headers },
+        );
       },
     },
     {
@@ -141,7 +183,10 @@ test("cold login obtains anti-forgery state before posting credentials", async (
         });
         const headers = new Headers(init?.headers);
         assert.equal(headers.get("x-xsrf-token"), "csrf-secret");
-        assert.equal(headers.get("cookie"), "XSRF-TOKEN=csrf-secret; XSRF-COOKIE-TOKEN=csrf-cookie");
+        assert.equal(
+          headers.get("cookie"),
+          "XSRF-TOKEN=csrf-secret; XSRF-COOKIE-TOKEN=csrf-cookie",
+        );
         assert.equal(headers.get("origin"), "https://www.nemlig.com");
       },
       response: json({ RedirectUrl: "/" }),
@@ -149,7 +194,10 @@ test("cold login obtains anti-forgery state before posting credentials", async (
     ...sessionRequests(),
   ];
 
-  await new NemligClient(mockFetch(requests)).login("person@example.test", "secret");
+  await new NemligClient(mockFetch(requests)).login(
+    "person@example.test",
+    "secret",
+  );
   assert.deepEqual(order, ["anti-forgery", "login"]);
   assert.equal(requests.length, 0);
 });
@@ -162,14 +210,21 @@ test("login fails closed when anti-forgery state is incomplete", async () => {
     },
   ];
   await assert.rejects(
-    new NemligClient(mockFetch(requests)).login("person@example.test", "secret"),
+    new NemligClient(mockFetch(requests)).login(
+      "person@example.test",
+      "secret",
+    ),
     (error) => {
       assert.ok(error instanceof NemligError);
       assert.doesNotMatch(error.message, /private-provider-detail/u);
       return true;
     },
   );
-  assert.equal(requests.length, 0, "credentials must not be submitted without valid anti-forgery state");
+  assert.equal(
+    requests.length,
+    0,
+    "credentials must not be submitted without valid anti-forgery state",
+  );
 });
 
 test("state-changing Nemlig API calls bootstrap anti-forgery state before dispatch", async () => {
@@ -186,7 +241,10 @@ test("state-changing Nemlig API calls bootstrap anti-forgery state before dispat
         const headers = new Headers(init?.headers);
         assert.equal(headers.get("x-xsrf-token"), "anti-forgery-token");
         assert.equal(headers.get("origin"), "https://www.nemlig.com");
-        assert.equal(headers.get("cookie"), "XSRF-TOKEN=anti-forgery-token; XSRF-COOKIE-TOKEN=cookie-token");
+        assert.equal(
+          headers.get("cookie"),
+          "XSRF-TOKEN=anti-forgery-token; XSRF-COOKIE-TOKEN=cookie-token",
+        );
       },
       response: json({}),
     },
@@ -205,15 +263,21 @@ test("state-changing Nemlig API calls bootstrap anti-forgery state before dispat
 
 test("login rejects provider errors without exposing the supplied secret", async () => {
   const client = new NemligClient(
-    mockFetch([antiForgeryRequest(), { match: "/login$", response: new Response("{}", { status: 401 }) }]),
+    mockFetch([
+      antiForgeryRequest(),
+      { match: "/login$", response: new Response("{}", { status: 401 }) },
+    ]),
   );
-  await assert.rejects(client.login("person@example.test", "private-secret"), (error) => {
-    assert.ok(error instanceof NemligError);
-    assert.equal(error.status, 401);
-    assert.match(error.message, /Login failed \(HTTP 401\)/);
-    assert.doesNotMatch(error.message, /private-secret/);
-    return true;
-  });
+  await assert.rejects(
+    client.login("person@example.test", "private-secret"),
+    (error) => {
+      assert.ok(error instanceof NemligError);
+      assert.equal(error.status, 401);
+      assert.match(error.message, /Login failed \(HTTP 401\)/);
+      assert.doesNotMatch(error.message, /private-secret/);
+      return true;
+    },
+  );
 });
 
 test("login stops on an unresolved basket merge without trying remove or save flags", async () => {
@@ -221,40 +285,56 @@ test("login stops on an unresolved basket merge without trying remove or save fl
     antiForgeryRequest(),
     {
       match: "/login$",
-      inspect: (_url, init) => assert.deepEqual(JSON.parse(String(init?.body)), {
-        Username: "person@example.test",
-        Password: "secret",
-        CheckForExistingProducts: true,
-        DoMerge: true,
-        AppInstalled: false,
-        SaveExistingBasket: false,
-      }),
+      inspect: (_url, init) =>
+        assert.deepEqual(JSON.parse(String(init?.body)), {
+          Username: "person@example.test",
+          Password: "secret",
+          CheckForExistingProducts: true,
+          DoMerge: true,
+          AppInstalled: false,
+          SaveExistingBasket: false,
+        }),
       response: json({ MergeSuccessful: false, CanCreateShoppingList: true }),
     },
   ];
   const client = new NemligClient(mockFetch(requests));
-  await assert.rejects(client.login("person@example.test", "secret"), /basket decision.*Nemlig.com/i);
+  await assert.rejects(
+    client.login("person@example.test", "secret"),
+    /basket decision.*Nemlig.com/i,
+  );
   assert.equal(client.isLoggedIn(), false);
-  assert.equal(requests.length, 0, "an unresolved merge must not trigger another login or session bootstrap");
+  assert.equal(
+    requests.length,
+    0,
+    "an unresolved merge must not trigger another login or session bootstrap",
+  );
 });
 
 test("login does not carry the previous session into reauthentication", async () => {
   const requests: ExpectedRequest[] = [
     antiForgeryRequest(),
-    { match: "/login$", response: () => {
-      const headers = new Headers(); headers.append("set-cookie", "session=old; Path=/");
-      return new Response(JSON.stringify({ RedirectUrl: "/" }), { headers });
-    } },
+    {
+      match: "/login$",
+      response: () => {
+        const headers = new Headers();
+        headers.append("set-cookie", "session=old; Path=/");
+        return new Response(JSON.stringify({ RedirectUrl: "/" }), { headers });
+      },
+    },
     ...sessionRequests(),
     {
       match: "/login$",
       inspect: (_url, init) => {
         const headers = new Headers(init?.headers);
         assert.equal(headers.has("authorization"), false);
-        assert.equal(headers.get("cookie"), "XSRF-TOKEN=anti-forgery-token; XSRF-COOKIE-TOKEN=cookie-token");
+        assert.equal(
+          headers.get("cookie"),
+          "XSRF-TOKEN=anti-forgery-token; XSRF-COOKIE-TOKEN=cookie-token",
+        );
       },
       response: () => {
-        const headers = new Headers(); headers.append("set-cookie", "session=new; Path=/");
+        const headers = new Headers();
+        headers.append("set-cookie", "session=new; Path=/");
         return new Response(JSON.stringify({ RedirectUrl: "/" }), { headers });
       },
     },
@@ -277,7 +357,10 @@ test("failed session bootstrap clears a previously authenticated client", async 
   ];
   const client = new NemligClient(mockFetch(requests));
   await client.login("person@example.test", "secret");
-  await assert.rejects(client.login("person@example.test", "secret"), /Get token failed|HTTP 503/);
+  await assert.rejects(
+    client.login("person@example.test", "secret"),
+    /Get token failed|HTTP 503/,
+  );
   assert.equal(client.isLoggedIn(), false);
   await assert.rejects(client.getCart(), /Must be logged in/);
   assert.equal(requests.length, 0);
@@ -285,15 +368,20 @@ test("failed session bootstrap clears a previously authenticated client", async 
 
 test("login error fields never expose hostile provider text", async () => {
   const secret = "synthetic-token-and-password";
-  const client = new NemligClient(mockFetch([
-    antiForgeryRequest(),
-    { match: "/login$", response: json({ ErrorMessage: secret }) },
-  ]));
-  await assert.rejects(client.login("person@example.test", "secret"), (error) => {
-    assert.ok(error instanceof NemligError);
-    assert.doesNotMatch(error.message, new RegExp(secret));
-    return true;
-  });
+  const client = new NemligClient(
+    mockFetch([
+      antiForgeryRequest(),
+      { match: "/login$", response: json({ ErrorMessage: secret }) },
+    ]),
+  );
+  await assert.rejects(
+    client.login("person@example.test", "secret"),
+    (error) => {
+      assert.ok(error instanceof NemligError);
+      assert.doesNotMatch(error.message, new RegExp(secret));
+      return true;
+    },
+  );
 });
 
 test("credential validation performs one login and one authenticated read with no retry or mutation", async () => {
@@ -303,22 +391,44 @@ test("credential validation performs one login and one authenticated read with n
       match: "/login$",
       inspect: (_url, init) => {
         assert.deepEqual(JSON.parse(String(init?.body)), {
-          Username: "person@example.test", Password: "private-secret", CheckForExistingProducts: true,
-          DoMerge: true, AppInstalled: false, SaveExistingBasket: false,
+          Username: "person@example.test",
+          Password: "private-secret",
+          CheckForExistingProducts: true,
+          DoMerge: true,
+          AppInstalled: false,
+          SaveExistingBasket: false,
         });
-        assert.equal(new Headers(init?.headers).get("x-xsrf-token"), "anti-forgery-token");
-        assert.equal(new Headers(init?.headers).get("cookie"), "XSRF-TOKEN=anti-forgery-token; XSRF-COOKIE-TOKEN=cookie-token");
-        assert.equal(new Headers(init?.headers).get("origin"), "https://www.nemlig.com");
+        assert.equal(
+          new Headers(init?.headers).get("x-xsrf-token"),
+          "anti-forgery-token",
+        );
+        assert.equal(
+          new Headers(init?.headers).get("cookie"),
+          "XSRF-TOKEN=anti-forgery-token; XSRF-COOKIE-TOKEN=cookie-token",
+        );
+        assert.equal(
+          new Headers(init?.headers).get("origin"),
+          "https://www.nemlig.com",
+        );
       },
       response: json({ RedirectUrl: "/" }),
     },
     { match: "/Token$", response: json({ access_token: "validated" }) },
   ];
-  await new NemligClient(mockFetch(requests)).validateCredentials("person@example.test", "private-secret");
+  await new NemligClient(mockFetch(requests)).validateCredentials(
+    "person@example.test",
+    "private-secret",
+  );
   assert.equal(requests.length, 0);
   let attempts = 0;
-  const failing = new NemligClient((async () => { attempts += 1; throw new TypeError("offline"); }) as typeof fetch);
-  await assert.rejects(failing.validateCredentials("person@example.test", "private-secret"), /network unavailable/u);
+  const failing = new NemligClient((async () => {
+    attempts += 1;
+    throw new TypeError("offline");
+  }) as typeof fetch);
+  await assert.rejects(
+    failing.validateCredentials("person@example.test", "private-secret"),
+    /network unavailable/u,
+  );
   assert.equal(attempts, 1);
 });
 
@@ -327,29 +437,42 @@ test("credential validation stops at a provider basket decision without fetching
     antiForgeryRequest(),
     {
       match: "/login$",
-      inspect: (_url, init) => assert.deepEqual(JSON.parse(String(init?.body)), {
-        Username: "person@example.test", Password: "private-secret", CheckForExistingProducts: true,
-        DoMerge: true, AppInstalled: false, SaveExistingBasket: false,
-      }),
+      inspect: (_url, init) =>
+        assert.deepEqual(JSON.parse(String(init?.body)), {
+          Username: "person@example.test",
+          Password: "private-secret",
+          CheckForExistingProducts: true,
+          DoMerge: true,
+          AppInstalled: false,
+          SaveExistingBasket: false,
+        }),
       response: json({ MergeSuccessful: false, CanCreateShoppingList: true }),
     },
   ];
   await assert.rejects(
-    new NemligClient(mockFetch(requests)).validateCredentials("person@example.test", "private-secret"),
+    new NemligClient(mockFetch(requests)).validateCredentials(
+      "person@example.test",
+      "private-secret",
+    ),
     /basket decision.*Nemlig.com/i,
   );
-  assert.equal(requests.length, 0, "unresolved login cannot continue to API-token or provider reads");
+  assert.equal(
+    requests.length,
+    0,
+    "unresolved login cannot continue to API-token or provider reads",
+  );
 });
 
 test("network reads retry, while basket mutations do not", async () => {
   let reads = 0;
-  const readClient = new NemligClient(
-    (async () => {
-      reads += 1;
-      throw new TypeError("offline");
-    }) as typeof fetch,
+  const readClient = new NemligClient((async () => {
+    reads += 1;
+    throw new TypeError("offline");
+  }) as typeof fetch);
+  await assert.rejects(
+    readClient.searchProducts("mælk"),
+    /Get token failed: network unavailable/u,
   );
-  await assert.rejects(readClient.searchProducts("mælk"), /Get token failed: network unavailable/u);
   assert.equal(reads, 2);
   assert.equal(NEMLIG_READ_ATTEMPT_TIMEOUT_MS, 60_000);
 
@@ -357,7 +480,10 @@ test("network reads retry, while basket mutations do not", async () => {
     antiForgeryRequest(),
     { match: "/login$", response: json({ RedirectUrl: "/" }) },
     ...sessionRequests(),
-    { match: "/basket/GetBasket$", response: json({ Lines: [], TotalProductsPrice: 0, NumberOfProducts: 0 }) },
+    {
+      match: "/basket/GetBasket$",
+      response: json({ Lines: [], TotalProductsPrice: 0, NumberOfProducts: 0 }),
+    },
     { match: "/basket/AddToBasket$", response: json({}, { status: 503 }) },
   ];
   const writeClient = new NemligClient(mockFetch(requests));
@@ -369,9 +495,15 @@ test("network reads retry, while basket mutations do not", async () => {
 test("primary catalogue failures are not converted into empty results", async () => {
   const requests: ExpectedRequest[] = [
     ...sessionRequests(),
-    { match: `${SEARCH_GATEWAY_URL}/search`, response: json({}, { status: 503 }) },
+    {
+      match: `${SEARCH_GATEWAY_URL}/search`,
+      response: json({}, { status: 503 }),
+    },
   ];
-  await assert.rejects(new NemligClient(mockFetch(requests)).searchProducts("mælk"), /Search products failed \(HTTP 503\)/u);
+  await assert.rejects(
+    new NemligClient(mockFetch(requests)).searchProducts("mælk"),
+    /Search products failed \(HTTP 503\)/u,
+  );
   assert.equal(requests.length, 0);
 });
 
@@ -385,7 +517,12 @@ test("caller cancellation starts no read, preserves its identity, and leaves mut
     return new Response();
   }) as typeof fetch);
   await assert.rejects(
-    Reflect.get(cancelledClient, "json").call(cancelledClient, "https://example.test/read", { signal: controller.signal }, "Read"),
+    Reflect.get(cancelledClient, "json").call(
+      cancelledClient,
+      "https://example.test/read",
+      { signal: controller.signal },
+      "Read",
+    ),
     (error) => error === cancelled,
   );
   assert.equal(cancelledReads, 0);
@@ -396,49 +533,143 @@ test("caller cancellation starts no read, preserves its identity, and leaves mut
     throw new TypeError("offline-private-detail");
   }) as typeof fetch);
   await assert.rejects(
-    Reflect.get(mutationClient, "json").call(mutationClient, "https://example.test/write", { method: "POST" }, "Write", false),
+    Reflect.get(mutationClient, "json").call(
+      mutationClient,
+      "https://example.test/write",
+      { method: "POST" },
+      "Write",
+      false,
+    ),
     /^NemligError: Write failed: network unavailable\.$/u,
   );
   assert.equal(mutationAttempts, 1);
 });
 
 test("catalogue and basket reads pass caller signals through initialization, fallback, and response bodies", async () => {
-  const preAborted = new AbortController(); const preAbortedReason = new Error("cancel before read");
+  const preAborted = new AbortController();
+  const preAbortedReason = new Error("cancel before read");
   preAborted.abort(preAbortedReason);
   let preAbortedFetches = 0;
-  const preAbortedClient = new NemligClient((async () => { preAbortedFetches += 1; return new Response(); }) as typeof fetch);
-  await assert.rejects(preAbortedClient.searchProducts("mælk", 2, preAborted.signal), (error) => error === preAbortedReason);
+  const preAbortedClient = new NemligClient((async () => {
+    preAbortedFetches += 1;
+    return new Response();
+  }) as typeof fetch);
+  await assert.rejects(
+    preAbortedClient.searchProducts("mælk", 2, preAborted.signal),
+    (error) => error === preAbortedReason,
+  );
   Object.assign(preAbortedClient, { loggedIn: true });
-  await assert.rejects(preAbortedClient.getCart(preAborted.signal), (error) => error === preAbortedReason);
+  await assert.rejects(
+    preAbortedClient.getCart(preAborted.signal),
+    (error) => error === preAbortedReason,
+  );
   assert.equal(preAbortedFetches, 0);
 
-  const fallbackAbort = new AbortController(); const fallbackReason = new Error("cancel fallback");
+  const fallbackAbort = new AbortController();
+  const fallbackReason = new Error("cancel fallback");
   const fallbackRequests: ExpectedRequest[] = [
     ...sessionRequests(),
-    { match: "/search\\?", inspect: (_url, init) => assert.equal(init?.signal?.aborted, false), response: json({ Products: [] }) },
-    { match: "/quick\\?", inspect: (_url, init) => assert.equal(init?.signal?.aborted, false), response: json({ Categories: [{ Url: "/one" }, { Url: "/two" }] }) },
-    { match: "https://www.nemlig.com/one\\?GetAsJson=1", inspect: (_url, init) => { assert.equal(init?.signal?.aborted, false); fallbackAbort.abort(fallbackReason); assert.equal(init?.signal?.aborted, true); }, response: () => { throw new DOMException("aborted", "AbortError"); } },
+    {
+      match: "/search\\?",
+      inspect: (_url, init) => assert.equal(init?.signal?.aborted, false),
+      response: json({ Products: [] }),
+    },
+    {
+      match: "/quick\\?",
+      inspect: (_url, init) => assert.equal(init?.signal?.aborted, false),
+      response: json({ Categories: [{ Url: "/one" }, { Url: "/two" }] }),
+    },
+    {
+      match: "https://www.nemlig.com/one\\?GetAsJson=1",
+      inspect: (_url, init) => {
+        assert.equal(init?.signal?.aborted, false);
+        fallbackAbort.abort(fallbackReason);
+        assert.equal(init?.signal?.aborted, true);
+      },
+      response: () => {
+        throw new DOMException("aborted", "AbortError");
+      },
+    },
   ];
-  await assert.rejects(new NemligClient(mockFetch(fallbackRequests)).searchProducts("mælk", 2, fallbackAbort.signal), (error) => error === fallbackReason);
-  assert.equal(fallbackRequests.length, 0, "cancellation starts no later category fallback");
+  await assert.rejects(
+    new NemligClient(mockFetch(fallbackRequests)).searchProducts(
+      "mælk",
+      2,
+      fallbackAbort.signal,
+    ),
+    (error) => error === fallbackReason,
+  );
+  assert.equal(
+    fallbackRequests.length,
+    0,
+    "cancellation starts no later category fallback",
+  );
 
-  const bodyAbort = new AbortController(); const bodyReason = new Error("cancel body");
-  const bodyClient = new NemligClient((async () => ({
-    ok: true, headers: new Headers(), json: async () => { bodyAbort.abort(bodyReason); throw new DOMException("aborted", "AbortError"); },
-  }) as unknown as Response) as typeof fetch);
-  await assert.rejects(Reflect.get(bodyClient, "json").call(bodyClient, "https://example.test/read", { signal: bodyAbort.signal }, "Read"), (error) => error === bodyReason);
+  const bodyAbort = new AbortController();
+  const bodyReason = new Error("cancel body");
+  const bodyClient = new NemligClient(
+    (async () =>
+      ({
+        ok: true,
+        headers: new Headers(),
+        json: async () => {
+          bodyAbort.abort(bodyReason);
+          throw new DOMException("aborted", "AbortError");
+        },
+      }) as unknown as Response) as typeof fetch,
+  );
+  await assert.rejects(
+    Reflect.get(bodyClient, "json").call(
+      bodyClient,
+      "https://example.test/read",
+      { signal: bodyAbort.signal },
+      "Read",
+    ),
+    (error) => error === bodyReason,
+  );
 });
 
 test("optional reads preserve cancellation and HTTP 401 while ordinary failures remain empty", async () => {
-  const cancelled = new AbortController(); const cancellation = new Error("stop optional");
-  const cancellingClient = new NemligClient((async () => { cancelled.abort(cancellation); throw new DOMException("aborted", "AbortError"); }) as typeof fetch);
-  await assert.rejects(Reflect.get(cancellingClient, "optionalJson").call(cancellingClient, "https://example.test/optional", "Optional", false, cancelled.signal), (error) => error === cancellation);
+  const cancelled = new AbortController();
+  const cancellation = new Error("stop optional");
+  const cancellingClient = new NemligClient((async () => {
+    cancelled.abort(cancellation);
+    throw new DOMException("aborted", "AbortError");
+  }) as typeof fetch);
+  await assert.rejects(
+    Reflect.get(cancellingClient, "optionalJson").call(
+      cancellingClient,
+      "https://example.test/optional",
+      "Optional",
+      false,
+      cancelled.signal,
+    ),
+    (error) => error === cancellation,
+  );
 
-  const unauthorizedClient = new NemligClient(mockFetch([{ match: "optional", response: json({}, { status: 401 }) }]));
-  await assert.rejects(Reflect.get(unauthorizedClient, "optionalJson").call(unauthorizedClient, "https://example.test/optional", "Optional"), (error) => error instanceof NemligError && error.status === 401);
+  const unauthorizedClient = new NemligClient(
+    mockFetch([{ match: "optional", response: json({}, { status: 401 }) }]),
+  );
+  await assert.rejects(
+    Reflect.get(unauthorizedClient, "optionalJson").call(
+      unauthorizedClient,
+      "https://example.test/optional",
+      "Optional",
+    ),
+    (error) => error instanceof NemligError && error.status === 401,
+  );
 
-  const unavailableClient = new NemligClient((async () => { throw new TypeError("offline"); }) as typeof fetch);
-  assert.deepEqual(await Reflect.get(unavailableClient, "optionalJson").call(unavailableClient, "https://example.test/optional", "Optional"), {});
+  const unavailableClient = new NemligClient((async () => {
+    throw new TypeError("offline");
+  }) as typeof fetch);
+  assert.deepEqual(
+    await Reflect.get(unavailableClient, "optionalJson").call(
+      unavailableClient,
+      "https://example.test/optional",
+      "Optional",
+    ),
+    {},
+  );
 });
 
 test("product normalization covers upstream fields and classifications", () => {
@@ -494,28 +725,49 @@ test("product normalization covers upstream fields and classifications", () => {
 
 test("product normalization turns provider HTML into bounded readable evidence", () => {
   const [product] = normalizeProducts(
-    [{
-      Id: 101,
-      Name: "Mælk",
-      Text: '<h1>Mælk</h1><p title="1 > 0">Mælk &amp; kakao&nbsp;&#160;1 l</p><a href="https://example.test/private">Læs mere</a><img alt="hemmelig" src="https://example.test/image"><script>tracking()</script><style>.hidden { display: none }</style><ul><li>Første</li><li>Anden</li></ul>',
-      DeclarationLabel: "<strong>MÆLK</strong><script>ignore()</script>",
-      Attributes: [{
-        Key: '<span title=">">Nærings&nbsp;værdi</span>',
-        Value: ['<script>ignore()</script><p>God&nbsp;værdi</p>', "Anden værdi"],
-      }, { Key: "Skjult", Value: ["hemmelig"], IsVisible: false }],
-    }],
+    [
+      {
+        Id: 101,
+        Name: "Mælk",
+        Text: '<h1>Mælk</h1><p title="1 > 0">Mælk &amp; kakao&nbsp;&#160;1 l</p><a href="https://example.test/private">Læs mere</a><img alt="hemmelig" src="https://example.test/image"><script>tracking()</script><style>.hidden { display: none }</style><ul><li>Første</li><li>Anden</li></ul>',
+        DeclarationLabel: "<strong>MÆLK</strong><script>ignore()</script>",
+        Attributes: [
+          {
+            Key: '<span title=">">Nærings&nbsp;værdi</span>',
+            Value: [
+              "<script>ignore()</script><p>God&nbsp;værdi</p>",
+              "Anden værdi",
+            ],
+          },
+          { Key: "Skjult", Value: ["hemmelig"], IsVisible: false },
+        ],
+      },
+    ],
     1,
   );
-  assert.equal(product?.description, "Mælk Mælk & kakao 1 l Læs mere Første Anden");
+  assert.equal(
+    product?.description,
+    "Mælk Mælk & kakao 1 l Læs mere Første Anden",
+  );
   assert.equal(product?.declaration, "MÆLK");
-  assert.deepEqual(product?.details, [{ key: "Nærings værdi", value: "God værdi, Anden værdi" }]);
+  assert.deepEqual(product?.details, [
+    { key: "Nærings værdi", value: "God værdi, Anden værdi" },
+  ]);
 });
 
 test("product normalization preserves meaningful malformed text and omits empty evidence", () => {
   const [malformed, empty] = normalizeProducts(
     [
       { Id: 102, Name: "Ufuldstændig", Text: "<p>Ufuldstændig <strong>mælk" },
-      { Id: 103, Name: "Tom", Text: "<script>ignore()</script><style>ignore()</style>", Attributes: [{ Key: "", Value: "value" }, { Key: 1, Value: "value" }] },
+      {
+        Id: 103,
+        Name: "Tom",
+        Text: "<script>ignore()</script><style>ignore()</style>",
+        Attributes: [
+          { Key: "", Value: "value" },
+          { Key: 1, Value: "value" },
+        ],
+      },
     ],
     2,
   );
@@ -525,11 +777,22 @@ test("product normalization preserves meaningful malformed text and omits empty 
 });
 
 test("product normalization keeps missing availability unknown and explicit rejection false", () => {
-  const [unknown, confirmed, unavailable] = normalizeProducts([
-    { Id: 109, Name: "Unknown stock" },
-    { Id: 110, Name: "Confirmed stock", Availability: { IsDeliveryAvailable: true, IsAvailableInStock: true } },
-    { Id: 111, Name: "Unavailable", Availability: { IsAvailableInStock: false } },
-  ], 3);
+  const [unknown, confirmed, unavailable] = normalizeProducts(
+    [
+      { Id: 109, Name: "Unknown stock" },
+      {
+        Id: 110,
+        Name: "Confirmed stock",
+        Availability: { IsDeliveryAvailable: true, IsAvailableInStock: true },
+      },
+      {
+        Id: 111,
+        Name: "Unavailable",
+        Availability: { IsAvailableInStock: false },
+      },
+    ],
+    3,
+  );
   assert.equal(unknown?.available, undefined);
   assert.equal(confirmed?.available, true);
   assert.equal(unavailable?.available, false);
@@ -538,27 +801,68 @@ test("product normalization keeps missing availability unknown and explicit reje
 test("product normalization keeps existing evidence limits before and after conversion", () => {
   const oversizedValues = Array.from({ length: 1_000 }, () => "værdi");
   Object.defineProperty(oversizedValues, 20, {
-    get: () => { throw new Error("attribute value work exceeded its bound"); },
+    get: () => {
+      throw new Error("attribute value work exceeded its bound");
+    },
   });
   const [product] = normalizeProducts(
-    [{
-      Id: 104,
-      Name: "Begrænset",
-      Text: `<p>før</p>${" ".repeat(16_384)}<p>SENTINEL</p>`,
-      Attributes: Array.from({ length: 21 }, (_, index) => ({ Key: `Nøgle ${index}`, Value: "værdi" })),
-    }],
+    [
+      {
+        Id: 104,
+        Name: "Begrænset",
+        Text: `<p>før</p>${" ".repeat(16_384)}<p>SENTINEL</p>`,
+        Attributes: Array.from({ length: 21 }, (_, index) => ({
+          Key: `Nøgle ${index}`,
+          Value: "værdi",
+        })),
+      },
+    ],
     1,
   );
   assert.equal(product?.description, "før");
   assert.equal(product?.description?.includes("SENTINEL"), false);
   assert.equal(product?.details?.length, 20);
-  assert.equal(normalizeProducts([{ Id: 105, Name: "Loft", Text: `<p>${"å".repeat(2_000)}SENTINEL</p>`, Attributes: [{ Key: "k".repeat(101), Value: "v" }, { Key: "k", Value: "v".repeat(301) }] }], 1)[0]?.description?.length, 2_000);
-  assert.deepEqual(normalizeProducts([{ Id: 105, Name: "Loft", Attributes: [{ Key: "k".repeat(101), Value: "v" }, { Key: "k", Value: "v".repeat(301) }] }], 1)[0]?.details, [
-    { key: "k".repeat(100), value: "v" },
-    { key: "k", value: "v".repeat(300) },
-  ]);
   assert.equal(
-    normalizeProducts([{ Id: 108, Attributes: [{ Key: "varianter", Value: oversizedValues }] }], 1)[0]?.details?.[0]?.value,
+    normalizeProducts(
+      [
+        {
+          Id: 105,
+          Name: "Loft",
+          Text: `<p>${"å".repeat(2_000)}SENTINEL</p>`,
+          Attributes: [
+            { Key: "k".repeat(101), Value: "v" },
+            { Key: "k", Value: "v".repeat(301) },
+          ],
+        },
+      ],
+      1,
+    )[0]?.description?.length,
+    2_000,
+  );
+  assert.deepEqual(
+    normalizeProducts(
+      [
+        {
+          Id: 105,
+          Name: "Loft",
+          Attributes: [
+            { Key: "k".repeat(101), Value: "v" },
+            { Key: "k", Value: "v".repeat(301) },
+          ],
+        },
+      ],
+      1,
+    )[0]?.details,
+    [
+      { key: "k".repeat(100), value: "v" },
+      { key: "k", value: "v".repeat(300) },
+    ],
+  );
+  assert.equal(
+    normalizeProducts(
+      [{ Id: 108, Attributes: [{ Key: "varianter", Value: oversizedValues }] }],
+      1,
+    )[0]?.details?.[0]?.value,
     Array.from({ length: 20 }, () => "værdi").join(", "),
   );
 });
@@ -566,12 +870,25 @@ test("product normalization keeps existing evidence limits before and after conv
 test("product normalization bounds parser depth and child nodes without warnings", () => {
   const warnings: unknown[][] = [];
   const originalWarn = console.warn;
-  console.warn = (...args: unknown[]) => { warnings.push(args); };
+  console.warn = (...args: unknown[]) => {
+    warnings.push(args);
+  };
   try {
-    const [depth, children] = normalizeProducts([
-      { Id: 106, Name: "Dyb", Text: `<p>før</p>${"<div>".repeat(33)}SENTINEL${"</div>".repeat(33)}` },
-      { Id: 107, Name: "Bred", Text: `${"<span></span>".repeat(1_001)}<p>SENTINEL</p>` },
-    ], 2);
+    const [depth, children] = normalizeProducts(
+      [
+        {
+          Id: 106,
+          Name: "Dyb",
+          Text: `<p>før</p>${"<div>".repeat(33)}SENTINEL${"</div>".repeat(33)}`,
+        },
+        {
+          Id: 107,
+          Name: "Bred",
+          Text: `${"<span></span>".repeat(1_001)}<p>SENTINEL</p>`,
+        },
+      ],
+      2,
+    );
     assert.equal(depth?.description?.includes("SENTINEL"), false);
     assert.equal(children?.description?.includes("SENTINEL"), false);
   } finally {
@@ -593,25 +910,36 @@ test("search accepts nested products and sends the current session values", asyn
         assert.equal(parsed.searchParams.get("deliveryZoneId"), "9");
         assert.equal(new Headers(init?.headers).has("content-type"), false);
       },
-      response: json({ Products: { Products: [{ Id: 1, Name: "Mælk", Price: 10 }] } }),
+      response: json({
+        Products: { Products: [{ Id: 1, Name: "Mælk", Price: 10 }] },
+      }),
     },
   ];
-  const products = await new NemligClient(mockFetch(requests)).searchProducts("mælk", 2);
+  const products = await new NemligClient(mockFetch(requests)).searchProducts(
+    "mælk",
+    2,
+  );
   assert.equal(products[0]?.name, "Mælk");
   assert.equal(requests.length, 0);
 });
 
 test("search without an explicit count requests Nemlig's default 20-item page", async () => {
-  const products = Array.from({ length: 12 }, (_, index) => ({ Id: index + 1, Name: `Product ${index + 1}` }));
+  const products = Array.from({ length: 12 }, (_, index) => ({
+    Id: index + 1,
+    Name: `Product ${index + 1}`,
+  }));
   const requests: ExpectedRequest[] = [
     ...sessionRequests(),
     {
       match: `${SEARCH_GATEWAY_URL}/search`,
-      inspect: (url) => assert.equal(new URL(url).searchParams.get("take"), "20"),
+      inspect: (url) =>
+        assert.equal(new URL(url).searchParams.get("take"), "20"),
       response: json({ Products: products }),
     },
   ];
-  const results = await new NemligClient(mockFetch(requests)).searchProducts("products");
+  const results = await new NemligClient(mockFetch(requests)).searchProducts(
+    "products",
+  );
   assert.equal(results.length, products.length);
   assert.equal(results.at(-1)?.name, "Product 12");
   assert.equal(requests.length, 0);
@@ -625,7 +953,10 @@ test("search accepts the upstream flat product response", async () => {
       response: json({ Products: [{ Id: "2", Name: "Flat milk", Price: 11 }] }),
     },
   ];
-  const products = await new NemligClient(mockFetch(requests)).searchProducts("mælk", 1);
+  const products = await new NemligClient(mockFetch(requests)).searchProducts(
+    "mælk",
+    1,
+  );
   assert.equal(products[0]?.name, "Flat milk");
   assert.equal(products[0]?.id, 2);
 });
@@ -634,7 +965,8 @@ test("exact product lookup uses current session context and returns only the req
   const requests: ExpectedRequest[] = [
     ...sessionRequests(),
     {
-      match: "/webapi/product-stamp/2026083115-60-240/9/42/Products/Get\\?id=424242",
+      match:
+        "/webapi/product-stamp/2026083115-60-240/9/42/Products/Get\\?id=424242",
       inspect: (_url, init) => {
         const headers = new Headers(init?.headers);
         assert.equal(init?.method, undefined);
@@ -644,22 +976,46 @@ test("exact product lookup uses current session context and returns only the req
       response: json({ Id: 424242, Name: "Test Product", Price: 12.34 }),
     },
   ];
-  assert.equal((await new NemligClient(mockFetch(requests)).getProduct(424242)).name, "Test Product");
+  assert.equal(
+    (await new NemligClient(mockFetch(requests)).getProduct(424242)).name,
+    "Test Product",
+  );
   assert.equal(requests.length, 0);
 });
 
 test("exact product lookup upgrades a shallow card, reuses detail, and cannot be downgraded", async () => {
   const requests: ExpectedRequest[] = [
     ...sessionRequests(),
-    { match: "/search\\?", response: json({ Products: [{ Id: 424242, Name: "Shallow", Price: 12.34 }] }) },
-    { match: "/Products/Get\\?id=424242", response: json({ Id: 424242, Name: "Detailed", Price: 13.45, Text: "<p>Current detail</p>" }) },
-    { match: "/search\\?", response: json({ Products: [{ Id: 424242, Name: "Later shallow", Price: 10 }] }) },
+    {
+      match: "/search\\?",
+      response: json({
+        Products: [{ Id: 424242, Name: "Shallow", Price: 12.34 }],
+      }),
+    },
+    {
+      match: "/Products/Get\\?id=424242",
+      response: json({
+        Id: 424242,
+        Name: "Detailed",
+        Price: 13.45,
+        Text: "<p>Current detail</p>",
+      }),
+    },
+    {
+      match: "/search\\?",
+      response: json({
+        Products: [{ Id: 424242, Name: "Later shallow", Price: 10 }],
+      }),
+    },
   ];
   const client = new NemligClient(mockFetch(requests));
   await client.searchProducts("Test Product", 1);
   assert.equal((await client.getProduct(424242)).description, "Current detail");
   assert.equal((await client.getProduct(424242)).name, "Detailed");
-  assert.equal((await client.searchProducts("Test Product", 1))[0]?.name, "Later shallow");
+  assert.equal(
+    (await client.searchProducts("Test Product", 1))[0]?.name,
+    "Later shallow",
+  );
   assert.equal((await client.getProduct(424242)).name, "Detailed");
   assert.equal(requests.length, 0);
 });
@@ -667,8 +1023,16 @@ test("exact product lookup upgrades a shallow card, reuses detail, and cannot be
 test("fresh exact product lookup bypasses a previously observed product", async () => {
   const requests: ExpectedRequest[] = [
     ...sessionRequests(),
-    { match: "/search\\?", response: json({ Products: [{ Id: 424242, Name: "Observed", Price: 12.34 }] }) },
-    { match: "/Products/Get\\?id=424242", response: json({ Id: 424242, Name: "Current", Price: 13.45 }) },
+    {
+      match: "/search\\?",
+      response: json({
+        Products: [{ Id: 424242, Name: "Observed", Price: 12.34 }],
+      }),
+    },
+    {
+      match: "/Products/Get\\?id=424242",
+      response: json({ Id: 424242, Name: "Current", Price: 13.45 }),
+    },
   ];
   const client = new NemligClient(mockFetch(requests));
   await client.searchProducts("Observed", 1);
@@ -683,7 +1047,9 @@ test("exact product reads retry network failure, preserve cancellation, and keep
   const client = new NemligClient((async (_input, init) => {
     attempts += 1;
     assert.equal(init?.signal?.aborted, false);
-    if (attempts === 1) throw new TypeError("offline");
+    if (attempts === 1) {
+      throw new TypeError("offline");
+    }
     return json({ Id: 7, Name: "Recovered" });
   }) as typeof fetch);
   Object.assign(client, {
@@ -699,10 +1065,20 @@ test("exact product reads retry network failure, preserve cancellation, and keep
   const cancelled = new AbortController();
   const reason = new Error("stop exact read");
   cancelled.abort(reason);
-  await assert.rejects(client.getProduct(8, cancelled.signal), (error) => error === reason);
+  await assert.rejects(
+    client.getProduct(8, cancelled.signal),
+    (error) => error === reason,
+  );
   assert.equal(attempts, 2);
 
-  const products = Array.from({ length: 1_001 }, (_, index) => normalizeProducts([{ Id: index + 1, Name: `Product ${index + 1}` }], 1)[0]!);
+  const products = Array.from(
+    { length: 1_001 },
+    (_, index) =>
+      normalizeProducts(
+        [{ Id: index + 1, Name: `Product ${index + 1}` }],
+        1,
+      )[0]!,
+  );
   Reflect.get(client, "rememberProducts").call(client, products, true);
   const known = Reflect.get(client, "knownProducts") as Map<number, Product>;
   const hydrated = Reflect.get(client, "hydratedProductIds") as Set<number>;
@@ -719,9 +1095,17 @@ test("exact product lookup rejects invalid and unresolved IDs", async () => {
     ]),
   );
   await assert.rejects(client.getProduct(0), /Product ID must be positive/);
-  await assert.rejects(client.getProduct(7), (error) =>
-    error instanceof NemligError && error.status === 404 && /could not be resolved exactly/u.test(error.message));
-  await assert.rejects(client.getFreshProduct(0), /Product ID must be positive/);
+  await assert.rejects(
+    client.getProduct(7),
+    (error) =>
+      error instanceof NemligError &&
+      error.status === 404 &&
+      /could not be resolved exactly/u.test(error.message),
+  );
+  await assert.rejects(
+    client.getFreshProduct(0),
+    /Product ID must be positive/,
+  );
 });
 
 test("empty gateway search tries no more than three safe fallback categories", async () => {
@@ -739,10 +1123,19 @@ test("empty gateway search tries no more than three safe fallback categories", a
         ],
       }),
     },
-    { match: "https://www.nemlig.com/one\\?GetAsJson=1", response: json({ content: [] }) },
-    { match: "https://www.nemlig.com/three\\?GetAsJson=1", response: json({ content: [] }) },
+    {
+      match: "https://www.nemlig.com/one\\?GetAsJson=1",
+      response: json({ content: [] }),
+    },
+    {
+      match: "https://www.nemlig.com/three\\?GetAsJson=1",
+      response: json({ content: [] }),
+    },
   ];
-  assert.deepEqual(await new NemligClient(mockFetch(requests)).searchProducts("ost", 5), []);
+  assert.deepEqual(
+    await new NemligClient(mockFetch(requests)).searchProducts("ost", 5),
+    [],
+  );
   assert.equal(requests.length, 0);
 });
 
@@ -757,10 +1150,15 @@ test("category fallback returns the first non-empty product group", async () => 
     },
     {
       match: "/Products/GetByProductGroupId\\?",
-      response: json({ Products: [{ Id: 9, Name: "Fallback milk", Category: "Køl" }] }),
+      response: json({
+        Products: [{ Id: 9, Name: "Fallback milk", Category: "Køl" }],
+      }),
     },
   ];
-  const products = await new NemligClient(mockFetch(requests)).searchProducts("milk", 3);
+  const products = await new NemligClient(mockFetch(requests)).searchProducts(
+    "milk",
+    3,
+  );
   assert.equal(products[0]?.id, 9);
 });
 
@@ -780,7 +1178,10 @@ test("favorites follows authenticated show-all groups, deduplicates, and never m
       },
       response: json({
         content: [
-          { TemplateName: "productlistonerowspot", ProductGroupId: "recommendations" },
+          {
+            TemplateName: "productlistonerowspot",
+            ProductGroupId: "recommendations",
+          },
           { TemplateName: "productlistshowallspot", ProductGroupId: "sale" },
           { TemplateName: "productlistshowallspot", ProductGroupId: "produce" },
         ],
@@ -794,7 +1195,9 @@ test("favorites follows authenticated show-all groups, deduplicates, and never m
         assert.equal(parsed.searchParams.get("pagesize"), "3");
         assert.equal(init?.method, undefined);
       },
-      response: json({ Products: [{ Id: 7, Name: "Favorite milk", Price: 12.5 }] }),
+      response: json({
+        Products: [{ Id: 7, Name: "Favorite milk", Price: 12.5 }],
+      }),
     },
     {
       match: "/Products/GetByProductGroupId\\?",
@@ -838,51 +1241,109 @@ test("favorites matching is Danish-aware, ordered, limited, and empty when unmat
     [1, 2],
   );
   assert.deepEqual(matchFavorites(favorites, "mælk", 2), []);
-  assert.throws(() => matchFavorites(favorites, " ", 2), /Favorites query is required/);
-  assert.throws(() => matchFavorites(favorites, "banan", 0), /Favorites limit must be positive/);
+  assert.throws(
+    () => matchFavorites(favorites, " ", 2),
+    /Favorites query is required/,
+  );
+  assert.throws(
+    () => matchFavorites(favorites, "banan", 0),
+    /Favorites limit must be positive/,
+  );
 });
 
 test("favorites paging applies one global offset across groups", async () => {
   const requests: ExpectedRequest[] = [
     antiForgeryRequest(),
-    { match: "/login$", response: json({ MergeSuccessful: true }) }, ...sessionRequests(),
-    { match: "https://www.nemlig.com/favoritter\\?", response: json({ content: [
-      { TemplateName: "productlistshowallspot", ProductGroupId: "first" },
-      { TemplateName: "productlistshowallspot", ProductGroupId: "second" },
-    ] }) },
-    { match: "/Products/GetByProductGroupId\\?", inspect: (url) => assert.equal(new URL(url).searchParams.get("productGroupId"), "first"), response: json({ Products: [{ Id: 1, Name: "First" }] }) },
-    { match: "/Products/GetByProductGroupId\\?", inspect: (url) => assert.equal(new URL(url).searchParams.get("productGroupId"), "second"), response: json({ Products: [{ Id: 2, Name: "Second" }] }) },
+    { match: "/login$", response: json({ MergeSuccessful: true }) },
+    ...sessionRequests(),
+    {
+      match: "https://www.nemlig.com/favoritter\\?",
+      response: json({
+        content: [
+          { TemplateName: "productlistshowallspot", ProductGroupId: "first" },
+          { TemplateName: "productlistshowallspot", ProductGroupId: "second" },
+        ],
+      }),
+    },
+    {
+      match: "/Products/GetByProductGroupId\\?",
+      inspect: (url) =>
+        assert.equal(new URL(url).searchParams.get("productGroupId"), "first"),
+      response: json({ Products: [{ Id: 1, Name: "First" }] }),
+    },
+    {
+      match: "/Products/GetByProductGroupId\\?",
+      inspect: (url) =>
+        assert.equal(new URL(url).searchParams.get("productGroupId"), "second"),
+      response: json({ Products: [{ Id: 2, Name: "Second" }] }),
+    },
   ];
-  const client = new NemligClient(mockFetch(requests)); await client.login("person@example.test", "secret");
-  assert.deepEqual((await client.listFavorites(1, 2)).map(({ id }) => id), [2]);
+  const client = new NemligClient(mockFetch(requests));
+  await client.login("person@example.test", "secret");
+  assert.deepEqual(
+    (await client.listFavorites(1, 2)).map(({ id }) => id),
+    [2],
+  );
   assert.equal(requests.length, 0);
 });
 
 test("favorites continue after a full page duplicated from a preceding group", async () => {
-  const firstGroup = Array.from({ length: 50 }, (_, index) => ({ Id: index + 1, Name: `Favorite ${index + 1}` }));
+  const firstGroup = Array.from({ length: 50 }, (_, index) => ({
+    Id: index + 1,
+    Name: `Favorite ${index + 1}`,
+  }));
   const requests: ExpectedRequest[] = [
     antiForgeryRequest(),
-    { match: "/login$", response: json({ MergeSuccessful: true }) }, ...sessionRequests(),
-    { match: "https://www.nemlig.com/favoritter\\?", response: json({ content: [
-      { TemplateName: "productlistshowallspot", ProductGroupId: "first" },
-      { TemplateName: "productlistshowallspot", ProductGroupId: "overlapping" },
-    ] }) },
-    { match: "/Products/GetByProductGroupId\\?", inspect: (url) => {
-      const query = new URL(url).searchParams;
-      assert.equal(query.get("productGroupId"), "first"); assert.equal(query.get("pageIndex"), "0");
-    }, response: json({ Products: firstGroup }) },
-    { match: "/Products/GetByProductGroupId\\?", inspect: (url) => {
-      const query = new URL(url).searchParams;
-      assert.equal(query.get("productGroupId"), "first"); assert.equal(query.get("pageIndex"), "1");
-    }, response: json({ Products: [] }) },
-    { match: "/Products/GetByProductGroupId\\?", inspect: (url) => {
-      const query = new URL(url).searchParams;
-      assert.equal(query.get("productGroupId"), "overlapping"); assert.equal(query.get("pageIndex"), "0");
-    }, response: json({ Products: firstGroup }) },
-    { match: "/Products/GetByProductGroupId\\?", inspect: (url) => {
-      const query = new URL(url).searchParams;
-      assert.equal(query.get("productGroupId"), "overlapping"); assert.equal(query.get("pageIndex"), "1");
-    }, response: json({ Products: [{ Id: 51, Name: "New favorite" }] }) },
+    { match: "/login$", response: json({ MergeSuccessful: true }) },
+    ...sessionRequests(),
+    {
+      match: "https://www.nemlig.com/favoritter\\?",
+      response: json({
+        content: [
+          { TemplateName: "productlistshowallspot", ProductGroupId: "first" },
+          {
+            TemplateName: "productlistshowallspot",
+            ProductGroupId: "overlapping",
+          },
+        ],
+      }),
+    },
+    {
+      match: "/Products/GetByProductGroupId\\?",
+      inspect: (url) => {
+        const query = new URL(url).searchParams;
+        assert.equal(query.get("productGroupId"), "first");
+        assert.equal(query.get("pageIndex"), "0");
+      },
+      response: json({ Products: firstGroup }),
+    },
+    {
+      match: "/Products/GetByProductGroupId\\?",
+      inspect: (url) => {
+        const query = new URL(url).searchParams;
+        assert.equal(query.get("productGroupId"), "first");
+        assert.equal(query.get("pageIndex"), "1");
+      },
+      response: json({ Products: [] }),
+    },
+    {
+      match: "/Products/GetByProductGroupId\\?",
+      inspect: (url) => {
+        const query = new URL(url).searchParams;
+        assert.equal(query.get("productGroupId"), "overlapping");
+        assert.equal(query.get("pageIndex"), "0");
+      },
+      response: json({ Products: firstGroup }),
+    },
+    {
+      match: "/Products/GetByProductGroupId\\?",
+      inspect: (url) => {
+        const query = new URL(url).searchParams;
+        assert.equal(query.get("productGroupId"), "overlapping");
+        assert.equal(query.get("pageIndex"), "1");
+      },
+      response: json({ Products: [{ Id: 51, Name: "New favorite" }] }),
+    },
   ];
   const client = new NemligClient(mockFetch(requests));
   await client.login("person@example.test", "secret");
@@ -895,23 +1356,46 @@ test("favorites continue after a full page duplicated from a preceding group", a
 test("favorites stop before starting another provider page after cancellation", async () => {
   const controller = new AbortController();
   const reason = new Error("favorites cancelled");
-  const products = Array.from({ length: 50 }, (_, index) => ({ Id: index + 1, Name: `Favorite ${index + 1}` }));
+  const products = Array.from({ length: 50 }, (_, index) => ({
+    Id: index + 1,
+    Name: `Favorite ${index + 1}`,
+  }));
   const requests: ExpectedRequest[] = [
     antiForgeryRequest(),
-    { match: "/login$", response: json({ MergeSuccessful: true }) }, ...sessionRequests(),
-    { match: "https://www.nemlig.com/favoritter\\?", response: json({ content: [
-      { TemplateName: "productlistshowallspot", ProductGroupId: "many-pages" },
-    ] }) },
-    { match: "/Products/GetByProductGroupId\\?", inspect: (_url, init) => {
-      assert.ok(init?.signal);
-      controller.abort(reason);
-    }, response: json({ Products: products }) },
+    { match: "/login$", response: json({ MergeSuccessful: true }) },
+    ...sessionRequests(),
+    {
+      match: "https://www.nemlig.com/favoritter\\?",
+      response: json({
+        content: [
+          {
+            TemplateName: "productlistshowallspot",
+            ProductGroupId: "many-pages",
+          },
+        ],
+      }),
+    },
+    {
+      match: "/Products/GetByProductGroupId\\?",
+      inspect: (_url, init) => {
+        assert.ok(init?.signal);
+        controller.abort(reason);
+      },
+      response: json({ Products: products }),
+    },
   ];
   const client = new NemligClient(mockFetch(requests));
   await client.login("person@example.test", "secret");
 
-  await assert.rejects(client.listFavorites(undefined, 1, controller.signal), (error) => error === reason);
-  assert.equal(requests.length, 0, "no subsequent page request may start after cancellation");
+  await assert.rejects(
+    client.listFavorites(undefined, 1, controller.signal),
+    (error) => error === reason,
+  );
+  assert.equal(
+    requests.length,
+    0,
+    "no subsequent page request may start after cancellation",
+  );
 });
 
 test("basket add treats quantity as a positive delta and preserves every existing line", async () => {
@@ -919,13 +1403,17 @@ test("basket add treats quantity as a positive delta and preserves every existin
     antiForgeryRequest(),
     { match: "/login$", response: json({ RedirectUrl: "/" }) },
     ...sessionRequests(),
-    { match: "/basket/GetBasket$", response: json({
-      Lines: [
-        { Id: 701015, Name: "Milk", Quantity: 2, Total: 25.9 },
-        { Id: 2301138, Name: "Banana", Quantity: 1, Total: 2.5 },
-      ],
-      TotalProductsPrice: 28.4, NumberOfProducts: 3,
-    }) },
+    {
+      match: "/basket/GetBasket$",
+      response: json({
+        Lines: [
+          { Id: 701015, Name: "Milk", Quantity: 2, Total: 25.9 },
+          { Id: 2301138, Name: "Banana", Quantity: 1, Total: 2.5 },
+        ],
+        TotalProductsPrice: 28.4,
+        NumberOfProducts: 3,
+      }),
+    },
     {
       match: "/basket/AddToBasket$",
       inspect: (_url, init) => {
@@ -935,8 +1423,14 @@ test("basket add treats quantity as a positive delta and preserves every existin
           AffectPartialQuantity: false,
           disableQuantityValidation: false,
         });
-        assert.equal(new Headers(init?.headers).get("x-xsrf-token"), "anti-forgery-token");
-        assert.equal(new Headers(init?.headers).get("origin"), "https://www.nemlig.com");
+        assert.equal(
+          new Headers(init?.headers).get("x-xsrf-token"),
+          "anti-forgery-token",
+        );
+        assert.equal(
+          new Headers(init?.headers).get("origin"),
+          "https://www.nemlig.com",
+        );
       },
       response: json({}),
     },
@@ -987,28 +1481,53 @@ test("unauthenticated basket operations fail before network access", async () =>
 test("search validates its boundary", async () => {
   const client = new NemligClient(mockFetch([]));
   await assert.rejects(client.searchProducts(""), /Search query is required/);
-  await assert.rejects(client.searchProducts("milk", 0), /Search limit must be positive/);
+  await assert.rejects(
+    client.searchProducts("milk", 0),
+    /Search limit must be positive/,
+  );
 });
 
 test("favorites validates its boundary before network access", async () => {
   const client = new NemligClient(mockFetch([]));
   Object.assign(client, { loggedIn: true });
-  await assert.rejects(client.listFavorites(0), /Favorites limit must be positive/);
+  await assert.rejects(
+    client.listFavorites(0),
+    /Favorites limit must be positive/,
+  );
 });
 
 test("departments normalize opaque same-origin paths and browsing revalidates paging", async () => {
-  assert.deepEqual(normalizeDepartments({ content: [
-    { Url: "/frugt-og-groent", Name: "Frugt & grønt" },
-    { Url: "/frugt-og-groent", Name: "Duplicate" },
-    { Url: "https://evil.test/no", Name: "No" },
-    { Url: "//evil.test/no", Name: "Also no" },
-  ] }), [{ id: "/frugt-og-groent", name: "Frugt & grønt" }]);
+  assert.deepEqual(
+    normalizeDepartments({
+      content: [
+        { Url: "/frugt-og-groent", Name: "Frugt & grønt" },
+        { Url: "/frugt-og-groent", Name: "Duplicate" },
+        { Url: "https://evil.test/no", Name: "No" },
+        { Url: "//evil.test/no", Name: "Also no" },
+      ],
+    }),
+    [{ id: "/frugt-og-groent", name: "Frugt & grønt" }],
+  );
   const requests: ExpectedRequest[] = [
-    { match: "https://www.nemlig.com/\\?GetAsJson=1", response: json({ content: [{ Url: "/frugt-og-groent", Name: "Frugt & grønt" }] }) },
-    { match: "https://www.nemlig.com/frugt-og-groent\\?GetAsJson=1", response: json({ content: [{ ProductGroupId: "produce" }] }) },
-    { match: "/Products/GetByProductGroupId\\?", inspect: (url) => {
-      const parsed = new URL(url); assert.equal(parsed.searchParams.get("pageIndex"), "1"); assert.equal(parsed.searchParams.get("pagesize"), "2");
-    }, response: json({ Products: [{ Id: 5, Name: "Æbler" }] }) },
+    {
+      match: "https://www.nemlig.com/\\?GetAsJson=1",
+      response: json({
+        content: [{ Url: "/frugt-og-groent", Name: "Frugt & grønt" }],
+      }),
+    },
+    {
+      match: "https://www.nemlig.com/frugt-og-groent\\?GetAsJson=1",
+      response: json({ content: [{ ProductGroupId: "produce" }] }),
+    },
+    {
+      match: "/Products/GetByProductGroupId\\?",
+      inspect: (url) => {
+        const parsed = new URL(url);
+        assert.equal(parsed.searchParams.get("pageIndex"), "1");
+        assert.equal(parsed.searchParams.get("pagesize"), "2");
+      },
+      response: json({ Products: [{ Id: 5, Name: "Æbler" }] }),
+    },
   ];
   const client = new NemligClient(mockFetch(requests));
   const result = await client.browseDepartment("/frugt-og-groent", 2, 2);
@@ -1019,20 +1538,44 @@ test("departments normalize opaque same-origin paths and browsing revalidates pa
 
 test("unknown departments and invalid pages fail before product browsing", async () => {
   const requests: ExpectedRequest[] = [
-    { match: "https://www.nemlig.com/\\?GetAsJson=1", response: json({ content: [] }) },
+    {
+      match: "https://www.nemlig.com/\\?GetAsJson=1",
+      response: json({ content: [] }),
+    },
   ];
   const client = new NemligClient(mockFetch(requests));
-  await assert.rejects(client.browseDepartment("/missing", 20, 1), /Unknown department/);
+  await assert.rejects(
+    client.browseDepartment("/missing", 20, 1),
+    /Unknown department/,
+  );
 });
 
 test("department browsing honors caller counts above 50 without truncation", async () => {
-  const products = Array.from({ length: 55 }, (_, index) => ({ Id: index + 1, Name: `Product ${index + 1}` }));
+  const products = Array.from({ length: 55 }, (_, index) => ({
+    Id: index + 1,
+    Name: `Product ${index + 1}`,
+  }));
   const requests: ExpectedRequest[] = [
-    { match: "https://www.nemlig.com/\\?GetAsJson=1", response: json({ content: [{ Url: "/produce", Name: "Produce" }] }) },
-    { match: "https://www.nemlig.com/produce\\?GetAsJson=1", response: json({ content: [{ ProductGroupId: "produce" }] }) },
-    { match: "/Products/GetByProductGroupId\\?", inspect: (url) => assert.equal(new URL(url).searchParams.get("pagesize"), "55"), response: json({ Products: products }) },
+    {
+      match: "https://www.nemlig.com/\\?GetAsJson=1",
+      response: json({ content: [{ Url: "/produce", Name: "Produce" }] }),
+    },
+    {
+      match: "https://www.nemlig.com/produce\\?GetAsJson=1",
+      response: json({ content: [{ ProductGroupId: "produce" }] }),
+    },
+    {
+      match: "/Products/GetByProductGroupId\\?",
+      inspect: (url) =>
+        assert.equal(new URL(url).searchParams.get("pagesize"), "55"),
+      response: json({ Products: products }),
+    },
   ];
-  const result = await new NemligClient(mockFetch(requests)).browseDepartment("/produce", 55, 1);
+  const result = await new NemligClient(mockFetch(requests)).browseDepartment(
+    "/produce",
+    55,
+    1,
+  );
   assert.equal(result.products.length, 55);
   assert.equal(result.hasNext, true);
   assert.equal(requests.length, 0);

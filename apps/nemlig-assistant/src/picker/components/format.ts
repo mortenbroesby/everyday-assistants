@@ -1,12 +1,15 @@
 import type { ProductView } from "../../product-presentation.js";
 
 export function money(value: unknown): string {
-  return typeof value === "number" && Number.isFinite(value) ? `${value.toFixed(2)} kr` : "Unknown price";
+  return typeof value === "number" && Number.isFinite(value)
+    ? `${value.toFixed(2)} kr`
+    : "Unknown price";
 }
 
 export function productName(view: ProductView, id?: number): string {
   return view.status === "complete"
-    ? view.product.name ?? `Product ${view.product.id ?? id ?? "details unavailable"}`
+    ? (view.product.name ??
+        `Product ${view.product.id ?? id ?? "details unavailable"}`)
     : `Product ${view.product_id ?? id ?? "details"}`;
 }
 

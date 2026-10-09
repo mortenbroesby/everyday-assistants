@@ -12,7 +12,9 @@ export default defineConfig({
     emptyOutDir: false,
     modulePreload: false,
     outDir: "dist",
-    rollupOptions: { input: fileURLToPath(new URL("picker.html", import.meta.url)) },
+    rollupOptions: {
+      input: fileURLToPath(new URL("picker.html", import.meta.url)),
+    },
     target: "baseline-widely-available",
   },
 });

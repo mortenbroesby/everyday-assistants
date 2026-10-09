@@ -12,11 +12,17 @@ test("credentials prefer a complete environment pair and tolerate malformed file
 
   await writeFile(file, "not json");
   assert.equal(await getCredentials(file, {}), undefined);
-  await saveCredentials({ username: "saved@example.test", password: "saved-secret" }, file);
-  assert.deepEqual(await getCredentials(file, { NEMLIG_USERNAME: "partial@example.test" }), {
-    username: "saved@example.test",
-    password: "saved-secret",
-  });
+  await saveCredentials(
+    { username: "saved@example.test", password: "saved-secret" },
+    file,
+  );
+  assert.deepEqual(
+    await getCredentials(file, { NEMLIG_USERNAME: "partial@example.test" }),
+    {
+      username: "saved@example.test",
+      password: "saved-secret",
+    },
+  );
   assert.deepEqual(
     await getCredentials(file, {
       NEMLIG_USERNAME: "env@example.test",
@@ -31,7 +37,10 @@ test("saved credentials and their directory are owner-only, then clear cleanly",
   const file = join(root, "nested", "credentials.json");
   t.after(() => clearCredentials(file));
 
-  await saveCredentials({ username: "person@example.test", password: "secret-value" }, file);
+  await saveCredentials(
+    { username: "person@example.test", password: "secret-value" },
+    file,
+  );
   assert.equal((await stat(join(root, "nested"))).mode & 0o777, 0o700);
   assert.equal((await stat(file)).mode & 0o777, 0o600);
   assert.match(await readFile(file, "utf8"), /person@example\.test/);
