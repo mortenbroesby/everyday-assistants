@@ -1,30 +1,30 @@
-import assert from 'node:assert/strict';
-import test from 'node:test';
-import type { CloudflareEnv } from './cloudflare-config.js';
+import assert from "node:assert/strict";
+import test from "node:test";
+import type { CloudflareEnv } from "./cloudflare-config.js";
 import {
   handleOnboardingRequest,
   loadOnboardingConfig,
   type OnboardingDependencies,
-} from './onboarding.js';
+} from "./onboarding.js";
 import {
   consumePortalCsrf,
   type PrincipalStorage,
-} from './principal-records.js';
+} from "./principal-records.js";
 
 const secret = (byte: number): string =>
-  Buffer.alloc(32, byte).toString('base64url');
+  Buffer.alloc(32, byte).toString("base64url");
 const env: CloudflareEnv = {
-  MCP_CREDENTIAL_ONBOARDING_ENABLED: 'true',
-  NEMLIG_MCP_PUBLIC_URL: 'https://mcp.example.test/mcp',
+  MCP_CREDENTIAL_ONBOARDING_ENABLED: "true",
+  NEMLIG_MCP_PUBLIC_URL: "https://mcp.example.test/mcp",
   NEMLIG_MCP_ONBOARDING_SESSION_KEY: secret(1),
   NEMLIG_MCP_CREDENTIAL_KEY: secret(2),
-  NEMLIG_MCP_CREDENTIAL_KEY_VERSION: 'one',
+  NEMLIG_MCP_CREDENTIAL_KEY_VERSION: "one",
   NEMLIG_MCP_PRINCIPALS: JSON.stringify({
     schema_version: 3,
-    revision: 'family-v3',
-    owner_subject: 'auth0|owner',
+    revision: "family-v3",
+    owner_subject: "auth0|owner",
     principals: [
-      { subject: 'auth0|owner', principal_key: 'a'.repeat(32), enabled: true },
+      { subject: "auth0|owner", principal_key: "a".repeat(32), enabled: true },
     ],
   }),
 };
@@ -32,18 +32,18 @@ const env: CloudflareEnv = {
 let connected = false;
 const dependencies: OnboardingDependencies = {
   authenticate: async (token) =>
-    token === 'valid-access-token' ? 'auth0|owner' : undefined,
+    token === "valid-access-token" ? "auth0|owner" : undefined,
   principalStatus: async (subject) =>
-    subject === 'auth0|owner' ? 'owner' : undefined,
+    subject === "auth0|owner" ? "owner" : undefined,
   connectionStatus: async () => connected,
   replace: async (subject, credentials) => {
-    assert.equal(subject, 'auth0|owner');
+    assert.equal(subject, "auth0|owner");
     assert.deepEqual(credentials, {
-      username: 'owner@example.test',
-      password: 'private-password',
+      username: "owner@example.test",
+      password: "private-password",
     });
     connected = true;
-    return 'connected';
+    return "connected";
   },
   revoke: async () => {
     connected = false;
@@ -55,16 +55,16 @@ const dependencies: OnboardingDependencies = {
 
 const cookieValue = (response: Response): string => {
   const match = response.headers
-    .get('set-cookie')
+    .get("set-cookie")
     ?.match(/(__Host-nemlig-session=[^;]+)/u);
   assert.ok(match?.[1]);
   return match[1];
 };
 
-test('anonymous browser has a usable sign-in entry without provider or storage work', async () => {
+test("anonymous browser has a usable sign-in entry without provider or storage work", async () => {
   let calls = 0;
   const result = await handleOnboardingRequest(
-    new Request('https://mcp.example.test/connect'),
+    new Request("https://mcp.example.test/connect"),
     env,
     {
       ...dependencies,
@@ -89,15 +89,15 @@ test('anonymous browser has a usable sign-in entry without provider or storage w
   assert.equal(calls, 0);
 });
 
-test('credential portal configuration does not require request-rate settings', () => {
+test("credential portal configuration does not require request-rate settings", () => {
   const config = loadOnboardingConfig(env);
-  assert.equal(config.publicUrl.href, 'https://mcp.example.test/mcp');
-  assert.equal('perPrincipalRate' in config, false);
-  assert.equal('globalRate' in config, false);
+  assert.equal(config.publicUrl.href, "https://mcp.example.test/mcp");
+  assert.equal("perPrincipalRate" in config, false);
+  assert.equal("globalRate" in config, false);
 });
 
-test('authenticated credential bursts keep rotating single-use CSRF without a rate gate', async (context) => {
-  context.mock.method(Date, 'now', () => Date.parse('2026-09-28T12:00:00Z'));
+test("authenticated credential bursts keep rotating single-use CSRF without a rate gate", async (context) => {
+  context.mock.method(Date, "now", () => Date.parse("2026-09-28T12:00:00Z"));
   const values = new Map<string, unknown>();
   const storage: PrincipalStorage = {
     transaction: async (callback) => callback(),
@@ -112,20 +112,20 @@ test('authenticated credential bursts keep rotating single-use CSRF without a ra
     ...dependencies,
     connectionStatus: async () => validations > 0,
     replace: async (subject, credentials) => {
-      assert.equal(subject, 'auth0|owner');
+      assert.equal(subject, "auth0|owner");
       assert.deepEqual(credentials, {
-        username: 'owner@example.test',
-        password: 'private-password',
+        username: "owner@example.test",
+        password: "private-password",
       });
       validations += 1;
-      return 'connected';
+      return "connected";
     },
     consumeCsrf: (subject, csrf, expiresAt) =>
       consumePortalCsrf(storage, subject, csrf, expiresAt),
   };
   const login = await handleOnboardingRequest(
-    new Request('https://mcp.example.test/connect', {
-      headers: { authorization: 'Bearer valid-access-token' },
+    new Request("https://mcp.example.test/connect", {
+      headers: { authorization: "Bearer valid-access-token" },
     }),
     env,
     burstDependencies,
@@ -133,7 +133,7 @@ test('authenticated credential bursts keep rotating single-use CSRF without a ra
   assert.equal(login.status, 303);
   let sessionCookie = cookieValue(login);
   const portal = await handleOnboardingRequest(
-    new Request('https://mcp.example.test/connect', {
+    new Request("https://mcp.example.test/connect", {
       headers: { cookie: sessionCookie },
     }),
     env,
@@ -146,32 +146,32 @@ test('authenticated credential bursts keep rotating single-use CSRF without a ra
   for (let attempt = 0; attempt < 65; attempt += 1) {
     const csrf = html.match(/name="csrf" value="([^"]+)"/u)?.[1];
     assert.ok(csrf);
-    const submit = (origin = 'https://mcp.example.test') =>
+    const submit = (origin = "https://mcp.example.test") =>
       handleOnboardingRequest(
-        new Request('https://mcp.example.test/connect', {
-          method: 'POST',
+        new Request("https://mcp.example.test/connect", {
+          method: "POST",
           headers: {
             cookie: sessionCookie,
             origin,
-            'content-type': 'application/x-www-form-urlencoded',
+            "content-type": "application/x-www-form-urlencoded",
           },
           body: new URLSearchParams({
             csrf,
-            action: 'replace',
-            username: 'owner@example.test',
-            password: 'private-password',
+            action: "replace",
+            username: "owner@example.test",
+            password: "private-password",
           }),
         }),
         env,
         burstDependencies,
       );
-    assert.equal((await submit('https://foreign.example.test')).status, 403);
+    assert.equal((await submit("https://foreign.example.test")).status, 403);
     const saved = await submit();
     assert.equal(saved.status, 200, `credential attempt ${attempt + 1}`);
     assert.equal(
       (await submit()).status,
       403,
-      'the just-used CSRF token cannot be replayed',
+      "the just-used CSRF token cannot be replayed",
     );
     sessionCookie = cookieValue(saved);
     html = await saved.text();
@@ -179,18 +179,18 @@ test('authenticated credential bursts keep rotating single-use CSRF without a ra
   }
   assert.equal(validations, 65);
   const replay = await handleOnboardingRequest(
-    new Request('https://mcp.example.test/connect', {
-      method: 'POST',
+    new Request("https://mcp.example.test/connect", {
+      method: "POST",
       headers: {
         cookie: firstCookie,
-        origin: 'https://mcp.example.test',
-        'content-type': 'application/x-www-form-urlencoded',
+        origin: "https://mcp.example.test",
+        "content-type": "application/x-www-form-urlencoded",
       },
       body: new URLSearchParams({
         csrf: firstCsrf,
-        action: 'replace',
-        username: 'owner@example.test',
-        password: 'private-password',
+        action: "replace",
+        username: "owner@example.test",
+        password: "private-password",
       }),
     }),
     env,
@@ -199,32 +199,32 @@ test('authenticated credential bursts keep rotating single-use CSRF without a ra
   assert.equal(
     replay.status,
     403,
-    'old consumed tokens remain rejected after more than 32 submissions',
+    "old consumed tokens remain rejected after more than 32 submissions",
   );
   assert.equal(
     validations,
     65,
-    'replay must not revalidate or replace credentials',
+    "replay must not revalidate or replace credentials",
   );
   const currentCsrf = html.match(/name="csrf" value="([^"]+)"/u)?.[1];
   assert.ok(currentCsrf);
-  context.mock.method(storage, 'put', async () => {
-    throw new Error('storage unavailable');
+  context.mock.method(storage, "put", async () => {
+    throw new Error("storage unavailable");
   });
   await assert.rejects(
     handleOnboardingRequest(
-      new Request('https://mcp.example.test/connect', {
-        method: 'POST',
+      new Request("https://mcp.example.test/connect", {
+        method: "POST",
         headers: {
           cookie: sessionCookie,
-          origin: 'https://mcp.example.test',
-          'content-type': 'application/x-www-form-urlencoded',
+          origin: "https://mcp.example.test",
+          "content-type": "application/x-www-form-urlencoded",
         },
         body: new URLSearchParams({
           csrf: currentCsrf,
-          action: 'replace',
-          username: 'owner@example.test',
-          password: 'private-password',
+          action: "replace",
+          username: "owner@example.test",
+          password: "private-password",
         }),
       }),
       env,
@@ -235,60 +235,60 @@ test('authenticated credential bursts keep rotating single-use CSRF without a ra
   assert.equal(
     validations,
     65,
-    'replay-history storage failure must stop before provider work',
+    "replay-history storage failure must stop before provider work",
   );
   assert.equal(
-    [...values.keys()].some((key) => key.startsWith('validation:')),
+    [...values.keys()].some((key) => key.startsWith("validation:")),
     false,
   );
 });
 
-test('credential portal does not accept an unbound browser callback', async () => {
+test("credential portal does not accept an unbound browser callback", async () => {
   assert.equal(
     loadOnboardingConfig(env).publicUrl.href,
-    'https://mcp.example.test/mcp',
+    "https://mcp.example.test/mcp",
   );
   assert.throws(
     () =>
       loadOnboardingConfig({
         ...env,
-        NEMLIG_MCP_ONBOARDING_SESSION_KEY: 'short',
+        NEMLIG_MCP_ONBOARDING_SESSION_KEY: "short",
       }),
     /configuration is invalid/u,
   );
   const callback = await handleOnboardingRequest(
-    new Request('https://mcp.example.test/connect/callback?code=old'),
+    new Request("https://mcp.example.test/connect/callback?code=old"),
     env,
     dependencies,
   );
   assert.equal(callback.status, 401);
 });
 
-test('credential portal accepts a standard bearer token and keeps provider state separate', async () => {
+test("credential portal accepts a standard bearer token and keeps provider state separate", async () => {
   connected = false;
   const anonymous = await handleOnboardingRequest(
-    new Request('https://mcp.example.test/connect'),
+    new Request("https://mcp.example.test/connect"),
     env,
     dependencies,
   );
   assert.equal(anonymous.status, 200);
   assert.match(await anonymous.text(), /Sign in/u);
   const invalid = await handleOnboardingRequest(
-    new Request('https://mcp.example.test/connect', {
-      headers: { authorization: 'Bearer invalid' },
+    new Request("https://mcp.example.test/connect", {
+      headers: { authorization: "Bearer invalid" },
     }),
     env,
     dependencies,
   );
   assert.equal(invalid.status, 401);
   assert.match(
-    invalid.headers.get('www-authenticate') ?? '',
+    invalid.headers.get("www-authenticate") ?? "",
     /resource_metadata=/u,
   );
 
   const login = await handleOnboardingRequest(
-    new Request('https://mcp.example.test/connect', {
-      headers: { authorization: 'Bearer valid-access-token' },
+    new Request("https://mcp.example.test/connect", {
+      headers: { authorization: "Bearer valid-access-token" },
     }),
     env,
     dependencies,
@@ -296,7 +296,7 @@ test('credential portal accepts a standard bearer token and keeps provider state
   assert.equal(login.status, 303);
   const sessionCookie = cookieValue(login);
   const portal = await handleOnboardingRequest(
-    new Request('https://mcp.example.test/connect', {
+    new Request("https://mcp.example.test/connect", {
       headers: { cookie: sessionCookie },
     }),
     env,
@@ -304,9 +304,9 @@ test('credential portal accepts a standard bearer token and keeps provider state
   );
   assert.equal(portal.status, 200);
   assert.equal(
-    portal.headers.get('referrer-policy'),
-    'same-origin',
-    'native form POST must retain Origin for the strict server check',
+    portal.headers.get("referrer-policy"),
+    "same-origin",
+    "native form POST must retain Origin for the strict server check",
   );
   const html = await portal.text();
   assert.match(html, /autocomplete="current-password"/u);
@@ -316,20 +316,20 @@ test('credential portal accepts a standard bearer token and keeps provider state
   );
   const csrf = html.match(/name="csrf" value="([^"]+)"/u)?.[1];
   assert.ok(csrf);
-  for (const origin of [undefined, 'null', 'https://foreign.example.test']) {
+  for (const origin of [undefined, "null", "https://foreign.example.test"]) {
     const rejected = await handleOnboardingRequest(
-      new Request('https://mcp.example.test/connect', {
-        method: 'POST',
+      new Request("https://mcp.example.test/connect", {
+        method: "POST",
         headers: {
           cookie: sessionCookie,
           ...(origin ? { origin } : {}),
-          'content-type': 'application/x-www-form-urlencoded',
+          "content-type": "application/x-www-form-urlencoded",
         },
         body: new URLSearchParams({
           csrf,
-          action: 'replace',
-          username: 'owner@example.test',
-          password: 'private-password',
+          action: "replace",
+          username: "owner@example.test",
+          password: "private-password",
         }),
       }),
       env,
@@ -339,22 +339,22 @@ test('credential portal accepts a standard bearer token and keeps provider state
     assert.equal(
       connected,
       false,
-      'rejected origins must not reach credential replacement',
+      "rejected origins must not reach credential replacement",
     );
   }
   const badCsrf = await handleOnboardingRequest(
-    new Request('https://mcp.example.test/connect', {
-      method: 'POST',
+    new Request("https://mcp.example.test/connect", {
+      method: "POST",
       headers: {
         cookie: sessionCookie,
-        origin: 'https://mcp.example.test',
-        'content-type': 'application/x-www-form-urlencoded',
+        origin: "https://mcp.example.test",
+        "content-type": "application/x-www-form-urlencoded",
       },
       body: new URLSearchParams({
-        csrf: 'wrong',
-        action: 'replace',
-        username: 'owner@example.test',
-        password: 'private-password',
+        csrf: "wrong",
+        action: "replace",
+        username: "owner@example.test",
+        password: "private-password",
       }),
     }),
     env,
@@ -364,21 +364,21 @@ test('credential portal accepts a standard bearer token and keeps provider state
   assert.equal(
     connected,
     false,
-    'same-origin alone must not authorize credential replacement',
+    "same-origin alone must not authorize credential replacement",
   );
   const saved = await handleOnboardingRequest(
-    new Request('https://mcp.example.test/connect', {
-      method: 'POST',
+    new Request("https://mcp.example.test/connect", {
+      method: "POST",
       headers: {
         cookie: sessionCookie,
-        origin: 'https://mcp.example.test',
-        'content-type': 'application/x-www-form-urlencoded',
+        origin: "https://mcp.example.test",
+        "content-type": "application/x-www-form-urlencoded",
       },
       body: new URLSearchParams({
         csrf,
-        action: 'replace',
-        username: 'owner@example.test',
-        password: 'private-password',
+        action: "replace",
+        username: "owner@example.test",
+        password: "private-password",
       }),
     }),
     env,

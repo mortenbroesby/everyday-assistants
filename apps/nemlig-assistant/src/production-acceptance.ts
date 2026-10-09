@@ -1,17 +1,17 @@
-import assert from 'node:assert/strict';
-import { isDeepStrictEqual } from 'node:util';
+import assert from "node:assert/strict";
+import { isDeepStrictEqual } from "node:util";
 import {
   serviceAcceptanceResourceInventory,
   serviceAcceptanceToolInventory,
-} from './mcp.js';
+} from "./mcp.js";
 import {
   PRODUCT_VIEWER_MIME_TYPE,
   PRODUCT_VIEWER_RESOURCE_DOMAINS,
   PRODUCT_VIEWER_RESOURCE_URI,
   renderProductViewerHtml,
-} from './product-viewer.js';
-import { RETIRED_PRODUCT_VIEWER_RESOURCE_URIS } from './product-viewer-identity.js';
-import { NEMLIG_CODENAME, NEMLIG_VERSION } from './runtime.js';
+} from "./product-viewer.js";
+import { RETIRED_PRODUCT_VIEWER_RESOURCE_URIS } from "./product-viewer-identity.js";
+import { NEMLIG_CODENAME, NEMLIG_VERSION } from "./runtime.js";
 
 interface ToolResult {
   isError?: boolean;
@@ -20,14 +20,14 @@ interface ToolResult {
 
 export const productionToolInventory = {
   readOnly: [
-    'find_groceries',
-    'check_nemlig_connection',
-    'get_profile',
-    'show_my_basket',
+    "find_groceries",
+    "check_nemlig_connection",
+    "get_profile",
+    "show_my_basket",
   ],
-  localState: ['start_product_review', 'update_product_review_conversation'],
-  externalState: ['submit_product_review_conversation'],
-  appActions: ['update_product_review', 'submit_product_review'],
+  localState: ["start_product_review", "update_product_review_conversation"],
+  externalState: ["submit_product_review_conversation"],
+  appActions: ["update_product_review", "submit_product_review"],
 } as const;
 
 export const productionResourceInventory = [
@@ -35,10 +35,10 @@ export const productionResourceInventory = [
   ...RETIRED_PRODUCT_VIEWER_RESOURCE_URIS,
 ] as const;
 export const prohibitedProductionTools = [
-  'checkout',
-  'place_order',
-  'pay',
-  'change_delivery_slot',
+  "checkout",
+  "place_order",
+  "pay",
+  "change_delivery_slot",
 ] as const;
 
 type ToolName =
@@ -77,7 +77,7 @@ interface Profile {
 const content = <T>(result: ToolResult, operation: string): T => {
   assert.equal(result.isError, undefined, `${operation} returned an MCP error`);
   assert.ok(
-    result.structuredContent && typeof result.structuredContent === 'object',
+    result.structuredContent && typeof result.structuredContent === "object",
     `${operation} returned no structured content`,
   );
   return result.structuredContent as T;
@@ -94,9 +94,9 @@ const basket = (result: ToolResult, operation: string): Basket => {
 
 const isServiceForbiddenResponse = (error: unknown): boolean =>
   !!error &&
-  typeof error === 'object' &&
-  (('status' in error && (error as { status?: unknown }).status === 403) ||
-    ('code' in error && (error as { code?: unknown }).code === 403));
+  typeof error === "object" &&
+  (("status" in error && (error as { status?: unknown }).status === 403) ||
+    ("code" in error && (error as { code?: unknown }).code === 403));
 
 const listResourcesOrEmpty = async (
   client: AcceptanceClient,
@@ -109,15 +109,15 @@ const listResourcesOrEmpty = async (
   );
   try {
     return (
-      await withinTotalDeadline('resource inventory', () =>
+      await withinTotalDeadline("resource inventory", () =>
         client.listResources!(),
       )
     ).resources;
   } catch (error) {
     if (
       error &&
-      typeof error === 'object' &&
-      'code' in error &&
+      typeof error === "object" &&
+      "code" in error &&
       (error as { code?: unknown }).code === -32601
     ) {
       return [];
@@ -135,12 +135,12 @@ export function assertProductionInventory(
   assert.deepEqual(
     tools.map(({ name }) => name).sort(),
     [...expectedTools].sort(),
-    'Production MCP tool inventory drifted',
+    "Production MCP tool inventory drifted",
   );
   assert.deepEqual(
     resources.map(({ uri }) => uri).sort(),
     [...productionResourceInventory].sort(),
-    'Production MCP resource inventory drifted',
+    "Production MCP resource inventory drifted",
   );
   for (const name of prohibitedProductionTools) {
     assert.equal(
@@ -151,54 +151,54 @@ export function assertProductionInventory(
   }
   const metadata = new Map(tools.map(({ name, _meta }) => [name, _meta]));
   for (const name of [
-    'start_product_review',
-    'update_product_review_conversation',
-    'submit_product_review_conversation',
+    "start_product_review",
+    "update_product_review_conversation",
+    "submit_product_review_conversation",
   ] as const) {
     const actual = metadata.get(name);
     assert.ok(
-      actual && typeof actual === 'object',
+      actual && typeof actual === "object",
       `Production ${name} metadata drifted`,
     );
     const value = actual as Record<string, unknown>;
     const expectedUi =
-      name === 'start_product_review'
-        ? { resourceUri: PRODUCT_VIEWER_RESOURCE_URI, visibility: ['model'] }
-        : { visibility: ['model'] };
+      name === "start_product_review"
+        ? { resourceUri: PRODUCT_VIEWER_RESOURCE_URI, visibility: ["model"] }
+        : { visibility: ["model"] };
     assert.deepEqual(
       value.ui,
       expectedUi,
       `Production ${name} UI metadata drifted`,
     );
     assert.equal(
-      value['openai/outputTemplate'],
-      name === 'start_product_review' ? PRODUCT_VIEWER_RESOURCE_URI : undefined,
+      value["openai/outputTemplate"],
+      name === "start_product_review" ? PRODUCT_VIEWER_RESOURCE_URI : undefined,
       `Production ${name} output template metadata drifted`,
     );
     assert.equal(
-      value['openai/widgetAccessible'],
+      value["openai/widgetAccessible"],
       undefined,
       `Model-visible ${name} must not be callable by old widget cards`,
     );
   }
   for (const name of [
-    'update_product_review',
-    'submit_product_review',
+    "update_product_review",
+    "submit_product_review",
   ] as const) {
     const value = metadata.get(name) as Record<string, unknown> | undefined;
     assert.ok(value, `Production ${name} metadata drifted`);
     assert.deepEqual(
       value.ui,
-      { visibility: ['app'] },
+      { visibility: ["app"] },
       `Production ${name} must remain app-only`,
     );
     assert.equal(
-      value['openai/outputTemplate'],
+      value["openai/outputTemplate"],
       undefined,
       `Production ${name} must not create another UI card`,
     );
     assert.equal(
-      value['openai/widgetAccessible'],
+      value["openai/widgetAccessible"],
       true,
       `Production ${name} must be callable by the current widget`,
     );
@@ -207,10 +207,10 @@ export function assertProductionInventory(
 
 /** Bounded evidence: never classify or report an assertion's complete HTML diff. */
 export class ProductViewerHtmlMismatchError extends Error {
-  readonly code = 'product_viewer_html_mismatch';
-  readonly lastCompletedBoundary = 'product_viewer_resource_read';
+  readonly code = "product_viewer_html_mismatch";
+  readonly lastCompletedBoundary = "product_viewer_resource_read";
   constructor() {
-    super('Product-viewer resource HTML drifted from the released renderer');
+    super("Product-viewer resource HTML drifted from the released renderer");
   }
 }
 
@@ -219,15 +219,15 @@ export class ServiceInventoryMismatchError extends Error {
   readonly lastCompletedBoundary: string;
   constructor(
     readonly code:
-      'service_tool_inventory_mismatch' | 'service_resource_inventory_mismatch',
+      "service_tool_inventory_mismatch" | "service_resource_inventory_mismatch",
     boundary?: string,
   ) {
     super(code);
     this.lastCompletedBoundary =
       boundary ??
-      (code === 'service_tool_inventory_mismatch'
-        ? 'service_tool_inventory_read'
-        : 'service_resource_inventory_read');
+      (code === "service_tool_inventory_mismatch"
+        ? "service_tool_inventory_read"
+        : "service_resource_inventory_read");
   }
 }
 
@@ -242,7 +242,7 @@ const assertProductViewerResource = (
   );
   const viewerContent = viewer.contents[0];
   assert.ok(
-    viewerContent && typeof viewerContent === 'object',
+    viewerContent && typeof viewerContent === "object",
     `${label} product-viewer resource returned no content object`,
   );
   const viewerRecord = viewerContent as {
@@ -270,12 +270,12 @@ const assertProductViewerResource = (
     `${label} product-viewer resource was not fetchable HTML`,
   );
   assert.ok(
-    viewerRecord._meta && typeof viewerRecord._meta === 'object',
+    viewerRecord._meta && typeof viewerRecord._meta === "object",
     `${label} product-viewer resource metadata is missing`,
   );
   const ui = (viewerRecord._meta as Record<string, unknown>).ui;
   assert.ok(
-    ui && typeof ui === 'object',
+    ui && typeof ui === "object",
     `${label} product-viewer UI metadata is missing`,
   );
   const metadata = ui as Record<string, unknown>;
@@ -314,7 +314,7 @@ export interface AcceptanceDeadlineOptions {
 const abortError = (signal: AbortSignal): Error =>
   signal.reason instanceof Error
     ? signal.reason
-    : new Error('Production acceptance deadline exceeded');
+    : new Error("Production acceptance deadline exceeded");
 
 const bounded = async <T>(
   label: string,
@@ -330,7 +330,7 @@ const bounded = async <T>(
   let onAbort: (() => void) | undefined;
   const aborted = new Promise<never>((_resolve, reject) => {
     onAbort = () => reject(abortError(signal));
-    signal.addEventListener('abort', onAbort, { once: true });
+    signal.addEventListener("abort", onAbort, { once: true });
   });
   try {
     const result = await Promise.race([work(), aborted]);
@@ -348,7 +348,7 @@ const bounded = async <T>(
     throw error;
   } finally {
     if (onAbort) {
-      signal.removeEventListener('abort', onAbort);
+      signal.removeEventListener("abort", onAbort);
     }
   }
 };
@@ -386,25 +386,25 @@ export async function verifyReadOnlyProductionFeatures(
 ): Promise<ProductionFeatureReport> {
   const withinTotalDeadline = createTotalDeadline(
     Date.now() + (options.totalTimeoutMs ?? 90_000),
-    'Production read-only acceptance',
+    "Production read-only acceptance",
     options.signal,
   );
   assertProductionInventory(
-    (await withinTotalDeadline('tool inventory', () => client.listTools()))
+    (await withinTotalDeadline("tool inventory", () => client.listTools()))
       .tools,
-    await listResourcesOrEmpty(client, withinTotalDeadline, 'Production'),
+    await listResourcesOrEmpty(client, withinTotalDeadline, "Production"),
   );
   assert.ok(
     client.readResource,
-    'Production product-viewer resource reader is required',
+    "Production product-viewer resource reader is required",
   );
-  const viewer = await withinTotalDeadline('product viewer resource', () =>
+  const viewer = await withinTotalDeadline("product viewer resource", () =>
     client.readResource!({ uri: PRODUCT_VIEWER_RESOURCE_URI }),
   );
-  assertProductViewerResource(viewer, 'Production');
+  assertProductViewerResource(viewer, "Production");
   const exercised: string[] = [];
   const unavailable: string[] = [];
-  exercised.push('read product viewer resource');
+  exercised.push("read product viewer resource");
   const call = async <T>(
     name: ToolName,
     args: Record<string, unknown> = {},
@@ -420,30 +420,30 @@ export async function verifyReadOnlyProductionFeatures(
     return content<T>(result, name);
   };
 
-  const profile = await call<Profile>('get_profile');
-  assert.ok(profile.id, 'get_profile returned no authenticated profile');
+  const profile = await call<Profile>("get_profile");
+  assert.ok(profile.id, "get_profile returned no authenticated profile");
   assert.deepEqual(
     profile.release,
     { version: NEMLIG_VERSION, codename: NEMLIG_CODENAME },
-    'get_profile release identity drifted',
+    "get_profile release identity drifted",
   );
 
   const searched = await call<{ result?: Array<{ id?: number }> }>(
-    'find_groceries',
-    { search_term: 'banan', result_count: 3 },
+    "find_groceries",
+    { search_term: "banan", result_count: 3 },
   );
   const productIds = (searched.result ?? []).flatMap(({ id }) =>
-    typeof id === 'number' && Number.isInteger(id) && id > 0 ? [id] : [],
+    typeof id === "number" && Number.isInteger(id) && id > 0 ? [id] : [],
   );
   assert.ok(
     productIds.length,
-    'Production product search returned no usable product',
+    "Production product search returned no usable product",
   );
 
-  const current = await call<Basket>('show_my_basket');
+  const current = await call<Basket>("show_my_basket");
   assert.ok(
     Array.isArray(current.items),
-    'show_my_basket returned no basket items',
+    "show_my_basket returned no basket items",
   );
   return { exercised, unavailable };
 }
@@ -455,13 +455,13 @@ export async function verifyServiceAcceptanceFeatures(
 ): Promise<ServiceAcceptanceFeatureReport> {
   const withinTotalDeadline = createTotalDeadline(
     Date.now() + (options.totalTimeoutMs ?? 90_000),
-    'Service acceptance',
+    "Service acceptance",
     options.signal,
   );
   const tools = (
-    await withinTotalDeadline('tool inventory', () => client.listTools())
+    await withinTotalDeadline("tool inventory", () => client.listTools())
   ).tools;
-  options.onBoundary?.('service_tool_inventory_read');
+  options.onBoundary?.("service_tool_inventory_read");
   const names = tools.map(({ name }) => name).sort();
   if (!isDeepStrictEqual(names, [...serviceAcceptanceToolInventory].sort())) {
     const missing = serviceAcceptanceToolInventory.flatMap((name, index) =>
@@ -473,16 +473,16 @@ export async function verifyServiceAcceptanceFeatures(
       names.length - serviceAcceptanceToolInventory.length + missing.length,
     );
     throw new ServiceInventoryMismatchError(
-      'service_tool_inventory_mismatch',
+      "service_tool_inventory_mismatch",
       `service_tool_inventory_read_m${missingMask.toString(16)}_x${Math.min(unexpectedCount, 99)}`,
     );
   }
   const resources = await listResourcesOrEmpty(
     client,
     withinTotalDeadline,
-    'Service',
+    "Service",
   );
-  options.onBoundary?.('service_resource_inventory_read');
+  options.onBoundary?.("service_resource_inventory_read");
   const expectedResources = new Map<string, number>();
   for (const uri of serviceAcceptanceResourceInventory) {
     expectedResources.set(uri, (expectedResources.get(uri) ?? 0) + 1);
@@ -504,24 +504,24 @@ export async function verifyServiceAcceptanceFeatures(
     const boundedCount = (count: number): string =>
       Math.min(count, 99).toString();
     throw new ServiceInventoryMismatchError(
-      'service_resource_inventory_mismatch',
+      "service_resource_inventory_mismatch",
       `service_resource_inventory_read_missing_${boundedCount(missingResourceCount)}_unexpected_${boundedCount(unexpectedResourceCount)}`,
     );
   }
 
   assert.ok(
     client.readResource,
-    'Service product-viewer resource reader is required',
+    "Service product-viewer resource reader is required",
   );
-  const viewer = await withinTotalDeadline('product viewer resource', () =>
+  const viewer = await withinTotalDeadline("product viewer resource", () =>
     client.readResource!({ uri: PRODUCT_VIEWER_RESOURCE_URI }),
   );
-  options.onBoundary?.('product_viewer_resource_read');
-  assertProductViewerResource(viewer, 'Service');
+  options.onBoundary?.("product_viewer_resource_read");
+  assertProductViewerResource(viewer, "Service");
 
   const exercised: string[] = [];
   let requestCount = 3;
-  exercised.push('read product viewer resource');
+  exercised.push("read product viewer resource");
   const call = async (
     name: string,
     args: Record<string, unknown> = {},
@@ -535,19 +535,19 @@ export async function verifyServiceAcceptanceFeatures(
     return result;
   };
   const searched = content<{ result?: Array<{ id?: number }> }>(
-    await call('find_groceries', { search_term: 'banan', result_count: 1 }),
-    'find_groceries',
+    await call("find_groceries", { search_term: "banan", result_count: 1 }),
+    "find_groceries",
   );
   const productId = searched.result?.find(
-    ({ id }) => typeof id === 'number',
+    ({ id }) => typeof id === "number",
   )?.id;
-  assert.ok(productId, 'Service product search returned no usable product');
-  basket(await call('show_my_basket'), 'show_my_basket');
+  assert.ok(productId, "Service product search returned no usable product");
+  basket(await call("show_my_basket"), "show_my_basket");
   const denied: string[] = [];
   for (const name of [
-    'start_product_review',
-    'update_product_review_conversation',
-    'submit_product_review_conversation',
+    "start_product_review",
+    "update_product_review_conversation",
+    "submit_product_review_conversation",
   ]) {
     try {
       requestCount += 1;
@@ -572,7 +572,7 @@ export async function verifyServiceAcceptanceFeatures(
   }
   assert.ok(
     requestCount <= 12,
-    'Service MCP acceptance exceeded its request budget',
+    "Service MCP acceptance exceeded its request budget",
   );
   return { exercised, denied, requestCount };
 }
@@ -595,7 +595,7 @@ export async function verifyProductionEdge(
   const stepTimeoutMs = options.stepTimeoutMs ?? 3_000;
   const steps: Array<{ boundary: string; latencyMs: number }> = [];
   const correlationIds: string[] = [];
-  let lastCompletedBoundary = 'none';
+  let lastCompletedBoundary = "none";
   const step = async (
     boundary: string,
     input: URL,
@@ -610,7 +610,7 @@ export async function verifyProductionEdge(
           ? AbortSignal.any([options.signal, timeout])
           : timeout,
       });
-      const correlationId = response.headers.get('x-nemlig-request-id');
+      const correlationId = response.headers.get("x-nemlig-request-id");
       if (correlationId && /^[A-Za-z0-9_-]{1,128}$/u.test(correlationId)) {
         correlationIds.push(correlationId);
       }
@@ -624,76 +624,76 @@ export async function verifyProductionEdge(
       );
     }
   };
-  const health = await step('health', new URL('/healthz', origin));
-  assert.equal(health.status, 200, 'Production health check failed');
-  assert.deepEqual(await health.json(), { status: 'ok', enabled: true });
+  const health = await step("health", new URL("/healthz", origin));
+  assert.equal(health.status, 200, "Production health check failed");
+  assert.deepEqual(await health.json(), { status: "ok", enabled: true });
 
-  const revisionResponse = await step('revision', new URL('/revision', origin));
+  const revisionResponse = await step("revision", new URL("/revision", origin));
   assert.equal(
     revisionResponse.status,
     200,
-    'Production revision check failed',
+    "Production revision check failed",
   );
   const revisionBody = (await revisionResponse.json()) as {
     revision?: unknown;
   };
   assert.equal(
     typeof revisionBody.revision,
-    'string',
-    'Production revision metadata is missing',
+    "string",
+    "Production revision metadata is missing",
   );
   const revision = revisionBody.revision as string;
   if (options.expectedRevision) {
     assert.equal(
       revision,
       options.expectedRevision,
-      'Production revision metadata does not match the expected deployment',
+      "Production revision metadata does not match the expected deployment",
     );
   }
 
   const metadata = await step(
-    'oauth_metadata',
-    new URL('/.well-known/oauth-protected-resource/mcp', origin),
+    "oauth_metadata",
+    new URL("/.well-known/oauth-protected-resource/mcp", origin),
   );
-  assert.equal(metadata.status, 200, 'OAuth resource metadata failed');
+  assert.equal(metadata.status, 200, "OAuth resource metadata failed");
   const resource = (await metadata.json()) as Record<string, unknown>;
-  assert.equal(resource.resource, new URL('/mcp', origin).href);
+  assert.equal(resource.resource, new URL("/mcp", origin).href);
   assert.deepEqual(
     resource.scopes_supported,
-    options.expectedScopes ?? ['use:nemlig-assistant'],
-    'OAuth scopes do not match production configuration',
+    options.expectedScopes ?? ["use:nemlig-assistant"],
+    "OAuth scopes do not match production configuration",
   );
-  assert.deepEqual(resource.bearer_methods_supported, ['header']);
+  assert.deepEqual(resource.bearer_methods_supported, ["header"]);
 
-  const anonymous = await step('anonymous_rejection', new URL('/mcp', origin), {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
+  const anonymous = await step("anonymous_rejection", new URL("/mcp", origin), {
+    method: "POST",
+    headers: { "content-type": "application/json" },
     body: JSON.stringify({
-      jsonrpc: '2.0',
+      jsonrpc: "2.0",
       id: 1,
-      method: 'initialize',
+      method: "initialize",
       params: {},
     }),
   });
-  assert.equal(anonymous.status, 401, 'Anonymous MCP request was not rejected');
+  assert.equal(anonymous.status, 401, "Anonymous MCP request was not rejected");
 
   const foreignOrigin = await step(
-    'foreign_origin_rejection',
-    new URL('/mcp', origin),
+    "foreign_origin_rejection",
+    new URL("/mcp", origin),
     {
-      method: 'POST',
+      method: "POST",
       headers: {
-        'content-type': 'application/json',
-        origin: 'https://example.invalid',
+        "content-type": "application/json",
+        origin: "https://example.invalid",
       },
       body: JSON.stringify({
-        jsonrpc: '2.0',
+        jsonrpc: "2.0",
         id: 1,
-        method: 'initialize',
+        method: "initialize",
         params: {},
       }),
     },
   );
-  assert.equal(foreignOrigin.status, 403, 'Foreign Origin was not rejected');
+  assert.equal(foreignOrigin.status, 403, "Foreign Origin was not rejected");
   return { revision, lastCompletedBoundary, steps, correlationIds };
 }

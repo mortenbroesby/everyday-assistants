@@ -1,15 +1,15 @@
-import type { CloudflareEnv } from './cloudflare-config.js';
+import type { CloudflareEnv } from "./cloudflare-config.js";
 import {
   parsePrincipalPolicy,
   type PrincipalPolicy,
-} from './principal-policy.js';
-import type { Credentials } from './config.js';
-import { oauthReconnectChallenge } from './auth0.js';
+} from "./principal-policy.js";
+import type { Credentials } from "./config.js";
+import { oauthReconnectChallenge } from "./auth0.js";
 import {
   auth,
   discoverAuthorizationServerMetadata,
   type OAuthClientProvider,
-} from '@modelcontextprotocol/client';
+} from "@modelcontextprotocol/client";
 
 /** Existing credential portal settings; browser OAuth stays in its adapter. */
 export interface OnboardingConfig {
@@ -27,22 +27,22 @@ export interface OnboardingDependencies {
   authenticate(token: string): Promise<string | undefined>;
   principalStatus(
     subject: string,
-  ): Promise<'owner' | 'pending' | 'enabled' | undefined>;
+  ): Promise<"owner" | "pending" | "enabled" | undefined>;
   connectionStatus(subject: string): Promise<boolean>;
   replace(
     subject: string,
     credentials: Credentials,
-  ): Promise<'connected' | 'invalid'>;
+  ): Promise<"connected" | "invalid">;
   revoke(subject: string): Promise<void>;
   listPrincipals(): Promise<
     Array<{
       subject: string;
-      status: 'pending' | 'enabled' | 'disabled' | 'revoked';
+      status: "pending" | "enabled" | "disabled" | "revoked";
     }>
   >;
   setPrincipalStatus(
     subject: string,
-    status: 'disabled' | 'revoked',
+    status: "disabled" | "revoked",
   ): Promise<void>;
   consumeCsrf(
     subject: string,
@@ -52,13 +52,13 @@ export interface OnboardingDependencies {
 }
 
 interface SessionCookie {
-  kind: 'session';
+  kind: "session";
   subject: string;
   csrf: string;
   expiresAt: number;
 }
 interface LoginCookie {
-  kind: 'login';
+  kind: "login";
   state: string;
   codeVerifier: string;
   issuer: string;
@@ -66,27 +66,27 @@ interface LoginCookie {
   expiresAt: number;
 }
 
-const SESSION_COOKIE = '__Host-nemlig-session';
-const LOGIN_COOKIE = '__Host-nemlig-login';
+const SESSION_COOKIE = "__Host-nemlig-session";
+const LOGIN_COOKIE = "__Host-nemlig-login";
 const encoder = new TextEncoder();
 const invalidConfig = (): never => {
-  throw new Error('Credential onboarding configuration is invalid.');
+  throw new Error("Credential onboarding configuration is invalid.");
 };
 const required = (env: CloudflareEnv, name: keyof CloudflareEnv): string =>
   env[name]?.trim() || invalidConfig();
 
 export function loadOnboardingConfig(env: CloudflareEnv): OnboardingConfig {
-  const publicUrl = new URL(required(env, 'NEMLIG_MCP_PUBLIC_URL'));
-  const sessionKey = required(env, 'NEMLIG_MCP_ONBOARDING_SESSION_KEY');
-  const credentialKey = required(env, 'NEMLIG_MCP_CREDENTIAL_KEY');
+  const publicUrl = new URL(required(env, "NEMLIG_MCP_PUBLIC_URL"));
+  const sessionKey = required(env, "NEMLIG_MCP_ONBOARDING_SESSION_KEY");
+  const credentialKey = required(env, "NEMLIG_MCP_CREDENTIAL_KEY");
   const credentialKeyVersion = required(
     env,
-    'NEMLIG_MCP_CREDENTIAL_KEY_VERSION',
+    "NEMLIG_MCP_CREDENTIAL_KEY_VERSION",
   );
   const principalPolicy = parsePrincipalPolicy(env.NEMLIG_MCP_PRINCIPALS);
   if (
-    publicUrl.protocol !== 'https:' ||
-    publicUrl.pathname !== '/mcp' ||
+    publicUrl.protocol !== "https:" ||
+    publicUrl.pathname !== "/mcp" ||
     publicUrl.search ||
     publicUrl.hash ||
     !/^[A-Za-z0-9_-]{43}$/u.test(sessionKey) ||
@@ -106,22 +106,22 @@ export function loadOnboardingConfig(env: CloudflareEnv): OnboardingConfig {
 }
 
 const base64url = (bytes: Uint8Array): string => {
-  let binary = '';
+  let binary = "";
   for (const byte of bytes) {
     binary += String.fromCharCode(byte);
   }
   return btoa(binary)
-    .replaceAll('+', '-')
-    .replaceAll('/', '_')
-    .replace(/=+$/u, '');
+    .replaceAll("+", "-")
+    .replaceAll("/", "_")
+    .replace(/=+$/u, "");
 };
 const decode = (value: string): Uint8Array<ArrayBuffer> => {
   if (!/^[A-Za-z0-9_-]+$/u.test(value) || value.length > 4_096) {
-    throw new Error('invalid cookie');
+    throw new Error("invalid cookie");
   }
   const binary = atob(
-    value.replaceAll('-', '+').replaceAll('_', '/') +
-      '==='.slice((value.length + 3) % 4),
+    value.replaceAll("-", "+").replaceAll("_", "/") +
+      "===".slice((value.length + 3) % 4),
   );
   const result = new Uint8Array(binary.length);
   for (let index = 0; index < binary.length; index += 1) {
@@ -131,11 +131,11 @@ const decode = (value: string): Uint8Array<ArrayBuffer> => {
 };
 const hmacKey = (encoded: string): Promise<CryptoKey> =>
   crypto.subtle.importKey(
-    'raw',
+    "raw",
     decode(encoded),
-    { name: 'HMAC', hash: 'SHA-256' },
+    { name: "HMAC", hash: "SHA-256" },
     false,
-    ['sign', 'verify'],
+    ["sign", "verify"],
   );
 const signCookie = async (
   value: SessionCookie | LoginCookie,
@@ -143,7 +143,7 @@ const signCookie = async (
 ): Promise<string> => {
   const payload = base64url(encoder.encode(JSON.stringify(value)));
   const signature = await crypto.subtle.sign(
-    'HMAC',
+    "HMAC",
     await hmacKey(key),
     encoder.encode(payload),
   );
@@ -154,13 +154,13 @@ const verifyCookie = async (
   key: string,
 ): Promise<SessionCookie | LoginCookie | undefined> => {
   try {
-    const [payload, signature, extra] = value?.split('.') ?? [];
+    const [payload, signature, extra] = value?.split(".") ?? [];
     if (
       !payload ||
       !signature ||
       extra ||
       !(await crypto.subtle.verify(
-        'HMAC',
+        "HMAC",
         await hmacKey(key),
         decode(signature),
         encoder.encode(payload),
@@ -177,18 +177,18 @@ const verifyCookie = async (
       return undefined;
     }
     if (
-      parsed.kind === 'session' &&
-      typeof parsed.subject === 'string' &&
+      parsed.kind === "session" &&
+      typeof parsed.subject === "string" &&
       /^[A-Za-z0-9_-]{32}$/u.test(parsed.csrf)
     ) {
       return parsed;
     }
     if (
-      parsed.kind === 'login' &&
+      parsed.kind === "login" &&
       /^[A-Za-z0-9_-]{32}$/u.test(parsed.state) &&
       /^[A-Za-z0-9._~-]{43,128}$/u.test(parsed.codeVerifier) &&
-      typeof parsed.issuer === 'string' &&
-      typeof parsed.clientId === 'string'
+      typeof parsed.issuer === "string" &&
+      typeof parsed.clientId === "string"
     ) {
       return parsed;
     }
@@ -200,25 +200,25 @@ const verifyCookie = async (
 
 const cookie = (request: Request, name: string): string | undefined =>
   request.headers
-    .get('cookie')
-    ?.split(';')
-    .map((part) => part.trim().split('='))
+    .get("cookie")
+    ?.split(";")
+    .map((part) => part.trim().split("="))
     .find(([key]) => key === name)
     ?.slice(1)
-    .join('=');
+    .join("=");
 const setCookie = (name: string, value: string, maxAge: number): string =>
   `${name}=${value}; Path=/; Max-Age=${maxAge}; Secure; HttpOnly; SameSite=Lax`;
 const random = (bytes = 32): string =>
   base64url(crypto.getRandomValues(new Uint8Array(bytes)));
 const securityHeaders = new Headers({
-  'cache-control': 'no-store',
-  'content-security-policy':
+  "cache-control": "no-store",
+  "content-security-policy":
     "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'",
-  'permissions-policy': 'camera=(), microphone=(), geolocation=()',
+  "permissions-policy": "camera=(), microphone=(), geolocation=()",
   // Native form POSTs under no-referrer send Origin: null and fail our origin check.
-  'referrer-policy': 'same-origin',
-  'x-content-type-options': 'nosniff',
-  'x-frame-options': 'DENY',
+  "referrer-policy": "same-origin",
+  "x-content-type-options": "nosniff",
+  "x-frame-options": "DENY",
 });
 const response = (
   body: string,
@@ -226,7 +226,7 @@ const response = (
   headers?: HeadersInit,
 ): Response => {
   const merged = new Headers(securityHeaders);
-  merged.set('content-type', 'text/html; charset=utf-8');
+  merged.set("content-type", "text/html; charset=utf-8");
   for (const [name, value] of new Headers(headers)) {
     merged.append(name, value);
   }
@@ -234,39 +234,39 @@ const response = (
 };
 const redirect = (location: string, cookies: string[]): Response => {
   const headers = new Headers(securityHeaders);
-  headers.set('location', location);
+  headers.set("location", location);
   for (const value of cookies) {
-    headers.append('set-cookie', value);
+    headers.append("set-cookie", value);
   }
   return new Response(null, { status: 303, headers });
 };
 const escape = (value: string): string =>
   value
-    .replaceAll('&', '&amp;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;')
-    .replaceAll('"', '&quot;')
-    .replaceAll("'", '&#39;');
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
 const page = (
   csrf: string,
   connected: boolean,
-  message = '',
+  message = "",
   principals: Array<{ subject: string; status: string }> = [],
 ): string =>
-  `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Connect Nemlig</title><style>body{font:16px system-ui;max-width:34rem;margin:3rem auto;padding:0 1rem}label,input,button{display:block;width:100%;box-sizing:border-box}input,button{font:inherit;padding:.7rem;margin:.35rem 0 1rem}</style></head><body><main><h1>Connect Nemlig</h1><p>${connected ? 'Connected. You can replace or revoke this connection.' : 'Enter your own Nemlig login. It is sent only to this service.'}</p>${message ? `<p role="status">${message}</p>` : ''}<form method="post" action="/connect"><input type="hidden" name="csrf" value="${csrf}"><input type="hidden" name="action" value="replace"><label for="username">Nemlig email</label><input id="username" name="username" type="email" autocomplete="username" maxlength="320" required><label for="password">Nemlig password</label><input id="password" name="password" type="password" autocomplete="current-password" maxlength="1024" required><button type="submit">Connect</button></form>${connected ? `<form method="post" action="/connect"><input type="hidden" name="csrf" value="${csrf}"><input type="hidden" name="action" value="revoke"><button type="submit">Revoke connection</button></form>` : ''}${principals.length ? `<section><h2>Invited users</h2>${principals.map((principal) => `<p>${escape(principal.subject)}: ${escape(principal.status)}</p><form method="post" action="/connect"><input type="hidden" name="csrf" value="${csrf}"><input type="hidden" name="subject" value="${escape(principal.subject)}"><button name="action" value="disable" type="submit">Disable access</button><button name="action" value="revoke-access" type="submit">Revoke access</button></form>`).join('')}</section>` : ''}</main></body></html>`;
+  `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Connect Nemlig</title><style>body{font:16px system-ui;max-width:34rem;margin:3rem auto;padding:0 1rem}label,input,button{display:block;width:100%;box-sizing:border-box}input,button{font:inherit;padding:.7rem;margin:.35rem 0 1rem}</style></head><body><main><h1>Connect Nemlig</h1><p>${connected ? "Connected. You can replace or revoke this connection." : "Enter your own Nemlig login. It is sent only to this service."}</p>${message ? `<p role="status">${message}</p>` : ""}<form method="post" action="/connect"><input type="hidden" name="csrf" value="${csrf}"><input type="hidden" name="action" value="replace"><label for="username">Nemlig email</label><input id="username" name="username" type="email" autocomplete="username" maxlength="320" required><label for="password">Nemlig password</label><input id="password" name="password" type="password" autocomplete="current-password" maxlength="1024" required><button type="submit">Connect</button></form>${connected ? `<form method="post" action="/connect"><input type="hidden" name="csrf" value="${csrf}"><input type="hidden" name="action" value="revoke"><button type="submit">Revoke connection</button></form>` : ""}${principals.length ? `<section><h2>Invited users</h2>${principals.map((principal) => `<p>${escape(principal.subject)}: ${escape(principal.status)}</p><form method="post" action="/connect"><input type="hidden" name="csrf" value="${csrf}"><input type="hidden" name="subject" value="${escape(principal.subject)}"><button name="action" value="disable" type="submit">Disable access</button><button name="action" value="revoke-access" type="submit">Revoke access</button></form>`).join("")}</section>` : ""}</main></body></html>`;
 
 const readForm = async (
   request: Request,
 ): Promise<URLSearchParams | undefined> => {
   if (
     !request.headers
-      .get('content-type')
+      .get("content-type")
       ?.toLowerCase()
-      .startsWith('application/x-www-form-urlencoded')
+      .startsWith("application/x-www-form-urlencoded")
   ) {
     return undefined;
   }
-  const declared = Number(request.headers.get('content-length') ?? '0');
+  const declared = Number(request.headers.get("content-length") ?? "0");
   if (!Number.isFinite(declared) || declared < 0 || declared > 4_096) {
     return undefined;
   }
@@ -297,10 +297,10 @@ const readForm = async (
   return new URLSearchParams(new TextDecoder().decode(joined));
 };
 const bearer = (request: Request): string | undefined =>
-  request.headers.get('authorization')?.match(/^Bearer\s+([^\s]+)$/iu)?.[1];
+  request.headers.get("authorization")?.match(/^Bearer\s+([^\s]+)$/iu)?.[1];
 const authRequired = (config: OnboardingConfig): Response =>
-  response('Authentication required.', 401, {
-    'www-authenticate': oauthReconnectChallenge(config.publicUrl),
+  response("Authentication required.", 401, {
+    "www-authenticate": oauthReconnectChallenge(config.publicUrl),
   });
 
 const signInPage = (): Response =>
@@ -318,16 +318,16 @@ const browserLogin = async (
   dependencies: OnboardingDependencies,
 ): Promise<Response> => {
   const failed = (): Response =>
-    response('Sign-in failed. Return to /connect and try again.', 401, {
-      'set-cookie': loginCookie('', 0),
+    response("Sign-in failed. Return to /connect and try again.", 401, {
+      "set-cookie": loginCookie("", 0),
     });
   try {
-    const issuer = new URL(required(env, 'NEMLIG_MCP_AUTH0_ISSUER'));
-    const clientId = required(env, 'NEMLIG_MCP_ONBOARDING_CLIENT_ID');
-    const audience = required(env, 'NEMLIG_MCP_AUTH0_AUDIENCE');
-    const timeout = Number(env.MCP_AUTH_TIMEOUT_MS ?? '5000');
+    const issuer = new URL(required(env, "NEMLIG_MCP_AUTH0_ISSUER"));
+    const clientId = required(env, "NEMLIG_MCP_ONBOARDING_CLIENT_ID");
+    const audience = required(env, "NEMLIG_MCP_AUTH0_AUDIENCE");
+    const timeout = Number(env.MCP_AUTH_TIMEOUT_MS ?? "5000");
     if (
-      issuer.protocol !== 'https:' ||
+      issuer.protocol !== "https:" ||
       issuer.username ||
       issuer.password ||
       issuer.search ||
@@ -339,12 +339,12 @@ const browserLogin = async (
     ) {
       return failed();
     }
-    if (!issuer.pathname.endsWith('/')) {
-      issuer.pathname += '/';
+    if (!issuer.pathname.endsWith("/")) {
+      issuer.pathname += "/";
     }
-    const callback = new URL('/connect/callback', config.origin);
+    const callback = new URL("/connect/callback", config.origin);
     const completing = new URL(request.url).pathname === callback.pathname;
-    if (request.method !== (completing ? 'POST' : 'GET')) {
+    if (request.method !== (completing ? "POST" : "GET")) {
       return failed();
     }
     const saved = await verifyCookie(
@@ -356,37 +356,37 @@ const browserLogin = async (
     let iss: string | undefined;
     if (completing) {
       if (
-        request.headers.get('origin') !== issuer.origin ||
-        saved?.kind !== 'login' ||
+        request.headers.get("origin") !== issuer.origin ||
+        saved?.kind !== "login" ||
         saved.issuer !== issuer.href ||
         saved.clientId !== clientId ||
         !request.headers
-          .get('content-type')
-          ?.startsWith('application/x-www-form-urlencoded')
+          .get("content-type")
+          ?.startsWith("application/x-www-form-urlencoded")
       ) {
         return failed();
       }
       const form = await readForm(request);
       if (
         !form ||
-        ['code', 'state'].some((name) => form.getAll(name).length !== 1) ||
-        form.getAll('iss').length > 1 ||
-        form.has('error') ||
-        form.get('state') !== saved.state
+        ["code", "state"].some((name) => form.getAll(name).length !== 1) ||
+        form.getAll("iss").length > 1 ||
+        form.has("error") ||
+        form.get("state") !== saved.state
       ) {
         return failed();
       }
-      code = form.get('code') ?? undefined;
-      iss = form.get('iss') ?? undefined;
+      code = form.get("code") ?? undefined;
+      iss = form.get("iss") ?? undefined;
       if (!code || code.length > 2048) {
         return failed();
       }
       transaction = saved;
     } else {
       transaction = {
-        kind: 'login',
+        kind: "login",
         state: random(24),
-        codeVerifier: '',
+        codeVerifier: "",
         issuer: issuer.href,
         clientId,
         expiresAt: Date.now() + 600_000,
@@ -404,24 +404,24 @@ const browserLogin = async (
         target.password ||
         target.hash
       ) {
-        throw new Error('OAuth destination rejected.');
+        throw new Error("OAuth destination rejected.");
       }
       if (
         (
-          init?.method ?? (input instanceof Request ? input.method : 'GET')
-        ).toUpperCase() === 'POST' &&
+          init?.method ?? (input instanceof Request ? input.method : "GET")
+        ).toUpperCase() === "POST" &&
         ++exchanges > 1
       ) {
-        throw new Error('OAuth exchange already attempted.');
+        throw new Error("OAuth exchange already attempted.");
       }
       // Workers supports manual redirects, not the browser/Node "error" mode.
       const fetched = await (dependencies.oauthFetch ?? fetch)(input, {
         ...init,
         signal,
-        redirect: 'manual',
+        redirect: "manual",
       });
       if (fetched.status >= 300 && fetched.status < 400) {
-        throw new Error('OAuth redirect rejected.');
+        throw new Error("OAuth redirect rejected.");
       }
       return fetched;
     };
@@ -437,10 +437,10 @@ const browserLogin = async (
       redirectUrl: callback,
       clientMetadata: {
         redirect_uris: [callback.href],
-        token_endpoint_auth_method: 'none',
-        grant_types: ['authorization_code'],
-        response_types: ['code'],
-        application_type: 'web',
+        token_endpoint_auth_method: "none",
+        grant_types: ["authorization_code"],
+        response_types: ["code"],
+        application_type: "web",
       },
       clientInformation: () => ({ client_id: clientId, issuer: issuer.href }),
       tokens: () => undefined,
@@ -462,30 +462,30 @@ const browserLogin = async (
       }),
       // Never let SDK invalid-grant/client recovery repeat a code exchange.
       invalidateCredentials: () => {
-        throw new Error('OAuth recovery requires a new sign-in.');
+        throw new Error("OAuth recovery requires a new sign-in.");
       },
       redirectToAuthorization: (url) => {
         if (url.origin !== issuer.origin) {
-          throw new Error('OAuth destination rejected.');
+          throw new Error("OAuth destination rejected.");
         }
-        url.searchParams.set('response_mode', 'form_post');
+        url.searchParams.set("response_mode", "form_post");
         // Auth0 selects the resource-server JWT through audience, not resource.
-        url.searchParams.set('audience', audience);
+        url.searchParams.set("audience", audience);
         authorizationUrl = url;
       },
     };
     const result = await auth(provider, {
       serverUrl: config.publicUrl,
-      scope: env.NEMLIG_MCP_REQUIRED_SCOPE ?? 'use:nemlig-assistant',
+      scope: env.NEMLIG_MCP_REQUIRED_SCOPE ?? "use:nemlig-assistant",
       fetchFn,
       ...(completing ? { authorizationCode: code, iss } : {}),
     });
-    if (!completing && result === 'REDIRECT' && authorizationUrl) {
+    if (!completing && result === "REDIRECT" && authorizationUrl) {
       return redirect(authorizationUrl.href, [
         loginCookie(await signCookie(transaction, config.sessionKey)),
       ]);
     }
-    if (!accessToken || result !== 'AUTHORIZED') {
+    if (!accessToken || result !== "AUTHORIZED") {
       return failed();
     }
     const subject = await dependencies.authenticate(accessToken);
@@ -504,13 +504,13 @@ const browserLogin = async (
       return failed();
     }
     const session: SessionCookie = {
-      kind: 'session',
+      kind: "session",
       subject,
       csrf: random(24),
       expiresAt: Date.now() + 900_000,
     };
-    return redirect('/connect', [
-      loginCookie('', 0),
+    return redirect("/connect", [
+      loginCookie("", 0),
       setCookie(
         SESSION_COOKIE,
         await signCookie(session, config.sessionKey),
@@ -531,35 +531,35 @@ export async function handleOnboardingRequest(
   env: CloudflareEnv,
   dependencies: OnboardingDependencies,
 ): Promise<Response> {
-  if (env.MCP_CREDENTIAL_ONBOARDING_ENABLED !== 'true') {
-    return response('Credential onboarding is disabled.', 503);
+  if (env.MCP_CREDENTIAL_ONBOARDING_ENABLED !== "true") {
+    return response("Credential onboarding is disabled.", 503);
   }
   let config: OnboardingConfig;
   try {
     config = loadOnboardingConfig(env);
   } catch {
-    return response('Credential onboarding configuration is invalid.', 503);
+    return response("Credential onboarding configuration is invalid.", 503);
   }
   const url = new URL(request.url);
   if (
-    url.pathname === '/connect/sign-in' ||
-    url.pathname === '/connect/callback'
+    url.pathname === "/connect/sign-in" ||
+    url.pathname === "/connect/callback"
   ) {
     return browserLogin(request, config, env, dependencies);
   }
-  if (url.pathname !== '/connect') {
-    return response('Not found.', 404);
+  if (url.pathname !== "/connect") {
+    return response("Not found.", 404);
   }
   const verified = await verifyCookie(
     cookie(request, SESSION_COOKIE),
     config.sessionKey,
   );
-  let session = verified?.kind === 'session' ? verified : undefined;
+  let session = verified?.kind === "session" ? verified : undefined;
   if (!session) {
-    if (request.method !== 'GET') {
+    if (request.method !== "GET") {
       return authRequired(config);
     }
-    if (!request.headers.has('authorization')) {
+    if (!request.headers.has("authorization")) {
       return signInPage();
     }
     const subject = await (async () => {
@@ -570,12 +570,12 @@ export async function handleOnboardingRequest(
       return authRequired(config);
     }
     session = {
-      kind: 'session',
+      kind: "session",
       subject,
       csrf: random(24),
       expiresAt: Date.now() + 15 * 60_000,
     };
-    return redirect('/connect', [
+    return redirect("/connect", [
       setCookie(
         SESSION_COOKIE,
         await signCookie(session, config.sessionKey),
@@ -585,27 +585,27 @@ export async function handleOnboardingRequest(
   }
   const status = await dependencies.principalStatus(session.subject);
   if (!status) {
-    return response('Access revoked.', 403);
+    return response("Access revoked.", 403);
   }
-  if (request.method === 'GET') {
+  if (request.method === "GET") {
     return response(
       page(
         session.csrf,
         await dependencies.connectionStatus(session.subject),
-        '',
-        status === 'owner' ? await dependencies.listPrincipals() : [],
+        "",
+        status === "owner" ? await dependencies.listPrincipals() : [],
       ),
     );
   }
-  if (request.method !== 'POST') {
-    return response('Method not allowed.', 405);
+  if (request.method !== "POST") {
+    return response("Method not allowed.", 405);
   }
-  if (request.headers.get('origin') !== config.origin) {
-    return response('Request rejected.', 403);
+  if (request.headers.get("origin") !== config.origin) {
+    return response("Request rejected.", 403);
   }
   const form = await readForm(request);
-  if (!form || form.get('csrf') !== session.csrf) {
-    return response('Request rejected.', 403);
+  if (!form || form.get("csrf") !== session.csrf) {
+    return response("Request rejected.", 403);
   }
   if (
     !(await dependencies.consumeCsrf(
@@ -614,7 +614,7 @@ export async function handleOnboardingRequest(
       session.expiresAt,
     ))
   ) {
-    return response('Request rejected.', 403);
+    return response("Request rejected.", 403);
   }
   const renewed: SessionCookie = {
     ...session,
@@ -623,7 +623,7 @@ export async function handleOnboardingRequest(
   };
   const render = async (body: string, statusCode = 200): Promise<Response> =>
     response(body, statusCode, {
-      'set-cookie': setCookie(
+      "set-cookie": setCookie(
         SESSION_COOKIE,
         await signCookie(renewed, config.sessionKey),
         900,
@@ -631,40 +631,40 @@ export async function handleOnboardingRequest(
     });
   try {
     if (
-      form.get('action') === 'disable' ||
-      form.get('action') === 'revoke-access'
+      form.get("action") === "disable" ||
+      form.get("action") === "revoke-access"
     ) {
-      const subject = form.get('subject');
+      const subject = form.get("subject");
       if (
-        status !== 'owner' ||
+        status !== "owner" ||
         !subject ||
         subject.length > 500 ||
         subject === session.subject
       ) {
-        return render('Request rejected.', 403);
+        return render("Request rejected.", 403);
       }
       await dependencies.setPrincipalStatus(
         subject,
-        form.get('action') === 'disable' ? 'disabled' : 'revoked',
+        form.get("action") === "disable" ? "disabled" : "revoked",
       );
       return render(
         page(
           renewed.csrf,
           await dependencies.connectionStatus(session.subject),
-          'Access updated.',
+          "Access updated.",
           await dependencies.listPrincipals(),
         ),
       );
     }
-    if (form.get('action') === 'revoke') {
+    if (form.get("action") === "revoke") {
       await dependencies.revoke(session.subject);
-      return render(page(renewed.csrf, false, 'Connection revoked.'));
+      return render(page(renewed.csrf, false, "Connection revoked."));
     }
-    if (form.get('action') !== 'replace') {
-      return render('Request rejected.', 400);
+    if (form.get("action") !== "replace") {
+      return render("Request rejected.", 400);
     }
-    const username = form.get('username');
-    const password = form.get('password');
+    const username = form.get("username");
+    const password = form.get("password");
     if (
       !username ||
       username.trim().length < 1 ||
@@ -676,7 +676,7 @@ export async function handleOnboardingRequest(
         page(
           renewed.csrf,
           await dependencies.connectionStatus(session.subject),
-          'Connection failed.',
+          "Connection failed.",
         ),
         400,
       );
@@ -685,17 +685,17 @@ export async function handleOnboardingRequest(
       username: username.trim(),
       password,
     });
-    return result === 'connected'
-      ? render(page(renewed.csrf, true, 'Connection saved.'))
+    return result === "connected"
+      ? render(page(renewed.csrf, true, "Connection saved."))
       : render(
           page(
             renewed.csrf,
             await dependencies.connectionStatus(session.subject),
-            'Connection failed.',
+            "Connection failed.",
           ),
           400,
         );
   } catch {
-    return render(page(renewed.csrf, false, 'Request failed.'), 500);
+    return render(page(renewed.csrf, false, "Request failed."), 500);
   }
 }

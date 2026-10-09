@@ -1,16 +1,16 @@
 import {
   Client,
   StreamableHTTPClientTransport,
-} from '@modelcontextprotocol/client';
-import { createMcpHandler } from '@modelcontextprotocol/server';
-import { toNodeHandler } from '@modelcontextprotocol/node';
-import assert from 'node:assert/strict';
-import { createServer } from 'node:http';
-import type { AddressInfo } from 'node:net';
-import test from 'node:test';
-import type { Basket, Product, ShoppingClient } from './client.js';
-import { createMcpServer } from './mcp.js';
-import type { ProductReviewSnapshot } from './product-review.js';
+} from "@modelcontextprotocol/client";
+import { createMcpHandler } from "@modelcontextprotocol/server";
+import { toNodeHandler } from "@modelcontextprotocol/node";
+import assert from "node:assert/strict";
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
+import test from "node:test";
+import type { Basket, Product, ShoppingClient } from "./client.js";
+import { createMcpServer } from "./mcp.js";
+import type { ProductReviewSnapshot } from "./product-review.js";
 
 const product = (id: number, name: string, price: number): Product => ({
   id,
@@ -18,11 +18,11 @@ const product = (id: number, name: string, price: number): Product => ({
   price,
   unit: `${price.toFixed(2)} kr/stk`,
   unitPrice: price,
-  unitSize: '1 stk',
-  brand: 'Test',
-  category: 'Dagligvarer',
-  subcategory: '',
-  imageUrl: '',
+  unitSize: "1 stk",
+  brand: "Test",
+  category: "Dagligvarer",
+  subcategory: "",
+  imageUrl: "",
   available: true,
   labels: [],
   isOrganic: false,
@@ -46,20 +46,20 @@ const withMcpClient = async <T>(
   server: ReturnType<typeof createMcpServer>,
   action: (client: Client) => Promise<T>,
 ): Promise<T> => {
-  const handler = createMcpHandler(() => server, { legacy: 'reject' });
+  const handler = createMcpHandler(() => server, { legacy: "reject" });
   const nodeHandler = toNodeHandler(handler);
   const httpServer = createServer((request, response) => {
     void nodeHandler(request, response);
   });
-  httpServer.listen(0, '127.0.0.1');
+  httpServer.listen(0, "127.0.0.1");
   await new Promise<void>((resolve, reject) => {
-    httpServer.once('listening', resolve);
-    httpServer.once('error', reject);
+    httpServer.once("listening", resolve);
+    httpServer.once("error", reject);
   });
   const client = new Client(
-    { name: 'submission-smoke', version: '1.0.0' },
+    { name: "submission-smoke", version: "1.0.0" },
     {
-      versionNegotiation: { mode: { pin: '2026-07-28' } },
+      versionNegotiation: { mode: { pin: "2026-07-28" } },
     },
   );
   const transport = new StreamableHTTPClientTransport(
@@ -81,26 +81,26 @@ const withMcpClient = async <T>(
   }
 };
 
-test('MCP submission smoke searches, prepares only accepted lines, and verifies explicit submission', async () => {
-  const chosen = product(7, 'Chosen oats', 4.25);
-  const unresolved = product(8, 'Unresolved tea', 6.5);
+test("MCP submission smoke searches, prepares only accepted lines, and verifies explicit submission", async () => {
+  const chosen = product(7, "Chosen oats", 4.25);
+  const unresolved = product(8, "Unresolved tea", 6.5);
   const products = new Map([
     [7, chosen],
     [8, unresolved],
   ]);
   let basket: Basket = {
-    items: [item(99, 'Unrelated provider item', 2, 3)],
+    items: [item(99, "Unrelated provider item", 2, 3)],
     productsPrice: 6,
     deliveryPrice: 5,
     numberOfProducts: 2,
-    deliveryTime: 'Tomorrow',
+    deliveryTime: "Tomorrow",
   };
   let providerWrites = 0;
   const provider: ShoppingClient = {
     isLoggedIn: () => true,
     login: async () => {},
     searchProducts: async (query) =>
-      query === 'oats' ? [chosen, unresolved] : [],
+      query === "oats" ? [chosen, unresolved] : [],
     getProduct: async (id) =>
       products.get(id) ?? { ...unresolved, id: undefined },
     getFreshProduct: async (id) =>
@@ -136,14 +136,14 @@ test('MCP submission smoke searches, prepares only accepted lines, and verifies 
     },
   };
   const credentials = async () => ({
-    username: 'person@example.test',
-    password: 'test-only',
+    username: "person@example.test",
+    password: "test-only",
   });
 
   await withMcpClient(createMcpServer(provider, credentials), async (mcp) => {
     const found = await mcp.callTool({
-      name: 'find_groceries',
-      arguments: { search_term: 'oats' },
+      name: "find_groceries",
+      arguments: { search_term: "oats" },
     });
     assert.equal(found.isError, undefined);
     const result = found.structuredContent as { result: Array<{ id: number }> };
@@ -151,10 +151,10 @@ test('MCP submission smoke searches, prepares only accepted lines, and verifies 
       result.result.map((value) => value.id),
       [7, 8],
     );
-    assert.equal(providerWrites, 0, 'search is read-only');
+    assert.equal(providerWrites, 0, "search is read-only");
 
     const started = await mcp.callTool({
-      name: 'start_product_review',
+      name: "start_product_review",
       arguments: {
         items: [
           { product_id: 7, quantity: 3 },
@@ -168,7 +168,7 @@ test('MCP submission smoke searches, prepares only accepted lines, and verifies 
     ).review;
     const update = async (action: Record<string, unknown>) => {
       const response = await mcp.callTool({
-        name: 'update_product_review_conversation',
+        name: "update_product_review_conversation",
         arguments: {
           review_id: review.review_id,
           revision: review.revision,
@@ -191,29 +191,29 @@ test('MCP submission smoke searches, prepares only accepted lines, and verifies 
         state,
       ]),
       [
-        [7, 3, 'needs-review'],
-        [8, 2, 'needs-review'],
+        [7, 3, "needs-review"],
+        [8, 2, "needs-review"],
       ],
     );
-    review = await update({ kind: 'accept', product_ids: [7] });
+    review = await update({ kind: "accept", product_ids: [7] });
     assert.deepEqual(
       review.items.map(({ product_id, state }) => [product_id, state]),
       [
-        [7, 'ready'],
-        [8, 'needs-review'],
+        [7, "ready"],
+        [8, "needs-review"],
       ],
     );
     assert.equal(
       providerWrites,
       0,
-      'local acceptance does not mutate the provider basket',
+      "local acceptance does not mutate the provider basket",
     );
 
-    review = await update({ kind: 'prepare_submission' });
+    review = await update({ kind: "prepare_submission" });
     assert.equal(
       providerWrites,
       0,
-      'preparation does not mutate the provider basket',
+      "preparation does not mutate the provider basket",
     );
     const prepared = review.submission;
     assert.ok(prepared);
@@ -249,13 +249,13 @@ test('MCP submission smoke searches, prepares only accepted lines, and verifies 
           quantity: 3,
           item_price: 4.25,
           line_total: 12.75,
-          name: 'Chosen oats',
-          unit_size: '1 stk',
+          name: "Chosen oats",
+          unit_size: "1 stk",
         },
       ],
     );
     assert.equal(
-      JSON.stringify(prepared.review).includes('Unresolved tea'),
+      JSON.stringify(prepared.review).includes("Unresolved tea"),
       false,
     );
     assert.equal(
@@ -264,23 +264,23 @@ test('MCP submission smoke searches, prepares only accepted lines, and verifies 
     );
 
     const wrongReference = await mcp.callTool({
-      name: 'submit_product_review_conversation',
+      name: "submit_product_review_conversation",
       arguments: {
         review_id: review.review_id,
         revision: review.revision,
-        submission_id: '00000000-0000-4000-8000-000000000000',
+        submission_id: "00000000-0000-4000-8000-000000000000",
       },
     });
     assert.equal(
       wrongReference.isError,
       true,
-      'only the exact prepared submission can be applied',
+      "only the exact prepared submission can be applied",
     );
     assert.equal(providerWrites, 0);
     // Simulate the separate conversational approval turn for these exact lines.
     // User approval is the model's responsibility, not a boolean invented by this test.
     const submitted = await mcp.callTool({
-      name: 'submit_product_review_conversation',
+      name: "submit_product_review_conversation",
       arguments: {
         review_id: review.review_id,
         revision: review.revision,
@@ -303,8 +303,8 @@ test('MCP submission smoke searches, prepares only accepted lines, and verifies 
         };
       };
     };
-    assert.equal(submittedData.review.submission?.status, 'submitted');
-    assert.equal(submittedData.result.status, 'completed');
+    assert.equal(submittedData.review.submission?.status, "submitted");
+    assert.equal(submittedData.result.status, "completed");
     assert.deepEqual(
       submittedData.result.basket.items.map(({ id, quantity }) => [
         id,
@@ -327,11 +327,11 @@ test('MCP submission smoke searches, prepares only accepted lines, and verifies 
         [99, 2],
         [7, 3],
       ],
-      'verified provider readback preserves unrelated lines',
+      "verified provider readback preserves unrelated lines",
     );
 
     const duplicate = await mcp.callTool({
-      name: 'submit_product_review_conversation',
+      name: "submit_product_review_conversation",
       arguments: {
         review_id: review.review_id,
         revision: review.revision,
@@ -341,12 +341,12 @@ test('MCP submission smoke searches, prepares only accepted lines, and verifies 
     assert.equal(
       duplicate.isError,
       true,
-      'the same approved submission cannot be applied twice',
+      "the same approved submission cannot be applied twice",
     );
     assert.equal(
       providerWrites,
       1,
-      'rejected duplicate makes no second provider write',
+      "rejected duplicate makes no second provider write",
     );
   });
 });

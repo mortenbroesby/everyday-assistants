@@ -1,5 +1,5 @@
-import type { CredentialEnvelope } from './credential-envelope.js';
-import type { Principal } from './principal-policy.js';
+import type { CredentialEnvelope } from "./credential-envelope.js";
+import type { Principal } from "./principal-policy.js";
 
 export interface AdmissionPrincipal {
   principalKey: string;
@@ -9,12 +9,12 @@ export interface AdmissionPolicy {
 }
 export type AdmissionResult =
   | { admitted: true; credential?: CredentialEnvelope }
-  | { admitted: false; status: 409; reason: 'credential_required' };
+  | { admitted: false; status: 409; reason: "credential_required" };
 
 export interface PrincipalRecord {
   subject: string;
   principal_key: string;
-  status: 'pending' | 'enabled' | 'disabled' | 'revoked';
+  status: "pending" | "enabled" | "disabled" | "revoked";
   created_at: string;
   updated_at: string;
 }
@@ -34,15 +34,15 @@ export interface PrincipalStorage {
 }
 
 const invalid = (): never => {
-  throw new Error('Principal record request is invalid.');
+  throw new Error("Principal record request is invalid.");
 };
 const encoder = new TextEncoder();
 
 const digest = async (value: string): Promise<string> => {
   const bytes = new Uint8Array(
-    await crypto.subtle.digest('SHA-256', encoder.encode(value)),
+    await crypto.subtle.digest("SHA-256", encoder.encode(value)),
   );
-  return [...bytes].map((byte) => byte.toString(16).padStart(2, '0')).join('');
+  return [...bytes].map((byte) => byte.toString(16).padStart(2, "0")).join("");
 };
 
 const subjectKey = async (subject: string): Promise<string> =>
@@ -67,7 +67,7 @@ export async function findPrincipalRecord(
 export async function setPrincipalStatus(
   storage: PrincipalStorage,
   principal: Principal,
-  status: 'enabled' | 'disabled' | 'revoked',
+  status: "enabled" | "disabled" | "revoked",
   prerequisitesPassed = false,
   now = new Date(),
 ): Promise<PrincipalRecord | undefined> {
@@ -86,11 +86,11 @@ export async function setPrincipalStatus(
     ) {
       return invalid();
     }
-    if (existing?.status === 'revoked') {
+    if (existing?.status === "revoked") {
       return undefined;
     }
     if (
-      status === 'enabled' &&
+      status === "enabled" &&
       (!principal.enabled ||
         !prerequisitesPassed ||
         !(await storage.get(credentialKey(principal.principal_key))))
@@ -105,7 +105,7 @@ export async function setPrincipalStatus(
       updated_at: now.toISOString(),
     };
     await storage.put(key, record);
-    if (status === 'revoked') {
+    if (status === "revoked") {
       await storage.delete(credentialKey(principal.principal_key));
     }
     return record;
@@ -114,7 +114,7 @@ export async function setPrincipalStatus(
 
 export async function getCredentialRecord(
   storage: PrincipalStorage,
-  principal: Pick<PrincipalRecord, 'principal_key'>,
+  principal: Pick<PrincipalRecord, "principal_key">,
 ): Promise<CredentialRecord | undefined> {
   if (!validPrincipalKey(principal.principal_key)) {
     return undefined;
@@ -151,8 +151,8 @@ export async function replaceCredentialRecord(
     if (
       access &&
       (access.principal_key !== principal.principal_key ||
-        access.status === 'disabled' ||
-        access.status === 'revoked')
+        access.status === "disabled" ||
+        access.status === "revoked")
     ) {
       return invalid();
     }
@@ -173,7 +173,7 @@ export async function replaceCredentialRecord(
     await storage.put(accessKey, {
       subject: principal.subject,
       principal_key: principal.principal_key,
-      status: 'enabled',
+      status: "enabled",
       created_at: access?.created_at ?? timestamp,
       updated_at: timestamp,
     } satisfies PrincipalRecord);
@@ -183,7 +183,7 @@ export async function replaceCredentialRecord(
 
 export async function revokeCredentialRecord(
   storage: PrincipalStorage,
-  principal: Pick<PrincipalRecord, 'principal_key'>,
+  principal: Pick<PrincipalRecord, "principal_key">,
 ): Promise<boolean> {
   if (!validPrincipalKey(principal.principal_key)) {
     return false;
@@ -210,7 +210,7 @@ export async function admitPrincipalRequest(
         credential.envelope.policy_revision !== policy.revision ||
         credential.generation !== credential.envelope.generation)
     ) {
-      return { admitted: false, status: 409, reason: 'credential_required' };
+      return { admitted: false, status: 409, reason: "credential_required" };
     }
     return {
       admitted: true,

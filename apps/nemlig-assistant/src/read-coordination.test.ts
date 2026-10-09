@@ -1,8 +1,8 @@
-import assert from 'node:assert/strict';
-import test from 'node:test';
-import { runReadPool } from './read-coordination.js';
+import assert from "node:assert/strict";
+import test from "node:test";
+import { runReadPool } from "./read-coordination.js";
 
-test('read pool starts inputs in order, preserves result order, and honors adjustable concurrency', async () => {
+test("read pool starts inputs in order, preserves result order, and honors adjustable concurrency", async () => {
   const starts: number[] = [];
   let active = 0;
   let maximum = 0;
@@ -24,7 +24,7 @@ test('read pool starts inputs in order, preserves result order, and honors adjus
   assert.equal(active, 0);
 });
 
-test('read pool rejects invalid concurrency before starting work', async () => {
+test("read pool rejects invalid concurrency before starting work", async () => {
   let starts = 0;
   await assert.rejects(
     runReadPool(
@@ -40,9 +40,9 @@ test('read pool rejects invalid concurrency before starting work', async () => {
   assert.equal(starts, 0);
 });
 
-test('read pool stops queued work and waits for active reads after cancellation', async () => {
+test("read pool stops queued work and waits for active reads after cancellation", async () => {
   const controller = new AbortController();
-  const reason = new Error('cancel pool');
+  const reason = new Error("cancel pool");
   const starts: number[] = [];
   let active = 0;
   const pending = runReadPool(
@@ -56,7 +56,7 @@ test('read pool stops queued work and waits for active reads after cancellation'
           resolve(value);
         }, 40);
         signal.addEventListener(
-          'abort',
+          "abort",
           () => {
             clearTimeout(timer);
             setTimeout(() => {

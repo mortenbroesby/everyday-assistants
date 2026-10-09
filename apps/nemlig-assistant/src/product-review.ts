@@ -1,21 +1,21 @@
-import type { BasketProposalService, ApplyResult } from './proposals.js';
-import { randomUUID } from 'node:crypto';
-import { NemligError } from './nemlig-error.js';
+import type { BasketProposalService, ApplyResult } from "./proposals.js";
+import { randomUUID } from "node:crypto";
+import { NemligError } from "./nemlig-error.js";
 import {
   isAuthenticationFailure,
   resolveDetailedProductSearch,
   type ProductDiscoveryClient,
-} from './product-discovery.js';
-import { createProductView, type ProductView } from './product-presentation.js';
-import { runReadPool } from './read-coordination.js';
+} from "./product-discovery.js";
+import { createProductView, type ProductView } from "./product-presentation.js";
+import { runReadPool } from "./read-coordination.js";
 
-export type ReviewDestination = 'needs-review' | 'ready' | 'alternatives';
+export type ReviewDestination = "needs-review" | "ready" | "alternatives";
 /** Bounds transient draft payloads while allowing a full family shopping trip. */
 export const MAX_DRAFT_PRODUCTS = 500;
 export interface ReviewItem {
   product_id: number;
   quantity: number;
-  state: 'needs-review' | 'ready';
+  state: "needs-review" | "ready";
   view: ProductView;
 }
 export interface ProductReviewSnapshot {
@@ -25,24 +25,24 @@ export interface ProductReviewSnapshot {
   items: ReviewItem[];
   submission?: {
     submission_id: string;
-    status: 'prepared' | 'submitted' | 'uncertain';
+    status: "prepared" | "submitted" | "uncertain";
     expires_at: string;
     review: Record<string, unknown>;
   };
   alternatives?: {
     product_id: number;
-    origin: 'needs-review';
+    origin: "needs-review";
     query: string;
     views: ProductView[];
   };
 }
 export type ProductReviewAction =
-  | { kind: 'accept' | 'remove' | 'revisit'; product_ids: number[] }
-  | { kind: 'add'; items: Array<{ product_id: number; quantity: number }> }
-  | { kind: 'quantity'; product_id: number; quantity: number }
-  | { kind: 'navigate'; destination: ReviewDestination }
-  | { kind: 'alternatives'; product_id: number; query: string; limit?: number }
-  | { kind: 'replace'; product_id: number; replacement_id: number };
+  | { kind: "accept" | "remove" | "revisit"; product_ids: number[] }
+  | { kind: "add"; items: Array<{ product_id: number; quantity: number }> }
+  | { kind: "quantity"; product_id: number; quantity: number }
+  | { kind: "navigate"; destination: ReviewDestination }
+  | { kind: "alternatives"; product_id: number; query: string; limit?: number }
+  | { kind: "replace"; product_id: number; replacement_id: number };
 interface StoredReview {
   owner: string;
   busy: boolean;
@@ -52,13 +52,13 @@ interface StoredReview {
 }
 type ReviewProposals = Pick<
   BasketProposalService,
-  'prepareAdditions' | 'apply'
+  "prepareAdditions" | "apply"
 >;
 
 const validPositive = (value: number): boolean =>
   Number.isSafeInteger(value) && value > 0;
 const available = (view: ProductView): boolean =>
-  view.status === 'complete' && view.product.available === true;
+  view.status === "complete" && view.product.available === true;
 
 /** Private, bounded, temporary state. Local edits cannot call a provider mutation. */
 export class ProductReviewService {
@@ -88,12 +88,12 @@ export class ProductReviewService {
     const oldest = [...this.drafts.entries()].find(
       ([, draft]) =>
         !draft.busy &&
-        draft.snapshot.submission?.status !== 'submitted' &&
-        draft.snapshot.submission?.status !== 'uncertain',
+        draft.snapshot.submission?.status !== "submitted" &&
+        draft.snapshot.submission?.status !== "uncertain",
     );
     if (!oldest) {
       throw new NemligError(
-        'Active draft list limit reached. Finish an in-progress draft list and try again.',
+        "Active draft list limit reached. Finish an in-progress draft list and try again.",
       );
     }
     const [id, draft] = oldest;
@@ -115,20 +115,20 @@ export class ProductReviewService {
             readSignal,
           );
           if (product.id !== item.product_id) {
-            throw new NemligError('Product identity mismatch.');
+            throw new NemligError("Product identity mismatch.");
           }
-          view = createProductView(product, { kind: 'details' });
+          view = createProductView(product, { kind: "details" });
         } catch (error) {
           if (readSignal.aborted || isAuthenticationFailure(error)) {
             throw error;
           }
           view = {
-            context: 'details',
-            status: 'unavailable',
+            context: "details",
+            status: "unavailable",
             product_id: item.product_id,
           };
         }
-        return { ...item, state: 'needs-review', view };
+        return { ...item, state: "needs-review", view };
       },
       { signal },
     );
@@ -166,7 +166,7 @@ export class ProductReviewService {
     const stored = this.get(owner, id);
     if (!stored.viewId || stored.viewId !== viewId) {
       throw new NemligError(
-        'This Draft list card is out of date. Use the newest card before making changes.',
+        "This Draft list card is out of date. Use the newest card before making changes.",
       );
     }
   }
@@ -199,12 +199,12 @@ export class ProductReviewService {
     }
     if (this.startingOwners.has(owner)) {
       throw new NemligError(
-        'A draft list is starting. Refresh it after the current request finishes.',
+        "A draft list is starting. Refresh it after the current request finishes.",
       );
     }
     if (!items.length) {
       throw new NemligError(
-        'No active Draft list to show. Find exact products and provide them to start a new Draft list.',
+        "No active Draft list to show. Find exact products and provide them to start a new Draft list.",
       );
     }
     if (
@@ -225,7 +225,7 @@ export class ProductReviewService {
       const snapshot: ProductReviewSnapshot = {
         review_id: randomUUID(),
         revision: 1,
-        destination: 'needs-review',
+        destination: "needs-review",
         items: rows,
       };
       this.drafts.set(snapshot.review_id, { owner, busy: false, snapshot });
@@ -249,7 +249,7 @@ export class ProductReviewService {
     const readySelection = (items: ReviewItem[]) =>
       JSON.stringify(
         items
-          .filter((item) => item.state === 'ready')
+          .filter((item) => item.state === "ready")
           .map(({ product_id, quantity }) => [product_id, quantity])
           .sort(([left], [right]) => Number(left) - Number(right)),
       );
@@ -257,34 +257,34 @@ export class ProductReviewService {
     const itemFor = (productId: number): ReviewItem => {
       const item = draft.items.find((row) => row.product_id === productId);
       if (!item) {
-        throw new NemligError('Exact product is not in this draft list.');
+        throw new NemligError("Exact product is not in this draft list.");
       }
       return item;
     };
     try {
       switch (action.kind) {
-        case 'accept':
-        case 'remove': {
+        case "accept":
+        case "remove": {
           if (
             !action.product_ids.length ||
             new Set(action.product_ids).size !== action.product_ids.length
           ) {
-            throw new NemligError('Select unique exact products.');
+            throw new NemligError("Select unique exact products.");
           }
           const selected = action.product_ids.map(itemFor);
-          if (action.kind === 'accept') {
-            if (selected.some((item) => item.state !== 'needs-review')) {
+          if (action.kind === "accept") {
+            if (selected.some((item) => item.state !== "needs-review")) {
               throw new NemligError(
-                'Only To decide products can be accepted into Ready.',
+                "Only To decide products can be accepted into Ready.",
               );
             }
             if (selected.some((item) => !available(item.view))) {
               throw new NemligError(
-                'Unavailable products cannot be accepted. Choose an available alternative.',
+                "Unavailable products cannot be accepted. Choose an available alternative.",
               );
             }
             selected.forEach((item) => {
-              item.state = 'ready';
+              item.state = "ready";
             });
           } else {
             draft.items = draft.items.filter(
@@ -293,25 +293,25 @@ export class ProductReviewService {
           }
           break;
         }
-        case 'revisit': {
+        case "revisit": {
           if (
             !action.product_ids.length ||
             new Set(action.product_ids).size !== action.product_ids.length
           ) {
-            throw new NemligError('Select unique exact products.');
+            throw new NemligError("Select unique exact products.");
           }
           const selected = action.product_ids.map(itemFor);
-          if (selected.some((item) => item.state !== 'ready')) {
+          if (selected.some((item) => item.state !== "ready")) {
             throw new NemligError(
-              'Only Ready products can be moved back to To decide.',
+              "Only Ready products can be moved back to To decide.",
             );
           }
           selected.forEach((item) => {
-            item.state = 'needs-review';
+            item.state = "needs-review";
           });
           break;
         }
-        case 'add': {
+        case "add": {
           if (
             !action.items.length ||
             action.items.some(
@@ -334,33 +334,33 @@ export class ProductReviewService {
           }
           const rows = await this.readItems(action.items, signal);
           draft.items.push(...rows);
-          draft.destination = 'needs-review';
+          draft.destination = "needs-review";
           break;
         }
-        case 'quantity':
+        case "quantity":
           if (!validPositive(action.quantity)) {
             throw new NemligError(
-              'Quantity must be a positive integer. Use remove to delete a product.',
+              "Quantity must be a positive integer. Use remove to delete a product.",
             );
           }
           itemFor(action.product_id).quantity = action.quantity;
           break;
-        case 'navigate':
-          if (action.destination === 'alternatives' && !draft.alternatives) {
-            throw new NemligError('No alternatives are open.');
+        case "navigate":
+          if (action.destination === "alternatives" && !draft.alternatives) {
+            throw new NemligError("No alternatives are open.");
           }
           draft.destination = action.destination;
           break;
-        case 'alternatives': {
+        case "alternatives": {
           const target = itemFor(action.product_id);
-          if (target.state !== 'needs-review') {
+          if (target.state !== "needs-review") {
             throw new NemligError(
-              'Move a Ready product to To decide before choosing alternatives.',
+              "Move a Ready product to To decide before choosing alternatives.",
             );
           }
           if (action.limit !== undefined && !validPositive(action.limit)) {
             throw new NemligError(
-              'Alternative limit must be a positive integer.',
+              "Alternative limit must be a positive integer.",
             );
           }
           const results = await resolveDetailedProductSearch(
@@ -383,26 +383,26 @@ export class ProductReviewService {
                   !existingIds.has(item.productId),
               )
               .slice(0, action.limit)
-              .map((item) => createProductView(item, { kind: 'details' })),
+              .map((item) => createProductView(item, { kind: "details" })),
           };
-          draft.destination = 'alternatives';
+          draft.destination = "alternatives";
           break;
         }
-        case 'replace': {
+        case "replace": {
           const target = itemFor(action.product_id);
           if (draft.alternatives?.product_id !== target.product_id) {
             throw new NemligError(
-              'Open alternatives for this exact product first.',
+              "Open alternatives for this exact product first.",
             );
           }
           const replacement = draft.alternatives.views.find(
             (view) =>
-              view.status === 'complete' &&
+              view.status === "complete" &&
               view.product.id === action.replacement_id,
           );
           if (!replacement || !available(replacement)) {
             throw new NemligError(
-              'Choose an available exact returned alternative.',
+              "Choose an available exact returned alternative.",
             );
           }
           if (
@@ -412,13 +412,13 @@ export class ProductReviewService {
             )
           ) {
             throw new NemligError(
-              'This product already exists in the draft list. Adjust its quantity instead.',
+              "This product already exists in the draft list. Adjust its quantity instead.",
             );
           }
           target.product_id = action.replacement_id;
           target.view = replacement;
-          target.state = 'needs-review';
-          draft.destination = 'needs-review';
+          target.state = "needs-review";
+          draft.destination = "needs-review";
           delete draft.alternatives;
           break;
         }
@@ -429,18 +429,18 @@ export class ProductReviewService {
           (item) => item.product_id === draft.alternatives!.product_id,
         )
       ) {
-        if (draft.destination === 'alternatives') {
+        if (draft.destination === "alternatives") {
           draft.destination = draft.alternatives.origin;
         }
         delete draft.alternatives;
       }
       this.get(owner, id); // Confirm the draft still exists after asynchronous reads.
       const preparedReadySelectionUnchanged =
-        draft.submission?.status === 'prepared' &&
+        draft.submission?.status === "prepared" &&
         readySelection(draft.items) === previousReadySelection;
       if (
-        action.kind !== 'navigate' &&
-        action.kind !== 'alternatives' &&
+        action.kind !== "navigate" &&
+        action.kind !== "alternatives" &&
         !preparedReadySelectionUnchanged
       ) {
         delete draft.submission;
@@ -459,12 +459,12 @@ export class ProductReviewService {
     const stored = this.get(owner, id);
     if (stored.busy) {
       throw new NemligError(
-        'A draft list operation is in progress. Refresh after it finishes.',
+        "A draft list operation is in progress. Refresh after it finishes.",
       );
     }
     if (stored.snapshot.revision !== revision) {
       throw new NemligError(
-        'Draft list revision is stale. Show the current draft list before choosing your next action; never replay the failed edit.',
+        "Draft list revision is stale. Show the current draft list before choosing your next action; never replay the failed edit.",
       );
     }
     stored.busy = true;
@@ -479,35 +479,35 @@ export class ProductReviewService {
     signal?: AbortSignal,
   ): Promise<ProductReviewSnapshot> {
     if (!this.proposals) {
-      throw new NemligError('Submission service unavailable.');
+      throw new NemligError("Submission service unavailable.");
     }
     const stored = this.lock(owner, id, revision);
     try {
       const previous = stored.snapshot.submission;
-      if (previous && previous.status !== 'prepared') {
+      if (previous && previous.status !== "prepared") {
         throw new NemligError(
-          'Inspect the actual Nemlig basket before deliberately editing and reviewing a new submission.',
+          "Inspect the actual Nemlig basket before deliberately editing and reviewing a new submission.",
         );
       }
       const items = stored.snapshot.items.filter(
-        (item) => item.state === 'ready',
+        (item) => item.state === "ready",
       );
       if (!items.length) {
         throw new NemligError(
-          'Ready is empty. Accept products before preparing submission.',
+          "Ready is empty. Accept products before preparing submission.",
         );
       }
       const proposal = await this.proposals.prepareAdditions(
         owner,
         items.map(({ product_id, quantity }) => ({ product_id, quantity })),
-        { kind: 'exact_review' },
+        { kind: "exact_review" },
         { signal, freshProducts: true },
       );
       this.get(owner, id);
       stored.proposalId = proposal.proposal_id;
       stored.snapshot.submission = {
         submission_id: randomUUID(),
-        status: 'prepared',
+        status: "prepared",
         expires_at: proposal.expires_at,
         review: structuredClone(proposal.review),
       };
@@ -526,35 +526,35 @@ export class ProductReviewService {
     submissionId: string,
   ): Promise<{ review: ProductReviewSnapshot; result: ApplyResult }> {
     if (!this.proposals) {
-      throw new NemligError('Submission service unavailable.');
+      throw new NemligError("Submission service unavailable.");
     }
     const stored = this.lock(owner, id, revision);
     try {
       const submission = stored.snapshot.submission;
       if (
         !submission ||
-        submission.status !== 'prepared' ||
+        submission.status !== "prepared" ||
         submission.submission_id !== submissionId ||
         !stored.proposalId
       ) {
         throw new NemligError(
-          'Submission is absent, changed, or already attempted. Refresh the draft list.',
+          "Submission is absent, changed, or already attempted. Refresh the draft list.",
         );
       }
       if (Date.parse(submission.expires_at) <= this.now()) {
         throw new NemligError(
-          'Submission expired. Prepare a fresh exact review for approval.',
+          "Submission expired. Prepare a fresh exact review for approval.",
         );
       }
       // Record uncertainty before crossing the provider boundary; never silently retry.
-      submission.status = 'uncertain';
+      submission.status = "uncertain";
       stored.snapshot.revision++;
       const result = await this.proposals.apply(
         owner,
         stored.proposalId,
-        'additions',
+        "additions",
       );
-      submission.status = 'submitted';
+      submission.status = "submitted";
       return { review: structuredClone(stored.snapshot), result };
     } finally {
       stored.busy = false;

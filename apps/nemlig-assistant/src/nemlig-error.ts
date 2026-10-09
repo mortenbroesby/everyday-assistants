@@ -1,5 +1,5 @@
 export class NemligError extends Error {
-  override readonly name: string = 'NemligError';
+  override readonly name: string = "NemligError";
 
   constructor(
     message: string,

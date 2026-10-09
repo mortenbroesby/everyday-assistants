@@ -1,11 +1,11 @@
 import {
   Client,
   StreamableHTTPClientTransport,
-} from '@modelcontextprotocol/client';
-import { resolve } from 'node:path';
-import process from 'node:process';
-import { fileURLToPath } from 'node:url';
-import { NEMLIG_VERSION } from '../src/runtime.js';
+} from "@modelcontextprotocol/client";
+import { resolve } from "node:path";
+import process from "node:process";
+import { fileURLToPath } from "node:url";
+import { NEMLIG_VERSION } from "../src/runtime.js";
 import {
   ProductViewerHtmlMismatchError,
   ServiceInventoryMismatchError,
@@ -13,7 +13,7 @@ import {
   verifyReadOnlyProductionFeatures,
   verifyServiceAcceptanceFeatures,
   type AcceptanceClient,
-} from '../src/production-acceptance.js';
+} from "../src/production-acceptance.js";
 
 type Environment = Record<string, string | undefined>;
 
@@ -24,10 +24,10 @@ interface ConnectedAcceptanceClient {
 }
 
 class ServiceRuntimeVersionMismatchError extends Error {
-  readonly code = 'service_runtime_version_mismatch';
-  readonly lastCompletedBoundary = 'service_runtime_version_read';
+  readonly code = "service_runtime_version_mismatch";
+  readonly lastCompletedBoundary = "service_runtime_version_read";
   constructor() {
-    super('Service runtime version does not match the candidate.');
+    super("Service runtime version does not match the candidate.");
   }
 }
 
@@ -56,7 +56,7 @@ const expectedServiceVersion = (env: Environment): string => {
   }
   if (!/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/u.test(configured)) {
     throw new Error(
-      'NEMLIG_EXPECTED_SERVICE_VERSION must be a package version',
+      "NEMLIG_EXPECTED_SERVICE_VERSION must be a package version",
     );
   }
   return configured;
@@ -75,24 +75,24 @@ const parseArgs = (
   let initializeOnly = false;
   let wakeOnly = false;
   for (const argument of argv) {
-    if (argument === '--edge-only') {
+    if (argument === "--edge-only") {
       if (edgeOnly) {
-        throw new Error('--edge-only must not be repeated');
+        throw new Error("--edge-only must not be repeated");
       }
       edgeOnly = true;
-    } else if (argument === '--service') {
+    } else if (argument === "--service") {
       if (service) {
-        throw new Error('--service must not be repeated');
+        throw new Error("--service must not be repeated");
       }
       service = true;
-    } else if (argument === '--initialize-only') {
+    } else if (argument === "--initialize-only") {
       if (initializeOnly) {
-        throw new Error('--initialize-only must not be repeated');
+        throw new Error("--initialize-only must not be repeated");
       }
       initializeOnly = true;
-    } else if (argument === '--wake-only') {
+    } else if (argument === "--wake-only") {
       if (wakeOnly) {
-        throw new Error('--wake-only must not be repeated');
+        throw new Error("--wake-only must not be repeated");
       }
       wakeOnly = true;
     } else {
@@ -100,13 +100,13 @@ const parseArgs = (
     }
   }
   if (edgeOnly && (service || initializeOnly)) {
-    throw new Error('--edge-only cannot be combined with service acceptance');
+    throw new Error("--edge-only cannot be combined with service acceptance");
   }
   if (initializeOnly && !service) {
-    throw new Error('--initialize-only requires --service');
+    throw new Error("--initialize-only requires --service");
   }
   if (wakeOnly && (!service || !initializeOnly)) {
-    throw new Error('--wake-only requires --service --initialize-only');
+    throw new Error("--wake-only requires --service --initialize-only");
   }
   return { edgeOnly, service, initializeOnly, wakeOnly };
 };
@@ -131,12 +131,12 @@ const abortable = async <T>(
               `Production acceptance deadline exceeded during ${label}`,
             ),
           );
-        signal.addEventListener('abort', onAbort, { once: true });
+        signal.addEventListener("abort", onAbort, { once: true });
       }),
     ]);
   } finally {
     if (onAbort) {
-      signal.removeEventListener('abort', onAbort);
+      signal.removeEventListener("abort", onAbort);
     }
   }
 };
@@ -147,9 +147,9 @@ const defaultConnect = async (
   signal: AbortSignal,
 ): Promise<ConnectedAcceptanceClient> => {
   const client = new Client(
-    { name: 'nemlig-production-acceptance', version: '1.0.0' },
+    { name: "nemlig-production-acceptance", version: "1.0.0" },
     {
-      versionNegotiation: { mode: { pin: '2026-07-28' } },
+      versionNegotiation: { mode: { pin: "2026-07-28" } },
     },
   );
   const transport = new StreamableHTTPClientTransport(origin, {
@@ -162,7 +162,7 @@ const defaultConnect = async (
       return;
     }
     try {
-      await abortable('Authenticated MCP close', pending, signal);
+      await abortable("Authenticated MCP close", pending, signal);
     } catch (error) {
       if (!quiet) {
         throw error;
@@ -172,10 +172,10 @@ const defaultConnect = async (
   const closeOnAbort = () => {
     void close(true).catch(() => undefined);
   };
-  signal.addEventListener('abort', closeOnAbort, { once: true });
+  signal.addEventListener("abort", closeOnAbort, { once: true });
   try {
     await abortable(
-      'Authenticated MCP connect',
+      "Authenticated MCP connect",
       client.connect(transport),
       signal,
     );
@@ -183,7 +183,7 @@ const defaultConnect = async (
     await close(true);
     throw error;
   } finally {
-    signal.removeEventListener('abort', closeOnAbort);
+    signal.removeEventListener("abort", closeOnAbort);
   }
   return {
     serverVersion: client.getServerVersion()?.version,
@@ -212,63 +212,63 @@ export interface AcceptanceReport {
   observedRevision?: string;
   startedAt: string;
   completedAt: string;
-  profile: 'edge' | 'live-user' | 'service';
+  profile: "edge" | "live-user" | "service";
   required: string[];
   passed: string[];
   failed: string[];
   unavailable: string[];
   lastCompletedBoundary: string;
   failureCategory?:
-    | 'input_invalid'
-    | 'deadline_exceeded'
-    | 'edge_failed'
-    | 'authentication_failed'
-    | 'transport_failed'
-    | 'feature_failed'
-    | 'unknown_failure';
+    | "input_invalid"
+    | "deadline_exceeded"
+    | "edge_failed"
+    | "authentication_failed"
+    | "transport_failed"
+    | "feature_failed"
+    | "unknown_failure";
   correlationIds: string[];
 }
 
 type AcceptanceOutcome = Omit<
   AcceptanceReport,
-  | 'schema'
-  | 'sourceSha'
-  | 'startedAt'
-  | 'completedAt'
-  | 'failed'
-  | 'failureCategory'
+  | "schema"
+  | "sourceSha"
+  | "startedAt"
+  | "completedAt"
+  | "failed"
+  | "failureCategory"
 >;
 
 const failureCategory = (
   error: unknown,
-): NonNullable<AcceptanceReport['failureCategory']> => {
+): NonNullable<AcceptanceReport["failureCategory"]> => {
   if (
     error instanceof ProductViewerHtmlMismatchError ||
     error instanceof ServiceInventoryMismatchError ||
     error instanceof ServiceRuntimeVersionMismatchError
   ) {
-    return 'feature_failed';
+    return "feature_failed";
   }
-  const message = error instanceof Error ? error.message : '';
+  const message = error instanceof Error ? error.message : "";
   if (/deadline exceeded|timed out/iu.test(message)) {
-    return 'deadline_exceeded';
+    return "deadline_exceeded";
   }
   if (/argument|valid URL|required|fixed production target/iu.test(message)) {
-    return 'input_invalid';
+    return "input_invalid";
   }
   if (/edge|health|revision|OAuth|anonymous|Origin/iu.test(message)) {
-    return 'edge_failed';
+    return "edge_failed";
   }
   if (/token|authentication|authorization/iu.test(message)) {
-    return 'authentication_failed';
+    return "authentication_failed";
   }
   if (/connect|transport|MCP/iu.test(message)) {
-    return 'transport_failed';
+    return "transport_failed";
   }
   if (/feature|inventory|basket|favorites|shopping|resource/iu.test(message)) {
-    return 'feature_failed';
+    return "feature_failed";
   }
-  return 'unknown_failure';
+  return "unknown_failure";
 };
 
 /** Run credential-free edge or authenticated read-only acceptance. */
@@ -282,7 +282,7 @@ export async function main(
   const controller = new AbortController();
   const timer = setTimeout(
     () =>
-      controller.abort(new Error('Production acceptance deadline exceeded')),
+      controller.abort(new Error("Production acceptance deadline exceeded")),
     dependencies.totalTimeoutMs ?? 90_000,
   );
   try {
@@ -290,20 +290,20 @@ export async function main(
     try {
       origin = new URL(
         env.NEMLIG_PRODUCTION_MCP_URL?.trim() ||
-          'https://nemlig-mcp.broesby.dk/mcp',
+          "https://nemlig-mcp.broesby.dk/mcp",
       );
     } catch {
-      throw new Error('NEMLIG_PRODUCTION_MCP_URL must be a valid URL');
+      throw new Error("NEMLIG_PRODUCTION_MCP_URL must be a valid URL");
     }
-    if (env.CI?.trim() && origin.href !== 'https://nemlig-mcp.broesby.dk/mcp') {
-      throw new Error('CI acceptance requires the fixed production target');
+    if (env.CI?.trim() && origin.href !== "https://nemlig-mcp.broesby.dk/mcp") {
+      throw new Error("CI acceptance requires the fixed production target");
     }
     const edge = options.initializeOnly
       ? undefined
       : await verifyProductionEdge(origin, dependencies.fetcher, {
           expectedRevision: env.NEMLIG_EXPECTED_REVISION?.trim() || undefined,
           signal: controller.signal,
-          expectedScopes: ['use:nemlig-assistant'],
+          expectedScopes: ["use:nemlig-assistant"],
         });
     const observedRevision =
       edge && /^[0-9a-f]{40}$/u.test(edge.revision) ? edge.revision : undefined;
@@ -312,10 +312,10 @@ export async function main(
     }
     if (options.edgeOnly) {
       return {
-        profile: 'edge',
+        profile: "edge",
         observedRevision,
-        required: ['edge'],
-        passed: ['edge'],
+        required: ["edge"],
+        passed: ["edge"],
         unavailable: [],
         lastCompletedBoundary: edge!.lastCompletedBoundary,
         correlationIds: edge!.correlationIds,
@@ -325,28 +325,28 @@ export async function main(
     const accessToken = required(
       env,
       options.service
-        ? 'NEMLIG_MCP_SERVICE_ACCESS_TOKEN'
-        : 'NEMLIG_MCP_ACCESS_TOKEN',
+        ? "NEMLIG_MCP_SERVICE_ACCESS_TOKEN"
+        : "NEMLIG_MCP_ACCESS_TOKEN",
     );
     const connected = await abortable(
-      'Authenticated MCP connect',
+      "Authenticated MCP connect",
       dependencies.connect(origin, accessToken, controller.signal),
       controller.signal,
     );
     if (progress) {
-      progress.lastCompletedBoundary = 'authenticated_mcp_connect';
+      progress.lastCompletedBoundary = "authenticated_mcp_connect";
     }
     const closeOnAbort = () => {
       void connected.close().catch(() => undefined);
     };
-    controller.signal.addEventListener('abort', closeOnAbort, { once: true });
+    controller.signal.addEventListener("abort", closeOnAbort, { once: true });
     let outcome: AcceptanceOutcome | undefined;
     let operationFailed = false;
     let operationError: unknown;
     try {
       if (options.service) {
         if (progress) {
-          progress.lastCompletedBoundary = 'service_runtime_version_read';
+          progress.lastCompletedBoundary = "service_runtime_version_read";
         }
         if (
           !options.wakeOnly &&
@@ -356,22 +356,22 @@ export async function main(
         }
         if (options.wakeOnly) {
           outcome = {
-            profile: 'service',
+            profile: "service",
             observedRevision,
-            required: ['service_wake'],
-            passed: ['service_wake'],
+            required: ["service_wake"],
+            passed: ["service_wake"],
             unavailable: [],
-            lastCompletedBoundary: 'service_runtime_version_read',
+            lastCompletedBoundary: "service_runtime_version_read",
             correlationIds: [],
           };
         } else if (options.initializeOnly) {
           outcome = {
-            profile: 'service',
+            profile: "service",
             observedRevision,
-            required: ['service_runtime'],
-            passed: ['service_runtime'],
+            required: ["service_runtime"],
+            passed: ["service_runtime"],
             unavailable: [],
-            lastCompletedBoundary: 'service_runtime_version_read',
+            lastCompletedBoundary: "service_runtime_version_read",
             correlationIds: [],
           };
         } else {
@@ -387,10 +387,10 @@ export async function main(
             },
           );
           outcome = {
-            profile: 'service',
+            profile: "service",
             observedRevision,
-            required: ['edge', 'service_fixture'],
-            passed: ['edge', 'service_fixture'],
+            required: ["edge", "service_fixture"],
+            passed: ["edge", "service_fixture"],
             unavailable: [],
             lastCompletedBoundary: `service_fixture_${report.requestCount}_requests`,
             correlationIds: edge!.correlationIds,
@@ -402,12 +402,12 @@ export async function main(
           { signal: controller.signal },
         );
         outcome = {
-          profile: 'live-user',
+          profile: "live-user",
           observedRevision,
-          required: ['edge', 'live_user_features'],
-          passed: ['edge', 'live_user_features'],
+          required: ["edge", "live_user_features"],
+          passed: ["edge", "live_user_features"],
           unavailable: report.unavailable,
-          lastCompletedBoundary: 'live_user_features',
+          lastCompletedBoundary: "live_user_features",
           correlationIds: edge!.correlationIds,
         };
       }
@@ -415,10 +415,10 @@ export async function main(
       operationFailed = true;
       operationError = error;
     }
-    controller.signal.removeEventListener('abort', closeOnAbort);
+    controller.signal.removeEventListener("abort", closeOnAbort);
     try {
       await abortable(
-        'Authenticated MCP close',
+        "Authenticated MCP close",
         connected.close(),
         controller.signal,
       );
@@ -432,7 +432,7 @@ export async function main(
       throw operationError;
     }
     if (!outcome) {
-      throw new Error('Production acceptance outcome unavailable');
+      throw new Error("Production acceptance outcome unavailable");
     }
     return outcome;
   } finally {
@@ -446,10 +446,10 @@ export async function run(
   dependencies: AcceptanceEntryDependencies = defaultDependencies,
 ): Promise<AcceptanceReport> {
   const startedAt = new Date().toISOString();
-  const sourceSha = /^[0-9a-f]{40}$/u.test(env.GITHUB_SHA?.trim() ?? '')
+  const sourceSha = /^[0-9a-f]{40}$/u.test(env.GITHUB_SHA?.trim() ?? "")
     ? env.GITHUB_SHA?.trim()
     : undefined;
-  const progress = { lastCompletedBoundary: 'none' };
+  const progress = { lastCompletedBoundary: "none" };
   try {
     const outcome = await main(argv, env, dependencies, progress);
     const report: AcceptanceReport = {
@@ -474,11 +474,11 @@ export async function run(
       sourceSha,
       startedAt,
       completedAt: new Date().toISOString(),
-      profile: argv.includes('--edge-only')
-        ? 'edge'
-        : argv.includes('--service')
-          ? 'service'
-          : 'live-user',
+      profile: argv.includes("--edge-only")
+        ? "edge"
+        : argv.includes("--service")
+          ? "service"
+          : "live-user",
       required: [],
       passed: [],
       failed: [boundedFailure?.code ?? failureCategory(error)],

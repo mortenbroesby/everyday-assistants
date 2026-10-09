@@ -1,54 +1,54 @@
-import { spawn } from 'node:child_process';
-import { createHash } from 'node:crypto';
-import { realpath } from 'node:fs/promises';
-import { basename, dirname, resolve } from 'node:path';
-import process from 'node:process';
-import { fileURLToPath } from 'node:url';
-import { deploymentFailureReasons } from './production-failure-reasons.js';
-import { issueServiceToken } from './service-token.js';
+import { spawn } from "node:child_process";
+import { createHash } from "node:crypto";
+import { realpath } from "node:fs/promises";
+import { basename, dirname, resolve } from "node:path";
+import process from "node:process";
+import { fileURLToPath } from "node:url";
+import { deploymentFailureReasons } from "./production-failure-reasons.js";
+import { issueServiceToken } from "./service-token.js";
 
 const fullSha = /^[0-9a-f]{40}$/u;
 const revisionSha = /^[0-9a-f]{7,40}$/u;
 const versionId = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/u;
-const productionRepository = 'mortenbroesby/everyday-assistants';
-const ciWorkflowName = 'CI';
-const ciWorkflowPath = '.github/workflows/ci.yml';
+const productionRepository = "mortenbroesby/everyday-assistants";
+const ciWorkflowName = "CI";
+const ciWorkflowPath = ".github/workflows/ci.yml";
 const containerApplication =
-  'nemlig-mcp-cloudflare-production-nemligmcpcontainer-production';
+  "nemlig-mcp-cloudflare-production-nemligmcpcontainer-production";
 const imageDigest = /^sha256:[0-9a-f]{64}$/u;
 const acceptanceFailureCategories = new Set([
-  'input_invalid',
-  'deadline_exceeded',
-  'edge_failed',
-  'authentication_failed',
-  'transport_failed',
-  'feature_failed',
-  'mutation_failed',
-  'unknown_failure',
+  "input_invalid",
+  "deadline_exceeded",
+  "edge_failed",
+  "authentication_failed",
+  "transport_failed",
+  "feature_failed",
+  "mutation_failed",
+  "unknown_failure",
 ]);
 
 export const productionDeployUsage =
-  'pnpm --filter nemlig-assistant production:deploy -- [--service] <40-character-main-commit>';
+  "pnpm --filter nemlig-assistant production:deploy -- [--service] <40-character-main-commit>";
 export function parseDeployArgs(argv: readonly string[]): string {
-  const values = argv[0] === '--' ? argv.slice(1) : argv;
-  if (values.length !== 1 || !fullSha.test(values[0] ?? '')) {
+  const values = argv[0] === "--" ? argv.slice(1) : argv;
+  if (values.length !== 1 || !fullSha.test(values[0] ?? "")) {
     fail(`usage: ${productionDeployUsage}`);
   }
   return values[0]!;
 }
 
 export interface AcceptanceFailureEvidence {
-  stage: 'edge' | 'read_only';
-  profile: 'edge' | 'service' | 'live-user';
+  stage: "edge" | "read_only";
+  profile: "edge" | "service" | "live-user";
   category:
-    | 'input_invalid'
-    | 'deadline_exceeded'
-    | 'edge_failed'
-    | 'authentication_failed'
-    | 'transport_failed'
-    | 'feature_failed'
-    | 'mutation_failed'
-    | 'unknown_failure';
+    | "input_invalid"
+    | "deadline_exceeded"
+    | "edge_failed"
+    | "authentication_failed"
+    | "transport_failed"
+    | "feature_failed"
+    | "mutation_failed"
+    | "unknown_failure";
   lastCompletedBoundary: string;
   correlationIds: string[];
   failureCode?: string;
@@ -80,12 +80,12 @@ export interface DeployDependencies {
   registryFetcher?: typeof fetch;
   sleep: (milliseconds: number) => Promise<void>;
   now: () => Date;
-  acceptanceMode?: 'owner' | 'service';
+  acceptanceMode?: "owner" | "service";
   issueServiceToken?: typeof issueServiceToken;
   signal?: AbortSignal;
   configReader?: (options: {
     config: string;
-    env: 'production';
+    env: "production";
   }) => Promise<unknown> | unknown;
 }
 
@@ -115,7 +115,7 @@ export interface ProductionDeploymentReport {
   startingVersion?: string;
   enabledVersion?: string;
   checks: string[];
-  outcome: 'success' | 'failed';
+  outcome: "success" | "failed";
   failure?: string;
   acceptanceFailure?: AcceptanceFailureEvidence;
 }
@@ -165,7 +165,7 @@ const json = (raw: string, code: string): unknown => {
   }
 };
 const object = (value: unknown): Record<string, unknown> | undefined =>
-  value !== null && typeof value === 'object' && !Array.isArray(value)
+  value !== null && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : undefined;
 const validAcceptanceFailure = (
@@ -176,95 +176,95 @@ const validAcceptanceFailure = (
     evidence &&
     Object.keys(evidence).every((key) =>
       [
-        'stage',
-        'profile',
-        'category',
-        'lastCompletedBoundary',
-        'correlationIds',
-        'failureCode',
+        "stage",
+        "profile",
+        "category",
+        "lastCompletedBoundary",
+        "correlationIds",
+        "failureCode",
       ].includes(key),
     ) &&
-    (evidence.stage === 'edge' || evidence.stage === 'read_only') &&
-    (evidence.profile === 'edge' ||
-      evidence.profile === 'service' ||
-      evidence.profile === 'live-user') &&
-    (evidence.stage === 'edge') === (evidence.profile === 'edge') &&
-    typeof evidence.category === 'string' &&
+    (evidence.stage === "edge" || evidence.stage === "read_only") &&
+    (evidence.profile === "edge" ||
+      evidence.profile === "service" ||
+      evidence.profile === "live-user") &&
+    (evidence.stage === "edge") === (evidence.profile === "edge") &&
+    typeof evidence.category === "string" &&
     acceptanceFailureCategories.has(evidence.category) &&
-    typeof evidence.lastCompletedBoundary === 'string' &&
+    typeof evidence.lastCompletedBoundary === "string" &&
     /^[A-Za-z0-9_:-]{1,64}$/u.test(evidence.lastCompletedBoundary) &&
     (evidence.failureCode === undefined ||
-      (typeof evidence.failureCode === 'string' &&
+      (typeof evidence.failureCode === "string" &&
         /^[a-z0-9_]{1,64}$/u.test(evidence.failureCode))) &&
     Array.isArray(evidence.correlationIds) &&
     evidence.correlationIds.length <= 16 &&
     evidence.correlationIds.every(
-      (id) => typeof id === 'string' && /^[A-Za-z0-9_-]{1,128}$/u.test(id),
+      (id) => typeof id === "string" && /^[A-Za-z0-9_-]{1,128}$/u.test(id),
     ),
   );
 };
 
 export function parseCurrentDeployment(raw: string): CurrentDeployment {
-  const parsed = json(raw, 'cloudflare_deployments_invalid');
+  const parsed = json(raw, "cloudflare_deployments_invalid");
   if (!Array.isArray(parsed) || parsed.length === 0) {
-    throw new DeployFailure('cloudflare_deployments_missing');
+    throw new DeployFailure("cloudflare_deployments_missing");
   }
   const latest = [...parsed]
     .map(object)
     .filter((value): value is Record<string, unknown> => Boolean(value))
     .sort((left, right) =>
-      String(left.created_on ?? '').localeCompare(
-        String(right.created_on ?? ''),
+      String(left.created_on ?? "").localeCompare(
+        String(right.created_on ?? ""),
       ),
     )
     .at(-1);
   if (!latest) {
-    throw new DeployFailure('cloudflare_deployment_ambiguous');
+    throw new DeployFailure("cloudflare_deployment_ambiguous");
   }
   const id = latest.id;
   const versions = latest.versions;
   if (
-    typeof id !== 'string' ||
+    typeof id !== "string" ||
     !Array.isArray(versions) ||
     versions.length !== 1
   ) {
-    throw new DeployFailure('cloudflare_deployment_ambiguous');
+    throw new DeployFailure("cloudflare_deployment_ambiguous");
   }
   const deployed = object(versions[0]);
   const deployedId = deployed?.version_id;
   if (
-    typeof deployedId !== 'string' ||
+    typeof deployedId !== "string" ||
     !versionId.test(deployedId) ||
     deployed?.percentage !== 100
   ) {
-    throw new DeployFailure('cloudflare_deployment_ambiguous');
+    throw new DeployFailure("cloudflare_deployment_ambiguous");
   }
   return { id, version: deployedId };
 }
 
 const configPlainNames = [
-  'MCP_AUTH_TIMEOUT_MS',
-  'MCP_CONTROL_TIMEOUT_MS',
-  'MCP_TOTAL_TIMEOUT_MS',
-  'MCP_BACKEND_TIMEOUT_MS',
-  'MCP_CREDENTIAL_ONBOARDING_ENABLED',
-  'NEMLIG_MCP_ONBOARDING_CLIENT_ID',
-  'NEMLIG_MCP_CREDENTIAL_KEY_VERSION',
-  'NEMLIG_MCP_HTTP_HOST',
-  'NEMLIG_MCP_HTTP_PORT',
-  'NEMLIG_MCP_AUTH0_ISSUER',
-  'NEMLIG_MCP_AUTH0_AUDIENCE',
-  'NEMLIG_MCP_PUBLIC_URL',
-  'NEMLIG_MCP_SERVICE_ACCEPTANCE_ENABLED',
-  'NEMLIG_MCP_SERVICE_CLIENT_ID',
+  "MCP_AUTH_TIMEOUT_MS",
+  "MCP_CONTROL_TIMEOUT_MS",
+  "MCP_TOTAL_TIMEOUT_MS",
+  "MCP_BACKEND_TIMEOUT_MS",
+  "MCP_CREDENTIAL_ONBOARDING_ENABLED",
+  "NEMLIG_MCP_ONBOARDING_CLIENT_ID",
+  "NEMLIG_MCP_CREDENTIAL_KEY_VERSION",
+  "NEMLIG_MCP_HTTP_HOST",
+  "NEMLIG_MCP_HTTP_PORT",
+  "NEMLIG_MCP_AUTH0_ISSUER",
+  "NEMLIG_MCP_AUTH0_AUDIENCE",
+  "NEMLIG_MCP_PUBLIC_URL",
+  "NEMLIG_MCP_SERVICE_ACCEPTANCE_ENABLED",
+  "NEMLIG_MCP_SERVICE_CLIENT_ID",
 ] as const;
 const configPlainSet = new Set<string>(configPlainNames);
-const requiredSecrets = new Set(['NEMLIG_MCP_PRINCIPALS']);
+const requiredSecrets = new Set(["NEMLIG_MCP_PRINCIPALS"]);
 const expectedDo = new Map([
-  ['NEMLIG_MCP_CONTAINER', 'NemligMcpContainer'],
-  ['NEMLIG_PLAN_STORAGE', 'PlanStorage'],
+  ["NEMLIG_MCP_CONTAINER", "NemligMcpContainer"],
+  ["NEMLIG_PLAN_STORAGE", "PlanStorage"],
 ]);
-const productionWorker = 'nemlig-mcp-cloudflare-production';
+const productionWorker = "nemlig-mcp-cloudflare-production";
 
 const bindings = (
   resource: Record<string, unknown>,
@@ -272,21 +272,21 @@ const bindings = (
   const resources = object(resource.resources);
   const values = resources?.bindings;
   if (!Array.isArray(values)) {
-    throw new DeployFailure('cloudflare_version_bindings_invalid');
+    throw new DeployFailure("cloudflare_version_bindings_invalid");
   }
   const result = new Map<string, Record<string, unknown>>();
   for (const entry of values) {
-    const value = object(entry) ?? fail('cloudflare_version_bindings_invalid');
+    const value = object(entry) ?? fail("cloudflare_version_bindings_invalid");
     const name =
-      typeof value.name === 'string'
+      typeof value.name === "string"
         ? value.name
-        : fail('cloudflare_version_bindings_invalid');
+        : fail("cloudflare_version_bindings_invalid");
     if (
       name.length === 0 ||
-      typeof value.type !== 'string' ||
+      typeof value.type !== "string" ||
       result.has(name)
     ) {
-      fail('cloudflare_version_bindings_invalid');
+      fail("cloudflare_version_bindings_invalid");
     }
     result.set(name, value);
   }
@@ -296,17 +296,17 @@ const bindings = (
 const validateDo = (bindings: Iterable<Record<string, unknown>>): void => {
   const found = new Map<string, string>();
   for (const value of bindings) {
-    if (value.type !== 'durable_object_namespace') {
+    if (value.type !== "durable_object_namespace") {
       continue;
     }
     const name =
-      typeof value.name === 'string'
+      typeof value.name === "string"
         ? value.name
-        : fail('cloudflare_runtime_safety_mismatch');
+        : fail("cloudflare_runtime_safety_mismatch");
     const className =
-      typeof value.class_name === 'string'
+      typeof value.class_name === "string"
         ? value.class_name
-        : fail('cloudflare_runtime_safety_mismatch');
+        : fail("cloudflare_runtime_safety_mismatch");
     if (
       found.has(name) ||
       (value.script_name !== undefined &&
@@ -314,12 +314,12 @@ const validateDo = (bindings: Iterable<Record<string, unknown>>): void => {
         value.script_name !== productionWorker) ||
       (value.environment !== undefined &&
         value.environment !== null &&
-        value.environment !== 'production') ||
+        value.environment !== "production") ||
       (value.environment !== undefined &&
         value.environment !== null &&
         value.script_name == null)
     ) {
-      fail('cloudflare_runtime_safety_mismatch');
+      fail("cloudflare_runtime_safety_mismatch");
     }
     found.set(name, className);
   }
@@ -327,7 +327,7 @@ const validateDo = (bindings: Iterable<Record<string, unknown>>): void => {
     found.size !== expectedDo.size ||
     [...expectedDo].some(([name, className]) => found.get(name) !== className)
   ) {
-    fail('cloudflare_runtime_safety_mismatch');
+    fail("cloudflare_runtime_safety_mismatch");
   }
 };
 
@@ -337,78 +337,78 @@ const effectiveConfig = (
   requireSecrets = true,
 ): EffectiveConfig => {
   const normalized = new Map(vars);
-  if (!normalized.has('NEMLIG_MCP_SERVICE_ACCEPTANCE_ENABLED')) {
-    normalized.set('NEMLIG_MCP_SERVICE_ACCEPTANCE_ENABLED', 'false');
+  if (!normalized.has("NEMLIG_MCP_SERVICE_ACCEPTANCE_ENABLED")) {
+    normalized.set("NEMLIG_MCP_SERVICE_ACCEPTANCE_ENABLED", "false");
   }
-  if (!normalized.has('NEMLIG_MCP_SERVICE_CLIENT_ID')) {
-    normalized.set('NEMLIG_MCP_SERVICE_CLIENT_ID', '');
+  if (!normalized.has("NEMLIG_MCP_SERVICE_CLIENT_ID")) {
+    normalized.set("NEMLIG_MCP_SERVICE_CLIENT_ID", "");
   }
   const serviceEnabled = normalized.get(
-    'NEMLIG_MCP_SERVICE_ACCEPTANCE_ENABLED',
+    "NEMLIG_MCP_SERVICE_ACCEPTANCE_ENABLED",
   );
-  const serviceClientId = normalized.get('NEMLIG_MCP_SERVICE_CLIENT_ID') ?? '';
+  const serviceClientId = normalized.get("NEMLIG_MCP_SERVICE_CLIENT_ID") ?? "";
   if (
     configPlainNames
       .filter(
         (name) =>
-          name !== 'NEMLIG_MCP_SERVICE_CLIENT_ID' &&
-          name !== 'NEMLIG_MCP_ONBOARDING_CLIENT_ID',
+          name !== "NEMLIG_MCP_SERVICE_CLIENT_ID" &&
+          name !== "NEMLIG_MCP_ONBOARDING_CLIENT_ID",
       )
       .some((name) => {
         const value = normalized.get(name);
         return (
-          typeof value !== 'string' || value.length === 0 || value.length > 2048
+          typeof value !== "string" || value.length === 0 || value.length > 2048
         );
       }) ||
     serviceClientId.length > 2048
   ) {
-    fail('cloudflare_runtime_safety_mismatch');
+    fail("cloudflare_runtime_safety_mismatch");
   }
   if (
-    !['true', 'false'].includes(
-      normalized.get('MCP_CREDENTIAL_ONBOARDING_ENABLED') ?? '',
+    !["true", "false"].includes(
+      normalized.get("MCP_CREDENTIAL_ONBOARDING_ENABLED") ?? "",
     )
   ) {
-    fail('cloudflare_runtime_safety_mismatch');
+    fail("cloudflare_runtime_safety_mismatch");
   }
   const browserClientId =
-    normalized.get('NEMLIG_MCP_ONBOARDING_CLIENT_ID') ?? '';
+    normalized.get("NEMLIG_MCP_ONBOARDING_CLIENT_ID") ?? "";
   const onboardingEnabled =
-    normalized.get('MCP_CREDENTIAL_ONBOARDING_ENABLED') === 'true';
+    normalized.get("MCP_CREDENTIAL_ONBOARDING_ENABLED") === "true";
   if (
-    (browserClientId !== '' || onboardingEnabled) &&
+    (browserClientId !== "" || onboardingEnabled) &&
     !/^[A-Za-z0-9_-]{8,128}$/u.test(browserClientId)
   ) {
-    fail('cloudflare_runtime_safety_mismatch');
+    fail("cloudflare_runtime_safety_mismatch");
   }
   if (
-    !['true', 'false'].includes(serviceEnabled ?? '') ||
-    (serviceEnabled === 'true' &&
+    !["true", "false"].includes(serviceEnabled ?? "") ||
+    (serviceEnabled === "true" &&
       !/^[A-Za-z0-9_-]{1,128}$/u.test(serviceClientId))
   ) {
-    fail('cloudflare_runtime_safety_mismatch');
+    fail("cloudflare_runtime_safety_mismatch");
   }
   if (
     !/^[A-Za-z0-9._-]{1,32}$/u.test(
-      normalized.get('NEMLIG_MCP_CREDENTIAL_KEY_VERSION') ?? '',
+      normalized.get("NEMLIG_MCP_CREDENTIAL_KEY_VERSION") ?? "",
     )
   ) {
-    fail('cloudflare_runtime_safety_mismatch');
+    fail("cloudflare_runtime_safety_mismatch");
   }
   for (const name of [
-    'MCP_AUTH_TIMEOUT_MS',
-    'MCP_CONTROL_TIMEOUT_MS',
-    'MCP_TOTAL_TIMEOUT_MS',
-    'MCP_BACKEND_TIMEOUT_MS',
+    "MCP_AUTH_TIMEOUT_MS",
+    "MCP_CONTROL_TIMEOUT_MS",
+    "MCP_TOTAL_TIMEOUT_MS",
+    "MCP_BACKEND_TIMEOUT_MS",
   ]) {
-    const value = vars.get(name) ?? '';
+    const value = vars.get(name) ?? "";
     if (!/^[1-9]\d*$/u.test(value) || !Number.isSafeInteger(Number(value))) {
-      fail('cloudflare_runtime_safety_mismatch');
+      fail("cloudflare_runtime_safety_mismatch");
     }
   }
   try {
-    const host = normalized.get('NEMLIG_MCP_HTTP_HOST') ?? '';
-    const portText = normalized.get('NEMLIG_MCP_HTTP_PORT') ?? '';
+    const host = normalized.get("NEMLIG_MCP_HTTP_HOST") ?? "";
+    const portText = normalized.get("NEMLIG_MCP_HTTP_PORT") ?? "";
     const port = Number(portText);
     if (
       !/^[\w.-]+$/u.test(host) ||
@@ -419,13 +419,13 @@ const effectiveConfig = (
       throw new Error();
     }
     for (const name of [
-      'NEMLIG_MCP_AUTH0_ISSUER',
-      'NEMLIG_MCP_AUTH0_AUDIENCE',
-      'NEMLIG_MCP_PUBLIC_URL',
+      "NEMLIG_MCP_AUTH0_ISSUER",
+      "NEMLIG_MCP_AUTH0_AUDIENCE",
+      "NEMLIG_MCP_PUBLIC_URL",
     ]) {
-      const url = new URL(normalized.get(name) ?? '');
+      const url = new URL(normalized.get(name) ?? "");
       if (
-        url.protocol !== 'https:' ||
+        url.protocol !== "https:" ||
         url.username ||
         url.password ||
         url.hash
@@ -434,7 +434,7 @@ const effectiveConfig = (
       }
     }
   } catch {
-    fail('cloudflare_runtime_safety_mismatch');
+    fail("cloudflare_runtime_safety_mismatch");
   }
   const secretNames = [...secrets].sort();
   if (
@@ -447,11 +447,11 @@ const effectiveConfig = (
       ([...requiredSecrets].some((name) => !secretNames.includes(name)) ||
         (onboardingEnabled &&
           [
-            'NEMLIG_MCP_ONBOARDING_SESSION_KEY',
-            'NEMLIG_MCP_CREDENTIAL_KEY',
+            "NEMLIG_MCP_ONBOARDING_SESSION_KEY",
+            "NEMLIG_MCP_CREDENTIAL_KEY",
           ].some((name) => !secretNames.includes(name)))))
   ) {
-    fail('cloudflare_runtime_safety_mismatch');
+    fail("cloudflare_runtime_safety_mismatch");
   }
   const canonical = JSON.stringify({
     limits: [100, 8],
@@ -461,24 +461,24 @@ const effectiveConfig = (
     durableObjects: [...expectedDo].sort(([left], [right]) =>
       left.localeCompare(right),
     ),
-    secrets: secretNames.map((name) => [name, 'secret_text']),
+    secrets: secretNames.map((name) => [name, "secret_text"]),
   });
   return {
     vars,
     secrets: secretNames,
-    digest: createHash('sha256').update(canonical).digest('hex'),
+    digest: createHash("sha256").update(canonical).digest("hex"),
   };
 };
 
 const versionConfig = (raw: string): EffectiveConfig => {
   const parsed =
-    object(json(raw, 'cloudflare_version_invalid')) ??
-    fail('cloudflare_version_invalid');
+    object(json(raw, "cloudflare_version_invalid")) ??
+    fail("cloudflare_version_invalid");
   const resources = object(parsed.resources);
   const runtime = object(resources?.script_runtime);
   const limits = object(runtime?.limits);
   if (limits?.cpu_ms !== 100 || limits.subrequests !== 8) {
-    fail('cloudflare_runtime_safety_mismatch');
+    fail("cloudflare_runtime_safety_mismatch");
   }
   const values = bindings(parsed);
   validateDo(values.values());
@@ -487,21 +487,21 @@ const versionConfig = (raw: string): EffectiveConfig => {
   for (const [name, value] of values) {
     if (
       configPlainSet.has(name) ||
-      name === 'MCP_ENABLED' ||
-      name === 'NEMLIG_MCP_REVISION'
+      name === "MCP_ENABLED" ||
+      name === "NEMLIG_MCP_REVISION"
     ) {
-      if (value.type !== 'plain_text') {
-        fail('cloudflare_runtime_safety_mismatch');
+      if (value.type !== "plain_text") {
+        fail("cloudflare_runtime_safety_mismatch");
       }
       const text =
-        typeof value.text === 'string'
+        typeof value.text === "string"
           ? value.text
-          : fail('cloudflare_runtime_safety_mismatch');
+          : fail("cloudflare_runtime_safety_mismatch");
       vars.set(name, text);
-    } else if (value.type === 'secret_text') {
+    } else if (value.type === "secret_text") {
       secrets.push(name);
-    } else if (value.type !== 'durable_object_namespace') {
-      fail('cloudflare_runtime_unexpected_binding');
+    } else if (value.type !== "durable_object_namespace") {
+      fail("cloudflare_runtime_unexpected_binding");
     }
   }
   return effectiveConfig(vars, secrets);
@@ -511,29 +511,29 @@ export function parseVersionState(
   raw: string,
   expectedId?: string,
 ): VersionState {
-  const parsed = object(json(raw, 'cloudflare_version_invalid'));
+  const parsed = object(json(raw, "cloudflare_version_invalid"));
   if (!parsed) {
-    throw new DeployFailure('cloudflare_version_mismatch');
+    throw new DeployFailure("cloudflare_version_mismatch");
   }
   const id = parsed.id;
   if (
-    typeof id !== 'string' ||
+    typeof id !== "string" ||
     !versionId.test(id) ||
     (expectedId && id !== expectedId)
   ) {
-    throw new DeployFailure('cloudflare_version_mismatch');
+    throw new DeployFailure("cloudflare_version_mismatch");
   }
   const values = bindings(parsed);
-  const enabled = values.get('MCP_ENABLED')?.text;
-  const revision = values.get('NEMLIG_MCP_REVISION')?.text;
+  const enabled = values.get("MCP_ENABLED")?.text;
+  const revision = values.get("NEMLIG_MCP_REVISION")?.text;
   if (
-    (enabled !== 'true' && enabled !== 'false') ||
-    typeof revision !== 'string' ||
+    (enabled !== "true" && enabled !== "false") ||
+    typeof revision !== "string" ||
     !revisionSha.test(revision)
   ) {
-    throw new DeployFailure('cloudflare_version_state_invalid');
+    throw new DeployFailure("cloudflare_version_state_invalid");
   }
-  return { id, enabled: enabled === 'true', revision };
+  return { id, enabled: enabled === "true", revision };
 }
 
 export function verifyCandidateVersion(
@@ -542,13 +542,13 @@ export function verifyCandidateVersion(
   commit: string,
   enabled: boolean,
 ): VersionState {
-  const parsed = object(json(raw, 'cloudflare_version_invalid'));
+  const parsed = object(json(raw, "cloudflare_version_invalid"));
   if (!parsed) {
-    throw new DeployFailure('cloudflare_version_invalid');
+    throw new DeployFailure("cloudflare_version_invalid");
   }
   const state = parseVersionState(raw, expectedId);
   if (state.revision !== commit || state.enabled !== enabled) {
-    fail('cloudflare_candidate_state_mismatch');
+    fail("cloudflare_candidate_state_mismatch");
   }
   const resources = object(parsed.resources);
   const runtime = object(resources?.script_runtime);
@@ -559,29 +559,29 @@ export function verifyCandidateVersion(
     limits.subrequests !== 8 ||
     !Array.isArray(containers) ||
     containers.length !== 1 ||
-    object(containers[0])?.class_name !== 'NemligMcpContainer'
+    object(containers[0])?.class_name !== "NemligMcpContainer"
   ) {
-    fail('cloudflare_runtime_safety_mismatch');
+    fail("cloudflare_runtime_safety_mismatch");
   }
   const values = bindings(parsed);
   const expectedText: Record<string, string> = {
-    MCP_AUTH_TIMEOUT_MS: '5000',
-    MCP_BACKEND_TIMEOUT_MS: '85000',
-    MCP_CONTROL_TIMEOUT_MS: '3000',
-    MCP_TOTAL_TIMEOUT_MS: '90000',
+    MCP_AUTH_TIMEOUT_MS: "5000",
+    MCP_BACKEND_TIMEOUT_MS: "85000",
+    MCP_CONTROL_TIMEOUT_MS: "3000",
+    MCP_TOTAL_TIMEOUT_MS: "90000",
   };
   for (const [name, text] of Object.entries(expectedText)) {
     if (values.get(name)?.text !== text) {
-      fail('cloudflare_runtime_safety_mismatch');
+      fail("cloudflare_runtime_safety_mismatch");
     }
   }
   for (const name of [
-    'NEMLIG_MCP_CONTAINER',
-    'NEMLIG_PLAN_STORAGE',
-    'NEMLIG_MCP_PRINCIPALS',
+    "NEMLIG_MCP_CONTAINER",
+    "NEMLIG_PLAN_STORAGE",
+    "NEMLIG_MCP_PRINCIPALS",
   ]) {
     if (!values.has(name)) {
-      fail('cloudflare_runtime_safety_mismatch');
+      fail("cloudflare_runtime_safety_mismatch");
     }
   }
   return state;
@@ -589,52 +589,52 @@ export function verifyCandidateVersion(
 
 const verifyConfig = (raw: string, expected: EffectiveConfig): void => {
   if (versionConfig(raw).digest !== expected.digest) {
-    fail('cloudflare_runtime_safety_mismatch');
+    fail("cloudflare_runtime_safety_mismatch");
   }
 };
 
 export function parseContainer(raw: string): ContainerState {
-  const parsed = json(raw, 'cloudflare_containers_invalid');
+  const parsed = json(raw, "cloudflare_containers_invalid");
   if (!Array.isArray(parsed) || parsed.length !== 1) {
-    throw new DeployFailure('cloudflare_container_ambiguous');
+    throw new DeployFailure("cloudflare_container_ambiguous");
   }
   const value = object(parsed[0]);
   if (!value) {
-    throw new DeployFailure('cloudflare_container_ambiguous');
+    throw new DeployFailure("cloudflare_container_ambiguous");
   }
   const id = value.id;
   const image = value.image;
   const digest =
-    typeof image === 'string'
+    typeof image === "string"
       ? image.match(/(?:^|@)(sha256:[0-9a-f]{64})$/u)?.[1]
       : undefined;
   const version = value.version;
   if (
-    typeof id !== 'string' ||
+    typeof id !== "string" ||
     !versionId.test(id) ||
     !digest ||
-    typeof version !== 'number' ||
+    typeof version !== "number" ||
     !Number.isSafeInteger(version) ||
     version < 1 ||
     value.name !== containerApplication ||
     value.instances !== 1
   ) {
-    throw new DeployFailure('cloudflare_container_ambiguous');
+    throw new DeployFailure("cloudflare_container_ambiguous");
   }
   return { id, image: digest, version };
 }
 
 export function instancesInactive(raw: string): boolean {
-  const parsed = json(raw, 'cloudflare_instances_invalid');
+  const parsed = json(raw, "cloudflare_instances_invalid");
   const instance =
     Array.isArray(parsed) && parsed.length === 1
       ? object(parsed[0])
       : undefined;
   return (
-    instance?.state === 'inactive' &&
-    typeof instance.id === 'string' &&
+    instance?.state === "inactive" &&
+    typeof instance.id === "string" &&
     instance.id.length > 0 &&
-    instance.name === 'nemlig-production' &&
+    instance.name === "nemlig-production" &&
     instance.version === null
   );
 }
@@ -643,17 +643,17 @@ const deployedVersionFromOutput = (raw: string): string => {
   const id = raw.match(/Current Version ID:\s*([0-9a-f-]{36})/u)?.[1];
   return id && versionId.test(id)
     ? id
-    : fail('cloudflare_upload_version_missing');
+    : fail("cloudflare_upload_version_missing");
 };
 
 const manifestDigest = (raw: string): string => {
   const descriptor = object(
-    object(json(raw, 'cloudflare_registry_manifest_invalid'))?.Descriptor,
+    object(json(raw, "cloudflare_registry_manifest_invalid"))?.Descriptor,
   );
   const digest = descriptor?.digest;
-  return typeof digest === 'string' && imageDigest.test(digest)
+  return typeof digest === "string" && imageDigest.test(digest)
     ? digest
-    : fail('cloudflare_registry_manifest_invalid');
+    : fail("cloudflare_registry_manifest_invalid");
 };
 
 export const defaultRunner: CommandRunner = async (
@@ -663,7 +663,7 @@ export const defaultRunner: CommandRunner = async (
 ) =>
   await new Promise<string>((resolvePromise, reject) => {
     if (options.signal?.aborted) {
-      reject(new DeployFailure('command_cancelled'));
+      reject(new DeployFailure("command_cancelled"));
       return;
     }
     const controller = new AbortController();
@@ -672,23 +672,23 @@ export const defaultRunner: CommandRunner = async (
       options.timeoutMs ?? 30_000,
     );
     const abort = () => controller.abort();
-    options.signal?.addEventListener('abort', abort, { once: true });
+    options.signal?.addEventListener("abort", abort, { once: true });
     const child = spawn(command, args, {
       cwd: options.cwd,
       env: options.env,
-      detached: process.platform !== 'win32',
-      stdio: ['pipe', 'pipe', 'pipe'],
+      detached: process.platform !== "win32",
+      stdio: ["pipe", "pipe", "pipe"],
     });
-    let output = '';
-    let stderr = '';
+    let output = "";
+    let stderr = "";
     let overflow = false;
     let terminated = false;
     let finished = false;
     let terminatedGroup: Promise<void> | undefined;
     const clean = () => {
       clearTimeout(timeout);
-      options.signal?.removeEventListener('abort', abort);
-      controller.signal.removeEventListener('abort', terminate);
+      options.signal?.removeEventListener("abort", abort);
+      controller.signal.removeEventListener("abort", terminate);
     };
     const done = (error?: Error) => {
       if (finished) {
@@ -709,8 +709,8 @@ export const defaultRunner: CommandRunner = async (
       terminated = true;
       try {
         process.kill(
-          process.platform === 'win32' ? child.pid! : -child.pid!,
-          'SIGTERM',
+          process.platform === "win32" ? child.pid! : -child.pid!,
+          "SIGTERM",
         );
       } catch {
         /* already closed */
@@ -719,8 +719,8 @@ export const defaultRunner: CommandRunner = async (
         setTimeout(() => {
           try {
             process.kill(
-              process.platform === 'win32' ? child.pid! : -child.pid!,
-              'SIGKILL',
+              process.platform === "win32" ? child.pid! : -child.pid!,
+              "SIGKILL",
             );
           } catch {
             /* already closed */
@@ -729,8 +729,8 @@ export const defaultRunner: CommandRunner = async (
         }, 5_000),
       );
     };
-    controller.signal.addEventListener('abort', terminate, { once: true });
-    child.stdout.on('data', (chunk: Buffer) => {
+    controller.signal.addEventListener("abort", terminate, { once: true });
+    child.stdout.on("data", (chunk: Buffer) => {
       if (output.length + chunk.length > 16 * 1024 * 1024) {
         overflow = true;
         controller.abort();
@@ -738,16 +738,16 @@ export const defaultRunner: CommandRunner = async (
         output += chunk.toString();
       }
     });
-    child.stderr.on('data', (chunk: Buffer) => {
+    child.stderr.on("data", (chunk: Buffer) => {
       stderr = `${stderr}${chunk.toString()}`.slice(-64 * 1024);
     });
-    child.on('error', () => done(new CommandFailure('command_failed')));
-    child.on('close', (code) => {
+    child.on("error", () => done(new CommandFailure("command_failed")));
+    child.on("close", (code) => {
       if (controller.signal.aborted) {
         void (terminatedGroup ?? Promise.resolve()).then(() =>
           done(
             new DeployFailure(
-              overflow ? 'command_failed' : 'command_cancelled',
+              overflow ? "command_failed" : "command_cancelled",
             ),
           ),
         );
@@ -756,7 +756,7 @@ export const defaultRunner: CommandRunner = async (
       } else {
         done(
           new CommandFailure(
-            'command_failed',
+            "command_failed",
             /HTTP 404\b/u.test(stderr) ? 404 : undefined,
             options.captureFailureStdout?.(output.slice(-16 * 1024).trim()),
             commandFailureDiagnostic(stderr),
@@ -796,8 +796,8 @@ const wrangler = (
   runAt(
     deps,
     deps.packageRoot,
-    'pnpm',
-    ['exec', 'wrangler', ...args, '--env', 'production'],
+    "pnpm",
+    ["exec", "wrangler", ...args, "--env", "production"],
     { timeoutMs },
   );
 
@@ -805,13 +805,13 @@ const readCurrent = async (
   deps: DeployDependencies,
 ): Promise<CurrentDeployment> =>
   parseCurrentDeployment(
-    await wrangler(deps, ['deployments', 'list', '--json']),
+    await wrangler(deps, ["deployments", "list", "--json"]),
   );
 
 const readVersion = async (
   deps: DeployDependencies,
   id: string,
-): Promise<string> => await wrangler(deps, ['versions', 'view', id, '--json']);
+): Promise<string> => await wrangler(deps, ["versions", "view", id, "--json"]);
 
 const readContainer = async (
   deps: DeployDependencies,
@@ -819,11 +819,11 @@ const readContainer = async (
 ): Promise<ContainerState> => {
   const id =
     applicationId ??
-    parseContainer(await wrangler(deps, ['containers', 'list', '--json'])).id;
+    parseContainer(await wrangler(deps, ["containers", "list", "--json"])).id;
   const info = object(
     json(
-      await wrangler(deps, ['containers', 'info', id, '--json']),
-      'cloudflare_containers_invalid',
+      await wrangler(deps, ["containers", "info", id, "--json"]),
+      "cloudflare_containers_invalid",
     ),
   );
   const configuration = object(info?.configuration);
@@ -854,7 +854,7 @@ const readContainerApplication = async (
   const account = deps.env.CLOUDFLARE_ACCOUNT_ID;
   const token = deps.env.CLOUDFLARE_API_TOKEN;
   if (!account || !/^[0-9a-f]{32}$/u.test(account) || !token) {
-    fail('cloudflare_container_read_unavailable');
+    fail("cloudflare_container_read_unavailable");
   }
   let response: Response;
   try {
@@ -866,17 +866,17 @@ const readContainerApplication = async (
       },
     );
   } catch {
-    return fail('cloudflare_container_read_failed');
+    return fail("cloudflare_container_read_failed");
   }
   let envelope: unknown;
   try {
     const raw = await response.text();
-    if (Buffer.byteLength(raw, 'utf8') > 1024 * 1024) {
-      return fail('cloudflare_container_read_failed');
+    if (Buffer.byteLength(raw, "utf8") > 1024 * 1024) {
+      return fail("cloudflare_container_read_failed");
     }
     envelope = JSON.parse(raw) as unknown;
   } catch {
-    return fail('cloudflare_container_read_failed');
+    return fail("cloudflare_container_read_failed");
   }
   const result = object(object(envelope)?.result);
   const configuration = object(result?.configuration);
@@ -888,24 +888,24 @@ const readContainerApplication = async (
     !response.ok ||
     object(envelope)?.success !== true ||
     result?.id !== applicationId ||
-    typeof image !== 'string' ||
-    typeof version !== 'number' ||
+    typeof image !== "string" ||
+    typeof version !== "number" ||
     !Number.isSafeInteger(version) ||
     version < 1 ||
     (activeRolloutId !== undefined &&
       activeRolloutId !== null &&
-      typeof activeRolloutId !== 'string')
+      typeof activeRolloutId !== "string")
   ) {
-    return fail('cloudflare_container_read_failed');
+    return fail("cloudflare_container_read_failed");
   }
-  if (schedulingPolicy !== 'default') {
-    return fail('cloudflare_container_read_unavailable');
+  if (schedulingPolicy !== "default") {
+    return fail("cloudflare_container_read_unavailable");
   }
   return {
     image,
     version,
     schedulingPolicy,
-    ...(typeof activeRolloutId === 'string' ? { activeRolloutId } : {}),
+    ...(typeof activeRolloutId === "string" ? { activeRolloutId } : {}),
   };
 };
 
@@ -915,15 +915,15 @@ const resolveCandidateImage = async (
 ): Promise<string> => {
   const account = deps.env.CLOUDFLARE_ACCOUNT_ID;
   if (!account || !/^[0-9a-f]{32}$/u.test(account)) {
-    fail('cloudflare_registry_manifest_invalid');
+    fail("cloudflare_registry_manifest_invalid");
   }
-  const ref = `registry.cloudflare.com/${account}/${containerApplication}:${workerVersion.split('-')[0]}`;
+  const ref = `registry.cloudflare.com/${account}/${containerApplication}:${workerVersion.split("-")[0]}`;
   return manifestDigest(
     await runAt(
       deps,
       deps.packageRoot,
-      'docker',
-      ['manifest', 'inspect', '-v', ref],
+      "docker",
+      ["manifest", "inspect", "-v", ref],
       { timeoutMs: 120_000 },
     ),
   );
@@ -933,33 +933,33 @@ const readLocalConfig = async (
   deps: DeployDependencies,
 ): Promise<EffectiveConfig> => {
   const trusted = await realpath(
-    resolve(deps.packageRoot, 'wrangler.jsonc'),
-  ).catch(() => fail('cloudflare_config_invalid'));
+    resolve(deps.packageRoot, "wrangler.jsonc"),
+  ).catch(() => fail("cloudflare_config_invalid"));
   let config: unknown;
   try {
     const reader =
       deps.configReader ??
-      (async ({ config: path, env }: { config: string; env: 'production' }) => {
-        const { unstable_readConfig } = await import('wrangler');
+      (async ({ config: path, env }: { config: string; env: "production" }) => {
+        const { unstable_readConfig } = await import("wrangler");
         return unstable_readConfig(
           { config: path, env },
           { hideWarnings: true },
         );
       });
-    config = await reader({ config: trusted, env: 'production' });
+    config = await reader({ config: trusted, env: "production" });
   } catch {
-    fail('cloudflare_config_invalid');
+    fail("cloudflare_config_invalid");
   }
-  const value = object(config) ?? fail('cloudflare_config_invalid');
+  const value = object(config) ?? fail("cloudflare_config_invalid");
   if (
-    typeof value.configPath !== 'string' ||
-    typeof value.userConfigPath !== 'string' ||
-    (await realpath(value.configPath).catch(() => '')) !== trusted ||
-    (await realpath(value.userConfigPath).catch(() => '')) !== trusted ||
+    typeof value.configPath !== "string" ||
+    typeof value.userConfigPath !== "string" ||
+    (await realpath(value.configPath).catch(() => "")) !== trusted ||
+    (await realpath(value.userConfigPath).catch(() => "")) !== trusted ||
     value.name !== productionWorker ||
     value.keep_vars !== false
   ) {
-    fail('cloudflare_config_invalid');
+    fail("cloudflare_config_invalid");
   }
   const limits = object(value.limits);
   const containers = value.containers;
@@ -969,42 +969,42 @@ const readLocalConfig = async (
     !Array.isArray(containers) ||
     containers.length !== 1
   ) {
-    fail('cloudflare_config_invalid');
+    fail("cloudflare_config_invalid");
   }
   const container = object((containers as unknown[])[0]);
   if (
     !container ||
-    container.class_name !== 'NemligMcpContainer' ||
-    container.instance_type !== 'lite' ||
+    container.class_name !== "NemligMcpContainer" ||
+    container.instance_type !== "lite" ||
     container.max_instances !== 1 ||
-    object(container.constraints)?.jurisdiction !== 'eu'
+    object(container.constraints)?.jurisdiction !== "eu"
   ) {
-    fail('cloudflare_config_invalid');
+    fail("cloudflare_config_invalid");
   }
-  const rawVars = object(value.vars) ?? fail('cloudflare_config_invalid');
+  const rawVars = object(value.vars) ?? fail("cloudflare_config_invalid");
   if (
     Object.keys(rawVars).some(
-      (name) => name !== 'MCP_ENABLED' && !configPlainSet.has(name),
+      (name) => name !== "MCP_ENABLED" && !configPlainSet.has(name),
     )
   ) {
-    fail('cloudflare_config_invalid');
+    fail("cloudflare_config_invalid");
   }
   const vars = new Map<string, string>();
   for (const [name, plain] of Object.entries(rawVars)) {
     vars.set(
       name,
-      typeof plain === 'string' ? plain : fail('cloudflare_config_invalid'),
+      typeof plain === "string" ? plain : fail("cloudflare_config_invalid"),
     );
   }
   const durable = object(value.durable_objects);
   const durableBindings = durable?.bindings;
   if (!Array.isArray(durableBindings)) {
-    fail('cloudflare_config_invalid');
+    fail("cloudflare_config_invalid");
   }
   validateDo(
     (durableBindings as unknown[]).map((entry) => {
-      const binding = object(entry) ?? fail('cloudflare_config_invalid');
-      return { ...binding, type: 'durable_object_namespace' };
+      const binding = object(entry) ?? fail("cloudflare_config_invalid");
+      return { ...binding, type: "durable_object_namespace" };
     }),
   );
   return effectiveConfig(vars, [], false);
@@ -1015,15 +1015,15 @@ const candidateConfig = (
   live: EffectiveConfig,
 ): EffectiveConfig => {
   const vars = new Map(local.vars);
-  const onboarding = live.vars.get('MCP_CREDENTIAL_ONBOARDING_ENABLED');
-  if (onboarding !== 'true' && onboarding !== 'false') {
-    fail('cloudflare_runtime_safety_mismatch');
+  const onboarding = live.vars.get("MCP_CREDENTIAL_ONBOARDING_ENABLED");
+  if (onboarding !== "true" && onboarding !== "false") {
+    fail("cloudflare_runtime_safety_mismatch");
   }
-  vars.set('MCP_CREDENTIAL_ONBOARDING_ENABLED', onboarding as string);
+  vars.set("MCP_CREDENTIAL_ONBOARDING_ENABLED", onboarding as string);
   for (const name of [
-    'NEMLIG_MCP_SERVICE_ACCEPTANCE_ENABLED',
-    'NEMLIG_MCP_SERVICE_CLIENT_ID',
-    'NEMLIG_MCP_ONBOARDING_CLIENT_ID',
+    "NEMLIG_MCP_SERVICE_ACCEPTANCE_ENABLED",
+    "NEMLIG_MCP_SERVICE_CLIENT_ID",
+    "NEMLIG_MCP_ONBOARDING_CLIENT_ID",
   ]) {
     const value = live.vars.get(name);
     if (value !== undefined) {
@@ -1041,10 +1041,10 @@ const deployVars = (
   ...[...config.vars]
     .filter(([name]) => configPlainSet.has(name))
     .sort(([left], [right]) => left.localeCompare(right))
-    .flatMap(([name, value]) => ['--var', `${name}:${value}`]),
-  '--var',
+    .flatMap(([name, value]) => ["--var", `${name}:${value}`]),
+  "--var",
   `MCP_ENABLED:${enabled}`,
-  '--var',
+  "--var",
   `NEMLIG_MCP_REVISION:${commit}`,
 ];
 
@@ -1053,21 +1053,21 @@ const repoIdentity = async (
 ): Promise<{ nameWithOwner: string; url: string }> => {
   const value = object(
     json(
-      await runAt(deps, deps.repoRoot, 'gh', [
-        'repo',
-        'view',
-        '--json',
-        'nameWithOwner,url',
+      await runAt(deps, deps.repoRoot, "gh", [
+        "repo",
+        "view",
+        "--json",
+        "nameWithOwner,url",
       ]),
-      'github_repository_invalid',
+      "github_repository_invalid",
     ),
   );
   if (
     !value ||
     value.nameWithOwner !== productionRepository ||
-    typeof value.url !== 'string'
+    typeof value.url !== "string"
   ) {
-    throw new DeployFailure('github_repository_invalid');
+    throw new DeployFailure("github_repository_invalid");
   }
   return { nameWithOwner: value.nameWithOwner, url: value.url };
 };
@@ -1077,56 +1077,56 @@ const verifySource = async (
   commit: string,
   repo: { nameWithOwner: string; url: string },
 ): Promise<number> => {
-  await runAt(deps, deps.repoRoot, 'gh', [
-    'auth',
-    'status',
-    '-h',
-    'github.com',
+  await runAt(deps, deps.repoRoot, "gh", [
+    "auth",
+    "status",
+    "-h",
+    "github.com",
   ]);
-  await runAt(deps, deps.repoRoot, 'git', [
-    '-c',
-    'credential.helper=!gh auth git-credential',
-    'fetch',
+  await runAt(deps, deps.repoRoot, "git", [
+    "-c",
+    "credential.helper=!gh auth git-credential",
+    "fetch",
     repo.url,
-    'main:refs/remotes/origin/main',
+    "main:refs/remotes/origin/main",
   ]);
   const [head, status] = await Promise.all([
-    runAt(deps, deps.repoRoot, 'git', ['rev-parse', 'HEAD']),
-    runAt(deps, deps.repoRoot, 'git', ['status', '--porcelain']),
+    runAt(deps, deps.repoRoot, "git", ["rev-parse", "HEAD"]),
+    runAt(deps, deps.repoRoot, "git", ["status", "--porcelain"]),
   ]);
-  if (head !== commit || status !== '') {
-    fail('source_revision_mismatch');
+  if (head !== commit || status !== "") {
+    fail("source_revision_mismatch");
   }
   try {
-    await runAt(deps, deps.repoRoot, 'git', [
-      'merge-base',
-      '--is-ancestor',
+    await runAt(deps, deps.repoRoot, "git", [
+      "merge-base",
+      "--is-ancestor",
       commit,
-      'origin/main',
+      "origin/main",
     ]);
   } catch {
-    fail('source_revision_mismatch');
+    fail("source_revision_mismatch");
   }
   if (
-    deps.env.GITHUB_EVENT_NAME === 'workflow_run' &&
-    (await runAt(deps, deps.repoRoot, 'git', ['rev-parse', 'origin/main'])) !==
+    deps.env.GITHUB_EVENT_NAME === "workflow_run" &&
+    (await runAt(deps, deps.repoRoot, "git", ["rev-parse", "origin/main"])) !==
       commit
   ) {
-    fail('source_revision_mismatch');
+    fail("source_revision_mismatch");
   }
   const workflows = json(
-    await runAt(deps, deps.repoRoot, 'gh', [
-      'workflow',
-      'list',
-      '--repo',
+    await runAt(deps, deps.repoRoot, "gh", [
+      "workflow",
+      "list",
+      "--repo",
       repo.nameWithOwner,
-      '--all',
-      '--limit',
-      '100',
-      '--json',
-      'id,name,path,state',
+      "--all",
+      "--limit",
+      "100",
+      "--json",
+      "id,name,path,state",
     ]),
-    'github_ci_workflow_invalid',
+    "github_ci_workflow_invalid",
   );
   const matchingWorkflows = Array.isArray(workflows)
     ? workflows
@@ -1135,30 +1135,30 @@ const verifySource = async (
           (workflow) =>
             workflow?.name === ciWorkflowName &&
             workflow.path === ciWorkflowPath &&
-            workflow.state === 'active',
+            workflow.state === "active",
         )
     : [];
   const workflowId =
     matchingWorkflows.length === 1 ? matchingWorkflows[0]?.id : undefined;
-  if (typeof workflowId !== 'number') {
-    fail('github_ci_workflow_invalid');
+  if (typeof workflowId !== "number") {
+    fail("github_ci_workflow_invalid");
   }
   const runs = json(
-    await runAt(deps, deps.repoRoot, 'gh', [
-      'run',
-      'list',
-      '--repo',
+    await runAt(deps, deps.repoRoot, "gh", [
+      "run",
+      "list",
+      "--repo",
       repo.nameWithOwner,
-      '--commit',
+      "--commit",
       commit,
-      '--workflow',
+      "--workflow",
       String(workflowId),
-      '--limit',
-      '10',
-      '--json',
-      'conclusion,databaseId,event,headBranch,headSha,status,url,workflowDatabaseId,workflowName',
+      "--limit",
+      "10",
+      "--json",
+      "conclusion,databaseId,event,headBranch,headSha,status,url,workflowDatabaseId,workflowName",
     ]),
-    'github_ci_invalid',
+    "github_ci_invalid",
   );
   const trusted = Array.isArray(runs)
     ? runs
@@ -1166,11 +1166,11 @@ const verifySource = async (
         .filter(
           (run) =>
             run?.headSha === commit &&
-            run.event === 'push' &&
-            run.headBranch === 'main' &&
+            run.event === "push" &&
+            run.headBranch === "main" &&
             run.workflowName === ciWorkflowName &&
             run.workflowDatabaseId === workflowId &&
-            typeof run.databaseId === 'number',
+            typeof run.databaseId === "number",
         )
         .sort(
           (left, right) =>
@@ -1178,27 +1178,27 @@ const verifySource = async (
         )[0]
     : undefined;
   if (!trusted) {
-    fail('exact_head_ci_not_green');
+    fail("exact_head_ci_not_green");
   }
   const trustedRun = trusted as Record<string, unknown>;
   if (
-    trustedRun.status !== 'completed' ||
-    trustedRun.conclusion !== 'success'
+    trustedRun.status !== "completed" ||
+    trustedRun.conclusion !== "success"
   ) {
-    fail('exact_head_ci_not_green');
+    fail("exact_head_ci_not_green");
   }
   const run = object(
     json(
-      await runAt(deps, deps.repoRoot, 'gh', [
-        'run',
-        'view',
+      await runAt(deps, deps.repoRoot, "gh", [
+        "run",
+        "view",
         String(trustedRun.databaseId),
-        '--repo',
+        "--repo",
         repo.nameWithOwner,
-        '--json',
-        'jobs',
+        "--json",
+        "jobs",
       ]),
-      'github_ci_invalid',
+      "github_ci_invalid",
     ),
   );
   const jobs = Array.isArray(run?.jobs)
@@ -1206,13 +1206,13 @@ const verifySource = async (
         .map(object)
         .filter((job): job is Record<string, unknown> => Boolean(job))
     : [];
-  const verify = jobs.filter((job) => job.name === 'verify');
+  const verify = jobs.filter((job) => job.name === "verify");
   if (
     verify.length !== 1 ||
-    verify[0]?.status !== 'completed' ||
-    verify[0]?.conclusion !== 'success'
+    verify[0]?.status !== "completed" ||
+    verify[0]?.conclusion !== "success"
   ) {
-    fail('exact_head_ci_not_green');
+    fail("exact_head_ci_not_green");
   }
   return trustedRun.databaseId as number;
 };
@@ -1222,31 +1222,31 @@ const verifyAutomaticCandidateIsCurrentMain = async (
   commit: string,
   repo: { url: string },
 ): Promise<void> => {
-  if (deps.env.GITHUB_EVENT_NAME !== 'workflow_run') {
+  if (deps.env.GITHUB_EVENT_NAME !== "workflow_run") {
     return;
   }
-  await runAt(deps, deps.repoRoot, 'git', [
-    '-c',
-    'credential.helper=!gh auth git-credential',
-    'fetch',
+  await runAt(deps, deps.repoRoot, "git", [
+    "-c",
+    "credential.helper=!gh auth git-credential",
+    "fetch",
     repo.url,
-    'main:refs/remotes/origin/main',
+    "main:refs/remotes/origin/main",
   ]);
   try {
-    await runAt(deps, deps.repoRoot, 'git', [
-      'merge-base',
-      '--is-ancestor',
+    await runAt(deps, deps.repoRoot, "git", [
+      "merge-base",
+      "--is-ancestor",
       commit,
-      'origin/main',
+      "origin/main",
     ]);
   } catch {
-    fail('source_revision_mismatch');
+    fail("source_revision_mismatch");
   }
   if (
-    (await runAt(deps, deps.repoRoot, 'git', ['rev-parse', 'origin/main'])) !==
+    (await runAt(deps, deps.repoRoot, "git", ["rev-parse", "origin/main"])) !==
     commit
   ) {
-    fail('source_revision_mismatch');
+    fail("source_revision_mismatch");
   }
 };
 
@@ -1257,15 +1257,15 @@ const githubEnvironment = async (
 ): Promise<Record<string, unknown>> => {
   try {
     const value = json(
-      await runAt(deps, deps.repoRoot, 'gh', [
-        'api',
+      await runAt(deps, deps.repoRoot, "gh", [
+        "api",
         `repos/${repository}/${path}`,
       ]),
-      'github_environment_not_ready',
+      "github_environment_not_ready",
     );
-    return object(value) ?? fail('github_environment_not_ready');
+    return object(value) ?? fail("github_environment_not_ready");
   } catch {
-    return fail('github_environment_not_ready');
+    return fail("github_environment_not_ready");
   }
 };
 
@@ -1276,7 +1276,7 @@ const verifyGithubEnvironment = async (
   const environment = await githubEnvironment(
     deps,
     repository,
-    'environments/nemlig-production',
+    "environments/nemlig-production",
   );
   const rules = Array.isArray(environment.protection_rules)
     ? environment.protection_rules.map(object)
@@ -1285,31 +1285,31 @@ const verifyGithubEnvironment = async (
   if (
     environment.can_admins_bypass !== false ||
     rules.length !== 1 ||
-    rules[0]?.type !== 'branch_policy' ||
+    rules[0]?.type !== "branch_policy" ||
     branchPolicy?.protected_branches !== false ||
     branchPolicy.custom_branch_policies !== true
   ) {
-    fail('github_environment_not_ready');
+    fail("github_environment_not_ready");
   }
   const branches = await githubEnvironment(
     deps,
     repository,
-    'environments/nemlig-production/deployment-branch-policies',
+    "environments/nemlig-production/deployment-branch-policies",
   );
   const policies = Array.isArray(branches.branch_policies)
     ? branches.branch_policies.map(object)
     : [];
   if (
     policies.length !== 1 ||
-    policies[0]?.name !== 'main' ||
-    policies[0]?.type !== 'branch'
+    policies[0]?.name !== "main" ||
+    policies[0]?.type !== "branch"
   ) {
-    fail('github_environment_not_ready');
+    fail("github_environment_not_ready");
   }
 };
 
 export type ProductionPreflight = {
-  state: 'ready';
+  state: "ready";
   commit: string;
   ciRunId: number;
 };
@@ -1318,12 +1318,12 @@ export async function preflightProductionDeploy(
   deps: DeployDependencies,
 ): Promise<ProductionPreflight> {
   if (!fullSha.test(commit)) {
-    fail('invalid_commit');
+    fail("invalid_commit");
   }
   const repo = await repoIdentity(deps);
   const ciRunId = await verifySource(deps, commit, repo);
   await verifyGithubEnvironment(deps, repo.nameWithOwner);
-  return { state: 'ready', commit, ciRunId };
+  return { state: "ready", commit, ciRunId };
 }
 
 const sleepAbortably = async (
@@ -1334,15 +1334,15 @@ const sleepAbortably = async (
     return await deps.sleep(durationMs);
   }
   await new Promise<void>((resolvePromise, reject) => {
-    const abort = () => reject(new DeployFailure('command_cancelled'));
-    deps.signal!.addEventListener('abort', abort, { once: true });
+    const abort = () => reject(new DeployFailure("command_cancelled"));
+    deps.signal!.addEventListener("abort", abort, { once: true });
     void deps.sleep(durationMs).then(
       () => {
-        deps.signal!.removeEventListener('abort', abort);
+        deps.signal!.removeEventListener("abort", abort);
         resolvePromise();
       },
       (error) => {
-        deps.signal!.removeEventListener('abort', abort);
+        deps.signal!.removeEventListener("abort", abort);
         reject(error);
       },
     );
@@ -1359,33 +1359,33 @@ const runningInstanceVersion = (
   raw: string,
   minimumVersion: number,
 ): number | null => {
-  const parsed = json(raw, 'cloudflare_instances_invalid');
+  const parsed = json(raw, "cloudflare_instances_invalid");
   if (!Array.isArray(parsed) || parsed.length !== 1) {
-    fail('cloudflare_instances_invalid');
+    fail("cloudflare_instances_invalid");
   }
   const instance =
-    object((parsed as unknown[])[0]) ?? fail('cloudflare_instances_invalid');
+    object((parsed as unknown[])[0]) ?? fail("cloudflare_instances_invalid");
   const { id, name, state, version } = instance;
   if (
-    typeof id !== 'string' ||
+    typeof id !== "string" ||
     id.length === 0 ||
-    name !== 'nemlig-production' ||
-    typeof state !== 'string' ||
+    name !== "nemlig-production" ||
+    typeof state !== "string" ||
     (version !== null &&
       (!Number.isSafeInteger(version) || (version as number) < 1))
   ) {
-    fail('cloudflare_instances_invalid');
+    fail("cloudflare_instances_invalid");
   }
-  if (state === 'running') {
-    if (typeof version !== 'number') {
-      return fail('cloudflare_instances_invalid');
+  if (state === "running") {
+    if (typeof version !== "number") {
+      return fail("cloudflare_instances_invalid");
     }
     return version >= minimumVersion ? version : null;
   }
-  if (['provisioning', 'stopping', 'stopped'].includes(state as string)) {
+  if (["provisioning", "stopping", "stopped"].includes(state as string)) {
     return null;
   }
-  return fail('cloudflare_instances_invalid');
+  return fail("cloudflare_instances_invalid");
 };
 
 /**
@@ -1401,10 +1401,10 @@ const waitForAcceptedInstance = async (
   for (let attempt = 0; attempt < 36; attempt += 1) {
     deps.signal?.throwIfAborted();
     const raw = await wrangler(deps, [
-      'containers',
-      'instances',
+      "containers",
+      "instances",
       applicationId,
-      '--json',
+      "--json",
     ]);
     if (instancesInactive(raw)) {
       return;
@@ -1412,7 +1412,7 @@ const waitForAcceptedInstance = async (
     const version = runningInstanceVersion(raw, expectedVersion);
     if (version !== null) {
       if (version !== expectedVersion) {
-        fail('cloudflare_deployment_drift');
+        fail("cloudflare_deployment_drift");
       }
       return;
     }
@@ -1420,7 +1420,7 @@ const waitForAcceptedInstance = async (
       await sleepAbortably(deps);
     }
   }
-  fail('container_instance_timeout');
+  fail("container_instance_timeout");
 };
 
 const waitForCandidateContainer = async (
@@ -1433,7 +1433,7 @@ const waitForCandidateContainer = async (
     await verifyCurrent(deps, workerVersion);
     const current = await readContainer(deps, starting.id);
     if (current.id !== starting.id) {
-      fail('cloudflare_deployment_drift');
+      fail("cloudflare_deployment_drift");
     }
     if (current.image === image) {
       return current;
@@ -1442,25 +1442,25 @@ const waitForCandidateContainer = async (
       current.image !== starting.image ||
       current.version !== starting.version
     ) {
-      fail('cloudflare_deployment_drift');
+      fail("cloudflare_deployment_drift");
     }
     if (attempt < 35) {
       await sleepAbortably(deps);
     }
   }
-  return fail('container_instance_timeout');
+  return fail("container_instance_timeout");
 };
 
 const parseAcceptanceFailure = (
   stdout: string | undefined,
-  profile: AcceptanceFailureEvidence['profile'],
-  stage: AcceptanceFailureEvidence['stage'],
+  profile: AcceptanceFailureEvidence["profile"],
+  stage: AcceptanceFailureEvidence["stage"],
 ): AcceptanceFailureEvidence | undefined => {
   if (!stdout) {
     return undefined;
   }
   for (const line of stdout.split(/\r?\n/u).reverse()) {
-    if (!line.startsWith('{')) {
+    if (!line.startsWith("{")) {
       continue;
     }
     let value: Record<string, unknown> | undefined;
@@ -1473,26 +1473,26 @@ const parseAcceptanceFailure = (
       !value ||
       value.schema !== 1 ||
       value.profile !== profile ||
-      typeof value.failureCategory !== 'string' ||
+      typeof value.failureCategory !== "string" ||
       !acceptanceFailureCategories.has(value.failureCategory) ||
       !Array.isArray(value.failed) ||
       value.failed.length !== 1 ||
       !(
         value.failed[0] === value.failureCategory ||
-        (value.failureCategory === 'feature_failed' &&
+        (value.failureCategory === "feature_failed" &&
           [
-            'product_viewer_html_mismatch',
-            'service_tool_inventory_mismatch',
-            'service_resource_inventory_mismatch',
-            'service_runtime_version_mismatch',
+            "product_viewer_html_mismatch",
+            "service_tool_inventory_mismatch",
+            "service_resource_inventory_mismatch",
+            "service_runtime_version_mismatch",
           ].includes(value.failed[0]))
       ) ||
-      typeof value.lastCompletedBoundary !== 'string' ||
+      typeof value.lastCompletedBoundary !== "string" ||
       !/^[A-Za-z0-9_:-]{1,64}$/u.test(value.lastCompletedBoundary) ||
       !Array.isArray(value.correlationIds) ||
       value.correlationIds.length > 16 ||
       !value.correlationIds.every(
-        (id) => typeof id === 'string' && /^[A-Za-z0-9_-]{1,128}$/u.test(id),
+        (id) => typeof id === "string" && /^[A-Za-z0-9_-]{1,128}$/u.test(id),
       )
     ) {
       continue;
@@ -1500,7 +1500,7 @@ const parseAcceptanceFailure = (
     const evidence: AcceptanceFailureEvidence = {
       stage,
       profile,
-      category: value.failureCategory as AcceptanceFailureEvidence['category'],
+      category: value.failureCategory as AcceptanceFailureEvidence["category"],
       lastCompletedBoundary: value.lastCompletedBoundary,
       correlationIds: value.correlationIds as string[],
       failureCode: value.failed[0] as string,
@@ -1518,12 +1518,12 @@ const retryAcceptance = async (
   args: readonly string[],
   env: NodeJS.ProcessEnv,
   attempts: number,
-  stage: AcceptanceFailureEvidence['stage'],
-  profile: AcceptanceFailureEvidence['profile'],
+  stage: AcceptanceFailureEvidence["stage"],
+  profile: AcceptanceFailureEvidence["profile"],
   failure:
-    | 'edge_acceptance_failed'
-    | 'service_fixture_acceptance_failed'
-    | 'authenticated_read_only_acceptance_failed',
+    | "edge_acceptance_failed"
+    | "service_fixture_acceptance_failed"
+    | "authenticated_read_only_acceptance_failed",
   runtimeConvergenceMs?: number,
   staleRuntimeAttemptLimit = 180,
 ): Promise<void> => {
@@ -1544,7 +1544,7 @@ const retryAcceptance = async (
     }
     try {
       attemptsMade += 1;
-      await runAt(deps, deps.packageRoot, 'pnpm', args, {
+      await runAt(deps, deps.packageRoot, "pnpm", args, {
         timeoutMs: Math.min(acceptanceCommandTimeoutMs, remainingMs()),
         env,
         captureFailureStdout: (stdout) =>
@@ -1564,13 +1564,13 @@ const retryAcceptance = async (
       }
       deps.signal?.throwIfAborted();
       if (deps.signal?.aborted) {
-        throw new DeployFailure('command_cancelled');
+        throw new DeployFailure("command_cancelled");
       }
       const staleRuntime =
-        profile === 'service' &&
+        profile === "service" &&
         validAcceptanceFailure(evidence) &&
-        evidence.category === 'feature_failed' &&
-        evidence.lastCompletedBoundary === 'service_runtime_version_read';
+        evidence.category === "feature_failed" &&
+        evidence.lastCompletedBoundary === "service_runtime_version_read";
       if (staleRuntime) {
         staleRuntimeAttempts += 1;
       } else {
@@ -1599,7 +1599,7 @@ const verifyCurrent = async (
   expected: string,
 ): Promise<void> => {
   if ((await readCurrent(deps)).version !== expected) {
-    fail('cloudflare_deployment_drift');
+    fail("cloudflare_deployment_drift");
   }
 };
 
@@ -1608,28 +1608,28 @@ export async function deployProduction(
   inputDeps: DeployDependencies,
 ): Promise<ProductionDeploymentReport> {
   if (!fullSha.test(commit)) {
-    fail('invalid_commit');
+    fail("invalid_commit");
   }
   const controller = new AbortController();
   const abort = () => controller.abort();
   if (inputDeps.signal?.aborted) {
     abort();
   } else {
-    inputDeps.signal?.addEventListener('abort', abort, { once: true });
+    inputDeps.signal?.addEventListener("abort", abort, { once: true });
   }
   const deadline = setTimeout(abort, 25 * 60_000);
   const service =
-    inputDeps.env.GITHUB_ACTIONS === 'true' ||
-    inputDeps.acceptanceMode === 'service';
+    inputDeps.env.GITHUB_ACTIONS === "true" ||
+    inputDeps.acceptanceMode === "service";
   const env = service
     ? Object.fromEntries(
         Object.keys(inputDeps.env)
           .filter(
             (name) =>
               ![
-                'NEMLIG_MCP_ACCESS_TOKEN',
-                'NEMLIG_MCP_SERVICE_CLIENT_SECRET',
-                'NEMLIG_MCP_SERVICE_ACCESS_TOKEN',
+                "NEMLIG_MCP_ACCESS_TOKEN",
+                "NEMLIG_MCP_SERVICE_CLIENT_SECRET",
+                "NEMLIG_MCP_SERVICE_ACCESS_TOKEN",
               ].includes(name),
           )
           .map((name) => [name, inputDeps.env[name]]),
@@ -1644,21 +1644,21 @@ export async function deployProduction(
     commit,
     ciRunId: 0,
     checks: [],
-    outcome: 'failed',
+    outcome: "failed",
   };
   try {
     deps.signal?.throwIfAborted();
     if (!service && !deps.env.NEMLIG_MCP_ACCESS_TOKEN?.trim()) {
-      fail('owner_access_token_required');
+      fail("owner_access_token_required");
     }
     const repo = await repoIdentity(deps);
     report.ciRunId = await verifySource(deps, commit, repo);
     await verifyGithubEnvironment(deps, repo.nameWithOwner);
-    report.checks.push('source_and_auth_preflight');
+    report.checks.push("source_and_auth_preflight");
     let serviceToken: string | undefined;
     if (service) {
-      if (deps.env.NEMLIG_CI_ACCEPTANCE_READY !== 'true') {
-        fail('service_acceptance_not_ready');
+      if (deps.env.NEMLIG_CI_ACCEPTANCE_READY !== "true") {
+        fail("service_acceptance_not_ready");
       }
       try {
         serviceToken = await (deps.issueServiceToken ?? issueServiceToken)(
@@ -1666,7 +1666,7 @@ export async function deployProduction(
           { fetcher: inputDeps.fetcher, signal: deps.signal },
         );
       } catch {
-        fail('service_token_unavailable');
+        fail("service_token_unavailable");
       }
     }
 
@@ -1680,29 +1680,29 @@ export async function deployProduction(
       startingState.enabled,
     );
     try {
-      await runAt(deps, deps.repoRoot, 'git', [
-        'merge-base',
-        '--is-ancestor',
+      await runAt(deps, deps.repoRoot, "git", [
+        "merge-base",
+        "--is-ancestor",
         startingState.revision,
         commit,
       ]);
     } catch {
-      fail('candidate_does_not_supersede_runtime');
+      fail("candidate_does_not_supersede_runtime");
     }
     const liveConfig = versionConfig(startingRaw);
     const configured = candidateConfig(await readLocalConfig(deps), liveConfig);
     if (configured.digest !== liveConfig.digest) {
-      fail('cloudflare_runtime_safety_mismatch');
+      fail("cloudflare_runtime_safety_mismatch");
     }
     if (service) {
       const clientId = inputDeps.env.NEMLIG_MCP_SERVICE_CLIENT_ID?.trim();
       if (
         !clientId ||
-        configured.vars.get('NEMLIG_MCP_SERVICE_ACCEPTANCE_ENABLED') !==
-          'true' ||
-        configured.vars.get('NEMLIG_MCP_SERVICE_CLIENT_ID') !== clientId
+        configured.vars.get("NEMLIG_MCP_SERVICE_ACCEPTANCE_ENABLED") !==
+          "true" ||
+        configured.vars.get("NEMLIG_MCP_SERVICE_CLIENT_ID") !== clientId
       ) {
-        fail('service_acceptance_not_ready');
+        fail("service_acceptance_not_ready");
       }
     }
     const startingContainer = await readContainer(deps);
@@ -1717,20 +1717,20 @@ export async function deployProduction(
       cloudflareApplication.version !== startingContainer.version ||
       cloudflareApplication.activeRolloutId
     ) {
-      fail('cloudflare_deployment_drift');
+      fail("cloudflare_deployment_drift");
     }
-    report.checks.push('starting_runtime_verified');
+    report.checks.push("starting_runtime_verified");
 
     await verifyCurrent(deps, starting.version);
     await verifyAutomaticCandidateIsCurrentMain(deps, commit, repo);
     const output = await wrangler(
       deps,
       [
-        'deploy',
+        "deploy",
         ...deployVars(configured, true, commit),
-        '--containers-rollout',
-        'immediate',
-        '--message',
+        "--containers-rollout",
+        "immediate",
+        "--message",
         `Automated production release at ${commit.slice(0, 7)}`,
       ],
       600_000,
@@ -1749,8 +1749,8 @@ export async function deployProduction(
       candidateImage,
     );
     report.checks.push(
-      'candidate_version_verified',
-      'container_rollout_verified',
+      "candidate_version_verified",
+      "container_rollout_verified",
     );
 
     await waitForAcceptedInstance(
@@ -1762,76 +1762,76 @@ export async function deployProduction(
       const edgeBudgetMs = 60_000;
       await retryAcceptance(
         deps,
-        ['production:probe'],
+        ["production:probe"],
         { NEMLIG_EXPECTED_REVISION: commit },
         12,
-        'edge',
-        'edge',
-        'edge_acceptance_failed',
+        "edge",
+        "edge",
+        "edge_acceptance_failed",
         edgeBudgetMs,
       );
       await retryAcceptance(
         deps,
         [
-          'production:test:features',
-          '--service',
-          '--initialize-only',
-          '--wake-only',
+          "production:test:features",
+          "--service",
+          "--initialize-only",
+          "--wake-only",
         ],
         {
           NEMLIG_MCP_SERVICE_ACCESS_TOKEN: serviceToken!,
           NEMLIG_EXPECTED_REVISION: commit,
         },
         12,
-        'read_only',
-        'service',
-        'service_fixture_acceptance_failed',
+        "read_only",
+        "service",
+        "service_fixture_acceptance_failed",
         12 * 60_000 - serviceStartupEvidenceReserveMs,
       );
       await retryAcceptance(
         deps,
-        ['production:test:features', '--service', '--initialize-only'],
+        ["production:test:features", "--service", "--initialize-only"],
         {
           NEMLIG_MCP_SERVICE_ACCESS_TOKEN: serviceToken!,
           NEMLIG_EXPECTED_REVISION: commit,
         },
         12,
-        'read_only',
-        'service',
-        'service_fixture_acceptance_failed',
+        "read_only",
+        "service",
+        "service_fixture_acceptance_failed",
         12 * 60_000 - serviceStartupEvidenceReserveMs,
       );
       await retryAcceptance(
         deps,
-        ['production:test:features', '--service'],
+        ["production:test:features", "--service"],
         {
           NEMLIG_MCP_SERVICE_ACCESS_TOKEN: serviceToken!,
           NEMLIG_EXPECTED_REVISION: commit,
         },
         12,
-        'read_only',
-        'service',
-        'service_fixture_acceptance_failed',
+        "read_only",
+        "service",
+        "service_fixture_acceptance_failed",
         11 * 60_000,
       );
     } else {
       await retryAcceptance(
         deps,
-        ['production:probe'],
+        ["production:probe"],
         { NEMLIG_EXPECTED_REVISION: commit },
         12,
-        'edge',
-        'edge',
-        'edge_acceptance_failed',
+        "edge",
+        "edge",
+        "edge_acceptance_failed",
       );
       await retryAcceptance(
         deps,
-        ['production:test:features'],
+        ["production:test:features"],
         { NEMLIG_EXPECTED_REVISION: commit },
         1,
-        'read_only',
-        'live-user',
-        'authenticated_read_only_acceptance_failed',
+        "read_only",
+        "live-user",
+        "authenticated_read_only_acceptance_failed",
       );
     }
     await verifyCurrent(deps, enabledId);
@@ -1841,14 +1841,14 @@ export async function deployProduction(
       provenContainer.image !== candidateImage ||
       provenContainer.version !== enabledContainer.version
     ) {
-      fail('cloudflare_deployment_drift');
+      fail("cloudflare_deployment_drift");
     }
     report.checks.push(
-      'edge_acceptance',
-      'read_only_acceptance',
-      'final_runtime_verified',
+      "edge_acceptance",
+      "read_only_acceptance",
+      "final_runtime_verified",
     );
-    report.outcome = 'success';
+    report.outcome = "success";
   } catch (error) {
     if (error instanceof CommandFailure && error.diagnostic) {
       console.error(error.diagnostic);
@@ -1856,13 +1856,13 @@ export async function deployProduction(
     report.failure =
       error instanceof DeployFailure && deploymentFailureReasons.has(error.code)
         ? error.code
-        : 'unexpected_failure';
+        : "unexpected_failure";
     if (error instanceof AcceptanceFailure) {
       if (error.evidence) {
         report.acceptanceFailure = error.evidence;
       }
       const failureCode = error.evidence?.failureCode ?? error.code;
-      const boundary = error.evidence?.lastCompletedBoundary ?? 'unknown';
+      const boundary = error.evidence?.lastCompletedBoundary ?? "unknown";
       console.error(
         `acceptance_final_failure_code=${failureCode} attempts=${error.attempts} last_completed_boundary=${boundary}`,
       );
@@ -1871,31 +1871,31 @@ export async function deployProduction(
     }
   } finally {
     clearTimeout(deadline);
-    inputDeps.signal?.removeEventListener('abort', abort);
+    inputDeps.signal?.removeEventListener("abort", abort);
   }
   return report;
 }
 
 async function main(): Promise<void> {
-  const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-  const repoRoot = resolve(packageRoot, '../..');
+  const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+  const repoRoot = resolve(packageRoot, "../..");
   const values =
-    process.argv.slice(2)[0] === '--'
+    process.argv.slice(2)[0] === "--"
       ? process.argv.slice(3)
       : process.argv.slice(2);
-  if (values.length === 1 && (values[0] === '--help' || values[0] === '-h')) {
+  if (values.length === 1 && (values[0] === "--help" || values[0] === "-h")) {
     console.log(`Usage: ${productionDeployUsage}`);
     return;
   }
-  const service = values[0] === '--service';
+  const service = values[0] === "--service";
   const commit = values[service ? 1 : 0];
-  if (values.length !== (service ? 2 : 1) || !fullSha.test(commit ?? '')) {
+  if (values.length !== (service ? 2 : 1) || !fullSha.test(commit ?? "")) {
     fail(`usage: ${productionDeployUsage}`);
   }
   const controller = new AbortController();
   const abort = () => controller.abort();
-  process.once('SIGINT', abort);
-  process.once('SIGTERM', abort);
+  process.once("SIGINT", abort);
+  process.once("SIGTERM", abort);
   const deps: DeployDependencies = {
     repoRoot,
     packageRoot,
@@ -1908,24 +1908,24 @@ async function main(): Promise<void> {
         setTimeout(resolvePromise, milliseconds),
       ),
     now: () => new Date(),
-    acceptanceMode: service ? 'service' : 'owner',
+    acceptanceMode: service ? "service" : "owner",
   };
   const report = await deployProduction(commit!, deps);
-  process.removeListener('SIGINT', abort);
-  process.removeListener('SIGTERM', abort);
+  process.removeListener("SIGINT", abort);
+  process.removeListener("SIGTERM", abort);
   console.log(JSON.stringify(report, null, 2));
-  if (report.outcome !== 'success') {
+  if (report.outcome !== "success") {
     process.exitCode = 1;
   }
 }
 
 if (
   process.argv[1] &&
-  basename(process.argv[1]).replace(/\.ts$/u, '.js') === 'production-deploy.js'
+  basename(process.argv[1]).replace(/\.ts$/u, ".js") === "production-deploy.js"
 ) {
   main().catch((error) => {
     console.error(
-      error instanceof DeployFailure ? error.code : 'production_deploy_failed',
+      error instanceof DeployFailure ? error.code : "production_deploy_failed",
     );
     process.exitCode = 1;
   });

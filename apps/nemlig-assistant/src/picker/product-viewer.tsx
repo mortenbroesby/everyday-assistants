@@ -1,6 +1,6 @@
-import { useApp, useHostStyles } from '@modelcontextprotocol/ext-apps/react';
-import { useCallback, useEffect, useId, useRef, useState } from 'react';
-import type { ProductView } from '../product-presentation.js';
+import { useApp, useHostStyles } from "@modelcontextprotocol/ext-apps/react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
+import type { ProductView } from "../product-presentation.js";
 import {
   ActionFooter,
   DestinationTabs,
@@ -16,22 +16,22 @@ import {
   QuantityControl,
   ViewerButton as Button,
   ViewerShell,
-} from './components/index.js';
+} from "./components/index.js";
 
 type ReviewItem = {
   product_id: number;
   quantity: number;
-  state: 'needs-review' | 'ready';
+  state: "needs-review" | "ready";
   view: ProductView;
 };
 type Review = {
   review_id: string;
   revision: number;
-  destination: 'needs-review' | 'ready' | 'alternatives';
+  destination: "needs-review" | "ready" | "alternatives";
   items: ReviewItem[];
   alternatives?: { product_id: number; query: string; views: ProductView[] };
   submission?: {
-    status: 'prepared' | 'submitted' | 'uncertain';
+    status: "prepared" | "submitted" | "uncertain";
     submission_id: string;
     review: {
       lines?: Array<{
@@ -46,7 +46,7 @@ type Review = {
     };
   };
 };
-type PresentationDestination = Review['destination'];
+type PresentationDestination = Review["destination"];
 type Payload = {
   views?: ProductView[];
   products?: ProductView[];
@@ -60,14 +60,14 @@ type Payload = {
   ended?: boolean;
 };
 type Screen =
-  | { kind: 'loading' }
-  | { kind: 'error'; message: string }
-  | { kind: 'cancelled' }
-  | { kind: 'stale' }
-  | { kind: 'products'; payload: Payload; views: ProductView[] }
-  | { kind: 'review'; review: Review; view_id?: string; active: boolean }
-  | { kind: 'unavailable'; review?: Review }
-  | { kind: 'empty'; message?: string };
+  | { kind: "loading" }
+  | { kind: "error"; message: string }
+  | { kind: "cancelled" }
+  | { kind: "stale" }
+  | { kind: "products"; payload: Payload; views: ProductView[] }
+  | { kind: "review"; review: Review; view_id?: string; active: boolean }
+  | { kind: "unavailable"; review?: Review }
+  | { kind: "empty"; message?: string };
 
 declare global {
   interface Window {
@@ -76,21 +76,21 @@ declare global {
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === 'object' && !Array.isArray(value);
+  return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 function isReview(value: unknown): value is Review {
   if (
     !isRecord(value) ||
-    typeof value.review_id !== 'string' ||
+    typeof value.review_id !== "string" ||
     !Number.isSafeInteger(value.revision) ||
     !Array.isArray(value.items)
   ) {
     return false;
   }
   if (!(
-    value.destination === 'needs-review' ||
-    value.destination === 'ready' ||
-    value.destination === 'alternatives'
+    value.destination === "needs-review" ||
+    value.destination === "ready" ||
+    value.destination === "alternatives"
   )) {
     return false;
   }
@@ -99,10 +99,10 @@ function isReview(value: unknown): value is Review {
       (item) =>
         isRecord(item) &&
         Number.isSafeInteger(item.product_id) &&
-        typeof item.quantity === 'number' &&
+        typeof item.quantity === "number" &&
         Number.isSafeInteger(item.quantity) &&
         item.quantity > 0 &&
-        (item.state === 'needs-review' || item.state === 'ready') &&
+        (item.state === "needs-review" || item.state === "ready") &&
         isProductView(item.view),
     )
   ) {
@@ -112,7 +112,7 @@ function isReview(value: unknown): value is Review {
     value.alternatives !== undefined &&
     (!isRecord(value.alternatives) ||
       !Number.isSafeInteger(value.alternatives.product_id) ||
-      typeof value.alternatives.query !== 'string' ||
+      typeof value.alternatives.query !== "string" ||
       !Array.isArray(value.alternatives.views) ||
       !value.alternatives.views.every(isProductView))
   ) {
@@ -121,10 +121,10 @@ function isReview(value: unknown): value is Review {
   if (value.submission !== undefined) {
     if (
       !isRecord(value.submission) ||
-      !['prepared', 'submitted', 'uncertain'].includes(
+      !["prepared", "submitted", "uncertain"].includes(
         String(value.submission.status),
       ) ||
-      typeof value.submission.submission_id !== 'string' ||
+      typeof value.submission.submission_id !== "string" ||
       !isRecord(value.submission.review)
     ) {
       return false;
@@ -132,7 +132,7 @@ function isReview(value: unknown): value is Review {
     const submissionReview = value.submission.review;
     const validOptionalTotal = (amount: unknown) =>
       amount === undefined ||
-      (typeof amount === 'number' && Number.isFinite(amount) && amount >= 0);
+      (typeof amount === "number" && Number.isFinite(amount) && amount >= 0);
     if (
       !validOptionalTotal(submissionReview.expected_products_price) ||
       (submissionReview.lines !== undefined &&
@@ -141,12 +141,12 @@ function isReview(value: unknown): value is Review {
             (line) =>
               isRecord(line) &&
               Number.isSafeInteger(line.product_id) &&
-              typeof line.quantity === 'number' &&
+              typeof line.quantity === "number" &&
               Number.isSafeInteger(line.quantity) &&
               line.quantity > 0 &&
-              (line.name === undefined || typeof line.name === 'string') &&
+              (line.name === undefined || typeof line.name === "string") &&
               (line.unit_size === undefined ||
-                typeof line.unit_size === 'string') &&
+                typeof line.unit_size === "string") &&
               validOptionalTotal(line.item_price) &&
               validOptionalTotal(line.line_total),
           )))
@@ -160,81 +160,81 @@ function isProductView(value: unknown): value is ProductView {
   if (
     !isRecord(value) ||
     !(
-      value.context === 'search' ||
-      value.context === 'details' ||
-      value.context === 'result' ||
-      value.context === 'basket' ||
-      value.context === 'review'
+      value.context === "search" ||
+      value.context === "details" ||
+      value.context === "result" ||
+      value.context === "basket" ||
+      value.context === "review"
     )
   ) {
     return false;
   }
-  if (value.status === 'unavailable') {
+  if (value.status === "unavailable") {
     return (
       value.product_id === undefined || Number.isSafeInteger(value.product_id)
     );
   }
-  if (value.status !== 'complete' || !isRecord(value.product)) {
+  if (value.status !== "complete" || !isRecord(value.product)) {
     return false;
   }
   const product = value.product;
   const optionalString = (key: string) =>
-    product[key] === undefined || typeof product[key] === 'string';
+    product[key] === undefined || typeof product[key] === "string";
   const optionalNumber = (key: string) =>
     product[key] === undefined ||
-    (typeof product[key] === 'number' && Number.isFinite(product[key]));
+    (typeof product[key] === "number" && Number.isFinite(product[key]));
   const optionalBoolean = (key: string) =>
-    product[key] === undefined || typeof product[key] === 'boolean';
+    product[key] === undefined || typeof product[key] === "boolean";
   const optionalNonnegativeNumber = (
     record: Record<string, unknown>,
     key: string,
   ) =>
     record[key] === undefined ||
-    (typeof record[key] === 'number' &&
+    (typeof record[key] === "number" &&
       Number.isFinite(record[key]) &&
       record[key] >= 0);
   const basketValid =
     value.basket === undefined ||
     (isRecord(value.basket) &&
-      optionalNonnegativeNumber(value.basket, 'quantity') &&
-      optionalNonnegativeNumber(value.basket, 'line_total'));
+      optionalNonnegativeNumber(value.basket, "quantity") &&
+      optionalNonnegativeNumber(value.basket, "line_total"));
   const reviewValid =
     value.review === undefined ||
     (isRecord(value.review) &&
-      optionalNonnegativeNumber(value.review, 'quantity') &&
-      optionalNonnegativeNumber(value.review, 'line_total') &&
+      optionalNonnegativeNumber(value.review, "quantity") &&
+      optionalNonnegativeNumber(value.review, "line_total") &&
       (value.review.approved === undefined ||
-        typeof value.review.approved === 'boolean'));
+        typeof value.review.approved === "boolean"));
   const detailsValid =
     product.details === undefined ||
     (Array.isArray(product.details) &&
       product.details.every(
         (fact) =>
           isRecord(fact) &&
-          typeof fact.key === 'string' &&
-          typeof fact.value === 'string',
+          typeof fact.key === "string" &&
+          typeof fact.value === "string",
       ));
   const stringArraysValid = [product.labels, product.tags].every(
     (list) =>
       list === undefined ||
-      (Array.isArray(list) && list.every((entry) => typeof entry === 'string')),
+      (Array.isArray(list) && list.every((entry) => typeof entry === "string")),
   );
   return (
     (product.id === undefined || Number.isSafeInteger(product.id)) &&
     [
-      'name',
-      'brand',
-      'unit',
-      'unit_size',
-      'category',
-      'subcategory',
-      'currency',
-      'description',
-      'declaration',
-      'image_url',
+      "name",
+      "brand",
+      "unit",
+      "unit_size",
+      "category",
+      "subcategory",
+      "currency",
+      "description",
+      "declaration",
+      "image_url",
     ].every(optionalString) &&
-    ['price', 'unit_price'].every(optionalNumber) &&
-    ['available', 'is_organic', 'is_frozen', 'is_on_discount'].every(
+    ["price", "unit_price"].every(optionalNumber) &&
+    ["available", "is_organic", "is_frozen", "is_on_discount"].every(
       optionalBoolean,
     ) &&
     basketValid &&
@@ -245,7 +245,7 @@ function isProductView(value: unknown): value is ProductView {
 }
 function readPayload(value: unknown): Screen | undefined {
   if (Array.isArray(value) && value.every(isProductView)) {
-    return { kind: 'products', payload: { views: value }, views: value };
+    return { kind: "products", payload: { views: value }, views: value };
   }
   if (!isRecord(value)) {
     return undefined;
@@ -255,22 +255,22 @@ function readPayload(value: unknown): Screen | undefined {
     : value;
   if (isRecord(envelope.review) && isReview(envelope.review)) {
     const view_id =
-      typeof envelope.view_id === 'string' ? envelope.view_id : undefined;
+      typeof envelope.view_id === "string" ? envelope.view_id : undefined;
     return {
-      kind: 'review',
+      kind: "review",
       review: envelope.review,
       ...(view_id ? { view_id } : {}),
       active: Boolean(view_id),
     };
   }
   if (envelope.unavailable === true) {
-    return { kind: 'unavailable' };
+    return { kind: "unavailable" };
   }
   if (envelope.ended === true) {
     return {
-      kind: 'empty',
+      kind: "empty",
       message:
-        'Your local Draft list was discarded. Nothing changed in Nemlig.',
+        "Your local Draft list was discarded. Nothing changed in Nemlig.",
     };
   }
   const candidate = Array.isArray(envelope.views)
@@ -281,7 +281,7 @@ function readPayload(value: unknown): Screen | undefined {
         ? envelope.result
         : undefined;
   if (candidate && candidate.every(isProductView)) {
-    return { kind: 'products', payload: envelope as Payload, views: candidate };
+    return { kind: "products", payload: envelope as Payload, views: candidate };
   }
   return undefined;
 }
@@ -339,10 +339,10 @@ function ProductCard({
   const disclosureExpanded = expanded ?? localExpanded;
   const quantity =
     item?.quantity ??
-    (view.status === 'complete'
-      ? view.context === 'basket'
+    (view.status === "complete"
+      ? view.context === "basket"
         ? view.basket?.quantity
-        : view.context === 'review'
+        : view.context === "review"
           ? view.review?.quantity
           : undefined
       : undefined);
@@ -397,8 +397,8 @@ function ProductCard({
         disabled={disabled}
         onQuantity={onQuantity}
       />
-      {item.state === 'needs-review' && removeControl}
-      {item.state === 'needs-review' && onOpenAlternatives && (
+      {item.state === "needs-review" && removeControl}
+      {item.state === "needs-review" && onOpenAlternatives && (
         <Button
           color="secondary"
           disabled={disabled}
@@ -409,7 +409,7 @@ function ProductCard({
       )}
     </div>
   );
-  const readyActions = item?.state === 'ready' && (
+  const readyActions = item?.state === "ready" && (
     <div className="review-controls ready-row-actions">
       {removeControl}
       {onRevisit && (
@@ -419,10 +419,10 @@ function ProductCard({
       )}
     </div>
   );
-  if (view.status !== 'complete') {
+  if (view.status !== "complete") {
     return (
       <article
-        className={`product-card${comparison ? ' product-comparison' : ''}`}
+        className={`product-card${comparison ? " product-comparison" : ""}`}
       >
         {onSelected && (
           <label className="product-select">
@@ -459,10 +459,10 @@ function ProductCard({
             hidden={!disclosureExpanded}
           >
             {item && <p>{item.quantity} ×</p>}
-            {item?.state === 'needs-review' && reviewControls}
+            {item?.state === "needs-review" && reviewControls}
             {readyActions}
           </div>
-          {item?.state === 'ready' && reviewControls}
+          {item?.state === "ready" && reviewControls}
         </div>
       </article>
     );
@@ -470,7 +470,7 @@ function ProductCard({
   const summary = <ProductSummary view={view} quantity={quantity} />;
   return (
     <article
-      className={`product-card${comparison ? ' product-comparison' : ''}`}
+      className={`product-card${comparison ? " product-comparison" : ""}`}
     >
       {onSelected && (
         <label className="product-select">
@@ -496,12 +496,12 @@ function ProductCard({
               onClick={onChoice}
               onKeyDown={(event) => {
                 const direction =
-                  event.key === 'ArrowRight' || event.key === 'ArrowDown'
+                  event.key === "ArrowRight" || event.key === "ArrowDown"
                     ? 1
-                    : event.key === 'ArrowLeft' || event.key === 'ArrowUp'
+                    : event.key === "ArrowLeft" || event.key === "ArrowUp"
                       ? -1
                       : 0;
-                if (!direction && event.key !== 'Home' && event.key !== 'End') {
+                if (!direction && event.key !== "Home" && event.key !== "End") {
                   return;
                 }
                 const choices = [
@@ -517,9 +517,9 @@ function ProductCard({
                 }
                 event.preventDefault();
                 const next =
-                  event.key === 'Home'
+                  event.key === "Home"
                     ? 0
-                    : event.key === 'End'
+                    : event.key === "End"
                       ? choices.length - 1
                       : (current + direction + choices.length) % choices.length;
                 choices[next]?.focus();
@@ -528,7 +528,7 @@ function ProductCard({
             >
               {summary}
               <span className="alternative-choice-state" aria-hidden="true">
-                {choice ? 'Selected' : 'Select'}
+                {choice ? "Selected" : "Select"}
               </span>
             </button>
           ) : (
@@ -563,10 +563,10 @@ function ProductCard({
             expandedFacts={expandedFacts}
             onFactExpandedChange={onFactExpandedChange}
           />
-          {item?.state === 'needs-review' && reviewControls}
+          {item?.state === "needs-review" && reviewControls}
           {readyActions}
         </div>
-        {item?.state === 'ready' && reviewControls}
+        {item?.state === "ready" && reviewControls}
       </div>
     </article>
   );
@@ -575,22 +575,22 @@ function ProductCard({
 export function ProductViewer() {
   const [screen, setScreen] = useState<Screen>(() => {
     const initial =
-      typeof window === 'undefined'
+      typeof window === "undefined"
         ? undefined
         : readPayload(window.openai?.toolOutput);
-    if (initial?.kind === 'review') {
+    if (initial?.kind === "review") {
       return { ...initial, active: false };
     }
-    return initial ?? { kind: 'loading' };
+    return initial ?? { kind: "loading" };
   });
   const [presentationDestination, setPresentationDestination] = useState<
     PresentationDestination | undefined
-  >(() => (screen.kind === 'review' ? screen.review.destination : undefined));
+  >(() => (screen.kind === "review" ? screen.review.destination : undefined));
   const activeReview = useRef<
     { review: Review; view_id?: string; active: boolean } | undefined
-  >(screen.kind === 'review' ? screen : undefined);
+  >(screen.kind === "review" ? screen : undefined);
   const lastConfirmedReview = useRef<Review | undefined>(
-    screen.kind === 'review' ? screen.review : undefined,
+    screen.kind === "review" ? screen.review : undefined,
   );
   const validatedViewId = useRef<string | undefined>(undefined);
   const callLock = useRef(false);
@@ -600,7 +600,7 @@ export function ProductViewer() {
     Map<number, { expanded: boolean; facts: Set<string> }>
   >(() => new Map());
   const [replacement, setReplacement] = useState<number>();
-  const [message, setMessage] = useState('');
+  const [message, setMessage] = useState("");
   const [activatingCurrent, setActivatingCurrent] = useState(false);
   const [busy, setBusy] = useState(false);
   const [confirmSubmit, setConfirmSubmit] = useState(false);
@@ -651,7 +651,7 @@ export function ProductViewer() {
     if (current) {
       const inactive = { ...current, active: false };
       activeReview.current = inactive;
-      setScreen({ kind: 'review', ...inactive });
+      setScreen({ kind: "review", ...inactive });
     }
     setConfirmSubmit(false);
   }, []);
@@ -664,9 +664,9 @@ export function ProductViewer() {
       if (isRecord(payload) && payload.isError === true) {
         deactivateReview();
         setScreen({
-          kind: 'error',
+          kind: "error",
           message:
-            'Could not load the Draft list. Reconnect Nemlig or try again in conversation.',
+            "Could not load the Draft list. Reconnect Nemlig or try again in conversation.",
         });
         return false;
       }
@@ -674,14 +674,14 @@ export function ProductViewer() {
       if (!next) {
         deactivateReview();
         setScreen({
-          kind: 'error',
+          kind: "error",
           message:
-            'Nemlig returned a response this view could not read. Continue in conversation to inspect the current state.',
+            "Nemlig returned a response this view could not read. Continue in conversation to inspect the current state.",
         });
         return false;
       }
       const previous = activeReview.current;
-      if (next.kind === 'review') {
+      if (next.kind === "review") {
         if (
           !current &&
           previous &&
@@ -712,8 +712,8 @@ export function ProductViewer() {
           next.review.revision === previous.review.revision
         ) {
           const verifiedCompletion =
-            previous.review.submission?.status === 'uncertain' &&
-            next.review.submission?.status === 'submitted' &&
+            previous.review.submission?.status === "uncertain" &&
+            next.review.submission?.status === "submitted" &&
             previous.review.submission.submission_id ===
               next.review.submission.submission_id;
           if (!verifiedCompletion) {
@@ -742,37 +742,37 @@ export function ProductViewer() {
         }
         const preserveContinuation =
           sameReview &&
-          previous?.review.submission?.status === 'submitted' &&
-          next.review.submission?.status === 'submitted' &&
+          previous?.review.submission?.status === "submitted" &&
+          next.review.submission?.status === "submitted" &&
           previous.review.submission.submission_id ===
             next.review.submission.submission_id;
         setContinueSubmitted((continued) => continued && preserveContinuation);
         if (
-          next.review.submission?.status === 'submitted' ||
-          next.review.submission?.status === 'uncertain'
+          next.review.submission?.status === "submitted" ||
+          next.review.submission?.status === "uncertain"
         ) {
-          const uncertain = next.review.submission.status === 'uncertain';
+          const uncertain = next.review.submission.status === "uncertain";
           submitBlockedRef.current = uncertain;
           setSubmitBlocked(uncertain);
         }
-        setScreen({ kind: 'review', ...state });
+        setScreen({ kind: "review", ...state });
         setPresentationDestination((visible) => {
           if (!sameReview || adoptPresentationDestination) {
             return next.review.destination;
           }
-          if (visible === 'alternatives' && !next.review.alternatives) {
+          if (visible === "alternatives" && !next.review.alternatives) {
             return next.review.destination;
           }
           return visible ?? next.review.destination;
         });
-        setMessage('');
+        setMessage("");
         setSelected((chosen) =>
           sameReview
             ? new Set(
                 [...chosen].filter((id) =>
                   next.review.items.some(
                     (item) =>
-                      item.product_id === id && item.state === 'needs-review',
+                      item.product_id === id && item.state === "needs-review",
                   ),
                 ),
               )
@@ -781,26 +781,26 @@ export function ProductViewer() {
         setReplacement((chosen) =>
           sameReview &&
           next.review.alternatives?.views.some(
-            (view) => view.status === 'complete' && view.product.id === chosen,
+            (view) => view.status === "complete" && view.product.id === chosen,
           )
             ? chosen
             : undefined,
         );
         setConfirmSubmit(false);
-      } else if (next.kind === 'unavailable') {
+      } else if (next.kind === "unavailable") {
         deactivateReview();
         activeReview.current = undefined;
         setPresentationDestination(undefined);
         setScreen({
-          kind: 'unavailable',
+          kind: "unavailable",
           review: previous?.review ?? lastConfirmedReview.current,
         });
       } else {
-        if (next.kind !== 'empty' && !current && previous?.active) {
+        if (next.kind !== "empty" && !current && previous?.active) {
           return true;
         }
         activeReview.current = undefined;
-        if (next.kind === 'empty') {
+        if (next.kind === "empty") {
           deactivateReview();
           activeReview.current = undefined;
           setPresentationDestination(undefined);
@@ -821,22 +821,22 @@ export function ProductViewer() {
     isConnected,
     error,
   } = useApp({
-    appInfo: { name: 'nemlig-product-viewer', version: '10.0.0' },
+    appInfo: { name: "nemlig-product-viewer", version: "10.0.0" },
     capabilities: {},
     onAppCreated: (host) => {
       host.ontoolresult = (result) => applyPayload(result);
       host.ontoolcancelled = () => {
         cancellationEpoch.current++;
         deactivateReview();
-        setScreen({ kind: 'cancelled' });
+        setScreen({ kind: "cancelled" });
         setMessage(
-          'Request cancelled. Continue in conversation when you are ready.',
+          "Request cancelled. Continue in conversation when you are ready.",
         );
       };
       host.onerror = () => {
         deactivateReview();
         setMessage(
-          'The Draft list connection failed. Continue in conversation or reopen your current Draft list.',
+          "The Draft list connection failed. Continue in conversation or reopen your current Draft list.",
         );
       };
     },
@@ -861,8 +861,8 @@ export function ProductViewer() {
     if (!connectedApp || !isConnected) {
       setMessage(
         error
-          ? 'The Draft list could not connect. Continue in conversation or reopen the current Draft list.'
-          : 'Connecting to the current Nemlig Draft list…',
+          ? "The Draft list could not connect. Continue in conversation or reopen the current Draft list."
+          : "Connecting to the current Nemlig Draft list…",
       );
       return false;
     }
@@ -872,7 +872,7 @@ export function ProductViewer() {
     callLock.current = true;
     const requestEpoch = cancellationEpoch.current;
     setBusy(true);
-    setMessage('Updating…');
+    setMessage("Updating…");
     try {
       const result = await connectedApp.callServerTool({
         name,
@@ -884,29 +884,29 @@ export function ProductViewer() {
       if (result.isError) {
         throw new Error(
           (result.content ?? [])
-            .filter((content) => content.type === 'text')
+            .filter((content) => content.type === "text")
             .map((content) => content.text)
-            .join(' ') || 'Update failed',
+            .join(" ") || "Update failed",
         );
       }
       const next = readPayload(result);
-      if (next?.kind === 'review' && next.view_id) {
+      if (next?.kind === "review" && next.view_id) {
         validatedViewId.current = next.view_id;
       }
       if (!applyPayload(result, true, adoptPresentationDestination)) {
-        throw new Error('Could not confirm the updated Draft list.');
+        throw new Error("Could not confirm the updated Draft list.");
       }
-      setMessage('');
+      setMessage("");
       return true;
     } catch (cause) {
-      const text = cause instanceof Error ? cause.message : 'Update failed';
+      const text = cause instanceof Error ? cause.message : "Update failed";
       if (/out of date/i.test(text)) {
         deactivateReview();
         activeReview.current = undefined;
         try {
           const current = await connectedApp.callServerTool({
-            name: 'update_product_review',
-            arguments: { action: { kind: 'show' } },
+            name: "update_product_review",
+            arguments: { action: { kind: "show" } },
           });
           if (
             !current.isError &&
@@ -915,27 +915,27 @@ export function ProductViewer() {
           ) {
             const snapshot = readPayload(current);
             setMessage(
-              snapshot?.kind === 'review'
-                ? 'Current Draft list reloaded. This card is read-only until you make it current.'
-                : 'No current Draft list remains. Ask before starting a new one.',
+              snapshot?.kind === "review"
+                ? "Current Draft list reloaded. This card is read-only until you make it current."
+                : "No current Draft list remains. Ask before starting a new one.",
             );
           } else {
-            setScreen({ kind: 'stale' });
+            setScreen({ kind: "stale" });
             setMessage(
-              'Could not reload the current Draft list. Ask in chat to reopen it.',
+              "Could not reload the current Draft list. Ask in chat to reopen it.",
             );
           }
         } catch {
-          setScreen({ kind: 'stale' });
+          setScreen({ kind: "stale" });
           setMessage(
-            'Could not reload the current Draft list. Ask in chat to reopen it.',
+            "Could not reload the current Draft list. Ask in chat to reopen it.",
           );
         }
       } else if (/unavailable/i.test(text)) {
         deactivateReview();
         activeReview.current = undefined;
-        setScreen({ kind: 'stale' });
-        setMessage('');
+        setScreen({ kind: "stale" });
+        setMessage("");
       } else if (recovery && /stale|no active draft/i.test(text)) {
         deactivateReview();
         setSelected(new Set());
@@ -944,44 +944,44 @@ export function ProductViewer() {
         try {
           if (latest?.view_id) {
             const fresh = await connectedApp.callServerTool({
-              name: 'update_product_review',
+              name: "update_product_review",
               arguments: {
                 view_id: latest.view_id,
                 review_id: latest.review.review_id,
                 revision: latest.review.revision,
-                action: { kind: 'show' },
+                action: { kind: "show" },
               },
             });
             if (!fresh.isError && requestEpoch === cancellationEpoch.current) {
               applyPayload(fresh, true);
             } else {
               activeReview.current = undefined;
-              setScreen({ kind: 'stale' });
+              setScreen({ kind: "stale" });
             }
           } else {
             activeReview.current = undefined;
-            setScreen({ kind: 'stale' });
+            setScreen({ kind: "stale" });
           }
         } catch {
           activeReview.current = undefined;
-          setScreen({ kind: 'stale' });
+          setScreen({ kind: "stale" });
         }
         setMessage(
-          'Your last action was not applied. The current Draft list was refreshed; choose again.',
+          "Your last action was not applied. The current Draft list was refreshed; choose again.",
         );
       } else if (!recovery && (uncertainOnFailure || /uncertain/i.test(text))) {
         submitBlockedRef.current = true;
         setSubmitBlocked(true);
         setConfirmSubmit(false);
         setMessage(
-          'Submission outcome is uncertain. Inspect the actual Nemlig basket; do not retry automatically.',
+          "Submission outcome is uncertain. Inspect the actual Nemlig basket; do not retry automatically.",
         );
       } else {
         deactivateReview();
         setPendingQuantities(new Map());
         setSelected(new Set());
         setMessage(
-          'We could not confirm this action. Refresh the Draft list to check its state before trying again.',
+          "We could not confirm this action. Refresh the Draft list to check its state before trying again.",
         );
       }
       return false;
@@ -995,13 +995,13 @@ export function ProductViewer() {
   };
   const activateCurrentDraftList = async () => {
     if (!connectedApp || !isConnected) {
-      setMessage('Ask in chat: “Reopen the current Draft list.”');
+      setMessage("Ask in chat: “Reopen the current Draft list.”");
       return;
     }
     setActivatingCurrent(true);
     const activated = await call(
-      'update_product_review',
-      { action: { kind: 'show' }, activate: true },
+      "update_product_review",
+      { action: { kind: "show" }, activate: true },
       false,
     );
     if (!activated) {
@@ -1020,25 +1020,25 @@ export function ProductViewer() {
     }
     validatedViewId.current = latest.view_id;
     void call(
-      'update_product_review',
+      "update_product_review",
       {
         view_id: latest.view_id,
         review_id: latest.review.review_id,
         revision: latest.review.revision,
-        action: { kind: 'show' },
+        action: { kind: "show" },
       },
       false,
     );
   }, [connectedApp, isConnected, call]);
-  const review = screen.kind === 'review' ? screen.review : undefined;
-  const active = screen.kind === 'review' && screen.active;
+  const review = screen.kind === "review" ? screen.review : undefined;
+  const active = screen.kind === "review" && screen.active;
   const update = async (action: Record<string, unknown>) => {
     const latest = activeReview.current;
     if (!latest?.active || !latest.view_id || callLock.current) {
       return false;
     }
     const result = await call(
-      'update_product_review',
+      "update_product_review",
       {
         view_id: latest.view_id,
         review_id: latest.review.review_id,
@@ -1046,9 +1046,9 @@ export function ProductViewer() {
         action,
       },
       true,
-      action.kind === 'alternatives' || action.kind === 'replace',
+      action.kind === "alternatives" || action.kind === "replace",
     );
-    if (result && action.kind === 'prepare_submission') {
+    if (result && action.kind === "prepare_submission") {
       setConfirmSubmit(false);
     }
     return result;
@@ -1099,11 +1099,11 @@ export function ProductViewer() {
         if (!latest.view_id) {
           return false;
         }
-        const ok = await call('update_product_review', {
+        const ok = await call("update_product_review", {
           view_id: latest.view_id,
           review_id: latest.review.review_id,
           revision: latest.review.revision,
-          action: { kind: 'quantity', product_id, quantity },
+          action: { kind: "quantity", product_id, quantity },
         });
         if (!ok) {
           return false;
@@ -1137,42 +1137,42 @@ export function ProductViewer() {
     ? (presentationDestination ?? review.destination)
     : undefined;
   const needsReviewCount =
-    review?.items.filter((item) => item.state === 'needs-review').length ?? 0;
+    review?.items.filter((item) => item.state === "needs-review").length ?? 0;
   const readyCount =
-    review?.items.filter((item) => item.state === 'ready').length ?? 0;
+    review?.items.filter((item) => item.state === "ready").length ?? 0;
   const navigate = (next: PresentationDestination) => {
-    if (next === 'alternatives' && !review?.alternatives) {
+    if (next === "alternatives" && !review?.alternatives) {
       return;
     }
     setPresentationDestination(next);
   };
   const safeTitle =
-    destination === 'ready'
-      ? 'Ready'
-      : destination === 'alternatives'
-        ? 'Choose an alternative'
-        : 'To decide';
+    destination === "ready"
+      ? "Ready"
+      : destination === "alternatives"
+        ? "Choose an alternative"
+        : "To decide";
   const visibleProductCount =
-    destination === 'ready' ? readyCount : needsReviewCount;
+    destination === "ready" ? readyCount : needsReviewCount;
   const productPayload =
-    screen.kind === 'products' ? screen.payload : undefined;
+    screen.kind === "products" ? screen.payload : undefined;
   const basket =
     productPayload?.detail_limit !== undefined &&
     Array.isArray(productPayload.items);
   const uncertainSubmission =
-    submitBlocked || review?.submission?.status === 'uncertain';
+    submitBlocked || review?.submission?.status === "uncertain";
   const editsBlocked =
     busy ||
     uncertainSubmission ||
-    (review?.submission?.status === 'submitted' && !continueSubmitted);
+    (review?.submission?.status === "submitted" && !continueSubmitted);
   const terminalSubmission =
     uncertainSubmission ||
-    (review?.submission?.status === 'submitted' && !continueSubmitted);
+    (review?.submission?.status === "submitted" && !continueSubmitted);
   const decisionsComplete = Boolean(
     review &&
     active &&
     !terminalSubmission &&
-    destination === 'needs-review' &&
+    destination === "needs-review" &&
     needsReviewCount === 0 &&
     readyCount > 0,
   );
@@ -1181,26 +1181,26 @@ export function ProductViewer() {
   );
   const sendFollowUp = async (text: string) => {
     if (!connectedApp || !isConnected) {
-      setMessage('Continue in conversation to inspect or start a Draft list.');
+      setMessage("Continue in conversation to inspect or start a Draft list.");
       return;
     }
     try {
       const result = await connectedApp.sendMessage({
-        role: 'user',
-        content: [{ type: 'text', text }],
+        role: "user",
+        content: [{ type: "text", text }],
       });
       if (result.isError) {
-        throw new Error('Host rejected the follow-up.');
+        throw new Error("Host rejected the follow-up.");
       }
-      setMessage('Follow-up sent to conversation.');
+      setMessage("Follow-up sent to conversation.");
     } catch {
-      setMessage('Continue in conversation to inspect or start a Draft list.');
+      setMessage("Continue in conversation to inspect or start a Draft list.");
     }
   };
   const endDraft = async () => {
     setConfirmEnd(false);
     if (await flushQuantities()) {
-      await update({ kind: 'end' });
+      await update({ kind: "end" });
     }
   };
   const reviewDisclosureProps = (productId: number) => {
@@ -1239,40 +1239,40 @@ export function ProductViewer() {
 
   const title =
     review && active && terminalSubmission
-      ? review.submission?.status === 'submitted'
-        ? 'Added to Nemlig basket'
-        : 'Check your Nemlig basket'
+      ? review.submission?.status === "submitted"
+        ? "Added to Nemlig basket"
+        : "Check your Nemlig basket"
       : review && active
         ? review.items.length
           ? decisionsComplete
-            ? 'Everything is ready'
+            ? "Everything is ready"
             : safeTitle
-          : 'What should we shop for?'
+          : "What should we shop for?"
         : basket
-          ? 'Actual Nemlig basket'
-          : screen.kind === 'unavailable'
-            ? 'Draft list unavailable'
-            : screen.kind === 'review'
-              ? 'Your Draft list'
-              : 'Products';
+          ? "Actual Nemlig basket"
+          : screen.kind === "unavailable"
+            ? "Draft list unavailable"
+            : screen.kind === "review"
+              ? "Your Draft list"
+              : "Products";
   const intro = !terminalSubmission
     ? review && active
       ? review.items.length === 0
-        ? 'Start another local Draft list in conversation.'
+        ? "Start another local Draft list in conversation."
         : decisionsComplete
-          ? 'All products are Ready for your final check. Nothing has been added to Nemlig.'
-          : safeTitle === 'Ready'
-            ? 'Adjust quantities directly. Open a product to move it back or remove it. Prepare the exact change before adding anything to Nemlig.'
-            : safeTitle === 'Choose an alternative'
-              ? 'Compare available options for this product.'
-              : 'Select products to move them into Ready. Open a product for details.'
+          ? "All products are Ready for your final check. Nothing has been added to Nemlig."
+          : safeTitle === "Ready"
+            ? "Adjust quantities directly. Open a product to move it back or remove it. Prepare the exact change before adding anything to Nemlig."
+            : safeTitle === "Choose an alternative"
+              ? "Compare available options for this product."
+              : "Select products to move them into Ready. Open a product for details."
       : basket
-        ? 'Your current Nemlig basket. This view cannot change it.'
-        : 'Inspect product details here or continue in conversation.'
+        ? "Your current Nemlig basket. This view cannot change it."
+        : "Inspect product details here or continue in conversation."
     : undefined;
   const outcomeOnly =
     terminalSubmission ||
-    screen.kind === 'empty' ||
+    screen.kind === "empty" ||
     (review && active && review.items.length === 0);
 
   return (
@@ -1284,28 +1284,28 @@ export function ProductViewer() {
         <DestinationTabs
           destination={destination ?? review.destination}
           toDecideCount={
-            review.items.filter((item) => item.state === 'needs-review').length
+            review.items.filter((item) => item.state === "needs-review").length
           }
           readyCount={
-            review.items.filter((item) => item.state === 'ready').length
+            review.items.filter((item) => item.state === "ready").length
           }
           hasAlternatives={Boolean(review.alternatives)}
           disabled={uncertainSubmission || !active}
           onNavigate={navigate}
         />
       )}
-      {screen.kind === 'loading' && (
+      {screen.kind === "loading" && (
         <p className="status" role="status">
           Loading your Nemlig selection…
         </p>
       )}
-      {screen.kind === 'error' && (
+      {screen.kind === "error" && (
         <section className="status">
           <p role="alert">{screen.message}</p>
           <p>Continue in conversation to inspect the current Draft list.</p>
         </section>
       )}
-      {screen.kind === 'cancelled' && (
+      {screen.kind === "cancelled" && (
         <section className="status">
           <p>
             Request cancelled. Continue in conversation to confirm the current
@@ -1313,7 +1313,7 @@ export function ProductViewer() {
           </p>
         </section>
       )}
-      {screen.kind === 'stale' && (
+      {screen.kind === "stale" && (
         <section className="status">
           <p>This Draft list card is out of date and cannot make changes.</p>
           <Button
@@ -1321,25 +1321,25 @@ export function ProductViewer() {
             disabled={activatingCurrent}
             onClick={() => void activateCurrentDraftList()}
           >
-            {activatingCurrent ? 'Loading…' : 'Load current Draft list'}
+            {activatingCurrent ? "Loading…" : "Load current Draft list"}
           </Button>
           {message && <p role="status">{message}</p>}
         </section>
       )}
-      {!isConnected && screen.kind === 'loading' && (
+      {!isConnected && screen.kind === "loading" && (
         <p className="status" role="status">
           {error
-            ? 'Could not connect to the Draft list host.'
-            : 'Connecting to Nemlig…'}
+            ? "Could not connect to the Draft list host."
+            : "Connecting to Nemlig…"}
         </p>
       )}
-      {screen.kind === 'review' && review && !active && !terminalSubmission && (
+      {screen.kind === "review" && review && !active && !terminalSubmission && (
         <section className="status">
           <p>
-            This Draft list card is inactive.{' '}
+            This Draft list card is inactive.{" "}
             {review.items.length
-              ? 'The current Draft list is shown read-only.'
-              : 'No current Draft list is available.'}
+              ? "The current Draft list is shown read-only."
+              : "No current Draft list is available."}
           </p>
           {review.items.length > 0 && (
             <Button
@@ -1347,7 +1347,7 @@ export function ProductViewer() {
               disabled={activatingCurrent || busy}
               onClick={() => void activateCurrentDraftList()}
             >
-              {activatingCurrent ? 'Loading…' : 'Make this card current'}
+              {activatingCurrent ? "Loading…" : "Make this card current"}
             </Button>
           )}
           {message && <p role="status">{message}</p>}
@@ -1363,7 +1363,7 @@ export function ProductViewer() {
           ))}
         </section>
       )}
-      {screen.kind === 'unavailable' && (
+      {screen.kind === "unavailable" && (
         <section className="status">
           <p>
             This temporary Draft list is no longer available. Ask in chat before
@@ -1375,7 +1375,7 @@ export function ProductViewer() {
       {review &&
         active &&
         !terminalSubmission &&
-        destination === 'alternatives' &&
+        destination === "alternatives" &&
         review.alternatives && (
           <section className="alternatives">
             <section
@@ -1402,11 +1402,11 @@ export function ProductViewer() {
                 event.preventDefault();
                 const target = review.alternatives!.product_id;
                 const query = String(
-                  new FormData(event.currentTarget).get('query') ?? '',
+                  new FormData(event.currentTarget).get("query") ?? "",
                 );
                 if (query.trim()) {
                   void update({
-                    kind: 'alternatives',
+                    kind: "alternatives",
                     product_id: target,
                     query: query.slice(0, 200),
                   });
@@ -1443,7 +1443,7 @@ export function ProductViewer() {
                 >
                   {review.alternatives.views.map((view, index) => {
                     const id =
-                      view.status === 'complete'
+                      view.status === "complete"
                         ? view.product.id
                         : view.product_id;
                     return (
@@ -1467,7 +1467,7 @@ export function ProductViewer() {
                   const target = review.alternatives!.product_id;
                   if (replacement !== undefined) {
                     void update({
-                      kind: 'replace',
+                      kind: "replace",
                       product_id: target,
                       replacement_id: replacement,
                     });
@@ -1479,18 +1479,18 @@ export function ProductViewer() {
               <Button
                 color="secondary"
                 disabled={uncertainSubmission}
-                onClick={() => navigate('needs-review')}
+                onClick={() => navigate("needs-review")}
               >
                 Back to To decide
               </Button>
             </section>
           </section>
         )}
-      {screen.kind === 'products' && screen.views.length > 0 && (
+      {screen.kind === "products" && screen.views.length > 0 && (
         <section className="product-list" aria-label="Product results">
           {screen.views.map((view, index) => (
             <ProductCard
-              key={`${view.status === 'complete' ? view.product.id : view.product_id}:${index}`}
+              key={`${view.status === "complete" ? view.product.id : view.product_id}:${index}`}
               view={view}
               disabled={busy}
             />
@@ -1501,7 +1501,7 @@ export function ProductViewer() {
         active &&
         !terminalSubmission &&
         visibleProductCount > 0 &&
-        destination !== 'alternatives' && (
+        destination !== "alternatives" && (
           <section
             className="product-list"
             aria-label={`${safeTitle} products`}
@@ -1510,7 +1510,7 @@ export function ProductViewer() {
               .filter((item) => item.state === destination)
               .map((item) => {
                 const alternativeQuery =
-                  item.view.status === 'complete'
+                  item.view.status === "complete"
                     ? (
                         item.view.product.subcategory ??
                         item.view.product.name ??
@@ -1528,7 +1528,7 @@ export function ProductViewer() {
                         pendingQuantities.get(item.product_id) ?? item.quantity,
                     }}
                     disabled={editsBlocked}
-                    {...(item.state === 'needs-review'
+                    {...(item.state === "needs-review"
                       ? {
                           selected: selected.has(item.product_id),
                           onSelected: (checked: boolean) =>
@@ -1546,25 +1546,25 @@ export function ProductViewer() {
                     onQuantity={(quantity) => setQuantity(item, quantity)}
                     onRemove={() =>
                       afterFlush({
-                        kind: 'remove',
+                        kind: "remove",
                         product_ids: [item.product_id],
                       })
                     }
                     onRevisit={
-                      item.state === 'ready'
+                      item.state === "ready"
                         ? () =>
                             afterFlush({
-                              kind: 'revisit',
+                              kind: "revisit",
                               product_ids: [item.product_id],
                             })
                         : undefined
                     }
                     onOpenAlternatives={
-                      item.state === 'needs-review'
+                      item.state === "needs-review"
                         ? () => {
                             setReplacement(undefined);
                             afterFlush({
-                              kind: 'alternatives',
+                              kind: "alternatives",
                               product_id: item.product_id,
                               query: alternativeQuery,
                             });
@@ -1585,7 +1585,7 @@ export function ProductViewer() {
           <Button
             color="primary"
             disabled={editsBlocked}
-            onClick={() => navigate('ready')}
+            onClick={() => navigate("ready")}
           >
             View Ready products
           </Button>
@@ -1594,11 +1594,11 @@ export function ProductViewer() {
       {review &&
         active &&
         !terminalSubmission &&
-        destination === 'needs-review' &&
+        destination === "needs-review" &&
         needsReviewCount > 0 && (
           <ActionFooter>
             {review.items.some(
-              (item) => item.state === 'needs-review' && isUsable(item.view),
+              (item) => item.state === "needs-review" && isUsable(item.view),
             ) && (
               <>
                 <Button
@@ -1610,7 +1610,7 @@ export function ProductViewer() {
                         review.items
                           .filter(
                             (item) =>
-                              item.state === 'needs-review' &&
+                              item.state === "needs-review" &&
                               isUsable(item.view),
                           )
                           .map((item) => item.product_id),
@@ -1627,7 +1627,7 @@ export function ProductViewer() {
                 color="primary"
                 disabled={editsBlocked}
                 onClick={() =>
-                  afterFlush({ kind: 'accept', product_ids: [...selected] })
+                  afterFlush({ kind: "accept", product_ids: [...selected] })
                 }
               >
                 Add selected to Ready ({selected.size})
@@ -1637,7 +1637,7 @@ export function ProductViewer() {
         )}
       {review &&
         terminalSubmission &&
-        review.submission?.status === 'submitted' && (
+        review.submission?.status === "submitted" && (
           <OutcomeSurface tone="success" title="Nemlig confirmed the addition">
             <p role="status">
               Only the prepared products were added. Your real Nemlig basket was
@@ -1663,7 +1663,7 @@ export function ProductViewer() {
             disabled={busy}
             onClick={() =>
               void sendFollowUp(
-                'Inspect the actual Nemlig basket for this uncertain Draft list submission. Do not retry or add anything.',
+                "Inspect the actual Nemlig basket for this uncertain Draft list submission. Do not retry or add anything.",
               )
             }
           >
@@ -1671,30 +1671,30 @@ export function ProductViewer() {
           </Button>
         </OutcomeSurface>
       )}
-      {review && active && !terminalSubmission && destination === 'ready' && (
+      {review && active && !terminalSubmission && destination === "ready" && (
         <ActionFooter>
-          {review.submission?.status !== 'prepared' && (
+          {review.submission?.status !== "prepared" && (
             <Button
               color="primary"
               disabled={
                 editsBlocked ||
-                !review.items.some((item) => item.state === 'ready')
+                !review.items.some((item) => item.state === "ready")
               }
-              onClick={() => afterFlush({ kind: 'prepare_submission' })}
+              onClick={() => afterFlush({ kind: "prepare_submission" })}
             >
               Review exact Nemlig change
             </Button>
           )}
-          {review.submission?.status === 'prepared' && (
+          {review.submission?.status === "prepared" && (
             <OutcomeSurface title="Ready to add to Nemlig basket">
               {review.submission.review.lines?.map((line) => (
                 <p key={line.product_id}>
-                  {line.quantity} × {line.name ?? `Product ${line.product_id}`}{' '}
+                  {line.quantity} × {line.name ?? `Product ${line.product_id}`}{" "}
                   · {money(line.item_price)} each · {money(line.line_total)}
                 </p>
               ))}
               <p>
-                Expected product total:{' '}
+                Expected product total:{" "}
                 {money(review.submission.review.expected_products_price)}
               </p>
               {submitBlocked ? (
@@ -1722,14 +1722,14 @@ export function ProductViewer() {
                           !confirmed?.submission ||
                           confirmed.review_id !== review.review_id ||
                           confirmed.revision !== review.revision ||
-                          confirmed.submission.status !== 'prepared' ||
+                          confirmed.submission.status !== "prepared" ||
                           confirmed.submission.submission_id !==
                             review.submission?.submission_id ||
                           callLock.current
                         ) {
                           setConfirmSubmit(false);
                           setMessage(
-                            'The prepared change changed while quantities were being saved. Prepare and review the exact change again.',
+                            "The prepared change changed while quantities were being saved. Prepare and review the exact change again.",
                           );
                           return;
                         }
@@ -1741,7 +1741,7 @@ export function ProductViewer() {
                           return;
                         }
                         const success = await call(
-                          'submit_product_review',
+                          "submit_product_review",
                           {
                             view_id: latest.view_id,
                             review_id: confirmed.review_id,
@@ -1754,7 +1754,7 @@ export function ProductViewer() {
                         );
                         if (!success) {
                           setMessage(
-                            'Submission outcome is uncertain. Inspect the actual Nemlig basket; do not retry automatically.',
+                            "Submission outcome is uncertain. Inspect the actual Nemlig basket; do not retry automatically.",
                           );
                         }
                       })
@@ -1774,7 +1774,7 @@ export function ProductViewer() {
               )}
             </OutcomeSurface>
           )}
-          {message && review.submission?.status !== 'uncertain' && (
+          {message && review.submission?.status !== "uncertain" && (
             <p className="status" role="status">
               {message}
             </p>
@@ -1820,18 +1820,18 @@ export function ProductViewer() {
           )}
         </DraftListOverflow>
       )}
-      {screen.kind === 'empty' && (
+      {screen.kind === "empty" && (
         <DraftListStarters
           message={
             screen.message ??
-            'Your local Draft list is empty. Nothing changed in Nemlig.'
+            "Your local Draft list is empty. Nothing changed in Nemlig."
           }
           onChoose={(prompt) => void sendFollowUp(prompt)}
         />
       )}
-      {screen.kind === 'products' && screen.views.length === 0 && (
+      {screen.kind === "products" && screen.views.length === 0 && (
         <div className="empty" role="status">
-          {basket ? 'Your Nemlig basket is empty.' : 'No products found.'}
+          {basket ? "Your Nemlig basket is empty." : "No products found."}
         </div>
       )}
       {productPayload?.unenriched_count ? (
@@ -1841,10 +1841,10 @@ export function ProductViewer() {
         </p>
       ) : null}
       {message &&
-        screen.kind !== 'error' &&
-        screen.kind !== 'stale' &&
-        !(screen.kind === 'review' && !active) &&
-        destination !== 'ready' && (
+        screen.kind !== "error" &&
+        screen.kind !== "stale" &&
+        !(screen.kind === "review" && !active) &&
+        destination !== "ready" && (
           <p className="status" role="status">
             {message}
           </p>

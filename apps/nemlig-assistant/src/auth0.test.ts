@@ -1,6 +1,6 @@
-import assert from 'node:assert/strict';
-import test from 'node:test';
-import { createLocalJWKSet, exportJWK, generateKeyPair, SignJWT } from 'jose';
+import assert from "node:assert/strict";
+import test from "node:test";
+import { createLocalJWKSet, exportJWK, generateKeyPair, SignJWT } from "jose";
 import {
   Auth0InfrastructureError,
   createAuth0Verifier,
@@ -8,73 +8,73 @@ import {
   loadAuth0Config,
   SERVICE_ACCEPTANCE_SCOPE,
   type Auth0Config,
-} from './auth0.js';
-import { parsePrincipalPolicy } from './principal-policy.js';
+} from "./auth0.js";
+import { parsePrincipalPolicy } from "./principal-policy.js";
 
-const ownerSubject = 'auth0|owner';
+const ownerSubject = "auth0|owner";
 const principalPolicy = parsePrincipalPolicy(
   JSON.stringify({
     schema_version: 3,
-    revision: 'family-v3',
-    owner_subject: 'auth0|owner',
+    revision: "family-v3",
+    owner_subject: "auth0|owner",
     principals: [
-      { subject: ownerSubject, principal_key: 'a'.repeat(32), enabled: true },
+      { subject: ownerSubject, principal_key: "a".repeat(32), enabled: true },
     ],
   }),
 );
 
 const config: Auth0Config = {
-  issuer: new URL('https://tenant.example.test/'),
-  audience: 'https://nemlig.example.test/mcp',
+  issuer: new URL("https://tenant.example.test/"),
+  audience: "https://nemlig.example.test/mcp",
   principalPolicy,
-  requiredScope: 'use:nemlig-assistant',
-  publicUrl: new URL('https://mcp.example.test/mcp'),
-  allowedOrigins: ['https://chatgpt.com'],
-  revision: 'test-revision',
-  host: '127.0.0.1',
+  requiredScope: "use:nemlig-assistant",
+  publicUrl: new URL("https://mcp.example.test/mcp"),
+  allowedOrigins: ["https://chatgpt.com"],
+  revision: "test-revision",
+  host: "127.0.0.1",
   port: 3333,
-  credentialKey: Buffer.alloc(32, 1).toString('base64url'),
-  credentialKeyVersion: 'one',
+  credentialKey: Buffer.alloc(32, 1).toString("base64url"),
+  credentialKeyVersion: "one",
 };
 
-test('Auth0 verifier returns the validated subject and enforces audience, issuer, signature, expiry, and scope', async () => {
-  const { privateKey, publicKey } = await generateKeyPair('RS256');
-  const { privateKey: revokedPrivateKey } = await generateKeyPair('RS256');
-  const jwk = { ...(await exportJWK(publicKey)), kid: 'test', alg: 'RS256' };
+test("Auth0 verifier returns the validated subject and enforces audience, issuer, signature, expiry, and scope", async () => {
+  const { privateKey, publicKey } = await generateKeyPair("RS256");
+  const { privateKey: revokedPrivateKey } = await generateKeyPair("RS256");
+  const jwk = { ...(await exportJWK(publicKey)), kid: "test", alg: "RS256" };
   const verifier = createAuth0Verifier(
     config,
-    new URL('https://tenant.example.test/.well-known/jwks.json'),
+    new URL("https://tenant.example.test/.well-known/jwks.json"),
     createLocalJWKSet({ keys: [jwk] }),
   );
   const sign = (claims: Record<string, unknown> = {}, subject = ownerSubject) =>
     new SignJWT({ scope: config.requiredScope, ...claims })
-      .setProtectedHeader({ alg: 'RS256', kid: 'test' })
+      .setProtectedHeader({ alg: "RS256", kid: "test" })
       .setIssuer(config.issuer.href)
       .setAudience(config.audience)
       .setSubject(subject)
       .setIssuedAt()
-      .setExpirationTime('5m')
+      .setExpirationTime("5m")
       .sign(privateKey);
   const accepted = await verifier.verifyAccessToken(
-    await sign({ azp: 'chatgpt' }),
+    await sign({ azp: "chatgpt" }),
   );
   assert.equal(accepted.extra?.subject, ownerSubject);
   assert.deepEqual(accepted.scopes, [config.requiredScope]);
   assert.equal(
-    (await verifier.verifyAccessToken(await sign({}, 'auth0|other'))).extra
+    (await verifier.verifyAccessToken(await sign({}, "auth0|other"))).extra
       ?.subject,
-    'auth0|other',
+    "auth0|other",
   );
-  const wrongScope = await sign({ scope: '' });
+  const wrongScope = await sign({ scope: "" });
   await assert.rejects(
     () => verifier.verifyAccessToken(wrongScope),
     /Invalid access token/u,
   );
   const missingSubject = await new SignJWT({ scope: config.requiredScope })
-    .setProtectedHeader({ alg: 'RS256', kid: 'test' })
+    .setProtectedHeader({ alg: "RS256", kid: "test" })
     .setIssuer(config.issuer.href)
     .setAudience(config.audience)
-    .setExpirationTime('5m')
+    .setExpirationTime("5m")
     .sign(privateKey);
   await assert.rejects(
     () => verifier.verifyAccessToken(missingSubject),
@@ -85,29 +85,29 @@ test('Auth0 verifier returns the validated subject and enforces audience, issuer
     /Invalid access token/u,
   );
   const revokedKey = await new SignJWT({ scope: config.requiredScope })
-    .setProtectedHeader({ alg: 'RS256', kid: 'revoked' })
+    .setProtectedHeader({ alg: "RS256", kid: "revoked" })
     .setIssuer(config.issuer.href)
     .setAudience(config.audience)
     .setSubject(ownerSubject)
-    .setExpirationTime('5m')
+    .setExpirationTime("5m")
     .sign(revokedPrivateKey);
   await assert.rejects(
     () => verifier.verifyAccessToken(revokedKey),
     /Invalid access token/u,
   );
   const wrongAudience = await new SignJWT({ scope: config.requiredScope })
-    .setProtectedHeader({ alg: 'RS256', kid: 'test' })
+    .setProtectedHeader({ alg: "RS256", kid: "test" })
     .setIssuer(config.issuer.href)
-    .setAudience('https://wrong.example')
+    .setAudience("https://wrong.example")
     .setSubject(ownerSubject)
-    .setExpirationTime('5m')
+    .setExpirationTime("5m")
     .sign(privateKey);
   await assert.rejects(
     () => verifier.verifyAccessToken(wrongAudience),
     /Invalid access token/u,
   );
   const expired = await new SignJWT({ scope: config.requiredScope })
-    .setProtectedHeader({ alg: 'RS256', kid: 'test' })
+    .setProtectedHeader({ alg: "RS256", kid: "test" })
     .setIssuer(config.issuer.href)
     .setAudience(config.audience)
     .setSubject(ownerSubject)
@@ -119,71 +119,71 @@ test('Auth0 verifier returns the validated subject and enforces audience, issuer
   );
 });
 
-test('Auth0 verifier separates token rejection from JWKS transport and timeout failures', async () => {
-  const keyPair = await generateKeyPair('RS256');
+test("Auth0 verifier separates token rejection from JWKS transport and timeout failures", async () => {
+  const keyPair = await generateKeyPair("RS256");
   const token = await new SignJWT({ scope: config.requiredScope })
-    .setProtectedHeader({ alg: 'RS256', kid: 'test' })
+    .setProtectedHeader({ alg: "RS256", kid: "test" })
     .setIssuer(config.issuer.href)
     .setAudience(config.audience)
     .setSubject(ownerSubject)
-    .setExpirationTime('5m')
+    .setExpirationTime("5m")
     .sign(keyPair.privateKey);
   const unavailable = createAuth0Verifier(
     config,
-    new URL('https://tenant.example.test/.well-known/jwks.json'),
+    new URL("https://tenant.example.test/.well-known/jwks.json"),
     async () => {
-      throw new TypeError('network unavailable');
+      throw new TypeError("network unavailable");
     },
   );
   await assert.rejects(
     () => unavailable.verifyAccessToken(token),
     (error: unknown) =>
-      error instanceof Auth0InfrastructureError && error.kind === 'unavailable',
+      error instanceof Auth0InfrastructureError && error.kind === "unavailable",
   );
   const timedOut = createAuth0Verifier(
     config,
-    new URL('https://tenant.example.test/.well-known/jwks.json'),
+    new URL("https://tenant.example.test/.well-known/jwks.json"),
     async () => {
-      throw new DOMException('timed out', 'TimeoutError');
+      throw new DOMException("timed out", "TimeoutError");
     },
   );
   await assert.rejects(
     () => timedOut.verifyAccessToken(token),
     (error: unknown) =>
-      error instanceof Auth0InfrastructureError && error.kind === 'timeout',
+      error instanceof Auth0InfrastructureError && error.kind === "timeout",
   );
 });
 
-test('service acceptance requires the exact signed client, subject, and scope', async () => {
-  const { privateKey, publicKey } = await generateKeyPair('RS256');
-  const jwk = { ...(await exportJWK(publicKey)), kid: 'service', alg: 'RS256' };
+test("service acceptance requires the exact signed client, subject, and scope", async () => {
+  const { privateKey, publicKey } = await generateKeyPair("RS256");
+  const jwk = { ...(await exportJWK(publicKey)), kid: "service", alg: "RS256" };
   const service = {
     ...config,
-    serviceAcceptance: { clientId: 'service-client' },
+    serviceAcceptance: { clientId: "service-client" },
   };
   const verifier = createAuth0Verifier(
     service,
-    new URL('https://tenant.example.test/.well-known/jwks.json'),
+    new URL("https://tenant.example.test/.well-known/jwks.json"),
     createLocalJWKSet({ keys: [jwk] }),
   );
   const sign = (claims: Record<string, unknown> = {}) =>
     new SignJWT({
       scope: SERVICE_ACCEPTANCE_SCOPE,
-      azp: 'service-client',
+      azp: "service-client",
       ...claims,
     })
-      .setProtectedHeader({ alg: 'RS256', kid: 'service' })
+      .setProtectedHeader({ alg: "RS256", kid: "service" })
       .setIssuer(config.issuer.href)
       .setAudience(config.audience)
-      .setSubject('service-client@clients')
-      .setExpirationTime('5m')
+      .setSubject("service-client@clients")
+      .setExpirationTime("5m")
       .sign(privateKey);
   assert.equal(
     (await verifier.verifyAccessToken(await sign())).extra?.subject,
-    'service-client@clients',
+    "service-client@clients",
   );
   for (const claims of [
-    { azp: 'other-client' },
+    { azp: "other-client" },
     { scope: config.requiredScope },
     { scope: `${SERVICE_ACCEPTANCE_SCOPE} extra:scope` },
   ]) {
@@ -194,12 +194,12 @@ test('service acceptance requires the exact signed client, subject, and scope', 
   }
   const missingExpiry = await new SignJWT({
     scope: SERVICE_ACCEPTANCE_SCOPE,
-    azp: 'service-client',
+    azp: "service-client",
   })
-    .setProtectedHeader({ alg: 'RS256', kid: 'service' })
+    .setProtectedHeader({ alg: "RS256", kid: "service" })
     .setIssuer(config.issuer.href)
     .setAudience(config.audience)
-    .setSubject('service-client@clients')
+    .setSubject("service-client@clients")
     .sign(privateKey);
   await assert.rejects(
     () => verifier.verifyAccessToken(missingExpiry),
@@ -207,10 +207,10 @@ test('service acceptance requires the exact signed client, subject, and scope', 
   );
 });
 
-test('HTTP auth configuration defaults to loopback and allows only the Container bind address', () => {
+test("HTTP auth configuration defaults to loopback and allows only the Container bind address", () => {
   assert.throws(() => loadAuth0Config({}), /NEMLIG_MCP_AUTH0_ISSUER/u);
   const loaded = loadAuth0Config({
-    NEMLIG_MCP_AUTH0_ISSUER: 'https://tenant.example.test',
+    NEMLIG_MCP_AUTH0_ISSUER: "https://tenant.example.test",
     NEMLIG_MCP_AUTH0_AUDIENCE: config.audience,
     NEMLIG_MCP_PRINCIPALS: JSON.stringify(principalPolicy),
     NEMLIG_MCP_CREDENTIAL_KEY: config.credentialKey,
@@ -218,10 +218,10 @@ test('HTTP auth configuration defaults to loopback and allows only the Container
     NEMLIG_MCP_PUBLIC_URL: config.publicUrl.href,
   });
   assert.equal(loaded.issuer.href, config.issuer.href);
-  assert.equal(loaded.host, '127.0.0.1');
+  assert.equal(loaded.host, "127.0.0.1");
   assert.deepEqual(loaded.allowedOrigins, [
-    'https://chatgpt.com',
-    'https://chat.openai.com',
+    "https://chatgpt.com",
+    "https://chat.openai.com",
   ]);
   assert.equal(
     loadAuth0Config({
@@ -230,9 +230,9 @@ test('HTTP auth configuration defaults to loopback and allows only the Container
       NEMLIG_MCP_PRINCIPALS: JSON.stringify(principalPolicy),
       NEMLIG_MCP_CREDENTIAL_KEY: config.credentialKey,
       NEMLIG_MCP_CREDENTIAL_KEY_VERSION: config.credentialKeyVersion,
-      NEMLIG_MCP_PUBLIC_URL: 'http://127.0.0.1:3333/mcp',
+      NEMLIG_MCP_PUBLIC_URL: "http://127.0.0.1:3333/mcp",
     }).host,
-    '127.0.0.1',
+    "127.0.0.1",
   );
   assert.equal(
     loadAuth0Config({
@@ -242,9 +242,9 @@ test('HTTP auth configuration defaults to loopback and allows only the Container
       NEMLIG_MCP_CREDENTIAL_KEY: config.credentialKey,
       NEMLIG_MCP_CREDENTIAL_KEY_VERSION: config.credentialKeyVersion,
       NEMLIG_MCP_PUBLIC_URL: config.publicUrl.href,
-      NEMLIG_MCP_HTTP_HOST: '0.0.0.0',
+      NEMLIG_MCP_HTTP_HOST: "0.0.0.0",
     }).host,
-    '0.0.0.0',
+    "0.0.0.0",
   );
   assert.throws(
     () =>
@@ -255,7 +255,7 @@ test('HTTP auth configuration defaults to loopback and allows only the Container
         NEMLIG_MCP_CREDENTIAL_KEY: config.credentialKey,
         NEMLIG_MCP_CREDENTIAL_KEY_VERSION: config.credentialKeyVersion,
         NEMLIG_MCP_PUBLIC_URL: config.publicUrl.href,
-        NEMLIG_MCP_HTTP_HOST: 'example.test',
+        NEMLIG_MCP_HTTP_HOST: "example.test",
       }),
     /NEMLIG_MCP_HTTP_HOST/u,
   );
@@ -267,14 +267,14 @@ test('HTTP auth configuration defaults to loopback and allows only the Container
         NEMLIG_MCP_PRINCIPALS: JSON.stringify(principalPolicy),
         NEMLIG_MCP_CREDENTIAL_KEY: config.credentialKey,
         NEMLIG_MCP_CREDENTIAL_KEY_VERSION: config.credentialKeyVersion,
-        NEMLIG_MCP_PUBLIC_URL: 'http://example.test:3333/mcp',
+        NEMLIG_MCP_PUBLIC_URL: "http://example.test:3333/mcp",
       }),
     /loopback/u,
   );
   assert.throws(
     () =>
       loadAuth0Config({
-        NEMLIG_MCP_AUTH0_ISSUER: 'http://tenant.example.test',
+        NEMLIG_MCP_AUTH0_ISSUER: "http://tenant.example.test",
         NEMLIG_MCP_AUTH0_AUDIENCE: config.audience,
         NEMLIG_MCP_PRINCIPALS: JSON.stringify(principalPolicy),
         NEMLIG_MCP_CREDENTIAL_KEY: config.credentialKey,
@@ -285,7 +285,7 @@ test('HTTP auth configuration defaults to loopback and allows only the Container
   );
 });
 
-test('service acceptance is disabled by default and requires its fixed client ID when enabled', () => {
+test("service acceptance is disabled by default and requires its fixed client ID when enabled", () => {
   const env = {
     NEMLIG_MCP_AUTH0_ISSUER: config.issuer.href,
     NEMLIG_MCP_AUTH0_AUDIENCE: config.audience,
@@ -299,21 +299,21 @@ test('service acceptance is disabled by default and requires its fixed client ID
     () =>
       loadAuth0Config({
         ...env,
-        NEMLIG_MCP_SERVICE_ACCEPTANCE_ENABLED: 'true',
+        NEMLIG_MCP_SERVICE_ACCEPTANCE_ENABLED: "true",
       }),
     /NEMLIG_MCP_SERVICE_CLIENT_ID/u,
   );
   assert.deepEqual(
     loadAuth0Config({
       ...env,
-      NEMLIG_MCP_SERVICE_ACCEPTANCE_ENABLED: 'true',
-      NEMLIG_MCP_SERVICE_CLIENT_ID: 'service-client',
+      NEMLIG_MCP_SERVICE_ACCEPTANCE_ENABLED: "true",
+      NEMLIG_MCP_SERVICE_CLIENT_ID: "service-client",
     }).serviceAcceptance,
-    { clientId: 'service-client' },
+    { clientId: "service-client" },
   );
 });
 
-test('every family auth configuration requires versioned encryption, never inline credentials', () => {
+test("every family auth configuration requires versioned encryption, never inline credentials", () => {
   const env = {
     NEMLIG_MCP_AUTH0_ISSUER: config.issuer.href,
     NEMLIG_MCP_AUTH0_AUDIENCE: config.audience,
@@ -346,7 +346,7 @@ test('every family auth configuration requires versioned encryption, never inlin
   }
 });
 
-test('Auth0 metadata failure is fail-closed', async () => {
+test("Auth0 metadata failure is fail-closed", async () => {
   await assert.rejects(
     () =>
       fetchAuth0Metadata(
@@ -357,16 +357,16 @@ test('Auth0 metadata failure is fail-closed', async () => {
   );
 });
 
-test('Auth0 discovery requires HTTPS endpoints and PKCE S256', async () => {
+test("Auth0 discovery requires HTTPS endpoints and PKCE S256", async () => {
   const metadata = {
     issuer: config.issuer.href,
-    authorization_endpoint: 'https://tenant.example.test/authorize',
-    token_endpoint: 'https://tenant.example.test/oauth/token',
-    jwks_uri: 'https://tenant.example.test/.well-known/jwks.json',
-    response_types_supported: ['code'],
-    subject_types_supported: ['public'],
-    id_token_signing_alg_values_supported: ['RS256'],
-    code_challenge_methods_supported: ['S256'],
+    authorization_endpoint: "https://tenant.example.test/authorize",
+    token_endpoint: "https://tenant.example.test/oauth/token",
+    jwks_uri: "https://tenant.example.test/.well-known/jwks.json",
+    response_types_supported: ["code"],
+    subject_types_supported: ["public"],
+    id_token_signing_alg_values_supported: ["RS256"],
+    code_challenge_methods_supported: ["S256"],
   };
   const fetcher = async () => Response.json(metadata);
   const loaded = await fetchAuth0Metadata(config, fetcher);
@@ -376,7 +376,7 @@ test('Auth0 discovery requires HTTPS endpoints and PKCE S256', async () => {
       fetchAuth0Metadata(config, async () =>
         Response.json({
           ...metadata,
-          authorization_endpoint: 'http://tenant.example.test/authorize',
+          authorization_endpoint: "http://tenant.example.test/authorize",
         }),
       ),
     /HTTPS/u,
@@ -386,7 +386,7 @@ test('Auth0 discovery requires HTTPS endpoints and PKCE S256', async () => {
       fetchAuth0Metadata(config, async () =>
         Response.json({
           ...metadata,
-          code_challenge_methods_supported: ['plain'],
+          code_challenge_methods_supported: ["plain"],
         }),
       ),
     /PKCE S256/u,

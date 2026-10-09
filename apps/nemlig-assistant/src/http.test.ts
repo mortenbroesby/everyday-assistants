@@ -1,88 +1,88 @@
-import assert from 'node:assert/strict';
-import type { OAuthMetadata } from '@modelcontextprotocol/server';
-import type { AddressInfo } from 'node:net';
-import test from 'node:test';
-import { createHttpApp } from './http.js';
-import { createLocalJWKSet, exportJWK, generateKeyPair, SignJWT } from 'jose';
+import assert from "node:assert/strict";
+import type { OAuthMetadata } from "@modelcontextprotocol/server";
+import type { AddressInfo } from "node:net";
+import test from "node:test";
+import { createHttpApp } from "./http.js";
+import { createLocalJWKSet, exportJWK, generateKeyPair, SignJWT } from "jose";
 import {
   Auth0InfrastructureError,
   createAuth0Verifier,
   SERVICE_ACCEPTANCE_SCOPE,
   type Auth0Config,
-} from './auth0.js';
-import { verifyServiceAcceptanceFeatures } from './production-acceptance.js';
+} from "./auth0.js";
+import { verifyServiceAcceptanceFeatures } from "./production-acceptance.js";
 import {
   attachAdmissionCredential,
   handleGatewayRequest,
-} from './cloudflare-gateway.js';
+} from "./cloudflare-gateway.js";
 import {
   admitPrincipalRequest,
   replaceCredentialRecord,
   type PrincipalStorage,
-} from './principal-records.js';
-import { BasketProposalService } from './proposals.js';
-import { parsePrincipalPolicy } from './principal-policy.js';
-import type { ShoppingClient } from './client.js';
+} from "./principal-records.js";
+import { BasketProposalService } from "./proposals.js";
+import { parsePrincipalPolicy } from "./principal-policy.js";
+import type { ShoppingClient } from "./client.js";
 import {
   encryptCredentials,
   type CredentialEnvelope,
-} from './credential-envelope.js';
+} from "./credential-envelope.js";
 import {
   Client,
   StreamableHTTPClientTransport,
-} from '@modelcontextprotocol/client';
-import { NEMLIG_VERSION } from './runtime.js';
+} from "@modelcontextprotocol/client";
+import { NEMLIG_VERSION } from "./runtime.js";
 
-const ownerSubject = 'auth0|owner';
+const ownerSubject = "auth0|owner";
 const principalPolicy = parsePrincipalPolicy(
   JSON.stringify({
     schema_version: 3,
-    revision: 'family-v3',
+    revision: "family-v3",
     owner_subject: ownerSubject,
     principals: [
-      { subject: ownerSubject, principal_key: 'a'.repeat(32), enabled: true },
-      { subject: 'auth0|guest', principal_key: 'b'.repeat(32), enabled: true },
+      { subject: ownerSubject, principal_key: "a".repeat(32), enabled: true },
+      { subject: "auth0|guest", principal_key: "b".repeat(32), enabled: true },
     ],
   }),
 );
 
 const config: Auth0Config = {
-  issuer: new URL('https://tenant.example.test/'),
-  audience: 'https://nemlig.example.test/mcp',
+  issuer: new URL("https://tenant.example.test/"),
+  audience: "https://nemlig.example.test/mcp",
   principalPolicy,
-  requiredScope: 'use:nemlig-assistant',
-  publicUrl: new URL('https://mcp.example.test/mcp'),
-  allowedOrigins: ['https://chatgpt.com'],
-  revision: 'test-revision',
-  host: '127.0.0.1',
+  requiredScope: "use:nemlig-assistant",
+  publicUrl: new URL("https://mcp.example.test/mcp"),
+  allowedOrigins: ["https://chatgpt.com"],
+  revision: "test-revision",
+  host: "127.0.0.1",
   port: 3333,
-  credentialKey: Buffer.alloc(32, 9).toString('base64url'),
-  credentialKeyVersion: 'one',
-  serviceAcceptance: { clientId: 'service-client' },
+  credentialKey: Buffer.alloc(32, 9).toString("base64url"),
+  credentialKeyVersion: "one",
+  serviceAcceptance: { clientId: "service-client" },
 };
 const oauth: OAuthMetadata = {
   issuer: config.issuer.href,
-  authorization_endpoint: new URL('authorize', config.issuer).href,
-  token_endpoint: new URL('oauth/token', config.issuer).href,
-  registration_endpoint: new URL('oidc/register', config.issuer).href,
-  response_types_supported: ['code'],
+  authorization_endpoint: new URL("authorize", config.issuer).href,
+  token_endpoint: new URL("oauth/token", config.issuer).href,
+  registration_endpoint: new URL("oidc/register", config.issuer).href,
+  response_types_supported: ["code"],
 };
 
 const envelopeHeaders = (value: CredentialEnvelope) => ({
-  'x-nemlig-principal-key': value.principal_key,
-  'x-nemlig-policy-revision': value.policy_revision,
-  'x-nemlig-credential-generation': String(value.generation),
-  'x-nemlig-credential-envelope': btoa(JSON.stringify(value)),
+  "x-nemlig-principal-key": value.principal_key,
+  "x-nemlig-policy-revision": value.policy_revision,
+  "x-nemlig-credential-generation": String(value.generation),
+  "x-nemlig-credential-envelope": btoa(JSON.stringify(value)),
 });
 const familyHeaders = async (token: string) => {
-  const guest = token === 'guest';
+  const guest = token === "guest";
   const value = await encryptCredentials(
     {
-      username: guest ? 'guest@example.test' : 'owner@example.test',
-      password: guest ? 'guest-secret' : 'owner-secret',
+      username: guest ? "guest@example.test" : "owner@example.test",
+      password: guest ? "guest-secret" : "owner-secret",
     },
     {
-      principalKey: (guest ? 'b' : 'a').repeat(32),
+      principalKey: (guest ? "b" : "a").repeat(32),
       policyRevision: principalPolicy.revision,
       keyVersion: config.credentialKeyVersion,
       generation: 1,
@@ -94,19 +94,19 @@ const familyHeaders = async (token: string) => {
 
 const modernClient = (name: string) =>
   new Client(
-    { name, version: '1.0.0' },
+    { name, version: "1.0.0" },
     {
-      versionNegotiation: { mode: { pin: '2026-07-28' } },
+      versionNegotiation: { mode: { pin: "2026-07-28" } },
     },
   );
 
-test('loopback MCP bursts use encrypted credential admission without usage limits or unapproved writes', async () => {
+test("loopback MCP bursts use encrypted credential admission without usage limits or unapproved writes", async () => {
   const empty = {
     items: [],
     productsPrice: 0,
     deliveryPrice: 0,
     numberOfProducts: 0,
-    deliveryTime: '',
+    deliveryTime: "",
   };
   let reads = 0;
   let writes = 0;
@@ -116,7 +116,7 @@ test('loopback MCP bursts use encrypted credential admission without usage limit
     login: async (username: string, password: string) => {
       assert.deepEqual(
         { username, password },
-        { username: 'owner@example.test', password: 'owner-secret' },
+        { username: "owner@example.test", password: "owner-secret" },
       );
       loggedIn = true;
     },
@@ -126,7 +126,7 @@ test('loopback MCP bursts use encrypted credential admission without usage limit
     },
     addToCart: async () => {
       writes += 1;
-      throw new Error('unapproved write');
+      throw new Error("unapproved write");
     },
   } as unknown as ShoppingClient;
   const app = createHttpApp(
@@ -135,7 +135,7 @@ test('loopback MCP bursts use encrypted credential admission without usage limit
     {
       verifyAccessToken: async (token) => ({
         token,
-        clientId: 'chatgpt',
+        clientId: "chatgpt",
         scopes: [config.requiredScope],
         expiresAt: Date.now() / 1000 + 300,
         extra: { subject: ownerSubject },
@@ -145,8 +145,8 @@ test('loopback MCP bursts use encrypted credential admission without usage limit
   );
   const server = app.listen(0, config.host);
   await new Promise<void>((resolve, reject) => {
-    server.once('listening', resolve);
-    server.once('error', reject);
+    server.once("listening", resolve);
+    server.once("error", reject);
   });
   const endpoint = new URL(
     `http://${config.host}:${(server.address() as AddressInfo).port}/mcp`,
@@ -173,7 +173,7 @@ test('loopback MCP bursts use encrypted credential admission without usage limit
     storage,
     principal,
     await encryptCredentials(
-      { username: 'owner@example.test', password: 'owner-secret' },
+      { username: "owner@example.test", password: "owner-secret" },
       {
         principalKey: principal.principal_key,
         policyRevision: principalPolicy.revision,
@@ -189,11 +189,11 @@ test('loopback MCP bursts use encrypted credential admission without usage limit
     handleGatewayRequest(
       new Request(input, init),
       {
-        MCP_ENABLED: 'true',
-        MCP_AUTH_TIMEOUT_MS: '5000',
-        MCP_CONTROL_TIMEOUT_MS: '3000',
-        MCP_TOTAL_TIMEOUT_MS: '30000',
-        MCP_BACKEND_TIMEOUT_MS: '25000',
+        MCP_ENABLED: "true",
+        MCP_AUTH_TIMEOUT_MS: "5000",
+        MCP_CONTROL_TIMEOUT_MS: "3000",
+        MCP_TOTAL_TIMEOUT_MS: "30000",
+        MCP_BACKEND_TIMEOUT_MS: "25000",
         NEMLIG_MCP_AUTH0_ISSUER: config.issuer.href,
         NEMLIG_MCP_AUTH0_AUDIENCE: config.audience,
         NEMLIG_MCP_PRINCIPALS: JSON.stringify(principalPolicy),
@@ -204,54 +204,54 @@ test('loopback MCP bursts use encrypted credential admission without usage limit
       {
         authenticate: async () => principalPolicy.principals[0],
         admit: async (operation, currentPrincipal) => {
-          if (operation === 'useful') {
+          if (operation === "useful") {
             usefulAdmissions += 1;
           }
           return admitPrincipalRequest(
             storage,
             { principalKey: currentPrincipal.principal_key },
             { revision: principalPolicy.revision },
-            operation === 'useful',
+            operation === "useful",
           );
         },
         forward: async (request, _operation, _config, _deadline, admission) =>
           fetch(attachAdmissionCredential(request, admission)),
       },
     );
-  const client = modernClient('burst-test');
+  const client = modernClient("burst-test");
   try {
     await client.connect(
       new StreamableHTTPClientTransport(endpoint, {
-        requestInit: { headers: { authorization: 'Bearer test' } },
+        requestInit: { headers: { authorization: "Bearer test" } },
         fetch: edgeFetch,
       }),
     );
     for (let index = 0; index < 501; index += 1) {
       const result = await client.callTool({
-        name: 'show_my_basket',
+        name: "show_my_basket",
         arguments: {},
       });
       assert.notEqual(result.isError, true);
     }
     for (let index = 0; index < 30; index += 1) {
       const result = await client.callTool({
-        name: 'submit_product_review_conversation',
+        name: "submit_product_review_conversation",
         arguments: {
-          review_id: '00000000-0000-4000-8000-000000000000',
+          review_id: "00000000-0000-4000-8000-000000000000",
           revision: 1,
-          submission_id: '00000000-0000-4000-8000-000000000000',
+          submission_id: "00000000-0000-4000-8000-000000000000",
         },
       });
       assert.equal(
         result.isError,
         true,
-        'rate removal must not bypass exact approval',
+        "rate removal must not bypass exact approval",
       );
     }
     assert.equal(reads, 501);
     assert.equal(writes, 0);
     assert.equal(usefulAdmissions, 531);
-    assert.equal(records.has('usage'), false);
+    assert.equal(records.has("usage"), false);
   } finally {
     await client.close();
     server.closeAllConnections();
@@ -261,11 +261,11 @@ test('loopback MCP bursts use encrypted credential admission without usage limit
   }
 });
 
-test('HTTP MCP accepts a 2025-era ChatGPT initialize handshake', async () => {
+test("HTTP MCP accepts a 2025-era ChatGPT initialize handshake", async () => {
   const app = createHttpApp(config, oauth, {
     verifyAccessToken: async (token) => ({
       token,
-      clientId: 'chatgpt',
+      clientId: "chatgpt",
       scopes: [config.requiredScope],
       expiresAt: Date.now() / 1000 + 300,
       extra: { subject: ownerSubject },
@@ -273,27 +273,27 @@ test('HTTP MCP accepts a 2025-era ChatGPT initialize handshake', async () => {
   });
   const server = app.listen(0, config.host);
   await new Promise<void>((resolve, reject) => {
-    server.once('listening', resolve);
-    server.once('error', reject);
+    server.once("listening", resolve);
+    server.once("error", reject);
   });
   try {
     const response = await fetch(
       `http://${config.host}:${(server.address() as AddressInfo).port}/mcp`,
       {
-        method: 'POST',
+        method: "POST",
         headers: {
-          authorization: 'Bearer test',
-          'content-type': 'application/json',
-          accept: 'application/json, text/event-stream',
+          authorization: "Bearer test",
+          "content-type": "application/json",
+          accept: "application/json, text/event-stream",
         },
         body: JSON.stringify({
-          jsonrpc: '2.0',
+          jsonrpc: "2.0",
           id: 1,
-          method: 'initialize',
+          method: "initialize",
           params: {
-            protocolVersion: '2025-06-18',
+            protocolVersion: "2025-06-18",
             capabilities: {},
-            clientInfo: { name: 'chatgpt-legacy', version: '1.0.0' },
+            clientInfo: { name: "chatgpt-legacy", version: "1.0.0" },
           },
         }),
       },
@@ -307,20 +307,20 @@ test('HTTP MCP accepts a 2025-era ChatGPT initialize handshake', async () => {
   }
 });
 
-test('HTTP MCP advertises Auth0, rejects anonymous and foreign origins, and preserves the MCP surface', async () => {
+test("HTTP MCP advertises Auth0, rejects anonymous and foreign origins, and preserves the MCP surface", async () => {
   const app = createHttpApp(config, oauth, {
     verifyAccessToken: async (token) => ({
       token,
-      clientId: 'chatgpt',
-      scopes: token === 'no-scope' ? [] : [config.requiredScope],
+      clientId: "chatgpt",
+      scopes: token === "no-scope" ? [] : [config.requiredScope],
       expiresAt: Date.now() / 1000 + 300,
-      extra: { subject: token === 'guest' ? 'auth0|guest' : ownerSubject },
+      extra: { subject: token === "guest" ? "auth0|guest" : ownerSubject },
     }),
   });
   const server = app.listen(0, config.host);
   await new Promise<void>((resolve, reject) => {
-    server.once('listening', resolve);
-    server.once('error', reject);
+    server.once("listening", resolve);
+    server.once("error", reject);
   });
   const base = `http://${config.host}:${(server.address() as AddressInfo).port}`;
   try {
@@ -331,50 +331,50 @@ test('HTTP MCP advertises Auth0, rejects anonymous and foreign origins, and pres
       resource: config.publicUrl.href,
       authorization_servers: [config.issuer.href],
       scopes_supported: [config.requiredScope],
-      resource_name: 'Nemlig Assistant',
+      resource_name: "Nemlig Assistant",
     });
     const health = await (await fetch(`${base}/healthz`)).json();
     const readiness = await (await fetch(`${base}/readyz`)).json();
     const revision = await (await fetch(`${base}/revision`)).json();
-    assert.deepEqual(health, { status: 'ok' });
-    assert.deepEqual(readiness, { status: 'ready' });
+    assert.deepEqual(health, { status: "ok" });
+    assert.deepEqual(readiness, { status: "ready" });
     assert.deepEqual(revision, { revision: config.revision });
     assert.doesNotMatch(
       JSON.stringify({ health, readiness, revision }),
       /auth0\||credential|token|basket|proposal|session|path/iu,
     );
     const anonymous = await fetch(`${base}/mcp`, {
-      method: 'POST',
-      body: '{}',
-      headers: { 'content-type': 'application/json' },
+      method: "POST",
+      body: "{}",
+      headers: { "content-type": "application/json" },
     });
     assert.equal(anonymous.status, 401);
     assert.match(
-      anonymous.headers.get('www-authenticate') ?? '',
+      anonymous.headers.get("www-authenticate") ?? "",
       /oauth-protected-resource\/mcp/u,
     );
     const missingScope = await fetch(`${base}/mcp`, {
-      method: 'POST',
-      headers: { authorization: 'Bearer no-scope' },
+      method: "POST",
+      headers: { authorization: "Bearer no-scope" },
     });
     assert.equal(missingScope.status, 403);
     const foreign = await fetch(`${base}/mcp`, {
-      method: 'POST',
-      headers: { authorization: 'Bearer test', origin: 'https://evil.example' },
+      method: "POST",
+      headers: { authorization: "Bearer test", origin: "https://evil.example" },
     });
     assert.equal(foreign.status, 403);
 
-    const client = modernClient('http-test');
+    const client = modernClient("http-test");
     const transport = new StreamableHTTPClientTransport(
       new URL(`${base}/mcp`),
       {
-        requestInit: { headers: await familyHeaders('test') },
+        requestInit: { headers: await familyHeaders("test") },
       },
     );
     await client.connect(transport);
-    assert.equal(client.getServerVersion()?.name, 'nemlig-assistant');
+    assert.equal(client.getServerVersion()?.name, "nemlig-assistant");
     const httpTools = await client.listTools();
-    assert.ok(httpTools.tools.some((tool) => tool.name === 'show_my_basket'));
+    assert.ok(httpTools.tools.some((tool) => tool.name === "show_my_basket"));
     assert.equal(transport.sessionId, undefined);
 
     await client.close();
@@ -386,33 +386,33 @@ test('HTTP MCP advertises Auth0, rejects anonymous and foreign origins, and pres
   }
 });
 
-test('HTTP Auth0 verifier infrastructure failures return a sanitized server error instead of an OAuth challenge', async () => {
+test("HTTP Auth0 verifier infrastructure failures return a sanitized server error instead of an OAuth challenge", async () => {
   const app = createHttpApp(config, oauth, {
     verifyAccessToken: async () => {
-      throw new Auth0InfrastructureError('unavailable');
+      throw new Auth0InfrastructureError("unavailable");
     },
   });
   const server = app.listen(0, config.host);
   await new Promise<void>((resolve, reject) => {
-    server.once('listening', resolve);
-    server.once('error', reject);
+    server.once("listening", resolve);
+    server.once("error", reject);
   });
   try {
     const endpoint = `http://${config.host}:${(server.address() as AddressInfo).port}/mcp`;
     const response = await fetch(endpoint, {
-      method: 'POST',
-      body: '{}',
+      method: "POST",
+      body: "{}",
       headers: {
-        authorization: 'Bearer token',
-        'content-type': 'application/json',
+        authorization: "Bearer token",
+        "content-type": "application/json",
       },
     });
     assert.equal(response.status, 500);
     assert.deepEqual(await response.json(), {
-      error: 'server_error',
-      error_description: 'Authentication unavailable.',
+      error: "server_error",
+      error_description: "Authentication unavailable.",
     });
-    assert.equal(response.headers.get('www-authenticate'), null);
+    assert.equal(response.headers.get("www-authenticate"), null);
   } finally {
     server.closeAllConnections();
     await new Promise<void>((resolve, reject) =>
@@ -421,36 +421,36 @@ test('HTTP Auth0 verifier infrastructure failures return a sanitized server erro
   }
 });
 
-test('HTTP service acceptance uses signed machine identity and its fixed fixture without a human context', async () => {
+test("HTTP service acceptance uses signed machine identity and its fixed fixture without a human context", async () => {
   const serviceConfig = {
     ...config,
-    serviceAcceptance: { clientId: 'service-client' },
+    serviceAcceptance: { clientId: "service-client" },
   };
-  const { privateKey, publicKey } = await generateKeyPair('RS256');
-  const jwk = { ...(await exportJWK(publicKey)), kid: 'service', alg: 'RS256' };
+  const { privateKey, publicKey } = await generateKeyPair("RS256");
+  const jwk = { ...(await exportJWK(publicKey)), kid: "service", alg: "RS256" };
   const verifier = createAuth0Verifier(
     serviceConfig,
-    new URL('https://tenant.example.test/.well-known/jwks.json'),
+    new URL("https://tenant.example.test/.well-known/jwks.json"),
     createLocalJWKSet({ keys: [jwk] }),
   );
   const token = await new SignJWT({
     scope: SERVICE_ACCEPTANCE_SCOPE,
-    azp: 'service-client',
+    azp: "service-client",
   })
-    .setProtectedHeader({ alg: 'RS256', kid: 'service' })
+    .setProtectedHeader({ alg: "RS256", kid: "service" })
     .setIssuer(config.issuer.href)
     .setAudience(config.audience)
-    .setSubject('service-client@clients')
-    .setExpirationTime('5m')
+    .setSubject("service-client@clients")
+    .setExpirationTime("5m")
     .sign(privateKey);
   for (const throughGateway of [true, false] as const) {
     const app = createHttpApp(serviceConfig, oauth, verifier, () => {
-      throw new Error('service must not resolve a human context');
+      throw new Error("service must not resolve a human context");
     });
     const server = app.listen(0, config.host);
     await new Promise<void>((resolve, reject) => {
-      server.once('listening', resolve);
-      server.once('error', reject);
+      server.once("listening", resolve);
+      server.once("error", reject);
     });
     try {
       const endpoint = new URL(
@@ -463,31 +463,31 @@ test('HTTP service acceptance uses signed machine identity and its fixed fixture
         await handleGatewayRequest(
           new Request(input, init),
           {
-            MCP_ENABLED: 'true',
-            MCP_AUTH_TIMEOUT_MS: '5000',
-            MCP_CONTROL_TIMEOUT_MS: '3000',
-            MCP_TOTAL_TIMEOUT_MS: '30000',
-            MCP_BACKEND_TIMEOUT_MS: '25000',
+            MCP_ENABLED: "true",
+            MCP_AUTH_TIMEOUT_MS: "5000",
+            MCP_CONTROL_TIMEOUT_MS: "3000",
+            MCP_TOTAL_TIMEOUT_MS: "30000",
+            MCP_BACKEND_TIMEOUT_MS: "25000",
             NEMLIG_MCP_AUTH0_ISSUER: config.issuer.href,
             NEMLIG_MCP_AUTH0_AUDIENCE: config.audience,
             NEMLIG_MCP_PRINCIPALS: JSON.stringify(principalPolicy),
             NEMLIG_MCP_PUBLIC_URL: config.publicUrl.href,
             NEMLIG_MCP_CREDENTIAL_KEY: config.credentialKey,
             NEMLIG_MCP_CREDENTIAL_KEY_VERSION: config.credentialKeyVersion,
-            NEMLIG_MCP_SERVICE_ACCEPTANCE_ENABLED: 'true',
-            NEMLIG_MCP_SERVICE_CLIENT_ID: 'service-client',
+            NEMLIG_MCP_SERVICE_ACCEPTANCE_ENABLED: "true",
+            NEMLIG_MCP_SERVICE_CLIENT_ID: "service-client",
           },
           {
             authenticate: async () => ({
-              subject: 'service-client@clients',
-              principal_key: 's'.repeat(32),
+              subject: "service-client@clients",
+              principal_key: "s".repeat(32),
               enabled: true,
             }),
             admit: async () => ({ admitted: true }),
             forward: async (request) => fetch(request),
           },
         );
-      const client = modernClient('service-test');
+      const client = modernClient("service-test");
       const transport = new StreamableHTTPClientTransport(endpoint, {
         requestInit: { headers: { authorization: `Bearer ${token}` } },
         ...(throughGateway ? { fetch: edgeFetch } : {}),
@@ -515,7 +515,7 @@ test('HTTP service acceptance uses signed machine identity and its fixed fixture
   }
 });
 
-test('HTTP MCP creates bounded isolated clients, credentials, baskets, favourites, and proposal stores per principal', async () => {
+test("HTTP MCP creates bounded isolated clients, credentials, baskets, favourites, and proposal stores per principal", async () => {
   const logins: string[] = [];
   const clients = new Set<ShoppingClient>();
   const proposalStores = new Set<BasketProposalService>();
@@ -525,10 +525,10 @@ test('HTTP MCP creates bounded isolated clients, credentials, baskets, favourite
     {
       verifyAccessToken: async (token) => ({
         token,
-        clientId: 'chatgpt',
+        clientId: "chatgpt",
         scopes: [config.requiredScope],
         expiresAt: Date.now() / 1000 + 300,
-        extra: { subject: token === 'guest' ? 'auth0|guest' : ownerSubject },
+        extra: { subject: token === "guest" ? "auth0|guest" : ownerSubject },
       }),
     },
     (principal) => {
@@ -537,16 +537,16 @@ test('HTTP MCP creates bounded isolated clients, credentials, baskets, favourite
         id: principal.subject === ownerSubject ? 1 : 2,
         name:
           principal.subject === ownerSubject
-            ? 'owner-favourite'
-            : 'guest-favourite',
+            ? "owner-favourite"
+            : "guest-favourite",
         price: 1,
-        unit: '1 kr/stk.',
+        unit: "1 kr/stk.",
         unitPrice: 1,
-        unitSize: '1 stk.',
-        brand: 'Test',
-        category: 'Test',
-        subcategory: 'Test',
-        imageUrl: '',
+        unitSize: "1 stk.",
+        brand: "Test",
+        category: "Test",
+        subcategory: "Test",
+        imageUrl: "",
         available: true,
         labels: [],
         isOrganic: false,
@@ -567,7 +567,7 @@ test('HTTP MCP creates bounded isolated clients, credentials, baskets, favourite
         searchProducts: async () => [],
         getProduct: async () => product,
         getFreshProduct: async () => {
-          throw new Error('unused');
+          throw new Error("unused");
         },
         listFavorites: async () => [product],
         listDepartments: async () => [],
@@ -583,11 +583,11 @@ test('HTTP MCP creates bounded isolated clients, credentials, baskets, favourite
           numberOfProducts: 0,
           deliveryTime:
             principal.subject === ownerSubject
-              ? 'owner-basket'
-              : 'guest-basket',
+              ? "owner-basket"
+              : "guest-basket",
         }),
         addToCart: async () => {
-          throw new Error('unused');
+          throw new Error("unused");
         },
       };
       const proposals = new BasketProposalService(client);
@@ -598,8 +598,8 @@ test('HTTP MCP creates bounded isolated clients, credentials, baskets, favourite
   );
   const server = app.listen(0, config.host);
   await new Promise<void>((resolve, reject) => {
-    server.once('listening', resolve);
-    server.once('error', reject);
+    server.once("listening", resolve);
+    server.once("error", reject);
   });
   const endpoint = new URL(
     `http://${config.host}:${(server.address() as AddressInfo).port}/mcp`,
@@ -614,14 +614,14 @@ test('HTTP MCP creates bounded isolated clients, credentials, baskets, favourite
     return client;
   };
   try {
-    const owner = await connect('owner');
-    const guest = await connect('guest');
+    const owner = await connect("owner");
+    const guest = await connect("guest");
     const ownerBasket = await owner.callTool({
-      name: 'show_my_basket',
+      name: "show_my_basket",
       arguments: {},
     });
     const guestBasket = await guest.callTool({
-      name: 'show_my_basket',
+      name: "show_my_basket",
       arguments: {},
     });
     assert.match(
@@ -633,12 +633,12 @@ test('HTTP MCP creates bounded isolated clients, credentials, baskets, favourite
       /guest-basket/u,
     );
     assert.deepEqual(logins.sort(), [
-      'guest@example.test:guest-secret',
-      'owner@example.test:owner-secret',
+      "guest@example.test:guest-secret",
+      "owner@example.test:owner-secret",
     ]);
     const started = await owner.callTool({
-      _meta: { 'openai/session': 'shop-a' },
-      name: 'start_product_review',
+      _meta: { "openai/session": "shop-a" },
+      name: "start_product_review",
       arguments: { items: [{ product_id: 1, quantity: 2 }] },
     });
     assert.equal(started.isError, undefined);
@@ -647,37 +647,37 @@ test('HTTP MCP creates bounded isolated clients, credentials, baskets, favourite
         review: { review_id: string; revision: number };
       }
     ).review;
-    const secondOwner = await connect('owner');
+    const secondOwner = await connect("owner");
     try {
       const otherChat = await secondOwner.callTool({
-        _meta: { 'openai/session': 'shop-b' },
-        name: 'update_product_review_conversation',
-        arguments: { ...review, action: { kind: 'show' } },
+        _meta: { "openai/session": "shop-b" },
+        name: "update_product_review_conversation",
+        arguments: { ...review, action: { kind: "show" } },
       });
       assert.equal(
         otherChat.isError,
         true,
-        'same authenticated account in a different chat cannot access the local selection',
+        "same authenticated account in a different chat cannot access the local selection",
       );
       const noSession = await secondOwner.callTool({
-        name: 'update_product_review_conversation',
-        arguments: { ...review, action: { kind: 'show' } },
+        name: "update_product_review_conversation",
+        arguments: { ...review, action: { kind: "show" } },
       });
       assert.equal(
         noSession.isError,
         true,
-        'stateless requests without conversation context must fail closed',
+        "stateless requests without conversation context must fail closed",
       );
       const accepted = await secondOwner.callTool({
-        _meta: { 'openai/session': 'shop-a' },
-        name: 'update_product_review_conversation',
-        arguments: { ...review, action: { kind: 'accept', product_ids: [1] } },
+        _meta: { "openai/session": "shop-a" },
+        name: "update_product_review_conversation",
+        arguments: { ...review, action: { kind: "accept", product_ids: [1] } },
       });
       assert.equal(accepted.isError, undefined);
       const shown = await owner.callTool({
-        _meta: { 'openai/session': 'shop-a' },
-        name: 'update_product_review_conversation',
-        arguments: { review_id: review.review_id, action: { kind: 'show' } },
+        _meta: { "openai/session": "shop-a" },
+        name: "update_product_review_conversation",
+        arguments: { review_id: review.review_id, action: { kind: "show" } },
       });
       assert.equal(
         (
@@ -685,12 +685,12 @@ test('HTTP MCP creates bounded isolated clients, credentials, baskets, favourite
             review: { items: Array<{ state: string }> };
           }
         ).review.items[0]?.state,
-        'ready',
+        "ready",
       );
       const denied = await guest.callTool({
-        _meta: { 'openai/session': 'shop-a' },
-        name: 'update_product_review_conversation',
-        arguments: { review_id: review.review_id, action: { kind: 'show' } },
+        _meta: { "openai/session": "shop-a" },
+        name: "update_product_review_conversation",
+        arguments: { review_id: review.review_id, action: { kind: "show" } },
       });
       assert.equal(denied.isError, true);
     } finally {
@@ -708,15 +708,15 @@ test('HTTP MCP creates bounded isolated clients, credentials, baskets, favourite
   }
 });
 
-test('current family stateless requests decrypt credentials and isolate credential generations and principals', async () => {
-  const key = Buffer.alloc(32, 9).toString('base64url');
-  const guestKey = 'c'.repeat(32);
+test("current family stateless requests decrypt credentials and isolate credential generations and principals", async () => {
+  const key = Buffer.alloc(32, 9).toString("base64url");
+  const guestKey = "c".repeat(32);
   const familyPolicy = parsePrincipalPolicy(
     JSON.stringify({
       ...principalPolicy,
       principals: principalPolicy.principals.map((principal) =>
-        principal.subject === 'auth0|guest'
-          ? { ...principal, principal_key: 'c'.repeat(32) }
+        principal.subject === "auth0|guest"
+          ? { ...principal, principal_key: "c".repeat(32) }
           : principal,
       ),
     }),
@@ -725,24 +725,24 @@ test('current family stateless requests decrypt credentials and isolate credenti
     ...config,
     principalPolicy: familyPolicy,
     credentialKey: key,
-    credentialKeyVersion: 'one',
+    credentialKeyVersion: "one",
   };
   const envelope = await encryptCredentials(
-    { username: 'guest@example.test', password: 'guest-secret' },
+    { username: "guest@example.test", password: "guest-secret" },
     {
       principalKey: guestKey,
       policyRevision: familyPolicy.revision,
-      keyVersion: 'one',
+      keyVersion: "one",
       generation: 1,
     },
     key,
   );
   const internalHeaders = (value: CredentialEnvelope) => ({
-    authorization: 'Bearer guest',
-    'x-nemlig-principal-key': value.principal_key,
-    'x-nemlig-policy-revision': value.policy_revision,
-    'x-nemlig-credential-generation': String(value.generation),
-    'x-nemlig-credential-envelope': btoa(JSON.stringify(value)),
+    authorization: "Bearer guest",
+    "x-nemlig-principal-key": value.principal_key,
+    "x-nemlig-policy-revision": value.policy_revision,
+    "x-nemlig-credential-generation": String(value.generation),
+    "x-nemlig-credential-envelope": btoa(JSON.stringify(value)),
   });
   const logins: string[] = [];
   const client: ShoppingClient = {
@@ -752,10 +752,10 @@ test('current family stateless requests decrypt credentials and isolate credenti
     },
     searchProducts: async () => [],
     getProduct: async () => {
-      throw new Error('unused');
+      throw new Error("unused");
     },
     getFreshProduct: async () => {
-      throw new Error('unused');
+      throw new Error("unused");
     },
     listFavorites: async () => [],
     listDepartments: async () => [],
@@ -765,10 +765,10 @@ test('current family stateless requests decrypt credentials and isolate credenti
       productsPrice: 0,
       deliveryPrice: 0,
       numberOfProducts: 0,
-      deliveryTime: 'guest-current',
+      deliveryTime: "guest-current",
     }),
     addToCart: async () => {
-      throw new Error('unused');
+      throw new Error("unused");
     },
   };
   const app = createHttpApp(
@@ -777,58 +777,58 @@ test('current family stateless requests decrypt credentials and isolate credenti
     {
       verifyAccessToken: async (token) => ({
         token,
-        clientId: 'chatgpt',
+        clientId: "chatgpt",
         scopes: [config.requiredScope],
         expiresAt: Date.now() / 1000 + 300,
-        extra: { subject: 'auth0|guest' },
+        extra: { subject: "auth0|guest" },
       }),
     },
     () => ({ client, proposals: new BasketProposalService(client) }),
   );
   const server = app.listen(0, config.host);
   await new Promise<void>((resolve, reject) => {
-    server.once('listening', resolve);
-    server.once('error', reject);
+    server.once("listening", resolve);
+    server.once("error", reject);
   });
   const endpoint = new URL(
     `http://${config.host}:${(server.address() as AddressInfo).port}/mcp`,
   );
   try {
-    const mcp = modernClient('current-test');
+    const mcp = modernClient("current-test");
     const transport = new StreamableHTTPClientTransport(endpoint, {
       requestInit: { headers: internalHeaders(envelope) },
     });
     await mcp.connect(transport);
-    await mcp.callTool({ name: 'show_my_basket', arguments: {} });
-    assert.deepEqual(logins, ['guest@example.test:guest-secret']);
+    await mcp.callTool({ name: "show_my_basket", arguments: {} });
+    assert.deepEqual(logins, ["guest@example.test:guest-secret"]);
     const next = await encryptCredentials(
-      { username: 'guest@example.test', password: 'new-secret' },
+      { username: "guest@example.test", password: "new-secret" },
       {
         principalKey: guestKey,
         policyRevision: familyPolicy.revision,
-        keyVersion: 'one',
+        keyVersion: "one",
         generation: 2,
       },
       key,
     );
     const wrongPrincipal = await fetch(endpoint, {
-      method: 'POST',
-      body: '{}',
+      method: "POST",
+      body: "{}",
       headers: {
-        ...internalHeaders({ ...envelope, principal_key: 'd'.repeat(32) }),
-        'content-type': 'application/json',
+        ...internalHeaders({ ...envelope, principal_key: "d".repeat(32) }),
+        "content-type": "application/json",
       },
     });
     assert.equal(wrongPrincipal.status, 403);
-    const rotated = modernClient('current-rotated-test');
+    const rotated = modernClient("current-rotated-test");
     const rotatedTransport = new StreamableHTTPClientTransport(endpoint, {
       requestInit: { headers: internalHeaders(next) },
     });
     await rotated.connect(rotatedTransport);
-    await rotated.callTool({ name: 'show_my_basket', arguments: {} });
+    await rotated.callTool({ name: "show_my_basket", arguments: {} });
     assert.deepEqual(logins, [
-      'guest@example.test:guest-secret',
-      'guest@example.test:new-secret',
+      "guest@example.test:guest-secret",
+      "guest@example.test:new-secret",
     ]);
     await rotated.close();
     await mcp.close();
@@ -840,19 +840,19 @@ test('current family stateless requests decrypt credentials and isolate credenti
   }
 });
 
-test('credential-free discovery preserves an active review while credential rotation invalidates it', async () => {
+test("credential-free discovery preserves an active review while credential rotation invalidates it", async () => {
   let providerReads = 0;
   const product = {
     id: 1,
-    name: 'Fixture milk',
+    name: "Fixture milk",
     price: 12,
-    unit: '12 kr/L',
+    unit: "12 kr/L",
     unitPrice: 12,
-    unitSize: '1 L',
-    brand: 'Fixture',
-    category: 'Dairy',
-    subcategory: 'Milk',
-    imageUrl: '',
+    unitSize: "1 L",
+    brand: "Fixture",
+    category: "Dairy",
+    subcategory: "Milk",
+    imageUrl: "",
     available: true,
     labels: [],
     isOrganic: false,
@@ -870,7 +870,7 @@ test('credential-free discovery preserves an active review while credential rota
     {
       verifyAccessToken: async (token) => ({
         token,
-        clientId: 'chatgpt',
+        clientId: "chatgpt",
         scopes: [config.requiredScope],
         expiresAt: Date.now() / 1000 + 300,
         extra: { subject: ownerSubject },
@@ -890,25 +890,25 @@ test('credential-free discovery preserves an active review while credential rota
   );
   const server = app.listen(0, config.host);
   await new Promise<void>((resolve, reject) => {
-    server.once('listening', resolve);
-    server.once('error', reject);
+    server.once("listening", resolve);
+    server.once("error", reject);
   });
   const endpoint = new URL(
     `http://${config.host}:${(server.address() as AddressInfo).port}/mcp`,
   );
-  const reviewer = modernClient('active-review');
-  const discovery = modernClient('credential-free-discovery');
-  const rotated = modernClient('rotated-review');
-  const _meta = { 'openai/session': 'review-discovery-regression' };
+  const reviewer = modernClient("active-review");
+  const discovery = modernClient("credential-free-discovery");
+  const rotated = modernClient("rotated-review");
+  const _meta = { "openai/session": "review-discovery-regression" };
   try {
     await reviewer.connect(
       new StreamableHTTPClientTransport(endpoint, {
-        requestInit: { headers: await familyHeaders('owner') },
+        requestInit: { headers: await familyHeaders("owner") },
       }),
     );
     const started = await reviewer.callTool({
       _meta,
-      name: 'start_product_review',
+      name: "start_product_review",
       arguments: { items: [{ product_id: 1, quantity: 2 }] },
     });
     assert.equal(started.isError, undefined);
@@ -921,19 +921,19 @@ test('credential-free discovery preserves an active review while credential rota
 
     await discovery.connect(
       new StreamableHTTPClientTransport(endpoint, {
-        requestInit: { headers: { authorization: 'Bearer owner' } },
+        requestInit: { headers: { authorization: "Bearer owner" } },
       }),
     );
     await discovery.listTools();
     const shown = await reviewer.callTool({
       _meta,
-      name: 'update_product_review_conversation',
-      arguments: { review_id: review.review_id, action: { kind: 'show' } },
+      name: "update_product_review_conversation",
+      arguments: { review_id: review.review_id, action: { kind: "show" } },
     });
     assert.equal(
       shown.isError,
       undefined,
-      'credential-free discovery must not discard the active review',
+      "credential-free discovery must not discard the active review",
     );
     assert.deepEqual(
       (shown.structuredContent as { review: unknown }).review,
@@ -942,13 +942,13 @@ test('credential-free discovery preserves an active review while credential rota
     assert.equal(
       providerReads,
       1,
-      'discovery and showing retained state must not reread products',
+      "discovery and showing retained state must not reread products",
     );
 
     const next = await encryptCredentials(
-      { username: 'owner@example.test', password: 'rotated-secret' },
+      { username: "owner@example.test", password: "rotated-secret" },
       {
-        principalKey: 'a'.repeat(32),
+        principalKey: "a".repeat(32),
         policyRevision: principalPolicy.revision,
         keyVersion: config.credentialKeyVersion,
         generation: 2,
@@ -958,19 +958,19 @@ test('credential-free discovery preserves an active review while credential rota
     await rotated.connect(
       new StreamableHTTPClientTransport(endpoint, {
         requestInit: {
-          headers: { authorization: 'Bearer owner', ...envelopeHeaders(next) },
+          headers: { authorization: "Bearer owner", ...envelopeHeaders(next) },
         },
       }),
     );
     const invalidated = await rotated.callTool({
       _meta,
-      name: 'update_product_review_conversation',
-      arguments: { review_id: review.review_id, action: { kind: 'show' } },
+      name: "update_product_review_conversation",
+      arguments: { review_id: review.review_id, action: { kind: "show" } },
     });
     assert.equal(
       invalidated.isError,
       true,
-      'actual credential rotation must still discard the old review',
+      "actual credential rotation must still discard the old review",
     );
   } finally {
     await Promise.all([reviewer.close(), discovery.close(), rotated.close()]);
@@ -981,14 +981,14 @@ test('credential-free discovery preserves an active review while credential rota
   }
 });
 
-test('private validation route decrypts once and exposes no MCP or credential data', async () => {
-  const key = Buffer.alloc(32, 4).toString('base64url');
+test("private validation route decrypts once and exposes no MCP or credential data", async () => {
+  const key = Buffer.alloc(32, 4).toString("base64url");
   const familyPolicy = parsePrincipalPolicy(
     JSON.stringify({
       ...principalPolicy,
       principals: principalPolicy.principals.map((principal) =>
-        principal.subject === 'auth0|guest'
-          ? { ...principal, principal_key: 'c'.repeat(32) }
+        principal.subject === "auth0|guest"
+          ? { ...principal, principal_key: "c".repeat(32) }
           : principal,
       ),
     }),
@@ -997,16 +997,16 @@ test('private validation route decrypts once and exposes no MCP or credential da
     ...config,
     principalPolicy: familyPolicy,
     credentialKey: key,
-    credentialKeyVersion: 'one',
+    credentialKeyVersion: "one",
   };
   const binding = {
-    principalKey: 'c'.repeat(32),
+    principalKey: "c".repeat(32),
     policyRevision: familyPolicy.revision,
-    keyVersion: 'one',
+    keyVersion: "one",
     generation: 1,
   };
   const envelope = await encryptCredentials(
-    { username: 'guest@example.test', password: 'private-password' },
+    { username: "guest@example.test", password: "private-password" },
     binding,
     key,
   );
@@ -1016,7 +1016,7 @@ test('private validation route decrypts once and exposes no MCP or credential da
     oauth,
     {
       verifyAccessToken: async () => {
-        throw new Error('unused');
+        throw new Error("unused");
       },
     },
     undefined,
@@ -1025,37 +1025,37 @@ test('private validation route decrypts once and exposes no MCP or credential da
         calls += 1;
         assert.deepEqual(
           { username, password },
-          { username: 'guest@example.test', password: 'private-password' },
+          { username: "guest@example.test", password: "private-password" },
         );
       },
     }),
   );
   const server = app.listen(0, config.host);
   await new Promise<void>((resolve, reject) => {
-    server.once('listening', resolve);
-    server.once('error', reject);
+    server.once("listening", resolve);
+    server.once("error", reject);
   });
   const base = `http://${config.host}:${(server.address() as AddressInfo).port}`;
   const headers = {
-    'x-nemlig-principal-key': binding.principalKey,
-    'x-nemlig-policy-revision': binding.policyRevision,
-    'x-nemlig-credential-generation': '1',
-    'x-nemlig-credential-envelope': btoa(JSON.stringify(envelope)),
+    "x-nemlig-principal-key": binding.principalKey,
+    "x-nemlig-policy-revision": binding.policyRevision,
+    "x-nemlig-credential-generation": "1",
+    "x-nemlig-credential-envelope": btoa(JSON.stringify(envelope)),
   };
   try {
     const accepted = await fetch(`${base}/__credential-validation`, {
-      method: 'POST',
+      method: "POST",
       headers,
     });
     assert.equal(accepted.status, 204);
-    assert.equal(await accepted.text(), '');
+    assert.equal(await accepted.text(), "");
     assert.equal(calls, 1);
     const rejected = await fetch(`${base}/__credential-validation`, {
-      method: 'POST',
-      headers: { ...headers, 'x-nemlig-principal-key': 'd'.repeat(32) },
+      method: "POST",
+      headers: { ...headers, "x-nemlig-principal-key": "d".repeat(32) },
     });
     assert.equal(rejected.status, 403);
-    assert.deepEqual(await rejected.json(), { error: 'validation_rejected' });
+    assert.deepEqual(await rejected.json(), { error: "validation_rejected" });
     assert.equal(calls, 1);
   } finally {
     server.closeAllConnections();
@@ -1065,7 +1065,7 @@ test('private validation route decrypts once and exposes no MCP or credential da
   }
 });
 
-test('family HTTP denies unknown, disabled and mismatched identities before creating provider contexts', async () => {
+test("family HTTP denies unknown, disabled and mismatched identities before creating provider contexts", async () => {
   let contexts = 0;
   const familyPolicy = parsePrincipalPolicy(
     JSON.stringify({
@@ -1073,8 +1073,8 @@ test('family HTTP denies unknown, disabled and mismatched identities before crea
       principals: [
         ...principalPolicy.principals,
         {
-          subject: 'auth0|disabled',
-          principal_key: 'd'.repeat(32),
+          subject: "auth0|disabled",
+          principal_key: "d".repeat(32),
           enabled: false,
         },
       ],
@@ -1086,64 +1086,64 @@ test('family HTTP denies unknown, disabled and mismatched identities before crea
     {
       verifyAccessToken: async (token) => ({
         token,
-        clientId: 'chatgpt',
+        clientId: "chatgpt",
         scopes: [config.requiredScope],
         expiresAt: Date.now() / 1000 + 300,
         extra: {
           subject:
-            token === 'unknown'
-              ? 'auth0|unknown'
-              : token === 'disabled'
-                ? 'auth0|disabled'
+            token === "unknown"
+              ? "auth0|unknown"
+              : token === "disabled"
+                ? "auth0|disabled"
                 : ownerSubject,
         },
       }),
     },
     () => {
       contexts += 1;
-      throw new Error('denied request must not create provider context');
+      throw new Error("denied request must not create provider context");
     },
   );
   const server = app.listen(0, config.host);
   await new Promise<void>((resolve, reject) => {
-    server.once('listening', resolve);
-    server.once('error', reject);
+    server.once("listening", resolve);
+    server.once("error", reject);
   });
   const endpoint = `http://${config.host}:${(server.address() as AddressInfo).port}/mcp`;
-  const ownerHeaders = await familyHeaders('owner');
-  const guestHeaders = await familyHeaders('guest');
+  const ownerHeaders = await familyHeaders("owner");
+  const guestHeaders = await familyHeaders("guest");
   try {
     const deniedHeaders: Array<Record<string, string>> = [
-      { authorization: 'Bearer unknown' },
-      { ...guestHeaders, authorization: 'Bearer unknown' },
-      { ...guestHeaders, authorization: 'Bearer disabled' },
-      { authorization: 'Bearer owner' },
-      { ...guestHeaders, authorization: 'Bearer owner' },
+      { authorization: "Bearer unknown" },
+      { ...guestHeaders, authorization: "Bearer unknown" },
+      { ...guestHeaders, authorization: "Bearer disabled" },
+      { authorization: "Bearer owner" },
+      { ...guestHeaders, authorization: "Bearer owner" },
       {
-        authorization: 'Bearer owner',
-        'x-nemlig-principal-key': 'a'.repeat(32),
+        authorization: "Bearer owner",
+        "x-nemlig-principal-key": "a".repeat(32),
       },
-      { ...ownerHeaders, 'x-nemlig-policy-revision': 'previous-policy' },
-      { ...ownerHeaders, 'x-nemlig-credential-generation': '2' },
+      { ...ownerHeaders, "x-nemlig-policy-revision": "previous-policy" },
+      { ...ownerHeaders, "x-nemlig-credential-generation": "2" },
     ];
     for (const headers of deniedHeaders) {
       const response = await fetch(endpoint, {
-        method: 'POST',
+        method: "POST",
         headers: {
           ...headers,
-          'content-type': 'application/json',
-          accept: 'application/json, text/event-stream',
+          "content-type": "application/json",
+          accept: "application/json, text/event-stream",
         },
         body: JSON.stringify({
-          jsonrpc: '2.0',
+          jsonrpc: "2.0",
           id: 1,
-          method: 'tools/call',
-          params: { name: 'show_my_basket', arguments: {} },
+          method: "tools/call",
+          params: { name: "show_my_basket", arguments: {} },
         }),
       });
       assert.equal(response.status, 403);
       assert.deepEqual(await response.json(), {
-        error: 'principal_not_allowed',
+        error: "principal_not_allowed",
       });
     }
     assert.equal(contexts, 0);

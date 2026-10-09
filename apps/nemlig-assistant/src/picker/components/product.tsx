@@ -1,158 +1,158 @@
-import styled from '@emotion/styled';
-import { useState } from 'react';
-import type { ProductView } from '../../product-presentation.js';
-import { safeNemligImageUrl } from '../../product-presentation.js';
-import { ViewerButton } from './button.js';
-import { isUsable, money, productName } from './format.js';
+import styled from "@emotion/styled";
+import { useState } from "react";
+import type { ProductView } from "../../product-presentation.js";
+import { safeNemligImageUrl } from "../../product-presentation.js";
+import { ViewerButton } from "./button.js";
+import { isUsable, money, productName } from "./format.js";
 
 const SummaryContent = styled.span({
-  display: 'grid',
-  width: '100%',
+  display: "grid",
+  width: "100%",
   minWidth: 0,
-  gridTemplateColumns: '58px minmax(0, 1fr)',
-  alignItems: 'start',
+  gridTemplateColumns: "58px minmax(0, 1fr)",
+  alignItems: "start",
   gap: 9,
-  '@media (max-width: 360px)': { gridTemplateColumns: '52px minmax(0, 1fr)' },
+  "@media (max-width: 360px)": { gridTemplateColumns: "52px minmax(0, 1fr)" },
 });
 const ProductImage = styled.img({
-  display: 'grid',
+  display: "grid",
   width: 58,
   height: 58,
-  placeItems: 'center',
+  placeItems: "center",
   border: 0,
   borderRadius: 14,
-  background: 'var(--soft)',
-  objectFit: 'contain',
-  fontSize: '.65rem',
-  '@media (max-width: 360px)': { width: 52, height: 52, borderRadius: 13 },
+  background: "var(--soft)",
+  objectFit: "contain",
+  fontSize: ".65rem",
+  "@media (max-width: 360px)": { width: 52, height: 52, borderRadius: 13 },
 });
 const ImageFallback = styled.span({
-  display: 'grid',
+  display: "grid",
   width: 58,
   height: 58,
-  placeItems: 'center',
+  placeItems: "center",
   borderRadius: 14,
-  background: 'var(--soft)',
-  color: 'var(--muted)',
-  textAlign: 'center',
-  fontSize: '.65rem',
-  '@media (max-width: 360px)': { width: 52, height: 52, borderRadius: 13 },
+  background: "var(--soft)",
+  color: "var(--muted)",
+  textAlign: "center",
+  fontSize: ".65rem",
+  "@media (max-width: 360px)": { width: 52, height: 52, borderRadius: 13 },
 });
-const ProductCopy = styled.span({ display: 'grid', minWidth: 0, gap: 3 });
+const ProductCopy = styled.span({ display: "grid", minWidth: 0, gap: 3 });
 const ProductHeading = styled.span({
-  display: 'flex',
-  alignItems: 'start',
-  justifyContent: 'space-between',
+  display: "flex",
+  alignItems: "start",
+  justifyContent: "space-between",
   gap: 8,
-  '& strong': {
+  "& strong": {
     minWidth: 0,
-    overflowWrap: 'anywhere',
-    fontSize: '.92rem',
+    overflowWrap: "anywhere",
+    fontSize: ".92rem",
     lineHeight: 1.35,
     fontWeight: 650,
   },
-  '& > span': {
-    flex: 'none',
-    fontSize: '.9rem',
+  "& > span": {
+    flex: "none",
+    fontSize: ".9rem",
     fontWeight: 650,
-    fontVariantNumeric: 'tabular-nums',
+    fontVariantNumeric: "tabular-nums",
   },
-  '@media (max-width: 360px)': {
-    display: 'grid',
+  "@media (max-width: 360px)": {
+    display: "grid",
     gap: 2,
-    '& > span': { textAlign: 'left' },
+    "& > span": { textAlign: "left" },
   },
 });
 const ProductMeta = styled.span({
-  color: 'var(--muted)',
-  fontSize: '.76rem',
+  color: "var(--muted)",
+  fontSize: ".76rem",
   lineHeight: 1.4,
-  overflowWrap: 'anywhere',
+  overflowWrap: "anywhere",
 });
 const ProductQuantity = styled.span({
-  justifySelf: 'start',
+  justifySelf: "start",
   marginTop: 2,
-  color: 'var(--accent)',
-  fontSize: '.8rem',
+  color: "var(--accent)",
+  fontSize: ".8rem",
   fontWeight: 650,
 });
 const Chips = styled.span({
-  display: 'flex',
-  flexWrap: 'wrap',
+  display: "flex",
+  flexWrap: "wrap",
   gap: 4,
   marginTop: 2,
 });
 const QuantityControlRoot = styled.div({
-  display: 'flex',
-  flexWrap: 'wrap',
-  alignItems: 'center',
+  display: "flex",
+  flexWrap: "wrap",
+  alignItems: "center",
   gap: 8,
   marginTop: 10,
-  justifyContent: 'space-between',
-  padding: '8px 0',
-  borderTop: '1px solid var(--line)',
-  borderBottom: '1px solid var(--line)',
-  fontSize: '.82rem',
-  '& > :first-child': { marginRight: 'auto' },
-  '& button': { minWidth: 34, minHeight: 34, padding: 0 },
-  '& [aria-live]': {
+  justifyContent: "space-between",
+  padding: "8px 0",
+  borderTop: "1px solid var(--line)",
+  borderBottom: "1px solid var(--line)",
+  fontSize: ".82rem",
+  "& > :first-child": { marginRight: "auto" },
+  "& button": { minWidth: 34, minHeight: 34, padding: 0 },
+  "& [aria-live]": {
     width: 28,
-    textAlign: 'center',
+    textAlign: "center",
     fontWeight: 650,
-    fontVariantNumeric: 'tabular-nums',
+    fontVariantNumeric: "tabular-nums",
   },
 });
 const Fact = styled.details({
   padding: 0,
-  borderBottom: '1px solid var(--line)',
+  borderBottom: "1px solid var(--line)",
 });
 const FactSummary = styled.summary({
-  display: 'flex',
+  display: "flex",
   minHeight: 40,
-  alignItems: 'center',
-  listStyle: 'none',
-  cursor: 'pointer',
-  fontSize: '.82rem',
+  alignItems: "center",
+  listStyle: "none",
+  cursor: "pointer",
+  fontSize: ".82rem",
   fontWeight: 650,
-  '&::-webkit-details-marker': { display: 'none' },
-  '&::after': {
-    marginLeft: 'auto',
+  "&::-webkit-details-marker": { display: "none" },
+  "&::after": {
+    marginLeft: "auto",
     content: '"+"',
-    color: 'var(--muted)',
-    fontSize: '1.15rem',
+    color: "var(--muted)",
+    fontSize: "1.15rem",
     fontWeight: 400,
   },
-  'details[open] > &::after': { content: '"−"' },
+  "details[open] > &::after": { content: '"−"' },
 });
 const FactBody = styled.p({
   margin: 0,
-  padding: '0 0 10px',
-  color: 'var(--muted)',
-  fontSize: '.8rem',
+  padding: "0 0 10px",
+  color: "var(--muted)",
+  fontSize: ".8rem",
   lineHeight: 1.45,
 });
-const FactList = styled.dl({ display: 'grid', gap: 8, margin: 0 });
+const FactList = styled.dl({ display: "grid", gap: 8, margin: 0 });
 const FactListItem = styled.div({
-  display: 'grid',
+  display: "grid",
   gap: 2,
-  '& dt': { color: 'var(--muted)', fontSize: '.8rem', fontWeight: 600 },
-  '& dd': { margin: 0 },
+  "& dt": { color: "var(--muted)", fontSize: ".8rem", fontWeight: 600 },
+  "& dd": { margin: 0 },
 });
 
 /** Full-width product disclosure with the same compact hierarchy in every view. */
 export const ProductSummaryButton = styled(ViewerButton)({
-  display: 'block',
-  width: '100%',
+  display: "block",
+  width: "100%",
   minWidth: 0,
   minHeight: 62,
-  padding: '1px 0',
+  padding: "1px 0",
   border: 0,
   borderRadius: 12,
-  color: 'inherit',
-  background: 'transparent',
-  textAlign: 'left',
-  whiteSpace: 'normal',
-  '&:hover:not(:disabled)': { background: 'var(--soft)' },
+  color: "inherit",
+  background: "transparent",
+  textAlign: "left",
+  whiteSpace: "normal",
+  "&:hover:not(:disabled)": { background: "var(--soft)" },
 });
 
 function StatusChip({ children }: { children: string }) {
@@ -164,30 +164,30 @@ function StatusChip({ children }: { children: string }) {
 }
 
 const StatusChipVisual = styled.span({
-  display: 'inline-flex',
-  width: 'fit-content',
-  alignItems: 'center',
+  display: "inline-flex",
+  width: "fit-content",
+  alignItems: "center",
   minHeight: 20,
-  padding: '2px 6px',
+  padding: "2px 6px",
   borderRadius: 999,
-  color: 'var(--accent)',
-  background: 'var(--soft)',
-  fontSize: '.68rem',
+  color: "var(--accent)",
+  background: "var(--soft)",
+  fontSize: ".68rem",
   fontWeight: 650,
   lineHeight: 1,
 });
 
 function ProductStatusChips({ view }: { view: ProductView }) {
-  if (view.status !== 'complete') {
+  if (view.status !== "complete") {
     return null;
   }
   const product = view.product;
   const chips = [
-    product.is_organic === true && 'Organic',
-    product.is_frozen === true && 'Frozen',
-    product.is_on_discount === true && 'Offer',
-    product.available === false && 'Unavailable',
-    product.available === undefined && 'Availability unknown',
+    product.is_organic === true && "Organic",
+    product.is_frozen === true && "Frozen",
+    product.is_on_discount === true && "Offer",
+    product.available === false && "Unavailable",
+    product.available === undefined && "Availability unknown",
   ].filter((chip): chip is string => Boolean(chip));
   return chips.length ? (
     <Chips>
@@ -206,16 +206,16 @@ export function ProductSummary({
   quantity?: number;
 }) {
   const [imageFailed, setImageFailed] = useState(false);
-  if (view.status !== 'complete') {
+  if (view.status !== "complete") {
     return (
-      <span>Product {view.product_id ?? 'details'} details unavailable.</span>
+      <span>Product {view.product_id ?? "details"} details unavailable.</span>
     );
   }
 
   const product = view.product;
   const image = safeNemligImageUrl(product.image_url);
   const quantityTotal =
-    quantity !== undefined && typeof product.price === 'number'
+    quantity !== undefined && typeof product.price === "number"
       ? quantity * product.price
       : product.price;
 
@@ -224,7 +224,7 @@ export function ProductSummary({
       {image && !imageFailed ? (
         <ProductImage
           src={image}
-          alt={product.name ?? 'Product'}
+          alt={product.name ?? "Product"}
           onError={() => setImageFailed(true)}
         />
       ) : (
@@ -241,13 +241,13 @@ export function ProductSummary({
           <span>{money(quantityTotal)}</span>
         </ProductHeading>
         <ProductMeta>
-          {[product.brand, product.unit_size].filter(Boolean).join(' · ') ||
-            'Package details unavailable'}
+          {[product.brand, product.unit_size].filter(Boolean).join(" · ") ||
+            "Package details unavailable"}
         </ProductMeta>
         <ProductMeta>
           {product.unit_price === undefined
-            ? (product.unit ?? 'Unit price unavailable')
-            : `${money(product.unit_price)}${product.unit ? ` · ${product.unit}` : ''}`}
+            ? (product.unit ?? "Unit price unavailable")
+            : `${money(product.unit_price)}${product.unit ? ` · ${product.unit}` : ""}`}
         </ProductMeta>
         {quantity !== undefined && (
           <ProductQuantity data-viewer-component="product-quantity">
@@ -304,7 +304,7 @@ export function ProductFacts({
   expandedFacts?: ReadonlySet<string>;
   onFactExpandedChange?: (factKey: string, expanded: boolean) => void;
 }) {
-  if (view.status !== 'complete') {
+  if (view.status !== "complete") {
     return null;
   }
   const product = view.product;
@@ -316,12 +316,12 @@ export function ProductFacts({
       {product.description && (
         <Fact
           data-viewer-component="product-fact"
-          open={expandedFacts?.has('Varebeskrivelse')}
+          open={expandedFacts?.has("Varebeskrivelse")}
           onToggle={
             onFactExpandedChange
               ? (event) =>
                   onFactExpandedChange(
-                    'Varebeskrivelse',
+                    "Varebeskrivelse",
                     event.currentTarget.open,
                   )
               : undefined
@@ -334,12 +334,12 @@ export function ProductFacts({
       {product.declaration && (
         <Fact
           data-viewer-component="product-fact"
-          open={expandedFacts?.has('Varedeklaration')}
+          open={expandedFacts?.has("Varedeklaration")}
           onToggle={
             onFactExpandedChange
               ? (event) =>
                   onFactExpandedChange(
-                    'Varedeklaration',
+                    "Varedeklaration",
                     event.currentTarget.open,
                   )
               : undefined
@@ -352,12 +352,12 @@ export function ProductFacts({
       {suppliedDetails.length > 0 && (
         <Fact
           data-viewer-component="product-fact"
-          open={expandedFacts?.has('Detaljer om varen')}
+          open={expandedFacts?.has("Detaljer om varen")}
           onToggle={
             onFactExpandedChange
               ? (event) =>
                   onFactExpandedChange(
-                    'Detaljer om varen',
+                    "Detaljer om varen",
                     event.currentTarget.open,
                   )
               : undefined

@@ -5,23 +5,23 @@ import {
   OAuthError,
   type AuthInfo,
   type OAuthMetadata,
-} from '@modelcontextprotocol/server';
+} from "@modelcontextprotocol/server";
 import {
   createMcpExpressApp,
   getOAuthProtectedResourceMetadataUrl,
   mcpAuthMetadataRouter,
   requireBearerAuth,
   type OAuthTokenVerifier,
-} from '@modelcontextprotocol/express';
-import { toNodeHandler } from '@modelcontextprotocol/node';
-import { realpathSync } from 'node:fs';
-import { basename } from 'node:path';
+} from "@modelcontextprotocol/express";
+import { toNodeHandler } from "@modelcontextprotocol/node";
+import { realpathSync } from "node:fs";
+import { basename } from "node:path";
 import {
   createServer,
   type IncomingMessage,
   type Server,
   type ServerResponse,
-} from 'node:http';
+} from "node:http";
 import {
   Auth0InfrastructureError,
   createAuth0Verifier,
@@ -29,25 +29,25 @@ import {
   loadAuth0Config,
   SERVICE_ACCEPTANCE_SCOPE,
   type Auth0Config,
-} from './auth0.js';
-import { NemligClient, type ShoppingClient } from './client.js';
-import { createMcpServer, serviceAcceptanceToolInventory } from './mcp.js';
+} from "./auth0.js";
+import { NemligClient, type ShoppingClient } from "./client.js";
+import { createMcpServer, serviceAcceptanceToolInventory } from "./mcp.js";
 import {
   PRODUCT_VIEWER_RESOURCE_URI,
   readProductViewerArtifact,
-} from './product-viewer.js';
-import { ProductReviewService } from './product-review.js';
-import { BasketProposalService } from './proposals.js';
+} from "./product-viewer.js";
+import { ProductReviewService } from "./product-review.js";
+import { BasketProposalService } from "./proposals.js";
 import {
   findEnabledPrincipal,
   MAX_PRINCIPALS,
   type Principal,
-} from './principal-policy.js';
+} from "./principal-policy.js";
 import {
   decryptCredentials,
   type CredentialEnvelope,
-} from './credential-envelope.js';
-import type { Credentials } from './config.js';
+} from "./credential-envelope.js";
+import type { Credentials } from "./config.js";
 
 export interface PrincipalContext {
   client: ShoppingClient;
@@ -65,22 +65,22 @@ const defaultPrincipalContext: PrincipalContextFactory = () => {
 };
 
 const servicePrincipal: Principal = {
-  subject: 'service',
-  principal_key: 's'.repeat(32),
+  subject: "service",
+  principal_key: "s".repeat(32),
   enabled: true,
 };
 const serviceContext = (): PrincipalContext => {
   const product = () => ({
     id: 1,
-    name: 'Service fixture banana',
+    name: "Service fixture banana",
     price: 1,
-    unit: '1 kr/stk.',
+    unit: "1 kr/stk.",
     unitPrice: 1,
-    unitSize: '1 stk.',
-    brand: 'Fixture',
-    category: 'Frugt',
-    subcategory: 'Bananer',
-    imageUrl: '',
+    unitSize: "1 stk.",
+    brand: "Fixture",
+    category: "Frugt",
+    subcategory: "Bananer",
+    imageUrl: "",
     available: true,
     labels: [],
     isOrganic: false,
@@ -99,7 +99,7 @@ const serviceContext = (): PrincipalContext => {
     getProduct: async () => product(),
     getFreshProduct: async () => product(),
     listFavorites: async () => [product()],
-    listDepartments: async () => [{ id: '/frugt', name: 'Frugt' }],
+    listDepartments: async () => [{ id: "/frugt", name: "Frugt" }],
     browseDepartment: async () => ({
       products: [product()],
       page: 1,
@@ -113,7 +113,7 @@ const serviceContext = (): PrincipalContext => {
       deliveryTime: undefined,
     }),
     addToCart: async () => {
-      throw new Error('service fixture is read-only');
+      throw new Error("service fixture is read-only");
     },
   };
   return { client, proposals: new BasketProposalService(client) };
@@ -122,14 +122,14 @@ const serviceContext = (): PrincipalContext => {
 const isCredentialFreeRequest = (request: Request): boolean => {
   // Protocol discovery must work before provider credential onboarding.
   const body = request.body;
-  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
     return false;
   }
   const method = (body as { method?: unknown }).method;
-  if (typeof method !== 'string') {
+  if (typeof method !== "string") {
     return false;
   }
-  return method !== 'tools/call';
+  return method !== "tools/call";
 };
 
 type Request = IncomingMessage & {
@@ -146,7 +146,7 @@ type Next = () => void;
 
 const configAddress = (server: Server): string => {
   const address = server.address();
-  return typeof address === 'object' && address
+  return typeof address === "object" && address
     ? `${address.address}:${address.port}`
     : String(address);
 };
@@ -158,7 +158,7 @@ export function createHttpApp(
   createContext: PrincipalContextFactory = defaultPrincipalContext,
   createValidationClient: () => Pick<
     NemligClient,
-    'validateCredentials'
+    "validateCredentials"
   > = () => new NemligClient(),
   mcpEnv: NodeJS.ProcessEnv = process.env,
 ) {
@@ -176,11 +176,11 @@ export function createHttpApp(
   const handler = createMcpHandler(
     ({ authInfo }) => {
       if (!authInfo) {
-        throw new Error('Authenticated request context is missing');
+        throw new Error("Authenticated request context is missing");
       }
       const requestContext = requestContexts.get(authInfo);
       if (!requestContext) {
-        throw new Error('Validated principal context is missing');
+        throw new Error("Validated principal context is missing");
       }
       const { context, principal, credentials, service } = requestContext;
       return createMcpServer(
@@ -191,14 +191,14 @@ export function createHttpApp(
         {
           principalKey: principal.principal_key,
           policyRevision: config.principalPolicy.revision,
-          ...(service ? { kind: 'service' as const } : {}),
+          ...(service ? { kind: "service" as const } : {}),
         },
         (context.reviews ??= new ProductReviewService(context.client, {
           proposals: context.proposals,
         })),
       );
     },
-    { legacy: 'stateless' },
+    { legacy: "stateless" },
   );
   const nodeHandler = toNodeHandler(handler, { onerror: () => undefined });
   app.locals.mcpHandler = handler;
@@ -207,24 +207,24 @@ export function createHttpApp(
       oauthMetadata: oauth,
       resourceServerUrl: config.publicUrl,
       scopesSupported: [config.requiredScope],
-      resourceName: 'Nemlig Assistant',
+      resourceName: "Nemlig Assistant",
     }),
   );
-  app.get('/healthz', (_req: Request, res: Response) =>
-    res.json({ status: 'ok' }),
+  app.get("/healthz", (_req: Request, res: Response) =>
+    res.json({ status: "ok" }),
   );
-  app.get('/readyz', (_req: Request, res: Response) =>
-    res.json({ status: 'ready' }),
+  app.get("/readyz", (_req: Request, res: Response) =>
+    res.json({ status: "ready" }),
   );
-  app.get('/revision', (_req: Request, res: Response) =>
+  app.get("/revision", (_req: Request, res: Response) =>
     res.json({ revision: config.revision }),
   );
-  app.post('/__credential-validation', async (req: Request, res: Response) => {
+  app.post("/__credential-validation", async (req: Request, res: Response) => {
     try {
-      const principalKey = req.get('x-nemlig-principal-key');
-      const policyRevision = req.get('x-nemlig-policy-revision');
-      const generation = Number(req.get('x-nemlig-credential-generation'));
-      const encoded = req.get('x-nemlig-credential-envelope');
+      const principalKey = req.get("x-nemlig-principal-key");
+      const policyRevision = req.get("x-nemlig-policy-revision");
+      const generation = Number(req.get("x-nemlig-credential-generation"));
+      const encoded = req.get("x-nemlig-credential-envelope");
       if (
         !principalKey ||
         !config.principalPolicy.principals.some(
@@ -237,7 +237,7 @@ export function createHttpApp(
         !config.credentialKey ||
         !config.credentialKeyVersion
       ) {
-        return res.status(403).json({ error: 'validation_rejected' });
+        return res.status(403).json({ error: "validation_rejected" });
       }
       const credentials = await decryptCredentials(
         JSON.parse(atob(encoded)),
@@ -257,7 +257,7 @@ export function createHttpApp(
       );
       return res.status(204).json({});
     } catch {
-      return res.status(401).json({ error: 'validation_failed' });
+      return res.status(401).json({ error: "validation_failed" });
     }
   });
 
@@ -269,10 +269,10 @@ export function createHttpApp(
         } catch (error) {
           if (error instanceof Auth0InfrastructureError) {
             throw new OAuthError(
-              'server_error',
-              error.kind === 'timeout'
-                ? 'Authentication timeout.'
-                : 'Authentication unavailable.',
+              "server_error",
+              error.kind === "timeout"
+                ? "Authentication timeout."
+                : "Authentication unavailable.",
             );
           }
           throw error;
@@ -283,18 +283,18 @@ export function createHttpApp(
     resourceMetadataUrl: getOAuthProtectedResourceMetadataUrl(config.publicUrl),
   });
   app.use(
-    '/mcp',
+    "/mcp",
     (req: Request, res: Response, next: Next) => {
-      const origin = req.get('origin');
+      const origin = req.get("origin");
       if (origin && !config.allowedOrigins.includes(origin)) {
-        return res.status(403).json({ error: 'origin_not_allowed' });
+        return res.status(403).json({ error: "origin_not_allowed" });
       }
       return next();
     },
     authenticate,
   );
 
-  app.all('/mcp', async (req: Request, res: Response) => {
+  app.all("/mcp", async (req: Request, res: Response) => {
     try {
       const subject = req.auth?.extra?.subject;
       const service =
@@ -305,34 +305,34 @@ export function createHttpApp(
         req.auth.scopes[0] === SERVICE_ACCEPTANCE_SCOPE;
       if (
         service &&
-        req.method === 'POST' &&
+        req.method === "POST" &&
         req.body &&
-        typeof req.body === 'object' &&
+        typeof req.body === "object" &&
         !Array.isArray(req.body)
       ) {
         const message = req.body as { method?: unknown; params?: unknown };
-        if (message.method === 'tools/call') {
+        if (message.method === "tools/call") {
           const name =
             message.params &&
-            typeof message.params === 'object' &&
+            typeof message.params === "object" &&
             !Array.isArray(message.params)
               ? (message.params as { name?: unknown }).name
               : undefined;
           if (
-            typeof name !== 'string' ||
+            typeof name !== "string" ||
             !serviceAcceptanceToolInventory.includes(
               name as (typeof serviceAcceptanceToolInventory)[number],
             )
           ) {
-            return res.status(403).json({ error: 'principal_not_allowed' });
+            return res.status(403).json({ error: "principal_not_allowed" });
           }
         }
       }
       if (!service && !req.auth?.scopes.includes(config.requiredScope)) {
-        return res.status(403).json({ error: 'principal_not_allowed' });
+        return res.status(403).json({ error: "principal_not_allowed" });
       }
       const configured =
-        !service && typeof subject === 'string'
+        !service && typeof subject === "string"
           ? findEnabledPrincipal(config.principalPolicy, subject)
           : undefined;
       let principal = configured;
@@ -343,22 +343,22 @@ export function createHttpApp(
         credentials = undefined;
       } else {
         if (!configured) {
-          return res.status(403).json({ error: 'principal_not_allowed' });
+          return res.status(403).json({ error: "principal_not_allowed" });
         }
-        const principalKey = req.get('x-nemlig-principal-key');
-        const policyRevision = req.get('x-nemlig-policy-revision');
+        const principalKey = req.get("x-nemlig-principal-key");
+        const policyRevision = req.get("x-nemlig-policy-revision");
         const generationValue = Number(
-          req.get('x-nemlig-credential-generation'),
+          req.get("x-nemlig-credential-generation"),
         );
-        const encodedEnvelope = req.get('x-nemlig-credential-envelope');
+        const encodedEnvelope = req.get("x-nemlig-credential-envelope");
         if (
           !principalKey &&
           !policyRevision &&
-          !req.get('x-nemlig-credential-generation') &&
+          !req.get("x-nemlig-credential-generation") &&
           !encodedEnvelope
         ) {
           if (!isCredentialFreeRequest(req)) {
-            return res.status(403).json({ error: 'principal_not_allowed' });
+            return res.status(403).json({ error: "principal_not_allowed" });
           }
         } else if (
           !principalKey ||
@@ -370,7 +370,7 @@ export function createHttpApp(
           !config.credentialKey ||
           !config.credentialKeyVersion
         ) {
-          return res.status(403).json({ error: 'principal_not_allowed' });
+          return res.status(403).json({ error: "principal_not_allowed" });
         } else {
           try {
             const envelope = JSON.parse(
@@ -388,12 +388,12 @@ export function createHttpApp(
               config.credentialKey,
             );
           } catch {
-            return res.status(403).json({ error: 'principal_not_allowed' });
+            return res.status(403).json({ error: "principal_not_allowed" });
           }
         }
       }
       if (!principal) {
-        return res.status(403).json({ error: 'principal_not_allowed' });
+        return res.status(403).json({ error: "principal_not_allowed" });
       }
       const contextKey = `${principal.principal_key}:${config.principalPolicy.revision}:${generation}`;
       let context: PrincipalContext | undefined;
@@ -415,14 +415,14 @@ export function createHttpApp(
         if (contexts.size >= MAX_PRINCIPALS) {
           return res
             .status(503)
-            .json({ error: 'principal_capacity_unavailable' });
+            .json({ error: "principal_capacity_unavailable" });
         }
         context = createContext(principal);
         contexts.set(contextKey, context);
       }
       const authInfo = req.auth;
       if (!authInfo) {
-        return res.status(403).json({ error: 'principal_not_allowed' });
+        return res.status(403).json({ error: "principal_not_allowed" });
       }
       requestContexts.set(authInfo, {
         context,
@@ -432,16 +432,16 @@ export function createHttpApp(
       });
       try {
         const resourceRead =
-          req.method === 'POST' &&
+          req.method === "POST" &&
           req.body &&
-          typeof req.body === 'object' &&
+          typeof req.body === "object" &&
           !Array.isArray(req.body) &&
-          (req.body as { method?: unknown }).method === 'resources/read' &&
+          (req.body as { method?: unknown }).method === "resources/read" &&
           (req.body as { params?: { uri?: unknown } }).params?.uri ===
             PRODUCT_VIEWER_RESOURCE_URI;
         if (resourceRead) {
           res.setHeader(
-            'x-nemlig-viewer-artifact-id',
+            "x-nemlig-viewer-artifact-id",
             readProductViewerArtifact().artifactId,
           );
         }
@@ -452,8 +452,8 @@ export function createHttpApp(
     } catch {
       if (!res.headersSent) {
         res.status(500).json({
-          jsonrpc: '2.0',
-          error: { code: -32_603, message: 'Internal server error' },
+          jsonrpc: "2.0",
+          error: { code: -32_603, message: "Internal server error" },
           id: null,
         });
       }
@@ -473,19 +473,19 @@ export async function startHttpServer(
       return app(request, response);
     }
     response.statusCode = 503;
-    response.setHeader('content-type', 'application/json');
+    response.setHeader("content-type", "application/json");
     response.end(
       JSON.stringify({
-        error: startupError ? 'server_unavailable' : 'server_starting',
+        error: startupError ? "server_unavailable" : "server_starting",
       }),
     );
   });
-  server.once('close', () => {
+  server.once("close", () => {
     void app?.locals.mcpHandler?.close();
   });
   await new Promise<void>((resolve, reject) => {
     server.listen(config.port, config.host, () => resolve());
-    server.once('error', reject);
+    server.once("error", reject);
   });
   void fetchAuth0Metadata(config)
     .then(({ oauth, jwksUrl }) => {
@@ -496,7 +496,7 @@ export async function startHttpServer(
       console.error(
         error instanceof Auth0InfrastructureError
           ? error.message
-          : 'MCP server startup failed.',
+          : "MCP server startup failed.",
       );
     });
   return server;
@@ -504,14 +504,14 @@ export async function startHttpServer(
 
 if (
   process.argv[1] &&
-  ['http.js', 'http.ts'].includes(basename(realpathSync(process.argv[1])))
+  ["http.js", "http.ts"].includes(basename(realpathSync(process.argv[1])))
 ) {
   startHttpServer()
     .then((server) => {
       console.error(`Nemlig MCP HTTP listening on ${configAddress(server)}.`);
     })
     .catch(() => {
-      console.error('Nemlig MCP HTTP server failed.');
+      console.error("Nemlig MCP HTTP server failed.");
       process.exitCode = 1;
     });
 }

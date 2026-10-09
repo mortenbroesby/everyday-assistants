@@ -1,9 +1,9 @@
-import type { Preview } from '@storybook/react-vite';
-import '../src/picker/styles.css';
+import type { Preview } from "@storybook/react-vite";
+import "../src/picker/styles.css";
 
 const preview: Preview = {
   parameters: {
-    layout: 'fullscreen',
+    layout: "fullscreen",
     controls: { disable: true },
   },
 };

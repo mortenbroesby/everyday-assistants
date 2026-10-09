@@ -1,46 +1,46 @@
-import styled from '@emotion/styled';
-import type { ReactNode } from 'react';
-import { ViewerButton } from './button.js';
+import styled from "@emotion/styled";
+import type { ReactNode } from "react";
+import { ViewerButton } from "./button.js";
 
-type Tone = 'neutral' | 'success' | 'warning';
+type Tone = "neutral" | "success" | "warning";
 
 const Surface = styled.section<{ tone: Tone }>(({ tone }) => ({
-  display: 'grid',
+  display: "grid",
   gap: 10,
   padding: 16,
-  border: '1px solid var(--line)',
+  border: "1px solid var(--line)",
   borderRadius: 16,
-  background: tone === 'success' ? 'var(--soft)' : 'var(--surface)',
-  ...(tone === 'warning'
-    ? { borderColor: 'var(--accent)', background: 'var(--soft)' }
+  background: tone === "success" ? "var(--soft)" : "var(--surface)",
+  ...(tone === "warning"
+    ? { borderColor: "var(--accent)", background: "var(--soft)" }
     : {}),
-  '& h2': { margin: 0, fontSize: '1rem', lineHeight: 1.3 },
-  '& p': {
+  "& h2": { margin: 0, fontSize: "1rem", lineHeight: 1.3 },
+  "& p": {
     margin: 0,
-    color: 'var(--muted)',
-    fontSize: '.84rem',
+    color: "var(--muted)",
+    fontSize: ".84rem",
     lineHeight: 1.5,
   },
 }));
-const Actions = styled.div({ display: 'grid', gap: 8, marginTop: 2 });
+const Actions = styled.div({ display: "grid", gap: 8, marginTop: 2 });
 const LocalActions = styled.details({
   marginTop: 10,
-  borderTop: '1px solid var(--line)',
-  '& > summary': {
+  borderTop: "1px solid var(--line)",
+  "& > summary": {
     minHeight: 40,
-    display: 'flex',
-    alignItems: 'center',
-    cursor: 'pointer',
-    color: 'var(--muted)',
-    fontSize: '.82rem',
+    display: "flex",
+    alignItems: "center",
+    cursor: "pointer",
+    color: "var(--muted)",
+    fontSize: ".82rem",
     fontWeight: 650,
   },
-  '& > div': { display: 'grid', gap: 8, paddingBottom: 2 },
+  "& > div": { display: "grid", gap: 8, paddingBottom: 2 },
 });
 
 /** Compact status, confirmation, and zero-selection composition. It owns no business state. */
 export function OutcomeSurface({
-  tone = 'neutral',
+  tone = "neutral",
   title,
   children,
 }: {
@@ -68,14 +68,14 @@ export function DraftListStarters({
     <OutcomeSurface title="What should we shop for?">
       <p>
         {message ??
-          'Ask Nemlig Assistant what you need. We will bring products here for you to decide.'}
+          "Ask Nemlig Assistant what you need. We will bring products here for you to decide."}
       </p>
       <Actions>
         <ViewerButton
           color="secondary"
           onClick={() =>
             onChoose(
-              'Help me plan groceries for the week. Start a new local Draft list; do not add anything to Nemlig.',
+              "Help me plan groceries for the week. Start a new local Draft list; do not add anything to Nemlig.",
             )
           }
         >
@@ -85,7 +85,7 @@ export function DraftListStarters({
           color="secondary"
           onClick={() =>
             onChoose(
-              'Help me find ingredients for dinner. Start a new local Draft list; do not add anything to Nemlig.',
+              "Help me find ingredients for dinner. Start a new local Draft list; do not add anything to Nemlig.",
             )
           }
         >
@@ -95,7 +95,7 @@ export function DraftListStarters({
           color="secondary"
           onClick={() =>
             onChoose(
-              'Help me find a product for a new local Draft list. Do not add anything to Nemlig.',
+              "Help me find a product for a new local Draft list. Do not add anything to Nemlig.",
             )
           }
         >

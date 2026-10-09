@@ -1,16 +1,16 @@
-import { readFileSync } from 'node:fs';
-import { NemligClient, NemligError, type ShoppingClient } from './client.js';
-import { getCredentials, type Credentials } from './config.js';
-import { readPackageIdentity } from './release-identity.js';
+import { readFileSync } from "node:fs";
+import { NemligClient, NemligError, type ShoppingClient } from "./client.js";
+import { getCredentials, type Credentials } from "./config.js";
+import { readPackageIdentity } from "./release-identity.js";
 
 let sharedClient: NemligClient | undefined;
 const loginInFlight = new WeakMap<object, Promise<void>>();
 const packageIdentity = readPackageIdentity(
-  readFileSync(new URL('../package.json', import.meta.url), 'utf8'),
-  'Nemlig package manifest',
+  readFileSync(new URL("../package.json", import.meta.url), "utf8"),
+  "Nemlig package manifest",
 );
 if (packageIdentity.codename === null) {
-  throw new Error('Nemlig package codename is missing.');
+  throw new Error("Nemlig package codename is missing.");
 }
 
 export const NEMLIG_VERSION = packageIdentity.version;
@@ -22,7 +22,7 @@ export const getClient = (): NemligClient =>
   (sharedClient ??= new NemligClient());
 
 async function login(
-  client: Pick<ShoppingClient, 'login'>,
+  client: Pick<ShoppingClient, "login">,
   loadCredentials: () => Promise<Credentials | undefined>,
 ): Promise<void> {
   const existing = loginInFlight.get(client);
@@ -33,7 +33,7 @@ async function login(
     const credentials = await loadCredentials();
     if (!credentials) {
       throw new NemligError(
-        'No Nemlig credentials configured. Run `pnpm nemlig login --save`.',
+        "No Nemlig credentials configured. Run `pnpm nemlig login --save`.",
       );
     }
     await client.login(credentials.username, credentials.password);
@@ -50,7 +50,7 @@ async function login(
 
 /** Logs in through the supplied credential loader; server callers never receive a prompt dependency. */
 export async function ensureLoggedIn(
-  client: Pick<ShoppingClient, 'isLoggedIn' | 'login'>,
+  client: Pick<ShoppingClient, "isLoggedIn" | "login">,
   loadCredentials: () => Promise<Credentials | undefined> = getCredentials,
   fresh = false,
 ): Promise<void> {
@@ -61,7 +61,7 @@ export async function ensureLoggedIn(
 }
 
 export async function withAuthenticatedReadRetry<T>(
-  client: Pick<ShoppingClient, 'isLoggedIn' | 'login'> & {
+  client: Pick<ShoppingClient, "isLoggedIn" | "login"> & {
     getSessionGeneration?: () => number;
   },
   loadCredentials: () => Promise<Credentials | undefined>,

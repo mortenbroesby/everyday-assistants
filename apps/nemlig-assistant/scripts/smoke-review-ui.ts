@@ -1,56 +1,56 @@
 /** Loopback-only browser smoke host: real MCP adapter + review service, fake catalogue. */
-import { createServer } from 'node:http';
-import type { AddressInfo } from 'node:net';
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
 import {
   Client,
   StreamableHTTPClientTransport,
-} from '@modelcontextprotocol/client';
-import { createMcpHandler } from '@modelcontextprotocol/server';
-import { toNodeHandler } from '@modelcontextprotocol/node';
-import { chromium } from 'playwright';
-import { createMcpServer } from '../src/mcp.js';
-import type { Product, ShoppingClient } from '../src/client.js';
-import type { ProductReviewSnapshot } from '../src/product-review.js';
-import { BasketProposalService } from '../src/proposals.js';
-import { PRODUCT_VIEWER_RESOURCE_URI } from '../src/product-viewer.js';
+} from "@modelcontextprotocol/client";
+import { createMcpHandler } from "@modelcontextprotocol/server";
+import { toNodeHandler } from "@modelcontextprotocol/node";
+import { chromium } from "playwright";
+import { createMcpServer } from "../src/mcp.js";
+import type { Product, ShoppingClient } from "../src/client.js";
+import type { ProductReviewSnapshot } from "../src/product-review.js";
+import { BasketProposalService } from "../src/proposals.js";
+import { PRODUCT_VIEWER_RESOURCE_URI } from "../src/product-viewer.js";
 
 let basketReads = 0,
   writes = 0;
 let preparedForSimulation: ProductReviewSnapshot | undefined;
 let simulatedSubmitted: ProductReviewSnapshot | undefined;
 let simulatedSubmissions = 0;
-let nextSubmissionStatus: 'submitted' | 'uncertain' = 'submitted';
+let nextSubmissionStatus: "submitted" | "uncertain" = "submitted";
 let unknownPriceScenario = false;
 const denied = async (): Promise<never> => {
   writes++;
-  throw new Error('Provider basket write forbidden in this smoke');
+  throw new Error("Provider basket write forbidden in this smoke");
 };
 const product = (id: number): Product => ({
   id,
   name: `Smoke product ${id}`,
   price: unknownPriceScenario && id === 1 ? undefined : id * 5,
   available: id === 4 ? false : true,
-  unit: 'kr/kg',
+  unit: "kr/kg",
   unitPrice: id * 5,
-  unitSize: '1 kg',
-  brand: 'Fixture',
-  category: 'Test',
-  subcategory: 'Test',
-  imageUrl: '',
+  unitSize: "1 kg",
+  brand: "Fixture",
+  category: "Test",
+  subcategory: "Test",
+  imageUrl: "",
   labels: [],
   description:
     id === 3
-      ? 'Long factual description for the alternatives comparison smoke.'
+      ? "Long factual description for the alternatives comparison smoke."
       : undefined,
   declaration:
     id === 3
-      ? 'Ingredients and allergen facts for the alternatives comparison smoke.'
+      ? "Ingredients and allergen facts for the alternatives comparison smoke."
       : undefined,
   details:
     id === 3
       ? [
-          { key: 'Country of origin', value: 'Denmark' },
-          { key: 'Storage', value: 'Keep chilled' },
+          { key: "Country of origin", value: "Denmark" },
+          { key: "Storage", value: "Keep chilled" },
         ]
       : undefined,
   isOrganic: id === 3,
@@ -68,13 +68,13 @@ const catalogue = {
   getProduct: async (id: number) => product(id),
   getFreshProduct: async (id: number) => product(id),
   searchProducts: async (query: string) => {
-    if (query === 'search-error') {
-      throw new Error('Synthetic alternative search failure');
+    if (query === "search-error") {
+      throw new Error("Synthetic alternative search failure");
     }
-    if (query === 'empty') {
+    if (query === "empty") {
       return [];
     }
-    if (query === 'unavailable') {
+    if (query === "unavailable") {
       return [product(4)];
     }
     return [product(1), product(2), product(3)];
@@ -86,7 +86,7 @@ const catalogue = {
       productsPrice: 0,
       deliveryPrice: 0,
       numberOfProducts: 0,
-      deliveryTime: 'smoke',
+      deliveryTime: "smoke",
     };
   },
   addToCart: denied,
@@ -94,11 +94,11 @@ const catalogue = {
 const proposalService = new BasketProposalService(catalogue);
 const uncertainProposals = {
   prepareAdditions: (
-    ...args: Parameters<BasketProposalService['prepareAdditions']>
+    ...args: Parameters<BasketProposalService["prepareAdditions"]>
   ) => proposalService.prepareAdditions(...args),
   apply: async () => {
     throw new Error(
-      'Synthetic ambiguous outcome; provider mutation is forbidden in this smoke.',
+      "Synthetic ambiguous outcome; provider mutation is forbidden in this smoke.",
     );
   },
 } as unknown as BasketProposalService;
@@ -110,11 +110,11 @@ const makeServer = () =>
     uncertainProposals,
   );
 let current = makeServer();
-const handler = createMcpHandler(() => current, { legacy: 'reject' });
+const handler = createMcpHandler(() => current, { legacy: "reject" });
 const mcpHandler = toNodeHandler(handler);
 const client = new Client(
-  { name: 'review-ui-smoke', version: '1' },
-  { versionNegotiation: { mode: { pin: '2026-07-28' } } },
+  { name: "review-ui-smoke", version: "1" },
+  { versionNegotiation: { mode: { pin: "2026-07-28" } } },
 );
 const page = `<!doctype html><html><body><h1>Selection recovery smoke</h1>
 <button id="start">Start sample selection</button><button id="reset">Simulate server restart</button><button id="replace">Create current selection without updating card</button>
@@ -418,50 +418,50 @@ document.getElementById('alternatives').onclick = async () => {
 };
 </script></body></html>`;
 const server = createServer((req, res) => {
-  if (req.url === '/mcp') {
+  if (req.url === "/mcp") {
     void mcpHandler(req, res);
     return;
   }
   void (async () => {
-    if (req.url === '/') {
-      res.setHeader('content-type', 'text/html');
+    if (req.url === "/") {
+      res.setHeader("content-type", "text/html");
       res.end(page);
       return;
     }
-    if (req.url === '/viewer') {
+    if (req.url === "/viewer") {
       const resource = (
         await client.readResource({ uri: PRODUCT_VIEWER_RESOURCE_URI })
       ).contents[0];
-      res.setHeader('content-type', 'text/html');
+      res.setHeader("content-type", "text/html");
       res.end(
-        resource && 'text' in resource ? resource.text : 'Missing viewer',
+        resource && "text" in resource ? resource.text : "Missing viewer",
       );
       return;
     }
-    if (req.url === '/reset' && req.method === 'POST') {
+    if (req.url === "/reset" && req.method === "POST") {
       current = makeServer();
       basketReads = 0;
       writes = 0;
       preparedForSimulation = undefined;
       simulatedSubmitted = undefined;
       simulatedSubmissions = 0;
-      nextSubmissionStatus = 'submitted';
+      nextSubmissionStatus = "submitted";
       unknownPriceScenario = false;
-      res.end('reset');
+      res.end("reset");
       return;
     }
-    if (req.url === '/unknown-price' && req.method === 'POST') {
+    if (req.url === "/unknown-price" && req.method === "POST") {
       unknownPriceScenario = true;
-      res.end('enabled');
+      res.end("enabled");
       return;
     }
-    if (req.url === '/uncertain-next' && req.method === 'POST') {
-      nextSubmissionStatus = 'uncertain';
-      res.end('enabled');
+    if (req.url === "/uncertain-next" && req.method === "POST") {
+      nextSubmissionStatus = "uncertain";
+      res.end("enabled");
       return;
     }
-    if (req.url === '/stats') {
-      res.setHeader('content-type', 'application/json');
+    if (req.url === "/stats") {
+      res.setHeader("content-type", "application/json");
       res.end(
         JSON.stringify({
           providerBasketCalls: basketReads + writes,
@@ -472,12 +472,12 @@ const server = createServer((req, res) => {
       );
       return;
     }
-    if (req.url === '/call' && req.method === 'POST') {
+    if (req.url === "/call" && req.method === "POST") {
       const chunks: Buffer[] = [];
       for await (const chunk of req) {
         chunks.push(Buffer.from(chunk));
         if (Buffer.concat(chunks).length > 16384) {
-          throw new Error('Input too large');
+          throw new Error("Input too large");
         }
       }
       const input = JSON.parse(Buffer.concat(chunks).toString()) as {
@@ -485,29 +485,29 @@ const server = createServer((req, res) => {
         arguments: Record<string, unknown>;
       };
       if (
-        input.name === 'submit_product_review' &&
-        nextSubmissionStatus !== 'uncertain'
+        input.name === "submit_product_review" &&
+        nextSubmissionStatus !== "uncertain"
       ) {
         const prepared = preparedForSimulation;
         if (
           !prepared?.submission ||
-          prepared.submission.status !== 'prepared' ||
+          prepared.submission.status !== "prepared" ||
           input.arguments.review_id !== prepared.review_id ||
           input.arguments.revision !== prepared.revision ||
           input.arguments.submission_id !== prepared.submission.submission_id
         ) {
           throw new Error(
-            'Only the exact locally prepared review may use the synthetic verified-submit result',
+            "Only the exact locally prepared review may use the synthetic verified-submit result",
           );
         }
         simulatedSubmitted = structuredClone(prepared);
-        if (nextSubmissionStatus === 'submitted') {
+        if (nextSubmissionStatus === "submitted") {
           simulatedSubmitted.revision++;
         }
         simulatedSubmitted.submission!.status = nextSubmissionStatus;
-        nextSubmissionStatus = 'submitted';
+        nextSubmissionStatus = "submitted";
         simulatedSubmissions++;
-        res.setHeader('content-type', 'application/json');
+        res.setHeader("content-type", "application/json");
         res.end(
           JSON.stringify({
             structuredContent: {
@@ -522,28 +522,28 @@ const server = createServer((req, res) => {
       }
       if (
         ![
-          'start_product_review',
-          'update_product_review',
-          'submit_product_review',
-          'update_product_review_conversation',
-          'submit_product_review_conversation',
+          "start_product_review",
+          "update_product_review",
+          "submit_product_review",
+          "update_product_review_conversation",
+          "submit_product_review_conversation",
         ].includes(input.name)
       ) {
-        throw new Error('Unexpected tool call in this smoke');
+        throw new Error("Unexpected tool call in this smoke");
       }
       const action = input.arguments.action as
-        | { kind?: string; destination?: ProductReviewSnapshot['destination'] }
+        | { kind?: string; destination?: ProductReviewSnapshot["destination"] }
         | undefined;
       if (
-        input.name === 'update_product_review' &&
-        action?.kind === 'navigate' &&
+        input.name === "update_product_review" &&
+        action?.kind === "navigate" &&
         simulatedSubmitted &&
         input.arguments.review_id === simulatedSubmitted.review_id &&
         action.destination
       ) {
         simulatedSubmitted.revision++;
         simulatedSubmitted.destination = action.destination;
-        res.setHeader('content-type', 'application/json');
+        res.setHeader("content-type", "application/json");
         res.end(
           JSON.stringify({
             structuredContent: { review: structuredClone(simulatedSubmitted) },
@@ -554,26 +554,26 @@ const server = createServer((req, res) => {
         return;
       }
       if (
-        input.name === 'submit_product_review' &&
-        nextSubmissionStatus === 'uncertain'
+        input.name === "submit_product_review" &&
+        nextSubmissionStatus === "uncertain"
       ) {
-        nextSubmissionStatus = 'submitted';
+        nextSubmissionStatus = "submitted";
       }
       const result = await client.callTool(input);
       if (
-        input.name === 'update_product_review' &&
-        action?.kind === 'prepare_submission'
+        input.name === "update_product_review" &&
+        action?.kind === "prepare_submission"
       ) {
         const snapshot = (
           result.structuredContent as { review?: unknown } | undefined
         )?.review;
-        if (snapshot && typeof snapshot === 'object') {
+        if (snapshot && typeof snapshot === "object") {
           preparedForSimulation = structuredClone(
             snapshot,
           ) as ProductReviewSnapshot;
         }
       }
-      res.setHeader('content-type', 'application/json');
+      res.setHeader("content-type", "application/json");
       res.end(JSON.stringify(result));
       return;
     }
@@ -581,48 +581,48 @@ const server = createServer((req, res) => {
     res.end();
   })().catch(() => {
     res.statusCode = 500;
-    res.end('Smoke request failed');
+    res.end("Smoke request failed");
   });
 });
-server.listen(0, '127.0.0.1');
-await new Promise<void>((resolve) => server.once('listening', resolve));
+server.listen(0, "127.0.0.1");
+await new Promise<void>((resolve) => server.once("listening", resolve));
 const origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
 await client.connect(
-  new StreamableHTTPClientTransport(new URL('/mcp', origin)),
+  new StreamableHTTPClientTransport(new URL("/mcp", origin)),
 );
 console.log(`Review UI smoke: ${origin}`);
-const browser = await chromium.launch({ headless: true, channel: 'chrome' });
+const browser = await chromium.launch({ headless: true, channel: "chrome" });
 try {
   const browserPage = await browser.newPage({
     viewport: { width: 375, height: 860 },
   });
   browserPage.setDefaultTimeout(10_000);
   browserPage.setDefaultNavigationTimeout(10_000);
-  await browserPage.goto(origin, { waitUntil: 'domcontentloaded' });
-  const status = browserPage.locator('#status');
+  await browserPage.goto(origin, { waitUntil: "domcontentloaded" });
+  const status = browserPage.locator("#status");
   const waitForResult = async (phase: string) => {
     await browserPage.waitForFunction(
       () =>
         /^(PASS|FAIL):/.test(
-          document.querySelector('#status')?.textContent ?? '',
+          document.querySelector("#status")?.textContent ?? "",
         ),
       undefined,
       { timeout: 90_000 },
     );
     const result = await status.textContent();
-    if (!result?.startsWith('PASS:')) {
+    if (!result?.startsWith("PASS:")) {
       throw new Error(`${phase} failed: ${result}`);
     }
     console.log(`${phase}: ${result}`);
   };
-  await browserPage.locator('#run').click();
-  await waitForResult('MCP adapter recovery flow');
-  await browserPage.locator('#flow').click();
-  await waitForResult('MCP adapter continuous flow');
-  await browserPage.locator('#alternatives').click();
-  await waitForResult('MCP adapter alternatives comparison');
+  await browserPage.locator("#run").click();
+  await waitForResult("MCP adapter recovery flow");
+  await browserPage.locator("#flow").click();
+  await waitForResult("MCP adapter continuous flow");
+  await browserPage.locator("#alternatives").click();
+  await waitForResult("MCP adapter alternatives comparison");
   const stats = await browserPage.evaluate(async () =>
-    fetch('/stats').then(
+    fetch("/stats").then(
       async (response) =>
         (await response.json()) as {
           providerBasketCalls: number;
@@ -643,5 +643,5 @@ try {
   );
 }
 console.log(
-  'MCP adapter browser smoke passed: recovery, current review controls, restart, exact prepare, and zero fake provider basket writes.',
+  "MCP adapter browser smoke passed: recovery, current review controls, restart, exact prepare, and zero fake provider basket writes.",
 );

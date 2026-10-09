@@ -1,13 +1,13 @@
-import passwordPrompt from '@inquirer/password';
-import { createInterface } from 'node:readline/promises';
-import { credentialsSchema, type Credentials } from './config.js';
+import passwordPrompt from "@inquirer/password";
+import { createInterface } from "node:readline/promises";
+import { credentialsSchema, type Credentials } from "./config.js";
 
 export async function promptCredentials(
   username?: string,
 ): Promise<Credentials> {
   if (!process.stdin.isTTY || !process.stdout.isTTY) {
     throw new Error(
-      'No Nemlig credentials configured. Run `pnpm nemlig login --save` in a terminal.',
+      "No Nemlig credentials configured. Run `pnpm nemlig login --save` in a terminal.",
     );
   }
 
@@ -17,8 +17,8 @@ export async function promptCredentials(
   });
   try {
     const email =
-      username?.trim() || (await readline.question('Email: ')).trim();
-    const password = await passwordPrompt({ message: 'Password', mask: '*' });
+      username?.trim() || (await readline.question("Email: ")).trim();
+    const password = await passwordPrompt({ message: "Password", mask: "*" });
     return credentialsSchema.parse({ username: email, password });
   } finally {
     readline.close();

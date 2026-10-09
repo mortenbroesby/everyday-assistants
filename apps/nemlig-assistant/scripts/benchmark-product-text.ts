@@ -1,22 +1,22 @@
 const iterations = 200;
 const inputLimit = 16_384;
 const started = process.hrtime.bigint();
-const { normalizeProducts } = await import('../src/client.js');
+const { normalizeProducts } = await import("../src/client.js");
 const coldNormalizerImportMs =
   Number(process.hrtime.bigint() - started) / 1_000_000;
 
 const exact = (value: string): string =>
   value.repeat(Math.ceil(inputLimit / value.length)).slice(0, inputLimit);
 const fixtures = {
-  plain: exact('Mælk og kakao '),
-  dense: exact('<p><strong>Mælk</strong><em> og kakao</em></p>'),
-  entity: exact('<p>Mælk&nbsp;&amp;&nbsp;kakao&#160;</p>'),
+  plain: exact("Mælk og kakao "),
+  dense: exact("<p><strong>Mælk</strong><em> og kakao</em></p>"),
+  entity: exact("<p>Mælk&nbsp;&amp;&nbsp;kakao&#160;</p>"),
   malformed: exact('<p title="1 > 0"><strong>Mælk &amp; kakao'),
 };
 const regex = (value: string): string =>
   value
-    .replace(/<[^>]*>/gu, ' ')
-    .replace(/\s+/gu, ' ')
+    .replace(/<[^>]*>/gu, " ")
+    .replace(/\s+/gu, " ")
     .trim();
 const percentile = (samples: number[], fraction: number): number =>
   samples[Math.floor((samples.length - 1) * fraction)] ?? 0;
@@ -43,12 +43,12 @@ function measure(run: () => void): {
 }
 
 const normalizeField = (text: string): void => {
-  normalizeProducts([{ Id: 1, Name: 'Benchmark', Text: text }], 1);
+  normalizeProducts([{ Id: 1, Name: "Benchmark", Text: text }], 1);
 };
 const fields = Object.values(fixtures);
 const worstProduct = {
   Id: 2,
-  Name: 'Benchmark',
+  Name: "Benchmark",
   Text: fields[0],
   Attributes: Array.from({ length: 20 }, (_, index) => ({
     Key: fields[(index * 2 + 1) % fields.length],
@@ -79,7 +79,7 @@ console.log(
       warmMsPerProduct41Fields: measure(() => {
         normalizeProducts([worstProduct], 1);
       }),
-      regexComparison: 'CPU samples only; not a speed claim.',
+      regexComparison: "CPU samples only; not a speed claim.",
     },
     null,
     2,

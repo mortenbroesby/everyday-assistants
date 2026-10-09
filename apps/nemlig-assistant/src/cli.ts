@@ -1,25 +1,25 @@
 #!/usr/bin/env node
 
-import { Command, InvalidArgumentError } from 'commander';
-import { realpathSync } from 'node:fs';
-import { basename } from 'node:path';
+import { Command, InvalidArgumentError } from "commander";
+import { realpathSync } from "node:fs";
+import { basename } from "node:path";
 import {
   matchFavorites,
   type ShoppingClient,
   type Basket,
   type Product,
-} from './client.js';
+} from "./client.js";
 import {
   clearCredentials,
   getCredentials,
   saveCredentials,
   type Credentials,
-} from './config.js';
-import { promptCredentials } from './credential-prompt.js';
-import { ensureLoggedIn, getClient, NEMLIG_VERSION } from './runtime.js';
+} from "./config.js";
+import { promptCredentials } from "./credential-prompt.js";
+import { ensureLoggedIn, getClient, NEMLIG_VERSION } from "./runtime.js";
 
-export { ensureLoggedIn, getClient, NEMLIG_VERSION } from './runtime.js';
-export type { ShoppingClient } from './client.js';
+export { ensureLoggedIn, getClient, NEMLIG_VERSION } from "./runtime.js";
+export type { ShoppingClient } from "./client.js";
 
 interface CliDependencies {
   client: ShoppingClient;
@@ -33,42 +33,42 @@ interface CliDependencies {
 const positiveInteger = (value: string): number => {
   const parsed = Number(value);
   if (!Number.isInteger(parsed) || parsed < 1) {
-    throw new InvalidArgumentError('must be a positive integer');
+    throw new InvalidArgumentError("must be a positive integer");
   }
   return parsed;
 };
 
 export const formatBasket = (basket: Basket): string => {
   if (!basket.items.length) {
-    return 'Your basket is empty.\nTotal: 0.00 DKK';
+    return "Your basket is empty.\nTotal: 0.00 DKK";
   }
   const lines = basket.items.map(
     (item) =>
-      `  ${item.quantity ?? 0}x ${item.name ?? 'Unknown'} - ${(item.total ?? 0).toFixed(2)} DKK`,
+      `  ${item.quantity ?? 0}x ${item.name ?? "Unknown"} - ${(item.total ?? 0).toFixed(2)} DKK`,
   );
   const products = basket.productsPrice ?? 0;
   const delivery = basket.deliveryPrice ?? 0;
   return [
-    'SHOPPING BASKET',
+    "SHOPPING BASKET",
     ...lines,
     `Products: ${basket.numberOfProducts ?? 0}`,
     `Subtotal: ${products.toFixed(2)} DKK`,
     `Delivery: ${delivery.toFixed(2)} DKK`,
     `Total: ${(products + delivery).toFixed(2)} DKK`,
     ...(basket.deliveryTime ? [`Delivery: ${basket.deliveryTime}`] : []),
-  ].join('\n');
+  ].join("\n");
 };
 
 const formatProduct = (product: Product): string => {
   const tags = [
-    product.isRefrigerated && 'Køl',
-    product.isFrozen && 'Frost',
-    product.isOrganic && 'Øko',
-    product.isDairy && 'Dairy',
-    product.isLactoseFree && 'Laktosefri',
-    product.isGlutenFree && 'Glutenfri',
-    product.isVegan && 'Vegan',
-    product.isOnDiscount && 'Tilbud',
+    product.isRefrigerated && "Køl",
+    product.isFrozen && "Frost",
+    product.isOrganic && "Øko",
+    product.isDairy && "Dairy",
+    product.isLactoseFree && "Laktosefri",
+    product.isGlutenFree && "Glutenfri",
+    product.isVegan && "Vegan",
+    product.isOnDiscount && "Tilbud",
   ].filter(Boolean);
   const details = [
     product.brand,
@@ -76,11 +76,11 @@ const formatProduct = (product: Product): string => {
     ...tags.map((tag) => `[${tag}]`),
   ]
     .filter(Boolean)
-    .join(' | ');
+    .join(" | ");
   return [
-    `${String(product.id ?? '').padEnd(8)} ${(product.name ?? 'Unknown').slice(0, 28).padEnd(28)}  ${(product.price ?? 0).toFixed(2).padEnd(8)} ${product.unitSize.slice(0, 10).padEnd(10)} ${product.available ? '✓ In Stock' : '✗ Sold Out'}`,
+    `${String(product.id ?? "").padEnd(8)} ${(product.name ?? "Unknown").slice(0, 28).padEnd(28)}  ${(product.price ?? 0).toFixed(2).padEnd(8)} ${product.unitSize.slice(0, 10).padEnd(10)} ${product.available ? "✓ In Stock" : "✗ Sold Out"}`,
     ...(details ? [`         ${details}`] : []),
-  ].join('\n');
+  ].join("\n");
 };
 
 const formatProductList = (
@@ -89,9 +89,9 @@ const formatProductList = (
 ): string =>
   products.length
     ? [
-        'ID       Name                          Price    Size       Status',
+        "ID       Name                          Price    Size       Status",
         ...products.map(formatProduct),
-      ].join('\n')
+      ].join("\n")
     : emptyMessage;
 
 export function createProgram(
@@ -107,21 +107,21 @@ export function createProgram(
     ...overrides,
   };
   const program = new Command()
-    .name('nemlig-assistant')
+    .name("nemlig-assistant")
     .description(
-      'Search Nemlig products and manage an explicitly approved basket.',
+      "Search Nemlig products and manage an explicitly approved basket.",
     )
     .version(NEMLIG_VERSION);
 
   program
-    .command('login')
+    .command("login")
     .description(
-      'Log in interactively without exposing the password in process arguments.',
+      "Log in interactively without exposing the password in process arguments.",
     )
-    .option('-u, --username <email>', 'Nemlig.com email')
+    .option("-u, --username <email>", "Nemlig.com email")
     .option(
-      '--save',
-      'Save credentials locally with owner-only permissions',
+      "--save",
+      "Save credentials locally with owner-only permissions",
       false,
     )
     .action(async (options: { username?: string; save: boolean }) => {
@@ -141,27 +141,27 @@ export function createProgram(
         await dependencies.save(credentials);
       }
       dependencies.out(
-        `✓ Login successful${options.save ? '; credentials saved' : ''}.`,
+        `✓ Login successful${options.save ? "; credentials saved" : ""}.`,
       );
     });
 
   program
-    .command('logout')
+    .command("logout")
     .description(
-      'Remove saved local credentials; this does not change the remote basket.',
+      "Remove saved local credentials; this does not change the remote basket.",
     )
     .action(async () => {
       await dependencies.clear();
-      dependencies.out('✓ Saved credentials cleared.');
+      dependencies.out("✓ Saved credentials cleared.");
     });
 
   program
-    .command('search')
-    .description('Search Nemlig products using Danish terms.')
-    .argument('<query>', 'Product query')
+    .command("search")
+    .description("Search Nemlig products using Danish terms.")
+    .argument("<query>", "Product query")
     .option(
-      '-l, --limit <number>',
-      'Ask Nemlig for this many results',
+      "-l, --limit <number>",
+      "Ask Nemlig for this many results",
       positiveInteger,
     )
     .action(async (query: string, options: { limit?: number }) => {
@@ -169,30 +169,30 @@ export function createProgram(
         query,
         options.limit,
       );
-      dependencies.out(formatProductList(products, 'No products found.'));
+      dependencies.out(formatProductList(products, "No products found."));
     });
 
   program
-    .command('cart')
-    .description('View the current basket and totals.')
+    .command("cart")
+    .description("View the current basket and totals.")
     .action(async () => {
       await ensureLoggedIn(dependencies.client, dependencies.credentials);
       dependencies.out(formatBasket(await dependencies.client.getCart()));
     });
 
   program
-    .command('favorites')
+    .command("favorites")
     .description(
-      'List or search current Nemlig favorites without changing favorites or the basket.',
+      "List or search current Nemlig favorites without changing favorites or the basket.",
     )
-    .argument('[query]', 'Danish product name')
+    .argument("[query]", "Danish product name")
     .option(
-      '-l, --limit <number>',
-      'Maximum results per requested page',
+      "-l, --limit <number>",
+      "Maximum results per requested page",
       positiveInteger,
       10,
     )
-    .option('-p, --page <number>', 'Results page', positiveInteger, 1)
+    .option("-p, --page <number>", "Results page", positiveInteger, 1)
     .action(
       async (
         query: string | undefined,
@@ -209,28 +209,28 @@ export function createProgram(
           (options.page - 1) * options.limit,
           options.page * options.limit,
         );
-        dependencies.out(formatProductList(products, 'No favorites found.'));
+        dependencies.out(formatProductList(products, "No favorites found."));
       },
     );
 
   program
-    .command('departments')
-    .description('List current Nemlig department IDs.')
+    .command("departments")
+    .description("List current Nemlig department IDs.")
     .action(async () => {
       const departments = await dependencies.client.listDepartments();
       dependencies.out(
         departments.length
-          ? departments.map((item) => `${item.id}\t${item.name}`).join('\n')
-          : 'No departments found.',
+          ? departments.map((item) => `${item.id}\t${item.name}`).join("\n")
+          : "No departments found.",
       );
     });
 
   program
-    .command('browse')
-    .description('Browse one freshly validated Nemlig department.')
-    .argument('<department-id>')
-    .option('-l, --limit <number>', 'Page size', positiveInteger, 20)
-    .option('-p, --page <number>', 'Results page', positiveInteger, 1)
+    .command("browse")
+    .description("Browse one freshly validated Nemlig department.")
+    .argument("<department-id>")
+    .option("-l, --limit <number>", "Page size", positiveInteger, 20)
+    .option("-p, --page <number>", "Results page", positiveInteger, 1)
     .action(
       async (
         departmentId: string,
@@ -244,24 +244,24 @@ export function createProgram(
         dependencies.out(
           result.products.length
             ? [
-                'ID Name Price Size Status',
+                "ID Name Price Size Status",
                 ...result.products.map(formatProduct),
                 ...(result.hasNext ? [`Next page: ${result.page + 1}`] : []),
-              ].join('\n')
-            : 'No products found.',
+              ].join("\n")
+            : "No products found.",
         );
       },
     );
 
   program
-    .command('add')
+    .command("add")
     .description(
-      'Add more units of an already reviewed and explicitly authorized product, then verify the basket.',
+      "Add more units of an already reviewed and explicitly authorized product, then verify the basket.",
     )
-    .argument('<product-id>', 'Numeric Nemlig product ID', positiveInteger)
+    .argument("<product-id>", "Numeric Nemlig product ID", positiveInteger)
     .option(
-      '-q, --quantity <number>',
-      'Additional units to add (not the final quantity)',
+      "-q, --quantity <number>",
+      "Additional units to add (not the final quantity)",
       positiveInteger,
       1,
     )
@@ -284,7 +284,7 @@ export async function main(argv = process.argv): Promise<void> {
     await createProgram().parseAsync(argv);
   } catch (error) {
     console.error(
-      `✗ ${error instanceof Error ? error.message : 'Nemlig command failed.'}`,
+      `✗ ${error instanceof Error ? error.message : "Nemlig command failed."}`,
     );
     process.exitCode = 1;
   }
@@ -292,7 +292,7 @@ export async function main(argv = process.argv): Promise<void> {
 
 if (
   process.argv[1] &&
-  ['cli.js', 'cli.ts'].includes(basename(realpathSync(process.argv[1])))
+  ["cli.js", "cli.ts"].includes(basename(realpathSync(process.argv[1])))
 ) {
   void main();
 }

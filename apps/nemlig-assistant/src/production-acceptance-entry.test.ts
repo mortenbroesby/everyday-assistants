@@ -1,35 +1,35 @@
-import assert from 'node:assert/strict';
-import test from 'node:test';
+import assert from "node:assert/strict";
+import test from "node:test";
 import {
   productionResourceInventory,
   productionToolInventory,
   type AcceptanceClient,
-} from './production-acceptance.js';
+} from "./production-acceptance.js";
 import {
   serviceAcceptanceResourceInventory,
   serviceAcceptanceToolInventory,
-} from './mcp.js';
+} from "./mcp.js";
 import {
   PRODUCT_VIEWER_MIME_TYPE,
   PRODUCT_VIEWER_RESOURCE_URI,
   renderProductViewerHtml,
-} from './product-viewer.js';
-import { NEMLIG_CODENAME, NEMLIG_VERSION } from './runtime.js';
+} from "./product-viewer.js";
+import { NEMLIG_CODENAME, NEMLIG_VERSION } from "./runtime.js";
 
 const userToolMetadata = {
   start_product_review: {
-    ui: { resourceUri: PRODUCT_VIEWER_RESOURCE_URI, visibility: ['model'] },
-    'openai/outputTemplate': PRODUCT_VIEWER_RESOURCE_URI,
+    ui: { resourceUri: PRODUCT_VIEWER_RESOURCE_URI, visibility: ["model"] },
+    "openai/outputTemplate": PRODUCT_VIEWER_RESOURCE_URI,
   },
-  update_product_review_conversation: { ui: { visibility: ['model'] } },
-  submit_product_review_conversation: { ui: { visibility: ['model'] } },
+  update_product_review_conversation: { ui: { visibility: ["model"] } },
+  submit_product_review_conversation: { ui: { visibility: ["model"] } },
   update_product_review: {
-    ui: { visibility: ['app'] },
-    'openai/widgetAccessible': true,
+    ui: { visibility: ["app"] },
+    "openai/widgetAccessible": true,
   },
   submit_product_review: {
-    ui: { visibility: ['app'] },
-    'openai/widgetAccessible': true,
+    ui: { visibility: ["app"] },
+    "openai/widgetAccessible": true,
   },
 };
 const withUserToolMetadata = (tools: Array<{ name: string }>) =>
@@ -44,14 +44,14 @@ const allTools = Object.values(productionToolInventory)
   .flat()
   .map((name) => ({ name }));
 const removedStorageTools = [
-  'save_my_shopping_plan',
-  'continue_my_shopping_plan',
-  'show_my_shopping_lists',
-  'save_my_shopping_list',
-  'copy_my_shopping_list',
-  'set_my_shopping_list_status',
-  'shop_from_my_list',
-  'migrate_my_saved_plan',
+  "save_my_shopping_plan",
+  "continue_my_shopping_plan",
+  "show_my_shopping_lists",
+  "save_my_shopping_list",
+  "copy_my_shopping_list",
+  "set_my_shopping_list_status",
+  "shop_from_my_list",
+  "migrate_my_saved_plan",
 ];
 const retainedTools = allTools.filter(
   ({ name }) => !removedStorageTools.includes(name),
@@ -59,27 +59,27 @@ const retainedTools = allTools.filter(
 
 function edgeFetcher(
   calls: string[],
-  origin = 'https://nemlig-mcp.example.test/mcp',
-  scopes = ['use:nemlig-assistant'],
+  origin = "https://nemlig-mcp.example.test/mcp",
+  scopes = ["use:nemlig-assistant"],
 ): typeof fetch {
   return async (input, init) => {
     const request = new Request(input, init);
     calls.push(new URL(request.url).pathname);
-    if (request.url.endsWith('/healthz')) {
-      return Response.json({ status: 'ok', enabled: true });
+    if (request.url.endsWith("/healthz")) {
+      return Response.json({ status: "ok", enabled: true });
     }
-    if (request.url.endsWith('/revision')) {
-      return Response.json({ revision: 'test-revision' });
+    if (request.url.endsWith("/revision")) {
+      return Response.json({ revision: "test-revision" });
     }
-    if (request.url.includes('oauth-protected-resource')) {
+    if (request.url.includes("oauth-protected-resource")) {
       return Response.json({
         resource: origin,
         scopes_supported: scopes,
-        bearer_methods_supported: ['header'],
+        bearer_methods_supported: ["header"],
       });
     }
     return new Response(null, {
-      status: request.headers.has('origin') ? 403 : 401,
+      status: request.headers.has("origin") ? 403 : 401,
     });
   };
 }
@@ -103,8 +103,8 @@ function serviceClient(): AcceptanceClient {
               csp: {
                 connectDomains: [],
                 resourceDomains: [
-                  'https://nemlig.com',
-                  'https://www.nemlig.com',
+                  "https://nemlig.com",
+                  "https://www.nemlig.com",
                 ],
               },
               prefersBorder: true,
@@ -116,17 +116,17 @@ function serviceClient(): AcceptanceClient {
     callTool: async ({ name }) => {
       if (
         [
-          'start_product_review',
-          'update_product_review_conversation',
-          'submit_product_review_conversation',
+          "start_product_review",
+          "update_product_review_conversation",
+          "submit_product_review_conversation",
         ].includes(name)
       ) {
         return { isError: true };
       }
-      if (name === 'find_groceries') {
+      if (name === "find_groceries") {
         return { structuredContent: { result: [{ id: 7 }] } };
       }
-      if (name === 'show_my_basket') {
+      if (name === "show_my_basket") {
         return { structuredContent: { items: [] } };
       }
       return { structuredContent: { result: [] } };
@@ -151,8 +151,8 @@ function readonlyClient(): AcceptanceClient {
               csp: {
                 connectDomains: [],
                 resourceDomains: [
-                  'https://nemlig.com',
-                  'https://www.nemlig.com',
+                  "https://nemlig.com",
+                  "https://www.nemlig.com",
                 ],
               },
               prefersBorder: true,
@@ -162,15 +162,15 @@ function readonlyClient(): AcceptanceClient {
       ],
     }),
     callTool: async ({ name }) => {
-      if (name === 'get_profile') {
+      if (name === "get_profile") {
         return {
           structuredContent: {
-            id: 'profile',
+            id: "profile",
             release: { version: NEMLIG_VERSION, codename: NEMLIG_CODENAME },
           },
         };
       }
-      if (name === 'find_groceries') {
+      if (name === "find_groceries") {
         return { structuredContent: { result: [{ id: 7 }] } };
       }
       return { structuredContent: { items: [] } };
@@ -178,17 +178,17 @@ function readonlyClient(): AcceptanceClient {
   };
 }
 
-test('importing the acceptance entry performs no work', async () => {
+test("importing the acceptance entry performs no work", async () => {
   const calls: string[] = [];
   const output: string[] = [];
   const originalLog = console.log;
   const originalError = console.error;
   const originalFetch = globalThis.fetch;
-  console.log = (...args: unknown[]) => output.push(args.join(' '));
-  console.error = (...args: unknown[]) => output.push(args.join(' '));
+  console.log = (...args: unknown[]) => output.push(args.join(" "));
+  console.error = (...args: unknown[]) => output.push(args.join(" "));
   globalThis.fetch = edgeFetcher(calls);
   try {
-    await import('../scripts/production-acceptance.js');
+    await import("../scripts/production-acceptance.js");
   } finally {
     globalThis.fetch = originalFetch;
     console.log = originalLog;
@@ -198,64 +198,64 @@ test('importing the acceptance entry performs no work', async () => {
   assert.deepEqual(output, []);
 });
 
-test('default acceptance connects after edge, verifies read-only paths without quota endpoints, and closes', async () => {
+test("default acceptance connects after edge, verifies read-only paths without quota endpoints, and closes", async () => {
   const calls: string[] = [];
   const events: string[] = [];
   const report = await (
-    await import('../scripts/production-acceptance.js')
+    await import("../scripts/production-acceptance.js")
   ).main(
     [],
     {
-      NEMLIG_PRODUCTION_MCP_URL: 'https://nemlig-mcp.example.test/mcp',
-      NEMLIG_MCP_ACCESS_TOKEN: 'test-token',
+      NEMLIG_PRODUCTION_MCP_URL: "https://nemlig-mcp.example.test/mcp",
+      NEMLIG_MCP_ACCESS_TOKEN: "test-token",
     },
     {
       fetcher: edgeFetcher(calls),
       connect: async () => {
-        events.push('connect');
+        events.push("connect");
         return {
           client: readonlyClient(),
           close: async () => {
-            events.push('close');
+            events.push("close");
           },
         };
       },
     },
   );
-  assert.deepEqual(events, ['connect', 'close']);
+  assert.deepEqual(events, ["connect", "close"]);
   assert.deepEqual(calls, [
-    '/healthz',
-    '/revision',
-    '/.well-known/oauth-protected-resource/mcp',
-    '/mcp',
-    '/mcp',
+    "/healthz",
+    "/revision",
+    "/.well-known/oauth-protected-resource/mcp",
+    "/mcp",
+    "/mcp",
   ]);
-  assert.deepEqual(report.required, ['edge', 'live_user_features']);
-  assert.deepEqual(report.passed, ['edge', 'live_user_features']);
-  assert.equal(report.lastCompletedBoundary, 'live_user_features');
+  assert.deepEqual(report.required, ["edge", "live_user_features"]);
+  assert.deepEqual(report.passed, ["edge", "live_user_features"]);
+  assert.equal(report.lastCompletedBoundary, "live_user_features");
 });
 
-test('acceptance profiles never request removed usage or breaker endpoints', async () => {
-  const entry = await import('../scripts/production-acceptance.js');
-  for (const args of [[], ['--service'], ['--edge-only']]) {
+test("acceptance profiles never request removed usage or breaker endpoints", async () => {
+  const entry = await import("../scripts/production-acceptance.js");
+  for (const args of [[], ["--service"], ["--edge-only"]]) {
     let closed = 0;
     const report = await entry.main(
       args,
       {
-        NEMLIG_PRODUCTION_MCP_URL: 'https://nemlig-mcp.example.test/mcp',
-        NEMLIG_MCP_ACCESS_TOKEN: 'test-token',
-        NEMLIG_MCP_SERVICE_ACCESS_TOKEN: 'service-token',
+        NEMLIG_PRODUCTION_MCP_URL: "https://nemlig-mcp.example.test/mcp",
+        NEMLIG_MCP_ACCESS_TOKEN: "test-token",
+        NEMLIG_MCP_SERVICE_ACCESS_TOKEN: "service-token",
       },
       {
         fetcher: async (input, init) => {
           const path = new URL(input instanceof Request ? input.url : input)
             .pathname;
-          assert.notEqual(path, '/admin/usage');
-          assert.notEqual(path, '/admin/reset-breaker');
+          assert.notEqual(path, "/admin/usage");
+          assert.notEqual(path, "/admin/reset-breaker");
           return await edgeFetcher([])(input, init);
         },
         connect: async () => ({
-          client: args.includes('--service')
+          client: args.includes("--service")
             ? serviceClient()
             : readonlyClient(),
           serverVersion: NEMLIG_VERSION,
@@ -265,74 +265,74 @@ test('acceptance profiles never request removed usage or breaker endpoints', asy
         }),
       },
     );
-    assert.equal(closed, args.includes('--edge-only') ? 0 : 1);
-    assert.equal(report.required.includes('owner_admin'), false);
-    assert.equal(report.passed.includes('owner_admin'), false);
+    assert.equal(closed, args.includes("--edge-only") ? 0 : 1);
+    assert.equal(report.required.includes("owner_admin"), false);
+    assert.equal(report.passed.includes("owner_admin"), false);
   }
 });
 
-test('service acceptance uses only its in-memory token, closes the MCP client, and skips quota endpoints', async () => {
+test("service acceptance uses only its in-memory token, closes the MCP client, and skips quota endpoints", async () => {
   const calls: string[] = [];
   const tokens: string[] = [];
   const events: string[] = [];
   const report = await (
-    await import('../scripts/production-acceptance.js')
+    await import("../scripts/production-acceptance.js")
   ).main(
-    ['--service'],
+    ["--service"],
     {
-      NEMLIG_PRODUCTION_MCP_URL: 'https://nemlig-mcp.example.test/mcp',
-      NEMLIG_MCP_SERVICE_ACCESS_TOKEN: 'service-token',
-      NEMLIG_MCP_ACCESS_TOKEN: 'owner-token-must-not-be-used',
+      NEMLIG_PRODUCTION_MCP_URL: "https://nemlig-mcp.example.test/mcp",
+      NEMLIG_MCP_SERVICE_ACCESS_TOKEN: "service-token",
+      NEMLIG_MCP_ACCESS_TOKEN: "owner-token-must-not-be-used",
     },
     {
-      fetcher: edgeFetcher(calls, 'https://nemlig-mcp.example.test/mcp', [
-        'use:nemlig-assistant',
+      fetcher: edgeFetcher(calls, "https://nemlig-mcp.example.test/mcp", [
+        "use:nemlig-assistant",
       ]),
       connect: async (_origin, token) => {
         tokens.push(token);
-        events.push('connect');
+        events.push("connect");
         return {
           client: serviceClient(),
           serverVersion: NEMLIG_VERSION,
           close: async () => {
-            events.push('close');
+            events.push("close");
           },
         };
       },
     },
   );
-  assert.deepEqual(tokens, ['service-token']);
-  assert.deepEqual(events, ['connect', 'close']);
-  assert.equal(calls.includes('/admin/usage'), false);
-  assert.equal(calls.includes('/admin/reset-breaker'), false);
-  assert.equal(calls.filter((path) => path === '/mcp').length, 2);
-  assert.deepEqual(report.required, ['edge', 'service_fixture']);
-  assert.deepEqual(report.passed, ['edge', 'service_fixture']);
-  assert.equal(report.profile, 'service');
+  assert.deepEqual(tokens, ["service-token"]);
+  assert.deepEqual(events, ["connect", "close"]);
+  assert.equal(calls.includes("/admin/usage"), false);
+  assert.equal(calls.includes("/admin/reset-breaker"), false);
+  assert.equal(calls.filter((path) => path === "/mcp").length, 2);
+  assert.deepEqual(report.required, ["edge", "service_fixture"]);
+  assert.deepEqual(report.passed, ["edge", "service_fixture"]);
+  assert.equal(report.profile, "service");
 });
 
-test('service initialization wakes and version-checks the backend without calling tools or reading resources', async () => {
+test("service initialization wakes and version-checks the backend without calling tools or reading resources", async () => {
   const events: string[] = [];
   const edgeCalls: string[] = [];
   const client = serviceClient();
   client.listTools = async () => {
-    events.push('list-tools');
-    throw new Error('preflight must not list tools');
+    events.push("list-tools");
+    throw new Error("preflight must not list tools");
   };
   client.listResources = async () => {
-    events.push('list-resources');
-    throw new Error('preflight must not list resources');
+    events.push("list-resources");
+    throw new Error("preflight must not list resources");
   };
   client.callTool = async () => {
-    events.push('call-tool');
-    throw new Error('preflight must not call tools');
+    events.push("call-tool");
+    throw new Error("preflight must not call tools");
   };
-  const entry = await import('../scripts/production-acceptance.js');
+  const entry = await import("../scripts/production-acceptance.js");
   const report = await entry.main(
-    ['--service', '--initialize-only'],
+    ["--service", "--initialize-only"],
     {
-      NEMLIG_PRODUCTION_MCP_URL: 'https://nemlig-mcp.example.test/mcp',
-      NEMLIG_MCP_SERVICE_ACCESS_TOKEN: 'service-token',
+      NEMLIG_PRODUCTION_MCP_URL: "https://nemlig-mcp.example.test/mcp",
+      NEMLIG_MCP_SERVICE_ACCESS_TOKEN: "service-token",
     },
     {
       fetcher: edgeFetcher(edgeCalls),
@@ -340,71 +340,71 @@ test('service initialization wakes and version-checks the backend without callin
         serverVersion: NEMLIG_VERSION,
         client,
         close: async () => {
-          events.push('close');
+          events.push("close");
         },
       }),
     },
   );
-  assert.deepEqual(events, ['close']);
+  assert.deepEqual(events, ["close"]);
   assert.deepEqual(edgeCalls, []);
-  assert.deepEqual(report.required, ['service_runtime']);
-  assert.deepEqual(report.passed, ['service_runtime']);
-  assert.equal(report.lastCompletedBoundary, 'service_runtime_version_read');
+  assert.deepEqual(report.required, ["service_runtime"]);
+  assert.deepEqual(report.passed, ["service_runtime"]);
+  assert.equal(report.lastCompletedBoundary, "service_runtime_version_read");
 });
 
-test('service wake only connects and closes an earlier backend without treating it as accepted', async () => {
+test("service wake only connects and closes an earlier backend without treating it as accepted", async () => {
   const events: string[] = [];
   const client = serviceClient();
   client.listTools = async () => {
-    events.push('list-tools');
-    throw new Error('wake must not list tools');
+    events.push("list-tools");
+    throw new Error("wake must not list tools");
   };
   client.listResources = async () => {
-    events.push('list-resources');
-    throw new Error('wake must not list resources');
+    events.push("list-resources");
+    throw new Error("wake must not list resources");
   };
-  const entry = await import('../scripts/production-acceptance.js');
+  const entry = await import("../scripts/production-acceptance.js");
   const report = await entry.main(
-    ['--service', '--initialize-only', '--wake-only'],
+    ["--service", "--initialize-only", "--wake-only"],
     {
-      NEMLIG_PRODUCTION_MCP_URL: 'https://nemlig-mcp.example.test/mcp',
-      NEMLIG_MCP_SERVICE_ACCESS_TOKEN: 'service-token',
+      NEMLIG_PRODUCTION_MCP_URL: "https://nemlig-mcp.example.test/mcp",
+      NEMLIG_MCP_SERVICE_ACCESS_TOKEN: "service-token",
     },
     {
       fetcher: edgeFetcher([]),
       connect: async () => ({
-        serverVersion: '0.0.1',
+        serverVersion: "0.0.1",
         client,
         close: async () => {
-          events.push('close');
+          events.push("close");
         },
       }),
     },
   );
-  assert.deepEqual(events, ['close']);
-  assert.deepEqual(report.required, ['service_wake']);
-  assert.deepEqual(report.passed, ['service_wake']);
-  assert.equal(report.lastCompletedBoundary, 'service_runtime_version_read');
+  assert.deepEqual(events, ["close"]);
+  assert.deepEqual(report.required, ["service_wake"]);
+  assert.deepEqual(report.passed, ["service_wake"]);
+  assert.equal(report.lastCompletedBoundary, "service_runtime_version_read");
 });
 
-test('service initialization rejects a previous server release without touching fixture tools', async () => {
-  const entry = await import('../scripts/production-acceptance.js');
+test("service initialization rejects a previous server release without touching fixture tools", async () => {
+  const entry = await import("../scripts/production-acceptance.js");
   const client = serviceClient();
   client.listTools = async () => {
-    throw new Error('fixture must not run');
+    throw new Error("fixture must not run");
   };
   let closed = 0;
   const report = await entry.run(
-    ['--service', '--initialize-only'],
+    ["--service", "--initialize-only"],
     {
-      NEMLIG_PRODUCTION_MCP_URL: 'https://nemlig-mcp.example.test/mcp',
-      NEMLIG_MCP_SERVICE_ACCESS_TOKEN: 'test-token',
+      NEMLIG_PRODUCTION_MCP_URL: "https://nemlig-mcp.example.test/mcp",
+      NEMLIG_MCP_SERVICE_ACCESS_TOKEN: "test-token",
     },
     {
       fetcher: edgeFetcher([]),
       connect: async () => ({
         client,
-        serverVersion: '4.17.0',
+        serverVersion: "4.17.0",
         close: async () => {
           closed += 1;
         },
@@ -412,30 +412,30 @@ test('service initialization rejects a previous server release without touching 
     },
   );
   assert.equal(closed, 1);
-  assert.equal(report.failureCategory, 'feature_failed');
-  assert.equal(report.lastCompletedBoundary, 'service_runtime_version_read');
-  assert.deepEqual(report.failed, ['service_runtime_version_mismatch']);
+  assert.equal(report.failureCategory, "feature_failed");
+  assert.equal(report.lastCompletedBoundary, "service_runtime_version_read");
+  assert.deepEqual(report.failed, ["service_runtime_version_mismatch"]);
   assert.doesNotMatch(JSON.stringify(report), /4\.17\.0|test-token/u);
 });
 
-test('service acceptance rejects a previous backend release before listing tools', async () => {
-  const entry = await import('../scripts/production-acceptance.js');
+test("service acceptance rejects a previous backend release before listing tools", async () => {
+  const entry = await import("../scripts/production-acceptance.js");
   const client = serviceClient();
   client.listTools = async () => {
-    throw new Error('old backend must not list tools');
+    throw new Error("old backend must not list tools");
   };
   let closed = 0;
   const report = await entry.run(
-    ['--service'],
+    ["--service"],
     {
-      NEMLIG_PRODUCTION_MCP_URL: 'https://nemlig-mcp.example.test/mcp',
-      NEMLIG_MCP_SERVICE_ACCESS_TOKEN: 'test-token',
+      NEMLIG_PRODUCTION_MCP_URL: "https://nemlig-mcp.example.test/mcp",
+      NEMLIG_MCP_SERVICE_ACCESS_TOKEN: "test-token",
     },
     {
       fetcher: edgeFetcher([]),
       connect: async () => ({
         client,
-        serverVersion: '4.17.0',
+        serverVersion: "4.17.0",
         close: async () => {
           closed += 1;
         },
@@ -443,49 +443,49 @@ test('service acceptance rejects a previous backend release before listing tools
     },
   );
   assert.equal(closed, 1);
-  assert.equal(report.failureCategory, 'feature_failed');
-  assert.equal(report.lastCompletedBoundary, 'service_runtime_version_read');
-  assert.deepEqual(report.failed, ['service_runtime_version_mismatch']);
+  assert.equal(report.failureCategory, "feature_failed");
+  assert.equal(report.lastCompletedBoundary, "service_runtime_version_read");
+  assert.deepEqual(report.failed, ["service_runtime_version_mismatch"]);
   assert.doesNotMatch(JSON.stringify(report), /4\.17\.0|test-token/u);
-  assert.notEqual(NEMLIG_VERSION, '4.17.0');
+  assert.notEqual(NEMLIG_VERSION, "4.17.0");
 });
 
-test('service acceptance can verify a recorded restored package version', async () => {
-  const entry = await import('../scripts/production-acceptance.js');
+test("service acceptance can verify a recorded restored package version", async () => {
+  const entry = await import("../scripts/production-acceptance.js");
   const report = await entry.main(
-    ['--service', '--initialize-only'],
+    ["--service", "--initialize-only"],
     {
-      NEMLIG_MCP_SERVICE_ACCESS_TOKEN: 'service-token',
-      NEMLIG_EXPECTED_SERVICE_VERSION: '6.0.0',
+      NEMLIG_MCP_SERVICE_ACCESS_TOKEN: "service-token",
+      NEMLIG_EXPECTED_SERVICE_VERSION: "6.0.0",
     },
     {
       fetcher: edgeFetcher([]),
       connect: async () => ({
         client: serviceClient(),
-        serverVersion: '6.0.0',
+        serverVersion: "6.0.0",
         close: async () => undefined,
       }),
     },
   );
-  assert.deepEqual(report.passed, ['service_runtime']);
+  assert.deepEqual(report.passed, ["service_runtime"]);
 });
 
-test('service acceptance does not depend on legacy expired-session recovery', async () => {
+test("service acceptance does not depend on legacy expired-session recovery", async () => {
   const sessionRequests: string[] = [];
   const calls: string[] = [];
   const report = await (
-    await import('../scripts/production-acceptance.js')
+    await import("../scripts/production-acceptance.js")
   ).main(
-    ['--service'],
+    ["--service"],
     {
-      NEMLIG_PRODUCTION_MCP_URL: 'https://nemlig-mcp.example.test/mcp',
-      NEMLIG_MCP_SERVICE_ACCESS_TOKEN: 'service-token',
+      NEMLIG_PRODUCTION_MCP_URL: "https://nemlig-mcp.example.test/mcp",
+      NEMLIG_MCP_SERVICE_ACCESS_TOKEN: "service-token",
     },
     {
       fetcher: async (input, init) => {
         const request = new Request(input, init);
-        if (request.headers.has('mcp-session-id')) {
-          sessionRequests.push(request.headers.get('mcp-session-id') ?? '');
+        if (request.headers.has("mcp-session-id")) {
+          sessionRequests.push(request.headers.get("mcp-session-id") ?? "");
           return new Response(null, { status: 400 });
         }
         return edgeFetcher(calls)(input, init);
@@ -498,23 +498,23 @@ test('service acceptance does not depend on legacy expired-session recovery', as
     },
   );
   assert.deepEqual(sessionRequests, []);
-  assert.equal(calls.filter((path) => path === '/mcp').length, 2);
-  assert.equal(report.profile, 'service');
+  assert.equal(calls.filter((path) => path === "/mcp").length, 2);
+  assert.equal(report.profile, "service");
 });
 
-test('edge-only skips credentials and connect', async () => {
+test("edge-only skips credentials and connect", async () => {
   const calls: string[] = [];
   let connected = false;
   await (
-    await import('../scripts/production-acceptance.js')
+    await import("../scripts/production-acceptance.js")
   ).main(
-    ['--edge-only'],
+    ["--edge-only"],
     {},
     {
-      fetcher: edgeFetcher(calls, 'https://nemlig-mcp.broesby.dk/mcp'),
+      fetcher: edgeFetcher(calls, "https://nemlig-mcp.broesby.dk/mcp"),
       connect: async () => {
         connected = true;
-        throw new Error('must not connect');
+        throw new Error("must not connect");
       },
     },
   );
@@ -522,19 +522,19 @@ test('edge-only skips credentials and connect', async () => {
   assert.equal(calls.length, 5);
 });
 
-test('acceptance preserves observed revision evidence without exposing arbitrary provider text', async () => {
-  const entry = await import('../scripts/production-acceptance.js');
-  for (const revision of ['a'.repeat(40), 'private-provider-marker']) {
+test("acceptance preserves observed revision evidence without exposing arbitrary provider text", async () => {
+  const entry = await import("../scripts/production-acceptance.js");
+  for (const revision of ["a".repeat(40), "private-provider-marker"]) {
     const report = await entry.main(
-      ['--edge-only'],
+      ["--edge-only"],
       {},
       {
         fetcher: async (input, init) =>
-          String(input).endsWith('/revision')
+          String(input).endsWith("/revision")
             ? Response.json({ revision })
-            : edgeFetcher([], 'https://nemlig-mcp.broesby.dk/mcp')(input, init),
+            : edgeFetcher([], "https://nemlig-mcp.broesby.dk/mcp")(input, init),
         connect: async () => {
-          throw new Error('must not connect');
+          throw new Error("must not connect");
         },
       },
     );
@@ -543,77 +543,77 @@ test('acceptance preserves observed revision evidence without exposing arbitrary
       revision.length === 40 ? revision : undefined,
     );
     assert.equal(
-      JSON.stringify(report).includes('private-provider-marker'),
+      JSON.stringify(report).includes("private-provider-marker"),
       false,
     );
   }
 });
 
-test('removed production basket mutation mode is unavailable before network or connect', async () => {
+test("removed production basket mutation mode is unavailable before network or connect", async () => {
   const calls: string[] = [];
   let connected = false;
   const dependencies = {
     fetcher: edgeFetcher(calls),
     connect: async () => {
       connected = true;
-      throw new Error('must not connect');
+      throw new Error("must not connect");
     },
   };
-  const entry = await import('../scripts/production-acceptance.js');
+  const entry = await import("../scripts/production-acceptance.js");
   await assert.rejects(
-    entry.main(['--mutation'], {}, dependencies),
+    entry.main(["--mutation"], {}, dependencies),
     /Unknown acceptance argument/u,
   );
   await assert.rejects(
-    entry.main(['--edge-only', '--edge-only'], {}, dependencies),
+    entry.main(["--edge-only", "--edge-only"], {}, dependencies),
     /must not be repeated/u,
   );
   await assert.rejects(
-    entry.main(['--initialize-only'], {}, dependencies),
+    entry.main(["--initialize-only"], {}, dependencies),
     /requires --service/u,
   );
   await assert.rejects(
-    entry.main(['--service', '--wake-only'], {}, dependencies),
+    entry.main(["--service", "--wake-only"], {}, dependencies),
     /requires --service --initialize-only/u,
   );
   await assert.rejects(
     entry.main(
-      ['--edge-only', '--service', '--initialize-only'],
+      ["--edge-only", "--service", "--initialize-only"],
       {},
       dependencies,
     ),
     /cannot be combined/u,
   );
   await assert.rejects(
-    entry.main(['--unknown'], {}, dependencies),
+    entry.main(["--unknown"], {}, dependencies),
     /Unknown acceptance argument/u,
   );
   await assert.rejects(
-    entry.main(['positional'], {}, dependencies),
+    entry.main(["positional"], {}, dependencies),
     /Unknown acceptance argument/u,
   );
   assert.equal(connected, false);
   assert.deepEqual(calls, []);
 });
 
-test('acceptance uses one deadline, aborts hanging transport, and never continues after a late response', async () => {
+test("acceptance uses one deadline, aborts hanging transport, and never continues after a late response", async () => {
   const calls: string[] = [];
   let aborts = 0;
   let callsAfterTimeout = 0;
-  const entry = await import('../scripts/production-acceptance.js');
+  const entry = await import("../scripts/production-acceptance.js");
   await assert.rejects(
     entry.main(
       [],
       {
-        NEMLIG_PRODUCTION_MCP_URL: 'https://nemlig-mcp.example.test/mcp',
-        NEMLIG_MCP_ACCESS_TOKEN: 'test-token',
+        NEMLIG_PRODUCTION_MCP_URL: "https://nemlig-mcp.example.test/mcp",
+        NEMLIG_MCP_ACCESS_TOKEN: "test-token",
       },
       {
         fetcher: edgeFetcher(calls),
         totalTimeoutMs: 5,
         connect: async (_origin, _token, signal) => {
           signal.addEventListener(
-            'abort',
+            "abort",
             () => {
               aborts += 1;
             },
@@ -632,19 +632,19 @@ test('acceptance uses one deadline, aborts hanging transport, and never continue
 });
 
 test(
-  'deadline aborts a hanging feature call and cleanup without issuing later tool calls',
+  "deadline aborts a hanging feature call and cleanup without issuing later tool calls",
   { timeout: 1_000 },
   async () => {
     const edgeCalls: string[] = [];
     const toolCalls: string[] = [];
     let closes = 0;
-    const entry = await import('../scripts/production-acceptance.js');
+    const entry = await import("../scripts/production-acceptance.js");
     await assert.rejects(
       entry.main(
         [],
         {
-          NEMLIG_PRODUCTION_MCP_URL: 'https://nemlig-mcp.example.test/mcp',
-          NEMLIG_MCP_ACCESS_TOKEN: 'test-token',
+          NEMLIG_PRODUCTION_MCP_URL: "https://nemlig-mcp.example.test/mcp",
+          NEMLIG_MCP_ACCESS_TOKEN: "test-token",
         },
         {
           fetcher: edgeFetcher(edgeCalls),
@@ -674,21 +674,21 @@ test(
   },
 );
 
-test('rejecting cleanup is surfaced without an unhandled abort cleanup rejection', async () => {
-  const entry = await import('../scripts/production-acceptance.js');
+test("rejecting cleanup is surfaced without an unhandled abort cleanup rejection", async () => {
+  const entry = await import("../scripts/production-acceptance.js");
   await assert.rejects(
     entry.main(
       [],
       {
-        NEMLIG_PRODUCTION_MCP_URL: 'https://nemlig-mcp.example.test/mcp',
-        NEMLIG_MCP_ACCESS_TOKEN: 'test-token',
+        NEMLIG_PRODUCTION_MCP_URL: "https://nemlig-mcp.example.test/mcp",
+        NEMLIG_MCP_ACCESS_TOKEN: "test-token",
       },
       {
         fetcher: edgeFetcher([]),
         connect: async () => ({
           client: readonlyClient(),
           close: async () => {
-            throw new Error('cleanup refused');
+            throw new Error("cleanup refused");
           },
         }),
       },
@@ -697,19 +697,19 @@ test('rejecting cleanup is surfaced without an unhandled abort cleanup rejection
   );
 });
 
-test('missing token is rejected before connect', async () => {
+test("missing token is rejected before connect", async () => {
   const calls: string[] = [];
   let connected = false;
-  const entry = await import('../scripts/production-acceptance.js');
+  const entry = await import("../scripts/production-acceptance.js");
   await assert.rejects(
     entry.main(
       [],
       {},
       {
-        fetcher: edgeFetcher(calls, 'https://nemlig-mcp.broesby.dk/mcp'),
+        fetcher: edgeFetcher(calls, "https://nemlig-mcp.broesby.dk/mcp"),
         connect: async () => {
           connected = true;
-          throw new Error('must not connect');
+          throw new Error("must not connect");
         },
       },
     ),
@@ -719,23 +719,23 @@ test('missing token is rejected before connect', async () => {
   assert.equal(calls.length, 5);
 });
 
-test('read-only failure after connect still closes the client', async () => {
+test("read-only failure after connect still closes the client", async () => {
   const calls: string[] = [];
   let closed = 0;
-  const entry = await import('../scripts/production-acceptance.js');
+  const entry = await import("../scripts/production-acceptance.js");
   await assert.rejects(
     entry.main(
       [],
       {
-        NEMLIG_PRODUCTION_MCP_URL: 'https://nemlig-mcp.example.test/mcp',
-        NEMLIG_MCP_ACCESS_TOKEN: 'test-token',
+        NEMLIG_PRODUCTION_MCP_URL: "https://nemlig-mcp.example.test/mcp",
+        NEMLIG_MCP_ACCESS_TOKEN: "test-token",
       },
       {
         fetcher: edgeFetcher(calls),
         connect: async () => ({
           client: {
             listTools: async () => {
-              throw new Error('provider detail with secret');
+              throw new Error("provider detail with secret");
             },
             listResources: async () => ({ resources: [] }),
             readResource: async () => ({ contents: [] }),
@@ -752,18 +752,18 @@ test('read-only failure after connect still closes the client', async () => {
   assert.equal(closed, 1);
 });
 
-test('CLI report is allowlisted when a hostile provider failure occurs', async () => {
+test("CLI report is allowlisted when a hostile provider failure occurs", async () => {
   const output: string[] = [];
   const originalLog = console.log;
   console.log = (value: string) => output.push(value);
   try {
-    const entry = await import('../scripts/production-acceptance.js');
+    const entry = await import("../scripts/production-acceptance.js");
     const report = await entry.run(
       [],
       {
-        GITHUB_SHA: '0123456789012345678901234567890123456789',
-        NEMLIG_PRODUCTION_MCP_URL: 'https://nemlig-mcp.example.test/mcp',
-        NEMLIG_MCP_ACCESS_TOKEN: 'private-token',
+        GITHUB_SHA: "0123456789012345678901234567890123456789",
+        NEMLIG_PRODUCTION_MCP_URL: "https://nemlig-mcp.example.test/mcp",
+        NEMLIG_MCP_ACCESS_TOKEN: "private-token",
       },
       {
         fetcher: edgeFetcher([]),
@@ -771,7 +771,7 @@ test('CLI report is allowlisted when a hostile provider failure occurs', async (
           client: {
             listTools: async () => {
               throw new Error(
-                'provider assertion private-token basket details',
+                "provider assertion private-token basket details",
               );
             },
             listResources: async () => ({ resources: [] }),
@@ -782,23 +782,23 @@ test('CLI report is allowlisted when a hostile provider failure occurs', async (
         }),
       },
     );
-    assert.equal(report.failureCategory, 'authentication_failed');
-    assert.deepEqual(Object.keys(JSON.parse(output[0] ?? '{}')).sort(), [
-      'completedAt',
-      'correlationIds',
-      'failed',
-      'failureCategory',
-      'lastCompletedBoundary',
-      'passed',
-      'profile',
-      'required',
-      'schema',
-      'sourceSha',
-      'startedAt',
-      'unavailable',
+    assert.equal(report.failureCategory, "authentication_failed");
+    assert.deepEqual(Object.keys(JSON.parse(output[0] ?? "{}")).sort(), [
+      "completedAt",
+      "correlationIds",
+      "failed",
+      "failureCategory",
+      "lastCompletedBoundary",
+      "passed",
+      "profile",
+      "required",
+      "schema",
+      "sourceSha",
+      "startedAt",
+      "unavailable",
     ]);
     assert.doesNotMatch(
-      output[0] ?? '',
+      output[0] ?? "",
       /private-token|basket details|assertion/iu,
     );
   } finally {
@@ -806,27 +806,27 @@ test('CLI report is allowlisted when a hostile provider failure occurs', async (
   }
 });
 
-test('stale viewer HTML produces bounded feature evidence instead of parsing HTML as an input error', async () => {
+test("stale viewer HTML produces bounded feature evidence instead of parsing HTML as an input error", async () => {
   const output: string[] = [];
   const originalLog = console.log;
   console.log = (value: string) => output.push(value);
   try {
-    const entry = await import('../scripts/production-acceptance.js');
+    const entry = await import("../scripts/production-acceptance.js");
     const client = serviceClient();
     client.readResource = async ({ uri }) => ({
       contents: [
         {
           uri,
           mimeType: PRODUCT_VIEWER_MIME_TYPE,
-          text: '<html>required arguments private-viewer-content</html>',
+          text: "<html>required arguments private-viewer-content</html>",
         },
       ],
     });
     const report = await entry.run(
-      ['--service'],
+      ["--service"],
       {
-        NEMLIG_PRODUCTION_MCP_URL: 'https://nemlig-mcp.example.test/mcp',
-        NEMLIG_MCP_SERVICE_ACCESS_TOKEN: 'test-token',
+        NEMLIG_PRODUCTION_MCP_URL: "https://nemlig-mcp.example.test/mcp",
+        NEMLIG_MCP_SERVICE_ACCESS_TOKEN: "test-token",
       },
       {
         fetcher: edgeFetcher([]),
@@ -837,11 +837,11 @@ test('stale viewer HTML produces bounded feature evidence instead of parsing HTM
         }),
       },
     );
-    assert.equal(report.failureCategory, 'feature_failed');
-    assert.equal(report.lastCompletedBoundary, 'product_viewer_resource_read');
-    assert.deepEqual(report.failed, ['product_viewer_html_mismatch']);
+    assert.equal(report.failureCategory, "feature_failed");
+    assert.equal(report.lastCompletedBoundary, "product_viewer_resource_read");
+    assert.deepEqual(report.failed, ["product_viewer_html_mismatch"]);
     assert.doesNotMatch(
-      output.join(''),
+      output.join(""),
       /private-viewer-content|<html>|test-token/u,
     );
   } finally {
@@ -849,29 +849,29 @@ test('stale viewer HTML produces bounded feature evidence instead of parsing HTM
   }
 });
 
-test('service inventory drift identifies the failed list without exposing its contents', async () => {
-  const entry = await import('../scripts/production-acceptance.js');
+test("service inventory drift identifies the failed list without exposing its contents", async () => {
+  const entry = await import("../scripts/production-acceptance.js");
   for (const [kind, failed, boundary] of [
     [
-      'tool',
-      'service_tool_inventory_mismatch',
-      'service_tool_inventory_read_m3_x1',
+      "tool",
+      "service_tool_inventory_mismatch",
+      "service_tool_inventory_read_m3_x1",
     ],
     [
-      'resource',
-      'service_resource_inventory_mismatch',
-      'service_resource_inventory_read_missing_18_unexpected_1',
+      "resource",
+      "service_resource_inventory_mismatch",
+      "service_resource_inventory_read_missing_18_unexpected_1",
     ],
   ] as const) {
     const client = serviceClient();
-    if (kind === 'tool') {
-      client.listTools = async () => ({ tools: [{ name: 'private-token' }] });
+    if (kind === "tool") {
+      client.listTools = async () => ({ tools: [{ name: "private-token" }] });
       client.listResources = async () => {
-        throw new Error('resource inventory must not be requested');
+        throw new Error("resource inventory must not be requested");
       };
     } else {
       client.listResources = async () => ({
-        resources: [{ uri: 'private-token' }],
+        resources: [{ uri: "private-token" }],
       });
     }
     const output: string[] = [];
@@ -879,10 +879,10 @@ test('service inventory drift identifies the failed list without exposing its co
     console.log = (value: string) => output.push(value);
     try {
       const report = await entry.run(
-        ['--service'],
+        ["--service"],
         {
-          NEMLIG_PRODUCTION_MCP_URL: 'https://nemlig-mcp.example.test/mcp',
-          NEMLIG_MCP_SERVICE_ACCESS_TOKEN: 'test-token',
+          NEMLIG_PRODUCTION_MCP_URL: "https://nemlig-mcp.example.test/mcp",
+          NEMLIG_MCP_SERVICE_ACCESS_TOKEN: "test-token",
         },
         {
           fetcher: edgeFetcher([]),
@@ -893,29 +893,29 @@ test('service inventory drift identifies the failed list without exposing its co
           }),
         },
       );
-      assert.equal(report.failureCategory, 'feature_failed');
+      assert.equal(report.failureCategory, "feature_failed");
       assert.equal(report.lastCompletedBoundary, boundary);
       assert.deepEqual(report.failed, [failed]);
-      assert.doesNotMatch(output.join(''), /private-token|test-token/u);
+      assert.doesNotMatch(output.join(""), /private-token|test-token/u);
     } finally {
       console.log = originalLog;
     }
   }
 });
 
-test('service inventory evidence distinguishes a missing basket tool from an unexpected tool', async () => {
-  const entry = await import('../scripts/production-acceptance.js');
+test("service inventory evidence distinguishes a missing basket tool from an unexpected tool", async () => {
+  const entry = await import("../scripts/production-acceptance.js");
   const client = serviceClient();
   client.listTools = async () => ({
     tools: serviceAcceptanceToolInventory
-      .filter((name) => name !== 'show_my_basket')
+      .filter((name) => name !== "show_my_basket")
       .map((name) => ({ name })),
   });
   const report = await entry.run(
-    ['--service'],
+    ["--service"],
     {
-      NEMLIG_PRODUCTION_MCP_URL: 'https://nemlig-mcp.example.test/mcp',
-      NEMLIG_MCP_SERVICE_ACCESS_TOKEN: 'test-token',
+      NEMLIG_PRODUCTION_MCP_URL: "https://nemlig-mcp.example.test/mcp",
+      NEMLIG_MCP_SERVICE_ACCESS_TOKEN: "test-token",
     },
     {
       fetcher: edgeFetcher([]),
@@ -928,26 +928,26 @@ test('service inventory evidence distinguishes a missing basket tool from an une
   );
   assert.equal(
     report.lastCompletedBoundary,
-    'service_tool_inventory_read_m2_x0',
+    "service_tool_inventory_read_m2_x0",
   );
-  assert.deepEqual(report.failed, ['service_tool_inventory_mismatch']);
+  assert.deepEqual(report.failed, ["service_tool_inventory_mismatch"]);
 });
 
-test('service failure keeps the last completed MCP boundary and primary error', async () => {
-  const entry = await import('../scripts/production-acceptance.js');
+test("service failure keeps the last completed MCP boundary and primary error", async () => {
+  const entry = await import("../scripts/production-acceptance.js");
   const client = serviceClient();
   client.listResources = async () => {
-    throw new Error('MCP resource stream failed private-data');
+    throw new Error("MCP resource stream failed private-data");
   };
   const output: string[] = [];
   const originalLog = console.log;
   console.log = (value: string) => output.push(value);
   try {
     const report = await entry.run(
-      ['--service'],
+      ["--service"],
       {
-        NEMLIG_PRODUCTION_MCP_URL: 'https://nemlig-mcp.example.test/mcp',
-        NEMLIG_MCP_SERVICE_ACCESS_TOKEN: 'test-token',
+        NEMLIG_PRODUCTION_MCP_URL: "https://nemlig-mcp.example.test/mcp",
+        NEMLIG_MCP_SERVICE_ACCESS_TOKEN: "test-token",
       },
       {
         fetcher: edgeFetcher([]),
@@ -955,15 +955,15 @@ test('service failure keeps the last completed MCP boundary and primary error', 
           client,
           serverVersion: NEMLIG_VERSION,
           close: async () => {
-            throw new Error('close failed');
+            throw new Error("close failed");
           },
         }),
       },
     );
-    assert.equal(report.failureCategory, 'transport_failed');
-    assert.equal(report.lastCompletedBoundary, 'service_tool_inventory_read');
+    assert.equal(report.failureCategory, "transport_failed");
+    assert.equal(report.lastCompletedBoundary, "service_tool_inventory_read");
     assert.doesNotMatch(
-      output.join(''),
+      output.join(""),
       /private-data|test-token|close failed/u,
     );
   } finally {
@@ -971,18 +971,18 @@ test('service failure keeps the last completed MCP boundary and primary error', 
   }
 });
 
-test('service timeout reports the last completed MCP boundary', async () => {
-  const entry = await import('../scripts/production-acceptance.js');
+test("service timeout reports the last completed MCP boundary", async () => {
+  const entry = await import("../scripts/production-acceptance.js");
   const client = serviceClient();
   client.listResources = async () => await new Promise(() => undefined);
   const originalLog = console.log;
   console.log = () => undefined;
   try {
     const report = await entry.run(
-      ['--service'],
+      ["--service"],
       {
-        NEMLIG_PRODUCTION_MCP_URL: 'https://nemlig-mcp.example.test/mcp',
-        NEMLIG_MCP_SERVICE_ACCESS_TOKEN: 'test-token',
+        NEMLIG_PRODUCTION_MCP_URL: "https://nemlig-mcp.example.test/mcp",
+        NEMLIG_MCP_SERVICE_ACCESS_TOKEN: "test-token",
       },
       {
         fetcher: edgeFetcher([]),
@@ -994,8 +994,8 @@ test('service timeout reports the last completed MCP boundary', async () => {
         totalTimeoutMs: 25,
       },
     );
-    assert.equal(report.failureCategory, 'deadline_exceeded');
-    assert.equal(report.lastCompletedBoundary, 'service_tool_inventory_read');
+    assert.equal(report.failureCategory, "deadline_exceeded");
+    assert.equal(report.lastCompletedBoundary, "service_tool_inventory_read");
   } finally {
     console.log = originalLog;
   }

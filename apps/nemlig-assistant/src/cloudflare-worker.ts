@@ -1,37 +1,37 @@
 /// <reference types="@cloudflare/workers-types" />
 
-import { Container, getContainer } from '@cloudflare/containers';
-import type { OAuthTokenVerifier } from '@modelcontextprotocol/express';
-import { DurableObject } from 'cloudflare:workers';
+import { Container, getContainer } from "@cloudflare/containers";
+import type { OAuthTokenVerifier } from "@modelcontextprotocol/express";
+import { DurableObject } from "cloudflare:workers";
 import {
   createAuth0Verifier,
   fetchAuth0Metadata,
   SERVICE_ACCEPTANCE_SCOPE,
   type Auth0Config,
-} from './auth0.js';
+} from "./auth0.js";
 import {
   FIXED_CONTAINER_NAME,
   loadGatewayConfig,
   type CloudflareEnv,
   type GatewayConfig,
-} from './cloudflare-config.js';
+} from "./cloudflare-config.js";
 import {
   attachAdmissionCredential,
   handleGatewayRequest,
   type GatewayDeadline,
-} from './cloudflare-gateway.js';
+} from "./cloudflare-gateway.js";
 import {
   parseGatewayRequestEvent,
   parseViewerResourceReadEvent,
   type GatewayRequestEvent,
   type ViewerResourceReadEvent,
-} from './cloudflare-observability.js';
+} from "./cloudflare-observability.js";
 import type {
   AdmissionPrincipal,
   AdmissionResult,
   AdmissionPolicy,
-} from './principal-records.js';
-import { findEnabledPrincipal, type Principal } from './principal-policy.js';
+} from "./principal-records.js";
+import { findEnabledPrincipal, type Principal } from "./principal-policy.js";
 import {
   admitPrincipalRequest,
   consumePortalCsrf,
@@ -40,10 +40,10 @@ import {
   replaceCredentialRecord,
   revokeCredentialRecord,
   setPrincipalStatus,
-} from './principal-records.js';
-import { encryptCredentials } from './credential-envelope.js';
-import type { Credentials } from './config.js';
-import { handleOnboardingRequest } from './onboarding.js';
+} from "./principal-records.js";
+import { encryptCredentials } from "./credential-envelope.js";
+import type { Credentials } from "./config.js";
+import { handleOnboardingRequest } from "./onboarding.js";
 
 interface Env extends CloudflareEnv {
   NEMLIG_MCP_CONTAINER: DurableObjectNamespace<NemligMcpContainer>;
@@ -59,9 +59,9 @@ interface Env extends CloudflareEnv {
 const containerNamespace = (
   env: Env,
 ): DurableObjectNamespace<NemligMcpContainer> =>
-  env.NEMLIG_MCP_REVISION === 'local'
+  env.NEMLIG_MCP_REVISION === "local"
     ? env.NEMLIG_MCP_CONTAINER
-    : env.NEMLIG_MCP_CONTAINER.jurisdiction('eu');
+    : env.NEMLIG_MCP_CONTAINER.jurisdiction("eu");
 
 let cachedVerifier: { key: string; verifier: OAuthTokenVerifier } | undefined;
 
@@ -78,7 +78,7 @@ const auth0Config = (config: GatewayConfig): Auth0Config => ({
   publicUrl: config.publicUrl,
   allowedOrigins: config.allowedOrigins,
   revision: config.revision,
-  host: '0.0.0.0',
+  host: "0.0.0.0",
   port: 8080,
 });
 
@@ -93,7 +93,7 @@ const authenticateSubject = async (
   config: GatewayConfig,
   deadline: GatewayDeadline,
 ): Promise<VerifiedSubject | undefined> => {
-  const key = `${config.issuer.href}\0${config.audience}\0${config.requiredScope}\0${config.serviceAcceptance?.clientId ?? ''}`;
+  const key = `${config.issuer.href}\0${config.audience}\0${config.requiredScope}\0${config.serviceAcceptance?.clientId ?? ""}`;
   if (cachedVerifier?.key !== key) {
     const auth = auth0Config(config);
     const boundedFetch: typeof fetch = (input, init) =>
@@ -120,7 +120,7 @@ const authenticateSubject = async (
   }
   const verified = await cachedVerifier.verifier.verifyAccessToken(token);
   const subject = verified.extra?.subject;
-  return typeof subject === 'string'
+  return typeof subject === "string"
     ? { subject, clientId: verified.clientId, scopes: verified.scopes }
     : undefined;
 };
@@ -130,7 +130,7 @@ const isVerifiedServicePrincipal = (
   config: GatewayConfig,
 ): boolean =>
   !!config.serviceAcceptance &&
-  principal.principal_key === 's'.repeat(32) &&
+  principal.principal_key === "s".repeat(32) &&
   principal.subject === `${config.serviceAcceptance.clientId}@clients`;
 
 const requestEvent = (event: GatewayRequestEvent): void => {
@@ -142,45 +142,45 @@ const viewerResourceReadEvent = (event: ViewerResourceReadEvent): void => {
 };
 
 const lifecycleEvent = (
-  event: 'container_started' | 'container_stopped' | 'container_error',
+  event: "container_started" | "container_stopped" | "container_error",
 ): void => {
   console.log(JSON.stringify({ schema_version: 1, event }));
 };
 
 export class NemligMcpContainer extends Container<Env> {
   defaultPort = 8080;
-  sleepAfter = '10m';
+  sleepAfter = "10m";
   envVars = {
-    NEMLIG_MCP_AUTH0_ISSUER: this.env.NEMLIG_MCP_AUTH0_ISSUER ?? '',
-    NEMLIG_MCP_AUTH0_AUDIENCE: this.env.NEMLIG_MCP_AUTH0_AUDIENCE ?? '',
-    NEMLIG_MCP_PRINCIPALS: this.env.NEMLIG_MCP_PRINCIPALS ?? '',
+    NEMLIG_MCP_AUTH0_ISSUER: this.env.NEMLIG_MCP_AUTH0_ISSUER ?? "",
+    NEMLIG_MCP_AUTH0_AUDIENCE: this.env.NEMLIG_MCP_AUTH0_AUDIENCE ?? "",
+    NEMLIG_MCP_PRINCIPALS: this.env.NEMLIG_MCP_PRINCIPALS ?? "",
     NEMLIG_MCP_REQUIRED_SCOPE:
-      this.env.NEMLIG_MCP_REQUIRED_SCOPE ?? 'use:nemlig-assistant',
-    NEMLIG_MCP_PUBLIC_URL: this.env.NEMLIG_MCP_PUBLIC_URL ?? '',
+      this.env.NEMLIG_MCP_REQUIRED_SCOPE ?? "use:nemlig-assistant",
+    NEMLIG_MCP_PUBLIC_URL: this.env.NEMLIG_MCP_PUBLIC_URL ?? "",
     NEMLIG_MCP_ALLOWED_ORIGINS:
       this.env.NEMLIG_MCP_ALLOWED_ORIGINS ??
-      'https://chatgpt.com,https://chat.openai.com',
-    NEMLIG_MCP_REVISION: this.env.NEMLIG_MCP_REVISION ?? 'development',
-    NEMLIG_MCP_CREDENTIAL_KEY: this.env.NEMLIG_MCP_CREDENTIAL_KEY ?? '',
+      "https://chatgpt.com,https://chat.openai.com",
+    NEMLIG_MCP_REVISION: this.env.NEMLIG_MCP_REVISION ?? "development",
+    NEMLIG_MCP_CREDENTIAL_KEY: this.env.NEMLIG_MCP_CREDENTIAL_KEY ?? "",
     NEMLIG_MCP_CREDENTIAL_KEY_VERSION:
-      this.env.NEMLIG_MCP_CREDENTIAL_KEY_VERSION ?? '',
+      this.env.NEMLIG_MCP_CREDENTIAL_KEY_VERSION ?? "",
     NEMLIG_MCP_SERVICE_ACCEPTANCE_ENABLED:
-      this.env.NEMLIG_MCP_SERVICE_ACCEPTANCE_ENABLED ?? 'false',
-    NEMLIG_MCP_SERVICE_CLIENT_ID: this.env.NEMLIG_MCP_SERVICE_CLIENT_ID ?? '',
-    NEMLIG_MCP_HTTP_HOST: '0.0.0.0',
-    NEMLIG_MCP_HTTP_PORT: '8080',
+      this.env.NEMLIG_MCP_SERVICE_ACCEPTANCE_ENABLED ?? "false",
+    NEMLIG_MCP_SERVICE_CLIENT_ID: this.env.NEMLIG_MCP_SERVICE_CLIENT_ID ?? "",
+    NEMLIG_MCP_HTTP_HOST: "0.0.0.0",
+    NEMLIG_MCP_HTTP_PORT: "8080",
   };
 
   override onStart(): void {
-    lifecycleEvent('container_started');
+    lifecycleEvent("container_started");
   }
 
   override onStop(): void {
-    lifecycleEvent('container_stopped');
+    lifecycleEvent("container_stopped");
   }
 
   override onError(): void {
-    lifecycleEvent('container_error');
+    lifecycleEvent("container_error");
   }
 
   async admit(
@@ -203,7 +203,7 @@ export class NemligMcpContainer extends Container<Env> {
     );
     if (
       record &&
-      (record.status !== 'enabled' ||
+      (record.status !== "enabled" ||
         record.principal_key !== configured.principal_key)
     ) {
       return undefined;
@@ -213,22 +213,22 @@ export class NemligMcpContainer extends Container<Env> {
 
   async principalStatus(
     subject: string,
-  ): Promise<'owner' | 'pending' | 'enabled' | undefined> {
+  ): Promise<"owner" | "pending" | "enabled" | undefined> {
     const policy = loadGatewayConfig(this.env).principalPolicy;
     const configured = findEnabledPrincipal(policy, subject);
     if (!configured) {
       return undefined;
     }
     if (subject === policy.owner_subject) {
-      return 'owner';
+      return "owner";
     }
     const record = await findPrincipalRecord(this.ctx.storage, subject);
     if (record && record.principal_key !== configured.principal_key) {
       return undefined;
     }
     return !record
-      ? 'enabled'
-      : record.status === 'pending' || record.status === 'enabled'
+      ? "enabled"
+      : record.status === "pending" || record.status === "enabled"
         ? record.status
         : undefined;
   }
@@ -248,7 +248,7 @@ export class NemligMcpContainer extends Container<Env> {
     if (
       record &&
       (record.principal_key !== configured.principal_key ||
-        (record.status !== 'pending' && record.status !== 'enabled'))
+        (record.status !== "pending" && record.status !== "enabled"))
     ) {
       return undefined;
     }
@@ -265,10 +265,10 @@ export class NemligMcpContainer extends Container<Env> {
   async replaceCredential(
     subject: string,
     credentials: Credentials,
-  ): Promise<'connected' | 'invalid'> {
+  ): Promise<"connected" | "invalid"> {
     const principal = await this.managementPrincipal(subject);
     if (!principal || !this.env.NEMLIG_MCP_CREDENTIAL_KEY) {
-      return 'invalid';
+      return "invalid";
     }
     const config = loadGatewayConfig(this.env);
     const current = await getCredentialRecord(this.ctx.storage, principal);
@@ -284,22 +284,22 @@ export class NemligMcpContainer extends Container<Env> {
       this.env.NEMLIG_MCP_CREDENTIAL_KEY,
     );
     const headers = {
-      'x-nemlig-credential-envelope': btoa(JSON.stringify(envelope)),
-      'x-nemlig-principal-key': envelope.principal_key,
-      'x-nemlig-policy-revision': envelope.policy_revision,
-      'x-nemlig-credential-generation': String(envelope.generation),
+      "x-nemlig-credential-envelope": btoa(JSON.stringify(envelope)),
+      "x-nemlig-principal-key": envelope.principal_key,
+      "x-nemlig-policy-revision": envelope.policy_revision,
+      "x-nemlig-credential-generation": String(envelope.generation),
     };
     const validation = await this.fetch(
-      new Request('http://container.internal/__credential-validation', {
-        method: 'POST',
+      new Request("http://container.internal/__credential-validation", {
+        method: "POST",
         headers,
       }),
     );
     if (!validation.ok) {
-      return 'invalid';
+      return "invalid";
     }
     await replaceCredentialRecord(this.ctx.storage, principal, envelope, true);
-    return 'connected';
+    return "connected";
   }
 
   async revokeCredential(subject: string): Promise<void> {
@@ -311,14 +311,14 @@ export class NemligMcpContainer extends Container<Env> {
 
   async setInviteeStatus(
     subject: string,
-    status: 'disabled' | 'revoked',
+    status: "disabled" | "revoked",
   ): Promise<void> {
     const policy = loadGatewayConfig(this.env).principalPolicy;
     const principal = policy.principals.find(
       (member) => member.subject === subject,
     );
     if (!principal || subject === policy.owner_subject) {
-      throw new Error('Access update rejected.');
+      throw new Error("Access update rejected.");
     }
     const record = await setPrincipalStatus(
       this.ctx.storage,
@@ -326,7 +326,7 @@ export class NemligMcpContainer extends Container<Env> {
       status,
     );
     if (!record || record.status !== status) {
-      throw new Error('Access update rejected.');
+      throw new Error("Access update rejected.");
     }
   }
 
@@ -341,7 +341,7 @@ export class NemligMcpContainer extends Container<Env> {
   async listInvitees(): Promise<
     Array<{
       subject: string;
-      status: 'pending' | 'enabled' | 'disabled' | 'revoked';
+      status: "pending" | "enabled" | "disabled" | "revoked";
     }>
   > {
     const policy = loadGatewayConfig(this.env).principalPolicy;
@@ -356,8 +356,8 @@ export class NemligMcpContainer extends Container<Env> {
           return {
             subject: principal.subject,
             status: !principal.enabled
-              ? 'disabled'
-              : (record?.status ?? 'enabled'),
+              ? "disabled"
+              : (record?.status ?? "enabled"),
           };
         }),
     );
@@ -367,15 +367,15 @@ export class NemligMcpContainer extends Container<Env> {
 // ponytail: retain the retired namespace and data; remove only with approved data cleanup.
 export class PlanStorage extends DurableObject<Env> {
   async fetch(): Promise<Response> {
-    return new Response('Saved shopping storage retired', { status: 410 });
+    return new Response("Saved shopping storage retired", { status: 410 });
   }
 }
 
-export { ContainerProxy } from '@cloudflare/containers';
+export { ContainerProxy } from "@cloudflare/containers";
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
-    if (new URL(request.url).pathname.startsWith('/connect')) {
+    if (new URL(request.url).pathname.startsWith("/connect")) {
       return handleOnboardingRequest(request, env, {
         async authenticate(token) {
           const config = loadGatewayConfig(env);
@@ -435,13 +435,13 @@ export default {
         },
         async setPrincipalStatus(subject, status) {
           return getContainer(
-            env.NEMLIG_MCP_CONTAINER.jurisdiction('eu'),
+            env.NEMLIG_MCP_CONTAINER.jurisdiction("eu"),
             FIXED_CONTAINER_NAME,
           ).setInviteeStatus(subject, status);
         },
         async consumeCsrf(subject, csrf, expiresAt) {
           return getContainer(
-            env.NEMLIG_MCP_CONTAINER.jurisdiction('eu'),
+            env.NEMLIG_MCP_CONTAINER.jurisdiction("eu"),
             FIXED_CONTAINER_NAME,
           ).consumePortalCsrf(subject, csrf, expiresAt);
         },
@@ -462,7 +462,7 @@ export default {
         if (service) {
           return {
             subject: identity.subject,
-            principal_key: 's'.repeat(32),
+            principal_key: "s".repeat(32),
             enabled: true,
           };
         }
@@ -490,7 +490,7 @@ export default {
           {
             revision: config.principalPolicy.revision,
           },
-          operation !== 'protocol' &&
+          operation !== "protocol" &&
             !isVerifiedServicePrincipal(principal, config),
         );
       },

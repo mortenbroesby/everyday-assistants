@@ -1,19 +1,19 @@
-import type { Product } from './client.js';
-import type { DetailedProductSearchItem } from './product-discovery.js';
+import type { Product } from "./client.js";
+import type { DetailedProductSearchItem } from "./product-discovery.js";
 
 export const IMAGE_ORIGINS = [
-  'https://nemlig.com',
-  'https://www.nemlig.com',
+  "https://nemlig.com",
+  "https://www.nemlig.com",
 ] as const;
 
 /** Keep provider-hosted images safe for model-visible product output. */
 export const safeNemligImageUrl = (value: unknown): string | undefined => {
-  if (typeof value !== 'string') {
+  if (typeof value !== "string") {
     return undefined;
   }
   try {
     const url = new URL(value);
-    return url.protocol === 'https:' &&
+    return url.protocol === "https:" &&
       IMAGE_ORIGINS.includes(url.origin as (typeof IMAGE_ORIGINS)[number])
       ? url.href
       : undefined;
@@ -31,7 +31,7 @@ export interface ProductCandidate {
   unit_size: string | undefined;
   category?: string;
   subcategory?: string;
-  currency: 'DKK';
+  currency: "DKK";
   description?: string;
   declaration?: string;
   details?: Array<{ key: string; value: string }>;
@@ -64,14 +64,14 @@ export interface ProductSummaryFacts {
 }
 
 export type ProductViewContext =
-  | { readonly kind: 'search' | 'details' | 'result' }
+  | { readonly kind: "search" | "details" | "result" }
   | {
-      readonly kind: 'basket';
+      readonly kind: "basket";
       readonly quantity?: number;
       readonly line_total?: number;
     }
   | {
-      readonly kind: 'review';
+      readonly kind: "review";
       readonly quantity?: number;
       readonly line_total?: number;
       readonly approved: boolean;
@@ -79,21 +79,21 @@ export type ProductViewContext =
 
 export type ProductView =
   | {
-      readonly context: ProductViewContext['kind'];
-      readonly status: 'complete';
+      readonly context: ProductViewContext["kind"];
+      readonly status: "complete";
       readonly product: ProductCandidate;
       readonly basket?: Extract<
         ProductViewContext,
-        { readonly kind: 'basket' }
+        { readonly kind: "basket" }
       >;
       readonly review?: Extract<
         ProductViewContext,
-        { readonly kind: 'review' }
+        { readonly kind: "review" }
       >;
     }
   | {
-      readonly context: ProductViewContext['kind'];
-      readonly status: 'unavailable';
+      readonly context: ProductViewContext["kind"];
+      readonly status: "unavailable";
       readonly product_id?: number;
     };
 
@@ -102,11 +102,11 @@ const hasLabelSubstring = (
   substring: string,
 ): boolean =>
   labels?.some((label) =>
-    label.toLocaleLowerCase('da-DK').includes(substring),
+    label.toLocaleLowerCase("da-DK").includes(substring),
   ) ?? false;
 
 const productCandidate = (product: Product): ProductCandidate => {
-  const organic = product.isOrganic || hasLabelSubstring(product.labels, 'øko');
+  const organic = product.isOrganic || hasLabelSubstring(product.labels, "øko");
   return {
     id: product.id,
     name: product.name,
@@ -116,7 +116,7 @@ const productCandidate = (product: Product): ProductCandidate => {
     unit_size: product.unitSize || undefined,
     category: product.category || undefined,
     subcategory: product.subcategory || undefined,
-    currency: 'DKK',
+    currency: "DKK",
     ...(product.description ? { description: product.description } : {}),
     ...(product.declaration ? { declaration: product.declaration } : {}),
     ...(product.details?.length ? { details: product.details } : {}),
@@ -127,7 +127,7 @@ const productCandidate = (product: Product): ProductCandidate => {
     is_on_discount: product.isOnDiscount,
     image_url: safeNemligImageUrl(product.imageUrl),
     labels: [...product.labels],
-    tags: organic ? ['organic'] : [],
+    tags: organic ? ["organic"] : [],
   };
 };
 
@@ -142,9 +142,9 @@ export function rankProducts(
 /** Adapts facts already present in basket/review output; it never fetches details. */
 export function createProductViewFromSummary(
   facts: ProductSummaryFacts,
-  context: Extract<ProductViewContext, { readonly kind: 'basket' | 'review' }>,
+  context: Extract<ProductViewContext, { readonly kind: "basket" | "review" }>,
 ): ProductView {
-  const hasOrganicLabel = hasLabelSubstring(facts.labels, 'øko');
+  const hasOrganicLabel = hasLabelSubstring(facts.labels, "øko");
   const product: ProductCandidate = {
     id: facts.id,
     name: facts.name,
@@ -154,7 +154,7 @@ export function createProductViewFromSummary(
     unit_size: facts.unit_size,
     category: facts.category,
     subcategory: facts.subcategory,
-    currency: 'DKK',
+    currency: "DKK",
     brand: undefined,
     available: facts.available,
     is_organic:
@@ -162,16 +162,16 @@ export function createProductViewFromSummary(
     is_frozen: facts.is_frozen,
     is_on_discount:
       facts.is_on_discount ??
-      (hasLabelSubstring(facts.labels, 'tilbud') || undefined),
+      (hasLabelSubstring(facts.labels, "tilbud") || undefined),
     image_url: undefined,
     labels: [...(facts.labels ?? [])],
-    tags: (facts.is_organic ?? hasOrganicLabel) ? ['organic'] : [],
+    tags: (facts.is_organic ?? hasOrganicLabel) ? ["organic"] : [],
   };
   return {
     context: context.kind,
-    status: 'complete',
+    status: "complete",
     product,
-    ...(context.kind === 'basket'
+    ...(context.kind === "basket"
       ? {
           basket: {
             kind: context.kind,
@@ -180,7 +180,7 @@ export function createProductViewFromSummary(
           },
         }
       : {}),
-    ...(context.kind === 'review' ? { review: context } : {}),
+    ...(context.kind === "review" ? { review: context } : {}),
   };
 }
 
@@ -192,20 +192,20 @@ export function createProductView(
   item: DetailedProductSearchItem | Product,
   context: ProductViewContext,
 ): ProductView {
-  if ('status' in item && item.status !== 'hydrated') {
+  if ("status" in item && item.status !== "hydrated") {
     return {
       context: context.kind,
-      status: 'unavailable',
+      status: "unavailable",
       ...(item.productId === undefined ? {} : { product_id: item.productId }),
     };
   }
-  const product = 'status' in item ? item.product : item;
+  const product = "status" in item ? item.product : item;
   return {
     context: context.kind,
-    status: 'complete',
+    status: "complete",
     product: productCandidate(product),
-    ...(context.kind === 'basket' ? { basket: context } : {}),
-    ...(context.kind === 'review' ? { review: context } : {}),
+    ...(context.kind === "basket" ? { basket: context } : {}),
+    ...(context.kind === "review" ? { review: context } : {}),
   };
 }
 

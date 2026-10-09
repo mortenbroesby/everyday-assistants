@@ -1,6 +1,6 @@
-import type { Meta, StoryObj } from '@storybook/react-vite';
-import type { ReactNode } from 'react';
-import type { ProductView } from '../../product-presentation.js';
+import type { Meta, StoryObj } from "@storybook/react-vite";
+import type { ReactNode } from "react";
+import type { ProductView } from "../../product-presentation.js";
 import {
   ActionFooter,
   DestinationTabs,
@@ -12,40 +12,40 @@ import {
   QuantityControl,
   ViewerButton,
   ViewerShell,
-} from './index.js';
+} from "./index.js";
 
 const milk: ProductView = {
-  context: 'review',
-  status: 'complete',
+  context: "review",
+  status: "complete",
   product: {
     id: 1,
-    name: 'Arla ØKO Minimælk',
-    brand: 'Arla',
-    unit_size: '1 L',
+    name: "Arla ØKO Minimælk",
+    brand: "Arla",
+    unit_size: "1 L",
     price: 12.95,
     unit_price: 12.95,
-    unit: 'kr/L',
-    currency: 'DKK',
-    description: 'Økologisk minimælk til morgenmad, kaffe og madlavning.',
-    declaration: 'MÆLK, 1,5 % fedt.',
+    unit: "kr/L",
+    currency: "DKK",
+    description: "Økologisk minimælk til morgenmad, kaffe og madlavning.",
+    declaration: "MÆLK, 1,5 % fedt.",
     details: [
-      { key: 'Oprindelsesland', value: 'Danmark' },
-      { key: 'Opbevaring', value: 'Opbevares køligt' },
+      { key: "Oprindelsesland", value: "Danmark" },
+      { key: "Opbevaring", value: "Opbevares køligt" },
     ],
     available: true,
     is_organic: true,
     is_frozen: false,
     is_on_discount: true,
     image_url: undefined,
-    labels: ['Økologisk', 'Tilbud'],
-    tags: ['organic'],
+    labels: ["Økologisk", "Tilbud"],
+    tags: ["organic"],
   },
-  review: { kind: 'review', quantity: 2, line_total: 25.9, approved: false },
+  review: { kind: "review", quantity: 2, line_total: 25.9, approved: false },
 };
 
 const unavailable: ProductView = {
-  context: 'review',
-  status: 'unavailable',
+  context: "review",
+  status: "unavailable",
   product_id: 99,
 };
 
@@ -75,7 +75,7 @@ function ProductRow({
   ready?: boolean;
 }) {
   const name =
-    view.status === 'complete' ? (view.product.name ?? 'Product') : 'Product';
+    view.status === "complete" ? (view.product.name ?? "Product") : "Product";
   return (
     <article className="product-card">
       {!ready && (
@@ -95,7 +95,7 @@ function ProductRow({
           <div className="product-expanded">
             <ProductFacts
               view={view}
-              expandedFacts={new Set(['Varebeskrivelse'])}
+              expandedFacts={new Set(["Varebeskrivelse"])}
             />
             <QuantityControl
               label={name}
@@ -131,13 +131,13 @@ function AlternativeRow({ selected = false }: { selected?: boolean }) {
         >
           <ProductSummary view={milk} quantity={1} />
           <span className="alternative-choice-state" aria-hidden="true">
-            {selected ? 'Selected' : 'Select'}
+            {selected ? "Selected" : "Select"}
           </span>
         </button>
         <div className="product-expanded">
           <ProductFacts
             view={milk}
-            expandedFacts={new Set(['Varebeskrivelse'])}
+            expandedFacts={new Set(["Varebeskrivelse"])}
           />
         </div>
       </div>
@@ -146,12 +146,12 @@ function AlternativeRow({ selected = false }: { selected?: boolean }) {
 }
 
 const meta = {
-  title: 'Picker/Visual contract',
+  title: "Picker/Visual contract",
   parameters: {
     docs: {
       description: {
         component:
-          'Deterministic component fixtures for visual review. These stories do not initialize the MCP Apps bridge or prove ChatGPT-host behavior.',
+          "Deterministic component fixtures for visual review. These stories do not initialize the MCP Apps bridge or prove ChatGPT-host behavior.",
       },
     },
   },

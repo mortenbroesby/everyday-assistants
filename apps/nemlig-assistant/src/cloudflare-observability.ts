@@ -1,46 +1,46 @@
-import { z } from 'zod';
+import { z } from "zod";
 
 const routeSchema = z.enum([
-  'health',
-  'revision',
-  'oauth_metadata',
-  'mcp',
-  'unknown',
+  "health",
+  "revision",
+  "oauth_metadata",
+  "mcp",
+  "unknown",
 ]);
-const methodSchema = z.enum(['GET', 'POST', 'DELETE', 'OTHER']);
-const operationSchema = z.enum(['protocol', 'profile', 'useful', 'none']);
+const methodSchema = z.enum(["GET", "POST", "DELETE", "OTHER"]);
+const operationSchema = z.enum(["protocol", "profile", "useful", "none"]);
 const denialReasonSchema = z.enum([
-  'none',
-  'mcp_disabled',
-  'configuration_invalid',
-  'request_invalid',
-  'origin_not_allowed',
-  'authentication_required',
-  'authentication_failed',
-  'principal_not_allowed',
-  'credential_required',
+  "none",
+  "mcp_disabled",
+  "configuration_invalid",
+  "request_invalid",
+  "origin_not_allowed",
+  "authentication_required",
+  "authentication_failed",
+  "principal_not_allowed",
+  "credential_required",
 ]);
 const outcomeSchema = z.enum([
-  'completed',
-  'protocol_completed',
-  'disabled',
-  'configuration_rejected',
-  'request_rejected',
-  'authentication_rejected',
-  'authentication_timeout',
-  'authentication_unavailable',
-  'control_timeout',
-  'connection_required',
-  'backend_timeout',
-  'backend_rejected',
-  'request_timeout',
-  'backend_failed',
+  "completed",
+  "protocol_completed",
+  "disabled",
+  "configuration_rejected",
+  "request_rejected",
+  "authentication_rejected",
+  "authentication_timeout",
+  "authentication_unavailable",
+  "control_timeout",
+  "connection_required",
+  "backend_timeout",
+  "backend_rejected",
+  "request_timeout",
+  "backend_failed",
 ]);
 
 const gatewayRequestEventSchema = z
   .object({
     schema_version: z.literal(2),
-    event: z.literal('gateway_request_terminal'),
+    event: z.literal("gateway_request_terminal"),
     request_id: z.string().uuid(),
     revision: z.string().min(1).max(128),
     route: routeSchema,
@@ -54,17 +54,17 @@ const gatewayRequestEventSchema = z
   .strict();
 
 export type GatewayRequestEvent = z.infer<typeof gatewayRequestEventSchema>;
-export type GatewayRoute = GatewayRequestEvent['route'];
-export type GatewayMethod = GatewayRequestEvent['method'];
-export type GatewayOutcome = GatewayRequestEvent['outcome'];
+export type GatewayRoute = GatewayRequestEvent["route"];
+export type GatewayMethod = GatewayRequestEvent["method"];
+export type GatewayOutcome = GatewayRequestEvent["outcome"];
 
 /** Bounded resource-binding evidence. It never contains a raw URI or user data. */
 const viewerResourceReadEventSchema = z
   .object({
     schema_version: z.literal(1),
-    event: z.literal('viewer_resource_read'),
+    event: z.literal("viewer_resource_read"),
     correlation_id: z.string().uuid(),
-    uri_class: z.enum(['current', 'retired', 'other']),
+    uri_class: z.enum(["current", "retired", "other"]),
     artifact_id: z
       .string()
       .regex(/^[a-f0-9]{64}$/u)
@@ -87,25 +87,25 @@ export function parseViewerResourceReadEvent(
 }
 
 export function classifyGatewayRoute(pathname: string): GatewayRoute {
-  if (pathname === '/healthz') {
-    return 'health';
+  if (pathname === "/healthz") {
+    return "health";
   }
-  if (pathname === '/revision') {
-    return 'revision';
+  if (pathname === "/revision") {
+    return "revision";
   }
-  if (pathname.startsWith('/.well-known/oauth-protected-resource')) {
-    return 'oauth_metadata';
+  if (pathname.startsWith("/.well-known/oauth-protected-resource")) {
+    return "oauth_metadata";
   }
-  if (pathname === '/mcp') {
-    return 'mcp';
+  if (pathname === "/mcp") {
+    return "mcp";
   }
-  return 'unknown';
+  return "unknown";
 }
 
 export function classifyGatewayMethod(method: string): GatewayMethod {
-  return method === 'GET' || method === 'POST' || method === 'DELETE'
+  return method === "GET" || method === "POST" || method === "DELETE"
     ? method
-    : 'OTHER';
+    : "OTHER";
 }
 
 export function shouldEmitGatewayRequestEvent(

@@ -1,34 +1,34 @@
-import assert from 'node:assert/strict';
-import test from 'node:test';
+import assert from "node:assert/strict";
+import test from "node:test";
 import {
   decryptCredentials,
   encryptCredentials,
   type CredentialBinding,
-} from './credential-envelope.js';
+} from "./credential-envelope.js";
 
 const key = (byte: number): string =>
-  Buffer.alloc(32, byte).toString('base64url');
+  Buffer.alloc(32, byte).toString("base64url");
 const binding: CredentialBinding = {
-  principalKey: 'a'.repeat(32),
-  policyRevision: 'family-v2',
-  keyVersion: '2026-09',
+  principalKey: "a".repeat(32),
+  policyRevision: "family-v2",
+  keyVersion: "2026-09",
   generation: 1,
 };
 
-test('credential envelopes round-trip and bind every identity field', async () => {
+test("credential envelopes round-trip and bind every identity field", async () => {
   const credentials = {
-    username: ' person@example.test ',
-    password: ' keep spaces ',
+    username: " person@example.test ",
+    password: " keep spaces ",
   };
   const envelope = await encryptCredentials(credentials, binding, key(1));
   assert.deepEqual(await decryptCredentials(envelope, binding, key(1)), {
-    username: 'person@example.test',
-    password: ' keep spaces ',
+    username: "person@example.test",
+    password: " keep spaces ",
   });
   for (const changed of [
-    { ...binding, principalKey: 'b'.repeat(32) },
-    { ...binding, policyRevision: 'family-v3' },
-    { ...binding, keyVersion: 'next' },
+    { ...binding, principalKey: "b".repeat(32) },
+    { ...binding, policyRevision: "family-v3" },
+    { ...binding, keyVersion: "next" },
     { ...binding, generation: 2 },
   ]) {
     await assert.rejects(
@@ -42,9 +42,9 @@ test('credential envelopes round-trip and bind every identity field', async () =
   );
 });
 
-test('credential envelopes reject tampering, malformed sizes, and unsafe input generically', async () => {
-  const username = 'sentinel-user@example.test';
-  const password = 'sentinel-private-value';
+test("credential envelopes reject tampering, malformed sizes, and unsafe input generically", async () => {
+  const username = "sentinel-user@example.test";
+  const password = "sentinel-private-value";
   const envelope = await encryptCredentials(
     { username, password },
     binding,
@@ -54,13 +54,13 @@ test('credential envelopes reject tampering, malformed sizes, and unsafe input g
     JSON.stringify(envelope),
     /sentinel-user|sentinel-private-value/u,
   );
-  const tampered = Buffer.from(envelope.ciphertext, 'base64url');
+  const tampered = Buffer.from(envelope.ciphertext, "base64url");
   tampered[0] = tampered[0]! ^ 1;
   for (const value of [
-    { ...envelope, ciphertext: tampered.toString('base64url') },
-    { ...envelope, nonce: 'short' },
-    { ...envelope, ciphertext: 'A'.repeat(2_049) },
-    { ...envelope, extra: 'field' },
+    { ...envelope, ciphertext: tampered.toString("base64url") },
+    { ...envelope, nonce: "short" },
+    { ...envelope, ciphertext: "A".repeat(2_049) },
+    { ...envelope, extra: "field" },
   ]) {
     await assert.rejects(async () => {
       try {
@@ -76,7 +76,7 @@ test('credential envelopes reject tampering, malformed sizes, and unsafe input g
   }
   await assert.rejects(
     encryptCredentials(
-      { username: 'person@example.test', password: '' },
+      { username: "person@example.test", password: "" },
       binding,
       key(1),
     ),

@@ -2,49 +2,49 @@ import {
   createServer,
   type IncomingMessage,
   type ServerResponse,
-} from 'node:http';
-import { createHash } from 'node:crypto';
-import { execFileSync } from 'node:child_process';
-import { appendFile, mkdir, readFile, writeFile } from 'node:fs/promises';
-import type { AddressInfo } from 'node:net';
-import { dirname, resolve } from 'node:path';
-import { gzipSync } from 'node:zlib';
-import { chromium, type Browser } from 'playwright';
-import type { ProductView } from '../src/product-presentation.js';
+} from "node:http";
+import { createHash } from "node:crypto";
+import { execFileSync } from "node:child_process";
+import { appendFile, mkdir, readFile, writeFile } from "node:fs/promises";
+import type { AddressInfo } from "node:net";
+import { dirname, resolve } from "node:path";
+import { gzipSync } from "node:zlib";
+import { chromium, type Browser } from "playwright";
+import type { ProductView } from "../src/product-presentation.js";
 
 const DEFAULT_RUNS = 10;
 const VIEWPORT = { width: 375, height: 812 };
-const PRODUCT_NAME = 'Benchmark product 1';
+const PRODUCT_NAME = "Benchmark product 1";
 
 const benchmarkViews: ProductView[] = [1, 2, 3].map((id) => ({
-  context: 'search',
-  status: 'complete',
+  context: "search",
+  status: "complete",
   product: {
     id,
     name: `Benchmark product ${id}`,
     price: 19.95,
     unit_price: 39.9,
-    unit: 'kr/kg',
-    unit_size: '500 g',
-    category: 'Grocery',
-    subcategory: 'Synthetic',
-    currency: 'DKK',
-    description: 'Synthetic benchmark details.',
-    declaration: 'Synthetic ingredient declaration.',
-    details: [{ key: 'Origin', value: 'Fixture' }],
-    brand: 'Fixture',
+    unit: "kr/kg",
+    unit_size: "500 g",
+    category: "Grocery",
+    subcategory: "Synthetic",
+    currency: "DKK",
+    description: "Synthetic benchmark details.",
+    declaration: "Synthetic ingredient declaration.",
+    details: [{ key: "Origin", value: "Fixture" }],
+    brand: "Fixture",
     available: true,
     is_organic: false,
     is_frozen: false,
     is_on_discount: false,
     image_url: undefined,
-    labels: ['Available'],
+    labels: ["Available"],
     tags: [],
   },
 }));
 
 type Renderer = {
-  name: 'v7' | 'v8';
+  name: "v7" | "v8";
   html: string;
   rawBytes: number;
   gzipBytes: number;
@@ -102,27 +102,27 @@ function parseOptions(args: string[]): { outputPath?: string; runs: number } {
   let runs = DEFAULT_RUNS;
   for (let index = 0; index < args.length; index += 1) {
     const argument = args[index];
-    if (argument === '--') {
+    if (argument === "--") {
       continue;
     }
-    if (argument === '--help' || argument === '-h') {
+    if (argument === "--help" || argument === "-h") {
       console.log(
-        'Usage: pnpm --filter nemlig-assistant bench:review-ui [--runs 10] [--output <report.json>]',
+        "Usage: pnpm --filter nemlig-assistant bench:review-ui [--runs 10] [--output <report.json>]",
       );
       process.exit(0);
     }
-    if (argument === '--output') {
+    if (argument === "--output") {
       outputPath = args[index + 1];
       if (!outputPath) {
-        throw new Error('--output requires a JSON report path.');
+        throw new Error("--output requires a JSON report path.");
       }
       index += 1;
       continue;
     }
-    if (argument === '--runs') {
+    if (argument === "--runs") {
       const value = Number(args[index + 1]);
       if (!Number.isInteger(value) || value < 3 || value > 50) {
-        throw new Error('--runs must be an integer from 3 to 50.');
+        throw new Error("--runs must be an integer from 3 to 50.");
       }
       runs = value;
       index += 1;
@@ -159,9 +159,9 @@ function serveHtml(renderers: Renderer[]) {
     renderers.map((renderer) => [`/resource/${renderer.name}`, renderer.html]),
   );
   return createServer((request: IncomingMessage, response: ServerResponse) => {
-    const path = request.url ?? '';
+    const path = request.url ?? "";
     const rendererName =
-      path === '/host/v7' ? 'v7' : path === '/host/v8' ? 'v8' : undefined;
+      path === "/host/v7" ? "v7" : path === "/host/v8" ? "v8" : undefined;
     const html = rendererName
       ? syntheticHostHtml(rendererName)
       : paths.get(path);
@@ -170,22 +170,22 @@ function serveHtml(renderers: Renderer[]) {
       return;
     }
     const acceptsGzip =
-      request.headers['accept-encoding']?.includes('gzip') ?? false;
+      request.headers["accept-encoding"]?.includes("gzip") ?? false;
     const body = acceptsGzip ? gzipSync(html, { level: 9 }) : Buffer.from(html);
     response
       .writeHead(200, {
-        'Cache-Control': 'no-store',
-        'Content-Length': body.byteLength,
-        'Content-Type': 'text/html; charset=utf-8',
+        "Cache-Control": "no-store",
+        "Content-Length": body.byteLength,
+        "Content-Type": "text/html; charset=utf-8",
         ...(acceptsGzip
-          ? { 'Content-Encoding': 'gzip', Vary: 'Accept-Encoding' }
+          ? { "Content-Encoding": "gzip", Vary: "Accept-Encoding" }
           : {}),
       })
       .end(body);
   });
 }
 
-function syntheticHostHtml(renderer: 'v7' | 'v8'): string {
+function syntheticHostHtml(renderer: "v7" | "v8"): string {
   return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>UI benchmark host</title><style>html,body{margin:0;width:100%;height:100%;overflow:hidden}iframe{display:block;border:0;width:100%;height:100%}</style></head><body><iframe title="benchmark viewer" src="/resource/${renderer}"></iframe><script>
     const viewer = document.querySelector('iframe');
     const result = { structuredContent: { views: ${JSON.stringify(benchmarkViews)} }, content: [] };
@@ -210,26 +210,26 @@ async function measureOne(
   const context = await browser.newContext({
     viewport: VIEWPORT,
     deviceScaleFactor: 2,
-    colorScheme: 'light',
-    serviceWorkers: 'block',
+    colorScheme: "light",
+    serviceWorkers: "block",
   });
   const externalRequests: string[] = [];
   try {
     await context.addInitScript((views) => {
       const observer = new MutationObserver(() => {
-        if (document.querySelector('main article')) {
-          performance.mark('benchmark:first-product');
+        if (document.querySelector("main article")) {
+          performance.mark("benchmark:first-product");
           observer.disconnect();
         }
       });
       observer.observe(document, { childList: true, subtree: true });
-      Object.defineProperty(window, 'openai', {
+      Object.defineProperty(window, "openai", {
         configurable: true,
         value: { toolOutput: { views } },
       });
     }, benchmarkViews);
-    await context.route('**/*', async (route) => {
-      if (route.request().url().startsWith('http://127.0.0.1:')) {
+    await context.route("**/*", async (route) => {
+      if (route.request().url().startsWith("http://127.0.0.1:")) {
         await route.continue();
       } else {
         externalRequests.push(route.request().url());
@@ -241,14 +241,14 @@ async function measureOne(
     page.setDefaultTimeout(10_000);
     page.setDefaultNavigationTimeout(15_000);
     const pageErrors: string[] = [];
-    page.on('pageerror', (error) => pageErrors.push(error.message));
-    await page.goto(url, { waitUntil: 'load' });
+    page.on("pageerror", (error) => pageErrors.push(error.message));
+    await page.goto(url, { waitUntil: "load" });
     await page.waitForFunction(() => {
       const frame = document.querySelector<HTMLIFrameElement>(
         'iframe[title="benchmark viewer"]',
       );
       try {
-        return frame?.contentDocument?.readyState === 'complete';
+        return frame?.contentDocument?.readyState === "complete";
       } catch {
         return false;
       }
@@ -261,38 +261,38 @@ async function measureOne(
     }
     await child.waitForFunction(
       (name) =>
-        document.querySelector('main article')?.textContent?.includes(name) ===
+        document.querySelector("main article")?.textContent?.includes(name) ===
         true,
       PRODUCT_NAME,
     );
     const toggle = child
       .locator(
-        'main article button[aria-expanded], main article > details > summary',
+        "main article button[aria-expanded], main article > details > summary",
       )
       .first();
     await child.evaluate(() => {
       const toggle = document.querySelector<HTMLElement>(
-        'main article button[aria-expanded], main article > details > summary',
+        "main article button[aria-expanded], main article > details > summary",
       );
       if (!toggle) {
-        throw new Error('The first product has no disclosure control.');
+        throw new Error("The first product has no disclosure control.");
       }
       toggle.addEventListener(
-        'click',
+        "click",
         () => {
-          performance.mark('benchmark:disclosure-start');
+          performance.mark("benchmark:disclosure-start");
           requestAnimationFrame(() => {
-            const controlled = toggle.getAttribute('aria-controls');
+            const controlled = toggle.getAttribute("aria-controls");
             const content = controlled
               ? document.getElementById(controlled)
               : null;
             const expanded =
-              toggle.getAttribute('aria-expanded') === 'true' ||
-              toggle.closest('details')?.open === true;
+              toggle.getAttribute("aria-expanded") === "true" ||
+              toggle.closest("details")?.open === true;
             if (expanded && (!content || !content.hidden)) {
               performance.measure(
-                'benchmark:disclosure-visible',
-                'benchmark:disclosure-start',
+                "benchmark:disclosure-visible",
+                "benchmark:disclosure-start",
               );
             }
           });
@@ -303,33 +303,33 @@ async function measureOne(
     await toggle.click();
     await child.waitForFunction(
       () =>
-        performance.getEntriesByName('benchmark:disclosure-visible').length > 0,
+        performance.getEntriesByName("benchmark:disclosure-visible").length > 0,
     );
     if (externalRequests.length) {
       throw new Error(
-        `${renderer.name} attempted external requests: ${externalRequests.join(', ')}`,
+        `${renderer.name} attempted external requests: ${externalRequests.join(", ")}`,
       );
     }
     if (pageErrors.length) {
       throw new Error(
-        `${renderer.name} had browser errors: ${pageErrors.join('; ')}`,
+        `${renderer.name} had browser errors: ${pageErrors.join("; ")}`,
       );
     }
 
     return await child.evaluate(() => {
       const navigation = performance.getEntriesByType(
-        'navigation',
+        "navigation",
       )[0] as PerformanceNavigationTiming;
-      const fcp = performance.getEntriesByName('first-contentful-paint')[0];
+      const fcp = performance.getEntriesByName("first-contentful-paint")[0];
       const firstProduct = performance.getEntriesByName(
-        'benchmark:first-product',
+        "benchmark:first-product",
       )[0];
       const disclosure = performance.getEntriesByName(
-        'benchmark:disclosure-visible',
+        "benchmark:disclosure-visible",
       )[0];
       if (!firstProduct || !disclosure) {
         throw new Error(
-          'The benchmark did not record product and disclosure timings.',
+          "The benchmark did not record product and disclosure timings.",
         );
       }
       return {
@@ -350,39 +350,39 @@ async function main(): Promise<void> {
   const { outputPath, runs } = parseOptions(process.argv.slice(2));
   const [v7Html, v7MetadataText, v8Html] = await Promise.all([
     readFile(
-      new URL('./fixtures/product-viewer-v7.html', import.meta.url),
-      'utf8',
+      new URL("./fixtures/product-viewer-v7.html", import.meta.url),
+      "utf8",
     ),
     readFile(
-      new URL('./fixtures/product-viewer-v7.json', import.meta.url),
-      'utf8',
+      new URL("./fixtures/product-viewer-v7.json", import.meta.url),
+      "utf8",
     ),
-    readFile(new URL('../dist/picker.html', import.meta.url), 'utf8'),
+    readFile(new URL("../dist/picker.html", import.meta.url), "utf8"),
   ]);
   const v7Metadata = JSON.parse(v7MetadataText) as {
     resourceUri?: string;
     sourceCommit?: string;
     sha256?: string;
   };
-  const v7FixtureSha256 = createHash('sha256').update(v7Html).digest('hex');
+  const v7FixtureSha256 = createHash("sha256").update(v7Html).digest("hex");
   if (
-    v7Metadata.resourceUri !== 'ui://nemlig/product-viewer-v7.html' ||
+    v7Metadata.resourceUri !== "ui://nemlig/product-viewer-v7.html" ||
     !v7Metadata.sourceCommit ||
     v7Metadata.sha256 !== v7FixtureSha256
   ) {
     throw new Error(
-      'The pinned v7 benchmark fixture or its provenance checksum is invalid.',
+      "The pinned v7 benchmark fixture or its provenance checksum is invalid.",
     );
   }
   const renderers: Renderer[] = [
     {
-      name: 'v7',
+      name: "v7",
       html: v7Html,
       rawBytes: Buffer.byteLength(v7Html),
       gzipBytes: gzipSync(v7Html, { level: 9 }).byteLength,
     },
     {
-      name: 'v8',
+      name: "v8",
       html: v8Html,
       rawBytes: Buffer.byteLength(v8Html),
       gzipBytes: gzipSync(v8Html, { level: 9 }).byteLength,
@@ -391,12 +391,12 @@ async function main(): Promise<void> {
 
   const server = serveHtml(renderers);
   await new Promise<void>((resolveListen, reject) => {
-    server.once('error', reject);
-    server.listen(0, '127.0.0.1', resolveListen);
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", resolveListen);
   });
   let browser: Browser;
   try {
-    browser = await chromium.launch({ headless: true, channel: 'chrome' });
+    browser = await chromium.launch({ headless: true, channel: "chrome" });
   } catch (error) {
     await new Promise<void>((resolveClose) =>
       server.close(() => resolveClose()),
@@ -438,25 +438,25 @@ async function main(): Promise<void> {
   }
 
   const report: BenchmarkReport = {
-    mode: 'v7-baseline-versus-react-v8',
+    mode: "v7-baseline-versus-react-v8",
     browser: {
-      name: 'Google Chrome (headless via Playwright)',
+      name: "Google Chrome (headless via Playwright)",
       version: browserVersion,
     },
-    viewport: { ...VIEWPORT, deviceScaleFactor: 2, colorScheme: 'light' },
+    viewport: { ...VIEWPORT, deviceScaleFactor: 2, colorScheme: "light" },
     fixture: {
       products: benchmarkViews.length,
       providerCalls: 0,
       basketWrites: 0,
     },
-    cache: 'fresh browser context per run; no-store local HTML response',
+    cache: "fresh browser context per run; no-store local HTML response",
     environment: {
-      host: 'synthetic same-origin parent iframe with ui/initialize response and tool-result notification',
+      host: "synthetic same-origin parent iframe with ui/initialize response and tool-result notification",
       rendererFrame:
-        'same-origin iframe at the same viewport size for both renderers',
-      timingFrame: 'child viewer document; excludes parent host timing',
+        "same-origin iframe at the same viewport size for both renderers",
+      timingFrame: "child viewer document; excludes parent host timing",
       firstProductDefinition:
-        'DOM insertion of the first product article; not paint',
+        "DOM insertion of the first product article; not paint",
     },
     timingsAreAdvisory: true,
     provenance: {
@@ -464,8 +464,8 @@ async function main(): Promise<void> {
         process.env.BENCHMARK_CHECKOUT_REF ??
         process.env.GITHUB_REF_NAME ??
         null,
-      checkedOutSha: execFileSync('git', ['rev-parse', 'HEAD'], {
-        encoding: 'utf8',
+      checkedOutSha: execFileSync("git", ["rev-parse", "HEAD"], {
+        encoding: "utf8",
       }).trim(),
       v7BaselineSha: v7Metadata.sourceCommit,
       v7FixtureSha256,
@@ -478,19 +478,19 @@ async function main(): Promise<void> {
         const values = (key: keyof Sample) =>
           samples
             .map((sample) => sample[key])
-            .filter((value): value is number => typeof value === 'number');
+            .filter((value): value is number => typeof value === "number");
         return [
           renderer.name,
           {
             rawBytes: renderer.rawBytes,
             gzipBytes: renderer.gzipBytes,
             runs: samples.length,
-            firstContentfulPaintMs: timingSummary(values('fcpMs')),
-            firstProductMs: timingSummary(values('firstProductMs')),
-            domContentLoadedMs: timingSummary(values('domContentLoadedMs')),
-            loadMs: timingSummary(values('loadMs')),
-            disclosureVisibleMs: timingSummary(values('disclosureMs')),
-            encodedResponseBytes: median(values('encodedBytes')),
+            firstContentfulPaintMs: timingSummary(values("fcpMs")),
+            firstProductMs: timingSummary(values("firstProductMs")),
+            domContentLoadedMs: timingSummary(values("domContentLoadedMs")),
+            loadMs: timingSummary(values("loadMs")),
+            disclosureVisibleMs: timingSummary(values("disclosureMs")),
+            encodedResponseBytes: median(values("encodedBytes")),
           },
         ];
       }),
@@ -501,13 +501,13 @@ async function main(): Promise<void> {
   if (outputPath) {
     const path = resolve(outputPath);
     await mkdir(dirname(path), { recursive: true });
-    await writeFile(path, reportJson, 'utf8');
+    await writeFile(path, reportJson, "utf8");
   }
   if (process.env.GITHUB_STEP_SUMMARY) {
     await appendFile(
       process.env.GITHUB_STEP_SUMMARY,
       formatStepSummary(report),
-      'utf8',
+      "utf8",
     );
   }
   console.log(reportJson);
@@ -516,75 +516,75 @@ async function main(): Promise<void> {
 function formatTiming(value: Timing): string {
   return value
     ? `${value.median.toFixed(1)} ms / ${value.p95.toFixed(1)} ms`
-    : 'not recorded';
+    : "not recorded";
 }
 
 function formatDelta(current: Timing, candidate: Timing): string {
   if (!current || !candidate) {
-    return 'not available';
+    return "not available";
   }
   const difference = candidate.median - current.median;
   const percent =
     current.median === 0
-      ? 'n/a'
+      ? "n/a"
       : `${((difference / current.median) * 100).toFixed(1)}%`;
-  return `${difference >= 0 ? '+' : ''}${difference.toFixed(1)} ms (${percent})`;
+  return `${difference >= 0 ? "+" : ""}${difference.toFixed(1)} ms (${percent})`;
 }
 
 function formatStepSummary(report: BenchmarkReport): string {
   const v7 = report.renderers.v7;
   const v8 = report.renderers.v8;
   const metadata = `**${report.browser.name} ${report.browser.version}** · ${v7.runs} paired runs · ${report.viewport.width}×${report.viewport.height} CSS px @ ${report.viewport.deviceScaleFactor}× · ${report.fixture.products} synthetic products · ${report.cache}.`;
-  const provenance = `Checked-out ref/SHA: \`${report.provenance.checkedOutRef ?? 'detached'}\` / \`${report.provenance.checkedOutSha}\`; v7 baseline source: \`${report.provenance.v7BaselineSha}\` (fixture SHA-256 \`${report.provenance.v7FixtureSha256}\`); PR head: \`${report.provenance.pullRequestHead ?? 'n/a'}\`.`;
+  const provenance = `Checked-out ref/SHA: \`${report.provenance.checkedOutRef ?? "detached"}\` / \`${report.provenance.checkedOutSha}\`; v7 baseline source: \`${report.provenance.v7BaselineSha}\` (fixture SHA-256 \`${report.provenance.v7FixtureSha256}\`); PR head: \`${report.provenance.pullRequestHead ?? "n/a"}\`.`;
 
   const rows: Array<
     [
       string,
       keyof Pick<
         RendererReport,
-        | 'firstContentfulPaintMs'
-        | 'firstProductMs'
-        | 'domContentLoadedMs'
-        | 'loadMs'
-        | 'disclosureVisibleMs'
+        | "firstContentfulPaintMs"
+        | "firstProductMs"
+        | "domContentLoadedMs"
+        | "loadMs"
+        | "disclosureVisibleMs"
       >,
     ]
   > = [
-    ['First contentful paint', 'firstContentfulPaintMs'],
-    ['First product DOM insertion (not paint)', 'firstProductMs'],
-    ['DOM content loaded', 'domContentLoadedMs'],
-    ['Page load', 'loadMs'],
-    ['Disclosure response', 'disclosureVisibleMs'],
+    ["First contentful paint", "firstContentfulPaintMs"],
+    ["First product DOM insertion (not paint)", "firstProductMs"],
+    ["DOM content loaded", "domContentLoadedMs"],
+    ["Page load", "loadMs"],
+    ["Disclosure response", "disclosureVisibleMs"],
   ];
   const timingRows = rows
     .map(
       ([label, key]) =>
         `| ${label} | ${formatTiming(v7[key])} | ${formatTiming(v8[key])} | ${formatDelta(v7[key], v8[key])} |`,
     )
-    .join('\n');
+    .join("\n");
   const byteDelta = v8.encodedResponseBytes - v7.encodedResponseBytes;
   const artifactDelta = v8.gzipBytes - v7.gzipBytes;
-  const formatBytes = (bytes: number) => `${bytes.toLocaleString('en-US')} B`;
+  const formatBytes = (bytes: number) => `${bytes.toLocaleString("en-US")} B`;
   return [
-    '## UI benchmark: v7 viewer vs React v8 (advisory)',
-    '',
+    "## UI benchmark: v7 viewer vs React v8 (advisory)",
+    "",
     metadata,
-    'Host: synthetic same-origin parent and iframe for both renderers; timings come from the child viewer document. First-product timing is DOM insertion, not paint.',
-    '',
-    '',
-    '| Measure | v7 viewer | React v8 | React v8 − v7 |',
-    '| --- | ---: | ---: | ---: |',
-    ...timingRows.split('\n'),
-    `| Encoded HTML response | ${formatBytes(v7.encodedResponseBytes)} | ${formatBytes(v8.encodedResponseBytes)} | ${byteDelta >= 0 ? '+' : ''}${formatBytes(byteDelta)} |`,
-    `| Standalone gzip artifact | ${formatBytes(v7.gzipBytes)} | ${formatBytes(v8.gzipBytes)} | ${artifactDelta >= 0 ? '+' : ''}${formatBytes(artifactDelta)} |`,
-    '',
+    "Host: synthetic same-origin parent and iframe for both renderers; timings come from the child viewer document. First-product timing is DOM insertion, not paint.",
+    "",
+    "",
+    "| Measure | v7 viewer | React v8 | React v8 − v7 |",
+    "| --- | ---: | ---: | ---: |",
+    ...timingRows.split("\n"),
+    `| Encoded HTML response | ${formatBytes(v7.encodedResponseBytes)} | ${formatBytes(v8.encodedResponseBytes)} | ${byteDelta >= 0 ? "+" : ""}${formatBytes(byteDelta)} |`,
+    `| Standalone gzip artifact | ${formatBytes(v7.gzipBytes)} | ${formatBytes(v8.gzipBytes)} | ${artifactDelta >= 0 ? "+" : ""}${formatBytes(artifactDelta)} |`,
+    "",
     `Timing cells show median / p95 across ${v7.runs} samples per renderer. Positive time deltas mean React v8 was slower; negative means faster. Values are advisory and runner-sensitive. No provider calls or basket writes were made.`,
     `\n${provenance}`,
     report.provenance.workflowRunId
-      ? `[Workflow run](https://github.com/${process.env.GITHUB_REPOSITORY ?? ''}/actions/runs/${report.provenance.workflowRunId}).`
-      : '',
-    '',
-  ].join('\n');
+      ? `[Workflow run](https://github.com/${process.env.GITHUB_REPOSITORY ?? ""}/actions/runs/${report.provenance.workflowRunId}).`
+      : "",
+    "",
+  ].join("\n");
 }
 
 main().catch((error: unknown) => {

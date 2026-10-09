@@ -1,30 +1,30 @@
 import {
   Client,
   StreamableHTTPClientTransport,
-} from '@modelcontextprotocol/client';
-import { createMcpHandler } from '@modelcontextprotocol/server';
-import { toNodeHandler } from '@modelcontextprotocol/node';
-import { createServer } from 'node:http';
-import type { AddressInfo } from 'node:net';
-import assert from 'node:assert/strict';
-import { execFile } from 'node:child_process';
-import { readFile } from 'node:fs/promises';
-import { promisify } from 'node:util';
-import test from 'node:test';
+} from "@modelcontextprotocol/client";
+import { createMcpHandler } from "@modelcontextprotocol/server";
+import { toNodeHandler } from "@modelcontextprotocol/node";
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
+import assert from "node:assert/strict";
+import { execFile } from "node:child_process";
+import { readFile } from "node:fs/promises";
+import { promisify } from "node:util";
+import test from "node:test";
 import {
   NemligError,
   type Basket,
   type Product,
   type ShoppingClient,
-} from './client.js';
-import { createMcpServer } from './mcp.js';
+} from "./client.js";
+import { createMcpServer } from "./mcp.js";
 
 const execute = promisify(execFile);
 const modernClient = (name: string) =>
   new Client(
-    { name, version: '1.0.0' },
+    { name, version: "1.0.0" },
     {
-      versionNegotiation: { mode: { pin: '2026-07-28' } },
+      versionNegotiation: { mode: { pin: "2026-07-28" } },
     },
   );
 
@@ -32,15 +32,15 @@ const connectModern = async (
   server: ReturnType<typeof createMcpServer>,
   client: Client,
 ): Promise<() => Promise<void>> => {
-  const handler = createMcpHandler(() => server, { legacy: 'reject' });
+  const handler = createMcpHandler(() => server, { legacy: "reject" });
   const nodeHandler = toNodeHandler(handler);
   const httpServer = createServer((req, res) => {
     void nodeHandler(req, res);
   });
-  httpServer.listen(0, '127.0.0.1');
+  httpServer.listen(0, "127.0.0.1");
   await new Promise<void>((resolve, reject) => {
-    httpServer.once('listening', resolve);
-    httpServer.once('error', reject);
+    httpServer.once("listening", resolve);
+    httpServer.once("error", reject);
   });
   const endpoint = new URL(
     `http://127.0.0.1:${(httpServer.address() as AddressInfo).port}/mcp`,
@@ -56,20 +56,20 @@ const connectModern = async (
   };
 };
 
-test('server modules do not depend on the executable CLI entry point', async () => {
-  for (const file of ['mcp.ts', 'http.ts', 'proposals.ts']) {
+test("server modules do not depend on the executable CLI entry point", async () => {
+  for (const file of ["mcp.ts", "http.ts", "proposals.ts"]) {
     const source = await readFile(
       new URL(`./${file}`, import.meta.url),
-      'utf8',
+      "utf8",
     );
     assert.doesNotMatch(source, /from "\.\/cli\.js"/u);
   }
 });
 
-test('credential storage module stays independent of terminal prompt dependencies', async () => {
+test("credential storage module stays independent of terminal prompt dependencies", async () => {
   const source = await readFile(
-    new URL('./config.ts', import.meta.url),
-    'utf8',
+    new URL("./config.ts", import.meta.url),
+    "utf8",
   );
   assert.doesNotMatch(
     source,
@@ -77,13 +77,13 @@ test('credential storage module stays independent of terminal prompt dependencie
   );
 });
 
-test('source CLI, MCP, and HTTP modules import without starting work', async () => {
+test("source CLI, MCP, and HTTP modules import without starting work", async () => {
   const { stderr, stdout } = await execute(
     process.execPath,
     [
-      '--import=tsx',
-      '--input-type=module',
-      '--eval',
+      "--import=tsx",
+      "--input-type=module",
+      "--eval",
       'globalThis.fetch=()=>{throw new Error("fetch during import")};await Promise.all([import("./cli.ts"), import("./mcp.ts"), import("./http.ts")])',
     ],
     {
@@ -92,14 +92,14 @@ test('source CLI, MCP, and HTTP modules import without starting work', async () 
       timeout: 30_000,
     },
   );
-  assert.equal(stdout, '');
-  assert.equal(stderr, '');
+  assert.equal(stdout, "");
+  assert.equal(stderr, "");
 });
 
-test('local CLI help and MCP surface need no credentials or network', async () => {
+test("local CLI help and MCP surface need no credentials or network", async () => {
   const { stdout } = await execute(
     process.execPath,
-    ['--import=tsx', `${import.meta.dirname}/cli.ts`, '--help'],
+    ["--import=tsx", `${import.meta.dirname}/cli.ts`, "--help"],
     { env: { PATH: process.env.PATH } },
   );
   assert.match(stdout, /^Usage: nemlig-assistant/m);
@@ -113,7 +113,7 @@ test('local CLI help and MCP surface need no credentials or network', async () =
   assert.doesNotMatch(stdout, /parse|checkout|--password/);
 
   const unavailable = async (): Promise<never> => {
-    throw new Error('Network must not be used by smoke test');
+    throw new Error("Network must not be used by smoke test");
   };
   const shoppingClient: ShoppingClient = {
     isLoggedIn: () => false,
@@ -128,21 +128,21 @@ test('local CLI help and MCP surface need no credentials or network', async () =
     addToCart: unavailable,
   };
   const server = createMcpServer(shoppingClient, async () => undefined);
-  const client = modernClient('smoke');
+  const client = modernClient("smoke");
   const close = await connectModern(server, client);
   try {
     const serverInfo = client.getServerVersion();
     assert.ok(serverInfo);
-    assert.equal(serverInfo?.name, 'nemlig-assistant');
-    assert.equal(serverInfo.title, 'Nemlig Assistant');
+    assert.equal(serverInfo?.name, "nemlig-assistant");
+    assert.equal(serverInfo.title, "Nemlig Assistant");
     assert.deepEqual(serverInfo.icons, [
       {
         src: serverInfo.icons?.[0]?.src,
-        mimeType: 'image/svg+xml',
-        sizes: ['1024x1024'],
+        mimeType: "image/svg+xml",
+        sizes: ["1024x1024"],
       },
     ]);
-    assert.match(serverInfo.icons?.[0]?.src ?? '', /^data:image\/svg\+xml,/u);
+    assert.match(serverInfo.icons?.[0]?.src ?? "", /^data:image\/svg\+xml,/u);
     assert.deepEqual(
       (await client.listTools()).tools
         .filter(
@@ -150,18 +150,18 @@ test('local CLI help and MCP surface need no credentials or network', async () =
             !tool._meta?.ui ||
             (
               (tool._meta.ui as { visibility?: string[] }).visibility ?? []
-            ).includes('model'),
+            ).includes("model"),
         )
         .map((tool) => tool.name)
         .sort(),
       [
-        'check_nemlig_connection',
-        'find_groceries',
-        'get_profile',
-        'show_my_basket',
-        'start_product_review',
-        'submit_product_review_conversation',
-        'update_product_review_conversation',
+        "check_nemlig_connection",
+        "find_groceries",
+        "get_profile",
+        "show_my_basket",
+        "start_product_review",
+        "submit_product_review_conversation",
+        "update_product_review_conversation",
       ],
     );
   } finally {
@@ -169,13 +169,13 @@ test('local CLI help and MCP surface need no credentials or network', async () =
   }
 });
 
-test('discovery reaches an approved draft submission and verified Nemlig basket', async () => {
+test("discovery reaches an approved draft submission and verified Nemlig basket", async () => {
   const product = (
     id: number,
     name: string,
     unitSize: string,
     price: number,
-    category = 'Dagligvarer',
+    category = "Dagligvarer",
   ): Product => ({
     id,
     name,
@@ -183,10 +183,10 @@ test('discovery reaches an approved draft submission and verified Nemlig basket'
     unit: `${price.toFixed(2)} kr./stk.`,
     unitPrice: price,
     unitSize,
-    brand: name.startsWith('Heinz') ? 'Heinz' : 'Test',
+    brand: name.startsWith("Heinz") ? "Heinz" : "Test",
     category,
     subcategory: category,
-    imageUrl: '',
+    imageUrl: "",
     available: true,
     labels: [],
     isOrganic: false,
@@ -199,11 +199,11 @@ test('discovery reaches an approved draft submission and verified Nemlig basket'
     isOnDiscount: false,
   });
   const products = new Map([
-    [101, product(101, 'Hakket oksekød', '500 g', 45, 'Kød')],
-    [102, product(102, 'Hakket oksekød til kat', '400 g', 22, 'Kattemad')],
-    [201, product(201, 'Heinz Tomato Ketchup', '500 ml', 28, 'Ketchup')],
-    [202, product(202, 'Tomatketchup', '500 ml', 14, 'Ketchup')],
-    [301, product(301, 'Cheddar', '200 g', 25, 'Ost')],
+    [101, product(101, "Hakket oksekød", "500 g", 45, "Kød")],
+    [102, product(102, "Hakket oksekød til kat", "400 g", 22, "Kattemad")],
+    [201, product(201, "Heinz Tomato Ketchup", "500 ml", 28, "Ketchup")],
+    [202, product(202, "Tomatketchup", "500 ml", 14, "Ketchup")],
+    [301, product(301, "Cheddar", "200 g", 25, "Ost")],
   ]);
   let reads = 0;
   let writes = 0;
@@ -218,14 +218,14 @@ test('discovery reaches an approved draft submission and verified Nemlig basket'
     isLoggedIn: () => true,
     login: async () => {},
     searchProducts: async (query) =>
-      query === 'hakket oksekød'
+      query === "hakket oksekød"
         ? [products.get(101)!, products.get(102)!]
-        : query === 'ketchup'
+        : query === "ketchup"
           ? [products.get(201)!, products.get(202)!]
           : [products.get(301)!],
     getProduct: async (id) => {
       if (id === 103) {
-        throw new NemligError('Resource not found.', 404);
+        throw new NemligError("Resource not found.", 404);
       }
       return products.get(id)!;
     },
@@ -271,15 +271,15 @@ test('discovery reaches an approved draft submission and verified Nemlig basket'
     },
   };
   const server = createMcpServer(client, async () => ({
-    username: 'smoke@example.test',
-    password: 'synthetic',
+    username: "smoke@example.test",
+    password: "synthetic",
   }));
-  const mcp = modernClient('recipe-smoke');
+  const mcp = modernClient("recipe-smoke");
   const close = await connectModern(server, mcp);
   try {
     const beef = await mcp.callTool({
-      name: 'find_groceries',
-      arguments: { search_term: 'hakket oksekød', result_count: 5 },
+      name: "find_groceries",
+      arguments: { search_term: "hakket oksekød", result_count: 5 },
     });
     assert.notEqual(beef.isError, true, JSON.stringify(beef));
     assert.deepEqual(
@@ -291,7 +291,7 @@ test('discovery reaches an approved draft submission and verified Nemlig basket'
     assert.equal(reads, 0);
 
     const started = await mcp.callTool({
-      name: 'start_product_review',
+      name: "start_product_review",
       arguments: {
         items: [
           { product_id: 101, quantity: 3 },
@@ -307,11 +307,11 @@ test('discovery reaches an approved draft submission and verified Nemlig basket'
       }
     ).review;
     const accepted = await mcp.callTool({
-      name: 'update_product_review_conversation',
+      name: "update_product_review_conversation",
       arguments: {
         review_id: initial.review_id,
         revision: initial.revision,
-        action: { kind: 'accept', product_ids: [101, 201, 301] },
+        action: { kind: "accept", product_ids: [101, 201, 301] },
       },
     });
     const ready = (
@@ -320,11 +320,11 @@ test('discovery reaches an approved draft submission and verified Nemlig basket'
       }
     ).review;
     const prepared = await mcp.callTool({
-      name: 'update_product_review_conversation',
+      name: "update_product_review_conversation",
       arguments: {
         review_id: ready.review_id,
         revision: ready.revision,
-        action: { kind: 'prepare_submission' },
+        action: { kind: "prepare_submission" },
       },
     });
     const draft = (
@@ -337,7 +337,7 @@ test('discovery reaches an approved draft submission and verified Nemlig basket'
       }
     ).review;
     const applied = await mcp.callTool({
-      name: 'submit_product_review_conversation',
+      name: "submit_product_review_conversation",
       arguments: {
         review_id: draft.review_id,
         revision: draft.revision,
@@ -357,7 +357,7 @@ test('discovery reaches an approved draft submission and verified Nemlig basket'
     assert.ok(reads >= 2);
 
     const replay = await mcp.callTool({
-      name: 'submit_product_review_conversation',
+      name: "submit_product_review_conversation",
       arguments: {
         review_id: draft.review_id,
         revision: draft.revision,
@@ -371,18 +371,18 @@ test('discovery reaches an approved draft submission and verified Nemlig basket'
   }
 });
 
-test('an indeterminate draft submission is attempted once', async () => {
+test("an indeterminate draft submission is attempted once", async () => {
   const item: Product = {
     id: 401,
-    name: 'Tomatketchup',
+    name: "Tomatketchup",
     price: 14,
-    unit: '28 kr./l',
+    unit: "28 kr./l",
     unitPrice: 28,
-    unitSize: '500 ml',
-    brand: 'Test',
-    category: 'Ketchup',
-    subcategory: 'Ketchup',
-    imageUrl: '',
+    unitSize: "500 ml",
+    brand: "Test",
+    category: "Ketchup",
+    subcategory: "Ketchup",
+    imageUrl: "",
     available: true,
     labels: [],
     isOrganic: false,
@@ -403,7 +403,7 @@ test('an indeterminate draft submission is attempted once', async () => {
   };
   let writes = 0;
   const unavailable = async (): Promise<never> => {
-    throw new Error('unexpected provider operation');
+    throw new Error("unexpected provider operation");
   };
   const client: ShoppingClient = {
     isLoggedIn: () => true,
@@ -417,18 +417,18 @@ test('an indeterminate draft submission is attempted once', async () => {
     getCart: async () => empty,
     addToCart: async () => {
       writes += 1;
-      throw new Error('indeterminate write');
+      throw new Error("indeterminate write");
     },
   };
   const server = createMcpServer(client, async () => ({
-    username: 'smoke@example.test',
-    password: 'synthetic',
+    username: "smoke@example.test",
+    password: "synthetic",
   }));
-  const mcp = modernClient('write-smoke');
+  const mcp = modernClient("write-smoke");
   const close = await connectModern(server, mcp);
   try {
     const started = await mcp.callTool({
-      name: 'start_product_review',
+      name: "start_product_review",
       arguments: { items: [{ product_id: 401, quantity: 1 }] },
     });
     const initial = (
@@ -437,11 +437,11 @@ test('an indeterminate draft submission is attempted once', async () => {
       }
     ).review;
     const accepted = await mcp.callTool({
-      name: 'update_product_review_conversation',
+      name: "update_product_review_conversation",
       arguments: {
         review_id: initial.review_id,
         revision: initial.revision,
-        action: { kind: 'accept', product_ids: [401] },
+        action: { kind: "accept", product_ids: [401] },
       },
     });
     const ready = (
@@ -450,11 +450,11 @@ test('an indeterminate draft submission is attempted once', async () => {
       }
     ).review;
     const prepared = await mcp.callTool({
-      name: 'update_product_review_conversation',
+      name: "update_product_review_conversation",
       arguments: {
         review_id: ready.review_id,
         revision: ready.revision,
-        action: { kind: 'prepare_submission' },
+        action: { kind: "prepare_submission" },
       },
     });
     const draft = (
@@ -474,7 +474,7 @@ test('an indeterminate draft submission is attempted once', async () => {
     assert.equal(
       (
         await mcp.callTool({
-          name: 'submit_product_review_conversation',
+          name: "submit_product_review_conversation",
           arguments: args,
         })
       ).isError,
@@ -483,7 +483,7 @@ test('an indeterminate draft submission is attempted once', async () => {
     assert.equal(
       (
         await mcp.callTool({
-          name: 'submit_product_review_conversation',
+          name: "submit_product_review_conversation",
           arguments: args,
         })
       ).isError,

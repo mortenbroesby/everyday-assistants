@@ -4,7 +4,7 @@
     14px/1.45 ui-sans-serif,
     -apple-system,
     BlinkMacSystemFont,
-    'Segoe UI',
+    "Segoe UI",
     sans-serif;
   --line: var(--color-border-primary, #dfe8e0);
   --accent: var(--color-text-success, #1b7140);
@@ -156,7 +156,7 @@ h2 {
   cursor: pointer;
 }
 .alternative-choice:hover:not(:disabled),
-.alternative-choice[aria-checked='true'] {
+.alternative-choice[aria-checked="true"] {
   border-color: var(--accent);
   background: var(--soft);
 }

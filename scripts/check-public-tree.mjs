@@ -1,21 +1,21 @@
-import { execFileSync } from 'node:child_process';
-import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { execFileSync } from "node:child_process";
+import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
+import { resolve } from "node:path";
 
-const root = resolve(import.meta.dirname, '..');
+const root = resolve(import.meta.dirname, "..");
 const explicit = process.argv.slice(2).map((path) => resolve(path));
 const files = (
   explicit.length
     ? explicit.flatMap(walk)
     : execFileSync(
-        'git',
-        ['ls-files', '-z', '--cached', '--others', '--exclude-standard'],
+        "git",
+        ["ls-files", "-z", "--cached", "--others", "--exclude-standard"],
         {
           cwd: root,
-          encoding: 'utf8',
+          encoding: "utf8",
         },
       )
-        .split('\0')
+        .split("\0")
         .filter(Boolean)
         .map((path) => resolve(root, path))
 ).filter(existsSync);
@@ -28,13 +28,13 @@ const forbiddenPaths = [
 const forbiddenContent = [
   /\/(?:Users|home)\/[^/\s]+\//,
   /\b[A-Z0-9._%+-]+@(?:gmail|hotmail|outlook|icloud)\.com\b/i,
-  new RegExp(['mortenbroesby', 'personal-assistant'].join('/'), 'i'),
+  new RegExp(["mortenbroesby", "personal-assistant"].join("/"), "i"),
   /apps\/nemlig-food-assistant/i,
   /apps\/(?:gmail-cleanup|drive-cleanup-assistant)/i,
-  ...(process.env.PUBLIC_RELEASE_DENYLIST?.split('\n')
+  ...(process.env.PUBLIC_RELEASE_DENYLIST?.split("\n")
     .filter(Boolean)
     .map(
-      (value) => new RegExp(value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i'),
+      (value) => new RegExp(value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i"),
     ) ?? []),
 ];
 const findings = [];
@@ -44,8 +44,8 @@ for (const file of files) {
   if (forbiddenPaths.some((pattern) => pattern.test(relative))) {
     findings.push(`${relative}: forbidden tracked path`);
   }
-  const contents = readFileSync(file, 'utf8');
-  if (contents.includes('\0')) continue;
+  const contents = readFileSync(file, "utf8");
+  if (contents.includes("\0")) continue;
   for (const pattern of forbiddenContent) {
     if (pattern.test(contents))
       findings.push(`${relative}: forbidden content (${pattern.source})`);
@@ -53,7 +53,7 @@ for (const file of files) {
 }
 
 if (findings.length) {
-  console.error(findings.join('\n'));
+  console.error(findings.join("\n"));
   process.exitCode = 1;
 } else {
   console.log(`Public-tree check passed (${files.length} files).`);

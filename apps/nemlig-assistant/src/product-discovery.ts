@@ -1,11 +1,11 @@
-import { Effect } from 'effect';
-import type { Product } from './client.js';
-import { NemligError } from './nemlig-error.js';
+import { Effect } from "effect";
+import type { Product } from "./client.js";
+import { NemligError } from "./nemlig-error.js";
 import {
   createReadScope,
   runAbortableEffect,
   type SettledRead,
-} from './read-coordination.js';
+} from "./read-coordination.js";
 
 export interface ProductDiscoveryClient {
   searchProducts(
@@ -27,12 +27,12 @@ export interface DetailedProductSearchOptions extends ProductDiscoveryOptions {
 
 export type DetailedProductSearchItem =
   | {
-      readonly status: 'hydrated';
+      readonly status: "hydrated";
       readonly productId: number;
       readonly product: Product;
     }
-  | { readonly status: 'unavailable'; readonly productId: number }
-  | { readonly status: 'invalid'; readonly productId: undefined };
+  | { readonly status: "unavailable"; readonly productId: number }
+  | { readonly status: "invalid"; readonly productId: undefined };
 
 export interface DetailedProductSearchResult {
   readonly query: string;
@@ -44,8 +44,8 @@ export const isAuthenticationFailure = (error: unknown): boolean =>
 
 export class ProductDiscoveryDeadlineError extends Error {
   constructor() {
-    super('Product discovery deadline expired.');
-    this.name = 'ProductDiscoveryDeadlineError';
+    super("Product discovery deadline expired.");
+    this.name = "ProductDiscoveryDeadlineError";
   }
 }
 
@@ -58,11 +58,11 @@ const detailedSearchRead = (
     const product = await client.getProduct(productId, signal);
     if (product.id !== productId) {
       throw new Error(
-        'Exact product identity did not match the search result.',
+        "Exact product identity did not match the search result.",
       );
     }
     return {
-      status: 'hydrated',
+      status: "hydrated",
       productId,
       product,
     } satisfies DetailedProductSearchItem;
@@ -71,7 +71,7 @@ const detailedSearchRead = (
       isAuthenticationFailure(error)
         ? Effect.fail(error)
         : Effect.succeed({
-            status: 'unavailable',
+            status: "unavailable",
             productId,
           } satisfies DetailedProductSearchItem),
     ),
@@ -85,21 +85,21 @@ export async function resolveDetailedProductSearch(
   options: DetailedProductSearchOptions = {},
 ): Promise<DetailedProductSearchResult> {
   if (!query.trim()) {
-    throw new NemligError('Search query is required.');
+    throw new NemligError("Search query is required.");
   }
   if (limit !== undefined && (!Number.isInteger(limit) || limit < 1)) {
-    throw new NemligError('Search limit must be positive.');
+    throw new NemligError("Search limit must be positive.");
   }
   const concurrency = options.concurrency ?? 3;
   if (!Number.isInteger(concurrency) || concurrency < 1) {
-    throw new RangeError('Read concurrency must be a positive integer.');
+    throw new RangeError("Read concurrency must be a positive integer.");
   }
   if (
     options.deadlineMs !== undefined &&
     (!Number.isFinite(options.deadlineMs) || options.deadlineMs <= 0)
   ) {
     throw new RangeError(
-      'Product discovery deadline must be a positive finite number.',
+      "Product discovery deadline must be a positive finite number.",
     );
   }
 
@@ -136,7 +136,7 @@ export async function resolveDetailedProductSearch(
     const items: DetailedProductSearchItem[] = [];
     for (const candidate of shallow) {
       if (candidate.id === undefined) {
-        items.push({ status: 'invalid', productId: undefined });
+        items.push({ status: "invalid", productId: undefined });
         continue;
       }
       if (emitted.has(candidate.id)) {

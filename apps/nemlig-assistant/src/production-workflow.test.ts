@@ -1,22 +1,22 @@
-import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
-import test from 'node:test';
+import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+import test from "node:test";
 
 const workflowPath = new URL(
-  '../../../.github/workflows/nemlig-production.yml',
+  "../../../.github/workflows/nemlig-production.yml",
   import.meta.url,
 );
 const deployScriptPath = new URL(
-  '../scripts/production-deploy.ts',
+  "../scripts/production-deploy.ts",
   import.meta.url,
 );
-const packagePath = new URL('../package.json', import.meta.url);
+const packagePath = new URL("../package.json", import.meta.url);
 
-test('production workflow deploys only the current successful main CI candidate', async () => {
-  const source = await readFile(workflowPath, 'utf8');
+test("production workflow deploys only the current successful main CI candidate", async () => {
+  const source = await readFile(workflowPath, "utf8");
   const releaseGate = source.slice(
-    source.indexOf('  release-gate:'),
-    source.indexOf('\n  deploy:'),
+    source.indexOf("  release-gate:"),
+    source.indexOf("\n  deploy:"),
   );
   assert.match(
     source,
@@ -49,8 +49,8 @@ test('production workflow deploys only the current successful main CI candidate'
   assert.doesNotMatch(source, /workflow_dispatch|schedule:|pull_request:/u);
 });
 
-test('production job builds and deploys the exact protected candidate', async () => {
-  const source = await readFile(workflowPath, 'utf8');
+test("production job builds and deploys the exact protected candidate", async () => {
+  const source = await readFile(workflowPath, "utf8");
   assert.match(source, /environment:\n\s+name: nemlig-production/u);
   assert.match(source, /git checkout --detach "\$CANDIDATE_SHA"/u);
   assert.match(source, /node-version: 24\.13\.0/u);
@@ -61,11 +61,11 @@ test('production job builds and deploys the exact protected candidate', async ()
   assert.match(source, /production:deploy -- --service "\$CANDIDATE_SHA"/u);
 });
 
-test('release tooling has no lease, journal, recovery, or retention path', async () => {
+test("release tooling has no lease, journal, recovery, or retention path", async () => {
   const [workflow, deploy, packageJson] = await Promise.all([
-    readFile(workflowPath, 'utf8'),
-    readFile(deployScriptPath, 'utf8'),
-    readFile(packagePath, 'utf8'),
+    readFile(workflowPath, "utf8"),
+    readFile(deployScriptPath, "utf8"),
+    readFile(packagePath, "utf8"),
   ]);
   assert.doesNotMatch(
     workflow,

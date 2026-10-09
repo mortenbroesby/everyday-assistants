@@ -1,8 +1,8 @@
-import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
-import test from 'node:test';
-import { NemligError } from './client.js';
-import { ensureLoggedIn as ensureLoggedInFromCli } from './cli.js';
+import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+import test from "node:test";
+import { NemligError } from "./client.js";
+import { ensureLoggedIn as ensureLoggedInFromCli } from "./cli.js";
 import {
   ensureLoggedIn,
   getClient,
@@ -10,9 +10,9 @@ import {
   NEMLIG_CODENAME,
   NEMLIG_RELEASE_IDENTITY,
   NEMLIG_VERSION,
-} from './runtime.js';
+} from "./runtime.js";
 
-test('ensureLoggedIn uses injected credentials and does not prompt', async () => {
+test("ensureLoggedIn uses injected credentials and does not prompt", async () => {
   let loggedIn = false;
   const client: {
     isLoggedIn(): boolean;
@@ -20,14 +20,14 @@ test('ensureLoggedIn uses injected credentials and does not prompt', async () =>
   } = {
     isLoggedIn: () => loggedIn,
     login: async (username, password) => {
-      assert.equal(username, 'owner@example.test');
-      assert.equal(password, 'secret');
+      assert.equal(username, "owner@example.test");
+      assert.equal(password, "secret");
       loggedIn = true;
     },
   };
   await ensureLoggedIn(client, async () => ({
-    username: 'owner@example.test',
-    password: 'secret',
+    username: "owner@example.test",
+    password: "secret",
   }));
   assert.equal(loggedIn, true);
   await assert.rejects(
@@ -39,7 +39,7 @@ test('ensureLoggedIn uses injected credentials and does not prompt', async () =>
   );
 });
 
-test('ensureLoggedIn preserves the CLI export and skips already logged-in clients', async () => {
+test("ensureLoggedIn preserves the CLI export and skips already logged-in clients", async () => {
   assert.equal(ensureLoggedInFromCli, ensureLoggedIn);
   let loaded = 0;
   let loggedIn = 0;
@@ -59,8 +59,8 @@ test('ensureLoggedIn preserves the CLI export and skips already logged-in client
   assert.equal(loggedIn, 0);
 });
 
-test('ensureLoggedIn preserves login failures and runtime keeps package identity', async () => {
-  const failure = new Error('login failed');
+test("ensureLoggedIn preserves login failures and runtime keeps package identity", async () => {
+  const failure = new Error("login failed");
   await assert.rejects(
     ensureLoggedIn(
       {
@@ -69,13 +69,13 @@ test('ensureLoggedIn preserves login failures and runtime keeps package identity
           throw failure;
         },
       },
-      async () => ({ username: 'owner@example.test', password: 'secret' }),
+      async () => ({ username: "owner@example.test", password: "secret" }),
     ),
     (error) => error === failure,
   );
   assert.equal(getClient(), getClient());
   const manifest = JSON.parse(
-    await readFile(new URL('../package.json', import.meta.url), 'utf8'),
+    await readFile(new URL("../package.json", import.meta.url), "utf8"),
   ) as { version?: unknown; nemligRelease?: { codename?: unknown } };
   assert.equal(NEMLIG_VERSION, manifest.version);
   assert.equal(NEMLIG_CODENAME, manifest.nemligRelease?.codename);
@@ -85,7 +85,7 @@ test('ensureLoggedIn preserves login failures and runtime keeps package identity
   );
 });
 
-test('read operations reuse a valid session and refresh once after a later 401', async () => {
+test("read operations reuse a valid session and refresh once after a later 401", async () => {
   let calls = 0;
   let logins = 0;
   const client = {
@@ -96,21 +96,21 @@ test('read operations reuse a valid session and refresh once after a later 401',
   };
   const result = await withAuthenticatedReadRetry(
     client,
-    async () => ({ username: 'owner@example.test', password: 'secret' }),
+    async () => ({ username: "owner@example.test", password: "secret" }),
     async () => {
       calls += 1;
       if (calls === 1) {
-        throw new NemligError('Search failed', 401);
+        throw new NemligError("Search failed", 401);
       }
-      return 'result';
+      return "result";
     },
   );
-  assert.equal(result, 'result');
+  assert.equal(result, "result");
   assert.equal(calls, 2);
   assert.equal(logins, 1);
 });
 
-test('parallel read operations share one in-flight login', async () => {
+test("parallel read operations share one in-flight login", async () => {
   let loggedIn = false;
   let logins = 0;
   const client = {
@@ -122,18 +122,18 @@ test('parallel read operations share one in-flight login', async () => {
     },
   };
   const credentials = async () => ({
-    username: 'owner@example.test',
-    password: 'secret',
+    username: "owner@example.test",
+    password: "secret",
   });
   const results = await Promise.all([
-    withAuthenticatedReadRetry(client, credentials, async () => 'first'),
-    withAuthenticatedReadRetry(client, credentials, async () => 'second'),
+    withAuthenticatedReadRetry(client, credentials, async () => "first"),
+    withAuthenticatedReadRetry(client, credentials, async () => "second"),
   ]);
-  assert.deepEqual(results, ['first', 'second']);
+  assert.deepEqual(results, ["first", "second"]);
   assert.equal(logins, 1);
 });
 
-test('expired session failures surface when a second 401 is returned', async () => {
+test("expired session failures surface when a second 401 is returned", async () => {
   let calls = 0;
   let logins = 0;
   const client = {
@@ -145,10 +145,10 @@ test('expired session failures surface when a second 401 is returned', async () 
   await assert.rejects(
     withAuthenticatedReadRetry(
       client,
-      async () => ({ username: 'owner@example.test', password: 'secret' }),
+      async () => ({ username: "owner@example.test", password: "secret" }),
       async () => {
         calls += 1;
-        throw new NemligError('Search failed', 401);
+        throw new NemligError("Search failed", 401);
       },
     ),
     (error) => error instanceof NemligError && error.status === 401,
@@ -157,7 +157,7 @@ test('expired session failures surface when a second 401 is returned', async () 
   assert.equal(logins, 1);
 });
 
-test('a late 401 does not reauthenticate after another read refreshed the session', async () => {
+test("a late 401 does not reauthenticate after another read refreshed the session", async () => {
   let calls = 0;
   let logins = 0;
   let generation = 0;
@@ -171,17 +171,17 @@ test('a late 401 does not reauthenticate after another read refreshed the sessio
   };
   const result = await withAuthenticatedReadRetry(
     client,
-    async () => ({ username: 'owner@example.test', password: 'secret' }),
+    async () => ({ username: "owner@example.test", password: "secret" }),
     async () => {
       calls += 1;
       if (calls === 1) {
         generation += 1;
-        throw new NemligError('Old session failed', 401);
+        throw new NemligError("Old session failed", 401);
       }
-      return 'result';
+      return "result";
     },
   );
-  assert.equal(result, 'result');
+  assert.equal(result, "result");
   assert.equal(calls, 2);
   assert.equal(logins, 0);
 });

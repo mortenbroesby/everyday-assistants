@@ -1,7 +1,7 @@
-import { chmod, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
-import { homedir } from 'node:os';
-import { dirname, join } from 'node:path';
-import { z } from 'zod';
+import { chmod, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { homedir } from "node:os";
+import { dirname, join } from "node:path";
+import { z } from "zod";
 
 export const credentialsSchema = z.object({
   username: z.string().min(1),
@@ -12,8 +12,8 @@ export type Credentials = z.infer<typeof credentialsSchema>;
 
 export const credentialsFile = (): string =>
   process.env.NEMLIG_CONFIG_DIR
-    ? join(process.env.NEMLIG_CONFIG_DIR, 'credentials.json')
-    : join(homedir(), '.nemlig-shopper', 'credentials.json');
+    ? join(process.env.NEMLIG_CONFIG_DIR, "credentials.json")
+    : join(homedir(), ".nemlig-shopper", "credentials.json");
 
 export async function getCredentials(
   file = credentialsFile(),
@@ -29,7 +29,7 @@ export async function getCredentials(
 
   try {
     const saved = credentialsSchema.safeParse(
-      JSON.parse(await readFile(file, 'utf8')),
+      JSON.parse(await readFile(file, "utf8")),
     );
     return saved.success ? saved.data : undefined;
   } catch {

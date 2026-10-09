@@ -1,10 +1,10 @@
-import { Cause, Effect, Exit, Option } from 'effect';
+import { Cause, Effect, Exit, Option } from "effect";
 
 export const DEFAULT_READ_CONCURRENCY = 3;
 
 export const abortReason = (signal: AbortSignal): unknown =>
   signal.reason ??
-  new DOMException('Read coordination was cancelled.', 'AbortError');
+  new DOMException("Read coordination was cancelled.", "AbortError");
 
 const waitForAbort = (signal: AbortSignal): Effect.Effect<never, unknown> =>
   Effect.async((resume) => {
@@ -12,9 +12,9 @@ const waitForAbort = (signal: AbortSignal): Effect.Effect<never, unknown> =>
     if (signal.aborted) {
       abort();
     } else {
-      signal.addEventListener('abort', abort, { once: true });
+      signal.addEventListener("abort", abort, { once: true });
     }
-    return Effect.sync(() => signal.removeEventListener('abort', abort));
+    return Effect.sync(() => signal.removeEventListener("abort", abort));
   });
 
 export type SettledRead = <T>(
@@ -92,7 +92,7 @@ export async function runReadPool<Input, Output>(
 ): Promise<Output[]> {
   const concurrency = options.concurrency ?? DEFAULT_READ_CONCURRENCY;
   if (!Number.isInteger(concurrency) || concurrency < 1) {
-    throw new RangeError('Read concurrency must be a positive integer.');
+    throw new RangeError("Read concurrency must be a positive integer.");
   }
   const reads = createReadScope();
   try {

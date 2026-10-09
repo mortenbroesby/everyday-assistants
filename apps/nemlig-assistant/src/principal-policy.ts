@@ -1,4 +1,4 @@
-import { z } from 'zod';
+import { z } from "zod";
 
 export const MAX_PRINCIPAL_POLICY_BYTES = 16_384;
 export const MAX_PRINCIPALS = 16;
@@ -33,13 +33,13 @@ const policySchema = z
       new Set(principals.map(({ subject }) => subject)).size !==
       principals.length
     ) {
-      context.addIssue({ code: 'custom', message: 'duplicate subject' });
+      context.addIssue({ code: "custom", message: "duplicate subject" });
     }
     if (
       new Set(principals.map(({ principal_key }) => principal_key)).size !==
       principals.length
     ) {
-      context.addIssue({ code: 'custom', message: 'duplicate principal key' });
+      context.addIssue({ code: "custom", message: "duplicate principal key" });
     }
     if (
       principals.filter(
@@ -47,8 +47,8 @@ const policySchema = z
       ).length !== 1
     ) {
       context.addIssue({
-        code: 'custom',
-        message: 'exactly one enabled configured owner is required',
+        code: "custom",
+        message: "exactly one enabled configured owner is required",
       });
     }
   });
@@ -61,12 +61,12 @@ export function parsePrincipalPolicy(raw: string | undefined): PrincipalPolicy {
     !raw ||
     new TextEncoder().encode(raw).byteLength > MAX_PRINCIPAL_POLICY_BYTES
   ) {
-    throw new Error('NEMLIG_MCP_PRINCIPALS is invalid.');
+    throw new Error("NEMLIG_MCP_PRINCIPALS is invalid.");
   }
   try {
     return policySchema.parse(JSON.parse(raw));
   } catch {
-    throw new Error('NEMLIG_MCP_PRINCIPALS is invalid.');
+    throw new Error("NEMLIG_MCP_PRINCIPALS is invalid.");
   }
 }
 

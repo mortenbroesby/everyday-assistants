@@ -1,4 +1,4 @@
-import type { Credentials } from './config.js';
+import type { Credentials } from "./config.js";
 
 export interface CredentialBinding {
   principalKey: string;
@@ -18,20 +18,20 @@ export interface CredentialEnvelope {
 }
 
 const invalid = (): never => {
-  throw new Error('Credential envelope is invalid.');
+  throw new Error("Credential envelope is invalid.");
 };
 const encoder = new TextEncoder();
-const decoder = new TextDecoder('utf-8', { fatal: true });
+const decoder = new TextDecoder("utf-8", { fatal: true });
 
 const base64url = (bytes: Uint8Array): string => {
-  let binary = '';
+  let binary = "";
   for (const byte of bytes) {
     binary += String.fromCharCode(byte);
   }
   return btoa(binary)
-    .replaceAll('+', '-')
-    .replaceAll('/', '_')
-    .replace(/=+$/u, '');
+    .replaceAll("+", "-")
+    .replaceAll("/", "_")
+    .replace(/=+$/u, "");
 };
 
 const bytes = (value: string, maximum: number): Uint8Array<ArrayBuffer> => {
@@ -40,8 +40,8 @@ const bytes = (value: string, maximum: number): Uint8Array<ArrayBuffer> => {
   }
   try {
     const decoded = atob(
-      value.replaceAll('-', '+').replaceAll('_', '/') +
-        '==='.slice((value.length + 3) % 4),
+      value.replaceAll("-", "+").replaceAll("_", "/") +
+        "===".slice((value.length + 3) % 4),
     );
     const result = new Uint8Array(decoded.length);
     for (let index = 0; index < decoded.length; index += 1) {
@@ -81,31 +81,31 @@ const importKey = async (encoded: string): Promise<CryptoKey> => {
   if (raw.byteLength !== 32) {
     return invalid();
   }
-  return crypto.subtle.importKey('raw', raw, 'AES-GCM', false, [
-    'encrypt',
-    'decrypt',
+  return crypto.subtle.importKey("raw", raw, "AES-GCM", false, [
+    "encrypt",
+    "decrypt",
   ]);
 };
 
 const validateCredentials = (value: unknown): Credentials => {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
     return invalid();
   }
   const record = value as Record<string, unknown>;
   const username = record.username;
   const password = record.password;
-  if (Object.keys(record).sort().join(',') !== 'password,username') {
+  if (Object.keys(record).sort().join(",") !== "password,username") {
     return invalid();
   }
   if (
-    typeof username !== 'string' ||
+    typeof username !== "string" ||
     username.trim().length < 1 ||
     username.length > 320
   ) {
     return invalid();
   }
   if (
-    typeof password !== 'string' ||
+    typeof password !== "string" ||
     password.length < 1 ||
     password.length > 1_024
   ) {
@@ -125,7 +125,7 @@ export async function encryptCredentials(
   const nonce = crypto.getRandomValues(new Uint8Array(12));
   const ciphertext = await crypto.subtle.encrypt(
     {
-      name: 'AES-GCM',
+      name: "AES-GCM",
       iv: nonce,
       additionalData: additionalData(binding),
       tagLength: 128,
@@ -152,20 +152,20 @@ export async function decryptCredentials(
 ): Promise<Credentials> {
   try {
     validateBinding(binding);
-    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
       return invalid();
     }
     const envelope = value as Record<string, unknown>;
     if (
-      Object.keys(envelope).sort().join(',') !==
-        'ciphertext,generation,key_version,nonce,policy_revision,principal_key,schema_version' ||
+      Object.keys(envelope).sort().join(",") !==
+        "ciphertext,generation,key_version,nonce,policy_revision,principal_key,schema_version" ||
       envelope.schema_version !== 1 ||
       envelope.principal_key !== binding.principalKey ||
       envelope.policy_revision !== binding.policyRevision ||
       envelope.key_version !== binding.keyVersion ||
       envelope.generation !== binding.generation ||
-      typeof envelope.nonce !== 'string' ||
-      typeof envelope.ciphertext !== 'string'
+      typeof envelope.nonce !== "string" ||
+      typeof envelope.ciphertext !== "string"
     ) {
       return invalid();
     }
@@ -180,7 +180,7 @@ export async function decryptCredentials(
     }
     const plaintext = await crypto.subtle.decrypt(
       {
-        name: 'AES-GCM',
+        name: "AES-GCM",
         iv: nonce,
         additionalData: additionalData(binding),
         tagLength: 128,

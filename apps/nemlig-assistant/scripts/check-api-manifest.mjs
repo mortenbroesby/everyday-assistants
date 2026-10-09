@@ -1,57 +1,57 @@
 /* global console, process */
 
-import { readFile } from 'node:fs/promises';
-import { dirname, resolve } from 'node:path';
-import { fileURLToPath, URL } from 'node:url';
+import { readFile } from "node:fs/promises";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath, URL } from "node:url";
 
-const appRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const manifestPath = resolve(appRoot, 'nemlig-api.openapi.json');
-const clientPath = resolve(appRoot, 'src/client.ts');
+const appRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const manifestPath = resolve(appRoot, "nemlig-api.openapi.json");
+const clientPath = resolve(appRoot, "src/client.ts");
 const methods = new Set([
-  'delete',
-  'get',
-  'head',
-  'options',
-  'patch',
-  'post',
-  'put',
-  'trace',
+  "delete",
+  "get",
+  "head",
+  "options",
+  "patch",
+  "post",
+  "put",
+  "trace",
 ]);
 const usages = new Set([
-  'client-used',
-  'client-used-and-observed',
-  'observed-only',
+  "client-used",
+  "client-used-and-observed",
+  "observed-only",
 ]);
 const bases = {
-  API_BASE_URL: 'https://www.nemlig.com/webapi',
-  SEARCH_GATEWAY_URL: 'https://webapi.prod.knl.nemlig.it/searchgateway/api',
+  API_BASE_URL: "https://www.nemlig.com/webapi",
+  SEARCH_GATEWAY_URL: "https://webapi.prod.knl.nemlig.it/searchgateway/api",
 };
 
 const pathSignature = (path) =>
   path
-    .split('/')
-    .map((part) => (/^\{[^}]+\}$/u.test(part) ? '{}' : part))
-    .join('/');
+    .split("/")
+    .map((part) => (/^\{[^}]+\}$/u.test(part) ? "{}" : part))
+    .join("/");
 
 const endpointKey = (host, path) => `${host}${pathSignature(path)}`;
 
 export function extractClientEndpoints(source) {
   const endpoints = new Set();
 
-  for (const line of source.split('\n')) {
+  for (const line of source.split("\n")) {
     for (const [identifier, base] of Object.entries(bases)) {
       const marker = `\${${identifier}}`;
       const start = line.indexOf(marker);
       if (start < 0) {
         continue;
       }
-      let suffix = line.slice(start + marker.length).split('`', 1)[0];
-      const query = suffix.indexOf('?${');
+      let suffix = line.slice(start + marker.length).split("`", 1)[0];
+      const query = suffix.indexOf("?${");
       if (query >= 0) {
         suffix = suffix.slice(0, query);
       }
-      suffix = suffix.replace(/\$\{[^}]+\}/gu, '{value}');
-      if (!suffix.startsWith('/')) {
+      suffix = suffix.replace(/\$\{[^}]+\}/gu, "{value}");
+      if (!suffix.startsWith("/")) {
         continue;
       }
       const url = new URL(base);
@@ -59,15 +59,15 @@ export function extractClientEndpoints(source) {
     }
 
     if (/['"]https:\/\/www\.nemlig\.com\/\?GetAsJson=1['"]/u.test(line)) {
-      endpoints.add(endpointKey('www.nemlig.com', '/'));
+      endpoints.add(endpointKey("www.nemlig.com", "/"));
     }
 
     const page = line.match(
       /new URL\((?:(['"])([^'"]+)\1|path), ['"]https:\/\/www\.nemlig\.com['"]\)/u,
     );
     if (page) {
-      const path = page[2] ?? '/{cataloguePath}';
-      endpoints.add(endpointKey('www.nemlig.com', path));
+      const path = page[2] ?? "/{cataloguePath}";
+      endpoints.add(endpointKey("www.nemlig.com", path));
     }
   }
 
@@ -77,7 +77,7 @@ export function extractClientEndpoints(source) {
 function manifestOperations(manifest) {
   if (
     !manifest.paths ||
-    typeof manifest.paths !== 'object' ||
+    typeof manifest.paths !== "object" ||
     Array.isArray(manifest.paths)
   ) {
     return [];
@@ -92,17 +92,17 @@ function manifestOperations(manifest) {
 export function validateApiManifest(manifest, clientSource) {
   const errors = [];
   if (
-    typeof manifest.openapi !== 'string' ||
-    !manifest.openapi.startsWith('3.1.')
+    typeof manifest.openapi !== "string" ||
+    !manifest.openapi.startsWith("3.1.")
   ) {
-    errors.push('manifest.openapi must select an OpenAPI 3.1 patch version');
+    errors.push("manifest.openapi must select an OpenAPI 3.1 patch version");
   }
   if (
     !manifest.info?.title ||
     !manifest.info?.version ||
-    !manifest['x-nemlig']?.lastObserved
+    !manifest["x-nemlig"]?.lastObserved
   ) {
-    errors.push('manifest info and x-nemlig.lastObserved are required');
+    errors.push("manifest info and x-nemlig.lastObserved are required");
   }
 
   const operations = manifestOperations(manifest);
@@ -110,7 +110,7 @@ export function validateApiManifest(manifest, clientSource) {
   const documentedClientEndpoints = new Set();
   for (const { method, path, operation } of operations) {
     const id = operation?.operationId;
-    const metadata = operation?.['x-nemlig'];
+    const metadata = operation?.["x-nemlig"];
     if (!id) {
       errors.push(`${method.toUpperCase()} ${path} is missing operationId`);
     } else if (operationIds.has(id)) {
@@ -130,7 +130,7 @@ export function validateApiManifest(manifest, clientSource) {
       );
       continue;
     }
-    if (!metadata.usage.startsWith('client-used')) {
+    if (!metadata.usage.startsWith("client-used")) {
       continue;
     }
     const serverUrl = operation.servers?.[0]?.url ?? manifest.servers?.[0]?.url;
@@ -159,17 +159,17 @@ export function validateApiManifest(manifest, clientSource) {
 
 async function main() {
   const [manifestText, clientSource] = await Promise.all([
-    readFile(manifestPath, 'utf8'),
-    readFile(clientPath, 'utf8'),
+    readFile(manifestPath, "utf8"),
+    readFile(clientPath, "utf8"),
   ]);
   const manifest = JSON.parse(manifestText);
   const errors = validateApiManifest(manifest, clientSource);
   if (errors.length) {
-    throw new Error(errors.join('\n'));
+    throw new Error(errors.join("\n"));
   }
   const operations = manifestOperations(manifest);
   const clientUsed = operations.filter(({ operation }) =>
-    operation['x-nemlig'].usage.startsWith('client-used'),
+    operation["x-nemlig"].usage.startsWith("client-used"),
   ).length;
   console.log(
     `Nemlig API manifest: ${operations.length} operations (${clientUsed} client-used, ${operations.length - clientUsed} observed-only).`,

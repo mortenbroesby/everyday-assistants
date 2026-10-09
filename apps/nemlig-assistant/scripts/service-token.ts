@@ -3,10 +3,10 @@ import {
   customFetch,
   jwtVerify,
   type JWTVerifyGetKey,
-} from 'jose';
-import { SERVICE_ACCEPTANCE_SCOPE } from '../src/auth0.js';
+} from "jose";
+import { SERVICE_ACCEPTANCE_SCOPE } from "../src/auth0.js";
 
-export { SERVICE_ACCEPTANCE_SCOPE } from '../src/auth0.js';
+export { SERVICE_ACCEPTANCE_SCOPE } from "../src/auth0.js";
 
 type Environment = Record<string, string | undefined>;
 
@@ -18,7 +18,7 @@ export interface ServiceTokenOptions {
 }
 
 const unavailable = (): never => {
-  throw new Error('Service token unavailable.');
+  throw new Error("Service token unavailable.");
 };
 
 const issuanceTimeoutMs = 5_000;
@@ -28,7 +28,7 @@ const canonicalIssuer = (value: string): URL | undefined => {
   try {
     const issuer = new URL(value);
     if (
-      issuer.protocol !== 'https:' ||
+      issuer.protocol !== "https:" ||
       issuer.username ||
       issuer.password ||
       issuer.search ||
@@ -36,8 +36,8 @@ const canonicalIssuer = (value: string): URL | undefined => {
     ) {
       return undefined;
     }
-    if (!issuer.pathname.endsWith('/')) {
-      issuer.pathname += '/';
+    if (!issuer.pathname.endsWith("/")) {
+      issuer.pathname += "/";
     }
     return issuer.href === value ? issuer : undefined;
   } catch {
@@ -48,12 +48,12 @@ const canonicalIssuer = (value: string): URL | undefined => {
 const canonicalAudience = (value: string): URL | undefined => {
   try {
     const audience = new URL(value);
-    return audience.protocol === 'https:' &&
+    return audience.protocol === "https:" &&
       !audience.username &&
       !audience.password &&
       !audience.search &&
       !audience.hash &&
-      audience.pathname === '/mcp' &&
+      audience.pathname === "/mcp" &&
       audience.href === value
       ? audience
       : undefined;
@@ -74,13 +74,13 @@ const beforeDeadline = async <T>(
     return await Promise.race([
       work,
       new Promise<never>((_resolve, reject) => {
-        onAbort = () => reject(new Error('service token deadline exceeded'));
-        signal.addEventListener('abort', onAbort, { once: true });
+        onAbort = () => reject(new Error("service token deadline exceeded"));
+        signal.addEventListener("abort", onAbort, { once: true });
       }),
     ]);
   } finally {
     if (onAbort) {
-      signal.removeEventListener('abort', onAbort);
+      signal.removeEventListener("abort", onAbort);
     }
   }
 };
@@ -101,7 +101,7 @@ export async function issueServiceToken(
   if (!issuer || !publicUrl) {
     return unavailable();
   }
-  const tokenEndpoint = new URL('oauth/token', issuer);
+  const tokenEndpoint = new URL("oauth/token", issuer);
   const now = options.now?.() ?? new Date();
   const deadline = options.signal
     ? AbortSignal.any([options.signal, AbortSignal.timeout(issuanceTimeoutMs)])
@@ -109,16 +109,16 @@ export async function issueServiceToken(
   try {
     const response = await beforeDeadline(
       (options.fetcher ?? fetch)(tokenEndpoint, {
-        method: 'POST',
-        headers: { 'content-type': 'application/x-www-form-urlencoded' },
+        method: "POST",
+        headers: { "content-type": "application/x-www-form-urlencoded" },
         body: new URLSearchParams({
-          grant_type: 'client_credentials',
+          grant_type: "client_credentials",
           client_id: clientId,
           client_secret: clientSecret,
           audience,
           scope: SERVICE_ACCEPTANCE_SCOPE,
         }),
-        redirect: 'error',
+        redirect: "error",
         signal: deadline,
       }),
       deadline,
@@ -138,7 +138,7 @@ export async function issueServiceToken(
       refresh_token?: unknown;
     };
     if (
-      typeof body.access_token !== 'string' ||
+      typeof body.access_token !== "string" ||
       !body.access_token ||
       body.refresh_token !== undefined
     ) {
@@ -146,13 +146,13 @@ export async function issueServiceToken(
     }
     const key =
       options.key ??
-      createRemoteJWKSet(new URL('.well-known/jwks.json', issuer), {
+      createRemoteJWKSet(new URL(".well-known/jwks.json", issuer), {
         timeoutDuration: issuanceTimeoutMs,
         [customFetch]: async (url, init) =>
           await beforeDeadline(
             (options.fetcher ?? fetch)(url, {
               ...init,
-              redirect: 'error',
+              redirect: "error",
               signal: AbortSignal.any([deadline, init.signal]),
             }),
             deadline,
@@ -162,13 +162,13 @@ export async function issueServiceToken(
       jwtVerify(body.access_token, key, {
         issuer: issuer.href,
         audience,
-        algorithms: ['RS256'],
+        algorithms: ["RS256"],
         currentDate: now,
       }),
       deadline,
     );
     const scopes =
-      typeof payload.scope === 'string'
+      typeof payload.scope === "string"
         ? payload.scope.split(/\s+/u).filter(Boolean)
         : [];
     if (
@@ -176,7 +176,7 @@ export async function issueServiceToken(
       payload.azp !== clientId ||
       scopes.length !== 1 ||
       scopes[0] !== SERVICE_ACCEPTANCE_SCOPE ||
-      typeof payload.exp !== 'number' ||
+      typeof payload.exp !== "number" ||
       payload.exp < Math.floor(now.getTime() / 1_000) + 27 * 60
     ) {
       return unavailable();

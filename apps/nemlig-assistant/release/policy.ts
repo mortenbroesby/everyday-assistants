@@ -1,16 +1,16 @@
-import { compare, valid } from 'semver';
+import { compare, valid } from "semver";
 import {
   parseCodename,
   type PackageIdentity,
-} from '../src/release-identity.js';
+} from "../src/release-identity.js";
 
-export type ReleaseKind = 'none' | 'patch' | 'minor' | 'major';
-export type PublishKind = Exclude<ReleaseKind, 'none'>;
+export type ReleaseKind = "none" | "patch" | "minor" | "major";
+export type PublishKind = Exclude<ReleaseKind, "none">;
 export {
   parseCodename,
   readPackageIdentity,
   type PackageIdentity,
-} from '../src/release-identity.js';
+} from "../src/release-identity.js";
 
 export function parseCodenameLedger(
   contents: string | null,
@@ -19,23 +19,23 @@ export function parseCodenameLedger(
   if (contents === null) {
     return [];
   }
-  const [header, ...rows] = contents.replace(/\n$/u, '').split('\n');
-  if (header !== 'version,codename') {
-    throw new Error('Invalid codename ledger header.');
+  const [header, ...rows] = contents.replace(/\n$/u, "").split("\n");
+  if (header !== "version,codename") {
+    throw new Error("Invalid codename ledger header.");
   }
   const versions = new Set<string>();
   const names = new Set<string>();
   return rows.map((row) => {
-    const [version, codename, extra] = row.split(',');
+    const [version, codename, extra] = row.split(",");
     if (!version || !codename || extra !== undefined) {
-      throw new Error('Invalid codename ledger row.');
+      throw new Error("Invalid codename ledger row.");
     }
     parseVersion(version);
     if (
       versions.has(version) ||
       (!allowHistoricalDuplicateNames && names.has(codename.toLowerCase()))
     ) {
-      throw new Error('Codename ledger reuses a version or codename.');
+      throw new Error("Codename ledger reuses a version or codename.");
     }
     parseCodename(codename);
     versions.add(version);
@@ -57,12 +57,12 @@ export function validateCodenameLedger(
   const candidate = parseCodenameLedger(current, true);
   if (!releaseBearing) {
     if (base !== current) {
-      throw new Error('Non-release changes cannot change the codename ledger.');
+      throw new Error("Non-release changes cannot change the codename ledger.");
     }
     return;
   }
   if (!identity.codename) {
-    throw new Error('Candidate codename is missing from the ledger identity.');
+    throw new Error("Candidate codename is missing from the ledger identity.");
   }
   if (
     previous.some(
@@ -71,12 +71,12 @@ export function validateCodenameLedger(
     )
   ) {
     throw new Error(
-      'Codename ledger cannot reuse a historical codename for a new release.',
+      "Codename ledger cannot reuse a historical codename for a new release.",
     );
   }
   if (candidate.length !== previous.length + 1) {
     throw new Error(
-      'Codename ledger must append exactly the candidate version and codename.',
+      "Codename ledger must append exactly the candidate version and codename.",
     );
   }
   const priorNameCounts = new Map<string, number>();
@@ -88,7 +88,7 @@ export function validateCodenameLedger(
     const actual = candidate[index];
     if (!actual || actual.version !== entry.version) {
       throw new Error(
-        'Codename ledger must preserve historical version order.',
+        "Codename ledger must preserve historical version order.",
       );
     }
     if (
@@ -96,13 +96,13 @@ export function validateCodenameLedger(
       actual.codename !== entry.codename
     ) {
       throw new Error(
-        'Codename ledger cannot rewrite a unique historical codename.',
+        "Codename ledger cannot rewrite a unique historical codename.",
       );
     }
   }
   if (JSON.stringify(candidate.at(-1)) !== JSON.stringify(identity)) {
     throw new Error(
-      'Codename ledger must append exactly the candidate version and codename.',
+      "Codename ledger must append exactly the candidate version and codename.",
     );
   }
 }
@@ -126,14 +126,14 @@ export interface ReleaseDecision {
 }
 
 export type RegistryState =
-  | { status: 'published'; version: string }
-  | { status: 'unpublished' }
-  | { status: 'unavailable'; reason: string };
+  | { status: "published"; version: string }
+  | { status: "unpublished" }
+  | { status: "unavailable"; reason: string };
 
-export type TagState = 'missing' | 'matching' | 'conflicting';
+export type TagState = "missing" | "matching" | "conflicting";
 
 export interface TransactionDecision {
-  action: 'apply' | 'no-op' | 'reject';
+  action: "apply" | "no-op" | "reject";
   reason: string;
   versionAlreadyCurrent: boolean;
 }
@@ -157,7 +157,7 @@ const order: Record<ReleaseKind, number> = {
 function parts(match: RegExpMatchArray): VersionParts {
   const groups = match.groups;
   if (!groups) {
-    throw new Error('Version parser did not return components.');
+    throw new Error("Version parser did not return components.");
   }
   return {
     major: Number(groups.major),
@@ -219,51 +219,51 @@ export function assessVersionBump(
   next: VersionParts,
 ): {
   ok: boolean;
-  kind: Exclude<ReleaseKind, 'none'> | null;
+  kind: Exclude<ReleaseKind, "none"> | null;
   reason: string;
 } {
   if (compareParts(next, previous) <= 0) {
     return {
       ok: false,
       kind: null,
-      reason: 'Nemlig Assistant version must move forward.',
+      reason: "Nemlig Assistant version must move forward.",
     };
   }
   if (next.major > previous.major) {
     return next.minor === 0 && next.patch === 0
-      ? { ok: true, kind: 'major', reason: 'Major bump accepted.' }
+      ? { ok: true, kind: "major", reason: "Major bump accepted." }
       : {
           ok: false,
           kind: null,
-          reason: 'Major bumps must reset minor and patch to 0.',
+          reason: "Major bumps must reset minor and patch to 0.",
         };
   }
   if (next.major !== previous.major) {
     return {
       ok: false,
       kind: null,
-      reason: 'Major version cannot move backward.',
+      reason: "Major version cannot move backward.",
     };
   }
   if (next.minor > previous.minor) {
     return next.patch === 0
-      ? { ok: true, kind: 'minor', reason: 'Minor bump accepted.' }
-      : { ok: false, kind: null, reason: 'Minor bumps must reset patch to 0.' };
+      ? { ok: true, kind: "minor", reason: "Minor bump accepted." }
+      : { ok: false, kind: null, reason: "Minor bumps must reset patch to 0." };
   }
   if (next.minor !== previous.minor) {
     return {
       ok: false,
       kind: null,
-      reason: 'Minor version cannot move backward.',
+      reason: "Minor version cannot move backward.",
     };
   }
   if (next.patch > previous.patch) {
-    return { ok: true, kind: 'patch', reason: 'Patch bump accepted.' };
+    return { ok: true, kind: "patch", reason: "Patch bump accepted." };
   }
   return {
     ok: false,
     kind: null,
-    reason: 'Patch version cannot move backward.',
+    reason: "Patch version cannot move backward.",
   };
 }
 
@@ -272,7 +272,7 @@ export function versionSatisfies(
   next: string,
   required: ReleaseKind,
 ): boolean {
-  if (required === 'none') {
+  if (required === "none") {
     return previous === next;
   }
   try {
@@ -293,21 +293,21 @@ export function versionSatisfies(
 export function nextVersion(
   previous: string,
   current: string,
-  kind: Exclude<ReleaseKind, 'none'>,
+  kind: Exclude<ReleaseKind, "none">,
 ): string {
   if (versionSatisfies(previous, current, kind)) {
     return current;
   }
   const baseline = parseBaselineVersion(previous);
   const next = { ...baseline };
-  if (kind === 'major') {
+  if (kind === "major") {
     next.major += 1;
     next.minor = 0;
     next.patch = 0;
-  } else if (kind === 'minor') {
+  } else if (kind === "minor") {
     next.minor += 1;
     next.patch = 0;
-  } else if (kind === 'patch') {
+  } else if (kind === "patch") {
     next.patch += 1;
   }
   return formatVersion(next);
@@ -317,20 +317,20 @@ export function classifyPaths(changedFiles: readonly string[]): {
   releaseFiles: string[];
   internalFiles: string[];
 } {
-  const packagePrefix = 'apps/nemlig-assistant/';
+  const packagePrefix = "apps/nemlig-assistant/";
   const releaseFiles = changedFiles.filter((filePath) =>
     new RegExp(
       `^${packagePrefix}(?:package\\.json|tsdown\\.config\\.ts|scripts/production-deploy\\.ts|src/(?!.*\\.test\\.ts$).+)$`,
-      'u',
+      "u",
     ).test(filePath),
   );
-  if (releaseFiles.length > 0 && changedFiles.includes('pnpm-lock.yaml')) {
-    releaseFiles.push('pnpm-lock.yaml');
+  if (releaseFiles.length > 0 && changedFiles.includes("pnpm-lock.yaml")) {
+    releaseFiles.push("pnpm-lock.yaml");
   }
   const internalFiles = changedFiles.filter((filePath) =>
     new RegExp(
       `^${packagePrefix}(?:release/|scripts/|src/.*\\.test\\.ts$|tsconfig\\.json$|eslint\\.config\\.mjs$)`,
-      'u',
+      "u",
     ).test(filePath),
   );
   return {
@@ -350,7 +350,7 @@ function commitType(subject: string): string | null {
 function isBreaking(commit: ReleaseCommit): boolean {
   return (
     /^(?:[a-z]+)(?:\([^)]+\))?!:/iu.test(commit.subject) ||
-    /\bBREAKING CHANGE:/iu.test(commit.body ?? '')
+    /\bBREAKING CHANGE:/iu.test(commit.body ?? "")
   );
 }
 
@@ -363,44 +363,44 @@ export function decideRelease(input: {
   const noRelease =
     input.noRelease ||
     input.commits.some((commit) =>
-      /(?:^|\n)Nemlig-Release: none(?:\n|$)/iu.test(commit.body ?? ''),
+      /(?:^|\n)Nemlig-Release: none(?:\n|$)/iu.test(commit.body ?? ""),
     );
   if (noRelease) {
     return {
-      kind: 'none',
-      reason: 'The validated no-release override is set.',
+      kind: "none",
+      reason: "The validated no-release override is set.",
       ...classified,
     };
   }
   if (classified.releaseFiles.length === 0) {
     return classified.internalFiles.length > 0
       ? {
-          kind: 'none',
-          reason: 'Only Nemlig tests or release internals changed.',
+          kind: "none",
+          reason: "Only Nemlig tests or release internals changed.",
           ...classified,
         }
       : {
-          kind: 'none',
-          reason: 'No Nemlig package files changed.',
+          kind: "none",
+          reason: "No Nemlig package files changed.",
           ...classified,
         };
   }
-  let kind: PublishKind = 'patch';
+  let kind: PublishKind = "patch";
   for (const commit of input.commits) {
     if (isBreaking(commit)) {
-      kind = 'major';
-    } else if (kind !== 'major' && commitType(commit.subject) === 'feat') {
-      kind = 'minor';
+      kind = "major";
+    } else if (kind !== "major" && commitType(commit.subject) === "feat") {
+      kind = "minor";
     }
   }
   return {
     kind,
     reason:
-      kind === 'major'
-        ? 'A breaking-change marker changed the Nemlig package.'
-        : kind === 'minor'
-          ? 'A feature commit changed the Nemlig package.'
-          : 'The Nemlig package changed without a feature or breaking marker.',
+      kind === "major"
+        ? "A breaking-change marker changed the Nemlig package."
+        : kind === "minor"
+          ? "A feature commit changed the Nemlig package."
+          : "The Nemlig package changed without a feature or breaking marker.",
     ...classified,
   };
 }
@@ -412,24 +412,24 @@ export function decideTransaction(input: {
   tagState: TagState;
 }): TransactionDecision {
   parseVersion(input.candidateVersion);
-  if (input.tagState === 'matching') {
+  if (input.tagState === "matching") {
     return {
-      action: 'no-op',
-      reason: 'The matching package tag already identifies this candidate.',
+      action: "no-op",
+      reason: "The matching package tag already identifies this candidate.",
       versionAlreadyCurrent: true,
     };
   }
-  if (input.tagState === 'conflicting') {
+  if (input.tagState === "conflicting") {
     return {
-      action: 'reject',
-      reason: 'The package tag exists on a different commit.',
+      action: "reject",
+      reason: "The package tag exists on a different commit.",
       versionAlreadyCurrent: false,
     };
   }
   if (input.mainVersion === null) {
     return {
-      action: 'reject',
-      reason: 'origin/main package version is unavailable.',
+      action: "reject",
+      reason: "origin/main package version is unavailable.",
       versionAlreadyCurrent: false,
     };
   }
@@ -439,34 +439,34 @@ export function decideTransaction(input: {
   );
   if (mainComparison < 0) {
     return {
-      action: 'reject',
+      action: "reject",
       reason: `Candidate ${input.candidateVersion} is older than main ${input.mainVersion}.`,
       versionAlreadyCurrent: false,
     };
   }
-  if (input.registry.status === 'unavailable') {
+  if (input.registry.status === "unavailable") {
     return {
-      action: 'reject',
+      action: "reject",
       reason: `npm registry state is unavailable: ${input.registry.reason}`,
       versionAlreadyCurrent: false,
     };
   }
   if (
-    input.registry.status === 'published' &&
+    input.registry.status === "published" &&
     compareRegistryVersions(input.candidateVersion, input.registry.version) <= 0
   ) {
     return {
-      action: 'reject',
+      action: "reject",
       reason: `Candidate ${input.candidateVersion} is not newer than npm ${input.registry.version}.`,
       versionAlreadyCurrent: false,
     };
   }
   return {
-    action: 'apply',
+    action: "apply",
     reason:
-      input.registry.status === 'unpublished'
-        ? 'The package is unpublished and the candidate is valid.'
-        : 'The candidate is newer than main and npm.',
+      input.registry.status === "unpublished"
+        ? "The package is unpublished and the candidate is valid."
+        : "The candidate is newer than main and npm.",
     versionAlreadyCurrent: mainComparison === 0,
   };
 }
@@ -479,7 +479,7 @@ export function validateRetry(input: {
 }): RetryValidation {
   const match = input.tag.match(/^nemlig-assistant-v(?<version>.+)$/u);
   if (!match?.groups?.version) {
-    throw new Error('Retry tag must use nemlig-assistant-v<version>.');
+    throw new Error("Retry tag must use nemlig-assistant-v<version>.");
   }
   const version = match.groups.version;
   parseVersion(version);
@@ -491,13 +491,13 @@ export function validateRetry(input: {
       `Retry tag version ${version} does not match package version ${input.manifestVersion}.`,
     );
   }
-  if (input.registry.status === 'unavailable') {
+  if (input.registry.status === "unavailable") {
     throw new Error(
       `npm registry state is unavailable: ${input.registry.reason}`,
     );
   }
   if (
-    input.registry.status === 'published' &&
+    input.registry.status === "published" &&
     compareRegistryVersions(version, input.registry.version) <= 0
   ) {
     throw new Error(
