@@ -30,7 +30,8 @@ export type Review = {
   items: ReviewItem[];
   alternatives?: { product_id: number; query: string; views: ProductView[] };
   submission?: {
-    status: "prepared" | "submitted" | "uncertain";
+    status: "prepared" | "submitted" | "uncertain" | "partial";
+    verified_additions?: number;
     submission_id: string;
     review: {
       lines?: Array<{
@@ -426,14 +427,17 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
   const basket =
     productPayload?.detail_limit !== undefined &&
     Array.isArray(productPayload.items);
+  const partialSubmission = review?.submission?.status === "partial";
   const uncertainSubmission =
     submitBlocked || review?.submission?.status === "uncertain";
   const editsBlocked =
     busy ||
     uncertainSubmission ||
+    partialSubmission ||
     (review?.submission?.status === "submitted" && !continueSubmitted);
   const terminalSubmission =
     uncertainSubmission ||
+    partialSubmission ||
     (review?.submission?.status === "submitted" && !continueSubmitted);
   const decisionsComplete = Boolean(
     review &&
@@ -450,7 +454,9 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
     review && active && terminalSubmission
       ? review.submission?.status === "submitted"
         ? "Added to Nemlig basket"
-        : "Check your Nemlig basket"
+        : partialSubmission
+          ? "Addition stopped early"
+          : "Check your Nemlig basket"
       : review && active
         ? review.items.length
           ? decisionsComplete
@@ -839,6 +845,28 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
           </Button>
         </OutcomeSurface>
       )}
+      {review && terminalSubmission && partialSubmission && (
+        <OutcomeSurface tone="warning" title="Some additions were confirmed">
+          <p role="status">
+            {review.submission?.verified_additions === 1
+              ? "One product was confirmed in your Nemlig basket."
+              : `${review.submission?.verified_additions ?? "Some"} products were confirmed in your Nemlig basket.`}{" "}
+            No later product was sent after the safety check stopped the
+            addition.
+          </p>
+          <p>
+            Inspect the actual Nemlig basket before preparing another request.
+            Nemlig Assistant will not retry automatically.
+          </p>
+          <Button
+            color="secondary"
+            disabled={busy}
+            onClick={actions.onInspectBasket}
+          >
+            Inspect Nemlig basket in conversation
+          </Button>
+        </OutcomeSurface>
+      )}
       {review && active && !terminalSubmission && destination === "ready" && (
         <ActionFooter>
           {review.submission?.status !== "prepared" && (
@@ -899,11 +927,13 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
               )}
             </OutcomeSurface>
           )}
-          {message && review.submission?.status !== "uncertain" && (
-            <p className="status" role="status">
-              {message}
-            </p>
-          )}
+          {message &&
+            review.submission?.status !== "uncertain" &&
+            review.submission?.status !== "partial" && (
+              <p className="status" role="status">
+                {message}
+              </p>
+            )}
         </ActionFooter>
       )}
       {review && active && !terminalSubmission && review.items.length === 0 && (
