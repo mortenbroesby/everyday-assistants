@@ -154,7 +154,8 @@ const reviewSnapshotSchema = z.object({
   submission: z
     .object({
       submission_id: z.string().uuid(),
-      status: z.enum(["prepared", "submitted", "uncertain"]),
+      status: z.enum(["prepared", "submitted", "uncertain", "partial"]),
+      verified_additions: z.number().int().positive().optional(),
       expires_at: z.string(),
       review: z.record(z.string(), z.unknown()),
     })
