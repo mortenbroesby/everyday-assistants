@@ -1,4 +1,8 @@
-import type { BasketProposalService, ApplyResult } from "./proposals.js";
+import {
+  type BasketProposalService,
+  type ApplyResult,
+  VerifiedPartialAdditionsError,
+} from "./proposals.js";
 import { randomUUID } from "node:crypto";
 import { NemligError } from "./nemlig-error.js";
 import {
@@ -25,7 +29,8 @@ export interface ProductReviewSnapshot {
   items: ReviewItem[];
   submission?: {
     submission_id: string;
-    status: "prepared" | "submitted" | "uncertain";
+    status: "prepared" | "submitted" | "uncertain" | "partial";
+    verified_additions?: number;
     expires_at: string;
     review: Record<string, unknown>;
   };
@@ -89,7 +94,8 @@ export class ProductReviewService {
       ([, draft]) =>
         !draft.busy &&
         draft.snapshot.submission?.status !== "submitted" &&
-        draft.snapshot.submission?.status !== "uncertain",
+        draft.snapshot.submission?.status !== "uncertain" &&
+        draft.snapshot.submission?.status !== "partial",
     );
     if (!oldest) {
       throw new NemligError(
@@ -549,11 +555,20 @@ export class ProductReviewService {
       // Record uncertainty before crossing the provider boundary; never silently retry.
       submission.status = "uncertain";
       stored.snapshot.revision++;
-      const result = await this.proposals.apply(
-        owner,
-        stored.proposalId,
-        "additions",
-      );
+      let result: ApplyResult;
+      try {
+        result = await this.proposals.apply(
+          owner,
+          stored.proposalId,
+          "additions",
+        );
+      } catch (error) {
+        if (error instanceof VerifiedPartialAdditionsError) {
+          submission.status = "partial";
+          submission.verified_additions = error.verifiedAdditions;
+        }
+        throw error;
+      }
       submission.status = "submitted";
       return { review: structuredClone(stored.snapshot), result };
     } finally {

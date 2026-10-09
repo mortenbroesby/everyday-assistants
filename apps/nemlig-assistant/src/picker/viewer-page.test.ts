@@ -181,3 +181,29 @@ test("busy submission confirmation disables its cancel control", () => {
   assert.ok(cancelButton, "submission confirmation did not render Cancel");
   assert.match(cancelButton, /disabled=""/u);
 });
+
+test("shared viewer page distinguishes a verified partial addition from an uncertain one", () => {
+  const pageProps = props();
+  assert.equal(pageProps.model.screen.kind, "review");
+  if (pageProps.model.screen.kind !== "review") {
+    return;
+  }
+  pageProps.model.screen = {
+    ...pageProps.model.screen,
+    review: {
+      ...pageProps.model.screen.review,
+      submission: {
+        status: "partial",
+        submission_id: "fixture-submission",
+        verified_additions: 1,
+        review: {},
+      },
+    },
+  };
+
+  const html = renderToStaticMarkup(createElement(ViewerPage, pageProps));
+  assert.match(html, /Some additions were confirmed/u);
+  assert.match(html, /One product was confirmed/u);
+  assert.match(html, /No later product was sent/u);
+  assert.doesNotMatch(html, /We could not verify the addition/u);
+});
