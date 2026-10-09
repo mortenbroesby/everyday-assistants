@@ -502,10 +502,11 @@ test("MCP exposes the complete friendly catalog and clean missing-credential err
         inputs,
       ] of friendlyCatalog) {
         const tool = tools.find((candidate) => candidate.name === name);
-        assert.equal(tool?.title, title, name);
-        assert.ok(tool?.description, `${name} needs a description`);
+        assert.ok(tool, `${name} is missing`);
+        assert.equal(tool.title, title, name);
+        assert.ok(tool.description, `${name} needs a description`);
         assert.deepEqual(
-          tool?.annotations,
+          tool.annotations,
           {
             readOnlyHint,
             destructiveHint,
@@ -514,13 +515,13 @@ test("MCP exposes the complete friendly catalog and clean missing-credential err
           name,
         );
         assert.deepEqual(
-          tool?._meta?.securitySchemes,
+          tool._meta?.securitySchemes,
           [{ type: "oauth2", scopes: ["use:nemlig-assistant"] }],
           name,
         );
         const properties =
           (
-            tool?.inputSchema as {
+            tool.inputSchema as {
               properties?: Record<string, { description?: string }>;
             }
           ).properties ?? {};
@@ -1555,11 +1556,12 @@ test("a clear conversational add command authorizes only its exact prepared Read
       const tool = (await mcp.listTools()).tools.find(
         (t) => t.name === "submit_product_review_conversation",
       );
-      assert.deepEqual(
-        (tool?._meta?.ui as { visibility: string[] }).visibility,
-        ["model"],
-      );
-      assert.equal(tool?._meta?.["openai/widgetAccessible"], undefined);
+      assert.ok(tool);
+      assert.ok(tool._meta?.ui);
+      assert.deepEqual((tool._meta.ui as { visibility: string[] }).visibility, [
+        "model",
+      ]);
+      assert.equal(tool._meta?.["openai/widgetAccessible"], undefined);
       const args = {
         review_id: review.review_id,
         revision: review.revision,
