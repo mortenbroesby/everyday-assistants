@@ -427,7 +427,7 @@ The local draft list is conversation-scoped and temporary. If it is unavailable,
     inputSchema: z.object({ review_id: z.string().uuid().optional().describe("The current local draft list reference. May be omitted for show to recover this conversation’s active draft list."), revision: z.number().int().positive().optional().describe("Current draft list revision required for every action except show."), action: reviewActionSchema.describe("The local draft list change, navigation, refresh, or preparation requested by the user.") }),
     outputSchema: z.union([z.object({ review: reviewSnapshotSchema }), z.object({ ended: z.literal(true) }), z.object({ unavailable: z.literal(true) })]),
     annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true },
-    _meta: { ui: { visibility: ["model"] } },
+    _meta: { ...PRODUCT_VIEWER_RESOURCE_METADATA, ui: { resourceUri: PRODUCT_VIEWER_RESOURCE_URI, visibility: ["model"] } },
   }, ({ review_id, revision, action }, ctx) => {
     const perform = () => updateDraft(reviewOwner(ctx), review_id, revision, action, ctx.mcpReq.signal)
       .then((result) => success(result, result.unavailable ? "No active local Draft list remains. Ask before starting a new draft list; previous choices and approval are not restored." : JSON.stringify(result)));
