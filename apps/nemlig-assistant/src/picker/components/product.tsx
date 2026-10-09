@@ -40,28 +40,22 @@ const ImageFallback = styled.span({
 });
 const ProductCopy = styled.span({ display: "grid", minWidth: 0, gap: 3 });
 const ProductHeading = styled.span({
-  display: "flex",
-  alignItems: "start",
-  justifyContent: "space-between",
-  gap: 8,
   "& strong": {
+    display: "-webkit-box",
     minWidth: 0,
     overflowWrap: "anywhere",
+    overflow: "hidden",
+    WebkitBoxOrient: "vertical",
+    WebkitLineClamp: 2,
     fontSize: ".92rem",
     lineHeight: 1.35,
     fontWeight: 650,
   },
-  "& > span": {
-    flex: "none",
-    fontSize: ".9rem",
-    fontWeight: 650,
-    fontVariantNumeric: "tabular-nums",
-  },
-  "@media (max-width: 400px)": {
-    display: "grid",
-    gap: 2,
-    "& > span": { textAlign: "left" },
-  },
+});
+const ProductPrice = styled.span({
+  fontSize: ".9rem",
+  fontWeight: 650,
+  fontVariantNumeric: "tabular-nums",
 });
 const ProductMeta = styled.span({
   color: "var(--muted)",
@@ -241,8 +235,10 @@ export function ProductSummary({
       <ProductCopy>
         <ProductHeading>
           <strong>{productName(view)}</strong>
-          <span>{money(quantityTotal)}</span>
         </ProductHeading>
+        <ProductPrice data-viewer-component="product-price">
+          {money(quantityTotal)}
+        </ProductPrice>
         <ProductMeta>
           {[product.brand, product.unit_size].filter(Boolean).join(" · ") ||
             "Package details unavailable"}

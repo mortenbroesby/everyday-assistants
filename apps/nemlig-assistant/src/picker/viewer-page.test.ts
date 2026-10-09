@@ -147,6 +147,7 @@ test("shared viewer page keeps thumbnails attached to their individual views", (
     markup,
     /src="\/assets\/alternative\.svg"[^>]*alt="Alternative yoghurt"/u,
   );
+  assert.match(markup, /data-viewer-component="product-price"/u);
   assert.match(markup, /aria-label="Use Alternative yoghurt instead"/u);
   assert.doesNotMatch(markup, /Use selected alternative|role="radio"/u);
 });
