@@ -256,7 +256,6 @@ export function ProductViewer() {
   const lastConfirmedReview = useRef<Review | undefined>(
     screen.kind === "review" ? screen.review : undefined,
   );
-  const validatedViewId = useRef<string | undefined>(undefined);
   const callLock = useRef(false);
   const cancellationEpoch = useRef(0);
   const [selected, setSelected] = useState<Set<number>>(() => new Set());
@@ -553,10 +552,6 @@ export function ProductViewer() {
             .join(" ") || "Update failed",
         );
       }
-      const next = readPayload(result);
-      if (next?.kind === "review" && next.view_id) {
-        validatedViewId.current = next.view_id;
-      }
       if (!applyPayload(result, true, adoptPresentationDestination)) {
         throw new Error("Could not confirm the updated Draft list.");
       }
@@ -657,43 +652,6 @@ export function ProductViewer() {
       }
     }
   };
-  const activateCurrentDraftList = async () => {
-    if (!connectedApp || !isConnected) {
-      setMessage("Ask in chat: “Reopen the current Draft list.”");
-      return;
-    }
-    setActivatingCurrent(true);
-    const activated = await call(
-      "update_product_review",
-      { action: { kind: "show" }, activate: true },
-      false,
-    );
-    if (!activated) {
-      setActivatingCurrent(false);
-    }
-  };
-  useEffect(() => {
-    const latest = activeReview.current;
-    if (
-      !connectedApp ||
-      !isConnected ||
-      !latest?.view_id ||
-      validatedViewId.current === latest.view_id
-    ) {
-      return;
-    }
-    validatedViewId.current = latest.view_id;
-    void call(
-      "update_product_review",
-      {
-        view_id: latest.view_id,
-        review_id: latest.review.review_id,
-        revision: latest.review.revision,
-        action: { kind: "show" },
-      },
-      false,
-    );
-  }, [connectedApp, isConnected, call]);
   const review = screen.kind === "review" ? screen.review : undefined;
   const update = async (action: Record<string, unknown>) => {
     const latest = activeReview.current;
@@ -818,6 +776,17 @@ export function ProductViewer() {
       setMessage("Follow-up sent to conversation.");
     } catch {
       setMessage("Continue in conversation to inspect or start a Draft list.");
+    }
+  };
+  const activateCurrentDraftList = async () => {
+    setActivatingCurrent(true);
+    try {
+      // The model tool path retains the conversation scope that owns the review.
+      await sendFollowUp(
+        "Reopen the current Draft list without changing it. If it is no longer available, say so; do not create a new Draft list.",
+      );
+    } finally {
+      setActivatingCurrent(false);
     }
   };
   const endDraft = async () => {

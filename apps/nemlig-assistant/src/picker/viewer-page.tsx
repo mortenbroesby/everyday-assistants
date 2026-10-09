@@ -576,7 +576,7 @@ export function ViewerPage(props: ViewerPageProps) {
             disabled={activatingCurrent}
             onClick={props.onActivateCurrent}
           >
-            {activatingCurrent ? "Loading…" : "Load current Draft list"}
+            {activatingCurrent ? "Opening…" : "Reopen in conversation"}
           </Button>
           {message && <p role="status">{message}</p>}
         </section>
@@ -595,7 +595,7 @@ export function ViewerPage(props: ViewerPageProps) {
               disabled={activatingCurrent || busy}
               onClick={props.onActivateCurrent}
             >
-              {activatingCurrent ? "Loading…" : "Make this card current"}
+              {activatingCurrent ? "Opening…" : "Reopen in conversation"}
             </Button>
           )}
           {message && <p role="status">{message}</p>}

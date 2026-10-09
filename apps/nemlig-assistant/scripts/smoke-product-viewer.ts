@@ -135,13 +135,13 @@ window.addEventListener('message',event=>{
  const message=event.data; if(!message || message.jsonrpc!=='2.0') return;
  if(message.method==='ui/initialize') return post(event,{jsonrpc:'2.0',id:message.id,result:{protocolVersion:message.params.protocolVersion,hostInfo:{name:'synthetic-host',version:'1'},hostCapabilities:{},hostContext:{theme:'light'}}});
  if(message.method==='ui/notifications/initialized'){const presented=result(review,initialViewIdOverride??viewId);initialViewIdOverride=undefined;return post(event,{jsonrpc:'2.0',method:'ui/notifications/tool-result',params:presented})}
- if(message.method==='ui/message'){window.messages.push(message.params.content.map(block=>block.type==='text'?block.text:'').join(''));return post(event,{jsonrpc:'2.0',id:message.id,result:{}})}
+ if(message.method==='ui/message'){const text=message.params.content.map(block=>block.type==='text'?block.text:'').join('');window.messages.push(text);post(event,{jsonrpc:'2.0',id:message.id,result:{}});if(text.startsWith('Reopen the current Draft list')){viewId='synthetic-view-'+(Number(viewId.split('-').at(-1))+1);setTimeout(()=>frame.contentWindow.postMessage({jsonrpc:'2.0',method:'ui/notifications/tool-result',params:result(review)},location.origin),0)}return}
  if(message.method==='tools/call'){
   const {name,arguments:args}=message.params; window.calls.push({name,args});
+  if(name==='update_product_review'&&args.view_id&&args.view_id!==viewId)return post(event,{jsonrpc:'2.0',id:message.id,error:{code:-32602,message:'This Draft list card is out of date'}})
   if(name==='update_product_review'&&args.action?.kind==='show'){
    if(args.activate){viewId='synthetic-view-'+(Number(viewId.split('-').at(-1))+1);return post(event,{jsonrpc:'2.0',id:message.id,result:result(review)})}
    if(!args.view_id)return post(event,{jsonrpc:'2.0',id:message.id,result:{structuredContent:{review}}});
-   if(args.view_id!==viewId)return post(event,{jsonrpc:'2.0',id:message.id,error:{code:-32602,message:'This Draft list card is out of date'}})
   }
   if(name==='submit_product_review'){
    window.submissionAttempts++;
@@ -315,8 +315,10 @@ try {
     });
   console.log("Synthetic viewer smoke: React resource initialized");
   await frame.getByRole("button", { name: /To decide \(2\)/ }).waitFor();
-  await page.waitForFunction(() =>
-    window.calls.some((call) => call.args.action?.kind === "show"),
+  assert.equal(
+    await page.evaluate(() => window.calls.length),
+    0,
+    "a freshly rendered card immediately revalidated through the server",
   );
   const viewerShell = frame.locator('[data-viewer-component="viewer-shell"]');
   assert.equal(
@@ -441,35 +443,27 @@ try {
   console.log(
     "Synthetic viewer smoke: completed decisions route to Ready without a tool call",
   );
-  const callsBeforeInactiveRefresh = await page.evaluate(
-    () => window.calls.length,
-  );
+  const callsBeforeStaleAction = await page.evaluate(() => window.calls.length);
   const staleViewId = await page.evaluate(() => window.getViewId());
   await page.evaluate(() => window.supersedeAndReload());
   const currentViewId = await page.evaluate(() => window.getViewId());
-  await frame.getByText("This Draft list card is inactive.").waitFor();
-  await frame.getByText("The current Draft list is shown read-only.").waitFor();
-  await frame.getByRole("button", { name: "Make this card current" }).waitFor();
+  await frame
+    .getByRole("checkbox", { name: "Select Synthetic milk" })
+    .waitFor();
   assert.equal(
     await frame.locator('input[type="checkbox"]').count(),
-    0,
-    "automatically refreshed card exposed editable product controls",
+    2,
+    "initial tool output did not remain visible while the card connected",
   );
   assert.equal(
     await frame.locator(".product-list article").count(),
     2,
-    "stale card did not automatically display the current products",
+    "initial tool output did not retain its products while the card connected",
   );
   assert.equal(
     await page.evaluate(() => window.calls.length),
-    callsBeforeInactiveRefresh + 2,
-    "stale card did not validate and then perform one read-only refresh",
-  );
-  const automaticRefresh = await page.evaluate(() => window.calls.at(-1));
-  assert.deepEqual(
-    automaticRefresh?.args,
-    { action: { kind: "show" } },
-    "automatic refresh sent stale authority or mutation arguments",
+    callsBeforeStaleAction,
+    "mounting a card made an unnecessary second server call",
   );
   assert.notEqual(
     currentViewId,
@@ -479,37 +473,36 @@ try {
   assert.equal(
     await page.evaluate(() => window.getViewId()),
     currentViewId,
-    "automatic refresh stole current-card authority",
+    "the fixture did not retain the newer card authority",
   );
-  await frame.getByRole("button", { name: "Make this card current" }).click();
-  await frame.getByRole("button", { name: /To decide \(2\)/ }).waitFor();
-  await frame
-    .getByText("This Draft list card is inactive.")
-    .waitFor({ state: "detached" });
-  const activation = await page.evaluate(() => window.calls.at(-1));
+  await frame.getByRole("checkbox", { name: "Select Synthetic milk" }).check();
+  await frame.getByRole("button", { name: /Add selected to Ready/ }).click();
+  await frame.getByText("This Draft list card is inactive.").waitFor();
+  await frame.getByRole("button", { name: "Reopen in conversation" }).waitFor();
   assert.equal(
     await page.evaluate(() => window.calls.length),
-    callsBeforeInactiveRefresh + 3,
-    "explicit activation did not make exactly one additional view call",
+    callsBeforeStaleAction + 2,
+    "a stale edit did not fail closed and load a read-only snapshot",
   );
-  assert.equal(activation?.name, "update_product_review");
-  assert.deepEqual(
-    activation?.args,
-    { action: { kind: "show" }, activate: true },
-    "activation sent stale review, revision, or mutation arguments",
-  );
-  assert.notEqual(
-    await page.evaluate(() => window.getViewId()),
-    currentViewId,
-    "explicit activation did not rotate the active view token",
-  );
+  await frame.getByRole("button", { name: "Reopen in conversation" }).click();
+  await page.waitForFunction(() => window.messages.length === 1);
   assert.equal(
-    await frame.locator('input[type="checkbox"]').count(),
-    2,
-    "refresh did not show the current products in the same card",
+    await page.evaluate(() => window.calls.length),
+    callsBeforeStaleAction + 2,
+    "explicit recovery made a server-tool call outside the conversation",
   );
+  const reopeningMessage = await page.evaluate(() => window.messages.at(-1));
+  assert.ok(reopeningMessage, "explicit recovery did not send a follow-up");
+  assert.match(
+    reopeningMessage,
+    /Reopen the current Draft list without changing it/u,
+    "explicit recovery did not request a bounded conversational reopen",
+  );
+  await frame
+    .getByRole("checkbox", { name: "Select Synthetic milk" })
+    .waitFor();
   console.log(
-    "Synthetic viewer smoke: stale card auto-refreshes read-only; explicit activation alone acquires authority",
+    "Synthetic viewer smoke: initial card does not revalidate; stale edits fail closed and recover through conversation",
   );
   await frame.getByRole("button", { name: /To decide \(2\)/ }).waitFor();
   assert.equal(await frame.getByText("Synthetic milk").count(), 1);
@@ -814,23 +807,13 @@ try {
       element.contentWindow?.location.reload(),
     );
   await frame.getByRole("heading", { name: "Current product" }).waitFor();
-  await page.waitForFunction(
-    (before) =>
-      window.calls
-        .slice(before)
-        .some((call) => call.args.action?.kind === "show"),
-    callsBeforeRemount,
-  );
   assert.equal(
     await page.evaluate(
-      (before) =>
-        window.calls
-          .slice(before)
-          .filter((call) => call.args.action?.kind === "show").length,
+      (before) => window.calls.slice(before).length,
       callsBeforeRemount,
     ),
-    1,
-    "remount did not validate the current view exactly once",
+    0,
+    "remount immediately revalidated the current view through the server",
   );
   await frame.getByRole("button", { name: /To decide \(2\)/ }).click();
   await frame
@@ -1098,15 +1081,21 @@ try {
     "an empty Draft list retained local destructive actions",
   );
   const callsBeforeStarter = await page.evaluate(() => window.calls.length);
+  const messagesBeforeStarter = await page.evaluate(
+    () => window.messages.length,
+  );
   await frame.getByRole("button", { name: "Find a product" }).click();
-  await page.waitForFunction(() => window.messages.length === 1);
+  await page.waitForFunction(
+    (previous) => window.messages.length === previous + 1,
+    messagesBeforeStarter,
+  );
   assert.equal(
     await page.evaluate(() => window.calls.length),
     callsBeforeStarter,
     "an empty-state starter called a server tool directly",
   );
   assert.match(
-    await page.evaluate(() => window.messages[0]),
+    await page.evaluate(() => window.messages.at(-1)),
     /new local Draft list/u,
     "empty-state starter did not send a bounded conversational request",
   );
