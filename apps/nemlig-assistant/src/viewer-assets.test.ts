@@ -10,11 +10,53 @@ import {
 } from "../scripts/viewer-generation.js";
 import {
   createViewerGeneration,
+  fetchViewerGeneration,
   parseViewerManifest,
   readBoundedBody,
   verifyViewerAssetBytes,
   verifyViewerGeneration,
 } from "./viewer-assets.js";
+
+test("public viewer fetch rejects missing or altered resources", async () => {
+  const generation = createViewerGeneration(
+    Buffer.from("window.viewer = true;"),
+    Buffer.from("body {}"),
+  );
+  const manifestResponse = () =>
+    new Response(JSON.stringify(generation.manifest), {
+      headers: {
+        "access-control-allow-origin": "*",
+        "cache-control": "no-store",
+        "content-type": "application/json",
+      },
+    });
+  await assert.rejects(
+    fetchViewerGeneration(async () => new Response(null, { status: 404 })),
+    /Viewer resource request failed/u,
+  );
+
+  for (const assetResponse of [
+    new Response(null, { status: 404 }),
+    new Response("changed", {
+      headers: {
+        "access-control-allow-origin": "*",
+        "cache-control": "public, max-age=31536000, immutable",
+        "content-type": "text/javascript",
+      },
+    }),
+  ]) {
+    let requests = 0;
+    await assert.rejects(
+      fetchViewerGeneration(async () =>
+        ++requests === 1 ? manifestResponse() : assetResponse,
+      ),
+      assetResponse.ok
+        ? /Viewer asset bytes do not match the manifest/u
+        : /Viewer resource request failed/u,
+    );
+    assert.equal(requests, 2);
+  }
+});
 
 test("viewer generations bind each asset and build digest to their bytes", () => {
   const generation = createViewerGeneration(
