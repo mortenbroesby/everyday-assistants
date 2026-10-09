@@ -209,14 +209,19 @@ function toggleSelection(
   checked: boolean,
 ) {
   const next = new Set(previous);
-  if (checked) next.add(productId);
-  else next.delete(productId);
+  if (checked) {
+    next.add(productId);
+  } else {
+    next.delete(productId);
+  }
   return next;
 }
 
 function prepareReview(review: Review): Review {
   const lines = review.items.flatMap((item) => {
-    if (item.state !== "ready" || item.view.status !== "complete") return [];
+    if (item.state !== "ready" || item.view.status !== "complete") {
+      return [];
+    }
     const { product } = item.view;
     return [
       {
@@ -349,7 +354,9 @@ function DraftListWalkthroughStory() {
           })),
         onChooseReplacement: setReplacement,
         onReplace: (productId) => {
-          if (!selectedAlternative) return;
+          if (!selectedAlternative) {
+            return;
+          }
           setCurrentReview((previous) => ({
             ...replaceItem(previous, productId, (item) => ({
               ...item,

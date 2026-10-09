@@ -29,14 +29,16 @@ function isReview(value: unknown): value is Review {
     typeof value.review_id !== "string" ||
     !Number.isSafeInteger(value.revision) ||
     !Array.isArray(value.items)
-  )
+  ) {
     return false;
+  }
   if (!(
     value.destination === "needs-review" ||
     value.destination === "ready" ||
     value.destination === "alternatives"
-  ))
+  )) {
     return false;
+  }
   if (
     !value.items.every(
       (item) =>
@@ -48,8 +50,9 @@ function isReview(value: unknown): value is Review {
         (item.state === "needs-review" || item.state === "ready") &&
         isProductView(item.view),
     )
-  )
+  ) {
     return false;
+  }
   if (
     value.alternatives !== undefined &&
     (!isRecord(value.alternatives) ||
@@ -57,8 +60,9 @@ function isReview(value: unknown): value is Review {
       typeof value.alternatives.query !== "string" ||
       !Array.isArray(value.alternatives.views) ||
       !value.alternatives.views.every(isProductView))
-  )
+  ) {
     return false;
+  }
   if (value.submission !== undefined) {
     if (
       !isRecord(value.submission) ||
@@ -67,8 +71,9 @@ function isReview(value: unknown): value is Review {
       ) ||
       typeof value.submission.submission_id !== "string" ||
       !isRecord(value.submission.review)
-    )
+    ) {
       return false;
+    }
     const submissionReview = value.submission.review;
     const validOptionalTotal = (amount: unknown) =>
       amount === undefined ||
@@ -90,8 +95,9 @@ function isReview(value: unknown): value is Review {
               validOptionalTotal(line.item_price) &&
               validOptionalTotal(line.line_total),
           )))
-    )
+    ) {
       return false;
+    }
   }
   return true;
 }
@@ -105,13 +111,17 @@ function isProductView(value: unknown): value is ProductView {
       value.context === "basket" ||
       value.context === "review"
     )
-  )
+  ) {
     return false;
-  if (value.status === "unavailable")
+  }
+  if (value.status === "unavailable") {
     return (
       value.product_id === undefined || Number.isSafeInteger(value.product_id)
     );
-  if (value.status !== "complete" || !isRecord(value.product)) return false;
+  }
+  if (value.status !== "complete" || !isRecord(value.product)) {
+    return false;
+  }
   const product = value.product;
   const optionalString = (key: string) =>
     product[key] === undefined || typeof product[key] === "string";
@@ -179,9 +189,12 @@ function isProductView(value: unknown): value is ProductView {
   );
 }
 function readPayload(value: unknown): ViewerScreen | undefined {
-  if (Array.isArray(value) && value.every(isProductView))
+  if (Array.isArray(value) && value.every(isProductView)) {
     return { kind: "products", payload: { views: value }, views: value };
-  if (!isRecord(value)) return undefined;
+  }
+  if (!isRecord(value)) {
+    return undefined;
+  }
   const envelope = isRecord(value.structuredContent)
     ? value.structuredContent
     : value;
@@ -195,13 +208,16 @@ function readPayload(value: unknown): ViewerScreen | undefined {
       active: Boolean(view_id),
     };
   }
-  if (envelope.unavailable === true) return { kind: "unavailable" };
-  if (envelope.ended === true)
+  if (envelope.unavailable === true) {
+    return { kind: "unavailable" };
+  }
+  if (envelope.ended === true) {
     return {
       kind: "empty",
       message:
         "Your local Draft list was discarded. Nothing changed in Nemlig.",
     };
+  }
   const candidate = Array.isArray(envelope.views)
     ? envelope.views
     : Array.isArray(envelope.products)
@@ -209,12 +225,13 @@ function readPayload(value: unknown): ViewerScreen | undefined {
       : Array.isArray(envelope.result)
         ? envelope.result
         : undefined;
-  if (candidate && candidate.every(isProductView))
+  if (candidate && candidate.every(isProductView)) {
     return {
       kind: "products",
       payload: envelope as ViewerPayload,
       views: candidate,
     };
+  }
   return undefined;
 }
 // The adapter intentionally owns all host state and authority checks.
@@ -225,7 +242,9 @@ export function ProductViewer() {
       typeof window === "undefined"
         ? undefined
         : readPayload(window.openai?.toolOutput);
-    if (initial?.kind === "review") return { ...initial, active: false };
+    if (initial?.kind === "review") {
+      return { ...initial, active: false };
+    }
     return initial ?? { kind: "loading" };
   });
   const [presentationDestination, setPresentationDestination] = useState<
@@ -268,7 +287,9 @@ export function ProductViewer() {
     setPendingQuantities(new Map());
   };
   const removePendingQuantity = (productId: number, quantity: number) => {
-    if (pendingQuantitiesRef.current.get(productId) !== quantity) return;
+    if (pendingQuantitiesRef.current.get(productId) !== quantity) {
+      return;
+    }
     const next = new Map(pendingQuantitiesRef.current);
     next.delete(productId);
     pendingQuantitiesRef.current = next;
@@ -282,7 +303,9 @@ export function ProductViewer() {
     }
   };
   const deactivateReview = useCallback(() => {
-    if (quantityTimer.current) clearTimeout(quantityTimer.current);
+    if (quantityTimer.current) {
+      clearTimeout(quantityTimer.current);
+    }
     quantityTimer.current = undefined;
     clearPendingQuantities();
     setSelected(new Set());
@@ -329,18 +352,23 @@ export function ProductViewer() {
           !previous.active &&
           next.view_id &&
           next.view_id === previous.view_id
-        )
+        ) {
           return true;
+        }
         if (
           !current &&
           previous?.active &&
           previous.review.review_id !== next.review.review_id
-        )
+        ) {
           return true;
+        }
         const sameReview = previous?.review.review_id === next.review.review_id;
-        if (!sameReview) setReviewDisclosures(new Map());
-        if (sameReview && next.review.revision < previous.review.revision)
+        if (!sameReview) {
+          setReviewDisclosures(new Map());
+        }
+        if (sameReview && next.review.revision < previous.review.revision) {
           return true;
+        }
         if (
           !current &&
           previous?.active &&
@@ -352,7 +380,9 @@ export function ProductViewer() {
             next.review.submission?.status === "submitted" &&
             previous.review.submission.submission_id ===
               next.review.submission.submission_id;
-          if (!verifiedCompletion) return true;
+          if (!verifiedCompletion) {
+            return true;
+          }
         }
         const view_id = next.view_id ?? previous?.view_id;
         const state = {
@@ -391,10 +421,12 @@ export function ProductViewer() {
         }
         setScreen({ kind: "review", ...state });
         setPresentationDestination((visible) => {
-          if (!sameReview || adoptPresentationDestination)
+          if (!sameReview || adoptPresentationDestination) {
             return next.review.destination;
-          if (visible === "alternatives" && !next.review.alternatives)
+          }
+          if (visible === "alternatives" && !next.review.alternatives) {
             return next.review.destination;
+          }
           return visible ?? next.review.destination;
         });
         setMessage("");
@@ -428,7 +460,9 @@ export function ProductViewer() {
           review: previous?.review ?? lastConfirmedReview.current,
         });
       } else {
-        if (next.kind !== "empty" && !current && previous?.active) return true;
+        if (next.kind !== "empty" && !current && previous?.active) {
+          return true;
+        }
         activeReview.current = undefined;
         if (next.kind === "empty") {
           deactivateReview();
@@ -474,7 +508,9 @@ export function ProductViewer() {
   useHostStyles(connectedApp, connectedApp?.getHostContext());
   useEffect(
     () => () => {
-      if (quantityTimer.current) clearTimeout(quantityTimer.current);
+      if (quantityTimer.current) {
+        clearTimeout(quantityTimer.current);
+      }
       connectedApp?.close();
     },
     [connectedApp],
@@ -494,7 +530,9 @@ export function ProductViewer() {
       );
       return false;
     }
-    if (callLock.current) return false;
+    if (callLock.current) {
+      return false;
+    }
     callLock.current = true;
     const requestEpoch = cancellationEpoch.current;
     setBusy(true);
@@ -504,19 +542,24 @@ export function ProductViewer() {
         name,
         arguments: args,
       });
-      if (requestEpoch !== cancellationEpoch.current) return false;
-      if (result.isError)
+      if (requestEpoch !== cancellationEpoch.current) {
+        return false;
+      }
+      if (result.isError) {
         throw new Error(
           (result.content ?? [])
             .filter((content) => content.type === "text")
             .map((content) => content.text)
             .join(" ") || "Update failed",
         );
+      }
       const next = readPayload(result);
-      if (next?.kind === "review" && next.view_id)
+      if (next?.kind === "review" && next.view_id) {
         validatedViewId.current = next.view_id;
-      if (!applyPayload(result, true, adoptPresentationDestination))
+      }
+      if (!applyPayload(result, true, adoptPresentationDestination)) {
         throw new Error("Could not confirm the updated Draft list.");
+      }
       setMessage("");
       return true;
     } catch (cause) {
@@ -573,9 +616,9 @@ export function ProductViewer() {
                 action: { kind: "show" },
               },
             });
-            if (!fresh.isError && requestEpoch === cancellationEpoch.current)
+            if (!fresh.isError && requestEpoch === cancellationEpoch.current) {
               applyPayload(fresh, true);
-            else {
+            } else {
               activeReview.current = undefined;
               setScreen({ kind: "stale" });
             }
@@ -609,7 +652,9 @@ export function ProductViewer() {
     } finally {
       callLock.current = false;
       setBusy(false);
-      for (const resolve of callIdleWaiters.current.splice(0)) resolve();
+      for (const resolve of callIdleWaiters.current.splice(0)) {
+        resolve();
+      }
     }
   };
   const activateCurrentDraftList = async () => {
@@ -623,7 +668,9 @@ export function ProductViewer() {
       { action: { kind: "show" }, activate: true },
       false,
     );
-    if (!activated) setActivatingCurrent(false);
+    if (!activated) {
+      setActivatingCurrent(false);
+    }
   };
   useEffect(() => {
     const latest = activeReview.current;
@@ -632,8 +679,9 @@ export function ProductViewer() {
       !isConnected ||
       !latest?.view_id ||
       validatedViewId.current === latest.view_id
-    )
+    ) {
       return;
+    }
     validatedViewId.current = latest.view_id;
     void call(
       "update_product_review",
@@ -649,7 +697,9 @@ export function ProductViewer() {
   const review = screen.kind === "review" ? screen.review : undefined;
   const update = async (action: Record<string, unknown>) => {
     const latest = activeReview.current;
-    if (!latest?.active || !latest.view_id || callLock.current) return false;
+    if (!latest?.active || !latest.view_id || callLock.current) {
+      return false;
+    }
     const result = await call(
       "update_product_review",
       {
@@ -661,7 +711,9 @@ export function ProductViewer() {
       true,
       action.kind === "alternatives" || action.kind === "replace",
     );
-    if (result && action.kind === "prepare_submission") setConfirmSubmit(false);
+    if (result && action.kind === "prepare_submission") {
+      setConfirmSubmit(false);
+    }
     return result;
   };
   const setQuantity = (item: ReviewItem, next: number) => {
@@ -671,22 +723,32 @@ export function ProductViewer() {
     );
     pendingQuantitiesRef.current = pending;
     setPendingQuantities(pending);
-    if (quantityTimer.current) clearTimeout(quantityTimer.current);
+    if (quantityTimer.current) {
+      clearTimeout(quantityTimer.current);
+    }
     quantityTimer.current = setTimeout(() => {
       quantityTimer.current = undefined;
       void flushQuantities();
     }, 2_500);
   };
   const flushQuantities = async () => {
-    if (quantityTimer.current) clearTimeout(quantityTimer.current);
+    if (quantityTimer.current) {
+      clearTimeout(quantityTimer.current);
+    }
     quantityTimer.current = undefined;
-    if (quantityFlush.current) return quantityFlush.current;
-    if (!pendingQuantitiesRef.current.size) return true;
+    if (quantityFlush.current) {
+      return quantityFlush.current;
+    }
+    if (!pendingQuantitiesRef.current.size) {
+      return true;
+    }
     const operation = (async () => {
       while (pendingQuantitiesRef.current.size) {
         await waitForCallIdle();
         const latest = activeReview.current;
-        if (!latest?.active) return false;
+        if (!latest?.active) {
+          return false;
+        }
         const [product_id, quantity] = pendingQuantitiesRef.current
           .entries()
           .next().value as [number, number];
@@ -697,35 +759,47 @@ export function ProductViewer() {
           removePendingQuantity(product_id, quantity);
           continue;
         }
-        if (!latest.view_id) return false;
+        if (!latest.view_id) {
+          return false;
+        }
         const ok = await call("update_product_review", {
           view_id: latest.view_id,
           review_id: latest.review.review_id,
           revision: latest.review.revision,
           action: { kind: "quantity", product_id, quantity },
         });
-        if (!ok) return false;
+        if (!ok) {
+          return false;
+        }
         const confirmed = activeReview.current?.review.items.find(
           (item) => item.product_id === product_id,
         )?.quantity;
-        if (confirmed !== quantity) return false;
+        if (confirmed !== quantity) {
+          return false;
+        }
         removePendingQuantity(product_id, quantity);
       }
       return activeReview.current?.active === true;
     })();
     const tracked = operation.finally(() => {
-      if (quantityFlush.current === tracked) quantityFlush.current = undefined;
+      if (quantityFlush.current === tracked) {
+        quantityFlush.current = undefined;
+      }
     });
     quantityFlush.current = tracked;
     return tracked;
   };
   const afterFlush = (action: Record<string, unknown>) => {
     void flushQuantities().then(async (ok) => {
-      if (ok) await update(action);
+      if (ok) {
+        await update(action);
+      }
     });
   };
   const navigate = (next: PresentationDestination) => {
-    if (next === "alternatives" && !review?.alternatives) return;
+    if (next === "alternatives" && !review?.alternatives) {
+      return;
+    }
     setPresentationDestination(next);
   };
   const sendFollowUp = async (text: string) => {
@@ -738,7 +812,9 @@ export function ProductViewer() {
         role: "user",
         content: [{ type: "text", text }],
       });
-      if (result.isError) throw new Error("Host rejected the follow-up.");
+      if (result.isError) {
+        throw new Error("Host rejected the follow-up.");
+      }
       setMessage("Follow-up sent to conversation.");
     } catch {
       setMessage("Continue in conversation to inspect or start a Draft list.");
@@ -746,7 +822,9 @@ export function ProductViewer() {
   };
   const endDraft = async () => {
     setConfirmEnd(false);
-    if (await flushQuantities()) await update({ kind: "end" });
+    if (await flushQuantities()) {
+      await update({ kind: "end" });
+    }
   };
   // The exact submission comparison is intentionally linear and fail-closed.
   // fallow-ignore-next-line complexity
@@ -772,7 +850,9 @@ export function ProductViewer() {
     setSubmitBlocked(true);
     setConfirmSubmit(false);
     const latest = activeReview.current;
-    if (!latest?.view_id) return;
+    if (!latest?.view_id) {
+      return;
+    }
     const success = await call(
       "submit_product_review",
       {
@@ -785,10 +865,11 @@ export function ProductViewer() {
       false,
       true,
     );
-    if (!success)
+    if (!success) {
       setMessage(
         "Submission outcome is uncertain. Inspect the actual Nemlig basket; do not retry automatically.",
       );
+    }
   };
   const updateDisclosure = (
     productId: number,
@@ -823,7 +904,9 @@ export function ProductViewer() {
   for (const view of displayedViews) {
     if (view.status === "complete" && view.product.id !== undefined) {
       const image = safeNemligImageUrl(view.product.image_url);
-      if (image) thumbnails.set(view, image);
+      if (image) {
+        thumbnails.set(view, image);
+      }
     }
   }
 
@@ -857,8 +940,11 @@ export function ProductViewer() {
       onFactExpandedChange={(productId, factKey, expanded) =>
         updateDisclosure(productId, (current) => {
           const facts = new Set(current.facts);
-          if (expanded) facts.add(factKey);
-          else facts.delete(factKey);
+          if (expanded) {
+            facts.add(factKey);
+          } else {
+            facts.delete(factKey);
+          }
           return { ...current, facts };
         })
       }
@@ -866,8 +952,11 @@ export function ProductViewer() {
       onSelected={(productId, checked) =>
         setSelected((previous) => {
           const next = new Set(previous);
-          if (checked) next.add(productId);
-          else next.delete(productId);
+          if (checked) {
+            next.add(productId);
+          } else {
+            next.delete(productId);
+          }
           return next;
         })
       }
