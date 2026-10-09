@@ -257,6 +257,12 @@ test("package paths and conventional commits produce scoped release decisions", 
       "none",
     ],
     [
+      "lint configuration",
+      ["apps/nemlig-assistant/.oxlintrc.json"],
+      [{ subject: "chore: lint" }],
+      "none",
+    ],
+    [
       "production delivery",
       ["apps/nemlig-assistant/scripts/production-deploy.ts"],
       [{ subject: "fix: deployment" }],
@@ -285,6 +291,13 @@ test("package paths and conventional commits produce scoped release decisions", 
   for (const [name, changedFiles, commits, expected] of cases) {
     assert.equal(decideRelease({ changedFiles, commits }).kind, expected, name);
   }
+  assert.deepEqual(
+    decideRelease({
+      changedFiles: ["apps/nemlig-assistant/.oxlintrc.json"],
+      commits: [{ subject: "chore: lint" }],
+    }).internalFiles,
+    ["apps/nemlig-assistant/.oxlintrc.json"],
+  );
   assert.deepEqual(
     decideRelease({
       changedFiles: ["apps/nemlig-assistant/package.json", "pnpm-lock.yaml"],
