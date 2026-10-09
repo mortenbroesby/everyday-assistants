@@ -65,8 +65,7 @@
     #nemlig-unified-review .ur-footer { position: sticky; bottom: 0; display: grid; gap: 8px; padding: 12px 14px max(14px, env(safe-area-inset-bottom, 0px)); border-top: 1px solid var(--line); background: var(--paper); }
     #nemlig-unified-review .ur-undo { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 5px 0; font-size: 12px; }
     #nemlig-unified-review .ur-undo button { min-height: 44px; padding: 0 10px; border: 0; color: var(--green); background: none; font-weight: 700; cursor: pointer; }
-    #nemlig-unified-review .ur-footer-copy { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; font-size: 12px; }
-    #nemlig-unified-review .ur-footer-copy span { color: var(--muted); font-size: 11px; }
+    #nemlig-unified-review .ur-footer-copy { font-size: 12px; }
     #nemlig-unified-review .ur-actions { display: grid; gap: 8px; }
     #nemlig-unified-review .ur-actions .ur-button { width: 100%; }
     #nemlig-unified-review dialog { width: min(calc(100% - 24px), 390px); max-height: calc(100dvh - 32px); padding: 20px; border: 1px solid var(--line); border-radius: 18px; color: var(--ink); background: var(--paper); box-shadow: 0 18px 44px rgb(0 0 0 / 20%); }
@@ -89,9 +88,9 @@
   <div id="nemlig-unified-review">
     <div class="ur-shell">
       <main class="ur-content">
-        <header class="ur-brand"><span class="ur-mark" aria-hidden="true">N</span><span><strong>Nemlig Assistant</strong><span>Local basket · not on Nemlig</span></span></header>
+        <header class="ur-brand"><span class="ur-mark" aria-hidden="true">N</span><span><strong>Nemlig Assistant</strong><span>Local basket</span></span></header>
         <h1>Your local basket</h1>
-        <p class="ur-intro">Nothing here has been sent to Nemlig. Swipe left to remove a product, or tap it for details. Review the exact items before submitting.</p>
+        <p class="ur-intro">Swipe left to remove a product, or tap it for details. Review the exact items before submitting.</p>
 
         <section class="ur-section" aria-label="Local basket products">
           <div class="ur-list" id="ur-products">
@@ -124,7 +123,7 @@
           <p class="ur-empty" data-empty hidden>Your local basket is empty. Use Undo to restore products.</p>
         </section>
       </main>
-      <footer class="ur-footer"><div class="ur-undo" data-undo hidden role="status"><span data-undo-name></span><button type="button" data-undo-button>Undo</button></div><div class="ur-footer-copy"><strong data-list-summary>5 products · 182,70 kr.</strong><span>Nothing sent yet</span></div><div class="ur-actions"><button class="ur-button ur-button-primary" type="button" data-preview>Submit to Nemlig</button><button class="ur-button" type="button" data-clear aria-label="Clear local basket">Clear</button></div></footer>
+      <footer class="ur-footer"><div class="ur-undo" data-undo hidden role="status"><span data-undo-name></span><button type="button" data-undo-button>Undo</button></div><div class="ur-footer-copy"><strong data-list-summary>5 products · 182,70 kr.</strong></div><div class="ur-actions"><button class="ur-button ur-button-primary" type="button" data-preview>Submit to Nemlig</button><button class="ur-button" type="button" data-clear aria-label="Clear local basket">Clear</button></div></footer>
     </div>
     <dialog aria-labelledby="ur-confirm-heading"><h2 id="ur-confirm-heading">Submit to Nemlig</h2><p>These exact products would be added after your authorization. This fixture does not contact Nemlig or submit anything.</p><ul class="ur-confirm-lines" data-confirm-lines></ul><button class="ur-button ur-button-primary" type="button" data-close>Back to local basket</button></dialog>
   </div>
