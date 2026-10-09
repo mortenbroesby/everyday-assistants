@@ -4,12 +4,22 @@
     "build": {
       "outputs": ["dist/**"]
     },
+    "build:storybook": {
+      "outputs": [".codex/storybook-static/**"]
+    },
     "check": {},
+    "check:api": {},
     "coverage": {
       "outputs": ["coverage/coverage.txt"]
     },
     "lint": {},
     "smoke": {},
+    "smoke:package": {
+      "dependsOn": ["build"]
+    },
+    "smoke:review-ui": {
+      "dependsOn": ["build"]
+    },
     "test": {}
   }
 }

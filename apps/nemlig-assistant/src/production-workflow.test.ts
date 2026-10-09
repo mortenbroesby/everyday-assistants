@@ -59,10 +59,12 @@ test("production job builds and deploys the exact protected candidate", async ()
   assert.match(source, /git checkout --detach "\$CANDIDATE_SHA"/u);
   assert.match(source, /node-version: 24\.13\.0/u);
   assert.match(source, /version: 9\.15\.9/u);
-  assert.match(source, /run: pnpm --filter nemlig-assistant build/u);
-  assert.match(source, /wrangler deployments list --env production/u);
-  assert.match(source, /wrangler containers list --env production/u);
-  assert.match(source, /production:deploy -- --service "\$CANDIDATE_SHA"/u);
+  assert.match(source, /run: pnpm nemlig:build/u);
+  assert.match(source, /pnpm nemlig:cloudflare:preflight/u);
+  assert.match(
+    source,
+    /run: pnpm nemlig:production:deploy -- --service "\$CANDIDATE_SHA"/u,
+  );
 });
 
 test("release tooling has no lease, journal, recovery, or retention path", async () => {
