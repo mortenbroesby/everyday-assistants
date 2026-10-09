@@ -25,7 +25,6 @@
     "nemlig:cloudflare:check": "pnpm --dir apps/nemlig-assistant cloudflare:check",
     "nemlig:cloudflare:preflight": "pnpm --dir apps/nemlig-assistant exec wrangler deployments list --env production --json >/dev/null && pnpm --dir apps/nemlig-assistant exec wrangler containers list --env production --json >/dev/null",
     "nemlig:mcp": "pnpm --dir apps/nemlig-assistant mcp",
-    "nemlig:playwright:install": "pnpm --dir apps/nemlig-assistant exec playwright install --with-deps chrome",
     "nemlig:production:deploy": "pnpm --dir apps/nemlig-assistant production:deploy",
     "nemlig:production:ready": "pnpm spec:validate && pnpm privacy:check && pnpm verify && pnpm nemlig:smoke:package && pnpm nemlig:cloudflare:check",
     "nemlig:release:apply": "pnpm --dir apps/nemlig-assistant release:apply",
