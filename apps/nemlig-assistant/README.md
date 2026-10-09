@@ -184,7 +184,7 @@ resource read, and native rendered build are separate facts: the supported
 recovery path is an operator-managed clean connection cutover followed by a new
 chat, not another URI bump.
 
-Run `pnpm --filter nemlig-assistant smoke:review-ui`, open its loopback URL,
+Run `pnpm nemlig:smoke:review-ui`, open its loopback URL,
 and click **Run regression smoke**. The real MCP adapter and fake catalogue
 exercise inactive mount/remount, conflicting revisions, a failed connection,
 process restart, explicit recovery and clearing the local draft list. The page reports PASS
@@ -195,7 +195,7 @@ are required; provider basket access is denied by the fixture.
 For a reproducible visual review of the current viewer, run:
 
 ```sh
-pnpm --filter nemlig-assistant ui:mockup
+pnpm nemlig:ui:mockup
 ```
 
 It builds the viewer and uses the same synthetic MCP host as the browser smoke
@@ -210,7 +210,7 @@ acceptance.
 For component-level visual review, run:
 
 ```sh
-pnpm --filter nemlig-assistant storybook
+pnpm nemlig:storybook
 ```
 
 The local Storybook uses deterministic product fixtures for the shared viewer
@@ -219,7 +219,7 @@ simulators: an embedded-conversation card and a ChatGPT app tab. The host
 frames are Storybook-only approximations; the inner page is the same
 `ViewerPage` used in production. Host chrome is deliberately not part of the
 app UI.
-`pnpm --filter nemlig-assistant build:storybook` checks that those stories
+`pnpm nemlig:build:storybook` checks that those stories
 build. It is not evidence of native ChatGPT rendering: retain the built-viewer
 smoke and post-release host smoke for host-owned framing and variables.
 
@@ -331,8 +331,8 @@ quantity.
 ### Local MCP server
 
 ```sh
-pnpm --filter nemlig-assistant build
-pnpm --filter nemlig-assistant mcp
+pnpm nemlig:build
+pnpm nemlig:mcp
 ```
 
 The MCP surface is organized around household actions:
@@ -439,7 +439,7 @@ connection; the owner can disable or revoke invitee access. Follow the disabled-
 [self-service procedure](../../docs/cloudflare-operations.md#self-service-credential-onboarding).
 
 For a credential-free native-form regression, run
-`pnpm --filter nemlig-assistant smoke:onboarding` and open its loopback URL.
+`pnpm nemlig:smoke:onboarding` and open its loopback URL.
 Use only the printed synthetic credentials, click **Connect**, then
 **Revoke connection**: both must succeed. This exercises the real portal
 renderer, signed cookie and single-use CSRF store with no OAuth/Nemlig access.
@@ -471,12 +471,12 @@ of the repository.
 ## 🛠️ Development
 
 ```sh
-pnpm --filter nemlig-assistant lint
-pnpm --filter nemlig-assistant build
-pnpm --filter nemlig-assistant check
-pnpm --filter nemlig-assistant test
-pnpm --filter nemlig-assistant smoke
-pnpm --filter nemlig-assistant smoke:package
+pnpm lint
+pnpm build
+pnpm check
+pnpm test
+pnpm smoke
+pnpm nemlig:smoke:package
 ```
 
 Tests use synthetic HTTP responses and never access a real Nemlig account.
@@ -490,9 +490,9 @@ The package build includes that exact self-contained file and the browser smoke
 drives it through a synthetic MCP host with a fake catalogue:
 
 ```sh
-pnpm --filter nemlig-assistant bench:review-ui -- --runs 10
-pnpm --filter nemlig-assistant build
-pnpm --filter nemlig-assistant smoke:review-ui
+pnpm nemlig:benchmark:review-ui -- --runs 10
+pnpm nemlig:build
+pnpm nemlig:smoke:review-ui
 ```
 
 Google Chrome must be installed. The report records its version so runs can be
@@ -526,7 +526,7 @@ When an endpoint or consumed response field changes:
    browser trace.
 3. Mark inferred shapes as partial and keep `additionalProperties: true` until
    repeated evidence supports a tighter contract.
-4. Run `pnpm --filter nemlig-assistant check:api` and the package tests. The
+4. Run `pnpm nemlig:check:api` and the package tests. The
    drift check fails when a client endpoint is added or removed without a
    corresponding manifest change.
 
@@ -546,7 +546,7 @@ identity:
 ```sh
 pnpm nemlig:release:plan --codename Callsign
 pnpm nemlig:release:apply --codename Callsign
-pnpm --filter nemlig-assistant check:version-bump --base origin/main --head HEAD
+pnpm nemlig:check:version-bump --base origin/main --head HEAD
 ```
 
 The version check compares committed revisions, not uncommitted manifest edits.
