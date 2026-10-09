@@ -164,9 +164,12 @@ document.getElementById('run').onclick = async () => {
   try {
   await fetch('/reset',{method:'POST'});
   widgetCalls.length=0; await document.getElementById('start').onclick();
-  await wait(()=>widgetCalls.length===1&&widgetCalls[0].arguments.action?.kind==='show');
-  status.textContent='Checking direct product display'; const beforeDirectView=widgetCalls.length; frame.contentWindow.location.reload(); await wait(()=>widgetCalls.length===beforeDirectView+1 && button('To decide (2)') && !button('To decide (2)').disabled);
-  check(widgetCalls.length===beforeDirectView+1&&widgetCalls.at(-1).arguments.action?.kind==='show'&&doc().querySelectorAll('.product-list article').length===2,'New card did not show products directly or validate its view');
+  await wait(()=>button('To decide (2)') && !button('To decide (2)').disabled && doc().querySelectorAll('.product-list article').length===2);
+  check(widgetCalls.length===0,'Fresh card made an unnecessary server call');
+  status.textContent='Checking direct product display'; const beforeDirectView=widgetCalls.length;
+  const reloaded=new Promise(resolve=>frame.addEventListener('load',resolve,{once:true})); frame.contentWindow.location.reload(); await reloaded;
+  await wait(()=>button('To decide (2)') && !button('To decide (2)').disabled && doc().querySelectorAll('.product-list article').length===2);
+  check(widgetCalls.length===beforeDirectView,'Reload made an unnecessary server call');
   await select(); click('Add selected to Ready (1)'); await wait(()=>button('Ready (1)') && !button('Ready (1)').disabled);
   check(!button('Open current Draft list'),'New card retained the obsolete open CTA');
   const beforeReadyTab=widgetCalls.length; click('Ready (1)'); await wait(()=>doc().querySelector('#title')?.textContent==='Ready' && !button('Ready (1)').disabled);
@@ -180,11 +183,13 @@ document.getElementById('run').onclick = async () => {
   check(!!button('Choose alternative'),'To decide omitted alternatives');
   check(!button('Open current Draft list'),'Return navigation collapsed the mounted frame');
   status.textContent='Checking remount'; const beforeMount=widgetCalls.length;
-  frame.src='/viewer'; await wait(()=>widgetCalls.length===beforeMount+1&&widgetCalls.at(-1).arguments.action?.kind==='show');
+  const remounted=new Promise(resolve=>frame.addEventListener('load',resolve,{once:true})); frame.src='/viewer'; await remounted;
+  await wait(()=>button('To decide (2)') && !button('To decide (2)').disabled && doc().querySelectorAll('.product-list article').length===2);
+  check(widgetCalls.length===beforeMount,'Remount made an unnecessary server call');
+  transcript=await call({name:'update_product_review_conversation',arguments:{action:{kind:'show'}}}); publish();
   await wait(()=>button('To decide (1)') && !button('To decide (1)').disabled);
-  check(widgetCalls.length===beforeMount+1&&widgetCalls.at(-1).arguments.action?.kind==='show','Remount did not validate and refresh the current view');
   status.textContent='Checking stale revision without replay';
-  const current=(await call({name:'update_product_review_conversation',arguments:{action:{kind:'show'}}})).structuredContent.review;
+  const current=transcript.structuredContent.review;
   await call({name:'update_product_review_conversation',arguments:{review_id:current.review_id,revision:current.revision,action:{kind:'quantity',product_id:1,quantity:3}}});
   const beforeConflict=widgetCalls.length;
   await select(); click('Add selected to Ready (1)'); await wait(()=>text().includes('Your last action was not applied'));
@@ -209,7 +214,7 @@ document.getElementById('run').onclick = async () => {
   check(prepared.basketReads===1&&prepared.basketWrites===0,'Prepare crossed the wrong provider boundary');
   check(!!button('Add to Nemlig basket') && !button('Add to Nemlig'),'The prepared change was shown before explicit confirmation');
   check(widgetCalls.every(call=>!('representation' in call.arguments)),'Viewer sent a representation selector');
-  status.textContent='PASS: inactive mount, remount, stale revision, outage, restart, finish, prepare only; one fake basket read, zero writes';
+  status.textContent='PASS: no-call mount, reload, remount, stale revision, outage, restart, finish, prepare only; one fake basket read, zero writes';
  } catch(error) { status.textContent='FAIL: '+error.message+' | viewer: '+(doc()?.body?.innerText||'no iframe document')+' | widget calls: '+JSON.stringify(widgetCalls); }
  finally { offline=false; run.disabled=false; }
 };
