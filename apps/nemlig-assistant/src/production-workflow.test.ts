@@ -57,7 +57,7 @@ test("production job builds and deploys the exact protected candidate", async ()
     /TURBO_TOKEN: \$\{\{ secrets\.TURBO_TOKEN \}\}\n\s+TURBO_TEAM: \$\{\{ secrets\.TURBO_TEAM \}\}/u,
   );
   assert.match(source, /git checkout --detach "\$CANDIDATE_SHA"/u);
-  assert.match(source, /node-version: 24\.13\.0/u);
+  assert.match(source, /node-version: 24\.13\.0\n\s+cache: pnpm/u);
   assert.match(source, /version: 9\.15\.9/u);
   assert.match(source, /run: pnpm --filter nemlig-assistant build/u);
   assert.match(source, /wrangler deployments list --env production/u);
