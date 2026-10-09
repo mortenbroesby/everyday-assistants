@@ -256,7 +256,6 @@ export function ProductViewer() {
   const lastConfirmedReview = useRef<Review | undefined>(
     screen.kind === "review" ? screen.review : undefined,
   );
-  const validatedViewId = useRef<string | undefined>(undefined);
   const callLock = useRef(false);
   const cancellationEpoch = useRef(0);
   const [selected, setSelected] = useState<Set<number>>(() => new Set());
@@ -553,10 +552,6 @@ export function ProductViewer() {
             .join(" ") || "Update failed",
         );
       }
-      const next = readPayload(result);
-      if (next?.kind === "review" && next.view_id) {
-        validatedViewId.current = next.view_id;
-      }
       if (!applyPayload(result, true, adoptPresentationDestination)) {
         throw new Error("Could not confirm the updated Draft list.");
       }
@@ -672,28 +667,6 @@ export function ProductViewer() {
       setActivatingCurrent(false);
     }
   };
-  useEffect(() => {
-    const latest = activeReview.current;
-    if (
-      !connectedApp ||
-      !isConnected ||
-      !latest?.view_id ||
-      validatedViewId.current === latest.view_id
-    ) {
-      return;
-    }
-    validatedViewId.current = latest.view_id;
-    void call(
-      "update_product_review",
-      {
-        view_id: latest.view_id,
-        review_id: latest.review.review_id,
-        revision: latest.review.revision,
-        action: { kind: "show" },
-      },
-      false,
-    );
-  }, [connectedApp, isConnected, call]);
   const review = screen.kind === "review" ? screen.review : undefined;
   const update = async (action: Record<string, unknown>) => {
     const latest = activeReview.current;

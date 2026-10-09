@@ -216,8 +216,10 @@ try {
     });
   console.log("Synthetic viewer smoke: React resource initialized");
   await frame.getByRole("button", { name: /To decide \(2\)/ }).waitFor();
-  await page.waitForFunction(() =>
-    window.calls.some((call) => call.args.action?.kind === "show"),
+  assert.equal(
+    await page.evaluate(() => window.calls.length),
+    0,
+    "a freshly rendered card immediately revalidated through the server",
   );
   const viewerShell = frame.locator('[data-viewer-component="viewer-shell"]');
   assert.equal(
@@ -286,35 +288,27 @@ try {
   console.log(
     "Synthetic viewer smoke: completed decisions route to Ready without a tool call",
   );
-  const callsBeforeInactiveRefresh = await page.evaluate(
-    () => window.calls.length,
-  );
+  const callsBeforeReload = await page.evaluate(() => window.calls.length);
   const staleViewId = await page.evaluate(() => window.getViewId());
   await page.evaluate(() => window.supersedeAndReload());
   const currentViewId = await page.evaluate(() => window.getViewId());
-  await frame.getByText("This Draft list card is inactive.").waitFor();
-  await frame.getByText("The current Draft list is shown read-only.").waitFor();
-  await frame.getByRole("button", { name: "Make this card current" }).waitFor();
+  await frame
+    .getByRole("checkbox", { name: "Select Synthetic milk" })
+    .waitFor();
   assert.equal(
     await frame.locator('input[type="checkbox"]').count(),
-    0,
-    "automatically refreshed card exposed editable product controls",
+    2,
+    "initial tool output did not remain visible while the card connected",
   );
   assert.equal(
     await frame.locator(".product-list article").count(),
     2,
-    "stale card did not automatically display the current products",
+    "initial tool output did not retain its products while the card connected",
   );
   assert.equal(
     await page.evaluate(() => window.calls.length),
-    callsBeforeInactiveRefresh + 2,
-    "stale card did not validate and then perform one read-only refresh",
-  );
-  const automaticRefresh = await page.evaluate(() => window.calls.at(-1));
-  assert.deepEqual(
-    automaticRefresh?.args,
-    { action: { kind: "show" } },
-    "automatic refresh sent stale authority or mutation arguments",
+    callsBeforeReload,
+    "mounting a card made an unnecessary second server call",
   );
   assert.notEqual(
     currentViewId,
@@ -324,38 +318,12 @@ try {
   assert.equal(
     await page.evaluate(() => window.getViewId()),
     currentViewId,
-    "automatic refresh stole current-card authority",
-  );
-  await frame.getByRole("button", { name: "Make this card current" }).click();
-  await frame.getByRole("button", { name: /To decide \(2\)/ }).waitFor();
-  await frame
-    .getByText("This Draft list card is inactive.")
-    .waitFor({ state: "detached" });
-  const activation = await page.evaluate(() => window.calls.at(-1));
-  assert.equal(
-    await page.evaluate(() => window.calls.length),
-    callsBeforeInactiveRefresh + 3,
-    "explicit activation did not make exactly one additional view call",
-  );
-  assert.equal(activation?.name, "update_product_review");
-  assert.deepEqual(
-    activation?.args,
-    { action: { kind: "show" }, activate: true },
-    "activation sent stale review, revision, or mutation arguments",
-  );
-  assert.notEqual(
-    await page.evaluate(() => window.getViewId()),
-    currentViewId,
-    "explicit activation did not rotate the active view token",
-  );
-  assert.equal(
-    await frame.locator('input[type="checkbox"]').count(),
-    2,
-    "refresh did not show the current products in the same card",
+    "the fixture did not retain the newer card authority",
   );
   console.log(
-    "Synthetic viewer smoke: stale card auto-refreshes read-only; explicit activation alone acquires authority",
+    "Synthetic viewer smoke: initial card does not revalidate after mounting or reload",
   );
+  await page.evaluate(() => window.reopenCurrentReview());
   await frame.getByRole("button", { name: /To decide \(2\)/ }).waitFor();
   assert.equal(await frame.getByText("Synthetic milk").count(), 1);
   assert.equal(
@@ -659,23 +627,13 @@ try {
       element.contentWindow?.location.reload(),
     );
   await frame.getByRole("heading", { name: "Current product" }).waitFor();
-  await page.waitForFunction(
-    (before) =>
-      window.calls
-        .slice(before)
-        .some((call) => call.args.action?.kind === "show"),
-    callsBeforeRemount,
-  );
   assert.equal(
     await page.evaluate(
-      (before) =>
-        window.calls
-          .slice(before)
-          .filter((call) => call.args.action?.kind === "show").length,
+      (before) => window.calls.slice(before).length,
       callsBeforeRemount,
     ),
-    1,
-    "remount did not validate the current view exactly once",
+    0,
+    "remount immediately revalidated the current view through the server",
   );
   await frame.getByRole("button", { name: /To decide \(2\)/ }).click();
   await frame
