@@ -652,21 +652,6 @@ export function ProductViewer() {
       }
     }
   };
-  const activateCurrentDraftList = async () => {
-    if (!connectedApp || !isConnected) {
-      setMessage("Ask in chat: “Reopen the current Draft list.”");
-      return;
-    }
-    setActivatingCurrent(true);
-    const activated = await call(
-      "update_product_review",
-      { action: { kind: "show" }, activate: true },
-      false,
-    );
-    if (!activated) {
-      setActivatingCurrent(false);
-    }
-  };
   const review = screen.kind === "review" ? screen.review : undefined;
   const update = async (action: Record<string, unknown>) => {
     const latest = activeReview.current;
@@ -793,6 +778,17 @@ export function ProductViewer() {
       setMessage("Continue in conversation to inspect or start a Draft list.");
     }
   };
+  const activateCurrentDraftList = async () => {
+    setActivatingCurrent(true);
+    try {
+      // The model tool path retains the conversation scope that owns the review.
+      await sendFollowUp(
+        "Reopen the current Draft list without changing it. If it is no longer available, say so; do not create a new Draft list.",
+      );
+    } finally {
+      setActivatingCurrent(false);
+    }
+  };
   const endDraft = async () => {
     setConfirmEnd(false);
     if (await flushQuantities()) {
@@ -875,7 +871,7 @@ export function ProductViewer() {
         : [];
   const thumbnails = new Map<ProductView, string>();
   for (const view of displayedViews) {
-    if (view.status === "complete" && view.product.id !== undefined) {
+    if (view.status === "complete") {
       const image = safeNemligImageUrl(view.product.image_url);
       if (image) {
         thumbnails.set(view, image);

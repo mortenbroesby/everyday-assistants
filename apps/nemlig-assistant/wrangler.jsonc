@@ -2,6 +2,10 @@
   "$schema": "./node_modules/wrangler/config-schema.json",
   "name": "nemlig-mcp-cloudflare-local",
   "main": "src/cloudflare-worker.ts",
+  "assets": {
+    "directory": "./dist/ui-static",
+    "not_found_handling": "none"
+  },
   "compatibility_date": "2026-08-31",
   "workers_dev": true,
   "keep_vars": false,

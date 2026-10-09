@@ -492,13 +492,10 @@ function submissionActions(
     onRequestSubmitConfirmation: () => setConfirmSubmit(true),
     onCancelSubmit: () => setConfirmSubmit(false),
     onConfirmSubmit: () => {
-      setCurrentReview((previous) => ({
-        ...previous,
-        submission: previous.submission
-          ? { ...previous.submission, status: "submitted" }
-          : previous.submission,
-      }));
       setConfirmSubmit(false);
+      setHostMessage(
+        "This walkthrough does not submit to Nemlig. Continue in conversation to add the prepared items.",
+      );
     },
     onContinueSubmitted: () =>
       setCurrentReview((previous) => ({ ...previous, submission: undefined })),

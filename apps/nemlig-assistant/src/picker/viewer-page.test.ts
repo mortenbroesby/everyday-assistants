@@ -149,3 +149,35 @@ test("shared viewer page keeps thumbnails attached to their individual views", (
     /src="\/assets\/alternative\.svg"[^>]*alt="Alternative yoghurt"/u,
   );
 });
+
+test("busy submission confirmation disables its cancel control", () => {
+  const pageProps = props();
+  assert.equal(pageProps.model.screen.kind, "review");
+  if (pageProps.model.screen.kind !== "review") {
+    return;
+  }
+  pageProps.model.screen = {
+    ...pageProps.model.screen,
+    review: {
+      ...pageProps.model.screen.review,
+      destination: "ready",
+      items: pageProps.model.screen.review.items.map((item) => ({
+        ...item,
+        state: "ready",
+      })),
+      submission: {
+        status: "prepared",
+        submission_id: "fixture-submission",
+        review: { lines: [], expected_products_price: 0 },
+      },
+    },
+  };
+  pageProps.model.presentationDestination = "ready";
+  pageProps.model.busy = true;
+  pageProps.model.confirmSubmit = true;
+
+  const html = renderToStaticMarkup(createElement(ViewerPage, pageProps));
+  const cancelButton = html.match(/<button[^>]*>Cancel<\/button>/u)?.[0];
+  assert.ok(cancelButton, "submission confirmation did not render Cancel");
+  assert.match(cancelButton, /disabled=""/u);
+});

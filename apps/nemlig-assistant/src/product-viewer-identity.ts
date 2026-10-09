@@ -3,10 +3,11 @@
  * cache a resource URI independently of tool metadata, so version churn makes
  * it easier to bind a current result to an obsolete card.
  */
-export const PRODUCT_VIEWER_RESOURCE_URI = "ui://nemlig/draft-list.html";
+export const PRODUCT_VIEWER_RESOURCE_URI = "ui://nemlig/shell.html";
 
 /** Previously published identities remain readable, but never receive live shopping controls. */
 export const RETIRED_PRODUCT_VIEWER_RESOURCE_URIS = [
+  "ui://nemlig/draft-list.html",
   "ui://nemlig/product-viewer.html",
   "ui://nemlig/product-viewer-v1.html",
   "ui://nemlig/product-viewer-v2.html",

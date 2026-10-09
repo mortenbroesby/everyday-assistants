@@ -584,7 +584,7 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
             disabled={activatingCurrent}
             onClick={actions.onActivateCurrent}
           >
-            {activatingCurrent ? "Loading…" : "Load current Draft list"}
+            {activatingCurrent ? "Opening…" : "Reopen in conversation"}
           </Button>
           {message && <p role="status">{message}</p>}
         </section>
@@ -603,7 +603,7 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
               disabled={activatingCurrent || busy}
               onClick={actions.onActivateCurrent}
             >
-              {activatingCurrent ? "Loading…" : "Make this card current"}
+              {activatingCurrent ? "Opening…" : "Reopen in conversation"}
             </Button>
           )}
           {message && <p role="status">{message}</p>}
@@ -925,7 +925,11 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
               ) : confirmSubmit ? (
                 <>
                   <p>Add only these exact quantities to the Nemlig basket?</p>
-                  <Button color="secondary" onClick={actions.onCancelSubmit}>
+                  <Button
+                    color="secondary"
+                    disabled={busy}
+                    onClick={actions.onCancelSubmit}
+                  >
                     Cancel
                   </Button>
                   <Button

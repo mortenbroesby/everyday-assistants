@@ -57,7 +57,7 @@ const ProductHeading = styled.span({
     fontWeight: 650,
     fontVariantNumeric: "tabular-nums",
   },
-  "@media (max-width: 360px)": {
+  "@media (max-width: 400px)": {
     display: "grid",
     gap: 2,
     "& > span": { textAlign: "left" },

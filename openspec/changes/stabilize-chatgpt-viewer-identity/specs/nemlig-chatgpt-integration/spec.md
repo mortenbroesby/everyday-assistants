@@ -2,24 +2,51 @@
 
 ### Requirement: Permanent viewer identity
 
-The integration SHALL advertise `ui://nemlig/draft-list.html` as its sole
-supported current viewer identity. `_meta.ui.resourceUri` and
-`openai/outputTemplate`, when both present, SHALL identify that same resource.
-Routine releases SHALL retain this identity and serve the packaged
-self-contained viewer when the resource is read.
+The integration SHALL advertise `ui://nemlig/shell.html` as its sole supported
+current viewer identity. `_meta.ui.resourceUri` and `openai/outputTemplate`,
+when both present, SHALL identify that same resource. Routine releases SHALL
+retain this identity and serve a small stable shell that loads the current UI
+bundle from the fixed production asset origin's `/ui/nemlig/manifest.json`
+when mounted.
 
 The integration SHALL distinguish server-state freshness from loaded-renderer
 freshness. It SHALL NOT claim that an unchanged URI, successful tool result,
 deployment, or connection acknowledgement proves that ChatGPT loaded current
 HTML, JavaScript, or CSS. It SHALL NOT depend on an undocumented result-level
-binding override or host cache invalidation mechanism.
+binding override or host cache invalidation mechanism. The shell SHALL accept
+only fixed-origin content-addressed JavaScript and CSS assets with matching SRI
+digests; its manifest request SHALL omit credentials, bypass caches, reject
+redirects, and have a bounded timeout.
 
 #### Scenario: Compatible viewer release
 
-- **WHEN** a compatible viewer artifact is released
+- **WHEN** a compatible viewer bundle is released
 - **THEN** the advertised URI remains unchanged
-- **AND** a fresh resource read returns that release's packaged artifact
+- **AND** a fresh resource read returns the stable shell
+- **AND** a new mount loads the bundle selected by the current manifest
 - **AND** native loaded-artifact freshness remains a separate acceptance result
+
+#### Scenario: Active shopping card spans a UI release
+
+- **WHEN** a new UI manifest is deployed while a card is mounted
+- **THEN** the active card keeps its current code and local interaction state
+- **AND** it does not poll, hot-swap, or replay shopping actions
+- **AND** a later mount loads the then-current bundle
+
+#### Scenario: Manifest or asset is invalid or unavailable
+
+- **WHEN** the manifest fails validation, times out, redirects, or its bundle
+  cannot pass SRI
+- **THEN** the shell shows an explicit retryable error with no shopping controls
+- **AND** no manifest or asset request carries provider credentials
+
+#### Scenario: A compatible release retains one predecessor bundle
+
+- **WHEN** a stable-shell bundle is deployed
+- **THEN** the candidate manifest and assets are accepted from the public origin
+- **AND** the immediately preceding shell generation's assets remain available
+- **AND** an unrecognized or missing shell-era predecessor blocks deployment
+- **AND** only a source-proven pre-shell predecessor may start without prior assets
 
 #### Scenario: Current data reaches a cached compatible renderer
 
@@ -38,8 +65,8 @@ binding override or host cache invalidation mechanism.
 
 For an authenticated `resources/read` request handled by the application, the
 system SHALL support bounded evidence containing only the URI class `current`,
-`retired`, or `other`, the current artifact identity when the current artifact
-is successfully served, and a request-scoped diagnostic correlation.
+`retired`, or `other`, the current shell artifact identity when the shell is
+successfully served, and a request-scoped diagnostic correlation.
 
 Evidence SHALL NOT contain raw requested URIs, arbitrary URI components,
 resource or tool payloads, shopping data, principal identifiers, conversation
@@ -96,7 +123,8 @@ resource, and native rendering evidence.
 A UI release SHALL be reported delivered only after the connected ChatGPT app
 advertises the intended review tools and permanent viewer identity and renders
 the expected interactive artifact. Server deployment acceptance SHALL verify
-the expected viewer HTML, artifact identity, and resource metadata.
+the stable shell, manifest, content-addressed assets, artifact identities, and
+resource metadata.
 
 Server acceptance, operator connection cutover, and native UI acceptance SHALL
 be recorded separately. Native acceptance SHALL include a new chat immediately
@@ -131,8 +159,9 @@ acknowledgements SHALL NOT imply native acceptance.
 ### Requirement: Inactive historical shopping cards
 
 All viewer identities published before this cutover, including
-`ui://nemlig/product-viewer.html` and the published versioned product-viewer
-URIs, SHALL remain permanently retired. Reads SHALL return inert notices
+`ui://nemlig/draft-list.html`, `ui://nemlig/product-viewer.html`, and the
+published versioned product-viewer URIs, SHALL remain permanently retired.
+Reads SHALL return inert notices
 without bridge code, shopping controls, backend shopping calls, or automatic
 migration. Historical cards using those identities are unsupported.
 

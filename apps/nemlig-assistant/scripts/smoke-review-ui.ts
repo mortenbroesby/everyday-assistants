@@ -1,6 +1,7 @@
 /** Loopback-only browser smoke host: real MCP adapter + review service, fake catalogue. */
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
+import { fileURLToPath } from "node:url";
 import {
   Client,
   StreamableHTTPClientTransport,
@@ -13,6 +14,15 @@ import type { Product, ShoppingClient } from "../src/client.js";
 import type { ProductReviewSnapshot } from "../src/product-review.js";
 import { BasketProposalService } from "../src/proposals.js";
 import { PRODUCT_VIEWER_RESOURCE_URI } from "../src/product-viewer.js";
+import { readLocalViewerGeneration } from "./viewer-generation.js";
+import {
+  closeViewerSmokeServer,
+  installViewerAssetFixture,
+} from "./viewer-asset-fixture.js";
+
+const viewerGeneration = await readLocalViewerGeneration(
+  fileURLToPath(new URL("../dist/ui-static/", import.meta.url)),
+);
 
 let basketReads = 0,
   writes = 0;
@@ -293,7 +303,7 @@ document.getElementById('flow').onclick = async () => {
   click('Add to Nemlig basket');
   const stalePlus=[...doc().querySelectorAll('.product-list article')].find(row=>row.textContent.includes('Smoke product 2'))?.querySelector('[data-viewer-component="quantity-control"] button:last-of-type'); check(stalePlus,'Prepared product quantity control missing');
   const beforeStale=widgetCalls.length; stalePlus.click();
-  await wait(()=>widgetCalls.slice(beforeStale).some(call=>call.name==='update_product_review'&&call.arguments.action?.kind==='quantity')&&!doc().querySelector('.submission h2'));
+  await wait(()=>widgetCalls.slice(beforeStale).some(call=>call.name==='update_product_review'&&call.arguments.action?.kind==='quantity')&&button('Review exact Nemlig change')&&!button('Add to Nemlig'));
   check(!widgetCalls.slice(beforeStale).some(call=>call.name==='submit_product_review'),'Stale prepared review reached submit_product_review'); open();
   for (let remaining=2; remaining>0; remaining--) {
     const row=doc().querySelector('.product-list article'); check(row,'Ready row disappeared before its local removal was confirmed');
@@ -598,9 +608,11 @@ await client.connect(
 console.log(`Review UI smoke: ${origin}`);
 const browser = await chromium.launch({ headless: true, channel: "chrome" });
 try {
-  const browserPage = await browser.newPage({
+  const browserContext = await browser.newContext({
     viewport: { width: 375, height: 860 },
   });
+  await installViewerAssetFixture(browserContext, viewerGeneration);
+  const browserPage = await browserContext.newPage();
   browserPage.setDefaultTimeout(10_000);
   browserPage.setDefaultNavigationTimeout(10_000);
   await browserPage.goto(origin, { waitUntil: "domcontentloaded" });
@@ -643,9 +655,7 @@ try {
 } finally {
   await browser.close();
   await client.close();
-  await new Promise<void>((resolve, reject) =>
-    server.close((error) => (error ? reject(error) : resolve())),
-  );
+  await closeViewerSmokeServer(server);
 }
 console.log(
   "MCP adapter browser smoke passed: recovery, current review controls, restart, exact prepare, and zero fake provider basket writes.",
