@@ -35,6 +35,8 @@ jobs:
 
   verify:
     runs-on: ubuntu-latest
+    env:
+      DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6.0.1
         with:
@@ -48,7 +50,26 @@ jobs:
           node-version: 24.13.0
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm nemlig:production:ready
+      - name: Authenticate Docker Hub when configured
+        if: ${{ vars.DOCKERHUB_USERNAME != '' && env.DOCKERHUB_TOKEN != '' }}
+        uses: docker/login-action@c99871dec2022cc055c062a10cc1a1310835ceb4 # v4.3.0
+        with:
+          username: ${{ vars.DOCKERHUB_USERNAME }}
+          password: ${{ env.DOCKERHUB_TOKEN }}
+      - name: Run Nemlig production readiness
+        run: |
+          set -o pipefail
+          for attempt in 1 2 3; do
+            log="${RUNNER_TEMP}/nemlig-production-ready-${attempt}.log"
+            if pnpm nemlig:production:ready 2>&1 | tee "${log}"; then
+              exit 0
+            fi
+            if ! grep -q 'registry-1.docker.io.*429 Too Many Requests' "${log}" || [ "${attempt}" -eq 3 ]; then
+              exit 1
+            fi
+            echo "Docker Hub throttled the container dry run; retrying in $((attempt * 30)) seconds."
+            sleep "$((attempt * 30))"
+          done
       - run: pnpm check
       - name: Check Fallow dead-code regressions
         run: |
