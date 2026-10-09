@@ -106,5 +106,5 @@ jobs:
             ' "${report}" || true
             exit "${status}"
           fi
-      - run: pnpm nemlig:playwright:install
+      - run: google-chrome --version
       - run: pnpm nemlig:smoke:review-ui

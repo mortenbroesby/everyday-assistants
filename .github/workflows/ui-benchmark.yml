@@ -29,7 +29,7 @@ jobs:
           node-version: 24.13.0
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm nemlig:playwright:install
+      - run: google-chrome --version
       - run: pnpm nemlig:build
       - name: Run UI benchmark
         id: benchmark
