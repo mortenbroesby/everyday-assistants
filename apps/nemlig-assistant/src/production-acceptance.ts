@@ -97,12 +97,11 @@ export function assertProductionInventory(
     const actual = metadata.get(name);
     assert.ok(actual && typeof actual === "object", `Production ${name} metadata drifted`);
     const value = actual as Record<string, unknown>;
-    const hasViewerResource = name === "start_product_review" || name === "update_product_review_conversation";
-    const expectedUi = hasViewerResource
+    const expectedUi = name === "start_product_review"
       ? { resourceUri: PRODUCT_VIEWER_RESOURCE_URI, visibility: ["model"] }
       : { visibility: ["model"] };
     assert.deepEqual(value.ui, expectedUi, `Production ${name} UI metadata drifted`);
-    assert.equal(value["openai/outputTemplate"], hasViewerResource ? PRODUCT_VIEWER_RESOURCE_URI : undefined, `Production ${name} output template metadata drifted`);
+    assert.equal(value["openai/outputTemplate"], name === "start_product_review" ? PRODUCT_VIEWER_RESOURCE_URI : undefined, `Production ${name} output template metadata drifted`);
     assert.equal(value["openai/widgetAccessible"], undefined, `Model-visible ${name} must not be callable by old widget cards`);
   }
   for (const name of ["update_product_review", "submit_product_review"] as const) {
