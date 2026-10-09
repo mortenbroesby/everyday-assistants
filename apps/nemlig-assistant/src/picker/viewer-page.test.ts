@@ -30,55 +30,64 @@ const product: ProductView = {
 };
 const noop = () => undefined;
 const props = (thumbnail?: string): ViewerPageProps => ({
-  screen: {
-    kind: "review",
-    active: true,
-    view_id: "fixture-view",
-    review: {
-      review_id: "fixture-review",
-      revision: 1,
-      destination: "needs-review",
-      items: [
-        { product_id: 7, quantity: 1, state: "needs-review", view: product },
-      ],
+  model: {
+    screen: {
+      kind: "review",
+      active: true,
+      view_id: "fixture-view",
+      review: {
+        review_id: "fixture-review",
+        revision: 1,
+        destination: "needs-review",
+        items: [
+          {
+            product_id: 7,
+            quantity: 1,
+            state: "needs-review",
+            view: product,
+          },
+        ],
+      },
     },
+    maxWidth: 320,
+    selected: new Set(),
+    reviewDisclosures: new Map(),
+    pendingQuantities: new Map(),
+    thumbnails: thumbnail ? new Map([[product, thumbnail]]) : new Map(),
+    message: "",
+    busy: false,
+    activatingCurrent: false,
+    confirmSubmit: false,
+    confirmEnd: false,
+    continueSubmitted: false,
+    submitBlocked: false,
   },
-  maxWidth: 320,
-  selected: new Set(),
-  reviewDisclosures: new Map(),
-  pendingQuantities: new Map(),
-  thumbnails: thumbnail ? new Map([[product, thumbnail]]) : new Map(),
-  message: "",
-  busy: false,
-  activatingCurrent: false,
-  confirmSubmit: false,
-  confirmEnd: false,
-  continueSubmitted: false,
-  submitBlocked: false,
-  onNavigate: noop,
-  onDisclosureChange: noop,
-  onFactExpandedChange: noop,
-  onActivateCurrent: noop,
-  onSelected: noop,
-  onSelectAll: noop,
-  onAcceptSelected: noop,
-  onQuantity: noop,
-  onRemove: noop,
-  onRevisit: noop,
-  onOpenAlternatives: noop,
-  onSearchAlternatives: noop,
-  onChooseReplacement: noop,
-  onReplace: noop,
-  onPrepareSubmission: noop,
-  onRequestSubmitConfirmation: noop,
-  onCancelSubmit: noop,
-  onConfirmSubmit: noop,
-  onContinueSubmitted: noop,
-  onInspectBasket: noop,
-  onSendFollowUp: noop,
-  onRequestEnd: noop,
-  onCancelEnd: noop,
-  onConfirmEnd: noop,
+  actions: {
+    onNavigate: noop,
+    onDisclosureChange: noop,
+    onFactExpandedChange: noop,
+    onActivateCurrent: noop,
+    onSelected: noop,
+    onSelectAll: noop,
+    onAcceptSelected: noop,
+    onQuantity: noop,
+    onRemove: noop,
+    onRevisit: noop,
+    onOpenAlternatives: noop,
+    onSearchAlternatives: noop,
+    onChooseReplacement: noop,
+    onReplace: noop,
+    onPrepareSubmission: noop,
+    onRequestSubmitConfirmation: noop,
+    onCancelSubmit: noop,
+    onConfirmSubmit: noop,
+    onContinueSubmitted: noop,
+    onInspectBasket: noop,
+    onSendFollowUp: noop,
+    onRequestEnd: noop,
+    onCancelEnd: noop,
+    onConfirmEnd: noop,
+  },
 });
 
 test("shared viewer page uses its supplied fixture thumbnail and keeps unsafe input on the fallback", () => {
@@ -111,7 +120,7 @@ test("shared viewer page keeps thumbnails attached to their individual views", (
     },
   };
   const pageProps = props();
-  pageProps.screen = {
+  pageProps.model.screen = {
     kind: "review",
     active: true,
     view_id: "fixture-view",
@@ -125,8 +134,8 @@ test("shared viewer page keeps thumbnails attached to their individual views", (
       alternatives: { product_id: 7, query: "yoghurt", views: [alternative] },
     },
   };
-  pageProps.presentationDestination = "alternatives";
-  pageProps.thumbnails = new Map([
+  pageProps.model.presentationDestination = "alternatives";
+  pageProps.model.thumbnails = new Map([
     [product, "/assets/original.svg"],
     [alternative, "/assets/alternative.svg"],
   ]);

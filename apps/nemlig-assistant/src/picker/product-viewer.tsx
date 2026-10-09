@@ -912,104 +912,97 @@ export function ProductViewer() {
 
   return (
     <ViewerPage
-      screen={screen}
-      presentationDestination={presentationDestination}
-      selected={selected}
-      replacement={replacement}
-      reviewDisclosures={reviewDisclosures}
-      pendingQuantities={pendingQuantities}
-      thumbnails={thumbnails}
-      message={message}
-      connectionMessage={
-        !isConnected
+      model={{
+        screen,
+        presentationDestination,
+        selected,
+        replacement,
+        reviewDisclosures,
+        pendingQuantities,
+        thumbnails,
+        message,
+        connectionMessage: !isConnected
           ? error
             ? "Could not connect to the Draft list host."
             : "Connecting to Nemlig…"
-          : undefined
-      }
-      busy={busy}
-      activatingCurrent={activatingCurrent}
-      confirmSubmit={confirmSubmit}
-      confirmEnd={confirmEnd}
-      continueSubmitted={continueSubmitted}
-      submitBlocked={submitBlocked}
-      onNavigate={navigate}
-      onDisclosureChange={(productId, expanded) =>
-        updateDisclosure(productId, (current) => ({ ...current, expanded }))
-      }
-      onFactExpandedChange={(productId, factKey, expanded) =>
-        updateDisclosure(productId, (current) => {
-          const facts = new Set(current.facts);
-          if (expanded) {
-            facts.add(factKey);
-          } else {
-            facts.delete(factKey);
-          }
-          return { ...current, facts };
-        })
-      }
-      onActivateCurrent={() => void activateCurrentDraftList()}
-      onSelected={(productId, checked) =>
-        setSelected((previous) => {
-          const next = new Set(previous);
-          if (checked) {
-            next.add(productId);
-          } else {
-            next.delete(productId);
-          }
-          return next;
-        })
-      }
-      onSelectAll={() =>
-        setSelected(
-          new Set(
-            review?.items
-              .filter(
-                (item) => item.state === "needs-review" && isUsable(item.view),
-              )
-              .map((item) => item.product_id) ?? [],
-          ),
-        )
-      }
-      onAcceptSelected={() =>
-        afterFlush({ kind: "accept", product_ids: [...selected] })
-      }
-      onQuantity={setQuantity}
-      onRemove={(item) =>
-        afterFlush({ kind: "remove", product_ids: [item.product_id] })
-      }
-      onRevisit={(item) =>
-        afterFlush({ kind: "revisit", product_ids: [item.product_id] })
-      }
-      onOpenAlternatives={(item, query) => {
-        setReplacement(undefined);
-        afterFlush({
-          kind: "alternatives",
-          product_id: item.product_id,
-          query,
-        });
+          : undefined,
+        busy,
+        activatingCurrent,
+        confirmSubmit,
+        confirmEnd,
+        continueSubmitted,
+        submitBlocked,
       }}
-      onSearchAlternatives={(product_id, query) =>
-        void update({ kind: "alternatives", product_id, query })
-      }
-      onChooseReplacement={setReplacement}
-      onReplace={(product_id, replacement_id) =>
-        void update({ kind: "replace", product_id, replacement_id })
-      }
-      onPrepareSubmission={() => afterFlush({ kind: "prepare_submission" })}
-      onRequestSubmitConfirmation={() => setConfirmSubmit(true)}
-      onCancelSubmit={() => setConfirmSubmit(false)}
-      onConfirmSubmit={() => void confirmPreparedSubmission()}
-      onContinueSubmitted={() => setContinueSubmitted(true)}
-      onInspectBasket={() =>
-        void sendFollowUp(
-          "Inspect the actual Nemlig basket for this uncertain Draft list submission. Do not retry or add anything.",
-        )
-      }
-      onSendFollowUp={(text) => void sendFollowUp(text)}
-      onRequestEnd={() => setConfirmEnd(true)}
-      onCancelEnd={() => setConfirmEnd(false)}
-      onConfirmEnd={() => void endDraft()}
+      actions={{
+        onNavigate: navigate,
+        onDisclosureChange: (productId, expanded) =>
+          updateDisclosure(productId, (current) => ({ ...current, expanded })),
+        onFactExpandedChange: (productId, factKey, expanded) =>
+          updateDisclosure(productId, (current) => {
+            const facts = new Set(current.facts);
+            if (expanded) {
+              facts.add(factKey);
+            } else {
+              facts.delete(factKey);
+            }
+            return { ...current, facts };
+          }),
+        onActivateCurrent: () => void activateCurrentDraftList(),
+        onSelected: (productId, checked) =>
+          setSelected((previous) => {
+            const next = new Set(previous);
+            if (checked) {
+              next.add(productId);
+            } else {
+              next.delete(productId);
+            }
+            return next;
+          }),
+        onSelectAll: () =>
+          setSelected(
+            new Set(
+              review?.items
+                .filter(
+                  (item) =>
+                    item.state === "needs-review" && isUsable(item.view),
+                )
+                .map((item) => item.product_id) ?? [],
+            ),
+          ),
+        onAcceptSelected: () =>
+          afterFlush({ kind: "accept", product_ids: [...selected] }),
+        onQuantity: setQuantity,
+        onRemove: (item) =>
+          afterFlush({ kind: "remove", product_ids: [item.product_id] }),
+        onRevisit: (item) =>
+          afterFlush({ kind: "revisit", product_ids: [item.product_id] }),
+        onOpenAlternatives: (item, query) => {
+          setReplacement(undefined);
+          afterFlush({
+            kind: "alternatives",
+            product_id: item.product_id,
+            query,
+          });
+        },
+        onSearchAlternatives: (product_id, query) =>
+          void update({ kind: "alternatives", product_id, query }),
+        onChooseReplacement: setReplacement,
+        onReplace: (product_id, replacement_id) =>
+          void update({ kind: "replace", product_id, replacement_id }),
+        onPrepareSubmission: () => afterFlush({ kind: "prepare_submission" }),
+        onRequestSubmitConfirmation: () => setConfirmSubmit(true),
+        onCancelSubmit: () => setConfirmSubmit(false),
+        onConfirmSubmit: () => void confirmPreparedSubmission(),
+        onContinueSubmitted: () => setContinueSubmitted(true),
+        onInspectBasket: () =>
+          void sendFollowUp(
+            "Inspect the actual Nemlig basket for this uncertain Draft list submission. Do not retry or add anything.",
+          ),
+        onSendFollowUp: (text) => void sendFollowUp(text),
+        onRequestEnd: () => setConfirmEnd(true),
+        onCancelEnd: () => setConfirmEnd(false),
+        onConfirmEnd: () => void endDraft(),
+      }}
     />
   );
 }

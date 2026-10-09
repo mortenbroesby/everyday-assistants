@@ -1,9 +1,24 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { useState } from "react";
+import { type Dispatch, type SetStateAction, useState } from "react";
 import { appTab, embeddedConversation } from "../../../.storybook/preview.js";
 import type { ProductView } from "../../product-presentation.js";
-import type { Review, ViewerPageProps, ViewerScreen } from "../viewer-page.js";
+import type {
+  Review,
+  ViewerPageActions,
+  ViewerPageModel,
+  ViewerPageProps,
+  ViewerScreen,
+} from "../viewer-page.js";
 import { ViewerPage } from "../viewer-page.js";
+import {
+  acceptSelected,
+  alternativesFor,
+  removeItem,
+  replaceWithAlternative,
+  revisitItem,
+  updateQuantity,
+  withoutSelected,
+} from "./visual-contract.fixture.js";
 
 const milkCarton = new URL("../fixtures/milk-carton.svg", import.meta.url).href;
 const unavailable: ProductView = {
@@ -101,6 +116,10 @@ const walkthroughReview: Review = {
   ...review,
   alternatives: { product_id: 1, query: "havredrik", views: [oatMilk] },
 };
+const walkthroughAlternatives = new Map<number, ProductView[]>([
+  [1, [oatMilk]],
+  [3, [milk, pasta]],
+]);
 const preparedReview: Review = {
   ...review,
   destination: "ready",
@@ -130,78 +149,122 @@ const uncertainReview: Review = {
   submission: { ...preparedReview.submission!, status: "uncertain" },
 };
 const noop = () => undefined;
+type StoryOverrides = {
+  model?: Partial<ViewerPageModel>;
+  actions?: Partial<ViewerPageActions>;
+};
+
 const baseProps = (
   screen: ViewerScreen,
-  overrides: Partial<ViewerPageProps> = {},
+  overrides: StoryOverrides = {},
 ): ViewerPageProps => ({
-  screen,
-  selected: new Set(),
-  reviewDisclosures: new Map(),
-  pendingQuantities: new Map(),
-  thumbnails: new Map([
-    [milk, milkCarton],
-    [pasta, milkCarton],
-    [oatMilk, milkCarton],
-  ]),
-  message: "",
-  busy: false,
-  activatingCurrent: false,
-  confirmSubmit: false,
-  confirmEnd: false,
-  continueSubmitted: false,
-  submitBlocked: false,
-  onNavigate: noop,
-  onDisclosureChange: noop,
-  onFactExpandedChange: noop,
-  onActivateCurrent: noop,
-  onSelected: noop,
-  onSelectAll: noop,
-  onAcceptSelected: noop,
-  onQuantity: noop,
-  onRemove: noop,
-  onRevisit: noop,
-  onOpenAlternatives: noop,
-  onSearchAlternatives: noop,
-  onChooseReplacement: noop,
-  onReplace: noop,
-  onPrepareSubmission: noop,
-  onRequestSubmitConfirmation: noop,
-  onCancelSubmit: noop,
-  onConfirmSubmit: noop,
-  onContinueSubmitted: noop,
-  onInspectBasket: noop,
-  onSendFollowUp: noop,
-  onRequestEnd: noop,
-  onCancelEnd: noop,
-  onConfirmEnd: noop,
-  ...overrides,
+  model: {
+    screen,
+    selected: new Set(),
+    reviewDisclosures: new Map(),
+    pendingQuantities: new Map(),
+    thumbnails: new Map([
+      [milk, milkCarton],
+      [pasta, milkCarton],
+      [oatMilk, milkCarton],
+    ]),
+    message: "",
+    busy: false,
+    activatingCurrent: false,
+    confirmSubmit: false,
+    confirmEnd: false,
+    continueSubmitted: false,
+    submitBlocked: false,
+    ...overrides.model,
+  },
+  actions: {
+    onNavigate: noop,
+    onDisclosureChange: noop,
+    onFactExpandedChange: noop,
+    onActivateCurrent: noop,
+    onSelected: noop,
+    onSelectAll: noop,
+    onAcceptSelected: noop,
+    onQuantity: noop,
+    onRemove: noop,
+    onRevisit: noop,
+    onOpenAlternatives: noop,
+    onSearchAlternatives: noop,
+    onChooseReplacement: noop,
+    onReplace: noop,
+    onPrepareSubmission: noop,
+    onRequestSubmitConfirmation: noop,
+    onCancelSubmit: noop,
+    onConfirmSubmit: noop,
+    onContinueSubmitted: noop,
+    onInspectBasket: noop,
+    onSendFollowUp: noop,
+    onRequestEnd: noop,
+    onCancelEnd: noop,
+    onConfirmEnd: noop,
+    ...overrides.actions,
+  },
 });
-const page = (screen: ViewerScreen, props?: Partial<ViewerPageProps>) => (
-  <ViewerPage {...baseProps(screen, props)} />
+
+// Provides explicit Storybook-only host feedback without changing production callbacks.
+// fallow-ignore-next-line complexity
+function FixturePage({
+  screen,
+  overrides = {},
+}: {
+  screen: ViewerScreen;
+  overrides?: StoryOverrides;
+}) {
+  const [hostMessage, setHostMessage] = useState("");
+  const props = baseProps(screen, {
+    ...overrides,
+    actions: {
+      ...overrides.actions,
+      onActivateCurrent:
+        overrides.actions?.onActivateCurrent ??
+        (() =>
+          setHostMessage(
+            "Storybook would ask ChatGPT to load the current Draft list.",
+          )),
+      onInspectBasket:
+        overrides.actions?.onInspectBasket ??
+        (() =>
+          setHostMessage(
+            "Storybook would ask ChatGPT to inspect the actual Nemlig basket.",
+          )),
+      onSendFollowUp:
+        overrides.actions?.onSendFollowUp ??
+        ((text) => setHostMessage(`Storybook would send to ChatGPT: ${text}`)),
+    },
+  });
+  return (
+    <>
+      <ViewerPage {...props} />
+      {hostMessage && <p role="status">{hostMessage}</p>}
+    </>
+  );
+}
+
+const page = (screen: ViewerScreen, overrides?: StoryOverrides) => (
+  <FixturePage screen={screen} overrides={overrides} />
 );
 const activeReview = (
   value: Review = review,
   destination = value.destination,
   maxWidth?: number,
-  overrides: Partial<ViewerPageProps> = {},
+  overrides: StoryOverrides = {},
 ) =>
   page(
     { kind: "review", review: value, active: true, view_id: "storybook-view" },
-    { presentationDestination: destination, maxWidth, ...overrides },
+    {
+      ...overrides,
+      model: {
+        ...overrides.model,
+        presentationDestination: destination,
+        maxWidth,
+      },
+    },
   );
-
-function replaceItem(
-  review: Review,
-  productId: number,
-  change: (item: Review["items"][number]) => Review["items"][number],
-) {
-  return {
-    ...review,
-    items: review.items.map((item) =>
-      item.product_id === productId ? change(item) : item,
-    ),
-  };
-}
 
 function toggleSelection(
   previous: ReadonlySet<number>,
@@ -252,20 +315,127 @@ function prepareReview(review: Review): Review {
   };
 }
 
-/** A deterministic visual walkthrough; it only projects local fixture state and never imitates MCP authority. */
-function DraftListWalkthroughStory() {
-  const [currentReview, setCurrentReview] = useState(walkthroughReview);
-  const [destination, setDestination] =
-    useState<Review["destination"]>("needs-review");
-  const [selected, setSelected] = useState<Set<number>>(new Set());
-  const [reviewDisclosures, setReviewDisclosures] = useState<
-    ViewerPageProps["reviewDisclosures"]
-  >(new Map());
-  const [replacement, setReplacement] = useState<number>();
-  const [confirmSubmit, setConfirmSubmit] = useState(false);
-  const [confirmEnd, setConfirmEnd] = useState(false);
-  const [ended, setEnded] = useState(false);
-  const screen: ViewerScreen = ended
+type SetState<T> = Dispatch<SetStateAction<T>>;
+
+function disclosureActions(
+  setReviewDisclosures: SetState<ViewerPageModel["reviewDisclosures"]>,
+): Pick<ViewerPageActions, "onDisclosureChange" | "onFactExpandedChange"> {
+  return {
+    onDisclosureChange: (productId, expanded) =>
+      setReviewDisclosures((previous) => {
+        const next = new Map(previous);
+        next.set(productId, {
+          expanded,
+          facts: previous.get(productId)?.facts ?? new Set(),
+        });
+        return next;
+      }),
+    onFactExpandedChange: (productId, factKey, expanded) =>
+      setReviewDisclosures((previous) => {
+        const current = previous.get(productId) ?? {
+          expanded: false,
+          facts: new Set<string>(),
+        };
+        const facts = new Set(current.facts);
+        if (expanded) {
+          facts.add(factKey);
+        } else {
+          facts.delete(factKey);
+        }
+        const next = new Map(previous);
+        next.set(productId, { ...current, facts });
+        return next;
+      }),
+  };
+}
+
+function reviewActions(
+  currentReview: Review,
+  selected: ReadonlySet<number>,
+  setCurrentReview: SetState<Review>,
+  setSelected: SetState<Set<number>>,
+): Pick<
+  ViewerPageActions,
+  | "onSelected"
+  | "onSelectAll"
+  | "onAcceptSelected"
+  | "onQuantity"
+  | "onRemove"
+  | "onRevisit"
+> {
+  return {
+    onSelected: (productId, checked) =>
+      setSelected((previous) => toggleSelection(previous, productId, checked)),
+    onSelectAll: () =>
+      setSelected(
+        new Set(
+          currentReview.items
+            .filter((item) => item.state === "needs-review")
+            .map((item) => item.product_id),
+        ),
+      ),
+    onAcceptSelected: () => {
+      setCurrentReview((previous) => acceptSelected(previous, selected));
+      setSelected(new Set());
+    },
+    onQuantity: (item, quantity) =>
+      setCurrentReview((previous) =>
+        updateQuantity(previous, item.product_id, quantity),
+      ),
+    onRemove: (item) => {
+      setCurrentReview((previous) => removeItem(previous, item.product_id));
+      setSelected((previous) => withoutSelected(previous, item.product_id));
+    },
+    onRevisit: (item) =>
+      setCurrentReview((previous) => revisitItem(previous, item.product_id)),
+  };
+}
+
+function alternativeActions(
+  setCurrentReview: SetState<Review>,
+  setSelected: SetState<Set<number>>,
+  setReplacement: SetState<number | undefined>,
+  setDestination: SetState<Review["destination"]>,
+): Pick<
+  ViewerPageActions,
+  | "onOpenAlternatives"
+  | "onSearchAlternatives"
+  | "onChooseReplacement"
+  | "onReplace"
+> {
+  const alternatives = (productId: number) =>
+    walkthroughAlternatives.get(productId) ?? [];
+  return {
+    onOpenAlternatives: (item, query) => {
+      setCurrentReview((previous) =>
+        alternativesFor(
+          previous,
+          item.product_id,
+          query,
+          alternatives(item.product_id),
+        ),
+      );
+      setReplacement(undefined);
+      setDestination("alternatives");
+    },
+    onSearchAlternatives: (productId, query) =>
+      setCurrentReview((previous) =>
+        alternativesFor(previous, productId, query, alternatives(productId)),
+      ),
+    onChooseReplacement: setReplacement,
+    onReplace: (productId, replacementId) => {
+      setCurrentReview((previous) =>
+        replaceWithAlternative(previous, productId, replacementId),
+      );
+      setSelected((previous) => withoutSelected(previous, productId));
+      setReplacement(undefined);
+      setDestination("needs-review");
+    },
+  };
+}
+
+function walkthroughScreen(ended: boolean, review: Review): ViewerScreen {
+  return ended
     ? {
         kind: "empty",
         message:
@@ -273,20 +443,111 @@ function DraftListWalkthroughStory() {
       }
     : {
         kind: "review",
-        review: currentReview,
+        review,
         active: true,
         view_id: "storybook-view",
       };
-  const alternatives = currentReview.alternatives;
-  const selectedAlternative = alternatives?.views.find(
-    (view) =>
-      (view.status === "complete" ? view.product.id : view.product_id) ===
-      replacement,
-  );
+}
 
+function WalkthroughPage({
+  screen,
+  model,
+  actions,
+  hostMessage,
+}: {
+  screen: ViewerScreen;
+  model: StoryOverrides["model"];
+  actions: StoryOverrides["actions"];
+  hostMessage: string;
+}) {
   return (
-    <ViewerPage
-      {...baseProps(screen, {
+    <>
+      <ViewerPage {...baseProps(screen, { model, actions })} />
+      {hostMessage && <p role="status">{hostMessage}</p>}
+    </>
+  );
+}
+
+function submissionActions(
+  setCurrentReview: SetState<Review>,
+  setConfirmSubmit: SetState<boolean>,
+  setConfirmEnd: SetState<boolean>,
+  setEnded: SetState<boolean>,
+  setHostMessage: SetState<string>,
+): Pick<
+  ViewerPageActions,
+  | "onPrepareSubmission"
+  | "onRequestSubmitConfirmation"
+  | "onCancelSubmit"
+  | "onConfirmSubmit"
+  | "onContinueSubmitted"
+  | "onRequestEnd"
+  | "onCancelEnd"
+  | "onConfirmEnd"
+  | "onSendFollowUp"
+> {
+  return {
+    onPrepareSubmission: () =>
+      setCurrentReview((previous) => prepareReview(previous)),
+    onRequestSubmitConfirmation: () => setConfirmSubmit(true),
+    onCancelSubmit: () => setConfirmSubmit(false),
+    onConfirmSubmit: () => {
+      setCurrentReview((previous) => ({
+        ...previous,
+        submission: previous.submission
+          ? { ...previous.submission, status: "submitted" }
+          : previous.submission,
+      }));
+      setConfirmSubmit(false);
+    },
+    onContinueSubmitted: () =>
+      setCurrentReview((previous) => ({ ...previous, submission: undefined })),
+    onRequestEnd: () => setConfirmEnd(true),
+    onCancelEnd: () => setConfirmEnd(false),
+    onConfirmEnd: () => setEnded(true),
+    onSendFollowUp: (text) =>
+      setHostMessage(`Storybook would send to ChatGPT: ${text}`),
+  };
+}
+
+/** A deterministic visual walkthrough; it only projects local fixture state and never imitates MCP authority. */
+function DraftListWalkthroughStory() {
+  const [currentReview, setCurrentReview] = useState(walkthroughReview);
+  const [destination, setDestination] =
+    useState<Review["destination"]>("needs-review");
+  const [selected, setSelected] = useState<Set<number>>(new Set());
+  const [reviewDisclosures, setReviewDisclosures] = useState<
+    ViewerPageModel["reviewDisclosures"]
+  >(new Map());
+  const [replacement, setReplacement] = useState<number>();
+  const [confirmSubmit, setConfirmSubmit] = useState(false);
+  const [confirmEnd, setConfirmEnd] = useState(false);
+  const [ended, setEnded] = useState(false);
+  const [hostMessage, setHostMessage] = useState("");
+  const disclosures = disclosureActions(setReviewDisclosures);
+  const reviews = reviewActions(
+    currentReview,
+    selected,
+    setCurrentReview,
+    setSelected,
+  );
+  const alternatives = alternativeActions(
+    setCurrentReview,
+    setSelected,
+    setReplacement,
+    setDestination,
+  );
+  const submission = submissionActions(
+    setCurrentReview,
+    setConfirmSubmit,
+    setConfirmEnd,
+    setEnded,
+    setHostMessage,
+  );
+  return (
+    <WalkthroughPage
+      screen={walkthroughScreen(ended, currentReview)}
+      model={{
         maxWidth: 375,
         presentationDestination: destination,
         selected,
@@ -294,132 +555,15 @@ function DraftListWalkthroughStory() {
         replacement,
         confirmSubmit,
         confirmEnd,
+      }}
+      actions={{
         onNavigate: setDestination,
-        onDisclosureChange: (productId, expanded) =>
-          setReviewDisclosures((previous) => {
-            const next = new Map(previous);
-            next.set(productId, {
-              expanded,
-              facts: previous.get(productId)?.facts ?? new Set(),
-            });
-            return next;
-          }),
-        onFactExpandedChange: (productId, factKey, expanded) =>
-          setReviewDisclosures((previous) => {
-            const current = previous.get(productId) ?? {
-              expanded: false,
-              facts: new Set<string>(),
-            };
-            const facts = new Set(current.facts);
-            if (expanded) {
-              facts.add(factKey);
-            } else {
-              facts.delete(factKey);
-            }
-            const next = new Map(previous);
-            next.set(productId, { ...current, facts });
-            return next;
-          }),
-        onSelected: (productId, checked) =>
-          setSelected((previous) =>
-            toggleSelection(previous, productId, checked),
-          ),
-        onSelectAll: () =>
-          setSelected(
-            new Set(
-              currentReview.items
-                .filter((item) => item.state === "needs-review")
-                .map((item) => item.product_id),
-            ),
-          ),
-        onAcceptSelected: () => {
-          setCurrentReview((previous) => ({
-            ...previous,
-            items: previous.items.map((item) =>
-              selected.has(item.product_id)
-                ? { ...item, state: "ready" }
-                : item,
-            ),
-          }));
-          setSelected(new Set());
-        },
-        onQuantity: (item, quantity) =>
-          setCurrentReview((previous) =>
-            replaceItem(previous, item.product_id, (current) => ({
-              ...current,
-              quantity,
-            })),
-          ),
-        onRemove: (item) =>
-          setCurrentReview((previous) => ({
-            ...previous,
-            items: previous.items.filter(
-              (current) => current.product_id !== item.product_id,
-            ),
-          })),
-        onRevisit: (item) =>
-          setCurrentReview((previous) =>
-            replaceItem(previous, item.product_id, (current) => ({
-              ...current,
-              state: "needs-review",
-            })),
-          ),
-        onOpenAlternatives: (_, query) => {
-          setCurrentReview((previous) => ({
-            ...previous,
-            alternatives: previous.alternatives
-              ? { ...previous.alternatives, query }
-              : previous.alternatives,
-          }));
-          setReplacement(undefined);
-          setDestination("alternatives");
-        },
-        onSearchAlternatives: (_, query) =>
-          setCurrentReview((previous) => ({
-            ...previous,
-            alternatives: previous.alternatives
-              ? { ...previous.alternatives, query }
-              : previous.alternatives,
-          })),
-        onChooseReplacement: setReplacement,
-        onReplace: (productId) => {
-          if (!selectedAlternative) {
-            return;
-          }
-          setCurrentReview((previous) => ({
-            ...replaceItem(previous, productId, (item) => ({
-              ...item,
-              view: selectedAlternative,
-              quantity: 1,
-              state: "needs-review",
-            })),
-            alternatives: undefined,
-          }));
-          setReplacement(undefined);
-          setDestination("needs-review");
-        },
-        onPrepareSubmission: () =>
-          setCurrentReview((previous) => prepareReview(previous)),
-        onRequestSubmitConfirmation: () => setConfirmSubmit(true),
-        onCancelSubmit: () => setConfirmSubmit(false),
-        onConfirmSubmit: () => {
-          setCurrentReview((previous) => ({
-            ...previous,
-            submission: previous.submission
-              ? { ...previous.submission, status: "submitted" }
-              : previous.submission,
-          }));
-          setConfirmSubmit(false);
-        },
-        onContinueSubmitted: () =>
-          setCurrentReview((previous) => ({
-            ...previous,
-            submission: undefined,
-          })),
-        onRequestEnd: () => setConfirmEnd(true),
-        onCancelEnd: () => setConfirmEnd(false),
-        onConfirmEnd: () => setEnded(true),
-      })}
+        ...disclosures,
+        ...reviews,
+        ...alternatives,
+        ...submission,
+      }}
+      hostMessage={hostMessage}
     />
   );
 }
@@ -457,14 +601,17 @@ export const EverythingReady: Story = {
   render: () => activeReview(everythingReadyReview, "needs-review", 375),
 };
 export const Alternatives: Story = {
-  render: () => activeReview(review, "alternatives", 375, { replacement: 2 }),
+  render: () =>
+    activeReview(review, "alternatives", 375, { model: { replacement: 2 } }),
 };
 export const FactualDetails: Story = {
   render: () =>
     activeReview(review, "needs-review", 375, {
-      reviewDisclosures: new Map([
-        [1, { expanded: true, facts: new Set(["Varebeskrivelse"]) }],
-      ]),
+      model: {
+        reviewDisclosures: new Map([
+          [1, { expanded: true, facts: new Set(["Varebeskrivelse"]) }],
+        ]),
+      },
     }),
 };
 export const Unavailable: Story = {
@@ -501,7 +648,12 @@ export const UncertainOutcome: Story = {
 export const EmptyDraftList: Story = { render: () => page({ kind: "empty" }) };
 export const Loading: Story = {
   render: () =>
-    page({ kind: "loading" }, { connectionMessage: "Connecting to Nemlig…" }),
+    page(
+      { kind: "loading" },
+      {
+        model: { connectionMessage: "Connecting to Nemlig…" },
+      },
+    ),
 };
 export const Error: Story = {
   render: () =>
@@ -523,13 +675,17 @@ export const MissingImageFallback: Story = {
   render: () =>
     page(
       { kind: "products", payload: {}, views: [pasta] },
-      { thumbnails: new Map() },
+      { model: { thumbnails: new Map() } },
     ),
 };
 export const FailedImageFallback: Story = {
   render: () =>
     page(
       { kind: "products", payload: {}, views: [pasta] },
-      { thumbnails: new Map([[pasta, "/missing-storybook-fixture.svg"]]) },
+      {
+        model: {
+          thumbnails: new Map([[pasta, "/missing-storybook-fixture.svg"]]),
+        },
+      },
     ),
 };

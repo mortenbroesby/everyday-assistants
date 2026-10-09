@@ -80,6 +80,8 @@ async function main() {
       "--test-coverage-exclude=release/**/generated/**",
       "--test-coverage-exclude=release/**/*.generated.ts",
       "src/*.test.ts",
+      "src/picker/*.test.ts",
+      "src/picker/components/*.test.ts",
       "release/*.test.ts",
       "scripts/*.test.mjs",
     ],
