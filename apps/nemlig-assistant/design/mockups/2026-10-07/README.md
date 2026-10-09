@@ -10,6 +10,9 @@ See the parent [`AGENTS.md`](../AGENTS.md) before modifying these references.
   Ready, Alternatives, confirmation, success, empty, and unavailable states.
 - `nemlig-review-look-and-feel.html` — focused product-row and visual-language
   exploration.
+- `nemlig-unified-review.html` — proposed single Draft list view with To decide
+  and Ready visible together. Fixture controls move products locally, adjust
+  quantities, and preview the exact Ready lines without a basket write.
 - `nemlig-selection-focused-list.svg` — static compact-list reference.
 
 They use fixture content only and make no provider, MCP, or network calls.
@@ -24,3 +27,9 @@ python3 -m http.server 8766 --bind 0.0.0.0 \
 ```
 
 Open `http://localhost:8766/nemlig-review-state-gallery.html`.
+
+For the unified proposal, open
+`http://localhost:8766/nemlig-unified-review.html`. The production follow-up
+would replace the two destination tabs with these sections while retaining
+per-item review state, alternative selection, prepared-submission invalidation,
+and the existing exact authorization and readback safeguards.
