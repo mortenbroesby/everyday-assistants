@@ -482,6 +482,15 @@ alternatives or outcome markup. This makes a Storybook screenshot evidence for
 the viewer-owned DOM and styles, while the synthetic MCP-host smoke continues
 to prove transport, state transitions and safety behavior.
 
+Storybook also provides one Storybook-only host-frame decorator that approximates
+the observed ChatGPT wrapper (outer app identity, content width, padding, and
+card boundary) without importing it into the production viewer. This makes
+review closer to the embedded experience while keeping the host-owned chrome
+explicitly non-authoritative. One deterministic click-through story may project
+fixture review state through the page's existing intent callbacks. It may move
+between local visual states, but it must not call MCP, simulate a provider,
+claim submission authority, or replace the synthetic-host smoke.
+
 Product images follow the same rendered image branch in both contexts. The
 production adapter derives a thumbnail only from the existing validated Nemlig
 HTTPS source; it does not relax `safeNemligImageUrl`. Storybook supplies bundled

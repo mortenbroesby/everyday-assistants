@@ -1,0 +1,57 @@
+.storybook-host-preview {
+  box-sizing: border-box;
+  min-height: 100vh;
+  padding: clamp(20px, 5vw, 48px) clamp(16px, 6vw, 72px);
+  background: #fff;
+  color: #121212;
+}
+
+.storybook-host-preview__identity {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  max-width: 620px;
+  margin: 0 auto 24px;
+  color: #545454;
+  font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: clamp(1.25rem, 3vw, 1.75rem);
+  font-weight: 500;
+}
+
+.storybook-host-preview__mark {
+  display: grid;
+  width: 38px;
+  height: 38px;
+  place-items: center;
+  border-radius: 12px;
+  color: white;
+  background: #eb7b23;
+  font-size: 1.15rem;
+}
+
+.storybook-host-preview__card {
+  width: min(100%, 620px);
+  margin: 0 auto;
+  overflow: clip;
+  border: 1px solid #dedede;
+  border-radius: 28px;
+  background: #fff;
+}
+
+.storybook-host-preview__card .app-frame {
+  padding: 20px 10px 14px;
+}
+
+@media (max-width: 420px) {
+  .storybook-host-preview {
+    padding: 16px 8px;
+  }
+
+  .storybook-host-preview__identity {
+    margin: 0 8px 16px;
+  }
+
+  .storybook-host-preview__card {
+    border-radius: 22px;
+  }
+}
