@@ -23,6 +23,7 @@ declare global {
         action?: {
           kind?: string;
           product_id?: number;
+          replacement_id?: number;
           quantity?: number;
           query?: string;
         };
@@ -896,11 +897,34 @@ try {
     .catch((error: unknown) =>
       throwViewerInteractionFailure("Alternative screen", error),
     );
+  const callsBeforeReplacement = await page.evaluate(() => window.calls.length);
   await frame
-    .getByRole("radio", { name: "Choose Synthetic alternative" })
+    .getByRole("button", { name: "Use Synthetic alternative instead" })
     .click();
-  await frame.getByRole("button", { name: "Use selected alternative" }).click();
   await frame.getByRole("button", { name: /To decide \(1\)/ }).waitFor();
+  assert.equal(
+    await frame
+      .getByRole("button", { name: "Use selected alternative" })
+      .count(),
+    0,
+    "alternative replacement retained a second confirmation action",
+  );
+  const replacementCall = await page.evaluate(() => window.calls.slice(-1)[0]);
+  assert.equal(
+    replacementCall?.name,
+    "update_product_review",
+    "selecting an alternative did not call the Draft list update tool",
+  );
+  assert.deepEqual(
+    replacementCall?.args.action,
+    { kind: "replace", product_id: 1, replacement_id: 3 },
+    "selecting an alternative did not issue the expected replacement request",
+  );
+  assert.equal(
+    await page.evaluate(() => window.calls.length),
+    callsBeforeReplacement + 1,
+    "selecting an alternative made more than one replacement request",
+  );
   await frame
     .getByRole("checkbox", { name: "Select Synthetic alternative" })
     .check()

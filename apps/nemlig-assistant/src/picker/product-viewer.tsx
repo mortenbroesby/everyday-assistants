@@ -262,7 +262,6 @@ export function ProductViewer() {
   const [reviewDisclosures, setReviewDisclosures] = useState<
     Map<number, { expanded: boolean; facts: Set<string> }>
   >(() => new Map());
-  const [replacement, setReplacement] = useState<number>();
   const [message, setMessage] = useState("");
   const [activatingCurrent, setActivatingCurrent] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -308,7 +307,6 @@ export function ProductViewer() {
     quantityTimer.current = undefined;
     clearPendingQuantities();
     setSelected(new Set());
-    setReplacement(undefined);
     setConfirmEnd(false);
     const current = activeReview.current;
     if (current) {
@@ -440,14 +438,6 @@ export function ProductViewer() {
                 ),
               )
             : new Set(),
-        );
-        setReplacement((chosen) =>
-          sameReview &&
-          next.review.alternatives?.views.some(
-            (view) => view.status === "complete" && view.product.id === chosen,
-          )
-            ? chosen
-            : undefined,
         );
         setConfirmSubmit(false);
       } else if (next.kind === "unavailable") {
@@ -598,7 +588,6 @@ export function ProductViewer() {
       } else if (recovery && /stale|no active draft/i.test(text)) {
         deactivateReview();
         setSelected(new Set());
-        setReplacement(undefined);
         const latest = activeReview.current;
         try {
           if (latest?.view_id) {
@@ -885,7 +874,6 @@ export function ProductViewer() {
         screen,
         presentationDestination,
         selected,
-        replacement,
         reviewDisclosures,
         pendingQuantities,
         thumbnails,
@@ -946,7 +934,6 @@ export function ProductViewer() {
         onRevisit: (item) =>
           afterFlush({ kind: "revisit", product_ids: [item.product_id] }),
         onOpenAlternatives: (item, query) => {
-          setReplacement(undefined);
           afterFlush({
             kind: "alternatives",
             product_id: item.product_id,
@@ -955,7 +942,6 @@ export function ProductViewer() {
         },
         onSearchAlternatives: (product_id, query) =>
           void update({ kind: "alternatives", product_id, query }),
-        onChooseReplacement: setReplacement,
         onReplace: (product_id, replacement_id) =>
           void update({ kind: "replace", product_id, replacement_id }),
         onPrepareSubmission: () => afterFlush({ kind: "prepare_submission" }),
