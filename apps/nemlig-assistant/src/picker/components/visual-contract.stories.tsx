@@ -102,6 +102,14 @@ export const ReadyAt375: Story = {
   </Frame>,
 };
 
+export const EverythingReady: Story = {
+  render: () => <Frame>
+    <p className="intro">All products are Ready for your final check. Nothing has been added to Nemlig.</p>
+    <DestinationTabs destination="needs-review" toDecideCount={0} readyCount={2} hasAlternatives={false} disabled={false} onNavigate={() => undefined} />
+    <OutcomeSurface title="Ready for your final check"><p>Review the local Ready products before deciding whether to add them to Nemlig.</p><ViewerButton color="primary">View Ready products</ViewerButton></OutcomeSurface>
+  </Frame>,
+};
+
 export const Alternatives: Story = {
   render: () => <Frame>
     <p className="intro">Choose an alternative without accepting it into Ready.</p>

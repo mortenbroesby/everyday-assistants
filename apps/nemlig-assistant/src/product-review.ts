@@ -6,6 +6,8 @@ import { createProductView, type ProductView } from "./product-presentation.js";
 import { runReadPool } from "./read-coordination.js";
 
 export type ReviewDestination = "needs-review" | "ready" | "alternatives";
+/** Bounds transient draft payloads while allowing a full family shopping trip. */
+export const MAX_DRAFT_PRODUCTS = 500;
 export interface ReviewItem {
   product_id: number;
   quantity: number;
@@ -126,9 +128,9 @@ export class ProductReviewService {
     if (activeId) return structuredClone(this.get(owner, activeId).snapshot);
     if (this.startingOwners.has(owner)) throw new NemligError("A draft list is starting. Refresh it after the current request finishes.");
     if (!items.length) throw new NemligError("No active Draft list to show. Find exact products and provide them to start a new Draft list.");
-    if (items.length > 50 || new Set(items.map(i => i.product_id)).size !== items.length ||
+    if (items.length > MAX_DRAFT_PRODUCTS || new Set(items.map(i => i.product_id)).size !== items.length ||
       items.some(i => !validPositive(i.product_id) || !validPositive(i.quantity))) {
-      throw new NemligError("Provide 1–50 unique exact products with positive integer quantities.");
+      throw new NemligError(`Provide 1–${MAX_DRAFT_PRODUCTS} unique exact products with positive integer quantities.`);
     }
     this.makeRoom();
     this.startingOwners.add(owner);
@@ -185,8 +187,8 @@ export class ProductReviewService {
           if (!action.items.length || action.items.some(item => !validPositive(item.product_id) || !validPositive(item.quantity)) ||
             new Set(action.items.map(item => item.product_id)).size !== action.items.length ||
             action.items.some(item => draft.items.some(existing => existing.product_id === item.product_id)) ||
-            draft.items.length + action.items.length > 50) {
-            throw new NemligError("Add 1–50 new unique exact products with positive integer quantities, up to 50 products in total.");
+            draft.items.length + action.items.length > MAX_DRAFT_PRODUCTS) {
+            throw new NemligError(`Add 1–${MAX_DRAFT_PRODUCTS} new unique exact products with positive integer quantities, up to ${MAX_DRAFT_PRODUCTS} products in total.`);
           }
           const rows = await this.readItems(action.items, signal);
           draft.items.push(...rows);

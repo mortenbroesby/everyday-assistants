@@ -424,16 +424,20 @@ export function ProductViewer() {
     void flushQuantities().then(async (ok) => { if (ok) await update(action); });
   };
   const destination = review ? presentationDestination ?? review.destination : undefined;
+  const needsReviewCount = review?.items.filter((item) => item.state === "needs-review").length ?? 0;
+  const readyCount = review?.items.filter((item) => item.state === "ready").length ?? 0;
   const navigate = (next: PresentationDestination) => {
     if (next === "alternatives" && !review?.alternatives) return;
     setPresentationDestination(next);
   };
   const safeTitle = destination === "ready" ? "Ready" : destination === "alternatives" ? "Choose an alternative" : "To decide";
+  const visibleProductCount = destination === "ready" ? readyCount : needsReviewCount;
   const productPayload = screen.kind === "products" ? screen.payload : undefined;
   const basket = productPayload?.detail_limit !== undefined && Array.isArray(productPayload.items);
   const uncertainSubmission = submitBlocked || review?.submission?.status === "uncertain";
   const editsBlocked = busy || uncertainSubmission || review?.submission?.status === "submitted" && !continueSubmitted;
   const terminalSubmission = uncertainSubmission || review?.submission?.status === "submitted" && !continueSubmitted;
+  const decisionsComplete = Boolean(review && active && !terminalSubmission && destination === "needs-review" && needsReviewCount === 0 && readyCount > 0);
   const hasActiveProducts = Boolean(review && active && review.items.length > 0);
   const sendFollowUp = async (text: string) => {
     if (!connectedApp || !isConnected) { setMessage("Continue in conversation to inspect or start a Draft list."); return; }
@@ -471,8 +475,8 @@ export function ProductViewer() {
     };
   };
 
-  const title = review && active && terminalSubmission ? review.submission?.status === "submitted" ? "Added to Nemlig basket" : "Check your Nemlig basket" : review && active ? (review.items.length ? safeTitle : "What should we shop for?") : basket ? "Actual Nemlig basket" : screen.kind === "unavailable" ? "Draft list unavailable" : screen.kind === "review" ? "Your Draft list" : "Products";
-  const intro = !terminalSubmission ? review && active ? (review.items.length === 0 ? "Start another local Draft list in conversation." : safeTitle === "Ready" ? "Adjust quantities directly. Open a product to move it back or remove it. Prepare the exact change before adding anything to Nemlig." : safeTitle === "Choose an alternative" ? "Compare available options for this product." : "Select products to move them into Ready. Open a product for details.") : basket ? "Your current Nemlig basket. This view cannot change it." : "Inspect product details here or continue in conversation." : undefined;
+  const title = review && active && terminalSubmission ? review.submission?.status === "submitted" ? "Added to Nemlig basket" : "Check your Nemlig basket" : review && active ? (review.items.length ? decisionsComplete ? "Everything is ready" : safeTitle : "What should we shop for?") : basket ? "Actual Nemlig basket" : screen.kind === "unavailable" ? "Draft list unavailable" : screen.kind === "review" ? "Your Draft list" : "Products";
+  const intro = !terminalSubmission ? review && active ? (review.items.length === 0 ? "Start another local Draft list in conversation." : decisionsComplete ? "All products are Ready for your final check. Nothing has been added to Nemlig." : safeTitle === "Ready" ? "Adjust quantities directly. Open a product to move it back or remove it. Prepare the exact change before adding anything to Nemlig." : safeTitle === "Choose an alternative" ? "Compare available options for this product." : "Select products to move them into Ready. Open a product for details.") : basket ? "Your current Nemlig basket. This view cannot change it." : "Inspect product details here or continue in conversation." : undefined;
   const outcomeOnly = terminalSubmission || screen.kind === "empty" || review && active && review.items.length === 0;
 
   return <ViewerShell title={outcomeOnly ? undefined : title} intro={outcomeOnly ? undefined : intro}>
@@ -511,7 +515,7 @@ export function ProductViewer() {
       </section>
     </section>}
     {screen.kind === "products" && screen.views.length > 0 && <section className="product-list" aria-label="Product results">{screen.views.map((view, index) => <ProductCard key={`${view.status === "complete" ? view.product.id : view.product_id}:${index}`} view={view} disabled={busy} />)}</section>}
-    {review && active && !terminalSubmission && review.items.length > 0 && destination !== "alternatives" && <section className="product-list" aria-label={`${safeTitle} products`}>
+    {review && active && !terminalSubmission && visibleProductCount > 0 && destination !== "alternatives" && <section className="product-list" aria-label={`${safeTitle} products`}>
       {review.items.filter((item) => item.state === destination).map((item) => {
         const alternativeQuery = item.view.status === "complete"
           ? (item.view.product.subcategory ?? item.view.product.name ?? String(item.product_id)).slice(0, 200)
@@ -540,7 +544,11 @@ export function ProductViewer() {
         />;
       })}
     </section>}
-    {review && active && !terminalSubmission && destination === "needs-review" && <ActionFooter>
+    {decisionsComplete && <OutcomeSurface title="Ready for your final check">
+      <p>Review the local Ready products before deciding whether to add them to Nemlig.</p>
+      <Button color="primary" disabled={editsBlocked} onClick={() => navigate("ready")}>View Ready products</Button>
+    </OutcomeSurface>}
+    {review && active && !terminalSubmission && destination === "needs-review" && needsReviewCount > 0 && <ActionFooter>
       {review.items.some((item) => item.state === "needs-review" && isUsable(item.view)) && <>
         <Button color="secondary" disabled={editsBlocked} onClick={() => setSelected(new Set(review.items.filter((item) => item.state === "needs-review" && isUsable(item.view)).map((item) => item.product_id)))}>Select all</Button>
       </>}

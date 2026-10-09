@@ -160,7 +160,7 @@ by the host session metadata and authenticated principal. There is no hourly exp
 **Clear draft list and start over** discards the local draft and shows a
 conversational starting screen. A restart or bounded memory eviction
 can also discard it; missing state is reported rather than silently recreated.
-Each principal retains at most eight conversation drafts of 50 products. Hosts
+Each principal retains at most eight conversation drafts of up to 500 products. Hosts
 without conversation context cannot access a hosted draft. ChatGPT does not
 provide a reliable notification when a conversation is closed.
 They are not saved shopping plans or named lists. Transcript cards start inactive:
