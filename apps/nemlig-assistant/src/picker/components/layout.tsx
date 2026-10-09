@@ -5,7 +5,7 @@ import { ViewerButton } from "./button.js";
 const ViewerRoot = styled.div({
   minWidth: 0,
   padding:
-    "max(16px, env(safe-area-inset-top, 0px)) max(16px, env(safe-area-inset-right, 0px)) max(16px, env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px)",
+    "max(20px, env(safe-area-inset-top, 0px)) max(20px, env(safe-area-inset-right, 0px)) max(20px, env(safe-area-inset-bottom, 0px)) max(20px, env(safe-area-inset-left, 0px)",
 });
 const Viewer = styled.main({ width: "min(100%, 560px)", margin: "0 auto" });
 const ScreenHeading = styled.h1({
