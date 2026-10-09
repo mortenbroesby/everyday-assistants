@@ -1,19 +1,19 @@
 import react from "@vitejs/plugin-react";
 import { fileURLToPath } from "node:url";
 import { defineConfig } from "vite";
-import { viteSingleFile } from "vite-plugin-singlefile";
 
 export default defineConfig({
-  base: "./",
   publicDir: false,
-  plugins: [react(), viteSingleFile()],
+  plugins: [react()],
   build: {
     cssCodeSplit: false,
-    emptyOutDir: false,
+    emptyOutDir: true,
+    manifest: true,
     modulePreload: false,
-    outDir: "dist",
+    outDir: "dist/viewer-build",
     rollupOptions: {
       input: fileURLToPath(new URL("picker.html", import.meta.url)),
+      output: { inlineDynamicImports: true },
     },
     target: "baseline-widely-available",
   },

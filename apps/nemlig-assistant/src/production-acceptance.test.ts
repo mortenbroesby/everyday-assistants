@@ -14,7 +14,9 @@ import {
   serviceAcceptanceToolInventory,
 } from "./mcp.js";
 import {
+  PRODUCT_VIEWER_CONNECT_DOMAINS,
   PRODUCT_VIEWER_MIME_TYPE,
+  PRODUCT_VIEWER_RESOURCE_DOMAINS,
   PRODUCT_VIEWER_RESOURCE_URI,
   renderProductViewerHtml,
 } from "./product-viewer.js";
@@ -29,8 +31,8 @@ const viewerResource = (uri: string) => ({
       _meta: {
         ui: {
           csp: {
-            connectDomains: [],
-            resourceDomains: ["https://nemlig.com", "https://www.nemlig.com"],
+            connectDomains: [...PRODUCT_VIEWER_CONNECT_DOMAINS],
+            resourceDomains: [...PRODUCT_VIEWER_RESOURCE_DOMAINS],
           },
           prefersBorder: true,
         },
@@ -243,8 +245,8 @@ test("service resource inventory failures report bounded counts without exposing
     );
   };
 
-  await assertMismatch([], "missing_18_unexpected_0");
-  await assertMismatch([{ uri: privateUri }], "missing_18_unexpected_1");
+  await assertMismatch([], "missing_19_unexpected_0");
+  await assertMismatch([{ uri: privateUri }], "missing_19_unexpected_1");
   await assertMismatch(
     [
       ...serviceAcceptanceResourceInventory.map((uri) => ({ uri })),

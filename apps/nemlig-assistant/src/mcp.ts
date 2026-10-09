@@ -32,6 +32,7 @@ import {
   type ProductView,
 } from "./product-presentation.js";
 import {
+  PRODUCT_VIEWER_CONNECT_DOMAINS,
   PRODUCT_VIEWER_MIME_TYPE,
   PRODUCT_VIEWER_RESOURCE_DOMAINS,
   PRODUCT_VIEWER_RESOURCE_METADATA,
@@ -454,7 +455,7 @@ The local draft list is conversation-scoped and temporary. If it is unavailable,
           _meta: {
             ui: {
               csp: {
-                connectDomains: [],
+                connectDomains: [...PRODUCT_VIEWER_CONNECT_DOMAINS],
                 resourceDomains: [...PRODUCT_VIEWER_RESOURCE_DOMAINS],
               },
               prefersBorder: true,

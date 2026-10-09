@@ -1,8 +1,19 @@
 import assert from "node:assert/strict";
-import { mkdir, readFile } from "node:fs/promises";
+import { mkdir } from "node:fs/promises";
 import { createServer } from "node:http";
 import { resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { chromium } from "playwright";
+import { readProductViewerArtifact } from "../src/product-viewer.js";
+import { readLocalViewerGeneration } from "./viewer-generation.js";
+import {
+  closeViewerSmokeServer,
+  installViewerAssetFixture,
+} from "./viewer-asset-fixture.js";
+import {
+  createViewerGeneration,
+  VIEWER_MANIFEST_PATH,
+} from "../src/viewer-assets.js";
 
 declare global {
   interface Window {
@@ -40,9 +51,9 @@ declare global {
   }
 }
 
-const html = await readFile(
-  new URL("../dist/picker.html", import.meta.url),
-  "utf8",
+const html = readProductViewerArtifact().html;
+const viewerGeneration = await readLocalViewerGeneration(
+  fileURLToPath(new URL("../dist/ui-static/", import.meta.url)),
 );
 const screenshotDirectory = process.env.NEMLIG_UI_SCREENSHOT_DIR;
 const longOatsName =
@@ -124,13 +135,13 @@ window.addEventListener('message',event=>{
  const message=event.data; if(!message || message.jsonrpc!=='2.0') return;
  if(message.method==='ui/initialize') return post(event,{jsonrpc:'2.0',id:message.id,result:{protocolVersion:message.params.protocolVersion,hostInfo:{name:'synthetic-host',version:'1'},hostCapabilities:{},hostContext:{theme:'light'}}});
  if(message.method==='ui/notifications/initialized'){const presented=result(review,initialViewIdOverride??viewId);initialViewIdOverride=undefined;return post(event,{jsonrpc:'2.0',method:'ui/notifications/tool-result',params:presented})}
- if(message.method==='ui/message'){window.messages.push(message.params.content.map(block=>block.type==='text'?block.text:'').join(''));return post(event,{jsonrpc:'2.0',id:message.id,result:{}})}
+ if(message.method==='ui/message'){const text=message.params.content.map(block=>block.type==='text'?block.text:'').join('');window.messages.push(text);post(event,{jsonrpc:'2.0',id:message.id,result:{}});if(text.startsWith('Reopen the current Draft list')){viewId='synthetic-view-'+(Number(viewId.split('-').at(-1))+1);setTimeout(()=>frame.contentWindow.postMessage({jsonrpc:'2.0',method:'ui/notifications/tool-result',params:result(review)},location.origin),0)}return}
  if(message.method==='tools/call'){
   const {name,arguments:args}=message.params; window.calls.push({name,args});
+  if(name==='update_product_review'&&args.view_id&&args.view_id!==viewId)return post(event,{jsonrpc:'2.0',id:message.id,error:{code:-32602,message:'This Draft list card is out of date'}})
   if(name==='update_product_review'&&args.action?.kind==='show'){
    if(args.activate){viewId='synthetic-view-'+(Number(viewId.split('-').at(-1))+1);return post(event,{jsonrpc:'2.0',id:message.id,result:result(review)})}
    if(!args.view_id)return post(event,{jsonrpc:'2.0',id:message.id,result:{structuredContent:{review}}});
-   if(args.view_id!==viewId)return post(event,{jsonrpc:'2.0',id:message.id,error:{code:-32602,message:'This Draft list card is out of date'}})
   }
   if(name==='submit_product_review'){
    window.submissionAttempts++;
@@ -147,9 +158,18 @@ window.addEventListener('message',event=>{
 </script>`;
 
 const server = createServer((request, response) => {
-  response
-    .writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
-    .end(request.url === "/resource" ? html : parentDocument);
+  const pathname = new URL(request.url ?? "/", "http://localhost").pathname;
+  if (pathname === "/resource") {
+    response
+      .writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
+      .end(html);
+  } else if (pathname === "/host") {
+    response
+      .writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
+      .end(parentDocument);
+  } else {
+    response.writeHead(404).end();
+  }
 });
 await new Promise<void>((resolve, reject) => {
   server.once("error", reject);
@@ -162,20 +182,80 @@ if (!address || typeof address === "string") {
 const browser = await chromium.launch({ headless: true, channel: "chrome" });
 console.log("Synthetic viewer smoke: browser launched");
 try {
+  const verifyLoaderRecovery = async (
+    path: string,
+    override: { body?: string | Uint8Array; delayMs?: number },
+    waitForLateResponse = false,
+  ) => {
+    const overrides = new Map([[path, override]]);
+    const recoveryContext = await browser.newContext();
+    await installViewerAssetFixture(
+      recoveryContext,
+      viewerGeneration,
+      overrides,
+    );
+    const recoveryPage = await recoveryContext.newPage();
+    let manifestRequests = 0;
+    recoveryPage.on("request", (request) => {
+      if (new URL(request.url()).pathname === VIEWER_MANIFEST_PATH) {
+        manifestRequests += 1;
+      }
+    });
+    await recoveryPage.goto(`http://127.0.0.1:${address.port}/host`);
+    const recoveryFrame = recoveryPage.frameLocator('iframe[title="viewer"]');
+    await recoveryFrame.locator("#load-error").waitFor({ state: "visible" });
+    if (waitForLateResponse) {
+      await recoveryPage.waitForTimeout(1_000);
+      assert.equal(
+        await recoveryFrame.locator("#root").innerText(),
+        "",
+        "a timed-out stale bundle mounted after its request completed",
+      );
+    }
+    overrides.delete(path);
+    overrides.set(VIEWER_MANIFEST_PATH, { delayMs: 100 });
+    await recoveryFrame.getByRole("button", { name: "Try again" }).click();
+    await recoveryFrame
+      .locator("#retry")
+      .evaluate((button: HTMLButtonElement) => button.click());
+    await recoveryFrame.getByRole("heading", { name: "To decide" }).waitFor();
+    assert.equal(
+      manifestRequests,
+      2,
+      "retry clicks started concurrent load attempts",
+    );
+    await recoveryContext.close();
+  };
+  await verifyLoaderRecovery(VIEWER_MANIFEST_PATH, { body: "{" });
+  await verifyLoaderRecovery(viewerGeneration.manifest.js.url, {
+    body: Buffer.from("corrupt JavaScript asset"),
+  });
+  await verifyLoaderRecovery(
+    viewerGeneration.manifest.js.url,
+    { delayMs: 5_500 },
+    true,
+  );
+  console.log(
+    "Synthetic viewer smoke: malformed, corrupt, and timed-out bundle recovery passed",
+  );
+
   const context = await browser.newContext({
     viewport: { width: 375, height: 860 },
     colorScheme: "light",
   });
-  const externalRequests: string[] = [];
-  await context.route("**/*", async (route) => {
-    if (route.request().url().startsWith("http://127.0.0.1:")) {
-      await route.continue();
-    } else {
-      externalRequests.push(route.request().url());
-      await route.abort();
+  const viewerOverrides = new Map();
+  const externalRequests = await installViewerAssetFixture(
+    context,
+    viewerGeneration,
+    viewerOverrides,
+  );
+  const page = await context.newPage();
+  let manifestRequests = 0;
+  page.on("request", (request) => {
+    if (new URL(request.url()).pathname === VIEWER_MANIFEST_PATH) {
+      manifestRequests += 1;
     }
   });
-  const page = await context.newPage();
   const capture = async (name: string) => {
     if (!screenshotDirectory) {
       return;
@@ -199,6 +279,25 @@ try {
   });
   console.log("Synthetic viewer smoke: host page loaded");
   const frame = page.frameLocator('iframe[title="viewer"]');
+  const throwViewerInteractionFailure = async (
+    action: string,
+    cause: unknown,
+  ): Promise<never> => {
+    const state = await frame.locator("main").innerText();
+    const diagnostics = await page.evaluate(() => ({
+      calls: window.calls,
+      hostErrors: window.hostErrors,
+      frames: [
+        ...document
+          .querySelector("iframe")!
+          .contentDocument!.querySelectorAll("main"),
+      ].map((node) => node.innerText),
+    }));
+    throw new Error(
+      `${action} failed. Calls: ${JSON.stringify(diagnostics)}. UI: ${state}`,
+      { cause },
+    );
+  };
   await frame
     .getByRole("heading", { name: "To decide" })
     .waitFor()
@@ -247,6 +346,62 @@ try {
     2,
     "products were not visible on the first rendered card",
   );
+  await frame.locator('input[type="checkbox"]').first().check();
+  const currentJs = Buffer.from(
+    viewerGeneration.assets.get(viewerGeneration.manifest.js.url)!,
+  ).toString();
+  const nextViewer = createViewerGeneration(
+    Buffer.from(currentJs.slice(currentJs.indexOf("\n") + 1)),
+    Buffer.from("body { color: rgb(20, 40, 60); }"),
+  );
+  viewerOverrides.set(VIEWER_MANIFEST_PATH, {
+    body: `${JSON.stringify(nextViewer.manifest)}\n`,
+  });
+  viewerOverrides.set(nextViewer.manifest.css.url, {
+    body: nextViewer.assets.get(nextViewer.manifest.css.url)!,
+  });
+  await page.waitForTimeout(100);
+  assert.equal(
+    manifestRequests,
+    1,
+    "the mounted shell polled for a bundle update",
+  );
+  assert.equal(
+    await frame.locator('input[type="checkbox"]').first().isChecked(),
+    true,
+    "the current card lost its local state when the manifest changed",
+  );
+  assert.equal(
+    await frame
+      .locator('meta[name="nemlig-viewer-bundle"]')
+      .getAttribute("content"),
+    viewerGeneration.manifest.build,
+  );
+  await page
+    .locator('iframe[title="viewer"]')
+    .evaluate((iframe: HTMLIFrameElement) => {
+      iframe.src = "/resource";
+    });
+  await frame.getByRole("heading", { name: "To decide" }).waitFor();
+  await frame
+    .locator('meta[name="nemlig-viewer-bundle"]')
+    .waitFor({ state: "attached" });
+  await page.waitForFunction(
+    (build) =>
+      document
+        .querySelector<HTMLIFrameElement>('iframe[title="viewer"]')
+        ?.contentDocument?.querySelector('meta[name="nemlig-viewer-bundle"]')
+        ?.getAttribute("content") === build,
+    nextViewer.manifest.build,
+  );
+  assert.equal(
+    manifestRequests,
+    2,
+    "a fresh frame did not fetch the new manifest",
+  );
+  console.log(
+    "Synthetic viewer smoke: active state stayed put; a fresh frame loaded the new bundle",
+  );
   console.log(
     "Synthetic viewer smoke: direct product display and view validation passed",
   );
@@ -288,7 +443,7 @@ try {
   console.log(
     "Synthetic viewer smoke: completed decisions route to Ready without a tool call",
   );
-  const callsBeforeReload = await page.evaluate(() => window.calls.length);
+  const callsBeforeStaleAction = await page.evaluate(() => window.calls.length);
   const staleViewId = await page.evaluate(() => window.getViewId());
   await page.evaluate(() => window.supersedeAndReload());
   const currentViewId = await page.evaluate(() => window.getViewId());
@@ -307,7 +462,7 @@ try {
   );
   assert.equal(
     await page.evaluate(() => window.calls.length),
-    callsBeforeReload,
+    callsBeforeStaleAction,
     "mounting a card made an unnecessary second server call",
   );
   assert.notEqual(
@@ -320,10 +475,35 @@ try {
     currentViewId,
     "the fixture did not retain the newer card authority",
   );
-  console.log(
-    "Synthetic viewer smoke: initial card does not revalidate after mounting or reload",
+  await frame.getByRole("checkbox", { name: "Select Synthetic milk" }).check();
+  await frame.getByRole("button", { name: /Add selected to Ready/ }).click();
+  await frame.getByText("This Draft list card is inactive.").waitFor();
+  await frame.getByRole("button", { name: "Reopen in conversation" }).waitFor();
+  assert.equal(
+    await page.evaluate(() => window.calls.length),
+    callsBeforeStaleAction + 2,
+    "a stale edit did not fail closed and load a read-only snapshot",
   );
-  await page.evaluate(() => window.reopenCurrentReview());
+  await frame.getByRole("button", { name: "Reopen in conversation" }).click();
+  await page.waitForFunction(() => window.messages.length === 1);
+  assert.equal(
+    await page.evaluate(() => window.calls.length),
+    callsBeforeStaleAction + 2,
+    "explicit recovery made a server-tool call outside the conversation",
+  );
+  const reopeningMessage = await page.evaluate(() => window.messages.at(-1));
+  assert.ok(reopeningMessage, "explicit recovery did not send a follow-up");
+  assert.match(
+    reopeningMessage,
+    /Reopen the current Draft list without changing it/u,
+    "explicit recovery did not request a bounded conversational reopen",
+  );
+  await frame
+    .getByRole("checkbox", { name: "Select Synthetic milk" })
+    .waitFor();
+  console.log(
+    "Synthetic viewer smoke: mount makes no server call; stale edits recover through conversation",
+  );
   await frame.getByRole("button", { name: /To decide \(2\)/ }).waitFor();
   assert.equal(await frame.getByText("Synthetic milk").count(), 1);
   assert.equal(
@@ -713,22 +893,9 @@ try {
   await frame
     .getByRole("heading", { name: "Current product" })
     .waitFor()
-    .catch(async (error: unknown) => {
-      const state = await frame.locator("main").innerText();
-      const diagnostics = await page.evaluate(() => ({
-        calls: window.calls,
-        hostErrors: window.hostErrors,
-        frames: [
-          ...document
-            .querySelector("iframe")!
-            .contentDocument!.querySelectorAll("main"),
-        ].map((node) => node.innerText),
-      }));
-      throw new Error(
-        `Alternative screen failed. Calls: ${JSON.stringify(diagnostics)}. UI: ${state}`,
-        { cause: error },
-      );
-    });
+    .catch((error: unknown) =>
+      throwViewerInteractionFailure("Alternative screen", error),
+    );
   await frame
     .getByRole("radio", { name: "Choose Synthetic alternative" })
     .click();
@@ -737,17 +904,9 @@ try {
   await frame
     .getByRole("checkbox", { name: "Select Synthetic alternative" })
     .check()
-    .catch(async (error: unknown) => {
-      const state = await frame.locator("main").innerText();
-      const diagnostics = await page.evaluate(() => ({
-        calls: window.calls,
-        hostErrors: window.hostErrors,
-      }));
-      throw new Error(
-        `Oats selection failed. Calls: ${JSON.stringify(diagnostics)}. UI: ${state}`,
-        { cause: error },
-      );
-    });
+    .catch((error: unknown) =>
+      throwViewerInteractionFailure("Oats selection", error),
+    );
   await frame
     .getByRole("button", { name: "Add selected to Ready (1)" })
     .click();
@@ -922,15 +1081,21 @@ try {
     "an empty Draft list retained local destructive actions",
   );
   const callsBeforeStarter = await page.evaluate(() => window.calls.length);
+  const messagesBeforeStarter = await page.evaluate(
+    () => window.messages.length,
+  );
   await frame.getByRole("button", { name: "Find a product" }).click();
-  await page.waitForFunction(() => window.messages.length === 1);
+  await page.waitForFunction(
+    (previous) => window.messages.length === previous + 1,
+    messagesBeforeStarter,
+  );
   assert.equal(
     await page.evaluate(() => window.calls.length),
     callsBeforeStarter,
     "an empty-state starter called a server tool directly",
   );
   assert.match(
-    await page.evaluate(() => window.messages[0]),
+    await page.evaluate(() => window.messages.at(-1) ?? ""),
     /new local Draft list/u,
     "empty-state starter did not send a bounded conversational request",
   );
@@ -998,9 +1163,7 @@ try {
   await context.close();
 } finally {
   await browser.close();
-  await new Promise<void>((resolve, reject) =>
-    server.close((error) => (error ? reject(error) : resolve())),
-  );
+  await closeViewerSmokeServer(server);
 }
 
 console.log(

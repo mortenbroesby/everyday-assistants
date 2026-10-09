@@ -7,14 +7,17 @@ approved a forward-only clean connection cutover.
 
 ## What Changes
 
-- Establish `ui://nemlig/draft-list.html` as the permanent supported viewer
+- Establish `ui://nemlig/shell.html` as the permanent supported viewer
   identity. Keep the standard descriptor binding and ChatGPT compatibility
   alias identical.
-- **BREAKING:** Permanently retire every previously published viewer identity,
-  including the unversioned URI and v1–v16. Preserve inert resource responses;
-  do not migrate historical cards, draft choices, or approvals.
-- Keep the self-contained renderer and server-authoritative Draft list.
-  Distinguish current business state from the renderer build actually loaded.
+- **BREAKING:** Permanently retire `ui://nemlig/draft-list.html` and every
+  previously published product-viewer identity. Preserve inert resource
+  responses; do not migrate historical cards, draft choices, or approvals.
+- Keep a small, stable MCP shell and load the current UI bundle on mount from a
+  fixed-origin, content-addressed manifest with integrity checks. Never replace
+  the code in an active shopping card.
+- Distinguish current business state, stable-shell identity, and the executing
+  UI bundle identity.
 - Add bounded, privacy-safe `resources/read` evidence containing only URI class,
   current artifact identity when served, and request-scoped correlation.
 - Define clean connection installation/reconnection as an operator-initiated
@@ -34,16 +37,16 @@ None.
 
 ## Impact
 
-Touches viewer identity/resource registration, artifact identity, the existing
-HTTP/MCP diagnostic boundary, focused tests and synthetic browser smoke,
-release documentation, connector recovery guidance, and affected OpenSpec
-records.
+Touches viewer identity/resource registration, static-asset build and delivery
+on the existing Worker, artifact identity, focused tests and synthetic browser
+smoke, release documentation, connector recovery guidance, and affected
+OpenSpec records.
 
 Preserves authentication, principal/conversation isolation, current-view and
 revision checks, exact prepared authorization, fresh validation, add-only
 provider writes, verified readback, and uncertain-write no-retry behavior.
-No new loader, manifest service, dependency, persistent state, background
-refresh, or provider operation is planned.
+No new service, dependency, persistent state, background refresh, or provider
+operation is planned.
 
 Code delivery, production deployment, and operator connection cutover remain
 separate stages. This plan does not execute external changes or authorize

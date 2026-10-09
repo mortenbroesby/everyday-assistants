@@ -7,7 +7,11 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { PRODUCT_VIEWER_RESOURCE_URI } from "../src/product-viewer.js";
+import {
+  PRODUCT_VIEWER_RESOURCE_URI,
+  readProductViewerArtifact,
+} from "../src/product-viewer.js";
+import { readLocalViewerGeneration } from "./viewer-generation.js";
 
 const execute = promisify(execFile);
 const packageRoot = path.resolve(
@@ -37,17 +41,32 @@ try {
   ];
   assert.ok(packed, "npm pack returned no package");
   const packedPaths = packed.files.map((file) => file.path).sort();
-  assert.deepEqual(packedPaths, [
-    "README.md",
-    "dist/cli.js",
-    "dist/cli.js.map",
-    "dist/http.js",
-    "dist/http.js.map",
-    "dist/mcp.js",
-    "dist/mcp.js.map",
-    "dist/picker.html",
-    "package.json",
-  ]);
+  assert.deepEqual(
+    packedPaths.filter((path) => !path.startsWith("dist/ui-static/")),
+    [
+      "README.md",
+      "dist/cli.js",
+      "dist/cli.js.map",
+      "dist/http.js",
+      "dist/http.js.map",
+      "dist/mcp.js",
+      "dist/mcp.js.map",
+      "package.json",
+    ],
+  );
+  const packedViewerAssets = packedPaths.filter((path) =>
+    path.startsWith("dist/ui-static/ui/nemlig/"),
+  );
+  assert.equal(packedViewerAssets.length, 3);
+  assert.ok(
+    packedViewerAssets.includes("dist/ui-static/ui/nemlig/manifest.json"),
+  );
+  assert.equal(
+    packedViewerAssets.filter((path) =>
+      /\/assets\/[a-f0-9]{64}\.(?:js|css)$/u.test(path),
+    ).length,
+    2,
+  );
   assert.doesNotMatch(
     packedPaths.join("\n"),
     /test|credential|token|cookie|\.auth|python/i,
@@ -104,6 +123,15 @@ try {
     "nemlig-assistant",
     "dist",
   );
+  const installedStatic = path.join(
+    tempRoot,
+    "node_modules",
+    "nemlig-assistant",
+    "dist",
+    "ui-static",
+  );
+  const viewerGeneration = await readLocalViewerGeneration(installedStatic);
+  assert.equal(viewerGeneration.assets.size, 2);
   const imports = await execute(
     process.execPath,
     [
@@ -179,23 +207,10 @@ try {
     const resource = viewer.contents[0];
     assert.ok(resource && "text" in resource);
     assert.equal(resource.mimeType, "text/html;profile=mcp-app");
-    assert.equal(PRODUCT_VIEWER_RESOURCE_URI, "ui://nemlig/draft-list.html");
-    assert.match(resource.text, /Nemlig confirmed the addition/u);
-    const packagedViewer = await readFile(
-      path.join(
-        tempRoot,
-        "node_modules",
-        "nemlig-assistant",
-        "dist",
-        "picker.html",
-      ),
-      "utf8",
-    );
-    assert.equal(
-      resource.text,
-      packagedViewer,
-      "installed MCP server did not serve the packaged viewer artifact",
-    );
+    assert.equal(PRODUCT_VIEWER_RESOURCE_URI, "ui://nemlig/shell.html");
+    assert.match(resource.text, /\/ui\/nemlig\/manifest\.json/u);
+    assert.match(resource.text, /Nothing has been changed/u);
+    assert.equal(resource.text, readProductViewerArtifact().html);
   } finally {
     await client.close();
   }
