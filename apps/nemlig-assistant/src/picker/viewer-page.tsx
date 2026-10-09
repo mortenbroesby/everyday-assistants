@@ -914,7 +914,11 @@ export function ViewerPage(props: ViewerPageProps) {
               ) : confirmSubmit ? (
                 <>
                   <p>Add only these exact quantities to the Nemlig basket?</p>
-                  <Button color="secondary" onClick={props.onCancelSubmit}>
+                  <Button
+                    color="secondary"
+                    disabled={busy}
+                    onClick={props.onCancelSubmit}
+                  >
                     Cancel
                   </Button>
                   <Button

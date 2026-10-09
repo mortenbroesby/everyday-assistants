@@ -262,6 +262,7 @@ function DraftListWalkthroughStory() {
   const [confirmSubmit, setConfirmSubmit] = useState(false);
   const [confirmEnd, setConfirmEnd] = useState(false);
   const [ended, setEnded] = useState(false);
+  const [message, setMessage] = useState("");
   const screen: ViewerScreen = ended
     ? {
         kind: "empty",
@@ -286,6 +287,7 @@ function DraftListWalkthroughStory() {
       {...baseProps(screen, {
         maxWidth: 375,
         presentationDestination: destination,
+        message,
         selected,
         replacement,
         confirmSubmit,
@@ -353,13 +355,14 @@ function DraftListWalkthroughStory() {
               : previous.alternatives,
           })),
         onChooseReplacement: setReplacement,
-        onReplace: (productId) => {
+        onReplace: (productId, replacementId) => {
           if (!selectedAlternative) {
             return;
           }
           setCurrentReview((previous) => ({
             ...replaceItem(previous, productId, (item) => ({
               ...item,
+              product_id: replacementId,
               view: selectedAlternative,
               quantity: 1,
               state: "needs-review",
@@ -374,13 +377,10 @@ function DraftListWalkthroughStory() {
         onRequestSubmitConfirmation: () => setConfirmSubmit(true),
         onCancelSubmit: () => setConfirmSubmit(false),
         onConfirmSubmit: () => {
-          setCurrentReview((previous) => ({
-            ...previous,
-            submission: previous.submission
-              ? { ...previous.submission, status: "submitted" }
-              : previous.submission,
-          }));
           setConfirmSubmit(false);
+          setMessage(
+            "This walkthrough does not submit to Nemlig. Continue in conversation to add the prepared items.",
+          );
         },
         onContinueSubmitted: () =>
           setCurrentReview((previous) => ({

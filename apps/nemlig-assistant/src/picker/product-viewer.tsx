@@ -902,7 +902,7 @@ export function ProductViewer() {
         : [];
   const thumbnails = new Map<ProductView, string>();
   for (const view of displayedViews) {
-    if (view.status === "complete" && view.product.id !== undefined) {
+    if (view.status === "complete") {
       const image = safeNemligImageUrl(view.product.image_url);
       if (image) {
         thumbnails.set(view, image);
