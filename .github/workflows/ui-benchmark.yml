@@ -7,6 +7,10 @@ on:
 permissions:
   contents: read
 
+env:
+  TURBO_TOKEN: ${{ secrets.TURBO_TOKEN }}
+  TURBO_TEAM: ${{ secrets.TURBO_TEAM }}
+
 jobs:
   product-viewer:
     if: github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'benchmark:ui')
