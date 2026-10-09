@@ -70,11 +70,12 @@ const ProductMeta = styled.span({
   overflowWrap: "anywhere",
 });
 const ProductQuantity = styled.span({
-  justifySelf: "start",
+  width: "100%",
   marginTop: 2,
   color: "var(--accent)",
   fontSize: ".8rem",
   fontWeight: 650,
+  textAlign: "right",
 });
 const Chips = styled.span({
   display: "flex",
@@ -201,9 +202,11 @@ function ProductStatusChips({ view }: { view: ProductView }) {
 export function ProductSummary({
   view,
   quantity,
+  thumbnailSrc,
 }: {
   view: ProductView;
   quantity?: number;
+  thumbnailSrc?: string;
 }) {
   const [imageFailed, setImageFailed] = useState(false);
   if (view.status !== "complete") {
@@ -213,7 +216,7 @@ export function ProductSummary({
   }
 
   const product = view.product;
-  const image = safeNemligImageUrl(product.image_url);
+  const image = thumbnailSrc ?? safeNemligImageUrl(product.image_url);
   const quantityTotal =
     quantity !== undefined && typeof product.price === "number"
       ? quantity * product.price

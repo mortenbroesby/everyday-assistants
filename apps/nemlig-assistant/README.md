@@ -214,12 +214,14 @@ pnpm --filter nemlig-assistant storybook
 ```
 
 The local Storybook uses deterministic product fixtures for the shared viewer
-components and the narrow To decide, Ready, alternatives, factual-detail,
-unavailable, prepared-confirmation, verified-success, and empty presentations.
-`pnpm --filter nemlig-assistant build:storybook`
-checks that those stories build. It is a component visual contract, not an MCP
-Apps host simulation or evidence of native ChatGPT rendering; retain the
-built-viewer smoke and post-release host smoke for those boundaries.
+pages, including bare production-page stories and two click-through Draft-list
+simulators: an embedded-conversation card and a ChatGPT app tab. The host
+frames are Storybook-only approximations; the inner page is the same
+`ViewerPage` used in production. Host chrome is deliberately not part of the
+app UI.
+`pnpm --filter nemlig-assistant build:storybook` checks that those stories
+build. It is not evidence of native ChatGPT rendering: retain the built-viewer
+smoke and post-release host smoke for host-owned framing and variables.
 
 Product disclosures, navigation and ordinary local edits do not fetch Nemlig;
 adding new exact products hydrates only those products, and

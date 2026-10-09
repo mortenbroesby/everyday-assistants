@@ -229,6 +229,38 @@ banner.
 - **THEN** only its relevant actions are shown, verified success remains a
   distinct outcome, and uncertainty does not offer automatic retry
 
+### Requirement: Shared presentational review pages
+Every visible Draft-list page state SHALL render through one shared,
+effect-free presentational composition supplied with snapshot-derived data and
+intent callbacks. The production MCP adapter SHALL remain responsible for host
+connection, validation, revision authority and tool calls. Local visual review
+SHALL render that same composition with deterministic fixture data and no host,
+provider or basket access. The embedded viewer SHALL not duplicate the host's
+app identity with its own icon-and-name header; it SHALL retain an accessible
+page title or landmark.
+
+#### Scenario: A fixture mirrors a visible viewer state
+- **WHEN** a reviewer opens a full-page Storybook fixture for a supported
+  Draft-list state
+- **THEN** the fixture renders the same page composition, product rows,
+  alternatives, actions and outcome markup used by the production viewer
+- **AND** rendering the fixture makes no MCP tool, provider or basket call
+
+#### Scenario: Product imagery is available or unavailable
+- **WHEN** a complete product includes a validated production image source or
+  a deterministic local visual-review fixture image
+- **THEN** its page renders the product thumbnail in the shared product row
+- **AND** when no usable source exists or image loading fails, the existing
+  honest image fallback is rendered instead
+- **AND** fixture image sources do not broaden the production accepted-image
+  policy
+
+#### Scenario: The viewer is embedded in an identified host
+- **WHEN** the host already displays the app identity around the viewer
+- **THEN** the viewer begins with its page content rather than a duplicate
+  app icon-and-name header
+- **AND** the page remains correctly labelled for assistive technology
+
 ### Requirement: Complete and refinable contextual alternatives
 For an In Review product, an alternatives search without a user-requested
 count SHALL expose every distinct candidate returned by the provider response

@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120">
+  <rect width="120" height="120" rx="18" fill="#f0f5ed"/>
+  <path d="M41 25 54 13h25l10 13v75H35V34z" fill="#fff" stroke="#8ca98d" stroke-width="2"/>
+  <path d="M41 25h48M54 13v12" fill="none" stroke="#8ca98d" stroke-width="2"/>
+  <path d="M36 58h53v30H36z" fill="#3a7049"/>
+  <text x="62" y="48" text-anchor="middle" font-family="sans-serif" font-size="10" fill="#3a7049">ØKO</text>
+  <text x="62" y="70" text-anchor="middle" font-family="sans-serif" font-size="9" font-weight="700" fill="#fff">MÆLK</text>
+  <text x="62" y="82" text-anchor="middle" font-family="sans-serif" font-size="7" fill="#fff">1 L</text>
+</svg>

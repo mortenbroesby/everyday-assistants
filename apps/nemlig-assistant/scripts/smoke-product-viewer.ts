@@ -227,13 +227,18 @@ try {
   );
   assert.equal(
     await viewerShell.getByText("Nemlig Assistant", { exact: true }).count(),
-    1,
-    "the viewer did not identify the Nemlig Assistant workspace",
+    0,
+    "the viewer repeated the host-owned app identity",
   );
   assert.equal(
     await viewerShell.getByText("Draft list", { exact: true }).count(),
-    1,
-    "the viewer shell did not identify the local Draft list",
+    0,
+    "the viewer repeated the host-owned Draft list header",
+  );
+  assert.equal(
+    await viewerShell.locator("main").getAttribute("aria-labelledby"),
+    "title",
+    "the page heading no longer labels the main landmark",
   );
   assert.equal(
     await frame.locator('input[type="checkbox"]').count(),
