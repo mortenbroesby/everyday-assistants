@@ -329,7 +329,7 @@ export function classifyPaths(changedFiles: readonly string[]): {
   }
   const internalFiles = changedFiles.filter((filePath) =>
     new RegExp(
-      `^${packagePrefix}(?:release/|scripts/|src/.*\\.test\\.ts$|tsconfig\\.json$|eslint\\.config\\.mjs$)`,
+      `^${packagePrefix}(?:release/|scripts/|src/.*\\.test\\.ts$|tsconfig\\.json$|\\.oxlintrc\\.json$)`,
       "u",
     ).test(filePath),
   );
