@@ -62,7 +62,7 @@ test("server modules do not depend on the executable CLI entry point", async () 
       new URL(`./${file}`, import.meta.url),
       "utf8",
     );
-    assert.doesNotMatch(source, /from "\.\/cli\.js"/u);
+    assert.doesNotMatch(source, /from\s+["']\.\/cli\.js["']/u);
   }
 });
 

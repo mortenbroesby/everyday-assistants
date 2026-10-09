@@ -45,10 +45,13 @@ for (const file of files) {
     findings.push(`${relative}: forbidden tracked path`);
   }
   const contents = readFileSync(file, "utf8");
-  if (contents.includes("\0")) continue;
+  if (contents.includes("\0")) {
+    continue;
+  }
   for (const pattern of forbiddenContent) {
-    if (pattern.test(contents))
+    if (pattern.test(contents)) {
       findings.push(`${relative}: forbidden content (${pattern.source})`);
+    }
   }
 }
 
