@@ -303,7 +303,7 @@ document.getElementById('flow').onclick = async () => {
   click('Add to Nemlig basket');
   const stalePlus=[...doc().querySelectorAll('.product-list article')].find(row=>row.textContent.includes('Smoke product 2'))?.querySelector('[data-viewer-component="quantity-control"] button:last-of-type'); check(stalePlus,'Prepared product quantity control missing');
   const beforeStale=widgetCalls.length; stalePlus.click();
-  await wait(()=>widgetCalls.slice(beforeStale).some(call=>call.name==='update_product_review'&&call.arguments.action?.kind==='quantity')&&!doc().querySelector('.submission h2'));
+  await wait(()=>widgetCalls.slice(beforeStale).some(call=>call.name==='update_product_review'&&call.arguments.action?.kind==='quantity')&&button('Review exact Nemlig change')&&!button('Add to Nemlig'));
   check(!widgetCalls.slice(beforeStale).some(call=>call.name==='submit_product_review'),'Stale prepared review reached submit_product_review'); open();
   for (let remaining=2; remaining>0; remaining--) {
     const row=doc().querySelector('.product-list article'); check(row,'Ready row disappeared before its local removal was confirmed');
