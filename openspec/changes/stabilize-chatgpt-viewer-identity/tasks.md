@@ -39,10 +39,10 @@
 
 ## 4. Reviewed delivery and operator cutover
 
-- [ ] 4.1 Complete one scoped PR with the required release note/version policy;
+- [x] 4.1 Complete one scoped PR with the required release note/version policy;
   record commit/PR, exact-head CI and active ruleset evidence separately from
   production and native acceptance.
-- [ ] 4.2 Through the separately authorized production path, deploy and verify
+- [x] 4.2 Through the separately authorized production path, deploy and verify
   exact source/artifact identity, authenticated descriptor aliases, resource
   content and CSP; record sanitized evidence without inferring native success.
 - [ ] 4.3 Have the operator perform the approved clean installation/reconnection;
@@ -80,3 +80,24 @@
   It passed `pnpm verify`, `smoke:review-ui:artifact`, focused resource/gateway
   coverage, protected fake-provider regressions, the full package test suite,
   release-note/version eligibility, and strict OpenSpec validation.
+
+## Delivery evidence (9 October 2026)
+
+- Task 4.1: PR #252 merged as `8481af4afbb768533dc6705af332b1a6188b6c92`
+  with the 6.2.5 **Lumen** release note. Exact-main CI run `37851067309`
+  and the production workflow run `37851380397` succeeded. The separately
+  triggered duplicate production run `37851709008` was skipped, not failed.
+- Task 4.2: the production workflow recorded the authenticated descriptor and
+  current-resource acceptance boundary. A subsequent edge-only production
+  probe at 2026-10-09T12:00:08Z read back exact revision `8481af4…` and passed
+  all required edge checks. This verifies service delivery only; it does not
+  establish the installed ChatGPT descriptor, resource rendering, or mounted
+  viewer behavior.
+- A fresh ChatGPT conversation initially rendered the inert retired document.
+  An explicit installed-app **Refresh tools** then allowed a new chat to render
+  the current interactive Draft list and complete local select → Ready → To
+  decide plus quantity persistence without real-basket access. The same chat
+  exposed a remaining native failure: a successful conversational Ready → To
+  decide update did not update the already mounted view. Tasks 4.3 and 5.1–5.3
+  therefore remain open; no URI rotation, reconnection retry, or automatic
+  reopen was attempted.
