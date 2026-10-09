@@ -38,10 +38,6 @@
   background: var(--surface);
 }
 
-.storybook-host-preview__card .app-frame {
-  padding: 20px 10px 14px;
-}
-
 @media (max-width: 420px) {
   .storybook-host-preview {
     padding: 16px 8px;
