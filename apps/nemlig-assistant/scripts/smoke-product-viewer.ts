@@ -25,6 +25,7 @@ declare global {
     supersedeAndReload: () => void;
     reopenCurrentReview: () => void;
     setReadyForDisclosure: (ready: boolean, quantity?: number) => void;
+    setAllReady: (ready: boolean) => void;
     replaceReviewIdentity: () => void;
   }
 }
@@ -77,6 +78,7 @@ window.sendUnavailableProduct=()=>frame.contentWindow.postMessage({jsonrpc:'2.0'
 window.getViewId=()=>viewId;
 window.supersedeAndReload=()=>{initialViewIdOverride=viewId;viewId='synthetic-view-'+(Number(viewId.split('-').at(-1))+1);frame.src='/resource'};
 window.setReadyForDisclosure=(ready,quantity)=>{const item=review.items.find(item=>item.product_id===2);item.state=ready?'ready':'needs-review';if(quantity!==undefined)item.quantity=quantity;review.revision++;frame.contentWindow.postMessage({jsonrpc:'2.0',method:'ui/notifications/tool-result',params:result(JSON.parse(JSON.stringify(review)))},location.origin)};
+window.setAllReady=(ready)=>{for(const item of review.items)item.state=ready?'ready':'needs-review';review.revision++;frame.contentWindow.postMessage({jsonrpc:'2.0',method:'ui/notifications/tool-result',params:result(JSON.parse(JSON.stringify(review)))},location.origin)};
 window.replaceReviewIdentity=()=>{review.review_id='second-synthetic-review';review.revision++;viewId='synthetic-view-2';frame.contentWindow.postMessage({jsonrpc:'2.0',method:'ui/notifications/tool-result',params:result(JSON.parse(JSON.stringify(review)))},location.origin)};
 window.reopenCurrentReview=()=>{viewId='synthetic-view-'+(Number(viewId.split('-').at(-1))+1);frame.contentWindow.postMessage({jsonrpc:'2.0',method:'ui/notifications/tool-result',params:result(JSON.parse(JSON.stringify(review)))},location.origin)};
 window.addEventListener('message',event=>{
@@ -150,6 +152,20 @@ try {
   assert.equal(await viewerShell.getByText("Draft list", { exact: true }).count(), 1, "the viewer shell did not identify the local Draft list");
   assert.equal(await frame.locator('input[type="checkbox"]').count(), 2, "products were not visible on the first rendered card");
   console.log("Synthetic viewer smoke: direct product display and view validation passed");
+  const callsBeforeCompleteDecisions = await page.evaluate(() => window.calls.length);
+  await page.evaluate(() => window.setAllReady(true));
+  await frame.getByRole("heading", { name: "Everything is ready" }).waitFor();
+  await frame.getByText("All products are Ready for your final check. Nothing has been added to Nemlig.").waitFor();
+  assert.equal(await frame.locator('.product-list').count(), 0, "an empty To decide state rendered a blank product list");
+  assert.equal(await frame.locator('[data-viewer-component="action-footer"]').count(), 0, "an empty To decide state retained inactive acceptance controls");
+  await frame.getByRole("button", { name: "View Ready products" }).click();
+  await frame.getByRole("heading", { name: "Ready" }).waitFor();
+  assert.equal(await page.evaluate(() => window.calls.length), callsBeforeCompleteDecisions, "the completion route performed an MCP call");
+  await page.evaluate(() => window.setAllReady(false));
+  await frame.getByRole("button", { name: /To decide \(2\)/ }).click();
+  await frame.getByRole("heading", { name: "To decide" }).waitFor();
+  assert.equal(await frame.locator('input[type="checkbox"]').count(), 2, "restoring To decide did not restore selectable products");
+  console.log("Synthetic viewer smoke: completed decisions route to Ready without a tool call");
   const callsBeforeInactiveRefresh = await page.evaluate(() => window.calls.length);
   const staleViewId = await page.evaluate(() => window.getViewId());
   await page.evaluate(() => window.supersedeAndReload());

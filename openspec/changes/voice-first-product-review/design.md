@@ -22,7 +22,7 @@ from the viewer. Existing discovery and actual basket tools remain independent.
   `openai/session` conversation key. Do not treat that metadata as authentication.
   Require it for hosted operations; local MCP uses its transport/process scope.
   No time-based expiry. Finish shopping removes the draft. Keep at most eight
-  conversation drafts of 50 products per principal context, evicting the least
+  conversation drafts of up to 500 products per principal context, evicting the least
   recently used idle draft when necessary. Do not evict uncertain/submitted
   outcomes automatically. Report restart/eviction loss honestly. No database, filesystem or browser persistence
   of business state. View-only browser state may retain disclosure/selection.
@@ -63,7 +63,7 @@ from the viewer. Existing discovery and actual basket tools remain independent.
   allow refresh, keep failed-action feedback and safe navigation.
 - Provider write succeeds but response/readback fails → preserve uncertainty,
   never retry automatically; inspect the actual basket before a new review.
-- Hydration fan-out → max 50 selected IDs/start, provider-returned alternatives,
+- Hydration fan-out → max 500 selected IDs/start, provider-returned alternatives,
   existing three-read pool and request deadlines; no navigation/expansion reads,
   polling, new storage, service or capacity. Existing quota limits remain unchanged. Start/update use normal admission like existing search and preparation; actual submission remains expensive.
 - Existing open historical deltas forbid controls → coordinate #114 and reconcile

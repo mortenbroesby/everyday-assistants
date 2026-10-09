@@ -1,13 +1,24 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { NemligError, type Product } from "./client.js";
-import { ProductReviewService } from "./product-review.js";
+import { MAX_DRAFT_PRODUCTS, ProductReviewService } from "./product-review.js";
 
 const product = (id: number): Product => ({
   id, name: `Product ${id}`, price: 5, unitPrice: 5, unit: "stk", unitSize: "1 stk", brand: "", category: "", subcategory: "", imageUrl: "", available: true,
   labels: [], isOrganic: false, isFrozen: false, isRefrigerated: false, isDairy: false, isLactoseFree: false, isGlutenFree: false, isVegan: false, isOnDiscount: false,
 });
 const client = { getProduct: async (id: number) => product(id), searchProducts: async () => [product(3)] };
+
+test("local Draft lists accept 500 exact products and reject 501 before provider reads", async () => {
+  const items = Array.from({ length: MAX_DRAFT_PRODUCTS }, (_, index) => ({ product_id: index + 1, quantity: 1 }));
+  const draft = await new ProductReviewService(client).start("owner", items);
+  assert.equal(draft.items.length, MAX_DRAFT_PRODUCTS);
+
+  let reads = 0;
+  const overLimit = new ProductReviewService({ ...client, getProduct: async (id) => { reads++; return product(id); } });
+  await assert.rejects(overLimit.start("owner", [...items, { product_id: MAX_DRAFT_PRODUCTS + 1, quantity: 1 }]), /1–500/u);
+  assert.equal(reads, 0);
+});
 
 test("voice and touch share exact local edits, reject stale/foreign references, and retain alternatives", async () => {
   const service = new ProductReviewService(client);

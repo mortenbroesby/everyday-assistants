@@ -26,7 +26,7 @@ import { IMAGE_ORIGINS, createProductViewFromSummary, createProductViews, type P
 import { PRODUCT_VIEWER_MIME_TYPE, PRODUCT_VIEWER_RESOURCE_DOMAINS, PRODUCT_VIEWER_RESOURCE_METADATA, PRODUCT_VIEWER_RESOURCE_URI, productViewsToText, renderProductViewerHtml } from "./product-viewer.js";
 import { RETIRED_PRODUCT_VIEWER_RESOURCE_URIS } from "./product-viewer-identity.js";
 import { renderRetiredProductViewerHtml } from "./retired-product-viewer.js";
-import { ProductReviewService } from "./product-review.js";
+import { MAX_DRAFT_PRODUCTS, ProductReviewService } from "./product-review.js";
 import { resolveDetailedProductSearch } from "./product-discovery.js";
 import { NEMLIG_ASSISTANT_ICON } from "./nemlig-assistant-icon.js";
 
@@ -101,11 +101,11 @@ const reviewSnapshotSchema = z.object({
 const reviewActionSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("show") }),
   z.object({ kind: z.literal("end") }),
-  z.object({ kind: z.literal("add"), items: z.array(z.object({ product_id: z.number().int().positive(), quantity: z.number().int().positive() })).min(1).max(50) }),
-  z.object({ kind: z.literal("revisit"), product_ids: z.array(z.number().int().positive()).min(1).max(50) }),
+  z.object({ kind: z.literal("add"), items: z.array(z.object({ product_id: z.number().int().positive(), quantity: z.number().int().positive() })).min(1).max(MAX_DRAFT_PRODUCTS) }),
+  z.object({ kind: z.literal("revisit"), product_ids: z.array(z.number().int().positive()).min(1).max(MAX_DRAFT_PRODUCTS) }),
   z.object({ kind: z.literal("prepare_submission") }),
-  z.object({ kind: z.literal("accept"), product_ids: z.array(z.number().int().positive()).min(1).max(50) }),
-  z.object({ kind: z.literal("remove"), product_ids: z.array(z.number().int().positive()).min(1).max(50) }),
+  z.object({ kind: z.literal("accept"), product_ids: z.array(z.number().int().positive()).min(1).max(MAX_DRAFT_PRODUCTS) }),
+  z.object({ kind: z.literal("remove"), product_ids: z.array(z.number().int().positive()).min(1).max(MAX_DRAFT_PRODUCTS) }),
   z.object({ kind: z.literal("quantity"), product_id: z.number().int().positive(), quantity: z.number().int().positive() }),
   z.object({ kind: z.literal("navigate"), destination: z.enum(["needs-review", "ready", "alternatives"]) }),
   z.object({ kind: z.literal("alternatives"), product_id: z.number().int().positive(), query: z.string().trim().min(1).max(200), limit: z.number().int().positive().optional() }),
@@ -411,7 +411,7 @@ The local draft list is conversation-scoped and temporary. If it is unavailable,
   registerTool("start_product_review", {
     title: "Show or start your draft list",
     description: "Open the native visual Draft list when the user asks to see products visually, even without naming this tool. With no active list, provide exact returned product IDs and quantities; all items initially need a decision. Omit items to reopen an existing list without changing its contents. Acceptance and edits are conversation-local; nothing is sent to Nemlig. Use update_product_review_conversation add for new products in an existing list. Each call renders a new card and makes older cards read-only, so do not repeat while the current card is usable. Respect an explicit request not to create or edit a Draft list. Temporary state can be lost on server restart or memory eviction.",
-    inputSchema: z.object({ items: z.array(z.object({ product_id: z.number().int().positive(), quantity: z.number().int().positive() })).min(1).max(50).optional().describe("Exact returned products and intended package quantities to start a list. Omit only when reopening an existing list.") }),
+    inputSchema: z.object({ items: z.array(z.object({ product_id: z.number().int().positive(), quantity: z.number().int().positive() })).min(1).max(MAX_DRAFT_PRODUCTS).optional().describe("Exact returned products and intended package quantities to start a list. Omit only when reopening an existing list.") }),
     outputSchema: z.object({ review: reviewSnapshotSchema, view_id: z.string().uuid() }),
     annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true },
     _meta: { ...PRODUCT_VIEWER_RESOURCE_METADATA, ui: { resourceUri: PRODUCT_VIEWER_RESOURCE_URI, visibility: ["model"] } },
