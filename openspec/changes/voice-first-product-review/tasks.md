@@ -553,7 +553,7 @@ inferring host acceptance from this release evidence.
   header from the shared page shell and the standalone state gallery. Verify
   page titles or landmarks remain accessible and the host-controlled app
   identity is not changed.
-- [ ] 13.26 Build Storybook and the viewer artifact; run focused page/component
+- [x] 13.26 Build Storybook and the viewer artifact; run focused page/component
   tests, the synthetic artifact and adapter smokes, strict OpenSpec validation,
   `pnpm verify`, and a narrow/compact browser review. Commit, push and open one
   focused PR; do not claim native ChatGPT acceptance from Storybook evidence.
