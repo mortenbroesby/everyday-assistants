@@ -532,3 +532,28 @@ changed-code hook, and release-note/version validation. Exact-head CI
 `37838248110` and automatic production deployment `37838972759` passed. The
 fresh native card did not bind v16, so 13.21 remains unchecked rather than
 inferring host acceptance from this release evidence.
+
+### Story 5 — production-page Storybook parity (one PR)
+
+- [ ] 13.22 Characterize the current full-page viewer DOM for every supported
+  visible state and add focused failing coverage that distinguishes shared page
+  rendering from MCP connection, tool-call and provider behavior. Verify a
+  page fixture renders no host, tool, provider or basket calls.
+- [ ] 13.23 Extract the effect-free page composition from the MCP adapter and
+  reuse it for the real viewer and full-page Storybook fixtures. Cover loading,
+  error, cancelled, stale/inactive, read-only products, To decide, Ready,
+  alternatives, prepared, verified, uncertain, empty and unavailable states;
+  verify the existing revision, protected submission and host behavior remain
+  in the adapter.
+- [ ] 13.24 Add bundled deterministic product-thumbnail fixtures and a
+  missing/failed-image fallback fixture. Preserve the production HTTPS Nemlig
+  image validation boundary; verify a visible thumbnail renders in the shared
+  row without a network request and an unusable source renders the fallback.
+- [ ] 13.25 Remove the viewer-local brand mark and duplicate app-name/Draft-list
+  header from the shared page shell and the standalone state gallery. Verify
+  page titles or landmarks remain accessible and the host-controlled app
+  identity is not changed.
+- [ ] 13.26 Build Storybook and the viewer artifact; run focused page/component
+  tests, the synthetic artifact and adapter smokes, strict OpenSpec validation,
+  `pnpm verify`, and a narrow/compact browser review. Commit, push and open one
+  focused PR; do not claim native ChatGPT acceptance from Storybook evidence.

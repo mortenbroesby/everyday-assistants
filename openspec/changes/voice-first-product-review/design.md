@@ -461,6 +461,43 @@ bridge, call tools or providers, replace the built-viewer smoke, or establish
 native ChatGPT acceptance. The existing synthetic-host screenshots remain the
 artifact-level visual evidence.
 
+### Production-page Storybook parity
+
+The current Storybook stories assemble shared primitives through story-local
+row markup. That is useful for component review but cannot establish that a
+whole Storybook screen matches the viewer. Extract one effect-free page
+composition that receives a complete, snapshot-derived page model and intent
+callbacks. `ProductViewer` remains the only MCP Apps adapter: it validates host
+payloads, retains the existing local presentation state, maps it into that page
+model, and maps callbacks back to the existing revision-checked actions. The
+page composition must not import the Apps SDK, call a tool, fetch a provider,
+or own review authority.
+
+Storybook stories render that same page composition with deterministic fixture
+models for every visible state: loading, error, cancelled, stale/inactive,
+read-only products, To decide, Ready, alternatives, prepared confirmation,
+verified success, uncertain outcome, empty and unavailable. Story-specific
+wrappers may select a fixed viewport but must not recreate product rows,
+alternatives or outcome markup. This makes a Storybook screenshot evidence for
+the viewer-owned DOM and styles, while the synthetic MCP-host smoke continues
+to prove transport, state transitions and safety behavior.
+
+Product images follow the same rendered image branch in both contexts. The
+production adapter derives a thumbnail only from the existing validated Nemlig
+HTTPS source; it does not relax `safeNemligImageUrl`. Storybook supplies bundled
+fixture thumbnails through the page model so visual review is deterministic and
+does not depend on a provider or external network. Every page family with a
+product image includes a visible-thumbnail fixture, and a separate fixture
+asserts the existing missing or failed-image fallback. The fixture source is
+presentation data only and cannot be accepted as an unvalidated runtime image.
+
+The host already identifies the embedded app. Remove the viewer-local brand
+mark and duplicate “Nemlig Assistant / Draft list” header from the shared page
+shell in both the production viewer and the standalone gallery. Retain the
+page title and accessible main landmark so removing duplicate chrome does not
+remove context for assistive technology. The host shell itself is outside this
+repository and remains unchanged.
+
 ### Story gates
 
 Before Story 1, record the actual production baseline: release identity,
@@ -551,3 +588,9 @@ next story but does not rewrite completed local evidence.
   release to force a URI change.
 - **A host control is unavailable** → render the correct static/conversational
   fallback and do not add speculative APIs, message heuristics or `requestClose`.
+- **A Storybook page drifts from the viewer** → stories import the extracted
+  page composition rather than recreating rows or outcomes; retain the
+  synthetic-host smoke for adapter and host behavior.
+- **Fixture images weaken runtime image safety** → keep validation at the
+  production adapter boundary, use only bundled assets in Storybook, and cover
+  the rejected or failed-image fallback separately.

@@ -156,9 +156,8 @@ await new Promise<void>((resolve, reject) => {
   server.listen(0, "127.0.0.1", resolve);
 });
 const address = server.address();
-if (!address || typeof address === "string") {
+if (!address || typeof address === "string")
   throw new Error("Could not start synthetic browser host.");
-}
 const browser = await chromium.launch({ headless: true, channel: "chrome" });
 console.log("Synthetic viewer smoke: browser launched");
 try {
@@ -168,18 +167,16 @@ try {
   });
   const externalRequests: string[] = [];
   await context.route("**/*", async (route) => {
-    if (route.request().url().startsWith("http://127.0.0.1:")) {
+    if (route.request().url().startsWith("http://127.0.0.1:"))
       await route.continue();
-    } else {
+    else {
       externalRequests.push(route.request().url());
       await route.abort();
     }
   });
   const page = await context.newPage();
   const capture = async (name: string) => {
-    if (!screenshotDirectory) {
-      return;
-    }
+    if (!screenshotDirectory) return;
     await mkdir(screenshotDirectory, { recursive: true });
     const path = resolve(screenshotDirectory, `${name}.png`);
     await page.screenshot({ path });
@@ -190,9 +187,7 @@ try {
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   page.on("console", (message) => {
-    if (message.type() === "error") {
-      errors.push(message.text());
-    }
+    if (message.type() === "error") errors.push(message.text());
   });
   await page.goto(`http://127.0.0.1:${address.port}/host`, {
     waitUntil: "domcontentloaded",
@@ -227,13 +222,18 @@ try {
   );
   assert.equal(
     await viewerShell.getByText("Nemlig Assistant", { exact: true }).count(),
-    1,
-    "the viewer did not identify the Nemlig Assistant workspace",
+    0,
+    "the viewer repeated the host-owned app identity",
   );
   assert.equal(
     await viewerShell.getByText("Draft list", { exact: true }).count(),
-    1,
-    "the viewer shell did not identify the local Draft list",
+    0,
+    "the viewer repeated the host-owned Draft list header",
+  );
+  assert.equal(
+    await viewerShell.locator("main").getAttribute("aria-labelledby"),
+    "title",
+    "the page heading no longer labels the main landmark",
   );
   assert.equal(
     await frame.locator('input[type="checkbox"]').count(),
@@ -488,11 +488,10 @@ try {
     1,
     "a collapsed Ready row did not keep direct quantity controls",
   );
-  for (let press = 0; press < 8; press++) {
+  for (let press = 0; press < 8; press++)
     await readyOatsCard
       .getByRole("button", { name: `Increase quantity of ${longOatsName}` })
       .click();
-  }
   await frame.getByText("10 ×").waitFor();
   await page.waitForTimeout(1_000);
   assert.equal(

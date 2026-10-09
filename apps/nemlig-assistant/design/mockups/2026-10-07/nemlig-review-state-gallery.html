@@ -16,12 +16,8 @@
   #nemlig-review-state-gallery .ng-shell { --ink: light-dark(#18251a, #f1f6f1); --muted: light-dark(#627168, #acb9ae); --line: light-dark(#dfe8e0, #344137); --bg: light-dark(#f4f7f3, #111813); --paper: light-dark(#fff, #18221b); --well: light-dark(#edf4ed, #253228); --green: light-dark(#1b7140, #78d99d); --green-ink: light-dark(#fff, #112517); --green-soft: light-dark(#e2f2e6, #1e422b); --warm: light-dark(#fff5df, #3d311a); color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 24px; overflow: hidden; }
   #nemlig-review-state-gallery .ng-app { padding: 16px 14px 14px; }
   #nemlig-review-state-gallery .ng-header { position: relative; display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 0 2px 18px; }
-  #nemlig-review-state-gallery .ng-brand { display: flex; align-items: center; gap: 9px; }
-  #nemlig-review-state-gallery .ng-brand-mark { display: grid; width: 30px; height: 30px; place-items: center; color: var(--green-ink); border-radius: 10px; background: var(--green); font-weight: 700; }
-  #nemlig-review-state-gallery .ng-brand strong, #nemlig-review-state-gallery h1, #nemlig-review-state-gallery h2, #nemlig-review-state-gallery p { margin: 0; }
-  #nemlig-review-state-gallery .ng-brand strong { display: block; font-size: 13px; font-weight: 650; }
-  #nemlig-review-state-gallery .ng-brand span, #nemlig-review-state-gallery .ng-copy, #nemlig-review-state-gallery .ng-meta { color: var(--muted); }
-  #nemlig-review-state-gallery .ng-brand span { display: block; margin-top: 1px; font-size: 11px; }
+  #nemlig-review-state-gallery h1, #nemlig-review-state-gallery h2, #nemlig-review-state-gallery p { margin: 0; }
+  #nemlig-review-state-gallery .ng-copy, #nemlig-review-state-gallery .ng-meta { color: var(--muted); }
   #nemlig-review-state-gallery .ng-more { display: grid; width: 42px; height: 42px; place-items: center; border: 1px solid var(--line); border-radius: 13px; color: var(--muted); background: var(--paper); cursor: pointer; font-size: 18px; letter-spacing: 1px; }
   #nemlig-review-state-gallery .ng-menu { position: absolute; z-index: 2; top: 48px; right: 0; width: min(286px, calc(100vw - 56px)); padding: 7px; border: 1px solid var(--line); border-radius: 16px; background: var(--paper); box-shadow: 0 14px 32px rgb(20 48 28 / 18%); }
   #nemlig-review-state-gallery .ng-menu[hidden] { display: none; }
@@ -124,7 +120,7 @@
   </div>
   <div class="ng-shell">
     <div class="ng-app">
-      <header class="ng-header"><div class="ng-brand"><span class="ng-brand-mark" aria-hidden="true">n</span><div><strong>Your Nemlig selection</strong><span>Local shopping workspace</span></div></div><button class="ng-more" type="button" aria-label="Selection options" aria-expanded="false" aria-controls="ng-menu">•••</button><div class="ng-menu" id="ng-menu" hidden><button type="button"><span class="ng-menu-icon" aria-hidden="true">×</span><strong>Close selection</strong></button><button type="button"><span class="ng-menu-icon" aria-hidden="true">↗</span><strong>Open nemlig.com</strong></button><hr><button class="ng-danger" type="button"><span class="ng-menu-icon" aria-hidden="true">⌫</span><strong>Discard local selection</strong></button></div></header>
+      <header class="ng-header"><button class="ng-more" type="button" aria-label="Selection options" aria-expanded="false" aria-controls="ng-menu">•••</button><div class="ng-menu" id="ng-menu" hidden><button type="button"><span class="ng-menu-icon" aria-hidden="true">×</span><strong>Close selection</strong></button><button type="button"><span class="ng-menu-icon" aria-hidden="true">↗</span><strong>Open nemlig.com</strong></button><hr><button class="ng-danger" type="button"><span class="ng-menu-icon" aria-hidden="true">⌫</span><strong>Discard local selection</strong></button></div></header>
       <section data-screen="decide">
         <h1>Choose your products</h1><p class="ng-copy">Review exact products before moving them to Ready.</p>
         <nav class="ng-tabs" aria-label="Shopping destinations"><button type="button" aria-current="page">To decide (3)</button><button type="button">Ready (2)</button></nav>

@@ -8,31 +8,6 @@ const ViewerRoot = styled.div({
     "max(10px, env(safe-area-inset-top, 0px)) max(10px, env(safe-area-inset-right, 0px)) max(14px, env(safe-area-inset-bottom, 0px)) max(10px, env(safe-area-inset-left, 0px)",
 });
 const Viewer = styled.main({ width: "min(100%, 560px)", margin: "0 auto" });
-const WorkspaceHeader = styled.header({
-  display: "flex",
-  alignItems: "center",
-  gap: 9,
-  margin: "2px 2px 18px",
-});
-const BrandMark = styled.span({
-  display: "grid",
-  width: 30,
-  height: 30,
-  placeItems: "center",
-  flex: "none",
-  borderRadius: 10,
-  color: "var(--accent-ink)",
-  background: "var(--accent)",
-  fontSize: ".82rem",
-  fontWeight: 700,
-});
-const BrandCopy = styled.span({
-  display: "grid",
-  gap: 1,
-  minWidth: 0,
-  "& strong": { fontSize: ".82rem", lineHeight: 1.2, fontWeight: 650 },
-  "& span": { color: "var(--muted)", fontSize: ".72rem", lineHeight: 1.25 },
-});
 const ScreenHeading = styled.h1({
   margin: "0 4px 5px",
   fontSize: "1.45rem",
@@ -100,13 +75,6 @@ export function ViewerShell({
         aria-labelledby={title ? "title" : undefined}
         style={maxWidth ? { maxWidth } : undefined}
       >
-        <WorkspaceHeader>
-          <BrandMark aria-hidden="true">N</BrandMark>
-          <BrandCopy>
-            <strong>Nemlig Assistant</strong>
-            <span>Draft list</span>
-          </BrandCopy>
-        </WorkspaceHeader>
         {title && <ScreenHeading id="title">{title}</ScreenHeading>}
         {intro && <ScreenIntro className="intro">{intro}</ScreenIntro>}
         {children}

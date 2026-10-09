@@ -178,9 +178,7 @@ const StatusChipVisual = styled.span({
 });
 
 function ProductStatusChips({ view }: { view: ProductView }) {
-  if (view.status !== "complete") {
-    return null;
-  }
+  if (view.status !== "complete") return null;
   const product = view.product;
   const chips = [
     product.is_organic === true && "Organic",
@@ -201,19 +199,20 @@ function ProductStatusChips({ view }: { view: ProductView }) {
 export function ProductSummary({
   view,
   quantity,
+  thumbnailSrc,
 }: {
   view: ProductView;
   quantity?: number;
+  thumbnailSrc?: string;
 }) {
   const [imageFailed, setImageFailed] = useState(false);
-  if (view.status !== "complete") {
+  if (view.status !== "complete")
     return (
       <span>Product {view.product_id ?? "details"} details unavailable.</span>
     );
-  }
 
   const product = view.product;
-  const image = safeNemligImageUrl(product.image_url);
+  const image = thumbnailSrc ?? safeNemligImageUrl(product.image_url);
   const quantityTotal =
     quantity !== undefined && typeof product.price === "number"
       ? quantity * product.price
@@ -304,9 +303,7 @@ export function ProductFacts({
   expandedFacts?: ReadonlySet<string>;
   onFactExpandedChange?: (factKey: string, expanded: boolean) => void;
 }) {
-  if (view.status !== "complete") {
-    return null;
-  }
+  if (view.status !== "complete") return null;
   const product = view.product;
   const suppliedDetails =
     product.details?.filter((fact) => fact.key.trim() && fact.value.trim()) ??
