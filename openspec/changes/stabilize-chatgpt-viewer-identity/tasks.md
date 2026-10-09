@@ -110,3 +110,12 @@
   replacement cards rather than delivering a state update to the existing
   iframe. The experiment is being reverted without adding reopen, polling, or
   URI-rotation behavior; no real basket was accessed or changed.
+- PR #256 deployed the revert as `269ac2a2d8272782fc7b416b294393d7c3e20ede`.
+  After an installed-app **Refresh tools** performed after that deployment, a
+  fresh native chat rendered an active current viewer, and in-card To decide →
+  Ready succeeded. A conversational Ready → To decide mutation completed
+  without a replacement card. The mounted viewer remained at its pre-mutation
+  state, confirming the separate host limitation: model-side mutations have no
+  supported path to update an already mounted iframe. No real basket was
+  accessed or changed. Tasks 4.3 and 5.1–5.3 remain open because clean
+  reconnect and mounted conversational readback are not established.
