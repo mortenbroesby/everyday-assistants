@@ -214,9 +214,11 @@ pnpm --filter nemlig-assistant storybook
 ```
 
 The local Storybook uses deterministic product fixtures for the shared viewer
-pages, including a click-through Draft-list walkthrough. Its Storybook-only
-host frame approximates the visible ChatGPT wrapper from the approved visual
-reference; the inner page is the same `ViewerPage` used in production.
+pages, including bare production-page stories and two click-through Draft-list
+simulators: an embedded-conversation card and a ChatGPT app tab. The host
+frames are Storybook-only approximations; the inner page is the same
+`ViewerPage` used in production. Host chrome is deliberately not part of the
+app UI.
 `pnpm --filter nemlig-assistant build:storybook` checks that those stories
 build. It is not evidence of native ChatGPT rendering: retain the built-viewer
 smoke and post-release host smoke for host-owned framing and variables.

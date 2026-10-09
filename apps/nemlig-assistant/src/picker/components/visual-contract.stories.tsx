@@ -1,5 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { useState } from "react";
+import { appTab, embeddedConversation } from "../../../.storybook/preview.js";
 import type { ProductView } from "../../product-presentation.js";
 import type { Review, ViewerPageProps, ViewerScreen } from "../viewer-page.js";
 import { ViewerPage } from "../viewer-page.js";
@@ -406,6 +407,11 @@ export const ToDecideAt320: Story = {
   render: () => activeReview(review, "needs-review", 320),
 };
 export const DraftListWalkthrough: Story = {
+  decorators: [embeddedConversation],
+  render: () => <DraftListWalkthroughStory />,
+};
+export const AppTabWalkthrough: Story = {
+  decorators: [appTab],
   render: () => <DraftListWalkthroughStory />,
 };
 export const ReadyAt375: Story = {
