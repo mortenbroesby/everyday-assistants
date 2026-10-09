@@ -11,8 +11,9 @@ See the parent [`AGENTS.md`](../AGENTS.md) before modifying these references.
 - `nemlig-review-look-and-feel.html` — focused product-row and visual-language
   exploration.
 - `nemlig-unified-review.html` — proposed single Draft list with one continuous
-  product list. Fixture controls select products for basket addition, adjust
-  quantities, and preview the exact selection without a basket write.
+  product list. Swipe left or use the product's Remove button, undo local
+  removals, adjust quantities, and preview the exact remaining list without a
+  basket write.
 - `nemlig-selection-focused-list.svg` — static compact-list reference.
 
 They use fixture content only and make no provider, MCP, or network calls.
@@ -30,6 +31,7 @@ Open `http://localhost:8766/nemlig-review-state-gallery.html`.
 
 For the unified proposal, open
 `http://localhost:8766/nemlig-unified-review.html`. The production follow-up
-would replace the destination tabs with one list and checkbox selection while
-retaining per-item review state, alternative selection, prepared-submission
+would replace destination tabs with one list whose remaining items form the
+basket-addition candidate. That changes how review state is represented and
+needs explicit contract work. Retain alternative selection, prepared-submission
 invalidation, and the existing exact authorization and readback safeguards.

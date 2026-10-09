@@ -20,7 +20,7 @@
       font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     }
     #nemlig-unified-review * { box-sizing: border-box; }
-    #nemlig-unified-review button, #nemlig-unified-review input { font: inherit; }
+    #nemlig-unified-review button { font: inherit; }
     #nemlig-unified-review .ur-shell {
       color: var(--ink);
       background: var(--bg);
@@ -40,9 +40,7 @@
     #nemlig-unified-review .ur-section { margin-top: 25px; }
     #nemlig-unified-review h2 { font-size: 16px; }
     #nemlig-unified-review .ur-list { border-top: 1px solid var(--line); }
-    #nemlig-unified-review .ur-row { display: grid; grid-template-columns: 44px 58px minmax(0, 1fr); gap: 9px; padding: 12px 2px; border-bottom: 1px solid var(--line); }
-    #nemlig-unified-review .ur-select { display: grid; min-height: 58px; place-items: center; }
-    #nemlig-unified-review .ur-select input { width: 19px; height: 19px; accent-color: var(--green); }
+    #nemlig-unified-review .ur-row { display: grid; grid-template-columns: 58px minmax(0, 1fr); gap: 9px; padding: 12px 2px; border-bottom: 1px solid var(--line); touch-action: pan-y; }
     #nemlig-unified-review .ur-thumb { display: grid; width: 58px; height: 58px; place-items: center; border-radius: 14px; background: var(--well); font-size: 29px; }
     #nemlig-unified-review .ur-product { min-width: 0; padding: 1px 0; border: 0; color: inherit; background: none; text-align: left; cursor: pointer; }
     #nemlig-unified-review .ur-title-line { display: flex; align-items: start; justify-content: space-between; gap: 7px; }
@@ -50,7 +48,7 @@
     #nemlig-unified-review .ur-title-line b { flex: none; font-size: 13px; font-variant-numeric: tabular-nums; }
     #nemlig-unified-review .ur-meta, #nemlig-unified-review .ur-quantity { display: block; margin-top: 3px; color: var(--muted); font-size: 11px; line-height: 1.4; }
     #nemlig-unified-review .ur-quantity { color: var(--green); font-weight: 650; }
-    #nemlig-unified-review .ur-details { grid-column: 2 / -1; display: grid; gap: 11px; padding: 2px 0 5px; }
+    #nemlig-unified-review .ur-details { grid-column: 2; display: grid; gap: 11px; padding: 2px 0 5px; }
     #nemlig-unified-review .ur-details[hidden] { display: none; }
     #nemlig-unified-review .ur-quantity-control { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); font-size: 12px; }
     #nemlig-unified-review .ur-stepper { display: inline-flex; align-items: center; gap: 5px; }
@@ -59,11 +57,14 @@
     #nemlig-unified-review details { border-bottom: 1px solid var(--line); }
     #nemlig-unified-review summary { min-height: 44px; padding-top: 12px; font-size: 12px; font-weight: 650; cursor: pointer; }
     #nemlig-unified-review details p { padding: 0 0 10px; color: var(--muted); font-size: 11px; line-height: 1.45; }
+    #nemlig-unified-review .ur-empty { padding: 18px 3px; color: var(--muted); font-size: 12px; }
     #nemlig-unified-review [hidden] { display: none !important; }
     #nemlig-unified-review .ur-button { display: inline-flex; min-height: 44px; align-items: center; justify-content: center; padding: 10px 13px; border: 1px solid var(--line); border-radius: 12px; color: var(--green); background: var(--paper); font-size: 12px; font-weight: 650; cursor: pointer; }
     #nemlig-unified-review .ur-button:disabled { cursor: default; opacity: .55; }
     #nemlig-unified-review .ur-button-primary { border-color: var(--green); color: var(--green-ink); background: var(--green); }
     #nemlig-unified-review .ur-footer { position: sticky; bottom: 0; display: grid; gap: 8px; padding: 12px 14px max(14px, env(safe-area-inset-bottom, 0px)); border-top: 1px solid var(--line); background: var(--paper); }
+    #nemlig-unified-review .ur-undo { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 5px 0; font-size: 12px; }
+    #nemlig-unified-review .ur-undo button { min-height: 44px; padding: 0 10px; border: 0; color: var(--green); background: none; font-weight: 700; cursor: pointer; }
     #nemlig-unified-review .ur-footer-copy { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; font-size: 12px; }
     #nemlig-unified-review .ur-footer-copy span { color: var(--muted); font-size: 11px; }
     #nemlig-unified-review .ur-footer .ur-button { width: 100%; }
@@ -74,10 +75,10 @@
     #nemlig-unified-review .ur-confirm-lines { margin: 0 0 15px; padding: 0; list-style: none; }
     #nemlig-unified-review .ur-confirm-lines li { display: flex; justify-content: space-between; gap: 8px; padding: 9px 0; border-bottom: 1px solid var(--line); font-size: 12px; }
     #nemlig-unified-review .ur-confirm-lines b { white-space: nowrap; font-variant-numeric: tabular-nums; }
-    #nemlig-unified-review button:focus-visible, #nemlig-unified-review input:focus-visible, #nemlig-unified-review summary:focus-visible { outline: 3px solid var(--green); outline-offset: 2px; }
+    #nemlig-unified-review button:focus-visible, #nemlig-unified-review summary:focus-visible { outline: 3px solid var(--green); outline-offset: 2px; }
     @media (max-width: 360px) {
       #nemlig-unified-review .ur-content { padding-inline: 11px; }
-      #nemlig-unified-review .ur-row { grid-template-columns: 42px 52px minmax(0, 1fr); gap: 7px; }
+      #nemlig-unified-review .ur-row { grid-template-columns: 52px minmax(0, 1fr); gap: 7px; }
       #nemlig-unified-review .ur-thumb { width: 52px; height: 52px; font-size: 26px; }
       #nemlig-unified-review .ur-title-line { display: grid; gap: 2px; }
     }
@@ -89,46 +90,42 @@
       <main class="ur-content">
         <header class="ur-brand"><span class="ur-mark" aria-hidden="true">N</span><span><strong>Nemlig Assistant</strong><span>Draft list · local review</span></span></header>
         <h1>Your Draft list</h1>
-        <p class="ur-intro">Select the products you want to add to your Nemlig basket. You can check the exact selection before anything is sent.</p>
+        <p class="ur-intro">Everything shown is a candidate for your basket addition. Swipe left to remove a product, or tap it for details and a Remove button. Check the exact list before anything is sent.</p>
 
         <section class="ur-section" aria-label="Draft products">
           <div class="ur-list" id="ur-products">
             <article class="ur-row" data-unit-price="14.95">
-              <label class="ur-select"><input type="checkbox" aria-label="Select Arla minimælk for basket addition"></label>
               <span class="ur-thumb" aria-hidden="true">🥛</span>
               <button class="ur-product" type="button" aria-expanded="false" aria-controls="ur-milk-details"><span class="ur-title-line"><strong>Arla minimælk</strong><b data-line-price>14,95 kr.</b></span><span class="ur-meta">Arla · 1 L · 14,95 kr./L</span><span class="ur-quantity" data-quantity-text>1 ×</span></button>
-              <div class="ur-details" id="ur-milk-details" hidden><div class="ur-quantity-control"><span>Quantity</span><span class="ur-stepper"><button type="button" data-step="-1" aria-label="Decrease Arla minimælk quantity">−</button><output>1</output><button type="button" data-step="1" aria-label="Increase Arla minimælk quantity">+</button></span></div><details><summary>Varebeskrivelse</summary><p>Pasteurised Danish low-fat milk for everyday use.</p></details><details><summary>Varedeklaration</summary><p>Milk.</p></details></div>
+              <div class="ur-details" id="ur-milk-details" hidden><div class="ur-quantity-control"><span>Quantity</span><span class="ur-stepper"><button type="button" data-step="-1" aria-label="Decrease Arla minimælk quantity">−</button><output>1</output><button type="button" data-step="1" aria-label="Increase Arla minimælk quantity">+</button></span></div><details><summary>Varebeskrivelse</summary><p>Pasteurised Danish low-fat milk for everyday use.</p></details><details><summary>Varedeklaration</summary><p>Milk.</p></details><button class="ur-button" type="button" data-remove>Remove from Draft list</button></div>
             </article>
             <article class="ur-row" data-unit-price="29.95">
-              <label class="ur-select"><input type="checkbox" aria-label="Select Lurpak smørbar for basket addition"></label>
               <span class="ur-thumb" aria-hidden="true">🧈</span>
               <button class="ur-product" type="button" aria-expanded="false" aria-controls="ur-butter-details"><span class="ur-title-line"><strong>Lurpak smørbar</strong><b data-line-price>59,90 kr.</b></span><span class="ur-meta">Lurpak · 200 g · 29,95 kr. each</span><span class="ur-quantity" data-quantity-text>2 ×</span></button>
-              <div class="ur-details" id="ur-butter-details" hidden><div class="ur-quantity-control"><span>Quantity</span><span class="ur-stepper"><button type="button" data-step="-1" aria-label="Decrease Lurpak smørbar quantity">−</button><output>2</output><button type="button" data-step="1" aria-label="Increase Lurpak smørbar quantity">+</button></span></div><details><summary>Varebeskrivelse</summary><p>Spreadable butter blend.</p></details><details><summary>Varedeklaration</summary><p>Butter and rapeseed oil.</p></details></div>
+              <div class="ur-details" id="ur-butter-details" hidden><div class="ur-quantity-control"><span>Quantity</span><span class="ur-stepper"><button type="button" data-step="-1" aria-label="Decrease Lurpak smørbar quantity">−</button><output>2</output><button type="button" data-step="1" aria-label="Increase Lurpak smørbar quantity">+</button></span></div><details><summary>Varebeskrivelse</summary><p>Spreadable butter blend.</p></details><details><summary>Varedeklaration</summary><p>Butter and rapeseed oil.</p></details><button class="ur-button" type="button" data-remove>Remove from Draft list</button></div>
             </article>
             <article class="ur-row" data-unit-price="18">
-              <label class="ur-select"><input type="checkbox" aria-label="Select Økologiske bananer for basket addition"></label>
               <span class="ur-thumb" aria-hidden="true">🍌</span>
               <button class="ur-product" type="button" aria-expanded="false" aria-controls="ur-bananas-details"><span class="ur-title-line"><strong>Økologiske bananer</strong><b data-line-price>18,00 kr.</b></span><span class="ur-meta">Økologisk · 1 kg · 18,00 kr./kg</span><span class="ur-quantity" data-quantity-text>1 ×</span></button>
-              <div class="ur-details" id="ur-bananas-details" hidden><div class="ur-quantity-control"><span>Quantity</span><span class="ur-stepper"><button type="button" data-step="-1" aria-label="Decrease banana quantity">−</button><output>1</output><button type="button" data-step="1" aria-label="Increase banana quantity">+</button></span></div><details><summary>Varebeskrivelse</summary><p>Organic bananas, sold by weight.</p></details></div>
+              <div class="ur-details" id="ur-bananas-details" hidden><div class="ur-quantity-control"><span>Quantity</span><span class="ur-stepper"><button type="button" data-step="-1" aria-label="Decrease banana quantity">−</button><output>1</output><button type="button" data-step="1" aria-label="Increase banana quantity">+</button></span></div><details><summary>Varebeskrivelse</summary><p>Organic bananas, sold by weight.</p></details><button class="ur-button" type="button" data-remove>Remove from Draft list</button></div>
             </article>
             <article class="ur-row" data-unit-price="29.95">
-              <label class="ur-select"><input type="checkbox" checked aria-label="Select Surdejsbrød for basket addition"></label>
               <span class="ur-thumb" aria-hidden="true">🥖</span>
               <button class="ur-product" type="button" aria-expanded="false" aria-controls="ur-bread-details"><span class="ur-title-line"><strong>Surdejsbrød</strong><b data-line-price>29,95 kr.</b></span><span class="ur-meta">29,95 kr. each</span><span class="ur-quantity" data-quantity-text>1 ×</span></button>
-              <div class="ur-details" id="ur-bread-details" hidden><div class="ur-quantity-control"><span>Quantity</span><span class="ur-stepper"><button type="button" data-step="-1" aria-label="Decrease Surdejsbrød quantity">−</button><output>1</output><button type="button" data-step="1" aria-label="Increase Surdejsbrød quantity">+</button></span></div></div>
+              <div class="ur-details" id="ur-bread-details" hidden><div class="ur-quantity-control"><span>Quantity</span><span class="ur-stepper"><button type="button" data-step="-1" aria-label="Decrease Surdejsbrød quantity">−</button><output>1</output><button type="button" data-step="1" aria-label="Increase Surdejsbrød quantity">+</button></span></div><button class="ur-button" type="button" data-remove>Remove from Draft list</button></div>
             </article>
             <article class="ur-row" data-unit-price="29.95">
-              <label class="ur-select"><input type="checkbox" checked aria-label="Select Havarti ost for basket addition"></label>
               <span class="ur-thumb" aria-hidden="true">🧀</span>
               <button class="ur-product" type="button" aria-expanded="false" aria-controls="ur-cheese-details"><span class="ur-title-line"><strong>Havarti ost</strong><b data-line-price>59,90 kr.</b></span><span class="ur-meta">29,95 kr. each</span><span class="ur-quantity" data-quantity-text>2 ×</span></button>
-              <div class="ur-details" id="ur-cheese-details" hidden><div class="ur-quantity-control"><span>Quantity</span><span class="ur-stepper"><button type="button" data-step="-1" aria-label="Decrease Havarti ost quantity">−</button><output>2</output><button type="button" data-step="1" aria-label="Increase Havarti ost quantity">+</button></span></div></div>
+              <div class="ur-details" id="ur-cheese-details" hidden><div class="ur-quantity-control"><span>Quantity</span><span class="ur-stepper"><button type="button" data-step="-1" aria-label="Decrease Havarti ost quantity">−</button><output>2</output><button type="button" data-step="1" aria-label="Increase Havarti ost quantity">+</button></span></div><button class="ur-button" type="button" data-remove>Remove from Draft list</button></div>
             </article>
           </div>
+          <p class="ur-empty" data-empty hidden>Your Draft list is empty. Use Undo to restore a product.</p>
         </section>
       </main>
-      <footer class="ur-footer"><div class="ur-footer-copy"><strong data-selection-summary>2 selected · 89,85 kr.</strong><span>Nothing sent yet</span></div><button class="ur-button ur-button-primary" type="button" data-preview>Review basket addition</button></footer>
+      <footer class="ur-footer"><div class="ur-undo" data-undo hidden role="status"><span data-undo-name></span><button type="button" data-undo-button>Undo</button></div><div class="ur-footer-copy"><strong data-list-summary>5 products · 182,70 kr.</strong><span>Nothing sent yet</span></div><button class="ur-button ur-button-primary" type="button" data-preview>Review basket addition</button></footer>
     </div>
-    <dialog aria-labelledby="ur-confirm-heading"><h2 id="ur-confirm-heading">Review basket addition</h2><p>Only these selected products would be added. This fixture does not contact Nemlig or submit anything.</p><ul class="ur-confirm-lines" data-confirm-lines></ul><button class="ur-button ur-button-primary" type="button" data-close>Back to Draft list</button></dialog>
+    <dialog aria-labelledby="ur-confirm-heading"><h2 id="ur-confirm-heading">Review basket addition</h2><p>These exact products would be added after your authorization. This fixture does not contact Nemlig or submit anything.</p><ul class="ur-confirm-lines" data-confirm-lines></ul><button class="ur-button ur-button-primary" type="button" data-close>Back to Draft list</button></dialog>
   </div>
   <script>
     (() => {
@@ -136,17 +133,26 @@
       if (!root) return;
       const list = root.querySelector("#ur-products");
       const dialog = root.querySelector("dialog");
+      const removed = [];
       const money = (amount) => amount.toLocaleString("da-DK", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " kr.";
-      const selected = () => [...list.querySelectorAll(".ur-row")].filter((row) => row.querySelector("input").checked);
+      const rows = () => [...list.querySelectorAll(".ur-row")];
       const quantity = (row) => Number(row.querySelector("output").textContent);
       const total = (row) => Number(row.dataset.unitPrice) * quantity(row);
       const sync = () => {
-        const chosen = selected();
-        const amount = chosen.reduce((sum, row) => sum + total(row), 0);
-        root.querySelector("[data-selection-summary]").textContent = chosen.length + " selected · " + money(amount);
-        root.querySelector("[data-preview]").disabled = chosen.length === 0;
+        const products = rows();
+        const amount = products.reduce((sum, row) => sum + total(row), 0);
+        root.querySelector("[data-list-summary]").textContent = products.length + (products.length === 1 ? " product · " : " products · ") + money(amount);
+        root.querySelector("[data-preview]").disabled = products.length === 0;
+        root.querySelector("[data-empty]").hidden = products.length !== 0;
+        root.querySelector("[data-undo]").hidden = removed.length === 0;
+        if (removed.length) root.querySelector("[data-undo-name]").textContent = "Removed " + removed.at(-1).row.querySelector(".ur-title-line strong").textContent;
       };
-      root.querySelectorAll(".ur-select input").forEach((input) => input.addEventListener("change", sync));
+      const removeRow = (row) => {
+        if (!row.isConnected) return;
+        removed.push({ row, next: row.nextSibling });
+        row.remove();
+        sync();
+      };
       root.querySelectorAll(".ur-product").forEach((button) => button.addEventListener("click", () => {
         const details = root.querySelector("#" + button.getAttribute("aria-controls"));
         details.hidden = !details.hidden;
@@ -160,9 +166,29 @@
         row.querySelector("[data-line-price]").textContent = money(total(row));
         sync();
       }));
+      root.querySelectorAll("[data-remove]").forEach((button) => button.addEventListener("click", () => removeRow(button.closest(".ur-row"))));
+      root.querySelectorAll(".ur-row").forEach((row) => {
+        let start;
+        row.addEventListener("pointerdown", (event) => {
+          if (event.pointerType === "touch") start = { id: event.pointerId, x: event.clientX, y: event.clientY };
+        });
+        row.addEventListener("pointerup", (event) => {
+          if (!start || event.pointerId !== start.id) return;
+          const dx = event.clientX - start.x;
+          const dy = event.clientY - start.y;
+          if (dx < -70 && Math.abs(dx) > Math.abs(dy) * 1.5) removeRow(row);
+          start = undefined;
+        });
+        row.addEventListener("pointercancel", () => { start = undefined; });
+      });
+      root.querySelector("[data-undo-button]").addEventListener("click", () => {
+        const { row, next } = removed.pop();
+        list.insertBefore(row, next);
+        sync();
+      });
       root.querySelector("[data-preview]").addEventListener("click", () => {
         const lines = root.querySelector("[data-confirm-lines]");
-        lines.replaceChildren(...selected().map((row) => {
+        lines.replaceChildren(...rows().map((row) => {
           const line = document.createElement("li");
           const item = document.createElement("span");
           const amount = document.createElement("b");
