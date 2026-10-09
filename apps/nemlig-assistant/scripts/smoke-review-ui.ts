@@ -174,9 +174,10 @@ document.getElementById('run').onclick = async () => {
   try {
   await fetch('/reset',{method:'POST'});
   widgetCalls.length=0; await document.getElementById('start').onclick();
-  await wait(()=>widgetCalls.length===1&&widgetCalls[0].arguments.action?.kind==='show');
-  status.textContent='Checking direct product display'; const beforeDirectView=widgetCalls.length; frame.contentWindow.location.reload(); await wait(()=>widgetCalls.length===beforeDirectView+1 && button('To decide (2)') && !button('To decide (2)').disabled);
-  check(widgetCalls.length===beforeDirectView+1&&widgetCalls.at(-1).arguments.action?.kind==='show'&&doc().querySelectorAll('.product-list article').length===2,'New card did not show products directly or validate its view');
+  await wait(()=>doc().querySelectorAll('.product-list article').length===2);
+  check(widgetCalls.length===0,'New card queried the current list instead of rendering its supplied products');
+  status.textContent='Checking direct product display'; const beforeDirectView=widgetCalls.length; const viewerReloaded=new Promise(resolve=>frame.addEventListener('load',resolve,{once:true})); frame.contentWindow.location.reload(); await viewerReloaded; await wait(()=>doc().querySelectorAll('.product-list article').length===2);
+  check(widgetCalls.length===beforeDirectView,'Remount queried the current list instead of rendering its supplied products');
   await select(); click('Add selected to Ready (1)'); await wait(()=>button('Ready (1)') && !button('Ready (1)').disabled);
   check(!button('Open current Draft list'),'New card retained the obsolete open CTA');
   const beforeReadyTab=widgetCalls.length; click('Ready (1)'); await wait(()=>doc().querySelector('#title')?.textContent==='Ready' && !button('Ready (1)').disabled);
@@ -190,9 +191,8 @@ document.getElementById('run').onclick = async () => {
   check(!!button('Choose alternative'),'To decide omitted alternatives');
   check(!button('Open current Draft list'),'Return navigation collapsed the mounted frame');
   status.textContent='Checking remount'; const beforeMount=widgetCalls.length;
-  frame.src='/viewer'; await wait(()=>widgetCalls.length===beforeMount+1&&widgetCalls.at(-1).arguments.action?.kind==='show');
-  await wait(()=>button('To decide (1)') && !button('To decide (1)').disabled);
-  check(widgetCalls.length===beforeMount+1&&widgetCalls.at(-1).arguments.action?.kind==='show','Remount did not validate and refresh the current view');
+  frame.src='/viewer'; await wait(()=>doc().querySelector('#title')?.textContent==='To decide' && doc().querySelectorAll('.product-list article').length===1);
+  check(widgetCalls.length===beforeMount,'Remount queried the current list instead of rendering its supplied products');
   status.textContent='Checking stale revision without replay';
   const current=(await call({name:'update_product_review_conversation',arguments:{action:{kind:'show'}}})).structuredContent.review;
   await call({name:'update_product_review_conversation',arguments:{review_id:current.review_id,revision:current.revision,action:{kind:'quantity',product_id:1,quantity:3}}});

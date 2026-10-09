@@ -68,7 +68,7 @@ export type ViewerScreen =
   | { kind: "unavailable"; review?: Review }
   | { kind: "empty"; message?: string };
 
-export type ViewerPageProps = {
+export type ViewerPageModel = {
   screen: ViewerScreen;
   maxWidth?: number;
   presentationDestination?: PresentationDestination;
@@ -88,6 +88,9 @@ export type ViewerPageProps = {
   confirmEnd: boolean;
   continueSubmitted: boolean;
   submitBlocked: boolean;
+};
+
+export type ViewerPageActions = {
   onNavigate: (destination: PresentationDestination) => void;
   onDisclosureChange: (productId: number, expanded: boolean) => void;
   onFactExpandedChange: (
@@ -116,6 +119,11 @@ export type ViewerPageProps = {
   onRequestEnd: () => void;
   onCancelEnd: () => void;
   onConfirmEnd: () => void;
+};
+
+export type ViewerPageProps = {
+  model: ViewerPageModel;
+  actions: ViewerPageActions;
 };
 
 // Retains keyboard radio navigation without coupling it to the host adapter.
@@ -418,7 +426,7 @@ function ProductCard({
 
 // The existing screen state machine is rendered here so production and Storybook cannot drift.
 // fallow-ignore-next-line complexity
-export function ViewerPage(props: ViewerPageProps) {
+export function ViewerPage({ model, actions }: ViewerPageProps) {
   const {
     screen,
     maxWidth,
@@ -436,7 +444,7 @@ export function ViewerPage(props: ViewerPageProps) {
     confirmEnd,
     continueSubmitted,
     submitBlocked,
-  } = props;
+  } = model;
   const review = screen.kind === "review" ? screen.review : undefined;
   const active = screen.kind === "review" && screen.active;
   const destination = review
@@ -521,10 +529,10 @@ export function ViewerPage(props: ViewerPageProps) {
     return {
       expanded: disclosure?.expanded ?? false,
       onExpandedChange: (expanded: boolean) =>
-        props.onDisclosureChange?.(productId, expanded),
+        actions.onDisclosureChange(productId, expanded),
       expandedFacts: disclosure?.facts,
       onFactExpandedChange: (factKey: string, expanded: boolean) =>
-        props.onFactExpandedChange?.(productId, factKey, expanded),
+        actions.onFactExpandedChange(productId, factKey, expanded),
     };
   };
   const thumbnail = (view: ProductView) => thumbnails.get(view);
@@ -541,7 +549,7 @@ export function ViewerPage(props: ViewerPageProps) {
           readyCount={readyCount}
           hasAlternatives={Boolean(review.alternatives)}
           disabled={uncertainSubmission || !active}
-          onNavigate={props.onNavigate}
+          onNavigate={actions.onNavigate}
         />
       )}
       {screen.kind === "loading" && (
@@ -574,7 +582,7 @@ export function ViewerPage(props: ViewerPageProps) {
           <Button
             color="primary"
             disabled={activatingCurrent}
-            onClick={props.onActivateCurrent}
+            onClick={actions.onActivateCurrent}
           >
             {activatingCurrent ? "Opening…" : "Reopen in conversation"}
           </Button>
@@ -593,7 +601,7 @@ export function ViewerPage(props: ViewerPageProps) {
             <Button
               color="primary"
               disabled={activatingCurrent || busy}
-              onClick={props.onActivateCurrent}
+              onClick={actions.onActivateCurrent}
             >
               {activatingCurrent ? "Opening…" : "Reopen in conversation"}
             </Button>
@@ -658,7 +666,7 @@ export function ViewerPage(props: ViewerPageProps) {
                   new FormData(event.currentTarget).get("query") ?? "",
                 );
                 if (query.trim()) {
-                  props.onSearchAlternatives(
+                  actions.onSearchAlternatives(
                     review.alternatives!.product_id,
                     query.slice(0, 200),
                   );
@@ -707,7 +715,7 @@ export function ViewerPage(props: ViewerPageProps) {
                         comparison
                         {...(id === undefined ? {} : disclosureProps(id))}
                         choice={replacement === id}
-                        onChoice={() => props.onChooseReplacement(id)}
+                        onChoice={() => actions.onChooseReplacement(id)}
                       />
                     );
                   })}
@@ -718,7 +726,7 @@ export function ViewerPage(props: ViewerPageProps) {
                 disabled={editsBlocked || replacement === undefined}
                 onClick={() => {
                   if (replacement !== undefined) {
-                    props.onReplace(
+                    actions.onReplace(
                       review.alternatives!.product_id,
                       replacement,
                     );
@@ -730,7 +738,7 @@ export function ViewerPage(props: ViewerPageProps) {
               <Button
                 color="secondary"
                 disabled={uncertainSubmission}
-                onClick={() => props.onNavigate("needs-review")}
+                onClick={() => actions.onNavigate("needs-review")}
               >
                 Back to To decide
               </Button>
@@ -785,19 +793,22 @@ export function ViewerPage(props: ViewerPageProps) {
                       ? {
                           selected: selected.has(item.product_id),
                           onSelected: (checked: boolean) =>
-                            props.onSelected(item.product_id, checked),
+                            actions.onSelected(item.product_id, checked),
                         }
                       : {})}
-                    onQuantity={(quantity) => props.onQuantity(item, quantity)}
-                    onRemove={() => props.onRemove(item)}
+                    onQuantity={(quantity) =>
+                      actions.onQuantity(item, quantity)
+                    }
+                    onRemove={() => actions.onRemove(item)}
                     onRevisit={
                       item.state === "ready"
-                        ? () => props.onRevisit(item)
+                        ? () => actions.onRevisit(item)
                         : undefined
                     }
                     onOpenAlternatives={
                       item.state === "needs-review"
-                        ? () => props.onOpenAlternatives(item, alternativeQuery)
+                        ? () =>
+                            actions.onOpenAlternatives(item, alternativeQuery)
                         : undefined
                     }
                   />
@@ -814,7 +825,7 @@ export function ViewerPage(props: ViewerPageProps) {
           <Button
             color="primary"
             disabled={editsBlocked}
-            onClick={() => props.onNavigate("ready")}
+            onClick={() => actions.onNavigate("ready")}
           >
             View Ready products
           </Button>
@@ -832,7 +843,7 @@ export function ViewerPage(props: ViewerPageProps) {
               <Button
                 color="secondary"
                 disabled={editsBlocked}
-                onClick={props.onSelectAll}
+                onClick={actions.onSelectAll}
               >
                 Select all
               </Button>
@@ -841,7 +852,7 @@ export function ViewerPage(props: ViewerPageProps) {
               <Button
                 color="primary"
                 disabled={editsBlocked}
-                onClick={props.onAcceptSelected}
+                onClick={actions.onAcceptSelected}
               >
                 Add selected to Ready ({selected.size})
               </Button>
@@ -859,7 +870,7 @@ export function ViewerPage(props: ViewerPageProps) {
             <Button
               color="secondary"
               disabled={busy}
-              onClick={props.onContinueSubmitted}
+              onClick={actions.onContinueSubmitted}
             >
               Continue with Draft list
             </Button>
@@ -874,7 +885,7 @@ export function ViewerPage(props: ViewerPageProps) {
           <Button
             color="secondary"
             disabled={busy}
-            onClick={props.onInspectBasket}
+            onClick={actions.onInspectBasket}
           >
             Inspect Nemlig basket in conversation
           </Button>
@@ -889,7 +900,7 @@ export function ViewerPage(props: ViewerPageProps) {
                 editsBlocked ||
                 !review.items.some((item) => item.state === "ready")
               }
-              onClick={props.onPrepareSubmission}
+              onClick={actions.onPrepareSubmission}
             >
               Review exact Nemlig change
             </Button>
@@ -917,14 +928,14 @@ export function ViewerPage(props: ViewerPageProps) {
                   <Button
                     color="secondary"
                     disabled={busy}
-                    onClick={props.onCancelSubmit}
+                    onClick={actions.onCancelSubmit}
                   >
                     Cancel
                   </Button>
                   <Button
                     color="primary"
                     disabled={busy}
-                    onClick={props.onConfirmSubmit}
+                    onClick={actions.onConfirmSubmit}
                   >
                     Add to Nemlig
                   </Button>
@@ -933,7 +944,7 @@ export function ViewerPage(props: ViewerPageProps) {
                 <Button
                   color="primary"
                   disabled={busy}
-                  onClick={props.onRequestSubmitConfirmation}
+                  onClick={actions.onRequestSubmitConfirmation}
                 >
                   Add to Nemlig basket
                 </Button>
@@ -950,7 +961,7 @@ export function ViewerPage(props: ViewerPageProps) {
       {review && active && !terminalSubmission && review.items.length === 0 && (
         <DraftListStarters
           message="Your local Draft list is empty. Nothing changed in Nemlig."
-          onChoose={props.onSendFollowUp}
+          onChoose={actions.onSendFollowUp}
         />
       )}
       {review && active && !terminalSubmission && hasActiveProducts && (
@@ -958,7 +969,7 @@ export function ViewerPage(props: ViewerPageProps) {
           <Button
             color="secondary"
             disabled={editsBlocked || busy}
-            onClick={props.onRequestEnd}
+            onClick={actions.onRequestEnd}
           >
             End Draft list
           </Button>
@@ -971,14 +982,14 @@ export function ViewerPage(props: ViewerPageProps) {
               <Button
                 color="secondary"
                 disabled={busy}
-                onClick={props.onCancelEnd}
+                onClick={actions.onCancelEnd}
               >
                 Keep Draft list
               </Button>
               <Button
                 color="secondary"
                 disabled={busy}
-                onClick={props.onConfirmEnd}
+                onClick={actions.onConfirmEnd}
               >
                 Confirm discard Draft list
               </Button>
@@ -992,7 +1003,7 @@ export function ViewerPage(props: ViewerPageProps) {
             screen.message ??
             "Your local Draft list is empty. Nothing changed in Nemlig."
           }
-          onChoose={props.onSendFollowUp}
+          onChoose={actions.onSendFollowUp}
         />
       )}
       {screen.kind === "products" && screen.views.length === 0 && (

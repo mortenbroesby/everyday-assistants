@@ -59,7 +59,7 @@
     "ui:mockup": "pnpm build:ui && NEMLIG_UI_SCREENSHOT_DIR=.codex/ui-mockups pnpm smoke:review-ui:artifact",
     "smoke:onboarding": "tsx scripts/smoke-onboarding.ts",
     "smoke:package": "tsx scripts/smoke-package.ts",
-    "test": "tsx --test src/*.test.ts release/*.test.ts scripts/*.test.mjs",
+    "test": "tsx --test src/*.test.ts src/picker/*.test.ts src/picker/components/*.test.ts release/*.test.ts scripts/*.test.mjs",
     "coverage": "node scripts/coverage.mjs"
   },
   "dependencies": {
