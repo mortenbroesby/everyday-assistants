@@ -7,6 +7,10 @@ on:
 permissions:
   contents: read
 
+env:
+  TURBO_TOKEN: ${{ secrets.TURBO_TOKEN }}
+  TURBO_TEAM: ${{ secrets.TURBO_TEAM }}
+
 jobs:
   product-viewer:
     if: github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'benchmark:ui')
@@ -25,14 +29,14 @@ jobs:
           node-version: 24.13.0
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm --filter nemlig-assistant exec playwright install --with-deps chrome
-      - run: pnpm --filter nemlig-assistant build
+      - run: pnpm nemlig:playwright:install
+      - run: pnpm nemlig:build
       - name: Run UI benchmark
         id: benchmark
         env:
           BENCHMARK_CHECKOUT_REF: ${{ github.event.pull_request.head.sha }}
           BENCHMARK_PR_HEAD: ${{ github.event.pull_request.head.sha }}
-        run: pnpm --filter nemlig-assistant bench:review-ui -- --runs 5 --output .comparison/ui-benchmark.json
+        run: pnpm nemlig:benchmark:review-ui -- --runs 5 --output .comparison/ui-benchmark.json
       - name: Upload benchmark report
         if: ${{ always() && steps.benchmark.outcome == 'success' }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

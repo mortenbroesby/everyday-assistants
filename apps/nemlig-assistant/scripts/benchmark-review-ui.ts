@@ -115,7 +115,7 @@ function parseOptions(args: string[]): { outputPath?: string; runs: number } {
     }
     if (argument === "--help" || argument === "-h") {
       console.log(
-        "Usage: pnpm --filter nemlig-assistant bench:review-ui [--runs 10] [--output <report.json>]",
+        "Usage: pnpm nemlig:benchmark:review-ui -- [--runs 10] [--output <report.json>]",
       );
       process.exit(0);
     }

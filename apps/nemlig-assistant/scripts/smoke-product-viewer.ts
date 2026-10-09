@@ -502,7 +502,7 @@ try {
     .getByRole("checkbox", { name: "Select Synthetic milk" })
     .waitFor();
   console.log(
-    "Synthetic viewer smoke: initial card does not revalidate; stale edits fail closed and recover through conversation",
+    "Synthetic viewer smoke: mount makes no server call; stale edits recover through conversation",
   );
   await frame.getByRole("button", { name: /To decide \(2\)/ }).waitFor();
   assert.equal(await frame.getByText("Synthetic milk").count(), 1);
@@ -1095,7 +1095,7 @@ try {
     "an empty-state starter called a server tool directly",
   );
   assert.match(
-    await page.evaluate(() => window.messages.at(-1)),
+    await page.evaluate(() => window.messages.at(-1) ?? ""),
     /new local Draft list/u,
     "empty-state starter did not send a bounded conversational request",
   );

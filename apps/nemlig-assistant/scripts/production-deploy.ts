@@ -37,7 +37,7 @@ const acceptanceFailureCategories = new Set([
 ]);
 
 export const productionDeployUsage =
-  "pnpm --filter nemlig-assistant production:deploy -- [--service] <40-character-main-commit>";
+  "pnpm nemlig:production:deploy -- [--service] <40-character-main-commit>";
 export function parseDeployArgs(argv: readonly string[]): string {
   const values = argv[0] === "--" ? argv.slice(1) : argv;
   if (values.length !== 1 || !fullSha.test(values[0] ?? "")) {
