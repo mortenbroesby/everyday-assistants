@@ -14,7 +14,7 @@ approved a forward-only clean connection cutover.
   previously published product-viewer identity. Preserve inert resource
   responses; do not migrate historical cards, draft choices, or approvals.
 - Keep a small, stable MCP shell and load the current UI bundle on mount from a
-  same-origin, content-addressed manifest with integrity checks. Never replace
+  fixed-origin, content-addressed manifest with integrity checks. Never replace
   the code in an active shopping card.
 - Distinguish current business state, stable-shell identity, and the executing
   UI bundle identity.

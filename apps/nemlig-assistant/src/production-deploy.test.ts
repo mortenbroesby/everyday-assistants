@@ -1,5 +1,12 @@
 import assert from "node:assert/strict";
-import { access, mkdtemp, rm, writeFile } from "node:fs/promises";
+import {
+  access,
+  mkdir,
+  mkdtemp,
+  readdir,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -16,6 +23,8 @@ import {
   type CommandRunner,
   type DeployDependencies,
 } from "../scripts/production-deploy.js";
+import { writeViewerGenerationFiles } from "../scripts/viewer-generation.js";
+import { createViewerGeneration } from "./viewer-assets.js";
 
 const commit = "7bdf94cbea0a1c3c63a5b64c97fbb05ad3b71b73";
 const previousCommit = "2c952d20999b8ac47f7b060be97f2f84445defcb";
@@ -131,10 +140,27 @@ async function fixture(
     failFeatures?: boolean;
     failFeatureAttempts?: number;
     advanceMainBeforeDeploy?: boolean;
+    startingShell?: boolean;
+    missingPredecessorAsset?: boolean;
+    unknownStartingViewer?: boolean;
+    driftDuringViewerCapture?: boolean;
   } = {},
 ): Promise<{ deps: DeployDependencies; calls: Call[]; root: string }> {
   const root = await mkdtemp(join(tmpdir(), "nemlig-production-deploy-"));
   await writeFile(join(root, "wrangler.jsonc"), "{}", "utf8");
+  const staticRoot = join(root, "dist/ui-static");
+  await mkdir(staticRoot, { recursive: true });
+  const previousViewer = createViewerGeneration(
+    Buffer.from("window.previous = true;"),
+    Buffer.from("body { color: blue; }"),
+  );
+  await writeViewerGenerationFiles(
+    staticRoot,
+    createViewerGeneration(
+      Buffer.from("window.candidate = true;"),
+      Buffer.from("body {}"),
+    ),
+  );
   const calls: Call[] = [];
   let current = startingId;
   let applicationVersion = 25;
@@ -215,6 +241,14 @@ async function fixture(
     }
     if (command === "git" && args[0] === "merge-base") {
       return "";
+    }
+    if (command === "git" && args[0] === "show") {
+      const identity = options.unknownStartingViewer
+        ? "ui://nemlig/unknown.html"
+        : options.startingShell
+          ? "ui://nemlig/shell.html"
+          : "ui://nemlig/product-viewer-v16.html";
+      return `export const PRODUCT_VIEWER_RESOURCE_URI = "${identity}";`;
     }
     if (command === "git" && args.includes("fetch")) {
       fetchCount += 1;
@@ -320,8 +354,37 @@ async function fixture(
         CLOUDFLARE_API_TOKEN: "test-cloudflare-token",
       },
       run,
-      fetcher: async () =>
-        Response.json({
+      fetcher: async (input) => {
+        const url = new URL(String(input));
+        if (url.pathname === "/ui/nemlig/manifest.json") {
+          if (options.driftDuringViewerCapture) {
+            current = enabledId;
+          }
+          return new Response(`${JSON.stringify(previousViewer.manifest)}\n`, {
+            headers: {
+              "access-control-allow-origin": "*",
+              "cache-control": "no-store",
+              "content-type": "application/json",
+            },
+          });
+        }
+        const previousAsset = previousViewer.assets.get(url.pathname);
+        if (previousAsset) {
+          return new Response(
+            options.missingPredecessorAsset ? null : Buffer.from(previousAsset),
+            {
+              status: options.missingPredecessorAsset ? 404 : 200,
+              headers: {
+                "access-control-allow-origin": "*",
+                "cache-control": "public, max-age=31536000, immutable",
+                "content-type": url.pathname.endsWith(".js")
+                  ? "text/javascript"
+                  : "text/css",
+              },
+            },
+          );
+        }
+        return Response.json({
           success: true,
           result: {
             id: applicationId,
@@ -331,7 +394,8 @@ async function fixture(
             },
             version: 25,
           },
-        }),
+        });
+      },
       sleep: async () => undefined,
       configReader: async () => config(join(root, "wrangler.jsonc")),
       now: () => new Date("2026-09-05T12:00:00Z"),
@@ -455,6 +519,83 @@ test("service deployment verifies the exact candidate without persistent deploym
     );
     await assert.rejects(
       access(join(root, ".git", "nemlig-production-deploy.lock")),
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("deployment retains a validated predecessor shell generation", async () => {
+  const { deps, root } = await fixture({ startingShell: true });
+  try {
+    deps.env.NEMLIG_MCP_ACCESS_TOKEN = "synthetic-acceptance-token";
+    const report = await deployProduction(commit, deps);
+    assert.equal(report.outcome, "success");
+    assert.ok(report.checks.includes("previous_viewer_assets_captured"));
+    assert.ok(report.checks.includes("previous_viewer_assets_verified"));
+    const retained = await readdir(
+      join(root, "dist/ui-static/ui/nemlig/assets"),
+    );
+    assert.equal(retained.length, 4);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("missing shell-era predecessor assets stop before Worker deployment", async () => {
+  const { deps, calls, root } = await fixture({
+    startingShell: true,
+    missingPredecessorAsset: true,
+  });
+  try {
+    deps.env.NEMLIG_MCP_ACCESS_TOKEN = "synthetic-acceptance-token";
+    const report = await deployProduction(commit, deps);
+    assert.equal(report.outcome, "failed");
+    assert.equal(report.failure, "viewer_predecessor_assets_unavailable");
+    assert.equal(
+      calls.some(
+        ({ command, args }) => command === "pnpm" && args.includes("deploy"),
+      ),
+      false,
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("unrecognized predecessor identity stops before Worker deployment", async () => {
+  const { deps, calls, root } = await fixture({ unknownStartingViewer: true });
+  try {
+    deps.env.NEMLIG_MCP_ACCESS_TOKEN = "synthetic-acceptance-token";
+    const report = await deployProduction(commit, deps);
+    assert.equal(report.outcome, "failed");
+    assert.equal(report.failure, "viewer_predecessor_identity_unknown");
+    assert.equal(
+      calls.some(
+        ({ command, args }) => command === "pnpm" && args.includes("deploy"),
+      ),
+      false,
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("deployment drift during predecessor capture stops before Worker deployment", async () => {
+  const { deps, calls, root } = await fixture({
+    startingShell: true,
+    driftDuringViewerCapture: true,
+  });
+  try {
+    deps.env.NEMLIG_MCP_ACCESS_TOKEN = "synthetic-acceptance-token";
+    const report = await deployProduction(commit, deps);
+    assert.equal(report.outcome, "failed");
+    assert.equal(report.failure, "cloudflare_deployment_drift");
+    assert.equal(
+      calls.some(
+        ({ command, args }) => command === "pnpm" && args.includes("deploy"),
+      ),
+      false,
     );
   } finally {
     await rm(root, { recursive: true, force: true });

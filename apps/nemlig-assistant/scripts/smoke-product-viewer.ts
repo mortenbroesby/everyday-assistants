@@ -1,9 +1,19 @@
 import assert from "node:assert/strict";
-import { mkdir, readFile } from "node:fs/promises";
+import { mkdir } from "node:fs/promises";
 import { createServer } from "node:http";
 import { resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { chromium } from "playwright";
 import { readProductViewerArtifact } from "../src/product-viewer.js";
+import { readLocalViewerGeneration } from "./viewer-generation.js";
+import {
+  closeViewerSmokeServer,
+  installViewerAssetFixture,
+} from "./viewer-asset-fixture.js";
+import {
+  createViewerGeneration,
+  VIEWER_MANIFEST_PATH,
+} from "../src/viewer-assets.js";
 
 declare global {
   interface Window {
@@ -42,27 +52,8 @@ declare global {
 }
 
 const html = readProductViewerArtifact().html;
-const staticRoot = new URL("../dist/ui-static/ui/nemlig/", import.meta.url);
-const manifestText = await readFile(
-  new URL("manifest.json", staticRoot),
-  "utf8",
-);
-const manifest = JSON.parse(manifestText) as {
-  js: { url: string };
-  css: { url: string };
-};
-const assets = new Map(
-  await Promise.all(
-    [manifest.js, manifest.css].map(
-      async (asset) =>
-        [
-          asset.url,
-          await readFile(
-            new URL(asset.url.slice("/ui/nemlig/".length), staticRoot),
-          ),
-        ] as const,
-    ),
-  ),
+const viewerGeneration = await readLocalViewerGeneration(
+  fileURLToPath(new URL("../dist/ui-static/", import.meta.url)),
 );
 const screenshotDirectory = process.env.NEMLIG_UI_SCREENSHOT_DIR;
 const longOatsName =
@@ -172,21 +163,6 @@ const server = createServer((request, response) => {
     response
       .writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
       .end(html);
-  } else if (pathname === "/ui/nemlig/manifest.json") {
-    response
-      .writeHead(200, {
-        "Cache-Control": "no-store",
-        "Content-Type": "application/json",
-      })
-      .end(manifestText);
-  } else if (pathname === manifest.js.url || pathname === manifest.css.url) {
-    response
-      .writeHead(200, {
-        "Content-Type": pathname.endsWith(".js")
-          ? "text/javascript; charset=utf-8"
-          : "text/css; charset=utf-8",
-      })
-      .end(assets.get(pathname));
   } else if (pathname === "/host") {
     response
       .writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
@@ -206,50 +182,80 @@ if (!address || typeof address === "string") {
 const browser = await chromium.launch({ headless: true, channel: "chrome" });
 console.log("Synthetic viewer smoke: browser launched");
 try {
+  const verifyLoaderRecovery = async (
+    path: string,
+    override: { body?: string | Uint8Array; delayMs?: number },
+    waitForLateResponse = false,
+  ) => {
+    const overrides = new Map([[path, override]]);
+    const recoveryContext = await browser.newContext();
+    await installViewerAssetFixture(
+      recoveryContext,
+      viewerGeneration,
+      overrides,
+    );
+    const recoveryPage = await recoveryContext.newPage();
+    let manifestRequests = 0;
+    recoveryPage.on("request", (request) => {
+      if (new URL(request.url()).pathname === VIEWER_MANIFEST_PATH) {
+        manifestRequests += 1;
+      }
+    });
+    await recoveryPage.goto(`http://127.0.0.1:${address.port}/host`);
+    const recoveryFrame = recoveryPage.frameLocator('iframe[title="viewer"]');
+    await recoveryFrame.locator("#load-error").waitFor({ state: "visible" });
+    if (waitForLateResponse) {
+      await recoveryPage.waitForTimeout(1_000);
+      assert.equal(
+        await recoveryFrame.locator("#root").innerText(),
+        "",
+        "a timed-out stale bundle mounted after its request completed",
+      );
+    }
+    overrides.delete(path);
+    overrides.set(VIEWER_MANIFEST_PATH, { delayMs: 100 });
+    await recoveryFrame.getByRole("button", { name: "Try again" }).click();
+    await recoveryFrame
+      .locator("#retry")
+      .evaluate((button: HTMLButtonElement) => button.click());
+    await recoveryFrame.getByRole("heading", { name: "To decide" }).waitFor();
+    assert.equal(
+      manifestRequests,
+      2,
+      "retry clicks started concurrent load attempts",
+    );
+    await recoveryContext.close();
+  };
+  await verifyLoaderRecovery(VIEWER_MANIFEST_PATH, { body: "{" });
+  await verifyLoaderRecovery(viewerGeneration.manifest.js.url, {
+    body: Buffer.from("corrupt JavaScript asset"),
+  });
+  await verifyLoaderRecovery(
+    viewerGeneration.manifest.js.url,
+    { delayMs: 5_500 },
+    true,
+  );
+  console.log(
+    "Synthetic viewer smoke: malformed, corrupt, and timed-out bundle recovery passed",
+  );
+
   const context = await browser.newContext({
     viewport: { width: 375, height: 860 },
     colorScheme: "light",
   });
-  const externalRequests: string[] = [];
-  await context.route("**/*", async (route) => {
-    if (route.request().url().startsWith("http://127.0.0.1:")) {
-      await route.continue();
-    } else if (
-      route
-        .request()
-        .url()
-        .startsWith("https://nemlig-mcp.broesby.dk/ui/nemlig/")
-    ) {
-      const url = new URL(route.request().url());
-      const body =
-        url.pathname === "/ui/nemlig/manifest.json"
-          ? manifestText
-          : assets.get(url.pathname);
-      if (!body) {
-        await route.fulfill({ status: 404, body: "missing" });
-      } else {
-        await route.fulfill({
-          status: 200,
-          body,
-          headers: {
-            "access-control-allow-origin": "*",
-            "cache-control": url.pathname.endsWith("manifest.json")
-              ? "no-store"
-              : "public, max-age=31536000, immutable",
-            "content-type": url.pathname.endsWith(".js")
-              ? "text/javascript; charset=utf-8"
-              : url.pathname.endsWith(".css")
-                ? "text/css; charset=utf-8"
-                : "application/json",
-          },
-        });
-      }
-    } else {
-      externalRequests.push(route.request().url());
-      await route.abort();
+  const viewerOverrides = new Map();
+  const externalRequests = await installViewerAssetFixture(
+    context,
+    viewerGeneration,
+    viewerOverrides,
+  );
+  const page = await context.newPage();
+  let manifestRequests = 0;
+  page.on("request", (request) => {
+    if (new URL(request.url()).pathname === VIEWER_MANIFEST_PATH) {
+      manifestRequests += 1;
     }
   });
-  const page = await context.newPage();
   const capture = async (name: string) => {
     if (!screenshotDirectory) {
       return;
@@ -273,6 +279,25 @@ try {
   });
   console.log("Synthetic viewer smoke: host page loaded");
   const frame = page.frameLocator('iframe[title="viewer"]');
+  const throwViewerInteractionFailure = async (
+    action: string,
+    cause: unknown,
+  ): Promise<never> => {
+    const state = await frame.locator("main").innerText();
+    const diagnostics = await page.evaluate(() => ({
+      calls: window.calls,
+      hostErrors: window.hostErrors,
+      frames: [
+        ...document
+          .querySelector("iframe")!
+          .contentDocument!.querySelectorAll("main"),
+      ].map((node) => node.innerText),
+    }));
+    throw new Error(
+      `${action} failed. Calls: ${JSON.stringify(diagnostics)}. UI: ${state}`,
+      { cause },
+    );
+  };
   await frame
     .getByRole("heading", { name: "To decide" })
     .waitFor()
@@ -318,6 +343,62 @@ try {
     await frame.locator('input[type="checkbox"]').count(),
     2,
     "products were not visible on the first rendered card",
+  );
+  await frame.locator('input[type="checkbox"]').first().check();
+  const currentJs = Buffer.from(
+    viewerGeneration.assets.get(viewerGeneration.manifest.js.url)!,
+  ).toString();
+  const nextViewer = createViewerGeneration(
+    Buffer.from(currentJs.slice(currentJs.indexOf("\n") + 1)),
+    Buffer.from("body { color: rgb(20, 40, 60); }"),
+  );
+  viewerOverrides.set(VIEWER_MANIFEST_PATH, {
+    body: `${JSON.stringify(nextViewer.manifest)}\n`,
+  });
+  viewerOverrides.set(nextViewer.manifest.css.url, {
+    body: nextViewer.assets.get(nextViewer.manifest.css.url)!,
+  });
+  await page.waitForTimeout(100);
+  assert.equal(
+    manifestRequests,
+    1,
+    "the mounted shell polled for a bundle update",
+  );
+  assert.equal(
+    await frame.locator('input[type="checkbox"]').first().isChecked(),
+    true,
+    "the current card lost its local state when the manifest changed",
+  );
+  assert.equal(
+    await frame
+      .locator('meta[name="nemlig-viewer-bundle"]')
+      .getAttribute("content"),
+    viewerGeneration.manifest.build,
+  );
+  await page
+    .locator('iframe[title="viewer"]')
+    .evaluate((iframe: HTMLIFrameElement) => {
+      iframe.src = "/resource";
+    });
+  await frame.getByRole("heading", { name: "To decide" }).waitFor();
+  await frame
+    .locator('meta[name="nemlig-viewer-bundle"]')
+    .waitFor({ state: "attached" });
+  await page.waitForFunction(
+    (build) =>
+      document
+        .querySelector<HTMLIFrameElement>('iframe[title="viewer"]')
+        ?.contentDocument?.querySelector('meta[name="nemlig-viewer-bundle"]')
+        ?.getAttribute("content") === build,
+    nextViewer.manifest.build,
+  );
+  assert.equal(
+    manifestRequests,
+    2,
+    "a fresh frame did not fetch the new manifest",
+  );
+  console.log(
+    "Synthetic viewer smoke: active state stayed put; a fresh frame loaded the new bundle",
   );
   console.log(
     "Synthetic viewer smoke: direct product display and view validation passed",
@@ -829,22 +910,9 @@ try {
   await frame
     .getByRole("heading", { name: "Current product" })
     .waitFor()
-    .catch(async (error: unknown) => {
-      const state = await frame.locator("main").innerText();
-      const diagnostics = await page.evaluate(() => ({
-        calls: window.calls,
-        hostErrors: window.hostErrors,
-        frames: [
-          ...document
-            .querySelector("iframe")!
-            .contentDocument!.querySelectorAll("main"),
-        ].map((node) => node.innerText),
-      }));
-      throw new Error(
-        `Alternative screen failed. Calls: ${JSON.stringify(diagnostics)}. UI: ${state}`,
-        { cause: error },
-      );
-    });
+    .catch((error: unknown) =>
+      throwViewerInteractionFailure("Alternative screen", error),
+    );
   await frame
     .getByRole("radio", { name: "Choose Synthetic alternative" })
     .click();
@@ -853,17 +921,9 @@ try {
   await frame
     .getByRole("checkbox", { name: "Select Synthetic alternative" })
     .check()
-    .catch(async (error: unknown) => {
-      const state = await frame.locator("main").innerText();
-      const diagnostics = await page.evaluate(() => ({
-        calls: window.calls,
-        hostErrors: window.hostErrors,
-      }));
-      throw new Error(
-        `Oats selection failed. Calls: ${JSON.stringify(diagnostics)}. UI: ${state}`,
-        { cause: error },
-      );
-    });
+    .catch((error: unknown) =>
+      throwViewerInteractionFailure("Oats selection", error),
+    );
   await frame
     .getByRole("button", { name: "Add selected to Ready (1)" })
     .click();
@@ -1114,9 +1174,7 @@ try {
   await context.close();
 } finally {
   await browser.close();
-  await new Promise<void>((resolve, reject) =>
-    server.close((error) => (error ? reject(error) : resolve())),
-  );
+  await closeViewerSmokeServer(server);
 }
 
 console.log(

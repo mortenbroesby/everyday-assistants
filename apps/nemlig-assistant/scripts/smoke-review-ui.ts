@@ -1,7 +1,7 @@
 /** Loopback-only browser smoke host: real MCP adapter + review service, fake catalogue. */
 import { createServer } from "node:http";
-import { readFile } from "node:fs/promises";
 import type { AddressInfo } from "node:net";
+import { fileURLToPath } from "node:url";
 import {
   Client,
   StreamableHTTPClientTransport,
@@ -14,30 +14,14 @@ import type { Product, ShoppingClient } from "../src/client.js";
 import type { ProductReviewSnapshot } from "../src/product-review.js";
 import { BasketProposalService } from "../src/proposals.js";
 import { PRODUCT_VIEWER_RESOURCE_URI } from "../src/product-viewer.js";
+import { readLocalViewerGeneration } from "./viewer-generation.js";
+import {
+  closeViewerSmokeServer,
+  installViewerAssetFixture,
+} from "./viewer-asset-fixture.js";
 
-const viewerStaticRoot = new URL(
-  "../dist/ui-static/ui/nemlig/",
-  import.meta.url,
-);
-const viewerManifest = JSON.parse(
-  await readFile(new URL("manifest.json", viewerStaticRoot), "utf8"),
-) as { js: { url: string }; css: { url: string } };
-const viewerAssets = new Map(
-  await Promise.all(
-    [viewerManifest.js, viewerManifest.css].map(
-      async (asset) =>
-        [
-          asset.url,
-          await readFile(
-            new URL(asset.url.slice("/ui/nemlig/".length), viewerStaticRoot),
-          ),
-        ] as const,
-    ),
-  ),
-);
-const viewerManifestText = await readFile(
-  new URL("manifest.json", viewerStaticRoot),
-  "utf8",
+const viewerGeneration = await readLocalViewerGeneration(
+  fileURLToPath(new URL("../dist/ui-static/", import.meta.url)),
 );
 
 let basketReads = 0,
@@ -622,35 +606,7 @@ try {
   const browserContext = await browser.newContext({
     viewport: { width: 375, height: 860 },
   });
-  await browserContext.route("**/*", async (route) => {
-    const url = new URL(route.request().url());
-    if (
-      url.origin === "https://nemlig-mcp.broesby.dk" &&
-      url.pathname.startsWith("/ui/nemlig/")
-    ) {
-      const body =
-        url.pathname === "/ui/nemlig/manifest.json"
-          ? viewerManifestText
-          : viewerAssets.get(url.pathname);
-      await route.fulfill({
-        status: body ? 200 : 404,
-        body: body ?? "missing",
-        headers: {
-          "access-control-allow-origin": "*",
-          "cache-control": url.pathname.endsWith("manifest.json")
-            ? "no-store"
-            : "public, max-age=31536000, immutable",
-          "content-type": url.pathname.endsWith(".js")
-            ? "text/javascript; charset=utf-8"
-            : url.pathname.endsWith(".css")
-              ? "text/css; charset=utf-8"
-              : "application/json",
-        },
-      });
-    } else {
-      await route.continue();
-    }
-  });
+  await installViewerAssetFixture(browserContext, viewerGeneration);
   const browserPage = await browserContext.newPage();
   browserPage.setDefaultTimeout(10_000);
   browserPage.setDefaultNavigationTimeout(10_000);
@@ -694,9 +650,7 @@ try {
 } finally {
   await browser.close();
   await client.close();
-  await new Promise<void>((resolve, reject) =>
-    server.close((error) => (error ? reject(error) : resolve())),
-  );
+  await closeViewerSmokeServer(server);
 }
 console.log(
   "MCP adapter browser smoke passed: recovery, current review controls, restart, exact prepare, and zero fake provider basket writes.",

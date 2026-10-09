@@ -1,7 +1,6 @@
 import { StdioClientTransport } from "@modelcontextprotocol/client/stdio";
 import { Client } from "@modelcontextprotocol/client";
 import assert from "node:assert/strict";
-import { createHash } from "node:crypto";
 import { execFile } from "node:child_process";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -12,6 +11,7 @@ import {
   PRODUCT_VIEWER_RESOURCE_URI,
   readProductViewerArtifact,
 } from "../src/product-viewer.js";
+import { readLocalViewerGeneration } from "./viewer-generation.js";
 
 const execute = promisify(execFile);
 const packageRoot = path.resolve(
@@ -130,32 +130,8 @@ try {
     "dist",
     "ui-static",
   );
-  const viewerManifest = JSON.parse(
-    await readFile(
-      path.join(installedStatic, "ui/nemlig/manifest.json"),
-      "utf8",
-    ),
-  ) as {
-    js: { url: string; integrity: string };
-    css: { url: string; integrity: string };
-  };
-  for (const [asset, extension] of [
-    [viewerManifest.js, "js"],
-    [viewerManifest.css, "css"],
-  ] as const) {
-    const bytes = await readFile(
-      path.join(installedStatic, asset.url.slice(1)),
-    );
-    const digest = createHash("sha256").update(bytes).digest();
-    assert.equal(
-      asset.url,
-      `/ui/nemlig/assets/${Buffer.from(digest).toString("hex")}.${extension}`,
-    );
-    assert.equal(
-      asset.integrity,
-      `sha256-${Buffer.from(digest).toString("base64")}`,
-    );
-  }
+  const viewerGeneration = await readLocalViewerGeneration(installedStatic);
+  assert.equal(viewerGeneration.assets.size, 2);
   const imports = await execute(
     process.execPath,
     [

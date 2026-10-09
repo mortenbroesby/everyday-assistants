@@ -2,7 +2,6 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import test from "node:test";
 import { validateProductViewerArtifact } from "../scripts/product-viewer-artifact.js";
-import { createViewerAssets } from "../scripts/viewer-assets.js";
 import type { ProductView } from "./product-presentation.js";
 import {
   PRODUCT_VIEWER_BUILD_MARKER,
@@ -13,6 +12,7 @@ import {
   readProductViewerArtifact,
   renderProductViewerHtml,
 } from "./product-viewer.js";
+import { createViewerGeneration } from "./viewer-assets.js";
 
 const complete: ProductView = {
   context: "review",
@@ -238,16 +238,17 @@ test("served resource is a bounded stable shell with current-on-mount loading", 
   assert.match(artifactId, /^[a-f0-9]{64}$/u);
   assert.equal(html, renderProductViewerHtml());
   assert.match(html, /\/ui\/nemlig\/manifest\.json/u);
-  assert.match(html, /cache:"no-store",credentials:"omit"/u);
+  assert.match(html, /cache:\s*"no-store",\s*credentials:\s*"omit"/u);
   assert.doesNotMatch(html, /setInterval|hot.swap|serviceWorker/u);
   validateProductViewerArtifact(html);
 });
 
 test("asset manifest content-addresses and integrity-binds the extracted bundle", () => {
-  const built = createViewerAssets(
-    '<script type="module">console.log("current")</script><style>body{color:red}</style>',
+  const built = createViewerGeneration(
+    Buffer.from('console.log("current")'),
+    Buffer.from("body{color:red}"),
   );
-  for (const [url, source] of built.files) {
+  for (const [url, source] of built.assets) {
     const extension = url.endsWith(".js") ? "js" : "css";
     const bytes = Buffer.from(source);
     const digest = createHash("sha256").update(bytes).digest();
@@ -260,9 +261,9 @@ test("asset manifest content-addresses and integrity-binds the extracted bundle"
       `sha256-${Buffer.from(digest).toString("base64")}`,
     );
   }
-  assert.throws(
-    () => createViewerAssets("<script></script>"),
-    /one bundled UI script/u,
+  assert.match(
+    Buffer.from(built.assets.get(built.manifest.js.url)!).toString(),
+    /Stale viewer bundle/u,
   );
 });
 

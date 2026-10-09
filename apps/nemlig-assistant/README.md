@@ -179,7 +179,7 @@ uncertain snapshots instead direct you to inspect the actual basket.
 The viewer uses the permanent `ui://nemlig/shell.html` identity. The previous
 `ui://nemlig/draft-list.html` address and every earlier product-viewer address
 resolve only to an inert, read-only notice, so historical cards cannot regain
-shopping controls. The stable shell loads the current same-origin,
+shopping controls. The stable shell loads the current fixed-origin,
 content-addressed UI bundle when it mounts; an active card never swaps code or
 replays shopping work. ChatGPT may retain previously cached documents; the
 server cannot remove those transcript cards. A release, resource read, and
@@ -485,10 +485,14 @@ Tests use synthetic HTTP responses and never access a real Nemlig account.
 
 The MCP resource uses the permanent `ui://nemlig/shell.html` identity. Its
 small HTML shell fetches `/ui/nemlig/manifest.json` without credentials or
-cache, validates the manifest and same-origin content-addressed JS/CSS with
+cache, validates the manifest and fixed-origin content-addressed JS/CSS with
 SRI, then loads that bundle once for the current mount. The existing Worker
 serves only the generated `/ui/nemlig/` static files; these requests do not
 enter MCP or wake the Container. The manifest and assets ship with the Worker.
+The existing deploy path validates and retains one predecessor asset generation
+for cards using the previous shell bundle. Its public edge acceptance checks
+the candidate manifest, asset bytes, CORS, MIME and cache headers; no new asset
+service or dependency is used.
 The package includes the shell, manifest, and hashed assets; browser smoke
 drives the real UI through a synthetic MCP host with a fake catalogue:
 
@@ -501,9 +505,10 @@ pnpm --filter nemlig-assistant smoke:review-ui
 Google Chrome must be installed. The report records its version so runs can be
 compared against the same browser build.
 
-The benchmark records raw/gzip size, first contentful paint, first product DOM
-insertion (not paint), load milestones, and product-detail disclosure response
-against synthetic product data in equivalent same-origin parent/iframe hosts.
+The benchmark records shell raw/gzip size, estimated gzip size for the shell,
+manifest, and assets, first contentful paint, first product DOM insertion (not paint),
+load milestones, and product-detail disclosure response against synthetic
+product data in equivalent same-origin parent/iframe hosts.
 Each sample uses a fresh browser context; the browser process is reused.
 External requests are blocked. The separate browser smoke exercises review
 actions and submission confirmation with synthetic host responses; it forbids

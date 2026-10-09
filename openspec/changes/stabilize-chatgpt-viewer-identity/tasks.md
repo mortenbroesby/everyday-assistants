@@ -64,18 +64,28 @@
 
 ## 6. Stable shell and static bundle follow-up
 
-- [ ] 6.1 Move the live binding to `ui://nemlig/shell.html` and retire
+- [x] 6.1 Move the live binding to `ui://nemlig/shell.html` and retire
   `ui://nemlig/draft-list.html` plus the historical viewer URIs as inert.
-- [ ] 6.2 Package a small shell and same-origin no-store manifest with
+- [x] 6.2 Package a small shell and fixed-origin no-store manifest with
   content-addressed JS/CSS, matching SRI, bounded load failure, and an explicit
   retry; load the current bundle only when the shell mounts.
-- [ ] 6.3 Serve only the generated `/ui/nemlig/` static directory through the
+- [x] 6.3 Serve only the generated `/ui/nemlig/` static directory through the
   existing Worker's asset handling without routing asset requests through MCP
   or waking the Container; keep MCP auth and unknown-binding checks unchanged.
-- [ ] 6.4 Verify the content-addressed manifest, shell/asset provenance,
+- [x] 6.4 Verify the content-addressed manifest, shell/asset provenance,
   retired-resource behavior, fake-provider browser flow, package contents,
   strict OpenSpec, and `pnpm verify`. Deployment and native acceptance remain
   separate.
+- [x] 6.5 Use Vite's manifest and shared asset validation instead of inline-HTML
+  extraction; remove the single-file plugin, share synthetic asset fixtures,
+  and benchmark the stable shell plus actual manifest/assets.
+- [x] 6.6 Before deploy, capture and validate exactly one shell-era predecessor
+  generation or prove from the starting revision that the predecessor predates
+  the shell; retain the old assets and verify both public generations without
+  changing the existing Worker deployment workflow.
+- [x] 6.7 Extend the read-only public edge acceptance to verify the candidate
+  manifest and asset bytes, CORS, MIME, cache headers, and bounded response
+  sizes. No production run or native acceptance is part of local verification.
 
 ## Implementation evidence (8 October 2026)
 
@@ -134,3 +144,26 @@
   supported path to update an already mounted iframe. No real basket was
   accessed or changed. Tasks 4.3 and 5.1–5.3 remain open because clean
   reconnect and mounted conversational readback are not established.
+
+## Stable shell follow-up evidence (9 October 2026)
+
+- Tasks 6.4–6.7 are implemented and locally verified. The build emits a small
+  stable shell plus a Vite-manifest generation; shared validation binds the
+  manifest and each content-addressed asset to its digest and size. The browser
+  smoke covers malformed manifests, corrupt and delayed assets, retry, and
+  fresh-frame generation changes. The current mounted frame stays stable.
+- Pre-deploy capture recognizes the starting source revision, validates the
+  current shell-era public generation, retains that one predecessor beside the
+  candidate, and rechecks provider state before deployment. Tests cover shell
+  A+B retention, missing predecessor bytes, unknown source identity, and drift
+  during capture. Read-only edge acceptance checks the public candidate
+  manifest, asset bytes, CORS, MIME, cache headers, and response bounds.
+- Local gates passed: `pnpm verify`, strict OpenSpec validation (27/27),
+  package tests (355/355), package smoke, adapter and artifact browser smokes,
+  focused viewer/deployment/acceptance tests (38/38), and Fallow's pre-commit
+  audit with no introduced findings. The Cloudflare dry-run passed. No
+  production deploy or native ChatGPT acceptance was run.
+- Benchmark comparison reports estimated gzip payload (shell + manifest +
+  JS/CSS), not measured wire transfer: 143,948 B for React v8 versus 11,150 B
+  for the v7 fixture. First-product DOM insertion was 371 ms median for v8 and
+  251 ms for v7 in this three-run sample; timings are advisory and synthetic.

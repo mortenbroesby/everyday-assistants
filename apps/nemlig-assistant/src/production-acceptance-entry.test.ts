@@ -17,6 +17,7 @@ import {
   renderProductViewerHtml,
 } from "./product-viewer.js";
 import { NEMLIG_CODENAME, NEMLIG_VERSION } from "./runtime.js";
+import { createViewerGeneration } from "./viewer-assets.js";
 
 const userToolMetadata = {
   start_product_review: {
@@ -518,6 +519,74 @@ test("edge-only skips credentials and connect", async () => {
   assert.equal(calls.length, 5);
 });
 
+test("edge-only viewer acceptance verifies the candidate manifest and public assets", async () => {
+  const generation = createViewerGeneration(
+    Buffer.from("window.viewer = true;"),
+    Buffer.from("body {}"),
+  );
+  const calls: string[] = [];
+  const report = await (
+    await import("../scripts/production-acceptance.js")
+  ).main(
+    ["--edge-only", "--viewer-assets"],
+    {},
+    {
+      expectedViewer: async () => generation,
+      fetcher: async (input, init) => {
+        const request = new Request(input, init);
+        const url = new URL(request.url);
+        calls.push(url.pathname);
+        if (url.pathname === "/healthz") {
+          return Response.json({ status: "ok", enabled: true });
+        }
+        if (url.pathname === "/revision") {
+          return Response.json({ revision: "test-revision" });
+        }
+        if (url.pathname.endsWith("oauth-protected-resource/mcp")) {
+          return Response.json({
+            resource: "https://nemlig-mcp.broesby.dk/mcp",
+            scopes_supported: ["use:nemlig-assistant"],
+            bearer_methods_supported: ["header"],
+          });
+        }
+        if (url.pathname === "/mcp") {
+          return new Response(null, {
+            status: request.headers.has("origin") ? 403 : 401,
+          });
+        }
+        if (url.pathname === "/ui/nemlig/manifest.json") {
+          return new Response(`${JSON.stringify(generation.manifest)}\n`, {
+            headers: {
+              "access-control-allow-origin": "*",
+              "cache-control": "no-store",
+              "content-type": "application/json",
+            },
+          });
+        }
+        const body = generation.assets.get(url.pathname);
+        assert.ok(body);
+        return new Response(Buffer.from(body), {
+          headers: {
+            "access-control-allow-origin": "*",
+            "cache-control": "public, max-age=31536000, immutable",
+            "content-type": url.pathname.endsWith(".js")
+              ? "text/javascript"
+              : "text/css",
+          },
+        });
+      },
+      connect: async () => {
+        throw new Error("edge acceptance must not connect");
+      },
+    },
+  );
+  assert.deepEqual(report.passed, ["edge", "viewer_assets"]);
+  assert.equal(
+    calls.filter((path) => path.startsWith("/ui/nemlig/")).length,
+    3,
+  );
+});
+
 test("acceptance preserves observed revision evidence without exposing arbitrary provider text", async () => {
   const entry = await import("../scripts/production-acceptance.js");
   for (const revision of ["a".repeat(40), "private-provider-marker"]) {
@@ -562,6 +631,18 @@ test("removed production basket mutation mode is unavailable before network or c
   );
   await assert.rejects(
     entry.main(["--edge-only", "--edge-only"], {}, dependencies),
+    /must not be repeated/u,
+  );
+  await assert.rejects(
+    entry.main(["--viewer-assets"], {}, dependencies),
+    /requires --edge-only/u,
+  );
+  await assert.rejects(
+    entry.main(
+      ["--edge-only", "--viewer-assets", "--viewer-assets"],
+      {},
+      dependencies,
+    ),
     /must not be repeated/u,
   );
   await assert.rejects(

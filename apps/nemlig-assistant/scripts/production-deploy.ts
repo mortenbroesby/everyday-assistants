@@ -6,6 +6,14 @@ import process from "node:process";
 import { fileURLToPath } from "node:url";
 import { deploymentFailureReasons } from "./production-failure-reasons.js";
 import { issueServiceToken } from "./service-token.js";
+import {
+  fetchViewerGeneration,
+  verifyViewerAssets,
+} from "../src/viewer-assets.js";
+import {
+  readLocalViewerGeneration,
+  writeViewerGenerationFiles,
+} from "./viewer-generation.js";
 
 const fullSha = /^[0-9a-f]{40}$/u;
 const revisionSha = /^[0-9a-f]{7,40}$/u;
@@ -23,6 +31,7 @@ const acceptanceFailureCategories = new Set([
   "authentication_failed",
   "transport_failed",
   "feature_failed",
+  "viewer_asset_acceptance_failed",
   "mutation_failed",
   "unknown_failure",
 ]);
@@ -1603,6 +1612,41 @@ const verifyCurrent = async (
   }
 };
 
+const previousViewerGeneration = async (
+  deps: DeployDependencies,
+  revision: string,
+) => {
+  let source = "";
+  try {
+    source = await runAt(deps, deps.repoRoot, "git", [
+      "show",
+      `${revision}:apps/nemlig-assistant/src/product-viewer-identity.ts`,
+    ]);
+  } catch {
+    fail("viewer_predecessor_identity_unknown");
+  }
+  const identity =
+    /^export const PRODUCT_VIEWER_RESOURCE_URI = "([^"]+)";/mu.exec(
+      source,
+    )?.[1];
+  if (identity === "ui://nemlig/shell.html") {
+    try {
+      return await fetchViewerGeneration(deps.fetcher, deps.signal);
+    } catch {
+      fail("viewer_predecessor_assets_unavailable");
+    }
+  }
+  if (
+    identity &&
+    /^ui:\/\/nemlig\/(?:draft-list|product-viewer(?:-v(?:1[0-6]|[1-9]))?)\.html$/u.test(
+      identity,
+    )
+  ) {
+    return undefined;
+  }
+  fail("viewer_predecessor_identity_unknown");
+};
+
 export async function deployProduction(
   commit: string,
   inputDeps: DeployDependencies,
@@ -1721,6 +1765,25 @@ export async function deployProduction(
     }
     report.checks.push("starting_runtime_verified");
 
+    const previousViewer = await previousViewerGeneration(
+      deps,
+      startingState.revision,
+    );
+    const staticRoot = resolve(deps.packageRoot, "dist/ui-static");
+    try {
+      const candidateViewer = await readLocalViewerGeneration(staticRoot);
+      await writeViewerGenerationFiles(
+        staticRoot,
+        candidateViewer,
+        previousViewer ? [previousViewer] : [],
+      );
+    } catch {
+      fail("viewer_candidate_assets_invalid");
+    }
+    if (previousViewer) {
+      report.checks.push("previous_viewer_assets_captured");
+    }
+
     await verifyCurrent(deps, starting.version);
     await verifyAutomaticCandidateIsCurrentMain(deps, commit, repo);
     const output = await wrangler(
@@ -1762,7 +1825,7 @@ export async function deployProduction(
       const edgeBudgetMs = 60_000;
       await retryAcceptance(
         deps,
-        ["production:probe"],
+        ["production:probe", "--viewer-assets"],
         { NEMLIG_EXPECTED_REVISION: commit },
         12,
         "edge",
@@ -1817,7 +1880,7 @@ export async function deployProduction(
     } else {
       await retryAcceptance(
         deps,
-        ["production:probe"],
+        ["production:probe", "--viewer-assets"],
         { NEMLIG_EXPECTED_REVISION: commit },
         12,
         "edge",
@@ -1833,6 +1896,14 @@ export async function deployProduction(
         "live-user",
         "authenticated_read_only_acceptance_failed",
       );
+    }
+    if (previousViewer) {
+      try {
+        await verifyViewerAssets(previousViewer, deps.fetcher, deps.signal);
+      } catch {
+        fail("viewer_asset_acceptance_failed");
+      }
+      report.checks.push("previous_viewer_assets_verified");
     }
     await verifyCurrent(deps, enabledId);
     const provenContainer = await readContainer(deps, enabledContainer.id);

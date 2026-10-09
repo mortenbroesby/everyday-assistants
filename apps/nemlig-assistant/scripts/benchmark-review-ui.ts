@@ -8,9 +8,14 @@ import { execFileSync } from "node:child_process";
 import { appendFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import type { AddressInfo } from "node:net";
 import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { gzipSync } from "node:zlib";
 import { chromium, type Browser } from "playwright";
 import type { ProductView } from "../src/product-presentation.js";
+import { readProductViewerArtifact } from "../src/product-viewer.js";
+import { readLocalViewerGeneration } from "./viewer-generation.js";
+import { installViewerAssetFixture } from "./viewer-asset-fixture.js";
+import type { ViewerGeneration } from "../src/viewer-assets.js";
 
 const DEFAULT_RUNS = 10;
 const VIEWPORT = { width: 375, height: 812 };
@@ -48,6 +53,7 @@ type Renderer = {
   html: string;
   rawBytes: number;
   gzipBytes: number;
+  assetGzipBytes: number;
 };
 type Sample = {
   fcpMs: number | null;
@@ -56,6 +62,7 @@ type Sample = {
   firstProductMs: number;
   disclosureMs: number;
   encodedBytes: number;
+  estimatedGzipPayloadBytes: number;
 };
 
 type Timing = { median: number; p95: number } | null;
@@ -69,6 +76,7 @@ type RendererReport = {
   loadMs: Timing;
   disclosureVisibleMs: Timing;
   encodedResponseBytes: number;
+  estimatedGzipPayloadBytes: number;
 };
 type BenchmarkReport = {
   mode: string;
@@ -206,6 +214,8 @@ async function measureOne(
   browser: Browser,
   renderer: Renderer,
   url: string,
+  viewerGeneration: ViewerGeneration,
+  assetGzipBytes: number,
 ): Promise<Sample> {
   const context = await browser.newContext({
     viewport: VIEWPORT,
@@ -213,7 +223,10 @@ async function measureOne(
     colorScheme: "light",
     serviceWorkers: "block",
   });
-  const externalRequests: string[] = [];
+  const externalRequests = await installViewerAssetFixture(
+    context,
+    viewerGeneration,
+  );
   try {
     await context.addInitScript((views) => {
       const observer = new MutationObserver(() => {
@@ -228,15 +241,6 @@ async function measureOne(
         value: { toolOutput: { views } },
       });
     }, benchmarkViews);
-    await context.route("**/*", async (route) => {
-      if (route.request().url().startsWith("http://127.0.0.1:")) {
-        await route.continue();
-      } else {
-        externalRequests.push(route.request().url());
-        await route.abort();
-      }
-    });
-
     const page = await context.newPage();
     page.setDefaultTimeout(10_000);
     page.setDefaultNavigationTimeout(15_000);
@@ -316,31 +320,35 @@ async function measureOne(
       );
     }
 
-    return await child.evaluate(() => {
-      const navigation = performance.getEntriesByType(
-        "navigation",
-      )[0] as PerformanceNavigationTiming;
-      const fcp = performance.getEntriesByName("first-contentful-paint")[0];
-      const firstProduct = performance.getEntriesByName(
-        "benchmark:first-product",
-      )[0];
-      const disclosure = performance.getEntriesByName(
-        "benchmark:disclosure-visible",
-      )[0];
-      if (!firstProduct || !disclosure) {
-        throw new Error(
-          "The benchmark did not record product and disclosure timings.",
-        );
-      }
-      return {
-        fcpMs: fcp?.startTime ?? null,
-        domContentLoadedMs: navigation.domContentLoadedEventEnd,
-        loadMs: navigation.loadEventEnd,
-        firstProductMs: firstProduct.startTime,
-        disclosureMs: disclosure.duration,
-        encodedBytes: navigation.encodedBodySize,
-      };
-    });
+    return await child.evaluate(
+      ({ assetGzipBytes, shellGzipBytes }) => {
+        const navigation = performance.getEntriesByType(
+          "navigation",
+        )[0] as PerformanceNavigationTiming;
+        const fcp = performance.getEntriesByName("first-contentful-paint")[0];
+        const firstProduct = performance.getEntriesByName(
+          "benchmark:first-product",
+        )[0];
+        const disclosure = performance.getEntriesByName(
+          "benchmark:disclosure-visible",
+        )[0];
+        if (!firstProduct || !disclosure) {
+          throw new Error(
+            "The benchmark did not record product and disclosure timings.",
+          );
+        }
+        return {
+          fcpMs: fcp?.startTime ?? null,
+          domContentLoadedMs: navigation.domContentLoadedEventEnd,
+          loadMs: navigation.loadEventEnd,
+          firstProductMs: firstProduct.startTime,
+          disclosureMs: disclosure.duration,
+          encodedBytes: navigation.encodedBodySize,
+          estimatedGzipPayloadBytes: shellGzipBytes + assetGzipBytes,
+        };
+      },
+      { assetGzipBytes, shellGzipBytes: renderer.gzipBytes },
+    );
   } finally {
     await context.close();
   }
@@ -348,7 +356,7 @@ async function measureOne(
 
 async function main(): Promise<void> {
   const { outputPath, runs } = parseOptions(process.argv.slice(2));
-  const [v7Html, v7MetadataText, manifestText] = await Promise.all([
+  const [v7Html, v7MetadataText, viewerGeneration] = await Promise.all([
     readFile(
       new URL("./fixtures/product-viewer-v7.html", import.meta.url),
       "utf8",
@@ -357,21 +365,18 @@ async function main(): Promise<void> {
       new URL("./fixtures/product-viewer-v7.json", import.meta.url),
       "utf8",
     ),
-    readFile(
-      new URL("../dist/ui-static/ui/nemlig/manifest.json", import.meta.url),
-      "utf8",
+    readLocalViewerGeneration(
+      fileURLToPath(new URL("../dist/ui-static/", import.meta.url)),
     ),
   ]);
-  const manifest = JSON.parse(manifestText) as {
-    js: { url: string };
-    css: { url: string };
-  };
-  const staticRoot = new URL("../dist/ui-static/", import.meta.url);
-  const [js, css] = await Promise.all([
-    readFile(new URL(manifest.js.url.slice(1), staticRoot), "utf8"),
-    readFile(new URL(manifest.css.url.slice(1), staticRoot), "utf8"),
-  ]);
-  const v8Html = `<!doctype html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>${css}</style></head><body><div id="root"></div><script type="module">${js}</script></body></html>`;
+  const v8Html = readProductViewerArtifact().html;
+  const assetGzipBytes =
+    gzipSync(`${JSON.stringify(viewerGeneration.manifest)}\n`, { level: 9 })
+      .byteLength +
+    [...viewerGeneration.assets.values()].reduce(
+      (total, asset) => total + gzipSync(asset, { level: 9 }).byteLength,
+      0,
+    );
   const v7Metadata = JSON.parse(v7MetadataText) as {
     resourceUri?: string;
     sourceCommit?: string;
@@ -393,12 +398,14 @@ async function main(): Promise<void> {
       html: v7Html,
       rawBytes: Buffer.byteLength(v7Html),
       gzipBytes: gzipSync(v7Html, { level: 9 }).byteLength,
+      assetGzipBytes: 0,
     },
     {
       name: "v8",
       html: v8Html,
       rawBytes: Buffer.byteLength(v8Html),
       gzipBytes: gzipSync(v8Html, { level: 9 }).byteLength,
+      assetGzipBytes,
     },
   ];
 
@@ -439,6 +446,8 @@ async function main(): Promise<void> {
               browser,
               renderer,
               `http://127.0.0.1:${address.port}${path}`,
+              viewerGeneration,
+              renderer.name === "v8" ? renderer.assetGzipBytes : 0,
             ),
           );
       }
@@ -504,6 +513,9 @@ async function main(): Promise<void> {
             loadMs: timingSummary(values("loadMs")),
             disclosureVisibleMs: timingSummary(values("disclosureMs")),
             encodedResponseBytes: median(values("encodedBytes")),
+            estimatedGzipPayloadBytes: median(
+              values("estimatedGzipPayloadBytes"),
+            ),
           },
         ];
       }),
@@ -589,6 +601,7 @@ function formatStepSummary(report: BenchmarkReport): string {
     "| --- | ---: | ---: | ---: |",
     ...timingRows.split("\n"),
     `| Encoded HTML response | ${formatBytes(v7.encodedResponseBytes)} | ${formatBytes(v8.encodedResponseBytes)} | ${byteDelta >= 0 ? "+" : ""}${formatBytes(byteDelta)} |`,
+    `| Estimated gzip shell + manifest + JS/CSS payload | ${formatBytes(v7.estimatedGzipPayloadBytes)} | ${formatBytes(v8.estimatedGzipPayloadBytes)} | ${v8.estimatedGzipPayloadBytes - v7.estimatedGzipPayloadBytes >= 0 ? "+" : ""}${formatBytes(v8.estimatedGzipPayloadBytes - v7.estimatedGzipPayloadBytes)} |`,
     `| Standalone gzip artifact | ${formatBytes(v7.gzipBytes)} | ${formatBytes(v8.gzipBytes)} | ${artifactDelta >= 0 ? "+" : ""}${formatBytes(artifactDelta)} |`,
     "",
     `Timing cells show median / p95 across ${v7.runs} samples per renderer. Positive time deltas mean React v8 was slower; negative means faster. Values are advisory and runner-sensitive. No provider calls or basket writes were made.`,

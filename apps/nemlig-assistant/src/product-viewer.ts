@@ -1,18 +1,18 @@
 import { createHash } from "node:crypto";
 import type { ProductView } from "./product-presentation.js";
 import { PRODUCT_VIEWER_RESOURCE_URI } from "./product-viewer-identity.js";
+import { VIEWER_ASSET_ORIGIN } from "./viewer-asset-contract.js";
 
 export { PRODUCT_VIEWER_RESOURCE_URI } from "./product-viewer-identity.js";
 export const PRODUCT_VIEWER_MIME_TYPE = "text/html;profile=mcp-app";
 export const PRODUCT_VIEWER_BUILD_MARKER = "nemlig-shell-1";
-const PRODUCT_VIEWER_ASSET_ORIGIN = "https://nemlig-mcp.broesby.dk";
 export const PRODUCT_VIEWER_RESOURCE_DOMAINS = Object.freeze([
-  PRODUCT_VIEWER_ASSET_ORIGIN,
+  VIEWER_ASSET_ORIGIN,
   "https://nemlig.com",
   "https://www.nemlig.com",
 ]);
 export const PRODUCT_VIEWER_CONNECT_DOMAINS = Object.freeze([
-  PRODUCT_VIEWER_ASSET_ORIGIN,
+  VIEWER_ASSET_ORIGIN,
 ]);
 
 const html = `<!doctype html>
@@ -35,43 +35,101 @@ const html = `<!doctype html>
   <p id="load-error" role="alert" hidden>The current Draft list could not be loaded. Nothing has been changed. <button id="retry" type="button">Try again</button></p>
   <div id="root"></div>
   <script>
-    (()=>{
-      const assetOrigin="${PRODUCT_VIEWER_ASSET_ORIGIN}", manifestPath=assetOrigin+"/ui/nemlig/manifest.json", loading=document.getElementById("loading"), error=document.getElementById("load-error"), meta=document.querySelector('meta[name="nemlig-viewer-bundle"]');
-      let attempt=0;
-      const validAsset=(asset,extension)=>{
-        if(!asset||typeof asset!="object")throw Error("Invalid UI asset");
-        const match=new RegExp("^/ui/nemlig/assets/([a-f0-9]{64})\\\\."+extension+"$").exec(asset.url);
-        const integrity=/^sha256-([A-Za-z0-9+/]{43}=)$/.exec(asset.integrity);
-        if(!match||!integrity)throw Error("Invalid UI asset");
-        const digest=Array.from(atob(integrity[1]),byte=>byte.charCodeAt(0).toString(16).padStart(2,"0")).join("");
-        if(digest!==match[1])throw Error("Invalid UI asset");
+    (() => {
+      const assetOrigin = "${VIEWER_ASSET_ORIGIN}";
+      const loading = document.getElementById("loading");
+      const error = document.getElementById("load-error");
+      const meta = document.querySelector('meta[name="nemlig-viewer-bundle"]');
+      let attempt = 0;
+      let loadingAttempt = false;
+      let mounted = false;
+
+      const validAsset = (asset, extension) => {
+        if (!asset || typeof asset !== "object") throw Error("Invalid UI asset");
+        if (typeof asset.url !== "string" || typeof asset.integrity !== "string") throw Error("Invalid UI asset");
+        const match = /^\\/ui\\/nemlig\\/assets\\/([a-f0-9]{64})\\.(js|css)$/.exec(asset.url);
+        const integrity = /^sha256-([A-Za-z0-9+/]{43}=)$/.exec(asset.integrity);
+        if (!match || match[2] !== extension || !integrity) throw Error("Invalid UI asset");
+        const digest = Array.from(atob(integrity[1]), (byte) => byte.charCodeAt(0).toString(16).padStart(2, "0")).join("");
+        if (digest !== match[1]) throw Error("Invalid UI asset");
         return asset;
       };
-      const load=(element)=>new Promise((resolve,reject)=>{
-        const timer=setTimeout(()=>reject(Error("UI asset timed out")),5000);
-        element.onload=()=>{clearTimeout(timer);resolve();};
-        element.onerror=()=>{clearTimeout(timer);reject(Error("UI asset unavailable"));};
+
+      const load = (element) => new Promise((resolve, reject) => {
+        const timer = setTimeout(() => reject(Error("UI asset timed out")), 5000);
+        element.onload = () => { clearTimeout(timer); resolve(); };
+        element.onerror = () => { clearTimeout(timer); reject(Error("UI asset unavailable")); };
         document.head.append(element);
       });
-      const mount=async()=>{
-        loading.hidden=false;error.hidden=true;
-        const currentAttempt=String(++attempt);
-        window.__nemligViewerAttempt=currentAttempt;
-        let link,script;
-        try{
-          const response=await fetch(manifestPath,{cache:"no-store",credentials:"omit",redirect:"error",signal:AbortSignal.timeout(5000)});
-          if(!response.ok)throw Error("UI manifest unavailable");
-          const manifest=await response.json();
-          if(manifest?.schemaVersion!==1||typeof manifest.build!=="string"||!(/^[a-f0-9]{64}$/.test(manifest.build)))throw Error("UI manifest invalid");
-          const css=validAsset(manifest.css,"css"),js=validAsset(manifest.js,"js");
-          link=document.createElement("link");link.rel="stylesheet";link.href=assetOrigin+css.url;link.integrity=css.integrity;link.crossOrigin="anonymous";await load(link);
-          script=document.createElement("script");script.type="module";script.src=assetOrigin+js.url+"?attempt="+currentAttempt;script.integrity=js.integrity;script.crossOrigin="anonymous";
+
+      const mount = async () => {
+        if (loadingAttempt || mounted) return;
+        loadingAttempt = true;
+        loading.hidden = false;
+        error.hidden = true;
+        const currentAttempt = String(++attempt);
+        window.__nemligViewerAttempt = currentAttempt;
+        let link;
+        let script;
+        try {
+          const manifestUrl = assetOrigin + "/ui/nemlig/manifest.json";
+          const response = await fetch(manifestUrl, {
+            cache: "no-store",
+            credentials: "omit",
+            redirect: "error",
+            signal: AbortSignal.timeout(5000),
+          });
+          if (!response.ok) throw Error("UI manifest unavailable");
+          const manifest = await response.json();
+          if (
+            manifest?.schemaVersion !== 1 ||
+            typeof manifest.build !== "string" ||
+            !/^[a-f0-9]{64}$/.test(manifest.build)
+          ) {
+            throw Error("UI manifest invalid");
+          }
+
+          const css = validAsset(manifest.css, "css");
+          const js = validAsset(manifest.js, "js");
+          const buildDigest = Array.from(
+            new Uint8Array(
+              await crypto.subtle.digest(
+                "SHA-256",
+                new TextEncoder().encode(js.integrity + "\\n" + css.integrity),
+              ),
+            ),
+            (byte) => byte.toString(16).padStart(2, "0"),
+          ).join("");
+          if (buildDigest !== manifest.build) throw Error("UI manifest invalid");
+          link = document.createElement("link");
+          link.rel = "stylesheet";
+          link.href = assetOrigin + css.url;
+          link.integrity = css.integrity;
+          link.crossOrigin = "anonymous";
+          await load(link);
+
+          script = document.createElement("script");
+          script.type = "module";
+          script.src = assetOrigin + js.url + "?attempt=" + currentAttempt;
+          script.integrity = js.integrity;
+          script.crossOrigin = "anonymous";
           await load(script);
-          meta.content=manifest.build;
-          loading.hidden=true;
-        }catch{window.__nemligViewerAttempt="";link?.remove();script?.remove();loading.hidden=true;error.hidden=false;}
+
+          mounted = true;
+          meta.content = manifest.build;
+          loading.hidden = true;
+        } catch {
+          window.__nemligViewerAttempt = "";
+          link?.remove();
+          script?.remove();
+          loading.hidden = true;
+          error.hidden = false;
+        } finally {
+          loadingAttempt = false;
+        }
       };
-      document.getElementById("retry").addEventListener("click",mount);
+
+      document.getElementById("retry").addEventListener("click", mount);
       void mount();
     })();
   </script>

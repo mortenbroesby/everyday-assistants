@@ -7,6 +7,11 @@ import process from "node:process";
 import { fileURLToPath } from "node:url";
 import { NEMLIG_VERSION } from "../src/runtime.js";
 import {
+  fetchViewerGeneration,
+  type ViewerGeneration,
+} from "../src/viewer-assets.js";
+import { readLocalViewerGeneration } from "./viewer-generation.js";
+import {
   ProductViewerHtmlMismatchError,
   ServiceInventoryMismatchError,
   verifyProductionEdge,
@@ -31,6 +36,14 @@ class ServiceRuntimeVersionMismatchError extends Error {
   }
 }
 
+class ViewerAssetMismatchError extends Error {
+  readonly code = "viewer_assets_mismatch";
+  readonly lastCompletedBoundary = "viewer_assets_read";
+  constructor() {
+    super("Public viewer assets do not match the candidate build.");
+  }
+}
+
 export interface AcceptanceEntryDependencies {
   fetcher: typeof fetch;
   connect(
@@ -39,6 +52,7 @@ export interface AcceptanceEntryDependencies {
     signal: AbortSignal,
   ): Promise<ConnectedAcceptanceClient>;
   totalTimeoutMs?: number;
+  expectedViewer?: () => Promise<ViewerGeneration>;
 }
 
 const required = (env: Environment, name: string): string => {
@@ -62,53 +76,80 @@ const expectedServiceVersion = (env: Environment): string => {
   return configured;
 };
 
+const acceptanceFlags = new Set([
+  "--edge-only",
+  "--viewer-assets",
+  "--service",
+  "--initialize-only",
+  "--wake-only",
+]);
+
+const readAcceptanceFlags = (argv: string[]): Set<string> => {
+  const flags = new Set<string>();
+  for (const argument of argv) {
+    if (!acceptanceFlags.has(argument)) {
+      throw new Error(`Unknown acceptance argument: ${argument}`);
+    }
+    if (flags.has(argument)) {
+      throw new Error(`${argument} must not be repeated`);
+    }
+    flags.add(argument);
+  }
+  return flags;
+};
+
+const acceptanceFlagRules: readonly [
+  (flags: ReadonlySet<string>) => boolean,
+  string,
+][] = [
+  [
+    (flags) =>
+      flags.has("--edge-only") &&
+      (flags.has("--service") || flags.has("--initialize-only")),
+    "--edge-only cannot be combined with service acceptance",
+  ],
+  [
+    (flags) => flags.has("--initialize-only") && !flags.has("--service"),
+    "--initialize-only requires --service",
+  ],
+  [
+    (flags) =>
+      flags.has("--wake-only") &&
+      (!flags.has("--service") || !flags.has("--initialize-only")),
+    "--wake-only requires --service --initialize-only",
+  ],
+  [
+    (flags) => flags.has("--viewer-assets") && !flags.has("--edge-only"),
+    "--viewer-assets requires --edge-only",
+  ],
+];
+
+const validateAcceptanceFlags = (flags: ReadonlySet<string>): void => {
+  const invalidRule = acceptanceFlagRules.find(([isInvalid]) =>
+    isInvalid(flags),
+  );
+  if (invalidRule) {
+    throw new Error(invalidRule[1]);
+  }
+};
+
 const parseArgs = (
   argv: string[],
 ): {
   edgeOnly: boolean;
+  viewerAssets: boolean;
   service: boolean;
   initializeOnly: boolean;
   wakeOnly: boolean;
 } => {
-  let edgeOnly = false;
-  let service = false;
-  let initializeOnly = false;
-  let wakeOnly = false;
-  for (const argument of argv) {
-    if (argument === "--edge-only") {
-      if (edgeOnly) {
-        throw new Error("--edge-only must not be repeated");
-      }
-      edgeOnly = true;
-    } else if (argument === "--service") {
-      if (service) {
-        throw new Error("--service must not be repeated");
-      }
-      service = true;
-    } else if (argument === "--initialize-only") {
-      if (initializeOnly) {
-        throw new Error("--initialize-only must not be repeated");
-      }
-      initializeOnly = true;
-    } else if (argument === "--wake-only") {
-      if (wakeOnly) {
-        throw new Error("--wake-only must not be repeated");
-      }
-      wakeOnly = true;
-    } else {
-      throw new Error(`Unknown acceptance argument: ${argument}`);
-    }
-  }
-  if (edgeOnly && (service || initializeOnly)) {
-    throw new Error("--edge-only cannot be combined with service acceptance");
-  }
-  if (initializeOnly && !service) {
-    throw new Error("--initialize-only requires --service");
-  }
-  if (wakeOnly && (!service || !initializeOnly)) {
-    throw new Error("--wake-only requires --service --initialize-only");
-  }
-  return { edgeOnly, service, initializeOnly, wakeOnly };
+  const flags = readAcceptanceFlags(argv);
+  validateAcceptanceFlags(flags);
+  const edgeOnly = flags.has("--edge-only");
+  const viewerAssets = flags.has("--viewer-assets");
+  const service = flags.has("--service");
+  const initializeOnly = flags.has("--initialize-only");
+  const wakeOnly = flags.has("--wake-only");
+  return { edgeOnly, viewerAssets, service, initializeOnly, wakeOnly };
 };
 
 const abortable = async <T>(
@@ -204,6 +245,10 @@ const defaultConnect = async (
 const defaultDependencies: AcceptanceEntryDependencies = {
   fetcher: fetch,
   connect: defaultConnect,
+  expectedViewer: () =>
+    readLocalViewerGeneration(
+      fileURLToPath(new URL("../dist/ui-static/", import.meta.url)),
+    ),
 };
 
 export interface AcceptanceReport {
@@ -239,13 +284,235 @@ type AcceptanceOutcome = Omit<
   | "failureCategory"
 >;
 
+const verifyViewerAssetAcceptance = async (
+  dependencies: AcceptanceEntryDependencies,
+  signal: AbortSignal,
+  observedRevision: string | undefined,
+  correlationIds: string[],
+  progress?: { lastCompletedBoundary: string },
+): Promise<AcceptanceOutcome> => {
+  const [expected, actual] = await Promise.all([
+    dependencies.expectedViewer
+      ? dependencies.expectedViewer()
+      : readLocalViewerGeneration(
+          fileURLToPath(new URL("../dist/ui-static/", import.meta.url)),
+        ),
+    fetchViewerGeneration(dependencies.fetcher, signal),
+  ]);
+  if (progress) {
+    progress.lastCompletedBoundary = "viewer_assets_read";
+  }
+  if (JSON.stringify(actual.manifest) !== JSON.stringify(expected.manifest)) {
+    throw new ViewerAssetMismatchError();
+  }
+  return {
+    profile: "edge",
+    observedRevision,
+    required: ["edge", "viewer_assets"],
+    passed: ["edge", "viewer_assets"],
+    unavailable: [],
+    lastCompletedBoundary: "viewer_assets_read",
+    correlationIds,
+  };
+};
+
+const verifyEdgeAcceptance = async (
+  options: ReturnType<typeof parseArgs>,
+  origin: URL,
+  env: Environment,
+  dependencies: AcceptanceEntryDependencies,
+  signal: AbortSignal,
+  progress?: { lastCompletedBoundary: string },
+): Promise<{
+  edge?: Awaited<ReturnType<typeof verifyProductionEdge>>;
+  observedRevision?: string;
+  outcome?: AcceptanceOutcome;
+}> => {
+  const edge = options.initializeOnly
+    ? undefined
+    : await verifyProductionEdge(origin, dependencies.fetcher, {
+        expectedRevision: env.NEMLIG_EXPECTED_REVISION?.trim() || undefined,
+        signal,
+        expectedScopes: ["use:nemlig-assistant"],
+      });
+  const observedRevision =
+    edge && /^[0-9a-f]{40}$/u.test(edge.revision) ? edge.revision : undefined;
+  if (progress && edge) {
+    progress.lastCompletedBoundary = edge.lastCompletedBoundary;
+  }
+  if (!options.edgeOnly) {
+    return { edge, observedRevision };
+  }
+  if (options.viewerAssets) {
+    return {
+      edge,
+      observedRevision,
+      outcome: await verifyViewerAssetAcceptance(
+        dependencies,
+        signal,
+        observedRevision,
+        edge!.correlationIds,
+        progress,
+      ),
+    };
+  }
+  return {
+    edge,
+    observedRevision,
+    outcome: {
+      profile: "edge",
+      observedRevision,
+      required: ["edge"],
+      passed: ["edge"],
+      unavailable: [],
+      lastCompletedBoundary: edge!.lastCompletedBoundary,
+      correlationIds: edge!.correlationIds,
+    },
+  };
+};
+
+const verifyServiceFeatures = async (
+  options: ReturnType<typeof parseArgs>,
+  connected: ConnectedAcceptanceClient,
+  env: Environment,
+  signal: AbortSignal,
+  observedRevision: string | undefined,
+  edge: Awaited<ReturnType<typeof verifyProductionEdge>> | undefined,
+  progress?: { lastCompletedBoundary: string },
+): Promise<AcceptanceOutcome> => {
+  if (progress) {
+    progress.lastCompletedBoundary = "service_runtime_version_read";
+  }
+  if (
+    !options.wakeOnly &&
+    connected.serverVersion !== expectedServiceVersion(env)
+  ) {
+    throw new ServiceRuntimeVersionMismatchError();
+  }
+  if (options.wakeOnly || options.initializeOnly) {
+    const wake = options.wakeOnly;
+    return {
+      profile: "service",
+      observedRevision,
+      required: [wake ? "service_wake" : "service_runtime"],
+      passed: [wake ? "service_wake" : "service_runtime"],
+      unavailable: [],
+      lastCompletedBoundary: "service_runtime_version_read",
+      correlationIds: [],
+    };
+  }
+  const report = await verifyServiceAcceptanceFeatures(connected.client, {
+    signal,
+    onBoundary: (boundary) => {
+      if (progress) {
+        progress.lastCompletedBoundary = boundary;
+      }
+    },
+  });
+  return {
+    profile: "service",
+    observedRevision,
+    required: ["edge", "service_fixture"],
+    passed: ["edge", "service_fixture"],
+    unavailable: [],
+    lastCompletedBoundary: `service_fixture_${report.requestCount}_requests`,
+    correlationIds: edge!.correlationIds,
+  };
+};
+
+const verifyLiveUserFeatures = async (
+  connected: ConnectedAcceptanceClient,
+  signal: AbortSignal,
+  observedRevision: string | undefined,
+  edge: Awaited<ReturnType<typeof verifyProductionEdge>> | undefined,
+): Promise<AcceptanceOutcome> => {
+  const report = await verifyReadOnlyProductionFeatures(connected.client, {
+    signal,
+  });
+  return {
+    profile: "live-user",
+    observedRevision,
+    required: ["edge", "live_user_features"],
+    passed: ["edge", "live_user_features"],
+    unavailable: report.unavailable,
+    lastCompletedBoundary: "live_user_features",
+    correlationIds: edge!.correlationIds,
+  };
+};
+
+const verifyAuthenticatedAcceptance = async (
+  options: ReturnType<typeof parseArgs>,
+  origin: URL,
+  env: Environment,
+  dependencies: AcceptanceEntryDependencies,
+  signal: AbortSignal,
+  edge: Awaited<ReturnType<typeof verifyProductionEdge>> | undefined,
+  observedRevision: string | undefined,
+  progress?: { lastCompletedBoundary: string },
+): Promise<AcceptanceOutcome> => {
+  const accessToken = required(
+    env,
+    options.service
+      ? "NEMLIG_MCP_SERVICE_ACCESS_TOKEN"
+      : "NEMLIG_MCP_ACCESS_TOKEN",
+  );
+  const connected = await abortable(
+    "Authenticated MCP connect",
+    dependencies.connect(origin, accessToken, signal),
+    signal,
+  );
+  if (progress) {
+    progress.lastCompletedBoundary = "authenticated_mcp_connect";
+  }
+  const closeOnAbort = () => {
+    void connected.close().catch(() => undefined);
+  };
+  signal.addEventListener("abort", closeOnAbort, { once: true });
+  let outcome: AcceptanceOutcome | undefined;
+  let operationFailed = false;
+  let operationError: unknown;
+  try {
+    outcome = options.service
+      ? await verifyServiceFeatures(
+          options,
+          connected,
+          env,
+          signal,
+          observedRevision,
+          edge,
+          progress,
+        )
+      : await verifyLiveUserFeatures(connected, signal, observedRevision, edge);
+  } catch (error) {
+    operationFailed = true;
+    operationError = error;
+  }
+  signal.removeEventListener("abort", closeOnAbort);
+  try {
+    await abortable("Authenticated MCP close", connected.close(), signal);
+  } catch (error) {
+    if (!operationFailed) {
+      operationFailed = true;
+      operationError = error;
+    }
+  }
+  if (operationFailed) {
+    throw operationError;
+  }
+  if (!outcome) {
+    throw new Error("Production acceptance outcome unavailable");
+  }
+  return outcome;
+};
+
 const failureCategory = (
   error: unknown,
 ): NonNullable<AcceptanceReport["failureCategory"]> => {
   if (
     error instanceof ProductViewerHtmlMismatchError ||
     error instanceof ServiceInventoryMismatchError ||
-    error instanceof ServiceRuntimeVersionMismatchError
+    error instanceof ServiceRuntimeVersionMismatchError ||
+    error instanceof ViewerAssetMismatchError
   ) {
     return "feature_failed";
   }
@@ -298,143 +565,29 @@ export async function main(
     if (env.CI?.trim() && origin.href !== "https://nemlig-mcp.broesby.dk/mcp") {
       throw new Error("CI acceptance requires the fixed production target");
     }
-    const edge = options.initializeOnly
-      ? undefined
-      : await verifyProductionEdge(origin, dependencies.fetcher, {
-          expectedRevision: env.NEMLIG_EXPECTED_REVISION?.trim() || undefined,
-          signal: controller.signal,
-          expectedScopes: ["use:nemlig-assistant"],
-        });
-    const observedRevision =
-      edge && /^[0-9a-f]{40}$/u.test(edge.revision) ? edge.revision : undefined;
-    if (progress && edge) {
-      progress.lastCompletedBoundary = edge.lastCompletedBoundary;
-    }
-    if (options.edgeOnly) {
-      return {
-        profile: "edge",
-        observedRevision,
-        required: ["edge"],
-        passed: ["edge"],
-        unavailable: [],
-        lastCompletedBoundary: edge!.lastCompletedBoundary,
-        correlationIds: edge!.correlationIds,
-      };
-    }
-
-    const accessToken = required(
+    const edgeResult = await verifyEdgeAcceptance(
+      options,
+      origin,
       env,
-      options.service
-        ? "NEMLIG_MCP_SERVICE_ACCESS_TOKEN"
-        : "NEMLIG_MCP_ACCESS_TOKEN",
-    );
-    const connected = await abortable(
-      "Authenticated MCP connect",
-      dependencies.connect(origin, accessToken, controller.signal),
+      dependencies,
       controller.signal,
+      progress,
     );
-    if (progress) {
-      progress.lastCompletedBoundary = "authenticated_mcp_connect";
+    if (edgeResult.outcome) {
+      return edgeResult.outcome;
     }
-    const closeOnAbort = () => {
-      void connected.close().catch(() => undefined);
-    };
-    controller.signal.addEventListener("abort", closeOnAbort, { once: true });
-    let outcome: AcceptanceOutcome | undefined;
-    let operationFailed = false;
-    let operationError: unknown;
-    try {
-      if (options.service) {
-        if (progress) {
-          progress.lastCompletedBoundary = "service_runtime_version_read";
-        }
-        if (
-          !options.wakeOnly &&
-          connected.serverVersion !== expectedServiceVersion(env)
-        ) {
-          throw new ServiceRuntimeVersionMismatchError();
-        }
-        if (options.wakeOnly) {
-          outcome = {
-            profile: "service",
-            observedRevision,
-            required: ["service_wake"],
-            passed: ["service_wake"],
-            unavailable: [],
-            lastCompletedBoundary: "service_runtime_version_read",
-            correlationIds: [],
-          };
-        } else if (options.initializeOnly) {
-          outcome = {
-            profile: "service",
-            observedRevision,
-            required: ["service_runtime"],
-            passed: ["service_runtime"],
-            unavailable: [],
-            lastCompletedBoundary: "service_runtime_version_read",
-            correlationIds: [],
-          };
-        } else {
-          const report = await verifyServiceAcceptanceFeatures(
-            connected.client,
-            {
-              signal: controller.signal,
-              onBoundary: (boundary) => {
-                if (progress) {
-                  progress.lastCompletedBoundary = boundary;
-                }
-              },
-            },
-          );
-          outcome = {
-            profile: "service",
-            observedRevision,
-            required: ["edge", "service_fixture"],
-            passed: ["edge", "service_fixture"],
-            unavailable: [],
-            lastCompletedBoundary: `service_fixture_${report.requestCount}_requests`,
-            correlationIds: edge!.correlationIds,
-          };
-        }
-      } else {
-        const report = await verifyReadOnlyProductionFeatures(
-          connected.client,
-          { signal: controller.signal },
-        );
-        outcome = {
-          profile: "live-user",
-          observedRevision,
-          required: ["edge", "live_user_features"],
-          passed: ["edge", "live_user_features"],
-          unavailable: report.unavailable,
-          lastCompletedBoundary: "live_user_features",
-          correlationIds: edge!.correlationIds,
-        };
-      }
-    } catch (error) {
-      operationFailed = true;
-      operationError = error;
-    }
-    controller.signal.removeEventListener("abort", closeOnAbort);
-    try {
-      await abortable(
-        "Authenticated MCP close",
-        connected.close(),
-        controller.signal,
-      );
-    } catch (error) {
-      if (!operationFailed) {
-        operationFailed = true;
-        operationError = error;
-      }
-    }
-    if (operationFailed) {
-      throw operationError;
-    }
-    if (!outcome) {
-      throw new Error("Production acceptance outcome unavailable");
-    }
-    return outcome;
+    const { edge, observedRevision } = edgeResult;
+
+    return await verifyAuthenticatedAcceptance(
+      options,
+      origin,
+      env,
+      dependencies,
+      controller.signal,
+      edge,
+      observedRevision,
+      progress,
+    );
   } finally {
     clearTimeout(timer);
   }
@@ -466,7 +619,8 @@ export async function run(
     const boundedFailure =
       error instanceof ProductViewerHtmlMismatchError ||
       error instanceof ServiceInventoryMismatchError ||
-      error instanceof ServiceRuntimeVersionMismatchError
+      error instanceof ServiceRuntimeVersionMismatchError ||
+      error instanceof ViewerAssetMismatchError
         ? error
         : undefined;
     const report: AcceptanceReport = {

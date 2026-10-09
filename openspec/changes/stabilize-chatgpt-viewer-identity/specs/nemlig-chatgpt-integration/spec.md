@@ -6,14 +6,15 @@ The integration SHALL advertise `ui://nemlig/shell.html` as its sole supported
 current viewer identity. `_meta.ui.resourceUri` and `openai/outputTemplate`,
 when both present, SHALL identify that same resource. Routine releases SHALL
 retain this identity and serve a small stable shell that loads the current UI
-bundle from the same-origin `/ui/nemlig/manifest.json` when mounted.
+bundle from the fixed production asset origin's `/ui/nemlig/manifest.json`
+when mounted.
 
 The integration SHALL distinguish server-state freshness from loaded-renderer
 freshness. It SHALL NOT claim that an unchanged URI, successful tool result,
 deployment, or connection acknowledgement proves that ChatGPT loaded current
 HTML, JavaScript, or CSS. It SHALL NOT depend on an undocumented result-level
 binding override or host cache invalidation mechanism. The shell SHALL accept
-only same-origin content-addressed JavaScript and CSS assets with matching SRI
+only fixed-origin content-addressed JavaScript and CSS assets with matching SRI
 digests; its manifest request SHALL omit credentials, bypass caches, reject
 redirects, and have a bounded timeout.
 
@@ -38,6 +39,14 @@ redirects, and have a bounded timeout.
   cannot pass SRI
 - **THEN** the shell shows an explicit retryable error with no shopping controls
 - **AND** no manifest or asset request carries provider credentials
+
+#### Scenario: A compatible release retains one predecessor bundle
+
+- **WHEN** a stable-shell bundle is deployed
+- **THEN** the candidate manifest and assets are accepted from the public origin
+- **AND** the immediately preceding shell generation's assets remain available
+- **AND** an unrecognized or missing shell-era predecessor blocks deployment
+- **AND** only a source-proven pre-shell predecessor may start without prior assets
 
 #### Scenario: Current data reaches a cached compatible renderer
 

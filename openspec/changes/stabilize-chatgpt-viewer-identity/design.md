@@ -10,7 +10,7 @@ not establish which URI was requested or whether a resource read occurred.
 The existing viewer already uses server-owned snapshots, current-view tokens,
 revision checks, bounded stale-state recovery, and protected submission.
 Reuse those paths. The current build is self-contained; the new resource will
-instead be a stable shell with a narrowly validated same-origin manifest and
+instead be a stable shell with a narrowly validated fixed-origin manifest and
 content-addressed UI bundle.
 
 Source context:
@@ -52,6 +52,24 @@ normal policy but are not cache workarounds. If compatibility cannot be
 maintained, stop for an explicit contract/cutover decision; do not silently
 rotate the URI.
 
+### Bounded static bundle generations
+
+Use Vite's emitted manifest and existing Zod, crypto, zlib, and fetch APIs;
+add no package. Validate exact content-addressed paths, SRI digests, build
+digest, MIME, CORS, cache policy, bounded bodies and request deadlines. Cap one
+generation at 1.5 MB raw and 350 KB gzip; cap the candidate plus its retained
+predecessor at twice those totals.
+
+Before the existing Worker deploy, read the starting Worker's source revision
+to identify its published viewer identity. Only a recognized pre-shell
+identity permits an empty predecessor. A shell-era predecessor must be fetched
+and fully validated from the public manifest and assets; missing assets abort
+the deployment. Verify that the starting Worker version has not changed after
+capture, then package the candidate manifest with both content-addressed asset
+pairs. After deployment, public acceptance verifies the candidate manifest and
+assets; the deployment path separately verifies the predecessor URLs remain
+available. Keep only one predecessor and use no new workflow or storage.
+
 ### Current state does not imply current code
 
 Reuse the existing current-state read and explicit activation paths. Rendering
@@ -60,7 +78,7 @@ retained results cannot grant authority or restore approval.
 
 A mounted shell reads `/ui/nemlig/manifest.json` with `no-store`, omitted
 credentials, a five-second timeout, and redirects rejected. It accepts only
-same-origin `/ui/nemlig/assets/<sha256>.js` and `.css` paths whose SRI digests
+fixed-origin `/ui/nemlig/assets/<sha256>.js` and `.css` paths whose SRI digests
 match their content-addressed names. Those assets are bundled into the existing
 Worker's static-assets directory; MCP and connection routes remain worker-first
 and unchanged, and asset requests do not wake the Container. The manifest and

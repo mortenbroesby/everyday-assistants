@@ -75,8 +75,8 @@ repository workflow, not by uploading a plugin ZIP.
 The live Draft list resource has one permanent identity:
 `ui://nemlig/shell.html`. The previous `ui://nemlig/draft-list.html`, the former
 unversioned product-viewer URI, and v1-v16 are permanently inert, read-only
-resources. The stable shell loads a same-origin, content-addressed bundle from
-the no-store manifest when mounted; it does not hot-swap code in an active
+resources. The stable shell loads the fixed-origin, content-addressed bundle
+from the no-store manifest when mounted; it does not hot-swap code in an active
 shopping card. Do not rotate a URI to try to invalidate a ChatGPT cache, and do
 not infer current rendered code from a successful deployment, resource read,
 or metadata refresh.

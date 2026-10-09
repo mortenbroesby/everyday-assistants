@@ -33,17 +33,19 @@ export function validateProductViewerArtifact(html: string): {
     1,
     "stable shell may fetch only its current manifest",
   );
-  assert.ok(
-    /fetch\(manifestPath,\{cache:"no-store",credentials:"omit",redirect:"error",signal:AbortSignal\.timeout\(5000\)\}\)/u.test(
-      html,
-    ),
+  assert.match(
+    html,
+    /fetch\(manifestUrl/u,
     "stable shell may fetch only its current manifest",
   );
-  assert.match(html, /integrity=js\.integrity/u);
-  assert.match(html, /integrity=css\.integrity/u);
-  assert.match(html, /assetOrigin="https:\/\/nemlig-mcp\.broesby\.dk"/u);
-  assert.match(html, /window\.__nemligViewerAttempt=currentAttempt/u);
-  assert.match(html, /\/ui\/nemlig\/assets\/\(\[a-f0-9\]\{64\}\)/u);
+  assert.match(html, /https:\/\/nemlig-mcp\.broesby\.dk/u);
+  assert.match(html, /credentials:\s*["']omit["']/u);
+  assert.match(html, /redirect:\s*["']error["']/u);
+  assert.match(html, /cache:\s*["']no-store["']/u);
+  assert.match(html, /AbortSignal\.timeout\(5000\)/u);
+  assert.match(html, /\.integrity\s*=\s*(?:js|css)\.integrity/u);
+  assert.match(html, /window\.__nemligViewerAttempt\s*=\s*currentAttempt/u);
+  assert.match(html, /\+\s*["']\?attempt=["']\s*\+\s*currentAttempt/u);
   assert.doesNotMatch(
     html,
     /Interactive local review is not implemented/u,
