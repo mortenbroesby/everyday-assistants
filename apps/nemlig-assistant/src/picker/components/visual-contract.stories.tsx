@@ -162,11 +162,7 @@ const baseProps = (
     screen,
     reviewDisclosures: new Map(),
     pendingQuantities: new Map(),
-    thumbnails: new Map([
-      [milk, milkCarton],
-      [pasta, milkCarton],
-      [oatMilk, milkCarton],
-    ]),
+    thumbnails: new Map([[milk, milkCarton]]),
     message: "",
     busy: false,
     activatingCurrent: false,
@@ -543,7 +539,7 @@ export const LegacyMixedLocalBasket: Story = {
   render: () => activeReview(review, "needs-review", 375),
 };
 export const Alternatives: Story = {
-  render: () => activeReview(review, "alternatives", 375),
+  render: () => activeReview(walkthroughReview, "alternatives", 375),
 };
 export const FactualDetails: Story = {
   render: () =>

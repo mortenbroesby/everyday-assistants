@@ -257,7 +257,20 @@ function ProductCard({
             onRemove();
           }}
         >
-          <span aria-hidden="true">▣</span> Remove
+          <svg
+            aria-hidden="true"
+            width="20"
+            height="20"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <path d="M3 6h18M8 6V4h8v2m3 0-1 15H6L5 6m5 4v7m4-7v7" />
+          </svg>
+          Remove
         </Button>
       )}
       {swipeAction === "alternative" && onOpenAlternatives && (
@@ -282,7 +295,20 @@ function ProductCard({
             onOpenAlternatives();
           }}
         >
-          <span aria-hidden="true">⌕</span> Find alternative
+          <svg
+            aria-hidden="true"
+            width="20"
+            height="20"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+          >
+            <circle cx="10" cy="10" r="6" />
+            <path d="m14.5 14.5 5.5 5.5" />
+          </svg>
+          Find alternative
         </Button>
       )}
     </>
