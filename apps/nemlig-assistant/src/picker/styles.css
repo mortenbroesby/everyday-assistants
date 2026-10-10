@@ -82,13 +82,13 @@ h2 {
   transform: translateX(-50%);
 }
 .product-action-sheet {
-  bottom: max(12px, env(safe-area-inset-bottom, 0px));
+  bottom: max(20px, env(safe-area-inset-bottom, 0px));
   padding: 16px;
 }
 .product-detail-modal {
   top: 8px;
   width: min(calc(100% - 16px), 560px);
-  height: calc(100dvh - 16px);
+  height: calc(100dvh - 32px);
   padding: 18px;
 }
 .product-overlay-header {

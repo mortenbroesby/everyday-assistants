@@ -363,6 +363,11 @@ try {
       detailsLayout.width >= 300,
     `product details did not open as a near-full-screen modal: ${JSON.stringify(detailsLayout)}`,
   );
+  const detailsBox = await details.boundingBox();
+  assert.ok(
+    detailsBox && detailsBox.y >= 0 && detailsBox.y + detailsBox.height <= 860,
+    `product details extend beyond the visible host viewport: ${JSON.stringify(detailsBox)}`,
+  );
   await details.getByRole("button", { name: "Close product overlay" }).click();
   await milkDisclosure.press("Shift+F10");
   const actionSheet = frame.getByRole("dialog", {
