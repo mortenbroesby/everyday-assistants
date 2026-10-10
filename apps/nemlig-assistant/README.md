@@ -124,13 +124,23 @@ additional resources.
 The shared product viewer opens directly to one **Local basket** list. Every
 row is Ready for whole-list submission; there are no To decide/Ready tabs,
 checkboxes, or acceptance step. Tap a product to open its full-screen details,
-or hold it for two seconds to open a top-aligned four-row action sheet: **Remove product**,
-**Find alternative**, **Show details**, and full-width quantity controls.
-Moving or releasing early cancels the long press. Keyboard users can press
-Shift+F10 on a product. The details view also has a **Product actions** button,
-so touch and screen-reader users can reach the same actions without a hold.
-It closes with ×, Escape, or a tap outside.
-The viewer does not intercept horizontal swipes.
+or swipe from right to left to replace that row with inline controls: trash and
+a two-arrow **Find alternatives** icon on the left, and minus/quantity/plus on the
+right, all on one line.
+The full-screen product details also show the same controls beneath the product facts.
+The product name and a close button remain above the swipe controls. The controls follow
+Nemlig’s familiar basket layout; the rest of the basket stays visible.
+Gesture tracking and tap filtering use `@use-gesture/react`.
+Left-to-right swipes, vertical scrolling, short drags, and canceled gestures do not
+open actions. Keyboard users can press
+Shift+F10 on a product. The details view shows the same controls, so touch and
+screen-reader users can reach the same actions without swiping.
+Close the inline controls with × or Escape to restore the product row. Product
+details close with ×, Escape, or a tap outside.
+The inline controls open on release; swiping alone changes no basket state. ChatGPT mobile
+gesture handling still needs real-host acceptance. If swipe remains unreliable,
+[the tap-layout fallback](https://github.com/mortenbroesby/everyday-assistants/issues/283)
+tracks the alternative interaction.
 The viewer stays within a 620 px height and scrolls longer lists; large Local baskets
 render visible rows with TanStack Virtual while shorter lists stay fully rendered.
 Removing or replacing a row changes only the Local basket, never Nemlig. The
@@ -181,7 +191,7 @@ native rendered build are separate facts: the supported recovery path is an
 operator-managed clean connection cutover followed by a new chat.
 
 Run `pnpm nemlig:smoke:review-ui` from the repository root. Its synthetic
-browser checks exercise the real MCP adapter, one shared Local basket, long-press
+browser checks exercise the real MCP adapter, one shared Local basket, right-to-left swipe
 actions, alternatives, exact whole-list preparation, failure recovery, and the
 packaged viewer. They use fake products and deny provider basket writes; no
 credentials are required.
@@ -222,10 +232,11 @@ explicit alternatives searches hydrate every unique eligible result in the
 single provider response with three concurrent reads and bounded provider
 deadlines/retries. This does not enumerate the whole catalogue.
 
-Choose **Submit to Nemlig** to prepare fresh exact prices and quantities for
-every Local basket row and show the separate on-screen confirmation. If any
-row is unavailable or incomplete, preparation stops; resolve it before trying
-again. Inspect the full prepared list, then choose **Add to Nemlig basket** and
+Choose **Submit to Nemlig** to prepare current price estimates and exact quantities for
+every Local basket row and show the separate on-screen confirmation. Unavailable
+products are named and excluded while available products can proceed; unresolved
+product details still require a fresh review. Inspect the full prepared list,
+then choose **Add to Nemlig basket** and
 confirm that exact addition in the viewer. In conversation, a clear instruction
 to add the unchanged current Local basket authorizes only those prepared lines;
 if you only ask to prepare/inspect, or any item or quantity changed, the
@@ -265,15 +276,20 @@ Read → prepare the exact intended change → confirm user authorization → ap
   prices without internal IDs, expiry times, or protocol status fields. Ask for
   “technical details” when those internals are useful for troubleshooting.
 - An additions review is connection-bound, short-lived, single-use, and tied to
-  exact products, additional and resulting quantities, prices, totals, and the
-  current basket fingerprint.
+  exact products, additional and resulting quantities, and the current basket
+  contents. Reviewed prices and totals are estimates, not approval limits.
 - The default 15-minute review window accommodates a normal ChatGPT approval
   round-trip without weakening final revalidation.
-- Any changed fact invalidates the approval.
+- Product identity, quantity, or basket-content changes invalidate the
+  approval. Missing prices do not block an addition; a product confirmed
+  unavailable is skipped and reported while other approved products continue.
 - The approved action freshly resolves every affected product upstream and
-  revalidates the review and current basket state before writing.
-- Additions re-read the basket immediately before writing and verify the
-  resulting line quantities and basket totals afterward.
+  revalidates the review and current basket state before writing. A failed
+  lookup that cannot confirm unavailability stops before any write.
+- Additions re-read the basket immediately before writing and verify exact
+  resulting lines and quantities afterward. Nemlig may return lower, higher,
+  or missing prices; an unavailable total is shown as unknown. This does not
+  place an order or charge a payment method.
 - Writes are never automatically retried after an uncertain result.
 - Cold login follows Nemlig's ordinary website flags; if Nemlig requires a
   basket decision, the assistant stops rather than selecting a remove/save
@@ -450,7 +466,7 @@ of the repository.
 2. Confirm a partial detail failure is labeled unavailable while other results
    remain in provider order.
 3. Inspect the current Nemlig basket and confirm the Local basket remains distinct.
-4. Start a Local basket, hold a product for two seconds to open its action sheet,
+4. Start a Local basket, swipe a product from right to left to reveal its inline controls,
    then choose an action or change quantity; also open and close full-screen
    details and use Shift+F10, confirming edits leave Nemlig unchanged.
 5. Prepare the entire Local basket and confirm unavailable/incomplete items block
@@ -582,7 +598,7 @@ This README is the user-facing inventory of shipped feature sets:
 - fresh Nemlig authentication before every provider-backed MCP task
 - rich individual short-query product discovery and refinement
 - one shared product presentation with a headless fallback
-- voice/touch one-list Local basket with a long-press action sheet and accessible
+- voice/touch one-list Local basket with a right-to-left swipe row replacement and accessible
   full-screen details, full-page alternatives, and scannable comparisons
 - persistent in-place review navigation, compact rows, and confirmed local removal
 - complete-per-search alternative results, deliberate follow-up search, and conversation-only Local basket edits

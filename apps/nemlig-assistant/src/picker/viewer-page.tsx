@@ -3,11 +3,11 @@ import {
   useLayoutEffect,
   useRef,
   useState,
-  type PointerEvent,
   type ReactNode,
 } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import { useVirtualizer } from "@tanstack/react-virtual";
+import { useDrag } from "@use-gesture/react";
 import type { ProductView } from "../product-presentation.js";
 import {
   ActionFooter,
@@ -37,6 +37,7 @@ export type Review = {
   submission?: {
     status: "prepared" | "submitted" | "uncertain" | "partial";
     verified_additions?: number;
+    skipped_products?: Array<{ product_id: number; name: string }>;
     submission_id: string;
     review: {
       lines?: Array<{
@@ -48,6 +49,7 @@ export type Review = {
         line_total?: number;
       }>;
       expected_products_price?: number;
+      skipped_products?: Array<{ product_id: number; name: string }>;
     };
   };
 };
@@ -118,7 +120,7 @@ export type ViewerPageProps = {
   actions: ViewerPageActions;
 };
 
-// Kept as one component because its hold gesture, overlay, and controls share one product row.
+// Kept as one component because its swipe gesture, details, and controls share one product row.
 // fallow-ignore-next-line complexity
 function ProductCard({
   view,
@@ -148,70 +150,67 @@ function ProductCard({
   comparison?: boolean;
 }) {
   const [overlayOpen, setOverlayOpen] = useState(false);
-  const [overlayMode, setOverlayMode] = useState<"actions" | "details">(
-    "actions",
-  );
-  const pressTimer = useRef<ReturnType<typeof setTimeout> | undefined>(
-    undefined,
-  );
-  const pressOrigin = useRef<{ x: number; y: number } | undefined>(undefined);
-  const suppressSummaryClick = useRef(false);
-  const suppressOverlayClick = useRef(false);
-  const removing = useRef(false);
+  const [actionsOpen, setActionsOpen] = useState(false);
+  const [swipeOffset, setSwipeOffset] = useState(0);
+  const cancelSwipe = useRef<(() => void) | undefined>(undefined);
+  const actionsRef = useRef<HTMLDivElement | null>(null);
   const rowRef = useRef<HTMLDivElement | null>(null);
   const summaryRef = useRef<HTMLButtonElement | null>(null);
-  const cancelPress = () => {
-    clearTimeout(pressTimer.current);
-    pressTimer.current = undefined;
-    pressOrigin.current = undefined;
+  const closeActions = () => {
+    setActionsOpen(false);
+    requestAnimationFrame(() =>
+      summaryRef.current?.focus({ preventScroll: true }),
+    );
   };
-  const endPress = () => {
-    cancelPress();
-    if (suppressSummaryClick.current) {
-      setTimeout(() => {
-        suppressSummaryClick.current = false;
-      }, 0);
+  useLayoutEffect(() => {
+    if (actionsOpen) {
+      actionsRef.current?.focus({ preventScroll: true });
     }
-  };
-  useEffect(() => cancelPress, []);
-  const openOverlay = (mode: "actions" | "details") => {
-    setOverlayMode(mode);
-    setOverlayOpen(true);
-  };
-  const onSummaryPointerDown = (event: PointerEvent<HTMLButtonElement>) => {
-    if (disabled || !item || comparison || event.button !== 0) {
-      return;
+  }, [actionsOpen]);
+  useLayoutEffect(() => {
+    if (disabled) {
+      cancelSwipe.current?.();
+      setSwipeOffset(0);
     }
-    cancelPress();
-    suppressSummaryClick.current = false;
-    pressOrigin.current = { x: event.clientX, y: event.clientY };
-    pressTimer.current = setTimeout(() => {
-      suppressSummaryClick.current = true;
-      suppressOverlayClick.current = true;
-      window.addEventListener(
-        "pointerup",
-        () => {
-          setTimeout(() => {
-            suppressOverlayClick.current = false;
-          }, 0);
-        },
-        { once: true, capture: true },
-      );
-      pressOrigin.current = undefined;
-      openOverlay("actions");
-      pressTimer.current = undefined;
-    }, 2_000);
-  };
-  const onSummaryPointerMove = (event: PointerEvent<HTMLButtonElement>) => {
-    const origin = pressOrigin.current;
-    if (
-      origin &&
-      Math.hypot(event.clientX - origin.x, event.clientY - origin.y) > 10
-    ) {
-      suppressSummaryClick.current = true;
-      cancelPress();
-    }
-  };
+  }, [disabled]);
+  const bindSwipe = useDrag(
+    ({
+      active,
+      down,
+      last,
+      cancel,
+      canceled,
+      event,
+      xy: [x, y],
+      initial: [startX, startY],
+    }) => {
+      cancelSwipe.current = down && !canceled ? cancel : undefined;
+      const dx = x - startX;
+      const dy = Math.abs(y - startY);
+      setSwipeOffset(active ? Math.min(0, dx) : 0);
+      // The library also ends drags on cancellation or lost capture; only release opens actions.
+      if (
+        last &&
+        !canceled &&
+        ["pointerup", "touchend", "mouseup"].includes(event.type) &&
+        dx <= -48 &&
+        -dx > dy * 1.5
+      ) {
+        setActionsOpen(true);
+      }
+    },
+    {
+      enabled: Boolean(item) && !comparison && !disabled,
+      axis: "x",
+      axisThreshold: { mouse: 10, touch: 10, pen: 10 },
+      threshold: 10,
+      filterTaps: true,
+      // Capture cancellation even before the movement threshold is crossed.
+      triggerAllEvents: true,
+      tapsThreshold: 10,
+      pointer: { keys: false },
+    },
+  );
   const quantity =
     item?.quantity ??
     (view.status === "complete"
@@ -229,6 +228,62 @@ function ProductCard({
       disabled={disabled}
       onQuantity={onQuantity}
     />
+  );
+  const actionControls = (
+    <div className="product-action-controls">
+      <button
+        type="button"
+        className="product-action-item product-action-icon"
+        aria-label="Remove product"
+        disabled={!onRemove || disabled}
+        onClick={() => {
+          setOverlayOpen(false);
+          rowRef.current?.closest<HTMLElement>(".viewer")?.focus();
+          onRemove?.();
+        }}
+      >
+        <svg
+          aria-hidden="true"
+          viewBox="0 0 24 24"
+          width="28"
+          height="28"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.8"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
+          <path d="M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7M14 10v7" />
+        </svg>
+      </button>
+      <button
+        type="button"
+        className="product-action-item product-action-icon"
+        aria-label="Find alternatives"
+        title="Find alternatives"
+        disabled={!onOpenAlternatives || disabled}
+        onClick={() => {
+          setActionsOpen(false);
+          setOverlayOpen(false);
+          onOpenAlternatives?.();
+        }}
+      >
+        <svg
+          aria-hidden="true"
+          viewBox="0 0 24 24"
+          width="28"
+          height="28"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.8"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
+          <path d="M5 8h14m-4-4 4 4-4 4M19 16H5m4-4-4 4 4 4" />
+        </svg>
+      </button>
+      {quantityControl}
+    </div>
   );
   const summary = (
     <ProductSummary
@@ -252,25 +307,28 @@ function ProductCard({
   return (
     <div
       className="product-action-row"
+      data-actions-open={actionsOpen || undefined}
+      data-swiping={swipeOffset !== 0 || undefined}
       data-product-id={item?.product_id}
       role={item && !comparison ? "group" : undefined}
       aria-label={
         item && !comparison ? productName(view, item.product_id) : undefined
       }
       ref={rowRef}
+      onKeyDown={(event) => {
+        if (event.key === "Escape" && actionsOpen) {
+          event.stopPropagation();
+          closeActions();
+        }
+      }}
     >
-      <Dialog.Root
-        open={overlayOpen}
-        onOpenChange={(open) => {
-          setOverlayOpen(open);
-          if (!open) {
-            suppressSummaryClick.current = false;
-            suppressOverlayClick.current = false;
-          }
-        }}
-      >
+      <Dialog.Root open={overlayOpen} onOpenChange={setOverlayOpen}>
         <article
           className={`product-card${comparison ? " product-comparison" : ""}`}
+          inert={actionsOpen}
+          style={{
+            transform: `translateX(${actionsOpen ? "-100%" : `${swipeOffset}px`})`,
+          }}
         >
           <div className="product-details">
             {comparison ? (
@@ -300,14 +358,12 @@ function ProductCard({
                 aria-label={`Show details for ${productName(view, item?.product_id)}`}
                 aria-keyshortcuts={item ? "Shift+F10" : undefined}
                 aria-description={
-                  item ? "Hold for actions or press Shift+F10" : undefined
+                  item
+                    ? "Swipe from right to left for actions or press Shift+F10"
+                    : undefined
                 }
                 disabled={disabled}
-                onPointerDown={onSummaryPointerDown}
-                onPointerMove={onSummaryPointerMove}
-                onPointerUp={endPress}
-                onPointerLeave={endPress}
-                onPointerCancel={endPress}
+                {...bindSwipe()}
                 onContextMenu={(event) => event.preventDefault()}
                 onKeyDown={(event) => {
                   if (
@@ -316,17 +372,10 @@ function ProductCard({
                       (event.shiftKey && event.key === "F10"))
                   ) {
                     event.preventDefault();
-                    openOverlay("actions");
+                    setActionsOpen(true);
                   }
                 }}
-                onClick={(event) => {
-                  if (suppressSummaryClick.current) {
-                    suppressSummaryClick.current = false;
-                    event.preventDefault();
-                    return;
-                  }
-                  openOverlay("details");
-                }}
+                onClick={() => setOverlayOpen(true)}
               >
                 {summary}
               </ProductSummaryButton>
@@ -338,28 +387,37 @@ function ProductCard({
             )}
           </div>
         </article>
+        {actionsOpen && (
+          <div
+            className="product-inline-actions"
+            role="group"
+            aria-label={`Actions for ${productName(view, item?.product_id)}`}
+            tabIndex={-1}
+            ref={actionsRef}
+          >
+            <div className="product-inline-header">
+              <strong>{productName(view, item?.product_id)}</strong>
+              <button
+                type="button"
+                aria-label="Close product actions"
+                onClick={closeActions}
+              >
+                ×
+              </button>
+            </div>
+            {actionControls}
+          </div>
+        )}
         {!comparison && (
           <Dialog.Portal>
             <Dialog.Overlay className="product-overlay-backdrop" />
             <Dialog.Content
-              className={
-                overlayMode === "actions"
-                  ? "product-action-sheet"
-                  : "product-detail-modal"
-              }
+              className="product-detail-modal"
               aria-describedby={undefined}
-              onClickCapture={(event) => {
-                if (suppressOverlayClick.current) {
-                  event.preventDefault();
-                  event.stopPropagation();
-                }
-              }}
               onCloseAutoFocus={(event) => {
                 event.preventDefault();
-                if (removing.current) {
-                  removing.current = false;
-                  rowRef.current?.closest<HTMLElement>(".viewer")?.focus();
-                  onRemove?.();
+                if (actionsOpen) {
+                  actionsRef.current?.focus({ preventScroll: true });
                 } else {
                   summaryRef.current?.focus();
                 }
@@ -367,9 +425,7 @@ function ProductCard({
             >
               <div className="product-overlay-header">
                 <Dialog.Title>
-                  {overlayMode === "actions"
-                    ? `Actions for ${productName(view, item?.product_id)}`
-                    : productName(view, item?.product_id)}
+                  {productName(view, item?.product_id)}
                 </Dialog.Title>
                 <Dialog.Close asChild>
                   <button type="button" aria-label="Close product overlay">
@@ -377,56 +433,11 @@ function ProductCard({
                   </button>
                 </Dialog.Close>
               </div>
-              {overlayMode === "actions" ? (
-                <div className="product-action-rows">
-                  <button
-                    type="button"
-                    className="product-action-item product-action-remove"
-                    disabled={!onRemove || disabled}
-                    onClick={() => {
-                      removing.current = true;
-                      setOverlayOpen(false);
-                    }}
-                  >
-                    Remove product
-                  </button>
-                  <button
-                    type="button"
-                    className="product-action-item"
-                    disabled={!onOpenAlternatives || disabled}
-                    onClick={() => {
-                      setOverlayOpen(false);
-                      onOpenAlternatives?.();
-                    }}
-                  >
-                    Find alternative
-                  </button>
-                  <button
-                    type="button"
-                    className="product-action-item"
-                    onClick={() => setOverlayMode("details")}
-                  >
-                    Show details
-                  </button>
-                  <div className="product-action-quantity">
-                    {quantityControl}
-                  </div>
-                </div>
-              ) : (
-                <div className="product-overlay-details">
-                  {summary}
-                  {item && (
-                    <button
-                      type="button"
-                      className="product-action-item"
-                      onClick={() => setOverlayMode("actions")}
-                    >
-                      Product actions
-                    </button>
-                  )}
-                  {details}
-                </div>
-              )}
+              <div className="product-overlay-details">
+                {summary}
+                {details}
+                {item && actionControls}
+              </div>
             </Dialog.Content>
           </Dialog.Portal>
         )}
@@ -548,12 +559,15 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
       return;
     }
     removalFocus.current = null;
-    const next =
+    const nextRow =
       pending.nextId === undefined
         ? null
         : document.querySelector<HTMLElement>(
-            `.product-list [data-product-id="${pending.nextId}"] [data-viewer-component="product-summary"]`,
+            `.product-list [data-product-id="${pending.nextId}"]`,
           );
+    const next = nextRow?.querySelector<HTMLElement>(
+      '.product-inline-actions, article:not([inert]) [data-viewer-component="product-summary"]',
+    );
     (next ?? document.querySelector<HTMLElement>(".viewer"))?.focus();
   }, [review?.items]);
   const destination = review
@@ -562,12 +576,15 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
   const safeTitle =
     destination === "alternatives" ? "Find an alternative" : "Local basket";
   const visibleProductCount = review?.items.length ?? 0;
-  const hasUnreadyItem = review?.items.some(
-    ({ view }) =>
-      !isUsable(view) ||
-      (view.status === "complete" &&
-        (typeof view.product.price !== "number" ||
-          !Number.isFinite(view.product.price))),
+  const hasUnreadyItem = review?.items.some(({ view }) =>
+    view.status === "unavailable"
+      ? view.missing !== true
+      : view.product.available === undefined,
+  );
+  const hasUnavailableItem = review?.items.some(({ view }) =>
+    view.status === "unavailable"
+      ? view.missing === true
+      : view.product.available === false,
   );
   const alternatives = review?.alternatives;
   const alternativesKey = alternatives
@@ -630,7 +647,9 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
   const title =
     review && active && terminalSubmission
       ? review.submission?.status === "submitted"
-        ? "Added to Nemlig basket"
+        ? review.submission.skipped_products?.length
+          ? "Nemlig basket update"
+          : "Added to Nemlig basket"
         : partialSubmission
           ? "Addition stopped early"
           : "Check your Nemlig basket"
@@ -651,7 +670,7 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
         ? "Start a Local basket in conversation."
         : safeTitle === "Find an alternative"
           ? "Compare available options for this product."
-          : "Tap a product for details, or hold a product for two seconds for actions."
+          : "Tap a product for details, or swipe from right to left for actions."
       : basket
         ? "Your current Nemlig basket. This view cannot change it."
         : "Inspect product details here or continue in conversation."
@@ -938,10 +957,20 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
       {review &&
         terminalSubmission &&
         review.submission?.status === "submitted" && (
-          <OutcomeSurface tone="success" title="Nemlig confirmed the addition">
+          <OutcomeSurface
+            tone={
+              review.submission.skipped_products?.length ? "warning" : "success"
+            }
+            title={
+              review.submission.verified_additions === 0
+                ? "No products were added"
+                : "Nemlig confirmed the addition"
+            }
+          >
             <p role="status">
-              Only the prepared products were added. Your real Nemlig basket was
-              verified after the addition.
+              {review.submission.skipped_products?.length
+                ? `${review.submission.verified_additions === 0 ? "No approved products were added" : `${review.submission.verified_additions} approved product additions were verified`}. Unavailable products were skipped: ${review.submission.skipped_products.map(({ name }) => name).join(", ")}. Check the actual Nemlig basket before trying them again.`
+                : "Only the prepared products were added. Your real Nemlig basket was verified after the addition."}
             </p>
             <Button
               color="secondary"
@@ -953,7 +982,15 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
           </OutcomeSurface>
         )}
       {review && terminalSubmission && uncertainSubmission && (
-        <OutcomeSurface tone="warning" title="We could not verify the addition">
+        <OutcomeSurface
+          tone="warning"
+          title={
+            message.includes("No product was sent.")
+              ? "Addition stopped before sending"
+              : "We could not verify the addition"
+          }
+        >
+          {message && !busy && <p role="status">{message}</p>}
           <p role="status">
             Inspect the actual Nemlig basket before making another request.
             Nemlig Assistant will not retry automatically.
@@ -1007,10 +1044,16 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
             )}
             {hasUnreadyItem && review.submission?.status !== "prepared" && (
               <p className="status" role="status">
-                Remove or replace unavailable or incomplete products before
-                submitting.
+                Resolve products with missing details before submitting.
               </p>
             )}
+            {hasUnavailableItem &&
+              !hasUnreadyItem &&
+              review.submission?.status !== "prepared" && (
+                <p className="status" role="status">
+                  Products Nemlig confirms are unavailable will be skipped.
+                </p>
+              )}
             {review.submission?.status === "prepared" && (
               <OutcomeSurface title="Ready to submit the Local basket">
                 {review.submission.review.lines?.map((line) => (
@@ -1020,9 +1063,21 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
                     {money(line.item_price)} each · {money(line.line_total)}
                   </p>
                 ))}
+                {review.submission.review.skipped_products?.length ? (
+                  <p role="status">
+                    Currently unavailable and excluded:{" "}
+                    {review.submission.review.skipped_products
+                      .map(({ name }) => name)
+                      .join(", ")}
+                    .
+                  </p>
+                ) : null}
                 <p>
-                  Expected product total:{" "}
+                  Estimated product total:{" "}
                   {money(review.submission.review.expected_products_price)}
+                </p>
+                <p>
+                  Prices may change. Check the actual Nemlig basket afterward.
                 </p>
                 {submitBlocked ? (
                   <p>

@@ -31,6 +31,15 @@ export class BasketSnapshotChangedError extends BasketPreflightError {
   }
 }
 
+/** Only a 404 from the exact product endpoint establishes a missing product. */
+export class ProductNotFoundError extends NemligError {
+  override readonly name = "ProductNotFoundError";
+
+  constructor(productId: number) {
+    super(`Product ${productId} could not be resolved exactly.`, 404);
+  }
+}
+
 export interface Product {
   id: number | undefined;
   name: string | undefined;
@@ -118,7 +127,7 @@ export interface Basket {
   deliveryTime: string | undefined;
 }
 
-/** Stable identity for the provider basket state relevant to additive writes. */
+/** Stable basket identity for additive writes; prices are estimates, not approval limits. */
 export const basketFingerprint = (basket: Basket): string => {
   const stable = {
     items: basket.items
@@ -126,11 +135,8 @@ export const basketFingerprint = (basket: Basket): string => {
         id: item.id ?? null,
         name: item.name ?? null,
         quantity: item.quantity ?? null,
-        total: item.total ?? null,
       }))
       .sort((left, right) => String(left.id).localeCompare(String(right.id))),
-    productsPrice: basket.productsPrice ?? null,
-    deliveryPrice: basket.deliveryPrice ?? null,
     numberOfProducts: basket.numberOfProducts ?? null,
     deliveryTime: basket.deliveryTime ?? null,
   };
@@ -559,10 +565,7 @@ export class NemligClient {
       );
     } catch (error) {
       if (error instanceof NemligError && error.status === 404) {
-        throw new NemligError(
-          `Product ${productId} could not be resolved exactly.`,
-          404,
-        );
+        throw new ProductNotFoundError(productId);
       }
       throw error;
     }
@@ -574,7 +577,6 @@ export class NemligClient {
     if (!product || product.id !== productId) {
       throw new NemligError(
         `Product ${productId} could not be resolved exactly.`,
-        404,
       );
     }
     return this.rememberProducts([product], true)[0]!;

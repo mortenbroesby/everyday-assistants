@@ -77,7 +77,15 @@ function isReview(value: unknown): value is Review {
       (value.submission.verified_additions !== undefined &&
         (typeof value.submission.verified_additions !== "number" ||
           !Number.isSafeInteger(value.submission.verified_additions) ||
-          value.submission.verified_additions < 1))
+          value.submission.verified_additions < 0)) ||
+      (value.submission.skipped_products !== undefined &&
+        (!Array.isArray(value.submission.skipped_products) ||
+          !value.submission.skipped_products.every(
+            (item) =>
+              isRecord(item) &&
+              Number.isSafeInteger(item.product_id) &&
+              typeof item.name === "string",
+          )))
     ) {
       return false;
     }
@@ -87,6 +95,14 @@ function isReview(value: unknown): value is Review {
       (typeof amount === "number" && Number.isFinite(amount) && amount >= 0);
     if (
       !validOptionalTotal(submissionReview.expected_products_price) ||
+      (submissionReview.skipped_products !== undefined &&
+        (!Array.isArray(submissionReview.skipped_products) ||
+          !submissionReview.skipped_products.every(
+            (item) =>
+              isRecord(item) &&
+              Number.isSafeInteger(item.product_id) &&
+              typeof item.name === "string",
+          ))) ||
       (submissionReview.lines !== undefined &&
         (!Array.isArray(submissionReview.lines) ||
           !submissionReview.lines.every(
@@ -108,22 +124,21 @@ function isReview(value: unknown): value is Review {
   }
   return true;
 }
+// Keep the complete untrusted tool-payload validation at the rendering boundary.
+// fallow-ignore-next-line complexity
 function isProductView(value: unknown): value is ProductView {
   if (
     !isRecord(value) ||
-    !(
-      value.context === "search" ||
-      value.context === "details" ||
-      value.context === "result" ||
-      value.context === "basket" ||
-      value.context === "review"
-    )
+    typeof value.context !== "string" ||
+    !["search", "details", "result", "basket", "review"].includes(value.context)
   ) {
     return false;
   }
   if (value.status === "unavailable") {
     return (
-      value.product_id === undefined || Number.isSafeInteger(value.product_id)
+      (value.product_id === undefined ||
+        Number.isSafeInteger(value.product_id)) &&
+      (value.missing === undefined || typeof value.missing === "boolean")
     );
   }
   if (value.status !== "complete" || !isRecord(value.product)) {
@@ -274,6 +289,7 @@ export function ProductViewer() {
   const [continueSubmitted, setContinueSubmitted] = useState(false);
   const [submitBlocked, setSubmitBlocked] = useState(false);
   const submitBlockedRef = useRef(false);
+  const submissionFailure = useRef<string | undefined>(undefined);
   const [pendingQuantities, setPendingQuantities] = useState<
     Map<number, number>
   >(() => new Map());
@@ -482,7 +498,8 @@ export function ProductViewer() {
       setSubmitBlocked(true);
       setConfirmSubmit(false);
       setMessage(
-        "Submission outcome is uncertain. Inspect the actual Nemlig basket; do not retry automatically.",
+        submissionFailure.current ??
+          "Nemlig did not confirm whether the complete addition reached the basket.",
       );
       return;
     }
@@ -514,6 +531,9 @@ export function ProductViewer() {
       return false;
     }
     callLock.current = true;
+    if (name === "submit_product_review") {
+      submissionFailure.current = undefined;
+    }
     const requestEpoch = cancellationEpoch.current;
     setBusy(true);
     setMessage("Updating…");
@@ -526,12 +546,22 @@ export function ProductViewer() {
         return false;
       }
       if (result.isError) {
-        throw new Error(
+        const detail =
           (result.content ?? [])
             .filter((content) => content.type === "text")
             .map((content) => content.text)
-            .join(" ") || "Update failed",
-        );
+            .join(" ") || "Update failed";
+        if (name === "submit_product_review") {
+          submissionFailure.current =
+            /Basket changed before an addition; no provider write was sent/iu.test(
+              detail,
+            )
+              ? "The Nemlig basket changed before the addition. No product was sent."
+              : /no provider write was sent/iu.test(detail)
+                ? "A basket safety check stopped the addition before any product was sent."
+                : undefined;
+        }
+        throw new Error(detail);
       }
       if (!applyPayload(result, true, adoptPresentationDestination)) {
         throw new Error("Could not confirm the updated Local basket.");
@@ -748,7 +778,8 @@ export function ProductViewer() {
         // The original failure remains safely uncertain when its local state cannot be re-read.
       }
       setMessage(
-        "Submission outcome is uncertain. Inspect the actual Nemlig basket; do not retry automatically.",
+        submissionFailure.current ??
+          "Nemlig did not confirm whether the complete addition reached the basket.",
       );
     }
   };
