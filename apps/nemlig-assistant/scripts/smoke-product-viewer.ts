@@ -443,10 +443,12 @@ try {
   );
   await capture("local-basket-revealed");
 
-  await swipeRow.press("Escape");
-  await frame
-    .getByRole("button", { name: /Remove Synthetic milk from Local basket/ })
-    .waitFor({ state: "detached" });
+  const revealedRemove = frame.getByRole("button", {
+    name: /Remove Synthetic milk from Local basket/,
+  });
+  await revealedRemove.focus();
+  await revealedRemove.press("Escape");
+  await revealedRemove.waitFor({ state: "detached" });
   const shortSwipeBox = await swipeRow.boundingBox();
   assert.ok(
     shortSwipeBox,
@@ -531,7 +533,6 @@ try {
     "Back changed server state",
   );
 
-  await frame.locator(".basket-swipe-row").first().press("Escape");
   if ((await milkDisclosure.getAttribute("aria-expanded")) === "false") {
     await milkDisclosure.click();
   }
