@@ -58,21 +58,25 @@ The system SHALL prepare one exact submission containing every current local bas
 - **THEN** the local basket remains intact, the outcome is explicitly uncertain or failed, and the system does not automatically retry the submission
 
 ### Requirement: To decide and Ready refinement
-The touch review SHALL show one Local basket list without visible To decide or Ready tabs, row-selection checkboxes, or an acceptance step. Every product SHALL be a Ready submission candidate. Swipe gestures past half the row SHALL reveal a full-row action without activating it; a fresh explicit activation of the revealed Remove or Find alternative button SHALL perform the corresponding local action. Keyboard users SHALL be able to reveal those actions by focusing the row and pressing Left or Right Arrow. Expanded rows SHALL provide full-width quantity controls without duplicate action buttons. Legacy stored state SHALL NOT exclude an item from whole-basket submission.
+The touch review SHALL show one Local basket list without visible To decide or Ready tabs, row-selection checkboxes, or an acceptance step. Every product SHALL be a Ready submission candidate. A stationary two-second hold on a row SHALL open a top-aligned modal sheet with explicit Remove product, Find alternative, Show details, and full-width quantity controls without activating an action. Moving or releasing early SHALL cancel the hold; the viewer SHALL NOT intercept horizontal swipes. Tapping a row SHALL open near-full-screen details that can be dismissed and offer a visible Product actions control for access without a hold. Keyboard users SHALL be able to open the action sheet with Shift+F10 and details with Enter or Space. Legacy stored state SHALL NOT exclude an item from whole-basket submission.
 
-The viewer SHALL bound its height and use one scroll region for long content. Larger Local baskets MAY virtualize offscreen rows, provided scrolling, keyboard access, expanded details, and whole-basket submission remain available.
+The viewer SHALL bound its height and use one scroll region for long content. Larger Local baskets MAY virtualize offscreen rows, provided scrolling, keyboard access, modal details, and whole-basket submission remain available.
 
 #### Scenario: Review a long Local basket
 - **WHEN** the Local basket contains more products than fit in the viewer
-- **THEN** the user can scroll through every product to Submit and Clear without a second nested scroll region; expanding or removing a row does not lose the remaining products or keyboard focus
+- **THEN** the user can scroll through every product to Submit and Clear without a second nested scroll region; opening details or removing a row does not lose the remaining products or keyboard focus
 
 #### Scenario: Submission is not locally ready
 - **WHEN** the Local basket is empty or contains an unavailable or incomplete product
 - **THEN** the viewer does not offer an enabled Submit action, and it explains what must be resolved without sending a preparation or provider-write request
 
-#### Scenario: Reveal a local row action
-- **WHEN** the user swipes left or right beyond half the row width and releases
-- **THEN** the row reveals the corresponding Remove or Find alternative button but performs no edit or navigation until that button is explicitly activated
+#### Scenario: Reveal local row actions
+- **WHEN** the user holds a row for two seconds without moving, or presses Shift+F10 while its summary is focused
+- **THEN** the modal sheet offers Remove product, Find alternative, Show details, and quantity controls without changing the Local or Nemlig basket until an action is explicitly activated
+
+#### Scenario: Inspect product details
+- **WHEN** the user taps a row or chooses Show details in its action sheet
+- **THEN** the product facts open in a near-full-screen modal with a Product actions control that opens the action sheet; the modal can be closed with ×, Escape, or outside activation without changing either basket
 
 #### Scenario: Resolve alternatives for a Ready row
 - **WHEN** the user searches alternatives from a Ready row and chooses a replacement

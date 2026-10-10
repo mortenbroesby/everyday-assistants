@@ -269,31 +269,30 @@ async function measureOne(
         true,
       PRODUCT_NAME,
     );
-    const toggle = child
-      .locator(
-        "main article button[aria-expanded], main article > details > summary",
-      )
-      .first();
-    await child.evaluate(() => {
-      const toggle = document.querySelector<HTMLElement>(
-        "main article button[aria-expanded], main article > details > summary",
-      );
+    const selectors = {
+      v8: {
+        toggle: 'main article [data-viewer-component="product-summary"]',
+        visible: '[role="dialog"]',
+      },
+      v7: {
+        toggle:
+          "main article button[aria-expanded], main article > details > summary",
+        visible:
+          'main article button[aria-expanded="true"], main article > details[open] > summary',
+      },
+    }[renderer.name];
+    const toggle = child.locator(selectors.toggle).first();
+    await child.evaluate(({ toggle: toggleSelector, visible }) => {
+      const toggle = document.querySelector<HTMLElement>(toggleSelector);
       if (!toggle) {
-        throw new Error("The first product has no disclosure control.");
+        throw new Error("The first product has no details control.");
       }
       toggle.addEventListener(
         "click",
         () => {
           performance.mark("benchmark:disclosure-start");
           requestAnimationFrame(() => {
-            const controlled = toggle.getAttribute("aria-controls");
-            const content = controlled
-              ? document.getElementById(controlled)
-              : null;
-            const expanded =
-              toggle.getAttribute("aria-expanded") === "true" ||
-              toggle.closest("details")?.open === true;
-            if (expanded && (!content || !content.hidden)) {
+            if (document.querySelector(visible)) {
               performance.measure(
                 "benchmark:disclosure-visible",
                 "benchmark:disclosure-start",
@@ -303,7 +302,7 @@ async function measureOne(
         },
         { once: true },
       );
-    });
+    }, selectors);
     await toggle.click();
     await child.waitForFunction(
       () =>
@@ -579,7 +578,7 @@ function formatStepSummary(report: BenchmarkReport): string {
     ["First product DOM insertion (not paint)", "firstProductMs"],
     ["DOM content loaded", "domContentLoadedMs"],
     ["Page load", "loadMs"],
-    ["Disclosure response", "disclosureVisibleMs"],
+    ["Product detail response", "disclosureVisibleMs"],
   ];
   const timingRows = rows
     .map(
