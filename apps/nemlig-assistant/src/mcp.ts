@@ -564,7 +564,7 @@ In the hosted deployment, Local baskets are durable owner data; use the opaque b
             throw error;
           }
           throw new LocalBasketRepositoryError(
-            "Local basket storage is temporarily unavailable. Refresh and try again.",
+            "Local basket storage is temporarily unavailable. Refresh its state before continuing.",
             503,
           );
         }
@@ -577,7 +577,7 @@ In the hosted deployment, Local baskets are durable owner data; use the opaque b
                 ? "Local basket changed or is busy. Refresh before trying again."
                 : status === 403
                   ? "Local basket access is not authorized for this request."
-                  : "Local basket storage is temporarily unavailable. Refresh and try again.";
+                  : "Local basket storage is temporarily unavailable. Refresh its state before continuing.";
           throw new LocalBasketRepositoryError(message, status);
         }
         return response.json();
