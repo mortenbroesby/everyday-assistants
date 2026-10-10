@@ -797,21 +797,3 @@ export const ReadOnlyProducts: Story = {
 export const ProductResults: Story = {
   render: () => page({ kind: "products", payload: {}, views: [milk, pasta] }),
 };
-export const MissingImageFallback: Story = {
-  render: () =>
-    page(
-      { kind: "products", payload: {}, views: [pasta] },
-      { model: { thumbnails: new Map() } },
-    ),
-};
-export const FailedImageFallback: Story = {
-  render: () =>
-    page(
-      { kind: "products", payload: {}, views: [pasta] },
-      {
-        model: {
-          thumbnails: new Map([[pasta, "/missing-storybook-fixture.svg"]]),
-        },
-      },
-    ),
-};

@@ -41,7 +41,7 @@ h2 {
   position: relative;
   flex: none;
 }
-.basket-menu > button {
+.basket-menu-trigger {
   display: grid;
   place-items: center;
   width: 44px;
@@ -69,6 +69,15 @@ h2 {
 }
 .basket-menu-options button {
   width: 100%;
+  justify-content: flex-start;
+  border-color: transparent;
+  background: transparent;
+}
+.basket-menu-options p {
+  margin: 4px 8px 8px;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 650;
 }
 .basket-picker ul {
   display: grid;
@@ -379,7 +388,7 @@ h2 {
   flex-direction: column;
 }
 .alternatives-scroll {
-  padding-bottom: 16px;
+  padding-bottom: 0;
 }
 .alternatives-scroll > h2 {
   margin-top: 8px;
@@ -421,22 +430,27 @@ h2 {
 .product-comparison-summary {
   width: 100%;
   min-width: 0;
-  padding: 7px;
+  padding: 12px 2px;
 }
 .alternative-choice {
   display: flex;
   align-items: center;
   gap: 8px;
   min-height: 76px;
-  border: 1px solid transparent;
-  border-radius: 14px;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  border-radius: 0;
   color: inherit;
   background: transparent;
   text-align: left;
   cursor: pointer;
 }
 .alternative-choice:hover:not(:disabled) {
-  border-color: var(--accent);
+  background: transparent;
+  color: var(--accent);
+}
+.alternative-choice[aria-pressed="true"] {
+  box-shadow: inset 3px 0 0 var(--accent);
   background: var(--soft);
 }
 .alternative-choice:disabled {
@@ -444,17 +458,38 @@ h2 {
 }
 .alternative-choice-state {
   flex: none;
-  min-width: 2rem;
+  min-width: 3.4rem;
   color: var(--accent);
   font-size: 0.8rem;
   font-weight: 650;
   text-align: right;
 }
-.alternative-choice-state[data-pending] {
-  min-width: 5rem;
+.alternative-choice[aria-pressed="true"] .alternative-choice-state {
+  color: var(--accent);
 }
 .product-comparison .product-expanded {
   padding: 8px 0 0;
+}
+.alternative-selection-confirmation {
+  position: sticky;
+  bottom: 0;
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+  padding: 12px 0 calc(12px + env(safe-area-inset-bottom));
+  border-top: 1px solid var(--line);
+  background: var(--surface);
+}
+.alternative-selection-confirmation p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.84rem;
+}
+.alternative-selection-confirmation strong {
+  color: var(--ink);
+}
+[data-viewer-component="action-footer"] + .clear-local-basket {
+  margin-top: 16px;
 }
 .alternatives-empty {
   color: var(--muted);

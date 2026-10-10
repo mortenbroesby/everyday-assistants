@@ -8,6 +8,7 @@ import {
 import * as Dialog from "@radix-ui/react-dialog";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { useDrag } from "@use-gesture/react";
+import { Check, Layers3, ShoppingBasket, Trash2 } from "lucide-react";
 import type { ProductView } from "../product-presentation.js";
 import {
   ActionFooter,
@@ -155,7 +156,7 @@ function ProductCard({
   onQuantity,
   onRemove,
   onChoice,
-  choicePending = false,
+  choiceSelected = false,
   onOpenAlternatives,
   expandedFacts,
   onFactExpandedChange,
@@ -167,8 +168,8 @@ function ProductCard({
   thumbnailSrc?: string;
   onQuantity?: (quantity: number) => void;
   onRemove?: () => void;
-  onChoice?: () => void | Promise<boolean | void>;
-  choicePending?: boolean;
+  onChoice?: () => void;
+  choiceSelected?: boolean;
   onOpenAlternatives?: () => void;
   expandedFacts?: ReadonlySet<string>;
   onFactExpandedChange?: (factKey: string, expanded: boolean) => void;
@@ -371,21 +372,18 @@ function ProductCard({
                 <button
                   type="button"
                   className="product-comparison-summary alternative-choice"
+                  aria-pressed={choiceSelected}
                   aria-label={
-                    choicePending
-                      ? `Replacing with ${productName(view)}`
-                      : `Use ${productName(view)} as the alternative`
+                    choiceSelected
+                      ? `${productName(view)} selected as the alternative`
+                      : `Select ${productName(view)} as the alternative`
                   }
                   disabled={disabled || !isUsable(view)}
-                  onClick={() => void onChoice()}
+                  onClick={onChoice}
                 >
                   {summary}
-                  <span
-                    className="alternative-choice-state"
-                    data-pending={choicePending || undefined}
-                    aria-hidden="true"
-                  >
-                    {choicePending ? "Replacing…" : "→"}
+                  <span className="alternative-choice-state" aria-hidden="true">
+                    {choiceSelected ? "Selected" : "Select"}
                   </span>
                 </button>
               ) : (
@@ -570,6 +568,9 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
   const [replacementPendingId, setReplacementPendingId] = useState<
     number | undefined
   >();
+  const [selectedAlternativeId, setSelectedAlternativeId] = useState<
+    number | undefined
+  >();
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | undefined>();
   const [basketMenuOpen, setBasketMenuOpen] = useState(false);
   const alternativeOpener = useRef<HTMLElement | null>(null);
@@ -672,6 +673,9 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
       setReplacementPendingId(undefined);
     }
   }, [showingAlternatives]);
+  useEffect(() => {
+    setSelectedAlternativeId(undefined);
+  }, [review?.alternatives?.product_id, review?.alternatives?.query]);
   const productPayload =
     screen.kind === "products" ? screen.payload : undefined;
   const basket =
@@ -696,26 +700,30 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
     <div className="basket-menu">
       <button
         type="button"
+        className="basket-menu-trigger"
         aria-label="Local basket options"
         aria-expanded={basketMenuOpen}
         onClick={() => setBasketMenuOpen((open) => !open)}
       >
-        •••
+        <Layers3 aria-hidden="true" size={20} />
       </button>
       {basketMenuOpen && (
         <div
           className="basket-menu-options"
-          role="group"
+          role="menu"
           aria-label="Local basket actions"
         >
+          <p>Local basket</p>
           <Button
             color="secondary"
+            role="menuitem"
             onClick={() => {
               setBasketMenuOpen(false);
               actions.onOpenPicker();
             }}
           >
-            Choose basket
+            <Layers3 aria-hidden="true" size={16} />
+            Choose another basket
           </Button>
         </div>
       )}
@@ -768,7 +776,40 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
     onFactExpandedChange: (factKey: string, expanded: boolean) =>
       actions.onFactExpandedChange(productId, factKey, expanded),
   });
-  const thumbnail = (view: ProductView) => thumbnails.get(view);
+  const thumbnailsByProductId = new Map<number, string>();
+  for (const [view, image] of thumbnails) {
+    if (view.status === "complete" && view.product.id !== undefined) {
+      thumbnailsByProductId.set(view.product.id, image);
+    }
+  }
+  const thumbnail = (view: ProductView) =>
+    thumbnails.get(view) ??
+    (view.status === "complete" && view.product.id !== undefined
+      ? thumbnailsByProductId.get(view.product.id)
+      : undefined);
+  const selectedAlternative = review?.alternatives?.views.find((view) =>
+    view.status === "complete"
+      ? view.product.id === selectedAlternativeId
+      : view.product_id === selectedAlternativeId,
+  );
+  const confirmAlternative = () => {
+    const alternatives = review?.alternatives;
+    if (!alternatives || selectedAlternativeId === undefined) {
+      return;
+    }
+    setReplacementPendingId(selectedAlternativeId);
+    void Promise.resolve(
+      actions.onReplace(alternatives.product_id, selectedAlternativeId),
+    )
+      .then((replaced) => {
+        if (replaced === false) {
+          setReplacementPendingId(undefined);
+        }
+      })
+      .catch(() => {
+        setReplacementPendingId(undefined);
+      });
+  };
   return (
     <ViewerShell
       title={outcomeOnly ? undefined : title}
@@ -1017,29 +1058,11 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
                             editsBlocked || replacementPendingId !== undefined
                           }
                           comparison
-                          choicePending={replacementPendingId === id}
+                          choiceSelected={selectedAlternativeId === id}
                           {...(id === undefined ? {} : disclosureProps(id))}
                           onChoice={() => {
                             if (id !== undefined) {
-                              alternativeProductId.current = id;
-                              setReplacementPendingId(id);
-                              return Promise.resolve()
-                                .then(() =>
-                                  actions.onReplace(
-                                    review.alternatives!.product_id,
-                                    id,
-                                  ),
-                                )
-                                .then((replaced) => {
-                                  if (replaced === false) {
-                                    setReplacementPendingId(undefined);
-                                  }
-                                  return replaced;
-                                })
-                                .catch(() => {
-                                  setReplacementPendingId(undefined);
-                                  return false;
-                                });
+                              setSelectedAlternativeId(id);
                             }
                           }}
                         />
@@ -1048,6 +1071,27 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
                   </div>
                 )}
               </section>
+              {selectedAlternative && (
+                <section
+                  className="alternative-selection-confirmation"
+                  aria-label="Confirm selected alternative"
+                >
+                  <p>
+                    <strong>{productName(selectedAlternative)}</strong> selected
+                  </p>
+                  <Button
+                    color="primary"
+                    block
+                    disabled={
+                      editsBlocked || replacementPendingId !== undefined
+                    }
+                    onClick={confirmAlternative}
+                  >
+                    <Check aria-hidden="true" size={18} />
+                    Use selected alternative
+                  </Button>
+                </section>
+              )}
             </div>
           </section>
         )}
@@ -1209,6 +1253,7 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
                 disabled={editsBlocked || hasUnreadyItem}
                 onClick={actions.onPrepareSubmission}
               >
+                <ShoppingBasket aria-hidden="true" size={18} />
                 Submit to Nemlig
               </Button>
             )}
@@ -1304,6 +1349,7 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
             disabled={editsBlocked || busy}
             onClick={actions.onRequestEnd}
           >
+            <Trash2 aria-hidden="true" size={18} />
             Clear
           </Button>
           {confirmEnd && (

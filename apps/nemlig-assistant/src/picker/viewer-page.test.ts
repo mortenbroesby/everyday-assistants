@@ -209,11 +209,34 @@ test("shared viewer page keeps thumbnails attached to their individual views", (
   assert.match(markup, /data-viewer-component="product-price"/u);
   assert.match(
     markup,
-    /aria-label="Use Alternative yoghurt as the alternative"/u,
+    /aria-label="Select Alternative yoghurt as the alternative"/u,
   );
-  assert.doesNotMatch(markup, />Choose</u);
+  assert.match(markup, />Select</u);
   assert.doesNotMatch(markup, /Use selected alternative/u);
   assert.match(markup, /Back to Local basket/u);
+});
+
+test("shared viewer page retains a supplied image for an equivalent fixture view", () => {
+  const equivalentProduct: ProductView = {
+    ...product,
+    product: { ...product.product },
+  };
+  const pageProps = props("/assets/yoghurt.svg");
+  if (pageProps.model.screen.kind !== "review") {
+    throw new Error("review fixture missing");
+  }
+  pageProps.model.screen.review = {
+    ...pageProps.model.screen.review,
+    items: [
+      {
+        ...pageProps.model.screen.review.items[0]!,
+        view: equivalentProduct,
+      },
+    ],
+  };
+  const markup = renderToStaticMarkup(createElement(ViewerPage, pageProps));
+  assert.match(markup, /src="\/assets\/yoghurt\.svg"/u);
+  assert.doesNotMatch(markup, /data-viewer-component="image-fallback"/u);
 });
 
 test("full-screen product facts use one visible Nemlig-style information tab", () => {
@@ -265,7 +288,7 @@ test("empty and incomplete Local baskets cannot start submission", () => {
     const markup = renderToStaticMarkup(createElement(ViewerPage, pageProps));
     assert.match(
       markup,
-      /<button[^>]*disabled=""[^>]*>Submit to Nemlig<\/button>/u,
+      /<button[^>]*disabled=""[^>]*>.*Submit to Nemlig<\/button>/u,
     );
     assert.match(markup, /Resolve products with missing details/u);
   }
