@@ -43,9 +43,11 @@
     #nemlig-unified-review .ur-row.is-open .ur-swipe-content { transform: translateX(-100%); }
     #nemlig-unified-review .ur-swipe-action { position: absolute; inset: 0; width: 100%; border: 0; color: #fff; background: #b4232d; cursor: pointer; }
     #nemlig-unified-review .ur-swipe-action span { position: absolute; top: 50%; font-size: 32px; line-height: 1; transform: translate(-50%, -50%); }
+    #nemlig-unified-review .ur-swipe-action::after { content: "Remove product"; position: absolute; top: 50%; right: calc(var(--reveal-half, 0px) + 22px); transform: translateY(-50%); white-space: nowrap; font-size: 12px; font-weight: 700; }
     #nemlig-unified-review .ur-delete-icon { left: calc(100% - var(--reveal-half, 0px)); }
     #nemlig-unified-review .ur-find-icon { display: none; left: var(--reveal-half, 0px); }
     #nemlig-unified-review .ur-row.is-swiping-right .ur-swipe-action { background: #1b7140; }
+    #nemlig-unified-review .ur-row.is-swiping-right .ur-swipe-action::after { content: "Find alternative"; right: auto; left: calc(var(--reveal-half, 0px) + 22px); }
     #nemlig-unified-review .ur-row.is-swiping-right .ur-delete-icon { display: none; }
     #nemlig-unified-review .ur-row.is-swiping-right .ur-find-icon { display: block; }
     #nemlig-unified-review .ur-thumb { display: grid; width: 58px; height: 58px; place-items: center; border-radius: 14px; background: var(--well); font-size: 29px; }
