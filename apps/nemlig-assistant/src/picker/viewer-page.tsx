@@ -118,7 +118,7 @@ export type ViewerPageProps = {
   actions: ViewerPageActions;
 };
 
-// Kept as one component because its hold gesture, overlay, and controls share one product row.
+// Kept as one component because its swipe gesture, details, and controls share one product row.
 // fallow-ignore-next-line complexity
 function ProductCard({
   view,
@@ -148,68 +148,75 @@ function ProductCard({
   comparison?: boolean;
 }) {
   const [overlayOpen, setOverlayOpen] = useState(false);
-  const [overlayMode, setOverlayMode] = useState<"actions" | "details">(
-    "actions",
-  );
-  const pressTimer = useRef<ReturnType<typeof setTimeout> | undefined>(
-    undefined,
-  );
-  const pressOrigin = useRef<{ x: number; y: number } | undefined>(undefined);
+  const [actionsOpen, setActionsOpen] = useState(false);
+  const [swipeOffset, setSwipeOffset] = useState(0);
+  const swipeOrigin = useRef<
+    { pointerId: number; x: number; y: number; canceled: boolean } | undefined
+  >(undefined);
   const suppressSummaryClick = useRef(false);
-  const suppressOverlayClick = useRef(false);
-  const removing = useRef(false);
+  const actionsRef = useRef<HTMLDivElement | null>(null);
   const rowRef = useRef<HTMLDivElement | null>(null);
   const summaryRef = useRef<HTMLButtonElement | null>(null);
-  const cancelPress = () => {
-    clearTimeout(pressTimer.current);
-    pressTimer.current = undefined;
-    pressOrigin.current = undefined;
+  const closeActions = () => {
+    setActionsOpen(false);
+    requestAnimationFrame(() =>
+      summaryRef.current?.focus({ preventScroll: true }),
+    );
   };
-  const endPress = () => {
-    cancelPress();
-    if (suppressSummaryClick.current) {
-      setTimeout(() => {
-        suppressSummaryClick.current = false;
-      }, 0);
+  useLayoutEffect(() => {
+    if (actionsOpen) {
+      actionsRef.current?.focus({ preventScroll: true });
     }
-  };
-  useEffect(() => cancelPress, []);
-  const openOverlay = (mode: "actions" | "details") => {
-    setOverlayMode(mode);
-    setOverlayOpen(true);
-  };
+  }, [actionsOpen]);
   const onSummaryPointerDown = (event: PointerEvent<HTMLButtonElement>) => {
-    if (disabled || !item || comparison || event.button !== 0) {
+    if (
+      disabled ||
+      !item ||
+      comparison ||
+      event.button !== 0 ||
+      !event.isPrimary
+    ) {
       return;
     }
-    cancelPress();
     suppressSummaryClick.current = false;
-    pressOrigin.current = { x: event.clientX, y: event.clientY };
-    pressTimer.current = setTimeout(() => {
-      suppressSummaryClick.current = true;
-      suppressOverlayClick.current = true;
-      window.addEventListener(
-        "pointerup",
-        () => {
-          setTimeout(() => {
-            suppressOverlayClick.current = false;
-          }, 0);
-        },
-        { once: true, capture: true },
-      );
-      pressOrigin.current = undefined;
-      openOverlay("actions");
-      pressTimer.current = undefined;
-    }, 2_000);
+    swipeOrigin.current = {
+      pointerId: event.pointerId,
+      x: event.clientX,
+      y: event.clientY,
+      canceled: false,
+    };
+    event.currentTarget.setPointerCapture(event.pointerId);
   };
   const onSummaryPointerMove = (event: PointerEvent<HTMLButtonElement>) => {
-    const origin = pressOrigin.current;
-    if (
-      origin &&
-      Math.hypot(event.clientX - origin.x, event.clientY - origin.y) > 10
-    ) {
+    const origin = swipeOrigin.current;
+    if (!origin || origin.pointerId !== event.pointerId) {
+      return;
+    }
+    const dx = Math.abs(event.clientX - origin.x);
+    const dy = Math.abs(event.clientY - origin.y);
+    if (Math.hypot(dx, dy) > 10) {
       suppressSummaryClick.current = true;
-      cancelPress();
+      if (dy > dx) {
+        origin.canceled = true;
+      }
+      setSwipeOffset(
+        origin.canceled ? 0 : Math.min(0, event.clientX - origin.x),
+      );
+    }
+  };
+  const onSummaryPointerUp = (event: PointerEvent<HTMLButtonElement>) => {
+    const origin = swipeOrigin.current;
+    if (!origin || origin.pointerId !== event.pointerId) {
+      return;
+    }
+    onSummaryPointerMove(event);
+    swipeOrigin.current = undefined;
+    setSwipeOffset(0);
+    const dx = event.clientX - origin.x;
+    const dy = Math.abs(event.clientY - origin.y);
+    if (!disabled && !origin.canceled && dx <= -48 && -dx > dy * 1.5) {
+      // Open on release so the swipe cannot activate a newly mounted action.
+      setActionsOpen(true);
     }
   };
   const quantity =
@@ -252,12 +259,20 @@ function ProductCard({
   return (
     <div
       className="product-action-row"
+      data-actions-open={actionsOpen || undefined}
+      data-swiping={swipeOffset !== 0 || undefined}
       data-product-id={item?.product_id}
       role={item && !comparison ? "group" : undefined}
       aria-label={
         item && !comparison ? productName(view, item.product_id) : undefined
       }
       ref={rowRef}
+      onKeyDown={(event) => {
+        if (event.key === "Escape" && actionsOpen) {
+          event.stopPropagation();
+          closeActions();
+        }
+      }}
     >
       <Dialog.Root
         open={overlayOpen}
@@ -265,12 +280,15 @@ function ProductCard({
           setOverlayOpen(open);
           if (!open) {
             suppressSummaryClick.current = false;
-            suppressOverlayClick.current = false;
           }
         }}
       >
         <article
           className={`product-card${comparison ? " product-comparison" : ""}`}
+          inert={actionsOpen}
+          style={{
+            transform: `translateX(${actionsOpen ? "-100%" : `${swipeOffset}px`})`,
+          }}
         >
           <div className="product-details">
             {comparison ? (
@@ -300,23 +318,32 @@ function ProductCard({
                 aria-label={`Show details for ${productName(view, item?.product_id)}`}
                 aria-keyshortcuts={item ? "Shift+F10" : undefined}
                 aria-description={
-                  item ? "Hold for actions or press Shift+F10" : undefined
+                  item
+                    ? "Swipe from right to left for actions or press Shift+F10"
+                    : undefined
                 }
                 disabled={disabled}
                 onPointerDown={onSummaryPointerDown}
                 onPointerMove={onSummaryPointerMove}
-                onPointerUp={endPress}
-                onPointerLeave={endPress}
-                onPointerCancel={endPress}
+                onPointerUp={onSummaryPointerUp}
+                onPointerCancel={() => {
+                  swipeOrigin.current = undefined;
+                  setSwipeOffset(0);
+                }}
+                onLostPointerCapture={() => {
+                  swipeOrigin.current = undefined;
+                  setSwipeOffset(0);
+                }}
                 onContextMenu={(event) => event.preventDefault()}
                 onKeyDown={(event) => {
+                  suppressSummaryClick.current = false;
                   if (
                     item &&
                     (event.key === "ContextMenu" ||
                       (event.shiftKey && event.key === "F10"))
                   ) {
                     event.preventDefault();
-                    openOverlay("actions");
+                    setActionsOpen(true);
                   }
                 }}
                 onClick={(event) => {
@@ -325,7 +352,7 @@ function ProductCard({
                     event.preventDefault();
                     return;
                   }
-                  openOverlay("details");
+                  setOverlayOpen(true);
                 }}
               >
                 {summary}
@@ -338,28 +365,74 @@ function ProductCard({
             )}
           </div>
         </article>
+        {actionsOpen && (
+          <div
+            className="product-inline-actions"
+            role="group"
+            aria-label={`Actions for ${productName(view, item?.product_id)}`}
+            tabIndex={-1}
+            ref={actionsRef}
+          >
+            <div className="product-inline-header">
+              <strong>{productName(view, item?.product_id)}</strong>
+              <button
+                type="button"
+                aria-label="Close product actions"
+                onClick={closeActions}
+              >
+                ×
+              </button>
+            </div>
+            <div className="product-action-controls">
+              <button
+                type="button"
+                className="product-action-item product-action-remove"
+                aria-label="Remove product"
+                disabled={!onRemove || disabled}
+                onClick={() => {
+                  rowRef.current?.closest<HTMLElement>(".viewer")?.focus();
+                  onRemove?.();
+                }}
+              >
+                <svg
+                  aria-hidden="true"
+                  viewBox="0 0 24 24"
+                  width="28"
+                  height="28"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.8"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <path d="M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7M14 10v7" />
+                </svg>
+              </button>
+              {quantityControl}
+            </div>
+            <button
+              type="button"
+              className="product-action-item"
+              disabled={!onOpenAlternatives || disabled}
+              onClick={() => {
+                setActionsOpen(false);
+                onOpenAlternatives?.();
+              }}
+            >
+              Find alternatives
+            </button>
+          </div>
+        )}
         {!comparison && (
           <Dialog.Portal>
             <Dialog.Overlay className="product-overlay-backdrop" />
             <Dialog.Content
-              className={
-                overlayMode === "actions"
-                  ? "product-action-sheet"
-                  : "product-detail-modal"
-              }
+              className="product-detail-modal"
               aria-describedby={undefined}
-              onClickCapture={(event) => {
-                if (suppressOverlayClick.current) {
-                  event.preventDefault();
-                  event.stopPropagation();
-                }
-              }}
               onCloseAutoFocus={(event) => {
                 event.preventDefault();
-                if (removing.current) {
-                  removing.current = false;
-                  rowRef.current?.closest<HTMLElement>(".viewer")?.focus();
-                  onRemove?.();
+                if (actionsOpen) {
+                  actionsRef.current?.focus({ preventScroll: true });
                 } else {
                   summaryRef.current?.focus();
                 }
@@ -367,9 +440,7 @@ function ProductCard({
             >
               <div className="product-overlay-header">
                 <Dialog.Title>
-                  {overlayMode === "actions"
-                    ? `Actions for ${productName(view, item?.product_id)}`
-                    : productName(view, item?.product_id)}
+                  {productName(view, item?.product_id)}
                 </Dialog.Title>
                 <Dialog.Close asChild>
                   <button type="button" aria-label="Close product overlay">
@@ -377,56 +448,22 @@ function ProductCard({
                   </button>
                 </Dialog.Close>
               </div>
-              {overlayMode === "actions" ? (
-                <div className="product-action-rows">
-                  <button
-                    type="button"
-                    className="product-action-item product-action-remove"
-                    disabled={!onRemove || disabled}
-                    onClick={() => {
-                      removing.current = true;
-                      setOverlayOpen(false);
-                    }}
-                  >
-                    Remove product
-                  </button>
+              <div className="product-overlay-details">
+                {summary}
+                {item && (
                   <button
                     type="button"
                     className="product-action-item"
-                    disabled={!onOpenAlternatives || disabled}
                     onClick={() => {
+                      setActionsOpen(true);
                       setOverlayOpen(false);
-                      onOpenAlternatives?.();
                     }}
                   >
-                    Find alternative
+                    Product actions
                   </button>
-                  <button
-                    type="button"
-                    className="product-action-item"
-                    onClick={() => setOverlayMode("details")}
-                  >
-                    Show details
-                  </button>
-                  <div className="product-action-quantity">
-                    {quantityControl}
-                  </div>
-                </div>
-              ) : (
-                <div className="product-overlay-details">
-                  {summary}
-                  {item && (
-                    <button
-                      type="button"
-                      className="product-action-item"
-                      onClick={() => setOverlayMode("actions")}
-                    >
-                      Product actions
-                    </button>
-                  )}
-                  {details}
-                </div>
-              )}
+                )}
+                {details}
+              </div>
             </Dialog.Content>
           </Dialog.Portal>
         )}
@@ -651,7 +688,7 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
         ? "Start a Local basket in conversation."
         : safeTitle === "Find an alternative"
           ? "Compare available options for this product."
-          : "Tap a product for details, or hold a product for two seconds for actions."
+          : "Tap a product for details, or swipe from right to left for actions."
       : basket
         ? "Your current Nemlig basket. This view cannot change it."
         : "Inspect product details here or continue in conversation."

@@ -94,7 +94,7 @@ const longFixtureJson = JSON.stringify({
 });
 const parentDocument = (
   reviewJson: string,
-) => `<!doctype html><meta charset="utf-8"><title>synthetic MCP host</title>
+) => `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>synthetic MCP host</title>
 <style>body{margin:0}</style><iframe title="viewer" src="/resource" style="display:block;width:100%;height:100vh;border:0"></iframe>
 <script>
 window.calls=[]; window.messages=[]; window.providerWrites=0; window.hostErrors=[]; let review=${reviewJson}; window.submissionAttempts=0; window.failNext=false; window.failGenericNext=false;
@@ -376,7 +376,7 @@ try {
     "product details are not top-aligned in the viewer",
   );
   await details.getByRole("button", { name: "Product actions" }).click();
-  const touchAccessibleActions = frame.getByRole("dialog", {
+  const touchAccessibleActions = frame.getByRole("group", {
     name: "Actions for Synthetic milk",
   });
   await touchAccessibleActions.waitFor();
@@ -385,61 +385,121 @@ try {
       modal.contains(modal.ownerDocument.activeElement),
     ),
     true,
-    "focus left the overlay when opening actions from details",
+    "focus did not move to inline actions from details",
   );
   await touchAccessibleActions
-    .getByRole("button", { name: "Close product overlay" })
+    .getByRole("button", { name: "Close product actions" })
     .click();
   await milkDisclosure.press("Shift+F10");
-  const actionSheet = frame.getByRole("dialog", {
+  const actionSheet = frame.getByRole("group", {
     name: "Actions for Synthetic milk",
   });
   await actionSheet.waitFor();
+  assert.equal(
+    await frame.getByRole("dialog").count(),
+    0,
+    "actions opened a modal",
+  );
+  const rowBox = await frame.locator('[data-product-id="1"]').boundingBox();
   const sheetBox = await actionSheet.boundingBox();
+  assert.ok(rowBox);
+  assert.ok(sheetBox);
   assert.ok(
-    sheetBox && sheetBox.y >= 0 && sheetBox.y + sheetBox.height <= 860,
-    `action sheet extends beyond the visible host viewport: ${JSON.stringify(sheetBox)}`,
+    Math.abs(rowBox.y - sheetBox.y) < 2,
+    "actions did not replace the product row",
   );
-  assert.ok(
-    hostFrameBox && sheetBox && sheetBox.y - hostFrameBox.y <= 16,
-    "action sheet is not top-aligned in the viewer",
+  assert.equal(
+    await frame
+      .getByRole("button", { name: "Show details for Synthetic milk" })
+      .evaluate((button) => {
+        button.focus({ preventScroll: true });
+        return (
+          button.closest("article")?.inert &&
+          button.ownerDocument.activeElement !== button
+        );
+      }),
+    true,
+    "replaced product summary is still interactive",
   );
-  for (const label of ["Remove product", "Find alternative", "Show details"]) {
+  for (const label of ["Remove product", "Find alternatives"]) {
     assert.equal(
       await actionSheet.getByRole("button", { name: label }).count(),
       1,
     );
   }
-  const quantityLayout = await actionSheet
-    .locator('[data-viewer-component="quantity-control"]')
-    .evaluate((control) => ({
-      control: control.getBoundingClientRect().width,
-      parent: control.parentElement!.getBoundingClientRect().width,
-      buttons: [...control.querySelectorAll("button")].map(
-        (button) => button.getBoundingClientRect().width,
+  const assertActionLayout = async () => {
+    await actionSheet.evaluate(async (node) => {
+      await Promise.all(
+        node.getAnimations().map((animation) => animation.finished),
+      );
+    });
+    const remove = await actionSheet
+      .getByRole("button", { name: "Remove product" })
+      .boundingBox();
+    const quantity = await actionSheet
+      .locator('[data-viewer-component="quantity-control"]')
+      .boundingBox();
+    const alternatives = await actionSheet
+      .getByRole("button", { name: "Find alternatives" })
+      .boundingBox();
+    assert.ok(remove, "trash control is missing");
+    assert.ok(remove.x >= 0, "trash control is clipped offscreen");
+    assert.equal(
+      await actionSheet.evaluate((node) => node.parentElement?.scrollLeft),
+      0,
+      "focusing inline actions scrolled the row sideways",
+    );
+    assert.ok(quantity, "quantity controls are missing");
+    assert.ok(alternatives, "Find alternatives is missing");
+    assert.ok(
+      remove.x + remove.width < quantity.x,
+      "trash control is not left of quantity controls",
+    );
+    assert.ok(
+      Math.abs(remove.y - quantity.y) < 2,
+      "trash and quantity controls are not aligned",
+    );
+    assert.ok(
+      alternatives.y >= quantity.y + quantity.height,
+      "Find alternatives is not below the quantity controls",
+    );
+    const targets = await actionSheet
+      .locator(".product-action-controls button")
+      .evaluateAll((buttons) =>
+        buttons.map((button) => {
+          const rect = button.getBoundingClientRect();
+          return rect.width >= 44 && rect.height >= 44;
+        }),
+      );
+    assert.equal(
+      targets.length,
+      3,
+      "trash, minus, and plus controls are required",
+    );
+    assert.ok(
+      targets.every(Boolean),
+      "action controls have undersized touch targets",
+    );
+    assert.equal(
+      await actionSheet.evaluate(
+        (modal) => modal.scrollWidth <= modal.clientWidth,
       ),
-    }));
-  assert.ok(
-    quantityLayout.control >= quantityLayout.parent - 2 &&
-      quantityLayout.buttons.every(
-        (width) => width > quantityLayout.parent / 3,
-      ),
-    "action-sheet quantity controls do not span their row",
-  );
+      true,
+      "action sheet overflows horizontally",
+    );
+  };
+  await assertActionLayout();
+  await page.setViewportSize({ width: 320, height: 860 });
+  await assertActionLayout();
+  await capture("local-basket-actions-320");
+  await page.setViewportSize({ width: 375, height: 860 });
   await capture("local-basket-quantity");
-  await actionSheet.getByRole("button", { name: "Show details" }).click();
-  await details.waitFor();
-  assert.equal(
-    await details.evaluate((modal) =>
-      modal.contains(modal.ownerDocument.activeElement),
-    ),
-    true,
-    "focus left the overlay when switching from actions to details",
-  );
-  await frame
-    .getByRole("dialog", { name: "Synthetic milk" })
-    .getByRole("button", { name: "Close product overlay" })
+  await actionSheet
+    .getByRole("button", { name: "Close product actions" })
     .click();
+  await milkDisclosure.click();
+  await details.waitFor();
+  await details.getByRole("button", { name: "Close product overlay" }).click();
   const callsBeforeMenu = await page.evaluate(() => window.calls.length);
   const box = await milkDisclosure.boundingBox();
   assert.ok(box, "product summary has no hit area");
@@ -452,48 +512,59 @@ try {
     .getByRole("dialog", { name: "Synthetic milk" })
     .getByRole("button", { name: "Close product overlay" })
     .click();
-  const dragBox = await milkDisclosure.boundingBox();
-  assert.ok(dragBox, "product summary has no drag hit area");
-  await page.mouse.move(
-    dragBox.x + dragBox.width * 0.8,
-    dragBox.y + dragBox.height / 2,
-  );
-  await page.mouse.down();
-  await page.mouse.move(
-    dragBox.x + dragBox.width * 0.2,
-    dragBox.y + dragBox.height / 2,
-  );
-  await page.waitForTimeout(2_100);
-  await page.mouse.up();
-  assert.equal(
-    await frame.getByRole("dialog").count(),
-    0,
-    "dragging opened a product overlay",
-  );
-  const holdBox = await milkDisclosure.boundingBox();
-  assert.ok(holdBox, "product summary has no long-press hit area");
-  await page.mouse.move(
-    holdBox.x + holdBox.width / 2,
-    holdBox.y + holdBox.height / 2,
-  );
-  await page.mouse.down();
-  await frame
-    .getByRole("dialog", { name: "Actions for Synthetic milk" })
-    .waitFor({ timeout: 3_000 });
-  await page.mouse.up();
+  const swipeSummary = async (from: number, to: number, dy = 0) => {
+    const box = await milkDisclosure.boundingBox();
+    assert.ok(box, "product summary has no swipe hit area");
+    await page.mouse.move(box.x + box.width * from, box.y + box.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(box.x + box.width * to, box.y + box.height / 2 + dy, {
+      steps: 5,
+    });
+    await page.mouse.up();
+  };
+  await swipeSummary(0.8, 0.2);
+  await actionSheet.waitFor();
   assert.equal(
     await page.evaluate(() => window.calls.length),
     callsBeforeMenu,
     "opening the action menu changed the Local basket",
   );
   await capture("local-basket-actions");
-  await frame.getByRole("dialog").press("Escape");
-  await frame.getByRole("dialog").waitFor({ state: "detached" });
+  await actionSheet.press("Escape");
+  await actionSheet.waitFor({ state: "detached" });
+  for (const [from, to, dy] of [
+    [0.2, 0.8, 0],
+    [0.8, 0.7, 0],
+    [0.8, 0.7, 80],
+  ] as const) {
+    await swipeSummary(from, to, dy);
+    assert.equal(
+      await frame.locator(".product-inline-actions, [role=dialog]").count(),
+      0,
+      "rightward, short, or vertical movement opened a product overlay",
+    );
+  }
+  const cancelBox = await milkDisclosure.boundingBox();
+  assert.ok(cancelBox, "product summary has no cancel hit area");
+  await page.mouse.move(cancelBox.x + cancelBox.width * 0.8, cancelBox.y + 5);
+  await page.mouse.down();
+  await page.mouse.move(cancelBox.x + cancelBox.width * 0.2, cancelBox.y + 5);
+  await milkDisclosure.dispatchEvent("pointercancel", { pointerId: 1 });
+  await page.mouse.up();
+  assert.equal(
+    await frame.locator(".product-inline-actions, [role=dialog]").count(),
+    0,
+    "canceled swipe opened an overlay",
+  );
+  await milkDisclosure.press("Enter");
+  await details.waitFor();
+  await details.press("Escape");
+  await details.waitFor({ state: "detached" });
   const openMilkAlternatives = async () => {
     await milkDisclosure.press("Shift+F10");
     await frame
-      .getByRole("dialog")
-      .getByRole("button", { name: "Find alternative" })
+      .locator(".product-inline-actions")
+      .getByRole("button", { name: "Find alternatives" })
       .click();
     await frame
       .getByRole("heading", { name: "Find an alternative", level: 1 })
@@ -526,10 +597,10 @@ try {
 
   await milkDisclosure.press("Shift+F10");
   await frame
-    .getByRole("dialog", { name: "Actions for Synthetic milk" })
+    .getByRole("group", { name: "Actions for Synthetic milk" })
     .getByRole("button", { name: "Increase quantity of Synthetic milk" })
     .click();
-  await frame.getByRole("dialog").press("Escape");
+  await frame.locator(".product-inline-actions").press("Escape");
   await page.waitForFunction(() => window.getReview().items[0]?.quantity === 2);
   await frame.getByRole("heading", { name: "Local basket" }).waitFor();
   await page.evaluate(() => window.sendPassive());
@@ -575,11 +646,13 @@ try {
     '[data-viewer-component="product-summary"]',
   );
   await oatsDisclosure.press("Shift+F10");
-  const increase = frame.getByRole("dialog").getByRole("button", {
-    name: `Increase quantity of ${longOatsName}`,
-  });
+  const increase = frame
+    .locator(".product-inline-actions")
+    .getByRole("button", {
+      name: `Increase quantity of ${longOatsName}`,
+    });
   await increase.click();
-  await frame.getByRole("dialog").press("Escape");
+  await frame.locator(".product-inline-actions").press("Escape");
   const callsBeforeSubmit = await page.evaluate(() => window.calls.length);
   await openPreparedSubmission();
   const actions = await page.evaluate(
@@ -634,10 +707,10 @@ try {
     .locator('[data-viewer-component="product-summary"]')
     .press("Shift+F10");
   await frame
-    .getByRole("dialog")
+    .locator(".product-inline-actions")
     .getByRole("button", { name: "Increase quantity of Synthetic alternative" })
     .click();
-  await frame.getByRole("dialog").press("Escape");
+  await frame.locator(".product-inline-actions").press("Escape");
   await frame.getByRole("button", { name: "Add to Nemlig" }).click();
   await frame
     .getByText("The prepared change changed while quantities were being saved.")
@@ -704,7 +777,7 @@ try {
       .getByRole("button", { name: `Show details for ${name}` })
       .press("Shift+F10");
     await removeFrame
-      .getByRole("dialog")
+      .locator(".product-inline-actions")
       .getByRole("button", { name: "Remove product" })
       .click();
     await removePage.waitForFunction(
@@ -756,11 +829,11 @@ try {
     .locator('[data-viewer-component="product-summary"]')
     .press("Shift+F10");
   await longFrame
-    .getByRole("dialog")
+    .locator(".product-inline-actions")
     .locator('[data-viewer-component="quantity-control"]')
     .waitFor();
   await longFrame
-    .getByRole("dialog")
+    .locator(".product-inline-actions")
     .getByRole("button", { name: "Remove product" })
     .click();
   await longPage.waitForFunction(() => window.getReview().items.length === 11);
@@ -803,31 +876,96 @@ try {
   const touchBox = await touchSummary.boundingBox();
   assert.ok(touchBox, "touch row has no hit area");
   const touch = await touchContext.newCDPSession(touchPage);
-  await touch.send("Input.dispatchTouchEvent", {
-    type: "touchStart",
-    touchPoints: [
-      {
-        x: touchBox.x + touchBox.width / 2,
-        y: touchBox.y + 5,
-      },
-    ],
-  });
+  const touchSwipe = async (
+    from: number,
+    to: number,
+    cancel = false,
+    dy = 0,
+  ) => {
+    await touch.send("Input.dispatchTouchEvent", {
+      type: "touchStart",
+      touchPoints: [
+        { x: touchBox.x + touchBox.width * from, y: touchBox.y + 5 },
+      ],
+    });
+    await touch.send("Input.dispatchTouchEvent", {
+      type: "touchMove",
+      touchPoints: [
+        { x: touchBox.x + touchBox.width * to, y: touchBox.y + 5 + dy },
+      ],
+    });
+    assert.equal(
+      await touchFrame
+        .locator(".product-inline-actions, [role=dialog]")
+        .count(),
+      0,
+      "touch opened actions before release",
+    );
+    await touch.send("Input.dispatchTouchEvent", {
+      type: cancel ? "touchCancel" : "touchEnd",
+      touchPoints: [],
+    });
+  };
+  for (const [from, to, cancel, dy] of [
+    [0.2, 0.8, false, 0],
+    [0.8, 0.7, false, 0],
+    [0.8, 0.2, true, 0],
+    [0.8, 0.7, false, 80],
+  ] as const) {
+    await touchSwipe(from, to, cancel, dy);
+    assert.equal(
+      await touchFrame
+        .locator(".product-inline-actions, [role=dialog]")
+        .count(),
+      0,
+      `touch (${from}, ${to}, cancel=${cancel}, dy=${dy}) opened ${await touchFrame.locator(".product-inline-actions, [role=dialog]").allTextContents()}`,
+    );
+  }
+  await touchSwipe(0.8, 0.2);
   await touchFrame
-    .getByRole("dialog", { name: "Actions for Synthetic milk" })
-    .waitFor({ timeout: 3_000 });
-  await touch.send("Input.dispatchTouchEvent", {
-    type: "touchEnd",
-    touchPoints: [],
-  });
+    .getByRole("group", { name: "Actions for Synthetic milk" })
+    .waitFor();
+  assert.equal(
+    await touchPage.evaluate(() => window.calls.length),
+    0,
+    "touch swipe activated a basket action",
+  );
   assert.equal(
     await touchPage.evaluate(() => window.providerWrites),
     0,
-    "touch hold reached a provider write",
+    "touch swipe reached a provider write",
   );
   assert.deepEqual(
     touchRequests,
     [],
     "touch UI requested an external resource",
+  );
+  await touchPage.goto(`http://127.0.0.1:${address.port}/host-long`);
+  await touchFrame.locator(".product-action-row").first().waitFor();
+  await touch.send("Input.dispatchTouchEvent", {
+    type: "touchStart",
+    touchPoints: [{ x: 180, y: 300 }],
+  });
+  for (const y of [260, 220, 180, 140]) {
+    await touch.send("Input.dispatchTouchEvent", {
+      type: "touchMove",
+      touchPoints: [{ x: 180, y }],
+    });
+  }
+  await touch.send("Input.dispatchTouchEvent", {
+    type: "touchEnd",
+    touchPoints: [],
+  });
+  await touchPage.waitForFunction(() => {
+    const viewer = document
+      .querySelector<HTMLIFrameElement>('iframe[title="viewer"]')
+      ?.contentDocument?.querySelector(".viewer");
+    return viewer && viewer.scrollTop > 0;
+  });
+  assert.equal(
+    await touchFrame.locator(".product-inline-actions, [role=dialog]").count(),
+    0,
+    "vertical touch scrolling opened an overlay",
   );
   await touchContext.close();
 
@@ -864,5 +1002,5 @@ try {
 }
 
 console.log(
-  "Built React viewer passed synthetic MCP browser smoke: one-list long-press actions, explicit alternatives/back and replacement, quantity flush, whole-list exact preparation, cancellation, confirmation, zero provider writes, and no external requests.",
+  "Built React viewer passed synthetic MCP browser smoke: one-list right-to-left swipe actions, explicit alternatives/back and replacement, quantity flush, whole-list exact preparation, cancellation, confirmation, zero provider writes, and no external requests.",
 );
