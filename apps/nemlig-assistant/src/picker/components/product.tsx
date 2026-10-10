@@ -134,7 +134,7 @@ const FactListItem = styled.div({
   "& dd": { margin: 0 },
 });
 
-/** Full-width product disclosure with the same compact hierarchy in every view. */
+/** Full-width product summary with the same compact hierarchy in every view. */
 export const ProductSummaryButton = styled(ViewerButton)({
   display: "block",
   width: "100%",
@@ -221,6 +221,7 @@ export function ProductSummary({
       {image && !imageFailed ? (
         <ProductImage
           src={image}
+          draggable={false}
           alt={product.name ?? "Product"}
           onError={() => setImageFailed(true)}
         />

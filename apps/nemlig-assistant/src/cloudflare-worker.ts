@@ -2,7 +2,6 @@
 
 import { Container, getContainer } from "@cloudflare/containers";
 import type { OAuthTokenVerifier } from "@modelcontextprotocol/express";
-import { DurableObject } from "cloudflare:workers";
 import {
   createAuth0Verifier,
   fetchAuth0Metadata,
@@ -47,7 +46,6 @@ import { handleOnboardingRequest } from "./onboarding.js";
 
 interface Env extends CloudflareEnv {
   NEMLIG_MCP_CONTAINER: DurableObjectNamespace<NemligMcpContainer>;
-  NEMLIG_PLAN_STORAGE: DurableObjectNamespace<PlanStorage>;
 }
 
 /**
@@ -361,13 +359,6 @@ export class NemligMcpContainer extends Container<Env> {
           };
         }),
     );
-  }
-}
-
-// ponytail: retain the retired namespace and data; remove only with approved data cleanup.
-export class PlanStorage extends DurableObject<Env> {
-  async fetch(): Promise<Response> {
-    return new Response("Saved shopping storage retired", { status: 410 });
   }
 }
 

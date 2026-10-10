@@ -4,6 +4,7 @@ import {
   matchFavorites,
   NemligClient,
   NemligError,
+  ProductNotFoundError,
   type Product,
   NEMLIG_READ_ATTEMPT_TIMEOUT_MS,
   SEARCH_GATEWAY_URL,
@@ -1098,13 +1099,30 @@ test("exact product lookup rejects invalid and unresolved IDs", async () => {
   await assert.rejects(
     client.getProduct(7),
     (error) =>
-      error instanceof NemligError &&
+      error instanceof ProductNotFoundError &&
       error.status === 404 &&
       /could not be resolved exactly/u.test(error.message),
   );
   await assert.rejects(
     client.getFreshProduct(0),
     /Product ID must be positive/,
+  );
+  const mismatched = new NemligClient(
+    mockFetch([
+      ...sessionRequests(),
+      {
+        match: "/Products/Get\\?id=7",
+        response: json({ Id: 8, Name: "Other product" }),
+      },
+    ]),
+  );
+  await assert.rejects(
+    mismatched.getFreshProduct(7),
+    (error) =>
+      error instanceof NemligError &&
+      !(error instanceof ProductNotFoundError) &&
+      error.status !== 404 &&
+      /could not be resolved exactly/u.test(error.message),
   );
 });
 

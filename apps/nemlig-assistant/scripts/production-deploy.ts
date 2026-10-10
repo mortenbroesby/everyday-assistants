@@ -115,6 +115,7 @@ interface ContainerState {
 interface EffectiveConfig {
   vars: Map<string, string>;
   secrets: string[];
+  durableObjects: ReadonlyMap<string, string>;
   digest: string;
 }
 
@@ -269,7 +270,8 @@ const configPlainNames = [
 ] as const;
 const configPlainSet = new Set<string>(configPlainNames);
 const requiredSecrets = new Set(["NEMLIG_MCP_PRINCIPALS"]);
-const expectedDo = new Map([
+const expectedDo = new Map([["NEMLIG_MCP_CONTAINER", "NemligMcpContainer"]]);
+const planStorageExpectedDo = new Map([
   ["NEMLIG_MCP_CONTAINER", "NemligMcpContainer"],
   ["NEMLIG_PLAN_STORAGE", "PlanStorage"],
 ]);
@@ -302,7 +304,10 @@ const bindings = (
   return result;
 };
 
-const validateDo = (bindings: Iterable<Record<string, unknown>>): void => {
+const validateDo = (
+  bindings: Iterable<Record<string, unknown>>,
+  expected = [expectedDo],
+): ReadonlyMap<string, string> => {
   const found = new Map<string, string>();
   for (const value of bindings) {
     if (value.type !== "durable_object_namespace") {
@@ -332,18 +337,24 @@ const validateDo = (bindings: Iterable<Record<string, unknown>>): void => {
     }
     found.set(name, className);
   }
-  if (
-    found.size !== expectedDo.size ||
-    [...expectedDo].some(([name, className]) => found.get(name) !== className)
-  ) {
-    fail("cloudflare_runtime_safety_mismatch");
+  const matching = expected.find(
+    (candidate) =>
+      found.size === candidate.size &&
+      [...candidate].every(
+        ([name, className]) => found.get(name) === className,
+      ),
+  );
+  if (!matching) {
+    throw new DeployFailure("cloudflare_runtime_safety_mismatch");
   }
+  return matching;
 };
 
 const effectiveConfig = (
   vars: Map<string, string>,
   secrets: Iterable<string>,
   requireSecrets = true,
+  durableObjects: ReadonlyMap<string, string> = expectedDo,
 ): EffectiveConfig => {
   const normalized = new Map(vars);
   if (!normalized.has("NEMLIG_MCP_SERVICE_ACCEPTANCE_ENABLED")) {
@@ -467,7 +478,7 @@ const effectiveConfig = (
     vars: [...normalized]
       .filter(([name]) => configPlainSet.has(name))
       .sort(([left], [right]) => left.localeCompare(right)),
-    durableObjects: [...expectedDo].sort(([left], [right]) =>
+    durableObjects: [...durableObjects].sort(([left], [right]) =>
       left.localeCompare(right),
     ),
     secrets: secretNames.map((name) => [name, "secret_text"]),
@@ -475,11 +486,15 @@ const effectiveConfig = (
   return {
     vars,
     secrets: secretNames,
+    durableObjects,
     digest: createHash("sha256").update(canonical).digest("hex"),
   };
 };
 
-const versionConfig = (raw: string): EffectiveConfig => {
+const versionConfig = (
+  raw: string,
+  expected = [expectedDo],
+): EffectiveConfig => {
   const parsed =
     object(json(raw, "cloudflare_version_invalid")) ??
     fail("cloudflare_version_invalid");
@@ -490,7 +505,7 @@ const versionConfig = (raw: string): EffectiveConfig => {
     fail("cloudflare_runtime_safety_mismatch");
   }
   const values = bindings(parsed);
-  validateDo(values.values());
+  const durableObjects = validateDo(values.values(), expected);
   const vars = new Map<string, string>();
   const secrets: string[] = [];
   for (const [name, value] of values) {
@@ -513,7 +528,7 @@ const versionConfig = (raw: string): EffectiveConfig => {
       fail("cloudflare_runtime_unexpected_binding");
     }
   }
-  return effectiveConfig(vars, secrets);
+  return effectiveConfig(vars, secrets, true, durableObjects);
 };
 
 export function parseVersionState(
@@ -550,6 +565,7 @@ export function verifyCandidateVersion(
   expectedId: string,
   commit: string,
   enabled: boolean,
+  expected = [expectedDo],
 ): VersionState {
   const parsed = object(json(raw, "cloudflare_version_invalid"));
   if (!parsed) {
@@ -584,14 +600,9 @@ export function verifyCandidateVersion(
       fail("cloudflare_runtime_safety_mismatch");
     }
   }
-  for (const name of [
-    "NEMLIG_MCP_CONTAINER",
-    "NEMLIG_PLAN_STORAGE",
-    "NEMLIG_MCP_PRINCIPALS",
-  ]) {
-    if (!values.has(name)) {
-      fail("cloudflare_runtime_safety_mismatch");
-    }
+  validateDo(values.values(), expected);
+  if (!values.has("NEMLIG_MCP_PRINCIPALS")) {
+    fail("cloudflare_runtime_safety_mismatch");
   }
   return state;
 }
@@ -1039,8 +1050,16 @@ const candidateConfig = (
       vars.set(name, value);
     }
   }
-  return effectiveConfig(vars, live.secrets);
+  return effectiveConfig(vars, live.secrets, true, local.durableObjects);
 };
+
+const isPlanStorageRetirement = (
+  live: EffectiveConfig,
+  configured: EffectiveConfig,
+): boolean =>
+  live.durableObjects === planStorageExpectedDo &&
+  configured.durableObjects === expectedDo &&
+  effectiveConfig(live.vars, live.secrets).digest === configured.digest;
 
 const deployVars = (
   config: EffectiveConfig,
@@ -1722,6 +1741,7 @@ export async function deployProduction(
       startingState.id,
       startingState.revision,
       startingState.enabled,
+      [expectedDo, planStorageExpectedDo],
     );
     try {
       await runAt(deps, deps.repoRoot, "git", [
@@ -1733,9 +1753,15 @@ export async function deployProduction(
     } catch {
       fail("candidate_does_not_supersede_runtime");
     }
-    const liveConfig = versionConfig(startingRaw);
+    const liveConfig = versionConfig(startingRaw, [
+      expectedDo,
+      planStorageExpectedDo,
+    ]);
     const configured = candidateConfig(await readLocalConfig(deps), liveConfig);
-    if (configured.digest !== liveConfig.digest) {
+    if (
+      configured.digest !== liveConfig.digest &&
+      !isPlanStorageRetirement(liveConfig, configured)
+    ) {
       fail("cloudflare_runtime_safety_mismatch");
     }
     if (service) {

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { VerifiedPartialAdditionsError } from "./proposals.js";
-import { NemligError, type Product } from "./client.js";
+import { NemligError, ProductNotFoundError, type Product } from "./client.js";
 import { MAX_DRAFT_PRODUCTS, ProductReviewService } from "./product-review.js";
 
 const product = (id: number): Product => ({
@@ -719,7 +719,7 @@ test("failed hydration remains visible and blocks whole-list preparation", async
     {
       ...client,
       getProduct: async () => {
-        throw new Error("Missing");
+        throw new NemligError("Unresolved lookup", 404);
       },
     },
     {
@@ -739,6 +739,101 @@ test("failed hydration remains visible and blocks whole-list preparation", async
   await assert.rejects(service.prepare("owner"), /unavailable/i);
   assert.equal(preparations, 0);
   assert.deepEqual(service.active("owner"), draft);
+});
+
+test("a confirmed missing Local basket product can be reported and skipped at preparation", async () => {
+  let preparations = 0;
+  const service = new ProductReviewService(
+    {
+      ...client,
+      getProduct: async (id) => {
+        if (id === 2) {
+          throw new ProductNotFoundError(id);
+        }
+        return product(id);
+      },
+    },
+    {
+      proposals: {
+        prepareAdditions: async () => {
+          preparations++;
+          return {
+            applicable: true,
+            proposal_id: "private",
+            operation: "additions",
+            connection_bound: true,
+            issued_at: new Date(0).toISOString(),
+            expires_at: new Date(Date.now() + 900_000).toISOString(),
+            basket_fingerprint: "private",
+            review: {
+              lines: [{ product_id: 1, quantity: 1 }],
+              skipped_products: [{ product_id: 2, name: "Product 2" }],
+            },
+          };
+        },
+        apply: async () => {
+          throw new Error("No submission in this test");
+        },
+      },
+    },
+  );
+  const draft = await service.start("owner", [
+    { product_id: 1, quantity: 1 },
+    { product_id: 2, quantity: 1 },
+  ]);
+  assert.deepEqual(draft.items[1]?.view, {
+    context: "details",
+    status: "unavailable",
+    product_id: 2,
+    missing: true,
+  });
+  const prepared = await service.prepare("owner");
+  assert.equal(preparations, 1);
+  assert.deepEqual(prepared.submission?.review.skipped_products, [
+    { product_id: 2, name: "Product 2" },
+  ]);
+});
+
+test("a skipped product remains visible in the submitted Local basket outcome", async () => {
+  const service = new ProductReviewService(client, {
+    proposals: {
+      prepareAdditions: async () => ({
+        applicable: true,
+        proposal_id: "private",
+        operation: "additions",
+        connection_bound: true,
+        issued_at: new Date(0).toISOString(),
+        expires_at: new Date(Date.now() + 900_000).toISOString(),
+        basket_fingerprint: "private",
+        review: { lines: [{ product_id: 1, quantity: 1 }] },
+      }),
+      apply: async () => ({
+        status: "completed",
+        operation: "additions",
+        replayed: false,
+        basket: {
+          items: [],
+          products_price: undefined,
+          delivery_price: undefined,
+          number_of_products: 0,
+          delivery_time: undefined,
+        },
+        skipped_products: [{ product_id: 1, name: "Product 1" }],
+        verified_additions: 0,
+      }),
+    },
+  });
+  await service.start("owner", [{ product_id: 1, quantity: 1 }]);
+  const prepared = await service.prepare("owner");
+  const submitted = await service.submit(
+    "owner",
+    prepared.submission!.submission_id,
+  );
+  assert.equal(submitted.review.submission?.status, "submitted");
+  assert.deepEqual(submitted.review.submission?.skipped_products, [
+    { product_id: 1, name: "Product 1" },
+  ]);
+  assert.equal(submitted.review.submission?.verified_additions, 0);
 });
 
 test("start and add share exact-product hydration and propagate authentication failures", async () => {
