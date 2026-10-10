@@ -214,9 +214,8 @@ document.getElementById('flow').onclick = async () => {
   check(!widgetCalls.some(c=>c.arguments.action?.kind==='submit_submission'),'Unavailable/incomplete basket row was submitted');
   check((await fetch('/stats').then(r=>r.json())).basketWrites===0,'Unavailable row reached a provider write');
   await fetch('/reset',{method:'POST'}); await fetch('/unknown-price',{method:'POST'});
-  await call({name:'start_product_review',arguments:{items:[{product_id:2,quantity:1}]}});
   status.textContent='Checking uncertain submission block';
-  transcript=await call({name:'update_product_review_conversation',arguments:{action:{kind:'show'}}});
+  transcript=await call({name:'start_product_review',arguments:{items:[{product_id:2,quantity:1}]}});
   initialized=false; frame.src='/viewer'; await wait(()=>initialized);
   await wait(()=>title()==='Local basket'&&doc().querySelectorAll('.product-list article').length===1);
   await wait(()=>button('Submit to Nemlig')&&!button('Submit to Nemlig').disabled);
