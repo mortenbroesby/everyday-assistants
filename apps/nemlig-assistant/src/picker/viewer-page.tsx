@@ -495,6 +495,11 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
     };
   };
   const thumbnail = (view: ProductView) => thumbnails.get(view);
+  const refreshControl = (
+    <Button color="secondary" disabled={busy} onClick={actions.onRefresh}>
+      Refresh Draft list
+    </Button>
+  );
   return (
     <ViewerShell
       title={outcomeOnly ? undefined : title}
@@ -536,6 +541,7 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
             Request cancelled. Continue in conversation to confirm the current
             Draft list before continuing.
           </p>
+          {refreshControl}
         </section>
       )}
       {screen.kind === "unavailable" && (
@@ -545,6 +551,7 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
             starting a new Draft list. Previous choices or submission approval
             are not restored.
           </p>
+          {refreshControl}
         </section>
       )}
       {review &&
@@ -777,6 +784,7 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
             >
               Continue with Draft list
             </Button>
+            {refreshControl}
           </OutcomeSurface>
         )}
       {review && terminalSubmission && uncertainSubmission && (
@@ -792,6 +800,7 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
           >
             Inspect Nemlig basket in conversation
           </Button>
+          {refreshControl}
         </OutcomeSurface>
       )}
       {review && terminalSubmission && partialSubmission && (
@@ -814,6 +823,7 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
           >
             Inspect Nemlig basket in conversation
           </Button>
+          {refreshControl}
         </OutcomeSurface>
       )}
       {review && active && !terminalSubmission && destination === "ready" && (
@@ -886,13 +896,17 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
         </ActionFooter>
       )}
       {review && active && !terminalSubmission && review.items.length === 0 && (
-        <DraftListStarters
-          message="Your local Draft list is empty. Nothing changed in Nemlig."
-          onChoose={actions.onSendFollowUp}
-        />
+        <>
+          <DraftListStarters
+            message="Your local Draft list is empty. Nothing changed in Nemlig."
+            onChoose={actions.onSendFollowUp}
+          />
+          {refreshControl}
+        </>
       )}
       {review && active && !terminalSubmission && hasActiveProducts && (
         <DraftListOverflow>
+          {refreshControl}
           <Button
             color="secondary"
             disabled={editsBlocked || busy}
@@ -925,13 +939,16 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
         </DraftListOverflow>
       )}
       {screen.kind === "empty" && (
-        <DraftListStarters
-          message={
-            screen.message ??
-            "Your local Draft list is empty. Nothing changed in Nemlig."
-          }
-          onChoose={actions.onSendFollowUp}
-        />
+        <>
+          <DraftListStarters
+            message={
+              screen.message ??
+              "Your local Draft list is empty. Nothing changed in Nemlig."
+            }
+            onChoose={actions.onSendFollowUp}
+          />
+          {refreshControl}
+        </>
       )}
       {screen.kind === "products" && screen.views.length === 0 && (
         <div className="empty" role="status">

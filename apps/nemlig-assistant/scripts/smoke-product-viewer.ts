@@ -847,14 +847,19 @@ try {
     0,
     "unsolicited snapshot reactivated a cancelled view",
   );
-  const resumedFrame = page.waitForEvent("framenavigated");
-  await page
-    .locator('iframe[title="viewer"]')
-    .evaluate((element: HTMLIFrameElement) =>
-      element.contentWindow?.location.reload(),
-    );
-  await resumedFrame;
+  const callsBeforeCancellationRefresh = await page.evaluate(
+    () => window.calls.length,
+  );
+  await frame.getByRole("button", { name: "Refresh Draft list" }).click();
   await frame.getByRole("button", { name: /To decide \(1\)/ }).waitFor();
+  assert.equal(
+    await page.evaluate(
+      (before) => window.calls.slice(before).at(-1)?.args.action?.kind,
+      callsBeforeCancellationRefresh,
+    ),
+    "show",
+    "cancelled card did not perform an authoritative current-list read",
+  );
   await frame.getByRole("button", { name: /To decide \(1\)/ }).click();
   await frame
     .locator(".product-card")

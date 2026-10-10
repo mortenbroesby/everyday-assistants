@@ -202,3 +202,35 @@ test("shared viewer page distinguishes a verified partial addition from an uncer
   assert.match(html, /No later product was sent/u);
   assert.doesNotMatch(html, /We could not verify the addition/u);
 });
+
+test("shared viewer page offers an authoritative Draft list refresh outside errors", () => {
+  const normal = renderToStaticMarkup(createElement(ViewerPage, props()));
+  assert.match(normal, /Refresh Draft list/u);
+
+  const emptyProps = props();
+  emptyProps.model.screen = { kind: "empty" };
+  const empty = renderToStaticMarkup(createElement(ViewerPage, emptyProps));
+  assert.match(empty, /Refresh Draft list/u);
+
+  const cancelledProps = props();
+  cancelledProps.model.screen = { kind: "cancelled" };
+  const cancelled = renderToStaticMarkup(
+    createElement(ViewerPage, cancelledProps),
+  );
+  assert.match(cancelled, /Refresh Draft list/u);
+
+  const uncertainProps = props();
+  assert.equal(uncertainProps.model.screen.kind, "review");
+  if (uncertainProps.model.screen.kind !== "review") {
+    return;
+  }
+  uncertainProps.model.screen.review.submission = {
+    status: "uncertain",
+    submission_id: "fixture-submission",
+    review: {},
+  };
+  const uncertain = renderToStaticMarkup(
+    createElement(ViewerPage, uncertainProps),
+  );
+  assert.match(uncertain, /Refresh Draft list/u);
+});

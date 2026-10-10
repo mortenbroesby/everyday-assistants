@@ -170,13 +170,16 @@ supported cards. Reloading a historical message does not restore its old snapsho
 use `start_product_review` without items to render the current list. A missing list
 stays unavailable until explicitly started again. Remounts require the current
 supported viewer bundle; no compatibility is promised for already-mounted older
-bundles. If a service error interrupts an action, the viewer hides editing controls
-and offers a read-only refresh. It never retries or replays the failed mutation.
+bundles. After a local action, the viewer ignores unsolicited host snapshots that
+could roll it back, but offers a read-only refresh in normal, empty, cancelled,
+unavailable, and outcome states. It never retries or replays the failed mutation.
 If the draft is gone, **Start new draft list** rechecks the original products and
 quantities without restoring acceptance or submission approval. Submitted,
 uncertain, or known-partial snapshots instead direct you to inspect the actual
 basket; a known partial result says how many additions were verified and that
-no later write was sent.
+no later write was sent. An uncertain or partial result remains recorded through
+later local edits, so preparing another addition requires an explicit Draft-list
+discard and fresh review after inspection.
 The viewer uses the permanent `ui://nemlig/shell.html` identity. The previous
 `ui://nemlig/draft-list.html` address and every earlier product-viewer address
 resolve only to an inert, read-only notice, so historical cards cannot regain

@@ -402,13 +402,15 @@ export class ProductReviewService {
         delete draft.alternatives;
       }
       this.get(owner); // Confirm the draft still exists after asynchronous reads.
-      const preparedReadySelectionUnchanged =
-        draft.submission?.status === "prepared" &&
-        readySelection(draft.items) === previousReadySelection;
+      const preserveSubmission =
+        draft.submission?.status === "uncertain" ||
+        draft.submission?.status === "partial" ||
+        (draft.submission?.status === "prepared" &&
+          readySelection(draft.items) === previousReadySelection);
       if (
         action.kind !== "navigate" &&
         action.kind !== "alternatives" &&
-        !preparedReadySelectionUnchanged
+        !preserveSubmission
       ) {
         delete draft.submission;
         delete stored.proposalId;

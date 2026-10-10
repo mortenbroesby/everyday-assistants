@@ -352,23 +352,28 @@ document.getElementById('flow').onclick = async () => {
   frame.contentWindow.postMessage({jsonrpc:'2.0',method:'ui/notifications/tool-cancelled',params:{reason:'Reopen only after explicit current-state inspection'}},location.origin);
   await wait(()=>doc().querySelectorAll('input[type=checkbox]').length===0 && text().includes('We could not verify the addition'));
   transcript=await call({name:'start_product_review',arguments:{items:[{product_id:1,quantity:1},{product_id:2,quantity:2}]}}); publish();
-  status.textContent='Checking recovery after uncertain write';
+  status.textContent='Checking explicit recovery after uncertain write';
   const uncertainSnapshot=(await call({name:'update_product_review_conversation',arguments:{action:{kind:'show'}}})).structuredContent.review;
   const edited=await call({name:'update_product_review_conversation',arguments:{action:{kind:'quantity',product_id:2,quantity:3}}});
   check(edited.isError!==true,'Explicit server-side quantity edit after uncertainty failed');
   const editedReview=edited.structuredContent.review;
-  check(!editedReview.submission,'Explicit quantity edit retained the uncertain submission authority');
+  check(editedReview.submission?.status==='uncertain','Explicit quantity edit erased the uncertain submission evidence');
+  const blockedPrepare=await call({name:'update_product_review_conversation',arguments:{action:{kind:'prepare_submission'}}});
+  check(blockedPrepare.isError===true,'Uncertain submission allowed another prepare before an explicit reset');
+  const ended=await call({name:'update_product_review_conversation',arguments:{action:{kind:'end'}}});
+  check(ended.structuredContent.ended===true,'Explicit recovery did not discard the uncertain Draft list');
   transcript=await call({name:'start_product_review',arguments:{items:[{product_id:1,quantity:1},{product_id:2,quantity:2}]}});
-  check(!transcript.structuredContent.review.submission,'Fresh viewer restored a previous uncertain submission');
+  check(!transcript.structuredContent.review.submission,'Explicit reset restored a previous uncertain submission');
+  transcript=await call({name:'update_product_review_conversation',arguments:{action:{kind:'accept',product_ids:[2]}}}); publish();
   initialized=false; const recoveryViewerLoaded=new Promise(resolve=>frame.addEventListener('load',resolve,{once:true})); frame.src='/viewer'; await recoveryViewerLoaded;
   await wait(()=>initialized&&button('Ready (1)')&&!button('Ready (1)').disabled); click('Ready (1)');
   await wait(()=>button('Review exact Nemlig change')&&!button('Review exact Nemlig change').disabled);
-  check(!button('Add to Nemlig'),'Reopening an edited uncertain review restored its old confirmation');
+  check(!button('Add to Nemlig'),'Reopening an explicitly reset uncertain review restored its old confirmation');
   check(widgetCalls.filter(call=>call.name==='submit_product_review').length===1,'Reopening an edited uncertain review automatically submitted it');
   click('Review exact Nemlig change'); await wait(()=>doc().querySelector('[data-viewer-component="outcome-surface"] h2')?.textContent==='Ready to add to Nemlig basket'); open();
   click('Add to Nemlig basket'); await wait(()=>button('Add to Nemlig')&&!button('Add to Nemlig').disabled);
   click('Add to Nemlig'); await wait(()=>text().includes('Nemlig confirmed the addition'));
-  check((await simulatorStats()).simulatedSubmissions===1,'Explicit edit did not allow one separately reviewed submission');
+  check((await simulatorStats()).simulatedSubmissions===1,'Explicit reset did not allow one separately reviewed submission');
   click('Continue with Draft list'); await wait(()=>!button('Continue with Draft list'));
   click('To decide (1)'); await wait(()=>doc().querySelector('#title')?.textContent==='To decide'&&!button('To decide (1)').disabled); open();
   click('Ready (1)'); await wait(()=>doc().querySelector('#title')?.textContent==='Ready'&&!button('Ready (1)').disabled); open();
@@ -377,7 +382,7 @@ document.getElementById('flow').onclick = async () => {
   check(widgetCalls.filter(call=>call.name==='submit_product_review').length===2,'Browser adapter made an unexpected submission call');
   const stats=await fetch('/stats').then(r=>r.json()); check(stats.basketWrites===0,'Provider basket write occurred');
   check(widgetCalls.every(call=>!('representation' in call.arguments)),'Viewer sent a representation selector');
- status.textContent='PASS: shared owner list, row selection, no-call selection, Ready action hierarchy, confirmed local removals, alternative return, two-row flush, prepared no-submit, verified-submit continuation, uncertain block and explicit-edit recovery, confirmed end/restart, 320/375px; provider basket writes 0';
+ status.textContent='PASS: shared owner list, row selection, no-call selection, Ready action hierarchy, confirmed local removals, alternative return, two-row flush, prepared no-submit, verified-submit continuation, uncertain block and explicit-reset recovery, confirmed end/restart, 320/375px; provider basket writes 0';
  } catch(error){status.textContent='FAIL: '+error.message+' | screen: '+(doc()?.querySelector('#title')?.textContent||'unavailable')+' | controls: '+[...(doc()?.querySelectorAll('button')||[])].map(button=>button.textContent.trim()+(button.disabled?' [disabled]':'')).join('; ')+' | widget calls: '+widgetCalls.map(call=>call.name+':'+(call.arguments.action?.kind||'start')).join(',');} finally{run.disabled=false;}
 };
 document.getElementById('alternatives').onclick = async () => {

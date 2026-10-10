@@ -507,6 +507,50 @@ test("a verified partial addition remains blocked with its confirmed count", asy
   const partial = service.active("owner");
   assert.equal(partial?.submission?.status, "partial");
   assert.equal(partial?.submission?.verified_additions, 1);
+  const edited = await service.update("owner", {
+    kind: "quantity",
+    product_id: 1,
+    quantity: 2,
+  });
+  assert.equal(edited.submission?.status, "partial");
+  await assert.rejects(service.prepare("owner"), /inspect/i);
+});
+
+test("local edits cannot erase an uncertain submission from another supported card", async () => {
+  const proposals = {
+    prepareAdditions: async () => ({
+      applicable: true as const,
+      proposal_id: "private-provider-reference",
+      operation: "additions" as const,
+      connection_bound: true as const,
+      issued_at: new Date(0).toISOString(),
+      expires_at: new Date(Date.now() + 900_000).toISOString(),
+      basket_fingerprint: "private",
+      review: { lines: [{ product_id: 1, quantity: 1, item_price: 5 }] },
+    }),
+    apply: async () => {
+      throw new Error("Readback failed after the addition attempt");
+    },
+  };
+  const service = new ProductReviewService(client, { proposals });
+  await service.start("owner", [
+    { product_id: 1, quantity: 1 },
+    { product_id: 2, quantity: 1 },
+  ]);
+  await service.update("owner", { kind: "accept", product_ids: [1] });
+  const prepared = await service.prepare("owner");
+  await assert.rejects(
+    service.submit("owner", prepared.submission!.submission_id),
+    /Readback failed/u,
+  );
+
+  const edited = await service.update("owner", {
+    kind: "quantity",
+    product_id: 2,
+    quantity: 2,
+  });
+  assert.equal(edited.items[1]?.quantity, 2);
+  assert.equal(edited.submission?.status, "uncertain");
   await assert.rejects(service.prepare("owner"), /inspect/i);
 });
 
