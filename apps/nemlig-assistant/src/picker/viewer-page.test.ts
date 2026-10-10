@@ -56,6 +56,7 @@ const props = (thumbnail?: string): ViewerPageProps => ({
     confirmEnd: false,
     continueSubmitted: false,
     submitBlocked: false,
+    knownNoWrite: false,
     baskets: [],
     selectedBasketId: undefined,
   },
@@ -359,16 +360,36 @@ test("a stopped submission explains the known reason and next step", () => {
     review: {},
   };
   pageProps.model.screen.review.submissionAttempted = true;
+  pageProps.model.knownNoWrite = true;
   pageProps.model.message =
-    "Nemlig's basket could not be read before the next addition. No product was sent.";
+    "A basket safety check stopped the addition before any product was sent.";
 
   const html = renderToStaticMarkup(createElement(ViewerPage, pageProps));
   assert.match(html, /Addition stopped before sending/u);
-  assert.match(html, /basket could not be read/u);
+  assert.match(html, /stopped the addition before any product was sent/u);
   assert.match(html, /The known result is that no product was sent/u);
   assert.doesNotMatch(html, /prior addition may have reached Nemlig/u);
   assert.match(html, /cannot be retried/u);
   assert.match(html, /Inspect Nemlig basket in conversation/u);
+});
+
+test("a submission fence without a known no-write result stays uncertain", () => {
+  const pageProps = props();
+  if (pageProps.model.screen.kind !== "review") {
+    throw new Error("review fixture missing");
+  }
+  pageProps.model.screen.review.submission = {
+    status: "uncertain",
+    submission_id: "fixture-submission",
+    review: {},
+  };
+  pageProps.model.screen.review.submissionAttempted = true;
+  pageProps.model.message = "The host did not confirm the addition.";
+
+  const html = renderToStaticMarkup(createElement(ViewerPage, pageProps));
+  assert.match(html, /A previous addition needs checking/u);
+  assert.match(html, /A prior addition may have reached Nemlig/u);
+  assert.doesNotMatch(html, /Addition stopped before sending/u);
 });
 
 test("a submitted basket names skipped products without claiming they were added", () => {

@@ -104,6 +104,7 @@ export type ViewerPageModel = {
   confirmEnd: boolean;
   continueSubmitted: boolean;
   submitBlocked: boolean;
+  knownNoWrite: boolean;
   baskets: BasketSummary[];
   selectedBasketId?: string;
 };
@@ -1129,7 +1130,7 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
         <OutcomeSurface
           tone="warning"
           title={
-            message.includes("No product was sent.")
+            model.knownNoWrite
               ? "Addition stopped before sending"
               : review.submissionAttempted
                 ? "A previous addition needs checking"
@@ -1138,7 +1139,7 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
         >
           {message && !busy && <p role="status">{message}</p>}
           <p role="status">
-            {message.includes("No product was sent.")
+            {model.knownNoWrite
               ? "The known result is that no product was sent. This Local basket remains fenced and cannot be retried; inspect the basket before continuing."
               : review.submissionAttempted
                 ? "A prior addition may have reached Nemlig. Inspect the actual basket before continuing; this Local basket cannot be submitted again."

@@ -200,7 +200,7 @@ window.addEventListener('message',event=>{
   if(name==='submit_product_review'){
    window.submissionAttempts++;
    if(window.failNext){window.failNext=false;review.submission.status='uncertain';return post(event,{jsonrpc:'2.0',id:message.id,error:{code:-32000,message:'Write outcome uncertain'}})}
-   return post(event,{jsonrpc:'2.0',id:message.id,result:result({...review,submission:{...review.submission,status:'submitted'}})});
+   return post(event,{jsonrpc:'2.0',id:message.id,result:result({...review,submissionAttempted:true,submission:{...review.submission,status:'submitted'}})});
   }
   if(name==='update_product_review' && window.failGenericNext){window.failGenericNext=false;if(window.deferGenericNext){window.deferGenericNext=false;deferredGeneric={event,message};return}return post(event,{jsonrpc:'2.0',id:message.id,error:{code:-32000,message:'Temporary synthetic failure'}})}
   try { const response=name==='update_product_review'?apply(args.action,args):result(review); return post(event,{jsonrpc:'2.0',id:message.id,result:response}); }
@@ -582,6 +582,118 @@ try {
     "passive picker discarded the debounced quantity",
   );
   await passivePickerPage.close();
+
+  const pickerFlushPage = await context.newPage();
+  await pickerFlushPage.goto(`http://127.0.0.1:${address.port}/host-restored`);
+  const pickerFlushFrame = pickerFlushPage.frameLocator(
+    'iframe[title="viewer"]',
+  );
+  await pickerFlushFrame
+    .getByRole("heading", { name: "Local basket", exact: true })
+    .waitFor();
+  await pickerFlushFrame
+    .locator(".product-action-row")
+    .first()
+    .locator('[data-viewer-component="product-summary"]')
+    .press("Shift+F10");
+  await pickerFlushFrame
+    .getByRole("button", { name: "Increase quantity of Synthetic milk" })
+    .click();
+  await pickerFlushFrame.locator(".basket-menu > button").click();
+  await pickerFlushFrame.getByRole("button", { name: "Choose basket" }).click();
+  await pickerFlushFrame
+    .getByRole("heading", { name: "Local baskets", exact: true })
+    .waitFor();
+  const pickerFlushCalls = await pickerFlushPage.evaluate(() =>
+    window.calls.map(({ args }) => args),
+  );
+  const flushedQuantityIndex = pickerFlushCalls.findIndex(
+    (args) => args.action?.kind === "quantity",
+  );
+  const pickerListIndex = pickerFlushCalls.findIndex(
+    (args) => args.action?.kind === "list",
+  );
+  assert.ok(
+    flushedQuantityIndex >= 0,
+    `picker switch dropped the pending quantity: ${JSON.stringify({
+      calls: pickerFlushCalls,
+      text: await pickerFlushFrame.locator(".viewer").innerText(),
+    })}`,
+  );
+  assert.ok(
+    pickerListIndex > flushedQuantityIndex,
+    "picker list was requested before the pending quantity was saved",
+  );
+  assert.equal(
+    pickerFlushCalls[flushedQuantityIndex]?.basket_id,
+    basketIds[0],
+    "picker flush was not bound to the original basket ID",
+  );
+  assert.equal(
+    pickerFlushCalls[flushedQuantityIndex]?.action?.quantity,
+    2,
+    "picker flush did not persist the incremented quantity",
+  );
+  await pickerFlushPage.close();
+
+  const pickerFlushFailurePage = await context.newPage();
+  await pickerFlushFailurePage.goto(
+    `http://127.0.0.1:${address.port}/host-restored`,
+  );
+  const pickerFlushFailureFrame = pickerFlushFailurePage.frameLocator(
+    'iframe[title="viewer"]',
+  );
+  await pickerFlushFailureFrame
+    .getByRole("heading", { name: "Local basket", exact: true })
+    .waitFor();
+  await pickerFlushFailureFrame
+    .locator(".product-action-row")
+    .first()
+    .locator('[data-viewer-component="product-summary"]')
+    .press("Shift+F10");
+  await pickerFlushFailurePage.evaluate(() => {
+    window.failGenericNext = true;
+  });
+  await pickerFlushFailureFrame
+    .getByRole("button", { name: "Increase quantity of Synthetic milk" })
+    .click();
+  await pickerFlushFailureFrame.locator(".basket-menu > button").click();
+  await pickerFlushFailureFrame
+    .getByRole("button", { name: "Choose basket" })
+    .click();
+  await pickerFlushFailureFrame
+    .getByText(/Could not save the pending quantity/u)
+    .waitFor();
+  assert.equal(
+    await pickerFlushFailureFrame
+      .getByRole("heading", { name: "Local basket", exact: true })
+      .count(),
+    1,
+    "failed quantity flush left the original basket",
+  );
+  assert.equal(
+    await pickerFlushFailureFrame
+      .getByRole("heading", { name: "Local baskets", exact: true })
+      .count(),
+    0,
+    "failed quantity flush navigated to the picker",
+  );
+  assert.equal(
+    await pickerFlushFailureFrame
+      .locator(".product-action-quantity-value")
+      .first()
+      .textContent(),
+    "2",
+    "failed quantity flush discarded the pending quantity",
+  );
+  assert.equal(
+    await pickerFlushFailurePage.evaluate(() =>
+      window.calls.some(({ args }) => args.action?.kind === "list"),
+    ),
+    false,
+    "failed quantity flush still requested the picker list",
+  );
+  await pickerFlushFailurePage.close();
 
   const staleFailurePage = await context.newPage();
   await staleFailurePage.goto(`http://127.0.0.1:${address.port}/host-restored`);
@@ -1137,6 +1249,33 @@ try {
     submitCalls,
   );
   assert.ok(prepareCall, "submission did not use exact preparation");
+
+  const completedPage = await context.newPage();
+  await completedPage.goto(`http://127.0.0.1:${address.port}/host`);
+  const completedFrame = completedPage.frameLocator('iframe[title="viewer"]');
+  await completedFrame
+    .getByRole("heading", { name: "Local basket", exact: true })
+    .waitFor();
+  await completedFrame
+    .getByRole("button", { name: "Submit to Nemlig" })
+    .click();
+  await completedFrame
+    .getByRole("heading", { name: "Ready to submit the Local basket" })
+    .waitFor();
+  await completedFrame
+    .getByRole("button", { name: "Add to Nemlig basket" })
+    .click();
+  await completedFrame.getByRole("button", { name: "Add to Nemlig" }).click();
+  await completedFrame
+    .getByRole("heading", { name: "Nemlig confirmed the addition" })
+    .waitFor();
+  await completedFrame
+    .getByRole("button", { name: "Choose another Local basket" })
+    .click();
+  await completedFrame
+    .getByRole("heading", { name: "Local baskets", exact: true })
+    .waitFor();
+  await completedPage.close();
 
   const uncertainPage = await context.newPage();
   await uncertainPage.goto(`http://127.0.0.1:${address.port}/host`, {

@@ -358,6 +358,9 @@ export function ProductViewer() {
     basketId: selectedBasketIdRef.current,
     epoch: selectionEpoch.current,
   });
+  const isCurrentSelection = (expected: { basketId?: string; epoch: number }) =>
+    expected.epoch === selectionEpoch.current &&
+    expected.basketId === selectedBasketIdRef.current;
   const [presentationDestination, setPresentationDestination] = useState<
     PresentationDestination | undefined
   >(() => (screen.kind === "review" ? screen.review.destination : undefined));
@@ -703,6 +706,7 @@ export function ProductViewer() {
     uncertainOnFailure = false,
     background = false,
     expectedSelection?: { basketId?: string; epoch: number },
+    preserveReviewOnFailure = false,
   ): Promise<boolean> => {
     if (!connectedApp || !isConnected) {
       if (!background) {
@@ -837,7 +841,14 @@ export function ProductViewer() {
         requestEpoch === cancellationEpoch.current &&
         requestSelectionEpoch === selectionEpoch.current
       ) {
-        handleCallFailure(cause, recovery, uncertainOnFailure);
+        if (preserveReviewOnFailure) {
+          ignorePassivePayloads.current = true;
+          setMessage(
+            "Could not save the pending quantity. Keep this Local basket open and retry before switching.",
+          );
+        } else {
+          handleCallFailure(cause, recovery, uncertainOnFailure);
+        }
       }
       return false;
     } finally {
@@ -1091,6 +1102,7 @@ export function ProductViewer() {
           false,
           false,
           expected,
+          true,
         );
         if (
           !ok ||
@@ -1161,6 +1173,13 @@ export function ProductViewer() {
     if (busy) {
       return;
     }
+    const expected = selectionContext();
+    if (!(await flushQuantities(expected))) {
+      return;
+    }
+    if (!isCurrentSelection(expected)) {
+      return;
+    }
     deactivateReview();
     setScreen({
       kind: "picker",
@@ -1168,7 +1187,15 @@ export function ProductViewer() {
       selectedBasketId: selectedBasketIdRef.current,
     });
     setPresentationDestination(undefined);
-    await call("update_product_review", { action: { kind: "list" } }, true);
+    await call(
+      "update_product_review",
+      { action: { kind: "list" } },
+      true,
+      false,
+      false,
+      false,
+      expected,
+    );
   };
   const selectBasket = async (basketId: string) => {
     if (busy || !isBasketId(basketId)) {
@@ -1336,6 +1363,7 @@ export function ProductViewer() {
         confirmEnd,
         continueSubmitted,
         submitBlocked,
+        knownNoWrite: submissionFailure.current !== undefined,
         baskets,
         selectedBasketId,
       }}

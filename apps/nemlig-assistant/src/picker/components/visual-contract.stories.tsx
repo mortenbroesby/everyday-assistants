@@ -178,6 +178,7 @@ const baseProps = (
     confirmEnd: false,
     continueSubmitted: false,
     submitBlocked: false,
+    knownNoWrite: false,
     baskets: screen.kind === "picker" ? screen.baskets : [],
     selectedBasketId: undefined,
     ...overrides.model,
