@@ -75,7 +75,6 @@ const props = (thumbnail?: string): ViewerPageProps => ({
     onRevisit: noop,
     onOpenAlternatives: noop,
     onSearchAlternatives: noop,
-    onChooseReplacement: noop,
     onReplace: noop,
     onPrepareSubmission: noop,
     onRequestSubmitConfirmation: noop,
@@ -148,6 +147,9 @@ test("shared viewer page keeps thumbnails attached to their individual views", (
     markup,
     /src="\/assets\/alternative\.svg"[^>]*alt="Alternative yoghurt"/u,
   );
+  assert.match(markup, /data-viewer-component="product-price"/u);
+  assert.match(markup, /aria-label="Use Alternative yoghurt instead"/u);
+  assert.doesNotMatch(markup, /Use selected alternative|role="radio"/u);
 });
 
 test("busy submission confirmation disables its cancel control", () => {
@@ -180,4 +182,30 @@ test("busy submission confirmation disables its cancel control", () => {
   const cancelButton = html.match(/<button[^>]*>Cancel<\/button>/u)?.[0];
   assert.ok(cancelButton, "submission confirmation did not render Cancel");
   assert.match(cancelButton, /disabled=""/u);
+});
+
+test("shared viewer page distinguishes a verified partial addition from an uncertain one", () => {
+  const pageProps = props();
+  assert.equal(pageProps.model.screen.kind, "review");
+  if (pageProps.model.screen.kind !== "review") {
+    return;
+  }
+  pageProps.model.screen = {
+    ...pageProps.model.screen,
+    review: {
+      ...pageProps.model.screen.review,
+      submission: {
+        status: "partial",
+        submission_id: "fixture-submission",
+        verified_additions: 1,
+        review: {},
+      },
+    },
+  };
+
+  const html = renderToStaticMarkup(createElement(ViewerPage, pageProps));
+  assert.match(html, /Some additions were confirmed/u);
+  assert.match(html, /One product was confirmed/u);
+  assert.match(html, /No later product was sent/u);
+  assert.doesNotMatch(html, /We could not verify the addition/u);
 });

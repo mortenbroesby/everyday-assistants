@@ -89,6 +89,18 @@ export interface ApplyResult extends Record<string, unknown> {
   basket: BasketPayload;
 }
 
+/** A preflight stopped a batch after earlier additions had verified readback. */
+export class VerifiedPartialAdditionsError extends NemligError {
+  override readonly name = "VerifiedPartialAdditionsError";
+
+  constructor(
+    readonly verifiedAdditions: number,
+    message: string,
+  ) {
+    super(message);
+  }
+}
+
 export interface BasketPayload extends Record<string, unknown> {
   items: Basket["items"];
   products_price: number | undefined;
@@ -530,7 +542,8 @@ export class BasketProposalService {
             .slice(0, verifiedAdditions)
             .map(({ name }) => name)
             .join(", ");
-          throw new NemligError(
+          throw new VerifiedPartialAdditionsError(
+            verifiedAdditions,
             `Earlier verified additions: ${verifiedNames}. ${detail}; no later write was sent. Inspect the basket and prepare a new proposal only after reconciling it.`,
           );
         }

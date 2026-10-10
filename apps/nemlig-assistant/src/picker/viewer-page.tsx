@@ -1,4 +1,4 @@
-import { type KeyboardEvent, useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import type { ProductView } from "../product-presentation.js";
 import {
   ActionFooter,
@@ -30,7 +30,8 @@ export type Review = {
   items: ReviewItem[];
   alternatives?: { product_id: number; query: string; views: ProductView[] };
   submission?: {
-    status: "prepared" | "submitted" | "uncertain";
+    status: "prepared" | "submitted" | "uncertain" | "partial";
+    verified_additions?: number;
     submission_id: string;
     review: {
       lines?: Array<{
@@ -73,7 +74,6 @@ export type ViewerPageModel = {
   maxWidth?: number;
   presentationDestination?: PresentationDestination;
   selected: ReadonlySet<number>;
-  replacement?: number;
   reviewDisclosures: ReadonlyMap<
     number,
     { expanded: boolean; facts: ReadonlySet<string> }
@@ -107,7 +107,6 @@ export type ViewerPageActions = {
   onRevisit: (item: ReviewItem) => void;
   onOpenAlternatives: (item: ReviewItem, query: string) => void;
   onSearchAlternatives: (productId: number, query: string) => void;
-  onChooseReplacement: (productId?: number) => void;
   onReplace: (productId: number, replacementId: number) => void;
   onPrepareSubmission: () => void;
   onRequestSubmitConfirmation: () => void;
@@ -126,39 +125,6 @@ export type ViewerPageProps = {
   actions: ViewerPageActions;
 };
 
-// Retains keyboard radio navigation without coupling it to the host adapter.
-// fallow-ignore-next-line complexity
-function focusAlternativeChoice(event: KeyboardEvent<HTMLButtonElement>) {
-  const direction =
-    event.key === "ArrowRight" || event.key === "ArrowDown"
-      ? 1
-      : event.key === "ArrowLeft" || event.key === "ArrowUp"
-        ? -1
-        : 0;
-  if (!direction && event.key !== "Home" && event.key !== "End") {
-    return;
-  }
-  const choices = [
-    ...(event.currentTarget
-      .closest('[role="radiogroup"]')
-      ?.querySelectorAll<HTMLButtonElement>('[role="radio"]:not(:disabled)') ??
-      []),
-  ];
-  const current = choices.indexOf(event.currentTarget);
-  if (current < 0 || choices.length === 0) {
-    return;
-  }
-  event.preventDefault();
-  const next =
-    event.key === "Home"
-      ? 0
-      : event.key === "End"
-        ? choices.length - 1
-        : (current + direction + choices.length) % choices.length;
-  choices[next]?.focus();
-  choices[next]?.click();
-}
-
 // Kept as one component because its local focus, disclosure, and controls share one product row.
 // fallow-ignore-next-line complexity
 function ProductCard({
@@ -171,7 +137,6 @@ function ProductCard({
   onRevisit,
   selected,
   onSelected,
-  choice,
   onChoice,
   onOpenAlternatives,
   expanded,
@@ -189,7 +154,6 @@ function ProductCard({
   onRevisit?: () => void;
   selected?: boolean;
   onSelected?: (selected: boolean) => void;
-  choice?: boolean;
   onChoice?: () => void;
   onOpenAlternatives?: () => void;
   expanded?: boolean;
@@ -371,16 +335,13 @@ function ProductCard({
             <button
               type="button"
               className="product-comparison-summary alternative-choice"
-              role="radio"
-              aria-checked={choice === true}
-              aria-label={`Choose ${productName(view)}`}
+              aria-label={`Use ${productName(view)} instead`}
               disabled={disabled || !isUsable(view)}
               onClick={onChoice}
-              onKeyDown={focusAlternativeChoice}
             >
               {summary}
               <span className="alternative-choice-state" aria-hidden="true">
-                {choice ? "Selected" : "Select"}
+                Use this alternative
               </span>
             </button>
           ) : (
@@ -432,7 +393,6 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
     maxWidth,
     presentationDestination,
     selected,
-    replacement,
     reviewDisclosures,
     pendingQuantities,
     thumbnails,
@@ -467,14 +427,17 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
   const basket =
     productPayload?.detail_limit !== undefined &&
     Array.isArray(productPayload.items);
+  const partialSubmission = review?.submission?.status === "partial";
   const uncertainSubmission =
     submitBlocked || review?.submission?.status === "uncertain";
   const editsBlocked =
     busy ||
     uncertainSubmission ||
+    partialSubmission ||
     (review?.submission?.status === "submitted" && !continueSubmitted);
   const terminalSubmission =
     uncertainSubmission ||
+    partialSubmission ||
     (review?.submission?.status === "submitted" && !continueSubmitted);
   const decisionsComplete = Boolean(
     review &&
@@ -491,7 +454,9 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
     review && active && terminalSubmission
       ? review.submission?.status === "submitted"
         ? "Added to Nemlig basket"
-        : "Check your Nemlig basket"
+        : partialSubmission
+          ? "Addition stopped early"
+          : "Check your Nemlig basket"
       : review && active
         ? review.items.length
           ? decisionsComplete
@@ -697,10 +662,7 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
                   No alternatives were returned. Try another search.
                 </p>
               ) : (
-                <div
-                  role="radiogroup"
-                  aria-labelledby="alternative-options-title"
-                >
+                <div>
                   {review.alternatives.views.map((view, index) => {
                     const id =
                       view.status === "complete"
@@ -714,27 +676,19 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
                         disabled={editsBlocked}
                         comparison
                         {...(id === undefined ? {} : disclosureProps(id))}
-                        choice={replacement === id}
-                        onChoice={() => actions.onChooseReplacement(id)}
+                        onChoice={() => {
+                          if (id !== undefined) {
+                            actions.onReplace(
+                              review.alternatives!.product_id,
+                              id,
+                            );
+                          }
+                        }}
                       />
                     );
                   })}
                 </div>
               )}
-              <Button
-                color="primary"
-                disabled={editsBlocked || replacement === undefined}
-                onClick={() => {
-                  if (replacement !== undefined) {
-                    actions.onReplace(
-                      review.alternatives!.product_id,
-                      replacement,
-                    );
-                  }
-                }}
-              >
-                Use selected alternative
-              </Button>
               <Button
                 color="secondary"
                 disabled={uncertainSubmission}
@@ -891,6 +845,28 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
           </Button>
         </OutcomeSurface>
       )}
+      {review && terminalSubmission && partialSubmission && (
+        <OutcomeSurface tone="warning" title="Some additions were confirmed">
+          <p role="status">
+            {review.submission?.verified_additions === 1
+              ? "One product was confirmed in your Nemlig basket."
+              : `${review.submission?.verified_additions ?? "Some"} products were confirmed in your Nemlig basket.`}{" "}
+            No later product was sent after the safety check stopped the
+            addition.
+          </p>
+          <p>
+            Inspect the actual Nemlig basket before preparing another request.
+            Nemlig Assistant will not retry automatically.
+          </p>
+          <Button
+            color="secondary"
+            disabled={busy}
+            onClick={actions.onInspectBasket}
+          >
+            Inspect Nemlig basket in conversation
+          </Button>
+        </OutcomeSurface>
+      )}
       {review && active && !terminalSubmission && destination === "ready" && (
         <ActionFooter>
           {review.submission?.status !== "prepared" && (
@@ -951,11 +927,13 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
               )}
             </OutcomeSurface>
           )}
-          {message && review.submission?.status !== "uncertain" && (
-            <p className="status" role="status">
-              {message}
-            </p>
-          )}
+          {message &&
+            review.submission?.status !== "uncertain" &&
+            review.submission?.status !== "partial" && (
+              <p className="status" role="status">
+                {message}
+              </p>
+            )}
         </ActionFooter>
       )}
       {review && active && !terminalSubmission && review.items.length === 0 && (

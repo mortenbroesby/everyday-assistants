@@ -190,7 +190,6 @@ const baseProps = (
     onRevisit: noop,
     onOpenAlternatives: noop,
     onSearchAlternatives: noop,
-    onChooseReplacement: noop,
     onReplace: noop,
     onPrepareSubmission: noop,
     onRequestSubmitConfirmation: noop,
@@ -394,14 +393,10 @@ function reviewActions(
 function alternativeActions(
   setCurrentReview: SetState<Review>,
   setSelected: SetState<Set<number>>,
-  setReplacement: SetState<number | undefined>,
   setDestination: SetState<Review["destination"]>,
 ): Pick<
   ViewerPageActions,
-  | "onOpenAlternatives"
-  | "onSearchAlternatives"
-  | "onChooseReplacement"
-  | "onReplace"
+  "onOpenAlternatives" | "onSearchAlternatives" | "onReplace"
 > {
   const alternatives = (productId: number) =>
     walkthroughAlternatives.get(productId) ?? [];
@@ -415,20 +410,17 @@ function alternativeActions(
           alternatives(item.product_id),
         ),
       );
-      setReplacement(undefined);
       setDestination("alternatives");
     },
     onSearchAlternatives: (productId, query) =>
       setCurrentReview((previous) =>
         alternativesFor(previous, productId, query, alternatives(productId)),
       ),
-    onChooseReplacement: setReplacement,
     onReplace: (productId, replacementId) => {
       setCurrentReview((previous) =>
         replaceWithAlternative(previous, productId, replacementId),
       );
       setSelected((previous) => withoutSelected(previous, productId));
-      setReplacement(undefined);
       setDestination("needs-review");
     },
   };
@@ -516,7 +508,6 @@ function DraftListWalkthroughStory() {
   const [reviewDisclosures, setReviewDisclosures] = useState<
     ViewerPageModel["reviewDisclosures"]
   >(new Map());
-  const [replacement, setReplacement] = useState<number>();
   const [confirmSubmit, setConfirmSubmit] = useState(false);
   const [confirmEnd, setConfirmEnd] = useState(false);
   const [ended, setEnded] = useState(false);
@@ -531,7 +522,6 @@ function DraftListWalkthroughStory() {
   const alternatives = alternativeActions(
     setCurrentReview,
     setSelected,
-    setReplacement,
     setDestination,
   );
   const submission = submissionActions(
@@ -549,7 +539,6 @@ function DraftListWalkthroughStory() {
         presentationDestination: destination,
         selected,
         reviewDisclosures,
-        replacement,
         confirmSubmit,
         confirmEnd,
       }}
@@ -598,8 +587,7 @@ export const EverythingReady: Story = {
   render: () => activeReview(everythingReadyReview, "needs-review", 375),
 };
 export const Alternatives: Story = {
-  render: () =>
-    activeReview(review, "alternatives", 375, { model: { replacement: 2 } }),
+  render: () => activeReview(review, "alternatives", 375),
 };
 export const FactualDetails: Story = {
   render: () =>

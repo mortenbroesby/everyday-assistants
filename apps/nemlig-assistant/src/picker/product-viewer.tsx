@@ -66,11 +66,15 @@ function isReview(value: unknown): value is Review {
   if (value.submission !== undefined) {
     if (
       !isRecord(value.submission) ||
-      !["prepared", "submitted", "uncertain"].includes(
+      !["prepared", "submitted", "uncertain", "partial"].includes(
         String(value.submission.status),
       ) ||
       typeof value.submission.submission_id !== "string" ||
-      !isRecord(value.submission.review)
+      !isRecord(value.submission.review) ||
+      (value.submission.verified_additions !== undefined &&
+        (typeof value.submission.verified_additions !== "number" ||
+          !Number.isSafeInteger(value.submission.verified_additions) ||
+          value.submission.verified_additions < 1))
     ) {
       return false;
     }
@@ -262,7 +266,6 @@ export function ProductViewer() {
   const [reviewDisclosures, setReviewDisclosures] = useState<
     Map<number, { expanded: boolean; facts: Set<string> }>
   >(() => new Map());
-  const [replacement, setReplacement] = useState<number>();
   const [message, setMessage] = useState("");
   const [activatingCurrent, setActivatingCurrent] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -308,7 +311,6 @@ export function ProductViewer() {
     quantityTimer.current = undefined;
     clearPendingQuantities();
     setSelected(new Set());
-    setReplacement(undefined);
     setConfirmEnd(false);
     const current = activeReview.current;
     if (current) {
@@ -412,7 +414,8 @@ export function ProductViewer() {
         setContinueSubmitted((continued) => continued && preserveContinuation);
         if (
           next.review.submission?.status === "submitted" ||
-          next.review.submission?.status === "uncertain"
+          next.review.submission?.status === "uncertain" ||
+          next.review.submission?.status === "partial"
         ) {
           const uncertain = next.review.submission.status === "uncertain";
           submitBlockedRef.current = uncertain;
@@ -440,14 +443,6 @@ export function ProductViewer() {
                 ),
               )
             : new Set(),
-        );
-        setReplacement((chosen) =>
-          sameReview &&
-          next.review.alternatives?.views.some(
-            (view) => view.status === "complete" && view.product.id === chosen,
-          )
-            ? chosen
-            : undefined,
         );
         setConfirmSubmit(false);
       } else if (next.kind === "unavailable") {
@@ -598,7 +593,6 @@ export function ProductViewer() {
       } else if (recovery && /stale|no active draft/i.test(text)) {
         deactivateReview();
         setSelected(new Set());
-        setReplacement(undefined);
         const latest = activeReview.current;
         try {
           if (latest?.view_id) {
@@ -835,6 +829,31 @@ export function ProductViewer() {
       true,
     );
     if (!success) {
+      try {
+        if (connectedApp) {
+          const current = await connectedApp.callServerTool({
+            name: "update_product_review",
+            arguments: {
+              view_id: latest.view_id,
+              review_id: confirmed.review_id,
+              revision: confirmed.revision,
+              action: { kind: "show" },
+            },
+          });
+          if (!current.isError && applyPayload(current, true)) {
+            const snapshot = readPayload(current);
+            if (
+              snapshot?.kind === "review" &&
+              snapshot.review.submission?.status === "partial"
+            ) {
+              setMessage("");
+              return;
+            }
+          }
+        }
+      } catch {
+        // The original failure remains safely uncertain when its local state cannot be re-read.
+      }
       setMessage(
         "Submission outcome is uncertain. Inspect the actual Nemlig basket; do not retry automatically.",
       );
@@ -885,7 +904,6 @@ export function ProductViewer() {
         screen,
         presentationDestination,
         selected,
-        replacement,
         reviewDisclosures,
         pendingQuantities,
         thumbnails,
@@ -946,7 +964,6 @@ export function ProductViewer() {
         onRevisit: (item) =>
           afterFlush({ kind: "revisit", product_ids: [item.product_id] }),
         onOpenAlternatives: (item, query) => {
-          setReplacement(undefined);
           afterFlush({
             kind: "alternatives",
             product_id: item.product_id,
@@ -955,7 +972,6 @@ export function ProductViewer() {
         },
         onSearchAlternatives: (product_id, query) =>
           void update({ kind: "alternatives", product_id, query }),
-        onChooseReplacement: setReplacement,
         onReplace: (product_id, replacement_id) =>
           void update({ kind: "replace", product_id, replacement_id }),
         onPrepareSubmission: () => afterFlush({ kind: "prepare_submission" }),
