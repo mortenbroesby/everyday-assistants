@@ -3,11 +3,11 @@ import {
   useLayoutEffect,
   useRef,
   useState,
-  type PointerEvent,
   type ReactNode,
 } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import { useVirtualizer } from "@tanstack/react-virtual";
+import { useDrag } from "@use-gesture/react";
 import type { ProductView } from "../product-presentation.js";
 import {
   ActionFooter,
@@ -152,10 +152,6 @@ function ProductCard({
   const [overlayOpen, setOverlayOpen] = useState(false);
   const [actionsOpen, setActionsOpen] = useState(false);
   const [swipeOffset, setSwipeOffset] = useState(0);
-  const swipeOrigin = useRef<
-    { pointerId: number; x: number; y: number; canceled: boolean } | undefined
-  >(undefined);
-  const suppressSummaryClick = useRef(false);
   const actionsRef = useRef<HTMLDivElement | null>(null);
   const rowRef = useRef<HTMLDivElement | null>(null);
   const summaryRef = useRef<HTMLButtonElement | null>(null);
@@ -170,57 +166,39 @@ function ProductCard({
       actionsRef.current?.focus({ preventScroll: true });
     }
   }, [actionsOpen]);
-  const onSummaryPointerDown = (event: PointerEvent<HTMLButtonElement>) => {
-    if (
-      disabled ||
-      !item ||
-      comparison ||
-      event.button !== 0 ||
-      !event.isPrimary
-    ) {
-      return;
-    }
-    suppressSummaryClick.current = false;
-    swipeOrigin.current = {
-      pointerId: event.pointerId,
-      x: event.clientX,
-      y: event.clientY,
-      canceled: false,
-    };
-    event.currentTarget.setPointerCapture(event.pointerId);
-  };
-  const onSummaryPointerMove = (event: PointerEvent<HTMLButtonElement>) => {
-    const origin = swipeOrigin.current;
-    if (!origin || origin.pointerId !== event.pointerId) {
-      return;
-    }
-    const dx = Math.abs(event.clientX - origin.x);
-    const dy = Math.abs(event.clientY - origin.y);
-    if (Math.hypot(dx, dy) > 10) {
-      suppressSummaryClick.current = true;
-      if (dy > dx) {
-        origin.canceled = true;
+  const bindSwipe = useDrag(
+    ({
+      active,
+      last,
+      canceled,
+      event,
+      xy: [x, y],
+      initial: [startX, startY],
+    }) => {
+      const dx = x - startX;
+      const dy = Math.abs(y - startY);
+      setSwipeOffset(active ? Math.min(0, dx) : 0);
+      // The library also ends drags on cancellation or lost capture; only release opens actions.
+      if (
+        last &&
+        !canceled &&
+        ["pointerup", "touchend", "mouseup"].includes(event.type) &&
+        dx <= -48 &&
+        -dx > dy * 1.5
+      ) {
+        setActionsOpen(true);
       }
-      setSwipeOffset(
-        origin.canceled ? 0 : Math.min(0, event.clientX - origin.x),
-      );
-    }
-  };
-  const onSummaryPointerUp = (event: PointerEvent<HTMLButtonElement>) => {
-    const origin = swipeOrigin.current;
-    if (!origin || origin.pointerId !== event.pointerId) {
-      return;
-    }
-    onSummaryPointerMove(event);
-    swipeOrigin.current = undefined;
-    setSwipeOffset(0);
-    const dx = event.clientX - origin.x;
-    const dy = Math.abs(event.clientY - origin.y);
-    if (!disabled && !origin.canceled && dx <= -48 && -dx > dy * 1.5) {
-      // Open on release so the swipe cannot activate a newly mounted action.
-      setActionsOpen(true);
-    }
-  };
+    },
+    {
+      enabled: Boolean(item) && !comparison && !disabled,
+      axis: "x",
+      axisThreshold: { mouse: 10, touch: 10, pen: 10 },
+      threshold: 10,
+      filterTaps: true,
+      tapsThreshold: 10,
+      pointer: { keys: false },
+    },
+  );
   const quantity =
     item?.quantity ??
     (view.status === "complete"
@@ -332,15 +310,7 @@ function ProductCard({
         }
       }}
     >
-      <Dialog.Root
-        open={overlayOpen}
-        onOpenChange={(open) => {
-          setOverlayOpen(open);
-          if (!open) {
-            suppressSummaryClick.current = false;
-          }
-        }}
-      >
+      <Dialog.Root open={overlayOpen} onOpenChange={setOverlayOpen}>
         <article
           className={`product-card${comparison ? " product-comparison" : ""}`}
           inert={actionsOpen}
@@ -381,20 +351,9 @@ function ProductCard({
                     : undefined
                 }
                 disabled={disabled}
-                onPointerDown={onSummaryPointerDown}
-                onPointerMove={onSummaryPointerMove}
-                onPointerUp={onSummaryPointerUp}
-                onPointerCancel={() => {
-                  swipeOrigin.current = undefined;
-                  setSwipeOffset(0);
-                }}
-                onLostPointerCapture={() => {
-                  swipeOrigin.current = undefined;
-                  setSwipeOffset(0);
-                }}
+                {...bindSwipe()}
                 onContextMenu={(event) => event.preventDefault()}
                 onKeyDown={(event) => {
-                  suppressSummaryClick.current = false;
                   if (
                     item &&
                     (event.key === "ContextMenu" ||
@@ -404,14 +363,7 @@ function ProductCard({
                     setActionsOpen(true);
                   }
                 }}
-                onClick={(event) => {
-                  if (suppressSummaryClick.current) {
-                    suppressSummaryClick.current = false;
-                    event.preventDefault();
-                    return;
-                  }
-                  setOverlayOpen(true);
-                }}
+                onClick={() => setOverlayOpen(true)}
               >
                 {summary}
               </ProductSummaryButton>

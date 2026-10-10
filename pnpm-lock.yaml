@@ -53,6 +53,9 @@ importers:
       '@tanstack/react-virtual':
         specifier: 3.14.14
         version: 3.14.14(react-dom@19.2.3(react@19.2.3))(react@19.2.3)
+      '@use-gesture/react':
+        specifier: 10.3.1
+        version: 10.3.1(react@19.2.3)
       commander:
         specifier: ^15.0.0
         version: 15.0.0
@@ -2250,6 +2253,14 @@ packages:
     engines: {node: '>=16.20.0'}
     cpu: [x64]
     os: [win32]
+
+  '@use-gesture/core@10.3.1':
+    resolution: {integrity: sha512-WcINiDt8WjqBdUXye25anHiNxPc0VOrlT8F6LLkU6cycrOGUDyY/yyFmsg3k8i5OLvv25llc0QC45GhR/C8llw==}
+
+  '@use-gesture/react@10.3.1':
+    resolution: {integrity: sha512-Yy19y6O2GJq8f7CHf7L0nxL8bf4PZCPaVOCgJrusOeFHY1LvHgYXnmnXg6N5iwAnbgbZCDjo60SiM6IPJi9C5g==}
+    peerDependencies:
+      react: '>= 16.8.0'
 
   '@vitejs/plugin-react@5.2.0':
     resolution: {integrity: sha512-YmKkfhOAi3wsB1PhJq5Scj3GXMn3WvtQ/JC0xoopuHoXSdmtdStOpFrYaT1kie2YgFBcIe64ROzMYRjCrYOdYw==}
@@ -5465,6 +5476,13 @@ snapshots:
 
   '@typescript/typescript-win32-x64@7.0.2':
     optional: true
+
+  '@use-gesture/core@10.3.1': {}
+
+  '@use-gesture/react@10.3.1(react@19.2.3)':
+    dependencies:
+      '@use-gesture/core': 10.3.1
+      react: 19.2.3
 
   '@vitejs/plugin-react@5.2.0(vite@7.3.6(@types/node@24.13.0)(jiti@2.7.0)(lightningcss@1.33.0)(tsx@4.23.13)(yaml@2.9.1))':
     dependencies:

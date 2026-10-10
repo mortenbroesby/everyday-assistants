@@ -10,7 +10,7 @@ Every local basket item is Ready and is included in the single Submit to Nemlig 
 
 - Nemlig Assistant picker, local review state transitions, review action descriptions, and feature documentation.
 - Existing review service and tool behavior only where needed to keep all current items submission candidates and allow a Ready row to search alternatives and replace it without changing its Ready status or quantity.
-- Use Radix Dialog for the details modal, and TanStack React Virtual for long Local baskets; keep swipe recognition and action activation in the app.
+- Use Radix Dialog for the details modal, TanStack React Virtual for long Local baskets, and @use-gesture/react for drag tracking and tap filtering. Keep reveal thresholds and explicit action activation in the app.
 - Bound the viewer height and let its single native scroll region contain long content. Virtualize larger Local baskets.
 
 ## Non-goals

@@ -540,6 +540,8 @@ try {
     assert.ok(box, "product summary has no swipe hit area");
     await page.mouse.move(box.x + box.width * from, box.y + box.height / 2);
     await page.mouse.down();
+    // Tiny initial finger jitter must not lock a horizontal swipe to the vertical axis.
+    await page.mouse.move(box.x + box.width * from, box.y + box.height / 2 + 2);
     await page.mouse.move(box.x + box.width * to, box.y + box.height / 2 + dy, {
       steps: 5,
     });
@@ -567,18 +569,20 @@ try {
       "rightward, short, or vertical movement opened a product overlay",
     );
   }
-  const cancelBox = await milkDisclosure.boundingBox();
-  assert.ok(cancelBox, "product summary has no cancel hit area");
-  await page.mouse.move(cancelBox.x + cancelBox.width * 0.8, cancelBox.y + 5);
-  await page.mouse.down();
-  await page.mouse.move(cancelBox.x + cancelBox.width * 0.2, cancelBox.y + 5);
-  await milkDisclosure.dispatchEvent("pointercancel", { pointerId: 1 });
-  await page.mouse.up();
-  assert.equal(
-    await frame.locator(".product-inline-actions, [role=dialog]").count(),
-    0,
-    "canceled swipe opened an overlay",
-  );
+  for (const cancelEvent of ["pointercancel", "lostpointercapture"]) {
+    const cancelBox = await milkDisclosure.boundingBox();
+    assert.ok(cancelBox, "product summary has no cancel hit area");
+    await page.mouse.move(cancelBox.x + cancelBox.width * 0.8, cancelBox.y + 5);
+    await page.mouse.down();
+    await page.mouse.move(cancelBox.x + cancelBox.width * 0.2, cancelBox.y + 5);
+    await milkDisclosure.dispatchEvent(cancelEvent, { pointerId: 1 });
+    await page.mouse.up();
+    assert.equal(
+      await frame.locator(".product-inline-actions, [role=dialog]").count(),
+      0,
+      `${cancelEvent} opened an overlay`,
+    );
+  }
   await milkDisclosure.press("Enter");
   await details.waitFor();
   await details.press("Escape");

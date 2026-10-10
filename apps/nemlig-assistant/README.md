@@ -130,6 +130,7 @@ right, all on one line.
 The full-screen product details also show the same controls beneath the product facts.
 The product name and a close button remain above the swipe controls. The controls follow
 Nemlig’s familiar basket layout; the rest of the basket stays visible.
+Gesture tracking and tap filtering use `@use-gesture/react`.
 Left-to-right swipes, vertical scrolling, short drags, and canceled gestures do not
 open actions. Keyboard users can press
 Shift+F10 on a product. The details view also has a **Product actions** button,
