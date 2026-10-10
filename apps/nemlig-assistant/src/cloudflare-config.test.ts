@@ -172,18 +172,25 @@ test("Wrangler configuration fixes both environments to one disabled EU lite Con
   );
 });
 
-test("Container has no saved-shopping outbound storage adapter", async () => {
+test("Container has no Durable Object binding and uses only the local basket callback", async () => {
   const worker = await readFile(
     new URL("./cloudflare-worker.ts", import.meta.url),
     "utf8",
   );
-  assert.doesNotMatch(worker, /outboundByHost|nemlig-plan-storage\.internal/u);
+  assert.match(worker, /outboundByHost/u);
+  assert.match(worker, /local-basket-state\.internal/u);
+  assert.doesNotMatch(worker, /nemlig-plan-storage\.internal/u);
   assert.doesNotMatch(worker, /GH_TOKEN|suggest_an_improvement/u);
   const container = worker.slice(
     worker.indexOf("export class NemligMcpContainer"),
     worker.indexOf("export class PlanStorage"),
   );
-  assert.doesNotMatch(container, /NEMLIG_LOCAL_BASKET_STORAGE/u);
+  const containerEnvVars = container.slice(
+    container.indexOf("envVars ="),
+    container.indexOf("static outboundByHost"),
+  );
+  assert.doesNotMatch(containerEnvVars, /NEMLIG_LOCAL_BASKET_STORAGE/u);
+  assert.doesNotMatch(containerEnvVars, /LOCAL_BASKET.*CAPABILITY/u);
   assert.match(worker, /Container<ContainerEnv>/u);
 });
 

@@ -45,6 +45,11 @@ import { encryptCredentials } from "./credential-envelope.js";
 import type { Credentials } from "./config.js";
 import { handleOnboardingRequest } from "./onboarding.js";
 import {
+  attachLocalBasketCapability,
+  withLocalBasketCapability,
+} from "./local-basket-capability.js";
+import { handleLocalBasketStateRequest } from "./local-basket-callback.js";
+import {
   expireOwnerLocalBasketInventory,
   readOwnerLocalBasketInventory,
   writeOwnerLocalBasketInventory,
@@ -72,6 +77,8 @@ const containerNamespace = (
   env.NEMLIG_MCP_REVISION === "local"
     ? env.NEMLIG_MCP_CONTAINER
     : env.NEMLIG_MCP_CONTAINER.jurisdiction("eu");
+
+const LOCAL_BASKET_STATE_HOST = "local-basket-state.internal";
 
 let cachedVerifier: { key: string; verifier: OAuthTokenVerifier } | undefined;
 
@@ -179,6 +186,11 @@ export class NemligMcpContainer extends Container<ContainerEnv> {
     NEMLIG_MCP_SERVICE_CLIENT_ID: this.env.NEMLIG_MCP_SERVICE_CLIENT_ID ?? "",
     NEMLIG_MCP_HTTP_HOST: "0.0.0.0",
     NEMLIG_MCP_HTTP_PORT: "8080",
+  };
+
+  static outboundByHost = {
+    [LOCAL_BASKET_STATE_HOST]: (request: Request, env: Env) =>
+      handleLocalBasketStateRequest(request, env.NEMLIG_LOCAL_BASKET_STORAGE),
   };
 
   override onStart(): void {
@@ -521,7 +533,14 @@ export default {
             !isVerifiedServicePrincipal(principal, config),
         );
       },
-      async forward(original, _operation, _config, deadline, admission) {
+      async forward(
+        original,
+        _operation,
+        _config,
+        deadline,
+        admission,
+        principal,
+      ) {
         const namespace = containerNamespace(env);
         const container = getContainer(namespace, FIXED_CONTAINER_NAME);
         const request = attachAdmissionCredential(
@@ -529,7 +548,11 @@ export default {
           admission,
           deadline.signal,
         );
-        return container.fetch(request);
+        return withLocalBasketCapability(
+          principal.principal_key,
+          (capability) =>
+            container.fetch(attachLocalBasketCapability(request, capability)),
+        );
       },
     });
   },

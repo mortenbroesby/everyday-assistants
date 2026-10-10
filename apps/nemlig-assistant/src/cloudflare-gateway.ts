@@ -84,6 +84,7 @@ export interface GatewayDependencies {
     config: GatewayConfig,
     deadline: GatewayDeadline,
     admission: AdmissionResult,
+    principal: Principal,
   ): Promise<Response>;
   event?(event: GatewayRequestEvent): void;
   viewerEvent?(event: ViewerResourceReadEvent): void;
@@ -555,6 +556,7 @@ export async function handleGatewayRequest(
             config,
             deadline,
             admission,
+            principal,
           ),
         config.backendTimeoutMs,
         remainingMs,
