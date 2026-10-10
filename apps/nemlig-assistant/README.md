@@ -127,7 +127,8 @@ checkboxes, or acceptance step. Tap a product to open its full-screen details,
 or swipe from right to left to replace that row with inline controls: trash and
 a two-arrow **Find alternatives** icon on the left, and minus/quantity/plus on the
 right, all on one line.
-The product name and a close button remain above the controls. The controls follow
+The full-screen product details also show the same controls beneath the product facts.
+The product name and a close button remain above the swipe controls. The controls follow
 Nemlig’s familiar basket layout; the rest of the basket stays visible.
 Left-to-right swipes, vertical scrolling, short drags, and canceled gestures do not
 open actions. Keyboard users can press

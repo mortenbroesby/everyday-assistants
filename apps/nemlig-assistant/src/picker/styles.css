@@ -237,9 +237,6 @@ h2 {
   gap: 14px;
   overflow-wrap: anywhere;
 }
-.product-overlay-details > [data-viewer-component="quantity-control"] {
-  margin-top: 0;
-}
 .product-details {
   flex: 1;
   min-width: 0;

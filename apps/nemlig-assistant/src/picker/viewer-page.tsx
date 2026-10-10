@@ -237,6 +237,62 @@ function ProductCard({
       onQuantity={onQuantity}
     />
   );
+  const actionControls = (
+    <div className="product-action-controls">
+      <button
+        type="button"
+        className="product-action-item product-action-icon"
+        aria-label="Remove product"
+        disabled={!onRemove || disabled}
+        onClick={() => {
+          setOverlayOpen(false);
+          rowRef.current?.closest<HTMLElement>(".viewer")?.focus();
+          onRemove?.();
+        }}
+      >
+        <svg
+          aria-hidden="true"
+          viewBox="0 0 24 24"
+          width="28"
+          height="28"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.8"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
+          <path d="M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7M14 10v7" />
+        </svg>
+      </button>
+      <button
+        type="button"
+        className="product-action-item product-action-icon"
+        aria-label="Find alternatives"
+        title="Find alternatives"
+        disabled={!onOpenAlternatives || disabled}
+        onClick={() => {
+          setActionsOpen(false);
+          setOverlayOpen(false);
+          onOpenAlternatives?.();
+        }}
+      >
+        <svg
+          aria-hidden="true"
+          viewBox="0 0 24 24"
+          width="28"
+          height="28"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.8"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
+          <path d="M5 8h14m-4-4 4 4-4 4M19 16H5m4-4-4 4 4 4" />
+        </svg>
+      </button>
+      {quantityControl}
+    </div>
+  );
   const summary = (
     <ProductSummary
       view={view}
@@ -383,58 +439,7 @@ function ProductCard({
                 ×
               </button>
             </div>
-            <div className="product-action-controls">
-              <button
-                type="button"
-                className="product-action-item product-action-icon"
-                aria-label="Remove product"
-                disabled={!onRemove || disabled}
-                onClick={() => {
-                  rowRef.current?.closest<HTMLElement>(".viewer")?.focus();
-                  onRemove?.();
-                }}
-              >
-                <svg
-                  aria-hidden="true"
-                  viewBox="0 0 24 24"
-                  width="28"
-                  height="28"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="1.8"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <path d="M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7M14 10v7" />
-                </svg>
-              </button>
-              <button
-                type="button"
-                className="product-action-item product-action-icon"
-                aria-label="Find alternatives"
-                title="Find alternatives"
-                disabled={!onOpenAlternatives || disabled}
-                onClick={() => {
-                  setActionsOpen(false);
-                  onOpenAlternatives?.();
-                }}
-              >
-                <svg
-                  aria-hidden="true"
-                  viewBox="0 0 24 24"
-                  width="28"
-                  height="28"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="1.8"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <path d="M5 8h14m-4-4 4 4-4 4M19 16H5m4-4-4 4 4 4" />
-                </svg>
-              </button>
-              {quantityControl}
-            </div>
+            {actionControls}
           </div>
         )}
         {!comparison && (
@@ -464,19 +469,8 @@ function ProductCard({
               </div>
               <div className="product-overlay-details">
                 {summary}
-                {item && (
-                  <button
-                    type="button"
-                    className="product-action-item"
-                    onClick={() => {
-                      setActionsOpen(true);
-                      setOverlayOpen(false);
-                    }}
-                  >
-                    Product actions
-                  </button>
-                )}
                 {details}
+                {item && actionControls}
               </div>
             </Dialog.Content>
           </Dialog.Portal>

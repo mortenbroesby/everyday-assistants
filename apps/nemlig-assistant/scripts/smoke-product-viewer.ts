@@ -375,21 +375,18 @@ try {
     hostFrameBox && detailsBox && detailsBox.y - hostFrameBox.y <= 16,
     "product details are not top-aligned in the viewer",
   );
-  await details.getByRole("button", { name: "Product actions" }).click();
-  const touchAccessibleActions = frame.getByRole("group", {
-    name: "Actions for Synthetic milk",
-  });
-  await touchAccessibleActions.waitFor();
-  assert.equal(
-    await touchAccessibleActions.evaluate((modal) =>
-      modal.contains(modal.ownerDocument.activeElement),
-    ),
-    true,
-    "focus did not move to inline actions from details",
-  );
-  await touchAccessibleActions
-    .getByRole("button", { name: "Close product actions" })
+  for (const label of ["Remove product", "Find alternatives"]) {
+    assert.equal(await details.getByRole("button", { name: label }).count(), 1);
+  }
+  await details
+    .getByRole("button", { name: "Increase quantity of Synthetic milk" })
     .click();
+  await page.waitForFunction(() => window.getReview().items[0]?.quantity === 2);
+  await details
+    .getByRole("button", { name: "Decrease quantity of Synthetic milk" })
+    .click();
+  await page.waitForFunction(() => window.getReview().items[0]?.quantity === 1);
+  await details.getByRole("button", { name: "Close product overlay" }).click();
   await milkDisclosure.press("Shift+F10");
   const actionSheet = frame.getByRole("group", {
     name: "Actions for Synthetic milk",
@@ -427,25 +424,25 @@ try {
       1,
     );
   }
-  const assertActionLayout = async () => {
-    await actionSheet.evaluate(async (node) => {
+  const assertActionLayout = async (surface = actionSheet) => {
+    await surface.evaluate(async (node) => {
       await Promise.all(
         node.getAnimations().map((animation) => animation.finished),
       );
     });
-    const remove = await actionSheet
+    const remove = await surface
       .getByRole("button", { name: "Remove product" })
       .boundingBox();
-    const quantity = await actionSheet
+    const quantity = await surface
       .locator('[data-viewer-component="quantity-control"]')
       .boundingBox();
-    const alternatives = await actionSheet
+    const alternatives = await surface
       .getByRole("button", { name: "Find alternatives" })
       .boundingBox();
     assert.ok(remove, "trash control is missing");
     assert.ok(remove.x >= 0, "trash control is clipped offscreen");
     assert.equal(
-      await actionSheet.evaluate((node) => node.parentElement?.scrollLeft),
+      await surface.evaluate((node) => node.parentElement?.scrollLeft),
       0,
       "focusing inline actions scrolled the row sideways",
     );
@@ -471,7 +468,7 @@ try {
       alternatives.x + alternatives.width <= quantity.x,
       "alternatives is not before quantity controls",
     );
-    const targets = await actionSheet
+    const targets = await surface
       .locator(".product-action-controls button")
       .evaluateAll((buttons) =>
         buttons.map((button) => {
@@ -489,9 +486,7 @@ try {
       "action controls have undersized touch targets",
     );
     assert.equal(
-      await actionSheet.evaluate(
-        (modal) => modal.scrollWidth <= modal.clientWidth,
-      ),
+      await surface.evaluate((modal) => modal.scrollWidth <= modal.clientWidth),
       true,
       "action sheet overflows horizontally",
     );
@@ -507,7 +502,27 @@ try {
     .click();
   await milkDisclosure.click();
   await details.waitFor();
-  await details.getByRole("button", { name: "Close product overlay" }).click();
+  await assertActionLayout(details);
+  await page.setViewportSize({ width: 320, height: 860 });
+  await assertActionLayout(details);
+  await capture("product-details-actions-320");
+  await page.setViewportSize({ width: 375, height: 860 });
+  await details.getByRole("button", { name: "Find alternatives" }).click();
+  await frame
+    .getByRole("heading", { name: "Find an alternative", level: 1 })
+    .waitFor();
+  assert.equal(
+    await frame.getByRole("dialog").count(),
+    0,
+    "details stayed open over alternatives",
+  );
+  assert.equal(
+    await page.evaluate(() => window.getReview().items[0]?.quantity),
+    1,
+    "details alternatives changed quantity",
+  );
+  await frame.getByRole("button", { name: "Back to Local basket" }).click();
+  await frame.getByRole("heading", { name: "Local basket" }).waitFor();
   const callsBeforeMenu = await page.evaluate(() => window.calls.length);
   const box = await milkDisclosure.boundingBox();
   assert.ok(box, "product summary has no hit area");
@@ -783,9 +798,9 @@ try {
   const removeProduct = async (name: string, remaining: number) => {
     await removeFrame
       .getByRole("button", { name: `Show details for ${name}` })
-      .press("Shift+F10");
+      .click();
     await removeFrame
-      .locator(".product-inline-actions")
+      .getByRole("dialog", { name })
       .getByRole("button", { name: "Remove product" })
       .click();
     await removePage.waitForFunction(

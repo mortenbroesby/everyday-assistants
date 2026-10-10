@@ -22,7 +22,7 @@ Every local basket item is Ready and is included in the single Submit to Nemlig 
 
 - The review shows one list labeled “Local basket”; no To decide/Ready tabs or row-selection checkboxes.
 - A right-to-left swipe replaces the product row with inline controls containing trash and a two-arrow Find alternatives icon on the left and minus/quantity/plus controls on the right, all on one line. Left-to-right swipes, vertical scrolling, short drags, and canceled gestures do not open actions. Opening the controls changes no basket state. Close or Escape restores the product row; the surrounding basket stays visible.
-- Tapping a row opens a near-full-screen details modal that closes by ×, Escape, or outside activation. The inline controls open only on release, without activating a control.
+- Tapping a row opens a near-full-screen details modal with the same delete, Find alternatives, and quantity controls below the product facts. The modal closes by ×, Escape, or outside activation. The inline controls open only on release, without activating a control.
 - Long Local baskets stay within the bounded viewer, remain reachable through one scroll region, and preserve keyboard focus as virtual rows change.
 - Keyboard users can focus a row and press Shift+F10 to reveal the same controls; Enter or Space opens details.
 - Alternatives appear in a dedicated full-page view with Back, current product, search, option selection, and explicit “Use selected alternative”. Back leaves the local row unchanged. A Ready row can search and replacement preserves its Ready status and quantity while invalidating a prepared submission.

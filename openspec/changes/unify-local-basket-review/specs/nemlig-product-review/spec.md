@@ -58,7 +58,7 @@ The system SHALL prepare one exact submission containing every current local bas
 - **THEN** the local basket remains intact, the outcome is explicitly uncertain or failed, and the system does not automatically retry the submission
 
 ### Requirement: To decide and Ready refinement
-The touch review SHALL show one Local basket list without visible To decide or Ready tabs, row-selection checkboxes, or an acceptance step. Every product SHALL be a Ready submission candidate. A right-to-left swipe on a row SHALL replace that row with inline controls containing accessible trash and Find alternatives icon controls on the left and minus/quantity/plus controls on the right, all on one line without activating an action. The inline controls SHALL open only on release. Close or Escape SHALL restore the product row; the surrounding basket SHALL remain visible. Left-to-right swipes, vertical scrolling, short drags, and canceled gestures SHALL NOT open actions or mutate the basket. Tapping a row SHALL open near-full-screen details that can be dismissed and offer a visible Product actions control for access without swiping. Keyboard users SHALL be able to open the inline controls with Shift+F10 and details with Enter or Space. Legacy stored state SHALL NOT exclude an item from whole-basket submission.
+The touch review SHALL show one Local basket list without visible To decide or Ready tabs, row-selection checkboxes, or an acceptance step. Every product SHALL be a Ready submission candidate. A right-to-left swipe on a row SHALL replace that row with inline controls containing accessible trash and Find alternatives icon controls on the left and minus/quantity/plus controls on the right, all on one line without activating an action. The inline controls SHALL open only on release. Close or Escape SHALL restore the product row; the surrounding basket SHALL remain visible. Left-to-right swipes, vertical scrolling, short drags, and canceled gestures SHALL NOT open actions or mutate the basket. Tapping a row SHALL open near-full-screen details that can be dismissed and show the same delete, Find alternatives, and quantity controls below the product facts for access without swiping. Keyboard users SHALL be able to open the inline controls with Shift+F10 and details with Enter or Space. Legacy stored state SHALL NOT exclude an item from whole-basket submission.
 
 The viewer SHALL bound its height and use one scroll region for long content. Larger Local baskets MAY virtualize offscreen rows, provided scrolling, keyboard access, modal details, and whole-basket submission remain available.
 
@@ -76,7 +76,7 @@ The viewer SHALL bound its height and use one scroll region for long content. La
 
 #### Scenario: Inspect product details
 - **WHEN** the user taps a row
-- **THEN** the product facts open in a near-full-screen modal with a Product actions control that opens the inline controls; the modal can be closed with ×, Escape, or outside activation without changing either basket
+- **THEN** the product facts open in a near-full-screen modal with the same delete, Find alternatives, and quantity controls below the product facts; the modal can be closed with ×, Escape, or outside activation without changing either basket
 
 #### Scenario: Resolve alternatives for a Ready row
 - **WHEN** the user searches alternatives from a Ready row and chooses a replacement
