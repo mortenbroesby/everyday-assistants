@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import type { ProductView } from "./product-presentation.js";
 
 export const LOCAL_BASKET_TTL_MS = 24 * 60 * 60 * 1000;
 export const MAX_LOCAL_BASKET_LINES = 500;
@@ -7,6 +8,8 @@ export const MAX_LOCAL_BASKETS = 50;
 export interface LocalBasketLine {
   productId: number;
   quantity: number;
+  /** Safe presentation snapshot; recovery never needs a provider lookup to render. */
+  view: ProductView;
 }
 
 export interface LocalBasket {
@@ -44,9 +47,14 @@ const UUID =
 const validPositiveInteger = (value: number): boolean =>
   Number.isSafeInteger(value) && value > 0;
 
+const viewMatchesProduct = (view: ProductView, productId: number): boolean =>
+  view.status === "complete"
+    ? view.product.id === productId
+    : view.product_id === productId;
+
 const cloneBasket = (basket: LocalBasket): LocalBasket => ({
   ...basket,
-  lines: basket.lines.map((line) => ({ ...line })),
+  lines: basket.lines.map((line) => structuredClone(line)),
 });
 
 const cloneInventory = (
@@ -79,6 +87,32 @@ const nowFrom = (options: LocalBasketDomainOptions): number => {
   return now;
 };
 
+const mergeLines = (
+  existingLines: readonly LocalBasketLine[],
+  additions: readonly LocalBasketLine[],
+): LocalBasketLine[] => {
+  const lines = new Map(
+    existingLines.map((line) => [line.productId, structuredClone(line)]),
+  );
+  for (const line of additions) {
+    const existing = lines.get(line.productId);
+    const quantity = (existing?.quantity ?? 0) + line.quantity;
+    if (!validPositiveInteger(quantity)) {
+      throw new Error("Product quantity exceeds the supported range.");
+    }
+    lines.set(line.productId, {
+      ...structuredClone(existing ?? line),
+      quantity,
+    });
+  }
+  if (lines.size > MAX_LOCAL_BASKET_LINES) {
+    throw new Error(
+      `A Local basket can contain at most ${MAX_LOCAL_BASKET_LINES} product lines.`,
+    );
+  }
+  return [...lines.values()].map((line) => structuredClone(line));
+};
+
 const normalizeLines = (
   lines: readonly LocalBasketLine[],
 ): LocalBasketLine[] => {
@@ -87,31 +121,18 @@ const normalizeLines = (
       "Provide at least one exact product with a positive quantity.",
     );
   }
-  const quantities = new Map<number, number>();
   for (const line of lines) {
     if (
       !validPositiveInteger(line.productId) ||
-      !validPositiveInteger(line.quantity)
+      !validPositiveInteger(line.quantity) ||
+      !viewMatchesProduct(line.view, line.productId)
     ) {
       throw new Error(
-        "Products and quantities must be positive safe integers.",
+        "Products, snapshots, and quantities must be exact positive values.",
       );
     }
-    const quantity = (quantities.get(line.productId) ?? 0) + line.quantity;
-    if (!validPositiveInteger(quantity)) {
-      throw new Error("Product quantity exceeds the supported range.");
-    }
-    quantities.set(line.productId, quantity);
   }
-  if (quantities.size > MAX_LOCAL_BASKET_LINES) {
-    throw new Error(
-      `A Local basket can contain at most ${MAX_LOCAL_BASKET_LINES} product lines.`,
-    );
-  }
-  return [...quantities].map(([productId, quantity]) => ({
-    productId,
-    quantity,
-  }));
+  return mergeLines([], lines);
 };
 
 const withoutExpired = (
@@ -265,28 +286,10 @@ export const appendLocalBasketLines = (
   const active = withoutExpired(inventory, now);
   const current = basketAt(active, basketId);
   const additions = normalizeLines(lines);
-  const quantities = new Map(
-    current.lines.map((line) => [line.productId, line.quantity]),
-  );
-  for (const line of additions) {
-    const quantity = (quantities.get(line.productId) ?? 0) + line.quantity;
-    if (!validPositiveInteger(quantity)) {
-      throw new Error("Product quantity exceeds the supported range.");
-    }
-    quantities.set(line.productId, quantity);
-  }
-  if (quantities.size > MAX_LOCAL_BASKET_LINES) {
-    throw new Error(
-      `A Local basket can contain at most ${MAX_LOCAL_BASKET_LINES} product lines.`,
-    );
-  }
   const updated = refresh(
     {
       ...current,
-      lines: [...quantities].map(([productId, quantity]) => ({
-        productId,
-        quantity,
-      })),
+      lines: mergeLines(current.lines, additions),
     },
     now,
   );

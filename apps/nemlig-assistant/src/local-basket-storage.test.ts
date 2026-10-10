@@ -18,6 +18,32 @@ import {
 const id = (value: number): string =>
   `00000000-0000-4000-8000-${String(value).padStart(12, "0")}`;
 
+const line = (productId: number, quantity: number) => ({
+  productId,
+  quantity,
+  view: {
+    context: "details" as const,
+    status: "complete" as const,
+    product: {
+      id: productId,
+      name: `Product ${productId}`,
+      price: 1,
+      unit_price: 1,
+      unit: "1 stk.",
+      unit_size: "1 stk.",
+      currency: "DKK" as const,
+      brand: "Fixture",
+      available: true,
+      is_organic: false,
+      is_frozen: false,
+      is_on_discount: false,
+      image_url: undefined,
+      labels: [],
+      tags: [],
+    },
+  },
+});
+
 class FakeStorage implements LocalBasketInventoryStorage {
   readonly values = new Map<string, unknown>();
   alarm: number | undefined;
@@ -48,7 +74,7 @@ const create = (
   value: number,
   now: number,
 ) =>
-  createLocalBasket(inventory, "owner", [{ productId: value, quantity: 1 }], {
+  createLocalBasket(inventory, "owner", [line(value, 1)], {
     now: () => now,
     createId: () => id(value),
   });

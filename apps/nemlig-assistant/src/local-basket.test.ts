@@ -32,11 +32,37 @@ const options = (
   nextId: () => string,
 ): LocalBasketDomainOptions => ({ now: clock.now, createId: nextId });
 
+const line = (productId: number, quantity: number) => ({
+  productId,
+  quantity,
+  view: {
+    context: "details" as const,
+    status: "complete" as const,
+    product: {
+      id: productId,
+      name: `Product ${productId}`,
+      price: 1,
+      unit_price: 1,
+      unit: "1 stk.",
+      unit_size: "1 stk.",
+      currency: "DKK" as const,
+      brand: "Fixture",
+      available: true,
+      is_organic: false,
+      is_frozen: false,
+      is_on_discount: false,
+      image_url: undefined,
+      labels: [],
+      tags: [],
+    },
+  },
+});
+
 const create = (
   inventory: OwnerLocalBasketInventory,
   clock: FakeClock,
   value: number,
-  lines = [{ productId: value, quantity: 1 }],
+  lines = [line(value, 1)],
 ) =>
   createLocalBasket(
     inventory,
@@ -48,11 +74,11 @@ const create = (
 test("creates owner-scoped UUID baskets with complete product lines", () => {
   const clock = new FakeClock(100);
   const created = create(createOwnerLocalBasketInventory("owner"), clock, 1, [
-    { productId: 7, quantity: 2 },
+    line(7, 2),
   ]);
 
   assert.match(created.value.basket.basketId, /^[0-9a-f-]{36}$/iu);
-  assert.deepEqual(created.value.basket.lines, [{ productId: 7, quantity: 2 }]);
+  assert.deepEqual(created.value.basket.lines, [line(7, 2)]);
   assert.equal(created.value.basket.createdAt, 100);
   assert.equal(created.value.basket.lastActivityAt, 100);
   assert.equal(created.value.basket.expiresAt, 100 + LOCAL_BASKET_TTL_MS);
@@ -73,7 +99,7 @@ test("rejects malformed generated UUIDs without creating a basket", () => {
   const inventory = createOwnerLocalBasketInventory("owner");
   assert.throws(
     () =>
-      createLocalBasket(inventory, "owner", [{ productId: 1, quantity: 1 }], {
+      createLocalBasket(inventory, "owner", [line(1, 1)], {
         now: clock.now,
         createId: () => "not-a-uuid",
       }),
@@ -82,38 +108,43 @@ test("rejects malformed generated UUIDs without creating a basket", () => {
   assert.deepEqual(inventory.baskets, []);
 });
 
+test("rejects a product snapshot that does not identify its exact line", () => {
+  const inventory = createOwnerLocalBasketInventory("owner");
+  const mismatched = line(2, 1);
+  mismatched.productId = 1;
+
+  assert.throws(
+    () => createLocalBasket(inventory, "owner", [mismatched]),
+    /snapshots/u,
+  );
+  assert.deepEqual(inventory.baskets, []);
+});
+
 test("appends exact product IDs by quantity while retaining distinct products", () => {
   const clock = new FakeClock(10);
   const created = create(createOwnerLocalBasketInventory("owner"), clock, 1, [
-    { productId: 1, quantity: 2 },
+    line(1, 2),
   ]);
   clock.set(20);
   const updated = appendLocalBasketLines(
     created.inventory,
     "owner",
     created.value.basket.basketId,
-    [
-      { productId: 1, quantity: 3 },
-      { productId: 2, quantity: 1 },
-    ],
+    [line(1, 3), line(2, 1)],
     { now: clock.now },
   );
 
-  assert.deepEqual(updated.value.lines, [
-    { productId: 1, quantity: 5 },
-    { productId: 2, quantity: 1 },
-  ]);
+  assert.deepEqual(updated.value.lines, [line(1, 5), line(2, 1)]);
   assert.equal(updated.value.lastActivityAt, 20);
   assert.equal(updated.value.expiresAt, 20 + LOCAL_BASKET_TTL_MS);
-  assert.deepEqual(created.value.basket.lines, [{ productId: 1, quantity: 2 }]);
+  assert.deepEqual(created.value.basket.lines, [line(1, 2)]);
 });
 
 test("rejects a 501st distinct line atomically", () => {
   const clock = new FakeClock();
-  const lines = Array.from({ length: MAX_LOCAL_BASKET_LINES }, (_, index) => ({
-    productId: index + 1,
-    quantity: 1,
-  }));
+  const lines = Array.from({ length: MAX_LOCAL_BASKET_LINES }, (_, index) =>
+    line(index + 1, 1),
+  );
   const created = create(
     createOwnerLocalBasketInventory("owner"),
     clock,
@@ -128,7 +159,7 @@ test("rejects a 501st distinct line atomically", () => {
         created.inventory,
         "owner",
         created.value.basket.basketId,
-        [{ productId: MAX_LOCAL_BASKET_LINES + 1, quantity: 1 }],
+        [line(MAX_LOCAL_BASKET_LINES + 1, 1)],
         { now: clock.now },
       ),
     /at most 500/u,
