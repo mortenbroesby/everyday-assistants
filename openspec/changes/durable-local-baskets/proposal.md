@@ -23,8 +23,12 @@ mask or misdiagnose that discovery failure.
   a restored basket must be freshly prepared and explicitly authorized before
   any provider write.
 - Diagnose recipe-scale discovery failures with privacy-safe, bounded evidence,
-  then implement only the demonstrated reliability fix. Preserve verified
-  partial results when a subset of discovery work fails.
+  then implement only the demonstrated reliability fix. Queue retryable reads
+  for at most three attempts with exponential backoff; stop further searches in
+  the affected chat after more than ten retryable failures in one minute.
+- Merge exact duplicate product IDs when appending results, increasing their
+  quantity without treating distinct variants as interchangeable. A confirmed
+  real-basket addition closes and removes the entire Local basket.
 - Publish this planning-only PR stacked on open PR #274. Start implementation
   only after #274 has merged; build the implementation branch on the resulting
   `main` SHA.

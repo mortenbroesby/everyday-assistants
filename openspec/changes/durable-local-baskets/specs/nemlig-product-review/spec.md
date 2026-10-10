@@ -26,15 +26,39 @@ Nemlig basket.
 - **AND** a concurrent action is rejected while that Local basket is busy
 
 #### Scenario: Local basket lifetime ends
-- **WHEN** the user deletes a Local basket or its hard one-day lifetime expires
+- **WHEN** the user deletes a Local basket or its activity-based one-day lifetime expires
 - **THEN** the system reports that the Local basket is unavailable without
   recreating it silently or changing the provider basket
 
 #### Scenario: Draft lifetime ends
-- **WHEN** the user finishes shopping, deletes the Local basket, or its hard
-  one-day lifetime expires
+- **WHEN** the user finishes shopping, deletes the Local basket, or its
+  activity-based one-day lifetime expires
 - **THEN** the system reports that the Local basket is unavailable without
   recreating it silently or changing the provider basket
+
+### Requirement: Explicit protected submission
+The system SHALL submit the complete Local basket only through an exact provider
+review and subsequent explicit approval. It SHALL NOT offer a partial submission
+or a discard-at-checkout path. Editing the Local basket SHALL invalidate its
+pending submission. All existing freshness, single-use, principal, mutation-lock
+and readback safeguards SHALL remain effective. Unrelated real basket lines
+SHALL remain unchanged. Verified successful readback SHALL close and delete the
+entire Local basket.
+
+#### Scenario: Local selection is complete
+- **WHEN** the user requests submission of the complete Local basket
+- **THEN** the system prepares exact current quantities, prices and effects for
+  approval without applying them
+
+#### Scenario: Approved submission succeeds
+- **WHEN** the user approves the unchanged current submission review
+- **THEN** the system applies it once, returns verified Nemlig basket readback,
+  closes the Local basket, and marks the outcome truthfully
+
+#### Scenario: Submission fails or becomes uncertain
+- **WHEN** application or readback fails
+- **THEN** the Local basket remains intact, the outcome is explicitly uncertain
+  or failed, and the system does not automatically retry the submission
 
 ### Requirement: Active conversation selection
 The system SHALL let an authenticated owner select one unexpired Local basket as

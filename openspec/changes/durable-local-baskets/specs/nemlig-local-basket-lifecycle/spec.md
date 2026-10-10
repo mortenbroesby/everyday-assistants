@@ -33,6 +33,11 @@ or generated human-readable basket name.
 - **WHEN** a create or update would make a Local basket contain more than 500 product lines
 - **THEN** the operation fails without partially persisting the attempted change
 
+#### Scenario: Appending an exact product already in the basket
+- **WHEN** an append contains the exact product ID of an existing Local basket line
+- **THEN** the system increases that line's quantity instead of creating a duplicate
+- **AND** it does not merge distinct product variants
+
 #### Scenario: Inventory reaches its capacity
 - **WHEN** an owner creates a fifty-first Local basket
 - **THEN** the Local basket with the oldest last-activity time is removed before
@@ -42,16 +47,32 @@ or generated human-readable basket name.
 
 ### Requirement: Activity-based one-day retention
 Every Local basket SHALL expire 24 hours after its most recent intentional
-basket interaction. Explicit basket open, selection, and local edits SHALL
-refresh that lifetime; passive ChatGPT conversation opening or restored card
-rendering SHALL NOT. Reads, edits, selection, and recovery SHALL enforce expiry;
-expired records SHALL be removed from active inventory and eventually deleted
-from durable storage.
+basket interaction. Explicit basket open, selection, local edits, and an active
+mounted-viewer heartbeat no more frequent than hourly SHALL refresh that
+lifetime; passive ChatGPT conversation opening or restored card rendering SHALL
+NOT. Reads, edits, selection, and recovery SHALL enforce expiry; expired records
+SHALL be removed from active inventory and eventually deleted from durable storage.
 
 #### Scenario: Expiry is reached
 - **WHEN** the owner opens or edits a Local basket at or after its expiry time
 - **THEN** the system reports that it expired and offers an explicit new Local basket path
 - **AND** it does not silently recreate prior products or alter the Nemlig basket
+
+#### Scenario: Active viewer remains open
+- **WHEN** an active mounted viewer remains open for more than one hour
+- **THEN** it refreshes the Local basket lifetime no more than once per hour
+- **AND** it stops refreshing when the viewer is inactive or unmounted
+
+### Requirement: Local basket ownership survives credential reconnection
+An authenticated owner's Local baskets SHALL remain available after that owner
+reconnects or rotates Nemlig credentials. Credential state SHALL NOT provide
+authorization to read another owner's Local baskets or restore provider-write
+authority.
+
+#### Scenario: Owner reconnects Nemlig
+- **WHEN** the same authenticated ChatGPT owner reconnects Nemlig credentials
+- **THEN** the owner's unexpired Local baskets remain selectable
+- **AND** any provider action still requires fresh validation, preparation, and approval
 
 ### Requirement: Restored Local baskets carry no write authority
 A restored Local basket SHALL preserve only local shopping state. Any prior

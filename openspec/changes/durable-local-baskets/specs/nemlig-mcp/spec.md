@@ -19,18 +19,24 @@ catalogue contents, or session identifiers.
 - **THEN** the result is an error distinct from a successful empty search
 - **AND** diagnostics identify the failure stage without exposing secrets or product contents
 
+#### Scenario: Retryable search failures exceed the session threshold
+- **WHEN** more than ten retryable product-search failures occur in one minute for one ChatGPT session
+- **THEN** the runtime stops further product-search work for that session and reports temporary provider unavailability
+- **AND** existing Local baskets remain available without provider access
+
 ## MODIFIED Requirements
 
 ### Requirement: Parallel reads share pre-authentication
 The MCP runtime SHALL ensure authentication before every provider-backed task,
 reuse existing sessions for read-only work, and coalesce overlapping login
 attempts only within the same principal client. It SHALL bound aggregate
-provider-backed discovery work for one principal according to the diagnosed
-recipe-scale reliability limit, in addition to any per-search detail limit. A
-read-only task SHALL retry at most once after HTTP 401; if another read already
-refreshed that client's session, it SHALL reuse the refreshed session rather
-than start a redundant login. These read retry rules SHALL NOT retry a basket
-write.
+provider-backed discovery work through a bounded per-session queue according to
+the diagnosed recipe-scale reliability limit, in addition to any per-search
+detail limit. Retryable searches SHALL use exponential backoff and at most three
+total attempts. It SHALL NOT retry invalid input, cancellation, lost
+authorization, or a basket write. A read-only task SHALL retry at most once
+after HTTP 401; if another read already refreshed that client's session, it
+SHALL reuse the refreshed session rather than start a redundant login.
 
 #### Scenario: ChatGPT starts independent searches concurrently
 - **WHEN** multiple read-only tools begin while a fresh login for their shared principal client is in flight

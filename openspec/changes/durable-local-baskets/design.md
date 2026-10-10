@@ -47,7 +47,9 @@ stores a collection of Local basket records rather than one global basket:
 - A record contains creation/last-activity/expiry timestamps, revision, lines
   (up to 500), local workflow state, and presentation-safe inventory metadata.
 - `expiresAt` is `lastActivityAt + 24 hours`. An explicit open, selection, or
-  local edit updates `lastActivityAt`; passive chat restoration does not.
+  local edit updates `lastActivityAt`; passive chat restoration does not. An
+  active mounted viewer sends at most one keep-alive heartbeat per hour, which
+  also refreshes `lastActivityAt`; it stops on inactivity or unmount.
 - An owner may retain at most 50 baskets. Creating basket 51 silently evicts
   the basket with the oldest `lastActivityAt`, with `createdAt` as a stable
   tie-breaker.
@@ -74,6 +76,12 @@ last-active date, and unique-product count. User-editable or generated human
 names are deferred. When a grocery request arrives with a valid selected basket,
 the assistant proposes appending to it and waits for the user's explicit choice
 between append and creating a new basket.
+
+Appending an exact product ID already in the selected basket increments that
+line's quantity; variants remain separate. A final local-basket submission is
+only available for the complete current basket. On confirmed provider readback,
+the basket is closed and deleted. Failed or uncertain write outcomes keep it
+available for inspection and never retry automatically.
 
 Retain the current seven model-visible shopping tools. Extend the existing
 Local-basket start/update schemas with explicit list, create, select, show, and
@@ -117,11 +125,14 @@ hydration, authentication refresh, deadline/cancellation, and aggregate active
 reads per principal. Record counts and normalized error class only; never terms,
 product contents, tokens, credentials, or session identifiers.
 
-Use the captured evidence to choose the smallest fix. If aggregate fan-out is
-confirmed, add a shared per-principal read coordinator around provider discovery
-while retaining per-search detail concurrency. If upstream search failures are
-the cause, retain truthful error/partial-result behavior rather than introducing
-an unrelated queue or retry loop.
+Use the captured evidence to choose the smallest fix. Retry only retryable
+read failures through a bounded product-search queue, for at most three total
+attempts with exponential backoff. Never retry invalid requests, cancellation,
+or lost authorization. After more than ten retryable failures in one minute,
+stop additional search work for that ChatGPT session and report the outage;
+other sessions remain unaffected. If upstream search failures are the cause,
+retain truthful error/partial-result behavior rather than adding unrelated
+global throttling.
 
 ## Risks / Trade-offs
 
@@ -141,6 +152,11 @@ an unrelated queue or retry loop.
 - [A concurrency change hides the real search cause] → Make the production-like
   fixture and failure-stage capture a hard task prerequisite for any limiter or
   retry adjustment.
+- [A mounted viewer retains a basket forever] → Limit heartbeats to one per hour
+  and stop them when the viewer is inactive or unmounted.
+- [A successful addition can be repeated] → Close and delete the complete Local
+  basket only after verified provider readback; retain failure/uncertainty for
+  inspection instead of retrying.
 - [The stacked UI changes alter the Local basket protocol] → Start from the
   eventual #274 merge SHA, re-read its final protocol and specs, and update this
   plan only if that concrete baseline changes the selected implementation seam.
