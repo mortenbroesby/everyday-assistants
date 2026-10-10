@@ -21,7 +21,9 @@ mask or misdiagnose that discovery failure.
 - Keep local basket editing, alternatives, and selection separate from the
   real Nemlig basket. Restore no prepared submission authority after a restart;
   a restored basket must be freshly prepared and explicitly authorized before
-  any provider write.
+  any provider write. Persist a non-authorizing uncertainty fence before a
+  provider write so a crash cannot make a possibly-applied basket eligible for
+  another submission.
 - Diagnose recipe-scale discovery failures with privacy-safe, bounded evidence,
   then implement only the demonstrated reliability fix. Queue retryable reads
   for at most three attempts with exponential backoff; stop further searches in
@@ -29,9 +31,8 @@ mask or misdiagnose that discovery failure.
 - Merge exact duplicate product IDs when appending results, increasing their
   quantity without treating distinct variants as interchangeable. A confirmed
   real-basket addition closes and removes the entire Local basket.
-- Publish this planning-only PR stacked on open PR #274. Start implementation
-  only after #274 has merged; build the implementation branch on the resulting
-  `main` SHA.
+- Publish this planning-only PR and build the implementation branch on the
+  merged #274 `main` baseline.
 
 ## Capabilities
 

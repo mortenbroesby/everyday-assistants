@@ -8,8 +8,8 @@ ChatGPT transcript and MCP-container lifetime, while retaining strict real-baske
 ### Requirement: Durable owner Local basket inventory
 The system SHALL maintain Local baskets for one authenticated owner independently
 of ChatGPT conversation identity. Each Local basket SHALL have an opaque stable
-identifier, creation time, last-activity time, expiry time, current product
-snapshot, and current local selection state. An owner SHALL be able to create a
+identifier, creation time, last-activity time, expiry time, and current complete
+product snapshot. An owner SHALL be able to create a
 Local basket, list its unexpired Local baskets, select one as current, and
 explicitly delete one. One Local basket SHALL contain no more than 500 product
 lines. The owner SHALL retain no more than 50 Local baskets; creating another
@@ -21,7 +21,7 @@ or generated human-readable basket name.
 
 #### Scenario: Owner resumes from another chat
 - **WHEN** the owner selects an unexpired Local basket from a supported new or old chat
-- **THEN** the same current products, quantities, and local selection state are available
+- **THEN** the same current products and quantities are available
 - **AND** no Nemlig basket operation occurs
 
 #### Scenario: Owner deletes a Local basket
@@ -75,13 +75,20 @@ authority.
 - **AND** any provider action still requires fresh validation, preparation, and approval
 
 ### Requirement: Restored Local baskets carry no write authority
-A restored Local basket SHALL preserve only local shopping state. Any prior
-prepared, submitted, failed, or uncertain provider operation SHALL remain
-separate from restored state. A real Nemlig addition SHALL require fresh
-validation, a newly prepared exact effect, explicit authorization, and existing
-verified readback safeguards.
+A restored Local basket SHALL preserve only local shopping state and, when a
+provider write was attempted, a non-authorizing uncertainty fence. It SHALL NOT
+preserve a prepared payload, approval, or reusable provider operation. A real
+Nemlig addition SHALL require fresh validation, a newly prepared exact effect,
+explicit authorization, and existing verified readback safeguards unless the
+uncertainty fence requires inspection of the real Nemlig basket first.
 
 #### Scenario: Basket is resumed after a process restart
 - **WHEN** an owner resumes a Local basket after a container restart
 - **THEN** they can inspect and edit local products
 - **AND** any real-basket submission must be freshly prepared before it can be authorized or applied
+
+#### Scenario: Provider write may have completed before restart
+- **WHEN** a container is replaced after the submission-attempt fence is stored
+  but before verified provider readback and Local basket deletion
+- **THEN** the recovered Local basket directs the owner to inspect the real
+  Nemlig basket and blocks preparation or automatic retry

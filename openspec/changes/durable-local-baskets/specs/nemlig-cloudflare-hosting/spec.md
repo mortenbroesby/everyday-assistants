@@ -7,7 +7,10 @@ calls SHALL NOT require an initialize request or `Mcp-Session-Id`. Every request
 SHALL retain gateway authentication, principal-policy authorization,
 request-size, deadline, and manual kill-switch checks. Provider-backed requests
 SHALL require independently bound current credentials before Container wake or
-provider access. Local basket state SHALL be isolated by authenticated principal
+provider access. Validated local-only Local basket list, show, select, delete,
+and heartbeat actions MAY reach the persistence boundary without Nemlig
+credentials, while retaining gateway authentication, principal-policy, quotas,
+deadlines, and no provider access. Local basket state SHALL be isolated by authenticated principal
 and stored through a narrow authenticated Worker persistence boundary; it SHALL
 not expose Durable Object access to unauthenticated callers or the Container.
 
@@ -27,7 +30,8 @@ not expose Durable Object access to unauthenticated callers or the Container.
 - **WHEN** a Container replacement occurs while an unexpired Local basket exists
 - **THEN** an authorized owner can recover that Local basket through the
   authenticated persistence boundary
-- **AND** prior prepared or uncertain provider-operation authority is not restored or retried
+- **AND** prior prepared provider-operation authority is not restored or retried;
+  a durable non-authorizing uncertainty fence remains inspect-only
 
 #### Scenario: Container replacement loses application state
 - **WHEN** a Container replacement loses process-local application state

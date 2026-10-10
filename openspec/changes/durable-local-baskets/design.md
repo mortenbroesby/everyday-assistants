@@ -3,9 +3,8 @@
 See [proposal.md](proposal.md). The merged shared-card work makes supported
 cards interchangeable within one current process-local review scope, but the
 scope is still keyed with ChatGPT session/conversation context and is lost with
-the MCP process. Open PR #272 introduces the Local basket product language and
-#274 applies that UI direction to the shipped viewer; this change must start
-only after both have landed.
+the MCP process. This implementation starts from merged #274, which established
+the current Local basket UI direction.
 
 `find_groceries` is independent of product-review ownership. The observed
 32/37 failure report is therefore a discovery/reliability investigation, not a
@@ -44,8 +43,9 @@ stores a collection of Local basket records rather than one global basket:
 
 - `basketId` is opaque and stable; it is never derived from product contents or
   a ChatGPT conversation id.
-- A record contains creation/last-activity/expiry timestamps, revision, lines
-  (up to 500), local workflow state, and presentation-safe inventory metadata.
+- A record contains creation/last-activity/expiry timestamps, an internal
+  revision, the complete product lines (up to 500), a durable submission fence
+  when needed, and presentation-safe inventory metadata.
 - `expiresAt` is `lastActivityAt + 24 hours`. An explicit open, selection, or
   local edit updates `lastActivityAt`; passive chat restoration does not. An
   active mounted viewer sends at most one keep-alive heartbeat per hour, which
@@ -92,9 +92,11 @@ and reviewable.
 ### 3. Keep durable state on the Worker side of the Container boundary
 
 The Container has no broad Durable Object binding. The Worker validates the
-authenticated principal before Container wake, exposes a narrow internal
-state-command interface, and forwards only validated owner-scoped commands and
-snapshots. The Container remains the owner of provider credentials, catalogue
+authenticated principal before Container wake, exposes a narrow native
+Container outbound callback with a request-scoped authenticated capability, and
+forwards only validated owner-scoped commands and snapshots. The callback never
+trusts an owner supplied by Container JSON and cannot be reused after the
+request. The Container remains the owner of provider credentials, catalogue
 reads, and protected proposal execution; the Durable Object never receives
 credentials, cookies, provider headers, or complete request logs.
 
@@ -110,35 +112,40 @@ Alternatives considered:
 
 ### 4. Re-establish submission safety after recovery
 
-Persist only local basket membership, quantities, local states, and safe
-presentation data. Do not persist a prepared payload, submission id, proposal,
-or operation lock as reusable authority. On any recovery where a proposal is not
-known live and current, clear local prepared state and require fresh product
-validation and exact preparation. An in-flight/uncertain provider mutation stays
-fail-closed and directs the user to inspect the real Nemlig basket.
+Persist local basket membership, quantities, safe presentation data, and a
+small non-authorizing `submissionAttempted` fence before beginning a provider
+write. Do not persist a prepared payload, approval, submission id, proposal, or
+operation lock as reusable authority. On recovery, clear local prepared state
+and require fresh product validation and exact preparation unless the fence is
+present. A recovered fence blocks preparation and submission, directs the user
+to inspect the real Nemlig basket, and never authorizes or retries a write. A
+verified successful readback deletes the basket; if deletion fails, the fence
+remains.
 
 ### 5. Diagnose discovery fan-out before fixing it
 
 First add a deterministic recipe-scale reproduction plus privacy-safe telemetry
-at the stage boundaries: host tool request, shallow catalogue response, detail
-hydration, authentication refresh, deadline/cancellation, and aggregate active
-reads per principal. Record counts and normalized error class only; never terms,
-product contents, tokens, credentials, or session identifiers.
+at the shallow catalogue, detail hydration, deadline/cancellation, and
+authentication boundaries. Record only stage, normalized error class, and
+active-read counts; never terms, product contents, tokens, credentials, or
+session identifiers.
 
-Use the captured evidence to choose the smallest fix. Retry only retryable
-read failures through a bounded product-search queue, for at most three total
-attempts with exponential backoff. Never retry invalid requests, cancellation,
-or lost authorization. After more than ten retryable failures in one minute,
-stop additional search work for that ChatGPT session and report the outage;
-other sessions remain unaffected. If upstream search failures are the cause,
-retain truthful error/partial-result behavior rather than adding unrelated
-global throttling.
+Use the captured evidence to choose the smallest fix. If a queue is warranted,
+retry only retryable read failures through a bounded product-search queue, for
+at most three total attempts with exponential backoff. Never retry invalid
+requests, cancellation, or lost authorization. Define the queue only for a
+stable host chat identifier; otherwise retain request-local limits rather than
+guessing a session. After more than ten retryable failures in one minute, stop
+additional search work for that chat and report the outage; other sessions
+remain unaffected. If upstream search failures are the cause, retain truthful
+error/partial-result behavior rather than adding unrelated global throttling.
 
 ## Risks / Trade-offs
 
 - [A durable basket is mistakenly treated as a durable authorization] → Persist
-  no proposal or submission authority; fresh preparation and explicit approval
-  remain mandatory after recovery.
+  no reusable proposal or submission authority; fresh preparation and explicit
+  approval remain mandatory after recovery, while a durable uncertainty fence
+  prevents duplicate writes.
 - [An old card edits the wrong basket] → Require an opaque basket ID for card
   mutations and return a bounded current snapshot only for that owner/basket.
 - [Expiry cleanup misses an alarm] → Enforce activity-based expiry on reads and
@@ -154,9 +161,10 @@ global throttling.
   retry adjustment.
 - [A mounted viewer retains a basket forever] → Limit heartbeats to one per hour
   and stop them when the viewer is inactive or unmounted.
-- [A successful addition can be repeated] → Close and delete the complete Local
-  basket only after verified provider readback; retain failure/uncertainty for
-  inspection instead of retrying.
+- [A successful addition can be repeated] → Write a durable non-authorizing
+  uncertainty fence before provider execution, close and delete the complete
+  Local basket only after verified readback, and retain the fence on uncertain
+  or cleanup-failure paths instead of retrying.
 - [The stacked UI changes alter the Local basket protocol] → Start from the
   eventual #274 merge SHA, re-read its final protocol and specs, and update this
   plan only if that concrete baseline changes the selected implementation seam.
