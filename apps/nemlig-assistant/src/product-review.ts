@@ -402,7 +402,13 @@ export class ProductReviewService {
         delete draft.alternatives;
       }
       this.get(owner); // Confirm the draft still exists after asynchronous reads.
+      const quantityUnchanged =
+        action.kind === "quantity" &&
+        stored.snapshot.items.find(
+          (item) => item.product_id === action.product_id,
+        )?.quantity === action.quantity;
       const preserveSubmission =
+        (draft.submission?.status === "submitted" && quantityUnchanged) ||
         draft.submission?.status === "uncertain" ||
         draft.submission?.status === "partial" ||
         (draft.submission?.status === "prepared" &&

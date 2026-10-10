@@ -379,8 +379,8 @@ The MCP surface is organized around household actions:
   that read/set boundary. Manage removals and clearing directly on Nemlig.com.
 - Search and conversation-side edits return structured and text results without
   mounting a widget for every tool call. `start_product_review` is the explicit
-  render action: it opens the current products immediately. Use it once while a
-  when a current view is requested, since each call renders a card from the same
+  render action: it opens the current products immediately. Use it only when a
+  current view is requested, since each call renders a card from the same
   owner-keyed list. ChatGPT may retain older message cards in the conversation;
   supported cards remain clients of the current list rather than holding separate
   server authority. Normal `update_product_review` edits use `{action}` only.

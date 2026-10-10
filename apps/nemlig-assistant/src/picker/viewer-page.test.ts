@@ -233,4 +233,14 @@ test("shared viewer page offers an authoritative Draft list refresh outside erro
     createElement(ViewerPage, uncertainProps),
   );
   assert.match(uncertain, /Refresh Draft list/u);
+
+  const errorProps = props();
+  errorProps.model.screen = {
+    kind: "error",
+    message: "The Draft list connection failed.",
+  };
+  errorProps.model.message =
+    "Reconnect to read this conversation's current Draft list.";
+  const error = renderToStaticMarkup(createElement(ViewerPage, errorProps));
+  assert.match(error, /role="status">Reconnect to read this conversation/u);
 });

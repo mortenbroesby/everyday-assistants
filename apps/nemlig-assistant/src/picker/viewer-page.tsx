@@ -533,6 +533,11 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
           <Button color="primary" disabled={busy} onClick={actions.onRefresh}>
             Refresh Draft list
           </Button>
+          {message && (
+            <p className="status" role="status">
+              {message}
+            </p>
+          )}
         </section>
       )}
       {screen.kind === "cancelled" && (

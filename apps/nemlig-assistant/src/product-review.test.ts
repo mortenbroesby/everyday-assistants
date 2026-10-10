@@ -454,6 +454,13 @@ test("submission hides provider references, invalidates edits, and retains verif
   assert.equal(result.review.items.length, 1);
   assert.equal(writes, 1);
   await assert.rejects(service.submit("owner", reference), /submission/i);
+  draft = await service.update("owner", {
+    kind: "quantity",
+    product_id: 1,
+    quantity: 2,
+  });
+  assert.equal(draft.submission?.status, "submitted");
+  await assert.rejects(service.prepare("owner"), /inspect/i);
   await service.update("owner", {
     kind: "quantity",
     product_id: 1,
