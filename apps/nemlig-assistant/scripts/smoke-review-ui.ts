@@ -178,6 +178,8 @@ document.getElementById('run').onclick = async () => {
   const beforeReload=widgetCalls.length; const reloaded=new Promise(resolve=>frame.addEventListener('load',resolve,{once:true})); frame.contentWindow.location.reload(); await reloaded;
   await wait(()=>title()==='Local basket'&&doc().querySelectorAll('.product-list article').length===2);
   check(widgetCalls.length===beforeReload,'Reload made an unnecessary service call');
+  const disclosure=doc().querySelector('.product-list article button[aria-expanded]'); check(disclosure,'Product disclosure missing'); disclosure.click();
+  await wait(()=>doc().querySelector('.product-list article [data-viewer-component="quantity-control"] button:last-of-type'));
   const quantity=doc().querySelector('.product-list article [data-viewer-component="quantity-control"] button:last-of-type'); check(quantity,'Quantity controls missing'); quantity.click();
   await wait(()=>widgetCalls.some(c=>c.arguments.action?.kind==='quantity'));
   click('Submit to Nemlig'); await wait(()=>doc().querySelector('[data-viewer-component="outcome-surface"] h2')?.textContent==='Ready to submit the Local basket');
