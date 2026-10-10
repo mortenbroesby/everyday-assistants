@@ -504,7 +504,9 @@ try {
   await frame.getByRole("button", { name: /Find alternative/ }).waitFor();
   const milkAlt = milkCard.getByRole("button", { name: /Find alternative/ });
   await milkAlt.click();
-  await frame.getByRole("heading", { name: "Find an alternative" }).waitFor();
+  await frame
+    .getByRole("heading", { name: "Find an alternative", level: 1 })
+    .waitFor();
   assert.equal(
     await page.evaluate(() =>
       window
@@ -543,7 +545,9 @@ try {
     "ordinary snapshot reopened alternatives or lost quantity after Back",
   );
   await milkCard.getByRole("button", { name: /Find alternative/ }).click();
-  await frame.getByRole("heading", { name: "Find an alternative" }).waitFor();
+  await frame
+    .getByRole("heading", { name: "Find an alternative", level: 1 })
+    .waitFor();
   const candidate = frame
     .locator(".alternative-options .product-card")
     .filter({ hasText: "Synthetic alternative" });
