@@ -18,9 +18,9 @@ Container application capped at one instance, and the custom hostname
 
 Use one Cloudflare Worker in front of one deterministic, EU-jurisdiction,
 container-enabled SQLite Durable Object. That object owns the safety state and
-one sleeping Nemlig MCP Container. The former shopping storage namespace is
-retained inactive only to preserve existing data and rollback; the application
-no longer reads or writes saved shopping records. Configure
+one sleeping Nemlig MCP Container. Migration `v2` deletes the former shopping
+storage namespace and its records; the application no longer reads or writes
+saved shopping records. Configure
 `max_instances = 1`, route to fixed object IDs, and do not use `getRandom` or any
 dynamic instance-ID path.
 

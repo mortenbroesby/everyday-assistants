@@ -37,7 +37,14 @@ interface WranglerDeployment {
     instance_type: string;
     constraints: { jurisdiction: string };
   }>;
-  durable_objects: { bindings: unknown[] };
+  durable_objects: {
+    bindings: Array<{ name: string; class_name: string }>;
+  };
+  migrations: Array<{
+    tag: string;
+    new_sqlite_classes?: string[];
+    deleted_classes?: string[];
+  }>;
 }
 
 test("Cloudflare safety configuration is explicit, bounded, and internally consistent", () => {
@@ -143,7 +150,16 @@ test("Wrangler configuration fixes both environments to one disabled EU lite Con
     assert.equal(deployment.containers[0].max_instances, 1);
     assert.equal(deployment.containers[0].instance_type, "lite");
     assert.equal(deployment.containers[0].constraints.jurisdiction, "eu");
-    assert.equal(deployment.durable_objects.bindings.length, 2);
+    assert.deepEqual(deployment.durable_objects.bindings, [
+      { name: "NEMLIG_MCP_CONTAINER", class_name: "NemligMcpContainer" },
+    ]);
+    assert.deepEqual(deployment.migrations, [
+      {
+        tag: "v1",
+        new_sqlite_classes: ["NemligMcpContainer", "PlanStorage"],
+      },
+      { tag: "v2", deleted_classes: ["PlanStorage"] },
+    ]);
   }
   assert.equal(wrangler.keep_vars, false);
   assert.equal(wrangler.limits.cpu_ms, 100);
@@ -163,23 +179,10 @@ test("Container has no saved-shopping outbound storage adapter", async () => {
   assert.doesNotMatch(worker, /GH_TOKEN|suggest_an_improvement/u);
 });
 
-test("historical PlanStorage is inert and does not access stored records", async () => {
+test("PlanStorage is removed from the Worker source", async () => {
   const worker = await readFile(
     new URL("./cloudflare-worker.ts", import.meta.url),
     "utf8",
   );
-  const planStorage = worker.slice(
-    worker.indexOf("export class PlanStorage"),
-    worker.indexOf("export { ContainerProxy"),
-  );
-  assert.ok(planStorage);
-  assert.match(
-    planStorage,
-    /return new Response\([^\n]*, \{ status: 410 \}\)/u,
-  );
-  assert.doesNotMatch(
-    planStorage,
-    /storage\.(?:get|put|delete|transaction)\s*\(/u,
-  );
-  assert.doesNotMatch(worker, /NEMLIG_PLAN_STORAGE_URL/u);
+  assert.doesNotMatch(worker, /PlanStorage|NEMLIG_PLAN_STORAGE/u);
 });

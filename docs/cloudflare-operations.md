@@ -29,11 +29,10 @@ field names only, never values.
 ## Production shape and defaults
 
 The repository deploys one Worker, one fixed EU Container-controller Durable
-Object named `nemlig-production`, and at most one sleeping `lite` Container. The
-legacy `PlanStorage` class, namespace binding and migration history are retained
-only to preserve existing records and rollback: its handler returns 410 without
-storage access, and the application no longer forwards saved-shopping requests.
-Do not delete that namespace or stored records as part of a routine deployment.
+Object named `nemlig-production`, and at most one sleeping `lite` Container.
+Migration `v2` deletes the retired `PlanStorage` class and its stored records.
+The application does not read or write saved-shopping records, and a code
+rollback cannot recover deleted Durable Object data.
 The Worker stays enabled during routine delivery; `MCP_ENABLED=false` is a
 manual emergency kill switch. A failed deployment is not automatically rolled
 back or disabled. Inspect the live Worker, Container image/version and rollout
