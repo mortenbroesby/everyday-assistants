@@ -4,7 +4,6 @@ import {
   safeNemligImageUrl,
   type ProductView,
 } from "../product-presentation.js";
-import { isUsable } from "./components/index.js";
 import { ViewerPage } from "./viewer-page.js";
 import type {
   PresentationDestination,
@@ -218,8 +217,7 @@ function readPayload(value: unknown): ViewerScreen | undefined {
   if (envelope.ended === true) {
     return {
       kind: "empty",
-      message:
-        "Your local Draft list was discarded. Nothing changed in Nemlig.",
+      message: "Your Local basket was discarded. Nothing changed in Nemlig.",
     };
   }
   const candidate = Array.isArray(envelope.views)
@@ -262,7 +260,6 @@ export function ProductViewer() {
   );
   const callLock = useRef(false);
   const cancellationEpoch = useRef(0);
-  const [selected, setSelected] = useState<Set<number>>(() => new Set());
   const [reviewDisclosures, setReviewDisclosures] = useState<
     Map<number, { expanded: boolean; facts: Set<string> }>
   >(() => new Map());
@@ -310,7 +307,6 @@ export function ProductViewer() {
     }
     quantityTimer.current = undefined;
     clearPendingQuantities();
-    setSelected(new Set());
     setConfirmEnd(false);
     const current = activeReview.current;
     if (current) {
@@ -331,7 +327,7 @@ export function ProductViewer() {
         setScreen({
           kind: "error",
           message:
-            "Could not load the Draft list. Reconnect Nemlig or try again in conversation.",
+            "Could not load the Local basket. Reconnect Nemlig or try again in conversation.",
         });
         return false;
       }
@@ -432,18 +428,6 @@ export function ProductViewer() {
           return visible ?? next.review.destination;
         });
         setMessage("");
-        setSelected((chosen) =>
-          sameReview
-            ? new Set(
-                [...chosen].filter((id) =>
-                  next.review.items.some(
-                    (item) =>
-                      item.product_id === id && item.state === "needs-review",
-                  ),
-                ),
-              )
-            : new Set(),
-        );
         setConfirmSubmit(false);
       } else if (next.kind === "unavailable") {
         deactivateReview();
@@ -494,7 +478,7 @@ export function ProductViewer() {
       host.onerror = () => {
         deactivateReview();
         setMessage(
-          "The Draft list connection failed. Continue in conversation or reopen your current Draft list.",
+          "The Local basket connection failed. Continue in conversation or reopen your current Local basket.",
         );
       };
     },
@@ -519,8 +503,8 @@ export function ProductViewer() {
     if (!connectedApp || !isConnected) {
       setMessage(
         error
-          ? "The Draft list could not connect. Continue in conversation or reopen the current Draft list."
-          : "Connecting to the current Nemlig Draft list…",
+          ? "The Local basket could not connect. Continue in conversation or reopen the current Local basket."
+          : "Connecting to your Local basket…",
       );
       return false;
     }
@@ -548,7 +532,7 @@ export function ProductViewer() {
         );
       }
       if (!applyPayload(result, true, adoptPresentationDestination)) {
-        throw new Error("Could not confirm the updated Draft list.");
+        throw new Error("Could not confirm the updated Local basket.");
       }
       setMessage("");
       return true;
@@ -570,19 +554,19 @@ export function ProductViewer() {
             const snapshot = readPayload(current);
             setMessage(
               snapshot?.kind === "review"
-                ? "Current Draft list reloaded. This card is read-only until you make it current."
-                : "No current Draft list remains. Ask before starting a new one.",
+                ? "Current Local basket reloaded. This card is read-only until you make it current."
+                : "No current Local basket remains. Ask before starting a new one.",
             );
           } else {
             setScreen({ kind: "stale" });
             setMessage(
-              "Could not reload the current Draft list. Ask in chat to reopen it.",
+              "Could not reload the current Local basket. Ask in chat to reopen it.",
             );
           }
         } catch {
           setScreen({ kind: "stale" });
           setMessage(
-            "Could not reload the current Draft list. Ask in chat to reopen it.",
+            "Could not reload the current Local basket. Ask in chat to reopen it.",
           );
         }
       } else if (/unavailable/i.test(text)) {
@@ -592,7 +576,6 @@ export function ProductViewer() {
         setMessage("");
       } else if (recovery && /stale|no active draft/i.test(text)) {
         deactivateReview();
-        setSelected(new Set());
         const latest = activeReview.current;
         try {
           if (latest?.view_id) {
@@ -620,7 +603,7 @@ export function ProductViewer() {
           setScreen({ kind: "stale" });
         }
         setMessage(
-          "Your last action was not applied. The current Draft list was refreshed; choose again.",
+          "Your last action was not applied. The current Local basket was refreshed; choose again.",
         );
       } else if (!recovery && (uncertainOnFailure || /uncertain/i.test(text))) {
         submitBlockedRef.current = true;
@@ -632,9 +615,8 @@ export function ProductViewer() {
       } else {
         deactivateReview();
         setPendingQuantities(new Map());
-        setSelected(new Set());
         setMessage(
-          "We could not confirm this action. Refresh the Draft list to check its state before trying again.",
+          "We could not confirm this action. Refresh the Local basket to check its state before trying again.",
         );
       }
       return false;
@@ -756,7 +738,9 @@ export function ProductViewer() {
   };
   const sendFollowUp = async (text: string) => {
     if (!connectedApp || !isConnected) {
-      setMessage("Continue in conversation to inspect or start a Draft list.");
+      setMessage(
+        "Continue in conversation to inspect or start a Local basket.",
+      );
       return;
     }
     try {
@@ -769,7 +753,9 @@ export function ProductViewer() {
       }
       setMessage("Follow-up sent to conversation.");
     } catch {
-      setMessage("Continue in conversation to inspect or start a Draft list.");
+      setMessage(
+        "Continue in conversation to inspect or start a Local basket.",
+      );
     }
   };
   const activateCurrentDraftList = async () => {
@@ -777,7 +763,7 @@ export function ProductViewer() {
     try {
       // The model tool path retains the conversation scope that owns the review.
       await sendFollowUp(
-        "Reopen the current Draft list without changing it. If it is no longer available, say so; do not create a new Draft list.",
+        "Reopen the current Local basket without changing it. If it is no longer available, say so; do not create a new Local basket.",
       );
     } finally {
       setActivatingCurrent(false);
@@ -903,14 +889,13 @@ export function ProductViewer() {
       model={{
         screen,
         presentationDestination,
-        selected,
         reviewDisclosures,
         pendingQuantities,
         thumbnails,
         message,
         connectionMessage: !isConnected
           ? error
-            ? "Could not connect to the Draft list host."
+            ? "Could not connect to the Local basket host."
             : "Connecting to Nemlig…"
           : undefined,
         busy,
@@ -935,34 +920,9 @@ export function ProductViewer() {
             return { ...current, facts };
           }),
         onActivateCurrent: () => void activateCurrentDraftList(),
-        onSelected: (productId, checked) =>
-          setSelected((previous) => {
-            const next = new Set(previous);
-            if (checked) {
-              next.add(productId);
-            } else {
-              next.delete(productId);
-            }
-            return next;
-          }),
-        onSelectAll: () =>
-          setSelected(
-            new Set(
-              review?.items
-                .filter(
-                  (item) =>
-                    item.state === "needs-review" && isUsable(item.view),
-                )
-                .map((item) => item.product_id) ?? [],
-            ),
-          ),
-        onAcceptSelected: () =>
-          afterFlush({ kind: "accept", product_ids: [...selected] }),
         onQuantity: setQuantity,
         onRemove: (item) =>
           afterFlush({ kind: "remove", product_ids: [item.product_id] }),
-        onRevisit: (item) =>
-          afterFlush({ kind: "revisit", product_ids: [item.product_id] }),
         onOpenAlternatives: (item, query) => {
           afterFlush({
             kind: "alternatives",
@@ -981,7 +941,7 @@ export function ProductViewer() {
         onContinueSubmitted: () => setContinueSubmitted(true),
         onInspectBasket: () =>
           void sendFollowUp(
-            "Inspect the actual Nemlig basket for this uncertain Draft list submission. Do not retry or add anything.",
+            "Inspect the actual Nemlig basket for this uncertain Local basket submission. Do not retry or add anything.",
           ),
         onSendFollowUp: (text) => void sendFollowUp(text),
         onRequestEnd: () => setConfirmEnd(true),

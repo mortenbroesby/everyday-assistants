@@ -6,8 +6,8 @@
 
 <p align="center">
   Search and compare in conversation. Every real basket change uses exact
-  preparation and user authorization; a clear request to add the current Ready
-  draft list is that authorization for those unchanged lines only.
+  preparation and user authorization; a clear request to add the current Local
+  basket is that authorization for all unchanged rows only.
 </p>
 
 <p align="center">
@@ -28,7 +28,7 @@
 
 Nemlig Assistant is an unofficial Node.js and TypeScript assistant for
 nemlig.com. It helps you move from “we need groceries” to a reviewed proposal
-with current products, prices, a temporary Draft list, and exact quantities.
+with current products, prices, a temporary Local basket, and exact quantities.
 
 Use it from a terminal or connect its MCP server to an AI client such as
 ChatGPT. The assistant can do useful read-only work immediately. Basket writes
@@ -43,15 +43,15 @@ with or endorsed by nemlig.com or OpenAI.
 Once connected, try prompts like:
 
 - “Find organic milk and show the current detailed results, compared by unit price.”
-- “Put these products in my Draft list so I can decide what to add.”
-- “Compare the cheese in my basket with this cheaper alternative.”
+- “Put these products in my Local basket.”
+- “Find an alternative to the cheese in my Local basket.”
 - “Show my Nemlig basket.”
-- “Add the Ready products from my Draft list to my Nemlig basket.”
+- “Add everything in my Local basket to my Nemlig basket.”
 - “Which Nemlig Assistant version and codename are running?”
 
 Search and Nemlig basket reads remain read-only. A clear conversational request to
-add the current unchanged Ready draft list authorizes that exact prepared
-payload without a redundant second approval; Ready status alone does not. Other
+add the unchanged current Local basket authorizes that exact prepared
+payload without a redundant second approval; presence in the Local basket alone does not. Other
 additions require exact approval, with final revalidation and verified readback.
 
 <a id="what-you-can-do"></a>
@@ -79,7 +79,7 @@ additions require exact approval, with final revalidation and verified readback.
 - Inspect the current basket without changing it.
 - Read the actual Nemlig basket as structured data and text; this read does not
   open a separate visual card.
-- Prepare exact Ready additions from the Draft list.
+- Prepare exact additions from every row in the Local basket.
 - Preview the final quantity and price after adding the requested positive
   quantity to each existing line.
 
@@ -114,57 +114,46 @@ for one repeatable credential-free repository and CI check.
 ChatGPT searches with short Danish catalogue terms and receives current exact
 details for every selected result. Results retain provider order and identify
 partial or unavailable detail reads explicitly. The MCP search result includes
-the supported exact product facts; basket changes stay behind Draft list
-preparation and protected submission.
+the supported exact product facts; additions from the Local basket stay behind
+whole-list preparation and protected submission.
 
 Provider descriptions, declarations, and item details are converted from HTML
 to bounded plain text, including Danish characters and entities. Scripts,
 styles, images and link destinations are omitted; conversion does not fetch
 additional resources.
-The shared product viewer opens directly on its products. Each row keeps a
-visible product image, readable name, brand/package details, quantity, and line
-price together on narrow screens; factual disclosures stay collapsed until
-opened. Its buttons, status chips and compact row styling are viewer-local
-native controls, grouped in the picker component suite, so the approved
-hierarchy does not depend on host component-kit defaults. **To decide** contains
-unresolved products; **Ready** contains exact accepted products. Select one or
-more To decide rows, then add them to Ready in one local action. In Ready,
-adjust quantities directly; open a row to move it back or remove it from the
-local Draft list after confirmation. This never changes the Nemlig basket. Choose
-alternatives only from To decide; choosing a replacement does not accept it
-automatically. Alternatives show every distinct eligible product in the provider
-response with comparison facts visible at a glance. The full product row is the
-selection target; the separate **Use selected alternative** action applies that
-choice. Unavailable results stay visibly unselectable. Longer facts use only
-the three collapsed sections **Varebeskrivelse**, **Varedeklaration**, and
-**Detaljer om varen**, with all supplied detail fields grouped in the latter.
-They allow a deliberate follow-up search when none fit. A search response is not
-a claim that the entire Nemlig catalogue was enumerated. These local operations also work
-through conversation, including “everything except the ricotta and cucumbers is
-fine.” Local acceptance never changes Nemlig.
+The shared product viewer opens directly to one **Local basket** list. Every
+row is Ready for whole-list submission; there are no To decide/Ready tabs,
+checkboxes, or acceptance step. Swipe left or right past half a row to reveal
+Remove or Find alternative. Releasing a swipe only reveals the action; tapping
+the button performs it. Expanded rows provide the same accessible controls.
+Removing or replacing a row changes only the Local basket, never Nemlig. The
+alternative view has Back, the current product, search, selectable results,
+and an explicit **Use selected alternative** action. Back and search preserve
+the original row. Replacement preserves its quantity and stays Ready. Unavailable
+results cannot be selected. Longer product facts use the three collapsed sections
+**Varebeskrivelse**, **Varedeklaration**, and **Detaljer om varen**.
+
 The MCP routing map separates catalogue discovery, the actual Nemlig basket,
-the local draft list, protected submission and recovery. Reopening uses
-draft list `show`, not new searches, repeated details or a second start; failed edits are not replayed.
-Once explicitly opened, the same current draft list frame stays active across
-confirmed local edits and destination changes. Compatible draft lists and open
-product rows remain in place. Rows show product, package, quantity and line
-price first. Expanded rows contain quantity and local row actions, plus
-collapsed **Varebeskrivelse**, **Varedeklaration**, and **Detaljer om varen**
-sections; opening them makes no tool call. **Review exact Nemlig change**
-prepares the exact products and quantities before any separately authorized
-Nemlig basket addition. Empty or ended Draft lists instead offer conversational
-shopping starters; they do not call Nemlig or change the local selection.
+the Local basket, protected submission and recovery. Reopening uses `show`, not
+new searches or a second start. Rows show product, package, quantity and line
+price first. Expanded rows contain quantity, local row actions and product
+facts. **Submit to Nemlig** prepares every current Local basket row for exact
+review before any provider addition. If any row is unavailable or incomplete,
+preparation stops without submitting a partial list. Empty Local baskets offer
+conversational shopping starters; they do not call Nemlig or change provider
+state. **Submit to Nemlig** is full width; **Clear** is full width at the
+bottom of the list and asks for confirmation before discarding the Local basket.
 
 Voice and touch use one private temporary draft per ChatGPT conversation, identified
 by the host session metadata and authenticated principal. There is no hourly expiry.
-**Clear draft list and start over** discards the local draft and shows a
+**Clear** asks for confirmation, then discards the Local basket and shows a
 conversational starting screen. A restart or bounded memory eviction
 can also discard it; missing state is reported rather than silently recreated.
 Each principal retains at most eight conversation drafts of up to 500 products. Hosts
 without conversation context cannot access a hosted draft. ChatGPT does not
 provide a reliable notification when a conversation is closed.
 They are not saved shopping plans or named lists. Transcript cards start inactive:
-**Open current draft list** reads this conversation’s current draft before showing
+**Open current Local basket** reads this conversation’s current draft before showing
 products or shopping controls. Reloading an old message does not restore its
 historical draft list. When a current viewer detects a stale card, it automatically
 reads and displays the current list in that same card, read-only. **Make this card
@@ -173,8 +162,8 @@ If the list is gone, the card asks before starting over. Cards already cached by
 cannot gain this behavior; ask in chat to reopen the list from those older cards. A
 stale edit refreshes once without replaying it; connection failures hide editing
 controls until you explicitly reopen current state.
-If the draft is gone, **Start new draft list** rechecks the original products and
-quantities without restoring acceptance or submission approval. Submitted,
+If the Local basket is gone, **Start new Local basket** rechecks the original products and
+quantities without restoring an earlier submission approval. Submitted,
 uncertain, or known-partial snapshots instead direct you to inspect the actual
 basket; a known partial result says how many additions were verified and that
 no later write was sent.
@@ -191,9 +180,9 @@ operator-managed clean connection cutover followed by a new chat.
 Run `pnpm nemlig:smoke:review-ui`, open its loopback URL,
 and click **Run regression smoke**. The real MCP adapter and fake catalogue
 exercise inactive mount/remount, conflicting revisions, a failed connection,
-process restart, explicit recovery and clearing the local draft list. The page reports PASS
-only when the stale edit was not replayed, restart cleared acceptance while
-preserving quantities, and provider basket calls remained zero. No credentials
+process restart, explicit recovery and clearing the Local basket. The page reports PASS
+only when the stale edit was not replayed, restart preserved quantities, and
+provider basket calls remained zero. No credentials
 are required; provider basket access is denied by the fixture.
 
 For a reproducible visual review of the current viewer, run:
@@ -203,9 +192,8 @@ pnpm nemlig:ui:mockup
 ```
 
 It builds the viewer and uses the same synthetic MCP host as the browser smoke
-to write `to-decide.png`, `product-expanded.png`, `ready.png`,
-`alternatives.png`, `confirmation.png`, `success.png`, `empty.png`, and
-`unavailable.png` beneath
+to write `local-basket.png`, `local-basket-revealed.png`, `alternatives.png`,
+and `confirmation.png` beneath
 `apps/nemlig-assistant/.codex/ui-mockups/`. These images are local and ignored:
 they contain only fixture products, make no external requests, and never access
 the real Nemlig basket. This is a design-review bootstrap, not ChatGPT-host
@@ -218,7 +206,7 @@ pnpm nemlig:storybook
 ```
 
 The local Storybook uses deterministic product fixtures for the shared viewer
-pages, including bare production-page stories and two click-through Draft-list
+pages, including bare production-page stories and two click-through Local-basket
 simulators: an embedded-conversation card and a ChatGPT app tab. The host
 frames are Storybook-only approximations; the inner page is the same
 `ViewerPage` used in production. Host chrome is deliberately not part of the
@@ -233,18 +221,18 @@ explicit alternatives searches hydrate every unique eligible result in the
 single provider response with three concurrent reads and bounded provider
 deadlines/retries. This does not enumerate the whole catalogue.
 
-When you are happy with Ready, choose **Review exact Nemlig change**.
-This prepares fresh exact product prices and quantities and shows the separate
-on-screen confirmation. Inspect the prepared lines, then choose **Add to Nemlig
-basket** and confirm the exact addition in the viewer. In conversation, a clear instruction to add the
-current Ready draft list is itself authorization for only those unchanged
-prepared lines; if you only ask to prepare/inspect, or the intended products or
-quantities are unclear or have changed, the assistant must ask before submitting.
-Merely preparing or showing confirmation does not submit.
-The quantities of those products are set in Nemlig; unrelated basket lines stay
-unchanged and To decide items are excluded. Editing the draft invalidates
-the pending submission. Verified success has its own screen; the local draft list
-remains available for continued shopping. If the result is uncertain, inspect
+Choose **Submit to Nemlig** to prepare fresh exact prices and quantities for
+every Local basket row and show the separate on-screen confirmation. If any
+row is unavailable or incomplete, preparation stops; resolve it before trying
+again. Inspect the full prepared list, then choose **Add to Nemlig basket** and
+confirm that exact addition in the viewer. In conversation, a clear instruction
+to add the unchanged current Local basket authorizes only those prepared lines;
+if you only ask to prepare/inspect, or any item or quantity changed, the
+assistant must ask before submitting. Preparing or showing confirmation does
+not submit. The quantities are added in Nemlig; unrelated Nemlig lines stay
+unchanged. Editing the Local basket invalidates the pending submission. Verified
+success has its own screen; the Local basket remains available for continued
+shopping. If the result is uncertain, inspect
 the actual Nemlig basket before preparing another submission. A known partial
 result records the verified count and stops before any later write. There is no
 automatic retry.
@@ -261,10 +249,10 @@ Read → prepare the exact intended change → confirm user authorization → ap
 ```
 
 - Search and Nemlig basket inspection are read-only; they never authorize or
-  change the Nemlig basket. Draft list edits are local only.
+  change the Nemlig basket. Local basket edits are local only.
 - Every real Nemlig basket change is a positive addition. It starts with
-  an exact Ready submission prepared from the draft list.
-- A clear instruction to add the unchanged Ready draft list authorizes only
+  an exact submission prepared from every current Local basket row.
+- A clear instruction to add the unchanged Local basket authorizes only
   those exact additions; the viewer retains its exact on-screen confirmation.
   Other additions require approval for the exact reviewed products and
   additional quantities. No approval authorizes removing, decreasing,
@@ -348,24 +336,24 @@ The MCP surface is organized around household actions:
   bounded read-only provider check and reports missing credentials, provider
   reauthentication, or provider unavailability separately.
 - See the actual Nemlig basket: `show_my_basket`.
-- Show or build a local draft list: `start_product_review`; refresh, accept, change, remove,
-  reconsider accepted products, append new products, navigate, finish shopping, or
-  prepare submission with `update_product_review_conversation`. Show can recover the active
+- Show or build a Local basket: `start_product_review`; refresh, change quantity, remove,
+  find alternatives, append products, finish shopping, or prepare the whole list
+  with `update_product_review_conversation`. Show can recover the active
   conversation review without its opaque reference. Repeated starts preserve it.
-- For a visual product request, search exact products and open the native Draft
-  list without requiring the user to name a tool. This changes only local review
+- For a visual product request, search exact products and open the native Local
+  basket without requiring the user to name a tool. This changes only local review
   state. Omit `items` to reopen an existing list, and add newly found products
-  through `update_product_review_conversation`. If the user forbids local Draft
+  through `update_product_review_conversation`. If the user forbids local basket
   state and later asks for a visual view, explain the conflict and ask whether
   to allow local state; give a concise text result until then.
   Use `show_my_basket` when the user means products already in Nemlig. Tool
-  success alone does not prove that a client rendered the Draft list viewer.
-- Submit those exact Ready lines after a clear conversational add instruction
+  success alone does not prove that a client rendered the Local basket viewer.
+- Submit all exact Local basket lines after a clear conversational add instruction
   or the viewer's separate on-screen exact confirmation:
   `submit_product_review_conversation`.
-  Ready acceptance alone is not provider-write authorization. The protected
-  tool uses only the unchanged prepared lines; ambiguous scope or changed Ready
-  IDs/quantities requires clarification.
+  Local presence alone is not provider-write authorization. The protected
+  tool uses only the unchanged prepared lines; any unavailable row fails closed,
+  and ambiguous scope or changed IDs/quantities requires clarification.
 - Nemlig Assistant is strictly add-only for the real
   basket: it cannot remove, decrease, replace, swap, or clear products. If two
   units are already present and two more are authorized, the resulting line is
@@ -390,7 +378,7 @@ The MCP surface is organized around household actions:
   serves a versioned viewer URI; older resource addresses are inert and cannot
   change shopping state.
   The viewer initializes the MCP Apps bridge and reports connection failures.
-  It can edit the server-owned Draft list and call the protected submission path
+  It can edit the server-owned Local basket and call the protected submission path
   only after the existing exact confirmation; it never calls Nemlig directly.
   `update_product_review_conversation show` remains the headless way to recover current state.
 
@@ -405,8 +393,8 @@ automatically.
 
 Direct `add_to_cart`, `remove_from_cart`, `replace_cart_line`, and
 `clear_cart` MCP tools intentionally do not exist. Every basket change uses the
-Draft list's protected prepare/submit path, fresh validation and verified readback.
-A clear request to add the current exact Ready draft list is its own
+Local basket's protected whole-list prepare/submit path, fresh validation and verified readback.
+A clear request to add the current exact Local basket is its own
 authorization; ambiguous or changed contents require approval of their exact
 prepared change.
 
@@ -465,12 +453,12 @@ of the repository.
    returned detailed results.
 2. Confirm a partial detail failure is labeled unavailable while other results
    remain in provider order.
-3. Inspect the current Nemlig basket and confirm the Draft list remains distinct.
-4. Start a Draft list, move exact products from To decide to Ready, and verify
-   local edits leave the Nemlig basket unchanged.
-5. Prepare an exact Ready addition and confirm that submission requires either
-   a clear instruction to add those unchanged lines or approval of the exact
-   prepared effect. Use fixtures for mutation tests; live basket changes need
+3. Inspect the current Nemlig basket and confirm the Local basket remains distinct.
+4. Start a Local basket, swipe a row and verify release only reveals an action;
+   use its button and expanded-row control, confirming edits leave Nemlig unchanged.
+5. Prepare the entire Local basket and confirm unavailable/incomplete items block
+   preparation; submission requires a clear instruction to add the unchanged list
+   or approval of the exact prepared effect. Use fixtures for mutation tests; live basket changes need
    separate authorization.
 
 <a id="development"></a>
@@ -597,15 +585,15 @@ This README is the user-facing inventory of shipped feature sets:
 - fresh Nemlig authentication before every provider-backed MCP task
 - rich individual short-query product discovery and refinement
 - one shared product presentation with a headless fallback
-- voice/touch To decide and Ready draft list with contextual alternatives,
-  full-row alternative selection, and immediately scannable product comparisons
+- voice/touch one-list Local basket with revealed swipe actions and accessible
+  expanded-row controls, full-page alternatives, and scannable comparisons
 - persistent in-place review navigation, compact rows, and confirmed local removal
-- complete-per-search alternative results, deliberate follow-up search, and conversation-only draft list edits
-- explicit protected submission of resolved local products
+- complete-per-search alternative results, deliberate follow-up search, and conversation-only Local basket edits
+- explicit protected submission of every validated Local basket row
 - on-screen exact submission confirmation with conversational fallback
 - CLI favorites, department browsing, and exact product details
 - seven MCP tools for live profile/release identity, connection check, detailed
-  search, actual basket read, Draft list start/update, and protected Ready
+  search, actual basket read, Local basket start/update, and protected whole-list
   submission
 - exact prepare/authorize/submit basket additions
 - easy-to-understand ChatGPT tool names and descriptions

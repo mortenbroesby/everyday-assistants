@@ -43,14 +43,13 @@ const props = (thumbnail?: string): ViewerPageProps => ({
           {
             product_id: 7,
             quantity: 1,
-            state: "needs-review",
+            state: "ready",
             view: product,
           },
         ],
       },
     },
     maxWidth: 320,
-    selected: new Set(),
     reviewDisclosures: new Map(),
     pendingQuantities: new Map(),
     thumbnails: thumbnail ? new Map([[product, thumbnail]]) : new Map(),
@@ -67,12 +66,8 @@ const props = (thumbnail?: string): ViewerPageProps => ({
     onDisclosureChange: noop,
     onFactExpandedChange: noop,
     onActivateCurrent: noop,
-    onSelected: noop,
-    onSelectAll: noop,
-    onAcceptSelected: noop,
     onQuantity: noop,
     onRemove: noop,
-    onRevisit: noop,
     onOpenAlternatives: noop,
     onSearchAlternatives: noop,
     onReplace: noop,
@@ -99,7 +94,7 @@ test("shared viewer page uses its supplied fixture thumbnail and keeps unsafe in
     new RegExp(`<img[^>]+src="${localThumbnail}"`, "u"),
   );
   assert.match(withFixture, /aria-labelledby="title"/u);
-  assert.match(withFixture, /<h1[^>]*id="title"[^>]*>To decide<\/h1>/u);
+  assert.match(withFixture, /<h1[^>]*id="title"[^>]*>Local basket<\/h1>/u);
   assert.doesNotMatch(withFixture, /<strong>Nemlig Assistant<\/strong>/u);
 
   const withoutFixture = renderToStaticMarkup(
@@ -148,8 +143,12 @@ test("shared viewer page keeps thumbnails attached to their individual views", (
     /src="\/assets\/alternative\.svg"[^>]*alt="Alternative yoghurt"/u,
   );
   assert.match(markup, /data-viewer-component="product-price"/u);
-  assert.match(markup, /aria-label="Use Alternative yoghurt instead"/u);
-  assert.doesNotMatch(markup, /Use selected alternative|role="radio"/u);
+  assert.match(
+    markup,
+    /aria-label="Select Alternative yoghurt as the alternative"/u,
+  );
+  assert.match(markup, /Use selected alternative/u);
+  assert.match(markup, /Back to Local basket/u);
 });
 
 test("busy submission confirmation disables its cancel control", () => {

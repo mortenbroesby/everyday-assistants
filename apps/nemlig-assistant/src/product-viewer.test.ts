@@ -227,7 +227,7 @@ test("headless product text preserves multiple rows and unavailable outputs exac
 test("served resource is a bounded stable shell with current-on-mount loading", () => {
   const { artifactId, html } = readProductViewerArtifact();
   assert.match(html, /<html lang="en">/u);
-  assert.match(html, /Loading the current Draft list/u);
+  assert.match(html, /Loading the current Local basket/u);
   assert.match(
     html,
     new RegExp(

@@ -668,12 +668,15 @@ test("HTTP MCP creates bounded isolated clients, credentials, baskets, favourite
         true,
         "stateless requests without conversation context must fail closed",
       );
-      const accepted = await secondOwner.callTool({
+      const edited = await secondOwner.callTool({
         _meta: { "openai/session": "shop-a" },
         name: "update_product_review_conversation",
-        arguments: { ...review, action: { kind: "accept", product_ids: [1] } },
+        arguments: {
+          ...review,
+          action: { kind: "quantity", product_id: 1, quantity: 2 },
+        },
       });
-      assert.equal(accepted.isError, undefined);
+      assert.equal(edited.isError, undefined);
       const shown = await owner.callTool({
         _meta: { "openai/session": "shop-a" },
         name: "update_product_review_conversation",

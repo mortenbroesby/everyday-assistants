@@ -91,3 +91,14 @@ The touch review SHALL show one Local basket list without visible To decide or R
 #### Scenario: Prepare a legacy mixed-state review
 - **WHEN** an active review created by an older version contains both Ready and needs-review rows
 - **THEN** submission preparation includes every row or fails closed; no row is silently excluded based on its legacy state
+
+### Requirement: Distinct Draft list and Nemlig basket names
+The temporary conversation-scoped workspace shown in the viewer and called out in tool guidance SHALL be named Local basket. The provider state SHALL be named Nemlig basket. The interface and assistant guidance SHALL make clear that local removal and replacement affect only Local basket items and never remove or replace provider items. Internal IDs and tool names MAY retain their existing protocol values.
+
+#### Scenario: User inspects local choices
+- **WHEN** the user opens or edits temporary shopping choices
+- **THEN** the viewer and agent call the workspace Local basket and describe all rows as local submission candidates
+
+#### Scenario: User inspects provider state
+- **WHEN** the user asks what is already in Nemlig or a write outcome is uncertain
+- **THEN** the assistant reads the Nemlig basket and does not describe Local basket rows as provider contents

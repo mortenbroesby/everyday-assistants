@@ -146,7 +146,7 @@ const reviewSnapshotSchema = z.object({
   alternatives: z
     .object({
       product_id: z.number().int().positive(),
-      origin: z.literal("needs-review"),
+      origin: z.enum(["needs-review", "ready"]),
       query: z.string(),
       views: z.array(productViewSchema),
     })
@@ -161,63 +161,87 @@ const reviewSnapshotSchema = z.object({
     })
     .optional(),
 });
+const showReviewActionSchema = z.object({ kind: z.literal("show") });
+const endReviewActionSchema = z.object({ kind: z.literal("end") });
+const addReviewActionSchema = z.object({
+  kind: z.literal("add"),
+  items: z
+    .array(
+      z.object({
+        product_id: z.number().int().positive(),
+        quantity: z.number().int().positive(),
+      }),
+    )
+    .min(1)
+    .max(MAX_DRAFT_PRODUCTS),
+});
+const revisitReviewActionSchema = z.object({
+  kind: z.literal("revisit"),
+  product_ids: z
+    .array(z.number().int().positive())
+    .min(1)
+    .max(MAX_DRAFT_PRODUCTS),
+});
+const prepareReviewActionSchema = z.object({
+  kind: z.literal("prepare_submission"),
+});
+const acceptReviewActionSchema = z.object({
+  kind: z.literal("accept"),
+  product_ids: z
+    .array(z.number().int().positive())
+    .min(1)
+    .max(MAX_DRAFT_PRODUCTS),
+});
+const removeReviewActionSchema = z.object({
+  kind: z.literal("remove"),
+  product_ids: z
+    .array(z.number().int().positive())
+    .min(1)
+    .max(MAX_DRAFT_PRODUCTS),
+});
+const quantityReviewActionSchema = z.object({
+  kind: z.literal("quantity"),
+  product_id: z.number().int().positive(),
+  quantity: z.number().int().positive(),
+});
+const navigateReviewActionSchema = z.object({
+  kind: z.literal("navigate"),
+  destination: z.enum(["needs-review", "ready", "alternatives"]),
+});
+const alternativesReviewActionSchema = z.object({
+  kind: z.literal("alternatives"),
+  product_id: z.number().int().positive(),
+  query: z.string().trim().min(1).max(200),
+  limit: z.number().int().positive().optional(),
+});
+const replaceReviewActionSchema = z.object({
+  kind: z.literal("replace"),
+  product_id: z.number().int().positive(),
+  replacement_id: z.number().int().positive(),
+});
 const reviewActionSchema = z.discriminatedUnion("kind", [
-  z.object({ kind: z.literal("show") }),
-  z.object({ kind: z.literal("end") }),
-  z.object({
-    kind: z.literal("add"),
-    items: z
-      .array(
-        z.object({
-          product_id: z.number().int().positive(),
-          quantity: z.number().int().positive(),
-        }),
-      )
-      .min(1)
-      .max(MAX_DRAFT_PRODUCTS),
-  }),
-  z.object({
-    kind: z.literal("revisit"),
-    product_ids: z
-      .array(z.number().int().positive())
-      .min(1)
-      .max(MAX_DRAFT_PRODUCTS),
-  }),
-  z.object({ kind: z.literal("prepare_submission") }),
-  z.object({
-    kind: z.literal("accept"),
-    product_ids: z
-      .array(z.number().int().positive())
-      .min(1)
-      .max(MAX_DRAFT_PRODUCTS),
-  }),
-  z.object({
-    kind: z.literal("remove"),
-    product_ids: z
-      .array(z.number().int().positive())
-      .min(1)
-      .max(MAX_DRAFT_PRODUCTS),
-  }),
-  z.object({
-    kind: z.literal("quantity"),
-    product_id: z.number().int().positive(),
-    quantity: z.number().int().positive(),
-  }),
-  z.object({
-    kind: z.literal("navigate"),
-    destination: z.enum(["needs-review", "ready", "alternatives"]),
-  }),
-  z.object({
-    kind: z.literal("alternatives"),
-    product_id: z.number().int().positive(),
-    query: z.string().trim().min(1).max(200),
-    limit: z.number().int().positive().optional(),
-  }),
-  z.object({
-    kind: z.literal("replace"),
-    product_id: z.number().int().positive(),
-    replacement_id: z.number().int().positive(),
-  }),
+  showReviewActionSchema,
+  endReviewActionSchema,
+  addReviewActionSchema,
+  revisitReviewActionSchema,
+  prepareReviewActionSchema,
+  acceptReviewActionSchema,
+  removeReviewActionSchema,
+  quantityReviewActionSchema,
+  navigateReviewActionSchema,
+  alternativesReviewActionSchema,
+  replaceReviewActionSchema,
+]);
+const modelReviewActionSchema = z.discriminatedUnion("kind", [
+  showReviewActionSchema,
+  endReviewActionSchema,
+  addReviewActionSchema,
+  prepareReviewActionSchema,
+  removeReviewActionSchema,
+  quantityReviewActionSchema,
+  navigateReviewActionSchema,
+  alternativesReviewActionSchema,
+  replaceReviewActionSchema,
 ]);
 
 export type Candidate = z.infer<typeof candidateSchema>;
@@ -366,7 +390,7 @@ const runMcpOperation = async <Result>(
 
 /**
  * Creates the explicit MCP catalog. Basket writes remain staged through the
- * draft list submission flow, while request context binds private state to a principal.
+ * Local basket submission flow, while request context binds private state to a principal.
  */
 export function createMcpServer(
   client: ShoppingClient = getClient(),
@@ -392,15 +416,15 @@ export function createMcpServer(
       ],
     },
     {
-      instructions: `Search Nemlig products with find_groceries, read the actual basket with show_my_basket, and use the temporary conversation draft list to review products before adding them.
+      instructions: `Search Nemlig products with find_groceries, read the actual basket with show_my_basket, and use the temporary Local basket to review products before adding them.
 
-The real Nemlig basket is add-only. Never remove, decrease, replace, swap, clear, check out, pay, order, or select delivery slots. An added quantity is additional units, not a new absolute total. Local draft list edits never write to Nemlig.
+The real Nemlig basket is add-only. Never remove, decrease, replace, swap, clear, check out, pay, order, or select delivery slots. An added quantity is additional units, not a new absolute total. Local basket edits never write to Nemlig.
 
-For product discovery, use a concise Danish catalogue phrase; preserve a distinctive brand when useful. Search returns detailed candidates from one provider response, not the entire catalogue. An empty result differs from a failed search. Search and conversation edits do not open cards. When the user asks to see products visually, use the native Draft list: search for exact IDs, then call start_product_review with those items. This creates only conversation-local review state, never changes the real basket, and requires no special wording from the user. If a Draft list already exists, keep its contents and add new finds with update_product_review_conversation add; omit items in start_product_review to reopen its native card only when asked to see it again or the current card is stale. Repeating start_product_review renders another card and makes older cards read-only. Respect an explicit instruction not to create or edit a Draft list. If a later visual request conflicts with it, explain that the native view needs local Draft state and ask whether to allow it; until then use a concise text comparison, never an imitation card or image table. If no active list remains, ask before starting over. A stale card may automatically read and display the active list without a view token, but remains read-only. Only an explicit user action may activate that card and issue a new view token; it never starts a missing list. Widget edits stay in the same card. Use update_product_review_conversation and submit_product_review_conversation for model-side text/data operations. The legacy update_product_review and submit_product_review names require the newest card's view token for edits, so cached older cards cannot edit. After a stale edit, show current state and never replay the edit.
+For product discovery, use a concise Danish catalogue phrase; preserve a distinctive brand when useful. Search returns detailed candidates from one provider response, not the entire catalogue. An empty result differs from a failed search. Search and conversation edits do not open cards. When the user asks to see products visually, use the native Local basket: search for exact IDs, then call start_product_review with those items. This creates only conversation-local review state, never changes the real basket, and requires no special wording from the user. If a Local basket already exists, keep its contents and add new finds with update_product_review_conversation add; omit items in start_product_review to reopen its native card only when asked to see it again or the current card is stale. Repeating start_product_review renders another card and makes older cards read-only. Respect an explicit instruction not to create or edit a Local basket. If a later visual request conflicts with it, explain that the native view needs Local basket state and ask whether to allow it; until then use a concise text comparison, never an imitation card or image table. If no active Local basket remains, ask before starting over. A stale card may automatically read and display the active Local basket without a view token, but remains read-only. Only an explicit user action may activate that card and issue a new view token; it never starts a missing list. Widget edits stay in the same card. Use update_product_review_conversation and submit_product_review_conversation for model-side text/data operations. The legacy update_product_review and submit_product_review names require the newest card's view token for edits, so cached older cards cannot edit. After a stale edit, show current state and never replay the edit.
 
-Only Ready lines may be prepared for the real basket. A clear instruction to add the unchanged current Ready draft list authorizes exactly that prepared payload without another chat approval; local Ready status or a request merely to inspect does not. If product IDs, quantities, or scope are unclear or changed after the instruction, ask for exact approval. For a model-side add, call submit_product_review_conversation only with the current review ID, revision, and submission ID. The widget submit action additionally requires its newest view token. Fresh validation and verified basket readback are mandatory. After an uncertain write, inspect the draft list and actual basket; never retry automatically.
+Prepare every current Local basket item, regardless of any legacy stored review state. If any item is unavailable or incomplete, preparation must stop without omitting that item or preparing a partial selection. A clear instruction to add the unchanged current Local basket authorizes exactly that prepared payload without another chat approval; local state or a request merely to inspect does not. If product IDs, quantities, or scope are unclear or changed after the instruction, ask for exact approval. For a model-side add, call submit_product_review_conversation only with the current review ID, revision, and submission ID. The widget submit action additionally requires its newest view token. Fresh validation and verified basket readback are mandatory. After an uncertain write, inspect the Local basket and actual Nemlig basket; never retry automatically.
 
-The local draft list is conversation-scoped and temporary. If it is unavailable, ask before starting anew; do not restore old acceptance or approval. A successful tool result or image URL does not prove the ChatGPT client rendered a card. Provide a complete text fallback when needed. check_nemlig_connection distinguishes Nemlig account access from ChatGPT app connection and directs users to the secure page without collecting credentials in chat.`,
+The Local basket is conversation-scoped and temporary. If it is unavailable, ask before starting anew; do not restore old acceptance or approval. A successful tool result or image URL does not prove the ChatGPT client rendered a card. Provide a complete text fallback when needed. check_nemlig_connection distinguishes Nemlig account access from ChatGPT app connection and directs users to the secure page without collecting credentials in chat.`,
       supportedProtocolVersions: SUPPORTED_PROTOCOL_VERSIONS,
     },
   );
@@ -444,7 +468,7 @@ The local draft list is conversation-scoped and temporary. If it is unavailable,
     {
       title: "Nemlig Assistant",
       description:
-        "Products and the shared local Draft list supplied by Nemlig Assistant.",
+        "Products and the shared temporary Local basket supplied by Nemlig Assistant.",
       mimeType: PRODUCT_VIEWER_MIME_TYPE,
     },
     async (uri) => ({
@@ -471,9 +495,9 @@ The local draft list is conversation-scoped and temporary. If it is unavailable,
       `nemlig-retired-product-viewer-v${index}`,
       uri,
       {
-        title: "Updated draft list",
+        title: "Updated Local basket",
         description:
-          "This retired draft list card is inert and contains no shopping data.",
+          "This retired Local basket card is inert and contains no shopping data.",
         mimeType: PRODUCT_VIEWER_MIME_TYPE,
       },
       async (resource) => ({
@@ -506,7 +530,7 @@ The local draft list is conversation-scoped and temporary. If it is unavailable,
     }
     if (requestContext) {
       throw new NemligError(
-        "This host did not provide a conversation session. Reopen the review in ChatGPT; no local draft list was accessed.",
+        "This host did not provide a conversation session. Reopen the review in ChatGPT; no Local basket was accessed.",
       );
     }
     return connectionId(ctx.sessionId); // One process/transport session for local MCP clients.
@@ -526,11 +550,11 @@ The local draft list is conversation-scoped and temporary. If it is unavailable,
       return review ? { review } : { unavailable: true as const };
     }
     if (!review_id) {
-      throw new NemligError("Show the active draft list before editing it.");
+      throw new NemligError("Show the active Local basket before editing it.");
     }
     if (revision === undefined) {
       throw new NemligError(
-        "Current draft list revision is required. Show the draft list first.",
+        "Current Local basket revision is required. Show it first.",
       );
     }
     if (action.kind === "end") {
@@ -676,7 +700,7 @@ The local draft list is conversation-scoped and temporary. If it is unavailable,
     {
       title: "Search Nemlig products",
       description:
-        "Search the current Nemlig catalogue independently with a concise Danish grocery phrase translated or normalized from the request. This is not tied to the current draft list or an alternative target. Preserve a distinctive brand and Danish category when useful (for example 'Prince biscuits' becomes 'prince kiks'); use an open phrase such as 'salmiak' or a broad category phrase such as 'smør' when the user wants matching products generally. With result_count omitted, return all unique detailed candidates from the one provider response actually received, without an application cap; this does not enumerate or guarantee completeness of the entire catalogue. A successful empty result means no matches from this response only; an error means the search failed and must not be presented as no matches. Inspect results before making a deliberate related follow-up search; do not automatically repeat a failing query, launch a synonym cascade, or silently equate categories. Read-only: does not change the local draft list or real Nemlig basket. Not for reopening an existing draft list; use update_product_review_conversation show instead.",
+        "Search the current Nemlig catalogue independently with a concise Danish grocery phrase translated or normalized from the request. This is not tied to the current Local basket or an alternative target. Preserve a distinctive brand and Danish category when useful (for example 'Prince biscuits' becomes 'prince kiks'); use an open phrase such as 'salmiak' or a broad category phrase such as 'smør' when the user wants matching products generally. With result_count omitted, return all unique detailed candidates from the one provider response actually received, without an application cap; this does not enumerate or guarantee completeness of the entire catalogue. A successful empty result means no matches from this response only; an error means the search failed and must not be presented as no matches. Inspect results before making a deliberate related follow-up search; do not automatically repeat a failing query, launch a synonym cascade, or silently equate categories. Read-only: does not change the Local basket or real Nemlig basket. Not for reopening an existing Local basket; use update_product_review_conversation show instead.",
       inputSchema: z.object({
         search_term: z
           .string()
@@ -724,7 +748,7 @@ The local draft list is conversation-scoped and temporary. If it is unavailable,
     {
       title: "Show my Nemlig basket",
       description:
-        "Show the actual Nemlig basket, not the local draft list. For Ready products in the local draft list use update_product_review_conversation show or navigate. Show the current items and totals in your Nemlig basket. This does not change your basket.",
+        "Show only the actual Nemlig basket and its current items and totals. To inspect local shopping choices, use the Local basket view. This tool does not change your basket.",
       outputSchema: basketResultSchema,
       annotations: {
         readOnlyHint: true,
@@ -746,9 +770,9 @@ The local draft list is conversation-scoped and temporary. If it is unavailable,
   registerTool(
     "start_product_review",
     {
-      title: "Show or start your draft list",
+      title: "Show or start your Local basket",
       description:
-        "Open the native visual Draft list when the user asks to see products visually, even without naming this tool. With no active list, provide exact returned product IDs and quantities; all items initially need a decision. Omit items to reopen an existing list without changing its contents. Acceptance and edits are conversation-local; nothing is sent to Nemlig. Use update_product_review_conversation add for new products in an existing list. Each call renders a new card and makes older cards read-only, so do not repeat while the current card is usable. Respect an explicit request not to create or edit a Draft list. Temporary state can be lost on server restart or memory eviction.",
+        "Open the native Local basket when the user asks to see products visually, even without naming this tool. With no active list, provide exact returned product IDs and quantities; every item is Ready for whole-basket submission. Omit items only to reopen an existing list without changing its contents. Local edits never write to Nemlig. Use update_product_review_conversation add for new products in an existing list. Each call renders a new card and makes older cards read-only, so do not repeat while the current card is usable. Respect an explicit request not to create or edit a Local basket. Temporary state can be lost on server restart or memory eviction.",
       inputSchema: z.object({
         items: z
           .array(
@@ -761,7 +785,7 @@ The local draft list is conversation-scoped and temporary. If it is unavailable,
           .max(MAX_DRAFT_PRODUCTS)
           .optional()
           .describe(
-            "Exact returned products and intended package quantities to start a list. Omit only when reopening an existing list.",
+            "Exact returned products and intended package quantities to start a Local basket. Every row is a Ready submission candidate. Omit only when reopening an existing Local basket.",
           ),
       }),
       outputSchema: z.object({
@@ -793,16 +817,16 @@ The local draft list is conversation-scoped and temporary. If it is unavailable,
   registerTool(
     "update_product_review_conversation",
     {
-      title: "Update your draft list",
+      title: "Update your Local basket",
       description:
-        "Show or edit the shared temporary local draft list using exact product IDs. By conversation or viewer, add newly found products, accept selected To decide products into Ready, revisit, remove, change quantity, navigate, search alternatives or discard with end. The draft list state is server-authoritative; use its current revision. Uncounted alternatives include every distinct eligible candidate in the provider response actually returned; another search replaces the candidate set. Alternatives are for To decide only; replacement stays there until accepted separately. None of these local edits writes to Nemlig. A To decide-only clarification/add leaves the prepared Ready payload unchanged; any Ready ID or quantity change invalidates it. prepare_submission prepares only Ready lines at fresh exact prices and quantities, preserving unrelated Nemlig lines. A clear conversational command to add the current unchanged Ready draft list authorizes applying only that prepared payload without a redundant approval question; otherwise require explicit approval of the exact prepared change. If intent or scope is unclear, or any Ready product ID/quantity changed after the command, ask before applying. After errors show current state; never replay a stale edit.",
+        "Show or edit the shared temporary Local basket using exact product IDs. New products are Ready submission candidates immediately. Use the current revision to remove a local row, change its quantity, or search alternatives. Alternatives search does not change the row; explicitly choosing an available exact result replaces it locally at the same quantity and keeps it Ready. None of these local edits writes to the Nemlig basket. Every current Local basket item is included in prepare_submission regardless of legacy stored state; fresh validation must stop on any unavailable or incomplete row rather than silently omitting it. Any item ID or quantity change invalidates a prepared submission. A clear conversational command to add the unchanged current Local basket authorizes only that exact prepared payload without redundant approval; otherwise require explicit approval of the exact prepared change. If intent or scope is unclear, or any item ID/quantity changes after the command, ask before applying. After errors show current state; never replay a stale edit.",
       inputSchema: z.object({
         review_id: z
           .string()
           .uuid()
           .optional()
           .describe(
-            "The current local draft list reference. May be omitted for show to recover this conversation’s active draft list.",
+            "The current Local basket reference. May be omitted for show to recover this conversation’s active Local basket.",
           ),
         revision: z
           .number()
@@ -810,10 +834,10 @@ The local draft list is conversation-scoped and temporary. If it is unavailable,
           .positive()
           .optional()
           .describe(
-            "Current draft list revision required for every action except show.",
+            "Current Local basket revision required for every action except show.",
           ),
-        action: reviewActionSchema.describe(
-          "The local draft list change, navigation, refresh, or preparation requested by the user.",
+        action: modelReviewActionSchema.describe(
+          "A Local basket quantity/removal/alternative action, refresh, or whole-basket preparation. Every item remains a submission candidate.",
         ),
       }),
       outputSchema: z.union([
@@ -840,7 +864,7 @@ The local draft list is conversation-scoped and temporary. If it is unavailable,
           success(
             result,
             result.unavailable
-              ? "No active local Draft list remains. Ask before starting a new draft list; previous choices and approval are not restored."
+              ? "No active Local basket remains. Ask before starting a new Local basket; previous choices and approval are not restored."
               : JSON.stringify(result),
           ),
         );
@@ -857,9 +881,9 @@ The local draft list is conversation-scoped and temporary. If it is unavailable,
   registerTool(
     "update_product_review",
     {
-      title: "Update the current Draft list view",
+      title: "Update the current Local basket view",
       description:
-        "Internal UI action for the current Draft list. Edits require the newest rendered view token; older card view IDs are rejected before any local change. A show without view or draft IDs reads the current conversation draft without authority. Only the explicit activate option, used after a user click, issues a new view token; neither show nor activate can change or recreate the draft.",
+        "Internal UI action for the current Local basket. Edits require the newest rendered view token; older card view IDs are rejected before any local change. A show without view or draft IDs reads the current conversation draft without authority. Only the explicit activate option, used after a user click, issues a new view token; neither show nor activate can change or recreate the draft.",
       inputSchema: z.object({
         view_id: z.string().uuid().optional(),
         review_id: z.string().uuid().optional(),
@@ -905,12 +929,12 @@ The local draft list is conversation-scoped and temporary. If it is unavailable,
         }
         if (activate) {
           throw new NemligError(
-            "Only show can activate the current Draft list view.",
+            "Only show can activate the current Local basket view.",
           );
         }
         if (!view_id || !review_id || revision === undefined) {
           throw new NemligError(
-            "A current Draft list view_id is required for this action.",
+            "A current Local basket view_id is required for this action.",
           );
         }
         reviews.assertCurrentView(owner, review_id, view_id);
@@ -934,20 +958,20 @@ The local draft list is conversation-scoped and temporary. If it is unavailable,
   registerTool(
     "submit_product_review_conversation",
     {
-      title: "Add explicitly requested Ready products to Nemlig",
+      title: "Submit the approved Local basket to Nemlig",
       description:
-        "After a clear user command to add the current Ready draft list, apply exactly the unchanged prepared product IDs and quantities; that command is sufficient conversational authorization, so do not ask again. Alternatively, apply only after explicit approval of the displayed exact prepared submission. Local Ready acceptance alone, or a request only to inspect/prepare, is not authorization. If scope is ambiguous or Ready contents/quantities changed after intent, ask which exact products to add. Fresh price validation and verified readback are mandatory. Requires the current draft list revision and its submission_id. No automatic retry; on any error inspect the draft list and actual basket first.",
+        "After a clear user command to add the current Local basket, apply exactly the unchanged prepared product IDs and quantities; that command is sufficient conversational authorization, so do not ask again. Alternatively, apply only after explicit approval of the displayed exact prepared submission. Local presence or a request only to inspect/prepare is not authorization. If scope is ambiguous or any Local basket item or quantity changed after intent, ask which exact products to add. The prepared submission must contain every current item and stop before writing if any item is unavailable or incomplete. Fresh price validation and verified readback are mandatory. Requires the current review revision and its submission_id. No automatic retry; on any error inspect the Local basket and actual Nemlig basket first.",
       inputSchema: z.object({
         review_id: z
           .string()
           .uuid()
-          .describe("The private local draft list reference."),
+          .describe("The private Local basket reference."),
         revision: z
           .number()
           .int()
           .positive()
           .describe(
-            "The latest draft list revision matching the prepared submission.",
+            "The latest Local basket revision matching the prepared submission.",
           ),
         submission_id: z
           .string()
@@ -984,9 +1008,9 @@ The local draft list is conversation-scoped and temporary. If it is unavailable,
   registerTool(
     "submit_product_review",
     {
-      title: "Confirm the current Draft list addition",
+      title: "Confirm the current Local basket submission",
       description:
-        "Internal UI action for the newest rendered Draft list only. Requires its current view, review revision, and prepared submission reference.",
+        "Internal UI action for the newest rendered Local basket only. Requires its current view, review revision, and prepared submission reference.",
       inputSchema: z.object({
         view_id: z.string().uuid(),
         review_id: z.string().uuid(),

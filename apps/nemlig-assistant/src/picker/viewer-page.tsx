@@ -1,9 +1,9 @@
-import { useId, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import * as Collapsible from "@radix-ui/react-collapsible";
 import { useSwipeable } from "react-swipeable";
 import type { ProductView } from "../product-presentation.js";
 import {
   ActionFooter,
-  DraftListOverflow,
   DraftListStarters,
   isUsable,
   money,
@@ -73,7 +73,6 @@ export type ViewerPageModel = {
   screen: ViewerScreen;
   maxWidth?: number;
   presentationDestination?: PresentationDestination;
-  selected: ReadonlySet<number>;
   reviewDisclosures: ReadonlyMap<
     number,
     { expanded: boolean; facts: ReadonlySet<string> }
@@ -99,12 +98,8 @@ export type ViewerPageActions = {
     expanded: boolean,
   ) => void;
   onActivateCurrent: () => void;
-  onSelected: (productId: number, selected: boolean) => void;
-  onSelectAll: () => void;
-  onAcceptSelected: () => void;
   onQuantity: (item: ReviewItem, quantity: number) => void;
   onRemove: (item: ReviewItem) => void;
-  onRevisit: (item: ReviewItem) => void;
   onOpenAlternatives: (item: ReviewItem, query: string) => void;
   onSearchAlternatives: (productId: number, query: string) => void;
   onReplace: (productId: number, replacementId: number) => void;
@@ -135,6 +130,7 @@ function ProductCard({
   onQuantity,
   onRemove,
   onChoice,
+  choiceSelected,
   onOpenAlternatives,
   expanded,
   onExpandedChange,
@@ -149,6 +145,7 @@ function ProductCard({
   onQuantity?: (quantity: number) => void;
   onRemove?: () => void;
   onChoice?: () => void;
+  choiceSelected?: boolean;
   onOpenAlternatives?: () => void;
   expanded?: boolean;
   onExpandedChange?: (expanded: boolean) => void;
@@ -159,26 +156,53 @@ function ProductCard({
   const [localExpanded, setLocalExpanded] = useState(false);
   const [swipeOffset, setSwipeOffset] = useState(0);
   const [swipeAction, setSwipeAction] = useState<"remove" | "alternative">();
+  const actionPress = useRef(false);
   const rowRef = useRef<HTMLDivElement | null>(null);
   const swipeHandlers = useSwipeable({
     delta: 8,
-    onSwiping: ({ deltaX }) => {
+    onSwiping: ({ deltaX, dir }) => {
+      if (dir !== "Left" && dir !== "Right") {
+        return;
+      }
+      actionPress.current = false;
       setSwipeAction(undefined);
       setSwipeOffset(deltaX);
     },
-    onSwiped: ({ absX, deltaX }) => {
+    onSwiped: ({ absX, dir }) => {
+      actionPress.current = false;
       setSwipeOffset(0);
       const width = rowRef.current?.clientWidth ?? 0;
       setSwipeAction(
-        absX > width / 2 ? (deltaX < 0 ? "remove" : "alternative") : undefined,
+        width > 0 && absX > width / 2
+          ? dir === "Left"
+            ? "remove"
+            : dir === "Right"
+              ? "alternative"
+              : undefined
+          : undefined,
       );
     },
     onTouchEndOrOnMouseUp: () => setSwipeOffset(0),
-    trackMouse: false,
-    preventScrollOnSwipe: true,
+    trackMouse: true,
+    preventScrollOnSwipe: false,
   });
-  const detailsId = useId();
+  const setSwipeRef = useCallback(
+    (element: HTMLDivElement | null) => {
+      rowRef.current = element;
+      swipeHandlers.ref(element);
+    },
+    [swipeHandlers.ref],
+  );
+  const transform =
+    swipeOffset !== 0
+      ? `${swipeOffset}px`
+      : swipeAction === "remove"
+        ? "-55%"
+        : swipeAction === "alternative"
+          ? "55%"
+          : "0";
   const disclosureExpanded = expanded ?? localExpanded;
+  const setDisclosureExpanded = onExpandedChange ?? setLocalExpanded;
   const quantity =
     item?.quantity ??
     (view.status === "complete"
@@ -189,11 +213,6 @@ function ProductCard({
           : undefined
       : undefined);
   const count = quantity ?? 0;
-  const removeControl = onRemove && (
-    <Button color="secondary" disabled={disabled} onClick={onRemove}>
-      Remove from Local basket
-    </Button>
-  );
   const reviewControls = item && (
     <div className="review-controls">
       <QuantityControl
@@ -202,123 +221,38 @@ function ProductCard({
         disabled={disabled}
         onQuantity={onQuantity}
       />
-      {item.state === "needs-review" && removeControl}
-      {onOpenAlternatives && (
-        <Button
-          color="secondary"
-          disabled={disabled}
-          onClick={onOpenAlternatives}
-        >
-          Choose alternative
-        </Button>
-      )}
-    </div>
-  );
-  const readyActions = item?.state === "ready" && (
-    <div className="review-controls ready-row-actions">
-      {removeControl}
-      {onOpenAlternatives && (
-        <Button
-          color="secondary"
-          disabled={disabled}
-          onClick={onOpenAlternatives}
-        >
-          Find alternative
-        </Button>
-      )}
-    </div>
-  );
-  if (view.status !== "complete") {
-    return (
-      <div
-        className="basket-swipe-row"
-        {...(item && !comparison ? swipeHandlers : {})}
-        ref={rowRef}
+      <Button color="secondary" disabled={disabled} onClick={onRemove}>
+        Remove from Local basket
+      </Button>
+      <Button
+        color="secondary"
+        disabled={disabled}
+        onClick={onOpenAlternatives}
       >
-        {swipeAction === "remove" && onRemove && (
-          <Button
-            color="secondary"
-            disabled={disabled}
-            className="swipe-action swipe-remove"
-            onClick={() => {
-              setSwipeAction(undefined);
-              onRemove();
-            }}
-          >
-            <span aria-hidden="true">▣</span> Remove
-          </Button>
-        )}
-        {swipeAction === "alternative" && onOpenAlternatives && (
-          <Button
-            color="secondary"
-            disabled={disabled}
-            className="swipe-action swipe-alternative"
-            onClick={() => {
-              setSwipeAction(undefined);
-              onOpenAlternatives();
-            }}
-          >
-            <span aria-hidden="true">⌕</span> Find alternative
-          </Button>
-        )}
-        <article
-          className={`product-card${comparison ? " product-comparison" : ""}`}
-          style={{
-            transform: `translateX(${swipeOffset || (swipeAction === "remove" ? "-55%" : swipeAction === "alternative" ? "55%" : 0)})`,
-          }}
-        >
-          <div className="product-details">
-            <ProductSummaryButton
-              color="secondary"
-              variant="ghost"
-              data-viewer-component="product-summary"
-              aria-expanded={disclosureExpanded}
-              aria-controls={detailsId}
-              onClick={() => {
-                const next = !disclosureExpanded;
-                if (onExpandedChange) {
-                  onExpandedChange(next);
-                } else {
-                  setLocalExpanded(next);
-                }
-              }}
-            >
-              <ProductSummary view={view} />
-            </ProductSummaryButton>
-            <div
-              id={detailsId}
-              className="product-expanded"
-              hidden={!disclosureExpanded}
-            >
-              {item && <p>{item.quantity} ×</p>}
-              {item?.state === "needs-review" && reviewControls}
-              {readyActions}
-            </div>
-            {item?.state === "ready" && reviewControls}
-          </div>
-        </article>
-      </div>
-    );
-  }
-  const summary = (
-    <ProductSummary
-      view={view}
-      quantity={quantity}
-      thumbnailSrc={thumbnailSrc}
-    />
+        Find alternative
+      </Button>
+    </div>
   );
-  return (
-    <div
-      className="basket-swipe-row"
-      {...(item && !comparison ? swipeHandlers : {})}
-      ref={rowRef}
-    >
+  const swipeActions = item && !comparison && (
+    <>
       {swipeAction === "remove" && onRemove && (
         <Button
           color="secondary"
           disabled={disabled}
           className="swipe-action swipe-remove"
-          onClick={() => {
+          aria-label={`Remove ${productName(view, item.product_id)} from Local basket`}
+          onPointerDown={() => {
+            actionPress.current = true;
+          }}
+          onPointerCancel={() => {
+            actionPress.current = false;
+          }}
+          onClick={(event) => {
+            if (event.detail !== 0 && !actionPress.current) {
+              event.preventDefault();
+              return;
+            }
+            actionPress.current = false;
             setSwipeAction(undefined);
             onRemove();
           }}
@@ -331,7 +265,19 @@ function ProductCard({
           color="secondary"
           disabled={disabled}
           className="swipe-action swipe-alternative"
-          onClick={() => {
+          aria-label={`Find an alternative to ${productName(view, item.product_id)}`}
+          onPointerDown={() => {
+            actionPress.current = true;
+          }}
+          onPointerCancel={() => {
+            actionPress.current = false;
+          }}
+          onClick={(event) => {
+            if (event.detail !== 0 && !actionPress.current) {
+              event.preventDefault();
+              return;
+            }
+            actionPress.current = false;
             setSwipeAction(undefined);
             onOpenAlternatives();
           }}
@@ -339,10 +285,57 @@ function ProductCard({
           <span aria-hidden="true">⌕</span> Find alternative
         </Button>
       )}
+    </>
+  );
+  const summary = (
+    <ProductSummary
+      view={view}
+      quantity={quantity}
+      thumbnailSrc={thumbnailSrc}
+    />
+  );
+  const details =
+    view.status === "complete" ? (
+      <>
+        <ProductFacts
+          view={view}
+          expandedFacts={expandedFacts}
+          onFactExpandedChange={onFactExpandedChange}
+        />
+        {item && reviewControls}
+      </>
+    ) : (
+      <>
+        {item && <p>{item.quantity} ×</p>}
+        {item && reviewControls}
+      </>
+    );
+  return (
+    <div
+      className="basket-swipe-row"
+      data-product-id={item?.product_id}
+      {...(item && !comparison ? swipeHandlers : {})}
+      ref={item && !comparison ? setSwipeRef : undefined}
+      onKeyDown={(event) => {
+        if (event.key === "Escape" && swipeAction) {
+          actionPress.current = false;
+          setSwipeAction(undefined);
+          setSwipeOffset(0);
+          if ((event.target as HTMLElement).closest(".swipe-action")) {
+            rowRef.current
+              ?.querySelector<HTMLButtonElement>("button[aria-expanded]")
+              ?.focus();
+          }
+        }
+      }}
+    >
+      {swipeActions}
       <article
         className={`product-card${comparison ? " product-comparison" : ""}`}
+        inert={Boolean(swipeAction)}
         style={{
-          transform: `translateX(${swipeOffset || (swipeAction === "remove" ? "-55%" : swipeAction === "alternative" ? "55%" : 0)})`,
+          transform: `translateX(${transform})`,
+          transition: swipeOffset !== 0 ? "none" : undefined,
         }}
       >
         <div className="product-details">
@@ -351,51 +344,44 @@ function ProductCard({
               <button
                 type="button"
                 className="product-comparison-summary alternative-choice"
-                aria-label={`Use ${productName(view)} instead`}
+                aria-label={`Select ${productName(view)} as the alternative`}
+                aria-pressed={choiceSelected === true}
                 disabled={disabled || !isUsable(view)}
                 onClick={onChoice}
               >
                 {summary}
                 <span className="alternative-choice-state" aria-hidden="true">
-                  Use this alternative
+                  {choiceSelected ? "Selected" : "Select"}
                 </span>
               </button>
             ) : (
               <div className="product-comparison-summary">{summary}</div>
             )
           ) : (
-            <ProductSummaryButton
-              color="secondary"
-              variant="ghost"
-              data-viewer-component="product-summary"
-              aria-expanded={disclosureExpanded}
-              aria-controls={detailsId}
-              onClick={() => {
-                const next = !disclosureExpanded;
-                if (onExpandedChange) {
-                  onExpandedChange(next);
-                } else {
-                  setLocalExpanded(next);
-                }
-              }}
+            <Collapsible.Root
+              open={disclosureExpanded}
+              onOpenChange={setDisclosureExpanded}
+              disabled={disabled}
             >
-              {summary}
-            </ProductSummaryButton>
+              <Collapsible.Trigger asChild>
+                <ProductSummaryButton
+                  color="secondary"
+                  variant="ghost"
+                  data-viewer-component="product-summary"
+                >
+                  {summary}
+                </ProductSummaryButton>
+              </Collapsible.Trigger>
+              <Collapsible.Content className="product-expanded">
+                {details}
+              </Collapsible.Content>
+            </Collapsible.Root>
           )}
-          <div
-            id={detailsId}
-            className="product-expanded"
-            hidden={!comparison && !disclosureExpanded}
-          >
-            <ProductFacts
-              view={view}
-              expandedFacts={expandedFacts}
-              onFactExpandedChange={onFactExpandedChange}
-            />
-            {item && reviewControls}
-            {readyActions}
-          </div>
-          {item?.state === "ready" && reviewControls}
+          {comparison && (
+            <div className="product-expanded product-comparison-details">
+              <ProductFacts view={view} />
+            </div>
+          )}
         </div>
       </article>
     </div>
@@ -405,11 +391,17 @@ function ProductCard({
 // The existing screen state machine is rendered here so production and Storybook cannot drift.
 // fallow-ignore-next-line complexity
 export function ViewerPage({ model, actions }: ViewerPageProps) {
+  const [alternativeChoice, setAlternativeChoice] = useState<
+    { key: string; productId: number } | undefined
+  >();
+  const alternativeOpener = useRef<HTMLElement | null>(null);
+  const alternativeProductId = useRef<number | undefined>(undefined);
+  const alternativeHeading = useRef<HTMLHeadingElement | null>(null);
+  const wasShowingAlternatives = useRef(false);
   const {
     screen,
     maxWidth,
     presentationDestination,
-    selected,
     reviewDisclosures,
     pendingQuantities,
     thumbnails,
@@ -427,13 +419,47 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
   const destination = review
     ? (presentationDestination ?? review.destination)
     : undefined;
-  const needsReviewCount =
-    review?.items.filter((item) => item.state === "needs-review").length ?? 0;
-  const readyCount =
-    review?.items.filter((item) => item.state === "ready").length ?? 0;
   const safeTitle =
-    destination === "alternatives" ? "Choose an alternative" : "Local basket";
+    destination === "alternatives" ? "Find an alternative" : "Local basket";
   const visibleProductCount = review?.items.length ?? 0;
+  const alternatives = review?.alternatives;
+  const alternativesKey = alternatives
+    ? `${review?.review_id}:${alternatives.product_id}:${alternatives.query}`
+    : undefined;
+  const showingAlternatives = Boolean(
+    review && active && destination === "alternatives" && alternatives,
+  );
+  useEffect(() => {
+    if (showingAlternatives && !wasShowingAlternatives.current) {
+      alternativeHeading.current?.focus();
+    } else if (!showingAlternatives && wasShowingAlternatives.current) {
+      const opener = alternativeOpener.current;
+      if (opener?.isConnected) {
+        opener.focus();
+      } else {
+        const source = alternativeProductId.current;
+        const sourceSummary =
+          source === undefined
+            ? null
+            : document.querySelector<HTMLButtonElement>(
+                `.product-list [data-product-id="${source}"] button[aria-expanded]`,
+              );
+        (
+          sourceSummary ??
+          document.querySelector<HTMLButtonElement>(
+            '.product-list button[aria-expanded="false"], .product-list button[aria-expanded="true"]',
+          )
+        )?.focus();
+      }
+    }
+    wasShowingAlternatives.current = showingAlternatives;
+  }, [showingAlternatives]);
+  const selectedAlternativeId =
+    alternativeChoice &&
+    alternativesKey &&
+    alternativeChoice.key === alternativesKey
+      ? alternativeChoice.productId
+      : undefined;
   const productPayload =
     screen.kind === "products" ? screen.payload : undefined;
   const basket =
@@ -451,14 +477,6 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
     uncertainSubmission ||
     partialSubmission ||
     (review?.submission?.status === "submitted" && !continueSubmitted);
-  const decisionsComplete = Boolean(
-    review &&
-    active &&
-    !terminalSubmission &&
-    destination === "needs-review" &&
-    needsReviewCount === 0 &&
-    readyCount > 0,
-  );
   const hasActiveProducts = Boolean(
     review && active && review.items.length > 0,
   );
@@ -476,15 +494,15 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
         : basket
           ? "Actual Nemlig basket"
           : screen.kind === "unavailable"
-            ? "Draft list unavailable"
+            ? "Local basket unavailable"
             : screen.kind === "review"
-              ? "Your Draft list"
+              ? "Your Local basket"
               : "Products";
   const intro = !terminalSubmission
     ? review && active
       ? review.items.length === 0
-        ? "Start another local Draft list in conversation."
-        : safeTitle === "Choose an alternative"
+        ? "Start a Local basket in conversation."
+        : safeTitle === "Find an alternative"
           ? "Compare available options for this product."
           : "Review products in your local basket. Open a product for details or swipe for an action."
       : basket
@@ -526,20 +544,20 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
       {screen.kind === "error" && (
         <section className="status">
           <p role="alert">{screen.message}</p>
-          <p>Continue in conversation to inspect the current Draft list.</p>
+          <p>Continue in conversation to inspect the current Local basket.</p>
         </section>
       )}
       {screen.kind === "cancelled" && (
         <section className="status">
           <p>
             Request cancelled. Continue in conversation to confirm the current
-            Draft list before continuing.
+            Local basket before continuing.
           </p>
         </section>
       )}
       {screen.kind === "stale" && (
         <section className="status">
-          <p>This Draft list card is out of date and cannot make changes.</p>
+          <p>This Local basket card is out of date and cannot make changes.</p>
           <Button
             color="primary"
             disabled={activatingCurrent}
@@ -553,10 +571,10 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
       {screen.kind === "review" && review && !active && !terminalSubmission && (
         <section className="status">
           <p>
-            This Draft list card is inactive.{" "}
+            This Local basket card is inactive.{" "}
             {review.items.length
-              ? "The current Draft list is shown read-only."
-              : "No current Draft list is available."}
+              ? "The current Local basket is shown read-only."
+              : "No current Local basket is available."}
           </p>
           {review.items.length > 0 && (
             <Button
@@ -573,7 +591,7 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
       {review && !active && !terminalSubmission && review.items.length > 0 && (
         <section
           className="product-list"
-          aria-label="Current Draft list, read only"
+          aria-label="Current Local basket, read only"
         >
           {review.items.map((item) => (
             <ProductCard
@@ -588,9 +606,9 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
       {screen.kind === "unavailable" && (
         <section className="status">
           <p>
-            This temporary Draft list is no longer available. Ask in chat before
-            starting a new Draft list. Previous choices or submission approval
-            are not restored.
+            This temporary Local basket is no longer available. Ask in chat
+            before starting a new Local basket. Previous choices or submission
+            approval are not restored.
           </p>
         </section>
       )}
@@ -599,100 +617,126 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
         !terminalSubmission &&
         destination === "alternatives" &&
         review.alternatives && (
-          <section className="alternatives">
-            <section
-              className="alternatives-current"
-              aria-labelledby="current-product-title"
-            >
-              <h2 id="current-product-title">Current product</h2>
-              {review.items
-                .filter(
-                  (item) => item.product_id === review.alternatives?.product_id,
-                )
-                .map((item) => (
-                  <ProductCard
-                    key={item.product_id}
-                    view={item.view}
-                    thumbnailSrc={thumbnail(item.view)}
-                    disabled={busy}
-                    {...disclosureProps(item.product_id)}
-                  />
-                ))}
-            </section>
-            <form
-              key={`${review.review_id}:${review.alternatives.product_id}:${review.alternatives.query}`}
-              onSubmit={(event) => {
-                event.preventDefault();
-                const query = String(
-                  new FormData(event.currentTarget).get("query") ?? "",
-                );
-                if (query.trim()) {
-                  actions.onSearchAlternatives(
-                    review.alternatives!.product_id,
-                    query.slice(0, 200),
-                  );
-                }
-              }}
-            >
-              <label htmlFor="alternative-query">
-                Search for more products
-              </label>
-              <input
-                id="alternative-query"
-                name="query"
-                type="search"
-                maxLength={200}
-                defaultValue={review.alternatives.query}
-              />
-              <Button color="secondary" type="submit" disabled={editsBlocked}>
-                Search products
-              </Button>
-            </form>
-            <section
-              className="alternative-options"
-              aria-labelledby="alternative-options-title"
-            >
-              <h2 id="alternative-options-title">Alternatives</h2>
-              {review.alternatives.views.length === 0 ? (
-                <p className="alternatives-empty" role="status">
-                  No alternatives were returned. Try another search.
-                </p>
-              ) : (
-                <div>
-                  {review.alternatives.views.map((view, index) => {
-                    const id =
-                      view.status === "complete"
-                        ? view.product.id
-                        : view.product_id;
-                    return (
-                      <ProductCard
-                        key={`${id}:${index}`}
-                        view={view}
-                        thumbnailSrc={thumbnail(view)}
-                        disabled={editsBlocked}
-                        comparison
-                        {...(id === undefined ? {} : disclosureProps(id))}
-                        onChoice={() => {
-                          if (id !== undefined) {
-                            actions.onReplace(
-                              review.alternatives!.product_id,
-                              id,
-                            );
-                          }
-                        }}
-                      />
-                    );
-                  })}
-                </div>
-              )}
+          <section className="alternatives" aria-label="Find an alternative">
+            <div className="alternatives-scroll">
               <Button
                 color="secondary"
                 disabled={uncertainSubmission}
-                onClick={() => actions.onNavigate("needs-review")}
+                onClick={() => actions.onNavigate("ready")}
               >
-                Back to To decide
+                Back to Local basket
               </Button>
-            </section>
+              <h2 ref={alternativeHeading} tabIndex={-1}>
+                Find an alternative
+              </h2>
+              <section
+                className="alternatives-current"
+                aria-labelledby="current-product-title"
+              >
+                <h2 id="current-product-title">Current product</h2>
+                {review.items
+                  .filter(
+                    (item) =>
+                      item.product_id === review.alternatives?.product_id,
+                  )
+                  .map((item) => (
+                    <ProductCard
+                      key={item.product_id}
+                      view={item.view}
+                      thumbnailSrc={thumbnail(item.view)}
+                      disabled={busy}
+                      {...disclosureProps(item.product_id)}
+                    />
+                  ))}
+              </section>
+              <form
+                key={`${review.review_id}:${review.alternatives.product_id}:${review.alternatives.query}`}
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  const query = String(
+                    new FormData(event.currentTarget).get("query") ?? "",
+                  );
+                  if (query.trim()) {
+                    setAlternativeChoice(undefined);
+                    actions.onSearchAlternatives(
+                      review.alternatives!.product_id,
+                      query.slice(0, 200),
+                    );
+                  }
+                }}
+              >
+                <label htmlFor="alternative-query">
+                  Search for more products
+                </label>
+                <input
+                  id="alternative-query"
+                  name="query"
+                  type="search"
+                  maxLength={200}
+                  defaultValue={review.alternatives.query}
+                />
+                <Button color="secondary" type="submit" disabled={editsBlocked}>
+                  Search products
+                </Button>
+              </form>
+              <section
+                className="alternative-options"
+                aria-labelledby="alternative-options-title"
+              >
+                <h2 id="alternative-options-title">Alternatives</h2>
+                {review.alternatives.views.length === 0 ? (
+                  <p className="alternatives-empty" role="status">
+                    No alternatives were returned. Try another search.
+                  </p>
+                ) : (
+                  <div>
+                    {review.alternatives.views.map((view, index) => {
+                      const id =
+                        view.status === "complete"
+                          ? view.product.id
+                          : view.product_id;
+                      return (
+                        <ProductCard
+                          key={`${id}:${index}`}
+                          view={view}
+                          thumbnailSrc={thumbnail(view)}
+                          disabled={editsBlocked}
+                          comparison
+                          choiceSelected={selectedAlternativeId === id}
+                          {...(id === undefined ? {} : disclosureProps(id))}
+                          onChoice={() => {
+                            if (id !== undefined && alternativesKey) {
+                              setAlternativeChoice({
+                                key: alternativesKey,
+                                productId: id,
+                              });
+                            }
+                          }}
+                        />
+                      );
+                    })}
+                  </div>
+                )}
+              </section>
+            </div>
+            <footer className="alternative-footer">
+              <Button
+                color="primary"
+                disabled={editsBlocked || selectedAlternativeId === undefined}
+                onClick={() => {
+                  if (selectedAlternativeId !== undefined) {
+                    alternativeProductId.current = selectedAlternativeId;
+                    actions.onReplace(
+                      alternatives!.product_id,
+                      selectedAlternativeId,
+                    );
+                    setAlternativeChoice(undefined);
+                  }
+                }}
+              >
+                Use selected alternative
+              </Button>
+            </footer>
           </section>
         )}
       {screen.kind === "products" && screen.views.length > 0 && (
@@ -736,56 +780,18 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
                   disabled={editsBlocked}
                   onQuantity={(quantity) => actions.onQuantity(item, quantity)}
                   onRemove={() => actions.onRemove(item)}
-                  onOpenAlternatives={() =>
-                    actions.onOpenAlternatives(item, alternativeQuery)
-                  }
+                  onOpenAlternatives={() => {
+                    alternativeProductId.current = item.product_id;
+                    alternativeOpener.current =
+                      document.activeElement instanceof HTMLElement
+                        ? document.activeElement
+                        : null;
+                    actions.onOpenAlternatives(item, alternativeQuery);
+                  }}
                 />
               );
             })}
           </section>
-        )}
-      {decisionsComplete && (
-        <OutcomeSurface title="Ready for your final check">
-          <p>
-            Review the local Ready products before deciding whether to add them
-            to Nemlig.
-          </p>
-          <Button
-            color="primary"
-            disabled={editsBlocked}
-            onClick={() => actions.onNavigate("ready")}
-          >
-            View Ready products
-          </Button>
-        </OutcomeSurface>
-      )}
-      {review &&
-        active &&
-        !terminalSubmission &&
-        destination === "needs-review" &&
-        needsReviewCount > 0 && (
-          <ActionFooter>
-            {review.items.some(
-              (item) => item.state === "needs-review" && isUsable(item.view),
-            ) && (
-              <Button
-                color="secondary"
-                disabled={editsBlocked}
-                onClick={actions.onSelectAll}
-              >
-                Select all
-              </Button>
-            )}
-            {selected.size > 0 && (
-              <Button
-                color="primary"
-                disabled={editsBlocked}
-                onClick={actions.onAcceptSelected}
-              >
-                Add selected to Ready ({selected.size})
-              </Button>
-            )}
-          </ActionFooter>
         )}
       {review &&
         terminalSubmission &&
@@ -800,7 +806,7 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
               disabled={busy}
               onClick={actions.onContinueSubmitted}
             >
-              Continue with Draft list
+              Continue with Local basket
             </Button>
           </OutcomeSurface>
         )}
@@ -841,119 +847,122 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
           </Button>
         </OutcomeSurface>
       )}
-      {review && active && !terminalSubmission && destination === "ready" && (
-        <ActionFooter>
-          {review.submission?.status !== "prepared" && (
-            <Button
-              color="primary"
-              disabled={
-                editsBlocked ||
-                !review.items.some((item) => item.state === "ready")
-              }
-              onClick={actions.onPrepareSubmission}
-            >
-              Review exact Nemlig change
-            </Button>
-          )}
-          {review.submission?.status === "prepared" && (
-            <OutcomeSurface title="Ready to add to Nemlig basket">
-              {review.submission.review.lines?.map((line) => (
-                <p key={line.product_id}>
-                  {line.quantity} × {line.name ?? `Product ${line.product_id}`}{" "}
-                  · {money(line.item_price)} each · {money(line.line_total)}
-                </p>
-              ))}
-              <p>
-                Expected product total:{" "}
-                {money(review.submission.review.expected_products_price)}
-              </p>
-              {submitBlocked ? (
+      {review &&
+        active &&
+        !terminalSubmission &&
+        destination !== "alternatives" && (
+          <ActionFooter>
+            {review.submission?.status !== "prepared" && (
+              <Button
+                color="primary"
+                block
+                disabled={editsBlocked}
+                onClick={actions.onPrepareSubmission}
+              >
+                Submit to Nemlig
+              </Button>
+            )}
+            {review.submission?.status === "prepared" && (
+              <OutcomeSurface title="Ready to submit the Local basket">
+                {review.submission.review.lines?.map((line) => (
+                  <p key={line.product_id}>
+                    {line.quantity} ×{" "}
+                    {line.name ?? `Product ${line.product_id}`} ·{" "}
+                    {money(line.item_price)} each · {money(line.line_total)}
+                  </p>
+                ))}
                 <p>
-                  Inspect the actual Nemlig basket in conversation before
-                  preparing another change.
+                  Expected product total:{" "}
+                  {money(review.submission.review.expected_products_price)}
                 </p>
-              ) : confirmSubmit ? (
-                <>
-                  <p>Add only these exact quantities to the Nemlig basket?</p>
-                  <Button
-                    color="secondary"
-                    disabled={busy}
-                    onClick={actions.onCancelSubmit}
-                  >
-                    Cancel
-                  </Button>
+                {submitBlocked ? (
+                  <p>
+                    Inspect the actual Nemlig basket in conversation before
+                    preparing another change.
+                  </p>
+                ) : confirmSubmit ? (
+                  <>
+                    <p>Add only these exact quantities to the Nemlig basket?</p>
+                    <Button
+                      color="secondary"
+                      disabled={busy}
+                      onClick={actions.onCancelSubmit}
+                    >
+                      Cancel
+                    </Button>
+                    <Button
+                      color="primary"
+                      disabled={busy}
+                      onClick={actions.onConfirmSubmit}
+                    >
+                      Add to Nemlig
+                    </Button>
+                  </>
+                ) : (
                   <Button
                     color="primary"
                     disabled={busy}
-                    onClick={actions.onConfirmSubmit}
+                    onClick={actions.onRequestSubmitConfirmation}
                   >
-                    Add to Nemlig
+                    Add to Nemlig basket
                   </Button>
-                </>
-              ) : (
-                <Button
-                  color="primary"
-                  disabled={busy}
-                  onClick={actions.onRequestSubmitConfirmation}
-                >
-                  Add to Nemlig basket
-                </Button>
-              )}
-            </OutcomeSurface>
-          )}
-          {message &&
-            review.submission?.status !== "uncertain" &&
-            review.submission?.status !== "partial" && (
-              <p className="status" role="status">
-                {message}
-              </p>
+                )}
+              </OutcomeSurface>
             )}
-        </ActionFooter>
-      )}
+            {message &&
+              review.submission?.status !== "uncertain" &&
+              review.submission?.status !== "partial" && (
+                <p className="status" role="status">
+                  {message}
+                </p>
+              )}
+          </ActionFooter>
+        )}
       {review && active && !terminalSubmission && review.items.length === 0 && (
         <DraftListStarters
-          message="Your local Draft list is empty. Nothing changed in Nemlig."
+          message="Your Local basket is empty. Nothing changed in Nemlig."
           onChoose={actions.onSendFollowUp}
         />
       )}
       {review && active && !terminalSubmission && hasActiveProducts && (
-        <DraftListOverflow>
+        <>
           <Button
             color="secondary"
+            block
+            className="clear-local-basket"
             disabled={editsBlocked || busy}
             onClick={actions.onRequestEnd}
           >
-            End Draft list
+            Clear
           </Button>
           {confirmEnd && (
             <section className="submission">
               <p>
-                Discard this local Draft list? The Nemlig basket will not
-                change.
+                Discard this Local basket? The Nemlig basket will not change.
               </p>
               <Button
                 color="secondary"
                 disabled={busy}
                 onClick={actions.onCancelEnd}
               >
-                Keep Draft list
+                Keep Local basket
               </Button>
               <Button
                 color="secondary"
                 disabled={busy}
                 onClick={actions.onConfirmEnd}
               >
-                Confirm discard Draft list
+                Confirm discard Local basket
               </Button>
             </section>
           )}
-        </DraftListOverflow>
+        </>
       )}
       {screen.kind === "empty" && (
         <DraftListStarters
           message={
             screen.message ??
-            "Your local Draft list is empty. Nothing changed in Nemlig."
+            "Your Local basket is empty. Nothing changed in Nemlig."
           }
           onChoose={actions.onSendFollowUp}
         />

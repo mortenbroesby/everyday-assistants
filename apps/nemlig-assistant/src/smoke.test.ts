@@ -306,24 +306,11 @@ test("discovery reaches an approved draft submission and verified Nemlig basket"
         review: { review_id: string; revision: number };
       }
     ).review;
-    const accepted = await mcp.callTool({
+    const prepared = await mcp.callTool({
       name: "update_product_review_conversation",
       arguments: {
         review_id: initial.review_id,
         revision: initial.revision,
-        action: { kind: "accept", product_ids: [101, 201, 301] },
-      },
-    });
-    const ready = (
-      accepted.structuredContent as {
-        review: { review_id: string; revision: number };
-      }
-    ).review;
-    const prepared = await mcp.callTool({
-      name: "update_product_review_conversation",
-      arguments: {
-        review_id: ready.review_id,
-        revision: ready.revision,
         action: { kind: "prepare_submission" },
       },
     });
@@ -436,24 +423,11 @@ test("an indeterminate draft submission is attempted once", async () => {
         review: { review_id: string; revision: number };
       }
     ).review;
-    const accepted = await mcp.callTool({
+    const prepared = await mcp.callTool({
       name: "update_product_review_conversation",
       arguments: {
         review_id: initial.review_id,
         revision: initial.revision,
-        action: { kind: "accept", product_ids: [401] },
-      },
-    });
-    const ready = (
-      accepted.structuredContent as {
-        review: { review_id: string; revision: number };
-      }
-    ).review;
-    const prepared = await mcp.callTool({
-      name: "update_product_review_conversation",
-      arguments: {
-        review_id: ready.review_id,
-        revision: ready.revision,
         action: { kind: "prepare_submission" },
       },
     });

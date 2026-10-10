@@ -11,13 +11,10 @@ import type {
 } from "../viewer-page.js";
 import { ViewerPage } from "../viewer-page.js";
 import {
-  acceptSelected,
   alternativesFor,
   removeItem,
   replaceWithAlternative,
-  revisitItem,
   updateQuantity,
-  withoutSelected,
 } from "./visual-contract.fixture.js";
 
 const milkCarton = new URL("../fixtures/milk-carton.svg", import.meta.url).href;
@@ -101,16 +98,12 @@ const oatMilk: ProductView = {
 const review: Review = {
   review_id: "storybook-review",
   revision: 4,
-  destination: "needs-review",
+  destination: "ready",
   items: [
-    { product_id: 1, quantity: 2, state: "needs-review", view: milk },
+    { product_id: 1, quantity: 2, state: "ready", view: milk },
     { product_id: 2, quantity: 1, state: "ready", view: pasta },
   ],
   alternatives: { product_id: 1, query: "minimælk", views: [milk, pasta] },
-};
-const everythingReadyReview: Review = {
-  ...review,
-  items: review.items.map((item) => ({ ...item, state: "ready" })),
 };
 const walkthroughReview: Review = {
   ...review,
@@ -129,6 +122,13 @@ const preparedReview: Review = {
     review: {
       lines: [
         {
+          product_id: 1,
+          quantity: 2,
+          name: "Arla ØKO Minimælk",
+          item_price: 12.95,
+          line_total: 25.9,
+        },
+        {
           product_id: 2,
           quantity: 1,
           name: "Lasagneplader øko.",
@@ -136,7 +136,7 @@ const preparedReview: Review = {
           line_total: 23.95,
         },
       ],
-      expected_products_price: 23.95,
+      expected_products_price: 49.85,
     },
   },
 };
@@ -160,7 +160,6 @@ const baseProps = (
 ): ViewerPageProps => ({
   model: {
     screen,
-    selected: new Set(),
     reviewDisclosures: new Map(),
     pendingQuantities: new Map(),
     thumbnails: new Map([
@@ -182,12 +181,8 @@ const baseProps = (
     onDisclosureChange: noop,
     onFactExpandedChange: noop,
     onActivateCurrent: noop,
-    onSelected: noop,
-    onSelectAll: noop,
-    onAcceptSelected: noop,
     onQuantity: noop,
     onRemove: noop,
-    onRevisit: noop,
     onOpenAlternatives: noop,
     onSearchAlternatives: noop,
     onReplace: noop,
@@ -223,7 +218,7 @@ function FixturePage({
         overrides.actions?.onActivateCurrent ??
         (() =>
           setHostMessage(
-            "Storybook would ask ChatGPT to load the current Draft list.",
+            "Storybook would ask ChatGPT to load the current Local basket.",
           )),
       onInspectBasket:
         overrides.actions?.onInspectBasket ??
@@ -265,38 +260,33 @@ const activeReview = (
     },
   );
 
-function toggleSelection(
-  previous: ReadonlySet<number>,
-  productId: number,
-  checked: boolean,
-) {
-  const next = new Set(previous);
-  if (checked) {
-    next.add(productId);
-  } else {
-    next.delete(productId);
-  }
-  return next;
-}
+type SetState<T> = Dispatch<SetStateAction<T>>;
 
-function prepareReview(review: Review): Review {
-  const lines = review.items.flatMap((item) => {
-    if (item.state !== "ready" || item.view.status !== "complete") {
-      return [];
+function prepareReview(review: Review): Review | undefined {
+  if (
+    review.items.length === 0 ||
+    review.items.some(
+      (item) =>
+        item.view.status !== "complete" || item.view.product.available !== true,
+    )
+  ) {
+    return undefined;
+  }
+  const lines = review.items.map((item) => {
+    if (item.view.status !== "complete") {
+      throw new globalThis.Error("Unavailable rows cannot be prepared.");
     }
     const { product } = item.view;
-    return [
-      {
-        product_id: item.product_id,
-        quantity: item.quantity,
-        name: product.name,
-        item_price: product.price,
-        line_total:
-          typeof product.price === "number"
-            ? item.quantity * product.price
-            : undefined,
-      },
-    ];
+    return {
+      product_id: item.product_id,
+      quantity: item.quantity,
+      name: product.name,
+      item_price: product.price,
+      line_total:
+        typeof product.price === "number"
+          ? item.quantity * product.price
+          : undefined,
+    };
   });
   return {
     ...review,
@@ -313,8 +303,6 @@ function prepareReview(review: Review): Review {
     },
   };
 }
-
-type SetState<T> = Dispatch<SetStateAction<T>>;
 
 function disclosureActions(
   setReviewDisclosures: SetState<ViewerPageModel["reviewDisclosures"]>,
@@ -349,50 +337,20 @@ function disclosureActions(
 }
 
 function reviewActions(
-  currentReview: Review,
-  selected: ReadonlySet<number>,
   setCurrentReview: SetState<Review>,
-  setSelected: SetState<Set<number>>,
-): Pick<
-  ViewerPageActions,
-  | "onSelected"
-  | "onSelectAll"
-  | "onAcceptSelected"
-  | "onQuantity"
-  | "onRemove"
-  | "onRevisit"
-> {
+): Pick<ViewerPageActions, "onQuantity" | "onRemove"> {
   return {
-    onSelected: (productId, checked) =>
-      setSelected((previous) => toggleSelection(previous, productId, checked)),
-    onSelectAll: () =>
-      setSelected(
-        new Set(
-          currentReview.items
-            .filter((item) => item.state === "needs-review")
-            .map((item) => item.product_id),
-        ),
-      ),
-    onAcceptSelected: () => {
-      setCurrentReview((previous) => acceptSelected(previous, selected));
-      setSelected(new Set());
-    },
     onQuantity: (item, quantity) =>
       setCurrentReview((previous) =>
         updateQuantity(previous, item.product_id, quantity),
       ),
-    onRemove: (item) => {
-      setCurrentReview((previous) => removeItem(previous, item.product_id));
-      setSelected((previous) => withoutSelected(previous, item.product_id));
-    },
-    onRevisit: (item) =>
-      setCurrentReview((previous) => revisitItem(previous, item.product_id)),
+    onRemove: (item) =>
+      setCurrentReview((previous) => removeItem(previous, item.product_id)),
   };
 }
 
 function alternativeActions(
   setCurrentReview: SetState<Review>,
-  setSelected: SetState<Set<number>>,
   setDestination: SetState<Review["destination"]>,
 ): Pick<
   ViewerPageActions,
@@ -420,8 +378,7 @@ function alternativeActions(
       setCurrentReview((previous) =>
         replaceWithAlternative(previous, productId, replacementId),
       );
-      setSelected((previous) => withoutSelected(previous, productId));
-      setDestination("needs-review");
+      setDestination("ready");
     },
   };
 }
@@ -430,8 +387,7 @@ function walkthroughScreen(ended: boolean, review: Review): ViewerScreen {
   return ended
     ? {
         kind: "empty",
-        message:
-          "Your local Draft list was discarded. Nothing changed in Nemlig.",
+        message: "Your Local basket was discarded. Nothing changed in Nemlig.",
       }
     : {
         kind: "review",
@@ -461,6 +417,7 @@ function WalkthroughPage({
 }
 
 function submissionActions(
+  currentReview: Review,
   setCurrentReview: SetState<Review>,
   setConfirmSubmit: SetState<boolean>,
   setConfirmEnd: SetState<boolean>,
@@ -479,8 +436,17 @@ function submissionActions(
   | "onSendFollowUp"
 > {
   return {
-    onPrepareSubmission: () =>
-      setCurrentReview((previous) => prepareReview(previous)),
+    onPrepareSubmission: () => {
+      const next = prepareReview(currentReview);
+      if (next) {
+        setCurrentReview(next);
+        setHostMessage("");
+      } else {
+        setHostMessage(
+          "Preparation stopped. Resolve every unavailable or incomplete Local basket row first.",
+        );
+      }
+    },
     onRequestSubmitConfirmation: () => setConfirmSubmit(true),
     onCancelSubmit: () => setConfirmSubmit(false),
     onConfirmSubmit: () => {
@@ -503,8 +469,7 @@ function submissionActions(
 function DraftListWalkthroughStory() {
   const [currentReview, setCurrentReview] = useState(walkthroughReview);
   const [destination, setDestination] =
-    useState<Review["destination"]>("needs-review");
-  const [selected, setSelected] = useState<Set<number>>(new Set());
+    useState<Review["destination"]>("ready");
   const [reviewDisclosures, setReviewDisclosures] = useState<
     ViewerPageModel["reviewDisclosures"]
   >(new Map());
@@ -513,18 +478,10 @@ function DraftListWalkthroughStory() {
   const [ended, setEnded] = useState(false);
   const [hostMessage, setHostMessage] = useState("");
   const disclosures = disclosureActions(setReviewDisclosures);
-  const reviews = reviewActions(
-    currentReview,
-    selected,
-    setCurrentReview,
-    setSelected,
-  );
-  const alternatives = alternativeActions(
-    setCurrentReview,
-    setSelected,
-    setDestination,
-  );
+  const reviews = reviewActions(setCurrentReview);
+  const alternatives = alternativeActions(setCurrentReview, setDestination);
   const submission = submissionActions(
+    currentReview,
     setCurrentReview,
     setConfirmSubmit,
     setConfirmEnd,
@@ -537,7 +494,6 @@ function DraftListWalkthroughStory() {
       model={{
         maxWidth: 375,
         presentationDestination: destination,
-        selected,
         reviewDisclosures,
         confirmSubmit,
         confirmEnd,
@@ -569,7 +525,7 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
-export const ToDecideAt320: Story = {
+export const LocalBasketAt320: Story = {
   render: () => activeReview(review, "needs-review", 320),
 };
 export const DraftListWalkthrough: Story = {
@@ -580,11 +536,11 @@ export const AppTabWalkthrough: Story = {
   decorators: [appTab],
   render: () => <DraftListWalkthroughStory />,
 };
-export const ReadyAt375: Story = {
+export const LocalBasketAt375: Story = {
   render: () => activeReview(review, "ready", 375),
 };
-export const EverythingReady: Story = {
-  render: () => activeReview(everythingReadyReview, "needs-review", 375),
+export const LegacyMixedLocalBasket: Story = {
+  render: () => activeReview(review, "needs-review", 375),
 };
 export const Alternatives: Story = {
   render: () => activeReview(review, "alternatives", 375),
@@ -642,7 +598,7 @@ export const Loading: Story = {
 };
 export const Error: Story = {
   render: () =>
-    page({ kind: "error", message: "Could not load the Draft list." }),
+    page({ kind: "error", message: "Could not load the Local basket." }),
 };
 export const Cancelled: Story = { render: () => page({ kind: "cancelled" }) };
 export const Stale: Story = { render: () => page({ kind: "stale" }) };

@@ -31,8 +31,8 @@ const html = `<!doctype html>
   </style>
 </head>
 <body>
-  <p id="loading" role="status">Loading the current Draft list…</p>
-  <p id="load-error" role="alert" hidden>The current Draft list could not be loaded. Nothing has been changed. <button id="retry" type="button">Try again</button></p>
+  <p id="loading" role="status">Loading the current Local basket…</p>
+  <p id="load-error" role="alert" hidden>The current Local basket could not be loaded. Nothing has been changed. <button id="retry" type="button">Try again</button></p>
   <div id="root"></div>
   <script>
     (() => {
