@@ -51,9 +51,10 @@ explicit, and invalid rows SHALL not be represented as false products.
 The system SHALL provide one reusable product-fact presentation for search,
 exact details, provider basket, review, and result contexts. Rendering facts
 or expanding disclosures SHALL make no tool/provider call or shopping change.
-An explicitly activated local-review workspace MAY expose the existing
-server-authoritative review controls and exact protected confirmation; it
-SHALL NOT own duplicate business state or contact Nemlig directly. The host
+The authenticated conversation's temporary Draft list MAY expose the existing
+server-authoritative review controls and exact protected confirmation through
+supported interchangeable viewer cards; a card SHALL NOT own duplicate
+business state or contact Nemlig directly. The host
 viewer SHALL retain a complete structured/text fallback.
 
 #### Scenario: Viewer renders a product

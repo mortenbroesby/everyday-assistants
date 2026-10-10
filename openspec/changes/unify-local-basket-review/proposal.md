@@ -23,8 +23,8 @@ Every local basket item is Ready and is included in the single Submit to Nemlig 
 - A left or right swipe past half the row reveals the corresponding red Remove or green Find alternative action. Releasing the gesture only reveals the action. A subsequent tap on its real button performs the local remove or opens alternatives.
 - Keyboard and assistive-technology users can use equivalent ordinary controls in the expanded row.
 - Alternatives appear in a dedicated full-page view with Back, current product, search, option selection, and explicit “Use selected alternative”. Back leaves the local row unchanged. A Ready row can search and replacement preserves its Ready status and quantity while invalidating a prepared submission.
-- Every item remains Ready; additions and replacements are immediately submission candidates. Submit prepares every current item as one exact recap. Any unavailable or incomplete line prevents preparation and remains visible for resolution. Exact confirmation, stale/inactive/uncertain gates, provider preflight, single-use write, and readback remain intact.
+- Every item remains Ready; additions and replacements are immediately submission candidates. Submit prepares every current item as one exact recap. Any unavailable or incomplete line prevents preparation and remains visible for resolution. Exact confirmation, owner isolation, concurrency and uncertain-write gates, provider preflight, single-use write, and readback remain intact.
 
 ## Verification
 
-Review changed files and types/build without running automated tests until explicitly authorized. Do not access a real basket or provider.
+Run focused service tests, the synthetic MCP and packaged-viewer browser smokes, typecheck, build, and the repository verification gates. Do not access a real basket or provider.

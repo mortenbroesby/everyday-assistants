@@ -22,13 +22,17 @@ declare global {
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
+
+function isUncertainFailure(
+  recovery: boolean,
+  uncertainOnFailure: boolean,
+  text: string,
+): boolean {
+  return !recovery && (uncertainOnFailure || /uncertain/i.test(text));
+}
+
 function isReview(value: unknown): value is Review {
-  if (
-    !isRecord(value) ||
-    typeof value.review_id !== "string" ||
-    !Number.isSafeInteger(value.revision) ||
-    !Array.isArray(value.items)
-  ) {
+  if (!isRecord(value) || !Array.isArray(value.items)) {
     return false;
   }
   if (!(
@@ -202,13 +206,10 @@ function readPayload(value: unknown): ViewerScreen | undefined {
     ? value.structuredContent
     : value;
   if (isRecord(envelope.review) && isReview(envelope.review)) {
-    const view_id =
-      typeof envelope.view_id === "string" ? envelope.view_id : undefined;
     return {
       kind: "review",
       review: envelope.review,
-      ...(view_id ? { view_id } : {}),
-      active: Boolean(view_id),
+      active: true,
     };
   }
   if (envelope.unavailable === true) {
@@ -244,32 +245,35 @@ export function ProductViewer() {
       typeof window === "undefined"
         ? undefined
         : readPayload(window.openai?.toolOutput);
-    if (initial?.kind === "review") {
-      return { ...initial, active: false };
-    }
     return initial ?? { kind: "loading" };
   });
   const [presentationDestination, setPresentationDestination] = useState<
     PresentationDestination | undefined
   >(() => (screen.kind === "review" ? screen.review.destination : undefined));
-  const activeReview = useRef<
-    { review: Review; view_id?: string; active: boolean } | undefined
-  >(screen.kind === "review" ? screen : undefined);
+  const activeReview = useRef<{ review: Review; active: boolean } | undefined>(
+    screen.kind === "review" ? screen : undefined,
+  );
   const lastConfirmedReview = useRef<Review | undefined>(
     screen.kind === "review" ? screen.review : undefined,
   );
   const callLock = useRef(false);
+  const ignorePassivePayloads = useRef(
+    screen.kind === "review" &&
+      (screen.review.submission?.status === "submitted" ||
+        screen.review.submission?.status === "uncertain" ||
+        screen.review.submission?.status === "partial"),
+  );
   const cancellationEpoch = useRef(0);
   const [reviewDisclosures, setReviewDisclosures] = useState<
     Map<number, { expanded: boolean; facts: Set<string> }>
   >(() => new Map());
   const [message, setMessage] = useState("");
-  const [activatingCurrent, setActivatingCurrent] = useState(false);
   const [busy, setBusy] = useState(false);
   const [confirmSubmit, setConfirmSubmit] = useState(false);
   const [confirmEnd, setConfirmEnd] = useState(false);
   const [continueSubmitted, setContinueSubmitted] = useState(false);
   const [submitBlocked, setSubmitBlocked] = useState(false);
+  const submitBlockedRef = useRef(false);
   const [pendingQuantities, setPendingQuantities] = useState<
     Map<number, number>
   >(() => new Map());
@@ -321,6 +325,10 @@ export function ProductViewer() {
       current = false,
       adoptPresentationDestination = false,
     ) => {
+      const next = readPayload(payload);
+      if (!current && ignorePassivePayloads.current) {
+        return true;
+      }
       if (isRecord(payload) && payload.isError === true) {
         deactivateReview();
         setScreen({
@@ -330,7 +338,6 @@ export function ProductViewer() {
         });
         return false;
       }
-      const next = readPayload(payload);
       if (!next) {
         deactivateReview();
         setScreen({
@@ -343,52 +350,19 @@ export function ProductViewer() {
       const previous = activeReview.current;
       if (next.kind === "review") {
         if (
-          !current &&
-          previous &&
-          !previous.active &&
-          next.view_id &&
-          next.view_id === previous.view_id
+          next.review.submission?.status === "submitted" ||
+          next.review.submission?.status === "uncertain" ||
+          next.review.submission?.status === "partial"
         ) {
-          return true;
+          ignorePassivePayloads.current = true;
         }
-        if (
-          !current &&
-          previous?.active &&
-          previous.review.review_id !== next.review.review_id
-        ) {
-          return true;
-        }
-        const sameReview = previous?.review.review_id === next.review.review_id;
+        const sameReview = Boolean(previous);
         if (!sameReview) {
           setReviewDisclosures(new Map());
         }
-        if (sameReview && next.review.revision < previous.review.revision) {
-          return true;
-        }
-        if (
-          !current &&
-          previous?.active &&
-          sameReview &&
-          next.review.revision === previous.review.revision
-        ) {
-          const verifiedCompletion =
-            previous.review.submission?.status === "uncertain" &&
-            next.review.submission?.status === "submitted" &&
-            previous.review.submission.submission_id ===
-              next.review.submission.submission_id;
-          if (!verifiedCompletion) {
-            return true;
-          }
-        }
-        const view_id = next.view_id ?? previous?.view_id;
         const state = {
           review: next.review,
-          ...(view_id ? { view_id } : {}),
-          active:
-            Boolean(view_id) &&
-            (current ||
-              Boolean(next.view_id) ||
-              (sameReview && previous.active)),
+          active: true,
         };
         activeReview.current = state;
         lastConfirmedReview.current = next.review;
@@ -397,6 +371,7 @@ export function ProductViewer() {
           next.review.submission?.submission_id !==
             previous?.review.submission?.submission_id;
         if (submissionChanged) {
+          submitBlockedRef.current = false;
           setSubmitBlocked(false);
         }
         const preserveContinuation =
@@ -412,6 +387,7 @@ export function ProductViewer() {
           next.review.submission?.status === "partial"
         ) {
           const uncertain = next.review.submission.status === "uncertain";
+          submitBlockedRef.current = uncertain;
           setSubmitBlocked(uncertain);
         }
         setScreen({ kind: "review", ...state });
@@ -444,6 +420,7 @@ export function ProductViewer() {
           activeReview.current = undefined;
           setPresentationDestination(undefined);
           lastConfirmedReview.current = undefined;
+          submitBlockedRef.current = false;
           setSubmitBlocked(false);
           setContinueSubmitted(false);
           setReviewDisclosures(new Map());
@@ -465,6 +442,7 @@ export function ProductViewer() {
       host.ontoolresult = (result) => applyPayload(result);
       host.ontoolcancelled = () => {
         cancellationEpoch.current++;
+        ignorePassivePayloads.current = true;
         deactivateReview();
         setScreen({ kind: "cancelled" });
         setMessage(
@@ -472,10 +450,13 @@ export function ProductViewer() {
         );
       };
       host.onerror = () => {
+        ignorePassivePayloads.current = true;
         deactivateReview();
-        setMessage(
-          "The Local basket connection failed. Continue in conversation or reopen your current Local basket.",
-        );
+        setScreen({
+          kind: "error",
+          message:
+            "The Local basket connection failed. Refresh the Local basket or continue in conversation.",
+        });
       };
     },
   });
@@ -489,6 +470,31 @@ export function ProductViewer() {
     },
     [connectedApp],
   );
+  const handleCallFailure = (
+    cause: unknown,
+    recovery: boolean,
+    uncertainOnFailure: boolean,
+  ) => {
+    ignorePassivePayloads.current = true;
+    const text = cause instanceof Error ? cause.message : "Update failed";
+    if (isUncertainFailure(recovery, uncertainOnFailure, text)) {
+      submitBlockedRef.current = true;
+      setSubmitBlocked(true);
+      setConfirmSubmit(false);
+      setMessage(
+        "Submission outcome is uncertain. Inspect the actual Nemlig basket; do not retry automatically.",
+      );
+      return;
+    }
+    deactivateReview();
+    setPendingQuantities(new Map());
+    setScreen({
+      kind: "error",
+      message:
+        "We could not confirm this action. Refresh the Local basket to read its current state before continuing.",
+    });
+  };
+  // fallow-ignore-next-line complexity
   const call = async (
     name: string,
     args: Record<string, unknown>,
@@ -500,7 +506,7 @@ export function ProductViewer() {
       setMessage(
         error
           ? "The Local basket could not connect. Continue in conversation or reopen the current Local basket."
-          : "Connecting to your Local basket…",
+          : "Connecting to the current Local basket…",
       );
       return false;
     }
@@ -530,90 +536,16 @@ export function ProductViewer() {
       if (!applyPayload(result, true, adoptPresentationDestination)) {
         throw new Error("Could not confirm the updated Local basket.");
       }
+      if (
+        name === "submit_product_review" ||
+        name === "update_product_review"
+      ) {
+        ignorePassivePayloads.current = true;
+      }
       setMessage("");
       return true;
     } catch (cause) {
-      const text = cause instanceof Error ? cause.message : "Update failed";
-      if (/out of date/i.test(text)) {
-        deactivateReview();
-        activeReview.current = undefined;
-        try {
-          const current = await connectedApp.callServerTool({
-            name: "update_product_review",
-            arguments: { action: { kind: "show" } },
-          });
-          if (
-            !current.isError &&
-            requestEpoch === cancellationEpoch.current &&
-            applyPayload(current, true)
-          ) {
-            const snapshot = readPayload(current);
-            setMessage(
-              snapshot?.kind === "review"
-                ? "Current Local basket reloaded. This card is read-only until you make it current."
-                : "No current Local basket remains. Ask before starting a new one.",
-            );
-          } else {
-            setScreen({ kind: "stale" });
-            setMessage(
-              "Could not reload the current Local basket. Ask in chat to reopen it.",
-            );
-          }
-        } catch {
-          setScreen({ kind: "stale" });
-          setMessage(
-            "Could not reload the current Local basket. Ask in chat to reopen it.",
-          );
-        }
-      } else if (/unavailable/i.test(text)) {
-        deactivateReview();
-        activeReview.current = undefined;
-        setScreen({ kind: "stale" });
-        setMessage("");
-      } else if (recovery && /stale|no active draft/i.test(text)) {
-        deactivateReview();
-        const latest = activeReview.current;
-        try {
-          if (latest?.view_id) {
-            const fresh = await connectedApp.callServerTool({
-              name: "update_product_review",
-              arguments: {
-                view_id: latest.view_id,
-                review_id: latest.review.review_id,
-                revision: latest.review.revision,
-                action: { kind: "show" },
-              },
-            });
-            if (!fresh.isError && requestEpoch === cancellationEpoch.current) {
-              applyPayload(fresh, true);
-            } else {
-              activeReview.current = undefined;
-              setScreen({ kind: "stale" });
-            }
-          } else {
-            activeReview.current = undefined;
-            setScreen({ kind: "stale" });
-          }
-        } catch {
-          activeReview.current = undefined;
-          setScreen({ kind: "stale" });
-        }
-        setMessage(
-          "Your last action was not applied. The current Local basket was refreshed; choose again.",
-        );
-      } else if (!recovery && (uncertainOnFailure || /uncertain/i.test(text))) {
-        setSubmitBlocked(true);
-        setConfirmSubmit(false);
-        setMessage(
-          "Submission outcome is uncertain. Inspect the actual Nemlig basket; do not retry automatically.",
-        );
-      } else {
-        deactivateReview();
-        setPendingQuantities(new Map());
-        setMessage(
-          "We could not confirm this action. Refresh the Local basket to check its state before trying again.",
-        );
-      }
+      handleCallFailure(cause, recovery, uncertainOnFailure);
       return false;
     } finally {
       callLock.current = false;
@@ -626,17 +558,12 @@ export function ProductViewer() {
   const review = screen.kind === "review" ? screen.review : undefined;
   const update = async (action: Record<string, unknown>) => {
     const latest = activeReview.current;
-    if (!latest?.active || !latest.view_id || callLock.current) {
+    if (!latest?.active || callLock.current) {
       return false;
     }
     const result = await call(
       "update_product_review",
-      {
-        view_id: latest.view_id,
-        review_id: latest.review.review_id,
-        revision: latest.review.revision,
-        action,
-      },
+      { action },
       true,
       action.kind === "alternatives" || action.kind === "replace",
     );
@@ -688,13 +615,7 @@ export function ProductViewer() {
           removePendingQuantity(product_id, quantity);
           continue;
         }
-        if (!latest.view_id) {
-          return false;
-        }
         const ok = await call("update_product_review", {
-          view_id: latest.view_id,
-          review_id: latest.review.review_id,
-          revision: latest.review.revision,
           action: { kind: "quantity", product_id, quantity },
         });
         if (!ok) {
@@ -753,16 +674,12 @@ export function ProductViewer() {
       );
     }
   };
-  const activateCurrentDraftList = async () => {
-    setActivatingCurrent(true);
-    try {
-      // The model tool path retains the conversation scope that owns the review.
-      await sendFollowUp(
-        "Reopen the current Local basket without changing it. If it is no longer available, say so; do not create a new Local basket.",
-      );
-    } finally {
-      setActivatingCurrent(false);
+  const refreshCurrentDraftList = async () => {
+    if (!connectedApp || !isConnected) {
+      setMessage("Reconnect to read this conversation's current Local basket.");
+      return;
     }
+    await call("update_product_review", { action: { kind: "show" } }, true);
   };
   const endDraft = async () => {
     setConfirmEnd(false);
@@ -775,11 +692,17 @@ export function ProductViewer() {
   const confirmPreparedSubmission = async () => {
     const ok = await flushQuantities();
     const confirmed = activeReview.current?.review;
+    const submissionSelection = (snapshot: Review) =>
+      JSON.stringify(
+        snapshot.items
+          .map(({ product_id, quantity }) => [product_id, quantity])
+          .sort(([left], [right]) => left - right),
+      );
     if (
       !ok ||
       !confirmed?.submission ||
-      confirmed.review_id !== review?.review_id ||
-      confirmed.revision !== review.revision ||
+      !review ||
+      submissionSelection(confirmed) !== submissionSelection(review) ||
       confirmed.submission.status !== "prepared" ||
       confirmed.submission.submission_id !== review.submission?.submission_id ||
       callLock.current
@@ -790,19 +713,15 @@ export function ProductViewer() {
       );
       return;
     }
+    submitBlockedRef.current = true;
+    setSubmitBlocked(true);
     setConfirmSubmit(false);
-    const latest = activeReview.current;
-    if (!latest?.view_id) {
+    if (!activeReview.current?.active) {
       return;
     }
     const success = await call(
       "submit_product_review",
-      {
-        view_id: latest.view_id,
-        review_id: confirmed.review_id,
-        revision: confirmed.revision,
-        submission_id: confirmed.submission.submission_id,
-      },
+      { submission_id: confirmed.submission.submission_id },
       false,
       false,
       true,
@@ -812,12 +731,7 @@ export function ProductViewer() {
         if (connectedApp) {
           const current = await connectedApp.callServerTool({
             name: "update_product_review",
-            arguments: {
-              view_id: latest.view_id,
-              review_id: confirmed.review_id,
-              revision: confirmed.revision,
-              action: { kind: "show" },
-            },
+            arguments: { action: { kind: "show" } },
           });
           if (!current.isError && applyPayload(current, true)) {
             const snapshot = readPayload(current);
@@ -892,7 +806,6 @@ export function ProductViewer() {
             : "Connecting to Nemlig…"
           : undefined,
         busy,
-        activatingCurrent,
         confirmSubmit,
         confirmEnd,
         continueSubmitted,
@@ -900,6 +813,7 @@ export function ProductViewer() {
       }}
       actions={{
         onNavigate: navigate,
+        onRefresh: () => void refreshCurrentDraftList(),
         onDisclosureChange: (productId, expanded) =>
           updateDisclosure(productId, (current) => ({ ...current, expanded })),
         onFactExpandedChange: (productId, factKey, expanded) =>
@@ -912,7 +826,6 @@ export function ProductViewer() {
             }
             return { ...current, facts };
           }),
-        onActivateCurrent: () => void activateCurrentDraftList(),
         onQuantity: setQuantity,
         onRemove: (item) =>
           afterFlush({ kind: "remove", product_ids: [item.product_id] }),

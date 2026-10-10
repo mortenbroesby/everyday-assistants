@@ -196,7 +196,7 @@ const formatProduct = (view: ProductView): string => {
     view.context === "basket"
       ? `Nemlig basket quantity ${formatNumber(view.basket?.quantity) ?? "unknown"}; line total ${formatMoney(view.basket?.line_total)}`
       : view.context === "review"
-        ? `draft list quantity ${formatNumber(view.review?.quantity) ?? "unknown"}; line total ${formatMoney(view.review?.line_total)}; approved ${view.review?.approved === true ? "yes" : "no"}`
+        ? `local basket quantity ${formatNumber(view.review?.quantity) ?? "unknown"}; line total ${formatMoney(view.review?.line_total)}; approved ${view.review?.approved === true ? "yes" : "no"}`
         : "";
   const details = product.details?.length
     ? product.details.map(({ key, value }) => `${key}: ${value}`).join("; ")

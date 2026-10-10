@@ -11,16 +11,16 @@ The system SHALL maintain the same principal-and-conversation-bound temporary re
 - **WHEN** an older card sends an acceptance action
 - **THEN** the server does not create a hidden subset; every current local row remains a submission candidate or the stale action fails without changing the review
 
-#### Scenario: Conflicting or foreign state
-- **WHEN** a caller changes a stale revision or accesses another principal's draft
-- **THEN** the action fails without changing state and a stale authorized caller can refresh the latest snapshot
+#### Scenario: Sequential or foreign action
+- **WHEN** one supported card updates the conversation's current Local basket, a concurrent action arrives, or another principal attempts access
+- **THEN** the supported action uses the owner list without a card or revision identifier, while concurrent or foreign actions fail without changing it
 
 #### Scenario: Draft lifetime ends
 - **WHEN** the user finishes shopping, its process restarts, or bounded memory eviction removes it
 - **THEN** the system reports that the Local basket is unavailable without recreating it silently or changing the provider basket
 
 ### Requirement: Contextual alternatives and reversible navigation
-The system SHALL show alternatives for one identified local product in a dedicated full-page view with Back, the current product, search, selectable options, and an explicit Use selected alternative action. Searching, navigating back, or cancelling SHALL leave the local row unchanged. Replacing a product SHALL preserve its quantity and Ready status, update only the local row, and invalidate any prepared submission. Alternative results SHALL remain tied to their exact target and current review revision.
+The system SHALL show alternatives for one identified local product in a dedicated full-page view with Back, the current product, search, selectable options, and an explicit Use selected alternative action. Searching, navigating back, or cancelling SHALL leave the local row unchanged. Replacing a product SHALL preserve its quantity and Ready status, update only the local row, and invalidate any prepared submission. Alternative results SHALL remain tied to their exact target in the owner list.
 
 #### Scenario: Cancel an alternative choice
 - **WHEN** the user opens alternatives for a local basket product then goes back

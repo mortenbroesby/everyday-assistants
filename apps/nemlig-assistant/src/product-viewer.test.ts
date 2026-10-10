@@ -52,7 +52,7 @@ test("permanent viewer identity and complete headless fallback stay in sync", ()
     "approved no",
     "12 kr/l",
     "Fat: 1.5%",
-    "draft list quantity 2",
+    "local basket quantity 2",
   ]) {
     assert.match(text, new RegExp(fact, "u"));
   }
@@ -182,7 +182,7 @@ test("headless product text preserves unknown, zero, false, empty, and whitespac
   );
   assert.equal(
     productViewsToText([zeroFalse]),
-    "1. Vand — 0.00 kr DKK — unavailable; organic no; frozen no; on discount no; unit price 0.00 kr DKK; draft list quantity 0; line total 0.00 kr; approved no.",
+    "1. Vand — 0.00 kr DKK — unavailable; organic no; frozen no; on discount no; unit price 0.00 kr DKK; local basket quantity 0; line total 0.00 kr; approved no.",
   );
   assert.equal(
     productViewsToText([whitespace]),
@@ -212,7 +212,7 @@ test("headless product text preserves multiple rows and unavailable outputs exac
         },
       },
     ]),
-    "1. First — Fresh — 12.00 kr DKK — 12 kr/l — 1 l — available; organic no; frozen no; on discount no; unit price 12.00 kr DKK (12 kr/l); draft list quantity 2; line total unknown price; approved no.\n2. Second — Fresh — 12.00 kr DKK — 12 kr/l — 1 l — available; organic no; frozen no; on discount no; unit price 12.00 kr DKK (12 kr/l); draft list quantity 2; line total unknown price; approved no.",
+    "1. First — Fresh — 12.00 kr DKK — 12 kr/l — 1 l — available; organic no; frozen no; on discount no; unit price 12.00 kr DKK (12 kr/l); local basket quantity 2; line total unknown price; approved no.\n2. Second — Fresh — 12.00 kr DKK — 12 kr/l — 1 l — available; organic no; frozen no; on discount no; unit price 12.00 kr DKK (12 kr/l); local basket quantity 2; line total unknown price; approved no.",
   );
   assert.equal(
     productViewsToText([

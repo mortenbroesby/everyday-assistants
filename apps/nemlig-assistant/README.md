@@ -152,21 +152,18 @@ can also discard it; missing state is reported rather than silently recreated.
 Each principal retains at most eight conversation drafts of up to 500 products. Hosts
 without conversation context cannot access a hosted draft. ChatGPT does not
 provide a reliable notification when a conversation is closed.
-They are not saved shopping plans or named lists. Transcript cards start inactive:
-**Open current Local basket** reads this conversation’s current draft before showing
-products or shopping controls. Reloading an old message does not restore its
-historical draft list. When a current viewer detects a stale card, it automatically
-reads and displays the current list in that same card, read-only. **Make this card
-current** explicitly gives it a fresh view token; this does not edit the list or basket.
-If the list is gone, the card asks before starting over. Cards already cached by ChatGPT
-cannot gain this behavior; ask in chat to reopen the list from those older cards. A
-stale edit refreshes once without replaying it; connection failures hide editing
-controls until you explicitly reopen current state.
-If the Local basket is gone, **Start new Local basket** rechecks the original products and
-quantities without restoring an earlier submission approval. Submitted,
-uncertain, or known-partial snapshots instead direct you to inspect the actual
-basket; a known partial result says how many additions were verified and that
-no later write was sent.
+They are not saved shopping plans or named lists. A conversation has one temporary
+Local basket, and supported cards are interchangeable clients of that same list.
+Starting another card does not create a separate list or invalidate earlier
+supported cards. Reloading a historical message does not restore its old snapshot;
+use `start_product_review` without items to render the current list. A missing list
+stays unavailable until explicitly started again. Remounts require the current
+supported viewer bundle; already-mounted older bundles may not work. After a
+local action, the viewer ignores unsolicited host snapshots that could roll it
+back, but offers a read-only refresh. Failed mutations are never replayed.
+Submitted, uncertain, or known-partial outcomes direct you to inspect the actual
+Nemlig basket; a known partial result says how many additions were verified and
+that no later write was sent.
 The viewer uses the permanent `ui://nemlig/shell.html` identity. The previous
 `ui://nemlig/draft-list.html` address and every earlier product-viewer address
 resolve only to an inert, read-only notice, so historical cards cannot regain
@@ -177,13 +174,11 @@ server cannot remove those transcript cards. A release, resource read, and
 native rendered build are separate facts: the supported recovery path is an
 operator-managed clean connection cutover followed by a new chat.
 
-Run `pnpm nemlig:smoke:review-ui`, open its loopback URL,
-and click **Run regression smoke**. The real MCP adapter and fake catalogue
-exercise inactive mount/remount, conflicting revisions, a failed connection,
-process restart, explicit recovery and clearing the Local basket. The page reports PASS
-only when the stale edit was not replayed, restart preserved quantities, and
-provider basket calls remained zero. No credentials
-are required; provider basket access is denied by the fixture.
+Run `pnpm nemlig:smoke:review-ui` from the repository root. Its synthetic
+browser checks exercise the real MCP adapter, one shared Local basket, swipe
+actions, alternatives, exact whole-list preparation, failure recovery, and the
+packaged viewer. They use fake products and deny provider basket writes; no
+credentials are required.
 
 For a reproducible visual review of the current viewer, run:
 

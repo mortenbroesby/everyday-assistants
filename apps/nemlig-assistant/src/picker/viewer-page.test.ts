@@ -34,11 +34,8 @@ const props = (thumbnail?: string): ViewerPageProps => ({
     screen: {
       kind: "review",
       active: true,
-      view_id: "fixture-view",
       review: {
-        review_id: "fixture-review",
-        revision: 1,
-        destination: "needs-review",
+        destination: "ready",
         items: [
           {
             product_id: 7,
@@ -55,7 +52,6 @@ const props = (thumbnail?: string): ViewerPageProps => ({
     thumbnails: thumbnail ? new Map([[product, thumbnail]]) : new Map(),
     message: "",
     busy: false,
-    activatingCurrent: false,
     confirmSubmit: false,
     confirmEnd: false,
     continueSubmitted: false,
@@ -65,7 +61,7 @@ const props = (thumbnail?: string): ViewerPageProps => ({
     onNavigate: noop,
     onDisclosureChange: noop,
     onFactExpandedChange: noop,
-    onActivateCurrent: noop,
+    onRefresh: noop,
     onQuantity: noop,
     onRemove: noop,
     onOpenAlternatives: noop,
@@ -117,14 +113,9 @@ test("shared viewer page keeps thumbnails attached to their individual views", (
   pageProps.model.screen = {
     kind: "review",
     active: true,
-    view_id: "fixture-view",
     review: {
-      review_id: "fixture-review",
-      revision: 1,
       destination: "alternatives",
-      items: [
-        { product_id: 7, quantity: 1, state: "needs-review", view: product },
-      ],
+      items: [{ product_id: 7, quantity: 1, state: "ready", view: product }],
       alternatives: { product_id: 7, query: "yoghurt", views: [alternative] },
     },
   };

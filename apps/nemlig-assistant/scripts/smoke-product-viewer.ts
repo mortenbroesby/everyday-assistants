@@ -29,26 +29,12 @@ declare global {
     }>;
     messages: string[];
     hostErrors: string[];
-    getViewId: () => string;
     providerWrites: number;
     failNext: boolean;
     failGenericNext: boolean;
     submissionAttempts: number;
-    sendForeign: () => void;
-    sendDuplicate: () => void;
-    sendCancel: () => void;
-    sendSubmitted: () => void;
-    sendMalformed: () => void;
-    sendEnded: () => void;
-    sendUnavailable: () => void;
-    sendUnavailableProduct: () => void;
-    supersedeAndReload: () => void;
-    reopenCurrentReview: () => void;
+    sendPassive: () => void;
     getReview: () => ProductReviewSnapshot;
-    setLegacyNeedsReview: () => void;
-    setReadyForDisclosure: (ready: boolean, quantity?: number) => void;
-    setAllReady: (ready: boolean) => void;
-    replaceReviewIdentity: () => void;
   }
 }
 
@@ -85,13 +71,11 @@ const fixtureView = (id: number, name: string) => ({
   review: { kind: "review", quantity: 1, approved: false },
 });
 const initialReview = {
-  review_id: "synthetic-review",
-  revision: 1,
-  destination: "needs-review",
+  destination: "ready",
   items: [1, 2].map((id) => ({
     product_id: id,
     quantity: id,
-    state: id === 2 ? "needs-review" : "ready",
+    state: "ready",
     view: fixtureView(id, id === 1 ? "Synthetic milk" : longOatsName),
   })),
 };
@@ -99,59 +83,38 @@ const fixtureJson = JSON.stringify(initialReview);
 const parentDocument = `<!doctype html><meta charset="utf-8"><title>synthetic MCP host</title>
 <iframe title="viewer" src="/resource" style="width:100%;height:900px;border:0"></iframe>
 <script>
-window.calls=[]; window.messages=[]; window.providerWrites=0; window.hostErrors=[]; let review=${fixtureJson}; let viewId='synthetic-view-1'; let initialViewIdOverride; window.submissionAttempts=0; window.failNext=false; window.failGenericNext=false;
+window.calls=[]; window.messages=[]; window.providerWrites=0; window.hostErrors=[]; let review=${fixtureJson}; window.submissionAttempts=0; window.failNext=false; window.failGenericNext=false;
 const alternativeView=${JSON.stringify(fixtureView(3, "Synthetic alternative"))};
 const frame=document.querySelector('iframe');
 const post=(event,message)=>event.source.postMessage(message,location.origin);
-const result=(review,presentedViewId=viewId)=>({structuredContent:{review,view_id:presentedViewId}});
+const result=(review)=>({structuredContent:{review}});
 const apply=(action)=>{
  if(action.kind==='show') return result(review);
  if(action.kind==='navigate') review.destination=action.destination;
  if(action.kind==='quantity') review.items.find(item=>item.product_id===action.product_id).quantity=action.quantity;
- if(action.kind==='accept') for(const item of review.items) if(action.product_ids.includes(item.product_id)) item.state='ready';
- if(action.kind==='revisit') for(const item of review.items) if(action.product_ids.includes(item.product_id)) item.state='needs-review';
  if(action.kind==='remove') review.items=review.items.filter(item=>!action.product_ids.includes(item.product_id));
  if(action.kind==='alternatives'){ review.destination='alternatives'; review.alternatives={product_id:action.product_id,query:action.query,views:[alternativeView]}; }
  if(action.kind==='replace'){ const target=review.items.find(item=>item.product_id===action.product_id); target.view=alternativeView; target.product_id=action.replacement_id; target.state='ready'; review.destination='ready'; review.alternatives=undefined; }
  if(action.kind==='prepare_submission') { const lines=review.items.map(item=>({product_id:item.product_id,quantity:item.quantity,name:item.view.product.name,item_price:item.view.product.price,line_total:item.quantity*item.view.product.price})); review.submission={status:'prepared',submission_id:'synthetic-submission',review:{lines,expected_products_price:lines.reduce((total,line)=>total+line.line_total,0)}}; }
  if(action.kind!=='prepare_submission' && action.kind!=='navigate' && action.kind!=='alternatives') delete review.submission;
- review.revision++; return result(review);
+ return result(review);
 };
-window.sendForeign=()=>{const foreign=JSON.parse(JSON.stringify(review));foreign.review_id='foreign-review';foreign.revision+=20;foreign.items=[{product_id:99,quantity:1,state:'needs-review',view:${JSON.stringify(fixtureView(99, "Foreign product"))}}];frame.contentWindow.postMessage({jsonrpc:'2.0',method:'ui/notifications/tool-result',params:result(foreign)},location.origin)};
-window.sendDuplicate=()=>frame.contentWindow.postMessage({jsonrpc:'2.0',method:'ui/notifications/tool-result',params:result(JSON.parse(JSON.stringify(review)))},location.origin);
-window.sendCancel=()=>frame.contentWindow.postMessage({jsonrpc:'2.0',method:'ui/notifications/tool-cancelled',params:{reason:'synthetic user cancellation'}},location.origin);
-window.sendSubmitted=()=>{review.submission.status='submitted';frame.contentWindow.postMessage({jsonrpc:'2.0',method:'ui/notifications/tool-result',params:result(JSON.parse(JSON.stringify(review)))},location.origin)};
-window.sendMalformed=()=>{const malformed=JSON.parse(JSON.stringify(review));malformed.submission.review.lines=[null];frame.contentWindow.postMessage({jsonrpc:'2.0',method:'ui/notifications/tool-result',params:result(malformed)},location.origin)};
-window.sendEnded=()=>frame.contentWindow.postMessage({jsonrpc:'2.0',method:'ui/notifications/tool-result',params:{structuredContent:{ended:true}}},location.origin);
-window.sendUnavailable=()=>frame.contentWindow.postMessage({jsonrpc:'2.0',method:'ui/notifications/tool-result',params:{structuredContent:{unavailable:true}}},location.origin);
-window.sendUnavailableProduct=()=>frame.contentWindow.postMessage({jsonrpc:'2.0',method:'ui/notifications/tool-result',params:{structuredContent:{views:[{context:'search',status:'unavailable',product_id:404}]}}},location.origin);
-window.getViewId=()=>viewId; window.getReview=()=>JSON.parse(JSON.stringify(review)); window.setLegacyNeedsReview=()=>{review.items[1].state='needs-review';};
-window.supersedeAndReload=()=>{initialViewIdOverride=viewId;viewId='synthetic-view-'+(Number(viewId.split('-').at(-1))+1);frame.src='/resource'};
-window.setReadyForDisclosure=(ready,quantity)=>{const item=review.items.find(item=>item.product_id===2);item.state=ready?'ready':'needs-review';if(quantity!==undefined)item.quantity=quantity;review.revision++;frame.contentWindow.postMessage({jsonrpc:'2.0',method:'ui/notifications/tool-result',params:result(JSON.parse(JSON.stringify(review)))},location.origin)};
-window.setAllReady=(ready)=>{for(const item of review.items)item.state=ready?'ready':'needs-review';review.revision++;frame.contentWindow.postMessage({jsonrpc:'2.0',method:'ui/notifications/tool-result',params:result(JSON.parse(JSON.stringify(review)))},location.origin)};
-window.replaceReviewIdentity=()=>{review.review_id='second-synthetic-review';review.revision++;viewId='synthetic-view-2';frame.contentWindow.postMessage({jsonrpc:'2.0',method:'ui/notifications/tool-result',params:result(JSON.parse(JSON.stringify(review)))},location.origin)};
-window.reopenCurrentReview=()=>{viewId='synthetic-view-'+(Number(viewId.split('-').at(-1))+1);frame.contentWindow.postMessage({jsonrpc:'2.0',method:'ui/notifications/tool-result',params:result(JSON.parse(JSON.stringify(review)))},location.origin)};
+window.getReview=()=>JSON.parse(JSON.stringify(review));
+window.sendPassive=()=>{const older=JSON.parse(JSON.stringify(review));older.items=[{product_id:99,quantity:1,state:'ready',view:${JSON.stringify(fixtureView(99, "Foreign product"))}}];frame.contentWindow.postMessage({jsonrpc:'2.0',method:'ui/notifications/tool-result',params:result(older)},location.origin)};
 window.addEventListener('message',event=>{
  if(event.source!==frame.contentWindow || event.origin!==location.origin) return;
  const message=event.data; if(!message || message.jsonrpc!=='2.0') return;
  if(message.method==='ui/initialize') return post(event,{jsonrpc:'2.0',id:message.id,result:{protocolVersion:message.params.protocolVersion,hostInfo:{name:'synthetic-host',version:'1'},hostCapabilities:{},hostContext:{theme:'light'}}});
- if(message.method==='ui/notifications/initialized'){const presented=result(review,initialViewIdOverride??viewId);initialViewIdOverride=undefined;return post(event,{jsonrpc:'2.0',method:'ui/notifications/tool-result',params:presented})}
- if(message.method==='ui/message'){const text=message.params.content.map(block=>block.type==='text'?block.text:'').join('');window.messages.push(text);post(event,{jsonrpc:'2.0',id:message.id,result:{}});if(text.startsWith('Reopen the current Local basket')){viewId='synthetic-view-'+(Number(viewId.split('-').at(-1))+1);setTimeout(()=>frame.contentWindow.postMessage({jsonrpc:'2.0',method:'ui/notifications/tool-result',params:result(review)},location.origin),0)}return}
+ if(message.method==='ui/notifications/initialized')return post(event,{jsonrpc:'2.0',method:'ui/notifications/tool-result',params:result(review)});
+ if(message.method==='ui/message'){const text=message.params.content.map(block=>block.type==='text'?block.text:'').join('');window.messages.push(text);post(event,{jsonrpc:'2.0',id:message.id,result:{}});return}
  if(message.method==='tools/call'){
   const {name,arguments:args}=message.params; window.calls.push({name,args});
-  if(name==='update_product_review'&&args.view_id&&args.view_id!==viewId)return post(event,{jsonrpc:'2.0',id:message.id,error:{code:-32602,message:'This Local basket card is out of date'}})
-  if(name==='update_product_review'&&args.action?.kind==='show'){
-   if(args.activate){viewId='synthetic-view-'+(Number(viewId.split('-').at(-1))+1);return post(event,{jsonrpc:'2.0',id:message.id,result:result(review)})}
-   if(!args.view_id)return post(event,{jsonrpc:'2.0',id:message.id,result:{structuredContent:{review}}});
-  }
   if(name==='submit_product_review'){
    window.submissionAttempts++;
-   if(window.failNext){window.failNext=false;review.revision++;review.submission.status='uncertain';return post(event,{jsonrpc:'2.0',id:message.id,error:{code:-32000,message:'Write outcome uncertain'}})}
+   if(window.failNext){window.failNext=false;review.submission.status='uncertain';return post(event,{jsonrpc:'2.0',id:message.id,error:{code:-32000,message:'Write outcome uncertain'}})}
    return post(event,{jsonrpc:'2.0',id:message.id,result:result({...review,submission:{...review.submission,status:'submitted'}})});
   }
-  if(name==='update_product_review' && args.action?.kind==='quantity' && window.failNext){ window.failNext=false; return post(event,{jsonrpc:'2.0',id:message.id,error:{code:-32602,message:'Draft list revision is stale'}}); }
   if(name==='update_product_review' && window.failGenericNext){window.failGenericNext=false;return post(event,{jsonrpc:'2.0',id:message.id,error:{code:-32000,message:'Temporary synthetic failure'}})}
-  if(name==='update_product_review' && args.action?.kind==='show' && !args.view_id) viewId='synthetic-view-'+(Number(viewId.split('-').at(-1))+1);
   try { const response=name==='update_product_review'?apply(args.action):result(review); return post(event,{jsonrpc:'2.0',id:message.id,result:response}); }
   catch(error){window.hostErrors.push(String(error));return post(event,{jsonrpc:'2.0',id:message.id,error:{code:-32603,message:String(error)}})}
  }
@@ -346,83 +309,6 @@ try {
   const milkDisclosure = milkCard.locator(
     '[data-viewer-component="product-summary"]',
   );
-  const idsBeforeStaleEdit = await page.evaluate(() =>
-    window
-      .getReview()
-      .items.map((item: { product_id: number }) => item.product_id),
-  );
-  const callsBeforeStaleEdit = await page.evaluate(() => window.calls.length);
-  await page.evaluate(() => window.supersedeAndReload());
-  await frame.getByRole("heading", { name: "Local basket" }).waitFor();
-  await milkDisclosure.click();
-  await milkCard
-    .getByRole("button", { name: "Remove from Local basket" })
-    .click();
-  await page.waitForFunction(
-    (before) => window.calls.length >= before + 2,
-    callsBeforeStaleEdit,
-  );
-  assert.deepEqual(
-    await page.evaluate(
-      (before) =>
-        window.calls.slice(before).map((call) => call.args.action?.kind),
-      callsBeforeStaleEdit,
-    ),
-    ["remove", "show"],
-    "stale action was replayed or skipped read-only recovery",
-  );
-  assert.deepEqual(
-    await page.evaluate(() =>
-      window
-        .getReview()
-        .items.map((item: { product_id: number }) => item.product_id),
-    ),
-    idsBeforeStaleEdit,
-    "stale removal changed the Local basket",
-  );
-  await page.evaluate(() => window.reopenCurrentReview());
-  await frame.getByRole("heading", { name: "Local basket" }).waitFor();
-
-  await page.evaluate(() => window.sendForeign());
-  await frame.getByText("Synthetic milk").waitFor();
-  assert.equal(
-    await frame.getByText("Foreign product").count(),
-    0,
-    "foreign review displaced the active Local basket",
-  );
-  await page.evaluate(() => window.sendCancel());
-  await frame
-    .getByText(
-      "Request cancelled. Continue in conversation to confirm the current Local basket before continuing.",
-    )
-    .waitFor();
-  assert.equal(
-    await frame.locator(".product-list").count(),
-    0,
-    "host cancellation left basket controls active",
-  );
-  await page.evaluate(() => window.reopenCurrentReview());
-  await frame.getByRole("heading", { name: "Local basket" }).waitFor();
-
-  await milkDisclosure.click();
-  await page.evaluate(() => {
-    window.failGenericNext = true;
-  });
-  await milkCard
-    .getByRole("button", { name: "Increase quantity of Synthetic milk" })
-    .click();
-  await frame.getByText("We could not confirm this action").waitFor();
-  await frame.getByText(/This Local basket card is inactive/u).waitFor();
-  assert.equal(
-    await milkCard
-      .getByRole("button", { name: "Increase quantity of Synthetic milk" })
-      .count(),
-    0,
-    "generic failure left editable stale controls active",
-  );
-  await page.evaluate(() => window.reopenCurrentReview());
-  await frame.getByRole("heading", { name: "Local basket" }).waitFor();
-
   const callsBeforeSwipe = await page.evaluate(() => window.calls.length);
   const swipeRow = frame.locator(".basket-swipe-row").first();
   const box = await swipeRow.boundingBox();
@@ -541,6 +427,12 @@ try {
     .click();
   await page.waitForFunction(() => window.getReview().items[0]?.quantity === 2);
   await frame.getByRole("heading", { name: "Local basket" }).waitFor();
+  await page.evaluate(() => window.sendPassive());
+  assert.equal(
+    await frame.getByText("Foreign product").count(),
+    0,
+    "a passive host snapshot replaced a confirmed Local basket edit",
+  );
   assert.equal(
     await page.evaluate(() => window.getReview().items[0]?.quantity),
     2,
@@ -588,7 +480,6 @@ try {
   });
   await increase.click();
   const callsBeforeSubmit = await page.evaluate(() => window.calls.length);
-  await page.evaluate(() => window.setLegacyNeedsReview());
   await frame.getByRole("button", { name: "Submit to Nemlig" }).click();
   await frame
     .getByRole("heading", { name: "Ready to submit the Local basket" })
@@ -710,17 +601,6 @@ try {
     await uncertainPage.evaluate(() => window.submissionAttempts),
     1,
     "uncertain write was retried",
-  );
-  await uncertainPage.evaluate(() => window.reopenCurrentReview());
-  await uncertainFrame
-    .getByRole("heading", { name: "We could not verify the addition" })
-    .waitFor();
-  assert.equal(
-    await uncertainFrame
-      .getByRole("button", { name: "Add to Nemlig basket" })
-      .count(),
-    0,
-    "reopening an uncertain submission offered a retry",
   );
   await uncertainPage.close();
 

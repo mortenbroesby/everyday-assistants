@@ -201,35 +201,39 @@ recorded release steps; they SHALL NOT be inferred from healthy edge endpoints.
 - **THEN** selecting and accepting an exact product changes only Ready,
   and navigation back to To decide preserves both lists without provider writes
 
-### Requirement: Inactive historical shopping cards
-Host-supplied review snapshots SHALL start inactive without product hydration or
-shopping controls. Explicit activation SHALL read the active conversation before
-rendering controls. Retired known viewer resources SHALL resolve to inert notices
-without backend shopping calls and offer a conversational route to the current
-review. The app SHALL NOT infer message age from time or shared browser storage.
+### Requirement: One conversation-owned Draft list across supported cards
+The authenticated conversation SHALL own one temporary Draft list, and supported
+current-bundle cards SHALL be interchangeable clients of it. Normal card actions
+SHALL use `{action}` without card, review, or revision identifiers. A remount
+SHALL require the current supported viewer bundle and its current invocation
+snapshot; compatibility with already-mounted predecessor bundles SHALL NOT be
+promised. The app SHALL NOT infer message age from time or shared browser storage.
 
-#### Scenario: Reopen or remount a transcript card
-- **WHEN** the host supplies a retained review snapshot
-- **THEN** the card shows an explicit Open current review action instead of historical products or mutations
-- **AND** activation reads current state without replaying or restoring prior acceptance
+#### Scenario: Another supported card starts
+- **WHEN** the host renders a new supported card for the same conversation
+- **THEN** it shows the current owner list without creating a second list or
+  superseding earlier supported cards
 
-#### Scenario: Old revision is edited
-- **WHEN** another card or conversation action has advanced the revision
-- **THEN** the rejected action triggers at most one read-only refresh, clears transient selection, and reports the conflict in plain language without raw protocol errors or mutation replay
+#### Scenario: Delayed passive snapshot follows a local action
+- **WHEN** the mounted card receives a delayed passive snapshot after a local
+  action was successfully correlated
+- **THEN** the snapshot cannot roll the card back from its confirmed local state
 
-#### Scenario: Service cannot confirm the action
-- **WHEN** a tool fails or times out without a known stale-state result
-- **THEN** the card hides shopping controls and offers explicit read-only recovery without automatic mutation retries
+#### Scenario: Retired identifier is submitted
+- **WHEN** an old card supplies a card, review, or revision field to a normal
+  action
+- **THEN** strict input validation rejects it before provider or Draft list
+  mutation
 
 #### Scenario: Retired resource is requested
 - **WHEN** the host requests a known retired viewer URI
 - **THEN** it receives an inactive notice, not obsolete shopping controls or a missing-template response
 - **AND** server changes make no claim to remove documents already cached by the host
 
-#### Scenario: Activated current card receives a duplicate host snapshot
-- **WHEN** the same mounted review receives a matching tool result or globals update
-- **THEN** it stays active, preserves compatible presentation state, and does not
-  reopen or replace the card
+#### Scenario: Service cannot confirm the action
+- **WHEN** a tool fails or times out
+- **THEN** the card hides shopping controls and offers a sanitized read-only
+  refresh without stale-card wording or automatic mutation retries
 
 ### Requirement: ChatGPT uses the Draft list and Nemlig basket distinctly
 The integration SHALL route product discovery to `find_groceries`, current provider-basket inspection to `show_my_basket`, and temporary choices to the Draft list tools. It SHALL NOT claim that image URLs or a successful tool response prove a card rendered. If the host does not render the Draft list viewer, it SHALL present complete text results. It SHALL NOT direct users to retired tool IDs.

@@ -23,8 +23,6 @@ export interface ReviewItem {
   view: ProductView;
 }
 export interface ProductReviewSnapshot {
-  review_id: string;
-  revision: number;
   destination: ReviewDestination;
   items: ReviewItem[];
   submission?: {
@@ -49,11 +47,9 @@ export type ProductReviewAction =
   | { kind: "alternatives"; product_id: number; query: string; limit?: number }
   | { kind: "replace"; product_id: number; replacement_id: number };
 interface StoredReview {
-  owner: string;
   busy: boolean;
   snapshot: ProductReviewSnapshot;
   proposalId?: string;
-  viewId?: string;
 }
 type ReviewProposals = Pick<
   BasketProposalService,
@@ -68,7 +64,6 @@ const available = (view: ProductView): boolean =>
 /** Private, bounded, temporary state. Local edits cannot call a provider mutation. */
 export class ProductReviewService {
   private readonly drafts = new Map<string, StoredReview>();
-  private readonly activeByOwner = new Map<string, string>();
   private readonly startingOwners = new Set<string>();
   private readonly proposals?: ReviewProposals;
   private readonly now: () => number;
@@ -81,9 +76,9 @@ export class ProductReviewService {
     this.now = options.now ?? Date.now;
   }
 
-  private touch(stored: StoredReview): void {
-    this.drafts.delete(stored.snapshot.review_id);
-    this.drafts.set(stored.snapshot.review_id, stored);
+  private touch(owner: string, stored: StoredReview): void {
+    this.drafts.delete(owner);
+    this.drafts.set(owner, stored);
   }
 
   private makeRoom(): void {
@@ -102,9 +97,8 @@ export class ProductReviewService {
         "Active Local basket limit reached. Finish an in-progress Local basket and try again.",
       );
     }
-    const [id, draft] = oldest;
-    this.drafts.delete(id);
-    this.activeByOwner.delete(draft.owner);
+    const [owner] = oldest;
+    this.drafts.delete(owner);
   }
 
   private readItems(
@@ -140,57 +134,28 @@ export class ProductReviewService {
     );
   }
 
-  private get(owner: string, id: string): StoredReview {
-    const draft = this.drafts.get(id);
-    if (!draft || draft.owner !== owner) {
+  private get(owner: string): StoredReview {
+    const draft = this.drafts.get(owner);
+    if (!draft) {
       throw new NemligError(
-        "Local basket unavailable. Use update_product_review_conversation show without an old review_id or revision to find this conversation's active Local basket; never replay the failed edit. If none remains, ask before starting a new Local basket.",
+        "Local basket unavailable. Show this conversation's current Local basket; never replay the failed edit. If none remains, ask before starting a new Local basket.",
       );
     }
     return draft;
   }
 
-  show(owner: string, id: string): ProductReviewSnapshot {
-    const stored = this.get(owner, id);
-    this.touch(stored);
-    return structuredClone(stored.snapshot);
-  }
-
-  /** A new rendered card supersedes every older card for this conversation. */
-  createView(
-    owner: string,
-    id: string,
-  ): { review: ProductReviewSnapshot; view_id: string } {
-    const stored = this.get(owner, id);
-    const view_id = randomUUID();
-    stored.viewId = view_id;
-    this.touch(stored);
-    return { review: structuredClone(stored.snapshot), view_id };
-  }
-
-  assertCurrentView(owner: string, id: string, viewId: string): void {
-    const stored = this.get(owner, id);
-    if (!stored.viewId || stored.viewId !== viewId) {
-      throw new NemligError(
-        "This Local basket card is out of date. Use the newest card before making changes.",
-      );
-    }
-  }
-
   active(owner: string): ProductReviewSnapshot | undefined {
-    const id = this.activeByOwner.get(owner);
-    if (!id) {
+    const stored = this.drafts.get(owner);
+    if (!stored) {
       return undefined;
     }
-    const stored = this.get(owner, id);
-    this.touch(stored);
+    this.touch(owner, stored);
     return structuredClone(stored.snapshot);
   }
 
-  end(owner: string, id: string, revision: number): void {
-    const stored = this.lock(owner, id, revision);
-    this.drafts.delete(id);
-    this.activeByOwner.delete(owner);
+  end(owner: string): void {
+    const stored = this.lock(owner);
+    this.drafts.delete(owner);
     stored.busy = false;
   }
 
@@ -199,9 +164,10 @@ export class ProductReviewService {
     items: Array<{ product_id: number; quantity: number }>,
     signal?: AbortSignal,
   ): Promise<ProductReviewSnapshot> {
-    const activeId = this.activeByOwner.get(owner);
-    if (activeId) {
-      return structuredClone(this.get(owner, activeId).snapshot);
+    const active = this.drafts.get(owner);
+    if (active) {
+      this.touch(owner, active);
+      return structuredClone(active.snapshot);
     }
     if (this.startingOwners.has(owner)) {
       throw new NemligError(
@@ -229,13 +195,10 @@ export class ProductReviewService {
     try {
       const rows = await this.readItems(items, signal);
       const snapshot: ProductReviewSnapshot = {
-        review_id: randomUUID(),
-        revision: 1,
         destination: "ready",
         items: rows,
       };
-      this.drafts.set(snapshot.review_id, { owner, busy: false, snapshot });
-      this.activeByOwner.set(owner, snapshot.review_id);
+      this.drafts.set(owner, { busy: false, snapshot });
       return structuredClone(snapshot);
     } finally {
       this.startingOwners.delete(owner);
@@ -244,12 +207,10 @@ export class ProductReviewService {
 
   async update(
     owner: string,
-    id: string,
-    revision: number,
     action: ProductReviewAction,
     signal?: AbortSignal,
   ): Promise<ProductReviewSnapshot> {
-    const stored = this.lock(owner, id, revision);
+    const stored = this.lock(owner);
     // Commit only after all validation and reads succeed, so bulk actions are atomic.
     const draft = structuredClone(stored.snapshot);
     const submissionSelection = (items: ReviewItem[]) =>
@@ -273,7 +234,7 @@ export class ProductReviewService {
         case "accept":
         case "revisit":
           throw new NemligError(
-            "This legacy selection action is no longer supported. Every Local basket item remains Ready for whole-list submission.",
+            "This legacy selection action is no longer supported. Every Local basket item is included in whole-list submission.",
           );
         case "remove": {
           if (
@@ -323,6 +284,9 @@ export class ProductReviewService {
           itemFor(action.product_id).quantity = action.quantity;
           break;
         case "navigate":
+          if (action.destination === "needs-review") {
+            throw new NemligError("The Local basket has one product list.");
+          }
           if (action.destination === "alternatives" && !draft.alternatives) {
             throw new NemligError("No alternatives are open.");
           }
@@ -406,54 +370,54 @@ export class ProductReviewService {
         }
         delete draft.alternatives;
       }
-      this.get(owner, id); // Confirm the draft still exists after asynchronous reads.
-      const preparedSubmissionSelectionUnchanged =
-        draft.submission?.status === "prepared" &&
-        submissionSelection(draft.items) === previousSubmissionSelection;
+      this.get(owner); // Confirm the draft still exists after asynchronous reads.
+      const quantityUnchanged =
+        action.kind === "quantity" &&
+        stored.snapshot.items.find(
+          (item) => item.product_id === action.product_id,
+        )?.quantity === action.quantity;
+      const preserveSubmission =
+        (draft.submission?.status === "submitted" && quantityUnchanged) ||
+        draft.submission?.status === "uncertain" ||
+        draft.submission?.status === "partial" ||
+        (draft.submission?.status === "prepared" &&
+          submissionSelection(draft.items) === previousSubmissionSelection);
       if (
         action.kind !== "navigate" &&
         action.kind !== "alternatives" &&
-        !preparedSubmissionSelectionUnchanged
+        !preserveSubmission
       ) {
         delete draft.submission;
         delete stored.proposalId;
       }
-      draft.revision++;
       stored.snapshot = draft;
-      this.touch(stored);
+      this.touch(owner, stored);
       return structuredClone(draft);
     } finally {
       stored.busy = false;
     }
   }
 
-  private lock(owner: string, id: string, revision: number): StoredReview {
-    const stored = this.get(owner, id);
+  private lock(owner: string): StoredReview {
+    const stored = this.get(owner);
     if (stored.busy) {
       throw new NemligError(
         "A Local basket operation is in progress. Refresh after it finishes.",
       );
     }
-    if (stored.snapshot.revision !== revision) {
-      throw new NemligError(
-        "Local basket revision is stale. Show the current Local basket before choosing your next action; never replay the failed edit.",
-      );
-    }
     stored.busy = true;
-    this.touch(stored);
+    this.touch(owner, stored);
     return stored;
   }
 
   async prepare(
     owner: string,
-    id: string,
-    revision: number,
     signal?: AbortSignal,
   ): Promise<ProductReviewSnapshot> {
     if (!this.proposals) {
       throw new NemligError("Submission service unavailable.");
     }
-    const stored = this.lock(owner, id, revision);
+    const stored = this.lock(owner);
     try {
       const previous = stored.snapshot.submission;
       if (previous && previous.status !== "prepared") {
@@ -463,8 +427,11 @@ export class ProductReviewService {
       }
       const items = stored.snapshot.items;
       if (!items.length) {
+        throw new NemligError("The Local basket is empty.");
+      }
+      if (items.some((item) => !available(item.view))) {
         throw new NemligError(
-          "Local basket is empty. Add products before preparing submission.",
+          "The Local basket contains unavailable products. Remove or replace them before submitting.",
         );
       }
       const proposal = await this.proposals.prepareAdditions(
@@ -473,7 +440,7 @@ export class ProductReviewService {
         { kind: "exact_review" },
         { signal, freshProducts: true },
       );
-      this.get(owner, id);
+      this.get(owner);
       stored.proposalId = proposal.proposal_id;
       stored.snapshot.submission = {
         submission_id: randomUUID(),
@@ -481,7 +448,6 @@ export class ProductReviewService {
         expires_at: proposal.expires_at,
         review: structuredClone(proposal.review),
       };
-      stored.snapshot.revision++;
       return structuredClone(stored.snapshot);
     } finally {
       stored.busy = false;
@@ -491,14 +457,12 @@ export class ProductReviewService {
   /** Call only after explicit conversational or viewer approval of this exact submission. */
   async submit(
     owner: string,
-    id: string,
-    revision: number,
     submissionId: string,
   ): Promise<{ review: ProductReviewSnapshot; result: ApplyResult }> {
     if (!this.proposals) {
       throw new NemligError("Submission service unavailable.");
     }
-    const stored = this.lock(owner, id, revision);
+    const stored = this.lock(owner);
     try {
       const submission = stored.snapshot.submission;
       if (
@@ -518,7 +482,6 @@ export class ProductReviewService {
       }
       // Record uncertainty before crossing the provider boundary; never silently retry.
       submission.status = "uncertain";
-      stored.snapshot.revision++;
       let result: ApplyResult;
       try {
         result = await this.proposals.apply(

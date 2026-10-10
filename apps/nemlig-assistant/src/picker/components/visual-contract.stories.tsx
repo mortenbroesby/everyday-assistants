@@ -96,8 +96,6 @@ const oatMilk: ProductView = {
   review: { kind: "review", quantity: 1, line_total: 19.95, approved: false },
 };
 const review: Review = {
-  review_id: "storybook-review",
-  revision: 4,
   destination: "ready",
   items: [
     { product_id: 1, quantity: 2, state: "ready", view: milk },
@@ -108,6 +106,10 @@ const review: Review = {
 const walkthroughReview: Review = {
   ...review,
   alternatives: { product_id: 1, query: "havredrik", views: [oatMilk] },
+};
+const legacyMixedReview: Review = {
+  ...review,
+  items: [review.items[0]!, { ...review.items[1]!, state: "needs-review" }],
 };
 const walkthroughAlternatives = new Map<number, ProductView[]>([
   [1, [oatMilk]],
@@ -165,7 +167,6 @@ const baseProps = (
     thumbnails: new Map([[milk, milkCarton]]),
     message: "",
     busy: false,
-    activatingCurrent: false,
     confirmSubmit: false,
     confirmEnd: false,
     continueSubmitted: false,
@@ -176,7 +177,7 @@ const baseProps = (
     onNavigate: noop,
     onDisclosureChange: noop,
     onFactExpandedChange: noop,
-    onActivateCurrent: noop,
+    onRefresh: noop,
     onQuantity: noop,
     onRemove: noop,
     onOpenAlternatives: noop,
@@ -210,8 +211,8 @@ function FixturePage({
     ...overrides,
     actions: {
       ...overrides.actions,
-      onActivateCurrent:
-        overrides.actions?.onActivateCurrent ??
+      onRefresh:
+        overrides.actions?.onRefresh ??
         (() =>
           setHostMessage(
             "Storybook would ask ChatGPT to load the current Local basket.",
@@ -245,7 +246,7 @@ const activeReview = (
   overrides: StoryOverrides = {},
 ) =>
   page(
-    { kind: "review", review: value, active: true, view_id: "storybook-view" },
+    { kind: "review", review: value, active: true },
     {
       ...overrides,
       model: {
@@ -389,7 +390,6 @@ function walkthroughScreen(ended: boolean, review: Review): ViewerScreen {
         kind: "review",
         review,
         active: true,
-        view_id: "storybook-view",
       };
 }
 
@@ -522,7 +522,7 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 
 export const LocalBasketAt320: Story = {
-  render: () => activeReview(review, "needs-review", 320),
+  render: () => activeReview(review, "ready", 320),
 };
 export const DraftListWalkthrough: Story = {
   decorators: [embeddedConversation],
@@ -536,14 +536,14 @@ export const LocalBasketAt375: Story = {
   render: () => activeReview(review, "ready", 375),
 };
 export const LegacyMixedLocalBasket: Story = {
-  render: () => activeReview(review, "needs-review", 375),
+  render: () => activeReview(legacyMixedReview, "ready", 375),
 };
 export const Alternatives: Story = {
   render: () => activeReview(walkthroughReview, "alternatives", 375),
 };
 export const FactualDetails: Story = {
   render: () =>
-    activeReview(review, "needs-review", 375, {
+    activeReview(review, "ready", 375, {
       model: {
         reviewDisclosures: new Map([
           [1, { expanded: true, facts: new Set(["Varebeskrivelse"]) }],
@@ -561,13 +561,12 @@ export const Unavailable: Story = {
           {
             product_id: 99,
             quantity: 1,
-            state: "needs-review",
+            state: "ready",
             view: unavailable,
           },
         ],
       },
       active: true,
-      view_id: "storybook-view",
     }),
 };
 export const UnavailableDraft: Story = {
@@ -597,10 +596,8 @@ export const Error: Story = {
     page({ kind: "error", message: "Could not load the Local basket." }),
 };
 export const Cancelled: Story = { render: () => page({ kind: "cancelled" }) };
-export const Stale: Story = { render: () => page({ kind: "stale" }) };
 export const Inactive: Story = {
-  render: () =>
-    page({ kind: "review", review, active: false, view_id: "older-view" }),
+  render: () => page({ kind: "review", review, active: false }),
 };
 export const ReadOnlyProducts: Story = {
   render: () =>

@@ -331,8 +331,6 @@ const server = createServer((req, res) => {
         if (
           !prepared?.submission ||
           prepared.submission.status !== "prepared" ||
-          input.arguments.review_id !== prepared.review_id ||
-          input.arguments.revision !== prepared.revision ||
           input.arguments.submission_id !== prepared.submission.submission_id
         ) {
           throw new Error(
@@ -340,9 +338,6 @@ const server = createServer((req, res) => {
           );
         }
         simulatedSubmitted = structuredClone(prepared);
-        if (nextSubmissionStatus === "submitted") {
-          simulatedSubmitted.revision++;
-        }
         simulatedSubmitted.submission!.status = nextSubmissionStatus;
         nextSubmissionStatus = "submitted";
         simulatedSubmissions++;
@@ -351,7 +346,6 @@ const server = createServer((req, res) => {
           JSON.stringify({
             structuredContent: {
               review: simulatedSubmitted,
-              view_id: input.arguments.view_id,
             },
             content: [],
             isError: false,
@@ -377,10 +371,8 @@ const server = createServer((req, res) => {
         input.name === "update_product_review" &&
         action?.kind === "navigate" &&
         simulatedSubmitted &&
-        input.arguments.review_id === simulatedSubmitted.review_id &&
         action.destination
       ) {
-        simulatedSubmitted.revision++;
         simulatedSubmitted.destination = action.destination;
         res.setHeader("content-type", "application/json");
         res.end(

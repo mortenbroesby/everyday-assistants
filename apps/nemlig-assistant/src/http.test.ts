@@ -642,26 +642,17 @@ test("HTTP MCP creates bounded isolated clients, credentials, baskets, favourite
       arguments: { items: [{ product_id: 1, quantity: 2 }] },
     });
     assert.equal(started.isError, undefined);
-    const review = (
-      started.structuredContent as {
-        review: { review_id: string; revision: number };
-      }
-    ).review;
     const secondOwner = await connect("owner");
     try {
       const otherChat = await secondOwner.callTool({
         _meta: { "openai/session": "shop-b" },
         name: "update_product_review_conversation",
-        arguments: { ...review, action: { kind: "show" } },
+        arguments: { action: { kind: "show" } },
       });
-      assert.equal(
-        otherChat.isError,
-        true,
-        "same authenticated account in a different chat cannot access the local selection",
-      );
+      assert.deepEqual(otherChat.structuredContent, { unavailable: true });
       const noSession = await secondOwner.callTool({
         name: "update_product_review_conversation",
-        arguments: { ...review, action: { kind: "show" } },
+        arguments: { action: { kind: "show" } },
       });
       assert.equal(
         noSession.isError,
@@ -672,30 +663,37 @@ test("HTTP MCP creates bounded isolated clients, credentials, baskets, favourite
         _meta: { "openai/session": "shop-a" },
         name: "update_product_review_conversation",
         arguments: {
-          ...review,
-          action: { kind: "quantity", product_id: 1, quantity: 2 },
+          action: { kind: "quantity", product_id: 1, quantity: 3 },
         },
       });
       assert.equal(edited.isError, undefined);
       const shown = await owner.callTool({
         _meta: { "openai/session": "shop-a" },
         name: "update_product_review_conversation",
-        arguments: { review_id: review.review_id, action: { kind: "show" } },
+        arguments: { action: { kind: "show" } },
       });
       assert.equal(
         (
           shown.structuredContent as {
-            review: { items: Array<{ state: string }> };
+            review: { items: Array<{ state: string; quantity: number }> };
           }
         ).review.items[0]?.state,
         "ready",
       );
+      assert.equal(
+        (
+          shown.structuredContent as {
+            review: { items: Array<{ quantity: number }> };
+          }
+        ).review.items[0]?.quantity,
+        3,
+      );
       const denied = await guest.callTool({
         _meta: { "openai/session": "shop-a" },
         name: "update_product_review_conversation",
-        arguments: { review_id: review.review_id, action: { kind: "show" } },
+        arguments: { action: { kind: "show" } },
       });
-      assert.equal(denied.isError, true);
+      assert.deepEqual(denied.structuredContent, { unavailable: true });
     } finally {
       await secondOwner.close();
     }
@@ -915,11 +913,7 @@ test("credential-free discovery preserves an active review while credential rota
       arguments: { items: [{ product_id: 1, quantity: 2 }] },
     });
     assert.equal(started.isError, undefined);
-    const review = (
-      started.structuredContent as {
-        review: { review_id: string; revision: number };
-      }
-    ).review;
+    const review = (started.structuredContent as { review: unknown }).review;
     assert.equal(providerReads, 1);
 
     await discovery.connect(
@@ -931,7 +925,7 @@ test("credential-free discovery preserves an active review while credential rota
     const shown = await reviewer.callTool({
       _meta,
       name: "update_product_review_conversation",
-      arguments: { review_id: review.review_id, action: { kind: "show" } },
+      arguments: { action: { kind: "show" } },
     });
     assert.equal(
       shown.isError,
@@ -968,13 +962,10 @@ test("credential-free discovery preserves an active review while credential rota
     const invalidated = await rotated.callTool({
       _meta,
       name: "update_product_review_conversation",
-      arguments: { review_id: review.review_id, action: { kind: "show" } },
+      arguments: { action: { kind: "show" } },
     });
-    assert.equal(
-      invalidated.isError,
-      true,
-      "actual credential rotation must still discard the old review",
-    );
+    assert.equal(invalidated.isError, undefined);
+    assert.deepEqual(invalidated.structuredContent, { unavailable: true });
   } finally {
     await Promise.all([reviewer.close(), discovery.close(), rotated.close()]);
     server.closeAllConnections();
