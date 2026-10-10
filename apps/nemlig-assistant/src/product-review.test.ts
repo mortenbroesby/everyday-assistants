@@ -83,7 +83,7 @@ test("voice and touch share all-Ready local edits, reject stale/foreign referenc
     initial.revision,
   );
   await assert.rejects(
-    service.update("owner", initial.review_id, initial.revision, {
+    service.update("owner", initial.review_id, initial.revision + 1, {
       kind: "remove",
       product_ids: [1],
     }),

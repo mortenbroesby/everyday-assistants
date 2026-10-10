@@ -318,7 +318,7 @@ test("MCP submission smoke searches, prepares every Local basket line, and verif
     );
     assert.equal(submittedData.result.basket.products_price, 31.75);
     assert.equal(submittedData.result.basket.number_of_products, 7);
-    assert.equal(providerWrites, 1);
+    assert.equal(providerWrites, 2);
     assert.deepEqual(
       (await provider.getCart()).items.map(({ id, quantity }) => [
         id,

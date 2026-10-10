@@ -40,15 +40,15 @@ const expectedProductViewerResources = [
     name: "nemlig-product-viewer",
     title: "Nemlig Assistant",
     description:
-      "Products and the shared local Draft list supplied by Nemlig Assistant.",
+      "Products and the shared temporary Local basket supplied by Nemlig Assistant.",
     mimeType: "text/html;profile=mcp-app",
   },
   ...RETIRED_PRODUCT_VIEWER_RESOURCE_URIS.map((uri, index) => ({
     uri,
     name: `nemlig-retired-product-viewer-v${index}`,
-    title: "Updated draft list",
+    title: "Updated Local basket",
     description:
-      "This retired draft list card is inert and contains no shopping data.",
+      "This retired Local basket card is inert and contains no shopping data.",
     mimeType: "text/html;profile=mcp-app",
   })),
 ];
@@ -356,7 +356,7 @@ const friendlyCatalog = [
   ["show_my_basket", "Show my Nemlig basket", true, false, []],
   [
     "start_product_review",
-    "Show or start your draft list",
+    "Show or start your Local basket",
     false,
     false,
     ["items"],
@@ -370,7 +370,7 @@ const friendlyCatalog = [
   ],
   [
     "update_product_review_conversation",
-    "Update your draft list",
+    "Update your Local basket",
     false,
     false,
     ["review_id", "revision", "action"],
@@ -906,7 +906,7 @@ test("MCP distinguishes a successful empty salmiak search from an upstream HTTP 
         );
         assert.match(
           tool?.description ?? "",
-          /not tied to the current draft list or an alternative target/u,
+          /not tied to the current Local basket or an alternative target/u,
         );
         return {
           result: await mcp.callTool({
@@ -1006,7 +1006,7 @@ test("every MCP tool has complete schemas, accurate annotations, and safe server
       );
       assert.match(
         mcp.getInstructions() ?? "",
-        /asks to see products visually.*native Draft list/u,
+        /asks to see products visually.*native Local basket/u,
       );
       assert.match(
         mcp.getInstructions() ?? "",
@@ -1047,7 +1047,7 @@ test("authenticated HTTP request context preserves stdio tool and resource metad
   );
 });
 
-test("MCP distinguishes the draft list from the actual Nemlig basket", async () => {
+test("MCP distinguishes the Local basket from the actual Nemlig basket", async () => {
   await withMcpClient(
     createMcpServer(fakeClient(), testCredentials),
     async (mcp) => {
@@ -1058,7 +1058,7 @@ test("MCP distinguishes the draft list from the actual Nemlig basket", async () 
         ]),
       );
       const instructions = mcp.getInstructions() ?? "";
-      assert.match(instructions, /temporary conversation draft list/u);
+      assert.match(instructions, /temporary Local basket/u);
       assert.match(instructions, /real Nemlig basket is add-only/u);
       assert.match(
         instructions,
@@ -1066,7 +1066,7 @@ test("MCP distinguishes the draft list from the actual Nemlig basket", async () 
       );
       assert.match(
         instructions,
-        /After an uncertain write, inspect the draft list and actual basket; never retry automatically/u,
+        /After an uncertain write, inspect the Local basket and actual Nemlig basket; never retry automatically/u,
       );
       assert.match(
         tools.get("find_groceries") ?? "",
@@ -1074,19 +1074,19 @@ test("MCP distinguishes the draft list from the actual Nemlig basket", async () 
       );
       assert.match(
         tools.get("show_my_basket") ?? "",
-        /actual Nemlig basket, not the local draft list/u,
+        /actual Nemlig basket and its current items and totals/u,
       );
       assert.match(
         tools.get("start_product_review") ?? "",
-        /Omit items to reopen/u,
+        /Omit items only to reopen/u,
       );
       assert.match(
         tools.get("update_product_review_conversation") ?? "",
-        /None of these local edits writes to Nemlig/u,
+        /None of these local edits writes to the Nemlig basket/u,
       );
       assert.match(
         tools.get("submit_product_review_conversation") ?? "",
-        /Local Ready acceptance alone.*is not authorization/u,
+        /Local presence or a request only to inspect\/prepare is not authorization/u,
       );
       assert.equal(
         (await mcp.listResources()).resources[0]?.uri,
@@ -1589,7 +1589,7 @@ test("a clear conversational add command authorizes only its exact prepared Read
   );
 });
 
-test("only the newest Draft list card can invoke widget actions", async () => {
+test("only the newest Local basket card can invoke widget actions", async () => {
   let basketReads = 0;
   let basketWrites = 0;
   const provider = fakeClient({
@@ -1610,7 +1610,7 @@ test("only the newest Draft list card can invoke widget actions", async () => {
         arguments: {},
       });
       assert.equal(absent.isError, true);
-      assert.match(toolText(absent), /No active Draft list to show/u);
+      assert.match(toolText(absent), /No active Local basket to show/u);
       const tools = (await mcp.listTools()).tools;
       const tool = (name: string) =>
         tools.find((entry) => entry.name === name)!;
@@ -1737,7 +1737,7 @@ test("only the newest Draft list card can invoke widget actions", async () => {
       assert.equal(missingTokenEdit.isError, true);
       assert.match(
         toolText(missingTokenEdit),
-        /current Draft list view_id is required/u,
+        /current Local basket view_id is required/u,
       );
 
       const currentEdit = await mcp.callTool({
@@ -1805,6 +1805,8 @@ test("MCP review starts all rows Ready and permits alternatives without changing
     getCart: noWrite,
     addToCart: noWrite,
     searchProducts: async () => [{ ...product, id: 8, name: "Alternative" }],
+    getProduct: async (id) => ({ ...product, id }),
+    getFreshProduct: async (id) => ({ ...product, id }),
   });
   await withMcpClient(
     createMcpServer(provider, testCredentials),
@@ -2042,6 +2044,9 @@ test("empty and unavailable results retain safe routes without accepting or writ
     getProduct: async () => {
       throw new NemligError("Product not found.");
     },
+    getFreshProduct: async () => {
+      throw new NemligError("Product not found.");
+    },
     searchProducts: async () => [],
     getCart: async () => ({
       ...basket,
@@ -2107,7 +2112,7 @@ test("empty and unavailable results retain safe routes without accepting or writ
       assert.match(toolText(refused), /incomplete|unavailable/u);
       assert.match(
         mcp.getInstructions() ?? "",
-        /Local draft list edits never write to Nemlig/u,
+        /Local basket edits never write to Nemlig/u,
       );
     },
   );
