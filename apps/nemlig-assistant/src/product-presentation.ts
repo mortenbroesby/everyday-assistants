@@ -95,6 +95,7 @@ export type ProductView =
       readonly context: ProductViewContext["kind"];
       readonly status: "unavailable";
       readonly product_id?: number;
+      readonly missing?: boolean;
     };
 
 const hasLabelSubstring = (
