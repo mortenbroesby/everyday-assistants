@@ -76,6 +76,24 @@ export type ViewerResourceReadEvent = z.infer<
   typeof viewerResourceReadEventSchema
 >;
 
+const productDiscoveryEventSchema = z
+  .object({
+    schema_version: z.literal(1),
+    event: z.literal("product_discovery_diagnostic"),
+    stage: z.enum(["shallow", "detail", "deadline", "cancelled"]),
+    error_class: z.enum([
+      "authentication",
+      "deadline",
+      "cancelled",
+      "provider",
+      "unknown",
+    ]),
+    active_read_count: z.number().int().nonnegative(),
+  })
+  .strict();
+
+export type ProductDiscoveryEvent = z.infer<typeof productDiscoveryEventSchema>;
+
 export function parseGatewayRequestEvent(value: unknown): GatewayRequestEvent {
   return gatewayRequestEventSchema.parse(value);
 }
@@ -84,6 +102,12 @@ export function parseViewerResourceReadEvent(
   value: unknown,
 ): ViewerResourceReadEvent {
   return viewerResourceReadEventSchema.parse(value);
+}
+
+export function parseProductDiscoveryEvent(
+  value: unknown,
+): ProductDiscoveryEvent {
+  return productDiscoveryEventSchema.parse(value);
 }
 
 export function classifyGatewayRoute(pathname: string): GatewayRoute {

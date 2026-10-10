@@ -44,10 +44,28 @@ import { RETIRED_PRODUCT_VIEWER_RESOURCE_URIS } from "./product-viewer-identity.
 import { renderRetiredProductViewerHtml } from "./retired-product-viewer.js";
 import { MAX_DRAFT_PRODUCTS, ProductReviewService } from "./product-review.js";
 import { resolveDetailedProductSearch } from "./product-discovery.js";
+import {
+  parseProductDiscoveryEvent,
+  type ProductDiscoveryEvent,
+} from "./cloudflare-observability.js";
 import { NEMLIG_ASSISTANT_ICON } from "./nemlig-assistant-icon.js";
 
 export const NEMLIG_CONNECT_URL = "https://nemlig-mcp.broesby.dk/connect";
 export const NEMLIG_IMAGE_ORIGINS = IMAGE_ORIGINS;
+
+const productDiscoveryDiagnostic = (
+  event: Omit<ProductDiscoveryEvent, "schema_version" | "event">,
+): void => {
+  console.log(
+    JSON.stringify(
+      parseProductDiscoveryEvent({
+        schema_version: 1,
+        event: "product_discovery_diagnostic",
+        ...event,
+      }),
+    ),
+  );
+};
 
 /**
  * Server-derived request identity that scopes private state and invalidates it
@@ -718,7 +736,15 @@ The Local basket is conversation-scoped and temporary. If unavailable, ask befor
           client,
           search_term,
           result_count,
-          { signal: ctx.mcpReq.signal },
+          {
+            signal: ctx.mcpReq.signal,
+            onDiagnostic: ({ stage, errorClass, activeReadCount }) =>
+              productDiscoveryDiagnostic({
+                stage,
+                error_class: errorClass,
+                active_read_count: activeReadCount,
+              }),
+          },
         );
         const views = createProductViews(detailed.items, { kind: "search" });
         const result = views.flatMap((view) =>

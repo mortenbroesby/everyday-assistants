@@ -2,7 +2,9 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { NemligError, type Product } from "./client.js";
 import {
+  ProductDiscoveryDeadlineError,
   type ProductDiscoveryClient,
+  type ProductDiscoveryDiagnostic,
   resolveDetailedProductSearch,
 } from "./product-discovery.js";
 
@@ -168,4 +170,202 @@ test("detailed search propagates cancellation and does not start queued detail r
   assert.ok(started.length <= 2);
   assert.ok(maximum <= 2);
   assert.equal(active, 0);
+});
+
+test("recipe-scale discovery distinguishes empty, partial, failed, and timed-out searches", async () => {
+  const client: ProductDiscoveryClient = {
+    searchProducts: async (query) => {
+      if (query === "empty") {
+        return [];
+      }
+      if (query === "failed") {
+        throw new Error("shallow search failed");
+      }
+      return [product(1, "Available"), product(2, "Unavailable")];
+    },
+    getProduct: async (id, signal) => {
+      if (id === 2) {
+        throw new Error("detail unavailable");
+      }
+      await new Promise<void>((resolve, reject) => {
+        const timer = setTimeout(resolve, 20);
+        signal?.addEventListener(
+          "abort",
+          () => {
+            clearTimeout(timer);
+            reject(signal.reason);
+          },
+          { once: true },
+        );
+      });
+      return product(id, "Available");
+    },
+  };
+
+  assert.deepEqual(
+    (await resolveDetailedProductSearch(client, "empty")).items,
+    [],
+  );
+  assert.deepEqual(
+    (await resolveDetailedProductSearch(client, "partial")).items.map(
+      (item) => item.status,
+    ),
+    ["hydrated", "unavailable"],
+  );
+  await assert.rejects(
+    resolveDetailedProductSearch(client, "failed"),
+    /shallow search failed/u,
+  );
+  await assert.rejects(
+    resolveDetailedProductSearch(client, "timeout", undefined, {
+      deadlineMs: 1,
+    }),
+    ProductDiscoveryDeadlineError,
+  );
+});
+
+test("discovery diagnostics distinguish failure stages without provider values", async () => {
+  const marker = "SYNTHETIC_PRIVATE_PRODUCT_MARKER";
+  const diagnostics: ProductDiscoveryDiagnostic[] = [];
+  const detailUnavailable: ProductDiscoveryClient = {
+    searchProducts: async () => [product(1, marker)],
+    getProduct: async () => {
+      throw new NemligError(marker, 503);
+    },
+  };
+
+  const partial = await resolveDetailedProductSearch(
+    detailUnavailable,
+    marker,
+    undefined,
+    { onDiagnostic: (event) => diagnostics.push(event) },
+  );
+  assert.deepEqual(
+    partial.items.map((item) => item.status),
+    ["unavailable"],
+  );
+
+  const shallowFailure: ProductDiscoveryClient = {
+    searchProducts: async () => {
+      throw new NemligError(marker, 503);
+    },
+    getProduct: async () => product(1, marker),
+  };
+  await assert.rejects(
+    resolveDetailedProductSearch(shallowFailure, marker, undefined, {
+      onDiagnostic: (event) => diagnostics.push(event),
+    }),
+  );
+
+  const authenticationFailure: ProductDiscoveryClient = {
+    searchProducts: async () => [product(1, marker)],
+    getProduct: async () => {
+      throw new NemligError(marker, 401);
+    },
+  };
+  await assert.rejects(
+    resolveDetailedProductSearch(authenticationFailure, marker, undefined, {
+      onDiagnostic: (event) => diagnostics.push(event),
+    }),
+  );
+
+  const pendingRead: ProductDiscoveryClient = {
+    searchProducts: async () => [product(1, marker)],
+    getProduct: async (_id, signal) =>
+      new Promise<Product>((_resolve, reject) => {
+        signal?.addEventListener("abort", () => reject(signal.reason), {
+          once: true,
+        });
+      }),
+  };
+  await assert.rejects(
+    resolveDetailedProductSearch(pendingRead, marker, undefined, {
+      deadlineMs: 10,
+      onDiagnostic: (event) => diagnostics.push(event),
+    }),
+    ProductDiscoveryDeadlineError,
+  );
+
+  const controller = new AbortController();
+  const pendingSearch: ProductDiscoveryClient = {
+    searchProducts: async (_query, _limit, signal) =>
+      new Promise<Product[]>((_resolve, reject) => {
+        signal?.addEventListener("abort", () => reject(signal.reason), {
+          once: true,
+        });
+      }),
+    getProduct: async () => product(1, marker),
+  };
+  const cancelled = resolveDetailedProductSearch(
+    pendingSearch,
+    marker,
+    undefined,
+    {
+      signal: controller.signal,
+      onDiagnostic: (event) => diagnostics.push(event),
+    },
+  );
+  controller.abort(new Error(marker));
+  await assert.rejects(cancelled);
+
+  assert.ok(
+    diagnostics.some(
+      (event) => event.stage === "detail" && event.errorClass === "provider",
+    ),
+  );
+  assert.ok(
+    diagnostics.some(
+      (event) => event.stage === "shallow" && event.errorClass === "provider",
+    ),
+  );
+  assert.ok(
+    diagnostics.some(
+      (event) =>
+        event.stage === "detail" && event.errorClass === "authentication",
+    ),
+  );
+  assert.ok(
+    diagnostics.some(
+      (event) => event.stage === "deadline" && event.errorClass === "deadline",
+    ),
+  );
+  assert.ok(
+    diagnostics.some(
+      (event) =>
+        event.stage === "cancelled" && event.errorClass === "cancelled",
+    ),
+  );
+  assert.ok(diagnostics.every((event) => event.activeReadCount >= 0));
+  assert.doesNotMatch(JSON.stringify(diagnostics), new RegExp(marker, "u"));
+});
+
+test("independent recipe searches expose their aggregate detail fan-out", async () => {
+  let active = 0;
+  let maximum = 0;
+  const diagnostics: ProductDiscoveryDiagnostic[] = [];
+  const client: ProductDiscoveryClient = {
+    searchProducts: async () => [product(1, "One")],
+    getProduct: async (id) => {
+      active += 1;
+      maximum = Math.max(maximum, active);
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      active -= 1;
+      throw new NemligError(`detail ${id}`, 503);
+    },
+  };
+
+  await Promise.all(
+    Array.from({ length: 37 }, () =>
+      resolveDetailedProductSearch(client, "recipe ingredient", undefined, {
+        onDiagnostic: (event) => diagnostics.push(event),
+      }),
+    ),
+  );
+
+  assert.equal(maximum, 37);
+  assert.equal(active, 0);
+  assert.equal(
+    Math.max(...diagnostics.map((event) => event.activeReadCount)),
+    37,
+  );
 });

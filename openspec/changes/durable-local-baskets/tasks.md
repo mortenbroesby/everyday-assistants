@@ -1,8 +1,8 @@
 ## 1. Baseline and diagnostic gate
 
 - [x] 1.1 Keep this planning PR stacked on #274. After #274 merges, create the implementation branch from the resulting `origin/main` SHA, re-read the final Local basket protocol/UI changes, and verify the branch contains that exact baseline before changing product-review code.
-- [ ] 1.2 Reproduce recipe-scale product discovery with a deterministic fixture that controls shallow-search, detail-hydration, authentication, deadline, and cancellation outcomes; verify it distinguishes successful empty results, unavailable detail rows, and whole-search errors.
-- [ ] 1.3 Add privacy-safe aggregate discovery diagnostics (stage, normalized error class, and active-read counts only) and a focused test proving no catalogue contents, credentials, or session identifiers are emitted.
+- [x] 1.2 Reproduce recipe-scale product discovery with a deterministic fixture that controls shallow-search, detail-hydration, authentication, deadline, and cancellation outcomes; verify it distinguishes successful empty results, unavailable detail rows, and whole-search errors.
+- [x] 1.3 Add privacy-safe aggregate discovery diagnostics (stage, normalized error class, and active-read counts only) and a focused test proving no catalogue contents, credentials, or session identifiers are emitted.
 - [ ] 1.4 Run the controlled production-like read-only trace for the reported multi-search behavior, inspect the exact failure stage, and record the evidence in the PR before selecting any global fan-out limit or retry change.
 - [ ] 1.5 Implement only the search reliability change supported by task 1.4 (if one is needed): with a stable host chat identifier, a bounded product-search queue retries retryable reads at most three total attempts with exponential backoff, stops that chat after more than ten retryable failures in one minute, and preserves verified partial results; without that identifier retain request-local limits. Add focused regression tests including cancellation and non-retryable failures.
 
