@@ -491,6 +491,12 @@ try {
   );
 
   await swipeRow.press("Escape");
+  await frame
+    .getByRole("button", { name: /Find an alternative to Synthetic milk/ })
+    .waitFor({ state: "detached" });
+  if ((await milkDisclosure.getAttribute("aria-expanded")) === "true") {
+    await milkDisclosure.click();
+  }
   await milkDisclosure.focus();
   await page.keyboard.press("Enter");
   await frame.getByRole("button", { name: /Find alternative/ }).waitFor();
@@ -522,7 +528,9 @@ try {
   );
 
   await frame.locator(".basket-swipe-row").first().press("Escape");
-  await milkCard.locator('[data-viewer-component="product-summary"]').click();
+  if ((await milkDisclosure.getAttribute("aria-expanded")) === "false") {
+    await milkDisclosure.click();
+  }
   await milkCard
     .getByRole("button", { name: "Increase quantity of Synthetic milk" })
     .click();
@@ -561,6 +569,12 @@ try {
   const oatsCard = frame
     .locator(".product-card")
     .filter({ hasText: longOatsName });
+  const oatsDisclosure = oatsCard.locator(
+    '[data-viewer-component="product-summary"]',
+  );
+  if ((await oatsDisclosure.getAttribute("aria-expanded")) === "false") {
+    await oatsDisclosure.click();
+  }
   const increase = oatsCard.getByRole("button", {
     name: `Increase quantity of ${longOatsName}`,
   });
@@ -616,7 +630,19 @@ try {
   const attemptsBeforeQuantityInvalidation = await page.evaluate(
     () => window.submissionAttempts,
   );
-  await milkCard
+  const replacementCard = frame
+    .locator(".product-card")
+    .filter({ hasText: "Synthetic alternative" });
+  if (
+    (await replacementCard
+      .locator('[data-viewer-component="product-summary"]')
+      .getAttribute("aria-expanded")) === "false"
+  ) {
+    await replacementCard
+      .locator('[data-viewer-component="product-summary"]')
+      .click();
+  }
+  await replacementCard
     .getByRole("button", { name: "Increase quantity of Synthetic alternative" })
     .click();
   await frame.getByRole("button", { name: "Add to Nemlig" }).click();
