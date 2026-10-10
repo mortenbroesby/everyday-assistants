@@ -559,20 +559,19 @@ test("service deployment verifies the exact candidate without persistent deploym
   }
 });
 
-test("deployment permits the reviewed owner Local basket binding addition", async () => {
-  const { deps, root } = await fixture();
+test("deployment rejects a retired PlanStorage predecessor before provider mutation", async () => {
+  const { deps, calls, root } = await fixture({ legacyPlanStorage: true });
   try {
-    deps.acceptanceMode = "service";
-    deps.env = {
-      CLOUDFLARE_ACCOUNT_ID: accountId,
-      CLOUDFLARE_API_TOKEN: "test-cloudflare-token",
-      GITHUB_ACTIONS: "true",
-      NEMLIG_MCP_SERVICE_CLIENT_ID: "service-client",
-      NEMLIG_MCP_SERVICE_CLIENT_SECRET: "machine-secret",
-      NEMLIG_CI_ACCEPTANCE_READY: "true",
-    };
+    deps.env.NEMLIG_MCP_ACCESS_TOKEN = "synthetic-acceptance-token";
     const report = await deployProduction(commit, deps);
-    assert.equal(report.outcome, "success", report.failure);
+    assert.equal(report.outcome, "failed");
+    assert.equal(report.failure, "cloudflare_runtime_safety_mismatch");
+    assert.equal(
+      calls.some(
+        ({ command, args }) => command === "pnpm" && args.includes("deploy"),
+      ),
+      false,
+    );
   } finally {
     await rm(root, { recursive: true, force: true });
   }

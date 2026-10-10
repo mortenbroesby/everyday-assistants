@@ -38,6 +38,46 @@ export interface LocalBasketMutation<T> {
   value: T;
 }
 
+export class LocalBasketNotFoundError extends Error {
+  override readonly name = "LocalBasketNotFoundError";
+  readonly code = "LOCAL_BASKET_NOT_FOUND";
+
+  constructor() {
+    super("Local basket is unavailable.");
+  }
+}
+
+class LocalBasketConflictError extends Error {
+  override readonly name = "LocalBasketConflictError";
+  readonly code = "LOCAL_BASKET_CONFLICT";
+
+  constructor() {
+    super("Local basket changed during product lookup. Refresh and try again.");
+  }
+}
+
+type LocalBasketFailureCode =
+  "LOCAL_BASKET_NOT_FOUND" | "LOCAL_BASKET_CONFLICT";
+
+/** Read the stable own-field code preserved when a DO RPC error is reconstructed. */
+export const serializedLocalBasketFailureCode = (
+  error: unknown,
+): LocalBasketFailureCode | undefined => {
+  if (error instanceof LocalBasketNotFoundError) {
+    return error.code;
+  }
+  if (error instanceof LocalBasketConflictError) {
+    return error.code;
+  }
+  if (typeof error !== "object" || error === null || !("code" in error)) {
+    return undefined;
+  }
+  const { code } = error;
+  return code === "LOCAL_BASKET_NOT_FOUND" || code === "LOCAL_BASKET_CONFLICT"
+    ? code
+    : undefined;
+};
+
 export interface CreatedLocalBasket {
   basket: LocalBasket;
   evictedBasketId?: string;
@@ -160,7 +200,7 @@ const basketAt = (
     (candidate) => candidate.basketId === basketId,
   );
   if (!basket) {
-    throw new Error("Local basket is unavailable.");
+    throw new LocalBasketNotFoundError();
   }
   return basket;
 };
@@ -510,9 +550,7 @@ export const applyLocalBasketCommand = (
         command.edit.kind !== "complete-submission" &&
         command.expectedRevision !== current.revision
       ) {
-        throw new Error(
-          "Local basket changed during product lookup. Refresh and try again.",
-        );
+        throw new LocalBasketConflictError();
       }
       return editLocalBasket(
         inventory,

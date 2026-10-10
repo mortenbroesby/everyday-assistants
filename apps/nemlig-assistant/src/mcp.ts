@@ -46,6 +46,7 @@ import {
   MAX_DRAFT_PRODUCTS,
   ProductReviewService,
   type ProductReviewAction,
+  type ProductReviewSnapshot,
 } from "./product-review.js";
 import { candidateSchema, productViewSchema } from "./product-view-schema.js";
 import { resolveDetailedProductSearch } from "./product-discovery.js";
@@ -372,9 +373,12 @@ const runMcpOperation = async <Result>(
     return failure(operation, error);
   }
 };
+class LocalBasketRepositoryError extends NemligError {
+  override readonly name = "LocalBasketRepositoryError";
+}
+
 const isUnavailableBasket = (error: unknown): boolean =>
-  error instanceof NemligError &&
-  /local basket is unavailable|local basket unavailable/iu.test(error.message);
+  error instanceof LocalBasketRepositoryError && error.status === 404;
 
 /**
  * Creates the explicit MCP catalog. Basket writes remain staged through the
@@ -541,20 +545,40 @@ In the hosted deployment, Local baskets are durable owner data; use the opaque b
     }
     return {
       async mutate(command: LocalBasketCommand): Promise<unknown> {
-        const response = await fetch(
-          "http://local-basket-state.internal/inventory",
-          {
-            method: "POST",
-            headers: {
-              "content-type": "application/json",
-              "x-nemlig-local-basket-capability": capability,
+        let response: Response;
+        try {
+          response = await fetch(
+            "http://local-basket-state.internal/inventory",
+            {
+              method: "POST",
+              headers: {
+                "content-type": "application/json",
+                "x-nemlig-local-basket-capability": capability,
+              },
+              body: JSON.stringify(command),
+              signal,
             },
-            body: JSON.stringify(command),
-            signal,
-          },
-        );
+          );
+        } catch (error) {
+          if (signal.aborted) {
+            throw error;
+          }
+          throw new LocalBasketRepositoryError(
+            "Local basket storage is temporarily unavailable. Refresh and try again.",
+            503,
+          );
+        }
         if (!response.ok) {
-          throw new NemligError("Local basket is unavailable. Refresh it.");
+          const status = response.status;
+          const message =
+            status === 404
+              ? "Local basket is unavailable. Refresh it."
+              : status === 409
+                ? "Local basket changed or is busy. Refresh before trying again."
+                : status === 403
+                  ? "Local basket access is not authorized for this request."
+                  : "Local basket storage is temporarily unavailable. Refresh and try again.";
+          throw new LocalBasketRepositoryError(message, status);
         }
         return response.json();
       },
@@ -578,24 +602,24 @@ In the hosted deployment, Local baskets are durable owner data; use the opaque b
     unavailable: z.literal(true).optional(),
     ended: z.literal(true).optional(),
   });
-  const mutateDurableBasket = async (
+  const unavailableDurableBasket = async (
+    repository: LocalBasketRepository,
+    owner: string,
+  ) =>
+    success({
+      baskets: await reviews.listBaskets(repository, owner),
+      selectedBasketId: null,
+      selectionRequired: true,
+      unavailable: true as const,
+    });
+  const withDurableReview = async (
     owner: string,
     basketId: string,
-    action: ProductReviewAction | { kind: "prepare_submission" },
     repository: LocalBasketRepository,
-    signal: AbortSignal,
+    load: () => Promise<ProductReviewSnapshot>,
   ) => {
     try {
-      const review =
-        action.kind === "prepare_submission"
-          ? await reviews.prepareBasket(owner, basketId, repository, signal)
-          : await reviews.updateBasket(
-              owner,
-              basketId,
-              action,
-              repository,
-              signal,
-            );
+      const review = await load();
       return success({
         review,
         baskets: await reviews.listBaskets(repository, owner),
@@ -605,13 +629,21 @@ In the hosted deployment, Local baskets are durable owner data; use the opaque b
       if (!isUnavailableBasket(error)) {
         throw error;
       }
-      return success({
-        baskets: await reviews.listBaskets(repository, owner),
-        selectedBasketId: null,
-        selectionRequired: true,
-        unavailable: true as const,
-      });
+      return unavailableDurableBasket(repository, owner);
     }
+  };
+  const mutateDurableBasket = async (
+    owner: string,
+    basketId: string,
+    action: ProductReviewAction | { kind: "prepare_submission" },
+    repository: LocalBasketRepository,
+    signal: AbortSignal,
+  ) => {
+    return withDurableReview(owner, basketId, repository, () =>
+      action.kind === "prepare_submission"
+        ? reviews.prepareBasket(owner, basketId, repository, signal)
+        : reviews.updateBasket(owner, basketId, action, repository, signal),
+    );
   };
   const submitDurableBasket = async (
     owner: string,
@@ -643,16 +675,13 @@ In the hosted deployment, Local baskets are durable owner data; use the opaque b
     selection: string | undefined,
     kind: "select" | "heartbeat",
   ) => {
-    await repository.mutate({
-      kind,
-      basketId,
-      ...(selection ? { selectionKey: selection } : {}),
-    });
-    const review = await reviews.showBasket(owner, basketId, repository);
-    return success({
-      review,
-      baskets: await reviews.listBaskets(repository, owner),
-      selectedBasketId: basketId,
+    return withDurableReview(owner, basketId, repository, async () => {
+      await repository.mutate({
+        kind,
+        basketId,
+        ...(selection ? { selectionKey: selection } : {}),
+      });
+      return reviews.showBasket(owner, basketId, repository);
     });
   };
   const selectedBasket = async (
@@ -1065,17 +1094,20 @@ In the hosted deployment, Local baskets are durable owner data; use the opaque b
               selectionRequired: true,
             });
           }
-          const result = await repository.mutate({
-            kind: "delete",
-            basketId: target,
-          });
+          try {
+            await repository.mutate({ kind: "delete", basketId: target });
+          } catch (error) {
+            if (!isUnavailableBasket(error)) {
+              throw error;
+            }
+            return unavailableDurableBasket(repository, owner);
+          }
           reviews.forgetBasket(owner, target);
           const baskets = await reviews.listBaskets(repository, owner);
           return success({
             ended: true as const,
             baskets,
             selectedBasketId: null,
-            ...(result && typeof result === "object" ? {} : {}),
           });
         }
         if (action.kind === "heartbeat") {
@@ -1112,13 +1144,11 @@ In the hosted deployment, Local baskets are durable owner data; use the opaque b
               baskets: await reviews.listBaskets(repository, owner),
               selectedBasketId: target,
             });
-          } catch {
-            return success({
-              baskets: await reviews.listBaskets(repository, owner),
-              selectedBasketId: null,
-              selectionRequired: true,
-              unavailable: true as const,
-            });
+          } catch (error) {
+            if (!isUnavailableBasket(error)) {
+              throw error;
+            }
+            return unavailableDurableBasket(repository, owner);
           }
         }
         if (!target) {

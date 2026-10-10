@@ -234,3 +234,48 @@ test("callback returns JSON-safe acknowledgements after committed deletion", asy
   });
   assert.equal(values.size, 0);
 });
+
+test("callback distinguishes missing baskets, conflicts, and storage failures", async () => {
+  const call = (error: Error) =>
+    handleLocalBasketStateRequest(
+      attachLocalBasketCapability(
+        new Request("http://local-basket-state.internal/inventory", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ kind: "list" }),
+        }),
+        "container-owned-capability",
+      ),
+      {
+        idFromName: (ownerId: string) => ownerId,
+        get: () => ({
+          mutate: async () => {
+            throw error;
+          },
+        }),
+      },
+      async () => principalKey,
+    );
+
+  const missingError = Object.assign(new Error("serialized missing basket"), {
+    code: "LOCAL_BASKET_NOT_FOUND",
+    name: "LocalBasketNotFoundError",
+  });
+  const missing = await call(missingError);
+  assert.equal(missing.status, 404);
+  assert.equal(await missing.text(), "Local basket is unavailable.");
+
+  const conflictError = Object.assign(
+    new Error("serialized revision conflict"),
+    { code: "LOCAL_BASKET_CONFLICT", name: "LocalBasketConflictError" },
+  );
+  const conflict = await call(conflictError);
+  assert.equal(conflict.status, 409);
+  assert.match(await conflict.text(), /changed/u);
+
+  const failed = await call(new Error("private owner detail"));
+  assert.equal(failed.status, 500);
+  const failureText = await failed.text();
+  assert.match(failureText, /temporarily unavailable/u);
+  assert.doesNotMatch(failureText, /private owner detail/u);
+});

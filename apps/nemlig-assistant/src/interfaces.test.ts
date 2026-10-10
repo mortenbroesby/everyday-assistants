@@ -1559,6 +1559,148 @@ test("widget Local basket actions use top-level basket_id and never guess a sele
   }
 });
 
+test("only an actual missing basket opens the picker on repository failures", async () => {
+  const basketId = "00000000-0000-4000-8000-000000000099";
+  const originalFetch = globalThis.fetch;
+  let responseMode: "missing" | "conflict" | "network" | "provider404" =
+    "missing";
+  globalThis.fetch = async (input, init) => {
+    const url =
+      typeof input === "string"
+        ? input
+        : input instanceof URL
+          ? input.href
+          : input.url;
+    if (!url.startsWith("http://local-basket-state.internal/")) {
+      return originalFetch(input, init);
+    }
+    const command = JSON.parse(String(init?.body)) as {
+      kind?: string;
+    };
+    if (command.kind === "list") {
+      return Response.json([]);
+    }
+    if (responseMode === "provider404" && command.kind === "read") {
+      return Response.json({
+        basketId,
+        createdAt: 1,
+        lastActivityAt: 2,
+        expiresAt: 86_400_002,
+        revision: 1,
+        lines: [
+          {
+            productId: 7,
+            quantity: 2,
+            view: createProductView(product, { kind: "details" }),
+          },
+        ],
+      });
+    }
+    if (responseMode === "network") {
+      throw new Error("private host or owner detail");
+    }
+    if (responseMode === "missing") {
+      return new Response("Local basket is unavailable.", { status: 404 });
+    }
+    return new Response("Local basket changed. Refresh it.", { status: 409 });
+  };
+
+  try {
+    const context = {
+      principalKey: "p".repeat(32),
+      policyRevision: "policy-1",
+      localBasketCapability: "capability-for-this-request",
+    };
+    await withMcpClient(
+      createMcpServer(
+        fakeClient(),
+        async () => undefined,
+        undefined,
+        undefined,
+        context,
+      ),
+      async (mcp) => {
+        const call = (action: Record<string, unknown>) =>
+          mcp.callTool({
+            name: "update_product_review_conversation",
+            arguments: { basket_id: basketId, action },
+          });
+        const missing = await call({ kind: "show" });
+        assert.equal(missing.isError, undefined, toolText(missing));
+        assert.equal(
+          (missing.structuredContent as { unavailable?: boolean }).unavailable,
+          true,
+        );
+        assert.equal(
+          (missing.structuredContent as { selectionRequired?: boolean })
+            .selectionRequired,
+          true,
+        );
+
+        responseMode = "conflict";
+        const conflict = await call({ kind: "show" });
+        assert.equal(conflict.isError, true);
+        assert.match(toolText(conflict), /changed or is busy/u);
+        assert.doesNotMatch(toolText(conflict), /unavailable|deleted/u);
+        assert.equal(conflict.structuredContent, undefined);
+
+        const staleEdit = await call({
+          kind: "quantity",
+          product_id: 7,
+          quantity: 3,
+        });
+        assert.equal(staleEdit.isError, true);
+        assert.match(toolText(staleEdit), /changed or is busy/u);
+        assert.doesNotMatch(toolText(staleEdit), /unavailable|deleted/u);
+
+        responseMode = "network";
+        const offline = await call({ kind: "show" });
+        assert.equal(offline.isError, true);
+        assert.match(toolText(offline), /temporarily unavailable/u);
+        assert.doesNotMatch(
+          toolText(offline),
+          /private host|owner detail|deleted/u,
+        );
+        assert.equal(offline.structuredContent, undefined);
+      },
+    );
+
+    responseMode = "provider404";
+    await withMcpClient(
+      createMcpServer(
+        fakeClient({
+          getCart: async () => ({
+            ...basket,
+            items: [{ id: 99, name: "Existing item", quantity: 1, total: 5 }],
+          }),
+          getFreshProduct: async () => {
+            throw new NemligError("Provider product not found", 404);
+          },
+        }),
+        async () => undefined,
+        undefined,
+        undefined,
+        context,
+      ),
+      async (mcp) => {
+        const providerMissing = await mcp.callTool({
+          name: "update_product_review_conversation",
+          arguments: {
+            basket_id: basketId,
+            action: { kind: "prepare_submission" },
+          },
+        });
+        assert.equal(providerMissing.isError, true);
+        assert.match(toolText(providerMissing), /Provider product not found/u);
+        assert.doesNotMatch(toolText(providerMissing), /unavailable|deleted/u);
+        assert.equal(providerMissing.structuredContent, undefined);
+      },
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("model-visible product images allow only observed Nemlig HTTPS origins", () => {
   assert.equal(
     safeNemligImageUrl("https://nemlig.com/scommerce/images/milk.jpg?i=1"),

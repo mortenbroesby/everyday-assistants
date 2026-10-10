@@ -1,4 +1,7 @@
-import type { LocalBasketCommand } from "./local-basket.js";
+import {
+  serializedLocalBasketFailureCode,
+  type LocalBasketCommand,
+} from "./local-basket.js";
 import { localBasketCapability } from "./local-basket-capability.js";
 import { productViewSchema } from "./product-view-schema.js";
 import { z } from "zod";
@@ -91,6 +94,24 @@ const callbackCommandSchema = z.discriminatedUnion("kind", [
     expectedRevision: z.number().int().nonnegative().optional(),
   }),
 ]);
+
+const storageFailureResponse = (error: unknown): Response => {
+  const code = serializedLocalBasketFailureCode(error);
+  if (code === "LOCAL_BASKET_NOT_FOUND") {
+    return new Response("Local basket is unavailable.", { status: 404 });
+  }
+  if (code === "LOCAL_BASKET_CONFLICT") {
+    return new Response(
+      "Local basket changed. Refresh it before trying again.",
+      {
+        status: 409,
+      },
+    );
+  }
+  return new Response("Local basket storage is temporarily unavailable.", {
+    status: 500,
+  });
+};
 const readBoundedJson = async (request: Request): Promise<unknown> => {
   const declared = Number(request.headers.get("content-length"));
   if (Number.isFinite(declared) && declared > MAX_CALLBACK_BODY_BYTES) {
@@ -154,7 +175,11 @@ export const handleLocalBasketStateRequest = async (
   }
   const storage = storageNamespace.get(storageNamespace.idFromName(ownerId));
   if (request.method === "GET") {
-    return Response.json(await storage.mutate(ownerId, { kind: "list" }));
+    try {
+      return Response.json(await storage.mutate(ownerId, { kind: "list" }));
+    } catch (error) {
+      return storageFailureResponse(error);
+    }
   }
   if (request.method !== "POST") {
     return new Response("Method not allowed", { status: 405 });
@@ -175,9 +200,7 @@ export const handleLocalBasketStateRequest = async (
     return Response.json(
       await storage.mutate(ownerId, parsed.data as LocalBasketCommand),
     );
-  } catch {
-    return new Response("Local basket operation failed. Refresh the basket.", {
-      status: 409,
-    });
+  } catch (error) {
+    return storageFailureResponse(error);
   }
 };

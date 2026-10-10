@@ -1,5 +1,6 @@
 import {
   applyLocalBasketCommand,
+  LocalBasketNotFoundError,
   type LocalBasket,
   type LocalBasketCommand,
   type LocalBasketLine,
@@ -304,7 +305,7 @@ export const mutateOwnerLocalBasketInventory = async (
       (basket) => basket.basketId === command.basketId,
     );
     if (!existing) {
-      throw new Error("Local basket is unavailable.");
+      throw new LocalBasketNotFoundError();
     }
     if (command.kind === "delete") {
       await saveBasket(transaction, index, existing, undefined);
