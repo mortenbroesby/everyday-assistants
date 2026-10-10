@@ -949,7 +949,9 @@ try {
     );
     if (cancel) {
       // Assistive activation can send a click without a fresh pointer or keyboard event.
-      await touchSummary.evaluate((button) => button.click());
+      await touchSummary.evaluate((button) =>
+        (button as HTMLButtonElement).click(),
+      );
       const touchDetails = touchFrame.getByRole("dialog", {
         name: "Synthetic milk",
       });
