@@ -24,8 +24,6 @@ export type ReviewItem = {
   view: ProductView;
 };
 export type Review = {
-  review_id: string;
-  revision: number;
   destination: "needs-review" | "ready" | "alternatives";
   items: ReviewItem[];
   alternatives?: { product_id: number; query: string; views: ProductView[] };
@@ -55,7 +53,6 @@ export type ViewerPayload = {
   detail_limit?: number;
   unenriched_count?: number;
   review?: Review;
-  view_id?: string;
   unavailable?: boolean;
   ended?: boolean;
 };
@@ -63,9 +60,8 @@ export type ViewerScreen =
   | { kind: "loading" }
   | { kind: "error"; message: string }
   | { kind: "cancelled" }
-  | { kind: "stale" }
   | { kind: "products"; payload: ViewerPayload; views: ProductView[] }
-  | { kind: "review"; review: Review; view_id?: string; active: boolean }
+  | { kind: "review"; review: Review; active: boolean }
   | { kind: "unavailable"; review?: Review }
   | { kind: "empty"; message?: string };
 
@@ -83,7 +79,6 @@ export type ViewerPageModel = {
   message: string;
   connectionMessage?: string;
   busy: boolean;
-  activatingCurrent: boolean;
   confirmSubmit: boolean;
   confirmEnd: boolean;
   continueSubmitted: boolean;
@@ -98,7 +93,7 @@ export type ViewerPageActions = {
     factKey: string,
     expanded: boolean,
   ) => void;
-  onActivateCurrent: () => void;
+  onRefresh: () => void;
   onSelected: (productId: number, selected: boolean) => void;
   onSelectAll: () => void;
   onAcceptSelected: () => void;
@@ -399,7 +394,6 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
     message,
     connectionMessage,
     busy,
-    activatingCurrent,
     confirmSubmit,
     confirmEnd,
     continueSubmitted,
@@ -531,6 +525,9 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
         <section className="status">
           <p role="alert">{screen.message}</p>
           <p>Continue in conversation to inspect the current Draft list.</p>
+          <Button color="primary" disabled={busy} onClick={actions.onRefresh}>
+            Refresh Draft list
+          </Button>
         </section>
       )}
       {screen.kind === "cancelled" && (
@@ -539,54 +536,6 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
             Request cancelled. Continue in conversation to confirm the current
             Draft list before continuing.
           </p>
-        </section>
-      )}
-      {screen.kind === "stale" && (
-        <section className="status">
-          <p>This Draft list card is out of date and cannot make changes.</p>
-          <Button
-            color="primary"
-            disabled={activatingCurrent}
-            onClick={actions.onActivateCurrent}
-          >
-            {activatingCurrent ? "Opening…" : "Reopen in conversation"}
-          </Button>
-          {message && <p role="status">{message}</p>}
-        </section>
-      )}
-      {screen.kind === "review" && review && !active && !terminalSubmission && (
-        <section className="status">
-          <p>
-            This Draft list card is inactive.{" "}
-            {review.items.length
-              ? "The current Draft list is shown read-only."
-              : "No current Draft list is available."}
-          </p>
-          {review.items.length > 0 && (
-            <Button
-              color="primary"
-              disabled={activatingCurrent || busy}
-              onClick={actions.onActivateCurrent}
-            >
-              {activatingCurrent ? "Opening…" : "Reopen in conversation"}
-            </Button>
-          )}
-          {message && <p role="status">{message}</p>}
-        </section>
-      )}
-      {review && !active && !terminalSubmission && review.items.length > 0 && (
-        <section
-          className="product-list"
-          aria-label="Current Draft list, read only"
-        >
-          {review.items.map((item) => (
-            <ProductCard
-              key={item.product_id}
-              view={item.view}
-              thumbnailSrc={thumbnail(item.view)}
-              disabled
-            />
-          ))}
         </section>
       )}
       {screen.kind === "unavailable" && (
@@ -624,7 +573,7 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
                 ))}
             </section>
             <form
-              key={`${review.review_id}:${review.alternatives.product_id}:${review.alternatives.query}`}
+              key={`${review.alternatives.product_id}:${review.alternatives.query}`}
               onSubmit={(event) => {
                 event.preventDefault();
                 const query = String(
@@ -997,7 +946,6 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
       ) : null}
       {message &&
         screen.kind !== "error" &&
-        screen.kind !== "stale" &&
         !(screen.kind === "review" && !active) &&
         destination !== "ready" && (
           <p className="status" role="status">

@@ -51,8 +51,8 @@ redirects, and have a bounded timeout.
 #### Scenario: Current data reaches a cached compatible renderer
 
 - **WHEN** a supported renderer receives a confirmed current server snapshot
-- **THEN** it renders that snapshot subject to current ownership, view and
-  revision rules
+- **THEN** it renders that snapshot subject to authenticated conversation
+  ownership and exact prepared-submission rules
 - **AND** it does not infer that its renderer code has also been refreshed
 
 #### Scenario: Renderer compatibility cannot be established
@@ -156,7 +156,7 @@ acknowledgements SHALL NOT imply native acceptance.
   evidence when available, native build observation, and pass/fail outcome
 - **AND** no real basket access or mutation is required by this acceptance
 
-### Requirement: Inactive historical shopping cards
+### Requirement: Interchangeable supported Draft list cards
 
 All viewer identities published before this cutover, including
 `ui://nemlig/draft-list.html`, `ui://nemlig/product-viewer.html`, and the
@@ -165,41 +165,41 @@ Reads SHALL return inert notices
 without bridge code, shopping controls, backend shopping calls, or automatic
 migration. Historical cards using those identities are unsupported.
 
-For the new permanent identity, host-supplied retained snapshots SHALL start
-inactive without product hydration or shopping controls. Explicit activation
-SHALL read the current conversation before rendering controls and SHALL NOT
-restore expired drafts or prior approval. The app SHALL NOT infer message age
-from time or shared browser storage.
-
-After activation, unsolicited snapshots for a different draft SHALL NOT replace
-or deactivate the confirmed current draft. Only a correlated current-state
-read or recovery result can switch drafts. Activation SHALL NOT survive a
-fresh mount.
+For the permanent identity, each supported card SHALL be an interchangeable
+client of the one temporary Draft list owned by its authenticated conversation.
+The server SHALL NOT require a view token, review identifier, revision, or
+activation action for a local Draft list read or edit. Rendering another
+supported card SHALL NOT revoke the authority of an earlier supported card.
+The app SHALL NOT infer message age from time or shared browser storage.
 
 Server authorization SHALL remain mandatory regardless of renderer age:
-principal/conversation ownership, current-view authority, revision, exact
-prepared authorization, freshness, single-use application, strictly additive
-basket writes, verified readback, and uncertain-write no-retry behavior SHALL
-remain enforced. Retirement SHALL NOT be represented as erasing host-cached code.
+principal/conversation ownership, exact prepared submission authorization,
+freshness, single-use application, strictly additive basket writes, verified
+readback, and uncertain-write no-retry behavior SHALL remain enforced. A
+prepared `submission_id` SHALL remain mandatory for a real-basket submission
+and SHALL bind the exact prepared Ready payload. Retirement SHALL NOT be
+represented as erasing host-cached code.
 
-#### Scenario: Reopen or remount a transcript card
+#### Scenario: Reopen or remount a supported transcript card
 
 - **WHEN** the host supplies a retained snapshot to the permanent viewer
-- **THEN** the card starts inactive
-- **AND** explicit activation reads current state without replaying approval
-  or recreating an unavailable draft
+- **THEN** the card can read and edit its authenticated conversation's current
+  Draft list without a card-scoped identifier
+- **AND** it does not recreate an unavailable list or replay prior approval
 
-#### Scenario: Old revision is edited
+#### Scenario: Earlier supported card edits the current list
 
-- **WHEN** another card or conversation action has advanced the revision
-- **THEN** the rejected action triggers at most one read-only refresh, clears
-  transient selection, and reports the conflict without mutation replay
+- **WHEN** another supported card or conversation action has changed the Draft
+  list
+- **THEN** a sequential local action from an earlier supported card applies to
+  that conversation's current list
+- **AND** concurrent work still fails cleanly without automatic replay
 
 #### Scenario: Service cannot confirm the action
 
 - **WHEN** a tool fails or times out without a known stale-state result
-- **THEN** the card hides shopping controls and offers explicit read-only
-  recovery without automatic mutation retries
+- **THEN** the card reports a sanitized action or connection error and offers
+  explicit read-only recovery without automatic mutation retries
 
 #### Scenario: Retired resource is requested
 
@@ -214,26 +214,29 @@ remain enforced. Retirement SHALL NOT be represented as erasing host-cached code
 - **THEN** that card remains unsupported and no claim of remote erasure is made
 - **AND** all calls still face the current server authorization and safety checks
 
-#### Scenario: Activated current card receives a duplicate host snapshot
+#### Scenario: Delayed host snapshot follows a local action
 
-- **WHEN** the same mounted review receives a matching result or globals update
-- **THEN** it stays active, preserves compatible presentation state, and does
-  not reopen or replace the card
+- **WHEN** a local Draft list action has returned its correlated current result
+- **THEN** a delayed passive host snapshot does not visually roll back that
+  confirmed result or resurrect cancelled controls
 
-#### Scenario: Historical snapshot arrives after current activation
+#### Scenario: Current list is unavailable
 
-- **WHEN** current draft B is confirmed and a delayed notification supplies A
-- **THEN** the mounted frame keeps B active without another tool call, lost
-  local selection, or renewed activation prompt
+- **WHEN** a card reads after restart, eviction, or explicit end removed its
+  conversation's temporary Draft list
+- **THEN** it reports the list unavailable without silently recreating it,
+  restoring acceptance, or restoring submission authority
 
-#### Scenario: Current draft changes by explicit recovery
+#### Scenario: Prepared submission remains exact
 
-- **WHEN** a correlated conversation-scoped recovery confirms current draft C
-- **THEN** the frame can switch to C
-- **AND** an unsolicited different-draft notification alone cannot switch it
+- **WHEN** Ready products or quantities change after a submission was prepared
+- **THEN** its prior submission ID is rejected before provider work
+- **AND** a To decide-only edit preserves an otherwise unchanged prepared Ready
+  payload
 
-#### Scenario: Historical frame remounts
+#### Scenario: Predecessor bundle remains mounted
 
-- **WHEN** a supported card receives a new frame after prior activation
-- **THEN** activation is lost and current state must be explicitly confirmed
-  before shopping controls are shown
+- **WHEN** an already-mounted predecessor bundle requires the removed card
+  identifiers
+- **THEN** it is not claimed compatible with the new action contract
+- **AND** a supported remount is required before it can perform local actions

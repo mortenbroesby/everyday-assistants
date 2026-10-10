@@ -170,8 +170,6 @@ test("MCP submission smoke searches, prepares only accepted lines, and verifies 
       const response = await mcp.callTool({
         name: "update_product_review_conversation",
         arguments: {
-          review_id: review.review_id,
-          revision: review.revision,
           action,
         },
       });
@@ -266,8 +264,6 @@ test("MCP submission smoke searches, prepares only accepted lines, and verifies 
     const wrongReference = await mcp.callTool({
       name: "submit_product_review_conversation",
       arguments: {
-        review_id: review.review_id,
-        revision: review.revision,
         submission_id: "00000000-0000-4000-8000-000000000000",
       },
     });
@@ -282,8 +278,6 @@ test("MCP submission smoke searches, prepares only accepted lines, and verifies 
     const submitted = await mcp.callTool({
       name: "submit_product_review_conversation",
       arguments: {
-        review_id: review.review_id,
-        revision: review.revision,
         submission_id: prepared.submission_id,
       },
     });
@@ -333,8 +327,6 @@ test("MCP submission smoke searches, prepares only accepted lines, and verifies 
     const duplicate = await mcp.callTool({
       name: "submit_product_review_conversation",
       arguments: {
-        review_id: review.review_id,
-        revision: review.revision,
         submission_id: prepared.submission_id,
       },
     });

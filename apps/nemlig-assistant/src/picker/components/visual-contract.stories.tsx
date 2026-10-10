@@ -99,8 +99,6 @@ const oatMilk: ProductView = {
   review: { kind: "review", quantity: 1, line_total: 19.95, approved: false },
 };
 const review: Review = {
-  review_id: "storybook-review",
-  revision: 4,
   destination: "needs-review",
   items: [
     { product_id: 1, quantity: 2, state: "needs-review", view: milk },
@@ -170,7 +168,6 @@ const baseProps = (
     ]),
     message: "",
     busy: false,
-    activatingCurrent: false,
     confirmSubmit: false,
     confirmEnd: false,
     continueSubmitted: false,
@@ -181,7 +178,7 @@ const baseProps = (
     onNavigate: noop,
     onDisclosureChange: noop,
     onFactExpandedChange: noop,
-    onActivateCurrent: noop,
+    onRefresh: noop,
     onSelected: noop,
     onSelectAll: noop,
     onAcceptSelected: noop,
@@ -219,12 +216,9 @@ function FixturePage({
     ...overrides,
     actions: {
       ...overrides.actions,
-      onActivateCurrent:
-        overrides.actions?.onActivateCurrent ??
-        (() =>
-          setHostMessage(
-            "Storybook would ask ChatGPT to load the current Draft list.",
-          )),
+      onRefresh:
+        overrides.actions?.onRefresh ??
+        (() => setHostMessage("Storybook would read the current Draft list.")),
       onInspectBasket:
         overrides.actions?.onInspectBasket ??
         (() =>
@@ -254,7 +248,7 @@ const activeReview = (
   overrides: StoryOverrides = {},
 ) =>
   page(
-    { kind: "review", review: value, active: true, view_id: "storybook-view" },
+    { kind: "review", review: value, active: true },
     {
       ...overrides,
       model: {
@@ -437,7 +431,6 @@ function walkthroughScreen(ended: boolean, review: Review): ViewerScreen {
         kind: "review",
         review,
         active: true,
-        view_id: "storybook-view",
       };
 }
 
@@ -615,7 +608,6 @@ export const Unavailable: Story = {
         ],
       },
       active: true,
-      view_id: "storybook-view",
     }),
 };
 export const UnavailableDraft: Story = {
@@ -645,11 +637,6 @@ export const Error: Story = {
     page({ kind: "error", message: "Could not load the Draft list." }),
 };
 export const Cancelled: Story = { render: () => page({ kind: "cancelled" }) };
-export const Stale: Story = { render: () => page({ kind: "stale" }) };
-export const Inactive: Story = {
-  render: () =>
-    page({ kind: "review", review, active: false, view_id: "older-view" }),
-};
 export const ReadOnlyProducts: Story = {
   render: () =>
     page({

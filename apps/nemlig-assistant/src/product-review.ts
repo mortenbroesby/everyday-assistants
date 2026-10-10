@@ -23,8 +23,6 @@ export interface ReviewItem {
   view: ProductView;
 }
 export interface ProductReviewSnapshot {
-  review_id: string;
-  revision: number;
   destination: ReviewDestination;
   items: ReviewItem[];
   submission?: {
@@ -49,11 +47,9 @@ export type ProductReviewAction =
   | { kind: "alternatives"; product_id: number; query: string; limit?: number }
   | { kind: "replace"; product_id: number; replacement_id: number };
 interface StoredReview {
-  owner: string;
   busy: boolean;
   snapshot: ProductReviewSnapshot;
   proposalId?: string;
-  viewId?: string;
 }
 type ReviewProposals = Pick<
   BasketProposalService,
@@ -68,7 +64,6 @@ const available = (view: ProductView): boolean =>
 /** Private, bounded, temporary state. Local edits cannot call a provider mutation. */
 export class ProductReviewService {
   private readonly drafts = new Map<string, StoredReview>();
-  private readonly activeByOwner = new Map<string, string>();
   private readonly startingOwners = new Set<string>();
   private readonly proposals?: ReviewProposals;
   private readonly now: () => number;
@@ -81,9 +76,9 @@ export class ProductReviewService {
     this.now = options.now ?? Date.now;
   }
 
-  private touch(stored: StoredReview): void {
-    this.drafts.delete(stored.snapshot.review_id);
-    this.drafts.set(stored.snapshot.review_id, stored);
+  private touch(owner: string, stored: StoredReview): void {
+    this.drafts.delete(owner);
+    this.drafts.set(owner, stored);
   }
 
   private makeRoom(): void {
@@ -102,9 +97,8 @@ export class ProductReviewService {
         "Active draft list limit reached. Finish an in-progress draft list and try again.",
       );
     }
-    const [id, draft] = oldest;
-    this.drafts.delete(id);
-    this.activeByOwner.delete(draft.owner);
+    const [owner] = oldest;
+    this.drafts.delete(owner);
   }
 
   private readItems(
@@ -140,57 +134,28 @@ export class ProductReviewService {
     );
   }
 
-  private get(owner: string, id: string): StoredReview {
-    const draft = this.drafts.get(id);
-    if (!draft || draft.owner !== owner) {
+  private get(owner: string): StoredReview {
+    const draft = this.drafts.get(owner);
+    if (!draft) {
       throw new NemligError(
-        "Draft list unavailable. Use update_product_review_conversation show without an old review_id or revision to find this conversation's active draft list; never replay the failed edit. If none remains, ask before starting a new draft list.",
+        "Draft list unavailable. Show this conversation's current draft list; never replay the failed edit. If none remains, ask before starting a new draft list.",
       );
     }
     return draft;
   }
 
-  show(owner: string, id: string): ProductReviewSnapshot {
-    const stored = this.get(owner, id);
-    this.touch(stored);
-    return structuredClone(stored.snapshot);
-  }
-
-  /** A new rendered card supersedes every older card for this conversation. */
-  createView(
-    owner: string,
-    id: string,
-  ): { review: ProductReviewSnapshot; view_id: string } {
-    const stored = this.get(owner, id);
-    const view_id = randomUUID();
-    stored.viewId = view_id;
-    this.touch(stored);
-    return { review: structuredClone(stored.snapshot), view_id };
-  }
-
-  assertCurrentView(owner: string, id: string, viewId: string): void {
-    const stored = this.get(owner, id);
-    if (!stored.viewId || stored.viewId !== viewId) {
-      throw new NemligError(
-        "This Draft list card is out of date. Use the newest card before making changes.",
-      );
-    }
-  }
-
   active(owner: string): ProductReviewSnapshot | undefined {
-    const id = this.activeByOwner.get(owner);
-    if (!id) {
+    const stored = this.drafts.get(owner);
+    if (!stored) {
       return undefined;
     }
-    const stored = this.get(owner, id);
-    this.touch(stored);
+    this.touch(owner, stored);
     return structuredClone(stored.snapshot);
   }
 
-  end(owner: string, id: string, revision: number): void {
-    const stored = this.lock(owner, id, revision);
-    this.drafts.delete(id);
-    this.activeByOwner.delete(owner);
+  end(owner: string): void {
+    const stored = this.lock(owner);
+    this.drafts.delete(owner);
     stored.busy = false;
   }
 
@@ -199,9 +164,10 @@ export class ProductReviewService {
     items: Array<{ product_id: number; quantity: number }>,
     signal?: AbortSignal,
   ): Promise<ProductReviewSnapshot> {
-    const activeId = this.activeByOwner.get(owner);
-    if (activeId) {
-      return structuredClone(this.get(owner, activeId).snapshot);
+    const active = this.drafts.get(owner);
+    if (active) {
+      this.touch(owner, active);
+      return structuredClone(active.snapshot);
     }
     if (this.startingOwners.has(owner)) {
       throw new NemligError(
@@ -229,13 +195,10 @@ export class ProductReviewService {
     try {
       const rows = await this.readItems(items, signal);
       const snapshot: ProductReviewSnapshot = {
-        review_id: randomUUID(),
-        revision: 1,
         destination: "needs-review",
         items: rows,
       };
-      this.drafts.set(snapshot.review_id, { owner, busy: false, snapshot });
-      this.activeByOwner.set(owner, snapshot.review_id);
+      this.drafts.set(owner, { busy: false, snapshot });
       return structuredClone(snapshot);
     } finally {
       this.startingOwners.delete(owner);
@@ -244,12 +207,10 @@ export class ProductReviewService {
 
   async update(
     owner: string,
-    id: string,
-    revision: number,
     action: ProductReviewAction,
     signal?: AbortSignal,
   ): Promise<ProductReviewSnapshot> {
-    const stored = this.lock(owner, id, revision);
+    const stored = this.lock(owner);
     // Commit only after all validation and reads succeed, so bulk actions are atomic.
     const draft = structuredClone(stored.snapshot);
     const readySelection = (items: ReviewItem[]) =>
@@ -440,7 +401,7 @@ export class ProductReviewService {
         }
         delete draft.alternatives;
       }
-      this.get(owner, id); // Confirm the draft still exists after asynchronous reads.
+      this.get(owner); // Confirm the draft still exists after asynchronous reads.
       const preparedReadySelectionUnchanged =
         draft.submission?.status === "prepared" &&
         readySelection(draft.items) === previousReadySelection;
@@ -452,42 +413,34 @@ export class ProductReviewService {
         delete draft.submission;
         delete stored.proposalId;
       }
-      draft.revision++;
       stored.snapshot = draft;
-      this.touch(stored);
+      this.touch(owner, stored);
       return structuredClone(draft);
     } finally {
       stored.busy = false;
     }
   }
 
-  private lock(owner: string, id: string, revision: number): StoredReview {
-    const stored = this.get(owner, id);
+  private lock(owner: string): StoredReview {
+    const stored = this.get(owner);
     if (stored.busy) {
       throw new NemligError(
         "A draft list operation is in progress. Refresh after it finishes.",
       );
     }
-    if (stored.snapshot.revision !== revision) {
-      throw new NemligError(
-        "Draft list revision is stale. Show the current draft list before choosing your next action; never replay the failed edit.",
-      );
-    }
     stored.busy = true;
-    this.touch(stored);
+    this.touch(owner, stored);
     return stored;
   }
 
   async prepare(
     owner: string,
-    id: string,
-    revision: number,
     signal?: AbortSignal,
   ): Promise<ProductReviewSnapshot> {
     if (!this.proposals) {
       throw new NemligError("Submission service unavailable.");
     }
-    const stored = this.lock(owner, id, revision);
+    const stored = this.lock(owner);
     try {
       const previous = stored.snapshot.submission;
       if (previous && previous.status !== "prepared") {
@@ -509,7 +462,7 @@ export class ProductReviewService {
         { kind: "exact_review" },
         { signal, freshProducts: true },
       );
-      this.get(owner, id);
+      this.get(owner);
       stored.proposalId = proposal.proposal_id;
       stored.snapshot.submission = {
         submission_id: randomUUID(),
@@ -517,7 +470,6 @@ export class ProductReviewService {
         expires_at: proposal.expires_at,
         review: structuredClone(proposal.review),
       };
-      stored.snapshot.revision++;
       return structuredClone(stored.snapshot);
     } finally {
       stored.busy = false;
@@ -527,14 +479,12 @@ export class ProductReviewService {
   /** Call only after explicit conversational or viewer approval of this exact submission. */
   async submit(
     owner: string,
-    id: string,
-    revision: number,
     submissionId: string,
   ): Promise<{ review: ProductReviewSnapshot; result: ApplyResult }> {
     if (!this.proposals) {
       throw new NemligError("Submission service unavailable.");
     }
-    const stored = this.lock(owner, id, revision);
+    const stored = this.lock(owner);
     try {
       const submission = stored.snapshot.submission;
       if (
@@ -554,7 +504,6 @@ export class ProductReviewService {
       }
       // Record uncertainty before crossing the provider boundary; never silently retry.
       submission.status = "uncertain";
-      stored.snapshot.revision++;
       let result: ApplyResult;
       try {
         result = await this.proposals.apply(

@@ -176,6 +176,12 @@ document.getElementById('run').onclick = async () => {
   widgetCalls.length=0; await document.getElementById('start').onclick();
   await wait(()=>button('To decide (2)') && !button('To decide (2)').disabled && doc().querySelectorAll('.product-list article').length===2);
   check(widgetCalls.length===0,'Fresh card made an unnecessary server call');
+  await select(); offline=true; click('Add selected to Ready (1)'); await wait(()=>text().includes('Refresh the Draft list'));
+  offline=false;
+  publish();
+  await new Promise(r=>setTimeout(r,50));
+  check(text().includes('Refresh the Draft list')&&!button('To decide (2)'),'Delayed initial host payload restored an unconfirmed card');
+  click('Refresh Draft list'); await wait(()=>button('To decide (2)') && !button('To decide (2)').disabled && doc().querySelectorAll('.product-list article').length===2);
   status.textContent='Checking direct product display'; const beforeDirectView=widgetCalls.length;
   const reloaded=new Promise(resolve=>frame.addEventListener('load',resolve,{once:true})); frame.contentWindow.location.reload(); await reloaded;
   await wait(()=>button('To decide (2)') && !button('To decide (2)').disabled && doc().querySelectorAll('.product-list article').length===2);
@@ -198,21 +204,23 @@ document.getElementById('run').onclick = async () => {
   check(widgetCalls.length===beforeMount,'Remount made an unnecessary server call');
   transcript=await call({name:'update_product_review_conversation',arguments:{action:{kind:'show'}}}); publish();
   await wait(()=>button('To decide (1)') && !button('To decide (1)').disabled);
-  status.textContent='Checking stale revision without replay';
-  const current=transcript.structuredContent.review;
-  await call({name:'update_product_review_conversation',arguments:{review_id:current.review_id,revision:current.revision,action:{kind:'quantity',product_id:1,quantity:3}}});
-  const beforeConflict=widgetCalls.length;
-  await select(); click('Add selected to Ready (1)'); await wait(()=>text().includes('Your last action was not applied'));
-  check(widgetCalls.length===beforeConflict+2,'Conflict must make one edit attempt and one read');
-  check(widgetCalls.at(-1).arguments.action.kind==='show','Conflict recovery was not read-only');
-  check(button('To decide (1)') && !doc().querySelector('input:checked'),'Conflict changed acceptance');
-  status.textContent='Checking connection failure'; await select(); offline=true; click('Add selected to Ready (1)'); await wait(()=>text().includes('This Draft list card is out of date'));
-  check(!doc().querySelector('input') && !/INVALID_ARGUMENT|private trace/.test(text()),'Failure leaked details or editable snapshot');
-  check(!button('Add selected to Ready (1)')&&!button('Remove from Draft list')&&!doc().querySelector('input'),'Stale view retained draft-edit controls after its request failed');
-  offline=false;
+  status.textContent='Checking sequential card action';
+  await call({name:'update_product_review_conversation',arguments:{action:{kind:'quantity',product_id:1,quantity:3}}});
+  const beforeSequential=widgetCalls.length;
+  await select(); click('Add selected to Ready (1)'); await wait(()=>button('Ready (2)')&&!button('Ready (2)').disabled);
+  check(widgetCalls.length===beforeSequential+1,'A supported card action did not apply to the current owner list');
+  check(widgetCalls.at(-1).arguments.action.kind==='accept','The card replayed or replaced the explicit action');
+  click('View Ready products'); await wait(()=>doc().querySelectorAll('.product-list article').length===2);
+  check([...doc().querySelectorAll('[data-viewer-component="product-quantity"]')].some(node=>node.textContent.startsWith('3')),'The card did not adopt current server quantities');
+  click('Move to To decide'); await wait(()=>button('To decide (1)')&&!button('To decide (1)').disabled); click('To decide (1)'); await wait(()=>doc().querySelector('#title')?.textContent==='To decide');
+  status.textContent='Checking service outage recovery'; await select(); offline=true; click('Add selected to Ready (1)'); await wait(()=>text().includes('Refresh the Draft list'));
+  check(!/out of date|stale|private trace|INVALID_ARGUMENT/i.test(text()),'A service outage was mislabeled or leaked details');
+  check(button('Refresh Draft list'),'Service outage omitted read-only recovery');
+  offline=false; click('Refresh Draft list'); await wait(()=>button('To decide (1)')&&!button('To decide (1)').disabled);
   status.textContent='Checking process restart'; await fetch('/reset',{method:'POST'});
   const restarted=await call({name:'start_product_review',arguments:{items:[{product_id:1,quantity:3},{product_id:2,quantity:2}]}});
   transcript=restarted; publish();
+  const restartedFrame=new Promise(resolve=>frame.addEventListener('load',resolve,{once:true})); frame.src='/viewer'; await restartedFrame;
   await wait(()=>button('To decide (2)') && !button('To decide (2)').disabled && [...doc().querySelectorAll('[data-viewer-component="product-quantity"]')].some(node=>node.textContent.startsWith('3')));
   check(button('Ready (0)') && !doc().querySelector('input:checked') && [...doc().querySelectorAll('[data-viewer-component="product-quantity"]')].some(node=>node.textContent.startsWith('3')),'Restart restored acceptance or lost the explicitly supplied quantities');
   status.textContent='Checking exact prepare only';
@@ -224,7 +232,7 @@ document.getElementById('run').onclick = async () => {
   check(prepared.basketReads===1&&prepared.basketWrites===0,'Prepare crossed the wrong provider boundary');
   check(!!button('Add to Nemlig basket') && !button('Add to Nemlig'),'The prepared change was shown before explicit confirmation');
   check(widgetCalls.every(call=>!('representation' in call.arguments)),'Viewer sent a representation selector');
-  status.textContent='PASS: no-call mount, reload, remount, stale revision, outage, restart, finish, prepare only; one fake basket read, zero writes';
+ status.textContent='PASS: no-call mount, reload, remount, sequential cards, outage recovery, restart, finish, prepare only; one fake basket read, zero writes';
  } catch(error) { status.textContent='FAIL: '+error.message+' | viewer: '+(doc()?.body?.innerText||'no iframe document')+' | widget calls: '+JSON.stringify(widgetCalls); }
  finally { offline=false; run.disabled=false; }
 };
@@ -324,7 +332,7 @@ document.getElementById('flow').onclick = async () => {
   const emptyReview=(await call({name:'update_product_review_conversation',arguments:{action:{kind:'show'}}})).structuredContent.review;
   check(emptyReview.items.length===0,'Confirmed local row removals did not clear the Ready list');
   check(!button('End Draft list'),'Empty Draft list retained an unnecessary destructive control');
-  await call({name:'update_product_review_conversation',arguments:{review_id:emptyReview.review_id,revision:emptyReview.revision,action:{kind:'end'}}});
+  await call({name:'update_product_review_conversation',arguments:{action:{kind:'end'}}});
   transcript=await call({name:'start_product_review',arguments:{items:[{product_id:1,quantity:1},{product_id:2,quantity:2}]}});
   status.textContent='Checking fresh post-discard card';
  initialized=false; const viewerLoaded=new Promise(resolve=>frame.addEventListener('load',resolve,{once:true})); frame.src='/viewer'; await viewerLoaded; await wait(()=>initialized);
@@ -346,7 +354,7 @@ document.getElementById('flow').onclick = async () => {
   transcript=await call({name:'start_product_review',arguments:{items:[{product_id:1,quantity:1},{product_id:2,quantity:2}]}}); publish();
   status.textContent='Checking recovery after uncertain write';
   const uncertainSnapshot=(await call({name:'update_product_review_conversation',arguments:{action:{kind:'show'}}})).structuredContent.review;
-  const edited=await call({name:'update_product_review_conversation',arguments:{review_id:uncertainSnapshot.review_id,revision:uncertainSnapshot.revision,action:{kind:'quantity',product_id:2,quantity:3}}});
+  const edited=await call({name:'update_product_review_conversation',arguments:{action:{kind:'quantity',product_id:2,quantity:3}}});
   check(edited.isError!==true,'Explicit server-side quantity edit after uncertainty failed');
   const editedReview=edited.structuredContent.review;
   check(!editedReview.submission,'Explicit quantity edit retained the uncertain submission authority');
@@ -369,7 +377,7 @@ document.getElementById('flow').onclick = async () => {
   check(widgetCalls.filter(call=>call.name==='submit_product_review').length===2,'Browser adapter made an unexpected submission call');
   const stats=await fetch('/stats').then(r=>r.json()); check(stats.basketWrites===0,'Provider basket write occurred');
   check(widgetCalls.every(call=>!('representation' in call.arguments)),'Viewer sent a representation selector');
-  status.textContent='PASS: activation, row selection, no-call selection, Ready action hierarchy, confirmed local removals, alternative return, two-row flush, stale prepared no-submit, verified-submit continuation, uncertain block and explicit-edit recovery, confirmed end/restart, 320/375px; provider basket writes 0';
+ status.textContent='PASS: shared owner list, row selection, no-call selection, Ready action hierarchy, confirmed local removals, alternative return, two-row flush, prepared no-submit, verified-submit continuation, uncertain block and explicit-edit recovery, confirmed end/restart, 320/375px; provider basket writes 0';
  } catch(error){status.textContent='FAIL: '+error.message+' | screen: '+(doc()?.querySelector('#title')?.textContent||'unavailable')+' | controls: '+[...(doc()?.querySelectorAll('button')||[])].map(button=>button.textContent.trim()+(button.disabled?' [disabled]':'')).join('; ')+' | widget calls: '+widgetCalls.map(call=>call.name+':'+(call.arguments.action?.kind||'start')).join(',');} finally{run.disabled=false;}
 };
 document.getElementById('alternatives').onclick = async () => {
@@ -421,8 +429,10 @@ document.getElementById('alternatives').onclick = async () => {
   await search('empty'); await wait(()=>doc().querySelector('.alternatives-empty'));
   check(doc().querySelector('#alternative-query')&&doc().querySelector('.alternatives-empty')?.textContent.includes('No alternatives were returned'),'Empty search was hidden or represented as a failure');
   await search('search-error');
-  await wait(()=>doc().querySelector('#title')?.textContent==='Your Draft list'&&doc().querySelector('main')?.textContent.includes('We could not confirm this action'));
+  await wait(()=>doc().querySelector('main')?.textContent.includes('We could not confirm this action')&&button('Refresh Draft list'));
+  check(!/stale|out of date|inactive/i.test(doc().querySelector('main')?.textContent||''),'Service failure was described as a stale card');
   check(!doc().querySelector('.alternatives-empty'),'Search failure was mislabeled as a successful empty result');
+  click('Refresh Draft list'); await wait(()=>button('To decide (2)')&&!button('To decide (2)').disabled);
   currentReview=(await call({name:'update_product_review_conversation',arguments:{action:{kind:'show'}}})).structuredContent.review;
   check(currentReview.items.every(item=>item.state==='needs-review'&&item.quantity>0),'Alternative search changed the authoritative local selection');
   check((await fetch('/stats').then(r=>r.json())).basketWrites===0,'Alternative comparison called a provider basket write');
@@ -505,8 +515,6 @@ const server = createServer((req, res) => {
         if (
           !prepared?.submission ||
           prepared.submission.status !== "prepared" ||
-          input.arguments.review_id !== prepared.review_id ||
-          input.arguments.revision !== prepared.revision ||
           input.arguments.submission_id !== prepared.submission.submission_id
         ) {
           throw new Error(
@@ -514,9 +522,6 @@ const server = createServer((req, res) => {
           );
         }
         simulatedSubmitted = structuredClone(prepared);
-        if (nextSubmissionStatus === "submitted") {
-          simulatedSubmitted.revision++;
-        }
         simulatedSubmitted.submission!.status = nextSubmissionStatus;
         nextSubmissionStatus = "submitted";
         simulatedSubmissions++;
@@ -525,7 +530,6 @@ const server = createServer((req, res) => {
           JSON.stringify({
             structuredContent: {
               review: simulatedSubmitted,
-              view_id: input.arguments.view_id,
             },
             content: [],
             isError: false,
@@ -551,10 +555,8 @@ const server = createServer((req, res) => {
         input.name === "update_product_review" &&
         action?.kind === "navigate" &&
         simulatedSubmitted &&
-        input.arguments.review_id === simulatedSubmitted.review_id &&
         action.destination
       ) {
-        simulatedSubmitted.revision++;
         simulatedSubmitted.destination = action.destination;
         res.setHeader("content-type", "application/json");
         res.end(
