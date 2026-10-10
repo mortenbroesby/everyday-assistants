@@ -2,8 +2,10 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   appendLocalBasketLines,
+  applyLocalBasketCommand,
   createLocalBasket,
   createOwnerLocalBasketInventory,
+  editLocalBasket,
   listLocalBaskets,
   LOCAL_BASKET_TTL_MS,
   MAX_LOCAL_BASKET_LINES,
@@ -276,5 +278,90 @@ test("preserves same-owner inventory across a credential reconnect without cross
         now: clock.now,
       }),
     /unavailable/u,
+  );
+});
+
+test("submission fence survives edits and only terminally closes a fenced basket", () => {
+  const start = createLocalBasket(
+    createOwnerLocalBasketInventory("owner"),
+    "owner",
+    [line(1, 1)],
+    { now: () => 100, createId: () => id(1) },
+  );
+  const fenced = editLocalBasket(
+    start.inventory,
+    "owner",
+    id(1),
+    { kind: "attempt-submission" },
+    { now: () => 200 },
+  );
+  assert.equal(fenced.value?.submissionAttempted, true);
+  assert.throws(
+    () =>
+      editLocalBasket(
+        fenced.inventory,
+        "owner",
+        id(1),
+        {
+          kind: "quantity",
+          productId: 1,
+          quantity: 2,
+        },
+        { now: () => 201 },
+      ),
+    /Inspect the Nemlig basket/u,
+  );
+  assert.throws(
+    () =>
+      editLocalBasket(
+        start.inventory,
+        "owner",
+        id(1),
+        {
+          kind: "complete-submission",
+        },
+        { now: () => 200 },
+      ),
+    /Inspect the Nemlig basket/u,
+  );
+  const closed = editLocalBasket(
+    fenced.inventory,
+    "owner",
+    id(1),
+    { kind: "complete-submission" },
+    { now: () => 300 },
+  );
+  assert.equal(closed.value, undefined);
+  assert.deepEqual(closed.inventory.baskets, []);
+});
+
+test("stale asynchronous product work fails without persisting its append", () => {
+  const start = createLocalBasket(
+    createOwnerLocalBasketInventory("owner"),
+    "owner",
+    [line(1, 1)],
+    { now: () => 100, createId: () => id(1) },
+  );
+  const edited = selectLocalBasket(start.inventory, "owner", id(1), {
+    now: () => 101,
+  });
+  assert.throws(
+    () =>
+      applyLocalBasketCommand(
+        edited.inventory,
+        "owner",
+        {
+          kind: "edit",
+          basketId: id(1),
+          expectedRevision: 0,
+          edit: { kind: "append", lines: [line(2, 1)] },
+        },
+        { now: () => 102 },
+      ),
+    /changed during product lookup/u,
+  );
+  assert.deepEqual(
+    edited.inventory.baskets[0]?.lines.map(({ productId }) => productId),
+    [1],
   );
 });

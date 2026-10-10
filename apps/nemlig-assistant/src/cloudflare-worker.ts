@@ -1,6 +1,7 @@
 /// <reference types="@cloudflare/workers-types" />
 
 import { Container, getContainer } from "@cloudflare/containers";
+import type { OutboundHandlerContext } from "@cloudflare/containers";
 import type { OAuthTokenVerifier } from "@modelcontextprotocol/express";
 import { DurableObject } from "cloudflare:workers";
 import {
@@ -46,15 +47,14 @@ import type { Credentials } from "./config.js";
 import { handleOnboardingRequest } from "./onboarding.js";
 import {
   attachLocalBasketCapability,
-  withLocalBasketCapability,
+  revokeWhenBodyEnds,
 } from "./local-basket-capability.js";
 import { handleLocalBasketStateRequest } from "./local-basket-callback.js";
 import {
   expireOwnerLocalBasketInventory,
-  readOwnerLocalBasketInventory,
-  writeOwnerLocalBasketInventory,
+  mutateOwnerLocalBasketInventory,
 } from "./local-basket-storage.js";
-import type { OwnerLocalBasketInventory } from "./local-basket.js";
+import type { LocalBasketCommand } from "./local-basket.js";
 
 interface ContainerEnv extends CloudflareEnv {
   NEMLIG_MCP_CONTAINER: DurableObjectNamespace<NemligMcpContainer>;
@@ -164,6 +164,10 @@ const lifecycleEvent = (
 };
 
 export class NemligMcpContainer extends Container<ContainerEnv> {
+  private readonly localBasketCapabilities = new Map<
+    string,
+    { ownerId: string; expiresAt: number }
+  >();
   defaultPort = 8080;
   sleepAfter = "10m";
   envVars = {
@@ -188,9 +192,52 @@ export class NemligMcpContainer extends Container<ContainerEnv> {
   };
 
   static outboundByHost = {
-    [LOCAL_BASKET_STATE_HOST]: (request: Request, env: Env) =>
-      handleLocalBasketStateRequest(request, env.NEMLIG_LOCAL_BASKET_STORAGE),
+    [LOCAL_BASKET_STATE_HOST]: async (
+      request: Request,
+      env: Env,
+      context: OutboundHandlerContext,
+    ) => {
+      const container = env.NEMLIG_MCP_CONTAINER.get(
+        env.NEMLIG_MCP_CONTAINER.idFromString(context.containerId),
+      );
+      return handleLocalBasketStateRequest(
+        request,
+        env.NEMLIG_LOCAL_BASKET_STORAGE,
+        (capability) => container.resolveLocalBasketCapability(capability),
+      );
+    },
   };
+
+  async beginLocalBasketRequest(
+    ownerId: string,
+    expiresAt: number,
+  ): Promise<string> {
+    if (
+      !/^[A-Za-z0-9_-]{32,64}$/u.test(ownerId) ||
+      !Number.isFinite(expiresAt) ||
+      expiresAt <= Date.now()
+    ) {
+      throw new Error("Local basket request is unavailable.");
+    }
+    const capability = crypto.randomUUID();
+    this.localBasketCapabilities.set(capability, { ownerId, expiresAt });
+    return capability;
+  }
+
+  async resolveLocalBasketCapability(
+    capability: string,
+  ): Promise<string | undefined> {
+    const active = this.localBasketCapabilities.get(capability);
+    if (!active || active.expiresAt <= Date.now()) {
+      this.localBasketCapabilities.delete(capability);
+      return undefined;
+    }
+    return active.ownerId;
+  }
+
+  async revokeLocalBasketRequest(capability: string): Promise<void> {
+    this.localBasketCapabilities.delete(capability);
+  }
 
   override onStart(): void {
     lifecycleEvent("container_started");
@@ -386,15 +433,10 @@ export class NemligMcpContainer extends Container<ContainerEnv> {
 }
 
 export class OwnerLocalBasketStorage extends DurableObject<CloudflareEnv> {
-  async read(ownerId: string): Promise<OwnerLocalBasketInventory> {
-    return readOwnerLocalBasketInventory(this.ctx.storage, ownerId);
-  }
-
-  async write(
-    ownerId: string,
-    inventory: OwnerLocalBasketInventory,
-  ): Promise<OwnerLocalBasketInventory> {
-    return writeOwnerLocalBasketInventory(this.ctx.storage, ownerId, inventory);
+  async mutate(ownerId: string, command: LocalBasketCommand): Promise<unknown> {
+    return this.ctx.blockConcurrencyWhile(() =>
+      mutateOwnerLocalBasketInventory(this.ctx.storage, ownerId, command),
+    );
   }
 
   async alarm(): Promise<void> {
@@ -540,11 +582,21 @@ export default {
           admission,
           deadline.signal,
         );
-        return withLocalBasketCapability(
+        const capability = await container.beginLocalBasketRequest(
           principal.principal_key,
-          (capability) =>
-            container.fetch(attachLocalBasketCapability(request, capability)),
+          Date.now() + deadline.remainingMs,
         );
+        try {
+          const response = await container.fetch(
+            attachLocalBasketCapability(request, capability),
+          );
+          return await revokeWhenBodyEnds(response, () =>
+            container.revokeLocalBasketRequest(capability),
+          );
+        } catch (error) {
+          await container.revokeLocalBasketRequest(capability);
+          throw error;
+        }
       },
     });
   },

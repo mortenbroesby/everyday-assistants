@@ -35,19 +35,19 @@ The system SHALL show alternatives for one identified local product in a dedicat
 - **THEN** the same target and returned alternatives remain available, and the local row is unchanged
 
 ### Requirement: Explicit protected submission
-The system SHALL prepare one exact submission containing every current local basket item, regardless of any legacy stored review state. It SHALL fail closed if any item is unavailable or its required product facts are incomplete; it SHALL never silently omit a row. Editing the draft SHALL invalidate its pending submission. Applying still requires explicit confirmation of the unchanged exact review, and all existing freshness, single-use, principal, mutation-lock, uncertain-write, and readback safeguards SHALL remain effective. Unrelated real basket lines SHALL remain unchanged.
+The system SHALL review every current local basket item, regardless of any legacy stored review state. It MAY explicitly exclude a product confirmed unavailable or missing while preparing the remaining available products, and SHALL report each exclusion rather than silently omit a row. Missing or changed prices SHALL NOT block submission. Unresolved identity, quantity, or availability SHALL fail closed. Editing the draft SHALL invalidate its pending submission. Applying still requires explicit confirmation of the unchanged exact review, and all existing freshness, single-use, principal, mutation-lock, uncertain-write, and readback safeguards SHALL remain effective. Unrelated real basket lines SHALL remain unchanged.
 
 #### Scenario: Submit the entire local basket
-- **WHEN** the user requests submission and every current local item has complete available product data
-- **THEN** the system prepares exact current quantities, prices, and effects for every item without applying them
+- **WHEN** the user requests submission and every current local item is available
+- **THEN** the system prepares exact current quantities and effects for every item, with prices where available, without applying them
 
 #### Scenario: Local selection is complete
 - **WHEN** the user submits the current Local basket
-- **THEN** the system prepares every exact current item for review without applying it
+- **THEN** the system reviews every exact current item, reports confirmed unavailable items as excluded, and prepares the remaining available items without applying them
 
 #### Scenario: A local basket item is unavailable or incomplete
-- **WHEN** any current local item cannot be freshly confirmed as available with complete required facts
-- **THEN** preparation stops, identifies the row for resolution, and prepares no partial subset
+- **WHEN** a current local item is confirmed unavailable or missing
+- **THEN** preparation identifies it as excluded and prepares the remaining available items; an unresolved identity, quantity, or availability still stops preparation
 
 #### Scenario: Approved submission succeeds
 - **WHEN** the user approves the unchanged current submission review
@@ -58,21 +58,25 @@ The system SHALL prepare one exact submission containing every current local bas
 - **THEN** the local basket remains intact, the outcome is explicitly uncertain or failed, and the system does not automatically retry the submission
 
 ### Requirement: To decide and Ready refinement
-The touch review SHALL show one Local basket list without visible To decide or Ready tabs, row-selection checkboxes, or an acceptance step. Every product SHALL be a Ready submission candidate. Swipe gestures past half the row SHALL reveal a full-row action without activating it; a fresh explicit activation of the revealed Remove or Find alternative button SHALL perform the corresponding local action. Keyboard users SHALL be able to reveal those actions by focusing the row and pressing Left or Right Arrow. Expanded rows SHALL provide full-width quantity controls without duplicate action buttons. Legacy stored state SHALL NOT exclude an item from whole-basket submission.
+The touch review SHALL show one Local basket list without visible To decide or Ready tabs, row-selection checkboxes, or an acceptance step. Every product SHALL be a Ready submission candidate. A right-to-left swipe on a row SHALL replace that row with inline controls containing accessible trash and Find alternatives icon controls on the left and minus/quantity/plus controls on the right, all on one line without activating an action. The inline controls SHALL open only on release. Close or Escape SHALL restore the product row; the surrounding basket SHALL remain visible. Left-to-right swipes, vertical scrolling, short drags, and canceled gestures SHALL NOT open actions or mutate the basket. Tapping a row SHALL open near-full-screen details that can be dismissed and show the same delete, Find alternatives, and quantity controls below the product facts for access without swiping. Keyboard users SHALL be able to open the inline controls with Shift+F10 and details with Enter or Space. Legacy stored state SHALL NOT exclude an item from whole-basket submission.
 
-The viewer SHALL bound its height and use one scroll region for long content. Larger Local baskets MAY virtualize offscreen rows, provided scrolling, keyboard access, expanded details, and whole-basket submission remain available.
+The viewer SHALL bound its height and use one scroll region for long content. Larger Local baskets MAY virtualize offscreen rows, provided scrolling, keyboard access, modal details, and whole-basket submission remain available.
 
 #### Scenario: Review a long Local basket
 - **WHEN** the Local basket contains more products than fit in the viewer
-- **THEN** the user can scroll through every product to Submit and Clear without a second nested scroll region; expanding or removing a row does not lose the remaining products or keyboard focus
+- **THEN** the user can scroll through every product to Submit and Clear without a second nested scroll region; opening details or removing a row does not lose the remaining products or keyboard focus
 
 #### Scenario: Submission is not locally ready
-- **WHEN** the Local basket is empty or contains an unavailable or incomplete product
+- **WHEN** the Local basket is empty or has no potentially addable products
 - **THEN** the viewer does not offer an enabled Submit action, and it explains what must be resolved without sending a preparation or provider-write request
 
-#### Scenario: Reveal a local row action
-- **WHEN** the user swipes left or right beyond half the row width and releases
-- **THEN** the row reveals the corresponding Remove or Find alternative button but performs no edit or navigation until that button is explicitly activated
+#### Scenario: Reveal local row actions
+- **WHEN** the user swipes a row from right to left and releases, or presses Shift+F10 while its summary is focused
+- **THEN** the replacement row offers a trash control, minus/quantity/plus controls, and Find alternatives without changing the Local or Nemlig basket until an action is explicitly activated
+
+#### Scenario: Inspect product details
+- **WHEN** the user taps a row
+- **THEN** the product facts open in a near-full-screen modal with the same delete, Find alternatives, and quantity controls below the product facts; the modal can be closed with ×, Escape, or outside activation without changing either basket
 
 #### Scenario: Resolve alternatives for a Ready row
 - **WHEN** the user searches alternatives from a Ready row and chooses a replacement

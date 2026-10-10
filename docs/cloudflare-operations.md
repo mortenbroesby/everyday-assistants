@@ -30,7 +30,7 @@ field names only, never values.
 
 The repository deploys one Worker, one fixed EU Container-controller Durable
 Object named `nemlig-production`, and at most one sleeping `lite` Container.
-The retired `PlanStorage` namespace is deleted by the reviewed `v3` migration:
+The retired `PlanStorage` namespace was deleted by migration `v2`. Migration `v3` adds the owner-scoped Local basket namespace:
 its saved-shopping records are not read or migrated, and cannot be recovered by
 rolling back Worker code after that migration deploys. Do not add it back to a
 routine deployment without a separately reviewed data-recovery design.

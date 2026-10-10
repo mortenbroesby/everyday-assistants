@@ -160,11 +160,11 @@ test("Wrangler configuration fixes both environments to one disabled EU lite Con
         tag: "v1",
         new_sqlite_classes: ["NemligMcpContainer", "PlanStorage"],
       },
+      { tag: "v2", deleted_classes: ["PlanStorage"] },
       {
-        tag: "v2",
+        tag: "v3",
         new_sqlite_classes: ["OwnerLocalBasketStorage"],
       },
-      { tag: "v3", deleted_classes: ["PlanStorage"] },
     ]);
   }
   assert.equal(wrangler.keep_vars, false);

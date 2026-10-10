@@ -1,22 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import {
-  createLocalBasket,
-  createOwnerLocalBasketInventory,
-  LOCAL_BASKET_TTL_MS,
-  MAX_LOCAL_BASKETS,
-  selectLocalBasket,
-  type OwnerLocalBasketInventory,
-} from "./local-basket.js";
+import { LOCAL_BASKET_TTL_MS, MAX_LOCAL_BASKETS } from "./local-basket.js";
 import {
   expireOwnerLocalBasketInventory,
-  readOwnerLocalBasketInventory,
-  writeOwnerLocalBasketInventory,
+  mutateOwnerLocalBasketInventory,
   type LocalBasketInventoryStorage,
+  type LocalBasketStorageAccess,
 } from "./local-basket-storage.js";
-
-const id = (value: number): string =>
-  `00000000-0000-4000-8000-${String(value).padStart(12, "0")}`;
 
 const line = (productId: number, quantity: number) => ({
   productId,
@@ -46,18 +36,51 @@ const line = (productId: number, quantity: number) => ({
 
 class FakeStorage implements LocalBasketInventoryStorage {
   readonly values = new Map<string, unknown>();
+  readonly reads: string[] = [];
+  readonly writes: string[] = [];
   alarm: number | undefined;
 
   async get<T>(key: string): Promise<T | undefined> {
+    this.reads.push(key);
     return this.values.get(key) as T | undefined;
   }
 
   async put<T>(key: string, value: T): Promise<void> {
+    this.writes.push(key);
+    if (
+      new TextEncoder().encode(JSON.stringify(value)).byteLength >
+      2 * 1024 * 1024
+    ) {
+      throw new Error("durable value too large");
+    }
     this.values.set(key, structuredClone(value));
   }
 
+  async transaction<T>(
+    action: (storage: LocalBasketStorageAccess) => Promise<T>,
+  ): Promise<T> {
+    const values = structuredClone(this.values);
+    const alarm = this.alarm;
+    try {
+      return await action(this);
+    } catch (error) {
+      this.values.clear();
+      for (const [key, value] of values) {
+        this.values.set(key, value);
+      }
+      this.alarm = alarm;
+      throw error;
+    }
+  }
+
   async delete(key: string): Promise<void> {
+    this.writes.push(key);
     this.values.delete(key);
+  }
+
+  resetIo(): void {
+    this.reads.length = 0;
+    this.writes.length = 0;
   }
 
   async setAlarm(scheduledTime: number): Promise<void> {
@@ -69,126 +92,179 @@ class FakeStorage implements LocalBasketInventoryStorage {
   }
 }
 
-const create = (
-  inventory: OwnerLocalBasketInventory,
-  value: number,
-  now: number,
-) =>
-  createLocalBasket(inventory, "owner", [line(value, 1)], {
-    now: () => now,
-    createId: () => id(value),
+test("500 product snapshots stay below the Durable Object per-value limit", async () => {
+  const storage = new FakeStorage();
+  const owner = "owner";
+  const manyLines = Array.from({ length: 500 }, (_, index) => {
+    const productId = index + 1;
+    const row = line(productId, 1);
+    return {
+      ...row,
+      view: {
+        ...row.view,
+        product: { ...row.view.product, description: "x".repeat(5_000) },
+      },
+    };
   });
-
-test("persists an owner inventory across Durable Object restarts", async () => {
-  const storage = new FakeStorage();
-  const created = create(createOwnerLocalBasketInventory("owner"), 1, 100);
-  await writeOwnerLocalBasketInventory(
+  const created = (await mutateOwnerLocalBasketInventory(
     storage,
-    "owner",
-    created.inventory,
+    owner,
+    { kind: "create", lines: manyLines },
     100,
-  );
+  )) as { basket: { basketId: string } };
 
-  const recovered = await readOwnerLocalBasketInventory(storage, "owner", 101);
-
-  assert.deepEqual(recovered, created.inventory);
-  assert.equal(storage.alarm, 100 + LOCAL_BASKET_TTL_MS);
-});
-
-test("prunes expiry on reads, writes, and the earliest-expiry alarm", async () => {
-  const storage = new FakeStorage();
-  let inventory = createOwnerLocalBasketInventory("owner");
-  const first = create(inventory, 1, 100);
-  inventory = first.inventory;
-  const second = create(inventory, 2, 200);
-  inventory = second.inventory;
-  await writeOwnerLocalBasketInventory(storage, "owner", inventory, 200);
-  assert.equal(storage.alarm, 100 + LOCAL_BASKET_TTL_MS);
-
-  const expiredOnRead = await readOwnerLocalBasketInventory(
-    storage,
-    "owner",
-    100 + LOCAL_BASKET_TTL_MS,
-  );
-  assert.deepEqual(expiredOnRead.baskets, [second.value.basket]);
-  assert.equal(storage.alarm, 200 + LOCAL_BASKET_TTL_MS);
-
-  const expiredOnWrite = await writeOwnerLocalBasketInventory(
-    storage,
-    "owner",
-    expiredOnRead,
-    200 + LOCAL_BASKET_TTL_MS,
-  );
-  assert.deepEqual(expiredOnWrite.baskets, []);
-  assert.equal(storage.values.size, 0);
-  assert.equal(storage.alarm, undefined);
-
-  const alarmStorage = new FakeStorage();
-  await writeOwnerLocalBasketInventory(alarmStorage, "owner", inventory, 200);
-  await expireOwnerLocalBasketInventory(
-    alarmStorage,
-    100 + LOCAL_BASKET_TTL_MS,
-  );
-  assert.deepEqual(
-    (
-      await readOwnerLocalBasketInventory(
-        alarmStorage,
-        "owner",
-        100 + LOCAL_BASKET_TTL_MS,
-      )
-    ).baskets,
-    [second.value.basket],
-  );
-  assert.equal(alarmStorage.alarm, 200 + LOCAL_BASKET_TTL_MS);
-  await expireOwnerLocalBasketInventory(
-    alarmStorage,
-    200 + LOCAL_BASKET_TTL_MS,
-  );
-  assert.equal(alarmStorage.values.size, 0);
-  assert.equal(alarmStorage.alarm, undefined);
-});
-
-test("persists domain LRU tie-breaking without crossing owner inventories", async () => {
-  const storage = new FakeStorage();
-  let inventory = createOwnerLocalBasketInventory("owner");
-  const first = create(inventory, 1, 100);
-  inventory = first.inventory;
-  const second = create(inventory, 2, 101);
-  inventory = second.inventory;
-  inventory = selectLocalBasket(
-    inventory,
-    "owner",
-    first.value.basket.basketId,
-    {
-      now: () => 200,
-    },
-  ).inventory;
-  inventory = selectLocalBasket(
-    inventory,
-    "owner",
-    second.value.basket.basketId,
-    {
-      now: () => 200,
-    },
-  ).inventory;
-  for (let value = 3; value <= MAX_LOCAL_BASKETS; value++) {
-    inventory = create(inventory, value, 200).inventory;
-  }
-  const overflow = create(inventory, MAX_LOCAL_BASKETS + 1, 201);
-  assert.equal(overflow.value.evictedBasketId, first.value.basket.basketId);
-
-  await writeOwnerLocalBasketInventory(
-    storage,
-    "owner",
-    overflow.inventory,
-    201,
-  );
-  await assert.rejects(
-    readOwnerLocalBasketInventory(storage, "another-owner", 201),
-    /unavailable/u,
+  assert.equal(storage.values.size, 501);
+  const index = storage.values.get("owner-local-basket-index") as {
+    baskets: Array<Record<string, unknown>>;
+  };
+  assert.equal("lines" in index.baskets[0]!, false);
+  assert.equal(index.baskets[0]!.productIds instanceof Array, true);
+  assert.ok(
+    [...storage.values.values()].every(
+      (value) =>
+        new TextEncoder().encode(JSON.stringify(value)).byteLength <
+        2 * 1024 * 1024,
+    ),
   );
   assert.equal(
-    (await readOwnerLocalBasketInventory(storage, "owner", 201)).baskets.length,
-    MAX_LOCAL_BASKETS,
+    (
+      (await mutateOwnerLocalBasketInventory(
+        storage,
+        owner,
+        { kind: "read", basketId: created.basket.basketId },
+        101,
+      )) as { lines: unknown[] }
+    ).lines.length,
+    500,
+  );
+});
+
+test("command reads and the Durable Object alarm remove expired baskets", async () => {
+  const storage = new FakeStorage();
+  const created = (await mutateOwnerLocalBasketInventory(
+    storage,
+    "owner",
+    { kind: "create", lines: [line(3, 1)] },
+    100,
+  )) as { basket: { basketId: string } };
+  assert.equal(storage.alarm, 100 + LOCAL_BASKET_TTL_MS);
+
+  await expireOwnerLocalBasketInventory(storage, 100 + LOCAL_BASKET_TTL_MS);
+  assert.equal(storage.values.size, 0);
+  assert.equal(storage.alarm, undefined);
+  await assert.rejects(
+    mutateOwnerLocalBasketInventory(
+      storage,
+      "owner",
+      { kind: "read", basketId: created.basket.basketId },
+      100 + LOCAL_BASKET_TTL_MS,
+    ),
+    /unavailable/u,
+  );
+});
+
+test("inventory listing and basket edits avoid unrelated product snapshots", async () => {
+  const storage = new FakeStorage();
+  const basketIds: string[] = [];
+  for (let basket = 1; basket <= MAX_LOCAL_BASKETS; basket += 1) {
+    const created = (await mutateOwnerLocalBasketInventory(
+      storage,
+      "owner",
+      {
+        kind: "create",
+        lines: Array.from({ length: 5 }, (_, offset) =>
+          line(basket * 10 + offset, 1),
+        ),
+      },
+      100,
+    )) as { basket: { basketId: string } };
+    basketIds.push(created.basket.basketId);
+  }
+  storage.resetIo();
+
+  const listed = await mutateOwnerLocalBasketInventory(
+    storage,
+    "owner",
+    { kind: "list" },
+    101,
+  );
+  assert.equal((listed as unknown[]).length, MAX_LOCAL_BASKETS);
+  assert.deepEqual(storage.reads, ["owner-local-basket-index"]);
+  assert.deepEqual(storage.writes, []);
+
+  storage.resetIo();
+  await mutateOwnerLocalBasketInventory(
+    storage,
+    "owner",
+    {
+      kind: "edit",
+      basketId: basketIds[24]!,
+      edit: { kind: "quantity", productId: 250, quantity: 2 },
+      expectedRevision: 0,
+    },
+    102,
+  );
+  assert.deepEqual(
+    storage.reads.filter((key) => key.startsWith("line:")),
+    Array.from(
+      { length: 5 },
+      (_, offset) => `line:${basketIds[24]}:${250 + offset}`,
+    ),
+  );
+  const writtenKeys: string[] = Array.from(storage.writes as string[]);
+  assert.ok(
+    writtenKeys.every(
+      (key) =>
+        key === "owner-local-basket-index" ||
+        key.startsWith(`line:${basketIds[24]}:`),
+    ),
+  );
+});
+
+test("terminal completion deletes both basket lines and its index record", async () => {
+  const storage = new FakeStorage();
+  const created = (await mutateOwnerLocalBasketInventory(
+    storage,
+    "owner",
+    { kind: "create", lines: [line(5, 1)] },
+    100,
+  )) as { basket: { basketId: string } };
+  const basketId = created.basket.basketId;
+
+  await mutateOwnerLocalBasketInventory(
+    storage,
+    "owner",
+    {
+      kind: "edit",
+      basketId,
+      edit: { kind: "attempt-submission" },
+      expectedRevision: 0,
+    },
+    101,
+  );
+  const completed = await mutateOwnerLocalBasketInventory(
+    storage,
+    "owner",
+    {
+      kind: "edit",
+      basketId,
+      edit: { kind: "complete-submission" },
+      expectedRevision: 1,
+    },
+    102,
+  );
+
+  assert.deepEqual(completed, { basketId, deleted: true });
+  assert.equal(storage.values.size, 0);
+  assert.equal(
+    (
+      (await mutateOwnerLocalBasketInventory(
+        storage,
+        "owner",
+        { kind: "list" },
+        103,
+      )) as unknown[]
+    ).length,
+    0,
   );
 });

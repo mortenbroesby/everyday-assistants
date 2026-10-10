@@ -43,6 +43,7 @@ import {
 import { RETIRED_PRODUCT_VIEWER_RESOURCE_URIS } from "./product-viewer-identity.js";
 import { renderRetiredProductViewerHtml } from "./retired-product-viewer.js";
 import { MAX_DRAFT_PRODUCTS, ProductReviewService } from "./product-review.js";
+import { candidateSchema, productViewSchema } from "./product-view-schema.js";
 import { resolveDetailedProductSearch } from "./product-discovery.js";
 import {
   parseProductDiscoveryEvent,
@@ -86,69 +87,6 @@ export const serviceAcceptanceResourceInventory = [
   ...RETIRED_PRODUCT_VIEWER_RESOURCE_URIS,
 ] as const;
 
-const candidateSchema = z.object({
-  id: z.number().int().positive().optional(),
-  name: z.string().optional(),
-  price: z.number().optional(),
-  unit_price: z.number().optional(),
-  unit: z.string().optional(),
-  unit_size: z.string().optional(),
-  category: z.string().optional(),
-  subcategory: z.string().optional(),
-  currency: z.literal("DKK").optional(),
-  description: z.string().max(2_000).optional(),
-  declaration: z.string().max(4_000).optional(),
-  details: z.array(z.object({ key: z.string(), value: z.string() })).optional(),
-  brand: z.string().optional(),
-  available: z.boolean().optional(),
-  is_organic: z.boolean().optional(),
-  is_frozen: z.boolean().optional(),
-  is_on_discount: z.boolean().optional(),
-  image_url: z.string().optional(),
-  labels: z.array(z.string()),
-  tags: z.array(z.string()),
-  source: z.enum(["favorite", "catalog"]).optional(),
-  dietary: z
-    .object({
-      organic: z.boolean(),
-      vegan: z.boolean(),
-      gluten_free: z.boolean(),
-      lactose_free: z.boolean(),
-    })
-    .optional(),
-  constraint_outcomes: z.record(z.string(), z.boolean()).optional(),
-  basket_quantity: z.number().nonnegative().optional(),
-  remaining_quantity: z.number().int().nonnegative().optional(),
-});
-
-const productViewSchema = z.discriminatedUnion("status", [
-  z.object({
-    context: z.enum(["search", "details", "result", "basket", "review"]),
-    status: z.literal("complete"),
-    product: candidateSchema,
-    basket: z
-      .object({
-        kind: z.literal("basket").optional(),
-        quantity: z.number().optional(),
-        line_total: z.number().optional(),
-      })
-      .optional(),
-    review: z
-      .object({
-        kind: z.literal("review").optional(),
-        quantity: z.number().int().positive().optional(),
-        line_total: z.number().optional(),
-        approved: z.boolean(),
-      })
-      .optional(),
-  }),
-  z.object({
-    context: z.enum(["search", "details", "result", "basket", "review"]),
-    status: z.literal("unavailable"),
-    product_id: z.number().int().positive().optional(),
-  }),
-]);
-
 const reviewSnapshotSchema = z.object({
   destination: z.enum(["needs-review", "ready", "alternatives"]),
   items: z.array(
@@ -171,7 +109,15 @@ const reviewSnapshotSchema = z.object({
     .object({
       submission_id: z.string().uuid(),
       status: z.enum(["prepared", "submitted", "uncertain", "partial"]),
-      verified_additions: z.number().int().positive().optional(),
+      verified_additions: z.number().int().nonnegative().optional(),
+      skipped_products: z
+        .array(
+          z.object({
+            product_id: z.number().int().positive(),
+            name: z.string(),
+          }),
+        )
+        .optional(),
       expires_at: z.string(),
       review: z.record(z.string(), z.unknown()),
     })
@@ -283,6 +229,12 @@ const applyResultSchema = z.object({
   operation: z.literal("additions"),
   replayed: z.boolean(),
   basket: basketSchema,
+  verified_additions: z.number().int().nonnegative().optional(),
+  skipped_products: z
+    .array(
+      z.object({ product_id: z.number().int().positive(), name: z.string() }),
+    )
+    .optional(),
   views: z.array(productViewSchema).optional(),
 });
 
@@ -437,7 +389,7 @@ The real Nemlig basket is add-only. Never remove, decrease, replace, swap, clear
 
 For discovery, use a concise Danish catalogue phrase and preserve a distinctive brand when useful. Search results describe one provider response, not the entire catalogue; an empty result differs from a failure. Search and conversation edits do not open cards. When the user asks to see products visually, use start_product_review with exact returned IDs and quantities. If a Local basket already exists, add new finds with update_product_review_conversation add; omit items in start_product_review to open another supported card without changing the list. Supported cards share the current conversation list. Respect an explicit instruction not to create or edit a Local basket; use concise text until the user allows local state. If no active list remains, ask before starting over. Use update_product_review_conversation and submit_product_review_conversation for model-side text/data operations. After an unconfirmed action, show current state; never replay it.
 
-The Local basket has one product list. Every item is included in whole-list submission. An unavailable product blocks preparation until removed or replaced; alternatives can be found for any item. A clear instruction to add the exact unchanged Local basket authorizes its prepared payload without another chat approval. Inspection, local edits, or preparation alone do not authorize a real-basket write. If IDs, quantities, or scope are unclear or changed after the instruction, ask for exact approval. Both widget and conversation submission require the exact prepared submission_id, fresh validation, and verified basket readback. After an uncertain write, inspect the Local basket and actual basket; never retry automatically.
+The Local basket has one product list. Every item is included in whole-list submission. Fresh preparation excludes products Nemlig confirms are unavailable; unresolved product identity or availability blocks preparation, while missing price, package, category, or descriptive fields may remain unknown. Alternatives can be found for any item. A clear instruction to add the exact unchanged Local basket authorizes its prepared payload without another chat approval. Inspection, local edits, or preparation alone do not authorize a real-basket write. If IDs, quantities, or scope are unclear or changed after the instruction, ask for exact approval. Both widget and conversation submission require the exact prepared submission_id, fresh validation, and verified basket readback. After an uncertain write, inspect the Local basket and actual basket; never retry automatically.
 
 The Local basket is conversation-scoped and temporary. If unavailable, ask before starting anew; do not restore old decisions or approval. A tool result or image URL does not prove ChatGPT rendered a card; provide a text fallback when needed. check_nemlig_connection distinguishes Nemlig account access from ChatGPT app connection and directs users to the secure page without collecting credentials in chat.`,
       supportedProtocolVersions: SUPPORTED_PROTOCOL_VERSIONS,

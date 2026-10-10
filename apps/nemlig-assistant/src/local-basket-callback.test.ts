@@ -1,11 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { handleLocalBasketStateRequest } from "./local-basket-callback.js";
-import {
-  attachLocalBasketCapability,
-  withLocalBasketCapability,
-} from "./local-basket-capability.js";
+import { attachLocalBasketCapability } from "./local-basket-capability.js";
 import { createOwnerLocalBasketInventory } from "./local-basket.js";
+import type { LocalBasketStorageAccess } from "./local-basket-storage.js";
+import { mutateOwnerLocalBasketInventory } from "./local-basket-storage.js";
 
 const principalKey = "a".repeat(32);
 
@@ -20,6 +19,7 @@ test("Local basket callback requires a live Worker capability before storage", a
       storageCalls += 1;
       return {
         read: async () => createOwnerLocalBasketInventory(principalKey),
+        mutate: async () => undefined,
       };
     },
   };
@@ -27,6 +27,7 @@ test("Local basket callback requires a live Worker capability before storage", a
   const response = await handleLocalBasketStateRequest(
     new Request("http://local-basket-state.internal/inventory"),
     storage,
+    async () => undefined,
   );
 
   assert.equal(response.status, 403);
@@ -42,23 +43,21 @@ test("Local basket callback derives storage identity from capability, not reques
     },
     get: () => ({
       read: async (ownerId: string) => createOwnerLocalBasketInventory(ownerId),
+      mutate: async () => [],
     }),
   };
   const request = new Request("http://local-basket-state.internal/inventory", {
     headers: { "x-owner-id": "forged-owner" },
   });
 
-  await withLocalBasketCapability(principalKey, async (capability) => {
-    const response = await handleLocalBasketStateRequest(
-      attachLocalBasketCapability(request, capability),
-      storage,
-    );
-    assert.equal(response.status, 200);
-    assert.deepEqual(
-      await response.json(),
-      createOwnerLocalBasketInventory(principalKey),
-    );
-  });
+  const response = await handleLocalBasketStateRequest(
+    attachLocalBasketCapability(request, "container-owned-capability"),
+    storage,
+    async (capability) =>
+      capability === "container-owned-capability" ? principalKey : undefined,
+  );
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), []);
 
   assert.deepEqual(names, [principalKey]);
 });
@@ -74,6 +73,7 @@ test("Local basket callback rejects credential-bearing egress before storage", a
       storageCalls += 1;
       return {
         read: async () => createOwnerLocalBasketInventory(principalKey),
+        mutate: async () => undefined,
       };
     },
   };
@@ -81,13 +81,156 @@ test("Local basket callback rejects credential-bearing egress before storage", a
     headers: { authorization: "Bearer synthetic-secret" },
   });
 
-  await withLocalBasketCapability(principalKey, async (capability) => {
-    const response = await handleLocalBasketStateRequest(
-      attachLocalBasketCapability(request, capability),
-      storage,
-    );
-    assert.equal(response.status, 403);
-  });
+  const response = await handleLocalBasketStateRequest(
+    attachLocalBasketCapability(request, "container-owned-capability"),
+    storage,
+    async () => principalKey,
+  );
+  assert.equal(response.status, 403);
 
   assert.equal(storageCalls, 0);
+});
+
+test("Local basket callback validates and strips product snapshot authority", async () => {
+  let persisted: unknown;
+  const storage = {
+    idFromName: (ownerId: string) => ownerId,
+    get: () => ({
+      read: async (ownerId: string) => createOwnerLocalBasketInventory(ownerId),
+      mutate: async (_ownerId: string, command: unknown) => {
+        persisted = command;
+        return { accepted: true };
+      },
+    }),
+  };
+  const post = (view: Record<string, unknown>) =>
+    new Request("http://local-basket-state.internal/inventory", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        kind: "create",
+        lines: [{ productId: 7, quantity: 1, view }],
+      }),
+    });
+  const owner = async () => principalKey;
+  const capability = "container-owned-capability";
+  const safeView = {
+    context: "details",
+    status: "complete",
+    product: {
+      id: 7,
+      name: "Fixture",
+      labels: [],
+      tags: [],
+      credential: "must-not-persist",
+    },
+    authority: { token: "must-not-persist" },
+  };
+
+  const accepted = await handleLocalBasketStateRequest(
+    attachLocalBasketCapability(post(safeView), capability),
+    storage,
+    owner,
+  );
+  assert.equal(accepted.status, 200);
+  const cleanView = (
+    persisted as {
+      lines: Array<{ view: Record<string, unknown> }>;
+    }
+  ).lines[0]!.view;
+  assert.equal("authority" in cleanView, false);
+  assert.equal(
+    "credential" in (cleanView.product as Record<string, unknown>),
+    false,
+  );
+
+  persisted = undefined;
+  const rejected = await handleLocalBasketStateRequest(
+    attachLocalBasketCapability(
+      post({ ...safeView, status: "pending" }),
+      capability,
+    ),
+    storage,
+    owner,
+  );
+  assert.equal(rejected.status, 400);
+  assert.equal(persisted, undefined);
+});
+
+test("callback returns JSON-safe acknowledgements after committed deletion", async () => {
+  const values = new Map<string, unknown>();
+  const storage = {
+    idFromName: (ownerId: string) => ownerId,
+    get: () => ({
+      mutate: async (
+        ownerId: string,
+        command: Parameters<typeof mutateOwnerLocalBasketInventory>[2],
+      ) => {
+        const access: LocalBasketStorageAccess = {
+          async get<T>(key: string) {
+            return values.get(key) as T | undefined;
+          },
+          async put<T>(key: string, value: T) {
+            values.set(key, structuredClone(value));
+          },
+          async delete(key: string) {
+            values.delete(key);
+          },
+          async setAlarm() {},
+          async deleteAlarm() {},
+        };
+        return mutateOwnerLocalBasketInventory(
+          {
+            ...access,
+            async transaction<T>(
+              action: (tx: LocalBasketStorageAccess) => Promise<T>,
+            ) {
+              return action(access);
+            },
+          },
+          ownerId,
+          command,
+        );
+      },
+    }),
+  };
+  const request = (body: unknown) =>
+    attachLocalBasketCapability(
+      new Request("http://local-basket-state.internal/inventory", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+      }),
+      "container-owned-capability",
+    );
+  const call = (body: unknown) =>
+    handleLocalBasketStateRequest(
+      request(body),
+      storage,
+      async () => principalKey,
+    );
+  const view = {
+    context: "details",
+    status: "complete",
+    product: { id: 17, name: "Fixture", labels: [], tags: [] },
+  };
+  const createdResponse = await call({
+    kind: "create",
+    lines: [{ productId: 17, quantity: 1, view }],
+  });
+  assert.equal(createdResponse.status, 200);
+  const created = (await createdResponse.json()) as {
+    basket: { basketId: string };
+  };
+
+  const deletedResponse = await call({
+    kind: "delete",
+    basketId: created.basket.basketId,
+  });
+  assert.equal(deletedResponse.status, 200);
+  assert.deepEqual(await deletedResponse.json(), {
+    basketId: created.basket.basketId,
+    deleted: true,
+  });
+  assert.equal(values.size, 0);
 });

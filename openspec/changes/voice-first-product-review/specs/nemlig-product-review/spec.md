@@ -56,7 +56,7 @@ remain effective. Unrelated real basket lines SHALL remain unchanged.
 
 #### Scenario: Local selection is complete
 - **WHEN** the user requests submission of Ready products
-- **THEN** the system prepares exact current quantities, prices and effects for
+- **THEN** the system prepares exact current quantities, estimated prices and effects for
   approval without applying them
 
 #### Scenario: Approved submission succeeds

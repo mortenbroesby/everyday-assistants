@@ -270,13 +270,10 @@ const configPlainNames = [
 ] as const;
 const configPlainSet = new Set<string>(configPlainNames);
 const requiredSecrets = new Set(["NEMLIG_MCP_PRINCIPALS"]);
-const expectedDo = new Map([
+const expectedDo = new Map([["NEMLIG_MCP_CONTAINER", "NemligMcpContainer"]]);
+const localBasketExpectedDo = new Map([
   ["NEMLIG_MCP_CONTAINER", "NemligMcpContainer"],
   ["NEMLIG_LOCAL_BASKET_STORAGE", "OwnerLocalBasketStorage"],
-]);
-const planStorageExpectedDo = new Map([
-  ["NEMLIG_MCP_CONTAINER", "NemligMcpContainer"],
-  ["NEMLIG_PLAN_STORAGE", "PlanStorage"],
 ]);
 const productionWorker = "nemlig-mcp-cloudflare-production";
 
@@ -496,7 +493,7 @@ const effectiveConfig = (
 
 const versionConfig = (
   raw: string,
-  expected = [expectedDo],
+  expected = [localBasketExpectedDo],
 ): EffectiveConfig => {
   const parsed =
     object(json(raw, "cloudflare_version_invalid")) ??
@@ -568,7 +565,7 @@ export function verifyCandidateVersion(
   expectedId: string,
   commit: string,
   enabled: boolean,
-  expected = [expectedDo],
+  expected = [localBasketExpectedDo],
 ): VersionState {
   const parsed = object(json(raw, "cloudflare_version_invalid"));
   if (!parsed) {
@@ -1024,13 +1021,14 @@ const readLocalConfig = async (
   if (!Array.isArray(durableBindings)) {
     fail("cloudflare_config_invalid");
   }
-  validateDo(
+  const durableObjects = validateDo(
     (durableBindings as unknown[]).map((entry) => {
       const binding = object(entry) ?? fail("cloudflare_config_invalid");
       return { ...binding, type: "durable_object_namespace" };
     }),
+    [localBasketExpectedDo],
   );
-  return effectiveConfig(vars, [], false);
+  return effectiveConfig(vars, [], false, durableObjects);
 };
 
 const candidateConfig = (
@@ -1053,16 +1051,17 @@ const candidateConfig = (
       vars.set(name, value);
     }
   }
-  return effectiveConfig(vars, live.secrets);
+  return effectiveConfig(vars, live.secrets, true, local.durableObjects);
 };
 
-const isPlanStorageRetirement = (
+const isLocalBasketStorageAddition = (
   live: EffectiveConfig,
   configured: EffectiveConfig,
 ): boolean =>
-  live.durableObjects === planStorageExpectedDo &&
-  configured.durableObjects === expectedDo &&
-  effectiveConfig(live.vars, live.secrets).digest === configured.digest;
+  live.durableObjects === expectedDo &&
+  configured.durableObjects === localBasketExpectedDo &&
+  effectiveConfig(live.vars, live.secrets, true, localBasketExpectedDo)
+    .digest === configured.digest;
 
 const deployVars = (
   config: EffectiveConfig,
@@ -1744,7 +1743,7 @@ export async function deployProduction(
       startingState.id,
       startingState.revision,
       startingState.enabled,
-      [expectedDo, planStorageExpectedDo],
+      [expectedDo, localBasketExpectedDo],
     );
     try {
       await runAt(deps, deps.repoRoot, "git", [
@@ -1758,12 +1757,12 @@ export async function deployProduction(
     }
     const liveConfig = versionConfig(startingRaw, [
       expectedDo,
-      planStorageExpectedDo,
+      localBasketExpectedDo,
     ]);
     const configured = candidateConfig(await readLocalConfig(deps), liveConfig);
     if (
       configured.digest !== liveConfig.digest &&
-      !isPlanStorageRetirement(liveConfig, configured)
+      !isLocalBasketStorageAddition(liveConfig, configured)
     ) {
       fail("cloudflare_runtime_safety_mismatch");
     }
