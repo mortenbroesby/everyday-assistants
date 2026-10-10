@@ -130,7 +130,7 @@ const legacyMixedReview: Review = {
   items: [review.items[0]!, { ...review.items[1]!, state: "needs-review" }],
 };
 const walkthroughAlternatives = new Map<number, ProductView[]>([
-  [1, [oatMilk]],
+  [1, [oatMilk, pasta]],
   [3, [milk, pasta]],
 ]);
 const preparedReview: Review = {
@@ -422,6 +422,22 @@ function alternativeActions(
 > {
   const alternatives = (productId: number) =>
     walkthroughAlternatives.get(productId) ?? [];
+  const searchedAlternatives = (productId: number, query: string) => {
+    const normalizedQuery = query.trim().toLocaleLowerCase("da-DK");
+    if (!normalizedQuery) {
+      return [];
+    }
+    return alternatives(productId).filter((view) => {
+      if (view.status !== "complete") {
+        return false;
+      }
+      return [view.product.name, view.product.brand, view.product.unit_size]
+        .filter(Boolean)
+        .join(" ")
+        .toLocaleLowerCase("da-DK")
+        .includes(normalizedQuery);
+    });
+  };
   return {
     onOpenAlternatives: (item, query) => {
       setCurrentReview((previous) =>
@@ -436,7 +452,12 @@ function alternativeActions(
     },
     onSearchAlternatives: (productId, query) =>
       setCurrentReview((previous) =>
-        alternativesFor(previous, productId, query, alternatives(productId)),
+        alternativesFor(
+          previous,
+          productId,
+          query,
+          searchedAlternatives(productId, query),
+        ),
       ),
     onReplace: (productId, replacementId) => {
       setCurrentReview((previous) =>
@@ -514,9 +535,19 @@ function submissionActions(
     onCancelSubmit: () => setConfirmSubmit(false),
     onConfirmSubmit: () => {
       setConfirmSubmit(false);
-      setHostMessage(
-        "This walkthrough does not submit to Nemlig. Continue in conversation to add the prepared items.",
+      setCurrentReview((previous) =>
+        previous.submission?.status === "prepared"
+          ? {
+              ...previous,
+              submission: {
+                ...previous.submission,
+                status: "submitted",
+                verified_additions: previous.submission.review.lines?.length,
+              },
+            }
+          : previous,
       );
+      setHostMessage("");
     },
     onContinueSubmitted: () =>
       setCurrentReview((previous) => ({ ...previous, submission: undefined })),
@@ -531,18 +562,22 @@ function submissionActions(
 /** A deterministic visual walkthrough; it only projects local fixture state and never imitates MCP authority. */
 function LocalBasketWalkthroughStory({
   initialReview = walkthroughReview,
+  initialDestination = initialReview.destination,
+  initiallyEnded = false,
 }: {
   initialReview?: Review;
+  initialDestination?: Review["destination"];
+  initiallyEnded?: boolean;
 }) {
   const [currentReview, setCurrentReview] = useState(initialReview);
   const [destination, setDestination] =
-    useState<Review["destination"]>("ready");
+    useState<Review["destination"]>(initialDestination);
   const [reviewDisclosures, setReviewDisclosures] = useState<
     ViewerPageModel["reviewDisclosures"]
   >(new Map());
   const [confirmSubmit, setConfirmSubmit] = useState(false);
   const [confirmEnd, setConfirmEnd] = useState(false);
-  const [ended, setEnded] = useState(false);
+  const [ended, setEnded] = useState(initiallyEnded);
   const [hostMessage, setHostMessage] = useState("");
   const disclosures = disclosureActions(setReviewDisclosures);
   const reviews = reviewActions(setCurrentReview);
@@ -583,7 +618,7 @@ const meta = {
     docs: {
       description: {
         component:
-          "Full pages rendered by the same effect-free ViewerPage used by ProductViewer. These fixtures do not initialize MCP, call tools, or contact Nemlig.",
+          "AppTabWalkthrough, Alternatives, FactualDetails, submission, and empty-state walkthroughs are interactive local fixtures. The remaining state stories are visual snapshots. None initialize MCP, call tools, or contact Nemlig.",
       },
     },
   },
@@ -635,15 +670,14 @@ export const LegacyMixedLocalBasket: Story = {
   render: () => activeReview(legacyMixedReview, "ready", 375),
 };
 export const Alternatives: Story = {
-  render: () => activeReview(walkthroughReview, "alternatives", 375),
+  decorators: [embeddedConversation],
+  render: () => (
+    <LocalBasketWalkthroughStory initialDestination="alternatives" />
+  ),
 };
 export const FactualDetails: Story = {
-  render: () =>
-    activeReview(review, "ready", 375, {
-      model: {
-        reviewDisclosures: new Map([[1, new Set(["Varebeskrivelse"])]]),
-      },
-    }),
+  decorators: [embeddedConversation],
+  render: () => <LocalBasketWalkthroughStory />,
   play: ({ canvasElement }) => {
     canvasElement
       .querySelector<HTMLButtonElement>(
@@ -674,16 +708,19 @@ export const UnavailableDraft: Story = {
   render: () => page({ kind: "unavailable", review }),
 };
 export const PreparedConfirmation: Story = {
-  render: () => activeReview(preparedReview, "ready"),
+  decorators: [embeddedConversation],
+  render: () => <LocalBasketWalkthroughStory initialReview={preparedReview} />,
 };
 export const VerifiedSuccess: Story = {
-  render: () => activeReview(submittedReview, "ready"),
+  decorators: [embeddedConversation],
+  render: () => <LocalBasketWalkthroughStory initialReview={submittedReview} />,
 };
 export const UncertainOutcome: Story = {
   render: () => activeReview(uncertainReview, "ready"),
 };
 export const EmptyLocalBasket: Story = {
-  render: () => page({ kind: "empty" }),
+  decorators: [embeddedConversation],
+  render: () => <LocalBasketWalkthroughStory initiallyEnded />,
 };
 export const LocalBasketInventory: Story = {
   render: () =>
