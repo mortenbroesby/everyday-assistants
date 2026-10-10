@@ -31,7 +31,46 @@ const client = {
   searchProducts: async () => [product(3)],
 };
 
-test("local Draft lists accept 500 exact products and reject 501 before provider reads", async () => {
+test("a shared Local basket prepares every item without an acceptance step", async () => {
+  const prepared: Array<Array<{ product_id: number; quantity: number }>> = [];
+  const service = new ProductReviewService(client, {
+    proposals: {
+      prepareAdditions: async (_owner, items) => {
+        prepared.push(items);
+        return {
+          applicable: true as const,
+          proposal_id: "proposal",
+          operation: "additions" as const,
+          connection_bound: true as const,
+          issued_at: new Date(0).toISOString(),
+          expires_at: new Date(Date.now() + 60_000).toISOString(),
+          basket_fingerprint: "private",
+          review: {},
+        };
+      },
+      apply: async () => {
+        throw new Error("not used");
+      },
+    },
+  });
+  const list = await service.start("owner", [
+    { product_id: 1, quantity: 2 },
+    { product_id: 2, quantity: 1 },
+  ]);
+  assert.deepEqual(
+    list.items.map((item) => item.state),
+    ["ready", "ready"],
+  );
+  await service.prepare("owner");
+  assert.deepEqual(prepared, [
+    [
+      { product_id: 1, quantity: 2 },
+      { product_id: 2, quantity: 1 },
+    ],
+  ]);
+});
+
+test("Local baskets accept 500 exact products and reject 501 before provider reads", async () => {
   const items = Array.from({ length: MAX_DRAFT_PRODUCTS }, (_, index) => ({
     product_id: index + 1,
     quantity: 1,
@@ -57,26 +96,23 @@ test("local Draft lists accept 500 exact products and reject 501 before provider
   assert.equal(reads, 0);
 });
 
-test("supported cards share sequential owner-scoped edits and retain alternatives", async () => {
+test("supported cards share one Local basket and retain alternatives", async () => {
   const service = new ProductReviewService(client);
   await service.start("owner", [
     { product_id: 1, quantity: 2 },
     { product_id: 2, quantity: 1 },
   ]);
-  const accepted = await service.update("owner", {
-    kind: "accept",
-    product_ids: [1],
-  });
+  const accepted = service.active("owner")!;
   assert.deepEqual(
     accepted.items.map((i) => i.state),
-    ["ready", "needs-review"],
+    ["ready", "ready"],
   );
   await assert.rejects(
     service.update("owner", {
       kind: "accept",
       product_ids: [1],
     }),
-    /Only To decide/i,
+    /legacy selection/i,
   );
   assert.deepEqual(service.active("owner"), accepted);
   await assert.rejects(
@@ -102,10 +138,10 @@ test("supported cards share sequential owner-scoped edits and retain alternative
     replaced.items.map((i) => [i.product_id, i.state]),
     [
       [1, "ready"],
-      [3, "needs-review"],
+      [3, "ready"],
     ],
   );
-  assert.equal(replaced.destination, "needs-review");
+  assert.equal(replaced.destination, "ready");
   const removed = await service.update("owner", {
     kind: "remove",
     product_ids: [1],
@@ -129,8 +165,9 @@ test("sequential actions from supported cards apply to the current owner list", 
   ]);
   assert.deepEqual(newerCard, firstCard);
   const current = await service.update("owner", {
-    kind: "accept",
-    product_ids: [1],
+    kind: "quantity",
+    product_id: 1,
+    quantity: 2,
   });
   const earlierCardAction = await service.update("owner", {
     kind: "quantity",
@@ -205,27 +242,10 @@ test("alternatives preserve every unique provider result in order unless the use
   );
 });
 
-test("Ready lines cannot choose alternatives until moved back; replacement remains unaccepted", async () => {
+test("any Local basket line can find an alternative; replacement keeps its quantity", async () => {
   const service = new ProductReviewService(client);
   await service.start("owner", [{ product_id: 1, quantity: 2 }]);
   let draft = await service.update("owner", {
-    kind: "accept",
-    product_ids: [1],
-  });
-  await assert.rejects(
-    service.update("owner", {
-      kind: "alternatives",
-      product_id: 1,
-      query: "alternative",
-    }),
-    /Move a Ready product/i,
-  );
-  assert.deepEqual(service.active("owner"), draft);
-  await service.update("owner", {
-    kind: "revisit",
-    product_ids: [1],
-  });
-  draft = await service.update("owner", {
     kind: "alternatives",
     product_id: 1,
     query: "alternative",
@@ -248,28 +268,24 @@ test("Ready lines cannot choose alternatives until moved back; replacement remai
     product_id: 1,
     replacement_id: 3,
   });
-  assert.equal(draft.items[0]?.state, "needs-review");
+  assert.equal(draft.items[0]?.state, "ready");
   assert.equal(draft.items[0]?.quantity, 2);
-  assert.equal(draft.destination, "needs-review");
+  assert.equal(draft.destination, "ready");
 });
 
-test("removing all accepted products keeps unresolved lines and never reads the provider basket", async () => {
+test("removing Local basket products never reads the provider basket", async () => {
   const service = new ProductReviewService(client);
   await service.start("owner", [
     { product_id: 1, quantity: 1 },
     { product_id: 2, quantity: 1 },
   ]);
-  await service.update("owner", {
-    kind: "accept",
-    product_ids: [1],
-  });
   let draft = await service.update("owner", {
     kind: "remove",
     product_ids: [1],
   });
   assert.deepEqual(
     draft.items.map((item) => [item.product_id, item.state]),
-    [[2, "needs-review"]],
+    [[2, "ready"]],
   );
   draft = await service.update("owner", {
     kind: "remove",
@@ -279,7 +295,7 @@ test("removing all accepted products keeps unresolved lines and never reads the 
   assert.deepEqual(service.active("owner"), draft);
 });
 
-test("preparation includes only accepted products while In Review remains populated", async () => {
+test("preparation includes the entire Local basket", async () => {
   let prepared: Array<{ product_id: number; quantity: number }> = [];
   const proposals = {
     prepareAdditions: async (_owner: string, items: typeof prepared) => {
@@ -304,15 +320,14 @@ test("preparation includes only accepted products while In Review remains popula
     { product_id: 1, quantity: 2 },
     { product_id: 2, quantity: 3 },
   ]);
-  await service.update("owner", {
-    kind: "accept",
-    product_ids: [1],
-  });
   const draft = await service.prepare("owner");
-  assert.deepEqual(prepared, [{ product_id: 1, quantity: 2 }]);
+  assert.deepEqual(prepared, [
+    { product_id: 1, quantity: 2 },
+    { product_id: 2, quantity: 3 },
+  ]);
   assert.deepEqual(
     draft.items.map((item) => item.state),
-    ["ready", "needs-review"],
+    ["ready", "ready"],
   );
   assert.equal(draft.submission?.status, "prepared");
 });
@@ -323,13 +338,14 @@ test("session drafts survive an hour, repeated starts preserve them, and explici
   await service.start("owner", [{ product_id: 1, quantity: 1 }]);
   assert.equal(service.active("another-session-owner"), undefined);
   const edited = await service.update("owner", {
-    kind: "accept",
-    product_ids: [1],
+    kind: "quantity",
+    product_id: 1,
+    quantity: 2,
   });
   await assert.rejects(
     service.update("owner", {
-      kind: "accept",
-      product_ids: [1, 99],
+      kind: "remove",
+      product_ids: [99],
     }),
     /product/i,
   );
@@ -368,8 +384,8 @@ test("adding exact products is atomic, reviewable, and bounded; older idle sessi
   assert.deepEqual(
     added.items.map((item) => [item.product_id, item.quantity, item.state]),
     [
-      [1, 1, "needs-review"],
-      [2, 3, "needs-review"],
+      [1, 1, "ready"],
+      [2, 3, "ready"],
     ],
   );
   for (let index = 2; index <= 8; index++) {
@@ -417,30 +433,23 @@ test("submission hides provider references, invalidates edits, and retains verif
   };
   const service = new ProductReviewService(client, { proposals });
   await service.start("owner", [{ product_id: 1, quantity: 1 }]);
-  await service.update("owner", {
-    kind: "accept",
-    product_ids: [1],
-  });
   let draft = await service.prepare("owner");
   assert.equal(writes, 0);
   assert.ok(!JSON.stringify(draft).includes("private-provider-reference"));
   const invalidated = draft.submission!.submission_id;
   draft = await service.update("owner", {
-    kind: "revisit",
-    product_ids: [1],
+    kind: "quantity",
+    product_id: 1,
+    quantity: 2,
   });
-  assert.equal(draft.items[0]?.state, "needs-review");
+  assert.equal(draft.items[0]?.state, "ready");
   await assert.rejects(service.submit("owner", invalidated), /submission/i);
-  await service.update("owner", {
-    kind: "accept",
-    product_ids: [1],
-  });
   draft = await service.prepare("owner");
   const changedQuantitySubmission = draft.submission!.submission_id;
   await service.update("owner", {
     kind: "quantity",
     product_id: 1,
-    quantity: 2,
+    quantity: 3,
   });
   await assert.rejects(
     service.submit("owner", changedQuantitySubmission),
@@ -457,14 +466,14 @@ test("submission hides provider references, invalidates edits, and retains verif
   draft = await service.update("owner", {
     kind: "quantity",
     product_id: 1,
-    quantity: 2,
+    quantity: 3,
   });
   assert.equal(draft.submission?.status, "submitted");
   await assert.rejects(service.prepare("owner"), /inspect/i);
   await service.update("owner", {
     kind: "quantity",
     product_id: 1,
-    quantity: 3,
+    quantity: 4,
   });
   draft = await service.prepare("owner");
   fail = true;
@@ -500,10 +509,6 @@ test("a verified partial addition remains blocked with its confirmed count", asy
   };
   const service = new ProductReviewService(client, { proposals });
   await service.start("owner", [{ product_id: 1, quantity: 1 }]);
-  await service.update("owner", {
-    kind: "accept",
-    product_ids: [1],
-  });
   const draft = await service.prepare("owner");
 
   await assert.rejects(
@@ -544,7 +549,6 @@ test("local edits cannot erase an uncertain submission from another supported ca
     { product_id: 1, quantity: 1 },
     { product_id: 2, quantity: 1 },
   ]);
-  await service.update("owner", { kind: "accept", product_ids: [1] });
   const prepared = await service.prepare("owner");
   await assert.rejects(
     service.submit("owner", prepared.submission!.submission_id),
@@ -561,7 +565,7 @@ test("local edits cannot erase an uncertain submission from another supported ca
   await assert.rejects(service.prepare("owner"), /inspect/i);
 });
 
-test("clarification edits to To decide preserve the exact prepared Ready submission; Ready changes invalidate it", async () => {
+test("any whole-list change invalidates a prepared submission", async () => {
   let writes = 0;
   const proposals = {
     prepareAdditions: async (
@@ -598,10 +602,6 @@ test("clarification edits to To decide preserve the exact prepared Ready submiss
     { product_id: 1, quantity: 2 },
     { product_id: 2, quantity: 1 },
   ]);
-  await service.update("owner", {
-    kind: "accept",
-    product_ids: [1],
-  });
   let draft = await service.prepare("owner");
   const exactSubmission = draft.submission!;
 
@@ -609,27 +609,30 @@ test("clarification edits to To decide preserve the exact prepared Ready submiss
     kind: "add",
     items: [{ product_id: 3, quantity: 1 }],
   });
-  assert.equal(draft.destination, "needs-review");
-  assert.equal(draft.submission?.submission_id, exactSubmission.submission_id);
-  assert.deepEqual(
-    draft.items
-      .filter((item) => item.state === "ready")
-      .map(({ product_id, quantity }) => [product_id, quantity]),
-    [[1, 2]],
+  assert.equal(draft.destination, "ready");
+  assert.equal(draft.submission, undefined);
+  await assert.rejects(
+    service.submit("owner", exactSubmission.submission_id),
+    /submission/i,
   );
+  assert.deepEqual(
+    draft.items.map(({ product_id, quantity }) => [product_id, quantity]),
+    [
+      [1, 2],
+      [2, 1],
+      [3, 1],
+    ],
+  );
+  draft = await service.prepare("owner");
   const submitted = await service.submit(
     "owner",
-    exactSubmission.submission_id,
+    draft.submission!.submission_id,
   );
   assert.equal(submitted.review.submission?.status, "submitted");
   assert.deepEqual(submitted.result.basket.items, []);
   assert.equal(writes, 1);
 
   await service.start("other-owner", [{ product_id: 1, quantity: 2 }]);
-  await service.update("other-owner", {
-    kind: "accept",
-    product_ids: [1],
-  });
   let next = await service.prepare("other-owner");
   const oldSubmission = next.submission!.submission_id;
   next = await service.update("other-owner", {
@@ -666,10 +669,6 @@ test("an expired prepared submission cannot write the provider basket", async ()
     now: () => now,
   });
   await service.start("owner", [{ product_id: 1, quantity: 1 }]);
-  await service.update("owner", {
-    kind: "accept",
-    product_ids: [1],
-  });
   const draft = await service.prepare("owner");
   now += 1_000;
   await assert.rejects(
@@ -714,22 +713,31 @@ test("an asynchronous alternatives search excludes conflicting edits and leaves 
   assert.equal(removed.items.length, 0);
 });
 
-test("failed hydration remains visible and cannot enter Ready", async () => {
-  const service = new ProductReviewService({
-    ...client,
-    getProduct: async () => {
-      throw new Error("Missing");
+test("failed hydration remains visible and blocks whole-list preparation", async () => {
+  let preparations = 0;
+  const service = new ProductReviewService(
+    {
+      ...client,
+      getProduct: async () => {
+        throw new Error("Missing");
+      },
     },
-  });
+    {
+      proposals: {
+        prepareAdditions: async () => {
+          preparations++;
+          throw new Error("Should not prepare unavailable products");
+        },
+        apply: async () => {
+          throw new Error("Should not apply unavailable products");
+        },
+      },
+    },
+  );
   const draft = await service.start("owner", [{ product_id: 1, quantity: 1 }]);
   assert.equal(draft.items[0]?.view.status, "unavailable");
-  await assert.rejects(
-    service.update("owner", {
-      kind: "accept",
-      product_ids: [1],
-    }),
-    /unavailable/i,
-  );
+  await assert.rejects(service.prepare("owner"), /unavailable/i);
+  assert.equal(preparations, 0);
   assert.deepEqual(service.active("owner"), draft);
 });
 

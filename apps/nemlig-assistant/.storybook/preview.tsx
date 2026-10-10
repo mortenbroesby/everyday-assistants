@@ -23,7 +23,7 @@ export const appTab: Decorator = (Story) => (
       aria-label="ChatGPT app tab simulator"
     >
       <header className="storybook-chatgpt-host__tab-title">
-        Show or start your Draft list
+        Show or start your Local basket
       </header>
       <div className="storybook-chatgpt-host__iframe">
         <Story />

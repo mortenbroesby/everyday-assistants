@@ -7,7 +7,7 @@ test("stable viewer shell loads the current same-origin bundle and fails safely"
   for (const feature of [
     "nemlig-viewer-shell",
     "/ui/nemlig/manifest.json",
-    "Loading the current Draft list",
+    "Loading the current Local basket",
     "Nothing has been changed",
     "Try again",
   ]) {

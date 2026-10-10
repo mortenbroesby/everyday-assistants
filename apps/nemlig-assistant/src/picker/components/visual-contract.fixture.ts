@@ -20,15 +20,6 @@ function replaceItem(
   };
 }
 
-export function acceptSelected(review: Review, selected: ReadonlySet<number>) {
-  return withoutPreparedSubmission({
-    ...review,
-    items: review.items.map((item) =>
-      selected.has(item.product_id) ? { ...item, state: "ready" } : item,
-    ),
-  });
-}
-
 export function updateQuantity(
   review: Review,
   productId: number,
@@ -44,24 +35,6 @@ export function removeItem(review: Review, productId: number) {
     ...review,
     items: review.items.filter((item) => item.product_id !== productId),
   });
-}
-
-export function withoutSelected(
-  selected: ReadonlySet<number>,
-  productId: number,
-) {
-  const next = new Set(selected);
-  next.delete(productId);
-  return next;
-}
-
-export function revisitItem(review: Review, productId: number) {
-  return withoutPreparedSubmission(
-    replaceItem(review, productId, (item) => ({
-      ...item,
-      state: "needs-review",
-    })),
-  );
 }
 
 export function alternativesFor(
@@ -94,7 +67,7 @@ export function replaceWithAlternative(
       ...item,
       product_id: replacementId,
       view: replacement,
-      state: "needs-review",
+      state: "ready",
     })),
     alternatives: undefined,
   });

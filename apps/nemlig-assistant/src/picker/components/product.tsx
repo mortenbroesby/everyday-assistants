@@ -78,18 +78,18 @@ const Chips = styled.span({
   marginTop: 2,
 });
 const QuantityControlRoot = styled.div({
-  display: "flex",
-  flexWrap: "wrap",
+  display: "grid",
+  width: "100%",
+  gridTemplateColumns: "minmax(0, 1fr) auto minmax(0, 1fr)",
   alignItems: "center",
   gap: 8,
   marginTop: 10,
-  justifyContent: "space-between",
   padding: "8px 0",
   borderTop: "1px solid var(--line)",
   borderBottom: "1px solid var(--line)",
   fontSize: ".82rem",
-  "& > :first-child": { marginRight: "auto" },
-  "& button": { minWidth: 34, minHeight: 34, padding: 0 },
+  "& > :first-child": { gridColumn: "1 / -1" },
+  "& button": { width: "100%", minHeight: 40, padding: 0 },
   "& [aria-live]": {
     width: 28,
     textAlign: "center",

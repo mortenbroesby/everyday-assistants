@@ -23,20 +23,6 @@ const Surface = styled.section<{ tone: Tone }>(({ tone }) => ({
   },
 }));
 const Actions = styled.div({ display: "grid", gap: 8, marginTop: 2 });
-const LocalActions = styled.details({
-  marginTop: 10,
-  borderTop: "1px solid var(--line)",
-  "& > summary": {
-    minHeight: 40,
-    display: "flex",
-    alignItems: "center",
-    cursor: "pointer",
-    color: "var(--muted)",
-    fontSize: ".82rem",
-    fontWeight: 650,
-  },
-  "& > div": { display: "grid", gap: 8, paddingBottom: 2 },
-});
 
 /** Compact status, confirmation, and zero-selection composition. It owns no business state. */
 export function OutcomeSurface({
@@ -68,14 +54,14 @@ export function DraftListStarters({
     <OutcomeSurface title="What should we shop for?">
       <p>
         {message ??
-          "Ask Nemlig Assistant what you need. We will bring products here for you to decide."}
+          "Ask Nemlig Assistant what you need. We will bring products to your Local basket."}
       </p>
       <Actions>
         <ViewerButton
           color="secondary"
           onClick={() =>
             onChoose(
-              "Help me plan groceries for the week. Start a new local Draft list; do not add anything to Nemlig.",
+              "Help me plan groceries for the week. Start a new Local basket; do not add anything to Nemlig.",
             )
           }
         >
@@ -85,7 +71,7 @@ export function DraftListStarters({
           color="secondary"
           onClick={() =>
             onChoose(
-              "Help me find ingredients for dinner. Start a new local Draft list; do not add anything to Nemlig.",
+              "Help me find ingredients for dinner. Start a new Local basket; do not add anything to Nemlig.",
             )
           }
         >
@@ -95,7 +81,7 @@ export function DraftListStarters({
           color="secondary"
           onClick={() =>
             onChoose(
-              "Help me find a product for a new local Draft list. Do not add anything to Nemlig.",
+              "Help me find a product for a new Local basket. Do not add anything to Nemlig.",
             )
           }
         >
@@ -103,15 +89,5 @@ export function DraftListStarters({
         </ViewerButton>
       </Actions>
     </OutcomeSurface>
-  );
-}
-
-/** Local-only actions are deliberately secondary to the active shopping decision. */
-export function DraftListOverflow({ children }: { children: ReactNode }) {
-  return (
-    <LocalActions data-viewer-component="draft-list-overflow">
-      <summary>More Draft list actions</summary>
-      <div>{children}</div>
-    </LocalActions>
   );
 }

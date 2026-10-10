@@ -1,6 +1,5 @@
 import styled from "@emotion/styled";
 import type { ReactNode } from "react";
-import { ViewerButton } from "./button.js";
 
 const ViewerRoot = styled.div({
   minWidth: 0,
@@ -8,11 +7,12 @@ const ViewerRoot = styled.div({
     "env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px) env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px)",
 });
 const Viewer = styled.main({
-  width: "min(calc(100% - 32px), 560px)",
-  margin: "16px auto",
+  width: "min(100%, 560px)",
+  maxHeight: 620,
+  margin: "0 auto",
+  overflowY: "auto",
+  overscrollBehaviorY: "contain",
   padding: 16,
-  border: "1px solid var(--line)",
-  borderRadius: 20,
   background: "var(--surface)",
 });
 const ScreenHeading = styled.h1({
@@ -28,38 +28,11 @@ const ScreenIntro = styled.p({
   color: "var(--muted)",
   fontSize: ".84rem",
 });
-const DestinationNavigation = styled.nav({
-  display: "grid",
-  gap: 8,
-  marginBottom: 14,
-});
-const Segments = styled.span({
-  display: "grid",
-  gridTemplateColumns: "1fr 1fr",
-  gap: 4,
-  padding: 4,
-  borderRadius: 14,
-  background: "var(--soft)",
-  "& > button": {
-    width: "100%",
-    minHeight: 42,
-    border: 0,
-    color: "var(--muted)",
-    background: "transparent",
-  },
-  "& > button[aria-current=page]": {
-    color: "var(--ink)",
-    background: "var(--surface)",
-    boxShadow: "0 1px 4px rgb(20 48 28 / 10%)",
-  },
-});
-const ReturnToAlternatives = styled(ViewerButton)({ justifySelf: "start" });
 const Footer = styled.footer({
-  display: "flex",
-  flexWrap: "wrap",
+  display: "grid",
   gap: 8,
   paddingTop: 12,
-  "& > button[data-viewer-tone=primary]": { flex: "1 1 13rem" },
+  "& > button": { width: "100%" },
 });
 
 /** Shared visual shell for every viewer state; it does not own shopping state or host effects. */
@@ -78,7 +51,8 @@ export function ViewerShell({
     <ViewerRoot className="app-frame" data-viewer-component="viewer-shell">
       <Viewer
         className="viewer"
-        aria-label={title ? undefined : "Nemlig Assistant Draft list"}
+        tabIndex={-1}
+        aria-label={title ? undefined : "Nemlig Assistant Local basket"}
         aria-labelledby={title ? "title" : undefined}
         style={maxWidth ? { maxWidth } : undefined}
       >
@@ -87,55 +61,6 @@ export function ViewerShell({
         {children}
       </Viewer>
     </ViewerRoot>
-  );
-}
-
-export function DestinationTabs({
-  destination,
-  toDecideCount,
-  readyCount,
-  hasAlternatives,
-  disabled,
-  onNavigate,
-}: {
-  destination: "needs-review" | "ready" | "alternatives";
-  toDecideCount: number;
-  readyCount: number;
-  hasAlternatives: boolean;
-  disabled: boolean;
-  onNavigate: (destination: "needs-review" | "ready" | "alternatives") => void;
-}) {
-  return (
-    <DestinationNavigation aria-label="Draft list destinations">
-      <Segments data-viewer-control="segmented-tabs">
-        <ViewerButton
-          color="secondary"
-          aria-current={destination === "needs-review" ? "page" : undefined}
-          disabled={disabled}
-          onClick={() => onNavigate("needs-review")}
-        >
-          To decide ({toDecideCount})
-        </ViewerButton>
-        <ViewerButton
-          color="secondary"
-          aria-current={destination === "ready" ? "page" : undefined}
-          disabled={disabled}
-          onClick={() => onNavigate("ready")}
-        >
-          Ready ({readyCount})
-        </ViewerButton>
-      </Segments>
-      {hasAlternatives && destination !== "alternatives" && (
-        <ReturnToAlternatives
-          color="secondary"
-          variant="ghost"
-          disabled={disabled}
-          onClick={() => onNavigate("alternatives")}
-        >
-          Return to existing alternatives
-        </ReturnToAlternatives>
-      )}
-    </DestinationNavigation>
   );
 }
 

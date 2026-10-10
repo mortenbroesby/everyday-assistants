@@ -45,7 +45,7 @@ pnpm nemlig --help
    replace, swap, or clear its contents, even if asked or explicitly approved;
    explain that the user can manage those actions directly on Nemlig.com. This
    prohibition applies to MCP, CLI, provider APIs, and production tests. Local
-   draft list removal and clearing are different operations and remain allowed.
+   Local basket removal and clearing are different operations and remain allowed.
 
    A requested quantity is an amount to add, not an absolute final quantity.
    If Nemlig already has two and the user authorizes adding two, the final
@@ -56,11 +56,11 @@ pnpm nemlig --help
    quantity. Separate external edits made directly on Nemlig.com can still race
    the provider's non-atomic read/set boundary; do not claim cross-client locking.
 
-5. A clear conversational instruction to add the exact unchanged Ready
-   draft list is itself authorization for that exact positive addition. Do not
+5. A clear conversational instruction to add the exact unchanged Local basket
+   is itself authorization for that exact positive addition. Do not
    ask for a redundant second conversational approval. For any other addition,
    obtain approval of the exact unchanged products, added quantities, current
-   prices and resulting basket effects. Local draft list or acceptance alone is
+   prices and resulting basket effects. Local basket state alone is
    not provider-write authorization. Any changed fact requires a fresh review.
 
 6. Add only approved lines:
@@ -81,26 +81,25 @@ remove or reduce anything, direct them to manage that directly on Nemlig.com.
 ## MCP workflow
 
 Model-visible basket writes never call a direct mutation tool. Additions use
-the draft list's `prepare_submission` → its existing exact confirmation →
+the Local basket's `prepare_submission` → its existing exact confirmation →
 `submit_product_review`. This is the assistant provider-basket write
 path and only adds positive quantities. A clear instruction to add the exact
-unchanged Ready draft list supplies authorization without a redundant second
+unchanged Local basket supplies authorization without a redundant second
 chat approval; UI confirmation remains as designed. The path preserves fresh
 validation, principal binding, single-use authority, serialization and verified
 basket readback. Never retry an indeterminate result; inspect the draft and
 actual basket before deliberately creating a fresh addition review.
-The user's clear conversational instruction to add the exact unchanged Ready
-draft list is authorization for that prepared payload; do not ask for redundant
+The user's clear conversational instruction to add the exact unchanged Local
+basket is authorization for that prepared payload; do not ask for redundant
 chat approval. Other additions require approval of the exact prepared change.
-Never retry an indeterminate result; inspect the draft list and actual basket
+Never retry an indeterminate result; inspect the Local basket and actual basket
 before deliberately preparing a fresh addition.
 
-Use `start_product_review` for an explicit new draft list. To reopen, first use
-`update_product_review` with action `show` and no old review ID or revision.
-Only after it reports no active draft list may you ask to start fresh. Never replay
-a failed edit or restore old acceptance/submission authority. To decide and
-Ready are draft list states, not the actual Nemlig basket; alternatives belong
-only to To decide. Local acceptance, removal and ending do not mutate Nemlig.
+Use `start_product_review` for an explicit new Local basket. To reopen, first use
+`update_product_review` with action `show`. Only after it reports no active basket
+may you ask to start fresh. Never replay a failed edit or restore old submission
+authority. Every Local basket row is a submission candidate, including after a
+replacement. Local removal and ending do not mutate the actual Nemlig basket.
 
 For private ChatGPT use, follow `../../../../../docs/cloudflare-operations.md`.
 Identity, infrastructure, and app changes remain owner actions and never

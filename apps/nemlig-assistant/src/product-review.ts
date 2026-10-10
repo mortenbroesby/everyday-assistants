@@ -34,7 +34,7 @@ export interface ProductReviewSnapshot {
   };
   alternatives?: {
     product_id: number;
-    origin: "needs-review";
+    origin: ReviewItem["state"];
     query: string;
     views: ProductView[];
   };
@@ -94,7 +94,7 @@ export class ProductReviewService {
     );
     if (!oldest) {
       throw new NemligError(
-        "Active draft list limit reached. Finish an in-progress draft list and try again.",
+        "Active Local basket limit reached. Finish an in-progress Local basket and try again.",
       );
     }
     const [owner] = oldest;
@@ -128,7 +128,7 @@ export class ProductReviewService {
             product_id: item.product_id,
           };
         }
-        return { ...item, state: "needs-review", view };
+        return { ...item, state: "ready", view };
       },
       { signal },
     );
@@ -138,7 +138,7 @@ export class ProductReviewService {
     const draft = this.drafts.get(owner);
     if (!draft) {
       throw new NemligError(
-        "Draft list unavailable. Show this conversation's current draft list; never replay the failed edit. If none remains, ask before starting a new draft list.",
+        "Local basket unavailable. Show this conversation's current Local basket; never replay the failed edit. If none remains, ask before starting a new Local basket.",
       );
     }
     return draft;
@@ -171,12 +171,12 @@ export class ProductReviewService {
     }
     if (this.startingOwners.has(owner)) {
       throw new NemligError(
-        "A draft list is starting. Refresh it after the current request finishes.",
+        "A Local basket is starting. Refresh it after the current request finishes.",
       );
     }
     if (!items.length) {
       throw new NemligError(
-        "No active Draft list to show. Find exact products and provide them to start a new Draft list.",
+        "No active Local basket to show. Find exact products and provide them to start a new Local basket.",
       );
     }
     if (
@@ -195,7 +195,7 @@ export class ProductReviewService {
     try {
       const rows = await this.readItems(items, signal);
       const snapshot: ProductReviewSnapshot = {
-        destination: "needs-review",
+        destination: "ready",
         items: rows,
       };
       this.drafts.set(owner, { busy: false, snapshot });
@@ -213,24 +213,29 @@ export class ProductReviewService {
     const stored = this.lock(owner);
     // Commit only after all validation and reads succeed, so bulk actions are atomic.
     const draft = structuredClone(stored.snapshot);
-    const readySelection = (items: ReviewItem[]) =>
+    const submissionSelection = (items: ReviewItem[]) =>
       JSON.stringify(
         items
-          .filter((item) => item.state === "ready")
           .map(({ product_id, quantity }) => [product_id, quantity])
           .sort(([left], [right]) => Number(left) - Number(right)),
       );
-    const previousReadySelection = readySelection(stored.snapshot.items);
+    const previousSubmissionSelection = submissionSelection(
+      stored.snapshot.items,
+    );
     const itemFor = (productId: number): ReviewItem => {
       const item = draft.items.find((row) => row.product_id === productId);
       if (!item) {
-        throw new NemligError("Exact product is not in this draft list.");
+        throw new NemligError("Exact product is not in this Local basket.");
       }
       return item;
     };
     try {
       switch (action.kind) {
         case "accept":
+        case "revisit":
+          throw new NemligError(
+            "This legacy selection action is no longer supported. Every Local basket item is included in whole-list submission.",
+          );
         case "remove": {
           if (
             !action.product_ids.length ||
@@ -238,44 +243,10 @@ export class ProductReviewService {
           ) {
             throw new NemligError("Select unique exact products.");
           }
-          const selected = action.product_ids.map(itemFor);
-          if (action.kind === "accept") {
-            if (selected.some((item) => item.state !== "needs-review")) {
-              throw new NemligError(
-                "Only To decide products can be accepted into Ready.",
-              );
-            }
-            if (selected.some((item) => !available(item.view))) {
-              throw new NemligError(
-                "Unavailable products cannot be accepted. Choose an available alternative.",
-              );
-            }
-            selected.forEach((item) => {
-              item.state = "ready";
-            });
-          } else {
-            draft.items = draft.items.filter(
-              (item) => !action.product_ids.includes(item.product_id),
-            );
-          }
-          break;
-        }
-        case "revisit": {
-          if (
-            !action.product_ids.length ||
-            new Set(action.product_ids).size !== action.product_ids.length
-          ) {
-            throw new NemligError("Select unique exact products.");
-          }
-          const selected = action.product_ids.map(itemFor);
-          if (selected.some((item) => item.state !== "ready")) {
-            throw new NemligError(
-              "Only Ready products can be moved back to To decide.",
-            );
-          }
-          selected.forEach((item) => {
-            item.state = "needs-review";
-          });
+          action.product_ids.forEach(itemFor);
+          draft.items = draft.items.filter(
+            (item) => !action.product_ids.includes(item.product_id),
+          );
           break;
         }
         case "add": {
@@ -301,7 +272,7 @@ export class ProductReviewService {
           }
           const rows = await this.readItems(action.items, signal);
           draft.items.push(...rows);
-          draft.destination = "needs-review";
+          draft.destination = "ready";
           break;
         }
         case "quantity":
@@ -313,6 +284,9 @@ export class ProductReviewService {
           itemFor(action.product_id).quantity = action.quantity;
           break;
         case "navigate":
+          if (action.destination === "needs-review") {
+            throw new NemligError("The Local basket has one product list.");
+          }
           if (action.destination === "alternatives" && !draft.alternatives) {
             throw new NemligError("No alternatives are open.");
           }
@@ -320,11 +294,6 @@ export class ProductReviewService {
           break;
         case "alternatives": {
           const target = itemFor(action.product_id);
-          if (target.state !== "needs-review") {
-            throw new NemligError(
-              "Move a Ready product to To decide before choosing alternatives.",
-            );
-          }
           if (action.limit !== undefined && !validPositive(action.limit)) {
             throw new NemligError(
               "Alternative limit must be a positive integer.",
@@ -379,13 +348,13 @@ export class ProductReviewService {
             )
           ) {
             throw new NemligError(
-              "This product already exists in the draft list. Adjust its quantity instead.",
+              "This product already exists in the Local basket. Adjust its quantity instead.",
             );
           }
           target.product_id = action.replacement_id;
           target.view = replacement;
-          target.state = "needs-review";
-          draft.destination = "needs-review";
+          target.state = "ready";
+          draft.destination = "ready";
           delete draft.alternatives;
           break;
         }
@@ -412,7 +381,7 @@ export class ProductReviewService {
         draft.submission?.status === "uncertain" ||
         draft.submission?.status === "partial" ||
         (draft.submission?.status === "prepared" &&
-          readySelection(draft.items) === previousReadySelection);
+          submissionSelection(draft.items) === previousSubmissionSelection);
       if (
         action.kind !== "navigate" &&
         action.kind !== "alternatives" &&
@@ -433,7 +402,7 @@ export class ProductReviewService {
     const stored = this.get(owner);
     if (stored.busy) {
       throw new NemligError(
-        "A draft list operation is in progress. Refresh after it finishes.",
+        "A Local basket operation is in progress. Refresh after it finishes.",
       );
     }
     stored.busy = true;
@@ -456,12 +425,13 @@ export class ProductReviewService {
           "Inspect the actual Nemlig basket before deliberately editing and reviewing a new submission.",
         );
       }
-      const items = stored.snapshot.items.filter(
-        (item) => item.state === "ready",
-      );
+      const items = stored.snapshot.items;
       if (!items.length) {
+        throw new NemligError("The Local basket is empty.");
+      }
+      if (items.some((item) => !available(item.view))) {
         throw new NemligError(
-          "Ready is empty. Accept products before preparing submission.",
+          "The Local basket contains unavailable products. Remove or replace them before submitting.",
         );
       }
       const proposal = await this.proposals.prepareAdditions(
@@ -502,7 +472,7 @@ export class ProductReviewService {
         !stored.proposalId
       ) {
         throw new NemligError(
-          "Submission is absent, changed, or already attempted. Refresh the draft list.",
+          "Submission is absent, changed, or already attempted. Refresh the Local basket.",
         );
       }
       if (Date.parse(submission.expires_at) <= this.now()) {

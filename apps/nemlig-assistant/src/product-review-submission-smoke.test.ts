@@ -81,7 +81,7 @@ const withMcpClient = async <T>(
   }
 };
 
-test("MCP submission smoke searches, prepares only accepted lines, and verifies explicit submission", async () => {
+test("MCP submission smoke searches, prepares every Local basket line, and verifies explicit submission", async () => {
   const chosen = product(7, "Chosen oats", 4.25);
   const unresolved = product(8, "Unresolved tea", 6.5);
   const products = new Map([
@@ -189,22 +189,14 @@ test("MCP submission smoke searches, prepares only accepted lines, and verifies 
         state,
       ]),
       [
-        [7, 3, "needs-review"],
-        [8, 2, "needs-review"],
-      ],
-    );
-    review = await update({ kind: "accept", product_ids: [7] });
-    assert.deepEqual(
-      review.items.map(({ product_id, state }) => [product_id, state]),
-      [
-        [7, "ready"],
-        [8, "needs-review"],
+        [7, 3, "ready"],
+        [8, 2, "ready"],
       ],
     );
     assert.equal(
       providerWrites,
       0,
-      "local acceptance does not mutate the provider basket",
+      "starting a Local basket does not mutate the provider basket",
     );
 
     review = await update({ kind: "prepare_submission" });
@@ -250,15 +242,23 @@ test("MCP submission smoke searches, prepares only accepted lines, and verifies 
           name: "Chosen oats",
           unit_size: "1 stk",
         },
+        {
+          product_id: 8,
+          quantity: 2,
+          item_price: 6.5,
+          line_total: 13,
+          name: "Unresolved tea",
+          unit_size: "1 stk",
+        },
       ],
     );
     assert.equal(
       JSON.stringify(prepared.review).includes("Unresolved tea"),
-      false,
+      true,
     );
     assert.equal(
       JSON.stringify(prepared.review).includes('"product_id":8'),
-      false,
+      true,
     );
 
     const wrongReference = await mcp.callTool({
@@ -307,11 +307,12 @@ test("MCP submission smoke searches, prepares only accepted lines, and verifies 
       [
         [99, 2],
         [7, 3],
+        [8, 2],
       ],
     );
-    assert.equal(submittedData.result.basket.products_price, 18.75);
-    assert.equal(submittedData.result.basket.number_of_products, 5);
-    assert.equal(providerWrites, 1);
+    assert.equal(submittedData.result.basket.products_price, 31.75);
+    assert.equal(submittedData.result.basket.number_of_products, 7);
+    assert.equal(providerWrites, 2);
     assert.deepEqual(
       (await provider.getCart()).items.map(({ id, quantity }) => [
         id,
@@ -320,6 +321,7 @@ test("MCP submission smoke searches, prepares only accepted lines, and verifies 
       [
         [99, 2],
         [7, 3],
+        [8, 2],
       ],
       "verified provider readback preserves unrelated lines",
     );
@@ -337,8 +339,8 @@ test("MCP submission smoke searches, prepares only accepted lines, and verifies 
     );
     assert.equal(
       providerWrites,
-      1,
-      "rejected duplicate makes no second provider write",
+      2,
+      "rejected duplicate makes no additional provider write",
     );
   });
 });

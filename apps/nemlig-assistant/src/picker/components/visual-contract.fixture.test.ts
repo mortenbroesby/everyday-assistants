@@ -3,13 +3,10 @@ import test from "node:test";
 import type { ProductView } from "../../product-presentation.js";
 import type { Review } from "../viewer-page.js";
 import {
-  acceptSelected,
   alternativesFor,
   removeItem,
   replaceWithAlternative,
-  revisitItem,
   updateQuantity,
-  withoutSelected,
 } from "./visual-contract.fixture.js";
 
 const milk: ProductView = {
@@ -65,15 +62,9 @@ const preparedReview = (): Review => ({
   },
 });
 
-test("fixture edits invalidate a prepared submission and prune removed selection", () => {
+test("fixture quantity and removal edits invalidate a prepared submission", () => {
   assert.equal(updateQuantity(preparedReview(), 1, 3).submission, undefined);
   assert.equal(removeItem(preparedReview(), 1).submission, undefined);
-  assert.equal(revisitItem(preparedReview(), 1).submission, undefined);
-  assert.equal(
-    acceptSelected(preparedReview(), new Set([1])).submission,
-    undefined,
-  );
-  assert.deepEqual([...withoutSelected(new Set([1, 2]), 1)], [2]);
 });
 
 test("fixture replacement preserves quantity, changes identity, and can reopen alternatives", () => {
@@ -83,7 +74,7 @@ test("fixture replacement preserves quantity, changes identity, and can reopen a
   assert.deepEqual(replaced.items[0], {
     product_id: 3,
     quantity: 2,
-    state: "needs-review",
+    state: "ready",
     view: oats,
   });
 

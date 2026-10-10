@@ -5,7 +5,7 @@ It owns reusable viewer presentation only: native controls, product summaries,
 supplied factual disclosures, navigation, outcome/entry surfaces, and layout helpers.
 
 Components receive server-owned snapshots and callbacks. They must not call MCP
-tools, fetch providers, own review membership/quantity/revision state, or
+tools, fetch providers, own review membership or quantity state, or
 weaken the protected submission boundary. `ViewerPage` composes those components
 for both the production adapter and Storybook; `product-viewer.tsx` retains
 host/MCP orchestration and protected submission authority. Export reusable

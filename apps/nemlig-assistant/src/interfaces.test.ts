@@ -40,15 +40,15 @@ const expectedProductViewerResources = [
     name: "nemlig-product-viewer",
     title: "Nemlig Assistant",
     description:
-      "Products and the shared local Draft list supplied by Nemlig Assistant.",
+      "Products and the shared Local basket supplied by Nemlig Assistant.",
     mimeType: "text/html;profile=mcp-app",
   },
   ...RETIRED_PRODUCT_VIEWER_RESOURCE_URIS.map((uri, index) => ({
     uri,
     name: `nemlig-retired-product-viewer-v${index}`,
-    title: "Updated draft list",
+    title: "Updated Local basket",
     description:
-      "This retired draft list card is inert and contains no shopping data.",
+      "This retired Local basket card is inert and contains no shopping data.",
     mimeType: "text/html;profile=mcp-app",
   })),
 ];
@@ -356,21 +356,21 @@ const friendlyCatalog = [
   ["show_my_basket", "Show my Nemlig basket", true, false, []],
   [
     "start_product_review",
-    "Show or start your draft list",
+    "Show or start your Local basket",
     false,
     false,
     ["items"],
   ],
   [
     "submit_product_review_conversation",
-    "Add explicitly requested Ready products to Nemlig",
+    "Submit the exact Local basket to Nemlig",
     false,
     false,
     ["submission_id"],
   ],
   [
     "update_product_review_conversation",
-    "Update your draft list",
+    "Update your Local basket",
     false,
     false,
     ["action"],
@@ -906,7 +906,7 @@ test("MCP distinguishes a successful empty salmiak search from an upstream HTTP 
         );
         assert.match(
           tool?.description ?? "",
-          /not tied to the current draft list or an alternative target/u,
+          /not tied to the current Local basket or an alternative target/u,
         );
         return {
           result: await mcp.callTool({
@@ -1002,15 +1002,15 @@ test("every MCP tool has complete schemas, accurate annotations, and safe server
       );
       assert.match(
         mcp.getInstructions() ?? "",
-        /Local draft list edits never write to Nemlig/u,
+        /Local basket edits never write to Nemlig/u,
       );
       assert.match(
         mcp.getInstructions() ?? "",
-        /asks to see products visually.*native Draft list/u,
+        /asks to see products visually.*start_product_review/u,
       );
       assert.match(
         mcp.getInstructions() ?? "",
-        /visual request conflicts.*ask whether to allow it/u,
+        /Respect an explicit instruction not to create or edit a Local basket/u,
       );
       assert.doesNotMatch(
         JSON.stringify({ tools, instructions: mcp.getInstructions() }),
@@ -1047,7 +1047,7 @@ test("authenticated HTTP request context preserves stdio tool and resource metad
   );
 });
 
-test("MCP distinguishes the draft list from the actual Nemlig basket", async () => {
+test("MCP distinguishes the Local basket from the actual Nemlig basket", async () => {
   await withMcpClient(
     createMcpServer(fakeClient(), testCredentials),
     async (mcp) => {
@@ -1058,7 +1058,7 @@ test("MCP distinguishes the draft list from the actual Nemlig basket", async () 
         ]),
       );
       const instructions = mcp.getInstructions() ?? "";
-      assert.match(instructions, /temporary conversation draft list/u);
+      assert.match(instructions, /temporary conversation Local basket/u);
       assert.match(instructions, /real Nemlig basket is add-only/u);
       assert.match(
         instructions,
@@ -1066,7 +1066,7 @@ test("MCP distinguishes the draft list from the actual Nemlig basket", async () 
       );
       assert.match(
         instructions,
-        /After an uncertain write, inspect the draft list and actual basket; never retry automatically/u,
+        /After an uncertain write, inspect the Local basket and actual basket; never retry automatically/u,
       );
       assert.match(
         tools.get("find_groceries") ?? "",
@@ -1074,7 +1074,7 @@ test("MCP distinguishes the draft list from the actual Nemlig basket", async () 
       );
       assert.match(
         tools.get("show_my_basket") ?? "",
-        /actual Nemlig basket, not the local draft list/u,
+        /actual Nemlig basket, not the Local basket/u,
       );
       assert.match(
         tools.get("start_product_review") ?? "",
@@ -1082,11 +1082,11 @@ test("MCP distinguishes the draft list from the actual Nemlig basket", async () 
       );
       assert.match(
         tools.get("update_product_review_conversation") ?? "",
-        /None of these local edits writes to Nemlig/u,
+        /Local edits never write to Nemlig/u,
       );
       assert.match(
         tools.get("submit_product_review_conversation") ?? "",
-        /Local Ready acceptance alone.*is not authorization/u,
+        /Inspection, local edits, and preparation are not authorization/u,
       );
       assert.equal(
         (await mcp.listResources()).resources[0]?.uri,
@@ -1222,8 +1222,8 @@ test("visual product discovery routes exact fixture results into the local selec
       assert.deepEqual(
         initial.items.map(({ product_id, state }) => [product_id, state]),
         [
-          [401, "needs-review"],
-          [402, "needs-review"],
+          [401, "ready"],
+          [402, "ready"],
         ],
       );
       const shown = await mcp.callTool({
@@ -1237,8 +1237,8 @@ test("visual product discovery routes exact fixture results into the local selec
       assert.deepEqual(
         current.items.map(({ product_id, state }) => [product_id, state]),
         [
-          [401, "needs-review"],
-          [402, "needs-review"],
+          [401, "ready"],
+          [402, "ready"],
         ],
       );
     },
@@ -1249,7 +1249,7 @@ test("visual product discovery routes exact fixture results into the local selec
   assert.equal(basketWrites, 0);
 });
 
-test("appending an exact search result preserves Ready and showing the selection does not restart discovery", async () => {
+test("appending an exact search result keeps one Local basket and showing it does not restart discovery", async () => {
   const pear = {
     ...product,
     id: 411,
@@ -1306,18 +1306,6 @@ test("appending an exact search result preserves Ready and showing the selection
         name: "start_product_review",
         arguments: { items: [{ product_id: firstId, quantity: 1 }] },
       });
-      const accepted = await mcp.callTool({
-        name: "update_product_review_conversation",
-        arguments: {
-          action: { kind: "accept", product_ids: [firstId] },
-        },
-      });
-      assert.equal(
-        (accepted.structuredContent as { review: ProductReviewSnapshot }).review
-          .items[0]?.state,
-        "ready",
-      );
-
       const secondSearch = await mcp.callTool({
         name: "find_groceries",
         arguments: { search_term: "banana" },
@@ -1345,7 +1333,7 @@ test("appending an exact search result preserves Ready and showing the selection
         ]),
         [
           [411, 1, "ready"],
-          [412, 2, "needs-review"],
+          [412, 2, "ready"],
         ],
       );
 
@@ -1364,7 +1352,7 @@ test("appending an exact search result preserves Ready and showing the selection
         ]),
         [
           [411, 1, "ready"],
-          [412, 2, "needs-review"],
+          [412, 2, "ready"],
         ],
       );
     },
@@ -1485,7 +1473,7 @@ test("legacy raw visual chooser is unavailable", async () => {
   );
 });
 
-test("a clear conversational add command authorizes only its exact prepared Ready selection", async () => {
+test("a clear conversational add command authorizes only its exact prepared Local basket", async () => {
   let writes = 0;
   let current: Basket = {
     items: [{ id: 99, name: "Existing", quantity: 1, total: 2 }],
@@ -1536,10 +1524,9 @@ test("a clear conversational add command authorizes only its exact prepared Read
         assert.equal(result.isError, undefined, toolText(result));
         review = (result.structuredContent as { review: typeof review }).review;
       };
-      await update({ kind: "accept", product_ids: [7] });
       assert.equal(review.items[0]?.state, "ready");
       // This MCP tool sequence represents the user's explicit conversational command to add
-      // the current Ready selection. The model must not ask for a second redundant approval.
+      // the current Local basket. The model must not ask for a second redundant approval.
       await update({ kind: "prepare_submission" });
       assert.equal(writes, 0);
       assert.ok(review.submission);
@@ -1589,7 +1576,7 @@ test("a clear conversational add command authorizes only its exact prepared Read
   );
 });
 
-test("supported Draft list cards share owner state and reject retired identifiers", async () => {
+test("supported Local basket cards share owner state and reject retired identifiers", async () => {
   let basketReads = 0;
   let basketWrites = 0;
   const provider = fakeClient({
@@ -1622,7 +1609,7 @@ test("supported Draft list cards share owner state and reject retired identifier
       assert.deepEqual(secondReview, firstReview);
 
       const firstCardEdit = await call("update_product_review", {
-        action: { kind: "accept", product_ids: [7] },
+        action: { kind: "quantity", product_id: 7, quantity: 2 },
       });
       assert.equal(firstCardEdit.isError, undefined, toolText(firstCardEdit));
       const current = await call("update_product_review_conversation", {
@@ -1632,6 +1619,7 @@ test("supported Draft list cards share owner state and reject retired identifier
         current.structuredContent as { review: ProductReviewSnapshot }
       ).review;
       assert.equal(currentReview.items[0]?.state, "ready");
+      assert.equal(currentReview.items[0]?.quantity, 2);
 
       const oldUpdate = await call("update_product_review", {
         review_id: "legacy-review",
@@ -1661,7 +1649,7 @@ test("supported Draft list cards share owner state and reject retired identifier
   assert.equal(basketWrites, 0);
 });
 
-test("MCP review uses Ready only and rejects obsolete basket navigation", async () => {
+test("MCP Local basket opens alternatives for any item and rejects obsolete basket navigation", async () => {
   const noWrite = async (): Promise<never> => {
     throw new Error("Local review must not mutate the provider basket");
   };
@@ -1678,15 +1666,8 @@ test("MCP review uses Ready only and rejects obsolete basket navigation", async 
       const started = await call("start_product_review", {
         items: [{ product_id: 7, quantity: 1 }],
       });
-      assert.equal(started.destination, "needs-review");
-      let review = await call("update_product_review_conversation", {
-        action: { kind: "accept", product_ids: [7] },
-      });
-      assert.equal(review.items[0]?.state, "ready");
-      await call("update_product_review_conversation", {
-        action: { kind: "show" },
-      });
-      assert.equal(review.items[0]?.state, "ready");
+      assert.equal(started.destination, "ready");
+      assert.equal(started.items[0]?.state, "ready");
       const obsolete = await mcp.callTool({
         name: "update_product_review_conversation",
         arguments: {
@@ -1694,41 +1675,27 @@ test("MCP review uses Ready only and rejects obsolete basket navigation", async 
         },
       });
       assert.equal(obsolete.isError, true);
-      review = await call("update_product_review_conversation", {
+      let review = await call("update_product_review_conversation", {
         action: { kind: "navigate", destination: "ready" },
       });
       assert.equal(review.destination, "ready");
-      const rejected = await mcp.callTool({
-        name: "update_product_review_conversation",
-        arguments: {
-          action: { kind: "alternatives", product_id: 7, query: "mælk" },
-        },
-      });
-      assert.equal(
-        rejected.isError,
-        true,
-        "Ready must move back before alternatives",
-      );
-      await call("update_product_review_conversation", {
-        action: { kind: "revisit", product_ids: [7] },
-      });
       review = await call("update_product_review_conversation", {
         action: { kind: "alternatives", product_id: 7, query: "mælk" },
       });
-      assert.equal(review.alternatives?.origin, "needs-review");
+      assert.equal(review.alternatives?.origin, "ready");
       assert.equal(
         (
           await call("start_product_review", {
             items: [{ product_id: 7, quantity: 1 }],
           })
         ).items[0]?.state,
-        "needs-review",
+        "ready",
       );
     },
   );
 });
 
-test("MCP supports broad search and the complete headless selection workflow without basket writes", async () => {
+test("MCP supports broad search and the complete headless Local basket workflow without basket writes", async () => {
   const options = Array.from({ length: 12 }, (_, index) => ({
     ...product,
     id: 100 + index,
@@ -1805,7 +1772,7 @@ test("MCP supports broad search and the complete headless selection workflow wit
           item.quantity,
           item.state,
         ]),
-        [[7, 2, "needs-review"]],
+        [[7, 2, "ready"]],
       );
       const update = async (action: Record<string, unknown>) => {
         const result = await mcp.callTool({
@@ -1821,7 +1788,7 @@ test("MCP supports broad search and the complete headless selection workflow wit
 
       await update({ kind: "add", items: [{ product_id: 112, quantity: 1 }] });
       await update({ kind: "quantity", product_id: 7, quantity: 4 });
-      let selection = await update({ kind: "accept", product_ids: [7] });
+      let selection = await update({ kind: "show" });
       assert.deepEqual(
         selection.items.map((item) => [
           item.product_id,
@@ -1830,11 +1797,10 @@ test("MCP supports broad search and the complete headless selection workflow wit
         ]),
         [
           [7, 4, "ready"],
-          [112, 1, "needs-review"],
+          [112, 1, "ready"],
         ],
       );
       await update({ kind: "navigate", destination: "ready" });
-      await update({ kind: "revisit", product_ids: [7] });
       selection = await update({
         kind: "alternatives",
         product_id: 7,
@@ -1872,8 +1838,8 @@ test("MCP supports broad search and the complete headless selection workflow wit
           item.state,
         ]),
         [
-          [120, 4, "needs-review"],
-          [112, 1, "needs-review"],
+          [120, 4, "ready"],
+          [112, 1, "ready"],
         ],
       );
       selection = await update({ kind: "remove", product_ids: [120, 112] });
@@ -1896,7 +1862,7 @@ test("MCP supports broad search and the complete headless selection workflow wit
   ]);
 });
 
-test("empty and unavailable results retain safe routes without accepting or writing", async () => {
+test("empty and unavailable results retain safe routes without preparing or writing", async () => {
   let writes = 0;
   const denied = async (): Promise<never> => {
     writes++;
@@ -1952,19 +1918,19 @@ test("empty and unavailable results retain safe routes without accepting or writ
         alternatives.structuredContent as { review: ProductReviewSnapshot }
       ).review;
       assert.deepEqual(alternativesReview.alternatives?.views, []);
-      assert.equal(alternativesReview.items[0]?.state, "needs-review");
+      assert.equal(alternativesReview.items[0]?.state, "ready");
       assert.equal(alternativesReview.submission, undefined);
       const refused = await mcp.callTool({
         name: "update_product_review_conversation",
         arguments: {
-          action: { kind: "accept", product_ids: [7] },
+          action: { kind: "prepare_submission" },
         },
       });
       assert.equal(refused.isError, true);
-      assert.match(toolText(refused), /Choose an available alternative/u);
+      assert.match(toolText(refused), /unavailable products/u);
       assert.match(
         mcp.getInstructions() ?? "",
-        /Local draft list edits never write to Nemlig/u,
+        /Local basket edits never write to Nemlig/u,
       );
     },
   );
@@ -1995,11 +1961,11 @@ test("lost and ended review recovery reports absence and only acts on explicitly
       const edit = await mcp.callTool({
         name: "update_product_review_conversation",
         arguments: {
-          action: { kind: "accept", product_ids: [7] },
+          action: { kind: "quantity", product_id: 7, quantity: 3 },
         },
       });
       assert.equal(edit.isError, true);
-      assert.match(toolText(edit), /Draft list unavailable/u);
+      assert.match(toolText(edit), /Local basket unavailable/u);
       assert.match(toolText(edit), /never replay/iu);
       const show = () =>
         mcp.callTool({
@@ -2009,7 +1975,7 @@ test("lost and ended review recovery reports absence and only acts on explicitly
       const absent = await show();
       assert.equal(absent.isError, undefined, toolText(absent));
       assert.deepEqual(absent.structuredContent, { unavailable: true });
-      assert.match(toolText(absent), /Ask before starting a new draft list/u);
+      assert.match(toolText(absent), /Ask before starting a new list/u);
       const unavailableWidgetRefresh = await mcp.callTool({
         name: "update_product_review",
         arguments: { action: { kind: "show" } },
@@ -2037,13 +2003,13 @@ test("lost and ended review recovery reports absence and only acts on explicitly
         restarted.structuredContent as { review: ProductReviewSnapshot }
       ).review;
       assert.equal(current.items[0]?.quantity, 2);
-      assert.equal(current.items[0]?.state, "needs-review");
+      assert.equal(current.items[0]?.state, "ready");
       assert.equal(current.submission, undefined);
       assert.deepEqual((await show()).structuredContent, { review: current });
       const earlierCardEdit = await mcp.callTool({
         name: "update_product_review_conversation",
         arguments: {
-          action: { kind: "accept", product_ids: [7] },
+          action: { kind: "quantity", product_id: 7, quantity: 3 },
         },
       });
       assert.equal(
@@ -2055,6 +2021,7 @@ test("lost and ended review recovery reports absence and only acts on explicitly
         review: ProductReviewSnapshot;
       };
       assert.equal(edited.review.items[0]?.state, "ready");
+      assert.equal(edited.review.items[0]?.quantity, 3);
       await mcp.callTool({
         name: "update_product_review_conversation",
         arguments: {

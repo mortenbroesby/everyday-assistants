@@ -35,19 +35,18 @@ const props = (thumbnail?: string): ViewerPageProps => ({
       kind: "review",
       active: true,
       review: {
-        destination: "needs-review",
+        destination: "ready",
         items: [
           {
             product_id: 7,
             quantity: 1,
-            state: "needs-review",
+            state: "ready",
             view: product,
           },
         ],
       },
     },
     maxWidth: 320,
-    selected: new Set(),
     reviewDisclosures: new Map(),
     pendingQuantities: new Map(),
     thumbnails: thumbnail ? new Map([[product, thumbnail]]) : new Map(),
@@ -63,12 +62,8 @@ const props = (thumbnail?: string): ViewerPageProps => ({
     onDisclosureChange: noop,
     onFactExpandedChange: noop,
     onRefresh: noop,
-    onSelected: noop,
-    onSelectAll: noop,
-    onAcceptSelected: noop,
     onQuantity: noop,
     onRemove: noop,
-    onRevisit: noop,
     onOpenAlternatives: noop,
     onSearchAlternatives: noop,
     onReplace: noop,
@@ -95,7 +90,7 @@ test("shared viewer page uses its supplied fixture thumbnail and keeps unsafe in
     new RegExp(`<img[^>]+src="${localThumbnail}"`, "u"),
   );
   assert.match(withFixture, /aria-labelledby="title"/u);
-  assert.match(withFixture, /<h1[^>]*id="title"[^>]*>To decide<\/h1>/u);
+  assert.match(withFixture, /<h1[^>]*id="title"[^>]*>Local basket<\/h1>/u);
   assert.doesNotMatch(withFixture, /<strong>Nemlig Assistant<\/strong>/u);
 
   const withoutFixture = renderToStaticMarkup(
@@ -120,9 +115,7 @@ test("shared viewer page keeps thumbnails attached to their individual views", (
     active: true,
     review: {
       destination: "alternatives",
-      items: [
-        { product_id: 7, quantity: 1, state: "needs-review", view: product },
-      ],
+      items: [{ product_id: 7, quantity: 1, state: "ready", view: product }],
       alternatives: { product_id: 7, query: "yoghurt", views: [alternative] },
     },
   };
@@ -141,8 +134,49 @@ test("shared viewer page keeps thumbnails attached to their individual views", (
     /src="\/assets\/alternative\.svg"[^>]*alt="Alternative yoghurt"/u,
   );
   assert.match(markup, /data-viewer-component="product-price"/u);
-  assert.match(markup, /aria-label="Use Alternative yoghurt instead"/u);
-  assert.doesNotMatch(markup, /Use selected alternative|role="radio"/u);
+  assert.match(
+    markup,
+    /aria-label="Select Alternative yoghurt as the alternative"/u,
+  );
+  assert.match(markup, /Use selected alternative/u);
+  assert.match(markup, /Back to Local basket/u);
+});
+
+test("empty and incomplete Local baskets cannot start submission", () => {
+  const pageProps = props();
+  if (pageProps.model.screen.kind !== "review") {
+    throw new Error("review fixture missing");
+  }
+  const review = pageProps.model.screen.review;
+  pageProps.model.screen = {
+    kind: "review",
+    active: true,
+    review: { ...review, items: [] },
+  };
+  assert.doesNotMatch(
+    renderToStaticMarkup(createElement(ViewerPage, pageProps)),
+    />Submit to Nemlig<\/button>/u,
+  );
+
+  for (const view of [
+    { context: "review", status: "unavailable", product_id: 7 },
+    { ...product, product: { ...product.product, price: undefined } },
+  ] satisfies ProductView[]) {
+    pageProps.model.screen = {
+      kind: "review",
+      active: true,
+      review: { ...review, items: [{ ...review.items[0]!, view }] },
+    };
+    const markup = renderToStaticMarkup(createElement(ViewerPage, pageProps));
+    assert.match(
+      markup,
+      /<button[^>]*disabled=""[^>]*>Submit to Nemlig<\/button>/u,
+    );
+    assert.match(
+      markup,
+      /Remove or replace unavailable or incomplete products/u,
+    );
+  }
 });
 
 test("busy submission confirmation disables its cancel control", () => {
@@ -201,46 +235,4 @@ test("shared viewer page distinguishes a verified partial addition from an uncer
   assert.match(html, /One product was confirmed/u);
   assert.match(html, /No later product was sent/u);
   assert.doesNotMatch(html, /We could not verify the addition/u);
-});
-
-test("shared viewer page offers an authoritative Draft list refresh outside errors", () => {
-  const normal = renderToStaticMarkup(createElement(ViewerPage, props()));
-  assert.match(normal, /Refresh Draft list/u);
-
-  const emptyProps = props();
-  emptyProps.model.screen = { kind: "empty" };
-  const empty = renderToStaticMarkup(createElement(ViewerPage, emptyProps));
-  assert.match(empty, /Refresh Draft list/u);
-
-  const cancelledProps = props();
-  cancelledProps.model.screen = { kind: "cancelled" };
-  const cancelled = renderToStaticMarkup(
-    createElement(ViewerPage, cancelledProps),
-  );
-  assert.match(cancelled, /Refresh Draft list/u);
-
-  const uncertainProps = props();
-  assert.equal(uncertainProps.model.screen.kind, "review");
-  if (uncertainProps.model.screen.kind !== "review") {
-    return;
-  }
-  uncertainProps.model.screen.review.submission = {
-    status: "uncertain",
-    submission_id: "fixture-submission",
-    review: {},
-  };
-  const uncertain = renderToStaticMarkup(
-    createElement(ViewerPage, uncertainProps),
-  );
-  assert.match(uncertain, /Refresh Draft list/u);
-
-  const errorProps = props();
-  errorProps.model.screen = {
-    kind: "error",
-    message: "The Draft list connection failed.",
-  };
-  errorProps.model.message =
-    "Reconnect to read this conversation's current Draft list.";
-  const error = renderToStaticMarkup(createElement(ViewerPage, errorProps));
-  assert.match(error, /role="status">Reconnect to read this conversation/u);
 });

@@ -31,8 +31,8 @@ const html = `<!doctype html>
   </style>
 </head>
 <body>
-  <p id="loading" role="status">Loading the current Draft list…</p>
-  <p id="load-error" role="alert" hidden>The current Draft list could not be loaded. Nothing has been changed. <button id="retry" type="button">Try again</button></p>
+  <p id="loading" role="status">Loading the current Local basket…</p>
+  <p id="load-error" role="alert" hidden>The current Local basket could not be loaded. Nothing has been changed. <button id="retry" type="button">Try again</button></p>
   <div id="root"></div>
   <script>
     (() => {
@@ -196,7 +196,7 @@ const formatProduct = (view: ProductView): string => {
     view.context === "basket"
       ? `Nemlig basket quantity ${formatNumber(view.basket?.quantity) ?? "unknown"}; line total ${formatMoney(view.basket?.line_total)}`
       : view.context === "review"
-        ? `draft list quantity ${formatNumber(view.review?.quantity) ?? "unknown"}; line total ${formatMoney(view.review?.line_total)}; approved ${view.review?.approved === true ? "yes" : "no"}`
+        ? `local basket quantity ${formatNumber(view.review?.quantity) ?? "unknown"}; line total ${formatMoney(view.review?.line_total)}; approved ${view.review?.approved === true ? "yes" : "no"}`
         : "";
   const details = product.details?.length
     ? product.details.map(({ key, value }) => `${key}: ${value}`).join("; ")
