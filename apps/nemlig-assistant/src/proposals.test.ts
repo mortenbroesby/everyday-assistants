@@ -265,6 +265,34 @@ test("real client continues when only an existing basket price changes before a 
   assert.equal(result.basket.products_price, 21);
 });
 
+test("real client sends no write when final basket prices are incomplete", async () => {
+  for (const missing of ["line", "basket"] as const) {
+    const fixture = httpProposalFixture(basketWithExistingProducts(), {
+      onBasketRead: (read, basket) => {
+        if (read === 3) {
+          if (missing === "line") {
+            basket.items[1]!.total = undefined;
+          } else {
+            basket.productsPrice = undefined;
+          }
+        }
+      },
+    });
+    const service = new BasketProposalService(fixture.client);
+    const prepared = await service.prepareAdditions(
+      "connection",
+      [{ product_id: 7, quantity: 1 }],
+      { kind: "exact_review" },
+    );
+
+    await assert.rejects(
+      service.apply("connection", prepared.proposal_id, "additions"),
+      /Basket prices cannot be verified safely; no provider write was sent/u,
+    );
+    assert.deepEqual(fixture.posts, []);
+  }
+});
+
 test("real client rejects basket drift before the first product POST", async () => {
   const fixture = httpProposalFixture(basketWithExistingProducts(), {
     onBasketRead: (read, basket) => {

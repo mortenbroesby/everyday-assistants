@@ -274,6 +274,7 @@ export function ProductViewer() {
   const [continueSubmitted, setContinueSubmitted] = useState(false);
   const [submitBlocked, setSubmitBlocked] = useState(false);
   const submitBlockedRef = useRef(false);
+  const submissionFailure = useRef<string | undefined>(undefined);
   const [pendingQuantities, setPendingQuantities] = useState<
     Map<number, number>
   >(() => new Map());
@@ -482,7 +483,8 @@ export function ProductViewer() {
       setSubmitBlocked(true);
       setConfirmSubmit(false);
       setMessage(
-        "Submission outcome is uncertain. Inspect the actual Nemlig basket; do not retry automatically.",
+        submissionFailure.current ??
+          "Nemlig did not confirm whether the complete addition reached the basket.",
       );
       return;
     }
@@ -514,6 +516,9 @@ export function ProductViewer() {
       return false;
     }
     callLock.current = true;
+    if (name === "submit_product_review") {
+      submissionFailure.current = undefined;
+    }
     const requestEpoch = cancellationEpoch.current;
     setBusy(true);
     setMessage("Updating…");
@@ -526,12 +531,24 @@ export function ProductViewer() {
         return false;
       }
       if (result.isError) {
-        throw new Error(
+        const detail =
           (result.content ?? [])
             .filter((content) => content.type === "text")
             .map((content) => content.text)
-            .join(" ") || "Update failed",
-        );
+            .join(" ") || "Update failed";
+        if (name === "submit_product_review") {
+          submissionFailure.current =
+            /Basket prices.*no provider write was sent/iu.test(detail)
+              ? "Nemlig's basket prices were incomplete at the final check. No product was sent."
+              : /Basket changed before an addition; no provider write was sent/iu.test(
+                    detail,
+                  )
+                ? "The Nemlig basket changed before the addition. No product was sent."
+                : /no provider write was sent/iu.test(detail)
+                  ? "A basket safety check stopped the addition before any product was sent."
+                  : undefined;
+        }
+        throw new Error(detail);
       }
       if (!applyPayload(result, true, adoptPresentationDestination)) {
         throw new Error("Could not confirm the updated Local basket.");
@@ -748,7 +765,8 @@ export function ProductViewer() {
         // The original failure remains safely uncertain when its local state cannot be re-read.
       }
       setMessage(
-        "Submission outcome is uncertain. Inspect the actual Nemlig basket; do not retry automatically.",
+        submissionFailure.current ??
+          "Nemlig did not confirm whether the complete addition reached the basket.",
       );
     }
   };

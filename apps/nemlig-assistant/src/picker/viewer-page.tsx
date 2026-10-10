@@ -953,7 +953,15 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
           </OutcomeSurface>
         )}
       {review && terminalSubmission && uncertainSubmission && (
-        <OutcomeSurface tone="warning" title="We could not verify the addition">
+        <OutcomeSurface
+          tone="warning"
+          title={
+            message.includes("No product was sent.")
+              ? "Addition stopped before sending"
+              : "We could not verify the addition"
+          }
+        >
+          {message && !busy && <p role="status">{message}</p>}
           <p role="status">
             Inspect the actual Nemlig basket before making another request.
             Nemlig Assistant will not retry automatically.

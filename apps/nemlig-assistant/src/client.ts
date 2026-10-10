@@ -737,6 +737,18 @@ export class NemligClient {
       throw new BasketSnapshotChangedError();
     }
     if (
+      expectedBasket &&
+      (!Number.isFinite(before.productsPrice) ||
+        before.productsPrice! < 0 ||
+        before.items.some(
+          (item) => !Number.isFinite(item.total) || item.total! < 0,
+        ))
+    ) {
+      throw new BasketPreflightError(
+        "Basket prices cannot be verified safely; no provider write was sent.",
+      );
+    }
+    if (
       before.items.some(
         (item) =>
           item.id === undefined ||

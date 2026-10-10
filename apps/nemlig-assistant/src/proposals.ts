@@ -546,11 +546,9 @@ export class BasketProposalService {
           this.invalidate(proposal);
           const detail =
             error instanceof BasketSnapshotChangedError
-              ? "Basket changed before an addition"
-              : "A required basket preflight failed";
-          throw new NemligError(
-            `${detail}; no provider write was sent. Prepare and review a new proposal.`,
-          );
+              ? "Basket changed before an addition; no provider write was sent."
+              : error.message;
+          throw new NemligError(`${detail} Prepare and review a new proposal.`);
         }
         if (error instanceof BasketPreflightError) {
           proposal.state = "partial";

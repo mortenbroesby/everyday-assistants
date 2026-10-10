@@ -242,3 +242,23 @@ test("shared viewer page distinguishes a verified partial addition from an uncer
   assert.match(html, /No later product was sent/u);
   assert.doesNotMatch(html, /We could not verify the addition/u);
 });
+
+test("a stopped submission explains the known reason and next step", () => {
+  const pageProps = props();
+  if (pageProps.model.screen.kind !== "review") {
+    throw new Error("review fixture missing");
+  }
+  pageProps.model.screen.review.submission = {
+    status: "uncertain",
+    submission_id: "fixture-submission",
+    review: {},
+  };
+  pageProps.model.message =
+    "Nemlig's basket prices were incomplete at the final check. No product was sent.";
+
+  const html = renderToStaticMarkup(createElement(ViewerPage, pageProps));
+  assert.match(html, /Addition stopped before sending/u);
+  assert.match(html, /basket prices were incomplete/u);
+  assert.match(html, /Inspect the actual Nemlig basket/u);
+  assert.match(html, /will not retry automatically/u);
+});
