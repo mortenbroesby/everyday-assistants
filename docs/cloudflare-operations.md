@@ -30,10 +30,11 @@ field names only, never values.
 
 The repository deploys one Worker, one fixed EU Container-controller Durable
 Object named `nemlig-production`, and at most one sleeping `lite` Container.
-The retired `PlanStorage` namespace was deleted by migration `v2`. Migration `v3` adds the owner-scoped Local basket namespace:
-its saved-shopping records are not read or migrated, and cannot be recovered by
-rolling back Worker code after that migration deploys. Do not add it back to a
-routine deployment without a separately reviewed data-recovery design.
+Migration `v2` deleted the retired `PlanStorage` namespace and its saved-shopping
+records. Those records are not migrated and cannot be recovered by rolling back
+Worker code. Migration `v3` adds the separate owner-scoped Local basket namespace.
+Preserve that new namespace and its binding during rollback; deleting the class
+would destroy Local basket data.
 The Worker stays enabled during routine delivery; `MCP_ENABLED=false` is a
 manual emergency kill switch. A failed deployment is not automatically rolled
 back or disabled. Inspect the live Worker, Container image/version and rollout
