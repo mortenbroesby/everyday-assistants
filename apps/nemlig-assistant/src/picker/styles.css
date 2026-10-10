@@ -200,7 +200,8 @@ h2 {
 }
 .product-action-controls [data-viewer-component="quantity-control"] {
   width: auto;
-  grid-template-columns: 44px minmax(44px, auto) 44px;
+  grid-template-columns: 44px minmax(44px, max-content) 44px;
+  justify-self: end;
   margin: 0;
   padding: 0;
   border: 0;
