@@ -424,7 +424,8 @@ try {
   await frame.getByRole("heading", { name: "Local basket" }).waitFor();
 
   const callsBeforeSwipe = await page.evaluate(() => window.calls.length);
-  const box = await milkCard.boundingBox();
+  const swipeRow = frame.locator(".basket-swipe-row").first();
+  const box = await swipeRow.boundingBox();
   assert.ok(box, "product row has no hit area");
   await page.mouse.move(box.x + box.width * 0.8, box.y + box.height / 2);
   await page.mouse.down();
@@ -442,8 +443,11 @@ try {
   );
   await capture("local-basket-revealed");
 
-  await frame.locator(".basket-swipe-row").first().press("Escape");
-  const shortSwipeBox = await milkCard.boundingBox();
+  await swipeRow.press("Escape");
+  await frame
+    .getByRole("button", { name: /Remove Synthetic milk from Local basket/ })
+    .waitFor({ state: "detached" });
+  const shortSwipeBox = await swipeRow.boundingBox();
   assert.ok(
     shortSwipeBox,
     "product row has no hit area for the threshold check",
@@ -486,7 +490,7 @@ try {
     "right swipe release navigated to alternatives",
   );
 
-  await frame.locator(".basket-swipe-row").first().press("Escape");
+  await swipeRow.press("Escape");
   await milkDisclosure.focus();
   await page.keyboard.press("Enter");
   await frame.getByRole("button", { name: /Find alternative/ }).waitFor();
