@@ -1340,41 +1340,45 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
       {review && active && !terminalSubmission && review.items.length === 0 && (
         <DraftListStarters onChoose={actions.onSendFollowUp} />
       )}
-      {review && active && !terminalSubmission && hasActiveProducts && (
-        <>
-          <Button
-            color="secondary"
-            block
-            className="clear-local-basket"
-            disabled={editsBlocked || busy}
-            onClick={actions.onRequestEnd}
-          >
-            <Trash2 aria-hidden="true" size={18} />
-            Clear
-          </Button>
-          {confirmEnd && (
-            <section className="submission">
-              <p>
-                Discard this Local basket? The Nemlig basket will not change.
-              </p>
-              <Button
-                color="secondary"
-                disabled={busy}
-                onClick={actions.onCancelEnd}
-              >
-                Keep Local basket
-              </Button>
-              <Button
-                color="secondary"
-                disabled={busy}
-                onClick={actions.onConfirmEnd}
-              >
-                Confirm discard Local basket
-              </Button>
-            </section>
-          )}
-        </>
-      )}
+      {review &&
+        active &&
+        !terminalSubmission &&
+        hasActiveProducts &&
+        destination !== "alternatives" && (
+          <>
+            <Button
+              color="secondary"
+              block
+              className="clear-local-basket"
+              disabled={editsBlocked || busy}
+              onClick={actions.onRequestEnd}
+            >
+              <Trash2 aria-hidden="true" size={18} />
+              Clear
+            </Button>
+            {confirmEnd && (
+              <section className="submission">
+                <p>
+                  Discard this Local basket? The Nemlig basket will not change.
+                </p>
+                <Button
+                  color="secondary"
+                  disabled={busy}
+                  onClick={actions.onCancelEnd}
+                >
+                  Keep Local basket
+                </Button>
+                <Button
+                  color="secondary"
+                  disabled={busy}
+                  onClick={actions.onConfirmEnd}
+                >
+                  Confirm discard Local basket
+                </Button>
+              </section>
+            )}
+          </>
+        )}
       {screen.kind === "empty" && (
         <DraftListStarters
           message={screen.message}

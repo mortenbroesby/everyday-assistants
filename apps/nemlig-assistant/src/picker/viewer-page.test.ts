@@ -214,6 +214,7 @@ test("shared viewer page keeps thumbnails attached to their individual views", (
   assert.match(markup, />Select</u);
   assert.doesNotMatch(markup, /Use selected alternative/u);
   assert.match(markup, /Back to Local basket/u);
+  assert.doesNotMatch(markup, />Clear</u);
 });
 
 test("shared viewer page retains a supplied image for an equivalent fixture view", () => {
