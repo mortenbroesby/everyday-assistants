@@ -877,7 +877,10 @@ try {
   await frame
     .getByRole("button", { name: "Use Synthetic alternative instead" })
     .click();
-  await frame.getByRole("button", { name: /To decide \(1\)/ }).waitFor();
+  await page.waitForFunction(
+    (before) => window.calls.length > before,
+    callsBeforeReplacement,
+  );
   assert.equal(
     await frame
       .getByRole("button", { name: "Use selected alternative" })
