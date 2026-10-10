@@ -229,6 +229,7 @@ document.getElementById('flow').onclick = async () => {
 };
 document.getElementById('alternatives').onclick = async () => {
  const run=document.getElementById('alternatives'); run.disabled=true;
+ status.textContent='Checking alternatives comparison';
  const doc=()=>frame.contentDocument, title=()=>doc()?.querySelector('#title')?.textContent;
  const buttons=()=>[...doc().querySelectorAll('button')], button=label=>buttons().find(b=>b.textContent.trim()===label);
  const check=(ok,message)=>{if(!ok)throw new Error(message);};
@@ -245,7 +246,9 @@ document.getElementById('alternatives').onclick = async () => {
   check(widgetCalls.length===beforeSwipe+1&&widgetCalls.at(-1).arguments.action.kind==='alternatives','Alternative view did not use the read-only search action');
   const unchanged=(await call({name:'update_product_review_conversation',arguments:{action:{kind:'show'}}})).structuredContent.review;
   check(JSON.stringify(unchanged.items.map(i=>[i.product_id,i.quantity,i.state]))===JSON.stringify(before.structuredContent.review.items.map(i=>[i.product_id,i.quantity,i.state])),'Opening alternatives changed the Local basket');
-  await doc().querySelector('#alternative-query').evaluate((input,node)=>{input.value='unavailable';input.dispatchEvent(new Event('input',{bubbles:true}));input.form.requestSubmit();},undefined);
+  const query=doc().querySelector('#alternative-query'); check(query,'Alternative search missing');
+  Object.getOwnPropertyDescriptor(doc().defaultView.HTMLInputElement.prototype,'value').set.call(query,'unavailable');
+  query.dispatchEvent(new Event('input',{bubbles:true})); query.form.requestSubmit();
   await wait(()=>doc().querySelector('.alternative-options')?.textContent.includes('Smoke product 4'));
   const back=button('Back to Local basket'); check(back,'Back control missing'); back.click(); await wait(()=>title()==='Local basket');
   check((await fetch('/stats').then(r=>r.json())).basketWrites===0,'Alternative navigation wrote to Nemlig');

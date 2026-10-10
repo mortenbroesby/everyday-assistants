@@ -317,7 +317,7 @@ try {
     .locator(".clear-local-basket")
     .evaluate((clear) => {
       const submit = document.querySelector<HTMLButtonElement>(
-        ".action-footer button",
+        '[data-viewer-component="action-footer"] button',
       );
       return {
         clear: clear.clientWidth,
