@@ -155,8 +155,9 @@ the Local basket, protected submission and recovery. Reopening uses `show`, not
 new searches or a second start. Rows show product, package, quantity and line
 price first. The details modal contains product facts. **Submit to Nemlig** prepares every current Local basket row for exact
 review before any provider addition. Confirmed unavailable rows are excluded
-and reported while available rows proceed. Unresolved or incomplete product
-details require a fresh review before submission. Empty Local baskets
+and reported while available rows proceed. Unresolved identity or availability
+details block preparation. Missing price, package, category, or descriptive
+fields may remain unknown. Empty Local baskets
 introduce the distinction from the real Nemlig basket and offer conversational
 shopping starters; they do not call Nemlig or change provider state.
 **Submit to Nemlig** is full width; **Clear** is full width at the
@@ -373,8 +374,9 @@ The MCP surface is organized around household actions:
   Local presence alone is not provider-write authorization. The protected
   tool uses only the unchanged prepared lines; confirmed unavailable products
   are skipped and reported while other approved products can proceed. Unresolved
-  product details fail closed; ambiguous scope or changed IDs/quantities requires
-  clarification.
+  identity or availability details fail closed; missing price, package, category,
+  or descriptive fields may remain unknown. Ambiguous scope or changed
+  IDs/quantities requires clarification.
 - Nemlig Assistant is strictly add-only for the real
   basket: it cannot remove, decrease, replace, swap, or clear products. If two
   units are already present and two more are authorized, the resulting line is
@@ -474,8 +476,9 @@ of the repository.
    then choose an action or change quantity; also open and close full-screen
    details and use Shift+F10, confirming edits leave Nemlig unchanged.
 5. Prepare the entire Local basket and confirm unavailable products are named
-   and excluded while available products proceed; unresolved or incomplete
-   product details block preparation. Submission requires a clear instruction
+   and excluded while available products proceed; unresolved identity or
+   availability details block preparation. Missing price, package, category, or
+   descriptive fields may remain unknown. Submission requires a clear instruction
    to add the unchanged list
    or approval of the exact prepared effect. Use fixtures for mutation tests; live basket changes need
    separate authorization.
