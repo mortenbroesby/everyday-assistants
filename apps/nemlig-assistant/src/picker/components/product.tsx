@@ -221,6 +221,7 @@ export function ProductSummary({
       {image && !imageFailed ? (
         <ProductImage
           src={image}
+          draggable={false}
           alt={product.name ?? "Product"}
           onError={() => setImageFailed(true)}
         />
