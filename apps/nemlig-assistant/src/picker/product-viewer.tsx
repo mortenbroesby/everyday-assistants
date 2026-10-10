@@ -270,7 +270,6 @@ export function ProductViewer() {
   const [confirmEnd, setConfirmEnd] = useState(false);
   const [continueSubmitted, setContinueSubmitted] = useState(false);
   const [submitBlocked, setSubmitBlocked] = useState(false);
-  const submitBlockedRef = useRef(false);
   const [pendingQuantities, setPendingQuantities] = useState<
     Map<number, number>
   >(() => new Map());
@@ -398,7 +397,6 @@ export function ProductViewer() {
           next.review.submission?.submission_id !==
             previous?.review.submission?.submission_id;
         if (submissionChanged) {
-          submitBlockedRef.current = false;
           setSubmitBlocked(false);
         }
         const preserveContinuation =
@@ -414,7 +412,6 @@ export function ProductViewer() {
           next.review.submission?.status === "partial"
         ) {
           const uncertain = next.review.submission.status === "uncertain";
-          submitBlockedRef.current = uncertain;
           setSubmitBlocked(uncertain);
         }
         setScreen({ kind: "review", ...state });
@@ -447,7 +444,6 @@ export function ProductViewer() {
           activeReview.current = undefined;
           setPresentationDestination(undefined);
           lastConfirmedReview.current = undefined;
-          submitBlockedRef.current = false;
           setSubmitBlocked(false);
           setContinueSubmitted(false);
           setReviewDisclosures(new Map());
@@ -606,7 +602,6 @@ export function ProductViewer() {
           "Your last action was not applied. The current Local basket was refreshed; choose again.",
         );
       } else if (!recovery && (uncertainOnFailure || /uncertain/i.test(text))) {
-        submitBlockedRef.current = true;
         setSubmitBlocked(true);
         setConfirmSubmit(false);
         setMessage(
@@ -795,8 +790,6 @@ export function ProductViewer() {
       );
       return;
     }
-    submitBlockedRef.current = true;
-    setSubmitBlocked(true);
     setConfirmSubmit(false);
     const latest = activeReview.current;
     if (!latest?.view_id) {

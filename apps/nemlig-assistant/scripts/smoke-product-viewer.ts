@@ -702,6 +702,7 @@ try {
     window.failNext = true;
   });
   await uncertainFrame.getByRole("button", { name: "Add to Nemlig" }).click();
+  await uncertainPage.waitForFunction(() => window.submissionAttempts === 1);
   await uncertainFrame
     .getByRole("heading", { name: "We could not verify the addition" })
     .waitFor();
