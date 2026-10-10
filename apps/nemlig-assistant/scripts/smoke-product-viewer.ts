@@ -917,7 +917,7 @@ try {
   );
   assert.deepEqual(
     replacementCall?.args.action,
-    { kind: "replace", product_id: 1, replacement_id: 3 },
+    { kind: "replace", product_id: 2, replacement_id: 3 },
     "selecting an alternative did not issue the expected replacement request",
   );
   assert.equal(
