@@ -462,7 +462,7 @@ function submissionActions(
 }
 
 /** A deterministic visual walkthrough; it only projects local fixture state and never imitates MCP authority. */
-function DraftListWalkthroughStory() {
+function LocalBasketWalkthroughStory() {
   const [currentReview, setCurrentReview] = useState(walkthroughReview);
   const [destination, setDestination] =
     useState<Review["destination"]>("ready");
@@ -524,13 +524,13 @@ type Story = StoryObj<typeof meta>;
 export const LocalBasketAt320: Story = {
   render: () => activeReview(review, "ready", 320),
 };
-export const DraftListWalkthrough: Story = {
+export const LocalBasketWalkthrough: Story = {
   decorators: [embeddedConversation],
-  render: () => <DraftListWalkthroughStory />,
+  render: () => <LocalBasketWalkthroughStory />,
 };
 export const AppTabWalkthrough: Story = {
   decorators: [appTab],
-  render: () => <DraftListWalkthroughStory />,
+  render: () => <LocalBasketWalkthroughStory />,
 };
 export const LocalBasketAt375: Story = {
   render: () => activeReview(review, "ready", 375),
@@ -581,7 +581,9 @@ export const VerifiedSuccess: Story = {
 export const UncertainOutcome: Story = {
   render: () => activeReview(uncertainReview, "ready"),
 };
-export const EmptyDraftList: Story = { render: () => page({ kind: "empty" }) };
+export const EmptyLocalBasket: Story = {
+  render: () => page({ kind: "empty" }),
+};
 export const Loading: Story = {
   render: () =>
     page(
