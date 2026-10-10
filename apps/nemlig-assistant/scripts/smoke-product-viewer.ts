@@ -334,34 +334,6 @@ try {
   const milkDisclosure = milkCard.locator(
     '[data-viewer-component="product-summary"]',
   );
-  const waitForFullSwipe = async (direction: "remove" | "alternative") => {
-    await page.waitForFunction(
-      (actionName) => {
-        const hostFrame = document.querySelector<HTMLIFrameElement>(
-          'iframe[title="viewer"]',
-        )!;
-        const row =
-          hostFrame.contentDocument!.querySelector<HTMLElement>(
-            ".basket-swipe-row",
-          )!;
-        const action = row.querySelector<HTMLElement>(
-          `button.swipe-${actionName}`,
-        )!;
-        const product = row.querySelector<HTMLElement>(".product-card")!;
-        const distance =
-          product.getBoundingClientRect().left -
-          row.getBoundingClientRect().left;
-        const expected =
-          actionName === "remove" ? -row.clientWidth : row.clientWidth;
-        return (
-          action.clientWidth >= row.clientWidth - 2 &&
-          Math.abs(distance - expected) <= 2
-        );
-      },
-      direction,
-      { timeout: 2_000 },
-    );
-  };
   await milkDisclosure.click();
   const quantityLayout = await milkCard
     .locator('[data-viewer-component="quantity-control"]')
@@ -380,119 +352,76 @@ try {
     "expanded quantity controls do not span the product row",
   );
   assert.equal(
-    await milkCard.getByRole("button", { name: "Find alternative" }).count(),
-    0,
-    "expanded product duplicated the swipe actions",
-  );
-  assert.equal(
     await milkCard
-      .getByRole("button", { name: "Remove from Local basket" })
+      .getByRole("button", { name: /Actions for Synthetic milk/ })
       .count(),
-    0,
-    "expanded product duplicated the remove action",
+    1,
+    "expanded product lost its action menu trigger",
   );
   await capture("local-basket-quantity");
   await milkDisclosure.click();
-  const callsBeforeSwipe = await page.evaluate(() => window.calls.length);
-  const swipeRow = frame.locator(".basket-swipe-row").first();
-  const openAlternativesByKeyboard = async () => {
-    await swipeRow.focus();
-    await page.keyboard.press("ArrowRight");
-    await frame
-      .getByRole("button", { name: /Find an alternative to Synthetic milk/ })
-      .click();
-    await frame
-      .getByRole("heading", { name: "Find an alternative", level: 1 })
-      .waitFor();
-  };
-  const box = await swipeRow.boundingBox();
-  assert.ok(box, "product row has no hit area");
-  await page.mouse.move(box.x + box.width * 0.8, box.y + box.height / 2);
-  await page.mouse.down();
-  await page.mouse.move(box.x + box.width * 0.1, box.y + box.height / 2, {
-    steps: 8,
+  const callsBeforeMenu = await page.evaluate(() => window.calls.length);
+  const actionTrigger = frame.getByRole("button", {
+    name: "Actions for Synthetic milk",
   });
-  assert.equal(
-    await frame
-      .getByRole("button", { name: /Remove Synthetic milk from Local basket/ })
-      .isVisible(),
-    true,
-    "remove action did not enter while dragging",
-  );
-  await page.mouse.up();
-  await frame
-    .getByRole("button", { name: /Remove Synthetic milk from Local basket/ })
-    .waitFor();
-  assert.equal(
-    await page.evaluate(() => window.calls.length),
-    callsBeforeSwipe,
-    "swipe release mutated the row",
-  );
-  await capture("local-basket-revealed");
-
-  const revealedRemove = frame.getByRole("button", {
-    name: /Remove Synthetic milk from Local basket/,
-  });
-  await waitForFullSwipe("remove");
-  assert.equal(
-    await milkDisclosure.getAttribute("aria-expanded"),
-    "false",
-    "swiping accidentally opened product details",
-  );
-  await revealedRemove.focus();
-  await revealedRemove.press("Escape");
-  await revealedRemove.waitFor({ state: "detached" });
-  const shortSwipeBox = await swipeRow.boundingBox();
-  assert.ok(
-    shortSwipeBox,
-    "product row has no hit area for the threshold check",
-  );
-  await page.mouse.move(
-    shortSwipeBox.x + shortSwipeBox.width * 0.8,
-    shortSwipeBox.y + shortSwipeBox.height / 2,
-  );
+  const box = await milkDisclosure.boundingBox();
+  assert.ok(box, "product summary has no hit area");
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
   await page.mouse.down();
-  await page.mouse.move(
-    shortSwipeBox.x + shortSwipeBox.width * 0.45,
-    shortSwipeBox.y + shortSwipeBox.height / 2,
-    { steps: 4 },
-  );
+  await page.waitForTimeout(250);
   await page.mouse.up();
   assert.equal(
-    await frame
-      .getByRole("button", { name: /Remove Synthetic milk from Local basket/ })
-      .count(),
+    await frame.getByRole("menuitem").count(),
     0,
-    "sub-threshold swipe revealed an action",
+    "a short press opened the action menu",
   );
+  if ((await milkDisclosure.getAttribute("aria-expanded")) === "true") {
+    await milkDisclosure.click();
+  }
+  const dragBox = await milkDisclosure.boundingBox();
+  assert.ok(dragBox, "product summary has no drag hit area");
   await page.mouse.move(
-    shortSwipeBox.x + shortSwipeBox.width * 0.15,
-    shortSwipeBox.y + shortSwipeBox.height / 2,
+    dragBox.x + dragBox.width * 0.8,
+    dragBox.y + dragBox.height / 2,
   );
   await page.mouse.down();
   await page.mouse.move(
-    shortSwipeBox.x + shortSwipeBox.width * 0.9,
-    shortSwipeBox.y + shortSwipeBox.height / 2,
-    { steps: 8 },
+    dragBox.x + dragBox.width * 0.2,
+    dragBox.y + dragBox.height / 2,
   );
+  await page.waitForTimeout(2_100);
   await page.mouse.up();
+  assert.equal(
+    await frame.getByRole("menuitem").count(),
+    0,
+    "dragging opened the product action menu",
+  );
+  const holdBox = await milkDisclosure.boundingBox();
+  assert.ok(holdBox, "product summary has no long-press hit area");
+  await page.mouse.move(
+    holdBox.x + holdBox.width / 2,
+    holdBox.y + holdBox.height / 2,
+  );
+  await page.mouse.down();
   await frame
-    .getByRole("button", { name: /Find an alternative to Synthetic milk/ })
-    .waitFor();
-  await waitForFullSwipe("alternative");
+    .getByRole("menuitem", { name: "Find alternative" })
+    .waitFor({ timeout: 3_000 });
+  await page.mouse.up();
   assert.equal(
     await page.evaluate(() => window.calls.length),
-    callsBeforeSwipe,
-    "right swipe release navigated to alternatives",
+    callsBeforeMenu,
+    "opening the action menu changed the Local basket",
   );
-
-  const revealedAlternative = frame.getByRole("button", {
-    name: /Find an alternative to Synthetic milk/,
-  });
-  await revealedAlternative.focus();
-  await revealedAlternative.press("Escape");
-  await revealedAlternative.waitFor({ state: "detached" });
-  await openAlternativesByKeyboard();
+  await capture("local-basket-actions");
+  await frame
+    .getByRole("menuitem", { name: "Find alternative" })
+    .press("Escape");
+  await frame.getByRole("menuitem").first().waitFor({ state: "detached" });
+  await actionTrigger.click();
+  await frame.getByRole("menuitem", { name: "Find alternative" }).click();
+  await frame
+    .getByRole("heading", { name: "Find an alternative", level: 1 })
+    .waitFor();
   assert.equal(
     await page.evaluate(() =>
       window
@@ -536,7 +465,11 @@ try {
     2,
     "ordinary snapshot reopened alternatives or lost quantity after Back",
   );
-  await openAlternativesByKeyboard();
+  await actionTrigger.click();
+  await frame.getByRole("menuitem", { name: "Find alternative" }).click();
+  await frame
+    .getByRole("heading", { name: "Find an alternative", level: 1 })
+    .waitFor();
   const candidate = frame
     .locator(".alternative-options .product-card")
     .filter({ hasText: "Synthetic alternative" });
@@ -697,28 +630,26 @@ try {
   await removePage.goto(`http://127.0.0.1:${address.port}/host`);
   const removeFrame = removePage.frameLocator('iframe[title="viewer"]');
   await removeFrame.getByRole("heading", { name: "Local basket" }).waitFor();
-  await removeFrame.locator(".basket-swipe-row").first().focus();
-  await removePage.keyboard.press("ArrowLeft");
-  const removeMilk = removeFrame.getByRole("button", {
-    name: /Remove Synthetic milk from Local basket/,
-  });
-  await removeMilk.focus();
-  await removeMilk.press("Enter");
+  await removeFrame
+    .getByRole("button", { name: "Actions for Synthetic milk" })
+    .click();
+  await removeFrame
+    .getByRole("menuitem", { name: "Remove from Local basket" })
+    .click();
   await removePage.waitForFunction(() => window.getReview().items.length === 1);
   assert.equal(
     await removeFrame
-      .locator(".basket-swipe-row")
-      .first()
-      .evaluate((row) => row.ownerDocument.activeElement === row),
+      .getByRole("button", { name: `Actions for ${longOatsName}` })
+      .evaluate((button) => button.ownerDocument.activeElement === button),
     true,
-    "keyboard removal lost focus instead of moving it to the remaining row",
+    "removal lost focus instead of moving it to the remaining row",
   );
-  await removePage.keyboard.press("ArrowLeft");
-  const removeLast = removeFrame.getByRole("button", {
-    name: `Remove ${longOatsName} from Local basket`,
-  });
-  await removeLast.focus();
-  await removeLast.press("Enter");
+  await removeFrame
+    .getByRole("button", { name: `Actions for ${longOatsName}` })
+    .click();
+  await removeFrame
+    .getByRole("menuitem", { name: "Remove from Local basket" })
+    .click();
   await removePage.waitForFunction(() => window.getReview().items.length === 0);
   assert.equal(
     await removeFrame
@@ -738,11 +669,11 @@ try {
   await longPage.goto(`http://127.0.0.1:${address.port}/host-long`);
   const longFrame = longPage.frameLocator('iframe[title="viewer"]');
   await longFrame.getByRole("heading", { name: "Local basket" }).waitFor();
-  await longFrame.locator(".basket-swipe-row").first().waitFor();
+  await longFrame.locator(".product-action-row").first().waitFor();
   const longList = await longFrame.locator(".viewer").evaluate((viewer) => ({
     height: viewer.clientHeight,
     scrollHeight: viewer.scrollHeight,
-    rendered: viewer.querySelectorAll(".basket-swipe-row").length,
+    rendered: viewer.querySelectorAll(".product-action-row").length,
   }));
   assert.ok(
     longList.height <= 620 &&
@@ -750,26 +681,24 @@ try {
       longList.rendered < 12,
     `long Local basket was not bounded and virtualized: ${JSON.stringify(longList)}`,
   );
-  const firstLongRow = longFrame.locator(".basket-swipe-row").first();
+  const firstLongRow = longFrame.locator(".product-action-row").first();
   await firstLongRow
     .locator('[data-viewer-component="product-summary"]')
     .click();
   await firstLongRow
     .locator('[data-viewer-component="quantity-control"]')
     .waitFor();
-  await firstLongRow.focus();
-  await longPage.keyboard.press("ArrowLeft");
-  const removeLong = longFrame.getByRole("button", {
-    name: "Remove Synthetic product 1 from Local basket",
-  });
-  await removeLong.focus();
-  await removeLong.press("Enter");
+  await firstLongRow
+    .getByRole("button", { name: "Actions for Synthetic product 1" })
+    .click();
+  await longFrame
+    .getByRole("menuitem", { name: "Remove from Local basket" })
+    .click();
   await longPage.waitForFunction(() => window.getReview().items.length === 11);
   assert.equal(
     await longFrame
-      .locator(".basket-swipe-row")
-      .first()
-      .evaluate((row) => row.ownerDocument.activeElement === row),
+      .getByRole("button", { name: "Actions for Synthetic product 2" })
+      .evaluate((button) => button.ownerDocument.activeElement === button),
     true,
     "virtualized row removal lost keyboard focus",
   );
@@ -817,5 +746,5 @@ try {
 }
 
 console.log(
-  "Built React viewer passed synthetic MCP browser smoke: one-list swipe reveal, explicit alternatives/back and replacement, quantity flush, whole-list exact preparation, cancellation, confirmation, zero provider writes, and no external requests.",
+  "Built React viewer passed synthetic MCP browser smoke: one-list long-press actions, explicit alternatives/back and replacement, quantity flush, whole-list exact preparation, cancellation, confirmation, zero provider writes, and no external requests.",
 );

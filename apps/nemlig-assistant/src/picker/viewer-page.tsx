@@ -1,15 +1,14 @@
 import {
-  useCallback,
   useEffect,
   useLayoutEffect,
   useRef,
   useState,
-  type MouseEvent,
+  type PointerEvent,
   type ReactNode,
 } from "react";
 import * as Collapsible from "@radix-ui/react-collapsible";
+import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { useSwipeable } from "react-swipeable";
 import type { ProductView } from "../product-presentation.js";
 import {
   ActionFooter,
@@ -158,87 +157,64 @@ function ProductCard({
   comparison?: boolean;
 }) {
   const [localExpanded, setLocalExpanded] = useState(false);
-  const [swipeOffset, setSwipeOffset] = useState(0);
-  const [swipeAction, setSwipeAction] = useState<"remove" | "alternative">();
-  const actionPress = useRef(false);
-  const suppressSwipeClick = useRef(false);
-  const rowRef = useRef<HTMLDivElement | null>(null);
-  const swipeHandlers = useSwipeable({
-    delta: 8,
-    onSwiping: ({ deltaX, dir }) => {
-      if (dir !== "Left" && dir !== "Right") {
-        return;
-      }
-      actionPress.current = false;
-      setSwipeAction(undefined);
-      setSwipeOffset(deltaX);
-    },
-    onSwiped: ({ absX, dir }) => {
-      actionPress.current = false;
-      suppressSwipeClick.current = true;
-      setSwipeOffset(0);
-      const width = rowRef.current?.clientWidth ?? 0;
-      setSwipeAction(
-        width > 0 && absX > width / 2
-          ? dir === "Left"
-            ? "remove"
-            : dir === "Right"
-              ? "alternative"
-              : undefined
-          : undefined,
-      );
-    },
-    onTouchEndOrOnMouseUp: () => setSwipeOffset(0),
-    trackMouse: true,
-    preventScrollOnSwipe: false,
-  });
-  const setSwipeRef = useCallback(
-    (element: HTMLDivElement | null) => {
-      rowRef.current = element;
-      swipeHandlers.ref(element);
-    },
-    [swipeHandlers.ref],
+  const [menuOpen, setMenuOpen] = useState(false);
+  const pressTimer = useRef<ReturnType<typeof setTimeout> | undefined>(
+    undefined,
   );
-  const transform =
-    swipeOffset !== 0
-      ? `${swipeOffset}px`
-      : swipeAction === "remove"
-        ? "-100%"
-        : swipeAction === "alternative"
-          ? "100%"
-          : "0";
-  const visibleSwipeAction =
-    swipeAction ??
-    (swipeOffset < 0 ? "remove" : swipeOffset > 0 ? "alternative" : undefined);
-  const onActionPointerDown = () => {
-    actionPress.current = true;
+  const pressOrigin = useRef<{ x: number; y: number } | undefined>(undefined);
+  const suppressSummaryClick = useRef(false);
+  const suppressMenuSelection = useRef(false);
+  const removing = useRef(false);
+  const rowRef = useRef<HTMLDivElement | null>(null);
+  const cancelPress = () => {
+    clearTimeout(pressTimer.current);
+    pressTimer.current = undefined;
+    pressOrigin.current = undefined;
   };
-  const onActionPointerCancel = () => {
-    actionPress.current = false;
+  useEffect(() => cancelPress, []);
+  const onSummaryPointerDown = (event: PointerEvent<HTMLButtonElement>) => {
+    if (disabled || !item || comparison || event.button !== 0) {
+      return;
+    }
+    cancelPress();
+    suppressSummaryClick.current = false;
+    pressOrigin.current = { x: event.clientX, y: event.clientY };
+    pressTimer.current = setTimeout(() => {
+      suppressSummaryClick.current = true;
+      suppressMenuSelection.current = true;
+      pressOrigin.current = undefined;
+      setMenuOpen(true);
+      pressTimer.current = undefined;
+    }, 2_000);
+  };
+  const onSummaryPointerMove = (event: PointerEvent<HTMLButtonElement>) => {
+    const origin = pressOrigin.current;
+    if (
+      origin &&
+      Math.hypot(event.clientX - origin.x, event.clientY - origin.y) > 10
+    ) {
+      cancelPress();
+    }
   };
   const focusAfterRemove = () => {
     const virtualRow = rowRef.current?.parentElement?.closest("[data-index]");
     const next =
-      rowRef.current?.nextElementSibling ||
-      rowRef.current?.previousElementSibling ||
-      virtualRow?.nextElementSibling?.querySelector(".basket-swipe-row") ||
-      virtualRow?.previousElementSibling?.querySelector(".basket-swipe-row") ||
+      rowRef.current?.nextElementSibling?.querySelector(
+        ".product-actions-trigger",
+      ) ||
+      rowRef.current?.previousElementSibling?.querySelector(
+        ".product-actions-trigger",
+      ) ||
+      virtualRow?.nextElementSibling?.querySelector(
+        ".product-actions-trigger",
+      ) ||
+      virtualRow?.previousElementSibling?.querySelector(
+        ".product-actions-trigger",
+      ) ||
       rowRef.current?.closest(".viewer");
     if (next instanceof HTMLElement) {
       next.focus();
     }
-  };
-  const onSwipeActionClick = (event: MouseEvent<HTMLButtonElement>) => {
-    if (event.detail !== 0 && !actionPress.current) {
-      event.preventDefault();
-      return;
-    }
-    actionPress.current = false;
-    if (event.detail === 0 && visibleSwipeAction === "remove") {
-      focusAfterRemove();
-    }
-    setSwipeAction(undefined);
-    (visibleSwipeAction === "remove" ? onRemove : onOpenAlternatives)?.();
   };
   const disclosureExpanded = expanded ?? localExpanded;
   const setDisclosureExpanded = onExpandedChange ?? setLocalExpanded;
@@ -259,62 +235,6 @@ function ProductCard({
       disabled={disabled}
       onQuantity={onQuantity}
     />
-  );
-  const swipeActions = item && !comparison && (
-    <>
-      {visibleSwipeAction === "remove" && onRemove && (
-        <Button
-          color="secondary"
-          disabled={disabled}
-          className="swipe-action swipe-remove"
-          aria-label={`Remove ${productName(view, item.product_id)} from Local basket`}
-          onPointerDown={onActionPointerDown}
-          onPointerCancel={onActionPointerCancel}
-          onClick={onSwipeActionClick}
-        >
-          <svg
-            aria-hidden="true"
-            width="20"
-            height="20"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <path d="M3 6h18M8 6V4h8v2m3 0-1 15H6L5 6m5 4v7m4-7v7" />
-          </svg>
-          Remove
-        </Button>
-      )}
-      {visibleSwipeAction === "alternative" && onOpenAlternatives && (
-        <Button
-          color="secondary"
-          disabled={disabled}
-          className="swipe-action swipe-alternative"
-          aria-label={`Find an alternative to ${productName(view, item.product_id)}`}
-          onPointerDown={onActionPointerDown}
-          onPointerCancel={onActionPointerCancel}
-          onClick={onSwipeActionClick}
-        >
-          <svg
-            aria-hidden="true"
-            width="20"
-            height="20"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-          >
-            <circle cx="10" cy="10" r="6" />
-            <path d="m14.5 14.5 5.5 5.5" />
-          </svg>
-          Find alternative
-        </Button>
-      )}
-    </>
   );
   const summary = (
     <ProductSummary
@@ -341,106 +261,154 @@ function ProductCard({
     );
   return (
     <div
-      className="basket-swipe-row"
-      data-revealed={swipeAction}
-      data-swiping={swipeOffset !== 0 || undefined}
+      className="product-action-row"
       data-product-id={item?.product_id}
       role={item && !comparison ? "group" : undefined}
       aria-label={
-        item && !comparison
-          ? `${productName(view, item.product_id)}. Left arrow reveals Remove; right arrow reveals Find alternative.`
-          : undefined
+        item && !comparison ? productName(view, item.product_id) : undefined
       }
-      tabIndex={item && !comparison ? 0 : undefined}
-      {...(item && !comparison ? swipeHandlers : {})}
-      ref={item && !comparison ? setSwipeRef : undefined}
-      onPointerDownCapture={() => {
-        suppressSwipeClick.current = false;
-      }}
-      onClickCapture={(event) => {
-        if (
-          suppressSwipeClick.current &&
-          (event.target as HTMLElement).closest(".product-card")
-        ) {
-          suppressSwipeClick.current = false;
-          event.preventDefault();
-          event.stopPropagation();
-        }
-      }}
-      onKeyDown={(event) => {
-        if (event.target === event.currentTarget && !disabled) {
-          if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
-            event.preventDefault();
-            setSwipeAction(
-              event.key === "ArrowLeft" ? "remove" : "alternative",
-            );
-            setSwipeOffset(0);
-          }
-        }
-        if (event.key === "Escape" && swipeAction) {
-          actionPress.current = false;
-          setSwipeAction(undefined);
-          setSwipeOffset(0);
-          if ((event.target as HTMLElement).closest(".swipe-action")) {
-            rowRef.current
-              ?.querySelector<HTMLButtonElement>("button[aria-expanded]")
-              ?.focus();
-          }
-        }
-      }}
+      ref={rowRef}
     >
-      {swipeActions}
-      <article
-        className={`product-card${comparison ? " product-comparison" : ""}`}
-        inert={Boolean(swipeAction)}
-        style={{ transform: `translateX(${transform})` }}
+      <DropdownMenu.Root
+        open={menuOpen && !disabled}
+        onOpenChange={(open) => {
+          setMenuOpen(open);
+          if (!open) {
+            suppressMenuSelection.current = false;
+            suppressSummaryClick.current = false;
+          }
+        }}
       >
-        <div className="product-details">
-          {comparison ? (
-            onChoice ? (
-              <button
-                type="button"
-                className="product-comparison-summary alternative-choice"
-                aria-label={`Select ${productName(view)} as the alternative`}
-                aria-pressed={choiceSelected === true}
-                disabled={disabled || !isUsable(view)}
-                onClick={onChoice}
-              >
-                {summary}
-                <span className="alternative-choice-state" aria-hidden="true">
-                  {choiceSelected ? "Selected" : "Select"}
-                </span>
-              </button>
-            ) : (
-              <div className="product-comparison-summary">{summary}</div>
-            )
-          ) : (
-            <Collapsible.Root
-              open={disclosureExpanded}
-              onOpenChange={setDisclosureExpanded}
-              disabled={disabled}
-            >
-              <Collapsible.Trigger asChild>
-                <ProductSummaryButton
-                  color="secondary"
-                  variant="ghost"
-                  data-viewer-component="product-summary"
+        <article
+          className={`product-card${comparison ? " product-comparison" : ""}`}
+        >
+          <div className="product-details">
+            {comparison ? (
+              onChoice ? (
+                <button
+                  type="button"
+                  className="product-comparison-summary alternative-choice"
+                  aria-label={`Select ${productName(view)} as the alternative`}
+                  aria-pressed={choiceSelected === true}
+                  disabled={disabled || !isUsable(view)}
+                  onClick={onChoice}
                 >
                   {summary}
-                </ProductSummaryButton>
-              </Collapsible.Trigger>
-              <Collapsible.Content className="product-expanded">
-                {details}
-              </Collapsible.Content>
-            </Collapsible.Root>
+                  <span className="alternative-choice-state" aria-hidden="true">
+                    {choiceSelected ? "Selected" : "Select"}
+                  </span>
+                </button>
+              ) : (
+                <div className="product-comparison-summary">{summary}</div>
+              )
+            ) : (
+              <Collapsible.Root
+                open={disclosureExpanded}
+                onOpenChange={setDisclosureExpanded}
+                disabled={disabled}
+              >
+                <Collapsible.Trigger asChild>
+                  <ProductSummaryButton
+                    color="secondary"
+                    variant="ghost"
+                    data-viewer-component="product-summary"
+                    onPointerDown={onSummaryPointerDown}
+                    onPointerMove={onSummaryPointerMove}
+                    onPointerUp={cancelPress}
+                    onPointerLeave={cancelPress}
+                    onPointerCancel={cancelPress}
+                    onContextMenu={(event) => event.preventDefault()}
+                    onClickCapture={(event) => {
+                      if (suppressSummaryClick.current) {
+                        suppressSummaryClick.current = false;
+                        event.preventDefault();
+                        event.stopPropagation();
+                      }
+                    }}
+                  >
+                    {summary}
+                  </ProductSummaryButton>
+                </Collapsible.Trigger>
+                <Collapsible.Content className="product-expanded">
+                  {details}
+                </Collapsible.Content>
+              </Collapsible.Root>
+            )}
+            {comparison && (
+              <div className="product-expanded product-comparison-details">
+                <ProductFacts view={view} />
+              </div>
+            )}
+          </div>
+          {item && !comparison && (
+            <DropdownMenu.Trigger asChild>
+              <Button
+                color="secondary"
+                variant="ghost"
+                className="product-actions-trigger"
+                disabled={disabled}
+                aria-label={`Actions for ${productName(view, item.product_id)}`}
+              >
+                <span aria-hidden="true">⋯</span>
+              </Button>
+            </DropdownMenu.Trigger>
           )}
-          {comparison && (
-            <div className="product-expanded product-comparison-details">
-              <ProductFacts view={view} />
-            </div>
-          )}
-        </div>
-      </article>
+        </article>
+        {item && !comparison && (
+          <DropdownMenu.Portal>
+            <DropdownMenu.Content
+              className="product-action-menu"
+              align="end"
+              sideOffset={4}
+              collisionPadding={8}
+              onPointerDownCapture={() => {
+                suppressMenuSelection.current = false;
+              }}
+              onKeyDownCapture={() => {
+                suppressMenuSelection.current = false;
+              }}
+              onCloseAutoFocus={(event) => {
+                if (removing.current) {
+                  event.preventDefault();
+                  removing.current = false;
+                  focusAfterRemove();
+                  onRemove?.();
+                }
+              }}
+            >
+              {onOpenAlternatives && (
+                <DropdownMenu.Item
+                  className="product-action-item"
+                  onSelect={(event) => {
+                    if (suppressMenuSelection.current) {
+                      event.preventDefault();
+                    } else {
+                      onOpenAlternatives();
+                    }
+                  }}
+                >
+                  Find alternative
+                </DropdownMenu.Item>
+              )}
+              {onRemove && (
+                <DropdownMenu.Item
+                  className="product-action-item product-action-remove"
+                  onSelect={(event) => {
+                    event.preventDefault();
+                    if (suppressMenuSelection.current) {
+                      return;
+                    }
+                    removing.current = true;
+                    setMenuOpen(false);
+                  }}
+                >
+                  Remove from Local basket
+                </DropdownMenu.Item>
+              )}
+            </DropdownMenu.Content>
+          </DropdownMenu.Portal>
+        )}
+      </DropdownMenu.Root>
     </div>
   );
 }
@@ -641,7 +609,7 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
         ? "Start a Local basket in conversation."
         : safeTitle === "Find an alternative"
           ? "Compare available options for this product."
-          : "Review products in your local basket. Open a product for details or swipe for an action."
+          : "Review products in your local basket. Open a product for details, or hold a product for two seconds for actions."
       : basket
         ? "Your current Nemlig basket. This view cannot change it."
         : "Inspect product details here or continue in conversation."

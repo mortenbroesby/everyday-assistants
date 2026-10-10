@@ -239,9 +239,9 @@ document.getElementById('alternatives').onclick = async () => {
   await wait(()=>title()==='Local basket'&&doc().querySelectorAll('.product-list article').length===2);
   const before=await call({name:'update_product_review_conversation',arguments:{action:{kind:'show'}}});
   const target=[...doc().querySelectorAll('.product-list article')].find(row=>row.textContent.includes('Smoke product 1')); check(target,'Product missing');
-  const row=target.closest('.basket-swipe-row'); check(row,'Swipe row missing'); row.focus(); row.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowRight',bubbles:true,cancelable:true})); await wait(()=>button('Find alternative'));
-  const beforeSwipe=widgetCalls.length; click('Find alternative'); await wait(()=>title()==='Find an alternative');
-  check(widgetCalls.length===beforeSwipe+1&&widgetCalls.at(-1).arguments.action.kind==='alternatives','Alternative view did not use the read-only search action');
+  const row=target.closest('.product-action-row'); check(row,'Product row missing'); const trigger=row.querySelector('.product-actions-trigger'); check(trigger,'Action trigger missing'); trigger.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true,cancelable:true})); await wait(()=>doc().querySelector('[role="menuitem"]'));
+  const beforeMenu=widgetCalls.length; const find=[...doc().querySelectorAll('[role="menuitem"]')].find(item=>item.textContent.trim()==='Find alternative'); check(find,'Find alternative action missing'); find.click(); await wait(()=>title()==='Find an alternative');
+  check(widgetCalls.length===beforeMenu+1&&widgetCalls.at(-1).arguments.action.kind==='alternatives','Alternative view did not use the read-only search action');
   const unchanged=(await call({name:'update_product_review_conversation',arguments:{action:{kind:'show'}}})).structuredContent.review;
   check(JSON.stringify(unchanged.items.map(i=>[i.product_id,i.quantity,i.state]))===JSON.stringify(before.structuredContent.review.items.map(i=>[i.product_id,i.quantity,i.state])),'Opening alternatives changed the Local basket');
   const query=doc().querySelector('#alternative-query'); check(query,'Alternative search missing');

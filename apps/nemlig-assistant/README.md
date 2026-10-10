@@ -123,10 +123,11 @@ styles, images and link destinations are omitted; conversion does not fetch
 additional resources.
 The shared product viewer opens directly to one **Local basket** list. Every
 row is Ready for whole-list submission; there are no To decide/Ready tabs,
-checkboxes, or acceptance step. Swipe left or right past half a row to reveal
-a full-row Remove or Find alternative action. Releasing a swipe only reveals the action;
-tapping the button performs it. Keyboard users can focus a row and press Left or Right
-Arrow to reveal the same buttons. Expanded rows provide full-width quantity controls.
+checkboxes, or acceptance step. Hold a product summary for two seconds to open
+its action menu, then choose **Find alternative** or **Remove from Local basket**.
+Moving or releasing early cancels the long press. The visible Actions button opens
+the same menu for keyboard and pointer users. Expanded rows provide full-width
+quantity controls. The viewer does not intercept horizontal swipes.
 The viewer stays within a 620 px height and scrolls longer lists; large Local baskets
 render visible rows with TanStack Virtual while shorter lists stay fully rendered.
 Removing or replacing a row changes only the Local basket, never Nemlig. The
@@ -178,7 +179,7 @@ native rendered build are separate facts: the supported recovery path is an
 operator-managed clean connection cutover followed by a new chat.
 
 Run `pnpm nemlig:smoke:review-ui` from the repository root. Its synthetic
-browser checks exercise the real MCP adapter, one shared Local basket, swipe
+browser checks exercise the real MCP adapter, one shared Local basket, long-press
 actions, alternatives, exact whole-list preparation, failure recovery, and the
 packaged viewer. They use fake products and deny provider basket writes; no
 credentials are required.
@@ -190,7 +191,7 @@ pnpm nemlig:ui:mockup
 ```
 
 It builds the viewer and uses the same synthetic MCP host as the browser smoke
-to write `local-basket.png`, `local-basket-revealed.png`, `alternatives.png`,
+to write `local-basket.png`, `local-basket-actions.png`, `alternatives.png`,
 and `confirmation.png` beneath
 `apps/nemlig-assistant/.codex/ui-mockups/`. These images are local and ignored:
 they contain only fixture products, make no external requests, and never access
@@ -447,8 +448,9 @@ of the repository.
 2. Confirm a partial detail failure is labeled unavailable while other results
    remain in provider order.
 3. Inspect the current Nemlig basket and confirm the Local basket remains distinct.
-4. Start a Local basket, swipe a row and verify release only reveals an action;
-   use its button and expanded-row control, confirming edits leave Nemlig unchanged.
+4. Start a Local basket, hold a product for two seconds to open its action menu,
+   then choose an action; also use its visible Actions button and expanded-row
+   control, confirming edits leave Nemlig unchanged.
 5. Prepare the entire Local basket and confirm unavailable/incomplete items block
    preparation; submission requires a clear instruction to add the unchanged list
    or approval of the exact prepared effect. Use fixtures for mutation tests; live basket changes need
@@ -578,7 +580,7 @@ This README is the user-facing inventory of shipped feature sets:
 - fresh Nemlig authentication before every provider-backed MCP task
 - rich individual short-query product discovery and refinement
 - one shared product presentation with a headless fallback
-- voice/touch one-list Local basket with revealed swipe actions and accessible
+- voice/touch one-list Local basket with long-press actions and accessible
   expanded-row controls, full-page alternatives, and scannable comparisons
 - persistent in-place review navigation, compact rows, and confirmed local removal
 - complete-per-search alternative results, deliberate follow-up search, and conversation-only Local basket edits

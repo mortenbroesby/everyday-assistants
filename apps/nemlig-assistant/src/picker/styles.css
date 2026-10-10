@@ -52,53 +52,34 @@ h2 {
   padding: 10px 2px;
   border-bottom: 1px solid var(--line);
 }
-.basket-swipe-row {
-  position: relative;
-  overflow: hidden;
-  touch-action: pan-y;
+.product-action-row .product-actions-trigger {
+  flex: none;
+  width: 38px;
+  margin-top: 8px;
+  padding: 0;
+  font-size: 1.4rem;
 }
-.basket-swipe-row .product-card {
-  position: relative;
-  z-index: 1;
+.product-action-menu {
+  z-index: 10;
+  min-width: 190px;
+  padding: 5px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
   background: var(--surface);
-  transition: transform 180ms ease;
+  box-shadow: 0 8px 24px #0002;
 }
-.basket-swipe-row[data-swiping] .product-card {
-  transition: none;
+.product-action-item {
+  padding: 10px 12px;
+  border-radius: 8px;
+  color: var(--ink);
+  cursor: pointer;
+  outline: none;
 }
-.basket-swipe-row button.swipe-action {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  display: flex;
-  width: 100%;
-  min-height: 100%;
-  align-items: center;
-  gap: 8px;
-  padding: 12px 8px;
-  border: 0;
-  border-radius: 0;
-  color: white;
-  text-align: center;
-  white-space: normal;
+.product-action-item[data-highlighted] {
+  background: var(--soft);
 }
-.basket-swipe-row button.swipe-remove {
-  right: 0;
-  justify-content: flex-end;
-  background: #b4232d;
-}
-.basket-swipe-row button.swipe-alternative {
-  left: 0;
-  justify-content: flex-start;
-  background: #1b7140;
-}
-.basket-swipe-row[data-revealed] button {
-  justify-content: center;
-}
-@media (prefers-reduced-motion: reduce) {
-  .basket-swipe-row .product-card {
-    transition: none;
-  }
+.product-action-remove {
+  color: #b4232d;
 }
 .product-details {
   flex: 1;
