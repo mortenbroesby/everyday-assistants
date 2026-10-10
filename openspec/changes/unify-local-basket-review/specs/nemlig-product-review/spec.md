@@ -35,19 +35,19 @@ The system SHALL show alternatives for one identified local product in a dedicat
 - **THEN** the same target and returned alternatives remain available, and the local row is unchanged
 
 ### Requirement: Explicit protected submission
-The system SHALL prepare one exact submission containing every current local basket item, regardless of any legacy stored review state. It SHALL fail closed if any item is unavailable or its required product facts are incomplete; it SHALL never silently omit a row. Editing the draft SHALL invalidate its pending submission. Applying still requires explicit confirmation of the unchanged exact review, and all existing freshness, single-use, principal, mutation-lock, uncertain-write, and readback safeguards SHALL remain effective. Unrelated real basket lines SHALL remain unchanged.
+The system SHALL review every current local basket item, regardless of any legacy stored review state. It MAY explicitly exclude a product confirmed unavailable or missing while preparing the remaining available products, and SHALL report each exclusion rather than silently omit a row. Missing or changed prices SHALL NOT block submission. Unresolved identity, quantity, or availability SHALL fail closed. Editing the draft SHALL invalidate its pending submission. Applying still requires explicit confirmation of the unchanged exact review, and all existing freshness, single-use, principal, mutation-lock, uncertain-write, and readback safeguards SHALL remain effective. Unrelated real basket lines SHALL remain unchanged.
 
 #### Scenario: Submit the entire local basket
-- **WHEN** the user requests submission and every current local item has complete available product data
-- **THEN** the system prepares exact current quantities, prices, and effects for every item without applying them
+- **WHEN** the user requests submission and every current local item is available
+- **THEN** the system prepares exact current quantities and effects for every item, with prices where available, without applying them
 
 #### Scenario: Local selection is complete
 - **WHEN** the user submits the current Local basket
-- **THEN** the system prepares every exact current item for review without applying it
+- **THEN** the system reviews every exact current item, reports confirmed unavailable items as excluded, and prepares the remaining available items without applying them
 
 #### Scenario: A local basket item is unavailable or incomplete
-- **WHEN** any current local item cannot be freshly confirmed as available with complete required facts
-- **THEN** preparation stops, identifies the row for resolution, and prepares no partial subset
+- **WHEN** a current local item is confirmed unavailable or missing
+- **THEN** preparation identifies it as excluded and prepares the remaining available items; an unresolved identity, quantity, or availability still stops preparation
 
 #### Scenario: Approved submission succeeds
 - **WHEN** the user approves the unchanged current submission review
@@ -67,7 +67,7 @@ The viewer SHALL bound its height and use one scroll region for long content. La
 - **THEN** the user can scroll through every product to Submit and Clear without a second nested scroll region; opening details or removing a row does not lose the remaining products or keyboard focus
 
 #### Scenario: Submission is not locally ready
-- **WHEN** the Local basket is empty or contains an unavailable or incomplete product
+- **WHEN** the Local basket is empty or has no potentially addable products
 - **THEN** the viewer does not offer an enabled Submit action, and it explains what must be resolved without sending a preparation or provider-write request
 
 #### Scenario: Reveal local row actions

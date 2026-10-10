@@ -204,14 +204,15 @@ document.getElementById('flow').onclick = async () => {
  const wait=async predicate=>{const until=Date.now()+15000;while(!predicate()){if(Date.now()>until)throw new Error('Timed out: '+(doc()?.querySelector('main')?.innerText||'no viewer main'));await new Promise(r=>setTimeout(r,25));}};
  const click=label=>{const b=button(label);check(b&&!b.disabled,'Missing enabled control: '+label);b.click();};
  try {
-  status.textContent='Checking fail-closed whole-list preparation'; widgetCalls.length=0;
+  status.textContent='Checking preparation with an unknown price'; widgetCalls.length=0;
   await fetch('/reset',{method:'POST'}); await fetch('/unknown-price',{method:'POST'});
   transcript=await call({name:'start_product_review',arguments:{items:[{product_id:1,quantity:1},{product_id:2,quantity:2}]}});
   initialized=false; frame.src='/viewer'; await wait(()=>initialized);
   await wait(()=>title()==='Local basket'&&doc().querySelectorAll('.product-list article').length===2);
-  await wait(()=>button('Submit to Nemlig')?.disabled&&text().includes('Remove or replace unavailable or incomplete products'));
-  check(!widgetCalls.some(c=>c.name==='submit_product_review' || c.arguments.action?.kind==='prepare_submission'),'Incomplete basket row was submitted or prepared');
-  check((await fetch('/stats').then(r=>r.json())).basketWrites===0,'Unavailable row reached a provider write');
+  await wait(()=>button('Submit to Nemlig')&&!button('Submit to Nemlig').disabled&&text().includes('Unknown price'));
+  click('Submit to Nemlig'); await wait(()=>button('Add to Nemlig basket'));
+  check(widgetCalls.some(c=>c.arguments.action?.kind==='prepare_submission'),'Unknown price blocked preparation');
+  check((await fetch('/stats').then(r=>r.json())).basketWrites===0,'Preparation reached a provider write');
   await fetch('/reset',{method:'POST'}); await fetch('/unknown-price',{method:'POST'});
   status.textContent='Checking uncertain submission block';
   transcript=await call({name:'start_product_review',arguments:{items:[{product_id:2,quantity:1}]}});
@@ -223,7 +224,7 @@ document.getElementById('flow').onclick = async () => {
   await fetch('/uncertain-next',{method:'POST'}); click('Add to Nemlig'); await wait(()=>text().includes('We could not verify the addition'));
   check(!button('Submit to Nemlig')&&!button('Add to Nemlig'),'Uncertain outcome allowed a retry');
   check((await fetch('/stats').then(r=>r.json())).basketWrites===0,'Synthetic uncertain path wrote the provider basket');
-  status.textContent='PASS: incomplete lines block prepare, uncertain result blocks replay, provider basket writes 0';
+  status.textContent='PASS: unknown prices allow prepare, uncertain result blocks replay, provider basket writes 0';
  } catch(error){status.textContent='FAIL: '+error.message+' | viewer: '+(doc()?.body?.innerText||'no iframe document')+' | widget calls: '+JSON.stringify(widgetCalls);} finally{run.disabled=false;}
 };
 document.getElementById('alternatives').onclick = async () => {

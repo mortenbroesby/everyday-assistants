@@ -37,6 +37,7 @@ export type Review = {
   submission?: {
     status: "prepared" | "submitted" | "uncertain" | "partial";
     verified_additions?: number;
+    skipped_products?: Array<{ product_id: number; name: string }>;
     submission_id: string;
     review: {
       lines?: Array<{
@@ -48,6 +49,7 @@ export type Review = {
         line_total?: number;
       }>;
       expected_products_price?: number;
+      skipped_products?: Array<{ product_id: number; name: string }>;
     };
   };
 };
@@ -562,12 +564,15 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
   const safeTitle =
     destination === "alternatives" ? "Find an alternative" : "Local basket";
   const visibleProductCount = review?.items.length ?? 0;
-  const hasUnreadyItem = review?.items.some(
-    ({ view }) =>
-      !isUsable(view) ||
-      (view.status === "complete" &&
-        (typeof view.product.price !== "number" ||
-          !Number.isFinite(view.product.price))),
+  const hasUnreadyItem = review?.items.some(({ view }) =>
+    view.status === "unavailable"
+      ? view.missing !== true
+      : view.product.available === undefined,
+  );
+  const hasUnavailableItem = review?.items.some(({ view }) =>
+    view.status === "unavailable"
+      ? view.missing === true
+      : view.product.available === false,
   );
   const alternatives = review?.alternatives;
   const alternativesKey = alternatives
@@ -630,7 +635,9 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
   const title =
     review && active && terminalSubmission
       ? review.submission?.status === "submitted"
-        ? "Added to Nemlig basket"
+        ? review.submission.skipped_products?.length
+          ? "Nemlig basket update"
+          : "Added to Nemlig basket"
         : partialSubmission
           ? "Addition stopped early"
           : "Check your Nemlig basket"
@@ -938,10 +945,20 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
       {review &&
         terminalSubmission &&
         review.submission?.status === "submitted" && (
-          <OutcomeSurface tone="success" title="Nemlig confirmed the addition">
+          <OutcomeSurface
+            tone={
+              review.submission.skipped_products?.length ? "warning" : "success"
+            }
+            title={
+              review.submission.verified_additions === 0
+                ? "No products were added"
+                : "Nemlig confirmed the addition"
+            }
+          >
             <p role="status">
-              Only the prepared products were added. Your real Nemlig basket was
-              verified after the addition.
+              {review.submission.skipped_products?.length
+                ? `${review.submission.verified_additions === 0 ? "No approved products were added" : `${review.submission.verified_additions} approved product additions were verified`}. Unavailable products were skipped: ${review.submission.skipped_products.map(({ name }) => name).join(", ")}. Check the actual Nemlig basket before trying them again.`
+                : "Only the prepared products were added. Your real Nemlig basket was verified after the addition."}
             </p>
             <Button
               color="secondary"
@@ -953,7 +970,15 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
           </OutcomeSurface>
         )}
       {review && terminalSubmission && uncertainSubmission && (
-        <OutcomeSurface tone="warning" title="We could not verify the addition">
+        <OutcomeSurface
+          tone="warning"
+          title={
+            message.includes("No product was sent.")
+              ? "Addition stopped before sending"
+              : "We could not verify the addition"
+          }
+        >
+          {message && !busy && <p role="status">{message}</p>}
           <p role="status">
             Inspect the actual Nemlig basket before making another request.
             Nemlig Assistant will not retry automatically.
@@ -1007,10 +1032,16 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
             )}
             {hasUnreadyItem && review.submission?.status !== "prepared" && (
               <p className="status" role="status">
-                Remove or replace unavailable or incomplete products before
-                submitting.
+                Resolve products with missing details before submitting.
               </p>
             )}
+            {hasUnavailableItem &&
+              !hasUnreadyItem &&
+              review.submission?.status !== "prepared" && (
+                <p className="status" role="status">
+                  Products Nemlig confirms are unavailable will be skipped.
+                </p>
+              )}
             {review.submission?.status === "prepared" && (
               <OutcomeSurface title="Ready to submit the Local basket">
                 {review.submission.review.lines?.map((line) => (
@@ -1020,9 +1051,21 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
                     {money(line.item_price)} each · {money(line.line_total)}
                   </p>
                 ))}
+                {review.submission.review.skipped_products?.length ? (
+                  <p role="status">
+                    Currently unavailable and excluded:{" "}
+                    {review.submission.review.skipped_products
+                      .map(({ name }) => name)
+                      .join(", ")}
+                    .
+                  </p>
+                ) : null}
                 <p>
-                  Expected product total:{" "}
+                  Estimated product total:{" "}
                   {money(review.submission.review.expected_products_price)}
+                </p>
+                <p>
+                  Prices may change. Check the actual Nemlig basket afterward.
                 </p>
                 {submitBlocked ? (
                   <p>

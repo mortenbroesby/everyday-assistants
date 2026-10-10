@@ -1927,7 +1927,10 @@ test("empty and unavailable results retain safe routes without preparing or writ
         },
       });
       assert.equal(refused.isError, true);
-      assert.match(toolText(refused), /unavailable products/u);
+      assert.match(
+        toolText(refused),
+        /unavailable or unresolved product details/u,
+      );
       assert.match(
         mcp.getInstructions() ?? "",
         /Local basket edits never write to Nemlig/u,
