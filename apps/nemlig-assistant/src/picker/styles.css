@@ -63,6 +63,9 @@ h2 {
   background: var(--surface);
   transition: transform 180ms ease;
 }
+.basket-swipe-row[data-swiping] .product-card {
+  transition: none;
+}
 .basket-swipe-row button.swipe-action {
   position: absolute;
   top: 0;
@@ -94,7 +97,7 @@ h2 {
 }
 @media (prefers-reduced-motion: reduce) {
   .basket-swipe-row .product-card {
-    transition: none !important;
+    transition: none;
   }
 }
 .product-details {
@@ -120,15 +123,12 @@ h2 {
 }
 .alternatives {
   display: flex;
-  min-height: calc(100dvh - 24px);
   flex-direction: column;
 }
 .alternatives-scroll {
-  flex: 1;
-  overflow-y: auto;
   padding-bottom: 16px;
 }
-.alternatives > .alternatives-scroll > h2 {
+.alternatives-scroll > h2 {
   margin-top: 8px;
 }
 .alternatives form {
@@ -202,7 +202,7 @@ h2 {
   flex: none;
   min-width: 4.5rem;
   color: var(--accent);
-  font-size: 0.78rem;
+  font-size: 0.8rem;
   font-weight: 650;
   text-align: right;
 }
@@ -211,7 +211,7 @@ h2 {
 }
 .alternatives-empty {
   color: var(--muted);
-  font-size: 0.85rem;
+  font-size: 0.84rem;
 }
 .empty {
   padding: 24px 4px;

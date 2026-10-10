@@ -142,6 +142,43 @@ test("shared viewer page keeps thumbnails attached to their individual views", (
   assert.match(markup, /Back to Local basket/u);
 });
 
+test("empty and incomplete Local baskets cannot start submission", () => {
+  const pageProps = props();
+  if (pageProps.model.screen.kind !== "review") {
+    throw new Error("review fixture missing");
+  }
+  const review = pageProps.model.screen.review;
+  pageProps.model.screen = {
+    kind: "review",
+    active: true,
+    review: { ...review, items: [] },
+  };
+  assert.doesNotMatch(
+    renderToStaticMarkup(createElement(ViewerPage, pageProps)),
+    />Submit to Nemlig<\/button>/u,
+  );
+
+  for (const view of [
+    { context: "review", status: "unavailable", product_id: 7 },
+    { ...product, product: { ...product.product, price: undefined } },
+  ] satisfies ProductView[]) {
+    pageProps.model.screen = {
+      kind: "review",
+      active: true,
+      review: { ...review, items: [{ ...review.items[0]!, view }] },
+    };
+    const markup = renderToStaticMarkup(createElement(ViewerPage, pageProps));
+    assert.match(
+      markup,
+      /<button[^>]*disabled=""[^>]*>Submit to Nemlig<\/button>/u,
+    );
+    assert.match(
+      markup,
+      /Remove or replace unavailable or incomplete products/u,
+    );
+  }
+});
+
 test("busy submission confirmation disables its cancel control", () => {
   const pageProps = props();
   assert.equal(pageProps.model.screen.kind, "review");

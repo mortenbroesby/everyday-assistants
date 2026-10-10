@@ -8,7 +8,10 @@ const ViewerRoot = styled.div({
 });
 const Viewer = styled.main({
   width: "min(100%, 560px)",
+  maxHeight: 620,
   margin: "0 auto",
+  overflowY: "auto",
+  overscrollBehaviorY: "contain",
   padding: 16,
   background: "var(--surface)",
 });
@@ -48,6 +51,7 @@ export function ViewerShell({
     <ViewerRoot className="app-frame" data-viewer-component="viewer-shell">
       <Viewer
         className="viewer"
+        tabIndex={-1}
         aria-label={title ? undefined : "Nemlig Assistant Local basket"}
         aria-labelledby={title ? "title" : undefined}
         style={maxWidth ? { maxWidth } : undefined}

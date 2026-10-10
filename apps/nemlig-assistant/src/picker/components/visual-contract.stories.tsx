@@ -103,6 +103,13 @@ const review: Review = {
   ],
   alternatives: { product_id: 1, query: "minimælk", views: [milk, pasta] },
 };
+const longBasket: Review = {
+  ...review,
+  items: Array.from({ length: 12 }, (_, index) => ({
+    ...review.items[index % review.items.length]!,
+    product_id: index + 1,
+  })),
+};
 const walkthroughReview: Review = {
   ...review,
   alternatives: { product_id: 1, query: "havredrik", views: [oatMilk] },
@@ -462,8 +469,12 @@ function submissionActions(
 }
 
 /** A deterministic visual walkthrough; it only projects local fixture state and never imitates MCP authority. */
-function LocalBasketWalkthroughStory() {
-  const [currentReview, setCurrentReview] = useState(walkthroughReview);
+function LocalBasketWalkthroughStory({
+  initialReview = walkthroughReview,
+}: {
+  initialReview?: Review;
+}) {
+  const [currentReview, setCurrentReview] = useState(initialReview);
   const [destination, setDestination] =
     useState<Review["destination"]>("ready");
   const [reviewDisclosures, setReviewDisclosures] = useState<
@@ -534,6 +545,10 @@ export const AppTabWalkthrough: Story = {
 };
 export const LocalBasketAt375: Story = {
   render: () => activeReview(review, "ready", 375),
+};
+export const ScrollableLocalBasket: Story = {
+  decorators: [embeddedConversation],
+  render: () => <LocalBasketWalkthroughStory initialReview={longBasket} />,
 };
 export const LegacyMixedLocalBasket: Story = {
   render: () => activeReview(legacyMixedReview, "ready", 375),

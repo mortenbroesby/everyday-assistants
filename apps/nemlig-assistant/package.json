@@ -71,6 +71,7 @@
     "@modelcontextprotocol/node": "2.0.0",
     "@modelcontextprotocol/server": "2.0.0",
     "@radix-ui/react-collapsible": "1.1.21",
+    "@tanstack/react-virtual": "3.14.14",
     "commander": "^15.0.0",
     "effect": "3.22.2",
     "express": "5.2.1",

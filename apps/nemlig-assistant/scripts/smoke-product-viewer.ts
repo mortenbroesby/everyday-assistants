@@ -80,10 +80,24 @@ const initialReview = {
   })),
 };
 const fixtureJson = JSON.stringify(initialReview);
-const parentDocument = `<!doctype html><meta charset="utf-8"><title>synthetic MCP host</title>
+const longFixtureJson = JSON.stringify({
+  ...initialReview,
+  items: Array.from({ length: 12 }, (_, index) => {
+    const id = index + 1;
+    return {
+      product_id: id,
+      quantity: 1,
+      state: "ready",
+      view: fixtureView(id, `Synthetic product ${id}`),
+    };
+  }),
+});
+const parentDocument = (
+  reviewJson: string,
+) => `<!doctype html><meta charset="utf-8"><title>synthetic MCP host</title>
 <iframe title="viewer" src="/resource" style="width:100%;height:900px;border:0"></iframe>
 <script>
-window.calls=[]; window.messages=[]; window.providerWrites=0; window.hostErrors=[]; let review=${fixtureJson}; window.submissionAttempts=0; window.failNext=false; window.failGenericNext=false;
+window.calls=[]; window.messages=[]; window.providerWrites=0; window.hostErrors=[]; let review=${reviewJson}; window.submissionAttempts=0; window.failNext=false; window.failGenericNext=false;
 const alternativeView=${JSON.stringify(fixtureView(3, "Synthetic alternative"))};
 const frame=document.querySelector('iframe');
 const post=(event,message)=>event.source.postMessage(message,location.origin);
@@ -121,16 +135,21 @@ window.addEventListener('message',event=>{
 });
 </script>`;
 
+const hostDocuments = new Map([
+  ["/host", parentDocument(fixtureJson)],
+  ["/host-long", parentDocument(longFixtureJson)],
+]);
 const server = createServer((request, response) => {
   const pathname = new URL(request.url ?? "/", "http://localhost").pathname;
+  const hostDocument = hostDocuments.get(pathname);
   if (pathname === "/resource") {
     response
       .writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
       .end(html);
-  } else if (pathname === "/host") {
+  } else if (hostDocument) {
     response
       .writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
-      .end(parentDocument);
+      .end(hostDocument);
   } else {
     response.writeHead(404).end();
   }
@@ -245,6 +264,12 @@ try {
   });
   console.log("Synthetic viewer smoke: host page loaded");
   const frame = page.frameLocator('iframe[title="viewer"]');
+  const openPreparedSubmission = async () => {
+    await frame.getByRole("button", { name: "Submit to Nemlig" }).click();
+    await frame
+      .getByRole("heading", { name: "Ready to submit the Local basket" })
+      .waitFor();
+  };
   await frame.getByRole("heading", { name: "Local basket" }).waitFor();
   assert.equal(
     await page.evaluate(() => window.calls.length),
@@ -550,10 +575,7 @@ try {
   });
   await increase.click();
   const callsBeforeSubmit = await page.evaluate(() => window.calls.length);
-  await frame.getByRole("button", { name: "Submit to Nemlig" }).click();
-  await frame
-    .getByRole("heading", { name: "Ready to submit the Local basket" })
-    .waitFor();
+  await openPreparedSubmission();
   const actions = await page.evaluate(
     (before) =>
       window.calls
@@ -624,10 +646,7 @@ try {
     "quantity edit did not invalidate the prepared approval before submit",
   );
   const submitCalls = await page.evaluate(() => window.calls.length);
-  await frame.getByRole("button", { name: "Submit to Nemlig" }).click();
-  await frame
-    .getByRole("heading", { name: "Ready to submit the Local basket" })
-    .waitFor();
+  await openPreparedSubmission();
 
   await frame.getByRole("button", { name: "Add to Nemlig basket" }).click();
   await frame.getByRole("button", { name: "Add to Nemlig" }).click();
@@ -680,16 +699,90 @@ try {
   await removeFrame.getByRole("heading", { name: "Local basket" }).waitFor();
   await removeFrame.locator(".basket-swipe-row").first().focus();
   await removePage.keyboard.press("ArrowLeft");
-  await removeFrame
-    .getByRole("button", { name: /Remove Synthetic milk from Local basket/ })
-    .click();
+  const removeMilk = removeFrame.getByRole("button", {
+    name: /Remove Synthetic milk from Local basket/,
+  });
+  await removeMilk.focus();
+  await removeMilk.press("Enter");
   await removePage.waitForFunction(() => window.getReview().items.length === 1);
+  assert.equal(
+    await removeFrame
+      .locator(".basket-swipe-row")
+      .first()
+      .evaluate((row) => row.ownerDocument.activeElement === row),
+    true,
+    "keyboard removal lost focus instead of moving it to the remaining row",
+  );
+  await removePage.keyboard.press("ArrowLeft");
+  const removeLast = removeFrame.getByRole("button", {
+    name: `Remove ${longOatsName} from Local basket`,
+  });
+  await removeLast.focus();
+  await removeLast.press("Enter");
+  await removePage.waitForFunction(() => window.getReview().items.length === 0);
+  assert.equal(
+    await removeFrame
+      .locator(".viewer")
+      .evaluate((viewer) => viewer.ownerDocument.activeElement === viewer),
+    true,
+    "removing the last row lost keyboard focus",
+  );
   assert.equal(
     await removePage.evaluate(() => window.providerWrites),
     0,
     "local row removal reached a provider write",
   );
   await removePage.close();
+
+  const longPage = await context.newPage();
+  await longPage.goto(`http://127.0.0.1:${address.port}/host-long`);
+  const longFrame = longPage.frameLocator('iframe[title="viewer"]');
+  await longFrame.getByRole("heading", { name: "Local basket" }).waitFor();
+  await longFrame.locator(".basket-swipe-row").first().waitFor();
+  const longList = await longFrame.locator(".viewer").evaluate((viewer) => ({
+    height: viewer.clientHeight,
+    scrollHeight: viewer.scrollHeight,
+    rendered: viewer.querySelectorAll(".basket-swipe-row").length,
+  }));
+  assert.ok(
+    longList.height <= 620 &&
+      longList.scrollHeight > longList.height &&
+      longList.rendered < 12,
+    `long Local basket was not bounded and virtualized: ${JSON.stringify(longList)}`,
+  );
+  const firstLongRow = longFrame.locator(".basket-swipe-row").first();
+  await firstLongRow
+    .locator('[data-viewer-component="product-summary"]')
+    .click();
+  await firstLongRow
+    .locator('[data-viewer-component="quantity-control"]')
+    .waitFor();
+  await firstLongRow.focus();
+  await longPage.keyboard.press("ArrowLeft");
+  const removeLong = longFrame.getByRole("button", {
+    name: "Remove Synthetic product 1 from Local basket",
+  });
+  await removeLong.focus();
+  await removeLong.press("Enter");
+  await longPage.waitForFunction(() => window.getReview().items.length === 11);
+  assert.equal(
+    await longFrame
+      .locator(".basket-swipe-row")
+      .first()
+      .evaluate((row) => row.ownerDocument.activeElement === row),
+    true,
+    "virtualized row removal lost keyboard focus",
+  );
+  await longFrame.locator(".viewer").evaluate((viewer) => {
+    viewer.scrollTop = viewer.scrollHeight;
+  });
+  await longFrame.locator('[data-product-id="12"]').waitFor();
+  assert.equal(
+    await longPage.evaluate(() => window.providerWrites),
+    0,
+    "virtualized Local basket reached a provider write",
+  );
+  await longPage.close();
 
   assert.equal(
     await page.evaluate(() => window.providerWrites),

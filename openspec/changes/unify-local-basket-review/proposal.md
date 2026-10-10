@@ -10,18 +10,20 @@ Every local basket item is Ready and is included in the single Submit to Nemlig 
 
 - Nemlig Assistant picker, local review state transitions, review action descriptions, and feature documentation.
 - Existing review service and tool behavior only where needed to keep all current items submission candidates and allow a Ready row to search alternatives and replace it without changing its Ready status or quantity.
-- Pin `react-swipeable` in the Nemlig Assistant package for gesture recognition; keep disclosure, focus, and action activation in the app.
+- Pin `react-swipeable` for gesture recognition and TanStack React Virtual for long Local baskets; keep disclosure, focus, and action activation in the app.
+- Bound the viewer height and let its single native scroll region contain long content. Virtualize larger Local baskets and measure expanded row heights.
 
 ## Non-goals
 
 - Any change to actual Nemlig basket semantics, provider APIs, proposal protocol, authorization rules, or checkout behavior.
-- Automatic gesture-triggered navigation or mutation, remote list persistence, unrelated redesign, or dependency additions beyond the swipe library.
+- Automatic gesture-triggered navigation or mutation, remote list persistence, unrelated redesign, or other dependency additions.
 
 ## Acceptance
 
 - The review shows one list labeled “Local basket”; no To decide/Ready tabs or row-selection checkboxes.
 - A left or right swipe past half the row settles into a full-row red Remove or green Find alternative action. Releasing the gesture only reveals the action. A subsequent tap on its real button performs the local remove or opens alternatives.
 - Expanded quantity controls span the available row width.
+- Long Local baskets stay within the bounded viewer, remain reachable through one scroll region, and preserve keyboard focus and row expansion as virtual rows change.
 - Keyboard and assistive-technology users can focus a row and press Left or Right Arrow to reveal the same explicit actions without duplicate expanded-row buttons.
 - Alternatives appear in a dedicated full-page view with Back, current product, search, option selection, and explicit “Use selected alternative”. Back leaves the local row unchanged. A Ready row can search and replacement preserves its Ready status and quantity while invalidating a prepared submission.
 - Every item remains Ready; additions and replacements are immediately submission candidates. Submit prepares every current item as one exact recap. Any unavailable or incomplete line prevents preparation and remains visible for resolution. Exact confirmation, owner isolation, concurrency and uncertain-write gates, provider preflight, single-use write, and readback remain intact.
@@ -29,3 +31,4 @@ Every local basket item is Ready and is included in the single Submit to Nemlig 
 ## Verification
 
 Run focused service tests, the synthetic MCP and packaged-viewer browser smokes, typecheck, build, and the repository verification gates. Do not access a real basket or provider.
+The bounded inline scroller departs from OpenAI's usual no-nested-scrolling card guidance; check real ChatGPT mobile scrolling after release.

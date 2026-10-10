@@ -127,6 +127,8 @@ checkboxes, or acceptance step. Swipe left or right past half a row to reveal
 a full-row Remove or Find alternative action. Releasing a swipe only reveals the action;
 tapping the button performs it. Keyboard users can focus a row and press Left or Right
 Arrow to reveal the same buttons. Expanded rows provide full-width quantity controls.
+The viewer stays within a 620 px height and scrolls longer lists; large Local baskets
+render visible rows with TanStack Virtual while shorter lists stay fully rendered.
 Removing or replacing a row changes only the Local basket, never Nemlig. The
 alternative view has Back, the current product, search, selectable results,
 and an explicit **Use selected alternative** action. Back and search preserve
@@ -137,7 +139,7 @@ results cannot be selected. Longer product facts use the three collapsed section
 The MCP routing map separates catalogue discovery, the actual Nemlig basket,
 the Local basket, protected submission and recovery. Reopening uses `show`, not
 new searches or a second start. Rows show product, package, quantity and line
-price first. Expanded rows contain quantity, local row actions and product
+price first. Expanded rows contain quantity and product
 facts. **Submit to Nemlig** prepares every current Local basket row for exact
 review before any provider addition. If any row is unavailable or incomplete,
 preparation stops without submitting a partial list. Empty Local baskets offer
@@ -206,7 +208,7 @@ pages, including bare production-page stories and two click-through Local-basket
 simulators: an embedded-conversation card and a ChatGPT app tab. The host
 frames are Storybook-only approximations; the inner page is the same
 `ViewerPage` used in production. Host chrome is deliberately not part of the
-app UI.
+app UI. A long Local basket story demonstrates scrolling and virtual rows.
 `pnpm nemlig:build:storybook` checks that those stories
 build. It is not evidence of native ChatGPT rendering: retain the built-viewer
 smoke and post-release host smoke for host-owned framing and variables.
@@ -361,17 +363,12 @@ The MCP surface is organized around household actions:
 - Search and conversation-side edits return structured and text results without
   mounting a widget for every tool call. `start_product_review` is the explicit
   render action: it opens the current products immediately. Use it once while a
-  current card is usable; repeat it only to reopen a stale card or when asked,
-  since each call renders a new card and invalidates the previous card's actions.
-  ChatGPT may retain older message cards in the conversation; Nemlig Assistant
-  leaves that history to the host and makes superseded cards read-only.
-  Each rendered view has a conversation-bound server token. The familiar
-  Edits through `update_product_review` and `submit_product_review` require the newest
-  view token. A stale card can omit it only for a read-only `show`; the explicit
-  **Make this card current** action issues a new token without recreating a missing
-  draft.
+  current card is usable; repeat it to reopen the current list when asked.
+  Supported cards share the same server-owned Local basket and read its current
+  state; a new card does not invalidate earlier supported cards or restore an
+  older snapshot. ChatGPT may retain older message cards in the conversation.
   Model-side text actions use the `_conversation` tool names. The MCP server
-  serves a versioned viewer URI; older resource addresses are inert and cannot
+  serves one stable viewer URI; retired resource addresses are inert and cannot
   change shopping state.
   The viewer initializes the MCP Apps bridge and reports connection failures.
   It can edit the server-owned Local basket and call the protected submission path

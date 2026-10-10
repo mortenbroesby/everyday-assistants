@@ -60,6 +60,16 @@ The system SHALL prepare one exact submission containing every current local bas
 ### Requirement: To decide and Ready refinement
 The touch review SHALL show one Local basket list without visible To decide or Ready tabs, row-selection checkboxes, or an acceptance step. Every product SHALL be a Ready submission candidate. Swipe gestures past half the row SHALL reveal a full-row action without activating it; a fresh explicit activation of the revealed Remove or Find alternative button SHALL perform the corresponding local action. Keyboard users SHALL be able to reveal those actions by focusing the row and pressing Left or Right Arrow. Expanded rows SHALL provide full-width quantity controls without duplicate action buttons. Legacy stored state SHALL NOT exclude an item from whole-basket submission.
 
+The viewer SHALL bound its height and use one scroll region for long content. Larger Local baskets MAY virtualize offscreen rows, provided scrolling, keyboard access, expanded details, and whole-basket submission remain available.
+
+#### Scenario: Review a long Local basket
+- **WHEN** the Local basket contains more products than fit in the viewer
+- **THEN** the user can scroll through every product to Submit and Clear without a second nested scroll region; expanding or removing a row does not lose the remaining products or keyboard focus
+
+#### Scenario: Submission is not locally ready
+- **WHEN** the Local basket is empty or contains an unavailable or incomplete product
+- **THEN** the viewer does not offer an enabled Submit action, and it explains what must be resolved without sending a preparation or provider-write request
+
 #### Scenario: Reveal a local row action
 - **WHEN** the user swipes left or right beyond half the row width and releases
 - **THEN** the row reveals the corresponding Remove or Find alternative button but performs no edit or navigation until that button is explicitly activated

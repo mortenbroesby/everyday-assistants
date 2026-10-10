@@ -1,5 +1,14 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type MouseEvent,
+  type ReactNode,
+} from "react";
 import * as Collapsible from "@radix-ui/react-collapsible";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import { useSwipeable } from "react-swipeable";
 import type { ProductView } from "../product-presentation.js";
 import {
@@ -201,6 +210,36 @@ function ProductCard({
   const visibleSwipeAction =
     swipeAction ??
     (swipeOffset < 0 ? "remove" : swipeOffset > 0 ? "alternative" : undefined);
+  const onActionPointerDown = () => {
+    actionPress.current = true;
+  };
+  const onActionPointerCancel = () => {
+    actionPress.current = false;
+  };
+  const focusAfterRemove = () => {
+    const virtualRow = rowRef.current?.parentElement?.closest("[data-index]");
+    const next =
+      rowRef.current?.nextElementSibling ||
+      rowRef.current?.previousElementSibling ||
+      virtualRow?.nextElementSibling?.querySelector(".basket-swipe-row") ||
+      virtualRow?.previousElementSibling?.querySelector(".basket-swipe-row") ||
+      rowRef.current?.closest(".viewer");
+    if (next instanceof HTMLElement) {
+      next.focus();
+    }
+  };
+  const onSwipeActionClick = (event: MouseEvent<HTMLButtonElement>) => {
+    if (event.detail !== 0 && !actionPress.current) {
+      event.preventDefault();
+      return;
+    }
+    actionPress.current = false;
+    if (event.detail === 0 && visibleSwipeAction === "remove") {
+      focusAfterRemove();
+    }
+    setSwipeAction(undefined);
+    (visibleSwipeAction === "remove" ? onRemove : onOpenAlternatives)?.();
+  };
   const disclosureExpanded = expanded ?? localExpanded;
   const setDisclosureExpanded = onExpandedChange ?? setLocalExpanded;
   const quantity =
@@ -229,21 +268,9 @@ function ProductCard({
           disabled={disabled}
           className="swipe-action swipe-remove"
           aria-label={`Remove ${productName(view, item.product_id)} from Local basket`}
-          onPointerDown={() => {
-            actionPress.current = true;
-          }}
-          onPointerCancel={() => {
-            actionPress.current = false;
-          }}
-          onClick={(event) => {
-            if (event.detail !== 0 && !actionPress.current) {
-              event.preventDefault();
-              return;
-            }
-            actionPress.current = false;
-            setSwipeAction(undefined);
-            onRemove();
-          }}
+          onPointerDown={onActionPointerDown}
+          onPointerCancel={onActionPointerCancel}
+          onClick={onSwipeActionClick}
         >
           <svg
             aria-hidden="true"
@@ -267,21 +294,9 @@ function ProductCard({
           disabled={disabled}
           className="swipe-action swipe-alternative"
           aria-label={`Find an alternative to ${productName(view, item.product_id)}`}
-          onPointerDown={() => {
-            actionPress.current = true;
-          }}
-          onPointerCancel={() => {
-            actionPress.current = false;
-          }}
-          onClick={(event) => {
-            if (event.detail !== 0 && !actionPress.current) {
-              event.preventDefault();
-              return;
-            }
-            actionPress.current = false;
-            setSwipeAction(undefined);
-            onOpenAlternatives();
-          }}
+          onPointerDown={onActionPointerDown}
+          onPointerCancel={onActionPointerCancel}
+          onClick={onSwipeActionClick}
         >
           <svg
             aria-hidden="true"
@@ -328,6 +343,7 @@ function ProductCard({
     <div
       className="basket-swipe-row"
       data-revealed={swipeAction}
+      data-swiping={swipeOffset !== 0 || undefined}
       data-product-id={item?.product_id}
       role={item && !comparison ? "group" : undefined}
       aria-label={
@@ -377,10 +393,7 @@ function ProductCard({
       <article
         className={`product-card${comparison ? " product-comparison" : ""}`}
         inert={Boolean(swipeAction)}
-        style={{
-          transform: `translateX(${transform})`,
-          transition: swipeOffset !== 0 ? "none" : undefined,
-        }}
+        style={{ transform: `translateX(${transform})` }}
       >
         <div className="product-details">
           {comparison ? (
@@ -432,6 +445,80 @@ function ProductCard({
   );
 }
 
+function BasketList({
+  items,
+  renderItem,
+}: {
+  items: ReviewItem[];
+  renderItem: (item: ReviewItem) => ReactNode;
+}) {
+  // Keep virtual rows mounted as the basket shrinks so removal does not drop focus.
+  const [virtual, setVirtual] = useState(() => items.length > 8);
+  useEffect(() => {
+    if (items.length > 8) {
+      setVirtual(true);
+    }
+  }, [items.length]);
+  const listRef = useRef<HTMLElement>(null);
+  const [scrollMargin, setScrollMargin] = useState(0);
+  useLayoutEffect(() => {
+    if (!virtual) {
+      return;
+    }
+    const list = listRef.current;
+    const scroller = list?.closest<HTMLElement>(".viewer");
+    if (list && scroller) {
+      setScrollMargin(
+        list.getBoundingClientRect().top -
+          scroller.getBoundingClientRect().top +
+          scroller.scrollTop,
+      );
+    }
+  }, [virtual]);
+  const virtualizer = useVirtualizer({
+    count: virtual ? items.length : 0,
+    getScrollElement: () =>
+      listRef.current?.closest<HTMLElement>(".viewer") ?? null,
+    estimateSize: () => 140,
+    getItemKey: (index) => items[index]?.product_id ?? index,
+    scrollMargin,
+    overscan: 3,
+    useFlushSync: false,
+  });
+  return (
+    <section
+      ref={listRef}
+      className="product-list"
+      aria-label="Local basket products"
+    >
+      {virtual ? (
+        <div
+          style={{ height: virtualizer.getTotalSize(), position: "relative" }}
+        >
+          {virtualizer.getVirtualItems().map((row) => (
+            <div
+              key={row.key}
+              ref={virtualizer.measureElement}
+              data-index={row.index}
+              style={{
+                position: "absolute",
+                top: 0,
+                left: 0,
+                width: "100%",
+                transform: `translateY(${row.start - scrollMargin}px)`,
+              }}
+            >
+              {renderItem(items[row.index]!)}
+            </div>
+          ))}
+        </div>
+      ) : (
+        items.map(renderItem)
+      )}
+    </section>
+  );
+}
+
 // The existing screen state machine is rendered here so production and Storybook cannot drift.
 // fallow-ignore-next-line complexity
 export function ViewerPage({ model, actions }: ViewerPageProps) {
@@ -465,6 +552,13 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
   const safeTitle =
     destination === "alternatives" ? "Find an alternative" : "Local basket";
   const visibleProductCount = review?.items.length ?? 0;
+  const hasUnreadyItem = review?.items.some(
+    ({ view }) =>
+      !isUsable(view) ||
+      (view.status === "complete" &&
+        (typeof view.product.price !== "number" ||
+          !Number.isFinite(view.product.price))),
+  );
   const alternatives = review?.alternatives;
   const alternativesKey = alternatives
     ? `${alternatives.product_id}:${alternatives.query}`
@@ -788,8 +882,9 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
         !terminalSubmission &&
         visibleProductCount > 0 &&
         destination !== "alternatives" && (
-          <section className="product-list" aria-label="Local basket products">
-            {review.items.map((item) => {
+          <BasketList
+            items={review.items}
+            renderItem={(item) => {
               const alternativeQuery =
                 item.view.status === "complete"
                   ? (
@@ -822,8 +917,8 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
                   }}
                 />
               );
-            })}
-          </section>
+            }}
+          />
         )}
       {review &&
         terminalSubmission &&
@@ -882,17 +977,24 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
       {review &&
         active &&
         !terminalSubmission &&
+        visibleProductCount > 0 &&
         destination !== "alternatives" && (
           <ActionFooter>
             {review.submission?.status !== "prepared" && (
               <Button
                 color="primary"
                 block
-                disabled={editsBlocked}
+                disabled={editsBlocked || hasUnreadyItem}
                 onClick={actions.onPrepareSubmission}
               >
                 Submit to Nemlig
               </Button>
+            )}
+            {hasUnreadyItem && review.submission?.status !== "prepared" && (
+              <p className="status" role="status">
+                Remove or replace unavailable or incomplete products before
+                submitting.
+              </p>
             )}
             {review.submission?.status === "prepared" && (
               <OutcomeSurface title="Ready to submit the Local basket">
