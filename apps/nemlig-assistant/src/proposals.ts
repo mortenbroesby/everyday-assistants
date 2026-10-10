@@ -4,6 +4,7 @@ import {
   basketFingerprint,
   BasketSnapshotChangedError,
   NemligError,
+  ProductNotFoundError,
   type Basket,
   type Product,
   type ShoppingClient,
@@ -46,14 +47,14 @@ export interface ProposalLine {
   quantity: number;
   current_quantity: number;
   resulting_quantity: number;
-  current_line_total: number;
-  resulting_line_total: number;
+  current_line_total: number | undefined;
+  resulting_line_total: number | undefined;
   available: boolean;
-  item_price: number;
+  item_price: number | undefined;
   unit_price: number | undefined;
   unit: string;
   currency: "DKK";
-  line_total: number;
+  line_total: number | undefined;
   labels: string[];
 }
 
@@ -62,6 +63,10 @@ interface AddOperation {
   lines: ProposalLine[];
 }
 type Operation = AddOperation;
+interface SkippedProduct {
+  product_id: number;
+  name: string;
+}
 type ProposalState =
   | "prepared"
   | "applying"
@@ -87,6 +92,8 @@ export interface ApplyResult extends Record<string, unknown> {
   operation: ProposalOperation;
   replayed: boolean;
   basket: BasketPayload;
+  skipped_products?: SkippedProduct[];
+  verified_additions?: number;
 }
 
 /** A preflight stopped a batch after earlier additions had verified readback. */
@@ -116,6 +123,7 @@ interface StoredProposal {
   issuedAt: Date;
   expiresAt: Date;
   operation: Operation;
+  skippedProducts: SkippedProduct[];
   review: Record<string, unknown>;
   authorization?: "exact_review";
   state: ProposalState;
@@ -145,16 +153,17 @@ export const basketPayload = (basket: Basket): BasketPayload => ({
   delivery_time: basket.deliveryTime,
 });
 
+const knownPrice = (price: number | undefined): number | undefined =>
+  price !== undefined && Number.isFinite(price) && price >= 0
+    ? price
+    : undefined;
+
 const productLine = (product: Product, quantity: number): ProposalLine => {
-  const price = product.price;
-  if (
-    typeof product.id !== "number" ||
-    !product.name ||
-    typeof price !== "number" ||
-    !Number.isFinite(price) ||
-    price < 0 ||
-    !Number.isFinite(price * quantity)
-  ) {
+  const price = knownPrice(product.price);
+  const lineTotal = knownPrice(
+    price === undefined ? undefined : price * quantity,
+  );
+  if (typeof product.id !== "number" || !product.name) {
     throw new NemligError(
       "Product data is incomplete; no proposal was created.",
     );
@@ -174,13 +183,14 @@ const productLine = (product: Product, quantity: number): ProposalLine => {
     current_quantity: 0,
     resulting_quantity: quantity,
     current_line_total: 0,
-    resulting_line_total: money(price * quantity),
+    resulting_line_total:
+      lineTotal === undefined ? undefined : money(lineTotal),
     available: product.available,
     item_price: price,
     unit_price: product.unitPrice,
     unit: product.unit,
     currency: "DKK",
-    line_total: money(price * quantity),
+    line_total: lineTotal === undefined ? undefined : money(lineTotal),
     labels: [...product.labels],
   };
 };
@@ -246,50 +256,90 @@ export class BasketProposalService {
       throw new NemligError("A valid additions authorization is required.");
     }
     const basket = await this.client.getCart(options.signal);
-    const basketLines = this.validateAdditionBasket(basket, items);
-    const lines = await runReadPool(
+    const basketLines = this.validateAdditionBasket(basket);
+    const candidates = await runReadPool(
       items,
-      async (item, signal) =>
-        productLine(
-          await (options.freshProducts
+      async (item, signal) => {
+        try {
+          const current = await (options.freshProducts
             ? this.client.getFreshProduct(item.product_id, signal)
-            : this.client.getProduct(item.product_id, signal)),
-          item.quantity,
-        ),
+            : this.client.getProduct(item.product_id, signal));
+          return current.available === false
+            ? {
+                skipped: {
+                  product_id: item.product_id,
+                  name: current.name ?? `Product ${item.product_id}`,
+                },
+              }
+            : { line: productLine(current, item.quantity) };
+        } catch (error) {
+          if (error instanceof ProductNotFoundError) {
+            return {
+              skipped: {
+                product_id: item.product_id,
+                name: `Product ${item.product_id}`,
+              },
+            };
+          }
+          throw error;
+        }
+      },
       options,
     );
-    if (lines.some((line) => !line.available)) {
+    const lines = candidates.flatMap((candidate) =>
+      candidate.line ? [candidate.line] : [],
+    );
+    const skippedProducts = candidates.flatMap((candidate) =>
+      candidate.skipped ? [candidate.skipped] : [],
+    );
+    if (!lines.length) {
       throw new NemligError(
-        "An exact product is unavailable; no proposal was created.",
+        "No reviewed products are currently available to add.",
       );
     }
     const reviewedLines = lines.map((line) => {
       const existing = basketLines.get(String(line.product_id));
+      const currentLineTotal = existing ? knownPrice(existing.total) : 0;
       return {
         ...line,
         current_quantity: existing?.quantity ?? 0,
         resulting_quantity: (existing?.quantity ?? 0) + line.quantity,
-        current_line_total: money(existing?.total ?? 0),
-        resulting_line_total: money((existing?.total ?? 0) + line.line_total),
+        current_line_total: currentLineTotal,
+        resulting_line_total:
+          line.line_total === undefined || currentLineTotal === undefined
+            ? undefined
+            : money(currentLineTotal + line.line_total),
       };
     });
     const totals = lines.reduce(
       (result, line) => ({
-        price: result.price + line.line_total,
         count: result.count + line.quantity,
       }),
-      { price: basket.productsPrice!, count: basket.numberOfProducts! },
+      { count: basket.numberOfProducts! },
     );
+    const expectedProductsPrice =
+      Number.isFinite(basket.productsPrice) &&
+      basket.productsPrice! >= 0 &&
+      lines.every((line) => line.line_total !== undefined)
+        ? money(
+            basket.productsPrice! +
+              lines.reduce((total, line) => total + line.line_total!, 0),
+          )
+        : undefined;
     return this.create(
       connectionId,
       basket,
       { kind: "additions", lines },
       {
         lines: reviewedLines,
-        expected_products_price: money(totals.price),
+        expected_products_price: expectedProductsPrice,
         expected_number_of_products: totals.count,
+        ...(skippedProducts.length
+          ? { skipped_products: skippedProducts }
+          : {}),
       },
       authorization.kind,
+      skippedProducts,
     );
   }
 
@@ -323,11 +373,8 @@ export class BasketProposalService {
 
   private validateAdditionBasket(
     basket: Basket,
-    items: Array<{ product_id: number; quantity: number }>,
   ): Map<string, Basket["items"][number]> {
     if (
-      !Number.isFinite(basket.productsPrice) ||
-      basket.productsPrice! < 0 ||
       !Number.isSafeInteger(basket.numberOfProducts) ||
       basket.numberOfProducts! < 0
     ) {
@@ -354,17 +401,6 @@ export class BasketProposalService {
         );
       }
       basketLines.set(id, line);
-    }
-    for (const item of items) {
-      const existing = basketLines.get(String(item.product_id));
-      if (
-        existing &&
-        (!Number.isFinite(existing.total) || existing.total! < 0)
-      ) {
-        throw new NemligError(
-          "A matching Nemlig basket line is incomplete; no proposal was created.",
-        );
-      }
     }
     return basketLines;
   }
@@ -426,12 +462,31 @@ export class BasketProposalService {
         );
       }
       let verifiedAdditions = 0;
+      const skippedProducts = [...proposal.skippedProducts];
+      const activeLines: ProposalLine[] = [];
       try {
         for (const reviewed of proposal.operation.lines) {
-          const current = productLine(
-            await this.client.getFreshProduct(reviewed.product_id),
-            reviewed.quantity,
-          );
+          let product: Product;
+          try {
+            product = await this.client.getFreshProduct(reviewed.product_id);
+          } catch (error) {
+            if (error instanceof ProductNotFoundError) {
+              skippedProducts.push({
+                product_id: reviewed.product_id,
+                name: reviewed.name,
+              });
+              continue;
+            }
+            throw error;
+          }
+          if (product.available === false) {
+            skippedProducts.push({
+              product_id: reviewed.product_id,
+              name: reviewed.name,
+            });
+            continue;
+          }
+          const current = productLine(product, reviewed.quantity);
           if (!sameProduct(current, reviewed)) {
             proposal.state = "invalid";
             this.record("invalidated", proposal.operation.kind, "rejected");
@@ -439,6 +494,7 @@ export class BasketProposalService {
               "Product details changed after review; prepare and review a new proposal.",
             );
           }
+          activeLines.push(reviewed);
         }
       } catch (error) {
         if (proposal.state === "invalid") {
@@ -449,19 +505,6 @@ export class BasketProposalService {
           "Current product details could not be revalidated; prepare and review a new proposal.",
         );
       }
-      if (
-        !Number.isFinite(basket.productsPrice) ||
-        basket.productsPrice! < 0 ||
-        basket.items.some(
-          (line) => !Number.isFinite(line.total) || line.total! < 0,
-        )
-      ) {
-        this.invalidate(proposal);
-        throw new NemligError(
-          "Current basket prices are incomplete; no provider write was sent.",
-        );
-      }
-
       proposal.state = "applying";
       this.record("applying", proposal.operation.kind, "started");
       try {
@@ -469,7 +512,7 @@ export class BasketProposalService {
         result = basket;
         let expectedProducts = basket.numberOfProducts!;
         let expectedLines = basket.items.length;
-        for (const line of proposal.operation.lines) {
+        for (const line of activeLines) {
           expectedProducts += line.quantity;
           const previousLine = result.items.find((item) =>
             sameId(item.id, line.product_id),
@@ -514,19 +557,9 @@ export class BasketProposalService {
               "Basket readback contained an unexpected product line.",
             );
           }
-          for (const current of result.items) {
-            if (!Number.isFinite(current.total) || current.total! < 0) {
-              throw new NemligError("Basket line price was incomplete.");
-            }
-          }
-          const actualProductsPrice = result.productsPrice ?? Number.NaN;
-          if (
-            !Number.isFinite(actualProductsPrice) ||
-            actualProductsPrice < 0 ||
-            result.numberOfProducts !== expectedProducts
-          ) {
+          if (result.numberOfProducts !== expectedProducts) {
             throw new NemligError(
-              "Basket total or product count could not be verified.",
+              "Basket product count could not be verified.",
             );
           }
           verifiedAdditions += 1;
@@ -536,6 +569,12 @@ export class BasketProposalService {
           operation: proposal.operation.kind,
           replayed: false,
           basket: basketPayload(result),
+          ...(skippedProducts.length
+            ? { skipped_products: skippedProducts }
+            : {}),
+          ...(skippedProducts.length
+            ? { verified_additions: verifiedAdditions }
+            : {}),
         };
         proposal.state = "completed";
         proposal.result = completed;
@@ -557,7 +596,7 @@ export class BasketProposalService {
             error instanceof BasketSnapshotChangedError
               ? "the basket changed before the next write"
               : "the next write failed its basket preflight";
-          const verifiedNames = proposal.operation.lines
+          const verifiedNames = activeLines
             .slice(0, verifiedAdditions)
             .map(({ name }) => name)
             .join(", ");
@@ -586,6 +625,7 @@ export class BasketProposalService {
     operation: Operation,
     review: Record<string, unknown>,
     authorization?: "exact_review",
+    skippedProducts: SkippedProduct[] = [],
   ): ProposalView {
     const issuedAt = this.now();
     const proposal: StoredProposal = {
@@ -595,6 +635,7 @@ export class BasketProposalService {
       issuedAt,
       expiresAt: new Date(issuedAt.getTime() + this.ttlMs),
       operation,
+      skippedProducts,
       review,
       authorization,
       state: "prepared",

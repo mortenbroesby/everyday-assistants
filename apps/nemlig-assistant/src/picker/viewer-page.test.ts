@@ -162,10 +162,12 @@ test("empty and incomplete Local baskets cannot start submission", () => {
     />Submit to Nemlig<\/button>/u,
   );
 
-  for (const view of [
-    { context: "review", status: "unavailable", product_id: 7 },
-    { ...product, product: { ...product.product, price: undefined } },
-  ] satisfies ProductView[]) {
+  const unavailable = {
+    context: "review",
+    status: "unavailable",
+    product_id: 7,
+  } satisfies ProductView;
+  for (const view of [unavailable] satisfies ProductView[]) {
     pageProps.model.screen = {
       kind: "review",
       active: true,
@@ -176,11 +178,44 @@ test("empty and incomplete Local baskets cannot start submission", () => {
       markup,
       /<button[^>]*disabled=""[^>]*>Submit to Nemlig<\/button>/u,
     );
-    assert.match(
-      markup,
-      /Remove or replace unavailable or incomplete products/u,
-    );
+    assert.match(markup, /Resolve products with missing details/u);
   }
+  pageProps.model.screen = {
+    kind: "review",
+    active: true,
+    review: {
+      ...review,
+      items: [
+        {
+          ...review.items[0]!,
+          view: {
+            ...product,
+            product: { ...product.product, price: undefined },
+          },
+        },
+      ],
+    },
+  };
+  assert.match(
+    renderToStaticMarkup(createElement(ViewerPage, pageProps)),
+    />Submit to Nemlig<\/button>/u,
+  );
+  pageProps.model.screen = {
+    kind: "review",
+    active: true,
+    review: {
+      ...review,
+      items: [{ ...review.items[0]!, view: { ...unavailable, missing: true } }],
+    },
+  };
+  const missingMarkup = renderToStaticMarkup(
+    createElement(ViewerPage, pageProps),
+  );
+  assert.match(missingMarkup, />Submit to Nemlig<\/button>/u);
+  assert.match(
+    missingMarkup,
+    /Products Nemlig confirms are unavailable will be skipped/u,
+  );
 });
 
 test("busy submission confirmation disables its cancel control", () => {
@@ -254,11 +289,29 @@ test("a stopped submission explains the known reason and next step", () => {
     review: {},
   };
   pageProps.model.message =
-    "Nemlig's basket prices were incomplete at the final check. No product was sent.";
+    "Nemlig's basket could not be read before the next addition. No product was sent.";
 
   const html = renderToStaticMarkup(createElement(ViewerPage, pageProps));
   assert.match(html, /Addition stopped before sending/u);
-  assert.match(html, /basket prices were incomplete/u);
+  assert.match(html, /basket could not be read/u);
   assert.match(html, /Inspect the actual Nemlig basket/u);
   assert.match(html, /will not retry automatically/u);
+});
+
+test("a submitted basket names skipped products without claiming they were added", () => {
+  const pageProps = props();
+  if (pageProps.model.screen.kind !== "review") {
+    throw new Error("review fixture missing");
+  }
+  pageProps.model.screen.review.submission = {
+    status: "submitted",
+    submission_id: "fixture-submission",
+    review: {},
+    verified_additions: 0,
+    skipped_products: [{ product_id: 7, name: "Banan" }],
+  };
+  const html = renderToStaticMarkup(createElement(ViewerPage, pageProps));
+  assert.match(html, /No products were added/u);
+  assert.match(html, /Unavailable products were skipped: Banan/u);
+  assert.doesNotMatch(html, /Only the prepared products were added/u);
 });

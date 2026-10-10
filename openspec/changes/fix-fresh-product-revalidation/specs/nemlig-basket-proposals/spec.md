@@ -8,12 +8,17 @@ product identity, availability, and quantity before mutation. Product identity,
 availability, package, and current price estimates SHALL come from a bounded
 authoritative upstream read started during application and SHALL NOT be
 satisfied by product data retained from discovery or proposal preparation.
-Price-only changes SHALL NOT invalidate an otherwise unchanged approval.
+Missing or changed prices SHALL NOT invalidate an otherwise unchanged approval.
 
 #### Scenario: Fresh product validation fails
 
-- **WHEN** any addition or replacement product cannot be freshly revalidated
+- **WHEN** a fresh lookup fails without establishing that a reviewed product is unavailable or missing
 - **THEN** the server invalidates the proposal before the first mutation and requires a new review without retrying the write
+
+#### Scenario: One reviewed product disappears
+
+- **WHEN** a fresh lookup establishes that one reviewed product is unavailable or missing
+- **THEN** the server excludes and reports it, while continuing with other exact approved additions
 
 #### Scenario: Reviewed details remain unchanged
 
@@ -22,7 +27,7 @@ Price-only changes SHALL NOT invalidate an otherwise unchanged approval.
 
 #### Scenario: Reviewed details changed
 
-- **WHEN** fresh availability, product identity, quantity, or basket contents differ
+- **WHEN** fresh product identity, quantity, or basket contents differ
 - **THEN** the server invalidates the proposal, reports the changed fields, performs no mutation, and requires a new proposal
 
 #### Scenario: Price changes after review
@@ -32,5 +37,5 @@ Price-only changes SHALL NOT invalidate an otherwise unchanged approval.
 
 #### Scenario: Fresh product details cannot be obtained
 
-- **WHEN** an authoritative product lookup fails or cannot resolve an exact reviewed product during application
+- **WHEN** an authoritative product lookup fails without confirming that the reviewed product is unavailable or missing
 - **THEN** the server fails closed, performs no mutation, and requires a new proposal after current product data is available

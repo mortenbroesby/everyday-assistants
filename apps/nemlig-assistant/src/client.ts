@@ -31,6 +31,15 @@ export class BasketSnapshotChangedError extends BasketPreflightError {
   }
 }
 
+/** Only a 404 from the exact product endpoint establishes a missing product. */
+export class ProductNotFoundError extends NemligError {
+  override readonly name = "ProductNotFoundError";
+
+  constructor(productId: number) {
+    super(`Product ${productId} could not be resolved exactly.`, 404);
+  }
+}
+
 export interface Product {
   id: number | undefined;
   name: string | undefined;
@@ -556,10 +565,7 @@ export class NemligClient {
       );
     } catch (error) {
       if (error instanceof NemligError && error.status === 404) {
-        throw new NemligError(
-          `Product ${productId} could not be resolved exactly.`,
-          404,
-        );
+        throw new ProductNotFoundError(productId);
       }
       throw error;
     }
@@ -571,7 +577,6 @@ export class NemligClient {
     if (!product || product.id !== productId) {
       throw new NemligError(
         `Product ${productId} could not be resolved exactly.`,
-        404,
       );
     }
     return this.rememberProducts([product], true)[0]!;
@@ -735,18 +740,6 @@ export class NemligClient {
       basketFingerprint(before) !== basketFingerprint(expectedBasket)
     ) {
       throw new BasketSnapshotChangedError();
-    }
-    if (
-      expectedBasket &&
-      (!Number.isFinite(before.productsPrice) ||
-        before.productsPrice! < 0 ||
-        before.items.some(
-          (item) => !Number.isFinite(item.total) || item.total! < 0,
-        ))
-    ) {
-      throw new BasketPreflightError(
-        "Basket prices cannot be verified safely; no provider write was sent.",
-      );
     }
     if (
       before.items.some(

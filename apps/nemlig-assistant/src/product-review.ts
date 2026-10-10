@@ -5,6 +5,7 @@ import {
 } from "./proposals.js";
 import { randomUUID } from "node:crypto";
 import { NemligError } from "./nemlig-error.js";
+import { ProductNotFoundError } from "./client.js";
 import {
   isAuthenticationFailure,
   resolveDetailedProductSearch,
@@ -29,6 +30,7 @@ export interface ProductReviewSnapshot {
     submission_id: string;
     status: "prepared" | "submitted" | "uncertain" | "partial";
     verified_additions?: number;
+    skipped_products?: Array<{ product_id: number; name: string }>;
     expires_at: string;
     review: Record<string, unknown>;
   };
@@ -126,6 +128,7 @@ export class ProductReviewService {
             context: "details",
             status: "unavailable",
             product_id: item.product_id,
+            ...(error instanceof ProductNotFoundError ? { missing: true } : {}),
           };
         }
         return { ...item, state: "ready", view };
@@ -429,9 +432,15 @@ export class ProductReviewService {
       if (!items.length) {
         throw new NemligError("The Local basket is empty.");
       }
-      if (items.some((item) => !available(item.view))) {
+      if (
+        items.some((item) =>
+          item.view.status === "unavailable"
+            ? item.view.missing !== true
+            : item.view.product.available === undefined,
+        )
+      ) {
         throw new NemligError(
-          "The Local basket contains unavailable products. Remove or replace them before submitting.",
+          "The Local basket has unavailable or unresolved product details. Review them before submitting.",
         );
       }
       const proposal = await this.proposals.prepareAdditions(
@@ -497,6 +506,8 @@ export class ProductReviewService {
         throw error;
       }
       submission.status = "submitted";
+      submission.skipped_products = result.skipped_products;
+      submission.verified_additions = result.verified_additions;
       return { review: structuredClone(stored.snapshot), result };
     } finally {
       stored.busy = false;

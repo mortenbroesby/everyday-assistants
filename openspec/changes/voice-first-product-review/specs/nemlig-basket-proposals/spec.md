@@ -12,12 +12,12 @@ The system SHALL prepare one or more positive basket additions without mutation 
 #### Scenario: Add to an existing line
 
 - **WHEN** the basket contains two units and a proposal requests two additional units of that product
-- **THEN** the proposal shows two existing, two additional, and four resulting units, and prices only the two added units while showing the resulting basket total
+- **THEN** the proposal shows two existing, two additional, and four resulting units, with any known estimated price for the added units and resulting basket
 
 #### Scenario: Product is unavailable or ambiguous
 
 - **WHEN** a requested product cannot be resolved exactly or is unavailable
-- **THEN** preparation reports the unresolved line and creates no applicable proposal containing that line
+- **THEN** preparation excludes and reports that line while allowing other available exact products; if none remain, no applicable proposal is created
 
 #### Scenario: Addition input is invalid
 
@@ -31,7 +31,7 @@ The system SHALL prepare one or more positive basket additions without mutation 
 
 ### Requirement: Revalidation inside the mutation lock
 
-The system SHALL obtain the process-local mutation lock and revalidate authorization binding, proposal state, expiry, current basket contents, exact product identity, availability, and requested additional quantity before mutation. Price-only changes SHALL NOT invalidate an otherwise unchanged approval. Addition application SHALL use fresh authoritative product facts rather than cached review facts. Every provider quantity write SHALL be a positive absolute quantity strictly greater than the latest observed quantity for that line; incomplete existing lines or any stale basket contents SHALL fail closed.
+The system SHALL obtain the process-local mutation lock and revalidate authorization binding, proposal state, expiry, current basket contents, exact product identity, availability, and requested additional quantity before mutation. Missing or changed prices SHALL NOT invalidate an otherwise unchanged approval. A definitively unavailable or missing product MAY be skipped and reported while other exact approved products continue; other lookup failures SHALL stop before mutation. Addition application SHALL use fresh authoritative product facts rather than cached review facts. Every provider quantity write SHALL be a positive absolute quantity strictly greater than the latest observed quantity for that line; incomplete existing quantities or stale basket contents SHALL fail closed.
 
 #### Scenario: Reviewed details remain unchanged
 
@@ -40,7 +40,7 @@ The system SHALL obtain the process-local mutation lock and revalidate authoriza
 
 #### Scenario: Reviewed details changed
 
-- **WHEN** availability, product identity, quantity, or basket contents differ
+- **WHEN** product identity, quantity, or basket contents differ
 - **THEN** the server invalidates the proposal, reports the changed fields, performs no mutation, and requires a new proposal
 
 #### Scenario: Price changes after review
@@ -50,13 +50,18 @@ The system SHALL obtain the process-local mutation lock and revalidate authoriza
 
 #### Scenario: Existing basket line is incomplete
 
-- **WHEN** the quantity or required price facts for an existing requested product line are missing or invalid
+- **WHEN** the quantity for an existing requested product line is missing or invalid
 - **THEN** preparation or application fails closed without writing a provider quantity
 
 #### Scenario: Fresh product validation fails
 
-- **WHEN** a fresh authoritative lookup fails for any addition product
+- **WHEN** a fresh authoritative lookup fails without confirming that the reviewed product is unavailable or missing
 - **THEN** the server invalidates the proposal before the first mutation and requires a new review without retrying the write
+
+#### Scenario: One reviewed product disappears
+
+- **WHEN** a fresh lookup confirms one reviewed product is unavailable or missing
+- **THEN** the server skips and reports that line while adding the remaining exact approved products
 
 ### Requirement: Proposal-based MCP tool surface
 

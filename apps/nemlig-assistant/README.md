@@ -223,9 +223,10 @@ single provider response with three concurrent reads and bounded provider
 deadlines/retries. This does not enumerate the whole catalogue.
 
 Choose **Submit to Nemlig** to prepare current price estimates and exact quantities for
-every Local basket row and show the separate on-screen confirmation. If any
-row is unavailable or incomplete, preparation stops; resolve it before trying
-again. Inspect the full prepared list, then choose **Add to Nemlig basket** and
+every Local basket row and show the separate on-screen confirmation. Unavailable
+products are named and excluded while available products can proceed; unresolved
+product details still require a fresh review. Inspect the full prepared list,
+then choose **Add to Nemlig basket** and
 confirm that exact addition in the viewer. In conversation, a clear instruction
 to add the unchanged current Local basket authorizes only those prepared lines;
 if you only ask to prepare/inspect, or any item or quantity changed, the
@@ -269,13 +270,15 @@ Read → prepare the exact intended change → confirm user authorization → ap
   contents. Reviewed prices and totals are estimates, not approval limits.
 - The default 15-minute review window accommodates a normal ChatGPT approval
   round-trip without weakening final revalidation.
-- Product identity, availability, quantity, or basket-content changes invalidate
-  the approval; price-only changes do not.
+- Product identity, quantity, or basket-content changes invalidate the
+  approval. Missing prices do not block an addition; a product confirmed
+  unavailable is skipped and reported while other approved products continue.
 - The approved action freshly resolves every affected product upstream and
-  revalidates the review and current basket state before writing.
+  revalidates the review and current basket state before writing. A failed
+  lookup that cannot confirm unavailability stops before any write.
 - Additions re-read the basket immediately before writing and verify exact
-  resulting lines and quantities afterward. Nemlig may return lower or higher
-  prices; the actual basket total is reported after submission. This does not
+  resulting lines and quantities afterward. Nemlig may return lower, higher,
+  or missing prices; an unavailable total is shown as unknown. This does not
   place an order or charge a payment method.
 - Writes are never automatically retried after an uncertain result.
 - Cold login follows Nemlig's ordinary website flags; if Nemlig requires a

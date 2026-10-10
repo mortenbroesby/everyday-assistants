@@ -52,7 +52,8 @@ pnpm nemlig --help
    quantity must be four. When the provider endpoint sets an absolute quantity,
    read the current basket, verify the exact line and freshness, and only send a
    positive resulting quantity strictly greater than the observed quantity.
-   Fail closed for incomplete or stale basket data; never send zero or a smaller
+   Fail closed for incomplete quantities or stale basket identity; missing
+   prices do not block approved additions. Never send zero or a smaller
    quantity. Separate external edits made directly on Nemlig.com can still race
    the provider's non-atomic read/set boundary; do not claim cross-client locking.
 
@@ -62,7 +63,9 @@ pnpm nemlig --help
    obtain approval of the exact unchanged products and added quantities. Show
    current prices as estimates; Nemlig may change them before or during the
    addition. Local basket state alone is not provider-write authorization.
-   Product, availability, quantity, or basket-content changes require a fresh review.
+   Product identity, quantity, or basket-content changes require a fresh review.
+   A product confirmed unavailable or missing may be skipped and reported while
+   other approved products continue. A failed lookup is not proof of absence.
 
 6. Add only approved lines:
 
@@ -70,8 +73,8 @@ pnpm nemlig --help
    pnpm nemlig add <product-id> --quantity <quantity>
    ```
 
-   The command automatically displays the resulting basket and total. Stop on
-   partial success, failed readback, or mismatch.
+   The command automatically displays the resulting basket and any known total.
+   Stop on uncertain writes, failed readback, or quantity mismatch.
 
 The CLI and MCP have no actual-basket remove, replace, swap, or clear operation.
 Never add such a path. The user manages destructive changes directly on
