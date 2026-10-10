@@ -539,6 +539,7 @@ try {
   await milkCard
     .getByRole("button", { name: "Increase quantity of Synthetic milk" })
     .click();
+  await page.waitForFunction(() => window.getReview().items[0]?.quantity === 2);
   await frame.getByRole("heading", { name: "Local basket" }).waitFor();
   assert.equal(
     await page.evaluate(() => window.getReview().items[0]?.quantity),
