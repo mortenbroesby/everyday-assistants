@@ -1,0 +1,422 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Your local basket</title>
+  <style>
+    #nemlig-unified-review {
+      color-scheme: light dark;
+      --ink: light-dark(#18251a, #f1f6f1);
+      --muted: light-dark(#627168, #acb9ae);
+      --line: light-dark(#dfe8e0, #344137);
+      --bg: light-dark(#f4f7f3, #111813);
+      --paper: light-dark(#fff, #18221b);
+      --well: light-dark(#edf4ed, #253228);
+      --green: light-dark(#1b7140, #78d99d);
+      --green-ink: light-dark(#fff, #112517);
+      width: min(100%, 420px);
+      margin: 0 auto;
+      font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    #nemlig-unified-review * { box-sizing: border-box; }
+    #nemlig-unified-review button { font: inherit; }
+    #nemlig-unified-review .ur-shell {
+      color: var(--ink);
+      background: var(--bg);
+      border: 1px solid var(--line);
+      border-radius: 26px;
+      overflow: hidden;
+      box-shadow: 0 18px 44px light-dark(rgb(20 48 28 / 10%), rgb(0 0 0 / 30%));
+    }
+    #nemlig-unified-review .ur-content { padding: 17px 14px 26px; }
+    #nemlig-unified-review h1, #nemlig-unified-review h2, #nemlig-unified-review p { margin: 0; }
+    #nemlig-unified-review h1 { font-size: 24px; line-height: 1.15; letter-spacing: -.035em; }
+    #nemlig-unified-review .ur-intro { margin-top: 6px; color: var(--muted); font-size: 13px; line-height: 1.45; }
+    #nemlig-unified-review .ur-section { margin-top: 25px; }
+    #nemlig-unified-review h2 { font-size: 16px; }
+    #nemlig-unified-review .ur-list { border-top: 1px solid var(--line); }
+    #nemlig-unified-review .ur-row { position: relative; overflow: hidden; border-bottom: 1px solid var(--line); touch-action: pan-y; }
+    #nemlig-unified-review .ur-swipe-content { position: relative; z-index: 1; display: grid; grid-template-columns: 58px minmax(0, 1fr); gap: 9px; padding: 12px 2px; background: var(--bg); transition: transform .18s ease; }
+    #nemlig-unified-review .ur-row.is-dragging .ur-swipe-content { transition: none; user-select: none; }
+    #nemlig-unified-review .ur-row.is-open { --reveal-half: 50%; }
+    #nemlig-unified-review .ur-row.is-open .ur-swipe-content { transform: translateX(-100%); }
+    #nemlig-unified-review .ur-row.is-open.is-swiping-right .ur-swipe-content { transform: translateX(100%); }
+    #nemlig-unified-review .ur-swipe-action { position: absolute; inset: 0; width: 100%; border: 0; color: #fff; background: #b4232d; cursor: pointer; }
+    #nemlig-unified-review .ur-swipe-action span { position: absolute; top: 50%; font-size: 32px; line-height: 1; transform: translate(-50%, -50%); }
+    #nemlig-unified-review .ur-swipe-action::after { content: "Remove product"; position: absolute; top: 50%; right: calc(var(--reveal-half, 0px) + 22px); transform: translateY(-50%); white-space: nowrap; font-size: 12px; font-weight: 700; }
+    #nemlig-unified-review .ur-delete-icon { left: calc(100% - var(--reveal-half, 0px)); }
+    #nemlig-unified-review .ur-find-icon { display: none; left: var(--reveal-half, 0px); }
+    #nemlig-unified-review .ur-row.is-swiping-right .ur-swipe-action { background: #1b7140; }
+    #nemlig-unified-review .ur-row.is-swiping-right .ur-swipe-action::after { content: "Find alternative"; right: auto; left: calc(var(--reveal-half, 0px) + 22px); }
+    #nemlig-unified-review .ur-row.is-swiping-right .ur-delete-icon { display: none; }
+    #nemlig-unified-review .ur-row.is-swiping-right .ur-find-icon { display: block; }
+    #nemlig-unified-review .ur-thumb { display: grid; width: 58px; height: 58px; place-items: center; border-radius: 14px; background: var(--well); font-size: 29px; }
+    #nemlig-unified-review .ur-product { min-width: 0; padding: 1px 0; border: 0; color: inherit; background: none; text-align: left; cursor: pointer; }
+    #nemlig-unified-review .ur-title-line { display: flex; align-items: start; justify-content: space-between; gap: 7px; }
+    #nemlig-unified-review .ur-title-line strong { min-width: 0; font-size: 13px; line-height: 1.35; }
+    #nemlig-unified-review .ur-title-line b { flex: none; font-size: 13px; font-variant-numeric: tabular-nums; }
+    #nemlig-unified-review .ur-meta, #nemlig-unified-review .ur-quantity { display: block; margin-top: 3px; color: var(--muted); font-size: 11px; line-height: 1.4; }
+    #nemlig-unified-review .ur-quantity { color: var(--green); font-weight: 650; }
+    #nemlig-unified-review .ur-details { grid-column: 1 / -1; display: grid; gap: 11px; padding: 2px 0 5px; }
+    #nemlig-unified-review .ur-details[hidden] { display: none; }
+    #nemlig-unified-review .ur-quantity-control { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); font-size: 12px; }
+    #nemlig-unified-review .ur-stepper { display: inline-flex; align-items: center; gap: 5px; }
+    #nemlig-unified-review .ur-stepper button { width: 44px; height: 44px; border: 1px solid var(--line); border-radius: 10px; color: var(--green); background: var(--paper); font-size: 19px; cursor: pointer; }
+    #nemlig-unified-review .ur-stepper output { width: 23px; text-align: center; font-variant-numeric: tabular-nums; font-weight: 650; }
+    #nemlig-unified-review details { border-bottom: 1px solid var(--line); }
+    #nemlig-unified-review summary { min-height: 44px; padding-top: 12px; font-size: 12px; font-weight: 650; cursor: pointer; }
+    #nemlig-unified-review details p { padding: 0 0 10px; color: var(--muted); font-size: 11px; line-height: 1.45; }
+    #nemlig-unified-review .ur-empty { padding: 18px 3px; color: var(--muted); font-size: 12px; }
+    #nemlig-unified-review [hidden] { display: none !important; }
+    #nemlig-unified-review .ur-button { display: inline-flex; min-height: 44px; align-items: center; justify-content: center; padding: 10px 13px; border: 1px solid var(--line); border-radius: 12px; color: var(--green); background: var(--paper); font-size: 12px; font-weight: 650; cursor: pointer; }
+    #nemlig-unified-review .ur-button:disabled { cursor: default; opacity: .55; }
+    #nemlig-unified-review .ur-button-primary { border-color: var(--green); color: var(--green-ink); background: var(--green); }
+    #nemlig-unified-review .ur-footer { position: sticky; bottom: 0; display: grid; gap: 8px; padding: 12px 14px max(14px, env(safe-area-inset-bottom, 0px)); border-top: 1px solid var(--line); background: var(--paper); }
+    #nemlig-unified-review .ur-undo { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 5px 0; font-size: 12px; }
+    #nemlig-unified-review .ur-undo button { min-height: 44px; padding: 0 10px; border: 0; color: var(--green); background: none; font-weight: 700; cursor: pointer; }
+    #nemlig-unified-review .ur-footer-copy { font-size: 12px; }
+    #nemlig-unified-review .ur-actions { display: grid; gap: 8px; }
+    #nemlig-unified-review .ur-actions .ur-button { width: 100%; }
+    #nemlig-unified-review dialog { width: min(calc(100% - 24px), 390px); max-height: calc(100dvh - 32px); padding: 20px; border: 1px solid var(--line); border-radius: 18px; color: var(--ink); background: var(--paper); box-shadow: 0 18px 44px rgb(0 0 0 / 20%); }
+    #nemlig-unified-review dialog::backdrop { background: rgb(0 0 0 / 45%); }
+    #nemlig-unified-review dialog h2 { margin-bottom: 7px; font-size: 19px; }
+    #nemlig-unified-review dialog p { margin-bottom: 13px; color: var(--muted); font-size: 12px; line-height: 1.45; }
+    #nemlig-unified-review .ur-confirm-lines { margin: 0 0 15px; padding: 0; list-style: none; }
+    #nemlig-unified-review .ur-confirm-lines li { display: flex; justify-content: space-between; gap: 8px; padding: 9px 0; border-bottom: 1px solid var(--line); font-size: 12px; }
+    #nemlig-unified-review .ur-confirm-lines b { white-space: nowrap; font-variant-numeric: tabular-nums; }
+    #nemlig-unified-review .ur-alternatives-page { display: flex; height: calc(100dvh - 16px); max-height: 720px; flex-direction: column; }
+    #nemlig-unified-review .ur-alt-body { min-height: 0; overflow-y: auto; padding: 17px 14px 26px; }
+    #nemlig-unified-review .ur-alt-back { min-height: 44px; padding: 0; border: 0; color: var(--green); background: none; font-size: 12px; font-weight: 650; cursor: pointer; }
+    #nemlig-unified-review .ur-alt-copy { margin-top: 6px; color: var(--muted); font-size: 12px; line-height: 1.45; }
+    #nemlig-unified-review .ur-alt-card { margin: 10px 0; padding: 12px; border: 1px solid var(--line); border-radius: 16px; background: var(--paper); }
+    #nemlig-unified-review .ur-alt-card h2 { margin: 0 0 10px; color: var(--muted); font-size: 10px; letter-spacing: .06em; text-transform: uppercase; }
+    #nemlig-unified-review .ur-alt-current { display: grid; grid-template-columns: 52px minmax(0, 1fr); gap: 10px; align-items: center; }
+    #nemlig-unified-review .ur-alt-current strong, #nemlig-unified-review .ur-alt-option strong { display: block; font-size: 13px; }
+    #nemlig-unified-review .ur-alt-meta, #nemlig-unified-review .ur-alt-detail { display: block; color: var(--muted); font-size: 11px; line-height: 1.4; }
+    #nemlig-unified-review .ur-alt-option { display: grid; grid-template-columns: 20px 44px minmax(0, 1fr); gap: 8px; align-items: start; padding: 12px 0; border-top: 1px solid var(--line); cursor: pointer; }
+    #nemlig-unified-review .ur-alt-option input { width: 18px; height: 18px; margin: 5px 0 0; accent-color: var(--green); }
+    #nemlig-unified-review .ur-alt-option .ur-thumb { width: 44px; height: 44px; font-size: 23px; }
+    #nemlig-unified-review .ur-alt-detail { margin-top: 6px; }
+    #nemlig-unified-review .ur-alt-search-label { display: block; margin-bottom: 10px; color: var(--muted); font-size: 11px; font-weight: 650; }
+    #nemlig-unified-review .ur-alternative-search { display: block; width: 100%; min-height: 44px; margin-top: 5px; padding: 10px; border: 1px solid var(--line); border-radius: 10px; color: var(--ink); background: var(--well); font: inherit; font-size: 13px; }
+    #nemlig-unified-review .ur-alt-empty { margin-top: 10px; color: var(--muted); font-size: 12px; }
+    #nemlig-unified-review .ur-alt-actions { padding: 12px 14px max(14px, env(safe-area-inset-bottom, 0px)); border-top: 1px solid var(--line); background: var(--paper); }
+    #nemlig-unified-review .ur-alt-actions .ur-button { width: 100%; }
+    #nemlig-unified-review button:focus-visible, #nemlig-unified-review input:focus-visible, #nemlig-unified-review summary:focus-visible { outline: 3px solid var(--green); outline-offset: 2px; }
+    @media (max-width: 360px) {
+      #nemlig-unified-review .ur-content { padding-inline: 11px; }
+      #nemlig-unified-review .ur-swipe-content { grid-template-columns: 52px minmax(0, 1fr); gap: 7px; }
+      #nemlig-unified-review .ur-thumb { width: 52px; height: 52px; font-size: 26px; }
+      #nemlig-unified-review .ur-title-line { display: grid; gap: 2px; }
+    }
+  </style>
+</head>
+<body>
+  <div id="nemlig-unified-review">
+    <div class="ur-shell">
+      <main class="ur-content">
+        <h1>Your local basket</h1>
+        <p class="ur-intro">Swipe left or right past halfway, then tap Remove or Find alternative. Tap a product for details. Review the exact items before submitting.</p>
+
+        <section class="ur-section" aria-label="Local basket products">
+          <div class="ur-list" id="ur-products">
+            <article class="ur-row" data-unit-price="14.95">
+              <button class="ur-swipe-action" type="button" aria-label="Remove Arla minimælk from local basket" inert><span class="ur-delete-icon" aria-hidden="true">🗑</span><span class="ur-find-icon" aria-hidden="true">🔍</span></button>
+              <div class="ur-swipe-content">
+                <span class="ur-thumb" aria-hidden="true">🥛</span>
+                <button class="ur-product" type="button" aria-expanded="false" aria-controls="ur-milk-details"><span class="ur-title-line"><strong>Arla minimælk</strong><b data-line-price>14,95 kr.</b></span><span class="ur-meta">Arla · 1 L · 14,95 kr./L</span><span class="ur-quantity" data-quantity-text>1 ×</span></button>
+                <div class="ur-details" id="ur-milk-details" hidden><div class="ur-quantity-control"><span>Quantity</span><span class="ur-stepper"><button type="button" data-step="-1" aria-label="Decrease Arla minimælk quantity">−</button><output>1</output><button type="button" data-step="1" aria-label="Increase Arla minimælk quantity">+</button></span></div><details open><summary>Varebeskrivelse</summary><p>Pasteurised Danish low-fat milk for everyday use.</p></details><details open><summary>Varedeklaration</summary><p>Milk.</p></details><button class="ur-button" type="button" data-find>Find alternatives</button><button class="ur-button" type="button" data-remove>Remove from local basket</button></div>
+              </div>
+            </article>
+            <article class="ur-row" data-unit-price="29.95">
+              <button class="ur-swipe-action" type="button" aria-label="Remove Lurpak smørbar from local basket" inert><span class="ur-delete-icon" aria-hidden="true">🗑</span><span class="ur-find-icon" aria-hidden="true">🔍</span></button>
+              <div class="ur-swipe-content">
+                <span class="ur-thumb" aria-hidden="true">🧈</span>
+                <button class="ur-product" type="button" aria-expanded="false" aria-controls="ur-butter-details"><span class="ur-title-line"><strong>Lurpak smørbar</strong><b data-line-price>59,90 kr.</b></span><span class="ur-meta">Lurpak · 200 g · 29,95 kr. each</span><span class="ur-quantity" data-quantity-text>2 ×</span></button>
+                <div class="ur-details" id="ur-butter-details" hidden><div class="ur-quantity-control"><span>Quantity</span><span class="ur-stepper"><button type="button" data-step="-1" aria-label="Decrease Lurpak smørbar quantity">−</button><output>2</output><button type="button" data-step="1" aria-label="Increase Lurpak smørbar quantity">+</button></span></div><details open><summary>Varebeskrivelse</summary><p>Spreadable butter blend.</p></details><details open><summary>Varedeklaration</summary><p>Butter and rapeseed oil.</p></details><button class="ur-button" type="button" data-find>Find alternatives</button><button class="ur-button" type="button" data-remove>Remove from local basket</button></div>
+              </div>
+            </article>
+            <article class="ur-row" data-unit-price="18">
+              <button class="ur-swipe-action" type="button" aria-label="Remove Økologiske bananer from local basket" inert><span class="ur-delete-icon" aria-hidden="true">🗑</span><span class="ur-find-icon" aria-hidden="true">🔍</span></button>
+              <div class="ur-swipe-content">
+                <span class="ur-thumb" aria-hidden="true">🍌</span>
+                <button class="ur-product" type="button" aria-expanded="false" aria-controls="ur-bananas-details"><span class="ur-title-line"><strong>Økologiske bananer</strong><b data-line-price>18,00 kr.</b></span><span class="ur-meta">Økologisk · 1 kg · 18,00 kr./kg</span><span class="ur-quantity" data-quantity-text>1 ×</span></button>
+                <div class="ur-details" id="ur-bananas-details" hidden><div class="ur-quantity-control"><span>Quantity</span><span class="ur-stepper"><button type="button" data-step="-1" aria-label="Decrease banana quantity">−</button><output>1</output><button type="button" data-step="1" aria-label="Increase banana quantity">+</button></span></div><details open><summary>Varebeskrivelse</summary><p>Organic bananas, sold by weight.</p></details><button class="ur-button" type="button" data-find>Find alternatives</button><button class="ur-button" type="button" data-remove>Remove from local basket</button></div>
+              </div>
+            </article>
+            <article class="ur-row" data-unit-price="29.95">
+              <button class="ur-swipe-action" type="button" aria-label="Remove Surdejsbrød from local basket" inert><span class="ur-delete-icon" aria-hidden="true">🗑</span><span class="ur-find-icon" aria-hidden="true">🔍</span></button>
+              <div class="ur-swipe-content">
+                <span class="ur-thumb" aria-hidden="true">🥖</span>
+                <button class="ur-product" type="button" aria-expanded="false" aria-controls="ur-bread-details"><span class="ur-title-line"><strong>Surdejsbrød</strong><b data-line-price>29,95 kr.</b></span><span class="ur-meta">29,95 kr. each</span><span class="ur-quantity" data-quantity-text>1 ×</span></button>
+                <div class="ur-details" id="ur-bread-details" hidden><div class="ur-quantity-control"><span>Quantity</span><span class="ur-stepper"><button type="button" data-step="-1" aria-label="Decrease Surdejsbrød quantity">−</button><output>1</output><button type="button" data-step="1" aria-label="Increase Surdejsbrød quantity">+</button></span></div><details open><summary>Varebeskrivelse</summary><p>Fresh sourdough loaf.</p></details><button class="ur-button" type="button" data-find>Find alternatives</button><button class="ur-button" type="button" data-remove>Remove from local basket</button></div>
+              </div>
+            </article>
+            <article class="ur-row" data-unit-price="29.95">
+              <button class="ur-swipe-action" type="button" aria-label="Remove Havarti ost from local basket" inert><span class="ur-delete-icon" aria-hidden="true">🗑</span><span class="ur-find-icon" aria-hidden="true">🔍</span></button>
+              <div class="ur-swipe-content">
+                <span class="ur-thumb" aria-hidden="true">🧀</span>
+                <button class="ur-product" type="button" aria-expanded="false" aria-controls="ur-cheese-details"><span class="ur-title-line"><strong>Havarti ost</strong><b data-line-price>59,90 kr.</b></span><span class="ur-meta">29,95 kr. each</span><span class="ur-quantity" data-quantity-text>2 ×</span></button>
+                <div class="ur-details" id="ur-cheese-details" hidden><div class="ur-quantity-control"><span>Quantity</span><span class="ur-stepper"><button type="button" data-step="-1" aria-label="Decrease Havarti ost quantity">−</button><output>2</output><button type="button" data-step="1" aria-label="Increase Havarti ost quantity">+</button></span></div><details open><summary>Varebeskrivelse</summary><p>Mild Havarti cheese.</p></details><button class="ur-button" type="button" data-find>Find alternatives</button><button class="ur-button" type="button" data-remove>Remove from local basket</button></div>
+              </div>
+            </article>
+          </div>
+          <p class="ur-empty" data-empty hidden>Your local basket is empty. Use Undo to restore products.</p>
+        </section>
+      </main>
+      <footer class="ur-footer"><div class="ur-undo" data-undo hidden role="status"><span data-undo-name></span><button type="button" data-undo-button>Undo</button></div><div class="ur-footer-copy"><strong data-list-summary>5 products · 182,70 kr.</strong></div><div class="ur-actions"><button class="ur-button ur-button-primary" type="button" data-preview>Submit to Nemlig</button><button class="ur-button" type="button" data-clear aria-label="Clear local basket">Clear</button></div></footer>
+      <section class="ur-alternatives-page" aria-labelledby="ur-alternatives-heading" hidden>
+        <div class="ur-alt-body">
+          <button class="ur-alt-back" type="button" data-close-alternatives>‹ Back to local basket</button>
+          <h1 id="ur-alternatives-heading">Choose an alternative</h1>
+          <p class="ur-alt-copy" data-alternatives-for></p>
+          <section class="ur-alt-card" aria-label="Current product"><h2>Current product</h2><div class="ur-alt-current"><span class="ur-thumb" data-current-thumb aria-hidden="true"></span><span><strong data-current-name></strong><small class="ur-alt-meta" data-current-meta></small></span></div></section>
+          <section class="ur-alt-card" aria-labelledby="ur-alt-list-heading"><h2 id="ur-alt-list-heading">Alternatives</h2><label class="ur-alt-search-label">Search for more products<input class="ur-alternative-search" type="search" placeholder="Search alternatives…"></label><div data-alternatives></div><p class="ur-alt-empty" data-alternatives-empty hidden>No fixture alternative matches. A live search would look through the Nemlig catalogue.</p></section>
+        </div>
+        <footer class="ur-alt-actions"><button class="ur-button ur-button-primary" type="button" data-use-alternative disabled>Use selected alternative</button></footer>
+      </section>
+    </div>
+    <dialog aria-labelledby="ur-confirm-heading"><h2 id="ur-confirm-heading">Submit to Nemlig</h2><p>These exact products would be added after your authorization. This fixture does not contact Nemlig or submit anything.</p><ul class="ur-confirm-lines" data-confirm-lines></ul><button class="ur-button ur-button-primary" type="button" data-close>Back to local basket</button></dialog>
+  </div>
+  <script>
+    (() => {
+      const root = document.getElementById("nemlig-unified-review");
+      if (!root) return;
+      const list = root.querySelector("#ur-products");
+      const dialog = root.querySelector("dialog");
+      const alternativesPage = root.querySelector(".ur-alternatives-page");
+      const basketContent = root.querySelector(".ur-content");
+      const basketFooter = root.querySelector(".ur-footer");
+      const money = (amount) => amount.toLocaleString("da-DK", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " kr.";
+      const priceMeta = (product) => product.meta.includes(money(product.price)) ? product.meta : product.meta + " · " + money(product.price);
+      const alternatives = {
+        "Arla minimælk": [
+          { name: "Thise minimælk", price: 15.95, meta: "Thise · 1 L · 15,95 kr./L", description: "Organic Danish low-fat milk; keep refrigerated.", declaration: "Milk." },
+          { name: "Änglamark minimælk", price: 13.95, meta: "Änglamark · 1 L · 13,95 kr./L", description: "Organic Danish milk for everyday use.", declaration: "Milk." }
+        ],
+        "Lurpak smørbar": [{ name: "Kærgården smørbar", price: 31.95, meta: "Kærgården · 200 g", description: "Spreadable butter blend.", declaration: "Butter and rapeseed oil." }],
+        "Økologiske bananer": [{ name: "Bananer, 1 kg", price: 17, meta: "1 kg · 17,00 kr./kg", description: "Bananas sold by weight." }],
+        "Surdejsbrød": [{ name: "Fuldkornsbrød", price: 27.95, meta: "27,95 kr. each", description: "Whole-grain bread." }],
+        "Havarti ost": [{ name: "Danbo ost", price: 32.95, meta: "32,95 kr. each", description: "Mild Danbo cheese." }]
+      };
+      const originalProducts = new WeakMap();
+      const choices = alternativesPage.querySelector("[data-alternatives]");
+      const search = alternativesPage.querySelector(".ur-alternative-search");
+      const useAlternative = alternativesPage.querySelector("[data-use-alternative]");
+      let currentRow;
+      let currentAlternatives = [];
+      const productFromRow = (row) => ({
+        name: row.querySelector(".ur-title-line strong").textContent,
+        price: Number(row.dataset.unitPrice),
+        meta: row.querySelector(".ur-meta").textContent,
+        thumb: row.querySelector(".ur-thumb").textContent,
+        description: row.querySelector(".ur-details details p").textContent,
+        declaration: row.querySelectorAll(".ur-details details p")[1]?.textContent
+      });
+      const filterAlternatives = () => {
+        const query = search.value.trim().toLocaleLowerCase("da-DK");
+        let visible = 0;
+        [...choices.children].forEach((card, index) => {
+          const option = currentAlternatives[index];
+          card.hidden = !(option.name + " " + option.meta + " " + option.description).toLocaleLowerCase("da-DK").includes(query);
+          if (card.hidden) {
+            card.querySelector("input").checked = false;
+          } else {
+            visible += 1;
+          }
+        });
+        alternativesPage.querySelector("[data-alternatives-empty]").hidden = visible !== 0;
+        useAlternative.disabled = !choices.querySelector("input:checked");
+      };
+      const showAlternatives = (row) => {
+        if (!originalProducts.has(row)) {
+          originalProducts.set(row, productFromRow(row));
+        }
+        currentRow = row;
+        const product = productFromRow(row);
+        currentAlternatives = [...alternatives[originalProducts.get(row).name], originalProducts.get(row)].filter((option) => option.name !== product.name);
+        alternativesPage.querySelector("[data-alternatives-for]").textContent = "For " + product.name + ". Fixture examples only; no Nemlig search or basket write.";
+        alternativesPage.querySelector("[data-current-thumb]").textContent = product.thumb;
+        alternativesPage.querySelector("[data-current-name]").textContent = product.name;
+        alternativesPage.querySelector("[data-current-meta]").textContent = priceMeta(product);
+        search.value = "";
+        choices.replaceChildren(...currentAlternatives.map((option, index) => {
+          const card = document.createElement("label");
+          card.className = "ur-alt-option";
+          const radio = document.createElement("input");
+          radio.type = "radio";
+          radio.name = "ur-alternative";
+          radio.value = String(index);
+          const thumb = document.createElement("span");
+          thumb.className = "ur-thumb";
+          thumb.setAttribute("aria-hidden", "true");
+          thumb.textContent = product.thumb;
+          const copy = document.createElement("span");
+          const title = document.createElement("strong");
+          title.textContent = option.name;
+          const meta = document.createElement("small");
+          meta.className = "ur-alt-meta";
+          meta.textContent = priceMeta(option);
+          const detail = document.createElement("span");
+          detail.className = "ur-alt-detail";
+          detail.textContent = "Varebeskrivelse: " + option.description + (option.declaration ? " Varedeklaration: " + option.declaration : "");
+          copy.append(title, meta, detail);
+          card.append(radio, thumb, copy);
+          return card;
+        }));
+        filterAlternatives();
+        setSwipeOpen(row, null);
+        basketContent.hidden = true;
+        basketFooter.hidden = true;
+        alternativesPage.hidden = false;
+        alternativesPage.querySelector(".ur-alt-body").scrollTop = 0;
+        alternativesPage.querySelector("[data-close-alternatives]").focus();
+      };
+      const closeAlternatives = () => {
+        alternativesPage.hidden = true;
+        basketContent.hidden = false;
+        basketFooter.hidden = false;
+        currentRow?.querySelector(".ur-product").focus();
+      };
+      search.addEventListener("input", filterAlternatives);
+      choices.addEventListener("change", () => { useAlternative.disabled = !choices.querySelector("input:checked"); });
+      useAlternative.addEventListener("click", () => {
+        const selected = choices.querySelector("input:checked");
+        if (!selected || !currentRow) {
+          return;
+        }
+        const product = currentAlternatives[Number(selected.value)];
+        currentRow.dataset.unitPrice = String(product.price);
+        currentRow.querySelector(".ur-title-line strong").textContent = product.name;
+        currentRow.querySelector(".ur-meta").textContent = product.meta;
+        currentRow.querySelector("[data-line-price]").textContent = money(total(currentRow));
+        currentRow.querySelector(".ur-details details p").textContent = product.description;
+        const declaration = currentRow.querySelectorAll(".ur-details details")[1];
+        if (declaration) {
+          declaration.hidden = !product.declaration;
+          if (product.declaration) {
+            declaration.querySelector("p").textContent = product.declaration;
+          }
+        }
+        setSwipeOpen(currentRow, null);
+        currentRow.querySelectorAll("[data-step]").forEach((button) => button.setAttribute("aria-label", (button.dataset.step === "1" ? "Increase " : "Decrease ") + product.name + " quantity"));
+        sync();
+        closeAlternatives();
+      });
+      root.querySelector("[data-close-alternatives]").addEventListener("click", closeAlternatives);
+      const removed = [];
+      const rows = () => [...list.querySelectorAll(".ur-row")];
+      const quantity = (row) => Number(row.querySelector("output").textContent);
+      const total = (row) => Number(row.dataset.unitPrice) * quantity(row);
+      const sync = () => {
+        const products = rows();
+        const amount = products.reduce((sum, row) => sum + total(row), 0);
+        root.querySelector("[data-list-summary]").textContent = products.length + (products.length === 1 ? " product · " : " products · ") + money(amount);
+        root.querySelector("[data-preview]").disabled = products.length === 0;
+        root.querySelector("[data-clear]").disabled = products.length === 0;
+        root.querySelector("[data-empty]").hidden = products.length !== 0;
+        root.querySelector("[data-undo]").hidden = removed.length === 0;
+        if (removed.length) root.querySelector("[data-undo-name]").textContent = removed.at(-1).label;
+      };
+      const setSwipeOpen = (row, direction) => {
+        row.classList.toggle("is-open", Boolean(direction));
+        row.classList.toggle("is-swiping-right", direction === "right");
+        row.querySelector(".ur-swipe-content").inert = Boolean(direction);
+        const action = row.querySelector(".ur-swipe-action");
+        action.inert = !direction;
+        const name = row.querySelector(".ur-title-line strong").textContent;
+        action.setAttribute("aria-label", direction === "right" ? "Find alternatives for " + name : "Remove " + name + " from local basket");
+      };
+      const removeRows = (products, label) => {
+        const items = products.filter((row) => row.isConnected).map((row) => ({ row, next: row.nextSibling }));
+        if (!items.length) return;
+        items.forEach(({ row }) => { setSwipeOpen(row, null); row.remove(); });
+        removed.push({ items, label });
+        sync();
+      };
+      const removeRow = (row) => removeRows([row], "Removed " + row.querySelector(".ur-title-line strong").textContent);
+      root.querySelectorAll(".ur-product").forEach((button) => button.addEventListener("click", () => {
+        const details = root.querySelector("#" + button.getAttribute("aria-controls"));
+        details.hidden = !details.hidden;
+        button.setAttribute("aria-expanded", String(!details.hidden));
+      }));
+      root.querySelectorAll("[data-step]").forEach((button) => button.addEventListener("click", () => {
+        const row = button.closest(".ur-row");
+        const output = row.querySelector("output");
+        output.textContent = String(Math.max(1, quantity(row) + Number(button.dataset.step)));
+        row.querySelector("[data-quantity-text]").textContent = output.textContent + " ×";
+        row.querySelector("[data-line-price]").textContent = money(total(row));
+        sync();
+      }));
+      root.querySelectorAll("[data-remove]").forEach((button) => button.addEventListener("click", () => removeRow(button.closest(".ur-row"))));
+      root.querySelectorAll("[data-find]").forEach((button) => button.addEventListener("click", () => showAlternatives(button.closest(".ur-row"))));
+      root.querySelector("[data-clear]").addEventListener("click", () => removeRows(rows(), "Cleared local basket"));
+      root.querySelectorAll(".ur-row").forEach((row) => {
+        let start;
+        const content = row.querySelector(".ur-swipe-content");
+        row.querySelector(".ur-swipe-action").addEventListener("click", () => row.classList.contains("is-swiping-right") ? showAlternatives(row) : removeRow(row));
+        row.addEventListener("pointerdown", (event) => {
+          if (event.button !== 0) return;
+          const openDirection = row.classList.contains("is-open") ? (row.classList.contains("is-swiping-right") ? "right" : "left") : null;
+          start = { id: event.pointerId, x: event.clientX, y: event.clientY, offset: openDirection === "right" ? row.clientWidth : openDirection === "left" ? -row.clientWidth : 0, openDirection, dragging: false };
+        });
+        row.addEventListener("pointermove", (event) => {
+          if (!start || event.pointerId !== start.id) return;
+          const dx = event.clientX - start.x;
+          const dy = event.clientY - start.y;
+          if (!start.dragging) {
+            if (Math.abs(dy) > 8 && Math.abs(dy) > Math.abs(dx)) { start = undefined; return; }
+            if (Math.abs(dx) < 8 || Math.abs(dx) <= Math.abs(dy) * 1.5) return;
+            start.dragging = true;
+            row.classList.add("is-dragging");
+            row.setPointerCapture(event.pointerId);
+          }
+          const offset = Math.max(-row.clientWidth, Math.min(row.clientWidth, start.offset + dx));
+          row.classList.toggle("is-swiping-right", offset > 0);
+          row.style.setProperty("--reveal-half", Math.abs(offset) / 2 + "px");
+          content.style.transform = `translateX(${offset}px)`;
+        });
+        row.addEventListener("pointerup", (event) => {
+          if (!start || event.pointerId !== start.id) return;
+          if (start.dragging) {
+            const offset = Math.max(-row.clientWidth, Math.min(row.clientWidth, start.offset + event.clientX - start.x));
+            setSwipeOpen(row, offset > row.clientWidth / 2 ? "right" : offset < -row.clientWidth / 2 ? "left" : null);
+            row.classList.remove("is-dragging");
+            row.style.removeProperty("--reveal-half");
+            content.style.transform = "";
+          }
+          start = undefined;
+        });
+        row.addEventListener("pointercancel", () => {
+          if (start) setSwipeOpen(row, start.openDirection);
+          row.classList.remove("is-dragging");
+          row.style.removeProperty("--reveal-half");
+          content.style.transform = "";
+          start = undefined;
+        });
+      });
+      root.querySelector("[data-undo-button]").addEventListener("click", () => {
+        const { items } = removed.pop();
+        [...items].reverse().forEach(({ row, next }) => list.insertBefore(row, next));
+        sync();
+      });
+      root.querySelector("[data-preview]").addEventListener("click", () => {
+        const lines = root.querySelector("[data-confirm-lines]");
+        lines.replaceChildren(...rows().map((row) => {
+          const line = document.createElement("li");
+          const item = document.createElement("span");
+          const amount = document.createElement("b");
+          item.textContent = quantity(row) + " × " + row.querySelector(".ur-title-line strong").textContent;
+          amount.textContent = money(total(row));
+          line.append(item, amount);
+          return line;
+        }));
+        dialog.showModal();
+      });
+      root.querySelector("[data-close]").addEventListener("click", () => dialog.close());
+      sync();
+    })();
+  </script>
+</body>
+</html>
