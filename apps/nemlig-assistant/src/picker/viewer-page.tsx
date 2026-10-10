@@ -1021,7 +1021,7 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
                   </p>
                 ))}
                 <p>
-                  Expected product total:{" "}
+                  Maximum product total:{" "}
                   {money(review.submission.review.expected_products_price)}
                 </p>
                 {submitBlocked ? (

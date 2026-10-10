@@ -130,12 +130,17 @@ The system SHALL consume a proposal at most once, SHALL return a stored sanitize
 
 ### Requirement: Post-mutation readback
 
-The system SHALL read the basket immediately after every mutation attempt, return the normalized result when verified, and stop on partial success, failed readback, or mismatch.
+The system SHALL read the basket immediately after every mutation attempt, return the normalized result when verified, and stop on partial success, failed readback, or mismatch. Provider basket offers MAY lower reviewed line prices and the basket product total after a write. Such a lower price SHALL NOT stop the remaining approved additions when exact requested and previously verified quantities are preserved, every basket line total is finite and no higher than its reviewed price ceiling, the product count matches, and the basket product total is finite and no higher than the reviewed cumulative amount after each write. An existing line's ceiling is its reviewed total, increased only by an approved addition to that line. Higher or incomplete prices remain a mismatch.
 
 #### Scenario: Applied additions match
 
 - **WHEN** the exact proposed additions succeed and basket readback matches
 - **THEN** the server marks the proposal completed and returns the resulting basket and totals
+
+#### Scenario: Basket offer reduces the price
+
+- **WHEN** an approved addition activates an offer that lowers its line price or another basket line price without changing the approved quantities
+- **THEN** the server accepts the verified cheaper basket, continues any remaining approved additions, and returns the actual discounted total
 
 #### Scenario: Readback fails or differs
 

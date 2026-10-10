@@ -441,21 +441,37 @@ export class BasketProposalService {
           "Current product details could not be revalidated; prepare and review a new proposal.",
         );
       }
+      const approvedLineTotals = new Map<string, number>();
+      for (const line of basket.items) {
+        if (!Number.isFinite(line.total) || line.total! < 0) {
+          this.invalidate(proposal);
+          throw new NemligError(
+            "Current basket prices are incomplete; no provider write was sent.",
+          );
+        }
+        approvedLineTotals.set(String(line.id), money(line.total!));
+      }
 
       proposal.state = "applying";
       this.record("applying", proposal.operation.kind, "started");
       try {
         let result: Basket;
         result = basket;
+        let approvedTotal = basket.productsPrice!;
+        let expectedProducts = basket.numberOfProducts!;
         for (const line of proposal.operation.lines) {
+          approvedTotal = money(approvedTotal + line.line_total);
+          expectedProducts += line.quantity;
           const previousLine = result.items.find((item) =>
             sameId(item.id, line.product_id),
           );
           const expectedQuantity =
             (previousLine?.quantity ?? 0) + line.quantity;
-          const expectedTotal = money(
-            (previousLine?.total ?? 0) + line.line_total,
+          const lineId = String(line.product_id);
+          const approvedLineTotal = money(
+            (approvedLineTotals.get(lineId) ?? 0) + line.line_total,
           );
+          approvedLineTotals.set(lineId, approvedLineTotal);
           const previousLines = result.items;
           result = await this.client.addToCart(
             line.product_id,
@@ -465,10 +481,7 @@ export class BasketProposalService {
           const applied = result.items.find((item) =>
             sameId(item.id, line.product_id),
           );
-          if (
-            applied?.quantity !== expectedQuantity ||
-            money(applied.total ?? Number.NaN) !== expectedTotal
-          ) {
+          if (applied?.quantity !== expectedQuantity) {
             throw new NemligError(
               "Basket readback did not match the approved additive quantity.",
             );
@@ -489,26 +502,36 @@ export class BasketProposalService {
               );
             }
           }
+          if (result.items.length !== approvedLineTotals.size) {
+            throw new NemligError(
+              "Basket readback contained an unexpected product line.",
+            );
+          }
+          for (const current of result.items) {
+            const ceiling = approvedLineTotals.get(String(current.id));
+            if (
+              ceiling === undefined ||
+              !Number.isFinite(current.total) ||
+              current.total! < 0 ||
+              money(current.total!) > ceiling
+            ) {
+              throw new NemligError(
+                "Basket line price exceeded the reviewed amount or was incomplete.",
+              );
+            }
+          }
+          const actualProductsPrice = result.productsPrice ?? Number.NaN;
+          if (
+            !Number.isFinite(actualProductsPrice) ||
+            actualProductsPrice < 0 ||
+            money(actualProductsPrice) > approvedTotal ||
+            result.numberOfProducts !== expectedProducts
+          ) {
+            throw new NemligError(
+              "Basket total or product count exceeded the approved additions.",
+            );
+          }
           verifiedAdditions += 1;
-        }
-        const addedQuantity = proposal.operation.lines.reduce(
-          (total, line) => total + line.quantity,
-          0,
-        );
-        const addedValue = proposal.operation.lines.reduce(
-          (total, line) => total + line.line_total,
-          0,
-        );
-        const expectedProductsPrice = money(basket.productsPrice! + addedValue);
-        const expectedNumberOfProducts =
-          basket.numberOfProducts! + addedQuantity;
-        if (
-          money(result.productsPrice ?? Number.NaN) !== expectedProductsPrice ||
-          result.numberOfProducts !== expectedNumberOfProducts
-        ) {
-          throw new NemligError(
-            "Final basket totals did not match the approved additions.",
-          );
         }
         const completed: ApplyResult = {
           status: "completed",

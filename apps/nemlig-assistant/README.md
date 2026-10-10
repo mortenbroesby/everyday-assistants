@@ -273,7 +273,9 @@ Read → prepare the exact intended change → confirm user authorization → ap
 - The approved action freshly resolves every affected product upstream and
   revalidates the review and current basket state before writing.
 - Additions re-read the basket immediately before writing and verify the
-  resulting line quantities and basket totals afterward.
+  resulting line quantities and basket totals afterward. A Nemlig basket offer
+  may reduce the actual total below the reviewed estimate; it never permits a
+  higher total or a changed quantity.
 - Writes are never automatically retried after an uncertain result.
 - Cold login follows Nemlig's ordinary website flags; if Nemlig requires a
   basket decision, the assistant stops rather than selecting a remove/save

@@ -622,6 +622,164 @@ test("approved addition quantities are deltas for existing lines and preserve un
   assert.equal(applied.basket.number_of_products, 4);
 });
 
+test("a basket offer can lower reviewed line prices without stopping later additions", async () => {
+  const bread = { ...product, name: "Naanbrød", price: 22.32 };
+  const garlicBread = { ...bread, id: 8, name: "Naanbrød m. hvidløg" };
+  const toast = { ...bread, id: 9, name: "Hvedetoast", price: 9.6 };
+  const products = new Map(
+    [bread, garlicBread, toast].map((item) => [item.id, item]),
+  );
+  const basket = emptyBasket();
+  const writes: number[] = [];
+  const service = new BasketProposalService(
+    fakeClient({
+      getProduct: async (id) => products.get(id)!,
+      getFreshProduct: async (id) => products.get(id)!,
+      getCart: async () => structuredClone(basket),
+      addToCart: async (id) => {
+        writes.push(id);
+        basket.items.push({
+          id,
+          name: products.get(id)!.name,
+          quantity: 1,
+          total: products.get(id)!.price,
+        });
+        if (id === 8) {
+          basket.items[0]!.total = 17.5;
+          basket.items[1]!.total = 17.5;
+        }
+        basket.numberOfProducts = basket.items.length;
+        basket.productsPrice = basket.items.reduce(
+          (total, item) => total + item.total!,
+          0,
+        );
+        return structuredClone(basket);
+      },
+    }),
+  );
+  const proposal = await service.prepareAdditions(
+    "connection",
+    [7, 8, 9].map((product_id) => ({ product_id, quantity: 1 })),
+    { kind: "exact_review" },
+  );
+
+  const applied = await service.apply(
+    "connection",
+    proposal.proposal_id,
+    "additions",
+  );
+  assert.deepEqual(writes, [7, 8, 9]);
+  assert.equal(applied.basket.products_price, 44.6);
+  assert.equal(applied.basket.number_of_products, 3);
+});
+
+test("discount tolerance still rejects higher or incomplete basket prices", async () => {
+  for (const { lineTotal, productsPrice } of [
+    { lineTotal: 3, productsPrice: 3 },
+    { lineTotal: 2.5, productsPrice: 3 },
+    { lineTotal: undefined, productsPrice: 2.5 },
+    { lineTotal: 2.5, productsPrice: undefined },
+  ]) {
+    let writes = 0;
+    const service = new BasketProposalService(
+      fakeClient({
+        addToCart: async () => {
+          writes += 1;
+          return {
+            ...bananaBasket(),
+            items: [{ id: 7, name: "Banan", quantity: 1, total: lineTotal }],
+            productsPrice,
+          };
+        },
+      }),
+    );
+    const proposal = await service.prepareAdditions(
+      "connection",
+      [{ product_id: 7, quantity: 1 }],
+      { kind: "exact_review" },
+    );
+    await assert.rejects(
+      service.apply("connection", proposal.proposal_id, "additions"),
+      /verification did not complete/u,
+    );
+    assert.equal(writes, 1);
+    await assert.rejects(
+      service.apply("connection", proposal.proposal_id, "additions"),
+      /no longer applicable/u,
+    );
+  }
+});
+
+test("a discount cannot hide a higher or missing price on a prior line", async () => {
+  for (const changedTotal of [13.5, undefined]) {
+    const basket: Basket = {
+      ...emptyBasket(),
+      items: [{ id: 9, name: "Minimælk", quantity: 1, total: 12.5 }],
+      productsPrice: 12.5,
+      numberOfProducts: 1,
+    };
+    const writes: number[] = [];
+    const service = new BasketProposalService(
+      fakeClient({
+        getCart: async () => structuredClone(basket),
+        addToCart: async (id) => {
+          writes.push(id);
+          basket.items.push({ id, name: "Banan", quantity: 1, total: 2.5 });
+          if (id === 8) {
+            basket.items[0]!.total = changedTotal;
+            basket.items[1]!.total = 1.5;
+          }
+          basket.numberOfProducts = basket.items.length;
+          basket.productsPrice = 17.5;
+          if (id === 7) {
+            basket.productsPrice = 15;
+          }
+          return structuredClone(basket);
+        },
+      }),
+    );
+    const proposal = await service.prepareAdditions(
+      "connection",
+      [7, 8, 10].map((product_id) => ({ product_id, quantity: 1 })),
+      { kind: "exact_review" },
+    );
+    await assert.rejects(
+      service.apply("connection", proposal.proposal_id, "additions"),
+      /verification did not complete/u,
+    );
+    assert.deepEqual(writes, [7, 8]);
+  }
+});
+
+test("an incomplete unrelated basket price blocks writes", async () => {
+  let writes = 0;
+  const basket: Basket = {
+    ...emptyBasket(),
+    items: [{ id: 9, name: "Minimælk", quantity: 1, total: undefined }],
+    productsPrice: 12.5,
+    numberOfProducts: 1,
+  };
+  const service = new BasketProposalService(
+    fakeClient({
+      getCart: async () => basket,
+      addToCart: async () => {
+        writes += 1;
+        return basket;
+      },
+    }),
+  );
+  const proposal = await service.prepareAdditions(
+    "connection",
+    [{ product_id: 7, quantity: 1 }],
+    { kind: "exact_review" },
+  );
+  await assert.rejects(
+    service.apply("connection", proposal.proposal_id, "additions"),
+    /basket prices are incomplete; no provider write was sent/u,
+  );
+  assert.equal(writes, 0);
+});
+
 test("addition preparation rejects incomplete basket facts before creating a proposal", async () => {
   const complete = basketWithExistingProducts();
   const incompleteSnapshots: Basket[] = [
