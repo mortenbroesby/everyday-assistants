@@ -59,9 +59,10 @@ pnpm nemlig --help
 5. A clear conversational instruction to add the exact unchanged Local basket
    is itself authorization for that exact positive addition. Do not
    ask for a redundant second conversational approval. For any other addition,
-   obtain approval of the exact unchanged products, added quantities, current
-   prices and resulting basket effects. Local basket state alone is
-   not provider-write authorization. Any changed fact requires a fresh review.
+   obtain approval of the exact unchanged products and added quantities. Show
+   current prices as estimates; Nemlig may change them before or during the
+   addition. Local basket state alone is not provider-write authorization.
+   Product, availability, quantity, or basket-content changes require a fresh review.
 
 6. Add only approved lines:
 

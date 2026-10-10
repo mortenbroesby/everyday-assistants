@@ -210,7 +210,8 @@ test("busy submission confirmation disables its cancel control", () => {
   pageProps.model.confirmSubmit = true;
 
   const html = renderToStaticMarkup(createElement(ViewerPage, pageProps));
-  assert.match(html, /Maximum product total:/u);
+  assert.match(html, /Estimated product total:/u);
+  assert.match(html, /Prices may change/u);
   const cancelButton = html.match(/<button[^>]*>Cancel<\/button>/u)?.[0];
   assert.ok(cancelButton, "submission confirmation did not render Cancel");
   assert.match(cancelButton, /disabled=""/u);

@@ -2,7 +2,7 @@
 
 ### Requirement: Exact addition proposal
 
-The system SHALL prepare one or more positive basket additions without mutation and return an opaque proposal ID, issue and expiry times, current basket fingerprint, exact product IDs and names, sizes, requested additional quantities, observed current quantities, resulting quantities, current and resulting line totals, availability, unit prices, incremental line totals, expected resulting basket totals, relevant upstream labels, and the authorization scope that produced the proposal. The private ownership binding SHALL NOT be disclosed. Requested quantities mean additional units, never absolute target quantities.
+The system SHALL prepare one or more positive basket additions without mutation and return an opaque proposal ID, issue and expiry times, current basket fingerprint, exact product IDs and names, sizes, requested additional quantities, observed current quantities, resulting quantities, estimated current and resulting line totals, availability, estimated unit prices, incremental line totals, expected resulting basket totals, relevant upstream labels, and the authorization scope that produced the proposal. The private ownership binding SHALL NOT be disclosed. Requested quantities mean additional units, never absolute target quantities.
 
 #### Scenario: Prepare available additions
 
@@ -31,7 +31,7 @@ The system SHALL prepare one or more positive basket additions without mutation 
 
 ### Requirement: Revalidation inside the mutation lock
 
-The system SHALL obtain the process-local mutation lock and revalidate authorization binding, proposal state, expiry, current basket fingerprint, exact product identity, availability, requested additional quantity, unit price, incremental line total, and expected resulting totals before mutation. Addition application SHALL use fresh authoritative product facts rather than cached review facts. Every provider quantity write SHALL be a positive absolute quantity strictly greater than the latest observed quantity for that line; incomplete existing lines or any stale basket state SHALL fail closed.
+The system SHALL obtain the process-local mutation lock and revalidate authorization binding, proposal state, expiry, current basket contents, exact product identity, availability, and requested additional quantity before mutation. Price-only changes SHALL NOT invalidate an otherwise unchanged approval. Addition application SHALL use fresh authoritative product facts rather than cached review facts. Every provider quantity write SHALL be a positive absolute quantity strictly greater than the latest observed quantity for that line; incomplete existing lines or any stale basket contents SHALL fail closed.
 
 #### Scenario: Reviewed details remain unchanged
 
@@ -40,8 +40,13 @@ The system SHALL obtain the process-local mutation lock and revalidate authoriza
 
 #### Scenario: Reviewed details changed
 
-- **WHEN** price, availability, product, quantity, total, or basket state differs
+- **WHEN** availability, product identity, quantity, or basket contents differ
 - **THEN** the server invalidates the proposal, reports the changed fields, performs no mutation, and requires a new proposal
+
+#### Scenario: Price changes after review
+
+- **WHEN** only a product or basket price changes after review and the exact products and quantities remain valid
+- **THEN** the server may continue the approved addition and reports the actual price from basket readback
 
 #### Scenario: Existing basket line is incomplete
 

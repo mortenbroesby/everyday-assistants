@@ -8,7 +8,7 @@ Defines the server-enforced proposal protocol that lets the private ChatGPT conn
 
 ### Requirement: Exact addition proposal
 
-The system SHALL prepare one or more positive basket additions without mutation and return an opaque proposal ID, issue and expiry times, current basket fingerprint, exact product IDs and names, sizes, requested addition quantities, current and expected final line quantities, availability, unit prices, added line totals, expected basket effect, relevant upstream labels, and the authorization scope that produced the proposal. The private ownership binding SHALL NOT be disclosed.
+The system SHALL prepare one or more positive basket additions without mutation and return an opaque proposal ID, issue and expiry times, current basket fingerprint, exact product IDs and names, sizes, requested addition quantities, current and expected final line quantities, availability, estimated unit prices, added line totals, expected basket effect, relevant upstream labels, and the authorization scope that produced the proposal. The private ownership binding SHALL NOT be disclosed.
 
 #### Scenario: Prepare available additions
 
@@ -97,7 +97,7 @@ The assistant SHALL expose no provider-basket removal, replacement, or clear ope
 
 ### Requirement: Revalidation inside the mutation lock
 
-The system SHALL obtain the process-local mutation lock and revalidate authorization binding, proposal state, expiry, current basket fingerprint, exact product identity, availability, quantity, unit price, line total, and expected totals before mutation. Addition application SHALL use fresh authoritative product facts rather than cached review facts.
+The system SHALL obtain the process-local mutation lock and revalidate authorization binding, proposal state, expiry, current basket contents, exact product identity, availability, and quantity before mutation. Price-only changes SHALL NOT invalidate an otherwise unchanged approval. Addition application SHALL use fresh authoritative product facts rather than cached review facts.
 
 #### Scenario: Reviewed details remain unchanged
 
@@ -106,8 +106,13 @@ The system SHALL obtain the process-local mutation lock and revalidate authoriza
 
 #### Scenario: Reviewed details changed
 
-- **WHEN** price, availability, product, quantity, total, or basket state differs
+- **WHEN** availability, product identity, quantity, or basket contents differ
 - **THEN** the server invalidates the proposal, reports the changed fields, performs no mutation, and requires a new proposal
+
+#### Scenario: Price changes after review
+
+- **WHEN** only a product or basket price changes after review and the exact products and quantities remain valid
+- **THEN** the server may continue the approved addition and reports the actual price from basket readback
 
 #### Scenario: Fresh product validation fails
 
@@ -130,17 +135,17 @@ The system SHALL consume a proposal at most once, SHALL return a stored sanitize
 
 ### Requirement: Post-mutation readback
 
-The system SHALL read the basket immediately after every mutation attempt, return the normalized result when verified, and stop on partial success, failed readback, or mismatch. Provider basket offers MAY lower reviewed line prices and the basket product total after a write. Such a lower price SHALL NOT stop the remaining approved additions when exact requested and previously verified quantities are preserved, every basket line total is finite and no higher than its reviewed price ceiling, the product count matches, and the basket product total is finite and no higher than the reviewed cumulative amount after each write. An existing line's ceiling is its reviewed total, increased only by an approved addition to that line. Higher or incomplete prices remain a mismatch.
+The system SHALL read the basket immediately after every mutation attempt, return the normalized result when verified, and stop on partial success, failed readback, or mismatch. Prices MAY rise or fall from the reviewed estimate without stopping remaining approved additions. The server SHALL require exact requested and previously verified quantities, no unexpected product lines, a matching product count, and finite nonnegative line and basket product totals after every write. Incomplete prices remain a mismatch. No basket submission places an order or charges a payment method.
 
 #### Scenario: Applied additions match
 
 - **WHEN** the exact proposed additions succeed and basket readback matches
 - **THEN** the server marks the proposal completed and returns the resulting basket and totals
 
-#### Scenario: Basket offer reduces the price
+#### Scenario: Basket price changes
 
-- **WHEN** an approved addition activates an offer that lowers its line price or another basket line price without changing the approved quantities
-- **THEN** the server accepts the verified cheaper basket, continues any remaining approved additions, and returns the actual discounted total
+- **WHEN** an approved addition changes a line price or the basket product total without changing approved quantities
+- **THEN** the server accepts the verified basket, continues any remaining approved additions, and returns the actual total
 
 #### Scenario: Readback fails or differs
 

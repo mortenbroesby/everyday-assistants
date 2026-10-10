@@ -118,7 +118,7 @@ export interface Basket {
   deliveryTime: string | undefined;
 }
 
-/** Stable identity for the provider basket state relevant to additive writes. */
+/** Stable basket identity for additive writes; prices are estimates, not approval limits. */
 export const basketFingerprint = (basket: Basket): string => {
   const stable = {
     items: basket.items
@@ -126,11 +126,8 @@ export const basketFingerprint = (basket: Basket): string => {
         id: item.id ?? null,
         name: item.name ?? null,
         quantity: item.quantity ?? null,
-        total: item.total ?? null,
       }))
       .sort((left, right) => String(left.id).localeCompare(String(right.id))),
-    productsPrice: basket.productsPrice ?? null,
-    deliveryPrice: basket.deliveryPrice ?? null,
     numberOfProducts: basket.numberOfProducts ?? null,
     deliveryTime: basket.deliveryTime ?? null,
   };

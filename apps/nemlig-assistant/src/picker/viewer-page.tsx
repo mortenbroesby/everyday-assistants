@@ -1021,8 +1021,11 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
                   </p>
                 ))}
                 <p>
-                  Maximum product total:{" "}
+                  Estimated product total:{" "}
                   {money(review.submission.review.expected_products_price)}
+                </p>
+                <p>
+                  Prices may change. Check the actual Nemlig basket afterward.
                 </p>
                 {submitBlocked ? (
                   <p>

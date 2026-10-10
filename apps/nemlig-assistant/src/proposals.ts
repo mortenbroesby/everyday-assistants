@@ -146,10 +146,14 @@ export const basketPayload = (basket: Basket): BasketPayload => ({
 });
 
 const productLine = (product: Product, quantity: number): ProposalLine => {
+  const price = product.price;
   if (
     typeof product.id !== "number" ||
     !product.name ||
-    product.price === undefined
+    typeof price !== "number" ||
+    !Number.isFinite(price) ||
+    price < 0 ||
+    !Number.isFinite(price * quantity)
   ) {
     throw new NemligError(
       "Product data is incomplete; no proposal was created.",
@@ -170,19 +174,23 @@ const productLine = (product: Product, quantity: number): ProposalLine => {
     current_quantity: 0,
     resulting_quantity: quantity,
     current_line_total: 0,
-    resulting_line_total: money(product.price * quantity),
+    resulting_line_total: money(price * quantity),
     available: product.available,
-    item_price: product.price,
+    item_price: price,
     unit_price: product.unitPrice,
     unit: product.unit,
     currency: "DKK",
-    line_total: money(product.price * quantity),
+    line_total: money(price * quantity),
     labels: [...product.labels],
   };
 };
 
-const sameLine = (left: ProposalLine, right: ProposalLine): boolean =>
-  JSON.stringify(left) === JSON.stringify(right);
+const sameProduct = (left: ProposalLine, right: ProposalLine): boolean =>
+  left.product_id === right.product_id &&
+  left.name === right.name &&
+  left.unit_size === right.unit_size &&
+  left.quantity === right.quantity &&
+  left.available === right.available;
 
 class Mutex {
   private tail: Promise<void> = Promise.resolve();
@@ -424,7 +432,7 @@ export class BasketProposalService {
             await this.client.getFreshProduct(reviewed.product_id),
             reviewed.quantity,
           );
-          if (!sameLine(current, reviewed)) {
+          if (!sameProduct(current, reviewed)) {
             proposal.state = "invalid";
             this.record("invalidated", proposal.operation.kind, "rejected");
             throw new NemligError(
@@ -441,15 +449,17 @@ export class BasketProposalService {
           "Current product details could not be revalidated; prepare and review a new proposal.",
         );
       }
-      const approvedLineTotals = new Map<string, number>();
-      for (const line of basket.items) {
-        if (!Number.isFinite(line.total) || line.total! < 0) {
-          this.invalidate(proposal);
-          throw new NemligError(
-            "Current basket prices are incomplete; no provider write was sent.",
-          );
-        }
-        approvedLineTotals.set(String(line.id), money(line.total!));
+      if (
+        !Number.isFinite(basket.productsPrice) ||
+        basket.productsPrice! < 0 ||
+        basket.items.some(
+          (line) => !Number.isFinite(line.total) || line.total! < 0,
+        )
+      ) {
+        this.invalidate(proposal);
+        throw new NemligError(
+          "Current basket prices are incomplete; no provider write was sent.",
+        );
       }
 
       proposal.state = "applying";
@@ -457,21 +467,18 @@ export class BasketProposalService {
       try {
         let result: Basket;
         result = basket;
-        let approvedTotal = basket.productsPrice!;
         let expectedProducts = basket.numberOfProducts!;
+        let expectedLines = basket.items.length;
         for (const line of proposal.operation.lines) {
-          approvedTotal = money(approvedTotal + line.line_total);
           expectedProducts += line.quantity;
           const previousLine = result.items.find((item) =>
             sameId(item.id, line.product_id),
           );
+          if (!previousLine) {
+            expectedLines += 1;
+          }
           const expectedQuantity =
             (previousLine?.quantity ?? 0) + line.quantity;
-          const lineId = String(line.product_id);
-          const approvedLineTotal = money(
-            (approvedLineTotals.get(lineId) ?? 0) + line.line_total,
-          );
-          approvedLineTotals.set(lineId, approvedLineTotal);
           const previousLines = result.items;
           result = await this.client.addToCart(
             line.product_id,
@@ -502,33 +509,24 @@ export class BasketProposalService {
               );
             }
           }
-          if (result.items.length !== approvedLineTotals.size) {
+          if (result.items.length !== expectedLines) {
             throw new NemligError(
               "Basket readback contained an unexpected product line.",
             );
           }
           for (const current of result.items) {
-            const ceiling = approvedLineTotals.get(String(current.id));
-            if (
-              ceiling === undefined ||
-              !Number.isFinite(current.total) ||
-              current.total! < 0 ||
-              money(current.total!) > ceiling
-            ) {
-              throw new NemligError(
-                "Basket line price exceeded the reviewed amount or was incomplete.",
-              );
+            if (!Number.isFinite(current.total) || current.total! < 0) {
+              throw new NemligError("Basket line price was incomplete.");
             }
           }
           const actualProductsPrice = result.productsPrice ?? Number.NaN;
           if (
             !Number.isFinite(actualProductsPrice) ||
             actualProductsPrice < 0 ||
-            money(actualProductsPrice) > approvedTotal ||
             result.numberOfProducts !== expectedProducts
           ) {
             throw new NemligError(
-              "Basket total or product count exceeded the approved additions.",
+              "Basket total or product count could not be verified.",
             );
           }
           verifiedAdditions += 1;

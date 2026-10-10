@@ -3,12 +3,12 @@
 ### Requirement: Revalidation inside the mutation lock
 
 The system SHALL obtain the process-local mutation lock and revalidate
-connection binding, proposal state, expiry, current basket fingerprint, exact
-product identity, availability, quantity, unit price, line total, and expected
-totals before mutation. Product identity, availability, package, and price data
-used for this final comparison SHALL come from a bounded authoritative upstream
-read started during application and SHALL NOT be satisfied by product data
-retained from discovery or proposal preparation.
+connection binding, proposal state, expiry, current basket contents, exact
+product identity, availability, and quantity before mutation. Product identity,
+availability, package, and current price estimates SHALL come from a bounded
+authoritative upstream read started during application and SHALL NOT be
+satisfied by product data retained from discovery or proposal preparation.
+Price-only changes SHALL NOT invalidate an otherwise unchanged approval.
 
 #### Scenario: Fresh product validation fails
 
@@ -22,8 +22,13 @@ retained from discovery or proposal preparation.
 
 #### Scenario: Reviewed details changed
 
-- **WHEN** fresh price, availability, product, quantity, total, or basket state differs
+- **WHEN** fresh availability, product identity, quantity, or basket contents differ
 - **THEN** the server invalidates the proposal, reports the changed fields, performs no mutation, and requires a new proposal
+
+#### Scenario: Price changes after review
+
+- **WHEN** only a product or basket price changes after review and the exact products and quantities remain valid
+- **THEN** the server may continue the approved addition and reports the actual price from basket readback
 
 #### Scenario: Fresh product details cannot be obtained
 
