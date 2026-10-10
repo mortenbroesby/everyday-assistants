@@ -124,7 +124,7 @@ additional resources.
 The shared product viewer opens directly to one **Local basket** list. Every
 row is Ready for whole-list submission; there are no To decide/Ready tabs,
 checkboxes, or acceptance step. Tap a product to open its full-screen details,
-or hold it for two seconds to open a four-row action sheet: **Remove product**,
+or hold it for two seconds to open a top-aligned four-row action sheet: **Remove product**,
 **Find alternative**, **Show details**, and full-width quantity controls.
 Moving or releasing early cancels the long press. Keyboard users can press
 Shift+F10 on a product. The details view closes with ×, Escape, or a tap outside.

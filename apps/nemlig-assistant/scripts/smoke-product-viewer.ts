@@ -364,9 +364,16 @@ try {
     `product details did not open as a near-full-screen modal: ${JSON.stringify(detailsLayout)}`,
   );
   const detailsBox = await details.boundingBox();
+  const hostFrameBox = await page
+    .locator('iframe[title="viewer"]')
+    .boundingBox();
   assert.ok(
     detailsBox && detailsBox.y >= 0 && detailsBox.y + detailsBox.height <= 860,
     `product details extend beyond the visible host viewport: ${JSON.stringify(detailsBox)}`,
+  );
+  assert.ok(
+    hostFrameBox && detailsBox && detailsBox.y - hostFrameBox.y <= 16,
+    "product details are not top-aligned in the viewer",
   );
   await details.getByRole("button", { name: "Close product overlay" }).click();
   await milkDisclosure.press("Shift+F10");
@@ -378,6 +385,10 @@ try {
   assert.ok(
     sheetBox && sheetBox.y >= 0 && sheetBox.y + sheetBox.height <= 860,
     `action sheet extends beyond the visible host viewport: ${JSON.stringify(sheetBox)}`,
+  );
+  assert.ok(
+    hostFrameBox && sheetBox && sheetBox.y - hostFrameBox.y <= 16,
+    "action sheet is not top-aligned in the viewer",
   );
   for (const label of ["Remove product", "Find alternative", "Show details"]) {
     assert.equal(
