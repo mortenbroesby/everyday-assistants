@@ -127,7 +127,9 @@ checkboxes, or acceptance step. Tap a product to open its full-screen details,
 or hold it for two seconds to open a top-aligned four-row action sheet: **Remove product**,
 **Find alternative**, **Show details**, and full-width quantity controls.
 Moving or releasing early cancels the long press. Keyboard users can press
-Shift+F10 on a product. The details view closes with ×, Escape, or a tap outside.
+Shift+F10 on a product. The details view also has a **Product actions** button,
+so touch and screen-reader users can reach the same actions without a hold.
+It closes with ×, Escape, or a tap outside.
 The viewer does not intercept horizontal swipes.
 The viewer stays within a 620 px height and scrolls longer lists; large Local baskets
 render visible rows with TanStack Virtual while shorter lists stay fully rendered.

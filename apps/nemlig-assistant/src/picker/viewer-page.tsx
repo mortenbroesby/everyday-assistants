@@ -415,6 +415,15 @@ function ProductCard({
               ) : (
                 <div className="product-overlay-details">
                   {summary}
+                  {item && (
+                    <button
+                      type="button"
+                      className="product-action-item"
+                      onClick={() => setOverlayMode("actions")}
+                    >
+                      Product actions
+                    </button>
+                  )}
                   {details}
                 </div>
               )}

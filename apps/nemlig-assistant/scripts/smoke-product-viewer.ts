@@ -375,7 +375,21 @@ try {
     hostFrameBox && detailsBox && detailsBox.y - hostFrameBox.y <= 16,
     "product details are not top-aligned in the viewer",
   );
-  await details.getByRole("button", { name: "Close product overlay" }).click();
+  await details.getByRole("button", { name: "Product actions" }).click();
+  const touchAccessibleActions = frame.getByRole("dialog", {
+    name: "Actions for Synthetic milk",
+  });
+  await touchAccessibleActions.waitFor();
+  assert.equal(
+    await touchAccessibleActions.evaluate((modal) =>
+      modal.contains(modal.ownerDocument.activeElement),
+    ),
+    true,
+    "focus left the overlay when opening actions from details",
+  );
+  await touchAccessibleActions
+    .getByRole("button", { name: "Close product overlay" })
+    .click();
   await milkDisclosure.press("Shift+F10");
   const actionSheet = frame.getByRole("dialog", {
     name: "Actions for Synthetic milk",
