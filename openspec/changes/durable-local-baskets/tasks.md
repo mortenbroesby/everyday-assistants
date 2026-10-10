@@ -19,7 +19,7 @@
 
 - [ ] 3.1 Extend the existing model-visible Local basket start/update contracts with explicit list, create, select, show, and delete intents without adding a new public shopping tool; remember a selection only for a stable host conversation identifier and otherwise show the picker.
 - [ ] 3.2 Update server instructions, structured/text fallbacks, README inventory, and product language from Draft list to Local basket; verify the real Nemlig basket remains unmistakably distinct.
-- [ ] 3.3 Update the shared viewer with a compact picker (UUID, last-active date, unique-product count) as the no-selection/unavailable landing state and from the top-right overflow; propose append versus create on new grocery requests, require confirmation for manual deletion, and expose no implicit real-basket action.
+- [ ] 3.3 Update the shared viewer with a compact picker (short non-secret UUID prefix, last-active date, unique-product count) as the no-selection/unavailable landing state and from the top-right overflow; propose append versus create on new grocery requests and wait for an explicit choice, require confirmation for manual deletion, and expose no implicit real-basket action.
 - [ ] 3.4 Add Storybook/fixture coverage for inventory, second-chat selection, unstable-chat fallback, activity refresh versus passive restoration, expiry/eviction/deletion landing state, restart recovery, partial search outcome, unavailable viewer, and prepared/uncertain safety states.
 - [ ] 3.5 Commit the conversational/viewer integration checkpoint after focused MCP, viewer, accessibility, and browser smoke tests pass with zero provider writes.
 

@@ -14,6 +14,12 @@ fallbacks.
   summarize them without mounting a viewer, then explicitly create or add them
   to a selected Local basket
 
+#### Scenario: Products arrive while a Local basket is selected
+- **WHEN** a grocery request produces products and the chat has a selected Local basket
+- **THEN** the assistant proposes appending to that Local basket and offers to
+  create a new one
+- **AND** it waits for the user's explicit choice before changing either Local basket
+
 #### Scenario: Viewer is unavailable
 - **WHEN** the client cannot render the optional shared viewer
 - **THEN** ChatGPT continues with the same structured and readable product data

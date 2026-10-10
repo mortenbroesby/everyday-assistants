@@ -15,6 +15,10 @@ explicitly delete one. One Local basket SHALL contain no more than 500 product
 lines. The owner SHALL retain no more than 50 Local baskets; creating another
 SHALL silently evict the least-recently-used basket.
 
+The inventory SHALL display a short non-secret prefix of the stable identifier,
+last-active date, and unique-product count. It SHALL NOT require a user-editable
+or generated human-readable basket name.
+
 #### Scenario: Owner resumes from another chat
 - **WHEN** the owner selects an unexpired Local basket from a supported new or old chat
 - **THEN** the same current products, quantities, and local selection state are available

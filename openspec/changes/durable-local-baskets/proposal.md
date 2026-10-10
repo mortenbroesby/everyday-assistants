@@ -17,6 +17,7 @@ mask or misdiagnose that discovery failure.
 - Let a user list active Local baskets, select one as the current basket, and
   explicitly delete one. Keep at most 500 product lines in each basket and 50
   baskets per owner; silently evict the least-recently-used basket at capacity.
+  Inventory displays a short non-secret UUID prefix rather than an editable name.
 - Keep local basket editing, alternatives, and selection separate from the
   real Nemlig basket. Restore no prepared submission authority after a restart;
   a restored basket must be freshly prepared and explicitly authorized before

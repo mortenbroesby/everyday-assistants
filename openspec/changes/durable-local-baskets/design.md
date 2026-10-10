@@ -69,10 +69,11 @@ owner's inventory. A chat without that reliable identifier opens the basket
 picker instead of guessing a selection. A supported card carries its opaque
 `basketId`; every owner chat can list and select every unexpired basket.
 
-The first inventory UI is deliberately small: UUID, last-active date, and
-unique-product count. User-editable or generated human names are deferred.
-When a grocery request arrives with a valid selected basket, the assistant
-proposes appending to it while offering explicit creation of a new basket.
+The first inventory UI is deliberately small: a short non-secret UUID prefix,
+last-active date, and unique-product count. User-editable or generated human
+names are deferred. When a grocery request arrives with a valid selected basket,
+the assistant proposes appending to it and waits for the user's explicit choice
+between append and creating a new basket.
 
 Retain the current seven model-visible shopping tools. Extend the existing
 Local-basket start/update schemas with explicit list, create, select, show, and
@@ -163,4 +164,5 @@ an unrelated queue or retry loop.
 ## Deferred follow-up
 
 User-editable labels and generated human-friendly names are deferred. The first
-inventory shows a UUID, last-active date, and unique-product count only.
+inventory shows a short non-secret UUID prefix, last-active date, and
+unique-product count only.
