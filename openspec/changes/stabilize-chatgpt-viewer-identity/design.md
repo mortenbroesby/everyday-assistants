@@ -7,10 +7,13 @@ Baseline main `7c79bddc47801ddbc4b0bd1d7110a4a50ffaf7d8` records v16 deployment 
 fresh native card displaying the retired-resource notice. That observation does
 not establish which URI was requested or whether a resource read occurred.
 
-The existing viewer already uses server-owned snapshots, current-view tokens,
-revision checks, bounded stale-state recovery, and protected submission.
-Reuse those paths. The current build is self-contained; the new resource will
-instead be a stable shell with a narrowly validated fixed-origin manifest and
+The existing viewer uses server-owned snapshots, card-scoped current-view
+tokens, revision checks, bounded stale-state recovery, and protected
+submission. The card-scoped authority is the demonstrated source of a card
+that first renders correctly then becomes unusable after a host remount or a
+later rendered card. Replace only that authority layer with one active list per
+authenticated conversation. The current build is self-contained; the new
+resource is a stable shell with a narrowly validated fixed-origin manifest and
 content-addressed UI bundle.
 
 Source context:
@@ -26,13 +29,17 @@ Source context:
 
 - One permanent identity, explicit forward-only cutover, observable resource
   binding, and separate proof of current data and loaded code.
-- Preserve all current server-side safety regardless of renderer age.
+- Let every supported card act on the one current, conversation-owned Draft
+  list without an application-generated card identifier.
+- Preserve exact prepared submission binding and all real-basket safeguards.
 
 **Non-Goals:**
 
 - Recovering old chats/cards, migrating draft state or approval, automatic
   reconnect, new OAuth registration, third-party code loading, a new asset
   service, background polling, durable draft storage, or basket operations.
+- Hot-swapping an already-mounted predecessor bundle, client-authoritative
+  shopping state, operation queues, or a durable-object migration.
 
 ## Decisions
 
@@ -70,10 +77,32 @@ pairs. After deployment, public acceptance verifies the candidate manifest and
 assets; the deployment path separately verifies the predecessor URLs remain
 available. Keep only one predecessor and use no new workflow or storage.
 
+### One implicit active Draft list per authenticated conversation
+
+The server keeps one bounded, temporary Draft list keyed by the existing
+principal-and-conversation owner. `start` preserves that list, `show` reads it,
+and local actions act on it directly. There is no caller-supplied review ID,
+view ID, or revision. A second rendered card does not revoke the first; a
+sequential action from either updates the same list.
+
+Keep the existing owner derivation, busy lock, bounded LRU capacity, product
+validation, clone-then-commit updates, terminal-outcome handling, and
+conversation isolation. Concurrent operations fail cleanly through the busy
+lock rather than being queued or silently reordered. End, eviction, and
+process loss discard temporary state; the server never reconstructs acceptance
+or submission authority from a card.
+
+The only client-supplied state binding that remains is `submission_id`. A
+prepared submission has the exact Ready products and quantities. Any Ready
+change invalidates it, and submit checks the exact ID before provider work.
+To-decide-only changes preserve a still-valid prepared Ready payload. The
+submission ID is not a card token and cannot select another conversation's
+list.
+
 ### Current state does not imply current code
 
-Reuse the existing current-state read and explicit activation paths. Rendering
-starts from authenticated, conversation-scoped server state. Browser state and
+Rendering starts from authenticated, conversation-scoped server state. A
+supported remount can read that state without activation. Browser state and
 retained results cannot grant authority or restore approval.
 
 A mounted shell reads `/ui/nemlig/manifest.json` with `no-store`, omitted
@@ -125,14 +154,23 @@ tool-to-resource correlation from timing alone.
 Do not change tool authority or submission semantics as a side effect of URI
 retirement. A URI or build marker is not an authentication credential.
 
-Keep principal/conversation ownership, current view and revision checks,
-fresh product/basket validation, exact prepared authorization, single-use
-application, additive writes, readback, and uncertain-write no-retry behavior.
-Retain current cancellation and unavailable-state handling.
+Keep principal/conversation ownership, fresh product/basket validation, exact
+prepared authorization, single-use application, additive writes, readback,
+and uncertain-write no-retry behavior. Remove only view/revision authority for
+local Draft list actions. Retain cancellation and unavailable-state handling.
+
+Passive host payloads are presentation data, not new server authority. After a
+local operation returns a correlated snapshot, a delayed passive payload must
+not visually roll it back. Use the existing local-call/cancellation lifecycle
+for that ordering; do not replace removed server revisions with another public
+business identifier. A user can explicitly read the current list when later
+server state is needed.
 
 Old fetched resources are inert. Already-cached code cannot be remotely erased;
-it is unsupported and remains subject to server checks. Do not promise that
-reconnection revokes every old host session or destroys old server memory.
+it is unsupported and remains subject to server checks. A predecessor bundle
+that requires the removed identifiers cannot be made compatible in-place; it
+needs a supported remount. Do not promise that reconnection revokes every old
+host session or destroys old server memory.
 
 ### Operator cutover
 
@@ -154,6 +192,11 @@ its existing lifecycle; the plan does not add a bulk deletion mechanism.
   mechanism.
 - Legacy code remains in old chats → those chats are unsupported, and current
   server checks remain mandatory.
+- A delayed passive host payload can visually undo a local action → preserve
+  the existing correlated-call/cancellation ordering and test the regression
+  without inventing a replacement revision field.
+- Process restart or eviction loses the temporary list → show unavailable state
+  and require an explicit fresh start; never restore selections or approval.
 - Diagnostics leak arbitrary input or increase logging → use strict fields, one
   bounded event per read, existing retention, and privacy/call-count tests.
 

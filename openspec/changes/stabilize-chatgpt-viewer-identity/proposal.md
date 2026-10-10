@@ -23,6 +23,13 @@ approved a forward-only clean connection cutover.
 - Define clean connection installation/reconnection as an operator-initiated
   external step. Require native proof after cutover; do not promise automatic
   host refresh or tool-result rebinding.
+- **BREAKING:** Replace card-scoped Draft list authority with one temporary,
+  authenticated conversation-owned Draft list. Supported cards are
+  interchangeable clients of that list; they do not require a view token,
+  review identifier, revision, or activation step to perform local actions.
+- Retain an exact prepared `submission_id` as the only UI-supplied identifier
+  for a real-basket submission. It continues to bind the reviewed product
+  payload and is not Draft list ownership or card authority.
 
 ## Capabilities
 
@@ -34,6 +41,14 @@ None.
 
 - `nemlig-chatgpt-integration`: Permanent viewer identity, forward-only
   historical-card retirement, binding evidence, and native cutover acceptance.
+- `nemlig-product-review`: One temporary conversation-owned Draft list for
+  supported cards, without card-scoped local authority.
+- `nemlig-mcp`: Widget actions with only their necessary input: `{action}` for
+  temporary Draft list changes and `{submission_id}` for protected submission.
+- `nemlig-guided-shopping`: Current-Draft-list recovery wording for an
+  unavailable temporary list.
+- `nemlig-package-distribution`: Packaged skill guidance that no longer asks
+  callers to retain card or review identifiers.
 
 ## Impact
 
@@ -42,11 +57,12 @@ on the existing Worker, artifact identity, focused tests and synthetic browser
 smoke, release documentation, connector recovery guidance, and affected
 OpenSpec records.
 
-Preserves authentication, principal/conversation isolation, current-view and
-revision checks, exact prepared authorization, fresh validation, add-only
-provider writes, verified readback, and uncertain-write no-retry behavior.
-No new service, dependency, persistent state, background refresh, or provider
-operation is planned.
+Preserves authentication, principal/conversation isolation, exact prepared
+authorization, fresh validation, add-only provider writes, verified readback,
+and uncertain-write no-retry behavior. Removes current-view and revision
+checks only for temporary local Draft list interactions. No new service,
+dependency, persistent state, background refresh, or provider operation is
+planned.
 
 Code delivery, production deployment, and operator connection cutover remain
 separate stages. This plan does not execute external changes or authorize
