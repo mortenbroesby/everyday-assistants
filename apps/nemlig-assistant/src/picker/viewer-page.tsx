@@ -1,15 +1,13 @@
 import {
-  useCallback,
   useEffect,
   useLayoutEffect,
   useRef,
   useState,
-  type MouseEvent,
+  type PointerEvent,
   type ReactNode,
 } from "react";
-import * as Collapsible from "@radix-ui/react-collapsible";
+import * as Dialog from "@radix-ui/react-dialog";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { useSwipeable } from "react-swipeable";
 import type { ProductView } from "../product-presentation.js";
 import {
   ActionFooter,
@@ -78,10 +76,7 @@ export type ViewerPageModel = {
   screen: ViewerScreen;
   maxWidth?: number;
   presentationDestination?: PresentationDestination;
-  reviewDisclosures: ReadonlyMap<
-    number,
-    { expanded: boolean; facts: ReadonlySet<string> }
-  >;
+  reviewDisclosures: ReadonlyMap<number, ReadonlySet<string>>;
   pendingQuantities: ReadonlyMap<number, number>;
   thumbnails: ReadonlyMap<ProductView, string>;
   message: string;
@@ -95,7 +90,6 @@ export type ViewerPageModel = {
 
 export type ViewerPageActions = {
   onNavigate: (destination: PresentationDestination) => void;
-  onDisclosureChange: (productId: number, expanded: boolean) => void;
   onFactExpandedChange: (
     productId: number,
     factKey: string,
@@ -124,7 +118,7 @@ export type ViewerPageProps = {
   actions: ViewerPageActions;
 };
 
-// Kept as one component because its local focus, disclosure, and controls share one product row.
+// Kept as one component because its hold gesture, overlay, and controls share one product row.
 // fallow-ignore-next-line complexity
 function ProductCard({
   view,
@@ -136,8 +130,6 @@ function ProductCard({
   onChoice,
   choiceSelected,
   onOpenAlternatives,
-  expanded,
-  onExpandedChange,
   expandedFacts,
   onFactExpandedChange,
   comparison = false,
@@ -151,97 +143,75 @@ function ProductCard({
   onChoice?: () => void;
   choiceSelected?: boolean;
   onOpenAlternatives?: () => void;
-  expanded?: boolean;
-  onExpandedChange?: (expanded: boolean) => void;
   expandedFacts?: ReadonlySet<string>;
   onFactExpandedChange?: (factKey: string, expanded: boolean) => void;
   comparison?: boolean;
 }) {
-  const [localExpanded, setLocalExpanded] = useState(false);
-  const [swipeOffset, setSwipeOffset] = useState(0);
-  const [swipeAction, setSwipeAction] = useState<"remove" | "alternative">();
-  const actionPress = useRef(false);
-  const suppressSwipeClick = useRef(false);
-  const rowRef = useRef<HTMLDivElement | null>(null);
-  const swipeHandlers = useSwipeable({
-    delta: 8,
-    onSwiping: ({ deltaX, dir }) => {
-      if (dir !== "Left" && dir !== "Right") {
-        return;
-      }
-      actionPress.current = false;
-      setSwipeAction(undefined);
-      setSwipeOffset(deltaX);
-    },
-    onSwiped: ({ absX, dir }) => {
-      actionPress.current = false;
-      suppressSwipeClick.current = true;
-      setSwipeOffset(0);
-      const width = rowRef.current?.clientWidth ?? 0;
-      setSwipeAction(
-        width > 0 && absX > width / 2
-          ? dir === "Left"
-            ? "remove"
-            : dir === "Right"
-              ? "alternative"
-              : undefined
-          : undefined,
-      );
-    },
-    onTouchEndOrOnMouseUp: () => setSwipeOffset(0),
-    trackMouse: true,
-    preventScrollOnSwipe: false,
-  });
-  const setSwipeRef = useCallback(
-    (element: HTMLDivElement | null) => {
-      rowRef.current = element;
-      swipeHandlers.ref(element);
-    },
-    [swipeHandlers.ref],
+  const [overlayOpen, setOverlayOpen] = useState(false);
+  const [overlayMode, setOverlayMode] = useState<"actions" | "details">(
+    "actions",
   );
-  const transform =
-    swipeOffset !== 0
-      ? `${swipeOffset}px`
-      : swipeAction === "remove"
-        ? "-100%"
-        : swipeAction === "alternative"
-          ? "100%"
-          : "0";
-  const visibleSwipeAction =
-    swipeAction ??
-    (swipeOffset < 0 ? "remove" : swipeOffset > 0 ? "alternative" : undefined);
-  const onActionPointerDown = () => {
-    actionPress.current = true;
+  const pressTimer = useRef<ReturnType<typeof setTimeout> | undefined>(
+    undefined,
+  );
+  const pressOrigin = useRef<{ x: number; y: number } | undefined>(undefined);
+  const suppressSummaryClick = useRef(false);
+  const suppressOverlayClick = useRef(false);
+  const removing = useRef(false);
+  const rowRef = useRef<HTMLDivElement | null>(null);
+  const summaryRef = useRef<HTMLButtonElement | null>(null);
+  const cancelPress = () => {
+    clearTimeout(pressTimer.current);
+    pressTimer.current = undefined;
+    pressOrigin.current = undefined;
   };
-  const onActionPointerCancel = () => {
-    actionPress.current = false;
-  };
-  const focusAfterRemove = () => {
-    const virtualRow = rowRef.current?.parentElement?.closest("[data-index]");
-    const next =
-      rowRef.current?.nextElementSibling ||
-      rowRef.current?.previousElementSibling ||
-      virtualRow?.nextElementSibling?.querySelector(".basket-swipe-row") ||
-      virtualRow?.previousElementSibling?.querySelector(".basket-swipe-row") ||
-      rowRef.current?.closest(".viewer");
-    if (next instanceof HTMLElement) {
-      next.focus();
+  const endPress = () => {
+    cancelPress();
+    if (suppressSummaryClick.current) {
+      setTimeout(() => {
+        suppressSummaryClick.current = false;
+      }, 0);
     }
   };
-  const onSwipeActionClick = (event: MouseEvent<HTMLButtonElement>) => {
-    if (event.detail !== 0 && !actionPress.current) {
-      event.preventDefault();
+  useEffect(() => cancelPress, []);
+  const openOverlay = (mode: "actions" | "details") => {
+    setOverlayMode(mode);
+    setOverlayOpen(true);
+  };
+  const onSummaryPointerDown = (event: PointerEvent<HTMLButtonElement>) => {
+    if (disabled || !item || comparison || event.button !== 0) {
       return;
     }
-    actionPress.current = false;
-    if (event.detail === 0 && visibleSwipeAction === "remove") {
-      focusAfterRemove();
-    }
-    setSwipeAction(undefined);
-    (visibleSwipeAction === "remove" ? onRemove : onOpenAlternatives)?.();
+    cancelPress();
+    suppressSummaryClick.current = false;
+    pressOrigin.current = { x: event.clientX, y: event.clientY };
+    pressTimer.current = setTimeout(() => {
+      suppressSummaryClick.current = true;
+      suppressOverlayClick.current = true;
+      window.addEventListener(
+        "pointerup",
+        () => {
+          setTimeout(() => {
+            suppressOverlayClick.current = false;
+          }, 0);
+        },
+        { once: true, capture: true },
+      );
+      pressOrigin.current = undefined;
+      openOverlay("actions");
+      pressTimer.current = undefined;
+    }, 2_000);
   };
-  const disclosureExpanded = expanded ?? localExpanded;
-  const setDisclosureExpanded = onExpandedChange ?? setLocalExpanded;
+  const onSummaryPointerMove = (event: PointerEvent<HTMLButtonElement>) => {
+    const origin = pressOrigin.current;
+    if (
+      origin &&
+      Math.hypot(event.clientX - origin.x, event.clientY - origin.y) > 10
+    ) {
+      suppressSummaryClick.current = true;
+      cancelPress();
+    }
+  };
   const quantity =
     item?.quantity ??
     (view.status === "complete"
@@ -260,62 +230,6 @@ function ProductCard({
       onQuantity={onQuantity}
     />
   );
-  const swipeActions = item && !comparison && (
-    <>
-      {visibleSwipeAction === "remove" && onRemove && (
-        <Button
-          color="secondary"
-          disabled={disabled}
-          className="swipe-action swipe-remove"
-          aria-label={`Remove ${productName(view, item.product_id)} from Local basket`}
-          onPointerDown={onActionPointerDown}
-          onPointerCancel={onActionPointerCancel}
-          onClick={onSwipeActionClick}
-        >
-          <svg
-            aria-hidden="true"
-            width="20"
-            height="20"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <path d="M3 6h18M8 6V4h8v2m3 0-1 15H6L5 6m5 4v7m4-7v7" />
-          </svg>
-          Remove
-        </Button>
-      )}
-      {visibleSwipeAction === "alternative" && onOpenAlternatives && (
-        <Button
-          color="secondary"
-          disabled={disabled}
-          className="swipe-action swipe-alternative"
-          aria-label={`Find an alternative to ${productName(view, item.product_id)}`}
-          onPointerDown={onActionPointerDown}
-          onPointerCancel={onActionPointerCancel}
-          onClick={onSwipeActionClick}
-        >
-          <svg
-            aria-hidden="true"
-            width="20"
-            height="20"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-          >
-            <circle cx="10" cy="10" r="6" />
-            <path d="m14.5 14.5 5.5 5.5" />
-          </svg>
-          Find alternative
-        </Button>
-      )}
-    </>
-  );
   const summary = (
     <ProductSummary
       view={view}
@@ -331,116 +245,192 @@ function ProductCard({
           expandedFacts={expandedFacts}
           onFactExpandedChange={onFactExpandedChange}
         />
-        {quantityControl}
       </>
     ) : (
-      <>
-        {item && <p>{item.quantity} ×</p>}
-        {quantityControl}
-      </>
+      <>{item && <p>{item.quantity} ×</p>}</>
     );
   return (
     <div
-      className="basket-swipe-row"
-      data-revealed={swipeAction}
-      data-swiping={swipeOffset !== 0 || undefined}
+      className="product-action-row"
       data-product-id={item?.product_id}
       role={item && !comparison ? "group" : undefined}
       aria-label={
-        item && !comparison
-          ? `${productName(view, item.product_id)}. Left arrow reveals Remove; right arrow reveals Find alternative.`
-          : undefined
+        item && !comparison ? productName(view, item.product_id) : undefined
       }
-      tabIndex={item && !comparison ? 0 : undefined}
-      {...(item && !comparison ? swipeHandlers : {})}
-      ref={item && !comparison ? setSwipeRef : undefined}
-      onPointerDownCapture={() => {
-        suppressSwipeClick.current = false;
-      }}
-      onClickCapture={(event) => {
-        if (
-          suppressSwipeClick.current &&
-          (event.target as HTMLElement).closest(".product-card")
-        ) {
-          suppressSwipeClick.current = false;
-          event.preventDefault();
-          event.stopPropagation();
-        }
-      }}
-      onKeyDown={(event) => {
-        if (event.target === event.currentTarget && !disabled) {
-          if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
-            event.preventDefault();
-            setSwipeAction(
-              event.key === "ArrowLeft" ? "remove" : "alternative",
-            );
-            setSwipeOffset(0);
-          }
-        }
-        if (event.key === "Escape" && swipeAction) {
-          actionPress.current = false;
-          setSwipeAction(undefined);
-          setSwipeOffset(0);
-          if ((event.target as HTMLElement).closest(".swipe-action")) {
-            rowRef.current
-              ?.querySelector<HTMLButtonElement>("button[aria-expanded]")
-              ?.focus();
-          }
-        }
-      }}
+      ref={rowRef}
     >
-      {swipeActions}
-      <article
-        className={`product-card${comparison ? " product-comparison" : ""}`}
-        inert={Boolean(swipeAction)}
-        style={{ transform: `translateX(${transform})` }}
+      <Dialog.Root
+        open={overlayOpen}
+        onOpenChange={(open) => {
+          setOverlayOpen(open);
+          if (!open) {
+            suppressSummaryClick.current = false;
+            suppressOverlayClick.current = false;
+          }
+        }}
       >
-        <div className="product-details">
-          {comparison ? (
-            onChoice ? (
-              <button
-                type="button"
-                className="product-comparison-summary alternative-choice"
-                aria-label={`Select ${productName(view)} as the alternative`}
-                aria-pressed={choiceSelected === true}
-                disabled={disabled || !isUsable(view)}
-                onClick={onChoice}
-              >
-                {summary}
-                <span className="alternative-choice-state" aria-hidden="true">
-                  {choiceSelected ? "Selected" : "Select"}
-                </span>
-              </button>
-            ) : (
-              <div className="product-comparison-summary">{summary}</div>
-            )
-          ) : (
-            <Collapsible.Root
-              open={disclosureExpanded}
-              onOpenChange={setDisclosureExpanded}
-              disabled={disabled}
-            >
-              <Collapsible.Trigger asChild>
-                <ProductSummaryButton
-                  color="secondary"
-                  variant="ghost"
-                  data-viewer-component="product-summary"
+        <article
+          className={`product-card${comparison ? " product-comparison" : ""}`}
+        >
+          <div className="product-details">
+            {comparison ? (
+              onChoice ? (
+                <button
+                  type="button"
+                  className="product-comparison-summary alternative-choice"
+                  aria-label={`Select ${productName(view)} as the alternative`}
+                  aria-pressed={choiceSelected === true}
+                  disabled={disabled || !isUsable(view)}
+                  onClick={onChoice}
                 >
                   {summary}
-                </ProductSummaryButton>
-              </Collapsible.Trigger>
-              <Collapsible.Content className="product-expanded">
-                {details}
-              </Collapsible.Content>
-            </Collapsible.Root>
-          )}
-          {comparison && (
-            <div className="product-expanded product-comparison-details">
-              <ProductFacts view={view} />
-            </div>
-          )}
-        </div>
-      </article>
+                  <span className="alternative-choice-state" aria-hidden="true">
+                    {choiceSelected ? "Selected" : "Select"}
+                  </span>
+                </button>
+              ) : (
+                <div className="product-comparison-summary">{summary}</div>
+              )
+            ) : (
+              <ProductSummaryButton
+                ref={summaryRef}
+                color="secondary"
+                variant="ghost"
+                data-viewer-component="product-summary"
+                aria-label={`Show details for ${productName(view, item?.product_id)}`}
+                aria-keyshortcuts={item ? "Shift+F10" : undefined}
+                aria-description={
+                  item ? "Hold for actions or press Shift+F10" : undefined
+                }
+                disabled={disabled}
+                onPointerDown={onSummaryPointerDown}
+                onPointerMove={onSummaryPointerMove}
+                onPointerUp={endPress}
+                onPointerLeave={endPress}
+                onPointerCancel={endPress}
+                onContextMenu={(event) => event.preventDefault()}
+                onKeyDown={(event) => {
+                  if (
+                    item &&
+                    (event.key === "ContextMenu" ||
+                      (event.shiftKey && event.key === "F10"))
+                  ) {
+                    event.preventDefault();
+                    openOverlay("actions");
+                  }
+                }}
+                onClick={(event) => {
+                  if (suppressSummaryClick.current) {
+                    suppressSummaryClick.current = false;
+                    event.preventDefault();
+                    return;
+                  }
+                  openOverlay("details");
+                }}
+              >
+                {summary}
+              </ProductSummaryButton>
+            )}
+            {comparison && (
+              <div className="product-expanded product-comparison-details">
+                <ProductFacts view={view} />
+              </div>
+            )}
+          </div>
+        </article>
+        {!comparison && (
+          <Dialog.Portal>
+            <Dialog.Overlay className="product-overlay-backdrop" />
+            <Dialog.Content
+              className={
+                overlayMode === "actions"
+                  ? "product-action-sheet"
+                  : "product-detail-modal"
+              }
+              aria-describedby={undefined}
+              onClickCapture={(event) => {
+                if (suppressOverlayClick.current) {
+                  event.preventDefault();
+                  event.stopPropagation();
+                }
+              }}
+              onCloseAutoFocus={(event) => {
+                event.preventDefault();
+                if (removing.current) {
+                  removing.current = false;
+                  rowRef.current?.closest<HTMLElement>(".viewer")?.focus();
+                  onRemove?.();
+                } else {
+                  summaryRef.current?.focus();
+                }
+              }}
+            >
+              <div className="product-overlay-header">
+                <Dialog.Title>
+                  {overlayMode === "actions"
+                    ? `Actions for ${productName(view, item?.product_id)}`
+                    : productName(view, item?.product_id)}
+                </Dialog.Title>
+                <Dialog.Close asChild>
+                  <button type="button" aria-label="Close product overlay">
+                    ×
+                  </button>
+                </Dialog.Close>
+              </div>
+              {overlayMode === "actions" ? (
+                <div className="product-action-rows">
+                  <button
+                    type="button"
+                    className="product-action-item product-action-remove"
+                    disabled={!onRemove || disabled}
+                    onClick={() => {
+                      removing.current = true;
+                      setOverlayOpen(false);
+                    }}
+                  >
+                    Remove product
+                  </button>
+                  <button
+                    type="button"
+                    className="product-action-item"
+                    disabled={!onOpenAlternatives || disabled}
+                    onClick={() => {
+                      setOverlayOpen(false);
+                      onOpenAlternatives?.();
+                    }}
+                  >
+                    Find alternative
+                  </button>
+                  <button
+                    type="button"
+                    className="product-action-item"
+                    onClick={() => setOverlayMode("details")}
+                  >
+                    Show details
+                  </button>
+                  <div className="product-action-quantity">
+                    {quantityControl}
+                  </div>
+                </div>
+              ) : (
+                <div className="product-overlay-details">
+                  {summary}
+                  {item && (
+                    <button
+                      type="button"
+                      className="product-action-item"
+                      onClick={() => setOverlayMode("actions")}
+                    >
+                      Product actions
+                    </button>
+                  )}
+                  {details}
+                </div>
+              )}
+            </Dialog.Content>
+          </Dialog.Portal>
+        )}
+      </Dialog.Root>
     </div>
   );
 }
@@ -529,6 +519,9 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
   const alternativeProductId = useRef<number | undefined>(undefined);
   const alternativeHeading = useRef<HTMLHeadingElement | null>(null);
   const wasShowingAlternatives = useRef(false);
+  const removalFocus = useRef<{ removedId: number; nextId?: number } | null>(
+    null,
+  );
   const {
     screen,
     maxWidth,
@@ -546,6 +539,23 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
   } = model;
   const review = screen.kind === "review" ? screen.review : undefined;
   const active = screen.kind === "review" && screen.active;
+  useLayoutEffect(() => {
+    const pending = removalFocus.current;
+    if (
+      !pending ||
+      review?.items.some((item) => item.product_id === pending.removedId)
+    ) {
+      return;
+    }
+    removalFocus.current = null;
+    const next =
+      pending.nextId === undefined
+        ? null
+        : document.querySelector<HTMLElement>(
+            `.product-list [data-product-id="${pending.nextId}"] [data-viewer-component="product-summary"]`,
+          );
+    (next ?? document.querySelector<HTMLElement>(".viewer"))?.focus();
+  }, [review?.items]);
   const destination = review
     ? (presentationDestination ?? review.destination)
     : undefined;
@@ -579,12 +589,12 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
           source === undefined
             ? null
             : document.querySelector<HTMLButtonElement>(
-                `.product-list [data-product-id="${source}"] button[aria-expanded]`,
+                `.product-list [data-product-id="${source}"] [data-viewer-component="product-summary"]`,
               );
         (
           sourceSummary ??
           document.querySelector<HTMLButtonElement>(
-            '.product-list button[aria-expanded="false"], .product-list button[aria-expanded="true"]',
+            '.product-list [data-viewer-component="product-summary"]',
           )
         )?.focus();
       }
@@ -641,7 +651,7 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
         ? "Start a Local basket in conversation."
         : safeTitle === "Find an alternative"
           ? "Compare available options for this product."
-          : "Review products in your local basket. Open a product for details or swipe for an action."
+          : "Tap a product for details, or hold a product for two seconds for actions."
       : basket
         ? "Your current Nemlig basket. This view cannot change it."
         : "Inspect product details here or continue in conversation."
@@ -650,17 +660,11 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
     terminalSubmission ||
     screen.kind === "empty" ||
     (review && active && review.items.length === 0);
-  const disclosureProps = (productId: number) => {
-    const disclosure = reviewDisclosures.get(productId);
-    return {
-      expanded: disclosure?.expanded ?? false,
-      onExpandedChange: (expanded: boolean) =>
-        actions.onDisclosureChange(productId, expanded),
-      expandedFacts: disclosure?.facts,
-      onFactExpandedChange: (factKey: string, expanded: boolean) =>
-        actions.onFactExpandedChange(productId, factKey, expanded),
-    };
-  };
+  const disclosureProps = (productId: number) => ({
+    expandedFacts: reviewDisclosures.get(productId),
+    onFactExpandedChange: (factKey: string, expanded: boolean) =>
+      actions.onFactExpandedChange(productId, factKey, expanded),
+  });
   const thumbnail = (view: ProductView) => thumbnails.get(view);
   return (
     <ViewerShell
@@ -906,7 +910,18 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
                   }}
                   disabled={editsBlocked}
                   onQuantity={(quantity) => actions.onQuantity(item, quantity)}
-                  onRemove={() => actions.onRemove(item)}
+                  onRemove={() => {
+                    const index = review.items.findIndex(
+                      (current) => current.product_id === item.product_id,
+                    );
+                    const neighbor =
+                      review.items[index + 1] ?? review.items[index - 1];
+                    removalFocus.current = {
+                      removedId: item.product_id,
+                      nextId: neighbor?.product_id,
+                    };
+                    actions.onRemove(item);
+                  }}
                   onOpenAlternatives={() => {
                     alternativeProductId.current = item.product_id;
                     alternativeOpener.current =

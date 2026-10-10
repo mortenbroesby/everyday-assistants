@@ -182,7 +182,6 @@ const baseProps = (
   },
   actions: {
     onNavigate: noop,
-    onDisclosureChange: noop,
     onFactExpandedChange: noop,
     onRefresh: noop,
     onQuantity: noop,
@@ -310,31 +309,18 @@ function prepareReview(review: Review): Review | undefined {
 
 function disclosureActions(
   setReviewDisclosures: SetState<ViewerPageModel["reviewDisclosures"]>,
-): Pick<ViewerPageActions, "onDisclosureChange" | "onFactExpandedChange"> {
+): Pick<ViewerPageActions, "onFactExpandedChange"> {
   return {
-    onDisclosureChange: (productId, expanded) =>
-      setReviewDisclosures((previous) => {
-        const next = new Map(previous);
-        next.set(productId, {
-          expanded,
-          facts: previous.get(productId)?.facts ?? new Set(),
-        });
-        return next;
-      }),
     onFactExpandedChange: (productId, factKey, expanded) =>
       setReviewDisclosures((previous) => {
-        const current = previous.get(productId) ?? {
-          expanded: false,
-          facts: new Set<string>(),
-        };
-        const facts = new Set(current.facts);
+        const facts = new Set(previous.get(productId));
         if (expanded) {
           facts.add(factKey);
         } else {
           facts.delete(factKey);
         }
         const next = new Map(previous);
-        next.set(productId, { ...current, facts });
+        next.set(productId, facts);
         return next;
       }),
   };
@@ -560,11 +546,16 @@ export const FactualDetails: Story = {
   render: () =>
     activeReview(review, "ready", 375, {
       model: {
-        reviewDisclosures: new Map([
-          [1, { expanded: true, facts: new Set(["Varebeskrivelse"]) }],
-        ]),
+        reviewDisclosures: new Map([[1, new Set(["Varebeskrivelse"])]]),
       },
     }),
+  play: ({ canvasElement }) => {
+    canvasElement
+      .querySelector<HTMLButtonElement>(
+        '[data-viewer-component="product-summary"]',
+      )
+      ?.click();
+  },
 };
 export const Unavailable: Story = {
   render: () =>
