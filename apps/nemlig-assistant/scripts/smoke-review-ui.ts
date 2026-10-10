@@ -279,13 +279,10 @@ document.getElementById('flow').onclick = async () => {
   status.textContent='Checking alternatives';
   doc().querySelector('.product-list article button[aria-expanded]').click(); click('Choose alternative');
   await wait(()=>doc().querySelector('#title')?.textContent==='Choose an alternative'&&button('Ready (0)')&&!button('Ready (0)').disabled); open();
-  const radio=doc().querySelector('[role=radio]'); check(radio,'Alternative choice missing'); radio.click();
-  await wait(()=>button('Use selected alternative')&&!button('Use selected alternative').disabled);
-  click('Ready (0)'); await wait(()=>doc().querySelector('#title')?.textContent==='Ready'&&button('Return to existing alternatives')&&!button('Return to existing alternatives').disabled);
-  check(!!button('Return to existing alternatives'),'Ready navigation omitted the saved alternatives return action');
-  click('Return to existing alternatives'); await wait(()=>doc().querySelector('#title')?.textContent==='Choose an alternative'&&button('Use selected alternative')&&!button('Use selected alternative').disabled);
-  check(doc().querySelector('[role=radio][aria-checked=true]'),'Saved alternative selection was lost on return'); open(); click('Use selected alternative');
+  const alternative=doc().querySelector('.alternative-choice'); check(alternative&&!alternative.disabled,'Alternative replacement action missing'); const beforeReplacement=widgetCalls.length; alternative.click();
   await wait(()=>doc().querySelector('#title')?.textContent==='To decide'&&button('To decide (2)')&&!button('To decide (2)').disabled); open();
+  check(!button('Use selected alternative'),'Alternative replacement retained a second confirmation action');
+  check(widgetCalls.length===beforeReplacement+1&&widgetCalls.at(-1).arguments.action.kind==='replace','Selecting an alternative did not make one direct replacement request');
   click('Select all'); await wait(()=>doc().querySelectorAll('input[type=checkbox]:checked').length===2); click('Add selected to Ready (2)');
   await wait(()=>button('Ready (2)')&&!button('Ready (2)').disabled); open();
   click('Ready (2)'); await wait(()=>doc().querySelector('#title')?.textContent==='Ready'&&!button('Ready (2)').disabled); open();
@@ -408,8 +405,9 @@ document.getElementById('alternatives').onclick = async () => {
   const details=[...candidate.querySelectorAll('[data-viewer-component="product-fact"] summary')].find(summary=>summary.textContent==='Detaljer om varen'); check(details,'Grouped product details disclosure missing'); details.click(); await wait(()=>candidate.textContent.includes('Country of origin')&&candidate.textContent.includes('Keep chilled'));
   let currentReview=(await call({name:'update_product_review_conversation',arguments:{action:{kind:'show'}}})).structuredContent.review;
   check(currentReview.destination==='alternatives'&&currentReview.items.every(item=>item.state==='needs-review'),'Opening alternatives implicitly accepted a product');
-  const alternativeChoice=candidate.querySelector('[role=radio]'); check(alternativeChoice,'Alternative card was not a direct choice control'); alternativeChoice.click(); await wait(()=>candidate.querySelector('[role=radio]')?.getAttribute('aria-checked')==='true'); click('Use selected alternative');
+  const alternativeChoice=candidate.querySelector('.alternative-choice'); check(alternativeChoice&&!alternativeChoice.disabled,'Alternative card was not a direct replacement control'); const beforeComparisonReplacement=widgetCalls.length; alternativeChoice.click();
   await wait(()=>doc().querySelector('#title')?.textContent==='To decide'&&!button('To decide (2)')?.disabled);
+  check(!button('Use selected alternative')&&widgetCalls.length===beforeComparisonReplacement+1&&widgetCalls.at(-1).arguments.action.kind==='replace','Alternative replacement required a second action or sent the wrong request');
   currentReview=(await call({name:'update_product_review_conversation',arguments:{action:{kind:'show'}}})).structuredContent.review;
   const replacement=currentReview.items.find(item=>item.product_id===3);
   check(replacement?.quantity===2&&replacement.state==='needs-review'&&currentReview.items.find(item=>item.product_id===2)?.quantity===1,'Replacement changed the wrong candidate or lost the requested quantity');
@@ -419,7 +417,7 @@ document.getElementById('alternatives').onclick = async () => {
   await wait(()=>doc().querySelector('#title')?.textContent==='Choose an alternative');
   await search('unavailable'); await wait(()=>doc().querySelector('.alternative-options')?.textContent.includes('Smoke product 4'));
   const unavailable=[...doc().querySelectorAll('.alternative-options .product-card')].find(row=>row.textContent.includes('Smoke product 4'));
-  check(unavailable?.querySelector('[role=radio]:disabled')&&unavailable.textContent.includes('Unavailable'),'Unavailable alternative could be selected or was not labeled');
+  check(unavailable?.querySelector('.alternative-choice:disabled')&&unavailable.textContent.includes('Unavailable'),'Unavailable alternative could be selected or was not labeled');
   await search('empty'); await wait(()=>doc().querySelector('.alternatives-empty'));
   check(doc().querySelector('#alternative-query')&&doc().querySelector('.alternatives-empty')?.textContent.includes('No alternatives were returned'),'Empty search was hidden or represented as a failure');
   await search('search-error');

@@ -1,4 +1,4 @@
-import { type KeyboardEvent, useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import type { ProductView } from "../product-presentation.js";
 import {
   ActionFooter,
@@ -74,7 +74,6 @@ export type ViewerPageModel = {
   maxWidth?: number;
   presentationDestination?: PresentationDestination;
   selected: ReadonlySet<number>;
-  replacement?: number;
   reviewDisclosures: ReadonlyMap<
     number,
     { expanded: boolean; facts: ReadonlySet<string> }
@@ -108,7 +107,6 @@ export type ViewerPageActions = {
   onRevisit: (item: ReviewItem) => void;
   onOpenAlternatives: (item: ReviewItem, query: string) => void;
   onSearchAlternatives: (productId: number, query: string) => void;
-  onChooseReplacement: (productId?: number) => void;
   onReplace: (productId: number, replacementId: number) => void;
   onPrepareSubmission: () => void;
   onRequestSubmitConfirmation: () => void;
@@ -127,39 +125,6 @@ export type ViewerPageProps = {
   actions: ViewerPageActions;
 };
 
-// Retains keyboard radio navigation without coupling it to the host adapter.
-// fallow-ignore-next-line complexity
-function focusAlternativeChoice(event: KeyboardEvent<HTMLButtonElement>) {
-  const direction =
-    event.key === "ArrowRight" || event.key === "ArrowDown"
-      ? 1
-      : event.key === "ArrowLeft" || event.key === "ArrowUp"
-        ? -1
-        : 0;
-  if (!direction && event.key !== "Home" && event.key !== "End") {
-    return;
-  }
-  const choices = [
-    ...(event.currentTarget
-      .closest('[role="radiogroup"]')
-      ?.querySelectorAll<HTMLButtonElement>('[role="radio"]:not(:disabled)') ??
-      []),
-  ];
-  const current = choices.indexOf(event.currentTarget);
-  if (current < 0 || choices.length === 0) {
-    return;
-  }
-  event.preventDefault();
-  const next =
-    event.key === "Home"
-      ? 0
-      : event.key === "End"
-        ? choices.length - 1
-        : (current + direction + choices.length) % choices.length;
-  choices[next]?.focus();
-  choices[next]?.click();
-}
-
 // Kept as one component because its local focus, disclosure, and controls share one product row.
 // fallow-ignore-next-line complexity
 function ProductCard({
@@ -172,7 +137,6 @@ function ProductCard({
   onRevisit,
   selected,
   onSelected,
-  choice,
   onChoice,
   onOpenAlternatives,
   expanded,
@@ -190,7 +154,6 @@ function ProductCard({
   onRevisit?: () => void;
   selected?: boolean;
   onSelected?: (selected: boolean) => void;
-  choice?: boolean;
   onChoice?: () => void;
   onOpenAlternatives?: () => void;
   expanded?: boolean;
@@ -372,16 +335,13 @@ function ProductCard({
             <button
               type="button"
               className="product-comparison-summary alternative-choice"
-              role="radio"
-              aria-checked={choice === true}
-              aria-label={`Choose ${productName(view)}`}
+              aria-label={`Use ${productName(view)} instead`}
               disabled={disabled || !isUsable(view)}
               onClick={onChoice}
-              onKeyDown={focusAlternativeChoice}
             >
               {summary}
               <span className="alternative-choice-state" aria-hidden="true">
-                {choice ? "Selected" : "Select"}
+                Use this alternative
               </span>
             </button>
           ) : (
@@ -433,7 +393,6 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
     maxWidth,
     presentationDestination,
     selected,
-    replacement,
     reviewDisclosures,
     pendingQuantities,
     thumbnails,
@@ -703,10 +662,7 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
                   No alternatives were returned. Try another search.
                 </p>
               ) : (
-                <div
-                  role="radiogroup"
-                  aria-labelledby="alternative-options-title"
-                >
+                <div>
                   {review.alternatives.views.map((view, index) => {
                     const id =
                       view.status === "complete"
@@ -720,27 +676,19 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
                         disabled={editsBlocked}
                         comparison
                         {...(id === undefined ? {} : disclosureProps(id))}
-                        choice={replacement === id}
-                        onChoice={() => actions.onChooseReplacement(id)}
+                        onChoice={() => {
+                          if (id !== undefined) {
+                            actions.onReplace(
+                              review.alternatives!.product_id,
+                              id,
+                            );
+                          }
+                        }}
                       />
                     );
                   })}
                 </div>
               )}
-              <Button
-                color="primary"
-                disabled={editsBlocked || replacement === undefined}
-                onClick={() => {
-                  if (replacement !== undefined) {
-                    actions.onReplace(
-                      review.alternatives!.product_id,
-                      replacement,
-                    );
-                  }
-                }}
-              >
-                Use selected alternative
-              </Button>
               <Button
                 color="secondary"
                 disabled={uncertainSubmission}

@@ -155,8 +155,7 @@ h2 {
   text-align: left;
   cursor: pointer;
 }
-.alternative-choice:hover:not(:disabled),
-.alternative-choice[aria-checked="true"] {
+.alternative-choice:hover:not(:disabled) {
   border-color: var(--accent);
   background: var(--soft);
 }
