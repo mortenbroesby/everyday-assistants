@@ -36,7 +36,12 @@
     #nemlig-unified-review .ur-section { margin-top: 25px; }
     #nemlig-unified-review h2 { font-size: 16px; }
     #nemlig-unified-review .ur-list { border-top: 1px solid var(--line); }
-    #nemlig-unified-review .ur-row { display: grid; grid-template-columns: 58px minmax(0, 1fr); gap: 9px; padding: 12px 2px; border-bottom: 1px solid var(--line); touch-action: pan-y; }
+    #nemlig-unified-review .ur-row { position: relative; overflow: hidden; border-bottom: 1px solid var(--line); touch-action: pan-y; }
+    #nemlig-unified-review .ur-swipe-content { position: relative; z-index: 1; display: grid; grid-template-columns: 58px minmax(0, 1fr); gap: 9px; padding: 12px 2px; background: var(--bg); transition: transform .18s ease; }
+    #nemlig-unified-review .ur-row.is-dragging .ur-swipe-content { transition: none; user-select: none; }
+    #nemlig-unified-review .ur-row.is-open .ur-swipe-content { transform: translateX(-100%); }
+    #nemlig-unified-review .ur-swipe-action { position: absolute; inset: 0; display: flex; width: 100%; align-items: center; justify-content: center; border: 0; color: #fff; background: #b4232d; cursor: pointer; }
+    #nemlig-unified-review .ur-swipe-action span { font-size: 32px; line-height: 1; }
     #nemlig-unified-review .ur-thumb { display: grid; width: 58px; height: 58px; place-items: center; border-radius: 14px; background: var(--well); font-size: 29px; }
     #nemlig-unified-review .ur-product { min-width: 0; padding: 1px 0; border: 0; color: inherit; background: none; text-align: left; cursor: pointer; }
     #nemlig-unified-review .ur-title-line { display: flex; align-items: start; justify-content: space-between; gap: 7px; }
@@ -74,7 +79,7 @@
     #nemlig-unified-review button:focus-visible, #nemlig-unified-review summary:focus-visible { outline: 3px solid var(--green); outline-offset: 2px; }
     @media (max-width: 360px) {
       #nemlig-unified-review .ur-content { padding-inline: 11px; }
-      #nemlig-unified-review .ur-row { grid-template-columns: 52px minmax(0, 1fr); gap: 7px; }
+      #nemlig-unified-review .ur-swipe-content { grid-template-columns: 52px minmax(0, 1fr); gap: 7px; }
       #nemlig-unified-review .ur-thumb { width: 52px; height: 52px; font-size: 26px; }
       #nemlig-unified-review .ur-title-line { display: grid; gap: 2px; }
     }
@@ -85,34 +90,49 @@
     <div class="ur-shell">
       <main class="ur-content">
         <h1>Your local basket</h1>
-        <p class="ur-intro">Swipe left to remove a product, or tap it for details. Review the exact items before submitting.</p>
+        <p class="ur-intro">Swipe left past halfway to reveal Remove, or tap a product for details. Review the exact items before submitting.</p>
 
         <section class="ur-section" aria-label="Local basket products">
           <div class="ur-list" id="ur-products">
             <article class="ur-row" data-unit-price="14.95">
-              <span class="ur-thumb" aria-hidden="true">🥛</span>
-              <button class="ur-product" type="button" aria-expanded="false" aria-controls="ur-milk-details"><span class="ur-title-line"><strong>Arla minimælk</strong><b data-line-price>14,95 kr.</b></span><span class="ur-meta">Arla · 1 L · 14,95 kr./L</span><span class="ur-quantity" data-quantity-text>1 ×</span></button>
-              <div class="ur-details" id="ur-milk-details" hidden><div class="ur-quantity-control"><span>Quantity</span><span class="ur-stepper"><button type="button" data-step="-1" aria-label="Decrease Arla minimælk quantity">−</button><output>1</output><button type="button" data-step="1" aria-label="Increase Arla minimælk quantity">+</button></span></div><details open><summary>Varebeskrivelse</summary><p>Pasteurised Danish low-fat milk for everyday use.</p></details><details open><summary>Varedeklaration</summary><p>Milk.</p></details><button class="ur-button" type="button" data-remove>Remove from local basket</button></div>
+              <button class="ur-swipe-action" type="button" aria-label="Remove Arla minimælk from local basket" inert><span aria-hidden="true">🗑</span></button>
+              <div class="ur-swipe-content">
+                <span class="ur-thumb" aria-hidden="true">🥛</span>
+                <button class="ur-product" type="button" aria-expanded="false" aria-controls="ur-milk-details"><span class="ur-title-line"><strong>Arla minimælk</strong><b data-line-price>14,95 kr.</b></span><span class="ur-meta">Arla · 1 L · 14,95 kr./L</span><span class="ur-quantity" data-quantity-text>1 ×</span></button>
+                <div class="ur-details" id="ur-milk-details" hidden><div class="ur-quantity-control"><span>Quantity</span><span class="ur-stepper"><button type="button" data-step="-1" aria-label="Decrease Arla minimælk quantity">−</button><output>1</output><button type="button" data-step="1" aria-label="Increase Arla minimælk quantity">+</button></span></div><details open><summary>Varebeskrivelse</summary><p>Pasteurised Danish low-fat milk for everyday use.</p></details><details open><summary>Varedeklaration</summary><p>Milk.</p></details><button class="ur-button" type="button" data-remove>Remove from local basket</button></div>
+              </div>
             </article>
             <article class="ur-row" data-unit-price="29.95">
-              <span class="ur-thumb" aria-hidden="true">🧈</span>
-              <button class="ur-product" type="button" aria-expanded="false" aria-controls="ur-butter-details"><span class="ur-title-line"><strong>Lurpak smørbar</strong><b data-line-price>59,90 kr.</b></span><span class="ur-meta">Lurpak · 200 g · 29,95 kr. each</span><span class="ur-quantity" data-quantity-text>2 ×</span></button>
-              <div class="ur-details" id="ur-butter-details" hidden><div class="ur-quantity-control"><span>Quantity</span><span class="ur-stepper"><button type="button" data-step="-1" aria-label="Decrease Lurpak smørbar quantity">−</button><output>2</output><button type="button" data-step="1" aria-label="Increase Lurpak smørbar quantity">+</button></span></div><details open><summary>Varebeskrivelse</summary><p>Spreadable butter blend.</p></details><details open><summary>Varedeklaration</summary><p>Butter and rapeseed oil.</p></details><button class="ur-button" type="button" data-remove>Remove from local basket</button></div>
+              <button class="ur-swipe-action" type="button" aria-label="Remove Lurpak smørbar from local basket" inert><span aria-hidden="true">🗑</span></button>
+              <div class="ur-swipe-content">
+                <span class="ur-thumb" aria-hidden="true">🧈</span>
+                <button class="ur-product" type="button" aria-expanded="false" aria-controls="ur-butter-details"><span class="ur-title-line"><strong>Lurpak smørbar</strong><b data-line-price>59,90 kr.</b></span><span class="ur-meta">Lurpak · 200 g · 29,95 kr. each</span><span class="ur-quantity" data-quantity-text>2 ×</span></button>
+                <div class="ur-details" id="ur-butter-details" hidden><div class="ur-quantity-control"><span>Quantity</span><span class="ur-stepper"><button type="button" data-step="-1" aria-label="Decrease Lurpak smørbar quantity">−</button><output>2</output><button type="button" data-step="1" aria-label="Increase Lurpak smørbar quantity">+</button></span></div><details open><summary>Varebeskrivelse</summary><p>Spreadable butter blend.</p></details><details open><summary>Varedeklaration</summary><p>Butter and rapeseed oil.</p></details><button class="ur-button" type="button" data-remove>Remove from local basket</button></div>
+              </div>
             </article>
             <article class="ur-row" data-unit-price="18">
-              <span class="ur-thumb" aria-hidden="true">🍌</span>
-              <button class="ur-product" type="button" aria-expanded="false" aria-controls="ur-bananas-details"><span class="ur-title-line"><strong>Økologiske bananer</strong><b data-line-price>18,00 kr.</b></span><span class="ur-meta">Økologisk · 1 kg · 18,00 kr./kg</span><span class="ur-quantity" data-quantity-text>1 ×</span></button>
-              <div class="ur-details" id="ur-bananas-details" hidden><div class="ur-quantity-control"><span>Quantity</span><span class="ur-stepper"><button type="button" data-step="-1" aria-label="Decrease banana quantity">−</button><output>1</output><button type="button" data-step="1" aria-label="Increase banana quantity">+</button></span></div><details open><summary>Varebeskrivelse</summary><p>Organic bananas, sold by weight.</p></details><button class="ur-button" type="button" data-remove>Remove from local basket</button></div>
+              <button class="ur-swipe-action" type="button" aria-label="Remove Økologiske bananer from local basket" inert><span aria-hidden="true">🗑</span></button>
+              <div class="ur-swipe-content">
+                <span class="ur-thumb" aria-hidden="true">🍌</span>
+                <button class="ur-product" type="button" aria-expanded="false" aria-controls="ur-bananas-details"><span class="ur-title-line"><strong>Økologiske bananer</strong><b data-line-price>18,00 kr.</b></span><span class="ur-meta">Økologisk · 1 kg · 18,00 kr./kg</span><span class="ur-quantity" data-quantity-text>1 ×</span></button>
+                <div class="ur-details" id="ur-bananas-details" hidden><div class="ur-quantity-control"><span>Quantity</span><span class="ur-stepper"><button type="button" data-step="-1" aria-label="Decrease banana quantity">−</button><output>1</output><button type="button" data-step="1" aria-label="Increase banana quantity">+</button></span></div><details open><summary>Varebeskrivelse</summary><p>Organic bananas, sold by weight.</p></details><button class="ur-button" type="button" data-remove>Remove from local basket</button></div>
+              </div>
             </article>
             <article class="ur-row" data-unit-price="29.95">
-              <span class="ur-thumb" aria-hidden="true">🥖</span>
-              <button class="ur-product" type="button" aria-expanded="false" aria-controls="ur-bread-details"><span class="ur-title-line"><strong>Surdejsbrød</strong><b data-line-price>29,95 kr.</b></span><span class="ur-meta">29,95 kr. each</span><span class="ur-quantity" data-quantity-text>1 ×</span></button>
-              <div class="ur-details" id="ur-bread-details" hidden><div class="ur-quantity-control"><span>Quantity</span><span class="ur-stepper"><button type="button" data-step="-1" aria-label="Decrease Surdejsbrød quantity">−</button><output>1</output><button type="button" data-step="1" aria-label="Increase Surdejsbrød quantity">+</button></span></div><details open><summary>Varebeskrivelse</summary><p>Fresh sourdough loaf.</p></details><button class="ur-button" type="button" data-remove>Remove from local basket</button></div>
+              <button class="ur-swipe-action" type="button" aria-label="Remove Surdejsbrød from local basket" inert><span aria-hidden="true">🗑</span></button>
+              <div class="ur-swipe-content">
+                <span class="ur-thumb" aria-hidden="true">🥖</span>
+                <button class="ur-product" type="button" aria-expanded="false" aria-controls="ur-bread-details"><span class="ur-title-line"><strong>Surdejsbrød</strong><b data-line-price>29,95 kr.</b></span><span class="ur-meta">29,95 kr. each</span><span class="ur-quantity" data-quantity-text>1 ×</span></button>
+                <div class="ur-details" id="ur-bread-details" hidden><div class="ur-quantity-control"><span>Quantity</span><span class="ur-stepper"><button type="button" data-step="-1" aria-label="Decrease Surdejsbrød quantity">−</button><output>1</output><button type="button" data-step="1" aria-label="Increase Surdejsbrød quantity">+</button></span></div><details open><summary>Varebeskrivelse</summary><p>Fresh sourdough loaf.</p></details><button class="ur-button" type="button" data-remove>Remove from local basket</button></div>
+              </div>
             </article>
             <article class="ur-row" data-unit-price="29.95">
-              <span class="ur-thumb" aria-hidden="true">🧀</span>
-              <button class="ur-product" type="button" aria-expanded="false" aria-controls="ur-cheese-details"><span class="ur-title-line"><strong>Havarti ost</strong><b data-line-price>59,90 kr.</b></span><span class="ur-meta">29,95 kr. each</span><span class="ur-quantity" data-quantity-text>2 ×</span></button>
-              <div class="ur-details" id="ur-cheese-details" hidden><div class="ur-quantity-control"><span>Quantity</span><span class="ur-stepper"><button type="button" data-step="-1" aria-label="Decrease Havarti ost quantity">−</button><output>2</output><button type="button" data-step="1" aria-label="Increase Havarti ost quantity">+</button></span></div><details open><summary>Varebeskrivelse</summary><p>Mild Havarti cheese.</p></details><button class="ur-button" type="button" data-remove>Remove from local basket</button></div>
+              <button class="ur-swipe-action" type="button" aria-label="Remove Havarti ost from local basket" inert><span aria-hidden="true">🗑</span></button>
+              <div class="ur-swipe-content">
+                <span class="ur-thumb" aria-hidden="true">🧀</span>
+                <button class="ur-product" type="button" aria-expanded="false" aria-controls="ur-cheese-details"><span class="ur-title-line"><strong>Havarti ost</strong><b data-line-price>59,90 kr.</b></span><span class="ur-meta">29,95 kr. each</span><span class="ur-quantity" data-quantity-text>2 ×</span></button>
+                <div class="ur-details" id="ur-cheese-details" hidden><div class="ur-quantity-control"><span>Quantity</span><span class="ur-stepper"><button type="button" data-step="-1" aria-label="Decrease Havarti ost quantity">−</button><output>2</output><button type="button" data-step="1" aria-label="Increase Havarti ost quantity">+</button></span></div><details open><summary>Varebeskrivelse</summary><p>Mild Havarti cheese.</p></details><button class="ur-button" type="button" data-remove>Remove from local basket</button></div>
+              </div>
             </article>
           </div>
           <p class="ur-empty" data-empty hidden>Your local basket is empty. Use Undo to restore products.</p>
@@ -143,10 +163,15 @@
         root.querySelector("[data-undo]").hidden = removed.length === 0;
         if (removed.length) root.querySelector("[data-undo-name]").textContent = removed.at(-1).label;
       };
+      const setSwipeOpen = (row, open) => {
+        row.classList.toggle("is-open", open);
+        row.querySelector(".ur-swipe-content").inert = open;
+        row.querySelector(".ur-swipe-action").inert = !open;
+      };
       const removeRows = (products, label) => {
         const items = products.filter((row) => row.isConnected).map((row) => ({ row, next: row.nextSibling }));
         if (!items.length) return;
-        items.forEach(({ row }) => row.remove());
+        items.forEach(({ row }) => { setSwipeOpen(row, false); row.remove(); });
         removed.push({ items, label });
         sync();
       };
@@ -168,17 +193,41 @@
       root.querySelector("[data-clear]").addEventListener("click", () => removeRows(rows(), "Cleared local basket"));
       root.querySelectorAll(".ur-row").forEach((row) => {
         let start;
+        const content = row.querySelector(".ur-swipe-content");
+        row.querySelector(".ur-swipe-action").addEventListener("click", () => removeRow(row));
         row.addEventListener("pointerdown", (event) => {
-          if (event.pointerType === "touch") start = { id: event.pointerId, x: event.clientX, y: event.clientY };
+          if (event.button !== 0) return;
+          start = { id: event.pointerId, x: event.clientX, y: event.clientY, offset: row.classList.contains("is-open") ? -row.clientWidth : 0, dragging: false };
         });
-        row.addEventListener("pointerup", (event) => {
+        row.addEventListener("pointermove", (event) => {
           if (!start || event.pointerId !== start.id) return;
           const dx = event.clientX - start.x;
           const dy = event.clientY - start.y;
-          if (dx < -70 && Math.abs(dx) > Math.abs(dy) * 1.5) removeRow(row);
+          if (!start.dragging) {
+            if (Math.abs(dy) > 8 && Math.abs(dy) > Math.abs(dx)) { start = undefined; return; }
+            if (Math.abs(dx) < 8 || Math.abs(dx) <= Math.abs(dy) * 1.5) return;
+            start.dragging = true;
+            row.classList.add("is-dragging");
+            row.setPointerCapture(event.pointerId);
+          }
+          const offset = Math.max(-row.clientWidth, Math.min(0, start.offset + dx));
+          content.style.transform = `translateX(${offset}px)`;
+        });
+        row.addEventListener("pointerup", (event) => {
+          if (!start || event.pointerId !== start.id) return;
+          if (start.dragging) {
+            const offset = Math.max(-row.clientWidth, Math.min(0, start.offset + event.clientX - start.x));
+            setSwipeOpen(row, -offset > row.clientWidth / 2);
+            row.classList.remove("is-dragging");
+            content.style.transform = "";
+          }
           start = undefined;
         });
-        row.addEventListener("pointercancel", () => { start = undefined; });
+        row.addEventListener("pointercancel", () => {
+          row.classList.remove("is-dragging");
+          content.style.transform = "";
+          start = undefined;
+        });
       });
       root.querySelector("[data-undo-button]").addEventListener("click", () => {
         const { items } = removed.pop();

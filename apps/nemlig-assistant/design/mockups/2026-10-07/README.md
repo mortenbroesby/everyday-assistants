@@ -10,9 +10,10 @@ See the parent [`AGENTS.md`](../AGENTS.md) before modifying these references.
   Ready, Alternatives, confirmation, success, empty, and unavailable states.
 - `nemlig-review-look-and-feel.html` — focused product-row and visual-language
   exploration.
-- `nemlig-unified-review.html` — proposed one-list local basket. Swipe left or
-  use the product's Remove button, clear or undo local changes, adjust
-  quantities, and preview the exact remaining items through Submit to Nemlig.
+- `nemlig-unified-review.html` — proposed one-list local basket. Swipe left
+  past halfway to reveal the trash action, or use the product's Remove button;
+  clear or undo local changes, adjust quantities, and preview the exact
+  remaining items through Submit to Nemlig.
   The fixture never writes to Nemlig.
 - `nemlig-selection-focused-list.svg` — static compact-list reference.
 
