@@ -8,7 +8,7 @@
 
 ## 2. Durable Local basket state
 
-- [ ] 2.1 Define and test the owner-scoped Local basket record, UUID, revision, 500-line validation, 50-basket cap, LRU eviction, same-owner credential-reconnect recovery, and intentional-activity `lastActivityAt + 24h` expiry semantics.
+- [x] 2.1 Define and test the owner-scoped Local basket record, UUID, revision, 500-line validation, 50-basket cap, LRU eviction, same-owner credential-reconnect recovery, and intentional-activity `lastActivityAt + 24h` expiry semantics.
 - [ ] 2.2 Add the dedicated owner-keyed Durable Object binding, storage migration, earliest-expiry alarm, and lazy expiry enforcement; verify restart recovery, expiry on read/write, LRU tie-breaking, alarm cleanup, and no access across owners.
 - [ ] 2.3 Implement the narrow authenticated Worker-to-Container state interface and verify unauthenticated requests never reach persistence or the Container, while the Container receives no Durable Object capability or credential-bearing state.
 - [ ] 2.4 Route successful Local basket create/read/update/delete operations through durable storage with serialized mutations. Apply ordinary edits to current basket state atomically; use an internal expected revision only when committing work that crossed an asynchronous provider read. Merge only unambiguous delayed actions, merge exact product-ID append duplicates by increasing quantity, otherwise refresh/fail safely, and never partially persist.
