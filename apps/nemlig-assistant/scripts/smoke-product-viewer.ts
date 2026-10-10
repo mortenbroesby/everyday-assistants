@@ -416,8 +416,8 @@ try {
   assert.equal(
     await milkCard
       .getByRole("button", { name: "Increase quantity of Synthetic milk" })
-      .isDisabled(),
-    true,
+      .count(),
+    0,
     "generic failure left editable stale controls active",
   );
   await page.evaluate(() => window.reopenCurrentReview());
