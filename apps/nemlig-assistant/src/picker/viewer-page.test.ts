@@ -34,10 +34,7 @@ const props = (thumbnail?: string): ViewerPageProps => ({
     screen: {
       kind: "review",
       active: true,
-      view_id: "fixture-view",
       review: {
-        review_id: "fixture-review",
-        revision: 1,
         destination: "needs-review",
         items: [
           {
@@ -56,7 +53,6 @@ const props = (thumbnail?: string): ViewerPageProps => ({
     thumbnails: thumbnail ? new Map([[product, thumbnail]]) : new Map(),
     message: "",
     busy: false,
-    activatingCurrent: false,
     confirmSubmit: false,
     confirmEnd: false,
     continueSubmitted: false,
@@ -66,7 +62,7 @@ const props = (thumbnail?: string): ViewerPageProps => ({
     onNavigate: noop,
     onDisclosureChange: noop,
     onFactExpandedChange: noop,
-    onActivateCurrent: noop,
+    onRefresh: noop,
     onSelected: noop,
     onSelectAll: noop,
     onAcceptSelected: noop,
@@ -122,10 +118,7 @@ test("shared viewer page keeps thumbnails attached to their individual views", (
   pageProps.model.screen = {
     kind: "review",
     active: true,
-    view_id: "fixture-view",
     review: {
-      review_id: "fixture-review",
-      revision: 1,
       destination: "alternatives",
       items: [
         { product_id: 7, quantity: 1, state: "needs-review", view: product },
@@ -208,4 +201,46 @@ test("shared viewer page distinguishes a verified partial addition from an uncer
   assert.match(html, /One product was confirmed/u);
   assert.match(html, /No later product was sent/u);
   assert.doesNotMatch(html, /We could not verify the addition/u);
+});
+
+test("shared viewer page offers an authoritative Draft list refresh outside errors", () => {
+  const normal = renderToStaticMarkup(createElement(ViewerPage, props()));
+  assert.match(normal, /Refresh Draft list/u);
+
+  const emptyProps = props();
+  emptyProps.model.screen = { kind: "empty" };
+  const empty = renderToStaticMarkup(createElement(ViewerPage, emptyProps));
+  assert.match(empty, /Refresh Draft list/u);
+
+  const cancelledProps = props();
+  cancelledProps.model.screen = { kind: "cancelled" };
+  const cancelled = renderToStaticMarkup(
+    createElement(ViewerPage, cancelledProps),
+  );
+  assert.match(cancelled, /Refresh Draft list/u);
+
+  const uncertainProps = props();
+  assert.equal(uncertainProps.model.screen.kind, "review");
+  if (uncertainProps.model.screen.kind !== "review") {
+    return;
+  }
+  uncertainProps.model.screen.review.submission = {
+    status: "uncertain",
+    submission_id: "fixture-submission",
+    review: {},
+  };
+  const uncertain = renderToStaticMarkup(
+    createElement(ViewerPage, uncertainProps),
+  );
+  assert.match(uncertain, /Refresh Draft list/u);
+
+  const errorProps = props();
+  errorProps.model.screen = {
+    kind: "error",
+    message: "The Draft list connection failed.",
+  };
+  errorProps.model.message =
+    "Reconnect to read this conversation's current Draft list.";
+  const error = renderToStaticMarkup(createElement(ViewerPage, errorProps));
+  assert.match(error, /role="status">Reconnect to read this conversation/u);
 });

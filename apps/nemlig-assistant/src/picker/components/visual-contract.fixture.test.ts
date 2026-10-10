@@ -55,8 +55,6 @@ const oats: ProductView = {
   },
 };
 const preparedReview = (): Review => ({
-  review_id: "storybook-review",
-  revision: 1,
   destination: "ready",
   items: [{ product_id: 1, quantity: 2, state: "ready", view: milk }],
   alternatives: { product_id: 1, query: "oats", views: [oats] },

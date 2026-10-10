@@ -16,10 +16,12 @@ replacement, removal and navigation SHALL NOT modify the Nemlig basket.
 - **THEN** those products move to Ready and unresolved products remain
   To decide, with no provider mutation
 
-#### Scenario: Conflicting or foreign state
-- **WHEN** a caller changes a stale revision or accesses another principal's draft
-- **THEN** the action fails without changing state and a stale authorized caller
-  can refresh the latest snapshot
+#### Scenario: Sequential or foreign action
+- **WHEN** a supported card acts on the conversation's current Draft list, or a
+  different owner attempts to access it
+- **THEN** the supported action updates the current list without a card or
+  revision identifier, while the foreign action fails without changing state
+- **AND** a concurrent action is rejected while the owner list is busy
 
 #### Scenario: Draft lifetime ends
 - **WHEN** the user finishes shopping, its process restarts, or bounded memory eviction removes it
@@ -78,43 +80,50 @@ it back to To decide and invalidate pending submission approval.
 - **THEN** time alone has not removed the local selection
 
 #### Scenario: Two conversations share an account
-- **WHEN** one conversation supplies the other conversation's review reference
+- **WHEN** one authenticated conversation attempts to access another
+  conversation's Draft list
 - **THEN** the system refuses access without modifying either local selection
 
 #### Scenario: Finish and start again
-- **WHEN** the user ends a review and later begins another
-- **THEN** the old reference is unavailable and the new Draft list starts independently
+- **WHEN** the user ends a Draft list and later begins another
+- **THEN** the old list is unavailable and the new owner list starts without
+  restoring acceptance or submission approval
 
-#### Scenario: A host retains a card after the draft is lost
-- **WHEN** an old card sends an action after restart, eviction, or explicit end
-- **THEN** the action is not replayed; a bounded read can find this conversation's current Draft list
-- **AND** if no active draft remains, the viewer offers an explicit fresh review of the displayed exact products and quantities, with refreshed product data and no restored acceptance or submission authority
-- **AND** a previously submitted or uncertain snapshot directs the user to inspect the actual basket instead of offering automatic recovery
+#### Scenario: A host retains a card after the Draft list is lost
+- **WHEN** a supported card sends an action after restart, eviction, or explicit
+  end
+- **THEN** the action is not replayed and the owner list remains unavailable
+- **AND** a new Draft list requires an explicit start with refreshed exact
+  products and quantities, without restoring acceptance or submission authority
+- **AND** a previously submitted or uncertain state directs the user to inspect
+  the actual basket instead of offering automatic recovery
 
 ### Requirement: Persistent local review interaction
-The newest explicitly rendered review frame SHALL open directly on its current
-products and remain active across confirmed same-review edits and destination
-changes while it stays mounted. A new render SHALL supersede older card
-authority, even when the draft revision has not changed. Retired resource
-versions SHALL be inert. Older host snapshots SHALL NOT replace a newer
-confirmed review revision.
+Supported current-bundle cards SHALL be interchangeable clients of the
+authenticated conversation's one temporary Draft list. Normal actions SHALL
+use `{action}` without card, review, or revision identifiers. A correlated
+local action result SHALL update its mounted card; delayed passive snapshots
+SHALL NOT roll back a successfully correlated local action. A remount SHALL
+require the current supported viewer bundle and its current invocation
+snapshot; compatibility with already-mounted predecessor bundles is not
+promised. Retired resource versions SHALL be inert.
 
-#### Scenario: Local change returns a host result
-- **WHEN** an activated frame accepts products, changes quantities, navigates,
-  or resolves alternatives and receives a matching current snapshot
+#### Scenario: Local change returns a correlated result
+- **WHEN** a supported frame accepts products, changes quantities, navigates,
+  or resolves alternatives and receives its correlated current snapshot
 - **THEN** the same frame renders the updated destination without requiring
-  `Open current review` again
+  another server call
 
-#### Scenario: An older card submits an action
-- **WHEN** a card uses a view token superseded by a later render of the same
-  conversation Draft list
-- **THEN** the server rejects the action before local edits or provider work
-- **AND** the stale card becomes a compact read-only notice after that rejection
+#### Scenario: Delayed passive snapshot follows a local action
+- **WHEN** a passive host snapshot arrives after a local action has been
+  successfully correlated
+- **THEN** it cannot replace the confirmed local state in that mounted card
 
-#### Scenario: A new Draft list view is rendered
-- **WHEN** the user explicitly opens the current Draft list in a new view
-- **THEN** products appear immediately and older views lose authority even if
-  the current Draft list revision is unchanged
+#### Scenario: A supported card is remounted
+- **WHEN** the current supported bundle mounts with a current invocation
+  snapshot
+- **THEN** it displays the current conversation list without creating another
+  list or promising predecessor-bundle compatibility
 
 #### Scenario: Confirm exact submission in the viewer
 - **WHEN** the user explicitly confirms the current prepared lines, quantities,
@@ -132,7 +141,7 @@ independently submittable while other products remain To decide.
 
 #### Scenario: Select and accept in one action
 - **WHEN** the user checks one or more To decide rows and chooses Add to Ready
-- **THEN** one revision-checked local update accepts exactly those products,
+- **THEN** one owner-scoped local update accepts exactly those products,
   stays in To decide and makes no provider mutation
 - **AND** selecting rows or opening product/factual disclosures alone makes no
   tool or provider call

@@ -87,6 +87,27 @@
   manifest and asset bytes, CORS, MIME, cache headers, and bounded response
   sizes. No production run or native acceptance is part of local verification.
 
+## 7. One conversation-owned Draft list
+
+- [x] 7.1 Add focused failing service coverage proving supported cards can
+  sequentially edit one owner-scoped Draft list without card IDs or revisions,
+  while foreign owners, concurrent actions, unavailable lists, eviction and
+  terminal outcomes remain safe.
+- [x] 7.2 Simplify temporary Draft list storage and its MCP schemas/instructions
+  to one authenticated conversation owner and exact `submission_id`; remove
+  view/review/revision/activation authority while preserving validation,
+  locking, submission invalidation, add-only writes, readback and no-retry.
+- [x] 7.3 Update the shared viewer, Storybook fixtures and synthetic browser
+  adapters to use the new contract; verify passive delayed payloads cannot
+  visually roll back a confirmed local action and service outages do not claim
+  a card is out of date.
+- [x] 7.4 Reconcile product-review, MCP, README and shopping-skill contract
+  wording with the one-list model; preserve historical fixtures and retired
+  resource behavior unchanged.
+- [x] 7.5 Run focused service/MCP/viewer/browser regressions, strict OpenSpec
+  validation, package check/lint/build/Storybook build, `pnpm verify`, and
+  `pnpm test`; review the diff for identifier remnants and real-basket safety.
+
 ## Implementation evidence (8 October 2026)
 
 - Current integration base: `fdb5ebf`; `ui://nemlig/draft-list.html` was absent

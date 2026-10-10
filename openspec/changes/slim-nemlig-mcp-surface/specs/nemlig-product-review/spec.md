@@ -61,10 +61,12 @@ replacement, removal and navigation SHALL NOT modify the Nemlig basket.
 - **THEN** those products move to Ready and unresolved products remain
   To decide, with no provider mutation
 
-#### Scenario: Conflicting or foreign state
-- **WHEN** a caller changes a stale revision or accesses another principal's draft
-- **THEN** the action fails without changing state and a stale authorized caller
-  can refresh the latest snapshot
+#### Scenario: Sequential or foreign action
+- **WHEN** a supported card acts on the conversation's current Draft list, or a
+  different owner attempts to access it
+- **THEN** the supported action updates the current list without a card or
+  revision identifier, while the foreign action fails without changing state
+- **AND** a concurrent action is rejected while the owner list is busy
 
 #### Scenario: Draft lifetime ends
 - **WHEN** the user finishes shopping, its process restarts, or bounded memory eviction removes it
@@ -108,11 +110,14 @@ it back to To decide and invalidate pending submission approval.
 - **WHEN** the user ends a review and later begins another
 - **THEN** the old reference is unavailable and the new Draft list starts independently
 
-#### Scenario: A host retains a card after the draft is lost
-- **WHEN** an old card sends an action after restart, eviction, or explicit end
-- **THEN** the action is not replayed; a bounded read can find this conversation's current Draft list
-- **AND** if no active draft remains, the viewer offers an explicit fresh review of the displayed exact products and quantities, with refreshed product data and no restored acceptance or submission authority
-- **AND** a previously submitted or uncertain snapshot directs the user to inspect the actual basket instead of offering automatic recovery
+#### Scenario: A host retains a card after the Draft list is lost
+- **WHEN** a supported card sends an action after restart, eviction, or explicit
+  end
+- **THEN** the action is not replayed and the owner list remains unavailable
+- **AND** a new Draft list requires an explicit start with refreshed exact
+  products and quantities, without restoring acceptance or submission authority
+- **AND** a previously submitted or uncertain state directs the user to inspect
+  the actual basket instead of offering automatic recovery
 
 ## REMOVED Requirements
 

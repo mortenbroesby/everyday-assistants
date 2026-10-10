@@ -301,37 +301,21 @@ test("discovery reaches an approved draft submission and verified Nemlig basket"
       },
     });
     assert.notEqual(started.isError, true);
-    const initial = (
-      started.structuredContent as {
-        review: { review_id: string; revision: number };
-      }
-    ).review;
-    const accepted = await mcp.callTool({
+    await mcp.callTool({
       name: "update_product_review_conversation",
       arguments: {
-        review_id: initial.review_id,
-        revision: initial.revision,
         action: { kind: "accept", product_ids: [101, 201, 301] },
       },
     });
-    const ready = (
-      accepted.structuredContent as {
-        review: { review_id: string; revision: number };
-      }
-    ).review;
     const prepared = await mcp.callTool({
       name: "update_product_review_conversation",
       arguments: {
-        review_id: ready.review_id,
-        revision: ready.revision,
         action: { kind: "prepare_submission" },
       },
     });
     const draft = (
       prepared.structuredContent as {
         review: {
-          review_id: string;
-          revision: number;
           submission: { submission_id: string };
         };
       }
@@ -339,8 +323,6 @@ test("discovery reaches an approved draft submission and verified Nemlig basket"
     const applied = await mcp.callTool({
       name: "submit_product_review_conversation",
       arguments: {
-        review_id: draft.review_id,
-        revision: draft.revision,
         submission_id: draft.submission.submission_id,
       },
     });
@@ -359,8 +341,6 @@ test("discovery reaches an approved draft submission and verified Nemlig basket"
     const replay = await mcp.callTool({
       name: "submit_product_review_conversation",
       arguments: {
-        review_id: draft.review_id,
-        revision: draft.revision,
         submission_id: draft.submission.submission_id,
       },
     });
@@ -431,44 +411,27 @@ test("an indeterminate draft submission is attempted once", async () => {
       name: "start_product_review",
       arguments: { items: [{ product_id: 401, quantity: 1 }] },
     });
-    const initial = (
-      started.structuredContent as {
-        review: { review_id: string; revision: number };
-      }
-    ).review;
-    const accepted = await mcp.callTool({
+    assert.notEqual(started.isError, true);
+    await mcp.callTool({
       name: "update_product_review_conversation",
       arguments: {
-        review_id: initial.review_id,
-        revision: initial.revision,
         action: { kind: "accept", product_ids: [401] },
       },
     });
-    const ready = (
-      accepted.structuredContent as {
-        review: { review_id: string; revision: number };
-      }
-    ).review;
     const prepared = await mcp.callTool({
       name: "update_product_review_conversation",
       arguments: {
-        review_id: ready.review_id,
-        revision: ready.revision,
         action: { kind: "prepare_submission" },
       },
     });
     const draft = (
       prepared.structuredContent as {
         review: {
-          review_id: string;
-          revision: number;
           submission: { submission_id: string };
         };
       }
     ).review;
     const args = {
-      review_id: draft.review_id,
-      revision: draft.revision,
       submission_id: draft.submission.submission_id,
     };
     assert.equal(

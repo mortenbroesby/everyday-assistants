@@ -163,21 +163,23 @@ can also discard it; missing state is reported rather than silently recreated.
 Each principal retains at most eight conversation drafts of up to 500 products. Hosts
 without conversation context cannot access a hosted draft. ChatGPT does not
 provide a reliable notification when a conversation is closed.
-They are not saved shopping plans or named lists. Transcript cards start inactive:
-**Open current draft list** reads this conversation’s current draft before showing
-products or shopping controls. Reloading an old message does not restore its
-historical draft list. When a current viewer detects a stale card, it automatically
-reads and displays the current list in that same card, read-only. **Make this card
-current** explicitly gives it a fresh view token; this does not edit the list or basket.
-If the list is gone, the card asks before starting over. Cards already cached by ChatGPT
-cannot gain this behavior; ask in chat to reopen the list from those older cards. A
-stale edit refreshes once without replaying it; connection failures hide editing
-controls until you explicitly reopen current state.
+They are not saved shopping plans or named lists. A conversation has one temporary
+Draft list, and supported cards are interchangeable clients of that same list.
+Starting another card does not create a separate list or invalidate earlier
+supported cards. Reloading a historical message does not restore its old snapshot;
+use `start_product_review` without items to render the current list. A missing list
+stays unavailable until explicitly started again. Remounts require the current
+supported viewer bundle; no compatibility is promised for already-mounted older
+bundles. After a local action, the viewer ignores unsolicited host snapshots that
+could roll it back, but offers a read-only refresh in normal, empty, cancelled,
+unavailable, and outcome states. It never retries or replays the failed mutation.
 If the draft is gone, **Start new draft list** rechecks the original products and
 quantities without restoring acceptance or submission approval. Submitted,
 uncertain, or known-partial snapshots instead direct you to inspect the actual
 basket; a known partial result says how many additions were verified and that
-no later write was sent.
+no later write was sent. An uncertain or partial result remains recorded through
+later local edits, so preparing another addition requires an explicit Draft-list
+discard and fresh review after inspection.
 The viewer uses the permanent `ui://nemlig/shell.html` identity. The previous
 `ui://nemlig/draft-list.html` address and every earlier product-viewer address
 resolve only to an inert, read-only notice, so historical cards cannot regain
@@ -190,10 +192,10 @@ operator-managed clean connection cutover followed by a new chat.
 
 Run `pnpm nemlig:smoke:review-ui`, open its loopback URL,
 and click **Run regression smoke**. The real MCP adapter and fake catalogue
-exercise inactive mount/remount, conflicting revisions, a failed connection,
-process restart, explicit recovery and clearing the local draft list. The page reports PASS
-only when the stale edit was not replayed, restart cleared acceptance while
-preserving quantities, and provider basket calls remained zero. No credentials
+exercise supported mount/remount, sequential owner-list actions, service failure,
+process restart, explicit recovery and clearing the local Draft list. The page reports PASS
+only when failed mutations are not replayed, restart clears acceptance while
+preserving quantities, and provider basket calls remain zero. No credentials
 are required; provider basket access is denied by the fixture.
 
 For a reproducible visual review of the current viewer, run:
@@ -348,10 +350,11 @@ The MCP surface is organized around household actions:
   bounded read-only provider check and reports missing credentials, provider
   reauthentication, or provider unavailability separately.
 - See the actual Nemlig basket: `show_my_basket`.
-- Show or build a local draft list: `start_product_review`; refresh, accept, change, remove,
+- Show or build a local Draft list: `start_product_review`; refresh, accept, change, remove,
   reconsider accepted products, append new products, navigate, finish shopping, or
-  prepare submission with `update_product_review_conversation`. Show can recover the active
-  conversation review without its opaque reference. Repeated starts preserve it.
+  prepare submission with `update_product_review_conversation`. All supported cards
+  operate on the authenticated conversation's current list; normal actions carry no
+  card, review, or revision identifier. Repeated starts preserve the list.
 - For a visual product request, search exact products and open the native Draft
   list without requiring the user to name a tool. This changes only local review
   state. Omit `items` to reopen an existing list, and add newly found products
@@ -362,7 +365,7 @@ The MCP surface is organized around household actions:
   success alone does not prove that a client rendered the Draft list viewer.
 - Submit those exact Ready lines after a clear conversational add instruction
   or the viewer's separate on-screen exact confirmation:
-  `submit_product_review_conversation`.
+  `submit_product_review_conversation` with the exact prepared `submission_id`.
   Ready acceptance alone is not provider-write authorization. The protected
   tool uses only the unchanged prepared lines; ambiguous scope or changed Ready
   IDs/quantities requires clarification.
@@ -376,16 +379,13 @@ The MCP surface is organized around household actions:
   that read/set boundary. Manage removals and clearing directly on Nemlig.com.
 - Search and conversation-side edits return structured and text results without
   mounting a widget for every tool call. `start_product_review` is the explicit
-  render action: it opens the current products immediately. Use it once while a
-  current card is usable; repeat it only to reopen a stale card or when asked,
-  since each call renders a new card and invalidates the previous card's actions.
-  ChatGPT may retain older message cards in the conversation; Nemlig Assistant
-  leaves that history to the host and makes superseded cards read-only.
-  Each rendered view has a conversation-bound server token. The familiar
-  Edits through `update_product_review` and `submit_product_review` require the newest
-  view token. A stale card can omit it only for a read-only `show`; the explicit
-  **Make this card current** action issues a new token without recreating a missing
-  draft.
+  render action: it opens the current products immediately. Use it only when a
+  current view is requested, since each call renders a card from the same
+  owner-keyed list. ChatGPT may retain older message cards in the conversation;
+  supported cards remain clients of the current list rather than holding separate
+  server authority. Normal `update_product_review` edits use `{action}` only.
+  Widget submission uses `{submission_id}` only; this binds the real basket write
+  to the exact prepared Ready payload, not to a card or revision.
   Model-side text actions use the `_conversation` tool names. The MCP server
   serves a versioned viewer URI; older resource addresses are inert and cannot
   change shopping state.
