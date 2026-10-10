@@ -178,9 +178,10 @@ document.getElementById('run').onclick = async () => {
   const beforeReload=widgetCalls.length; const reloaded=new Promise(resolve=>frame.addEventListener('load',resolve,{once:true})); frame.contentWindow.location.reload(); await reloaded;
   await wait(()=>title()==='Local basket'&&doc().querySelectorAll('.product-list article').length===2);
   check(widgetCalls.length===beforeReload,'Reload made an unnecessary service call');
-  const disclosure=doc().querySelector('.product-list article button[aria-expanded]'); check(disclosure,'Product disclosure missing'); disclosure.click();
-  await wait(()=>doc().querySelector('.product-list article [data-viewer-component="quantity-control"] button:last-of-type'));
-  const quantity=doc().querySelector('.product-list article [data-viewer-component="quantity-control"] button:last-of-type'); check(quantity,'Quantity controls missing'); quantity.click();
+  const summary=doc().querySelector('.product-list article [data-viewer-component="product-summary"]'); check(summary,'Product summary missing'); summary.dispatchEvent(new KeyboardEvent('keydown',{key:'F10',shiftKey:true,bubbles:true,cancelable:true}));
+  await wait(()=>doc().querySelector('.product-inline-actions [data-viewer-component="quantity-control"] button:last-of-type'));
+  const quantity=doc().querySelector('.product-inline-actions [data-viewer-component="quantity-control"] button:last-of-type'); check(quantity,'Quantity controls missing'); quantity.click();
+  doc().querySelector('.product-inline-actions [aria-label="Close product actions"]')?.click();
   await wait(()=>widgetCalls.some(c=>c.arguments.action?.kind==='quantity'));
   await wait(()=>button('Submit to Nemlig')&&!button('Submit to Nemlig').disabled);
   click('Submit to Nemlig'); await wait(()=>doc().querySelector('[data-viewer-component="outcome-surface"] h2')?.textContent==='Ready to submit the Local basket');
@@ -203,14 +204,15 @@ document.getElementById('flow').onclick = async () => {
  const wait=async predicate=>{const until=Date.now()+15000;while(!predicate()){if(Date.now()>until)throw new Error('Timed out: '+(doc()?.querySelector('main')?.innerText||'no viewer main'));await new Promise(r=>setTimeout(r,25));}};
  const click=label=>{const b=button(label);check(b&&!b.disabled,'Missing enabled control: '+label);b.click();};
  try {
-  status.textContent='Checking fail-closed whole-list preparation'; widgetCalls.length=0;
+  status.textContent='Checking preparation with an unknown price'; widgetCalls.length=0;
   await fetch('/reset',{method:'POST'}); await fetch('/unknown-price',{method:'POST'});
   transcript=await call({name:'start_product_review',arguments:{items:[{product_id:1,quantity:1},{product_id:2,quantity:2}]}});
   initialized=false; frame.src='/viewer'; await wait(()=>initialized);
   await wait(()=>title()==='Local basket'&&doc().querySelectorAll('.product-list article').length===2);
-  await wait(()=>button('Submit to Nemlig')?.disabled&&text().includes('Remove or replace unavailable or incomplete products'));
-  check(!widgetCalls.some(c=>c.name==='submit_product_review' || c.arguments.action?.kind==='prepare_submission'),'Incomplete basket row was submitted or prepared');
-  check((await fetch('/stats').then(r=>r.json())).basketWrites===0,'Unavailable row reached a provider write');
+  await wait(()=>button('Submit to Nemlig')&&!button('Submit to Nemlig').disabled&&text().includes('Unknown price'));
+  click('Submit to Nemlig'); await wait(()=>button('Add to Nemlig basket'));
+  check(widgetCalls.some(c=>c.arguments.action?.kind==='prepare_submission'),'Unknown price blocked preparation');
+  check((await fetch('/stats').then(r=>r.json())).basketWrites===0,'Preparation reached a provider write');
   await fetch('/reset',{method:'POST'}); await fetch('/unknown-price',{method:'POST'});
   status.textContent='Checking uncertain submission block';
   transcript=await call({name:'start_product_review',arguments:{items:[{product_id:2,quantity:1}]}});
@@ -222,7 +224,7 @@ document.getElementById('flow').onclick = async () => {
   await fetch('/uncertain-next',{method:'POST'}); click('Add to Nemlig'); await wait(()=>text().includes('We could not verify the addition'));
   check(!button('Submit to Nemlig')&&!button('Add to Nemlig'),'Uncertain outcome allowed a retry');
   check((await fetch('/stats').then(r=>r.json())).basketWrites===0,'Synthetic uncertain path wrote the provider basket');
-  status.textContent='PASS: incomplete lines block prepare, uncertain result blocks replay, provider basket writes 0';
+  status.textContent='PASS: unknown prices allow prepare, uncertain result blocks replay, provider basket writes 0';
  } catch(error){status.textContent='FAIL: '+error.message+' | viewer: '+(doc()?.body?.innerText||'no iframe document')+' | widget calls: '+JSON.stringify(widgetCalls);} finally{run.disabled=false;}
 };
 document.getElementById('alternatives').onclick = async () => {
@@ -239,9 +241,9 @@ document.getElementById('alternatives').onclick = async () => {
   await wait(()=>title()==='Local basket'&&doc().querySelectorAll('.product-list article').length===2);
   const before=await call({name:'update_product_review_conversation',arguments:{action:{kind:'show'}}});
   const target=[...doc().querySelectorAll('.product-list article')].find(row=>row.textContent.includes('Smoke product 1')); check(target,'Product missing');
-  const row=target.closest('.basket-swipe-row'); check(row,'Swipe row missing'); row.focus(); row.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowRight',bubbles:true,cancelable:true})); await wait(()=>button('Find alternative'));
-  const beforeSwipe=widgetCalls.length; click('Find alternative'); await wait(()=>title()==='Find an alternative');
-  check(widgetCalls.length===beforeSwipe+1&&widgetCalls.at(-1).arguments.action.kind==='alternatives','Alternative view did not use the read-only search action');
+  const row=target.closest('.product-action-row'); check(row,'Product row missing'); const trigger=row.querySelector('[data-viewer-component="product-summary"]'); check(trigger,'Product summary missing'); trigger.dispatchEvent(new KeyboardEvent('keydown',{key:'F10',shiftKey:true,bubbles:true,cancelable:true})); await wait(()=>doc().querySelector('.product-inline-actions'));
+  const beforeMenu=widgetCalls.length; const find=[...doc().querySelectorAll('.product-inline-actions button')].find(item=>item.getAttribute('aria-label')==='Find alternatives'); check(find,'Find alternative action missing'); find.click(); await wait(()=>title()==='Find an alternative');
+  check(widgetCalls.length===beforeMenu+1&&widgetCalls.at(-1).arguments.action.kind==='alternatives','Alternative view did not use the read-only search action');
   const unchanged=(await call({name:'update_product_review_conversation',arguments:{action:{kind:'show'}}})).structuredContent.review;
   check(JSON.stringify(unchanged.items.map(i=>[i.product_id,i.quantity,i.state]))===JSON.stringify(before.structuredContent.review.items.map(i=>[i.product_id,i.quantity,i.state])),'Opening alternatives changed the Local basket');
   const query=doc().querySelector('#alternative-query'); check(query,'Alternative search missing');

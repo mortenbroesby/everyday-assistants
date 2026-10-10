@@ -128,6 +128,7 @@ const productViewSchema = z.discriminatedUnion("status", [
     context: z.enum(["search", "details", "result", "basket", "review"]),
     status: z.literal("unavailable"),
     product_id: z.number().int().positive().optional(),
+    missing: z.boolean().optional(),
   }),
 ]);
 
@@ -153,7 +154,15 @@ const reviewSnapshotSchema = z.object({
     .object({
       submission_id: z.string().uuid(),
       status: z.enum(["prepared", "submitted", "uncertain", "partial"]),
-      verified_additions: z.number().int().positive().optional(),
+      verified_additions: z.number().int().nonnegative().optional(),
+      skipped_products: z
+        .array(
+          z.object({
+            product_id: z.number().int().positive(),
+            name: z.string(),
+          }),
+        )
+        .optional(),
       expires_at: z.string(),
       review: z.record(z.string(), z.unknown()),
     })
@@ -265,6 +274,12 @@ const applyResultSchema = z.object({
   operation: z.literal("additions"),
   replayed: z.boolean(),
   basket: basketSchema,
+  verified_additions: z.number().int().nonnegative().optional(),
+  skipped_products: z
+    .array(
+      z.object({ product_id: z.number().int().positive(), name: z.string() }),
+    )
+    .optional(),
   views: z.array(productViewSchema).optional(),
 });
 
