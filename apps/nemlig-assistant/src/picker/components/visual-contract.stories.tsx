@@ -178,12 +178,18 @@ const baseProps = (
     confirmEnd: false,
     continueSubmitted: false,
     submitBlocked: false,
+    knownNoWrite: false,
+    baskets: screen.kind === "picker" ? screen.baskets : [],
+    selectedBasketId: undefined,
     ...overrides.model,
   },
   actions: {
     onNavigate: noop,
     onFactExpandedChange: noop,
     onRefresh: noop,
+    onOpenPicker: noop,
+    onSelectBasket: noop,
+    onDeleteBasket: noop,
     onQuantity: noop,
     onRemove: noop,
     onOpenAlternatives: noop,
@@ -213,10 +219,63 @@ function FixturePage({
   overrides?: StoryOverrides;
 }) {
   const [hostMessage, setHostMessage] = useState("");
+  const [activeScreen, setActiveScreen] = useState(screen);
+  const [localBaskets, setLocalBaskets] = useState(
+    overrides.model?.baskets ??
+      (screen.kind === "picker" ? screen.baskets : []),
+  );
   const props = baseProps(screen, {
     ...overrides,
+    model: {
+      ...overrides.model,
+      screen: activeScreen,
+      baskets: localBaskets,
+    },
     actions: {
       ...overrides.actions,
+      onOpenPicker:
+        overrides.actions?.onOpenPicker ??
+        (() => {
+          setActiveScreen({
+            kind: "picker",
+            baskets: localBaskets,
+            selectedBasketId:
+              activeScreen.kind === "review"
+                ? activeScreen.review.basketId
+                : undefined,
+          });
+          setHostMessage("Storybook opened the Local basket picker.");
+        }),
+      onSelectBasket:
+        overrides.actions?.onSelectBasket ??
+        ((basketId) => {
+          setActiveScreen({
+            kind: "review",
+            review: {
+              ...review,
+              basketId,
+              revision: 1,
+              submissionAttempted: false,
+              submission: undefined,
+            },
+            active: true,
+          });
+          setHostMessage(`Storybook opened Basket ${basketId.slice(0, 8)}.`);
+        }),
+      onDeleteBasket:
+        overrides.actions?.onDeleteBasket ??
+        ((basketId) => {
+          const remaining = localBaskets.filter(
+            (basket) => basket.basketId !== basketId,
+          );
+          setLocalBaskets(remaining);
+          setActiveScreen({
+            kind: "picker",
+            baskets: remaining,
+            selectedBasketId: undefined,
+          });
+          setHostMessage(`Storybook deleted Basket ${basketId.slice(0, 8)}.`);
+        }),
       onRefresh:
         overrides.actions?.onRefresh ??
         (() =>
@@ -515,6 +574,27 @@ const meta = {
   },
 } satisfies Meta;
 
+const inventory = [
+  {
+    basketId: "12345678-1234-4234-8234-123456789abc",
+    createdAt: Date.parse("2026-10-01T10:00:00.000Z"),
+    lastActivityAt: Date.parse("2026-10-09T10:00:00.000Z"),
+    expiresAt: Date.parse("2026-10-10T10:00:00.000Z"),
+    revision: 3,
+    productCount: 4,
+    submissionAttempted: false,
+  },
+  {
+    basketId: "abcdef12-1234-4234-8234-123456789abc",
+    createdAt: Date.parse("2026-10-02T10:00:00.000Z"),
+    lastActivityAt: Date.parse("2026-10-08T10:00:00.000Z"),
+    expiresAt: Date.parse("2026-10-09T10:00:00.000Z"),
+    revision: 6,
+    productCount: 2,
+    submissionAttempted: true,
+  },
+];
+
 export default meta;
 type Story = StoryObj<typeof meta>;
 
@@ -589,6 +669,53 @@ export const UncertainOutcome: Story = {
 };
 export const EmptyLocalBasket: Story = {
   render: () => page({ kind: "empty" }),
+};
+export const LocalBasketInventory: Story = {
+  render: () =>
+    page(
+      { kind: "picker", baskets: inventory },
+      { model: { baskets: inventory } },
+    ),
+};
+export const SecondChatPicker: Story = {
+  decorators: [embeddedConversation],
+  render: () =>
+    page(
+      { kind: "picker", baskets: inventory },
+      { model: { baskets: inventory } },
+    ),
+};
+export const NoStableChatSelection: Story = {
+  render: () => page({ kind: "picker", baskets: inventory }),
+};
+export const ExpiredOrEvictedBasket: Story = {
+  render: () =>
+    page({
+      kind: "picker",
+      baskets: [],
+      selectedBasketId: inventory[0]!.basketId,
+    }),
+};
+export const RestartFencedBasket: Story = {
+  render: () => {
+    const fencedReview = {
+      ...review,
+      basketId: inventory[1]!.basketId,
+      revision: 7,
+      submissionAttempted: true,
+      submission: undefined,
+    } satisfies Review;
+    return page(
+      { kind: "review", review: fencedReview, active: true },
+      {
+        model: {
+          baskets: inventory,
+          selectedBasketId: inventory[1]!.basketId,
+          submitBlocked: true,
+        },
+      },
+    );
+  },
 };
 export const Loading: Story = {
   render: () =>

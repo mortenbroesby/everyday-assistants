@@ -20,8 +20,9 @@ import {
   PRODUCT_VIEWER_RESOURCE_URI,
   RETIRED_PRODUCT_VIEWER_RESOURCE_URIS,
 } from "./product-viewer-identity.js";
+import { isCredentialFreeMcpCall } from "./credential-free-mcp.js";
 
-export type OperationClass = "protocol" | "useful";
+export type OperationClass = "protocol" | "local" | "useful";
 export type ViewerResourceClass = "current" | "retired" | "other";
 const INTERNAL_VIEWER_ARTIFACT_HEADER = "x-nemlig-viewer-artifact-id";
 const INTERNAL_CREDENTIAL_HEADERS = [
@@ -84,6 +85,7 @@ export interface GatewayDependencies {
     config: GatewayConfig,
     deadline: GatewayDeadline,
     admission: AdmissionResult,
+    principal: Principal,
   ): Promise<Response>;
   event?(event: GatewayRequestEvent): void;
   viewerEvent?(event: ViewerResourceReadEvent): void;
@@ -149,8 +151,19 @@ export function classifyMcpMessage(value: unknown): OperationClass {
   if (message.method !== "tools/call") {
     return "protocol";
   }
+  if (isLocalBasketOnlyCall(message.params)) {
+    return "local";
+  }
   return "useful";
 }
+
+const isLocalBasketOnlyCall = (value: unknown): boolean => {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return false;
+  }
+  const params = value as { name?: unknown; arguments?: unknown };
+  return isCredentialFreeMcpCall(params.name, params.arguments);
+};
 
 /** Classifies only known resource identities; the raw URI never leaves this function. */
 export function classifyViewerResourceRead(
@@ -555,6 +568,7 @@ export async function handleGatewayRequest(
             config,
             deadline,
             admission,
+            principal,
           ),
         config.backendTimeoutMs,
         remainingMs,

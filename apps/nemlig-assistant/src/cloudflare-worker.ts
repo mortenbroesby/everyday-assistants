@@ -1,7 +1,9 @@
 /// <reference types="@cloudflare/workers-types" />
 
 import { Container, getContainer } from "@cloudflare/containers";
+import type { OutboundHandlerContext } from "@cloudflare/containers";
 import type { OAuthTokenVerifier } from "@modelcontextprotocol/express";
+import { DurableObject } from "cloudflare:workers";
 import {
   createAuth0Verifier,
   fetchAuth0Metadata,
@@ -43,9 +45,23 @@ import {
 import { encryptCredentials } from "./credential-envelope.js";
 import type { Credentials } from "./config.js";
 import { handleOnboardingRequest } from "./onboarding.js";
+import {
+  attachLocalBasketCapability,
+  revokeWhenBodyEnds,
+} from "./local-basket-capability.js";
+import { handleLocalBasketStateRequest } from "./local-basket-callback.js";
+import {
+  expireOwnerLocalBasketInventory,
+  mutateOwnerLocalBasketInventory,
+} from "./local-basket-storage.js";
+import type { LocalBasketCommand } from "./local-basket.js";
 
-interface Env extends CloudflareEnv {
+interface ContainerEnv extends CloudflareEnv {
   NEMLIG_MCP_CONTAINER: DurableObjectNamespace<NemligMcpContainer>;
+}
+
+interface Env extends ContainerEnv {
+  NEMLIG_LOCAL_BASKET_STORAGE: DurableObjectNamespace<OwnerLocalBasketStorage>;
 }
 
 /**
@@ -55,11 +71,13 @@ interface Env extends CloudflareEnv {
  * the actual configured Container image.
  */
 const containerNamespace = (
-  env: Env,
+  env: ContainerEnv,
 ): DurableObjectNamespace<NemligMcpContainer> =>
   env.NEMLIG_MCP_REVISION === "local"
     ? env.NEMLIG_MCP_CONTAINER
     : env.NEMLIG_MCP_CONTAINER.jurisdiction("eu");
+
+const LOCAL_BASKET_STATE_HOST = "local-basket-state.internal";
 
 let cachedVerifier: { key: string; verifier: OAuthTokenVerifier } | undefined;
 
@@ -145,7 +163,11 @@ const lifecycleEvent = (
   console.log(JSON.stringify({ schema_version: 1, event }));
 };
 
-export class NemligMcpContainer extends Container<Env> {
+export class NemligMcpContainer extends Container<ContainerEnv> {
+  private readonly localBasketCapabilities = new Map<
+    string,
+    { ownerId: string; expiresAt: number }
+  >();
   defaultPort = 8080;
   sleepAfter = "10m";
   envVars = {
@@ -168,6 +190,43 @@ export class NemligMcpContainer extends Container<Env> {
     NEMLIG_MCP_HTTP_HOST: "0.0.0.0",
     NEMLIG_MCP_HTTP_PORT: "8080",
   };
+
+  async beginLocalBasketRequest(
+    ownerId: string,
+    expiresAt: number,
+  ): Promise<string> {
+    const now = Date.now();
+    for (const [capability, active] of this.localBasketCapabilities) {
+      if (active.expiresAt <= now) {
+        this.localBasketCapabilities.delete(capability);
+      }
+    }
+    if (
+      !/^[A-Za-z0-9_-]{32,64}$/u.test(ownerId) ||
+      !Number.isFinite(expiresAt) ||
+      expiresAt <= now
+    ) {
+      throw new Error("Local basket request is unavailable.");
+    }
+    const capability = crypto.randomUUID();
+    this.localBasketCapabilities.set(capability, { ownerId, expiresAt });
+    return capability;
+  }
+
+  async resolveLocalBasketCapability(
+    capability: string,
+  ): Promise<string | undefined> {
+    const active = this.localBasketCapabilities.get(capability);
+    if (!active || active.expiresAt <= Date.now()) {
+      this.localBasketCapabilities.delete(capability);
+      return undefined;
+    }
+    return active.ownerId;
+  }
+
+  async revokeLocalBasketRequest(capability: string): Promise<void> {
+    this.localBasketCapabilities.delete(capability);
+  }
 
   override onStart(): void {
     lifecycleEvent("container_started");
@@ -362,6 +421,35 @@ export class NemligMcpContainer extends Container<Env> {
   }
 }
 
+NemligMcpContainer.outboundByHost = {
+  [LOCAL_BASKET_STATE_HOST]: async (
+    request: Request,
+    env: Env,
+    context: OutboundHandlerContext,
+  ) => {
+    const container = env.NEMLIG_MCP_CONTAINER.get(
+      env.NEMLIG_MCP_CONTAINER.idFromString(context.containerId),
+    );
+    return handleLocalBasketStateRequest(
+      request,
+      env.NEMLIG_LOCAL_BASKET_STORAGE,
+      (capability) => container.resolveLocalBasketCapability(capability),
+    );
+  },
+};
+
+export class OwnerLocalBasketStorage extends DurableObject<CloudflareEnv> {
+  async mutate(ownerId: string, command: LocalBasketCommand): Promise<unknown> {
+    return this.ctx.blockConcurrencyWhile(() =>
+      mutateOwnerLocalBasketInventory(this.ctx.storage, ownerId, command),
+    );
+  }
+
+  async alarm(): Promise<void> {
+    await expireOwnerLocalBasketInventory(this.ctx.storage);
+  }
+}
+
 export { ContainerProxy } from "@cloudflare/containers";
 
 export default {
@@ -481,11 +569,18 @@ export default {
           {
             revision: config.principalPolicy.revision,
           },
-          operation !== "protocol" &&
+          operation === "useful" &&
             !isVerifiedServicePrincipal(principal, config),
         );
       },
-      async forward(original, _operation, _config, deadline, admission) {
+      async forward(
+        original,
+        _operation,
+        _config,
+        deadline,
+        admission,
+        principal,
+      ) {
         const namespace = containerNamespace(env);
         const container = getContainer(namespace, FIXED_CONTAINER_NAME);
         const request = attachAdmissionCredential(
@@ -493,7 +588,21 @@ export default {
           admission,
           deadline.signal,
         );
-        return container.fetch(request);
+        const capability = await container.beginLocalBasketRequest(
+          principal.principal_key,
+          Date.now() + deadline.remainingMs,
+        );
+        try {
+          const response = await container.fetch(
+            attachLocalBasketCapability(request, capability),
+          );
+          return await revokeWhenBodyEnds(response, () =>
+            container.revokeLocalBasketRequest(capability),
+          );
+        } catch (error) {
+          await container.revokeLocalBasketRequest(capability);
+          throw error;
+        }
       },
     });
   },

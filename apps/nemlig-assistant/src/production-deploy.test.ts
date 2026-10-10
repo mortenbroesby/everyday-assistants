@@ -41,7 +41,7 @@ const version = (
   id: string,
   revision: string,
   enabled: boolean,
-  includesPlanStorage = false,
+  storageState: "local" | "none" | "plan" = "local",
 ) =>
   JSON.stringify({
     id,
@@ -78,7 +78,7 @@ const version = (
           type: "durable_object_namespace",
           class_name: "NemligMcpContainer",
         },
-        ...(includesPlanStorage
+        ...(storageState === "plan"
           ? [
               {
                 name: "NEMLIG_PLAN_STORAGE",
@@ -86,7 +86,15 @@ const version = (
                 class_name: "PlanStorage",
               },
             ]
-          : []),
+          : storageState === "local"
+            ? [
+                {
+                  name: "NEMLIG_LOCAL_BASKET_STORAGE",
+                  type: "durable_object_namespace",
+                  class_name: "OwnerLocalBasketStorage",
+                },
+              ]
+            : []),
         { name: "NEMLIG_MCP_PRINCIPALS", type: "secret_text" },
       ],
     },
@@ -134,6 +142,10 @@ const config = (path: string) => ({
   durable_objects: {
     bindings: [
       { name: "NEMLIG_MCP_CONTAINER", class_name: "NemligMcpContainer" },
+      {
+        name: "NEMLIG_LOCAL_BASKET_STORAGE",
+        class_name: "OwnerLocalBasketStorage",
+      },
     ],
   },
 });
@@ -284,7 +296,11 @@ async function fixture(
         id,
         id === startingId ? previousCommit : commit,
         id !== startingId,
-        options.legacyPlanStorage === true && id === startingId,
+        id === startingId
+          ? options.legacyPlanStorage === true
+            ? "plan"
+            : "none"
+          : "local",
       );
     }
     if (args.includes("containers") && args.includes("list")) {
@@ -478,7 +494,7 @@ test("deployment input and provider metadata fail closed", () => {
   );
   assert.throws(() =>
     verifyCandidateVersion(
-      version(enabledId, commit, true, true),
+      version(enabledId, commit, true, "plan"),
       enabledId,
       commit,
       true,
@@ -525,7 +541,7 @@ test("service deployment verifies the exact candidate without persistent deploym
       NEMLIG_CI_ACCEPTANCE_READY: "true",
     };
     const report = await deployProduction(commit, deps);
-    assert.equal(report.outcome, "success");
+    assert.equal(report.outcome, "success", JSON.stringify(report));
     assert.equal(report.enabledVersion, enabledId);
     assert.ok(report.checks.includes("read_only_acceptance"));
     assert.equal(
@@ -543,13 +559,19 @@ test("service deployment verifies the exact candidate without persistent deploym
   }
 });
 
-test("deployment permits the reviewed PlanStorage retirement transition", async () => {
-  const { deps, root } = await fixture({ legacyPlanStorage: true });
+test("deployment rejects a retired PlanStorage predecessor before provider mutation", async () => {
+  const { deps, calls, root } = await fixture({ legacyPlanStorage: true });
   try {
     deps.env.NEMLIG_MCP_ACCESS_TOKEN = "synthetic-acceptance-token";
     const report = await deployProduction(commit, deps);
-    assert.equal(report.outcome, "success");
-    assert.equal(report.enabledVersion, enabledId);
+    assert.equal(report.outcome, "failed");
+    assert.equal(report.failure, "cloudflare_runtime_safety_mismatch");
+    assert.equal(
+      calls.some(
+        ({ command, args }) => command === "pnpm" && args.includes("deploy"),
+      ),
+      false,
+    );
   } finally {
     await rm(root, { recursive: true, force: true });
   }

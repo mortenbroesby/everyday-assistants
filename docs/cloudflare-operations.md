@@ -30,9 +30,11 @@ field names only, never values.
 
 The repository deploys one Worker, one fixed EU Container-controller Durable
 Object named `nemlig-production`, and at most one sleeping `lite` Container.
-Migration `v2` deletes the retired `PlanStorage` class and its stored records.
-The application does not read or write saved-shopping records, and a code
-rollback cannot recover deleted Durable Object data.
+Migration `v2` deleted the retired `PlanStorage` namespace and its saved-shopping
+records. Those records are not migrated and cannot be recovered by rolling back
+Worker code. Migration `v3` adds the separate owner-scoped Local basket namespace.
+Preserve that new namespace and its binding during rollback; deleting the class
+would destroy Local basket data.
 The Worker stays enabled during routine delivery; `MCP_ENABLED=false` is a
 manual emergency kill switch. A failed deployment is not automatically rolled
 back or disabled. Inspect the live Worker, Container image/version and rollout

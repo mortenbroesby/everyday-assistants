@@ -208,6 +208,7 @@ test("unknown, disabled, and malformed principals fail before admission or Conta
 
 test("shopping and unknown tool requests receive the same useful classification", async () => {
   const forwarded: OperationClass[] = [];
+  const forwardedPrincipals: string[] = [];
   const events: GatewayRequestEvent[] = [];
   let authenticated = 0;
   const dependencies: GatewayDependencies = {
@@ -217,9 +218,17 @@ test("shopping and unknown tool requests receive the same useful classification"
       return principal;
     },
     admit: async () => ({ admitted: true }),
-    forward: async (request, operation) => {
+    forward: async (
+      request,
+      operation,
+      _config,
+      _deadline,
+      _admission,
+      owner,
+    ) => {
       assert.equal(request.headers.get("authorization"), "Bearer owner-token");
       forwarded.push(operation);
+      forwardedPrincipals.push(owner.principal_key);
       return new Response("ok");
     },
     event: (event) => events.push(event),
@@ -239,6 +248,10 @@ test("shopping and unknown tool requests receive the same useful classification"
   assert.equal(await unknown.text(), "ok");
   assert.equal(authenticated, 2);
   assert.deepEqual(forwarded, ["useful", "useful"]);
+  assert.deepEqual(forwardedPrincipals, [
+    principal.principal_key,
+    principal.principal_key,
+  ]);
   assert.equal(events.length, 2);
   assert.deepEqual(
     events.map((event) => event.outcome),
@@ -264,6 +277,39 @@ test("shopping and unknown tool requests receive the same useful classification"
     classifyMcpMessage({
       method: "tools/call",
       params: { name: "add_approved_items" },
+    }),
+    "useful",
+  );
+});
+
+test("only explicit Local basket inventory actions use credential-free local admission", () => {
+  assert.equal(
+    classifyMcpMessage({
+      method: "tools/call",
+      params: {
+        name: "update_product_review_conversation",
+        arguments: { action: { kind: "list" } },
+      },
+    }),
+    "local",
+  );
+  assert.equal(
+    classifyMcpMessage({
+      method: "tools/call",
+      params: {
+        name: "update_product_review_conversation",
+        arguments: { action: { kind: "heartbeat", basket_id: "not-a-uuid" } },
+      },
+    }),
+    "useful",
+  );
+  assert.equal(
+    classifyMcpMessage({
+      method: "tools/call",
+      params: {
+        name: "update_product_review_conversation",
+        arguments: { action: { kind: "prepare_submission" } },
+      },
     }),
     "useful",
   );

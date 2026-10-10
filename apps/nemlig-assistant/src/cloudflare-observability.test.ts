@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   parseGatewayRequestEvent,
+  parseProductDiscoveryEvent,
   parseViewerResourceReadEvent,
   shouldEmitGatewayRequestEvent,
   type GatewayRequestEvent,
@@ -113,4 +114,32 @@ test("viewer binding evidence permits only a URI class, served artifact digest, 
   assert.throws(() =>
     parseViewerResourceReadEvent({ ...event, artifact_id: "not-a-digest" }),
   );
+});
+
+test("product discovery diagnostics have no room for provider or user data", () => {
+  const event = {
+    schema_version: 1 as const,
+    event: "product_discovery_diagnostic" as const,
+    stage: "detail" as const,
+    error_class: "provider" as const,
+    active_read_count: 3,
+  };
+  assert.deepEqual(parseProductDiscoveryEvent(event), event);
+  for (const sensitiveKey of [
+    "error",
+    "query",
+    "product",
+    "product_id",
+    "credentials",
+    "principal",
+    "session",
+    "stack",
+  ]) {
+    assert.throws(() =>
+      parseProductDiscoveryEvent({
+        ...event,
+        [sensitiveKey]: "SYNTHETIC_PRIVATE_PRODUCT_MARKER",
+      }),
+    );
+  }
 });

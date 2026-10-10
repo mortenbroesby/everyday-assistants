@@ -31,6 +31,9 @@ export type ReviewItem = {
   view: ProductView;
 };
 export type Review = {
+  basketId?: string;
+  revision?: number;
+  submissionAttempted?: boolean;
   destination: "needs-review" | "ready" | "alternatives";
   items: ReviewItem[];
   alternatives?: { product_id: number; query: string; views: ProductView[] };
@@ -53,6 +56,15 @@ export type Review = {
     };
   };
 };
+export type BasketSummary = {
+  basketId: string;
+  createdAt: number;
+  lastActivityAt: number;
+  expiresAt: number;
+  revision: number;
+  productCount: number;
+  submissionAttempted: boolean;
+};
 export type PresentationDestination = Review["destination"];
 export type ViewerPayload = {
   views?: ProductView[];
@@ -62,6 +74,9 @@ export type ViewerPayload = {
   detail_limit?: number;
   unenriched_count?: number;
   review?: Review;
+  baskets?: BasketSummary[];
+  selectedBasketId?: string;
+  selectionRequired?: boolean;
   unavailable?: boolean;
   ended?: boolean;
 };
@@ -71,6 +86,7 @@ export type ViewerScreen =
   | { kind: "cancelled" }
   | { kind: "products"; payload: ViewerPayload; views: ProductView[] }
   | { kind: "review"; review: Review; active: boolean }
+  | { kind: "picker"; baskets: BasketSummary[]; selectedBasketId?: string }
   | { kind: "unavailable"; review?: Review }
   | { kind: "empty"; message?: string };
 
@@ -88,6 +104,9 @@ export type ViewerPageModel = {
   confirmEnd: boolean;
   continueSubmitted: boolean;
   submitBlocked: boolean;
+  knownNoWrite: boolean;
+  baskets: BasketSummary[];
+  selectedBasketId?: string;
 };
 
 export type ViewerPageActions = {
@@ -98,6 +117,9 @@ export type ViewerPageActions = {
     expanded: boolean,
   ) => void;
   onRefresh: () => void;
+  onOpenPicker: () => void;
+  onSelectBasket: (basketId: string) => void;
+  onDeleteBasket: (basketId: string) => void;
   onQuantity: (item: ReviewItem, quantity: number) => void;
   onRemove: (item: ReviewItem) => void;
   onOpenAlternatives: (item: ReviewItem, query: string) => void;
@@ -526,6 +548,8 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
   const [alternativeChoice, setAlternativeChoice] = useState<
     { key: string; productId: number } | undefined
   >();
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | undefined>();
+  const [basketMenuOpen, setBasketMenuOpen] = useState(false);
   const alternativeOpener = useRef<HTMLElement | null>(null);
   const alternativeProductId = useRef<number | undefined>(undefined);
   const alternativeHeading = useRef<HTMLHeadingElement | null>(null);
@@ -547,8 +571,14 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
     confirmEnd,
     continueSubmitted,
     submitBlocked,
+    baskets,
+    selectedBasketId,
   } = model;
   const review = screen.kind === "review" ? screen.review : undefined;
+  useEffect(() => {
+    setConfirmDeleteId(undefined);
+    setBasketMenuOpen(false);
+  }, [selectedBasketId]);
   const active = screen.kind === "review" && screen.active;
   useLayoutEffect(() => {
     const pending = removalFocus.current;
@@ -630,17 +660,49 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
     productPayload?.detail_limit !== undefined &&
     Array.isArray(productPayload.items);
   const partialSubmission = review?.submission?.status === "partial";
+  const confirmedSubmission = review?.submission?.status === "submitted";
   const uncertainSubmission =
-    submitBlocked || review?.submission?.status === "uncertain";
+    review?.submission?.status === "uncertain" ||
+    (submitBlocked && !partialSubmission && !confirmedSubmission);
   const editsBlocked =
     busy ||
+    submitBlocked ||
     uncertainSubmission ||
     partialSubmission ||
-    (review?.submission?.status === "submitted" && !continueSubmitted);
+    (confirmedSubmission && !continueSubmitted);
   const terminalSubmission =
     uncertainSubmission ||
     partialSubmission ||
-    (review?.submission?.status === "submitted" && !continueSubmitted);
+    (confirmedSubmission && !continueSubmitted);
+  const basketMenu = review && (
+    <div className="basket-menu">
+      <button
+        type="button"
+        aria-label="Local basket options"
+        aria-expanded={basketMenuOpen}
+        onClick={() => setBasketMenuOpen((open) => !open)}
+      >
+        •••
+      </button>
+      {basketMenuOpen && (
+        <div
+          className="basket-menu-options"
+          role="group"
+          aria-label="Local basket actions"
+        >
+          <Button
+            color="secondary"
+            onClick={() => {
+              setBasketMenuOpen(false);
+              actions.onOpenPicker();
+            }}
+          >
+            Choose basket
+          </Button>
+        </div>
+      )}
+    </div>
+  );
   const hasActiveProducts = Boolean(
     review && active && review.items.length > 0,
   );
@@ -659,11 +721,13 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
           : "What should we shop for?"
         : basket
           ? "Actual Nemlig basket"
-          : screen.kind === "unavailable"
-            ? "Local basket unavailable"
-            : screen.kind === "review"
-              ? "Your Local basket"
-              : "Products";
+          : screen.kind === "picker"
+            ? "Local baskets"
+            : screen.kind === "unavailable"
+              ? "Local basket unavailable"
+              : screen.kind === "review"
+                ? "Your Local basket"
+                : "Products";
   const intro = !terminalSubmission
     ? review && active
       ? review.items.length === 0
@@ -673,7 +737,9 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
           : "Tap a product for details, or swipe from right to left for actions."
       : basket
         ? "Your current Nemlig basket. This view cannot change it."
-        : "Inspect product details here or continue in conversation."
+        : screen.kind === "picker"
+          ? undefined
+          : "Inspect product details here or continue in conversation."
     : undefined;
   const outcomeOnly =
     terminalSubmission ||
@@ -690,7 +756,84 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
       title={outcomeOnly ? undefined : title}
       intro={outcomeOnly ? undefined : intro}
       maxWidth={maxWidth}
+      headerActions={basketMenu}
     >
+      {screen.kind === "picker" && (
+        <section className="basket-picker" aria-label="Local baskets">
+          {baskets.length === 0 ? (
+            <p role="status">
+              {screen.selectedBasketId
+                ? "This Local basket is unavailable or expired. Start a new one in conversation."
+                : "No active Local baskets. Start one in conversation."}
+            </p>
+          ) : (
+            <ul>
+              {baskets.map((basket) => (
+                <li key={basket.basketId}>
+                  <strong>Basket {basket.basketId.slice(0, 8)}</strong>
+                  <span className="basket-picker-meta">
+                    Last active{" "}
+                    {new Date(basket.lastActivityAt).toLocaleDateString()} ·{" "}
+                    {basket.productCount} unique products
+                  </span>
+                  {basket.submissionAttempted && (
+                    <span className="basket-picker-status" role="status">
+                      Check the Nemlig basket before continuing.
+                    </span>
+                  )}
+                  <Button
+                    color="primary"
+                    aria-label={`Open basket ${basket.basketId.slice(0, 8)}`}
+                    disabled={busy}
+                    onClick={() => actions.onSelectBasket(basket.basketId)}
+                  >
+                    Open
+                  </Button>
+                  {confirmDeleteId === basket.basketId ? (
+                    <div
+                      className="basket-delete-confirmation"
+                      role="group"
+                      aria-label={`Confirm deletion of basket ${basket.basketId.slice(0, 8)}`}
+                    >
+                      <p>
+                        Delete this Local basket? This does not change your real
+                        Nemlig basket.
+                      </p>
+                      <Button
+                        color="secondary"
+                        disabled={busy}
+                        onClick={() => setConfirmDeleteId(undefined)}
+                      >
+                        Keep
+                      </Button>
+                      <Button
+                        color="secondary"
+                        disabled={busy}
+                        onClick={() => {
+                          setConfirmDeleteId(undefined);
+                          actions.onDeleteBasket(basket.basketId);
+                        }}
+                      >
+                        Delete
+                      </Button>
+                    </div>
+                  ) : (
+                    <Button
+                      color="secondary"
+                      aria-label={`Delete basket ${basket.basketId.slice(0, 8)}`}
+                      disabled={busy}
+                      onClick={() => setConfirmDeleteId(basket.basketId)}
+                    >
+                      Delete
+                    </Button>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+          {message && <p role="status">{message}</p>}
+        </section>
+      )}
       {screen.kind === "loading" && (
         <p className="status" role="status">
           Loading your Nemlig selection…
@@ -977,7 +1120,9 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
               disabled={busy}
               onClick={actions.onContinueSubmitted}
             >
-              Continue with Local basket
+              {review.submissionAttempted
+                ? "Choose another Local basket"
+                : "Continue with Local basket"}
             </Button>
           </OutcomeSurface>
         )}
@@ -985,15 +1130,20 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
         <OutcomeSurface
           tone="warning"
           title={
-            message.includes("No product was sent.")
+            model.knownNoWrite
               ? "Addition stopped before sending"
-              : "We could not verify the addition"
+              : review.submissionAttempted
+                ? "A previous addition needs checking"
+                : "We could not verify the addition"
           }
         >
           {message && !busy && <p role="status">{message}</p>}
           <p role="status">
-            Inspect the actual Nemlig basket before making another request.
-            Nemlig Assistant will not retry automatically.
+            {model.knownNoWrite
+              ? "The known result is that no product was sent. This Local basket remains fenced and cannot be retried; inspect the basket before continuing."
+              : review.submissionAttempted
+                ? "A prior addition may have reached Nemlig. Inspect the actual basket before continuing; this Local basket cannot be submitted again."
+                : "Inspect the actual Nemlig basket before making another request. Nemlig Assistant will not retry automatically."}
           </p>
           <Button
             color="secondary"

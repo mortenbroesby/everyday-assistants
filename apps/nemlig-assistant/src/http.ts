@@ -32,6 +32,7 @@ import {
 } from "./auth0.js";
 import { NemligClient, type ShoppingClient } from "./client.js";
 import { createMcpServer, serviceAcceptanceToolInventory } from "./mcp.js";
+import { isCredentialFreeMcpCall } from "./credential-free-mcp.js";
 import {
   PRODUCT_VIEWER_RESOURCE_URI,
   readProductViewerArtifact,
@@ -129,7 +130,18 @@ const isCredentialFreeRequest = (request: Request): boolean => {
   if (typeof method !== "string") {
     return false;
   }
-  return method !== "tools/call";
+  if (method !== "tools/call") {
+    return true;
+  }
+  const params = (body as { params?: unknown }).params;
+  if (!params || typeof params !== "object" || Array.isArray(params)) {
+    return false;
+  }
+  const { name, arguments: args } = params as {
+    name?: unknown;
+    arguments?: unknown;
+  };
+  return isCredentialFreeMcpCall(name, args);
 };
 
 type Request = IncomingMessage & {
@@ -171,6 +183,7 @@ export function createHttpApp(
       principal: Principal;
       credentials: Credentials | undefined;
       service: boolean;
+      localBasketCapability?: string;
     }
   >();
   const handler = createMcpHandler(
@@ -182,7 +195,13 @@ export function createHttpApp(
       if (!requestContext) {
         throw new Error("Validated principal context is missing");
       }
-      const { context, principal, credentials, service } = requestContext;
+      const {
+        context,
+        principal,
+        credentials,
+        service,
+        localBasketCapability,
+      } = requestContext;
       return createMcpServer(
         context.client,
         async () => credentials,
@@ -191,6 +210,7 @@ export function createHttpApp(
         {
           principalKey: principal.principal_key,
           policyRevision: config.principalPolicy.revision,
+          ...(localBasketCapability ? { localBasketCapability } : {}),
           ...(service ? { kind: "service" as const } : {}),
         },
         (context.reviews ??= new ProductReviewService(context.client, {
@@ -429,6 +449,13 @@ export function createHttpApp(
         principal,
         credentials,
         service: Boolean(service),
+        ...(req.get("x-nemlig-local-basket-capability")
+          ? {
+              localBasketCapability: req.get(
+                "x-nemlig-local-basket-capability",
+              ),
+            }
+          : {}),
       });
       try {
         const resourceRead =

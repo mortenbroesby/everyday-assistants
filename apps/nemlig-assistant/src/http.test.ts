@@ -515,7 +515,7 @@ test("HTTP service acceptance uses signed machine identity and its fixed fixture
   }
 });
 
-test("HTTP MCP creates bounded isolated clients, credentials, baskets, favourites, and proposal stores per principal", async () => {
+test("HTTP MCP creates bounded isolated clients, credentials, favourites, and proposal stores per principal", async () => {
   const logins: string[] = [];
   const clients = new Set<ShoppingClient>();
   const proposalStores = new Set<BasketProposalService>();
@@ -636,67 +636,6 @@ test("HTTP MCP creates bounded isolated clients, credentials, baskets, favourite
       "guest@example.test:guest-secret",
       "owner@example.test:owner-secret",
     ]);
-    const started = await owner.callTool({
-      _meta: { "openai/session": "shop-a" },
-      name: "start_product_review",
-      arguments: { items: [{ product_id: 1, quantity: 2 }] },
-    });
-    assert.equal(started.isError, undefined);
-    const secondOwner = await connect("owner");
-    try {
-      const otherChat = await secondOwner.callTool({
-        _meta: { "openai/session": "shop-b" },
-        name: "update_product_review_conversation",
-        arguments: { action: { kind: "show" } },
-      });
-      assert.deepEqual(otherChat.structuredContent, { unavailable: true });
-      const noSession = await secondOwner.callTool({
-        name: "update_product_review_conversation",
-        arguments: { action: { kind: "show" } },
-      });
-      assert.equal(
-        noSession.isError,
-        true,
-        "stateless requests without conversation context must fail closed",
-      );
-      const edited = await secondOwner.callTool({
-        _meta: { "openai/session": "shop-a" },
-        name: "update_product_review_conversation",
-        arguments: {
-          action: { kind: "quantity", product_id: 1, quantity: 3 },
-        },
-      });
-      assert.equal(edited.isError, undefined);
-      const shown = await owner.callTool({
-        _meta: { "openai/session": "shop-a" },
-        name: "update_product_review_conversation",
-        arguments: { action: { kind: "show" } },
-      });
-      assert.equal(
-        (
-          shown.structuredContent as {
-            review: { items: Array<{ state: string; quantity: number }> };
-          }
-        ).review.items[0]?.state,
-        "ready",
-      );
-      assert.equal(
-        (
-          shown.structuredContent as {
-            review: { items: Array<{ quantity: number }> };
-          }
-        ).review.items[0]?.quantity,
-        3,
-      );
-      const denied = await guest.callTool({
-        _meta: { "openai/session": "shop-a" },
-        name: "update_product_review_conversation",
-        arguments: { action: { kind: "show" } },
-      });
-      assert.deepEqual(denied.structuredContent, { unavailable: true });
-    } finally {
-      await secondOwner.close();
-    }
     assert.equal(clients.size, 2);
     assert.equal(proposalStores.size, 2);
     await owner.close();
@@ -841,30 +780,48 @@ test("current family stateless requests decrypt credentials and isolate credenti
   }
 });
 
-test("credential-free discovery preserves an active review while credential rotation invalidates it", async () => {
-  let providerReads = 0;
-  const product = {
-    id: 1,
-    name: "Fixture milk",
-    price: 12,
-    unit: "12 kr/L",
-    unitPrice: 12,
-    unitSize: "1 L",
-    brand: "Fixture",
-    category: "Dairy",
-    subcategory: "Milk",
-    imageUrl: "",
-    available: true,
-    labels: [],
-    isOrganic: false,
-    isFrozen: false,
-    isRefrigerated: true,
-    isDairy: true,
-    isLactoseFree: false,
-    isGlutenFree: true,
-    isVegan: false,
-    isOnDiscount: false,
+test("authenticated local-only basket requests keep capabilities request-scoped", async () => {
+  const observed: Array<{ capability: string; kind: string }> = [];
+  const basketId = "00000000-0000-4000-8000-000000000099";
+  const basket = {
+    basketId,
+    createdAt: 1,
+    lastActivityAt: 2,
+    expiresAt: 86_400_002,
+    revision: 1,
+    lines: [],
   };
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (input, init) => {
+    const url =
+      typeof input === "string"
+        ? input
+        : input instanceof URL
+          ? input.href
+          : input.url;
+    if (url !== "http://local-basket-state.internal/inventory") {
+      return originalFetch(input, init);
+    }
+    const command = JSON.parse(String(init?.body)) as { kind: string };
+    const capability = new Headers(init?.headers).get(
+      "x-nemlig-local-basket-capability",
+    );
+    assert.ok(capability);
+    observed.push({ capability, kind: command.kind });
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    if (command.kind === "list") {
+      return Response.json([]);
+    }
+    if (command.kind === "delete") {
+      return Response.json({ deleted: true });
+    }
+    if (command.kind === "selection") {
+      return Response.json(null);
+    }
+    return Response.json(basket);
+  };
+
+  let providerTouches = 0;
   const app = createHttpApp(
     config,
     oauth,
@@ -879,11 +836,17 @@ test("credential-free discovery preserves an active review while credential rota
     },
     () => {
       const client = {
-        isLoggedIn: () => false,
-        login: async () => {},
+        isLoggedIn: () => {
+          providerTouches += 1;
+          return false;
+        },
         getProduct: async () => {
-          providerReads += 1;
-          return product;
+          providerTouches += 1;
+          throw new Error("provider must stay asleep");
+        },
+        getCart: async () => {
+          providerTouches += 1;
+          throw new Error("provider must stay asleep");
         },
       } as unknown as ShoppingClient;
       return { client, proposals: new BasketProposalService(client) };
@@ -897,81 +860,91 @@ test("credential-free discovery preserves an active review while credential rota
   const endpoint = new URL(
     `http://${config.host}:${(server.address() as AddressInfo).port}/mcp`,
   );
-  const reviewer = modernClient("active-review");
-  const discovery = modernClient("credential-free-discovery");
-  const rotated = modernClient("rotated-review");
-  const _meta = { "openai/session": "review-discovery-regression" };
-  try {
-    await reviewer.connect(
-      new StreamableHTTPClientTransport(endpoint, {
-        requestInit: { headers: await familyHeaders("owner") },
-      }),
-    );
-    const started = await reviewer.callTool({
-      _meta,
-      name: "start_product_review",
-      arguments: { items: [{ product_id: 1, quantity: 2 }] },
-    });
-    assert.equal(started.isError, undefined);
-    const review = (started.structuredContent as { review: unknown }).review;
-    assert.equal(providerReads, 1);
-
-    await discovery.connect(
-      new StreamableHTTPClientTransport(endpoint, {
-        requestInit: { headers: { authorization: "Bearer owner" } },
-      }),
-    );
-    await discovery.listTools();
-    const shown = await reviewer.callTool({
-      _meta,
-      name: "update_product_review_conversation",
-      arguments: { action: { kind: "show" } },
-    });
-    assert.equal(
-      shown.isError,
-      undefined,
-      "credential-free discovery must not discard the active review",
-    );
-    assert.deepEqual(
-      (shown.structuredContent as { review: unknown }).review,
-      review,
-    );
-    assert.equal(
-      providerReads,
-      1,
-      "discovery and showing retained state must not reread products",
-    );
-
-    const next = await encryptCredentials(
-      { username: "owner@example.test", password: "rotated-secret" },
-      {
-        principalKey: "a".repeat(32),
-        policyRevision: principalPolicy.revision,
-        keyVersion: config.credentialKeyVersion,
-        generation: 2,
-      },
-      config.credentialKey,
-    );
-    await rotated.connect(
+  const connect = async (capability: string) => {
+    const client = modernClient(`local-only-${capability}`);
+    await client.connect(
       new StreamableHTTPClientTransport(endpoint, {
         requestInit: {
-          headers: { authorization: "Bearer owner", ...envelopeHeaders(next) },
+          headers: {
+            authorization: "Bearer owner",
+            "x-nemlig-local-basket-capability": capability,
+          },
         },
       }),
     );
-    const invalidated = await rotated.callTool({
-      _meta,
-      name: "update_product_review_conversation",
-      arguments: { action: { kind: "show" } },
-    });
-    assert.equal(invalidated.isError, undefined);
-    assert.deepEqual(invalidated.structuredContent, { unavailable: true });
+    return client;
+  };
+  const first = await connect("request-capability-one");
+  const second = await connect("request-capability-two");
+  try {
+    const [firstList, secondList] = await Promise.all([
+      first.callTool({
+        name: "update_product_review",
+        arguments: { action: { kind: "list" } },
+      }),
+      second.callTool({
+        name: "update_product_review",
+        arguments: { action: { kind: "list" } },
+      }),
+    ]);
+    assert.equal(firstList.isError, undefined);
+    assert.equal(secondList.isError, undefined);
+
+    for (const action of [
+      { kind: "show" },
+      { kind: "select" },
+      { kind: "heartbeat" },
+      { kind: "delete" },
+    ]) {
+      const result = await first.callTool({
+        name: "update_product_review",
+        arguments: {
+          ...(action.kind === "show" ? {} : { basket_id: basketId }),
+          action,
+        },
+      });
+      assert.equal(result.isError, undefined, JSON.stringify(action));
+    }
+
+    for (const request of [
+      {
+        name: "update_product_review",
+        arguments: {
+          basket_id: basketId,
+          action: { kind: "add", items: [{ product_id: 1, quantity: 1 }] },
+        },
+      },
+      {
+        name: "submit_product_review",
+        arguments: { basket_id: basketId, submission_id: crypto.randomUUID() },
+      },
+    ]) {
+      await assert.rejects(
+        first.callTool(request),
+        (error: unknown) =>
+          (error as { data?: { status?: number } }).data?.status === 403,
+      );
+    }
+
+    assert.ok(
+      observed.some((entry) => entry.capability === "request-capability-one"),
+    );
+    assert.ok(
+      observed.some((entry) => entry.capability === "request-capability-two"),
+    );
+    assert.equal(
+      observed.filter((entry) => entry.kind === "list").length,
+      6,
+      "local-only UI operations all reached the authenticated callback",
+    );
+    assert.equal(providerTouches, 0);
   } finally {
-    await Promise.all([reviewer.close(), discovery.close(), rotated.close()]);
+    await Promise.all([first.close(), second.close()]);
     server.closeAllConnections();
     await new Promise<void>((resolve, reject) =>
       server.close((error?: Error) => (error ? reject(error) : resolve())),
     );
+    globalThis.fetch = originalFetch;
   }
 });
 

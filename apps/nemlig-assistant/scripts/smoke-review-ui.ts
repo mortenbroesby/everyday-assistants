@@ -11,8 +11,12 @@ import { toNodeHandler } from "@modelcontextprotocol/node";
 import { chromium } from "playwright";
 import { createMcpServer } from "../src/mcp.js";
 import type { Product, ShoppingClient } from "../src/client.js";
-import type { ProductReviewSnapshot } from "../src/product-review.js";
 import { BasketProposalService } from "../src/proposals.js";
+import { handleLocalBasketStateRequest } from "../src/local-basket-callback.js";
+import {
+  mutateOwnerLocalBasketInventory,
+  type LocalBasketInventoryStorage,
+} from "../src/local-basket-storage.js";
 import { PRODUCT_VIEWER_RESOURCE_URI } from "../src/product-viewer.js";
 import { readLocalViewerGeneration } from "./viewer-generation.js";
 import {
@@ -26,8 +30,6 @@ const viewerGeneration = await readLocalViewerGeneration(
 
 let basketReads = 0,
   writes = 0;
-let preparedForSimulation: ProductReviewSnapshot | undefined;
-let simulatedSubmitted: ProductReviewSnapshot | undefined;
 let simulatedSubmissions = 0;
 let nextSubmissionStatus: "submitted" | "uncertain" = "submitted";
 let unknownPriceScenario = false;
@@ -107,17 +109,78 @@ const uncertainProposals = {
     ...args: Parameters<BasketProposalService["prepareAdditions"]>
   ) => proposalService.prepareAdditions(...args),
   apply: async () => {
-    throw new Error(
-      "Synthetic ambiguous outcome; provider mutation is forbidden in this smoke.",
-    );
+    simulatedSubmissions++;
+    if (nextSubmissionStatus === "uncertain") {
+      nextSubmissionStatus = "submitted";
+      throw new Error(
+        "Synthetic ambiguous outcome; provider mutation is forbidden in this smoke.",
+      );
+    }
+    return {
+      status: "completed",
+      operation: "additions",
+      replayed: false,
+      verified_additions: 1,
+      basket: {
+        items: [],
+        products_price: 0,
+        delivery_price: undefined,
+        number_of_products: 0,
+        delivery_time: undefined,
+      },
+    };
   },
 } as unknown as BasketProposalService;
+// Keep durable storage across MCP restarts, just as the owner Durable Object does.
+let stored = new Map<string, unknown>();
+const storage: LocalBasketInventoryStorage = {
+  get: async <T>(key: string) => structuredClone(stored.get(key)) as T,
+  put: async (key, value) => {
+    stored.set(key, structuredClone(value));
+  },
+  delete: async (key) => stored.delete(key),
+  setAlarm: async () => {},
+  deleteAlarm: async () => {},
+  transaction: async (action) => {
+    const before = structuredClone(stored);
+    try {
+      return await action(storage);
+    } catch (error) {
+      stored = before;
+      throw error;
+    }
+  },
+};
+const originalFetch = globalThis.fetch;
+globalThis.fetch = (async (input, init) => {
+  const url = new URL(input instanceof Request ? input.url : input.toString());
+  if (url.hostname !== "local-basket-state.internal") {
+    return originalFetch(input, init);
+  }
+  return handleLocalBasketStateRequest(
+    new Request(input, init),
+    {
+      idFromName: (owner) => owner,
+      get: () => ({
+        mutate: (owner, command) =>
+          mutateOwnerLocalBasketInventory(storage, owner, command),
+      }),
+    },
+    async (capability) =>
+      capability === "smoke-capability" ? "smoke-owner" : undefined,
+  );
+}) as typeof fetch;
 const makeServer = () =>
   createMcpServer(
     catalogue,
     async () => undefined,
     process.env,
     uncertainProposals,
+    {
+      principalKey: "smoke-owner",
+      policyRevision: "smoke-policy",
+      localBasketCapability: "smoke-capability",
+    },
   );
 let current = makeServer();
 const handler = createMcpHandler(() => current, { legacy: "reject" });
@@ -192,7 +255,16 @@ document.getElementById('run').onclick = async () => {
   check(button('Add to Nemlig basket')&&!button('Add to Nemlig'),'Prepared review skipped explicit confirmation');
   const stats=await fetch('/stats').then(r=>r.json()); check(stats.basketReads===1&&stats.basketWrites===0,'Prepare crossed an unsafe provider boundary');
   check(widgetCalls.every(c=>!('representation' in c.arguments)),'Viewer sent a representation selector');
-  status.textContent='PASS: one Ready list, no tabs or checkboxes, quantity flush, all-row exact prepare, confirmation retained, one fake basket read, zero writes';
+  await fetch('/reset',{method:'POST'});
+  const recovered=await call({name:'update_product_review_conversation',arguments:{action:{kind:'show'}}});
+  check(recovered.structuredContent.review.basketId===review.basketId,'Restart lost the selected durable basket');
+  check(recovered.structuredContent.review.items.length===2&&!recovered.structuredContent.review.submission,'Restart restored prepared authority or lost rows');
+  const stale=await call({name:'submit_product_review',arguments:{basket_id:review.basketId,submission_id:review.submission.submission_id}});
+  check(stale.isError===true,'Restart accepted an expired prepared submission');
+  check((await fetch('/stats').then(r=>r.json())).basketWrites===0,'Restart recovery crossed provider write boundary');
+  transcript=recovered; initialized=false; frame.src='/viewer';
+  await wait(()=>initialized&&button('Submit to Nemlig')&&!button('Add to Nemlig basket'));
+  status.textContent='PASS: quantity flush, all-row exact prepare, durable restart recovery without authority, zero provider writes';
  } catch(error) {status.textContent='FAIL: '+error.message+' | viewer: '+(doc()?.body?.innerText||'no iframe document')+' | widget calls: '+JSON.stringify(widgetCalls);} finally {run.disabled=false;}
 };
 document.getElementById('flow').onclick = async () => {
@@ -261,6 +333,8 @@ const server = createServer((req, res) => {
     void mcpHandler(req, res);
     return;
   }
+  // Fixture routes share reset counters and durable storage; MCP owns the behavior under test.
+  // fallow-ignore-next-line complexity
   void (async () => {
     if (req.url === "/") {
       res.setHeader("content-type", "text/html");
@@ -281,8 +355,6 @@ const server = createServer((req, res) => {
       current = makeServer();
       basketReads = 0;
       writes = 0;
-      preparedForSimulation = undefined;
-      simulatedSubmitted = undefined;
       simulatedSubmissions = 0;
       nextSubmissionStatus = "submitted";
       unknownPriceScenario = false;
@@ -324,36 +396,6 @@ const server = createServer((req, res) => {
         arguments: Record<string, unknown>;
       };
       if (
-        input.name === "submit_product_review" &&
-        nextSubmissionStatus !== "uncertain"
-      ) {
-        const prepared = preparedForSimulation;
-        if (
-          !prepared?.submission ||
-          prepared.submission.status !== "prepared" ||
-          input.arguments.submission_id !== prepared.submission.submission_id
-        ) {
-          throw new Error(
-            "Only the exact locally prepared review may use the synthetic verified-submit result",
-          );
-        }
-        simulatedSubmitted = structuredClone(prepared);
-        simulatedSubmitted.submission!.status = nextSubmissionStatus;
-        nextSubmissionStatus = "submitted";
-        simulatedSubmissions++;
-        res.setHeader("content-type", "application/json");
-        res.end(
-          JSON.stringify({
-            structuredContent: {
-              review: simulatedSubmitted,
-            },
-            content: [],
-            isError: false,
-          }),
-        );
-        return;
-      }
-      if (
         ![
           "start_product_review",
           "update_product_review",
@@ -364,46 +406,10 @@ const server = createServer((req, res) => {
       ) {
         throw new Error("Unexpected tool call in this smoke");
       }
-      const action = input.arguments.action as
-        | { kind?: string; destination?: ProductReviewSnapshot["destination"] }
-        | undefined;
-      if (
-        input.name === "update_product_review" &&
-        action?.kind === "navigate" &&
-        simulatedSubmitted &&
-        action.destination
-      ) {
-        simulatedSubmitted.destination = action.destination;
-        res.setHeader("content-type", "application/json");
-        res.end(
-          JSON.stringify({
-            structuredContent: { review: structuredClone(simulatedSubmitted) },
-            content: [],
-            isError: false,
-          }),
-        );
-        return;
-      }
-      if (
-        input.name === "submit_product_review" &&
-        nextSubmissionStatus === "uncertain"
-      ) {
-        nextSubmissionStatus = "submitted";
-      }
-      const result = await client.callTool(input);
-      if (
-        input.name === "update_product_review" &&
-        action?.kind === "prepare_submission"
-      ) {
-        const snapshot = (
-          result.structuredContent as { review?: unknown } | undefined
-        )?.review;
-        if (snapshot && typeof snapshot === "object") {
-          preparedForSimulation = structuredClone(
-            snapshot,
-          ) as ProductReviewSnapshot;
-        }
-      }
+      const result = await client.callTool({
+        ...input,
+        _meta: { "openai/session": "review-ui-smoke-conversation" },
+      });
       res.setHeader("content-type", "application/json");
       res.end(JSON.stringify(result));
       return;
@@ -472,6 +478,7 @@ try {
   await browser.close();
   await client.close();
   await closeViewerSmokeServer(server);
+  globalThis.fetch = originalFetch;
 }
 console.log(
   "MCP adapter browser smoke passed: recovery, current review controls, restart, exact prepare, and zero fake provider basket writes.",

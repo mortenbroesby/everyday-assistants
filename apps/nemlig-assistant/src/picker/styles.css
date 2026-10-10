@@ -37,6 +37,63 @@ h2 {
   font-size: 0.95rem;
   font-weight: 650;
 }
+.basket-menu {
+  position: relative;
+  flex: none;
+}
+.basket-menu > button {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  background: var(--soft);
+  cursor: pointer;
+  font-size: 1.15rem;
+  letter-spacing: 0.08em;
+  border: 0;
+  color: var(--ink);
+  cursor: pointer;
+}
+.basket-menu-options {
+  position: absolute;
+  z-index: 5;
+  top: 48px;
+  right: 0;
+  width: min(260px, calc(100vw - 48px));
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: 0 8px 24px #0002;
+}
+.basket-menu-options button {
+  width: 100%;
+}
+.basket-picker ul {
+  display: grid;
+  gap: 10px;
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.basket-picker li {
+  display: grid;
+  gap: 6px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+}
+.basket-picker-meta,
+.basket-picker-status {
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+.basket-delete-confirmation {
+  display: grid;
+  gap: 8px;
+  padding-top: 8px;
+}
 .status,
 .empty {
   color: var(--muted);
@@ -198,7 +255,7 @@ h2 {
   border: 0;
   border-radius: 50%;
 }
-.product-action-controls [data-viewer-component="quantity-control"] {
+.product-action-controls .product-action-quantity {
   width: auto;
   grid-template-columns: 44px minmax(44px, max-content) 44px;
   justify-self: end;
@@ -206,12 +263,10 @@ h2 {
   padding: 0;
   border: 0;
 }
-.product-action-controls
-  [data-viewer-component="quantity-control"]
-  > :first-child {
+.product-action-controls .product-action-quantity-label {
   display: none;
 }
-.product-action-controls [data-viewer-component="quantity-control"] button {
+.product-action-controls .product-action-quantity-button {
   height: 44px;
   border: 0;
   border-radius: 50%;
@@ -220,9 +275,7 @@ h2 {
   font-size: 1.75rem;
   font-weight: 400;
 }
-.product-action-controls
-  [data-viewer-component="quantity-control"]
-  [aria-live] {
+.product-action-controls .product-action-quantity-value {
   display: grid;
   place-items: center;
   width: auto;

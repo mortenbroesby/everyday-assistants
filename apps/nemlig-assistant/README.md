@@ -38,6 +38,7 @@ It has no recipe, order, payment, or checkout capability. It is not affiliated
 with or endorsed by nemlig.com or OpenAI.
 
 <a id="start-here"></a>
+
 ## 🚀 Start here
 
 Once connected, try prompts like:
@@ -55,6 +56,7 @@ payload without a redundant second approval; presence in the Local basket alone 
 additions require exact approval, with final revalidation and verified readback.
 
 <a id="what-you-can-do"></a>
+
 ## ✨ What you can do
 
 ### Search and inspect products
@@ -163,20 +165,22 @@ shopping starters; they do not call Nemlig or change provider state.
 **Submit to Nemlig** is full width; **Clear** is full width at the
 bottom of the list and asks for confirmation before discarding the Local basket.
 
-Voice and touch use one private temporary draft per ChatGPT conversation, identified
-by the host session metadata and authenticated principal. There is no hourly expiry.
-**Clear** asks for confirmation, then discards the Local basket and shows a
-conversational starting screen. A restart or bounded memory eviction
-can also discard it; missing state is reported rather than silently recreated.
-Each principal retains at most eight conversation drafts of up to 500 products. Hosts
-without conversation context cannot access a hosted draft. ChatGPT does not
-provide a reliable notification when a conversation is closed.
-They are not saved shopping plans or named lists. A conversation has one temporary
-Local basket, and supported cards are interchangeable clients of that same list.
-Starting another card does not create a separate list or invalidate earlier
-supported cards. Reloading a historical message does not restore its old snapshot;
-use `start_product_review` without items to render the current list. A missing list
-stays unavailable until explicitly started again. Remounts require the current
+In the hosted deployment, Local baskets are durable data owned by the authenticated
+principal, independent of credentials and individual chat sessions. Direct stdio
+use is process-local and text-only. Each owner can keep up to 50 unnamed
+baskets; each basket can hold up to 500 distinct product lines and expires 24 hours
+after explicit activity. The host may remember the selected basket only when it
+provides a stable conversation identifier. Without one, the viewer asks the user
+to pick a basket. Reconnecting credentials recovers the same non-authorizing
+product snapshots, but never a prepared submission or provider authority.
+**Clear** asks for confirmation, then deletes only the selected Local basket and
+shows the picker. Expired and evicted baskets are unavailable and are never
+silently recreated. ChatGPT does not provide a reliable notification when a
+conversation is closed.
+The baskets are unnamed and are not saved shopping plans. Starting a new basket
+does not replace another basket or invalidate its supported cards. Historical
+messages must carry their basket ID for mutations; missing or stale IDs lead back
+to the picker rather than targeting another basket. Remounts require the current
 supported viewer bundle; already-mounted older bundles may not work. After a
 local action, the viewer ignores unsolicited host snapshots that could roll it
 back, but offers a read-only refresh. Failed mutations are never replayed.
@@ -246,17 +250,20 @@ if you only ask to prepare/inspect, or any item or quantity changed, the
 assistant must ask before submitting. Preparing or showing confirmation does
 not submit. The quantities are added in Nemlig; unrelated Nemlig lines stay
 unchanged. Editing the Local basket invalidates the pending submission. Verified
-success has its own screen; the Local basket remains available for continued
-shopping. If the result is uncertain, inspect
-the actual Nemlig basket before preparing another submission. A known partial
-result records the verified count and stops before any later write. There is no
-automatic retry.
+success has its own screen and deletes that Local basket. Start or select another
+basket for continued shopping. If the result is uncertain or partial, the
+attempted basket is inspect-or-delete only. Inspect the actual Nemlig basket;
+after confirming the outcome, create a new Local basket and obtain fresh exact
+authorization before another submission. The attempted record is never retried.
+A known partial result records the verified count and stops before any later
+write. There is no automatic retry.
 
 Interactive ChatGPT hosts use their tool bridge. Other hosts retain the complete
 structured/text results and equivalent conversational requests; the viewer never
 pretends a local action succeeded when no bridge is available.
 
 <a id="how-basket-changes-work"></a>
+
 ## 🛡️ How basket changes work
 
 ```text
@@ -311,6 +318,7 @@ preparation never authorizes a basket mutation. Operators must read
 [`nemlig-basket` skill](.codex/skills/nemlig-basket/SKILL.md).
 
 <a id="run-it"></a>
+
 ## ⚙️ Run it
 
 Run commands from the Everyday Assistants repository root.
@@ -359,7 +367,9 @@ The MCP surface is organized around household actions:
 - Show or build a Local basket: `start_product_review`; refresh, change quantity, remove,
   find alternatives, append products, finish shopping, or prepare the whole list
   with `update_product_review_conversation`. Show can recover the active
-  conversation review without its opaque reference. Repeated starts preserve it.
+  conversation review without its opaque reference. A start with exact items
+  creates a separate Local basket; omit items to reopen the remembered basket
+  or show the picker.
 - For a visual product request, search exact products and open the native Local
   basket without requiring the user to name a tool. This changes only local review
   state. Omit `items` to reopen an existing list, and add newly found products
@@ -421,7 +431,9 @@ prepared change.
 The maintained hosted path is the single-Container Cloudflare profile described
 in [Cloudflare operations](../../docs/cloudflare-operations.md). It is the only
 supported ChatGPT deployment. The CLI and stdio MCP server remain available for
-direct local development and use; they are not a ChatGPT hosting fallback.
+direct local development and use; they are not a ChatGPT hosting fallback. The
+stdio server keeps Local review text-only and process-local; it does not
+advertise the durable hosted basket viewer.
 
 Hosted identity is resolved from the validated Auth0 subject. The only supported
 private policy is schema v3: revision, explicit `owner_subject`, and configured
@@ -484,6 +496,7 @@ of the repository.
    separate authorization.
 
 <a id="development"></a>
+
 ## 🛠️ Development
 
 ```sh

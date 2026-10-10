@@ -37,9 +37,7 @@ interface WranglerDeployment {
     instance_type: string;
     constraints: { jurisdiction: string };
   }>;
-  durable_objects: {
-    bindings: Array<{ name: string; class_name: string }>;
-  };
+  durable_objects: { bindings: unknown[] };
   migrations: Array<{
     tag: string;
     new_sqlite_classes?: string[];
@@ -152,6 +150,10 @@ test("Wrangler configuration fixes both environments to one disabled EU lite Con
     assert.equal(deployment.containers[0].constraints.jurisdiction, "eu");
     assert.deepEqual(deployment.durable_objects.bindings, [
       { name: "NEMLIG_MCP_CONTAINER", class_name: "NemligMcpContainer" },
+      {
+        name: "NEMLIG_LOCAL_BASKET_STORAGE",
+        class_name: "OwnerLocalBasketStorage",
+      },
     ]);
     assert.deepEqual(deployment.migrations, [
       {
@@ -159,6 +161,10 @@ test("Wrangler configuration fixes both environments to one disabled EU lite Con
         new_sqlite_classes: ["NemligMcpContainer", "PlanStorage"],
       },
       { tag: "v2", deleted_classes: ["PlanStorage"] },
+      {
+        tag: "v3",
+        new_sqlite_classes: ["OwnerLocalBasketStorage"],
+      },
     ]);
   }
   assert.equal(wrangler.keep_vars, false);
@@ -170,16 +176,31 @@ test("Wrangler configuration fixes both environments to one disabled EU lite Con
   );
 });
 
-test("Container has no saved-shopping outbound storage adapter", async () => {
+test("Container has no Durable Object binding and uses only the local basket callback", async () => {
   const worker = await readFile(
     new URL("./cloudflare-worker.ts", import.meta.url),
     "utf8",
   );
-  assert.doesNotMatch(worker, /outboundByHost|nemlig-plan-storage\.internal/u);
+  assert.match(worker, /outboundByHost/u);
+  assert.match(worker, /local-basket-state\.internal/u);
+  assert.doesNotMatch(worker, /nemlig-plan-storage\.internal/u);
   assert.doesNotMatch(worker, /GH_TOKEN|suggest_an_improvement/u);
+  const container = worker.slice(
+    worker.indexOf("export class NemligMcpContainer"),
+    worker.indexOf("export class OwnerLocalBasketStorage"),
+  );
+  const containerEnvVars = container.slice(
+    container.indexOf("envVars ="),
+    container.indexOf("async beginLocalBasketRequest"),
+  );
+  assert.doesNotMatch(containerEnvVars, /NEMLIG_LOCAL_BASKET_STORAGE/u);
+  assert.doesNotMatch(containerEnvVars, /LOCAL_BASKET.*CAPABILITY/u);
+  assert.match(worker, /Container<ContainerEnv>/u);
+  assert.match(worker, /NemligMcpContainer\.outboundByHost\s*=\s*\{/u);
+  assert.doesNotMatch(container, /static outboundByHost\s*=/u);
 });
 
-test("PlanStorage is removed from the Worker source", async () => {
+test("retired PlanStorage is absent from the Worker", async () => {
   const worker = await readFile(
     new URL("./cloudflare-worker.ts", import.meta.url),
     "utf8",
