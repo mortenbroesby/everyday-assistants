@@ -133,8 +133,8 @@ Nemlig’s familiar basket layout; the rest of the basket stays visible.
 Gesture tracking and tap filtering use `@use-gesture/react`.
 Left-to-right swipes, vertical scrolling, short drags, and canceled gestures do not
 open actions. Keyboard users can press
-Shift+F10 on a product. The details view also has a **Product actions** button,
-so touch and screen-reader users can reach the same actions without swiping.
+Shift+F10 on a product. The details view shows the same controls, so touch and
+screen-reader users can reach the same actions without swiping.
 Close the inline controls with × or Escape to restore the product row. Product
 details close with ×, Escape, or a tap outside.
 The inline controls open on release; swiping alone changes no basket state. ChatGPT mobile

@@ -947,6 +947,18 @@ try {
       0,
       `touch (${from}, ${to}, cancel=${cancel}, dy=${dy}) opened ${await touchFrame.locator(".product-inline-actions, [role=dialog]").allTextContents()}`,
     );
+    if (cancel) {
+      // Assistive activation can send a click without a fresh pointer or keyboard event.
+      await touchSummary.evaluate((button) => button.click());
+      const touchDetails = touchFrame.getByRole("dialog", {
+        name: "Synthetic milk",
+      });
+      await touchDetails.waitFor();
+      await touchDetails
+        .getByRole("button", { name: "Close product overlay" })
+        .click();
+      await touchDetails.waitFor({ state: "detached" });
+    }
   }
   await touchSwipe(0.8, 0.2);
   await touchFrame
