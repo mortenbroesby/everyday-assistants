@@ -490,10 +490,12 @@ try {
     "right swipe release navigated to alternatives",
   );
 
-  await swipeRow.press("Escape");
-  await frame
-    .getByRole("button", { name: /Find an alternative to Synthetic milk/ })
-    .waitFor({ state: "detached" });
+  const revealedAlternative = frame.getByRole("button", {
+    name: /Find an alternative to Synthetic milk/,
+  });
+  await revealedAlternative.focus();
+  await revealedAlternative.press("Escape");
+  await revealedAlternative.waitFor({ state: "detached" });
   if ((await milkDisclosure.getAttribute("aria-expanded")) === "true") {
     await milkDisclosure.click();
   }
