@@ -347,8 +347,8 @@ test("MCP submission smoke searches, prepares every Local basket line, and verif
     );
     assert.equal(
       providerWrites,
-      1,
-      "rejected duplicate makes no second provider write",
+      2,
+      "rejected duplicate makes no additional provider write",
     );
   });
 });

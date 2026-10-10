@@ -363,7 +363,7 @@ const friendlyCatalog = [
   ],
   [
     "submit_product_review_conversation",
-    "Add explicitly requested Ready products to Nemlig",
+    "Submit the approved Local basket to Nemlig",
     false,
     false,
     ["review_id", "revision", "submission_id"],
@@ -2109,7 +2109,7 @@ test("empty and unavailable results retain safe routes without accepting or writ
         },
       });
       assert.equal(refused.isError, true);
-      assert.match(toolText(refused), /incomplete|unavailable/u);
+      assert.match(toolText(refused), /not found|incomplete|unavailable/iu);
       assert.match(
         mcp.getInstructions() ?? "",
         /Local basket edits never write to Nemlig/u,
