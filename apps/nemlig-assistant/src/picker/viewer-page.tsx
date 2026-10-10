@@ -1053,10 +1053,7 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
           </ActionFooter>
         )}
       {review && active && !terminalSubmission && review.items.length === 0 && (
-        <DraftListStarters
-          message="Your Local basket is empty. Nothing changed in Nemlig."
-          onChoose={actions.onSendFollowUp}
-        />
+        <DraftListStarters onChoose={actions.onSendFollowUp} />
       )}
       {review && active && !terminalSubmission && hasActiveProducts && (
         <>
@@ -1094,10 +1091,7 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
       )}
       {screen.kind === "empty" && (
         <DraftListStarters
-          message={
-            screen.message ??
-            "Your Local basket is empty. Nothing changed in Nemlig."
-          }
+          message={screen.message}
           onChoose={actions.onSendFollowUp}
         />
       )}

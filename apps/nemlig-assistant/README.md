@@ -142,9 +142,10 @@ new searches or a second start. Rows show product, package, quantity and line
 price first. Expanded rows contain quantity and product
 facts. **Submit to Nemlig** prepares every current Local basket row for exact
 review before any provider addition. If any row is unavailable or incomplete,
-preparation stops without submitting a partial list. Empty Local baskets offer
-conversational shopping starters; they do not call Nemlig or change provider
-state. **Submit to Nemlig** is full width; **Clear** is full width at the
+preparation stops without submitting a partial list. Empty Local baskets
+introduce the distinction from the real Nemlig basket and offer conversational
+shopping starters; they do not call Nemlig or change provider state.
+**Submit to Nemlig** is full width; **Clear** is full width at the
 bottom of the list and asks for confirmation before discarding the Local basket.
 
 Voice and touch use one private temporary draft per ChatGPT conversation, identified

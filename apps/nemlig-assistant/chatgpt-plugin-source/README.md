@@ -11,12 +11,12 @@ From the repository root, build the ZIP with:
 node apps/nemlig-assistant/scripts/package-chatgpt-plugin.mjs
 ```
 
-The output is `apps/nemlig-assistant/dist/plugin/nemlig-shopping-0.1.3.zip`.
+The output is `apps/nemlig-assistant/dist/plugin/nemlig-shopping-0.1.4.zip`.
 To rebuild the tracked upload artifact after changing the source:
 
 ```sh
 node apps/nemlig-assistant/scripts/package-chatgpt-plugin.mjs \
-  --output apps/nemlig-assistant/chatgpt-plugin-archives/nemlig-shopping-0.1.3.zip
+  --output apps/nemlig-assistant/chatgpt-plugin-archives/nemlig-shopping-0.1.4.zip
 ```
 
 The packager checks the endpoint against `wrangler.jsonc`, the local skill and
