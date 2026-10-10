@@ -84,10 +84,23 @@
     #nemlig-unified-review .ur-confirm-lines { margin: 0 0 15px; padding: 0; list-style: none; }
     #nemlig-unified-review .ur-confirm-lines li { display: flex; justify-content: space-between; gap: 8px; padding: 9px 0; border-bottom: 1px solid var(--line); font-size: 12px; }
     #nemlig-unified-review .ur-confirm-lines b { white-space: nowrap; font-variant-numeric: tabular-nums; }
-    #nemlig-unified-review .ur-alternative-search { display: block; width: 100%; min-height: 44px; margin-bottom: 10px; padding: 10px; border: 1px solid var(--line); border-radius: 10px; color: var(--ink); background: var(--bg); font: inherit; }
-    #nemlig-unified-review .ur-alternative-list { margin: 0 0 15px; padding: 0; list-style: none; }
-    #nemlig-unified-review .ur-alternative-list li { padding: 10px 0; border-bottom: 1px solid var(--line); font-size: 13px; }
-    #nemlig-unified-review button:focus-visible, #nemlig-unified-review summary:focus-visible { outline: 3px solid var(--green); outline-offset: 2px; }
+    #nemlig-unified-review .ur-alternatives-dialog { width: min(calc(100vw - 12px), 420px); max-width: none; max-height: calc(100dvh - 12px); padding: 16px; }
+    #nemlig-unified-review .ur-alt-back { min-height: 44px; padding: 0; border: 0; color: var(--green); background: none; font-size: 12px; font-weight: 650; cursor: pointer; }
+    #nemlig-unified-review .ur-alt-card { margin: 10px 0; padding: 12px; border: 1px solid var(--line); border-radius: 16px; background: var(--bg); }
+    #nemlig-unified-review .ur-alt-card h3 { margin: 0 0 10px; color: var(--muted); font-size: 10px; letter-spacing: .06em; text-transform: uppercase; }
+    #nemlig-unified-review .ur-alt-current { display: grid; grid-template-columns: 52px minmax(0, 1fr); gap: 10px; align-items: center; }
+    #nemlig-unified-review .ur-alt-current strong, #nemlig-unified-review .ur-alt-option strong { display: block; font-size: 13px; }
+    #nemlig-unified-review .ur-alt-meta, #nemlig-unified-review .ur-alt-detail { display: block; color: var(--muted); font-size: 11px; line-height: 1.4; }
+    #nemlig-unified-review .ur-alt-option { display: grid; grid-template-columns: 20px 44px minmax(0, 1fr); gap: 8px; align-items: start; padding: 12px 0; border-top: 1px solid var(--line); cursor: pointer; }
+    #nemlig-unified-review .ur-alt-option input { width: 18px; height: 18px; margin: 5px 0 0; accent-color: var(--green); }
+    #nemlig-unified-review .ur-alt-option .ur-thumb { width: 44px; height: 44px; font-size: 23px; }
+    #nemlig-unified-review .ur-alt-detail { margin-top: 6px; }
+    #nemlig-unified-review .ur-alt-search-label { display: block; margin-bottom: 10px; color: var(--muted); font-size: 11px; font-weight: 650; }
+    #nemlig-unified-review .ur-alternative-search { display: block; width: 100%; min-height: 44px; margin-top: 5px; padding: 10px; border: 1px solid var(--line); border-radius: 10px; color: var(--ink); background: var(--well); font: inherit; font-size: 13px; }
+    #nemlig-unified-review .ur-alt-empty { margin: 10px 0 0 !important; }
+    #nemlig-unified-review .ur-alt-actions { position: sticky; bottom: -16px; margin: 10px -16px -16px; padding: 12px 16px 16px; background: var(--paper); }
+    #nemlig-unified-review .ur-alt-actions .ur-button { width: 100%; }
+    #nemlig-unified-review button:focus-visible, #nemlig-unified-review input:focus-visible, #nemlig-unified-review summary:focus-visible { outline: 3px solid var(--green); outline-offset: 2px; }
     @media (max-width: 360px) {
       #nemlig-unified-review .ur-content { padding-inline: 11px; }
       #nemlig-unified-review .ur-swipe-content { grid-template-columns: 52px minmax(0, 1fr); gap: 7px; }
@@ -152,7 +165,14 @@
       <footer class="ur-footer"><div class="ur-undo" data-undo hidden role="status"><span data-undo-name></span><button type="button" data-undo-button>Undo</button></div><div class="ur-footer-copy"><strong data-list-summary>5 products · 182,70 kr.</strong></div><div class="ur-actions"><button class="ur-button ur-button-primary" type="button" data-preview>Submit to Nemlig</button><button class="ur-button" type="button" data-clear aria-label="Clear local basket">Clear</button></div></footer>
     </div>
     <dialog aria-labelledby="ur-confirm-heading"><h2 id="ur-confirm-heading">Submit to Nemlig</h2><p>These exact products would be added after your authorization. This fixture does not contact Nemlig or submit anything.</p><ul class="ur-confirm-lines" data-confirm-lines></ul><button class="ur-button ur-button-primary" type="button" data-close>Back to local basket</button></dialog>
-    <dialog class="ur-alternatives-dialog" aria-labelledby="ur-alternatives-heading"><h2 id="ur-alternatives-heading">Find alternatives</h2><p data-alternatives-for></p><input class="ur-alternative-search" type="search" aria-label="Search fixture alternatives" placeholder="Search alternatives"><ul class="ur-alternative-list" data-alternatives></ul><button class="ur-button ur-button-primary" type="button" data-close-alternatives>Back to local basket</button></dialog>
+    <dialog class="ur-alternatives-dialog" aria-labelledby="ur-alternatives-heading">
+      <button class="ur-alt-back" type="button" data-close-alternatives>‹ Back to local basket</button>
+      <h2 id="ur-alternatives-heading">Choose an alternative</h2>
+      <p data-alternatives-for></p>
+      <section class="ur-alt-card" aria-label="Current product"><h3>Current product</h3><div class="ur-alt-current"><span class="ur-thumb" data-current-thumb aria-hidden="true"></span><span><strong data-current-name></strong><small class="ur-alt-meta" data-current-meta></small></span></div></section>
+      <section class="ur-alt-card" aria-labelledby="ur-alt-list-heading"><h3 id="ur-alt-list-heading">Alternatives</h3><label class="ur-alt-search-label">Search for more products<input class="ur-alternative-search" type="search" placeholder="Search by name or description…"></label><div data-alternatives></div><p class="ur-alt-empty" data-alternatives-empty hidden>No fixture alternative matches. A live search would look through the Nemlig catalogue.</p></section>
+      <div class="ur-alt-actions"><button class="ur-button ur-button-primary" type="button" data-use-alternative disabled>Use selected alternative</button></div>
+    </dialog>
   </div>
   <script>
     (() => {
@@ -161,35 +181,113 @@
       const list = root.querySelector("#ur-products");
       const dialog = root.querySelector("dialog");
       const alternativesDialog = root.querySelector(".ur-alternatives-dialog");
+      const money = (amount) => amount.toLocaleString("da-DK", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " kr.";
+      const priceMeta = (product) => product.meta.includes(money(product.price)) ? product.meta : product.meta + " · " + money(product.price);
       const alternatives = {
-        "Arla minimælk": ["Thise minimælk", "Änglamark minimælk"],
-        "Lurpak smørbar": ["Kærgården smørbar"],
-        "Økologiske bananer": ["Bananer, 1 kg"],
-        "Surdejsbrød": ["Fuldkornsbrød"],
-        "Havarti ost": ["Danbo ost"]
+        "Arla minimælk": [
+          { name: "Thise minimælk", price: 15.95, meta: "Thise · 1 L · 15,95 kr./L", description: "Organic Danish low-fat milk; keep refrigerated.", declaration: "Milk." },
+          { name: "Änglamark minimælk", price: 13.95, meta: "Änglamark · 1 L · 13,95 kr./L", description: "Organic Danish milk for everyday use.", declaration: "Milk." }
+        ],
+        "Lurpak smørbar": [{ name: "Kærgården smørbar", price: 31.95, meta: "Kærgården · 200 g", description: "Spreadable butter blend.", declaration: "Butter and rapeseed oil." }],
+        "Økologiske bananer": [{ name: "Bananer, 1 kg", price: 17, meta: "1 kg · 17,00 kr./kg", description: "Bananas sold by weight." }],
+        "Surdejsbrød": [{ name: "Fuldkornsbrød", price: 27.95, meta: "27,95 kr. each", description: "Whole-grain bread." }],
+        "Havarti ost": [{ name: "Danbo ost", price: 32.95, meta: "32,95 kr. each", description: "Mild Danbo cheese." }]
       };
-      let alternativeNames = [];
+      const originalProducts = new WeakMap();
+      const choices = alternativesDialog.querySelector("[data-alternatives]");
       const search = alternativesDialog.querySelector(".ur-alternative-search");
-      const renderAlternatives = () => {
-        const matches = alternativeNames.filter((name) => name.toLocaleLowerCase("da-DK").includes(search.value.trim().toLocaleLowerCase("da-DK")));
-        alternativesDialog.querySelector("[data-alternatives]").replaceChildren(...(matches.length ? matches : ["No fixture alternatives match."]).map((name) => {
-          const item = document.createElement("li");
-          item.textContent = name;
-          return item;
-        }));
+      const useAlternative = alternativesDialog.querySelector("[data-use-alternative]");
+      let currentRow;
+      let currentAlternatives = [];
+      const productFromRow = (row) => ({
+        name: row.querySelector(".ur-title-line strong").textContent,
+        price: Number(row.dataset.unitPrice),
+        meta: row.querySelector(".ur-meta").textContent,
+        thumb: row.querySelector(".ur-thumb").textContent,
+        description: row.querySelector(".ur-details details p").textContent,
+        declaration: row.querySelectorAll(".ur-details details p")[1]?.textContent
+      });
+      const filterAlternatives = () => {
+        const query = search.value.trim().toLocaleLowerCase("da-DK");
+        let visible = 0;
+        [...choices.children].forEach((card, index) => {
+          const option = currentAlternatives[index];
+          card.hidden = !(option.name + " " + option.meta + " " + option.description).toLocaleLowerCase("da-DK").includes(query);
+          if (card.hidden) {
+            card.querySelector("input").checked = false;
+          } else {
+            visible += 1;
+          }
+        });
+        alternativesDialog.querySelector("[data-alternatives-empty]").hidden = visible !== 0;
+        useAlternative.disabled = !choices.querySelector("input:checked");
       };
       const showAlternatives = (row) => {
-        const name = row.querySelector(".ur-title-line strong").textContent;
-        alternativeNames = alternatives[name] ?? [];
-        alternativesDialog.querySelector("[data-alternatives-for]").textContent = "For " + name + ". Fixture examples only; nothing in your local basket changes.";
+        if (!originalProducts.has(row)) {
+          originalProducts.set(row, productFromRow(row));
+        }
+        currentRow = row;
+        const product = productFromRow(row);
+        currentAlternatives = [...alternatives[originalProducts.get(row).name], originalProducts.get(row)].filter((option) => option.name !== product.name);
+        alternativesDialog.querySelector("[data-alternatives-for]").textContent = "For " + product.name + ". Fixture examples only; no Nemlig search or basket write.";
+        alternativesDialog.querySelector("[data-current-thumb]").textContent = product.thumb;
+        alternativesDialog.querySelector("[data-current-name]").textContent = product.name;
+        alternativesDialog.querySelector("[data-current-meta]").textContent = priceMeta(product);
         search.value = "";
-        renderAlternatives();
+        choices.replaceChildren(...currentAlternatives.map((option, index) => {
+          const card = document.createElement("label");
+          card.className = "ur-alt-option";
+          const radio = document.createElement("input");
+          radio.type = "radio";
+          radio.name = "ur-alternative";
+          radio.value = String(index);
+          const thumb = document.createElement("span");
+          thumb.className = "ur-thumb";
+          thumb.setAttribute("aria-hidden", "true");
+          thumb.textContent = product.thumb;
+          const copy = document.createElement("span");
+          const title = document.createElement("strong");
+          title.textContent = option.name;
+          const meta = document.createElement("small");
+          meta.className = "ur-alt-meta";
+          meta.textContent = priceMeta(option);
+          const detail = document.createElement("span");
+          detail.className = "ur-alt-detail";
+          detail.textContent = "Varebeskrivelse: " + option.description + (option.declaration ? " Varedeklaration: " + option.declaration : "");
+          copy.append(title, meta, detail);
+          card.append(radio, thumb, copy);
+          return card;
+        }));
+        filterAlternatives();
         alternativesDialog.showModal();
       };
-      search.addEventListener("input", renderAlternatives);
+      search.addEventListener("input", filterAlternatives);
+      choices.addEventListener("change", () => { useAlternative.disabled = !choices.querySelector("input:checked"); });
+      useAlternative.addEventListener("click", () => {
+        const selected = choices.querySelector("input:checked");
+        if (!selected || !currentRow) {
+          return;
+        }
+        const product = currentAlternatives[Number(selected.value)];
+        currentRow.dataset.unitPrice = String(product.price);
+        currentRow.querySelector(".ur-title-line strong").textContent = product.name;
+        currentRow.querySelector(".ur-meta").textContent = product.meta;
+        currentRow.querySelector("[data-line-price]").textContent = money(total(currentRow));
+        currentRow.querySelector(".ur-details details p").textContent = product.description;
+        const declaration = currentRow.querySelectorAll(".ur-details details")[1];
+        if (declaration) {
+          declaration.hidden = !product.declaration;
+          if (product.declaration) {
+            declaration.querySelector("p").textContent = product.declaration;
+          }
+        }
+        currentRow.querySelector(".ur-swipe-action").setAttribute("aria-label", "Remove " + product.name + " from local basket");
+        currentRow.querySelectorAll("[data-step]").forEach((button) => button.setAttribute("aria-label", (button.dataset.step === "1" ? "Increase " : "Decrease ") + product.name + " quantity"));
+        sync();
+        alternativesDialog.close();
+      });
       root.querySelector("[data-close-alternatives]").addEventListener("click", () => alternativesDialog.close());
       const removed = [];
-      const money = (amount) => amount.toLocaleString("da-DK", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " kr.";
       const rows = () => [...list.querySelectorAll(".ur-row")];
       const quantity = (row) => Number(row.querySelector("output").textContent);
       const total = (row) => Number(row.dataset.unitPrice) * quantity(row);
