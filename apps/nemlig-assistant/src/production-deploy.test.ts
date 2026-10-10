@@ -78,6 +78,11 @@ const version = (id: string, revision: string, enabled: boolean) =>
           type: "durable_object_namespace",
           class_name: "PlanStorage",
         },
+        {
+          name: "NEMLIG_LOCAL_BASKET_STORAGE",
+          type: "durable_object_namespace",
+          class_name: "OwnerLocalBasketStorage",
+        },
         { name: "NEMLIG_MCP_PRINCIPALS", type: "secret_text" },
       ],
     },
@@ -126,6 +131,10 @@ const config = (path: string) => ({
     bindings: [
       { name: "NEMLIG_MCP_CONTAINER", class_name: "NemligMcpContainer" },
       { name: "NEMLIG_PLAN_STORAGE", class_name: "PlanStorage" },
+      {
+        name: "NEMLIG_LOCAL_BASKET_STORAGE",
+        class_name: "OwnerLocalBasketStorage",
+      },
     ],
   },
 });

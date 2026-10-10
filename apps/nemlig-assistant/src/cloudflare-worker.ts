@@ -44,10 +44,20 @@ import {
 import { encryptCredentials } from "./credential-envelope.js";
 import type { Credentials } from "./config.js";
 import { handleOnboardingRequest } from "./onboarding.js";
+import {
+  expireOwnerLocalBasketInventory,
+  readOwnerLocalBasketInventory,
+  writeOwnerLocalBasketInventory,
+} from "./local-basket-storage.js";
+import type { OwnerLocalBasketInventory } from "./local-basket.js";
 
-interface Env extends CloudflareEnv {
+interface ContainerEnv extends CloudflareEnv {
   NEMLIG_MCP_CONTAINER: DurableObjectNamespace<NemligMcpContainer>;
   NEMLIG_PLAN_STORAGE: DurableObjectNamespace<PlanStorage>;
+}
+
+interface Env extends ContainerEnv {
+  NEMLIG_LOCAL_BASKET_STORAGE: DurableObjectNamespace<OwnerLocalBasketStorage>;
 }
 
 /**
@@ -57,7 +67,7 @@ interface Env extends CloudflareEnv {
  * the actual configured Container image.
  */
 const containerNamespace = (
-  env: Env,
+  env: ContainerEnv,
 ): DurableObjectNamespace<NemligMcpContainer> =>
   env.NEMLIG_MCP_REVISION === "local"
     ? env.NEMLIG_MCP_CONTAINER
@@ -147,7 +157,7 @@ const lifecycleEvent = (
   console.log(JSON.stringify({ schema_version: 1, event }));
 };
 
-export class NemligMcpContainer extends Container<Env> {
+export class NemligMcpContainer extends Container<ContainerEnv> {
   defaultPort = 8080;
   sleepAfter = "10m";
   envVars = {
@@ -368,6 +378,23 @@ export class NemligMcpContainer extends Container<Env> {
 export class PlanStorage extends DurableObject<Env> {
   async fetch(): Promise<Response> {
     return new Response("Saved shopping storage retired", { status: 410 });
+  }
+}
+
+export class OwnerLocalBasketStorage extends DurableObject<CloudflareEnv> {
+  async read(ownerId: string): Promise<OwnerLocalBasketInventory> {
+    return readOwnerLocalBasketInventory(this.ctx.storage, ownerId);
+  }
+
+  async write(
+    ownerId: string,
+    inventory: OwnerLocalBasketInventory,
+  ): Promise<OwnerLocalBasketInventory> {
+    return writeOwnerLocalBasketInventory(this.ctx.storage, ownerId, inventory);
+  }
+
+  async alarm(): Promise<void> {
+    await expireOwnerLocalBasketInventory(this.ctx.storage);
   }
 }
 

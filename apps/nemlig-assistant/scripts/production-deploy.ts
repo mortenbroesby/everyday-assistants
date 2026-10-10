@@ -272,6 +272,7 @@ const requiredSecrets = new Set(["NEMLIG_MCP_PRINCIPALS"]);
 const expectedDo = new Map([
   ["NEMLIG_MCP_CONTAINER", "NemligMcpContainer"],
   ["NEMLIG_PLAN_STORAGE", "PlanStorage"],
+  ["NEMLIG_LOCAL_BASKET_STORAGE", "OwnerLocalBasketStorage"],
 ]);
 const productionWorker = "nemlig-mcp-cloudflare-production";
 
@@ -587,6 +588,7 @@ export function verifyCandidateVersion(
   for (const name of [
     "NEMLIG_MCP_CONTAINER",
     "NEMLIG_PLAN_STORAGE",
+    "NEMLIG_LOCAL_BASKET_STORAGE",
     "NEMLIG_MCP_PRINCIPALS",
   ]) {
     if (!values.has(name)) {

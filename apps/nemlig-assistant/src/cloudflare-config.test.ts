@@ -38,6 +38,7 @@ interface WranglerDeployment {
     constraints: { jurisdiction: string };
   }>;
   durable_objects: { bindings: unknown[] };
+  migrations: Array<{ tag: string; new_sqlite_classes: string[] }>;
 }
 
 test("Cloudflare safety configuration is explicit, bounded, and internally consistent", () => {
@@ -143,7 +144,24 @@ test("Wrangler configuration fixes both environments to one disabled EU lite Con
     assert.equal(deployment.containers[0].max_instances, 1);
     assert.equal(deployment.containers[0].instance_type, "lite");
     assert.equal(deployment.containers[0].constraints.jurisdiction, "eu");
-    assert.equal(deployment.durable_objects.bindings.length, 2);
+    assert.deepEqual(deployment.durable_objects.bindings, [
+      { name: "NEMLIG_MCP_CONTAINER", class_name: "NemligMcpContainer" },
+      { name: "NEMLIG_PLAN_STORAGE", class_name: "PlanStorage" },
+      {
+        name: "NEMLIG_LOCAL_BASKET_STORAGE",
+        class_name: "OwnerLocalBasketStorage",
+      },
+    ]);
+    assert.deepEqual(deployment.migrations, [
+      {
+        tag: "v1",
+        new_sqlite_classes: ["NemligMcpContainer", "PlanStorage"],
+      },
+      {
+        tag: "v2",
+        new_sqlite_classes: ["OwnerLocalBasketStorage"],
+      },
+    ]);
   }
   assert.equal(wrangler.keep_vars, false);
   assert.equal(wrangler.limits.cpu_ms, 100);
@@ -161,6 +179,12 @@ test("Container has no saved-shopping outbound storage adapter", async () => {
   );
   assert.doesNotMatch(worker, /outboundByHost|nemlig-plan-storage\.internal/u);
   assert.doesNotMatch(worker, /GH_TOKEN|suggest_an_improvement/u);
+  const container = worker.slice(
+    worker.indexOf("export class NemligMcpContainer"),
+    worker.indexOf("export class PlanStorage"),
+  );
+  assert.doesNotMatch(container, /NEMLIG_LOCAL_BASKET_STORAGE/u);
+  assert.match(worker, /Container<ContainerEnv>/u);
 });
 
 test("historical PlanStorage is inert and does not access stored records", async () => {
