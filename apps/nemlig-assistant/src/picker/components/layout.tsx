@@ -7,11 +7,9 @@ const ViewerRoot = styled.div({
     "env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px) env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px)",
 });
 const Viewer = styled.main({
-  width: "min(calc(100% - 32px), 560px)",
-  margin: "16px auto",
+  width: "min(100%, 560px)",
+  margin: "0 auto",
   padding: 16,
-  border: "1px solid var(--line)",
-  borderRadius: 20,
   background: "var(--surface)",
 });
 const ScreenHeading = styled.h1({
