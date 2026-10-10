@@ -44,6 +44,7 @@ declare global {
     getBasketState: () => { selected?: string; ids: string[] };
     advanceSyntheticClock: (milliseconds: number) => void;
     sendPassive: () => void;
+    sendPassivePicker: () => void;
     cancelPendingTool: () => void;
     rejectDeferredGeneric: () => void;
     getReview: () => ProductReviewSnapshot & { basketId?: string };
@@ -186,6 +187,7 @@ const apply=(action,args)=>{
 };
 window.getReview=()=>JSON.parse(JSON.stringify(review)); window.getBasketState=()=>({selected:selectedBasketId,ids:inventory.map(basket=>basket.basketId)});
 window.sendPassive=()=>{const older=JSON.parse(JSON.stringify(review));older.items=[{product_id:99,quantity:1,state:'ready',view:${JSON.stringify(fixtureView(99, "Foreign product"))}}];frame.contentWindow.postMessage({jsonrpc:'2.0',method:'ui/notifications/tool-result',params:result(older)},location.origin)};
+window.sendPassivePicker=()=>frame.contentWindow.postMessage({jsonrpc:'2.0',method:'ui/notifications/tool-result',params:payload({baskets:inventory,selectedBasketId,selectionRequired:true})},location.origin);
 let deferredGeneric; window.cancelPendingTool=()=>frame.contentWindow.postMessage({jsonrpc:'2.0',method:'ui/notifications/tool-cancelled',params:{reason:'synthetic cancellation'}},location.origin); window.rejectDeferredGeneric=()=>{if(deferredGeneric){const {event,message}=deferredGeneric;deferredGeneric=undefined;post(event,{jsonrpc:'2.0',id:message.id,error:{code:-32000,message:'Temporary synthetic failure'}})}};
 window.addEventListener('message',event=>{
  if(event.source!==frame.contentWindow || event.origin!==location.origin) return;
@@ -523,6 +525,63 @@ try {
     "passive restore renewed a basket",
   );
   await restoredPage.close();
+
+  const passivePickerPage = await context.newPage();
+  await passivePickerPage.goto(
+    `http://127.0.0.1:${address.port}/host-restored`,
+  );
+  const passivePickerFrame = passivePickerPage.frameLocator(
+    'iframe[title="viewer"]',
+  );
+  await passivePickerFrame
+    .getByRole("heading", { name: "Local basket", exact: true })
+    .waitFor();
+  await passivePickerFrame
+    .locator(".product-action-row")
+    .first()
+    .locator('[data-viewer-component="product-summary"]')
+    .press("Shift+F10");
+  await passivePickerFrame
+    .getByRole("button", { name: "Increase quantity of Synthetic milk" })
+    .click();
+  assert.equal(
+    await passivePickerPage.evaluate(() => window.calls.length),
+    0,
+    "restored quantity should still be debounced",
+  );
+  await passivePickerPage.evaluate(() => window.sendPassivePicker());
+  await passivePickerFrame
+    .getByRole("heading", { name: "Local basket", exact: true })
+    .waitFor();
+  assert.equal(
+    await passivePickerFrame
+      .getByRole("heading", { name: "Local baskets" })
+      .count(),
+    0,
+    "a passive picker replaced the restored bound basket",
+  );
+  await passivePickerPage.waitForFunction(
+    () =>
+      window.calls.filter(({ args }) => args.action?.kind === "quantity")
+        .length === 1,
+    undefined,
+    { timeout: 5_000 },
+  );
+  const passiveQuantity = await passivePickerPage.evaluate(
+    () =>
+      window.calls.find(({ args }) => args.action?.kind === "quantity")?.args,
+  );
+  assert.equal(
+    passiveQuantity?.basket_id,
+    basketIds[0],
+    "passive picker retargeted the pending quantity to another basket",
+  );
+  assert.equal(
+    passiveQuantity?.action?.quantity,
+    2,
+    "passive picker discarded the debounced quantity",
+  );
+  await passivePickerPage.close();
 
   const staleFailurePage = await context.newPage();
   await staleFailurePage.goto(`http://127.0.0.1:${address.port}/host-restored`);

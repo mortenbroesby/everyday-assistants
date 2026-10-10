@@ -504,6 +504,14 @@ export function ProductViewer() {
         });
         return false;
       }
+      if (
+        !current &&
+        next.kind === "picker" &&
+        activeReview.current?.active &&
+        isBasketId(selectedBasketIdRef.current)
+      ) {
+        return true;
+      }
       const previous = activeReview.current;
       if (next.kind === "picker") {
         deactivateReview();
