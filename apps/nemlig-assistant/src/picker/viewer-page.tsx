@@ -152,6 +152,7 @@ function ProductCard({
   const [overlayOpen, setOverlayOpen] = useState(false);
   const [actionsOpen, setActionsOpen] = useState(false);
   const [swipeOffset, setSwipeOffset] = useState(0);
+  const cancelSwipe = useRef<(() => void) | undefined>(undefined);
   const actionsRef = useRef<HTMLDivElement | null>(null);
   const rowRef = useRef<HTMLDivElement | null>(null);
   const summaryRef = useRef<HTMLButtonElement | null>(null);
@@ -166,15 +167,24 @@ function ProductCard({
       actionsRef.current?.focus({ preventScroll: true });
     }
   }, [actionsOpen]);
+  useLayoutEffect(() => {
+    if (disabled) {
+      cancelSwipe.current?.();
+      setSwipeOffset(0);
+    }
+  }, [disabled]);
   const bindSwipe = useDrag(
     ({
       active,
+      down,
       last,
+      cancel,
       canceled,
       event,
       xy: [x, y],
       initial: [startX, startY],
     }) => {
+      cancelSwipe.current = down && !canceled ? cancel : undefined;
       const dx = x - startX;
       const dy = Math.abs(y - startY);
       setSwipeOffset(active ? Math.min(0, dx) : 0);
@@ -195,6 +205,8 @@ function ProductCard({
       axisThreshold: { mouse: 10, touch: 10, pen: 10 },
       threshold: 10,
       filterTaps: true,
+      // Capture cancellation even before the movement threshold is crossed.
+      triggerAllEvents: true,
       tapsThreshold: 10,
       pointer: { keys: false },
     },
@@ -547,12 +559,15 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
       return;
     }
     removalFocus.current = null;
-    const next =
+    const nextRow =
       pending.nextId === undefined
         ? null
         : document.querySelector<HTMLElement>(
-            `.product-list [data-product-id="${pending.nextId}"] [data-viewer-component="product-summary"]`,
+            `.product-list [data-product-id="${pending.nextId}"]`,
           );
+    const next = nextRow?.querySelector<HTMLElement>(
+      '.product-inline-actions, article:not([inert]) [data-viewer-component="product-summary"]',
+    );
     (next ?? document.querySelector<HTMLElement>(".viewer"))?.focus();
   }, [review?.items]);
   const destination = review

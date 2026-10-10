@@ -835,6 +835,163 @@ try {
   );
   await removePage.close();
 
+  const openRowsPage = await context.newPage();
+  await openRowsPage.goto(`http://127.0.0.1:${address.port}/host`);
+  const openRowsFrame = openRowsPage.frameLocator('iframe[title="viewer"]');
+  for (const name of ["Synthetic milk", longOatsName]) {
+    await openRowsFrame
+      .getByRole("button", { name: `Show details for ${name}` })
+      .press("Shift+F10");
+  }
+  await openRowsFrame
+    .locator('[data-product-id="1"]')
+    .getByRole("button", { name: "Remove product" })
+    .click();
+  await openRowsPage.waitForFunction(
+    () => window.getReview().items.length === 1,
+  );
+  await openRowsFrame.locator('[data-product-id="1"]').waitFor({
+    state: "detached",
+  });
+  assert.equal(
+    await openRowsFrame
+      .locator(".product-inline-actions")
+      .evaluate(
+        (controls) => controls.ownerDocument.activeElement === controls,
+      ),
+    true,
+    "removal did not focus the remaining row's open controls",
+  );
+  await openRowsPage.close();
+
+  hostDocuments.set(
+    "/host-delayed",
+    parentDocument(fixtureJson).replace(
+      "return post(event,{jsonrpc:'2.0',id:message.id,result:response});",
+      "return setTimeout(()=>post(event,{jsonrpc:'2.0',id:message.id,result:response}),1000);",
+    ),
+  );
+  for (const [initialDistance, releaseDuringSave] of [
+    [100, true],
+    [100, false],
+    [5, false],
+  ] as const) {
+    const savingPage = await context.newPage();
+    await savingPage.goto(`http://127.0.0.1:${address.port}/host-delayed`);
+    const savingFrame = savingPage.frameLocator('iframe[title="viewer"]');
+    await savingFrame
+      .getByRole("button", {
+        name: "Show details for Synthetic milk",
+      })
+      .press("Shift+F10");
+    await savingFrame
+      .getByRole("button", {
+        name: "Increase quantity of Synthetic milk",
+      })
+      .click();
+    const swiped = savingFrame.getByRole("button", {
+      name: `Show details for ${longOatsName}`,
+    });
+    const swipeBox = await swiped.boundingBox();
+    assert.ok(swipeBox);
+    await savingPage.mouse.move(swipeBox.x + 200, swipeBox.y + 20);
+    await savingPage.mouse.down();
+    await savingPage.mouse.move(
+      swipeBox.x + 200 - initialDistance,
+      swipeBox.y + 20,
+      { steps: 5 },
+    );
+    assert.equal(
+      await swiped.evaluate(
+        (button) =>
+          new DOMMatrix(getComputedStyle(button.closest("article")!).transform)
+            .m41,
+      ),
+      initialDistance === 5 ? 0 : -100,
+    );
+    await savingPage.waitForFunction(
+      () =>
+        document
+          .querySelector<HTMLIFrameElement>("iframe")!
+          .contentDocument!.querySelector<HTMLButtonElement>(
+            '[data-product-id="2"] button',
+          )!.disabled,
+    );
+    if (releaseDuringSave) {
+      await savingPage.mouse.up();
+    }
+    await savingPage.waitForFunction(
+      () =>
+        !document
+          .querySelector<HTMLIFrameElement>("iframe")!
+          .contentDocument!.querySelector<HTMLButtonElement>(
+            '[data-product-id="2"] button',
+          )!.disabled,
+    );
+    if (!releaseDuringSave) {
+      await savingPage.mouse.move(swipeBox.x + 100, swipeBox.y + 20, {
+        steps: 5,
+      });
+      await savingPage.mouse.up();
+    }
+    assert.equal(
+      await swiped.evaluate(
+        (button) =>
+          new DOMMatrix(getComputedStyle(button.closest("article")!).transform)
+            .m41,
+      ),
+      0,
+      "quantity save left another product row displaced",
+    );
+    assert.equal(
+      await savingFrame
+        .locator('[data-product-id="2"] .product-inline-actions')
+        .count(),
+      0,
+      "a swipe interrupted by saving opened actions on release",
+    );
+    await savingPage.close();
+  }
+
+  const imageUrl = "https://www.nemlig.com/synthetic-swipe-image.svg";
+  hostDocuments.set(
+    "/host-image",
+    parentDocument(
+      fixtureJson.replaceAll("https://example.invalid/image.png", imageUrl),
+    ),
+  );
+  const imagePage = await context.newPage();
+  await imagePage.route(imageUrl, (route) =>
+    route.fulfill({
+      contentType: "image/svg+xml",
+      body: '<svg xmlns="http://www.w3.org/2000/svg" width="58" height="58"><rect width="58" height="58" fill="green"/></svg>',
+    }),
+  );
+  await imagePage.goto(`http://127.0.0.1:${address.port}/host-image`);
+  const imageFrame = imagePage.frameLocator('iframe[title="viewer"]');
+  const thumbnail = imageFrame.locator('[data-product-id="1"] img');
+  await thumbnail.waitFor();
+  await thumbnail.evaluate((image: HTMLImageElement) => image.decode());
+  const imageBox = await thumbnail.boundingBox();
+  assert.ok(imageBox);
+  await imagePage.mouse.move(imageBox.x + imageBox.width - 2, imageBox.y + 20);
+  await imagePage.mouse.down();
+  await imagePage.mouse.move(
+    imageBox.x + imageBox.width - 57,
+    imageBox.y + 20,
+    { steps: 8 },
+  );
+  await imagePage.mouse.up();
+  await imageFrame
+    .getByRole("group", { name: "Actions for Synthetic milk" })
+    .waitFor();
+  assert.equal(
+    await imagePage.evaluate(() => window.calls.length),
+    0,
+    "swiping from a thumbnail activated a basket action",
+  );
+  await imagePage.close();
+
   const longPage = await context.newPage();
   await longPage.goto(`http://127.0.0.1:${address.port}/host-long`);
   const longFrame = longPage.frameLocator('iframe[title="viewer"]');
