@@ -22,6 +22,13 @@ const ScreenHeading = styled.h1({
   letterSpacing: "-.035em",
   fontWeight: 650,
 });
+const HeadingRow = styled.div({
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "space-between",
+  gap: 8,
+  "& h1": { minWidth: 0 },
+});
 const ScreenIntro = styled.p({
   maxWidth: "42ch",
   margin: "0 4px 14px",
@@ -41,11 +48,13 @@ export function ViewerShell({
   intro,
   children,
   maxWidth,
+  headerActions,
 }: {
   title?: string;
   intro?: ReactNode;
   children: ReactNode;
   maxWidth?: number;
+  headerActions?: ReactNode;
 }) {
   return (
     <ViewerRoot className="app-frame" data-viewer-component="viewer-shell">
@@ -56,7 +65,12 @@ export function ViewerShell({
         aria-labelledby={title ? "title" : undefined}
         style={maxWidth ? { maxWidth } : undefined}
       >
-        {title && <ScreenHeading id="title">{title}</ScreenHeading>}
+        {title && (
+          <HeadingRow>
+            <ScreenHeading id="title">{title}</ScreenHeading>
+            {headerActions}
+          </HeadingRow>
+        )}
         {intro && <ScreenIntro className="intro">{intro}</ScreenIntro>}
         {children}
       </Viewer>

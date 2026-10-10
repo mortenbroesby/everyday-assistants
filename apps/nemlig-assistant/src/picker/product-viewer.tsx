@@ -6,6 +6,7 @@ import {
 } from "../product-presentation.js";
 import { ViewerPage } from "./viewer-page.js";
 import type {
+  BasketSummary,
   PresentationDestination,
   Review,
   ReviewItem,
@@ -53,6 +54,17 @@ function isReview(value: unknown): value is Review {
         (item.state === "needs-review" || item.state === "ready") &&
         isProductView(item.view),
     )
+  ) {
+    return false;
+  }
+  if (
+    (value.basketId !== undefined && !isBasketId(value.basketId)) ||
+    (value.revision !== undefined &&
+      (typeof value.revision !== "number" ||
+        !Number.isSafeInteger(value.revision) ||
+        value.revision < 0)) ||
+    (value.submissionAttempted !== undefined &&
+      typeof value.submissionAttempted !== "boolean")
   ) {
     return false;
   }
@@ -123,6 +135,41 @@ function isReview(value: unknown): value is Review {
     }
   }
   return true;
+}
+function isBasketId(value: unknown): value is string {
+  return (
+    typeof value === "string" &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu.test(
+      value,
+    )
+  );
+}
+function isNonnegativeSafeInteger(value: unknown): value is number {
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
+}
+function hasValidBasketTimestamps(value: Record<string, unknown>) {
+  return (
+    isNonnegativeSafeInteger(value.createdAt) &&
+    isNonnegativeSafeInteger(value.lastActivityAt) &&
+    isNonnegativeSafeInteger(value.expiresAt)
+  );
+}
+function hasValidBasketCounts(value: Record<string, unknown>) {
+  return (
+    isNonnegativeSafeInteger(value.revision) &&
+    isNonnegativeSafeInteger(value.productCount)
+  );
+}
+function hasValidBasketIdentity(value: Record<string, unknown>) {
+  return (
+    isBasketId(value.basketId) &&
+    hasValidBasketTimestamps(value) &&
+    hasValidBasketCounts(value) &&
+    typeof value.submissionAttempted === "boolean"
+  );
+}
+function isBasketSummary(value: unknown): value is BasketSummary {
+  return isRecord(value) && hasValidBasketIdentity(value);
 }
 // Keep the complete untrusted tool-payload validation at the rendering boundary.
 // fallow-ignore-next-line complexity
@@ -210,6 +257,28 @@ function isProductView(value: unknown): value is ProductView {
     stringArraysValid
   );
 }
+function readBasketSummaries(
+  envelope: Record<string, unknown>,
+): BasketSummary[] | undefined {
+  if (envelope.baskets === undefined) {
+    return [];
+  }
+  if (
+    !Array.isArray(envelope.baskets) ||
+    !envelope.baskets.every(isBasketSummary)
+  ) {
+    return undefined;
+  }
+  return envelope.baskets;
+}
+function hasUnselectedReview(value: unknown) {
+  return isRecord(value) && isReview(value) && !isBasketId(value.basketId);
+}
+function requiresBasketPicker(envelope: Record<string, unknown>) {
+  const serverRequiresSelection =
+    envelope.selectionRequired === true || envelope.unavailable === true;
+  return serverRequiresSelection || hasUnselectedReview(envelope.review);
+}
 function readPayload(value: unknown): ViewerScreen | undefined {
   if (Array.isArray(value) && value.every(isProductView)) {
     return { kind: "products", payload: { views: value }, views: value };
@@ -220,6 +289,16 @@ function readPayload(value: unknown): ViewerScreen | undefined {
   const envelope = isRecord(value.structuredContent)
     ? value.structuredContent
     : value;
+  const baskets = readBasketSummaries(envelope);
+  if (!baskets) {
+    return undefined;
+  }
+  const selectedBasketId = isBasketId(envelope.selectedBasketId)
+    ? envelope.selectedBasketId
+    : undefined;
+  if (requiresBasketPicker(envelope)) {
+    return { kind: "picker", baskets, selectedBasketId };
+  }
   if (isRecord(envelope.review) && isReview(envelope.review)) {
     return {
       kind: "review",
@@ -227,8 +306,8 @@ function readPayload(value: unknown): ViewerScreen | undefined {
       active: true,
     };
   }
-  if (envelope.unavailable === true) {
-    return { kind: "unavailable" };
+  if (Array.isArray(envelope.baskets)) {
+    return { kind: "picker", baskets, selectedBasketId };
   }
   if (envelope.ended === true) {
     return {
@@ -262,6 +341,23 @@ export function ProductViewer() {
         : readPayload(window.openai?.toolOutput);
     return initial ?? { kind: "loading" };
   });
+  const [baskets, setBaskets] = useState<BasketSummary[]>(() =>
+    screen.kind === "picker" ? screen.baskets : [],
+  );
+  const [selectedBasketId, setSelectedBasketId] = useState<string | undefined>(
+    () =>
+      screen.kind === "review"
+        ? screen.review.basketId
+        : screen.kind === "picker"
+          ? screen.selectedBasketId
+          : undefined,
+  );
+  const selectedBasketIdRef = useRef(selectedBasketId);
+  const selectionEpoch = useRef(0);
+  const selectionContext = () => ({
+    basketId: selectedBasketIdRef.current,
+    epoch: selectionEpoch.current,
+  });
   const [presentationDestination, setPresentationDestination] = useState<
     PresentationDestination | undefined
   >(() => (screen.kind === "review" ? screen.review.destination : undefined));
@@ -274,11 +370,18 @@ export function ProductViewer() {
   const callLock = useRef(false);
   const ignorePassivePayloads = useRef(
     screen.kind === "review" &&
-      (screen.review.submission?.status === "submitted" ||
+      (screen.review.submissionAttempted === true ||
+        screen.review.submission?.status === "submitted" ||
         screen.review.submission?.status === "uncertain" ||
         screen.review.submission?.status === "partial"),
   );
   const cancellationEpoch = useRef(0);
+  const heartbeatByBasket = useRef(
+    new Map<
+      string,
+      { attemptedAt: number; renewedAt: number; intentAt: number }
+    >(),
+  );
   const [reviewDisclosures, setReviewDisclosures] = useState<
     Map<number, Set<string>>
   >(() => new Map());
@@ -287,8 +390,16 @@ export function ProductViewer() {
   const [confirmSubmit, setConfirmSubmit] = useState(false);
   const [confirmEnd, setConfirmEnd] = useState(false);
   const [continueSubmitted, setContinueSubmitted] = useState(false);
-  const [submitBlocked, setSubmitBlocked] = useState(false);
-  const submitBlockedRef = useRef(false);
+  const [submitBlocked, setSubmitBlocked] = useState(
+    screen.kind === "review" &&
+      (screen.review.submissionAttempted === true ||
+        screen.review.submission?.status === "uncertain"),
+  );
+  const submitBlockedRef = useRef(
+    screen.kind === "review" &&
+      (screen.review.submissionAttempted === true ||
+        screen.review.submission?.status === "uncertain"),
+  );
   const submissionFailure = useRef<string | undefined>(undefined);
   const [pendingQuantities, setPendingQuantities] = useState<
     Map<number, number>
@@ -300,6 +411,36 @@ export function ProductViewer() {
   );
   const quantityFlush = useRef<Promise<boolean> | undefined>(undefined);
   const callIdleWaiters = useRef<Array<() => void>>([]);
+  const resetBasketUi = () => {
+    if (quantityTimer.current) {
+      clearTimeout(quantityTimer.current);
+    }
+    quantityTimer.current = undefined;
+    pendingQuantitiesRef.current.clear();
+    setPendingQuantities(new Map());
+    quantityFlush.current = undefined;
+    activeReview.current = undefined;
+    lastConfirmedReview.current = undefined;
+    setPresentationDestination(undefined);
+    setReviewDisclosures(new Map());
+    setConfirmSubmit(false);
+    setConfirmEnd(false);
+    setContinueSubmitted(false);
+    setSubmitBlocked(false);
+    submitBlockedRef.current = false;
+    setMessage("");
+    ignorePassivePayloads.current = false;
+    submissionFailure.current = undefined;
+  };
+  const changeBasket = (basketId: string | undefined) => {
+    if (selectedBasketIdRef.current === basketId) {
+      return;
+    }
+    selectionEpoch.current++;
+    selectedBasketIdRef.current = basketId;
+    setSelectedBasketId(basketId);
+    resetBasketUi();
+  };
   const clearPendingQuantities = () => {
     pendingQuantitiesRef.current.clear();
     setPendingQuantities(new Map());
@@ -364,7 +505,27 @@ export function ProductViewer() {
         return false;
       }
       const previous = activeReview.current;
+      if (next.kind === "picker") {
+        deactivateReview();
+        activeReview.current = undefined;
+        if (selectedBasketIdRef.current !== next.selectedBasketId) {
+          changeBasket(next.selectedBasketId);
+        }
+        setBaskets(next.baskets);
+        setScreen(next);
+        setPresentationDestination(undefined);
+        return true;
+      }
       if (next.kind === "review") {
+        if (
+          selectedBasketIdRef.current &&
+          selectedBasketIdRef.current !== next.review.basketId
+        ) {
+          return true;
+        }
+        if (selectedBasketIdRef.current !== next.review.basketId) {
+          changeBasket(next.review.basketId);
+        }
         if (
           next.review.submission?.status === "submitted" ||
           next.review.submission?.status === "uncertain" ||
@@ -372,7 +533,7 @@ export function ProductViewer() {
         ) {
           ignorePassivePayloads.current = true;
         }
-        const sameReview = Boolean(previous);
+        const sameReview = previous?.review.basketId === next.review.basketId;
         if (!sameReview) {
           setReviewDisclosures(new Map());
         }
@@ -384,6 +545,7 @@ export function ProductViewer() {
         lastConfirmedReview.current = next.review;
         const submissionChanged =
           !sameReview ||
+          next.review.basketId !== previous?.review.basketId ||
           next.review.submission?.submission_id !==
             previous?.review.submission?.submission_id;
         if (submissionChanged) {
@@ -405,6 +567,19 @@ export function ProductViewer() {
           const uncertain = next.review.submission.status === "uncertain";
           submitBlockedRef.current = uncertain;
           setSubmitBlocked(uncertain);
+        }
+        if (next.review.submissionAttempted) {
+          ignorePassivePayloads.current = true;
+          submitBlockedRef.current = true;
+          setSubmitBlocked(true);
+        }
+        const payloadRecord = isRecord(payload)
+          ? isRecord(payload.structuredContent)
+            ? payload.structuredContent
+            : payload
+          : undefined;
+        if (payloadRecord && Array.isArray(payloadRecord.baskets)) {
+          setBaskets(payloadRecord.baskets as BasketSummary[]);
         }
         setScreen({ kind: "review", ...state });
         setPresentationDestination((visible) => {
@@ -518,31 +693,92 @@ export function ProductViewer() {
     recovery = true,
     adoptPresentationDestination = false,
     uncertainOnFailure = false,
+    background = false,
+    expectedSelection?: { basketId?: string; epoch: number },
   ): Promise<boolean> => {
     if (!connectedApp || !isConnected) {
-      setMessage(
-        error
-          ? "The Local basket could not connect. Continue in conversation or reopen the current Local basket."
-          : "Connecting to the current Local basket…",
-      );
+      if (!background) {
+        setMessage(
+          error
+            ? "The Local basket could not connect. Continue in conversation or reopen the current Local basket."
+            : "Connecting to the current Local basket…",
+        );
+      }
       return false;
     }
-    if (callLock.current) {
+    while (callLock.current) {
+      if (background) {
+        return false;
+      }
+      await waitForCallIdle();
+      if (!connectedApp || !isConnected) {
+        return false;
+      }
+      if (
+        expectedSelection &&
+        (expectedSelection.epoch !== selectionEpoch.current ||
+          expectedSelection.basketId !== selectedBasketIdRef.current)
+      ) {
+        return false;
+      }
+    }
+    if (
+      expectedSelection &&
+      (expectedSelection.epoch !== selectionEpoch.current ||
+        expectedSelection.basketId !== selectedBasketIdRef.current)
+    ) {
       return false;
+    }
+    const requestArgs = { ...args };
+    if (name === "update_product_review") {
+      const action = isRecord(requestArgs.action) ? requestArgs.action : {};
+      const kind = action.kind;
+      if (kind !== "list") {
+        const basketId =
+          kind === "select" ||
+          kind === "show" ||
+          kind === "delete" ||
+          kind === "heartbeat"
+            ? requestArgs.basket_id
+            : (expectedSelection?.basketId ?? selectedBasketIdRef.current);
+        if (!isBasketId(basketId)) {
+          setMessage("Choose a Local basket before continuing.");
+          setScreen({ kind: "picker", baskets, selectedBasketId });
+          return false;
+        }
+        requestArgs.basket_id = basketId;
+      } else {
+        delete requestArgs.basket_id;
+      }
+    } else if (name === "submit_product_review") {
+      if (!isBasketId(selectedBasketIdRef.current)) {
+        setMessage("Choose a Local basket before continuing.");
+        setScreen({ kind: "picker", baskets, selectedBasketId });
+        return false;
+      }
+      requestArgs.basket_id =
+        expectedSelection?.basketId ?? selectedBasketIdRef.current;
     }
     callLock.current = true;
     if (name === "submit_product_review") {
       submissionFailure.current = undefined;
     }
     const requestEpoch = cancellationEpoch.current;
-    setBusy(true);
-    setMessage("Updating…");
+    const requestSelectionEpoch =
+      expectedSelection?.epoch ?? selectionEpoch.current;
+    if (!background) {
+      setBusy(true);
+      setMessage("Updating…");
+    }
     try {
       const result = await connectedApp.callServerTool({
         name,
-        arguments: args,
+        arguments: requestArgs,
       });
-      if (requestEpoch !== cancellationEpoch.current) {
+      if (
+        requestEpoch !== cancellationEpoch.current ||
+        requestSelectionEpoch !== selectionEpoch.current
+      ) {
         return false;
       }
       if (result.isError) {
@@ -563,32 +799,217 @@ export function ProductViewer() {
         }
         throw new Error(detail);
       }
-      if (!applyPayload(result, true, adoptPresentationDestination)) {
+      if (background) {
+        const payloadRecord = isRecord(result.structuredContent)
+          ? result.structuredContent
+          : undefined;
+        if (
+          payloadRecord &&
+          Array.isArray(payloadRecord.baskets) &&
+          payloadRecord.baskets.every(isBasketSummary)
+        ) {
+          setBaskets(payloadRecord.baskets);
+        }
+      } else if (!applyPayload(result, true, adoptPresentationDestination)) {
         throw new Error("Could not confirm the updated Local basket.");
       }
       if (
-        name === "submit_product_review" ||
-        name === "update_product_review"
+        !background &&
+        (name === "submit_product_review" || name === "update_product_review")
       ) {
         ignorePassivePayloads.current = true;
       }
-      setMessage("");
+      if (!background) {
+        setMessage("");
+      }
       return true;
     } catch (cause) {
-      handleCallFailure(cause, recovery, uncertainOnFailure);
+      if (
+        !background &&
+        requestEpoch === cancellationEpoch.current &&
+        requestSelectionEpoch === selectionEpoch.current
+      ) {
+        handleCallFailure(cause, recovery, uncertainOnFailure);
+      }
       return false;
     } finally {
       callLock.current = false;
-      setBusy(false);
+      if (!background) {
+        setBusy(false);
+      }
       for (const resolve of callIdleWaiters.current.splice(0)) {
         resolve();
       }
     }
   };
+  const callRef = useRef(call);
+  callRef.current = call;
+  useEffect(() => {
+    const hour = 60 * 60 * 1_000;
+    const activeInteractions = new Set<string>();
+    const releaseFrames = new Set<number>();
+    const getHeartbeatState = (basketId: string) => {
+      const state = heartbeatByBasket.current.get(basketId) ?? {
+        attemptedAt: 0,
+        renewedAt: 0,
+        intentAt: 0,
+      };
+      heartbeatByBasket.current.set(basketId, state);
+      return state;
+    };
+    const isVisibleAndFocused = () =>
+      document.visibilityState === "visible" && document.hasFocus();
+    const hasBasketContext = (
+      basketId: string | undefined,
+      current: { active: boolean } | undefined,
+    ): basketId is string => Boolean(basketId && current?.active);
+    const canRenewBasket = (
+      basketId: string | undefined,
+      current: { active: boolean } | undefined,
+    ): basketId is string =>
+      hasBasketContext(basketId, current) &&
+      isVisibleAndFocused() &&
+      !callLock.current &&
+      activeInteractions.size === 0;
+    const hasRenewalIntent = (state: {
+      attemptedAt: number;
+      renewedAt: number;
+      intentAt: number;
+    }) => state.intentAt > state.renewedAt;
+    const rememberIntent = (basketId: string) => {
+      const state = getHeartbeatState(basketId);
+      const now = Date.now();
+      state.intentAt = now;
+      if (state.attemptedAt === 0) {
+        state.attemptedAt = now;
+      }
+      return state;
+    };
+    const pointerInteractionKey = (event: Event) => {
+      if (event.type !== "pointerdown" || !("pointerId" in event)) {
+        return undefined;
+      }
+      return `pointer:${String(event.pointerId)}`;
+    };
+    const keyboardInteractionKey = (event: Event) => {
+      if (event.type !== "keydown" || !("key" in event)) {
+        return undefined;
+      }
+      return `key:${String(event.key)}`;
+    };
+    const interactionKey = (event: Event) =>
+      pointerInteractionKey(event) ?? keyboardInteractionKey(event);
+    const trackInteraction = (event: Event) => {
+      const key = interactionKey(event);
+      if (key) {
+        activeInteractions.add(key);
+      }
+    };
+    const tick = () => {
+      const basketId = selectedBasketIdRef.current;
+      const current = activeReview.current;
+      if (!canRenewBasket(basketId, current)) {
+        return;
+      }
+      const state = getHeartbeatState(basketId);
+      const now = Date.now();
+      if (!hasRenewalIntent(state) || now - state.attemptedAt < hour) {
+        return;
+      }
+      state.attemptedAt = now;
+      heartbeatByBasket.current.set(basketId, state);
+      const requestEpoch = selectionEpoch.current;
+      void callRef
+        .current(
+          "update_product_review",
+          { action: { kind: "heartbeat" }, basket_id: basketId },
+          true,
+          false,
+          false,
+          true,
+        )
+        .then((ok) => {
+          if (
+            ok &&
+            basketId === selectedBasketIdRef.current &&
+            requestEpoch === selectionEpoch.current
+          ) {
+            state.renewedAt = Date.now();
+          }
+        });
+    };
+    const recordIntent = (event: Event) => {
+      if (!event.isTrusted) {
+        return;
+      }
+      const basketId = selectedBasketIdRef.current;
+      if (!basketId) {
+        return;
+      }
+      rememberIntent(basketId);
+      trackInteraction(event);
+    };
+    const scheduleInteractionRelease = (key: string) => {
+      const frame = requestAnimationFrame(() => {
+        activeInteractions.delete(key);
+        releaseFrames.delete(frame);
+      });
+      releaseFrames.add(frame);
+    };
+    const releasePointer = (event: PointerEvent) =>
+      scheduleInteractionRelease(`pointer:${event.pointerId}`);
+    const releaseKey = (event: KeyboardEvent) =>
+      scheduleInteractionRelease(`key:${event.key}`);
+    const pauseActivity = () => {
+      activeInteractions.clear();
+      const basketId = selectedBasketIdRef.current;
+      const state = basketId
+        ? heartbeatByBasket.current.get(basketId)
+        : undefined;
+      if (state) {
+        state.intentAt = state.renewedAt;
+      }
+    };
+    const visibilityChanged = () => {
+      if (document.visibilityState === "visible") {
+        tick();
+      } else {
+        pauseActivity();
+      }
+    };
+    document.addEventListener("pointerdown", recordIntent, true);
+    document.addEventListener("keydown", recordIntent, true);
+    document.addEventListener("pointerup", releasePointer, true);
+    document.addEventListener("pointercancel", releasePointer, true);
+    document.addEventListener("keyup", releaseKey, true);
+    document.addEventListener("visibilitychange", visibilityChanged);
+    window.addEventListener("focus", tick);
+    window.addEventListener("blur", pauseActivity);
+    const timer = setInterval(tick, 60_000);
+    return () => {
+      clearInterval(timer);
+      for (const frame of releaseFrames) {
+        cancelAnimationFrame(frame);
+      }
+      document.removeEventListener("pointerdown", recordIntent, true);
+      document.removeEventListener("keydown", recordIntent, true);
+      document.removeEventListener("pointerup", releasePointer, true);
+      document.removeEventListener("pointercancel", releasePointer, true);
+      document.removeEventListener("keyup", releaseKey, true);
+      document.removeEventListener("visibilitychange", visibilityChanged);
+      window.removeEventListener("focus", tick);
+      window.removeEventListener("blur", pauseActivity);
+    };
+  }, []);
   const review = screen.kind === "review" ? screen.review : undefined;
   const update = async (action: Record<string, unknown>) => {
+    const expected = selectionContext();
     const latest = activeReview.current;
-    if (!latest?.active || callLock.current) {
+    if (
+      !latest?.active ||
+      expected.epoch !== selectionEpoch.current ||
+      expected.basketId !== selectedBasketIdRef.current
+    ) {
       return false;
     }
     const result = await call(
@@ -596,6 +1017,9 @@ export function ProductViewer() {
       { action },
       true,
       action.kind === "alternatives" || action.kind === "replace",
+      false,
+      false,
+      expected,
     );
     if (result && action.kind === "prepare_submission") {
       setConfirmSubmit(false);
@@ -617,7 +1041,7 @@ export function ProductViewer() {
       void flushQuantities();
     }, 2_500);
   };
-  const flushQuantities = async () => {
+  const flushQuantities = async (expected = selectionContext()) => {
     if (quantityTimer.current) {
       clearTimeout(quantityTimer.current);
     }
@@ -631,6 +1055,12 @@ export function ProductViewer() {
     const operation = (async () => {
       while (pendingQuantitiesRef.current.size) {
         await waitForCallIdle();
+        if (
+          expected.epoch !== selectionEpoch.current ||
+          expected.basketId !== selectedBasketIdRef.current
+        ) {
+          return false;
+        }
         const latest = activeReview.current;
         if (!latest?.active) {
           return false;
@@ -645,10 +1075,20 @@ export function ProductViewer() {
           removePendingQuantity(product_id, quantity);
           continue;
         }
-        const ok = await call("update_product_review", {
-          action: { kind: "quantity", product_id, quantity },
-        });
-        if (!ok) {
+        const ok = await call(
+          "update_product_review",
+          { action: { kind: "quantity", product_id, quantity } },
+          true,
+          false,
+          false,
+          false,
+          expected,
+        );
+        if (
+          !ok ||
+          expected.epoch !== selectionEpoch.current ||
+          expected.basketId !== selectedBasketIdRef.current
+        ) {
           return false;
         }
         const confirmed = activeReview.current?.review.items.find(
@@ -670,8 +1110,13 @@ export function ProductViewer() {
     return tracked;
   };
   const afterFlush = (action: Record<string, unknown>) => {
-    void flushQuantities().then(async (ok) => {
-      if (ok) {
+    const expected = selectionContext();
+    void flushQuantities(expected).then(async (ok) => {
+      if (
+        ok &&
+        expected.epoch === selectionEpoch.current &&
+        expected.basketId === selectedBasketIdRef.current
+      ) {
         await update(action);
       }
     });
@@ -704,12 +1149,65 @@ export function ProductViewer() {
       );
     }
   };
+  const openPicker = async () => {
+    if (busy) {
+      return;
+    }
+    deactivateReview();
+    setScreen({
+      kind: "picker",
+      baskets,
+      selectedBasketId: selectedBasketIdRef.current,
+    });
+    setPresentationDestination(undefined);
+    await call("update_product_review", { action: { kind: "list" } }, true);
+  };
+  const selectBasket = async (basketId: string) => {
+    if (busy || !isBasketId(basketId)) {
+      return;
+    }
+    changeBasket(basketId);
+    const heartbeat = heartbeatByBasket.current.get(basketId) ?? {
+      attemptedAt: 0,
+      renewedAt: 0,
+      intentAt: 0,
+    };
+    heartbeat.intentAt = Date.now();
+    heartbeatByBasket.current.set(basketId, heartbeat);
+    setScreen({ kind: "picker", baskets, selectedBasketId: basketId });
+    await call(
+      "update_product_review",
+      { action: { kind: "select" }, basket_id: basketId },
+      true,
+      true,
+    );
+  };
+  const deleteBasket = async (basketId: string) => {
+    if (!busy && isBasketId(basketId)) {
+      await call(
+        "update_product_review",
+        { action: { kind: "delete" }, basket_id: basketId },
+        true,
+      );
+    }
+  };
   const refreshCurrentDraftList = async () => {
     if (!connectedApp || !isConnected) {
       setMessage("Reconnect to read this conversation's current Local basket.");
       return;
     }
-    await call("update_product_review", { action: { kind: "show" } }, true);
+    if (selectedBasketIdRef.current) {
+      await call(
+        "update_product_review",
+        {
+          action: { kind: "show" },
+          basket_id: selectedBasketIdRef.current,
+        },
+        true,
+      );
+    } else {
+      await openPicker();
+    }
   };
   const endDraft = async () => {
     setConfirmEnd(false);
@@ -720,7 +1218,11 @@ export function ProductViewer() {
   // The exact submission comparison is intentionally linear and fail-closed.
   // fallow-ignore-next-line complexity
   const confirmPreparedSubmission = async () => {
-    const ok = await flushQuantities();
+    const expected = selectionContext();
+    const ok = await flushQuantities(expected);
+    if (ok) {
+      await waitForCallIdle();
+    }
     const confirmed = activeReview.current?.review;
     const submissionSelection = (snapshot: Review) =>
       JSON.stringify(
@@ -730,8 +1232,11 @@ export function ProductViewer() {
       );
     if (
       !ok ||
+      expected.epoch !== selectionEpoch.current ||
+      expected.basketId !== selectedBasketIdRef.current ||
       !confirmed?.submission ||
       !review ||
+      confirmed.basketId !== selectedBasketIdRef.current ||
       submissionSelection(confirmed) !== submissionSelection(review) ||
       confirmed.submission.status !== "prepared" ||
       confirmed.submission.submission_id !== review.submission?.submission_id ||
@@ -755,23 +1260,25 @@ export function ProductViewer() {
       false,
       false,
       true,
+      false,
+      expected,
     );
     if (!success) {
       try {
-        if (connectedApp) {
-          const current = await connectedApp.callServerTool({
-            name: "update_product_review",
-            arguments: { action: { kind: "show" } },
-          });
-          if (!current.isError && applyPayload(current, true)) {
-            const snapshot = readPayload(current);
-            if (
-              snapshot?.kind === "review" &&
-              snapshot.review.submission?.status === "partial"
-            ) {
-              setMessage("");
-              return;
-            }
+        if (
+          selectedBasketIdRef.current &&
+          (await call(
+            "update_product_review",
+            {
+              action: { kind: "show" },
+              basket_id: selectedBasketIdRef.current,
+            },
+            true,
+          ))
+        ) {
+          if (activeReview.current?.review.submission?.status === "partial") {
+            setMessage("");
+            return;
           }
         }
       } catch {
@@ -821,10 +1328,15 @@ export function ProductViewer() {
         confirmEnd,
         continueSubmitted,
         submitBlocked,
+        baskets,
+        selectedBasketId,
       }}
       actions={{
         onNavigate: navigate,
         onRefresh: () => void refreshCurrentDraftList(),
+        onOpenPicker: () => void openPicker(),
+        onSelectBasket: (basketId) => void selectBasket(basketId),
+        onDeleteBasket: (basketId) => void deleteBasket(basketId),
         onFactExpandedChange: (productId, factKey, expanded) =>
           setReviewDisclosures((previous) => {
             const next = new Map(previous);
@@ -855,7 +1367,13 @@ export function ProductViewer() {
         onRequestSubmitConfirmation: () => setConfirmSubmit(true),
         onCancelSubmit: () => setConfirmSubmit(false),
         onConfirmSubmit: () => void confirmPreparedSubmission(),
-        onContinueSubmitted: () => setContinueSubmitted(true),
+        onContinueSubmitted: () => {
+          if (review?.submissionAttempted) {
+            void openPicker();
+          } else {
+            setContinueSubmitted(true);
+          }
+        },
         onInspectBasket: () =>
           void sendFollowUp(
             "Inspect the actual Nemlig basket for this uncertain Local basket submission. Do not retry or add anything.",

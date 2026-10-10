@@ -56,11 +56,16 @@ const props = (thumbnail?: string): ViewerPageProps => ({
     confirmEnd: false,
     continueSubmitted: false,
     submitBlocked: false,
+    baskets: [],
+    selectedBasketId: undefined,
   },
   actions: {
     onNavigate: noop,
     onFactExpandedChange: noop,
     onRefresh: noop,
+    onOpenPicker: noop,
+    onSelectBasket: noop,
+    onDeleteBasket: noop,
     onQuantity: noop,
     onRemove: noop,
     onOpenAlternatives: noop,
@@ -79,6 +84,64 @@ const props = (thumbnail?: string): ViewerPageProps => ({
   },
 });
 
+test("basket picker shows only a compact prefix, activity date, and product count", () => {
+  const pageProps = props();
+  const inventory = [
+    {
+      basketId: "12345678-1234-4234-8234-123456789abc",
+      createdAt: Date.parse("2026-10-01T10:00:00.000Z"),
+      lastActivityAt: Date.parse("2026-10-09T10:00:00.000Z"),
+      expiresAt: Date.parse("2026-10-10T10:00:00.000Z"),
+      revision: 3,
+      productCount: 4,
+      submissionAttempted: false,
+    },
+  ];
+  pageProps.model.screen = {
+    kind: "picker",
+    baskets: inventory,
+  };
+  pageProps.model.baskets = inventory;
+  const markup = renderToStaticMarkup(createElement(ViewerPage, pageProps));
+  assert.match(markup, /Local baskets/u);
+  assert.match(markup, /Basket 12345678/u);
+  assert.match(markup, /4 unique products/u);
+  assert.doesNotMatch(markup, /12345678-1234-4234-8234-123456789abc/u);
+  assert.match(markup, />Open</u);
+  assert.match(markup, />Delete</u);
+  assert.doesNotMatch(markup, /Choose a Local basket to continue/u);
+  assert.doesNotMatch(markup, /Local basket options|Choose basket/u);
+  assert.equal((markup.match(/<h[1-6]/gu) ?? []).length, 1);
+});
+
+test("an unavailable old card offers picker recovery without an implicit selection", () => {
+  const pageProps = props();
+  pageProps.model.screen = { kind: "picker", baskets: [] };
+  const markup = renderToStaticMarkup(createElement(ViewerPage, pageProps));
+  assert.match(markup, /No active Local baskets/u);
+  assert.match(markup, /Start one in conversation/u);
+  assert.doesNotMatch(markup, /Submit to Nemlig/u);
+});
+
+test("a recovered submission fence explains the uncertainty without inventing an id", () => {
+  const pageProps = props();
+  if (pageProps.model.screen.kind !== "review") {
+    throw new Error("review fixture missing");
+  }
+  pageProps.model.screen.review = {
+    ...pageProps.model.screen.review,
+    basketId: "12345678-1234-4234-8234-123456789abc",
+    submissionAttempted: true,
+  };
+  pageProps.model.selectedBasketId = "12345678-1234-4234-8234-123456789abc";
+  pageProps.model.submitBlocked = true;
+  const markup = renderToStaticMarkup(createElement(ViewerPage, pageProps));
+  assert.match(markup, /A previous addition needs checking/u);
+  assert.match(markup, /may have reached Nemlig/u);
+  assert.doesNotMatch(markup, /synthetic-submission|fixture-submission/u);
+  assert.doesNotMatch(markup, />Submit to Nemlig<\/button>/u);
+});
+
 test("shared viewer page uses its supplied fixture thumbnail and keeps unsafe input on the fallback", () => {
   const localThumbnail = "/assets/milk-carton.svg";
   const withFixture = renderToStaticMarkup(
@@ -93,7 +156,11 @@ test("shared viewer page uses its supplied fixture thumbnail and keeps unsafe in
   assert.match(withFixture, /Show details for Fixture yoghurt/u);
   assert.match(withFixture, /swipe from right to left for actions/u);
   assert.doesNotMatch(withFixture, /Actions for Fixture yoghurt/u);
-  assert.doesNotMatch(withFixture, /aria-expanded=/u);
+  assert.match(withFixture, /aria-expanded="false"/u);
+  assert.doesNotMatch(
+    withFixture,
+    /data-viewer-component="product-summary"[^>]*aria-expanded/u,
+  );
   assert.doesNotMatch(withFixture, /hold a product/u);
   assert.doesNotMatch(withFixture, /<strong>Nemlig Assistant<\/strong>/u);
 
@@ -262,6 +329,7 @@ test("shared viewer page distinguishes a verified partial addition from an uncer
     ...pageProps.model.screen,
     review: {
       ...pageProps.model.screen.review,
+      submissionAttempted: true,
       submission: {
         status: "partial",
         submission_id: "fixture-submission",
@@ -270,12 +338,14 @@ test("shared viewer page distinguishes a verified partial addition from an uncer
       },
     },
   };
+  pageProps.model.submitBlocked = true;
 
   const html = renderToStaticMarkup(createElement(ViewerPage, pageProps));
   assert.match(html, /Some additions were confirmed/u);
   assert.match(html, /One product was confirmed/u);
   assert.match(html, /No later product was sent/u);
   assert.doesNotMatch(html, /We could not verify the addition/u);
+  assert.doesNotMatch(html, /A previous addition needs checking/u);
 });
 
 test("a stopped submission explains the known reason and next step", () => {
@@ -288,14 +358,17 @@ test("a stopped submission explains the known reason and next step", () => {
     submission_id: "fixture-submission",
     review: {},
   };
+  pageProps.model.screen.review.submissionAttempted = true;
   pageProps.model.message =
     "Nemlig's basket could not be read before the next addition. No product was sent.";
 
   const html = renderToStaticMarkup(createElement(ViewerPage, pageProps));
   assert.match(html, /Addition stopped before sending/u);
   assert.match(html, /basket could not be read/u);
-  assert.match(html, /Inspect the actual Nemlig basket/u);
-  assert.match(html, /will not retry automatically/u);
+  assert.match(html, /The known result is that no product was sent/u);
+  assert.doesNotMatch(html, /prior addition may have reached Nemlig/u);
+  assert.match(html, /cannot be retried/u);
+  assert.match(html, /Inspect Nemlig basket in conversation/u);
 });
 
 test("a submitted basket names skipped products without claiming they were added", () => {
@@ -310,8 +383,13 @@ test("a submitted basket names skipped products without claiming they were added
     verified_additions: 0,
     skipped_products: [{ product_id: 7, name: "Banan" }],
   };
+  pageProps.model.screen.review.submissionAttempted = true;
+  pageProps.model.submitBlocked = true;
   const html = renderToStaticMarkup(createElement(ViewerPage, pageProps));
   assert.match(html, /No products were added/u);
   assert.match(html, /Unavailable products were skipped: Banan/u);
   assert.doesNotMatch(html, /Only the prepared products were added/u);
+  assert.doesNotMatch(html, /A previous addition needs checking/u);
+  assert.match(html, /Choose another Local basket/u);
+  assert.doesNotMatch(html, /Continue with Local basket/u);
 });

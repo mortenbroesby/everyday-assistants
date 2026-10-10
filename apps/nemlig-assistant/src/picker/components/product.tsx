@@ -272,9 +272,13 @@ export function QuantityControl({
   onQuantity?: (quantity: number) => void;
 }) {
   return (
-    <QuantityControlRoot data-viewer-component="quantity-control">
-      <span>Quantity</span>
+    <QuantityControlRoot
+      className="product-action-quantity"
+      data-viewer-component="quantity-control"
+    >
+      <span className="product-action-quantity-label">Quantity</span>
       <ViewerButton
+        className="product-action-quantity-button"
         color="secondary"
         aria-label={`Decrease quantity of ${label}`}
         disabled={disabled || quantity <= 1}
@@ -282,8 +286,11 @@ export function QuantityControl({
       >
         −
       </ViewerButton>
-      <span aria-live="polite">{quantity}</span>
+      <span className="product-action-quantity-value" aria-live="polite">
+        {quantity}
+      </span>
       <ViewerButton
+        className="product-action-quantity-button"
         color="secondary"
         aria-label={`Increase quantity of ${label}`}
         disabled={disabled || quantity >= Number.MAX_SAFE_INTEGER}
