@@ -9,8 +9,8 @@ request-size, deadline, and manual kill-switch checks. Provider-backed requests
 SHALL require independently bound current credentials before Container wake or
 provider access. Validated local-only Local basket list, show, select, delete,
 and heartbeat actions MAY reach the persistence boundary without Nemlig
-credentials, while retaining gateway authentication, principal-policy, quotas,
-deadlines, and no provider access. Local basket state SHALL be isolated by authenticated principal
+credentials, while retaining gateway authentication, principal-policy,
+request-size and deadline checks, and no provider access. Local basket state SHALL be isolated by authenticated principal
 and stored through a narrow authenticated Worker persistence boundary; it SHALL
 not expose Durable Object access to unauthenticated callers or the Container.
 

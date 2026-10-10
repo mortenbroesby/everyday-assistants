@@ -30,7 +30,7 @@ the aggregate fan-out across simultaneous host tool calls is not yet evidenced.
   basket merging, or any change to checkout/payment/delivery.
 - Restoring a prepared provider submission, retrying an uncertain write, or
   treating Local basket recovery as approval to add to Nemlig.
-- Changing the #272/#274 UI contract while those PRs remain under review.
+- Replacing the current shared Local basket UI or its swipe/details actions.
 - Guessing a provider fan-out limit before a bounded reproduction identifies the
   failing stage.
 
@@ -137,7 +137,9 @@ requests, cancellation, or lost authorization. Define the queue only for a
 stable host chat identifier; otherwise retain request-local limits rather than
 guessing a session. After more than ten retryable failures in one minute, stop
 additional search work for that chat and report the outage; other sessions
-remain unaffected. If upstream search failures are the cause, retain truthful
+remain unaffected. This pause clears when the rolling 60-second failure count
+falls to ten or fewer. New requests may then proceed; stopped or canceled
+requests are not automatically replayed. If upstream search failures are the cause, retain truthful
 error/partial-result behavior rather than adding unrelated global throttling.
 
 ## Risks / Trade-offs
@@ -166,16 +168,17 @@ error/partial-result behavior rather than adding unrelated global throttling.
   Local basket only after verified readback, and retain the fence on uncertain
   or cleanup-failure paths instead of retrying.
 - [The stacked UI changes alter the Local basket protocol] → Start from the
-  eventual #274 merge SHA, re-read its final protocol and specs, and update this
+  current `origin/main` containing #274, re-read its final protocol and specs, and update this
   plan only if that concrete baseline changes the selected implementation seam.
 
 ## Migration Plan
 
-1. Keep this planning PR stacked on #274. After #274 merges, create the
-   implementation branch from the resulting `origin/main` SHA.
-2. Add Durable Object bindings/migrations and the authenticated state boundary
-   behind existing production safety checks. No existing persisted PlanStorage
-   data is read, migrated, or deleted.
+1. Reconcile the implementation branch with current `origin/main`, including
+   #274, the #281 PlanStorage retirement, and subsequent Local basket changes.
+2. Preserve the existing `v1` creation and `v2` PlanStorage deletion migrations
+   unchanged. Add the owner Local basket binding in a new `v3` migration and
+   the authenticated state boundary behind existing production safety checks.
+   This feature does not repeat the PlanStorage deletion or reuse its records.
 3. Route new Local basket create/list/select/edit/delete operations through the
    boundary. Existing in-memory conversation drafts receive an explicit
    unavailable/choose-or-create recovery path; they are never silently copied
