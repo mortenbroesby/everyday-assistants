@@ -1,0 +1,93 @@
+## MODIFIED Requirements
+
+### Requirement: Shared private product review
+The system SHALL maintain the same principal-and-conversation-bound temporary review snapshot for conversation and touch. Every product in the local basket SHALL be a Ready submission candidate; new products and replacements SHALL enter or remain Ready. Local quantity change, replacement, removal and navigation SHALL NOT modify the Nemlig basket.
+
+#### Scenario: Add products to the local basket
+- **WHEN** exact products are added to the active review
+- **THEN** every returned local row is Ready and eligible for the later exact submission review, with no provider mutation
+
+#### Scenario: Accept some products
+- **WHEN** an older card sends an acceptance action
+- **THEN** the server does not create a hidden subset; every current local row remains a submission candidate or the stale action fails without changing the review
+
+#### Scenario: Conflicting or foreign state
+- **WHEN** a caller changes a stale revision or accesses another principal's draft
+- **THEN** the action fails without changing state and a stale authorized caller can refresh the latest snapshot
+
+#### Scenario: Draft lifetime ends
+- **WHEN** the user finishes shopping, its process restarts, or bounded memory eviction removes it
+- **THEN** the system reports that the Local basket is unavailable without recreating it silently or changing the provider basket
+
+### Requirement: Contextual alternatives and reversible navigation
+The system SHALL show alternatives for one identified local product in a dedicated full-page view with Back, the current product, search, selectable options, and an explicit Use selected alternative action. Searching, navigating back, or cancelling SHALL leave the local row unchanged. Replacing a product SHALL preserve its quantity and Ready status, update only the local row, and invalidate any prepared submission. Alternative results SHALL remain tied to their exact target and current review revision.
+
+#### Scenario: Cancel an alternative choice
+- **WHEN** the user opens alternatives for a local basket product then goes back
+- **THEN** the unchanged local product remains Ready and no provider mutation occurs
+
+#### Scenario: Replace a local basket product
+- **WHEN** the user explicitly uses an available exact alternative for a product
+- **THEN** the replacement takes that row's quantity, remains Ready, and invalidates a prepared submission without changing the Nemlig basket
+
+#### Scenario: Inspect alternatives and return
+- **WHEN** the user opens alternatives for a local basket product and returns
+- **THEN** the same target and returned alternatives remain available, and the local row is unchanged
+
+### Requirement: Explicit protected submission
+The system SHALL prepare one exact submission containing every current local basket item, regardless of any legacy stored review state. It SHALL fail closed if any item is unavailable or its required product facts are incomplete; it SHALL never silently omit a row. Editing the draft SHALL invalidate its pending submission. Applying still requires explicit confirmation of the unchanged exact review, and all existing freshness, single-use, principal, mutation-lock, uncertain-write, and readback safeguards SHALL remain effective. Unrelated real basket lines SHALL remain unchanged.
+
+#### Scenario: Submit the entire local basket
+- **WHEN** the user requests submission and every current local item has complete available product data
+- **THEN** the system prepares exact current quantities, prices, and effects for every item without applying them
+
+#### Scenario: Local selection is complete
+- **WHEN** the user submits the current Local basket
+- **THEN** the system prepares every exact current item for review without applying it
+
+#### Scenario: A local basket item is unavailable or incomplete
+- **WHEN** any current local item cannot be freshly confirmed as available with complete required facts
+- **THEN** preparation stops, identifies the row for resolution, and prepares no partial subset
+
+#### Scenario: Approved submission succeeds
+- **WHEN** the user approves the unchanged current submission review
+- **THEN** the system applies it once, returns verified Nemlig basket readback, retains the local basket, and marks the submission outcome truthfully
+
+#### Scenario: Submission fails or becomes uncertain
+- **WHEN** application or readback fails
+- **THEN** the local basket remains intact, the outcome is explicitly uncertain or failed, and the system does not automatically retry the submission
+
+### Requirement: To decide and Ready refinement
+The touch review SHALL show one Local basket list without visible To decide or Ready tabs, row-selection checkboxes, or an acceptance step. Every product SHALL be a Ready submission candidate. Swipe gestures SHALL only reveal an action; a fresh explicit activation of the revealed Remove or Find alternative button SHALL perform the corresponding local action. Expanded rows SHALL provide equivalent accessible controls. Legacy stored state SHALL NOT exclude an item from whole-basket submission.
+
+#### Scenario: Reveal a local row action
+- **WHEN** the user swipes left or right beyond half the row width and releases
+- **THEN** the row reveals the corresponding Remove or Find alternative button but performs no edit or navigation until that button is explicitly activated
+
+#### Scenario: Resolve alternatives for a Ready row
+- **WHEN** the user searches alternatives from a Ready row and chooses a replacement
+- **THEN** the replacement remains Ready with the original quantity and the unchanged remainder of the list remains eligible for submission
+
+#### Scenario: Select and accept in one action
+- **WHEN** an older card sends a selection or acceptance action
+- **THEN** it cannot create a hidden To decide subset or exclude a product from whole-basket submission
+
+#### Scenario: Reconsider a Ready product
+- **WHEN** an older card asks to move a product back to To decide
+- **THEN** no such subset transition occurs; the product remains a Ready submission candidate
+
+#### Scenario: Remove all Ready products
+- **WHEN** the user explicitly removes selected local rows
+- **THEN** only those rows are removed locally and the Nemlig basket remains unchanged
+
+#### Scenario: Empty and completed workspace
+- **WHEN** the Local basket is empty or a submission completes
+- **THEN** the viewer shows its appropriate empty or truthful terminal state without To decide/Ready navigation or automatic retry
+
+#### Scenario: Obsolete review action
+- **WHEN** an older cached card sends obsolete basket navigation
+- **THEN** the server rejects the action without changing the review or the Nemlig basket
+
+#### Scenario: Prepare a legacy mixed-state review
+- **WHEN** an active review created by an older version contains both Ready and needs-review rows
+- **THEN** submission preparation includes every row or fails closed; no row is silently excluded based on its legacy state

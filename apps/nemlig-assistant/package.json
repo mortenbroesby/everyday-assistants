@@ -76,6 +76,7 @@
     "hono": "4.13.8",
     "html-to-text": "10.0.1",
     "jose": "^6.2.10",
+    "react-swipeable": "7.0.2",
     "zod": "^4.5.4"
   },
   "devDependencies": {

@@ -1,8 +1,8 @@
-import { useEffect, useId, useRef, useState } from "react";
+import { useId, useRef, useState } from "react";
+import { useSwipeable } from "react-swipeable";
 import type { ProductView } from "../product-presentation.js";
 import {
   ActionFooter,
-  DestinationTabs,
   DraftListOverflow,
   DraftListStarters,
   isUsable,
@@ -134,9 +134,6 @@ function ProductCard({
   thumbnailSrc,
   onQuantity,
   onRemove,
-  onRevisit,
-  selected,
-  onSelected,
   onChoice,
   onOpenAlternatives,
   expanded,
@@ -151,9 +148,6 @@ function ProductCard({
   thumbnailSrc?: string;
   onQuantity?: (quantity: number) => void;
   onRemove?: () => void;
-  onRevisit?: () => void;
-  selected?: boolean;
-  onSelected?: (selected: boolean) => void;
   onChoice?: () => void;
   onOpenAlternatives?: () => void;
   expanded?: boolean;
@@ -163,18 +157,26 @@ function ProductCard({
   comparison?: boolean;
 }) {
   const [localExpanded, setLocalExpanded] = useState(false);
-  const [confirmingRemoval, setConfirmingRemoval] = useState(false);
-  const removeTriggerRef = useRef<HTMLButtonElement | null>(null);
-  const removalPromptRef = useRef<HTMLParagraphElement | null>(null);
-  const wasConfirmingRemoval = useRef(false);
-  useEffect(() => {
-    if (confirmingRemoval) {
-      removalPromptRef.current?.focus();
-    } else if (wasConfirmingRemoval.current) {
-      removeTriggerRef.current?.focus();
-    }
-    wasConfirmingRemoval.current = confirmingRemoval;
-  }, [confirmingRemoval]);
+  const [swipeOffset, setSwipeOffset] = useState(0);
+  const [swipeAction, setSwipeAction] = useState<"remove" | "alternative">();
+  const rowRef = useRef<HTMLDivElement | null>(null);
+  const swipeHandlers = useSwipeable({
+    delta: 8,
+    onSwiping: ({ deltaX }) => {
+      setSwipeAction(undefined);
+      setSwipeOffset(deltaX);
+    },
+    onSwiped: ({ absX, deltaX }) => {
+      setSwipeOffset(0);
+      const width = rowRef.current?.clientWidth ?? 0;
+      setSwipeAction(
+        absX > width / 2 ? (deltaX < 0 ? "remove" : "alternative") : undefined,
+      );
+    },
+    onTouchEndOrOnMouseUp: () => setSwipeOffset(0),
+    trackMouse: false,
+    preventScrollOnSwipe: true,
+  });
   const detailsId = useId();
   const disclosureExpanded = expanded ?? localExpanded;
   const quantity =
@@ -188,46 +190,9 @@ function ProductCard({
       : undefined);
   const count = quantity ?? 0;
   const removeControl = onRemove && (
-    <div className="local-removal">
-      <Button
-        ref={removeTriggerRef}
-        color="secondary"
-        disabled={disabled}
-        hidden={confirmingRemoval}
-        onClick={() => setConfirmingRemoval(true)}
-      >
-        Remove from Draft list
-      </Button>
-      {confirmingRemoval && (
-        <div
-          className="local-confirmation"
-          role="group"
-          aria-label={`Confirm removing ${productName(view, item?.product_id)}`}
-        >
-          <p ref={removalPromptRef} tabIndex={-1} role="alert">
-            Remove this product from the local Draft list? The Nemlig basket
-            will not change.
-          </p>
-          <Button
-            color="secondary"
-            disabled={disabled}
-            onClick={() => setConfirmingRemoval(false)}
-          >
-            Keep product
-          </Button>
-          <Button
-            color="secondary"
-            disabled={disabled}
-            onClick={() => {
-              setConfirmingRemoval(false);
-              onRemove();
-            }}
-          >
-            Confirm remove
-          </Button>
-        </div>
-      )}
-    </div>
+    <Button color="secondary" disabled={disabled} onClick={onRemove}>
+      Remove from Local basket
+    </Button>
   );
   const reviewControls = item && (
     <div className="review-controls">
@@ -238,7 +203,7 @@ function ProductCard({
         onQuantity={onQuantity}
       />
       {item.state === "needs-review" && removeControl}
-      {item.state === "needs-review" && onOpenAlternatives && (
+      {onOpenAlternatives && (
         <Button
           color="secondary"
           disabled={disabled}
@@ -252,59 +217,87 @@ function ProductCard({
   const readyActions = item?.state === "ready" && (
     <div className="review-controls ready-row-actions">
       {removeControl}
-      {onRevisit && (
-        <Button color="secondary" disabled={disabled} onClick={onRevisit}>
-          Move to To decide
+      {onOpenAlternatives && (
+        <Button
+          color="secondary"
+          disabled={disabled}
+          onClick={onOpenAlternatives}
+        >
+          Find alternative
         </Button>
       )}
     </div>
   );
   if (view.status !== "complete") {
     return (
-      <article
-        className={`product-card${comparison ? " product-comparison" : ""}`}
+      <div
+        className="basket-swipe-row"
+        {...(item && !comparison ? swipeHandlers : {})}
+        ref={rowRef}
       >
-        {onSelected && (
-          <label className="product-select">
-            <input
-              type="checkbox"
-              aria-label={`Select ${productName(view, item?.product_id)}`}
-              disabled={disabled || !isUsable(view)}
-              checked={selected === true}
-              onChange={(event) => onSelected(event.currentTarget.checked)}
-            />
-          </label>
-        )}
-        <div className="product-details">
-          <ProductSummaryButton
+        {swipeAction === "remove" && onRemove && (
+          <Button
             color="secondary"
-            variant="ghost"
-            data-viewer-component="product-summary"
-            aria-expanded={disclosureExpanded}
-            aria-controls={detailsId}
+            disabled={disabled}
+            className="swipe-action swipe-remove"
             onClick={() => {
-              const next = !disclosureExpanded;
-              if (onExpandedChange) {
-                onExpandedChange(next);
-              } else {
-                setLocalExpanded(next);
-              }
+              setSwipeAction(undefined);
+              onRemove();
             }}
           >
-            <ProductSummary view={view} />
-          </ProductSummaryButton>
-          <div
-            id={detailsId}
-            className="product-expanded"
-            hidden={!disclosureExpanded}
+            <span aria-hidden="true">▣</span> Remove
+          </Button>
+        )}
+        {swipeAction === "alternative" && onOpenAlternatives && (
+          <Button
+            color="secondary"
+            disabled={disabled}
+            className="swipe-action swipe-alternative"
+            onClick={() => {
+              setSwipeAction(undefined);
+              onOpenAlternatives();
+            }}
           >
-            {item && <p>{item.quantity} ×</p>}
-            {item?.state === "needs-review" && reviewControls}
-            {readyActions}
+            <span aria-hidden="true">⌕</span> Find alternative
+          </Button>
+        )}
+        <article
+          className={`product-card${comparison ? " product-comparison" : ""}`}
+          style={{
+            transform: `translateX(${swipeOffset || (swipeAction === "remove" ? "-55%" : swipeAction === "alternative" ? "55%" : 0)})`,
+          }}
+        >
+          <div className="product-details">
+            <ProductSummaryButton
+              color="secondary"
+              variant="ghost"
+              data-viewer-component="product-summary"
+              aria-expanded={disclosureExpanded}
+              aria-controls={detailsId}
+              onClick={() => {
+                const next = !disclosureExpanded;
+                if (onExpandedChange) {
+                  onExpandedChange(next);
+                } else {
+                  setLocalExpanded(next);
+                }
+              }}
+            >
+              <ProductSummary view={view} />
+            </ProductSummaryButton>
+            <div
+              id={detailsId}
+              className="product-expanded"
+              hidden={!disclosureExpanded}
+            >
+              {item && <p>{item.quantity} ×</p>}
+              {item?.state === "needs-review" && reviewControls}
+              {readyActions}
+            </div>
+            {item?.state === "ready" && reviewControls}
           </div>
-          {item?.state === "ready" && reviewControls}
-        </div>
-      </article>
+        </article>
+      </div>
     );
   }
   const summary = (
@@ -315,73 +308,97 @@ function ProductCard({
     />
   );
   return (
-    <article
-      className={`product-card${comparison ? " product-comparison" : ""}`}
+    <div
+      className="basket-swipe-row"
+      {...(item && !comparison ? swipeHandlers : {})}
+      ref={rowRef}
     >
-      {onSelected && (
-        <label className="product-select">
-          <input
-            type="checkbox"
-            aria-label={`Select ${productName(view)}`}
-            disabled={disabled || !isUsable(view)}
-            checked={selected === true}
-            onChange={(event) => onSelected(event.currentTarget.checked)}
-          />
-        </label>
+      {swipeAction === "remove" && onRemove && (
+        <Button
+          color="secondary"
+          disabled={disabled}
+          className="swipe-action swipe-remove"
+          onClick={() => {
+            setSwipeAction(undefined);
+            onRemove();
+          }}
+        >
+          <span aria-hidden="true">▣</span> Remove
+        </Button>
       )}
-      <div className="product-details">
-        {comparison ? (
-          onChoice ? (
-            <button
-              type="button"
-              className="product-comparison-summary alternative-choice"
-              aria-label={`Use ${productName(view)} instead`}
-              disabled={disabled || !isUsable(view)}
-              onClick={onChoice}
+      {swipeAction === "alternative" && onOpenAlternatives && (
+        <Button
+          color="secondary"
+          disabled={disabled}
+          className="swipe-action swipe-alternative"
+          onClick={() => {
+            setSwipeAction(undefined);
+            onOpenAlternatives();
+          }}
+        >
+          <span aria-hidden="true">⌕</span> Find alternative
+        </Button>
+      )}
+      <article
+        className={`product-card${comparison ? " product-comparison" : ""}`}
+        style={{
+          transform: `translateX(${swipeOffset || (swipeAction === "remove" ? "-55%" : swipeAction === "alternative" ? "55%" : 0)})`,
+        }}
+      >
+        <div className="product-details">
+          {comparison ? (
+            onChoice ? (
+              <button
+                type="button"
+                className="product-comparison-summary alternative-choice"
+                aria-label={`Use ${productName(view)} instead`}
+                disabled={disabled || !isUsable(view)}
+                onClick={onChoice}
+              >
+                {summary}
+                <span className="alternative-choice-state" aria-hidden="true">
+                  Use this alternative
+                </span>
+              </button>
+            ) : (
+              <div className="product-comparison-summary">{summary}</div>
+            )
+          ) : (
+            <ProductSummaryButton
+              color="secondary"
+              variant="ghost"
+              data-viewer-component="product-summary"
+              aria-expanded={disclosureExpanded}
+              aria-controls={detailsId}
+              onClick={() => {
+                const next = !disclosureExpanded;
+                if (onExpandedChange) {
+                  onExpandedChange(next);
+                } else {
+                  setLocalExpanded(next);
+                }
+              }}
             >
               {summary}
-              <span className="alternative-choice-state" aria-hidden="true">
-                Use this alternative
-              </span>
-            </button>
-          ) : (
-            <div className="product-comparison-summary">{summary}</div>
-          )
-        ) : (
-          <ProductSummaryButton
-            color="secondary"
-            variant="ghost"
-            data-viewer-component="product-summary"
-            aria-expanded={disclosureExpanded}
-            aria-controls={detailsId}
-            onClick={() => {
-              const next = !disclosureExpanded;
-              if (onExpandedChange) {
-                onExpandedChange(next);
-              } else {
-                setLocalExpanded(next);
-              }
-            }}
+            </ProductSummaryButton>
+          )}
+          <div
+            id={detailsId}
+            className="product-expanded"
+            hidden={!comparison && !disclosureExpanded}
           >
-            {summary}
-          </ProductSummaryButton>
-        )}
-        <div
-          id={detailsId}
-          className="product-expanded"
-          hidden={!comparison && !disclosureExpanded}
-        >
-          <ProductFacts
-            view={view}
-            expandedFacts={expandedFacts}
-            onFactExpandedChange={onFactExpandedChange}
-          />
-          {item?.state === "needs-review" && reviewControls}
-          {readyActions}
+            <ProductFacts
+              view={view}
+              expandedFacts={expandedFacts}
+              onFactExpandedChange={onFactExpandedChange}
+            />
+            {item && reviewControls}
+            {readyActions}
+          </div>
+          {item?.state === "ready" && reviewControls}
         </div>
-        {item?.state === "ready" && reviewControls}
-      </div>
-    </article>
+      </article>
+    </div>
   );
 }
 
@@ -415,13 +432,8 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
   const readyCount =
     review?.items.filter((item) => item.state === "ready").length ?? 0;
   const safeTitle =
-    destination === "ready"
-      ? "Ready"
-      : destination === "alternatives"
-        ? "Choose an alternative"
-        : "To decide";
-  const visibleProductCount =
-    destination === "ready" ? readyCount : needsReviewCount;
+    destination === "alternatives" ? "Choose an alternative" : "Local basket";
+  const visibleProductCount = review?.items.length ?? 0;
   const productPayload =
     screen.kind === "products" ? screen.payload : undefined;
   const basket =
@@ -459,9 +471,7 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
           : "Check your Nemlig basket"
       : review && active
         ? review.items.length
-          ? decisionsComplete
-            ? "Everything is ready"
-            : safeTitle
+          ? safeTitle
           : "What should we shop for?"
         : basket
           ? "Actual Nemlig basket"
@@ -474,13 +484,9 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
     ? review && active
       ? review.items.length === 0
         ? "Start another local Draft list in conversation."
-        : decisionsComplete
-          ? "All products are Ready for your final check. Nothing has been added to Nemlig."
-          : safeTitle === "Ready"
-            ? "Adjust quantities directly. Open a product to move it back or remove it. Prepare the exact change before adding anything to Nemlig."
-            : safeTitle === "Choose an alternative"
-              ? "Compare available options for this product."
-              : "Select products to move them into Ready. Open a product for details."
+        : safeTitle === "Choose an alternative"
+          ? "Compare available options for this product."
+          : "Review products in your local basket. Open a product for details or swipe for an action."
       : basket
         ? "Your current Nemlig basket. This view cannot change it."
         : "Inspect product details here or continue in conversation."
@@ -507,16 +513,6 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
       intro={outcomeOnly ? undefined : intro}
       maxWidth={maxWidth}
     >
-      {review && review.items.length > 0 && !terminalSubmission && (
-        <DestinationTabs
-          destination={destination ?? review.destination}
-          toDecideCount={needsReviewCount}
-          readyCount={readyCount}
-          hasAlternatives={Boolean(review.alternatives)}
-          disabled={uncertainSubmission || !active}
-          onNavigate={actions.onNavigate}
-        />
-      )}
       {screen.kind === "loading" && (
         <p className="status" role="status">
           Loading your Nemlig selection…
@@ -716,58 +712,36 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
         !terminalSubmission &&
         visibleProductCount > 0 &&
         destination !== "alternatives" && (
-          <section
-            className="product-list"
-            aria-label={`${safeTitle} products`}
-          >
-            {review.items
-              .filter((item) => item.state === destination)
-              .map((item) => {
-                const alternativeQuery =
-                  item.view.status === "complete"
-                    ? (
-                        item.view.product.subcategory ??
-                        item.view.product.name ??
-                        String(item.product_id)
-                      ).slice(0, 200)
-                    : String(item.product_id);
-                return (
-                  <ProductCard
-                    key={item.product_id}
-                    view={item.view}
-                    thumbnailSrc={thumbnail(item.view)}
-                    {...disclosureProps(item.product_id)}
-                    item={{
-                      ...item,
-                      quantity:
-                        pendingQuantities.get(item.product_id) ?? item.quantity,
-                    }}
-                    disabled={editsBlocked}
-                    {...(item.state === "needs-review"
-                      ? {
-                          selected: selected.has(item.product_id),
-                          onSelected: (checked: boolean) =>
-                            actions.onSelected(item.product_id, checked),
-                        }
-                      : {})}
-                    onQuantity={(quantity) =>
-                      actions.onQuantity(item, quantity)
-                    }
-                    onRemove={() => actions.onRemove(item)}
-                    onRevisit={
-                      item.state === "ready"
-                        ? () => actions.onRevisit(item)
-                        : undefined
-                    }
-                    onOpenAlternatives={
-                      item.state === "needs-review"
-                        ? () =>
-                            actions.onOpenAlternatives(item, alternativeQuery)
-                        : undefined
-                    }
-                  />
-                );
-              })}
+          <section className="product-list" aria-label="Local basket products">
+            {review.items.map((item) => {
+              const alternativeQuery =
+                item.view.status === "complete"
+                  ? (
+                      item.view.product.subcategory ??
+                      item.view.product.name ??
+                      String(item.product_id)
+                    ).slice(0, 200)
+                  : String(item.product_id);
+              return (
+                <ProductCard
+                  key={item.product_id}
+                  view={item.view}
+                  thumbnailSrc={thumbnail(item.view)}
+                  {...disclosureProps(item.product_id)}
+                  item={{
+                    ...item,
+                    quantity:
+                      pendingQuantities.get(item.product_id) ?? item.quantity,
+                  }}
+                  disabled={editsBlocked}
+                  onQuantity={(quantity) => actions.onQuantity(item, quantity)}
+                  onRemove={() => actions.onRemove(item)}
+                  onOpenAlternatives={() =>
+                    actions.onOpenAlternatives(item, alternativeQuery)
+                  }
+                />
+              );
+            })}
           </section>
         )}
       {decisionsComplete && (
