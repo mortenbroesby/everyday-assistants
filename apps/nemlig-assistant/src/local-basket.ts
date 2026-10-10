@@ -57,13 +57,6 @@ const cloneBasket = (basket: LocalBasket): LocalBasket => ({
   lines: basket.lines.map((line) => structuredClone(line)),
 });
 
-const cloneInventory = (
-  inventory: OwnerLocalBasketInventory,
-): OwnerLocalBasketInventory => ({
-  ...inventory,
-  baskets: inventory.baskets.map(cloneBasket),
-});
-
 const assertOwner = (
   inventory: OwnerLocalBasketInventory,
   ownerId: string,
@@ -139,7 +132,7 @@ const withoutExpired = (
   inventory: OwnerLocalBasketInventory,
   now: number,
 ): OwnerLocalBasketInventory => ({
-  ...cloneInventory(inventory),
+  ...inventory,
   baskets: inventory.baskets
     .filter((basket) => basket.expiresAt > now)
     .map(cloneBasket),

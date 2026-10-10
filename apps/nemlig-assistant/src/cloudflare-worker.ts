@@ -58,7 +58,6 @@ import type { OwnerLocalBasketInventory } from "./local-basket.js";
 
 interface ContainerEnv extends CloudflareEnv {
   NEMLIG_MCP_CONTAINER: DurableObjectNamespace<NemligMcpContainer>;
-  NEMLIG_PLAN_STORAGE: DurableObjectNamespace<PlanStorage>;
 }
 
 interface Env extends ContainerEnv {
@@ -383,13 +382,6 @@ export class NemligMcpContainer extends Container<ContainerEnv> {
           };
         }),
     );
-  }
-}
-
-// ponytail: retain the retired namespace and data; remove only with approved data cleanup.
-export class PlanStorage extends DurableObject<Env> {
-  async fetch(): Promise<Response> {
-    return new Response("Saved shopping storage retired", { status: 410 });
   }
 }
 

@@ -59,8 +59,9 @@ stores a collection of Local basket records rather than one global basket:
 
 This is smaller and more reliable than an owner-wide list index plus one Durable
 Object per basket. It gives serialized owner mutations and a bounded retention
-window without a second database or global cleanup worker. The existing retired
-PlanStorage Durable Object is not reused.
+window without a second database or global cleanup worker. The retired
+PlanStorage Durable Object is deleted through an explicit Cloudflare migration;
+its data is not reused or migrated.
 
 ### 2. Keep ChatGPT identity out of durable ownership; remember selection only when safe
 
@@ -174,16 +175,16 @@ error/partial-result behavior rather than adding unrelated global throttling.
 1. Keep this planning PR stacked on #274. After #274 merges, create the
    implementation branch from the resulting `origin/main` SHA.
 2. Add Durable Object bindings/migrations and the authenticated state boundary
-   behind existing production safety checks. No existing persisted PlanStorage
-   data is read, migrated, or deleted.
+   behind existing production safety checks. Retire PlanStorage with a reviewed
+   Cloudflare delete migration; no existing records are read or migrated.
 3. Route new Local basket create/list/select/edit/delete operations through the
    boundary. Existing in-memory conversation drafts receive an explicit
    unavailable/choose-or-create recovery path; they are never silently copied
    into owner storage.
 4. Ship with exact-head CI, Worker/Container state readback, refreshed ChatGPT
-   metadata, and old/new-chat smoke proof. Rollback is the prior Worker/Container
-   release; durable records remain inert and expire within 24 hours of their
-   last intentional interaction.
+   metadata, and old/new-chat smoke proof. A Worker/Container rollback cannot
+   restore PlanStorage after the deletion migration; Local basket records remain
+   inert and expire within 24 hours of their last intentional interaction.
 
 ## Deferred follow-up
 

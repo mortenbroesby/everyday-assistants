@@ -38,7 +38,11 @@ interface WranglerDeployment {
     constraints: { jurisdiction: string };
   }>;
   durable_objects: { bindings: unknown[] };
-  migrations: Array<{ tag: string; new_sqlite_classes: string[] }>;
+  migrations: Array<{
+    tag: string;
+    new_sqlite_classes?: string[];
+    deleted_classes?: string[];
+  }>;
 }
 
 test("Cloudflare safety configuration is explicit, bounded, and internally consistent", () => {
@@ -146,7 +150,6 @@ test("Wrangler configuration fixes both environments to one disabled EU lite Con
     assert.equal(deployment.containers[0].constraints.jurisdiction, "eu");
     assert.deepEqual(deployment.durable_objects.bindings, [
       { name: "NEMLIG_MCP_CONTAINER", class_name: "NemligMcpContainer" },
-      { name: "NEMLIG_PLAN_STORAGE", class_name: "PlanStorage" },
       {
         name: "NEMLIG_LOCAL_BASKET_STORAGE",
         class_name: "OwnerLocalBasketStorage",
@@ -161,6 +164,7 @@ test("Wrangler configuration fixes both environments to one disabled EU lite Con
         tag: "v2",
         new_sqlite_classes: ["OwnerLocalBasketStorage"],
       },
+      { tag: "v3", deleted_classes: ["PlanStorage"] },
     ]);
   }
   assert.equal(wrangler.keep_vars, false);
@@ -183,7 +187,7 @@ test("Container has no Durable Object binding and uses only the local basket cal
   assert.doesNotMatch(worker, /GH_TOKEN|suggest_an_improvement/u);
   const container = worker.slice(
     worker.indexOf("export class NemligMcpContainer"),
-    worker.indexOf("export class PlanStorage"),
+    worker.indexOf("export class OwnerLocalBasketStorage"),
   );
   const containerEnvVars = container.slice(
     container.indexOf("envVars ="),
@@ -194,23 +198,10 @@ test("Container has no Durable Object binding and uses only the local basket cal
   assert.match(worker, /Container<ContainerEnv>/u);
 });
 
-test("historical PlanStorage is inert and does not access stored records", async () => {
+test("retired PlanStorage is absent from the Worker", async () => {
   const worker = await readFile(
     new URL("./cloudflare-worker.ts", import.meta.url),
     "utf8",
   );
-  const planStorage = worker.slice(
-    worker.indexOf("export class PlanStorage"),
-    worker.indexOf("export { ContainerProxy"),
-  );
-  assert.ok(planStorage);
-  assert.match(
-    planStorage,
-    /return new Response\([^\n]*, \{ status: 410 \}\)/u,
-  );
-  assert.doesNotMatch(
-    planStorage,
-    /storage\.(?:get|put|delete|transaction)\s*\(/u,
-  );
-  assert.doesNotMatch(worker, /NEMLIG_PLAN_STORAGE_URL/u);
+  assert.doesNotMatch(worker, /PlanStorage|NEMLIG_PLAN_STORAGE/u);
 });

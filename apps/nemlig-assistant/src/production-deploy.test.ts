@@ -37,7 +37,12 @@ const candidateImage =
   "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
 const accountId = "0123456789abcdef0123456789abcdef";
 
-const version = (id: string, revision: string, enabled: boolean) =>
+const version = (
+  id: string,
+  revision: string,
+  enabled: boolean,
+  includesRetiredPlanStorage = false,
+) =>
   JSON.stringify({
     id,
     resources: {
@@ -73,16 +78,21 @@ const version = (id: string, revision: string, enabled: boolean) =>
           type: "durable_object_namespace",
           class_name: "NemligMcpContainer",
         },
-        {
-          name: "NEMLIG_PLAN_STORAGE",
-          type: "durable_object_namespace",
-          class_name: "PlanStorage",
-        },
-        {
-          name: "NEMLIG_LOCAL_BASKET_STORAGE",
-          type: "durable_object_namespace",
-          class_name: "OwnerLocalBasketStorage",
-        },
+        ...(includesRetiredPlanStorage
+          ? [
+              {
+                name: "NEMLIG_PLAN_STORAGE",
+                type: "durable_object_namespace",
+                class_name: "PlanStorage",
+              },
+            ]
+          : [
+              {
+                name: "NEMLIG_LOCAL_BASKET_STORAGE",
+                type: "durable_object_namespace",
+                class_name: "OwnerLocalBasketStorage",
+              },
+            ]),
         { name: "NEMLIG_MCP_PRINCIPALS", type: "secret_text" },
       ],
     },
@@ -130,7 +140,6 @@ const config = (path: string) => ({
   durable_objects: {
     bindings: [
       { name: "NEMLIG_MCP_CONTAINER", class_name: "NemligMcpContainer" },
-      { name: "NEMLIG_PLAN_STORAGE", class_name: "PlanStorage" },
       {
         name: "NEMLIG_LOCAL_BASKET_STORAGE",
         class_name: "OwnerLocalBasketStorage",
@@ -153,6 +162,7 @@ async function fixture(
     missingPredecessorAsset?: boolean;
     unknownStartingViewer?: boolean;
     driftDuringViewerCapture?: boolean;
+    legacyPlanStorage?: boolean;
   } = {},
 ): Promise<{ deps: DeployDependencies; calls: Call[]; root: string }> {
   const root = await mkdtemp(join(tmpdir(), "nemlig-production-deploy-"));
@@ -284,6 +294,7 @@ async function fixture(
         id,
         id === startingId ? previousCommit : commit,
         id !== startingId,
+        options.legacyPlanStorage === true && id === startingId,
       );
     }
     if (args.includes("containers") && args.includes("list")) {
@@ -475,6 +486,14 @@ test("deployment input and provider metadata fail closed", () => {
       true,
     ),
   );
+  assert.throws(() =>
+    verifyCandidateVersion(
+      version(enabledId, commit, true, true),
+      enabledId,
+      commit,
+      true,
+    ),
+  );
 });
 
 test("preflight proves exact main CI and protected environment without Git ref writes", async () => {
@@ -529,6 +548,25 @@ test("service deployment verifies the exact candidate without persistent deploym
     await assert.rejects(
       access(join(root, ".git", "nemlig-production-deploy.lock")),
     );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("deployment permits only the reviewed PlanStorage retirement transition", async () => {
+  const { deps, root } = await fixture({ legacyPlanStorage: true });
+  try {
+    deps.acceptanceMode = "service";
+    deps.env = {
+      CLOUDFLARE_ACCOUNT_ID: accountId,
+      CLOUDFLARE_API_TOKEN: "test-cloudflare-token",
+      GITHUB_ACTIONS: "true",
+      NEMLIG_MCP_SERVICE_CLIENT_ID: "service-client",
+      NEMLIG_MCP_SERVICE_CLIENT_SECRET: "machine-secret",
+      NEMLIG_CI_ACCEPTANCE_READY: "true",
+    };
+    const report = await deployProduction(commit, deps);
+    assert.equal(report.outcome, "success", report.failure);
   } finally {
     await rm(root, { recursive: true, force: true });
   }

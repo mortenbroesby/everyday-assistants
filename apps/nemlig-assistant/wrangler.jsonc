@@ -46,10 +46,6 @@
         "class_name": "NemligMcpContainer"
       },
       {
-        "name": "NEMLIG_PLAN_STORAGE",
-        "class_name": "PlanStorage"
-      },
-      {
         "name": "NEMLIG_LOCAL_BASKET_STORAGE",
         "class_name": "OwnerLocalBasketStorage"
       }
@@ -63,6 +59,10 @@
     {
       "tag": "v2",
       "new_sqlite_classes": ["OwnerLocalBasketStorage"]
+    },
+    {
+      "tag": "v3",
+      "deleted_classes": ["PlanStorage"]
     }
   ],
   "env": {
@@ -114,10 +114,6 @@
             "class_name": "NemligMcpContainer"
           },
           {
-            "name": "NEMLIG_PLAN_STORAGE",
-            "class_name": "PlanStorage"
-          },
-          {
             "name": "NEMLIG_LOCAL_BASKET_STORAGE",
             "class_name": "OwnerLocalBasketStorage"
           }
@@ -131,6 +127,10 @@
         {
           "tag": "v2",
           "new_sqlite_classes": ["OwnerLocalBasketStorage"]
+        },
+        {
+          "tag": "v3",
+          "deleted_classes": ["PlanStorage"]
         }
       ]
     }
