@@ -1,5 +1,6 @@
 import { Effect } from "effect";
 import type { Product } from "./client.js";
+import type { ProductDiscoveryEvent } from "./cloudflare-observability.js";
 import { NemligError } from "./nemlig-error.js";
 import {
   createReadScope,
@@ -27,9 +28,9 @@ export interface DetailedProductSearchOptions extends ProductDiscoveryOptions {
 }
 
 export type ProductDiscoveryDiagnostic = {
-  readonly stage: "shallow" | "detail" | "deadline" | "cancelled";
-  readonly errorClass:
-    "authentication" | "deadline" | "cancelled" | "provider" | "unknown";
+  readonly stage: ProductDiscoveryEvent["stage"];
+  readonly errorClass: ProductDiscoveryEvent["error_class"];
+  /** Aggregate active detail reads across this MCP process, not this chat. */
   readonly activeReadCount: number;
 };
 
@@ -139,11 +140,13 @@ const detailedSearchRead = (
         product,
       } satisfies DetailedProductSearchItem;
     } catch (error) {
-      emitDiagnostic(options.onDiagnostic, {
-        stage: diagnosticStage(error, signal),
-        errorClass: diagnosticErrorClass(error, signal),
-        activeReadCount: activeProviderReads,
-      });
+      if (!signal.aborted) {
+        emitDiagnostic(options.onDiagnostic, {
+          stage: diagnosticStage(error, signal),
+          errorClass: diagnosticErrorClass(error, signal),
+          activeReadCount: activeProviderReads,
+        });
+      }
       throw error;
     } finally {
       activeProviderReads -= 1;

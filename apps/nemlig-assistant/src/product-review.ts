@@ -13,10 +13,17 @@ import {
 } from "./product-discovery.js";
 import { createProductView, type ProductView } from "./product-presentation.js";
 import { runReadPool } from "./read-coordination.js";
+import type {
+  LocalBasket,
+  LocalBasketCommand,
+  LocalBasketEdit,
+  LocalBasketSummary,
+} from "./local-basket.js";
 
 export type ReviewDestination = "needs-review" | "ready" | "alternatives";
 /** Bounds transient draft payloads while allowing a full family shopping trip. */
 export const MAX_DRAFT_PRODUCTS = 500;
+const MAX_DURABLE_REVIEW_CACHE = 8;
 export interface ReviewItem {
   product_id: number;
   quantity: number;
@@ -24,6 +31,9 @@ export interface ReviewItem {
   view: ProductView;
 }
 export interface ProductReviewSnapshot {
+  basketId?: string;
+  revision?: number;
+  submissionAttempted?: boolean;
   destination: ReviewDestination;
   items: ReviewItem[];
   submission?: {
@@ -57,16 +67,69 @@ type ReviewProposals = Pick<
   BasketProposalService,
   "prepareAdditions" | "apply"
 >;
+export interface LocalBasketRepository {
+  mutate(command: LocalBasketCommand): Promise<unknown>;
+}
+
+const reviewKey = (owner: string, basketId: string): string =>
+  `${owner}\0${basketId}`;
+const localBasketSnapshot = (basket: LocalBasket): ProductReviewSnapshot => ({
+  basketId: basket.basketId,
+  revision: basket.revision,
+  submissionAttempted: basket.submissionAttempted === true,
+  destination: "ready",
+  items: basket.lines.map((line) => ({
+    product_id: line.productId,
+    quantity: line.quantity,
+    state: "ready",
+    view: structuredClone(line.view),
+  })),
+});
+const localBasket = (value: unknown): LocalBasket => {
+  if (
+    !value ||
+    typeof value !== "object" ||
+    !("basketId" in value) ||
+    !Array.isArray((value as LocalBasket).lines)
+  ) {
+    throw new NemligError("Local basket unavailable. Refresh the basket.");
+  }
+  return value as LocalBasket;
+};
 
 const validPositive = (value: number): boolean =>
   Number.isSafeInteger(value) && value > 0;
 const available = (view: ProductView): boolean =>
   view.status === "complete" && view.product.available === true;
+const requirePreparedSubmission = (
+  submission: ProductReviewSnapshot["submission"],
+  submissionId: string,
+  proposalId: string | undefined,
+  now: number,
+) => {
+  if (
+    !submission ||
+    submission.status !== "prepared" ||
+    submission.submission_id !== submissionId ||
+    !proposalId
+  ) {
+    throw new NemligError(
+      "Submission is absent, changed, or already attempted. Refresh the Local basket.",
+    );
+  }
+  if (Date.parse(submission.expires_at) <= now) {
+    throw new NemligError(
+      "Submission expired. Prepare a fresh exact review for approval.",
+    );
+  }
+  return { proposalId, submission };
+};
 
 /** Private, bounded, temporary state. Local edits cannot call a provider mutation. */
 export class ProductReviewService {
   private readonly drafts = new Map<string, StoredReview>();
   private readonly startingOwners = new Set<string>();
+  private readonly basketOperations = new Set<string>();
   private readonly proposals?: ReviewProposals;
   private readonly now: () => number;
 
@@ -103,6 +166,65 @@ export class ProductReviewService {
     this.drafts.delete(owner);
   }
 
+  private makeDurableRoom(key: string): boolean {
+    if (this.drafts.has(key)) {
+      return true;
+    }
+    const durable = [...this.drafts.entries()].filter(([candidate]) =>
+      candidate.includes("\0"),
+    );
+    if (durable.length < MAX_DURABLE_REVIEW_CACHE) {
+      return true;
+    }
+    const oldest = durable.find(
+      ([candidate, draft]) =>
+        !draft.busy &&
+        !this.basketOperations.has(candidate) &&
+        !this.startingOwners.has(candidate.split("\0", 1)[0] ?? ""),
+    );
+    if (!oldest) {
+      return false;
+    }
+    this.drafts.delete(oldest[0]);
+    return true;
+  }
+
+  private cacheDurable(key: string, stored: StoredReview): void {
+    if (this.makeDurableRoom(key)) {
+      this.drafts.set(key, stored);
+    }
+  }
+
+  forgetBasket(owner: string, basketId: string): void {
+    const key = reviewKey(owner, basketId);
+    const stored = this.drafts.get(key);
+    if (stored?.busy || this.basketOperations.has(key)) {
+      return;
+    }
+    this.drafts.delete(key);
+  }
+
+  private forgetMissingBaskets(
+    owner: string,
+    baskets: readonly LocalBasketSummary[],
+  ): void {
+    const prefix = `${owner}\0`;
+    const available = new Set(baskets.map(({ basketId }) => basketId));
+    for (const [key, stored] of this.drafts) {
+      if (!key.startsWith(prefix)) {
+        continue;
+      }
+      const basketId = key.slice(prefix.length);
+      if (
+        !available.has(basketId) &&
+        !stored.busy &&
+        !this.basketOperations.has(key)
+      ) {
+        this.drafts.delete(key);
+      }
+    }
+  }
+
   private readItems(
     items: Array<{ product_id: number; quantity: number }>,
     signal?: AbortSignal,
@@ -135,6 +257,362 @@ export class ProductReviewService {
       },
       { signal },
     );
+  }
+
+  async listBaskets(
+    repository: LocalBasketRepository,
+    owner?: string,
+  ): Promise<LocalBasketSummary[]> {
+    const baskets = (await repository.mutate({
+      kind: "list",
+    })) as LocalBasketSummary[];
+    if (owner) {
+      this.forgetMissingBaskets(owner, baskets);
+    }
+    return baskets;
+  }
+
+  // Preserve only safe live outcomes across revisions; never restore prepared authority.
+  // fallow-ignore-next-line complexity
+  async showBasket(
+    owner: string,
+    basketId: string,
+    repository: LocalBasketRepository,
+    allowOperation = false,
+  ): Promise<ProductReviewSnapshot> {
+    const key = reviewKey(owner, basketId);
+    let basket: LocalBasket;
+    try {
+      basket = localBasket(await repository.mutate({ kind: "read", basketId }));
+    } catch (error) {
+      this.forgetBasket(owner, basketId);
+      throw error;
+    }
+    const previous = this.drafts.get(key);
+    if (previous?.busy || (!allowOperation && this.basketOperations.has(key))) {
+      throw new NemligError(
+        "A Local basket operation is in progress. Refresh it after the request finishes.",
+      );
+    }
+    const snapshot = localBasketSnapshot(basket);
+    if (previous?.snapshot.revision === basket.revision) {
+      if (basket.submissionAttempted) {
+        if (
+          previous.snapshot.submission?.status === "uncertain" ||
+          previous.snapshot.submission?.status === "partial" ||
+          previous.snapshot.submission?.status === "submitted"
+        ) {
+          snapshot.submission = structuredClone(previous.snapshot.submission);
+        }
+      } else {
+        snapshot.alternatives = structuredClone(previous.snapshot.alternatives);
+        snapshot.submission = structuredClone(previous.snapshot.submission);
+      }
+      previous.snapshot = snapshot;
+      this.touch(key, previous);
+      return structuredClone(snapshot);
+    }
+    this.cacheDurable(key, { busy: false, snapshot });
+    return structuredClone(snapshot);
+  }
+
+  async createBasket(
+    owner: string,
+    items: Array<{ product_id: number; quantity: number }>,
+    repository: LocalBasketRepository,
+    signal?: AbortSignal,
+    selectionKey?: string,
+  ): Promise<{ review: ProductReviewSnapshot; baskets: LocalBasketSummary[] }> {
+    const rows = await this.readItems(items, signal);
+    const created = (await repository.mutate({
+      kind: "create",
+      ...(selectionKey ? { selectionKey } : {}),
+      lines: rows.map(({ product_id, quantity, view }) => ({
+        productId: product_id,
+        quantity,
+        view,
+      })),
+    })) as { basket: LocalBasket; evictedBasketId?: string };
+    if (created.evictedBasketId) {
+      this.drafts.delete(reviewKey(owner, created.evictedBasketId));
+    }
+    const review = localBasketSnapshot(created.basket);
+    this.cacheDurable(reviewKey(owner, created.basket.basketId), {
+      busy: false,
+      snapshot: review,
+    });
+    return { review, baskets: await this.listBaskets(repository, owner) };
+  }
+
+  // Serialize local edits, preserve explicit operation order, and revision-check provider reads.
+  // fallow-ignore-next-line complexity
+  async updateBasket(
+    owner: string,
+    basketId: string,
+    action: ProductReviewAction,
+    repository: LocalBasketRepository,
+    signal?: AbortSignal,
+  ): Promise<ProductReviewSnapshot> {
+    const key = reviewKey(owner, basketId);
+    if (this.basketOperations.has(key)) {
+      throw new NemligError("A Local basket operation is in progress.");
+    }
+    this.basketOperations.add(key);
+    try {
+      let review = await this.showBasket(owner, basketId, repository, true);
+      const current = localBasket(
+        await repository.mutate({ kind: "read", basketId }),
+      );
+      if (current.submissionAttempted && action.kind !== "navigate") {
+        throw new NemligError(
+          "Inspect the actual Nemlig basket before changing this Local basket.",
+        );
+      }
+      const updated = await this.update(key, action, signal);
+      review = updated;
+      let edit: LocalBasketEdit | undefined;
+      if (action.kind === "quantity") {
+        edit = {
+          kind: "quantity",
+          productId: action.product_id,
+          quantity: action.quantity,
+        };
+      } else if (action.kind === "remove") {
+        edit = { kind: "remove", productIds: action.product_ids };
+      } else if (action.kind === "add") {
+        edit = {
+          kind: "append",
+          lines: action.items.map((addition) => {
+            const item = updated.items.find(
+              (candidate) => candidate.product_id === addition.product_id,
+            );
+            if (!item) {
+              throw new NemligError(
+                "Exact product is not in this Local basket.",
+              );
+            }
+            return {
+              productId: addition.product_id,
+              quantity: addition.quantity,
+              view: item.view,
+            };
+          }),
+        };
+      } else if (action.kind === "replace") {
+        const item = updated.items.find(
+          (candidate) => candidate.product_id === action.replacement_id,
+        );
+        if (!item) {
+          throw new NemligError(
+            "Exact replacement is not in this Local basket.",
+          );
+        }
+        edit = {
+          kind: "replace",
+          productId: action.product_id,
+          line: {
+            productId: action.replacement_id,
+            quantity:
+              current.lines.find((line) => line.productId === action.product_id)
+                ?.quantity ?? 1,
+            view: item.view,
+          },
+        };
+      }
+      if (edit) {
+        const result = await repository.mutate({
+          kind: "edit",
+          basketId,
+          edit,
+          ...(action.kind === "add" || action.kind === "replace"
+            ? { expectedRevision: current.revision }
+            : {}),
+        });
+        const changed = localBasket(result);
+        const next = this.drafts.get(key);
+        review = {
+          ...(next?.snapshot ?? updated),
+          items: changed.lines.map((line) => ({
+            product_id: line.productId,
+            quantity: line.quantity,
+            state: "ready" as const,
+            view: structuredClone(line.view),
+          })),
+          basketId,
+          revision: changed.revision,
+          submissionAttempted: changed.submissionAttempted === true,
+        };
+        if (next) {
+          next.snapshot = review;
+          next.proposalId = undefined;
+        }
+      }
+      return review;
+    } finally {
+      this.basketOperations.delete(key);
+    }
+  }
+
+  // Preparation and provider apply keep separate, visible critical sections with different fence ordering.
+  // fallow-ignore-next-line code-duplication
+  async prepareBasket(
+    owner: string,
+    basketId: string,
+    repository: LocalBasketRepository,
+    signal?: AbortSignal,
+  ): Promise<ProductReviewSnapshot> {
+    // Keep both provider-authority entry points independently fail-closed.
+    // fallow-ignore-next-line code-duplication
+    if (!this.proposals) {
+      throw new NemligError("Submission service unavailable.");
+    }
+    const key = reviewKey(owner, basketId);
+    if (this.basketOperations.has(key)) {
+      throw new NemligError("A Local basket operation is in progress.");
+    }
+    this.basketOperations.add(key);
+    try {
+      await this.showBasket(owner, basketId, repository, true);
+      const stored = this.lock(key);
+      try {
+        const basket = localBasket(
+          await repository.mutate({ kind: "read", basketId }),
+        );
+        if (basket.submissionAttempted) {
+          throw new NemligError(
+            "Inspect the actual Nemlig basket before preparing another submission.",
+          );
+        }
+        if (!basket.lines.length) {
+          throw new NemligError("The Local basket is empty.");
+        }
+        if (
+          basket.lines.some((line) =>
+            line.view.status === "unavailable"
+              ? line.view.missing !== true
+              : line.view.product.available === undefined,
+          )
+        ) {
+          throw new NemligError(
+            "The Local basket has unresolved product identity or availability.",
+          );
+        }
+        const proposal = await this.proposals.prepareAdditions(
+          owner,
+          basket.lines.map(({ productId, quantity }) => ({
+            product_id: productId,
+            quantity,
+          })),
+          { kind: "exact_review" },
+          { signal, freshProducts: true },
+        );
+        const current = localBasket(
+          await repository.mutate({ kind: "read", basketId }),
+        );
+        if (
+          current.revision !== basket.revision ||
+          current.submissionAttempted
+        ) {
+          throw new NemligError(
+            "The Local basket changed during preparation. Refresh and prepare again.",
+          );
+        }
+        stored.proposalId = proposal.proposal_id;
+        stored.snapshot = {
+          ...localBasketSnapshot(current),
+          submission: {
+            submission_id: randomUUID(),
+            status: "prepared",
+            expires_at: proposal.expires_at,
+            review: structuredClone(proposal.review),
+          },
+        };
+        return structuredClone(stored.snapshot);
+      } finally {
+        stored.busy = false;
+      }
+    } finally {
+      this.basketOperations.delete(key);
+    }
+  }
+
+  // Fence before provider apply, retain uncertain outcomes, and delete only after verified readback.
+  // fallow-ignore-next-line complexity
+  async submitBasket(
+    owner: string,
+    basketId: string,
+    submissionId: string,
+    repository: LocalBasketRepository,
+  ): Promise<{ review: ProductReviewSnapshot; result: ApplyResult }> {
+    // Keep both provider-authority entry points independently fail-closed.
+    // fallow-ignore-next-line code-duplication
+    if (!this.proposals) {
+      throw new NemligError("Submission service unavailable.");
+    }
+    const key = reviewKey(owner, basketId);
+    if (this.basketOperations.has(key)) {
+      throw new NemligError("A Local basket operation is in progress.");
+    }
+    this.basketOperations.add(key);
+    try {
+      const stored = this.lock(key);
+      try {
+        const { proposalId, submission } = requirePreparedSubmission(
+          stored.snapshot.submission,
+          submissionId,
+          stored.proposalId,
+          this.now(),
+        );
+        const current = localBasket(
+          await repository.mutate({ kind: "read", basketId }),
+        );
+        if (
+          current.submissionAttempted ||
+          current.revision !== stored.snapshot.revision
+        ) {
+          throw new NemligError(
+            "The Local basket changed after review. Prepare a fresh exact review.",
+          );
+        }
+        const fenced = localBasket(
+          await repository.mutate({
+            kind: "edit",
+            basketId,
+            edit: { kind: "attempt-submission" },
+            expectedRevision: current.revision,
+          }),
+        );
+        submission.status = "uncertain";
+        stored.snapshot = { ...localBasketSnapshot(fenced), submission };
+        let result: ApplyResult;
+        try {
+          result = await this.proposals.apply(owner, proposalId, "additions");
+        } catch (error) {
+          if (error instanceof VerifiedPartialAdditionsError) {
+            submission.status = "partial";
+            submission.verified_additions = error.verifiedAdditions;
+            stored.snapshot = { ...stored.snapshot, submission };
+          }
+          throw error;
+        }
+        submission.status = "submitted";
+        submission.skipped_products = result.skipped_products;
+        submission.verified_additions = result.verified_additions;
+        stored.snapshot = { ...stored.snapshot, submission };
+        await repository.mutate({
+          kind: "edit",
+          basketId,
+          edit: { kind: "complete-submission" },
+          expectedRevision: fenced.revision,
+        });
+        this.drafts.delete(key);
+        return { review: structuredClone(stored.snapshot), result };
+      } finally {
+        stored.busy = false;
+      }
+    } finally {
+      this.basketOperations.delete(key);
+    }
   }
 
   private get(owner: string): StoredReview {
@@ -253,6 +731,14 @@ export class ProductReviewService {
           break;
         }
         case "add": {
+          const existingIds = new Set(
+            draft.items.map((item) => item.product_id),
+          );
+          const newProductCount = new Set(
+            action.items
+              .map((item) => item.product_id)
+              .filter((id) => !existingIds.has(id)),
+          ).size;
           if (
             !action.items.length ||
             action.items.some(
@@ -262,19 +748,24 @@ export class ProductReviewService {
             ) ||
             new Set(action.items.map((item) => item.product_id)).size !==
               action.items.length ||
-            action.items.some((item) =>
-              draft.items.some(
-                (existing) => existing.product_id === item.product_id,
-              ),
-            ) ||
-            draft.items.length + action.items.length > MAX_DRAFT_PRODUCTS
+            draft.items.length + newProductCount > MAX_DRAFT_PRODUCTS
           ) {
             throw new NemligError(
               `Add 1–${MAX_DRAFT_PRODUCTS} new unique exact products with positive integer quantities, up to ${MAX_DRAFT_PRODUCTS} products in total.`,
             );
           }
           const rows = await this.readItems(action.items, signal);
-          draft.items.push(...rows);
+          for (const row of rows) {
+            const existing = draft.items.find(
+              (item) => item.product_id === row.product_id,
+            );
+            if (existing) {
+              existing.quantity += row.quantity;
+              existing.view = row.view;
+            } else {
+              draft.items.push(row);
+            }
+          }
           draft.destination = "ready";
           break;
         }
@@ -473,31 +964,17 @@ export class ProductReviewService {
     }
     const stored = this.lock(owner);
     try {
-      const submission = stored.snapshot.submission;
-      if (
-        !submission ||
-        submission.status !== "prepared" ||
-        submission.submission_id !== submissionId ||
-        !stored.proposalId
-      ) {
-        throw new NemligError(
-          "Submission is absent, changed, or already attempted. Refresh the Local basket.",
-        );
-      }
-      if (Date.parse(submission.expires_at) <= this.now()) {
-        throw new NemligError(
-          "Submission expired. Prepare a fresh exact review for approval.",
-        );
-      }
+      const { proposalId, submission } = requirePreparedSubmission(
+        stored.snapshot.submission,
+        submissionId,
+        stored.proposalId,
+        this.now(),
+      );
       // Record uncertainty before crossing the provider boundary; never silently retry.
       submission.status = "uncertain";
       let result: ApplyResult;
       try {
-        result = await this.proposals.apply(
-          owner,
-          stored.proposalId,
-          "additions",
-        );
+        result = await this.proposals.apply(owner, proposalId, "additions");
       } catch (error) {
         if (error instanceof VerifiedPartialAdditionsError) {
           submission.status = "partial";

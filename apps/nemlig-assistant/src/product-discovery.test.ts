@@ -278,12 +278,18 @@ test("discovery diagnostics distinguish failure stages without provider values",
         });
       }),
   };
+  const beforeDeadline = diagnostics.length;
   await assert.rejects(
     resolveDetailedProductSearch(pendingRead, marker, undefined, {
       deadlineMs: 10,
       onDiagnostic: (event) => diagnostics.push(event),
     }),
     ProductDiscoveryDeadlineError,
+  );
+  const deadlineEvents = diagnostics.slice(beforeDeadline);
+  assert.deepEqual(
+    deadlineEvents.map(({ stage, errorClass }) => [stage, errorClass]),
+    [["deadline", "deadline"]],
   );
 
   const controller = new AbortController();

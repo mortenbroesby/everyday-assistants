@@ -191,11 +191,13 @@ test("Container has no Durable Object binding and uses only the local basket cal
   );
   const containerEnvVars = container.slice(
     container.indexOf("envVars ="),
-    container.indexOf("static outboundByHost"),
+    container.indexOf("async beginLocalBasketRequest"),
   );
   assert.doesNotMatch(containerEnvVars, /NEMLIG_LOCAL_BASKET_STORAGE/u);
   assert.doesNotMatch(containerEnvVars, /LOCAL_BASKET.*CAPABILITY/u);
   assert.match(worker, /Container<ContainerEnv>/u);
+  assert.match(worker, /NemligMcpContainer\.outboundByHost\s*=\s*\{/u);
+  assert.doesNotMatch(container, /static outboundByHost\s*=/u);
 });
 
 test("retired PlanStorage is absent from the Worker", async () => {

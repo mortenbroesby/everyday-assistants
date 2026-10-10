@@ -47,6 +47,11 @@ const editSchema = z.discriminatedUnion("kind", [
     productId: z.number().int().positive(),
     quantity: z.number().int().positive(),
   }),
+  z.object({
+    kind: z.literal("replace"),
+    productId: z.number().int().positive(),
+    line: localLineSchema,
+  }),
   z
     .object({
       kind: z.literal("remove"),
@@ -58,10 +63,26 @@ const editSchema = z.discriminatedUnion("kind", [
 ]);
 const callbackCommandSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("list") }),
-  z.object({ kind: z.literal("create"), lines: linesSchema }),
+  z.object({
+    kind: z.literal("selection"),
+    selectionKey: z.string().min(1).max(128),
+  }),
+  z.object({
+    kind: z.literal("create"),
+    lines: linesSchema,
+    selectionKey: z.string().min(1).max(128).optional(),
+  }),
   z.object({ kind: z.literal("read"), basketId: basketIdSchema }),
-  z.object({ kind: z.literal("select"), basketId: basketIdSchema }),
-  z.object({ kind: z.literal("heartbeat"), basketId: basketIdSchema }),
+  z.object({
+    kind: z.literal("select"),
+    basketId: basketIdSchema,
+    selectionKey: z.string().min(1).max(128).optional(),
+  }),
+  z.object({
+    kind: z.literal("heartbeat"),
+    basketId: basketIdSchema,
+    selectionKey: z.string().min(1).max(128).optional(),
+  }),
   z.object({ kind: z.literal("delete"), basketId: basketIdSchema }),
   z.object({
     kind: z.literal("edit"),

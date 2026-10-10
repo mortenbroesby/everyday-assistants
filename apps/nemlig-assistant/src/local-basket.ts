@@ -52,7 +52,7 @@ export interface LocalBasketSummary {
   submissionAttempted: boolean;
 }
 export type LocalBasketCommandResult =
-  LocalBasketSummary[] | LocalBasket | CreatedLocalBasket | undefined;
+  LocalBasketSummary[] | LocalBasket | CreatedLocalBasket | string | undefined;
 
 const UUID =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
@@ -265,6 +265,12 @@ const refresh = (basket: LocalBasket, now: number): LocalBasket => ({
   revision: basket.revision + 1,
 });
 
+const refreshActivity = (basket: LocalBasket, now: number): LocalBasket => ({
+  ...cloneBasket(basket),
+  lastActivityAt: now,
+  expiresAt: now + LOCAL_BASKET_TTL_MS,
+});
+
 /** Explicit selection is intentional activity; passive reads are not. */
 export const selectLocalBasket = (
   inventory: OwnerLocalBasketInventory,
@@ -275,7 +281,7 @@ export const selectLocalBasket = (
   assertOwner(inventory, ownerId);
   const now = nowFrom(options);
   const active = withoutExpired(inventory, now);
-  const selected = refresh(basketAt(active, basketId), now);
+  const selected = refreshActivity(basketAt(active, basketId), now);
   return {
     inventory: replaceBasket(active, selected),
     value: cloneBasket(selected),
@@ -310,9 +316,72 @@ export const appendLocalBasketLines = (
 export type LocalBasketEdit =
   | { kind: "append"; lines: LocalBasketLine[] }
   | { kind: "quantity"; productId: number; quantity: number }
+  | { kind: "replace"; productId: number; line: LocalBasketLine }
   | { kind: "remove"; productIds: number[] }
   | { kind: "attempt-submission" }
   | { kind: "complete-submission" };
+
+const basketLineAt = (
+  basket: LocalBasket,
+  productId: number,
+): LocalBasketLine => {
+  const line = basket.lines.find((item) => item.productId === productId);
+  if (!line) {
+    throw new Error("Exact product is not in this Local basket.");
+  }
+  return line;
+};
+
+// Keep the exhaustive product-edit cases together after the lifecycle guards.
+// fallow-ignore-next-line complexity
+const applyBasketEdit = (
+  current: LocalBasket,
+  edit: LocalBasketEdit,
+): LocalBasket | undefined => {
+  const updated = cloneBasket(current);
+  switch (edit.kind) {
+    case "append":
+      updated.lines = mergeLines(current.lines, normalizeLines(edit.lines));
+      break;
+    case "quantity": {
+      if (!validPositiveInteger(edit.quantity)) {
+        throw new Error("Quantity must be a positive integer.");
+      }
+      basketLineAt(updated, edit.productId).quantity = edit.quantity;
+      break;
+    }
+    case "replace": {
+      basketLineAt(updated, edit.productId);
+      if (
+        updated.lines.some((item) => item.productId === edit.line.productId)
+      ) {
+        throw new Error("Replacement product already exists.");
+      }
+      updated.lines = mergeLines(
+        updated.lines.filter((item) => item.productId !== edit.productId),
+        [edit.line],
+      );
+      break;
+    }
+    case "remove":
+      if (
+        !edit.productIds.length ||
+        new Set(edit.productIds).size !== edit.productIds.length
+      ) {
+        throw new Error("Select unique exact products.");
+      }
+      updated.lines = updated.lines.filter(
+        (line) => !edit.productIds.includes(line.productId),
+      );
+      break;
+    case "attempt-submission":
+      updated.submissionAttempted = true;
+      break;
+    case "complete-submission":
+      return undefined;
+  }
+  return updated;
+};
 
 export const editLocalBasket = (
   inventory: OwnerLocalBasketInventory,
@@ -335,48 +404,17 @@ export const editLocalBasket = (
       "Inspect the Nemlig basket before changing this Local basket.",
     );
   }
-  let updated = cloneBasket(current);
-  switch (edit.kind) {
-    case "append":
-      updated.lines = mergeLines(current.lines, normalizeLines(edit.lines));
-      break;
-    case "quantity": {
-      if (!validPositiveInteger(edit.quantity)) {
-        throw new Error("Quantity must be a positive integer.");
-      }
-      const line = updated.lines.find(
-        (item) => item.productId === edit.productId,
-      );
-      if (!line) {
-        throw new Error("Exact product is not in this Local basket.");
-      }
-      line.quantity = edit.quantity;
-      break;
-    }
-    case "remove":
-      if (
-        !edit.productIds.length ||
-        new Set(edit.productIds).size !== edit.productIds.length
-      ) {
-        throw new Error("Select unique exact products.");
-      }
-      updated.lines = updated.lines.filter(
-        (line) => !edit.productIds.includes(line.productId),
-      );
-      break;
-    case "attempt-submission":
-      updated.submissionAttempted = true;
-      break;
-    case "complete-submission":
-      return {
-        inventory: {
-          ...active,
-          baskets: active.baskets.filter((item) => item.basketId !== basketId),
-        },
-        value: undefined,
-      };
+  const edited = applyBasketEdit(current, edit);
+  if (!edited) {
+    return {
+      inventory: {
+        ...active,
+        baskets: active.baskets.filter((item) => item.basketId !== basketId),
+      },
+      value: undefined,
+    };
   }
-  updated = refresh(updated, now);
+  const updated = refresh(edited, now);
   return {
     inventory: replaceBasket(active, updated),
     value: cloneBasket(updated),
@@ -411,9 +449,10 @@ const heartbeatLocalBasket = (
 
 export type LocalBasketCommand =
   | { kind: "list" }
+  | { kind: "selection"; selectionKey: string }
   | { kind: "read"; basketId: string }
-  | { kind: "create"; lines: LocalBasketLine[] }
-  | { kind: "select" | "heartbeat"; basketId: string }
+  | { kind: "create"; lines: LocalBasketLine[]; selectionKey?: string }
+  | { kind: "select" | "heartbeat"; basketId: string; selectionKey?: string }
   | { kind: "delete"; basketId: string }
   | {
       kind: "edit";
@@ -442,6 +481,8 @@ export const applyLocalBasketCommand = (
         ),
       };
     }
+    case "selection":
+      return { inventory, value: undefined };
     case "read":
       return readLocalBasket(inventory, ownerId, command.basketId, options);
     case "create":
@@ -466,6 +507,7 @@ export const applyLocalBasketCommand = (
       ).value;
       if (
         command.expectedRevision !== undefined &&
+        command.edit.kind !== "complete-submission" &&
         command.expectedRevision !== current.revision
       ) {
         throw new Error(

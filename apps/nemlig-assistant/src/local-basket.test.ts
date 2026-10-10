@@ -96,6 +96,36 @@ test("creates owner-scoped UUID baskets with complete product lines", () => {
   );
 });
 
+test("selection and heartbeat extend activity without changing content revision", () => {
+  const clock = new FakeClock(100);
+  const created = create(createOwnerLocalBasketInventory("owner"), clock, 2);
+  const basketId = created.value.basket.basketId;
+
+  clock.set(200);
+  const selected = selectLocalBasket(
+    created.inventory,
+    "owner",
+    basketId,
+    options(clock, () => id(3)),
+  );
+  const selectedBasket = selected.inventory.baskets[0]!;
+  assert.equal(selectedBasket.revision, created.value.basket.revision);
+  assert.equal(selectedBasket.lastActivityAt, 200);
+  assert.equal(selectedBasket.expiresAt, 200 + LOCAL_BASKET_TTL_MS);
+
+  clock.set(300);
+  const heartbeat = applyLocalBasketCommand(
+    selected.inventory,
+    "owner",
+    { kind: "heartbeat", basketId },
+    options(clock, () => id(4)),
+  );
+  const heartbeatBasket = heartbeat.inventory.baskets[0]!;
+  assert.equal(heartbeatBasket.revision, created.value.basket.revision);
+  assert.equal(heartbeatBasket.lastActivityAt, 300);
+  assert.equal(heartbeatBasket.expiresAt, 300 + LOCAL_BASKET_TTL_MS);
+});
+
 test("rejects malformed generated UUIDs without creating a basket", () => {
   const clock = new FakeClock();
   const inventory = createOwnerLocalBasketInventory("owner");
@@ -281,7 +311,7 @@ test("preserves same-owner inventory across a credential reconnect without cross
   );
 });
 
-test("submission fence survives edits and only terminally closes a fenced basket", () => {
+test("submission fence blocks edits but permits explicit Local basket deletion", () => {
   const start = createLocalBasket(
     createOwnerLocalBasketInventory("owner"),
     "owner",
@@ -333,6 +363,23 @@ test("submission fence survives edits and only terminally closes a fenced basket
   );
   assert.equal(closed.value, undefined);
   assert.deepEqual(closed.inventory.baskets, []);
+  const discarded = applyLocalBasketCommand(
+    fenced.inventory,
+    "owner",
+    {
+      kind: "delete",
+      basketId: id(1),
+    },
+    { now: () => 301 },
+  );
+  assert.deepEqual(discarded.inventory.baskets, []);
+  assert.throws(
+    () =>
+      readLocalBasket(discarded.inventory, "owner", id(1), {
+        now: () => 302,
+      }),
+    /unavailable/u,
+  );
 });
 
 test("stale asynchronous product work fails without persisting its append", () => {
@@ -342,9 +389,13 @@ test("stale asynchronous product work fails without persisting its append", () =
     [line(1, 1)],
     { now: () => 100, createId: () => id(1) },
   );
-  const edited = selectLocalBasket(start.inventory, "owner", id(1), {
-    now: () => 101,
-  });
+  const edited = appendLocalBasketLines(
+    start.inventory,
+    "owner",
+    id(1),
+    [line(3, 1)],
+    { now: () => 101 },
+  );
   assert.throws(
     () =>
       applyLocalBasketCommand(
@@ -362,6 +413,6 @@ test("stale asynchronous product work fails without persisting its append", () =
   );
   assert.deepEqual(
     edited.inventory.baskets[0]?.lines.map(({ productId }) => productId),
-    [1],
+    [1, 3],
   );
 });

@@ -282,6 +282,39 @@ test("shopping and unknown tool requests receive the same useful classification"
   );
 });
 
+test("only explicit Local basket inventory actions use credential-free local admission", () => {
+  assert.equal(
+    classifyMcpMessage({
+      method: "tools/call",
+      params: {
+        name: "update_product_review_conversation",
+        arguments: { action: { kind: "list" } },
+      },
+    }),
+    "local",
+  );
+  assert.equal(
+    classifyMcpMessage({
+      method: "tools/call",
+      params: {
+        name: "update_product_review_conversation",
+        arguments: { action: { kind: "heartbeat", basket_id: "not-a-uuid" } },
+      },
+    }),
+    "useful",
+  );
+  assert.equal(
+    classifyMcpMessage({
+      method: "tools/call",
+      params: {
+        name: "update_product_review_conversation",
+        arguments: { action: { kind: "prepare_submission" } },
+      },
+    }),
+    "useful",
+  );
+});
+
 test("forwarded MCP handshake failures are logged as backend rejections", async () => {
   const events: GatewayRequestEvent[] = [];
   const response = await handleGatewayRequest(

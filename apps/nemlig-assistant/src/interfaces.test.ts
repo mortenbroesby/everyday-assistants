@@ -33,6 +33,7 @@ import {
 } from "./product-viewer.js";
 import { RETIRED_PRODUCT_VIEWER_RESOURCE_URIS } from "./product-viewer-identity.js";
 import { NEMLIG_CODENAME, NEMLIG_VERSION } from "./runtime.js";
+import { createProductView } from "./product-presentation.js";
 
 const expectedProductViewerResources = [
   {
@@ -366,14 +367,14 @@ const friendlyCatalog = [
     "Submit the exact Local basket to Nemlig",
     false,
     false,
-    ["submission_id"],
+    ["basket_id", "submission_id"],
   ],
   [
     "update_product_review_conversation",
     "Update your Local basket",
     false,
     false,
-    ["action"],
+    ["action", "basket_id"],
   ],
 ] as const;
 
@@ -1030,7 +1031,28 @@ test("authenticated HTTP request context preserves stdio tool and resource metad
           policyRevision: "test-v1",
         }),
         async (http) => {
-          assert.deepEqual(await http.listTools(), await stdio.listTools());
+          const stdioTools = await stdio.listTools();
+          const httpTools = await http.listTools();
+          assert.deepEqual(
+            httpTools.tools.map(({ name }) => name),
+            stdioTools.tools.map(({ name }) => name),
+          );
+          const stdioStart = stdioTools.tools.find(
+            ({ name }) => name === "start_product_review",
+          );
+          const httpStart = httpTools.tools.find(
+            ({ name }) => name === "start_product_review",
+          );
+          assert.equal(
+            (stdioStart?._meta as { ui?: { resourceUri?: string } } | undefined)
+              ?.ui?.resourceUri,
+            undefined,
+          );
+          assert.equal(
+            (httpStart?._meta as { ui?: { resourceUri?: string } } | undefined)
+              ?.ui?.resourceUri,
+            PRODUCT_VIEWER_RESOURCE_URI,
+          );
           const expectedResources = expectedProductViewerResources;
           assert.deepEqual(
             (await stdio.listResources()).resources,
@@ -1058,7 +1080,15 @@ test("MCP distinguishes the Local basket from the actual Nemlig basket", async (
         ]),
       );
       const instructions = mcp.getInstructions() ?? "";
-      assert.match(instructions, /temporary conversation Local basket/u);
+      assert.match(instructions, /durable Local baskets/u);
+      assert.match(
+        instructions,
+        /ask whether to append the finds to that basket or create a separate basket/u,
+      );
+      assert.match(
+        instructions,
+        /explicit instruction.*already makes that choice/u,
+      );
       assert.match(instructions, /real Nemlig basket is add-only/u);
       assert.match(
         instructions,
@@ -1066,7 +1096,7 @@ test("MCP distinguishes the Local basket from the actual Nemlig basket", async (
       );
       assert.match(
         instructions,
-        /After an uncertain write, inspect the Local basket and actual basket; never retry automatically/u,
+        /After an uncertain or partial write, the fenced basket is inspect-or-delete only/u,
       );
       assert.match(
         tools.get("find_groceries") ?? "",
@@ -1078,7 +1108,7 @@ test("MCP distinguishes the Local basket from the actual Nemlig basket", async (
       );
       assert.match(
         tools.get("start_product_review") ?? "",
-        /Omit items to open another supported card/u,
+        /Omit items to reopen the remembered basket or show the basket picker/u,
       );
       assert.match(
         tools.get("update_product_review_conversation") ?? "",
@@ -1206,7 +1236,12 @@ test("visual product discovery routes exact fixture results into the local selec
       assert.equal(
         (startTool?._meta as { ui?: { resourceUri?: string } } | undefined)?.ui
           ?.resourceUri,
-        PRODUCT_VIEWER_RESOURCE_URI,
+        undefined,
+      );
+      assert.deepEqual(
+        (startTool?._meta as { ui?: { visibility?: string[] } } | undefined)?.ui
+          ?.visibility,
+        ["model"],
       );
 
       const started = await mcp.callTool({
@@ -1226,6 +1261,7 @@ test("visual product discovery routes exact fixture results into the local selec
           [402, "ready"],
         ],
       );
+      assert.match(toolText(started), /Green pear|pear/u);
       const shown = await mcp.callTool({
         name: "update_product_review_conversation",
         arguments: { action: { kind: "show" } },
@@ -1398,6 +1434,129 @@ test("MCP basket viewer uses basket summaries without fetching product details",
     assert.equal(views[0]?.basket.line_total, 7.5);
   });
   assert.equal(productReads, 0);
+});
+
+test("widget Local basket actions use top-level basket_id and never guess a selection", async () => {
+  const basketId = "00000000-0000-4000-8000-000000000099";
+  const commands: Array<Record<string, unknown>> = [];
+  const storedBasket = {
+    basketId,
+    createdAt: 1,
+    lastActivityAt: 2,
+    expiresAt: 86_400_002,
+    revision: 1,
+    lines: [
+      {
+        productId: 7,
+        quantity: 2,
+        view: createProductView(product, { kind: "details" }),
+      },
+    ],
+  };
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (input, init) => {
+    const url =
+      typeof input === "string"
+        ? input
+        : input instanceof URL
+          ? input.href
+          : input.url;
+    if (!url.startsWith("http://local-basket-state.internal/")) {
+      return originalFetch(input, init);
+    }
+    const command = JSON.parse(String(init?.body)) as Record<string, unknown>;
+    commands.push(command);
+    if (command.kind === "list") {
+      return Response.json([
+        {
+          basketId,
+          createdAt: 1,
+          lastActivityAt: 2,
+          expiresAt: 86_400_002,
+          revision: 1,
+          productCount: 1,
+          submissionAttempted: false,
+        },
+      ]);
+    }
+    if (command.kind === "selection") {
+      return Response.json(basketId);
+    }
+    return Response.json(storedBasket);
+  };
+  try {
+    const context = {
+      principalKey: "p".repeat(32),
+      policyRevision: "policy-1",
+      localBasketCapability: "capability-for-this-request",
+    };
+    await withMcpClient(
+      createMcpServer(
+        fakeClient(),
+        async () => undefined,
+        undefined,
+        undefined,
+        context,
+      ),
+      async (mcp) => {
+        const selected = await mcp.callTool({
+          name: "update_product_review",
+          _meta: { "openai/session": "widget-scope" },
+          arguments: {
+            basket_id: basketId,
+            action: { kind: "select" },
+          },
+        });
+        assert.equal(selected.isError, undefined, toolText(selected));
+        assert.equal(
+          (selected.structuredContent as { selectedBasketId: string })
+            .selectedBasketId,
+          basketId,
+        );
+        assert.ok(commands.some((command) => command.kind === "select"));
+
+        commands.length = 0;
+        const idless = await mcp.callTool({
+          name: "update_product_review",
+          arguments: { action: { kind: "show" } },
+        });
+        assert.equal(idless.isError, undefined, toolText(idless));
+        const result = idless.structuredContent as {
+          selectionRequired?: boolean;
+          review?: unknown;
+        };
+        assert.equal(result.selectionRequired, true);
+        assert.equal(result.review, undefined);
+        assert.ok(commands.every((command) => command.kind !== "read"));
+
+        commands.length = 0;
+        const oldCard = await mcp.callTool({
+          name: "update_product_review",
+          _meta: { "openai/session": "widget-scope" },
+          arguments: {
+            action: { kind: "quantity", product_id: 7, quantity: 9 },
+          },
+        });
+        assert.equal(oldCard.isError, undefined, toolText(oldCard));
+        assert.equal(
+          (oldCard.structuredContent as { selectionRequired: boolean })
+            .selectionRequired,
+          true,
+        );
+        assert.ok(
+          commands.every(
+            (command) =>
+              command.kind !== "read" &&
+              command.kind !== "edit" &&
+              command.kind !== "selection",
+          ),
+          "an idless historical card never resolves the new remembered selection",
+        );
+      },
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });
 
 test("model-visible product images allow only observed Nemlig HTTPS origins", () => {

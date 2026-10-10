@@ -8,8 +8,10 @@ ChatGPT transcript and MCP-container lifetime, while retaining strict real-baske
 ### Requirement: Durable owner Local basket inventory
 The system SHALL maintain Local baskets for one authenticated owner independently
 of ChatGPT conversation identity. Each Local basket SHALL have an opaque stable
-identifier, creation time, last-activity time, expiry time, and current complete
-product snapshot. An owner SHALL be able to create a
+identifier, creation time, last-activity time, expiry time, and current normalized
+product snapshot, including all known presentation fields or an explicit unavailable
+state tied to the exact product identifier. Missing facts SHALL remain unknown;
+restoration SHALL NOT fabricate a complete or available product. An owner SHALL be able to create a
 Local basket, list its unexpired Local baskets, select one as current, and
 explicitly delete one. One Local basket SHALL contain no more than 500 product
 lines. The owner SHALL retain no more than 50 Local baskets; creating another
@@ -23,6 +25,12 @@ or generated human-readable basket name.
 - **WHEN** the owner selects an unexpired Local basket from a supported new or old chat
 - **THEN** the same current products and quantities are available
 - **AND** no Nemlig basket operation occurs
+
+#### Scenario: An unavailable product is restored
+- **WHEN** an owner restores a line with an explicit unavailable product view
+- **THEN** the same exact product identifier, quantity, and unavailable state are retained
+- **AND** no missing presentation fields or provider-write authority are fabricated
+- **AND** fresh submission preparation still skips confirmed unavailable products and blocks unresolved identity or availability
 
 #### Scenario: Owner deletes a Local basket
 - **WHEN** the owner explicitly deletes one Local basket

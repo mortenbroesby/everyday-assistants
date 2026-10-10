@@ -191,31 +191,20 @@ export class NemligMcpContainer extends Container<ContainerEnv> {
     NEMLIG_MCP_HTTP_PORT: "8080",
   };
 
-  static outboundByHost = {
-    [LOCAL_BASKET_STATE_HOST]: async (
-      request: Request,
-      env: Env,
-      context: OutboundHandlerContext,
-    ) => {
-      const container = env.NEMLIG_MCP_CONTAINER.get(
-        env.NEMLIG_MCP_CONTAINER.idFromString(context.containerId),
-      );
-      return handleLocalBasketStateRequest(
-        request,
-        env.NEMLIG_LOCAL_BASKET_STORAGE,
-        (capability) => container.resolveLocalBasketCapability(capability),
-      );
-    },
-  };
-
   async beginLocalBasketRequest(
     ownerId: string,
     expiresAt: number,
   ): Promise<string> {
+    const now = Date.now();
+    for (const [capability, active] of this.localBasketCapabilities) {
+      if (active.expiresAt <= now) {
+        this.localBasketCapabilities.delete(capability);
+      }
+    }
     if (
       !/^[A-Za-z0-9_-]{32,64}$/u.test(ownerId) ||
       !Number.isFinite(expiresAt) ||
-      expiresAt <= Date.now()
+      expiresAt <= now
     ) {
       throw new Error("Local basket request is unavailable.");
     }
@@ -432,6 +421,23 @@ export class NemligMcpContainer extends Container<ContainerEnv> {
   }
 }
 
+NemligMcpContainer.outboundByHost = {
+  [LOCAL_BASKET_STATE_HOST]: async (
+    request: Request,
+    env: Env,
+    context: OutboundHandlerContext,
+  ) => {
+    const container = env.NEMLIG_MCP_CONTAINER.get(
+      env.NEMLIG_MCP_CONTAINER.idFromString(context.containerId),
+    );
+    return handleLocalBasketStateRequest(
+      request,
+      env.NEMLIG_LOCAL_BASKET_STORAGE,
+      (capability) => container.resolveLocalBasketCapability(capability),
+    );
+  },
+};
+
 export class OwnerLocalBasketStorage extends DurableObject<CloudflareEnv> {
   async mutate(ownerId: string, command: LocalBasketCommand): Promise<unknown> {
     return this.ctx.blockConcurrencyWhile(() =>
@@ -563,7 +569,7 @@ export default {
           {
             revision: config.principalPolicy.revision,
           },
-          operation !== "protocol" &&
+          operation === "useful" &&
             !isVerifiedServicePrincipal(principal, config),
         );
       },

@@ -6,7 +6,8 @@ unavailability, and whole-search failure. For a multi-search request sequence,
 it SHALL preserve successfully verified product results and report unresolved
 searches truthfully without fabricating availability or creating a Local basket
 from unverified products. Privacy-safe diagnostics SHALL identify only the
-failing stage, normalized error class, and active-read count, without recording
+failing stage, normalized error class, and process-wide active-read count,
+without recording
 credentials, catalogue contents, or session identifiers.
 
 #### Scenario: Some recipe searches fail

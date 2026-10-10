@@ -3,6 +3,12 @@ import test from "node:test";
 import { VerifiedPartialAdditionsError } from "./proposals.js";
 import { NemligError, ProductNotFoundError, type Product } from "./client.js";
 import { MAX_DRAFT_PRODUCTS, ProductReviewService } from "./product-review.js";
+import {
+  applyLocalBasketCommand,
+  createOwnerLocalBasketInventory,
+  type LocalBasketCommand,
+  type OwnerLocalBasketInventory,
+} from "./local-basket.js";
 
 const product = (id: number): Product => ({
   id,
@@ -94,6 +100,45 @@ test("Local baskets accept 500 exact products and reject 501 before provider rea
     /1–500/u,
   );
   assert.equal(reads, 0);
+});
+
+test("durable snapshots use a bounded cache without evicting stored baskets", async () => {
+  let inventory: OwnerLocalBasketInventory =
+    createOwnerLocalBasketInventory("owner");
+  let nextId = 0;
+  let now = 100;
+  const repository = {
+    async mutate(command: LocalBasketCommand) {
+      const result = applyLocalBasketCommand(inventory, "owner", command, {
+        now: () => now,
+        createId: () =>
+          `00000000-0000-4000-8000-${String(++nextId).padStart(12, "0")}`,
+      });
+      inventory = result.inventory;
+      return result.value;
+    },
+  };
+  const service = new ProductReviewService(client);
+  const created = await Promise.all(
+    Array.from({ length: 12 }, (_, index) => {
+      now += 1;
+      return service.createBasket(
+        "owner",
+        [{ product_id: index + 1, quantity: 1 }],
+        repository,
+      );
+    }),
+  );
+  const basketIds = created.map(({ review }) => review.basketId!);
+
+  const cached = (service as unknown as { drafts: Map<string, unknown> })
+    .drafts;
+  assert.equal(cached.size, 8);
+  assert.equal(inventory.baskets.length, 12);
+
+  await repository.mutate({ kind: "delete", basketId: basketIds[11]! });
+  assert.equal((await service.listBaskets(repository, "owner")).length, 11);
+  assert.equal(cached.size, 7);
 });
 
 test("supported cards share one Local basket and retain alternatives", async () => {
@@ -372,11 +417,22 @@ test("adding exact products is atomic, reviewable, and bounded; older idle sessi
   await assert.rejects(
     service.update("owner-1", {
       kind: "add",
-      items: [{ product_id: 1, quantity: 2 }],
+      items: [
+        { product_id: 2, quantity: 1 },
+        { product_id: 2, quantity: 2 },
+      ],
     }),
     /unique exact/i,
   );
   assert.deepEqual(service.active("owner-1"), draft);
+  const merged = await service.update("owner-1", {
+    kind: "add",
+    items: [{ product_id: 1, quantity: 2 }],
+  });
+  assert.deepEqual(
+    merged.items.map(({ product_id, quantity }) => [product_id, quantity]),
+    [[1, 3]],
+  );
   const added = await service.update("owner-1", {
     kind: "add",
     items: [{ product_id: 2, quantity: 3 }],
@@ -384,7 +440,7 @@ test("adding exact products is atomic, reviewable, and bounded; older idle sessi
   assert.deepEqual(
     added.items.map((item) => [item.product_id, item.quantity, item.state]),
     [
-      [1, 1, "ready"],
+      [1, 3, "ready"],
       [2, 3, "ready"],
     ],
   );

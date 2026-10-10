@@ -8,7 +8,13 @@ const routeSchema = z.enum([
   "unknown",
 ]);
 const methodSchema = z.enum(["GET", "POST", "DELETE", "OTHER"]);
-const operationSchema = z.enum(["protocol", "profile", "useful", "none"]);
+const operationSchema = z.enum([
+  "protocol",
+  "profile",
+  "local",
+  "useful",
+  "none",
+]);
 const denialReasonSchema = z.enum([
   "none",
   "mcp_disabled",

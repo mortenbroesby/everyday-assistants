@@ -139,6 +139,33 @@ test("500 product snapshots stay below the Durable Object per-value limit", asyn
   );
 });
 
+test("explicitly unavailable product lines survive durable recovery", async () => {
+  const storage = new FakeStorage();
+  const unavailable = {
+    productId: 17,
+    quantity: 1,
+    view: {
+      context: "details" as const,
+      status: "unavailable" as const,
+      product_id: 17,
+    },
+  };
+  const created = (await mutateOwnerLocalBasketInventory(
+    storage,
+    "owner",
+    { kind: "create", lines: [unavailable] },
+    100,
+  )) as { basket: { basketId: string } };
+
+  const recovered = (await mutateOwnerLocalBasketInventory(
+    storage,
+    "owner",
+    { kind: "read", basketId: created.basket.basketId },
+    101,
+  )) as { lines: Array<{ view: { status: string; product_id?: number } }> };
+  assert.deepEqual(recovered.lines[0]?.view, unavailable.view);
+});
+
 test("command reads and the Durable Object alarm remove expired baskets", async () => {
   const storage = new FakeStorage();
   const created = (await mutateOwnerLocalBasketInventory(
@@ -219,6 +246,40 @@ test("inventory listing and basket edits avoid unrelated product snapshots", asy
         key.startsWith(`line:${basketIds[24]}:`),
     ),
   );
+});
+
+test("passive reads and metadata-only heartbeats never rewrite product lines", async () => {
+  const storage = new FakeStorage();
+  const created = (await mutateOwnerLocalBasketInventory(
+    storage,
+    "owner",
+    { kind: "create", lines: [line(5, 1), line(6, 2)] },
+    100,
+  )) as { basket: { basketId: string } };
+  const basketId = created.basket.basketId;
+
+  storage.resetIo();
+  await mutateOwnerLocalBasketInventory(
+    storage,
+    "owner",
+    { kind: "read", basketId },
+    101,
+  );
+  assert.deepEqual(storage.writes, []);
+
+  storage.resetIo();
+  await mutateOwnerLocalBasketInventory(
+    storage,
+    "owner",
+    { kind: "heartbeat", basketId },
+    102,
+  );
+  const heartbeatWrites: string[] = Array.from(storage.writes);
+  assert.deepEqual(
+    heartbeatWrites.filter((key) => key.startsWith("line:")),
+    [],
+  );
+  assert.ok(heartbeatWrites.includes("owner-local-basket-index"));
 });
 
 test("terminal completion deletes both basket lines and its index record", async () => {
