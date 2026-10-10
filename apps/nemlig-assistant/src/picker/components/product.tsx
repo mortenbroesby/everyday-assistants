@@ -6,6 +6,8 @@ import { ViewerButton } from "./button.js";
 import { isUsable, money, productName } from "./format.js";
 
 type SummaryLayout = "row" | "detail";
+type CompleteProductView = Extract<ProductView, { status: "complete" }>;
+type CompleteProduct = CompleteProductView["product"];
 
 const SummaryContent = styled.span<{
   $fillImageToRow: boolean;
@@ -266,14 +268,14 @@ function lineTotal(price: number | undefined, quantity: number | undefined) {
     : price;
 }
 
-function productPackage(product: ProductView["product"]) {
+function productPackage(product: CompleteProduct) {
   return (
     [product.brand, product.unit_size].filter(Boolean).join(" · ") ||
     "Package details unavailable"
   );
 }
 
-function productUnitPrice(product: ProductView["product"]) {
+function productUnitPrice(product: CompleteProduct) {
   if (product.unit_price === undefined) {
     return product.unit ?? "Unit price unavailable";
   }
@@ -287,7 +289,7 @@ function CompleteProductSummary({
   fillImageToRow,
   layout,
 }: {
-  view: ProductView;
+  view: CompleteProductView;
   quantity?: number;
   thumbnailSrc?: string;
   fillImageToRow: boolean;
@@ -396,7 +398,7 @@ export function QuantityControl({
 
 type ProductFact = { key: string; content: ReactNode };
 
-function productFacts(product: ProductView["product"]): ProductFact[] {
+function productFacts(product: CompleteProduct): ProductFact[] {
   const suppliedDetails =
     product.details?.filter((fact) => fact.key.trim() && fact.value.trim()) ??
     [];
