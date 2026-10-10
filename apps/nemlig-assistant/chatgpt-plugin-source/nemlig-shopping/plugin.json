@@ -3,27 +3,25 @@
   "author": {
     "name": "Morten & Josephine Broesby-Olsen"
   },
-  "description": "Search and compare Nemlig groceries, review a Draft list, and add selected items only after authorization.",
+  "description": "Find and compare Nemlig groceries, collect choices in a Local basket, and add them to Nemlig only after authorization.",
   "extensions": {
     "com.openai": {
       "apps": "./.app.json",
       "interface": {
-        "capabilities": [
-          "Interactive"
-        ],
+        "capabilities": ["Interactive"],
         "category": "Productivity",
         "composerIcon": "./assets/icon.png",
-        "defaultPrompt": "Show my current Draft list if one exists; otherwise offer choices to find groceries, compare products, or view my basket.",
+        "defaultPrompt": "Show my current Local basket if one exists. If it is empty, introduce how it works and offer to find a product, plan groceries, or find dinner ingredients. Do not add anything to my Nemlig basket.",
         "developerName": "Morten & Josephine Broesby-Olsen",
         "displayName": "Nemlig Assistant",
         "logo": "./assets/icon.png",
-        "longDescription": "Search Nemlig products, compare package sizes and prices, and review a local Draft list. Add selected items to the basket only after authorization.",
-        "shortDescription": "Shop groceries on Nemlig"
+        "longDescription": "Search current Nemlig products, compare sizes and prices, and collect choices in a temporary Local basket. Nothing is added to the real Nemlig basket until you explicitly ask to add the current list.",
+        "shortDescription": "Groceries in a Local basket"
       }
     }
   },
   "name": "nemlig-shopping",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "keywords": [
     "groceries",
     "grocery shopping",

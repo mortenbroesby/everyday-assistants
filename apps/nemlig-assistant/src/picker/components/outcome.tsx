@@ -51,11 +51,12 @@ export function DraftListStarters({
   onChoose: (prompt: string) => void;
 }) {
   return (
-    <OutcomeSurface title="What should we shop for?">
+    <OutcomeSurface title="Start your Local basket">
       <p>
-        {message ??
-          "Ask Nemlig Assistant what you need. We will bring products to your Local basket."}
+        Find products and collect your choices here. Nothing is added to Nemlig
+        until you explicitly ask to add the current Local basket.
       </p>
+      {message && <p role="status">{message}</p>}
       <Actions>
         <ViewerButton
           color="secondary"

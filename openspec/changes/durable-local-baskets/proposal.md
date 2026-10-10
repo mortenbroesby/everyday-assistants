@@ -25,14 +25,17 @@ mask or misdiagnose that discovery failure.
   provider write so a crash cannot make a possibly-applied basket eligible for
   another submission.
 - Diagnose recipe-scale discovery failures with privacy-safe, bounded evidence,
-  then implement only the demonstrated reliability fix. Queue retryable reads
-  for at most three attempts with exponential backoff; stop further searches in
-  the affected chat after more than ten retryable failures in one minute.
+  then implement only the demonstrated reliability fix. If a bounded queue is
+  warranted, retry reads for at most three attempts with exponential backoff;
+  pause further searches in the affected chat while its rolling 60-second
+  retryable-failure count exceeds ten. Resume new requests when the count falls
+  to ten or fewer without replaying stopped or canceled requests.
 - Merge exact duplicate product IDs when appending results, increasing their
   quantity without treating distinct variants as interchangeable. A confirmed
   real-basket addition closes and removes the entire Local basket.
-- Publish this planning-only PR and build the implementation branch on the
-  merged #274 `main` baseline.
+- Publish this planning-only PR and reconcile the implementation with current
+  `main`, preserving the merged #281 PlanStorage retirement migration and the
+  current Local basket interaction contract.
 
 ## Capabilities
 

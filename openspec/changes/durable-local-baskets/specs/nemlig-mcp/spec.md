@@ -20,9 +20,10 @@ credentials, catalogue contents, or session identifiers.
 - **AND** diagnostics identify the failure stage without exposing secrets or product contents
 
 #### Scenario: Retryable search failures exceed the session threshold
-- **WHEN** more than ten retryable product-search failures occur in one minute for one ChatGPT session
+- **WHEN** diagnosis warrants the bounded queue and more than ten retryable product-search failures occur in a rolling 60-second window for one stable ChatGPT session
 - **THEN** the runtime stops further product-search work for that session and reports temporary provider unavailability
 - **AND** existing Local baskets remain available without provider access
+- **AND** new searches are allowed again when the rolling count falls to ten or fewer; stopped or canceled requests are not automatically replayed
 
 ## MODIFIED Requirements
 
