@@ -662,12 +662,12 @@ try {
     attemptsBeforeQuantityInvalidation,
     "quantity edit did not invalidate the prepared approval before submit",
   );
+  const submitCalls = await page.evaluate(() => window.calls.length);
   await frame.getByRole("button", { name: "Submit to Nemlig" }).click();
   await frame
     .getByRole("heading", { name: "Ready to submit the Local basket" })
     .waitFor();
 
-  const submitCalls = await page.evaluate(() => window.calls.length);
   await frame.getByRole("button", { name: "Add to Nemlig basket" }).click();
   await frame.getByRole("button", { name: "Add to Nemlig" }).click();
   await frame.getByText("Nemlig confirmed the addition").waitFor();
