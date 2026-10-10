@@ -205,8 +205,10 @@ document.getElementById('flow').onclick = async () => {
  try {
   status.textContent='Checking fail-closed whole-list preparation'; widgetCalls.length=0;
   await fetch('/reset',{method:'POST'}); await fetch('/unknown-price',{method:'POST'});
-  transcript=await call({name:'start_product_review',arguments:{items:[{product_id:1,quantity:1},{product_id:2,quantity:2}]}}); publish();
+  transcript=await call({name:'start_product_review',arguments:{items:[{product_id:1,quantity:1},{product_id:2,quantity:2}]}});
+  initialized=false; frame.src='/viewer'; await wait(()=>initialized);
   await wait(()=>title()==='Local basket'&&doc().querySelectorAll('.product-list article').length===2);
+  await wait(()=>button('Submit to Nemlig')&&!button('Submit to Nemlig').disabled);
   click('Submit to Nemlig'); await wait(()=>widgetResults.at(-1)?.name==='update_product_review'&&widgetResults.at(-1)?.isError);
   check(widgetResults.at(-1)?.text.includes('incomplete'),'Incomplete exact product failure was not reported');
   check(!widgetCalls.some(c=>c.arguments.action?.kind==='submit_submission'),'Unavailable/incomplete basket row was submitted');
@@ -214,8 +216,10 @@ document.getElementById('flow').onclick = async () => {
   await fetch('/reset',{method:'POST'}); await fetch('/unknown-price',{method:'POST'});
   await call({name:'start_product_review',arguments:{items:[{product_id:2,quantity:1}]}});
   status.textContent='Checking uncertain submission block';
-  transcript=await call({name:'update_product_review_conversation',arguments:{action:{kind:'show'}}}); publish();
+  transcript=await call({name:'update_product_review_conversation',arguments:{action:{kind:'show'}}});
+  initialized=false; frame.src='/viewer'; await wait(()=>initialized);
   await wait(()=>title()==='Local basket'&&doc().querySelectorAll('.product-list article').length===1);
+  await wait(()=>button('Submit to Nemlig')&&!button('Submit to Nemlig').disabled);
   click('Submit to Nemlig'); await wait(()=>button('Add to Nemlig basket'));
   click('Add to Nemlig basket'); await wait(()=>button('Add to Nemlig'));
   await fetch('/uncertain-next',{method:'POST'}); click('Add to Nemlig'); await wait(()=>text().includes('We could not verify the addition'));
