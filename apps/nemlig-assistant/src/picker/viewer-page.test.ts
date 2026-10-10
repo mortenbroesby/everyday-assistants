@@ -3,6 +3,7 @@ import test from "node:test";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import type { ProductView } from "../product-presentation.js";
+import { ProductFacts } from "./components/product.js";
 import { ViewerPage } from "./viewer-page.js";
 import type { ViewerPageProps } from "./viewer-page.js";
 
@@ -208,10 +209,30 @@ test("shared viewer page keeps thumbnails attached to their individual views", (
   assert.match(markup, /data-viewer-component="product-price"/u);
   assert.match(
     markup,
-    /aria-label="Select Alternative yoghurt as the alternative"/u,
+    /aria-label="Use Alternative yoghurt as the alternative"/u,
   );
-  assert.match(markup, /Use selected alternative/u);
+  assert.doesNotMatch(markup, />Choose</u);
+  assert.doesNotMatch(markup, /Use selected alternative/u);
   assert.match(markup, /Back to Local basket/u);
+});
+
+test("full-screen product facts use one visible Nemlig-style information tab", () => {
+  const detailedProduct: ProductView = {
+    ...product,
+    product: {
+      ...product.product,
+      description: "A creamy fixture yoghurt.",
+      declaration: "MILK.",
+      details: [{ key: "Origin", value: "Denmark" }],
+    },
+  };
+  const markup = renderToStaticMarkup(
+    createElement(ProductFacts, { view: detailedProduct, variant: "tabs" }),
+  );
+  assert.match(markup, /role="tablist"/u);
+  assert.match(markup, /aria-selected="true"/u);
+  assert.match(markup, /A creamy fixture yoghurt./u);
+  assert.doesNotMatch(markup, /<details/u);
 });
 
 test("empty and incomplete Local baskets cannot start submission", () => {

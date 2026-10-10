@@ -17,7 +17,18 @@ import {
   updateQuantity,
 } from "./visual-contract.fixture.js";
 
-const milkCarton = new URL("../fixtures/milk-carton.svg", import.meta.url).href;
+const dairyMilk = new URL(
+  "../fixtures/storybook-dairy-milk.png",
+  import.meta.url,
+).href;
+const lasagneSheets = new URL(
+  "../fixtures/storybook-lasagne-sheets.png",
+  import.meta.url,
+).href;
+const oatMilkCarton = new URL(
+  "../fixtures/storybook-oat-milk.png",
+  import.meta.url,
+).href;
 const unavailable: ProductView = {
   context: "review",
   status: "unavailable",
@@ -45,7 +56,7 @@ const milk: ProductView = {
     is_organic: true,
     is_frozen: false,
     is_on_discount: true,
-    image_url: "https://example.invalid/ignored-story-image.png",
+    image_url: undefined,
     labels: ["Økologisk", "Tilbud"],
     tags: ["organic"],
   },
@@ -171,7 +182,11 @@ const baseProps = (
     screen,
     reviewDisclosures: new Map(),
     pendingQuantities: new Map(),
-    thumbnails: new Map([[milk, milkCarton]]),
+    thumbnails: new Map([
+      [milk, dairyMilk],
+      [pasta, lasagneSheets],
+      [oatMilk, oatMilkCarton],
+    ]),
     message: "",
     busy: false,
     confirmSubmit: false,
@@ -598,16 +613,16 @@ const inventory = [
 export default meta;
 type Story = StoryObj<typeof meta>;
 
-export const LocalBasketAt320: Story = {
-  render: () => activeReview(review, "ready", 320),
+export const AppTabWalkthrough: Story = {
+  decorators: [appTab],
+  render: () => <LocalBasketWalkthroughStory />,
 };
 export const LocalBasketWalkthrough: Story = {
   decorators: [embeddedConversation],
   render: () => <LocalBasketWalkthroughStory />,
 };
-export const AppTabWalkthrough: Story = {
-  decorators: [appTab],
-  render: () => <LocalBasketWalkthroughStory />,
+export const LocalBasketAt320: Story = {
+  render: () => activeReview(review, "ready", 320),
 };
 export const LocalBasketAt375: Story = {
   render: () => activeReview(review, "ready", 375),

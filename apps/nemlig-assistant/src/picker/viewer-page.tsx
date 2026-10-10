@@ -124,7 +124,10 @@ export type ViewerPageActions = {
   onRemove: (item: ReviewItem) => void;
   onOpenAlternatives: (item: ReviewItem, query: string) => void;
   onSearchAlternatives: (productId: number, query: string) => void;
-  onReplace: (productId: number, replacementId: number) => void;
+  onReplace: (
+    productId: number,
+    replacementId: number,
+  ) => void | Promise<boolean | void>;
   onPrepareSubmission: () => void;
   onRequestSubmitConfirmation: () => void;
   onCancelSubmit: () => void;
@@ -152,7 +155,7 @@ function ProductCard({
   onQuantity,
   onRemove,
   onChoice,
-  choiceSelected,
+  choicePending = false,
   onOpenAlternatives,
   expandedFacts,
   onFactExpandedChange,
@@ -164,8 +167,8 @@ function ProductCard({
   thumbnailSrc?: string;
   onQuantity?: (quantity: number) => void;
   onRemove?: () => void;
-  onChoice?: () => void;
-  choiceSelected?: boolean;
+  onChoice?: () => void | Promise<boolean | void>;
+  choicePending?: boolean;
   onOpenAlternatives?: () => void;
   expandedFacts?: ReadonlySet<string>;
   onFactExpandedChange?: (factKey: string, expanded: boolean) => void;
@@ -312,6 +315,15 @@ function ProductCard({
       view={view}
       quantity={quantity}
       thumbnailSrc={thumbnailSrc}
+      fillImageToRow={!comparison}
+    />
+  );
+  const detailSummary = (
+    <ProductSummary
+      view={view}
+      quantity={quantity}
+      thumbnailSrc={thumbnailSrc}
+      layout="detail"
     />
   );
   const details =
@@ -321,6 +333,7 @@ function ProductCard({
           view={view}
           expandedFacts={expandedFacts}
           onFactExpandedChange={onFactExpandedChange}
+          variant="tabs"
         />
       </>
     ) : (
@@ -358,14 +371,21 @@ function ProductCard({
                 <button
                   type="button"
                   className="product-comparison-summary alternative-choice"
-                  aria-label={`Select ${productName(view)} as the alternative`}
-                  aria-pressed={choiceSelected === true}
+                  aria-label={
+                    choicePending
+                      ? `Replacing with ${productName(view)}`
+                      : `Use ${productName(view)} as the alternative`
+                  }
                   disabled={disabled || !isUsable(view)}
-                  onClick={onChoice}
+                  onClick={() => void onChoice()}
                 >
                   {summary}
-                  <span className="alternative-choice-state" aria-hidden="true">
-                    {choiceSelected ? "Selected" : "Select"}
+                  <span
+                    className="alternative-choice-state"
+                    data-pending={choicePending || undefined}
+                    aria-hidden="true"
+                  >
+                    {choicePending ? "Replacing…" : "→"}
                   </span>
                 </button>
               ) : (
@@ -446,18 +466,20 @@ function ProductCard({
               }}
             >
               <div className="product-overlay-header">
-                <Dialog.Title>
+                <Dialog.Title className="visually-hidden">
                   {productName(view, item?.product_id)}
                 </Dialog.Title>
                 <Dialog.Close asChild>
-                  <button type="button" aria-label="Close product overlay">
-                    ×
+                  <button type="button" aria-label="Back to Local basket">
+                    ←
                   </button>
                 </Dialog.Close>
               </div>
               <div className="product-overlay-details">
-                {summary}
-                {details}
+                <div className="product-overlay-scroll">
+                  {detailSummary}
+                  {details}
+                </div>
                 {item && actionControls}
               </div>
             </Dialog.Content>
@@ -545,8 +567,8 @@ function BasketList({
 // The existing screen state machine is rendered here so production and Storybook cannot drift.
 // fallow-ignore-next-line complexity
 export function ViewerPage({ model, actions }: ViewerPageProps) {
-  const [alternativeChoice, setAlternativeChoice] = useState<
-    { key: string; productId: number } | undefined
+  const [replacementPendingId, setReplacementPendingId] = useState<
+    number | undefined
   >();
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | undefined>();
   const [basketMenuOpen, setBasketMenuOpen] = useState(false);
@@ -617,9 +639,6 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
       : view.product.available === false,
   );
   const alternatives = review?.alternatives;
-  const alternativesKey = alternatives
-    ? `${alternatives.product_id}:${alternatives.query}`
-    : undefined;
   const showingAlternatives = Boolean(
     review && active && destination === "alternatives" && alternatives,
   );
@@ -648,12 +667,11 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
     }
     wasShowingAlternatives.current = showingAlternatives;
   }, [showingAlternatives]);
-  const selectedAlternativeId =
-    alternativeChoice &&
-    alternativesKey &&
-    alternativeChoice.key === alternativesKey
-      ? alternativeChoice.productId
-      : undefined;
+  useEffect(() => {
+    if (!showingAlternatives) {
+      setReplacementPendingId(undefined);
+    }
+  }, [showingAlternatives]);
   const productPayload =
     screen.kind === "products" ? screen.payload : undefined;
   const basket =
@@ -918,14 +936,17 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
               >
                 Back to Local basket
               </Button>
-              <h2 ref={alternativeHeading} tabIndex={-1}>
-                Find an alternative
-              </h2>
               <section
                 className="alternatives-current"
                 aria-labelledby="current-product-title"
               >
-                <h2 id="current-product-title">Current product</h2>
+                <h2
+                  ref={alternativeHeading}
+                  id="current-product-title"
+                  tabIndex={-1}
+                >
+                  Current product
+                </h2>
                 {review.items
                   .filter(
                     (item) =>
@@ -949,7 +970,6 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
                     new FormData(event.currentTarget).get("query") ?? "",
                   );
                   if (query.trim()) {
-                    setAlternativeChoice(undefined);
                     actions.onSearchAlternatives(
                       review.alternatives!.product_id,
                       query.slice(0, 200),
@@ -974,8 +994,9 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
               <section
                 className="alternative-options"
                 aria-labelledby="alternative-options-title"
+                aria-busy={replacementPendingId !== undefined || undefined}
               >
-                <h2 id="alternative-options-title">Alternatives</h2>
+                <h2 id="alternative-options-title">Available products</h2>
                 {review.alternatives.views.length === 0 ? (
                   <p className="alternatives-empty" role="status">
                     No alternatives were returned. Try another search.
@@ -992,16 +1013,33 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
                           key={`${id}:${index}`}
                           view={view}
                           thumbnailSrc={thumbnail(view)}
-                          disabled={editsBlocked}
+                          disabled={
+                            editsBlocked || replacementPendingId !== undefined
+                          }
                           comparison
-                          choiceSelected={selectedAlternativeId === id}
+                          choicePending={replacementPendingId === id}
                           {...(id === undefined ? {} : disclosureProps(id))}
                           onChoice={() => {
-                            if (id !== undefined && alternativesKey) {
-                              setAlternativeChoice({
-                                key: alternativesKey,
-                                productId: id,
-                              });
+                            if (id !== undefined) {
+                              alternativeProductId.current = id;
+                              setReplacementPendingId(id);
+                              return Promise.resolve()
+                                .then(() =>
+                                  actions.onReplace(
+                                    review.alternatives!.product_id,
+                                    id,
+                                  ),
+                                )
+                                .then((replaced) => {
+                                  if (replaced === false) {
+                                    setReplacementPendingId(undefined);
+                                  }
+                                  return replaced;
+                                })
+                                .catch(() => {
+                                  setReplacementPendingId(undefined);
+                                  return false;
+                                });
                             }
                           }}
                         />
@@ -1011,24 +1049,6 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
                 )}
               </section>
             </div>
-            <footer className="alternative-footer">
-              <Button
-                color="primary"
-                disabled={editsBlocked || selectedAlternativeId === undefined}
-                onClick={() => {
-                  if (selectedAlternativeId !== undefined) {
-                    alternativeProductId.current = selectedAlternativeId;
-                    actions.onReplace(
-                      alternatives!.product_id,
-                      selectedAlternativeId,
-                    );
-                    setAlternativeChoice(undefined);
-                  }
-                }}
-              >
-                Use selected alternative
-              </Button>
-            </footer>
           </section>
         )}
       {screen.kind === "products" && screen.views.length > 0 && (
