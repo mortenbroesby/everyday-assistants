@@ -265,7 +265,7 @@ export function ProductViewer() {
   );
   const cancellationEpoch = useRef(0);
   const [reviewDisclosures, setReviewDisclosures] = useState<
-    Map<number, { expanded: boolean; facts: Set<string> }>
+    Map<number, Set<string>>
   >(() => new Map());
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
@@ -752,26 +752,6 @@ export function ProductViewer() {
       );
     }
   };
-  const updateDisclosure = (
-    productId: number,
-    change: (current: { expanded: boolean; facts: Set<string> }) => {
-      expanded: boolean;
-      facts: Set<string>;
-    },
-  ) =>
-    setReviewDisclosures((previous) => {
-      const next = new Map(previous);
-      next.set(
-        productId,
-        change(
-          previous.get(productId) ?? {
-            expanded: false,
-            facts: new Set<string>(),
-          },
-        ),
-      );
-      return next;
-    });
   const displayedViews =
     screen.kind === "products"
       ? screen.views
@@ -814,17 +794,17 @@ export function ProductViewer() {
       actions={{
         onNavigate: navigate,
         onRefresh: () => void refreshCurrentDraftList(),
-        onDisclosureChange: (productId, expanded) =>
-          updateDisclosure(productId, (current) => ({ ...current, expanded })),
         onFactExpandedChange: (productId, factKey, expanded) =>
-          updateDisclosure(productId, (current) => {
-            const facts = new Set(current.facts);
+          setReviewDisclosures((previous) => {
+            const next = new Map(previous);
+            const facts = new Set(previous.get(productId));
             if (expanded) {
               facts.add(factKey);
             } else {
               facts.delete(factKey);
             }
-            return { ...current, facts };
+            next.set(productId, facts);
+            return next;
           }),
         onQuantity: setQuantity,
         onRemove: (item) =>

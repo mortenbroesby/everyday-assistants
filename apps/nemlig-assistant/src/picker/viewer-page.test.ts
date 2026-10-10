@@ -59,7 +59,6 @@ const props = (thumbnail?: string): ViewerPageProps => ({
   },
   actions: {
     onNavigate: noop,
-    onDisclosureChange: noop,
     onFactExpandedChange: noop,
     onRefresh: noop,
     onQuantity: noop,
@@ -91,8 +90,10 @@ test("shared viewer page uses its supplied fixture thumbnail and keeps unsafe in
   );
   assert.match(withFixture, /aria-labelledby="title"/u);
   assert.match(withFixture, /<h1[^>]*id="title"[^>]*>Local basket<\/h1>/u);
-  assert.match(withFixture, /Actions for Fixture yoghurt/u);
+  assert.match(withFixture, /Show details for Fixture yoghurt/u);
   assert.match(withFixture, /hold a product for two seconds/u);
+  assert.doesNotMatch(withFixture, /Actions for Fixture yoghurt/u);
+  assert.doesNotMatch(withFixture, /aria-expanded=/u);
   assert.doesNotMatch(withFixture, /swipe for an action/u);
   assert.doesNotMatch(withFixture, /<strong>Nemlig Assistant<\/strong>/u);
 

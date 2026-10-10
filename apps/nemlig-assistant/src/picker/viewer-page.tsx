@@ -6,8 +6,7 @@ import {
   type PointerEvent,
   type ReactNode,
 } from "react";
-import * as Collapsible from "@radix-ui/react-collapsible";
-import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
+import * as Dialog from "@radix-ui/react-dialog";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import type { ProductView } from "../product-presentation.js";
 import {
@@ -77,10 +76,7 @@ export type ViewerPageModel = {
   screen: ViewerScreen;
   maxWidth?: number;
   presentationDestination?: PresentationDestination;
-  reviewDisclosures: ReadonlyMap<
-    number,
-    { expanded: boolean; facts: ReadonlySet<string> }
-  >;
+  reviewDisclosures: ReadonlyMap<number, ReadonlySet<string>>;
   pendingQuantities: ReadonlyMap<number, number>;
   thumbnails: ReadonlyMap<ProductView, string>;
   message: string;
@@ -94,7 +90,6 @@ export type ViewerPageModel = {
 
 export type ViewerPageActions = {
   onNavigate: (destination: PresentationDestination) => void;
-  onDisclosureChange: (productId: number, expanded: boolean) => void;
   onFactExpandedChange: (
     productId: number,
     factKey: string,
@@ -123,7 +118,7 @@ export type ViewerPageProps = {
   actions: ViewerPageActions;
 };
 
-// Kept as one component because its local focus, disclosure, and controls share one product row.
+// Kept as one component because its hold gesture, overlay, and controls share one product row.
 // fallow-ignore-next-line complexity
 function ProductCard({
   view,
@@ -135,8 +130,6 @@ function ProductCard({
   onChoice,
   choiceSelected,
   onOpenAlternatives,
-  expanded,
-  onExpandedChange,
   expandedFacts,
   onFactExpandedChange,
   comparison = false,
@@ -150,28 +143,41 @@ function ProductCard({
   onChoice?: () => void;
   choiceSelected?: boolean;
   onOpenAlternatives?: () => void;
-  expanded?: boolean;
-  onExpandedChange?: (expanded: boolean) => void;
   expandedFacts?: ReadonlySet<string>;
   onFactExpandedChange?: (factKey: string, expanded: boolean) => void;
   comparison?: boolean;
 }) {
-  const [localExpanded, setLocalExpanded] = useState(false);
-  const [menuOpen, setMenuOpen] = useState(false);
+  const [overlayOpen, setOverlayOpen] = useState(false);
+  const [overlayMode, setOverlayMode] = useState<"actions" | "details">(
+    "actions",
+  );
   const pressTimer = useRef<ReturnType<typeof setTimeout> | undefined>(
     undefined,
   );
   const pressOrigin = useRef<{ x: number; y: number } | undefined>(undefined);
   const suppressSummaryClick = useRef(false);
-  const suppressMenuSelection = useRef(false);
+  const suppressOverlayClick = useRef(false);
   const removing = useRef(false);
   const rowRef = useRef<HTMLDivElement | null>(null);
+  const summaryRef = useRef<HTMLButtonElement | null>(null);
   const cancelPress = () => {
     clearTimeout(pressTimer.current);
     pressTimer.current = undefined;
     pressOrigin.current = undefined;
   };
+  const endPress = () => {
+    cancelPress();
+    if (suppressSummaryClick.current) {
+      setTimeout(() => {
+        suppressSummaryClick.current = false;
+      }, 0);
+    }
+  };
   useEffect(() => cancelPress, []);
+  const openOverlay = (mode: "actions" | "details") => {
+    setOverlayMode(mode);
+    setOverlayOpen(true);
+  };
   const onSummaryPointerDown = (event: PointerEvent<HTMLButtonElement>) => {
     if (disabled || !item || comparison || event.button !== 0) {
       return;
@@ -181,9 +187,18 @@ function ProductCard({
     pressOrigin.current = { x: event.clientX, y: event.clientY };
     pressTimer.current = setTimeout(() => {
       suppressSummaryClick.current = true;
-      suppressMenuSelection.current = true;
+      suppressOverlayClick.current = true;
+      window.addEventListener(
+        "pointerup",
+        () => {
+          setTimeout(() => {
+            suppressOverlayClick.current = false;
+          }, 0);
+        },
+        { once: true, capture: true },
+      );
       pressOrigin.current = undefined;
-      setMenuOpen(true);
+      openOverlay("actions");
       pressTimer.current = undefined;
     }, 2_000);
   };
@@ -193,31 +208,10 @@ function ProductCard({
       origin &&
       Math.hypot(event.clientX - origin.x, event.clientY - origin.y) > 10
     ) {
+      suppressSummaryClick.current = true;
       cancelPress();
     }
   };
-  const focusAfterRemove = () => {
-    const virtualRow = rowRef.current?.parentElement?.closest("[data-index]");
-    const next =
-      rowRef.current?.nextElementSibling?.querySelector(
-        ".product-actions-trigger",
-      ) ||
-      rowRef.current?.previousElementSibling?.querySelector(
-        ".product-actions-trigger",
-      ) ||
-      virtualRow?.nextElementSibling?.querySelector(
-        ".product-actions-trigger",
-      ) ||
-      virtualRow?.previousElementSibling?.querySelector(
-        ".product-actions-trigger",
-      ) ||
-      rowRef.current?.closest(".viewer");
-    if (next instanceof HTMLElement) {
-      next.focus();
-    }
-  };
-  const disclosureExpanded = expanded ?? localExpanded;
-  const setDisclosureExpanded = onExpandedChange ?? setLocalExpanded;
   const quantity =
     item?.quantity ??
     (view.status === "complete"
@@ -251,13 +245,9 @@ function ProductCard({
           expandedFacts={expandedFacts}
           onFactExpandedChange={onFactExpandedChange}
         />
-        {quantityControl}
       </>
     ) : (
-      <>
-        {item && <p>{item.quantity} ×</p>}
-        {quantityControl}
-      </>
+      <>{item && <p>{item.quantity} ×</p>}</>
     );
   return (
     <div
@@ -269,13 +259,13 @@ function ProductCard({
       }
       ref={rowRef}
     >
-      <DropdownMenu.Root
-        open={menuOpen && !disabled}
+      <Dialog.Root
+        open={overlayOpen}
         onOpenChange={(open) => {
-          setMenuOpen(open);
+          setOverlayOpen(open);
           if (!open) {
-            suppressMenuSelection.current = false;
             suppressSummaryClick.current = false;
+            suppressOverlayClick.current = false;
           }
         }}
       >
@@ -302,37 +292,44 @@ function ProductCard({
                 <div className="product-comparison-summary">{summary}</div>
               )
             ) : (
-              <Collapsible.Root
-                open={disclosureExpanded}
-                onOpenChange={setDisclosureExpanded}
+              <ProductSummaryButton
+                ref={summaryRef}
+                color="secondary"
+                variant="ghost"
+                data-viewer-component="product-summary"
+                aria-label={`Show details for ${productName(view, item?.product_id)}`}
+                aria-keyshortcuts={item ? "Shift+F10" : undefined}
+                aria-description={
+                  item ? "Hold for actions or press Shift+F10" : undefined
+                }
                 disabled={disabled}
+                onPointerDown={onSummaryPointerDown}
+                onPointerMove={onSummaryPointerMove}
+                onPointerUp={endPress}
+                onPointerLeave={endPress}
+                onPointerCancel={endPress}
+                onContextMenu={(event) => event.preventDefault()}
+                onKeyDown={(event) => {
+                  if (
+                    item &&
+                    (event.key === "ContextMenu" ||
+                      (event.shiftKey && event.key === "F10"))
+                  ) {
+                    event.preventDefault();
+                    openOverlay("actions");
+                  }
+                }}
+                onClick={(event) => {
+                  if (suppressSummaryClick.current) {
+                    suppressSummaryClick.current = false;
+                    event.preventDefault();
+                    return;
+                  }
+                  openOverlay("details");
+                }}
               >
-                <Collapsible.Trigger asChild>
-                  <ProductSummaryButton
-                    color="secondary"
-                    variant="ghost"
-                    data-viewer-component="product-summary"
-                    onPointerDown={onSummaryPointerDown}
-                    onPointerMove={onSummaryPointerMove}
-                    onPointerUp={cancelPress}
-                    onPointerLeave={cancelPress}
-                    onPointerCancel={cancelPress}
-                    onContextMenu={(event) => event.preventDefault()}
-                    onClickCapture={(event) => {
-                      if (suppressSummaryClick.current) {
-                        suppressSummaryClick.current = false;
-                        event.preventDefault();
-                        event.stopPropagation();
-                      }
-                    }}
-                  >
-                    {summary}
-                  </ProductSummaryButton>
-                </Collapsible.Trigger>
-                <Collapsible.Content className="product-expanded">
-                  {details}
-                </Collapsible.Content>
-              </Collapsible.Root>
+                {summary}
+              </ProductSummaryButton>
             )}
             {comparison && (
               <div className="product-expanded product-comparison-details">
@@ -340,75 +337,91 @@ function ProductCard({
               </div>
             )}
           </div>
-          {item && !comparison && (
-            <DropdownMenu.Trigger asChild>
-              <Button
-                color="secondary"
-                variant="ghost"
-                className="product-actions-trigger"
-                disabled={disabled}
-                aria-label={`Actions for ${productName(view, item.product_id)}`}
-              >
-                <span aria-hidden="true">⋯</span>
-              </Button>
-            </DropdownMenu.Trigger>
-          )}
         </article>
-        {item && !comparison && (
-          <DropdownMenu.Portal>
-            <DropdownMenu.Content
-              className="product-action-menu"
-              align="end"
-              sideOffset={4}
-              collisionPadding={8}
-              onPointerDownCapture={() => {
-                suppressMenuSelection.current = false;
-              }}
-              onKeyDownCapture={() => {
-                suppressMenuSelection.current = false;
+        {!comparison && (
+          <Dialog.Portal>
+            <Dialog.Overlay className="product-overlay-backdrop" />
+            <Dialog.Content
+              className={
+                overlayMode === "actions"
+                  ? "product-action-sheet"
+                  : "product-detail-modal"
+              }
+              aria-describedby={undefined}
+              onClickCapture={(event) => {
+                if (suppressOverlayClick.current) {
+                  event.preventDefault();
+                  event.stopPropagation();
+                }
               }}
               onCloseAutoFocus={(event) => {
+                event.preventDefault();
                 if (removing.current) {
-                  event.preventDefault();
                   removing.current = false;
-                  focusAfterRemove();
+                  rowRef.current?.closest<HTMLElement>(".viewer")?.focus();
                   onRemove?.();
+                } else {
+                  summaryRef.current?.focus();
                 }
               }}
             >
-              {onOpenAlternatives && (
-                <DropdownMenu.Item
-                  className="product-action-item"
-                  onSelect={(event) => {
-                    if (suppressMenuSelection.current) {
-                      event.preventDefault();
-                    } else {
-                      onOpenAlternatives();
-                    }
-                  }}
-                >
-                  Find alternative
-                </DropdownMenu.Item>
+              <div className="product-overlay-header">
+                <Dialog.Title>
+                  {overlayMode === "actions"
+                    ? `Actions for ${productName(view, item?.product_id)}`
+                    : productName(view, item?.product_id)}
+                </Dialog.Title>
+                <Dialog.Close asChild>
+                  <button type="button" aria-label="Close product overlay">
+                    ×
+                  </button>
+                </Dialog.Close>
+              </div>
+              {overlayMode === "actions" ? (
+                <div className="product-action-rows">
+                  <button
+                    type="button"
+                    className="product-action-item product-action-remove"
+                    disabled={!onRemove || disabled}
+                    onClick={() => {
+                      removing.current = true;
+                      setOverlayOpen(false);
+                    }}
+                  >
+                    Remove product
+                  </button>
+                  <button
+                    type="button"
+                    className="product-action-item"
+                    disabled={!onOpenAlternatives || disabled}
+                    onClick={() => {
+                      setOverlayOpen(false);
+                      onOpenAlternatives?.();
+                    }}
+                  >
+                    Find alternative
+                  </button>
+                  <button
+                    type="button"
+                    className="product-action-item"
+                    onClick={() => setOverlayMode("details")}
+                  >
+                    Show details
+                  </button>
+                  <div className="product-action-quantity">
+                    {quantityControl}
+                  </div>
+                </div>
+              ) : (
+                <div className="product-overlay-details">
+                  {summary}
+                  {details}
+                </div>
               )}
-              {onRemove && (
-                <DropdownMenu.Item
-                  className="product-action-item product-action-remove"
-                  onSelect={(event) => {
-                    event.preventDefault();
-                    if (suppressMenuSelection.current) {
-                      return;
-                    }
-                    removing.current = true;
-                    setMenuOpen(false);
-                  }}
-                >
-                  Remove from Local basket
-                </DropdownMenu.Item>
-              )}
-            </DropdownMenu.Content>
-          </DropdownMenu.Portal>
+            </Dialog.Content>
+          </Dialog.Portal>
         )}
-      </DropdownMenu.Root>
+      </Dialog.Root>
     </div>
   );
 }
@@ -497,6 +510,9 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
   const alternativeProductId = useRef<number | undefined>(undefined);
   const alternativeHeading = useRef<HTMLHeadingElement | null>(null);
   const wasShowingAlternatives = useRef(false);
+  const removalFocus = useRef<{ removedId: number; nextId?: number } | null>(
+    null,
+  );
   const {
     screen,
     maxWidth,
@@ -514,6 +530,23 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
   } = model;
   const review = screen.kind === "review" ? screen.review : undefined;
   const active = screen.kind === "review" && screen.active;
+  useLayoutEffect(() => {
+    const pending = removalFocus.current;
+    if (
+      !pending ||
+      review?.items.some((item) => item.product_id === pending.removedId)
+    ) {
+      return;
+    }
+    removalFocus.current = null;
+    const next =
+      pending.nextId === undefined
+        ? null
+        : document.querySelector<HTMLElement>(
+            `.product-list [data-product-id="${pending.nextId}"] [data-viewer-component="product-summary"]`,
+          );
+    (next ?? document.querySelector<HTMLElement>(".viewer"))?.focus();
+  }, [review?.items]);
   const destination = review
     ? (presentationDestination ?? review.destination)
     : undefined;
@@ -547,12 +580,12 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
           source === undefined
             ? null
             : document.querySelector<HTMLButtonElement>(
-                `.product-list [data-product-id="${source}"] button[aria-expanded]`,
+                `.product-list [data-product-id="${source}"] [data-viewer-component="product-summary"]`,
               );
         (
           sourceSummary ??
           document.querySelector<HTMLButtonElement>(
-            '.product-list button[aria-expanded="false"], .product-list button[aria-expanded="true"]',
+            '.product-list [data-viewer-component="product-summary"]',
           )
         )?.focus();
       }
@@ -609,7 +642,7 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
         ? "Start a Local basket in conversation."
         : safeTitle === "Find an alternative"
           ? "Compare available options for this product."
-          : "Review products in your local basket. Open a product for details, or hold a product for two seconds for actions."
+          : "Tap a product for details, or hold a product for two seconds for actions."
       : basket
         ? "Your current Nemlig basket. This view cannot change it."
         : "Inspect product details here or continue in conversation."
@@ -618,17 +651,11 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
     terminalSubmission ||
     screen.kind === "empty" ||
     (review && active && review.items.length === 0);
-  const disclosureProps = (productId: number) => {
-    const disclosure = reviewDisclosures.get(productId);
-    return {
-      expanded: disclosure?.expanded ?? false,
-      onExpandedChange: (expanded: boolean) =>
-        actions.onDisclosureChange(productId, expanded),
-      expandedFacts: disclosure?.facts,
-      onFactExpandedChange: (factKey: string, expanded: boolean) =>
-        actions.onFactExpandedChange(productId, factKey, expanded),
-    };
-  };
+  const disclosureProps = (productId: number) => ({
+    expandedFacts: reviewDisclosures.get(productId),
+    onFactExpandedChange: (factKey: string, expanded: boolean) =>
+      actions.onFactExpandedChange(productId, factKey, expanded),
+  });
   const thumbnail = (view: ProductView) => thumbnails.get(view);
   return (
     <ViewerShell
@@ -874,7 +901,18 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
                   }}
                   disabled={editsBlocked}
                   onQuantity={(quantity) => actions.onQuantity(item, quantity)}
-                  onRemove={() => actions.onRemove(item)}
+                  onRemove={() => {
+                    const index = review.items.findIndex(
+                      (current) => current.product_id === item.product_id,
+                    );
+                    const neighbor =
+                      review.items[index + 1] ?? review.items[index - 1];
+                    removalFocus.current = {
+                      removedId: item.product_id,
+                      nextId: neighbor?.product_id,
+                    };
+                    actions.onRemove(item);
+                  }}
                   onOpenAlternatives={() => {
                     alternativeProductId.current = item.product_id;
                     alternativeOpener.current =

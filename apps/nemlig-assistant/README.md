@@ -123,11 +123,12 @@ styles, images and link destinations are omitted; conversion does not fetch
 additional resources.
 The shared product viewer opens directly to one **Local basket** list. Every
 row is Ready for whole-list submission; there are no To decide/Ready tabs,
-checkboxes, or acceptance step. Hold a product summary for two seconds to open
-its action menu, then choose **Find alternative** or **Remove from Local basket**.
-Moving or releasing early cancels the long press. The visible Actions button opens
-the same menu for keyboard and pointer users. Expanded rows provide full-width
-quantity controls. The viewer does not intercept horizontal swipes.
+checkboxes, or acceptance step. Tap a product to open its full-screen details,
+or hold it for two seconds to open a four-row action sheet: **Remove product**,
+**Find alternative**, **Show details**, and full-width quantity controls.
+Moving or releasing early cancels the long press. Keyboard users can press
+Shift+F10 on a product. The details view closes with ×, Escape, or a tap outside.
+The viewer does not intercept horizontal swipes.
 The viewer stays within a 620 px height and scrolls longer lists; large Local baskets
 render visible rows with TanStack Virtual while shorter lists stay fully rendered.
 Removing or replacing a row changes only the Local basket, never Nemlig. The
@@ -140,8 +141,7 @@ results cannot be selected. Longer product facts use the three collapsed section
 The MCP routing map separates catalogue discovery, the actual Nemlig basket,
 the Local basket, protected submission and recovery. Reopening uses `show`, not
 new searches or a second start. Rows show product, package, quantity and line
-price first. Expanded rows contain quantity and product
-facts. **Submit to Nemlig** prepares every current Local basket row for exact
+price first. The details modal contains product facts. **Submit to Nemlig** prepares every current Local basket row for exact
 review before any provider addition. If any row is unavailable or incomplete,
 preparation stops without submitting a partial list. Empty Local baskets offer
 conversational shopping starters; they do not call Nemlig or change provider
@@ -448,9 +448,9 @@ of the repository.
 2. Confirm a partial detail failure is labeled unavailable while other results
    remain in provider order.
 3. Inspect the current Nemlig basket and confirm the Local basket remains distinct.
-4. Start a Local basket, hold a product for two seconds to open its action menu,
-   then choose an action; also use its visible Actions button and expanded-row
-   control, confirming edits leave Nemlig unchanged.
+4. Start a Local basket, hold a product for two seconds to open its action sheet,
+   then choose an action or change quantity; also open and close full-screen
+   details and use Shift+F10, confirming edits leave Nemlig unchanged.
 5. Prepare the entire Local basket and confirm unavailable/incomplete items block
    preparation; submission requires a clear instruction to add the unchanged list
    or approval of the exact prepared effect. Use fixtures for mutation tests; live basket changes need
@@ -494,7 +494,7 @@ compared against the same browser build.
 
 The benchmark records shell raw/gzip size, estimated gzip size for the shell,
 manifest, and assets, first contentful paint, first product DOM insertion (not paint),
-load milestones, and product-detail disclosure response against synthetic
+load milestones, and product-detail opening response against synthetic
 product data in equivalent same-origin parent/iframe hosts.
 Each sample uses a fresh browser context; the browser process is reused.
 External requests are blocked. The separate browser smoke exercises review
@@ -580,8 +580,8 @@ This README is the user-facing inventory of shipped feature sets:
 - fresh Nemlig authentication before every provider-backed MCP task
 - rich individual short-query product discovery and refinement
 - one shared product presentation with a headless fallback
-- voice/touch one-list Local basket with long-press actions and accessible
-  expanded-row controls, full-page alternatives, and scannable comparisons
+- voice/touch one-list Local basket with a long-press action sheet and accessible
+  full-screen details, full-page alternatives, and scannable comparisons
 - persistent in-place review navigation, compact rows, and confirmed local removal
 - complete-per-search alternative results, deliberate follow-up search, and conversation-only Local basket edits
 - explicit protected submission of every validated Local basket row
