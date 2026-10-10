@@ -386,7 +386,7 @@ function ProductCard({
             <div className="product-action-controls">
               <button
                 type="button"
-                className="product-action-item product-action-remove"
+                className="product-action-item product-action-icon"
                 aria-label="Remove product"
                 disabled={!onRemove || disabled}
                 onClick={() => {
@@ -408,19 +408,33 @@ function ProductCard({
                   <path d="M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7M14 10v7" />
                 </svg>
               </button>
+              <button
+                type="button"
+                className="product-action-item product-action-icon"
+                aria-label="Find alternatives"
+                title="Find alternatives"
+                disabled={!onOpenAlternatives || disabled}
+                onClick={() => {
+                  setActionsOpen(false);
+                  onOpenAlternatives?.();
+                }}
+              >
+                <svg
+                  aria-hidden="true"
+                  viewBox="0 0 24 24"
+                  width="28"
+                  height="28"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.8"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <path d="M5 8h14m-4-4 4 4-4 4M19 16H5m4-4-4 4 4 4" />
+                </svg>
+              </button>
               {quantityControl}
             </div>
-            <button
-              type="button"
-              className="product-action-item"
-              disabled={!onOpenAlternatives || disabled}
-              onClick={() => {
-                setActionsOpen(false);
-                onOpenAlternatives?.();
-              }}
-            >
-              Find alternatives
-            </button>
           </div>
         )}
         {!comparison && (

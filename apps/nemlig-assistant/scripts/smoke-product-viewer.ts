@@ -460,8 +460,16 @@ try {
       "trash and quantity controls are not aligned",
     );
     assert.ok(
-      alternatives.y >= quantity.y + quantity.height,
-      "Find alternatives is not below the quantity controls",
+      Math.abs(alternatives.y - quantity.y) < 2,
+      "alternatives and quantity controls are not on the same line",
+    );
+    assert.ok(
+      remove.x + remove.width <= alternatives.x,
+      "alternatives is not beside trash",
+    );
+    assert.ok(
+      alternatives.x + alternatives.width <= quantity.x,
+      "alternatives is not before quantity controls",
     );
     const targets = await actionSheet
       .locator(".product-action-controls button")
@@ -473,8 +481,8 @@ try {
       );
     assert.equal(
       targets.length,
-      3,
-      "trash, minus, and plus controls are required",
+      4,
+      "trash, alternatives, minus, and plus controls are required",
     );
     assert.ok(
       targets.every(Boolean),

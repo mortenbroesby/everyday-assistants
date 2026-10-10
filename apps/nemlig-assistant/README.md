@@ -124,8 +124,9 @@ additional resources.
 The shared product viewer opens directly to one **Local basket** list. Every
 row is Ready for whole-list submission; there are no To decide/Ready tabs,
 checkboxes, or acceptance step. Tap a product to open its full-screen details,
-or swipe from right to left to replace that row with inline controls: a trash icon
-on the left, minus/quantity/plus on the right, and **Find alternatives** underneath.
+or swipe from right to left to replace that row with inline controls: trash and
+a two-arrow **Find alternatives** icon on the left, and minus/quantity/plus on the
+right, all on one line.
 The product name and a close button remain above the controls. The controls follow
 Nemlig’s familiar basket layout; the rest of the basket stays visible.
 Left-to-right swipes, vertical scrolling, short drags, and canceled gestures do not

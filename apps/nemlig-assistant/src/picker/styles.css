@@ -182,13 +182,13 @@ h2 {
   cursor: not-allowed;
 }
 .product-action-controls {
-  display: flex;
+  display: grid;
+  grid-template-columns: 44px 44px minmax(0, 1fr);
   align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 10px 0 16px;
+  gap: 8px;
+  padding: 10px 0 8px;
 }
-.product-action-remove {
+.product-action-icon {
   display: grid;
   place-items: center;
   flex: none;
