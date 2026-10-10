@@ -152,6 +152,7 @@ function ProductCard({
   const [swipeOffset, setSwipeOffset] = useState(0);
   const [swipeAction, setSwipeAction] = useState<"remove" | "alternative">();
   const actionPress = useRef(false);
+  const suppressSwipeClick = useRef(false);
   const rowRef = useRef<HTMLDivElement | null>(null);
   const swipeHandlers = useSwipeable({
     delta: 8,
@@ -165,6 +166,7 @@ function ProductCard({
     },
     onSwiped: ({ absX, dir }) => {
       actionPress.current = false;
+      suppressSwipeClick.current = true;
       setSwipeOffset(0);
       const width = rowRef.current?.clientWidth ?? 0;
       setSwipeAction(
@@ -192,10 +194,13 @@ function ProductCard({
     swipeOffset !== 0
       ? `${swipeOffset}px`
       : swipeAction === "remove"
-        ? "-55%"
+        ? "-100%"
         : swipeAction === "alternative"
-          ? "55%"
+          ? "100%"
           : "0";
+  const visibleSwipeAction =
+    swipeAction ??
+    (swipeOffset < 0 ? "remove" : swipeOffset > 0 ? "alternative" : undefined);
   const disclosureExpanded = expanded ?? localExpanded;
   const setDisclosureExpanded = onExpandedChange ?? setLocalExpanded;
   const quantity =
@@ -208,29 +213,17 @@ function ProductCard({
           : undefined
       : undefined);
   const count = quantity ?? 0;
-  const reviewControls = item && (
-    <div className="review-controls">
-      <QuantityControl
-        label={productName(view, item.product_id)}
-        quantity={count}
-        disabled={disabled}
-        onQuantity={onQuantity}
-      />
-      <Button color="secondary" disabled={disabled} onClick={onRemove}>
-        Remove from Local basket
-      </Button>
-      <Button
-        color="secondary"
-        disabled={disabled}
-        onClick={onOpenAlternatives}
-      >
-        Find alternative
-      </Button>
-    </div>
+  const quantityControl = item && (
+    <QuantityControl
+      label={productName(view, item.product_id)}
+      quantity={count}
+      disabled={disabled}
+      onQuantity={onQuantity}
+    />
   );
   const swipeActions = item && !comparison && (
     <>
-      {swipeAction === "remove" && onRemove && (
+      {visibleSwipeAction === "remove" && onRemove && (
         <Button
           color="secondary"
           disabled={disabled}
@@ -268,7 +261,7 @@ function ProductCard({
           Remove
         </Button>
       )}
-      {swipeAction === "alternative" && onOpenAlternatives && (
+      {visibleSwipeAction === "alternative" && onOpenAlternatives && (
         <Button
           color="secondary"
           disabled={disabled}
@@ -323,21 +316,51 @@ function ProductCard({
           expandedFacts={expandedFacts}
           onFactExpandedChange={onFactExpandedChange}
         />
-        {item && reviewControls}
+        {quantityControl}
       </>
     ) : (
       <>
         {item && <p>{item.quantity} ×</p>}
-        {item && reviewControls}
+        {quantityControl}
       </>
     );
   return (
     <div
       className="basket-swipe-row"
+      data-revealed={swipeAction}
       data-product-id={item?.product_id}
+      role={item && !comparison ? "group" : undefined}
+      aria-label={
+        item && !comparison
+          ? `${productName(view, item.product_id)}. Left arrow reveals Remove; right arrow reveals Find alternative.`
+          : undefined
+      }
+      tabIndex={item && !comparison ? 0 : undefined}
       {...(item && !comparison ? swipeHandlers : {})}
       ref={item && !comparison ? setSwipeRef : undefined}
+      onPointerDownCapture={() => {
+        suppressSwipeClick.current = false;
+      }}
+      onClickCapture={(event) => {
+        if (
+          suppressSwipeClick.current &&
+          (event.target as HTMLElement).closest(".product-card")
+        ) {
+          suppressSwipeClick.current = false;
+          event.preventDefault();
+          event.stopPropagation();
+        }
+      }}
       onKeyDown={(event) => {
+        if (event.target === event.currentTarget && !disabled) {
+          if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
+            event.preventDefault();
+            setSwipeAction(
+              event.key === "ArrowLeft" ? "remove" : "alternative",
+            );
+            setSwipeOffset(0);
+          }
+        }
         if (event.key === "Escape" && swipeAction) {
           actionPress.current = false;
           setSwipeAction(undefined);

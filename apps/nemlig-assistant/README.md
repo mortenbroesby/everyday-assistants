@@ -124,8 +124,9 @@ additional resources.
 The shared product viewer opens directly to one **Local basket** list. Every
 row is Ready for whole-list submission; there are no To decide/Ready tabs,
 checkboxes, or acceptance step. Swipe left or right past half a row to reveal
-Remove or Find alternative. Releasing a swipe only reveals the action; tapping
-the button performs it. Expanded rows provide the same accessible controls.
+a full-row Remove or Find alternative action. Releasing a swipe only reveals the action;
+tapping the button performs it. Keyboard users can focus a row and press Left or Right
+Arrow to reveal the same buttons. Expanded rows provide full-width quantity controls.
 Removing or replacing a row changes only the Local basket, never Nemlig. The
 alternative view has Back, the current product, search, selectable results,
 and an explicit **Use selected alternative** action. Back and search preserve

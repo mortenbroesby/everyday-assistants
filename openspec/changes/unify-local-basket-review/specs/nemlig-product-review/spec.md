@@ -58,7 +58,7 @@ The system SHALL prepare one exact submission containing every current local bas
 - **THEN** the local basket remains intact, the outcome is explicitly uncertain or failed, and the system does not automatically retry the submission
 
 ### Requirement: To decide and Ready refinement
-The touch review SHALL show one Local basket list without visible To decide or Ready tabs, row-selection checkboxes, or an acceptance step. Every product SHALL be a Ready submission candidate. Swipe gestures SHALL only reveal an action; a fresh explicit activation of the revealed Remove or Find alternative button SHALL perform the corresponding local action. Expanded rows SHALL provide equivalent accessible controls. Legacy stored state SHALL NOT exclude an item from whole-basket submission.
+The touch review SHALL show one Local basket list without visible To decide or Ready tabs, row-selection checkboxes, or an acceptance step. Every product SHALL be a Ready submission candidate. Swipe gestures past half the row SHALL reveal a full-row action without activating it; a fresh explicit activation of the revealed Remove or Find alternative button SHALL perform the corresponding local action. Keyboard users SHALL be able to reveal those actions by focusing the row and pressing Left or Right Arrow. Expanded rows SHALL provide full-width quantity controls without duplicate action buttons. Legacy stored state SHALL NOT exclude an item from whole-basket submission.
 
 #### Scenario: Reveal a local row action
 - **WHEN** the user swipes left or right beyond half the row width and releases

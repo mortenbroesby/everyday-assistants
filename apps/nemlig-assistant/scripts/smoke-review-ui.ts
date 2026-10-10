@@ -241,7 +241,7 @@ document.getElementById('alternatives').onclick = async () => {
   await wait(()=>title()==='Local basket'&&doc().querySelectorAll('.product-list article').length===2);
   const before=await call({name:'update_product_review_conversation',arguments:{action:{kind:'show'}}});
   const target=[...doc().querySelectorAll('.product-list article')].find(row=>row.textContent.includes('Smoke product 1')); check(target,'Product missing');
-  target.querySelector('button[aria-expanded]')?.click(); await wait(()=>button('Find alternative'));
+  const row=target.closest('.basket-swipe-row'); check(row,'Swipe row missing'); row.focus(); row.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowRight',bubbles:true,cancelable:true})); await wait(()=>button('Find alternative'));
   const beforeSwipe=widgetCalls.length; click('Find alternative'); await wait(()=>title()==='Find an alternative');
   check(widgetCalls.length===beforeSwipe+1&&widgetCalls.at(-1).arguments.action.kind==='alternatives','Alternative view did not use the read-only search action');
   const unchanged=(await call({name:'update_product_review_conversation',arguments:{action:{kind:'show'}}})).structuredContent.review;

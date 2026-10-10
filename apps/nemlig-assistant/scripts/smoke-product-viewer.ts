@@ -309,8 +309,77 @@ try {
   const milkDisclosure = milkCard.locator(
     '[data-viewer-component="product-summary"]',
   );
+  const waitForFullSwipe = async (direction: "remove" | "alternative") => {
+    await page.waitForFunction(
+      (actionName) => {
+        const hostFrame = document.querySelector<HTMLIFrameElement>(
+          'iframe[title="viewer"]',
+        )!;
+        const row =
+          hostFrame.contentDocument!.querySelector<HTMLElement>(
+            ".basket-swipe-row",
+          )!;
+        const action = row.querySelector<HTMLElement>(
+          `button.swipe-${actionName}`,
+        )!;
+        const product = row.querySelector<HTMLElement>(".product-card")!;
+        const distance =
+          product.getBoundingClientRect().left -
+          row.getBoundingClientRect().left;
+        const expected =
+          actionName === "remove" ? -row.clientWidth : row.clientWidth;
+        return (
+          action.clientWidth >= row.clientWidth - 2 &&
+          Math.abs(distance - expected) <= 2
+        );
+      },
+      direction,
+      { timeout: 2_000 },
+    );
+  };
+  await milkDisclosure.click();
+  const quantityLayout = await milkCard
+    .locator('[data-viewer-component="quantity-control"]')
+    .evaluate((control) => ({
+      control: control.getBoundingClientRect().width,
+      parent: control.parentElement!.getBoundingClientRect().width,
+      buttons: [...control.querySelectorAll("button")].map(
+        (button) => button.getBoundingClientRect().width,
+      ),
+    }));
+  assert.ok(
+    quantityLayout.control >= quantityLayout.parent - 2 &&
+      quantityLayout.buttons.every(
+        (width) => width > quantityLayout.parent / 3,
+      ),
+    "expanded quantity controls do not span the product row",
+  );
+  assert.equal(
+    await milkCard.getByRole("button", { name: "Find alternative" }).count(),
+    0,
+    "expanded product duplicated the swipe actions",
+  );
+  assert.equal(
+    await milkCard
+      .getByRole("button", { name: "Remove from Local basket" })
+      .count(),
+    0,
+    "expanded product duplicated the remove action",
+  );
+  await capture("local-basket-quantity");
+  await milkDisclosure.click();
   const callsBeforeSwipe = await page.evaluate(() => window.calls.length);
   const swipeRow = frame.locator(".basket-swipe-row").first();
+  const openAlternativesByKeyboard = async () => {
+    await swipeRow.focus();
+    await page.keyboard.press("ArrowRight");
+    await frame
+      .getByRole("button", { name: /Find an alternative to Synthetic milk/ })
+      .click();
+    await frame
+      .getByRole("heading", { name: "Find an alternative", level: 1 })
+      .waitFor();
+  };
   const box = await swipeRow.boundingBox();
   assert.ok(box, "product row has no hit area");
   await page.mouse.move(box.x + box.width * 0.8, box.y + box.height / 2);
@@ -318,6 +387,13 @@ try {
   await page.mouse.move(box.x + box.width * 0.1, box.y + box.height / 2, {
     steps: 8,
   });
+  assert.equal(
+    await frame
+      .getByRole("button", { name: /Remove Synthetic milk from Local basket/ })
+      .isVisible(),
+    true,
+    "remove action did not enter while dragging",
+  );
   await page.mouse.up();
   await frame
     .getByRole("button", { name: /Remove Synthetic milk from Local basket/ })
@@ -332,6 +408,12 @@ try {
   const revealedRemove = frame.getByRole("button", {
     name: /Remove Synthetic milk from Local basket/,
   });
+  await waitForFullSwipe("remove");
+  assert.equal(
+    await milkDisclosure.getAttribute("aria-expanded"),
+    "false",
+    "swiping accidentally opened product details",
+  );
   await revealedRemove.focus();
   await revealedRemove.press("Escape");
   await revealedRemove.waitFor({ state: "detached" });
@@ -372,6 +454,7 @@ try {
   await frame
     .getByRole("button", { name: /Find an alternative to Synthetic milk/ })
     .waitFor();
+  await waitForFullSwipe("alternative");
   assert.equal(
     await page.evaluate(() => window.calls.length),
     callsBeforeSwipe,
@@ -384,17 +467,7 @@ try {
   await revealedAlternative.focus();
   await revealedAlternative.press("Escape");
   await revealedAlternative.waitFor({ state: "detached" });
-  if ((await milkDisclosure.getAttribute("aria-expanded")) === "true") {
-    await milkDisclosure.click();
-  }
-  await milkDisclosure.focus();
-  await page.keyboard.press("Enter");
-  await frame.getByRole("button", { name: /Find alternative/ }).waitFor();
-  const milkAlt = milkCard.getByRole("button", { name: /Find alternative/ });
-  await milkAlt.click();
-  await frame
-    .getByRole("heading", { name: "Find an alternative", level: 1 })
-    .waitFor();
+  await openAlternativesByKeyboard();
   assert.equal(
     await page.evaluate(() =>
       window
@@ -438,10 +511,7 @@ try {
     2,
     "ordinary snapshot reopened alternatives or lost quantity after Back",
   );
-  await milkCard.getByRole("button", { name: /Find alternative/ }).click();
-  await frame
-    .getByRole("heading", { name: "Find an alternative", level: 1 })
-    .waitFor();
+  await openAlternativesByKeyboard();
   const candidate = frame
     .locator(".alternative-options .product-card")
     .filter({ hasText: "Synthetic alternative" });
@@ -603,6 +673,23 @@ try {
     "uncertain write was retried",
   );
   await uncertainPage.close();
+
+  const removePage = await context.newPage();
+  await removePage.goto(`http://127.0.0.1:${address.port}/host`);
+  const removeFrame = removePage.frameLocator('iframe[title="viewer"]');
+  await removeFrame.getByRole("heading", { name: "Local basket" }).waitFor();
+  await removeFrame.locator(".basket-swipe-row").first().focus();
+  await removePage.keyboard.press("ArrowLeft");
+  await removeFrame
+    .getByRole("button", { name: /Remove Synthetic milk from Local basket/ })
+    .click();
+  await removePage.waitForFunction(() => window.getReview().items.length === 1);
+  assert.equal(
+    await removePage.evaluate(() => window.providerWrites),
+    0,
+    "local row removal reached a provider write",
+  );
+  await removePage.close();
 
   assert.equal(
     await page.evaluate(() => window.providerWrites),

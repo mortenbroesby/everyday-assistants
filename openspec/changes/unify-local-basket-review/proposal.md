@@ -20,8 +20,9 @@ Every local basket item is Ready and is included in the single Submit to Nemlig 
 ## Acceptance
 
 - The review shows one list labeled “Local basket”; no To decide/Ready tabs or row-selection checkboxes.
-- A left or right swipe past half the row reveals the corresponding red Remove or green Find alternative action. Releasing the gesture only reveals the action. A subsequent tap on its real button performs the local remove or opens alternatives.
-- Keyboard and assistive-technology users can use equivalent ordinary controls in the expanded row.
+- A left or right swipe past half the row settles into a full-row red Remove or green Find alternative action. Releasing the gesture only reveals the action. A subsequent tap on its real button performs the local remove or opens alternatives.
+- Expanded quantity controls span the available row width.
+- Keyboard and assistive-technology users can focus a row and press Left or Right Arrow to reveal the same explicit actions without duplicate expanded-row buttons.
 - Alternatives appear in a dedicated full-page view with Back, current product, search, option selection, and explicit “Use selected alternative”. Back leaves the local row unchanged. A Ready row can search and replacement preserves its Ready status and quantity while invalidating a prepared submission.
 - Every item remains Ready; additions and replacements are immediately submission candidates. Submit prepares every current item as one exact recap. Any unavailable or incomplete line prevents preparation and remains visible for resolution. Exact confirmation, owner isolation, concurrency and uncertain-write gates, provider preflight, single-use write, and readback remain intact.
 
