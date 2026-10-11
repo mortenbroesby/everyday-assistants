@@ -1728,17 +1728,33 @@ test("only an actual missing basket opens the picker on repository failures", as
     );
 
     responseMode = "provider404";
+    const providerMissingClient = Object.assign(
+      fakeClient({
+        getCart: async () => ({
+          ...basket,
+          items: [{ id: 99, name: "Existing item", quantity: 1, total: 5 }],
+        }),
+        getFreshProduct: async () => {
+          throw new NemligError("Provider product not found", 404);
+        },
+      }),
+      {
+        createShoppingList: async () => ({
+          id: 1,
+          name: "fixture",
+          items: [],
+        }),
+        updateShoppingListProduct: async () => undefined,
+        getShoppingList: async () => ({
+          id: 1,
+          name: "fixture",
+          items: [],
+        }),
+      },
+    );
     await withMcpClient(
       createMcpServer(
-        fakeClient({
-          getCart: async () => ({
-            ...basket,
-            items: [{ id: 99, name: "Existing item", quantity: 1, total: 5 }],
-          }),
-          getFreshProduct: async () => {
-            throw new NemligError("Provider product not found", 404);
-          },
-        }),
+        providerMissingClient,
         async () => undefined,
         undefined,
         undefined,
