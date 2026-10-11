@@ -256,7 +256,10 @@ export class BasketProposalService {
     connectionId: string,
     items: Array<{ product_id: number; quantity: number }>,
     authorization: AdditionAuthorization,
-    options: ProposalReadOptions & { freshProducts?: boolean } = {},
+    options: ProposalReadOptions & {
+      freshProducts?: boolean;
+      requireAllAvailable?: boolean;
+    } = {},
   ): Promise<ProposalView> {
     this.validateAdditionItems(items);
     if (!authorization || authorization.kind !== "exact_review") {
@@ -299,6 +302,7 @@ export class BasketProposalService {
     const skippedProducts = candidates.flatMap((candidate) =>
       candidate.skipped ? [candidate.skipped] : [],
     );
+    this.requireAllAvailable(options.requireAllAvailable, skippedProducts);
     if (!lines.length) {
       throw new NemligError(
         "No reviewed products are currently available to add.",
@@ -374,7 +378,7 @@ export class BasketProposalService {
         quantity,
       })),
       authorization,
-      options,
+      { ...options, requireAllAvailable: true },
     );
     const stored = this.proposals.get(proposal.proposal_id);
     if (!stored || stored.operation.kind !== "additions") {
@@ -412,6 +416,17 @@ export class BasketProposalService {
     if (ids.size !== items.length) {
       throw new NemligError(
         "Each product ID may appear only once per proposal.",
+      );
+    }
+  }
+
+  private requireAllAvailable(
+    requireAllAvailable: boolean | undefined,
+    skippedProducts: readonly SkippedProduct[],
+  ): void {
+    if (requireAllAvailable && skippedProducts.length) {
+      throw new NemligError(
+        "Every provider-list product must be available before submission review.",
       );
     }
   }
@@ -673,11 +688,11 @@ export class BasketProposalService {
     activeLines: readonly ProposalLine[],
     skippedProducts: readonly SkippedProduct[],
   ): Promise<ApplyResult> {
-    const { listId, fingerprint, client } = this.shoppingListTransferClient(
+    const { listId, fingerprint } = this.shoppingListTransferDetails(
       proposal.operation,
     );
-    this.assertEntireListIsApproved(proposal.operation, activeLines);
-    const currentList = await client.getShoppingList(listId);
+    const currentList = await this.client.getShoppingList!(listId);
+    this.assertExactApprovedList(currentList.items, activeLines);
     const currentBasket = await this.client.getCart();
     if (
       shoppingListFingerprint(currentList) !== fingerprint ||
@@ -685,7 +700,7 @@ export class BasketProposalService {
     ) {
       throw new BasketSnapshotChangedError();
     }
-    await client.addShoppingListToCart(listId);
+    await this.client.addShoppingListToCart!(listId);
     const result = await this.client.getCart();
     this.assertShoppingListTransferReadback(baseline, result, activeLines);
     const completed: ApplyResult = {
@@ -706,13 +721,9 @@ export class BasketProposalService {
     return completed;
   }
 
-  private shoppingListTransferClient(operation: AddOperation): {
+  private shoppingListTransferDetails(operation: AddOperation): {
     listId: number;
     fingerprint: string;
-    client: Pick<
-      ShoppingListClient,
-      "getShoppingList" | "addShoppingListToCart"
-    >;
   } {
     const { shoppingListId: listId, shoppingListFingerprint: fingerprint } =
       operation;
@@ -728,17 +739,22 @@ export class BasketProposalService {
     return {
       listId,
       fingerprint,
-      client: { getShoppingList, addShoppingListToCart },
     };
   }
 
-  private assertEntireListIsApproved(
-    operation: AddOperation,
+  private assertExactApprovedList(
+    listItems: readonly { productId: number; quantity: number }[],
     activeLines: readonly ProposalLine[],
   ): void {
-    if (activeLines.length !== operation.lines.length) {
+    const approved = new Map(
+      activeLines.map((line) => [line.product_id, line.quantity]),
+    );
+    if (
+      listItems.length !== approved.size ||
+      listItems.some((item) => approved.get(item.productId) !== item.quantity)
+    ) {
       throw new BasketPreflightError(
-        "A reviewed provider-list product is no longer available.",
+        "Provider-list contents changed or include an unreviewed product.",
       );
     }
   }

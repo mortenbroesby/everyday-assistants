@@ -43,12 +43,6 @@ const localLineSchema = z
       MAX_LINE_RECORD_BYTES,
   );
 const linesSchema = z.array(localLineSchema).min(1).max(500);
-const providerListBindingSchema = z.object({
-  listId: z.number().int().positive(),
-  accountId: z.string().min(1).max(512),
-  fingerprint: z.string().regex(/^[a-f0-9]{64}$/u),
-  productCount: z.number().int().nonnegative().max(500),
-});
 const editSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("append"), lines: linesSchema }),
   z.object({
@@ -68,11 +62,6 @@ const editSchema = z.discriminatedUnion("kind", [
     })
     .refine(({ productIds }) => new Set(productIds).size === productIds.length),
   z.object({ kind: z.literal("attempt-submission") }),
-  z.object({ kind: z.literal("cleanup-pending") }),
-  z.object({
-    kind: z.literal("provider-synchronized"),
-    binding: providerListBindingSchema,
-  }),
   z.object({ kind: z.literal("complete-submission") }),
 ]);
 const callbackCommandSchema = z.discriminatedUnion("kind", [
@@ -84,7 +73,6 @@ const callbackCommandSchema = z.discriminatedUnion("kind", [
   z.object({
     kind: z.literal("create"),
     lines: linesSchema,
-    providerList: providerListBindingSchema.optional(),
     selectionKey: z.string().min(1).max(128).optional(),
   }),
   z.object({ kind: z.literal("read"), basketId: basketIdSchema }),

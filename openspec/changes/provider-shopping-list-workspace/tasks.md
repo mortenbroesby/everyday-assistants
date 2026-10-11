@@ -4,11 +4,11 @@
 - [ ] 1.2 Add sanitized client fixtures that characterize list readback and quantity semantics; reject incomplete/mismatched data rather than compensating.
 - [ ] 1.3 Define list fingerprints and exact transfer verification while retaining add-only real-basket checks.
 
-## 2. Workspace cutover
+## 2. Deferred workspace cutover
 
-- [ ] 2.1 Replace durable line-content persistence for new workspaces with owner/list mapping, revision/fingerprint, selection, and submission-fence metadata.
-- [ ] 2.2 Synchronize Ready changes to the provider list serially and require verified readback before acknowledgement.
-- [ ] 2.3 Cut over cleanly with a separate versioned metadata key: legacy local records are not silently uploaded, converted, reopened, or given prepared authority.
+- [ ] 2.1 Follow-up: replace durable line-content persistence only after the real-host proof release passes.
+- [ ] 2.2 Follow-up: synchronize Ready changes to the provider list serially and require verified readback before acknowledgement.
+- [ ] 2.3 Follow-up: cut over with separate versioned metadata and delete legacy local-basket storage.
 
 ## 3. Submission and recovery
 
@@ -18,8 +18,8 @@
 
 ## 4. Surface and documentation
 
-- [ ] 4.1 Update MCP/authentication boundaries, viewer/text states, and fixtures for provider-backed Ready contents.
-- [ ] 4.2 Update README, skills, smoke/runbook wording, and relevant durable specifications; mark the direct-write continuation proposal superseded.
+- [ ] 4.1 Update the current MCP/viewer/text submission path for provider-list preparation while retaining local-basket editing.
+- [ ] 4.2 Update smoke/runbook wording; record the local-basket retirement as a post-proof follow-up.
 
 ## 5. Verification and review
 

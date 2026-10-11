@@ -257,25 +257,58 @@ const shoppingListItem = (
     : undefined;
 };
 
-function normalizeShoppingList(value: unknown): ShoppingList {
+function normalizeShoppingList(
+  value: unknown,
+  expectedId?: number,
+): ShoppingList {
   const list = asRecord(value);
+  const { id, name } = shoppingListIdentity(list, expectedId);
+  const items = normalizedShoppingListItems(
+    list.Products ?? list.Items ?? list.ShoppingListProducts,
+  );
+  assertUniqueShoppingListItems(items);
+  return { id, name, items };
+}
+
+const shoppingListIdentity = (
+  list: Record<string, unknown>,
+  expectedId: number | undefined,
+): { id: number; name: string } => {
   const id = asId(list.Id) ?? asId(list.ListId);
   const name = asString(list.Name) ?? asString(list.ListName);
-  const rawItems = list.Products ?? list.Items ?? list.ShoppingListProducts;
-  const items = asRecords(rawItems).flatMap((item) => {
-    const normalized = shoppingListItem(item);
-    return normalized ? [normalized] : [];
-  });
   if (
     id === undefined ||
-    !name ||
-    items.length !== asRecords(rawItems).length ||
-    new Set(items.map((item) => item.productId)).size !== items.length
+    (expectedId !== undefined && id !== expectedId) ||
+    !name
   ) {
     throw new NemligError("Shopping list response is incomplete.");
   }
-  return { id, name, items };
-}
+  return { id, name };
+};
+
+const normalizedShoppingListItems = (
+  value: unknown,
+): Array<{ productId: number; quantity: number }> => {
+  if (!Array.isArray(value)) {
+    throw new NemligError("Shopping list response is incomplete.");
+  }
+  const items = asRecords(value).flatMap((item) => {
+    const normalized = shoppingListItem(item);
+    return normalized ? [normalized] : [];
+  });
+  if (items.length !== value.length) {
+    throw new NemligError("Shopping list response is incomplete.");
+  }
+  return items;
+};
+
+const assertUniqueShoppingListItems = (
+  items: readonly { productId: number }[],
+): void => {
+  if (new Set(items.map((item) => item.productId)).size !== items.length) {
+    throw new NemligError("Shopping list response is incomplete.");
+  }
+};
 
 export function normalizeProducts(value: unknown, limit?: number): Product[] {
   const records =
@@ -788,6 +821,7 @@ export class NemligClient {
         { signal },
         "Get shopping list",
       ),
+      listId,
     );
   }
 
@@ -1373,11 +1407,12 @@ export class NemligClient {
           );
         }
         try {
+          if (allowEmpty) {
+            const body = await response.text();
+            return body.trim() ? JSON.parse(body) : undefined;
+          }
           return await response.json();
         } catch {
-          if (allowEmpty && response.status >= 200 && response.status < 300) {
-            return undefined;
-          }
           if (init.signal?.aborted) {
             throw abortReason(init.signal);
           }

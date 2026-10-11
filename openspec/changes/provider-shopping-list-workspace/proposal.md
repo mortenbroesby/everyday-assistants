@@ -1,24 +1,22 @@
-# Provider shopping-list workspace
+# Provider shopping-list transfer proof
 
 ## Why
 
 The current Local basket stores every accepted product line, quantity and presentation snapshot in the assistant's Durable Object, then submits each line directly to the real Nemlig basket. A normal family shop of 30 or more products therefore creates a long chain of real-basket writes inside one gateway request. A verified prefix can succeed before a later request fails, leaving an intentionally non-retryable partial result. This is safe but needlessly fragile when Nemlig already provides a first-class shopping-list workflow and a native list-to-basket transfer.
 
-The owner-approved direction is to make an assistant-owned Nemlig shopping list the durable source of the workspace's Ready contents. The assistant keeps only minimum Durable Object metadata needed to bind that list to the authenticated owner/conversation and to fence an uncertain real-basket transfer. The real basket remains add-only and is only mutated by the single native transfer after exact preparation and authorization.
+This is deliberately a proof release: it creates an assistant-owned provider list from an existing Local basket only when submission is prepared, then submits it through one native transfer. The current durable Local basket remains in place for the proof. A successful real ChatGPT smoke test is the gate for the subsequent clean cutover that makes provider lists durable workspaces and deletes local line persistence.
 
 ## Scope
 
-- Create and synchronize a provider shopping list for an active Local basket's Ready contents.
+- Create a provider shopping list from an active Local basket only during submission preparation and verify its exact contents.
 - Submit one verified provider-list transfer, rather than issuing one real-basket request per product.
 - Preserve exact review/authorization, principal and conversation binding, stale-state rejection, serialization, add-only basket behavior, readback, and no automatic retry after uncertainty.
-- Replace durable storage of local basket line contents with minimal metadata and a terminal submission fence.
-- Retain an untransferred provider list when the user leaves the workspace; remove only an assistant-owned list after a verified transfer or explicit abandonment.
-- Update tool/documentation contracts that currently state local edits never write to Nemlig.
+- Retain the current Durable Object Local basket and its existing fence during this proof.
 
 ## Non-goals
 
 - Changing Nemlig login flags, clearing/replacing/removing/decreasing the real basket, checkout, payment, or delivery.
-- Migrating old local basket contents automatically on reopen.
+- Migrating old local basket contents automatically on reopen, synchronizing ordinary Ready edits, or deleting Durable Object storage. Those are the follow-up after live proof.
 - Introducing another persistence service, parallel list update queue, provider retries, or a new browser business-state model.
 - Solving unrelated search, stale-ChatGPT-card, UI redesign, or deployment work.
 
@@ -30,10 +28,8 @@ The owner-approved direction is to make an assistant-owned Nemlig shopping list 
 
 ## Acceptance
 
-1. Ready contents are durably represented by an authenticated, assistant-owned provider list; a restart does not require persisted duplicate product-line snapshots.
-2. A mutation acknowledges Ready state only after provider-list readback matches the requested exact items and quantities.
-3. Preparing binds the owner, originating conversation/workspace, provider-list ID, verified list fingerprint, reviewed facts, and pre-transfer real-basket baseline.
-4. Submission performs at most one list-to-basket transfer for an authorization. It verifies additive quantities and preservation of existing real-basket lines. It never clears, removes, decreases, replaces, or retries the real basket.
-5. A failed or uncertain transfer remains fenced and cannot be replayed automatically. A post-transfer list-cleanup failure does not turn a verified basket addition into a retryable failure.
-6. A 38+ item fixture reaches exactly one transfer request, not 38 real-basket requests.
-7. Credential-free routes cannot read, mutate, or expose provider-backed workspace contents.
+1. Preparing an existing Local basket creates a provider list with its exact lines and rejects a malformed or mismatched readback before any real-basket request.
+2. Submission performs at most one list-to-basket transfer for an authorization. It verifies additive quantities and preservation of existing real-basket lines. It never clears, removes, decreases, replaces, or retries the real basket.
+3. A failed or uncertain transfer remains fenced by the existing Local basket mechanism and cannot be replayed automatically.
+4. A 38+ item fixture reaches exactly one transfer request, not 38 real-basket requests.
+5. After merge/deployment, a new real ChatGPT session proves preparation; a real transfer requires a separate exact approval.

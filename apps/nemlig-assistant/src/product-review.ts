@@ -5,7 +5,7 @@ import {
 } from "./proposals.js";
 import { randomUUID } from "node:crypto";
 import { NemligError } from "./nemlig-error.js";
-import { ProductNotFoundError } from "./client.js";
+import { ProductNotFoundError, type ShoppingListClient } from "./client.js";
 import {
   isAuthenticationFailure,
   resolveDetailedProductSearch,
@@ -62,11 +62,14 @@ interface StoredReview {
   busy: boolean;
   snapshot: ProductReviewSnapshot;
   proposalId?: string;
+  shoppingListId?: number;
 }
 type ReviewProposals = Pick<
   BasketProposalService,
   "prepareAdditions" | "apply"
->;
+> &
+  Partial<Pick<BasketProposalService, "prepareShoppingListAdditions">>;
+type ReviewClient = ProductDiscoveryClient & Partial<ShoppingListClient>;
 export interface LocalBasketRepository {
   mutate(command: LocalBasketCommand): Promise<unknown>;
 }
@@ -134,7 +137,7 @@ export class ProductReviewService {
   private readonly now: () => number;
 
   constructor(
-    private readonly client: ProductDiscoveryClient,
+    private readonly client: ReviewClient,
     options: { now?: () => number; proposals?: ReviewProposals } = {},
   ) {
     this.proposals = options.proposals;
@@ -453,6 +456,82 @@ export class ProductReviewService {
     }
   }
 
+  private canPrepareShoppingList(): boolean {
+    return Boolean(
+      this.proposals?.prepareShoppingListAdditions &&
+      this.client.createShoppingList &&
+      this.client.updateShoppingListProduct &&
+      this.client.getShoppingList,
+    );
+  }
+
+  private async createSubmissionShoppingList(
+    basketId: string,
+    lines: LocalBasket["lines"],
+  ): Promise<number> {
+    const { createShoppingList, updateShoppingListProduct, getShoppingList } =
+      this.client;
+    if (!createShoppingList || !updateShoppingListProduct || !getShoppingList) {
+      throw new NemligError("Shopping-list submission is unavailable.");
+    }
+    const list = await this.client.createShoppingList!(
+      `Nemlig Assistant ${basketId.slice(0, 8)}`,
+    );
+    for (const line of lines) {
+      await this.client.updateShoppingListProduct!(
+        list.id,
+        line.productId,
+        line.quantity,
+      );
+    }
+    const confirmed = await this.client.getShoppingList!(list.id);
+    if (
+      confirmed.items.length !== lines.length ||
+      confirmed.items.some(
+        (item) =>
+          lines.find((line) => line.productId === item.productId)?.quantity !==
+          item.quantity,
+      )
+    ) {
+      throw new NemligError(
+        "Shopping-list readback did not match the Local basket; no real basket write was sent.",
+      );
+    }
+    return list.id;
+  }
+
+  private async prepareSubmissionProposal(
+    owner: string,
+    basketId: string,
+    basket: LocalBasket,
+    signal: AbortSignal | undefined,
+  ): Promise<{
+    proposal: Awaited<ReturnType<BasketProposalService["prepareAdditions"]>>;
+    shoppingListId?: number;
+  }> {
+    const shoppingListId = this.canPrepareShoppingList()
+      ? await this.createSubmissionShoppingList(basketId, basket.lines)
+      : undefined;
+    const proposal =
+      shoppingListId === undefined
+        ? await this.proposals!.prepareAdditions(
+            owner,
+            basket.lines.map(({ productId, quantity }) => ({
+              product_id: productId,
+              quantity,
+            })),
+            { kind: "exact_review" },
+            { signal, freshProducts: true },
+          )
+        : await this.proposals!.prepareShoppingListAdditions!(
+            owner,
+            shoppingListId,
+            { kind: "exact_review" },
+            { signal, freshProducts: true },
+          );
+    return { proposal, ...(shoppingListId ? { shoppingListId } : {}) };
+  }
+
   // Preparation and provider apply keep separate, visible critical sections with different fence ordering.
   // fallow-ignore-next-line code-duplication
   async prepareBasket(
@@ -497,15 +576,8 @@ export class ProductReviewService {
             "The Local basket has unresolved product identity or availability.",
           );
         }
-        const proposal = await this.proposals.prepareAdditions(
-          owner,
-          basket.lines.map(({ productId, quantity }) => ({
-            product_id: productId,
-            quantity,
-          })),
-          { kind: "exact_review" },
-          { signal, freshProducts: true },
-        );
+        const { proposal, shoppingListId } =
+          await this.prepareSubmissionProposal(owner, basketId, basket, signal);
         const current = localBasket(
           await repository.mutate({ kind: "read", basketId }),
         );
@@ -518,6 +590,7 @@ export class ProductReviewService {
           );
         }
         stored.proposalId = proposal.proposal_id;
+        stored.shoppingListId = shoppingListId;
         stored.snapshot = {
           ...localBasketSnapshot(current),
           submission: {
