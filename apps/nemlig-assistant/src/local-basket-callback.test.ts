@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createRequire } from "node:module";
 import test from "node:test";
 import { handleLocalBasketStateRequest } from "./local-basket-callback.js";
 import { attachLocalBasketCapability } from "./local-basket-capability.js";
@@ -7,6 +8,85 @@ import type { LocalBasketStorageAccess } from "./local-basket-storage.js";
 import { mutateOwnerLocalBasketInventory } from "./local-basket-storage.js";
 
 const principalKey = "a".repeat(32);
+const requireFromHere = createRequire(import.meta.url);
+const wranglerRequire = createRequire(
+  requireFromHere.resolve("wrangler/package.json"),
+);
+
+interface WorkersRuntime {
+  dispatchFetch(input: string, init: RequestInit): Promise<Response>;
+  dispose(): Promise<void>;
+}
+
+const workersRuntimeModules = () => {
+  const { build } = wranglerRequire("esbuild") as {
+    build(options: Record<string, unknown>): Promise<{
+      outputFiles: Array<{ text: string }>;
+    }>;
+  };
+  const { Miniflare, convertV4MiniflareOptions } = wranglerRequire(
+    "miniflare",
+  ) as {
+    Miniflare: new (options: unknown) => WorkersRuntime;
+    convertV4MiniflareOptions(options: unknown): unknown;
+  };
+  return { build, Miniflare, convertV4MiniflareOptions };
+};
+
+const runWorkersSelection = async (): Promise<Response> => {
+  const { build, Miniflare, convertV4MiniflareOptions } =
+    workersRuntimeModules();
+  const result = await build({
+    stdin: {
+      contents: `
+        import { handleLocalBasketStateRequest } from "./local-basket-callback.ts";
+        const storage = {
+          idFromName: (ownerId: string) => ownerId,
+          get: () => ({ mutate: async () => undefined }),
+        };
+        export default {
+          fetch(request: Request) {
+            return handleLocalBasketStateRequest(
+              request,
+              storage,
+              async (capability) => capability === "cap" ? "${principalKey}" : undefined,
+            );
+          },
+        };
+      `,
+      resolveDir: new URL(".", import.meta.url).pathname,
+      sourcefile: "local-basket-workers-fixture.ts",
+      loader: "ts",
+    },
+    bundle: true,
+    format: "esm",
+    platform: "node",
+    write: false,
+  });
+  const runtime = new Miniflare(
+    convertV4MiniflareOptions({
+      modules: true,
+      compatibilityDate: "2026-08-31",
+      compatibilityFlags: ["nodejs_compat"],
+      script: result.outputFiles[0]!.text,
+    }),
+  );
+  try {
+    return await runtime.dispatchFetch(
+      "http://local-basket-state.internal/inventory",
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-nemlig-local-basket-capability": "cap",
+        },
+        body: JSON.stringify({ kind: "selection", selectionKey: "session" }),
+      },
+    );
+  } finally {
+    await runtime.dispose();
+  }
+};
 
 test("Local basket callback requires a live Worker capability before storage", async () => {
   let storageCalls = 0;
@@ -155,6 +235,34 @@ test("Local basket callback validates and strips product snapshot authority", as
   );
   assert.equal(rejected.status, 400);
   assert.equal(persisted, undefined);
+});
+
+test("callback serializes an absent selection as JSON null", async () => {
+  const response = await handleLocalBasketStateRequest(
+    attachLocalBasketCapability(
+      new Request("http://local-basket-state.internal/inventory", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ kind: "selection", selectionKey: "session" }),
+      }),
+      "container-owned-capability",
+    ),
+    {
+      idFromName: (ownerId: string) => ownerId,
+      get: () => ({ mutate: async () => undefined }),
+    },
+    async () => principalKey,
+  );
+
+  assert.equal(response.status, 200);
+  assert.equal(await response.json(), null);
+});
+
+test("Workers callback keeps an absent selection JSON-readable", async () => {
+  const response = await runWorkersSelection();
+
+  assert.equal(response.status, 200);
+  assert.equal(await response.text(), "null");
 });
 
 test("callback returns JSON-safe acknowledgements after committed deletion", async () => {
