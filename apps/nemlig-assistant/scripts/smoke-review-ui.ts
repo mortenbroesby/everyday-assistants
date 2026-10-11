@@ -296,7 +296,7 @@ document.getElementById('flow').onclick = async () => {
   await wait(()=>button('Add to Nemlig'));
   await fetch('/uncertain-next',{method:'POST'});
   click('Add to Nemlig');
-  await wait(()=>text().includes('We could not verify the addition'));
+  await wait(()=>text().includes('Inspect the actual Nemlig basket'));
   check(!button('Submit to Nemlig')&&!button('Add to Nemlig'),'Uncertain outcome allowed a retry');
   check((await fetch('/stats').then(r=>r.json())).basketWrites===0,'Synthetic uncertain path wrote the provider basket');
   status.textContent='PASS: unknown prices allow prepare, uncertain result blocks replay, provider basket writes 0';
