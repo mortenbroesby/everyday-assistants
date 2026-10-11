@@ -10,7 +10,7 @@ import { createMcpHandler } from "@modelcontextprotocol/server";
 import { toNodeHandler } from "@modelcontextprotocol/node";
 import { chromium } from "playwright";
 import { createMcpServer } from "../src/mcp.js";
-import type { Product, ShoppingClient } from "../src/client.js";
+import type { Basket, Product, ShoppingClient } from "../src/client.js";
 import { BasketProposalService } from "../src/proposals.js";
 import { handleLocalBasketStateRequest } from "../src/local-basket-callback.js";
 import {
@@ -29,7 +29,8 @@ const viewerGeneration = await readLocalViewerGeneration(
 );
 
 let basketReads = 0,
-  writes = 0;
+  directWrites = 0,
+  nativeTransfers = 0;
 let simulatedSubmissions = 0;
 let nextSubmissionStatus: "submitted" | "uncertain" = "submitted";
 let unknownPriceScenario = false;
@@ -38,8 +39,15 @@ const shoppingLists = new Map<
   number,
   { id: number; name: string; items: Map<number, number> }
 >();
+let currentBasket: Basket = {
+  items: [],
+  productsPrice: 0,
+  deliveryPrice: 0,
+  numberOfProducts: 0,
+  deliveryTime: "smoke",
+};
 const denied = async (): Promise<never> => {
-  writes++;
+  directWrites++;
   throw new Error("Provider basket write forbidden in this smoke");
 };
 const product = (id: number): Product => ({
@@ -98,13 +106,7 @@ const catalogue = {
   },
   getCart: async () => {
     basketReads++;
-    return {
-      items: [],
-      productsPrice: 0,
-      deliveryPrice: 0,
-      numberOfProducts: 0,
-      deliveryTime: "smoke",
-    };
+    return structuredClone(currentBasket);
   },
   addToCart: denied,
   createShoppingList: async (name: string) => {
@@ -141,6 +143,32 @@ const catalogue = {
       })),
     };
   },
+  addShoppingListToCart: async (listId: number) => {
+    const list = shoppingLists.get(listId);
+    if (!list) {
+      throw new Error("Synthetic shopping list is missing");
+    }
+    nativeTransfers++;
+    const items = [...list.items].map(([id, quantity]) => {
+      const view = product(id);
+      return {
+        id,
+        name: view.name,
+        quantity,
+        total: quantity * (view.price ?? 0),
+      };
+    });
+    currentBasket = {
+      ...currentBasket,
+      items: [...currentBasket.items, ...items],
+      productsPrice:
+        (currentBasket.productsPrice ?? 0) +
+        items.reduce((total, item) => total + (item.total ?? 0), 0),
+      numberOfProducts:
+        (currentBasket.numberOfProducts ?? 0) +
+        items.reduce((total, item) => total + item.quantity, 0),
+    };
+  },
 } as unknown as ShoppingClient;
 const proposalService = new BasketProposalService(catalogue);
 const uncertainProposals = {
@@ -150,7 +178,7 @@ const uncertainProposals = {
   prepareShoppingListAdditions: (
     ...args: Parameters<BasketProposalService["prepareShoppingListAdditions"]>
   ) => proposalService.prepareShoppingListAdditions(...args),
-  apply: async () => {
+  apply: async (...args: Parameters<BasketProposalService["apply"]>) => {
     simulatedSubmissions++;
     if (nextSubmissionStatus === "uncertain") {
       nextSubmissionStatus = "submitted";
@@ -158,19 +186,7 @@ const uncertainProposals = {
         "Synthetic ambiguous outcome; provider mutation is forbidden in this smoke.",
       );
     }
-    return {
-      status: "completed",
-      operation: "additions",
-      replayed: false,
-      verified_additions: 1,
-      basket: {
-        items: [],
-        products_price: 0,
-        delivery_price: undefined,
-        number_of_products: 0,
-        delivery_time: undefined,
-      },
-    };
+    return proposalService.apply(...args);
   },
 } as unknown as BasketProposalService;
 // Keep durable storage across MCP restarts, just as the owner Durable Object does.
@@ -327,21 +343,31 @@ document.getElementById('flow').onclick = async () => {
   click('Submit to Nemlig'); await wait(()=>button('Add to Nemlig basket'));
   check(widgetCalls.some(c=>c.arguments.action?.kind==='prepare_submission'),'Unknown price blocked preparation');
   check((await fetch('/stats').then(r=>r.json())).basketWrites===0,'Preparation reached a provider write');
-  await fetch('/reset',{method:'POST'}); await fetch('/unknown-price',{method:'POST'});
+  await fetch('/reset',{method:'POST'});
+  status.textContent='Checking confirmed provider-list transfer';
+  transcript=await call({name:'start_product_review',arguments:{items:[{product_id:2,quantity:1}]}});
+  initialized=false; frame.src='/viewer'; await wait(()=>initialized);
+  await wait(()=>title()==='Local basket'&&doc().querySelectorAll('.product-list article').length===1);
+  await wait(()=>button('Submit to Nemlig')&&!button('Submit to Nemlig').disabled);
+  click('Submit to Nemlig'); await wait(()=>button('Add to Nemlig basket'));
+  click('Add to Nemlig basket'); await wait(()=>button('Add to Nemlig'));
+  click('Add to Nemlig');
+  await wait(()=>widgetResults.some(result=>result.name==='submit_product_review'&&!result.isError));
+  const confirmedStats=await fetch('/stats').then(r=>r.json()); check(confirmedStats.basketWrites===0,'Confirmed submission used a direct provider basket write'); check(confirmedStats.nativeTransfers===1,'Confirmed submission did not transfer its provider shopping list');
+  await fetch('/reset',{method:'POST'});
   status.textContent='Checking uncertain submission block';
   transcript=await call({name:'start_product_review',arguments:{items:[{product_id:2,quantity:1}]}});
   initialized=false; frame.src='/viewer'; await wait(()=>initialized);
   await wait(()=>title()==='Local basket'&&doc().querySelectorAll('.product-list article').length===1);
   await wait(()=>button('Submit to Nemlig')&&!button('Submit to Nemlig').disabled);
   click('Submit to Nemlig'); await wait(()=>button('Add to Nemlig basket'));
-  click('Add to Nemlig basket');
-  await wait(()=>button('Add to Nemlig'));
   await fetch('/uncertain-next',{method:'POST'});
+  click('Add to Nemlig basket'); await wait(()=>button('Add to Nemlig'));
   click('Add to Nemlig');
   await wait(()=>button('Inspect Nemlig basket in conversation'));
   check(!button('Submit to Nemlig')&&!button('Add to Nemlig'),'Uncertain outcome allowed a retry');
-  check((await fetch('/stats').then(r=>r.json())).basketWrites===0,'Synthetic uncertain path wrote the provider basket');
-  status.textContent='PASS: unknown prices allow prepare, uncertain result blocks replay, provider basket writes 0';
+  const stats=await fetch('/stats').then(r=>r.json()); check(stats.basketWrites===0,'Synthetic uncertain path used a direct provider basket write');
+  status.textContent='PASS: unknown prices allow prepare, confirmed list transfer succeeds, uncertain result blocks replay, direct provider basket writes 0';
  } catch(error){status.textContent='FAIL: '+error.message+' | viewer: '+(doc()?.body?.innerText||'no iframe document')+' | widget calls: '+JSON.stringify(widgetCalls);} finally{run.disabled=false;}
 };
 document.getElementById('alternatives').onclick = async () => {
@@ -399,12 +425,20 @@ const server = createServer((req, res) => {
     if (req.url === "/reset" && req.method === "POST") {
       current = makeServer();
       basketReads = 0;
-      writes = 0;
+      directWrites = 0;
+      nativeTransfers = 0;
       simulatedSubmissions = 0;
       nextSubmissionStatus = "submitted";
       unknownPriceScenario = false;
       nextShoppingListId = 1;
       shoppingLists.clear();
+      currentBasket = {
+        items: [],
+        productsPrice: 0,
+        deliveryPrice: 0,
+        numberOfProducts: 0,
+        deliveryTime: "smoke",
+      };
       res.end("reset");
       return;
     }
@@ -422,9 +456,10 @@ const server = createServer((req, res) => {
       res.setHeader("content-type", "application/json");
       res.end(
         JSON.stringify({
-          providerBasketCalls: basketReads + writes,
+          providerBasketCalls: basketReads + directWrites + nativeTransfers,
           basketReads,
-          basketWrites: writes,
+          basketWrites: directWrites,
+          nativeTransfers,
           simulatedSubmissions,
         }),
       );
@@ -516,7 +551,7 @@ try {
         },
     ),
   );
-  if (stats.basketWrites !== 0 || writes !== 0) {
+  if (stats.basketWrites !== 0 || directWrites !== 0) {
     throw new Error(
       `Fake provider basket write boundary crossed: ${JSON.stringify(stats)}`,
     );
