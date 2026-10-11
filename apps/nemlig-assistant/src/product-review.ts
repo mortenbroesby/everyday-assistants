@@ -879,6 +879,23 @@ export class ProductReviewService {
     return structuredClone(snapshot);
   }
 
+  private storeNativeListReview(
+    owner: string,
+    accountIdentity: string,
+    list: ShoppingList,
+    snapshot: ProductReviewSnapshot,
+    operationGeneration?: string,
+  ): void {
+    this.drafts.set(owner, {
+      busy: false,
+      accountIdentity,
+      nativeFingerprint: shoppingListFingerprint(list),
+      nativeItems: list.items.map((item) => ({ ...item })),
+      ...(operationGeneration ? { operationGeneration } : {}),
+      snapshot,
+    });
+  }
+
   // Validate account, inventory, native identity, and rows before trusting a list ID.
   // fallow-ignore-next-line complexity
   async openShoppingList(
@@ -1013,14 +1030,13 @@ export class ProductReviewService {
             }
           : {}),
       };
-      this.drafts.set(owner, {
-        busy: false,
+      this.storeNativeListReview(
+        owner,
         accountIdentity,
-        nativeFingerprint: shoppingListFingerprint(list),
-        nativeItems: list.items.map((item) => ({ ...item })),
-        operationGeneration: operation.generation,
-        snapshot: recovered,
-      });
+        list,
+        recovered,
+        operation.generation,
+      );
       return structuredClone(recovered);
     }
     const snapshot: ProductReviewSnapshot = {
@@ -1096,13 +1112,7 @@ export class ProductReviewService {
           // Keep the durable fence unresolved when basket readback is inconclusive.
         }
       }
-      this.drafts.set(owner, {
-        busy: false,
-        accountIdentity,
-        nativeFingerprint: shoppingListFingerprint(list),
-        nativeItems: list.items.map((item) => ({ ...item })),
-        snapshot,
-      });
+      this.storeNativeListReview(owner, accountIdentity, list, snapshot);
       return structuredClone(snapshot);
     }
     if (
@@ -1153,13 +1163,7 @@ export class ProductReviewService {
       this.touch(owner, current);
       return structuredClone(current.snapshot);
     }
-    this.drafts.set(owner, {
-      busy: false,
-      accountIdentity,
-      nativeFingerprint: shoppingListFingerprint(list),
-      nativeItems: list.items.map((item) => ({ ...item })),
-      snapshot,
-    });
+    this.storeNativeListReview(owner, accountIdentity, list, snapshot);
     return structuredClone(snapshot);
   }
 

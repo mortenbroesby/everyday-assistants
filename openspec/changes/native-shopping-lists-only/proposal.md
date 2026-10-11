@@ -60,9 +60,11 @@ and network access. ChatGPT host metadata is optional convenience, never authori
 The long-term goal is one native shopping-list model from discovery through
 editing and submission, with no durable local-basket persistence. This PR
 checkpoint implements discovery, draft Save, staged Update, and durable
-Save/Update recovery. Local Basket storage retirement and shopping-list transfer
-remain separately gated. Temporary unsaved drafts remain. This plan does not
-authorize provider data mutation, deployment, or deletion of old user data.
+Save/Update recovery. The current draft branch also contains a saved-list
+submission path, but the concurrent-edit acceptance gate remains unresolved.
+Local Basket storage retirement and automatic source-list cleanup remain
+separately gated. Temporary unsaved drafts remain. This plan does not authorize
+provider data mutation, deployment, or deletion of old user data.
 
 ### Acceptance
 
@@ -93,9 +95,16 @@ authorize provider data mutation, deployment, or deletion of old user data.
 ### Delivery and existing work
 
 Implementation is continuing on PR #296's `codex/plan-native-shopping-lists`
-branch. Keep Local Basket namespace deletion and any transfer enabling out of
-this checkpoint. PR #294 is merged in main at `ea56ce3`; its cleanup behavior
-does not prove safe cleanup of a user-owned native shopping list.
+branch. Its submission path re-reads the exact source contents and basket
+baseline, sends one native list transfer, verifies additive basket readback,
+and retains a durable no-replay receipt. It keeps the source list after
+success. A provider-side edit between the final client read and transfer call
+is not excluded by those checks, so this draft does not satisfy the
+concurrent-edit gate in tasks 1.4 or 3.3 and must not merge as accepted. Keep
+automatic source deletion disabled unless Nemlig provides a conditional delete
+or equivalent race protection. PR #294 is merged in main at `ea56ce3`; its
+cleanup behavior does not prove safe cleanup of a user-owned native shopping
+list. Keep Local Basket namespace deletion separately gated.
 This change supersedes the unimplemented sections 2–3 of
 `provider-shopping-list-core-workspace`: its two-list design and mandatory
 workspace registry are rejected. Its shipped list-only submission safeguard and

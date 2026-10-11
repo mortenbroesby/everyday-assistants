@@ -442,7 +442,10 @@ test("native-list submit uses the same list and verifies additive basket readbac
   const list = {
     id: 44,
     name: "Family",
-    items: [{ productId: 7, quantity: 1 }],
+    items: [
+      { productId: 7, quantity: 1 },
+      { productId: 8, quantity: 2 },
+    ],
   };
   const baseline: Basket = {
     items: [
@@ -479,11 +482,12 @@ test("native-list submit uses the same list and verifies additive basket readbac
       basket = {
         ...baseline,
         items: [
+          { id: 8, name: "Pære", quantity: 2, total: 8 },
           { id: 7, name: "Banan", quantity: 3, total: 7.5 },
           { id: 99, name: "Existing", quantity: 1, total: 6 },
         ],
-        productsPrice: 13.5,
-        numberOfProducts: 4,
+        productsPrice: 21.5,
+        numberOfProducts: 6,
       };
     },
   });
@@ -491,7 +495,10 @@ test("native-list submit uses the same list and verifies additive basket readbac
   const result = await service.transferNativeShoppingList(
     44,
     shoppingListFingerprint(list),
-    [{ product_id: 7, quantity: 1 }],
+    [
+      { product_id: 7, quantity: 1 },
+      { product_id: 8, quantity: 2 },
+    ],
     baseline,
     async () => {
       events.push("durable-fence");
@@ -499,7 +506,15 @@ test("native-list submit uses the same list and verifies additive basket readbac
   );
 
   assert.equal(result.status, "completed");
-  assert.equal(result.basket.number_of_products, 4);
+  assert.equal(result.basket.number_of_products, 6);
+  assert.deepEqual(
+    result.basket.items.map(({ id, quantity }) => [id, quantity]),
+    [
+      [8, 2],
+      [7, 3],
+      [99, 1],
+    ],
+  );
   assert.deepEqual(events, [
     "list-read:44",
     "basket-read",
