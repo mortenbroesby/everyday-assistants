@@ -24,6 +24,7 @@
     { "name": "Session" },
     { "name": "Catalogue" },
     { "name": "Basket" },
+    { "name": "Shopping lists" },
     { "name": "Website" }
   ],
   "x-nemlig": {
@@ -444,6 +445,121 @@
         },
         "responses": {
           "200": { "description": "Mutation accepted; exact basket state is not established by this response." },
+          "default": { "$ref": "#/components/responses/ProviderError" }
+        }
+      }
+    },
+    "/webapi/basket/addShoppingListToBasket": {
+      "post": {
+        "operationId": "addShoppingListToBasket",
+        "tags": ["Basket", "Shopping lists"],
+        "summary": "Add one provider shopping list to the current basket",
+        "description": "Adds the list through Nemlig's native shopping-list flow. Nemlig Assistant uses this only for an exact, freshly read-back, explicitly authorized list and verifies the basket afterwards.",
+        "security": [{ "bearerAuth": [] }, { "cookieAuth": [] }],
+        "x-nemlig": {
+          "usage": "client-used",
+          "confidence": "high",
+          "safety": "assistant-add-only-exact-authorized-list-with-readback",
+          "evidence": ["NemligClient.addShoppingListToCart", "authenticated provider transfer probe 2026-10-11"]
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["ListId", "ConfirmMissingProducts"],
+                "properties": {
+                  "ListId": { "type": "integer", "minimum": 1 },
+                  "ConfirmMissingProducts": { "const": false }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Transfer accepted; GetBasket readback establishes the outcome." },
+          "default": { "$ref": "#/components/responses/ProviderError" }
+        }
+      }
+    },
+    "/webapi/ShoppingList/getShoppingList": {
+      "get": {
+        "operationId": "getShoppingList",
+        "tags": ["Shopping lists"],
+        "summary": "Get one provider shopping list",
+        "security": [{ "bearerAuth": [] }, { "cookieAuth": [] }],
+        "x-nemlig": {
+          "usage": "client-used",
+          "confidence": "high",
+          "safety": "personal-data-read",
+          "evidence": ["NemligClient.getShoppingList", "authenticated provider transfer probe 2026-10-11"]
+        },
+        "parameters": [{ "name": "listId", "in": "query", "required": true, "schema": { "type": "integer", "minimum": 1 } }],
+        "responses": {
+          "200": { "description": "Shopping-list record; only product IDs and quantities are consumed." },
+          "default": { "$ref": "#/components/responses/ProviderError" }
+        }
+      }
+    },
+    "/webapi/ShoppingList/CreateShoppingList": {
+      "post": {
+        "operationId": "createShoppingList",
+        "tags": ["Shopping lists"],
+        "summary": "Create a temporary provider shopping list",
+        "security": [{ "bearerAuth": [] }, { "cookieAuth": [] }],
+        "x-nemlig": {
+          "usage": "client-used",
+          "confidence": "high",
+          "safety": "provider-list-write-no-real-basket-mutation",
+          "evidence": ["NemligClient.createShoppingList", "authenticated provider transfer probe 2026-10-11"]
+        },
+        "parameters": [{ "name": "name", "in": "query", "required": true, "schema": { "type": "string", "minLength": 1, "maxLength": 30 } }],
+        "responses": {
+          "200": { "description": "Provider list identifier." },
+          "default": { "$ref": "#/components/responses/ProviderError" }
+        }
+      }
+    },
+    "/webapi/ShoppingList/UpdateProductInShoppingList": {
+      "post": {
+        "operationId": "updateShoppingListProduct",
+        "tags": ["Shopping lists"],
+        "summary": "Set one product quantity on a provider shopping list",
+        "security": [{ "bearerAuth": [] }, { "cookieAuth": [] }],
+        "x-nemlig": {
+          "usage": "client-used",
+          "confidence": "high",
+          "safety": "provider-list-write-no-real-basket-mutation",
+          "evidence": ["NemligClient.updateShoppingListProduct", "authenticated provider transfer probe 2026-10-11"]
+        },
+        "parameters": [
+          { "name": "listId", "in": "query", "required": true, "schema": { "type": "integer", "minimum": 1 } },
+          { "name": "productId", "in": "query", "required": true, "schema": { "type": "integer", "minimum": 1 } },
+          { "name": "amount", "in": "query", "required": true, "schema": { "type": "integer", "minimum": 0 } }
+        ],
+        "responses": {
+          "200": { "description": "Update accepted; subsequent getShoppingList verifies exact contents." },
+          "default": { "$ref": "#/components/responses/ProviderError" }
+        }
+      }
+    },
+    "/webapi/ShoppingList/RemoveShoppingList": {
+      "post": {
+        "operationId": "removeShoppingList",
+        "tags": ["Shopping lists"],
+        "summary": "Remove a provider shopping list",
+        "description": "Available for cleanup of an unsubmitted temporary list. It must never be used against the real basket.",
+        "security": [{ "bearerAuth": [] }, { "cookieAuth": [] }],
+        "x-nemlig": {
+          "usage": "client-used",
+          "confidence": "high",
+          "safety": "provider-list-cleanup-no-real-basket-mutation",
+          "evidence": ["NemligClient.deleteShoppingList", "authenticated provider transfer probe 2026-10-11"]
+        },
+        "parameters": [{ "name": "listId", "in": "query", "required": true, "schema": { "type": "integer", "minimum": 1 } }],
+        "responses": {
+          "200": { "description": "List removal accepted." },
           "default": { "$ref": "#/components/responses/ProviderError" }
         }
       }

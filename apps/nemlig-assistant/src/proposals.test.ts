@@ -241,6 +241,200 @@ test("real client applies multiple reviewed lines sequentially and preserves unr
   assert.equal(result.basket.number_of_products, 6);
 });
 
+test("provider shopping-list submission transfers a 38-item review once", async () => {
+  const products = Array.from({ length: 38 }, (_, index) => ({
+    ...product,
+    id: index + 1,
+    name: `Product ${index + 1}`,
+  }));
+  let transfers = 0;
+  let basket = emptyBasket();
+  const list = {
+    id: 44,
+    name: "Nemlig Assistant test",
+    items: products.map((item) => ({ productId: item.id!, quantity: 1 })),
+  };
+  const client = {
+    getProduct: async (id: number) => products.find((item) => item.id === id)!,
+    getFreshProduct: async (id: number) =>
+      products.find((item) => item.id === id)!,
+    getCart: async () => structuredClone(basket),
+    addToCart: async () => {
+      throw new Error(
+        "Direct basket writes must not be used for a list transfer.",
+      );
+    },
+    createShoppingList: async () => structuredClone(list),
+    updateShoppingListProduct: async () => undefined,
+    getShoppingList: async () => structuredClone(list),
+    addShoppingListToCart: async () => {
+      transfers += 1;
+      basket = {
+        items: products.map((item) => ({
+          id: item.id,
+          name: item.name,
+          quantity: 1,
+          total: item.price,
+        })),
+        productsPrice: products.length * (product.price ?? 0),
+        deliveryPrice: 0,
+        numberOfProducts: products.length,
+        deliveryTime: undefined,
+      };
+    },
+  };
+  const service = new BasketProposalService(client);
+  const prepared = await service.prepareShoppingListAdditions(
+    "connection",
+    list.items.map(({ productId, quantity }) => ({
+      product_id: productId,
+      quantity,
+    })),
+    list.name,
+    { kind: "exact_review" },
+  );
+
+  const result = await service.apply(
+    "connection",
+    prepared.proposal_id,
+    "additions",
+  );
+
+  assert.equal(transfers, 1);
+  assert.equal(result.basket.number_of_products, 38);
+});
+
+test("provider shopping-list preparation rejects a changed list before reviewing it", async () => {
+  let productReads = 0;
+  const service = new BasketProposalService({
+    getProduct: async () => {
+      productReads += 1;
+      return product;
+    },
+    getFreshProduct: async () => {
+      productReads += 1;
+      return product;
+    },
+    getCart: async () => emptyBasket(),
+    addToCart: async () => emptyBasket(),
+    createShoppingList: async () => ({
+      id: 44,
+      name: "Nemlig Assistant test",
+      items: [],
+    }),
+    updateShoppingListProduct: async () => undefined,
+    getShoppingList: async () => ({
+      id: 44,
+      name: "Nemlig Assistant test",
+      items: [
+        { productId: 1, quantity: 1 },
+        { productId: 2, quantity: 1 },
+      ],
+    }),
+    addShoppingListToCart: async () => undefined,
+  });
+
+  await assert.rejects(
+    service.prepareShoppingListAdditions(
+      "connection",
+      [{ product_id: 1, quantity: 1 }],
+      "Nemlig Assistant test",
+      { kind: "exact_review" },
+    ),
+    /Provider-list contents changed/u,
+  );
+  assert.equal(productReads, 1);
+});
+
+test("provider shopping-list transfer rejects an unexpected final basket line", async () => {
+  let transfers = 0;
+  let basket = emptyBasket();
+  const list = {
+    id: 44,
+    name: "Nemlig Assistant test",
+    items: [{ productId: 1, quantity: 1 }],
+  };
+  const service = new BasketProposalService({
+    getProduct: async () => ({ ...product, id: 1 }),
+    getFreshProduct: async () => ({ ...product, id: 1 }),
+    getCart: async () => structuredClone(basket),
+    addToCart: async () => {
+      throw new Error(
+        "Direct basket writes must not be used for a list transfer.",
+      );
+    },
+    createShoppingList: async () => structuredClone(list),
+    updateShoppingListProduct: async () => undefined,
+    getShoppingList: async () => structuredClone(list),
+    addShoppingListToCart: async () => {
+      transfers += 1;
+      basket = {
+        ...emptyBasket(),
+        items: [
+          { id: 1, name: "Product", quantity: 1, total: 1 },
+          { id: 99, name: "Unexpected", quantity: 1, total: 1 },
+        ],
+        numberOfProducts: 1,
+      };
+    },
+  });
+  const prepared = await service.prepareShoppingListAdditions(
+    "connection",
+    [{ product_id: 1, quantity: 1 }],
+    list.name,
+    { kind: "exact_review" },
+  );
+
+  await assert.rejects(
+    service.apply("connection", prepared.proposal_id, "additions"),
+    /Basket may have changed/u,
+  );
+  assert.equal(transfers, 1);
+});
+
+test("provider shopping-list preparation skips unavailable products before list creation", async () => {
+  const items = new Map<number, number>();
+  const service = new BasketProposalService({
+    getProduct: async (id) => ({ ...product, id, available: id !== 1 }),
+    getFreshProduct: async (id) => ({ ...product, id, available: id !== 1 }),
+    getCart: async () => emptyBasket(),
+    addToCart: async () => emptyBasket(),
+    createShoppingList: async () => ({
+      id: 44,
+      name: "Nemlig Assistant test",
+      items: [],
+    }),
+    updateShoppingListProduct: async (_listId, productId, quantity) => {
+      items.set(productId, quantity);
+    },
+    getShoppingList: async () => ({
+      id: 44,
+      name: "Nemlig Assistant test",
+      items: [...items].map(([productId, quantity]) => ({
+        productId,
+        quantity,
+      })),
+    }),
+    addShoppingListToCart: async () => undefined,
+  });
+
+  const prepared = await service.prepareShoppingListAdditions(
+    "connection",
+    [
+      { product_id: 1, quantity: 1 },
+      { product_id: 2, quantity: 1 },
+    ],
+    "Nemlig Assistant test",
+    { kind: "exact_review" },
+    { freshProducts: true },
+  );
+
+  assert.deepEqual([...items], [[2, 1]]);
+  assert.deepEqual(prepared.review.skipped_products, [
+    { product_id: 1, name: product.name },
+  ]);
+});
+
 test("real client continues when only an existing basket price changes before a write", async () => {
   const fixture = httpProposalFixture(basketWithExistingProducts(), {
     onBasketRead: (read, basket) => {

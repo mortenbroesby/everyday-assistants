@@ -198,6 +198,80 @@ test("metadata heartbeat preserves a fresh exact prepared submission", async () 
   assert.equal(f.state.providerCalls, 1);
 });
 
+test("durable preparation builds and verifies one provider shopping list", async () => {
+  const f = await fixture();
+  const calls: string[] = [];
+  const items = new Map<number, number>();
+  const service = new ProductReviewService(
+    {
+      getProduct: async (id) => product(id),
+      searchProducts: async () => [product(3)],
+      createShoppingList: async () => {
+        calls.push("create");
+        return { id: 17, name: "Nemlig Assistant", items: [] };
+      },
+      updateShoppingListProduct: async (_listId, productId, quantity) => {
+        calls.push(`update:${productId}:${quantity}`);
+        items.set(productId, quantity);
+      },
+      getShoppingList: async () => {
+        calls.push("read");
+        return {
+          id: 17,
+          name: "Nemlig Assistant",
+          items: [...items].map(([productId, quantity]) => ({
+            productId,
+            quantity,
+          })),
+        };
+      },
+    },
+    {
+      proposals: {
+        prepareAdditions: async () => {
+          throw new Error("Direct additions must not prepare this workflow.");
+        },
+        prepareShoppingListAdditions: async (_owner, expectedItems, name) => {
+          assert.equal(name.startsWith("Nemlig Assistant"), true);
+          assert.deepEqual(expectedItems, [
+            { product_id: 1, quantity: 2 },
+            { product_id: 2, quantity: 1 },
+          ]);
+          calls.push("prepare-list");
+          return {
+            applicable: true,
+            proposal_id: "provider-list-proposal",
+            operation: "additions",
+            connection_bound: true,
+            issued_at: new Date().toISOString(),
+            expires_at: new Date(Date.now() + 60_000).toISOString(),
+            basket_fingerprint: "fixture",
+            review: {},
+          };
+        },
+        apply: async () => verified,
+      },
+    },
+  );
+  const created = await service.createBasket(
+    "owner",
+    [
+      { product_id: 1, quantity: 2 },
+      { product_id: 2, quantity: 1 },
+    ],
+    f.repository,
+  );
+
+  const prepared = await service.prepareBasket(
+    "owner",
+    created.review.basketId!,
+    f.repository,
+  );
+
+  assert.equal(prepared.submission?.status, "prepared");
+  assert.deepEqual(calls, ["prepare-list"]);
+});
+
 test("durable fence precedes provider execution and heartbeat cannot prevent success cleanup", async () => {
   const f = await fixture();
   const prepared = await f.prepare();

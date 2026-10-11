@@ -1,6 +1,6 @@
 {
   "name": "nemlig-assistant",
-  "version": "6.2.6",
+  "version": "6.3.0",
   "private": true,
   "description": "Safe local Nemlig Assistant CLI and MCP server",
   "type": "module",
@@ -107,6 +107,6 @@
     "wrangler": "4.127.1"
   },
   "nemligRelease": {
-    "codename": "Meadow"
+    "codename": "Marigold"
   }
 }

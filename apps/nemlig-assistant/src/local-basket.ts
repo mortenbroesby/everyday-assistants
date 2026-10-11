@@ -491,7 +491,11 @@ export type LocalBasketCommand =
   | { kind: "list" }
   | { kind: "selection"; selectionKey: string }
   | { kind: "read"; basketId: string }
-  | { kind: "create"; lines: LocalBasketLine[]; selectionKey?: string }
+  | {
+      kind: "create";
+      lines: LocalBasketLine[];
+      selectionKey?: string;
+    }
   | { kind: "select" | "heartbeat"; basketId: string; selectionKey?: string }
   | { kind: "delete"; basketId: string }
   | {
