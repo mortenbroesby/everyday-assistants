@@ -1,29 +1,32 @@
 ## MODIFIED Requirements
 
 ### Requirement: Shared private product review
-Conversation and touch SHALL share temporary candidate review state scoped to
-the principal and conversation. Accepted products SHALL be stored in the selected
-native shopping list. Accepting, changing quantity, replacing or removing saved
-items SHALL update that list with verified readback, never the actual basket.
+Conversation and touch SHALL share an unsaved draft scoped to the principal and
+conversation. Accepting or editing draft items SHALL remain temporary until
+explicit Save as shopping list. After saving, the same UI SHALL read/edit native
+list contents with verified readback, without a durable editable local mirror.
+Neither draft edits, saving nor saved-list edits SHALL change the actual basket.
 
 #### Scenario: Accept some products
-- **WHEN** exact candidate products are accepted
-- **THEN** they are saved to the selected shopping list and unresolved suggestions
-  remain temporary, without changing the Nemlig basket
+- **WHEN** exact candidate products are accepted in an unsaved draft
+- **THEN** they remain in the unsaved draft until explicit Save; accepting alone
+  creates no native list and changes no Nemlig basket
 
 #### Scenario: Sequential or foreign action
-- **WHEN** a card changes its named list or a foreign principal attempts access
-- **THEN** authorized actions are serialized for that account/list and foreign
-  actions fail without mutation
+- **WHEN** a card targets its exact live draft/native list or a foreign principal attempts access
+- **THEN** authorized actions are serialized for their target and foreign or stale
+  actions fail without mutation or retargeting
 
 #### Scenario: Draft lifetime ends
-- **WHEN** temporary suggestions are lost after finish, restart or memory eviction
-- **THEN** saved shopping-list contents remain on Nemlig; no list is recreated
+- **WHEN** an unsaved draft is lost after inactivity, finish, restart or memory eviction
+- **THEN** unsaved products disappear, saved shopping-list contents remain on
+  Nemlig, and neither a draft nor a list is silently recreated
 
 ### Requirement: Contextual alternatives and reversible navigation
 The system SHALL offer alternatives for an identified candidate or saved item,
 preserve product details and cancellation, and allow returning without changes.
-Only explicit acceptance/replacement SHALL write a native list. Temporary
+Before Save, acceptance/replacement SHALL edit only the draft. After Save,
+explicit accepted edits SHALL write the selected native list. Temporary
 alternative results SHALL remain available during navigation while their target
 and observed list state are still current.
 
@@ -37,10 +40,11 @@ and observed list state are still current.
   requires refreshing them
 
 ### Requirement: Explicit protected submission
-Only exact accepted products SHALL be submitted through the protected review,
+Only exact explicitly approved saved-list products SHALL be submitted through the protected review,
 authorization, single-use native transfer and additive basket-readback flow.
-Any changed list contents SHALL invalidate prepared approval. Unresolved
-suggestions SHALL never be implicitly submitted. Successful submission SHALL
+Any changed list contents SHALL invalidate prepared approval. Saving draft ideas
+SHALL NOT imply submission approval; temporary candidates SHALL never be implicitly
+submitted. An unsaved draft SHALL offer explicit Save before preparing submission. Successful submission SHALL
 consume the eligible corresponding list subject to safe cleanup; cleanup
 uncertainty SHALL not invalidate verified basket success.
 
@@ -61,7 +65,7 @@ uncertainty SHALL not invalidate verified basket success.
 ### Requirement: Active conversation selection
 Each conversation SHALL have an optional native shopping-list reference. Multiple
 conversations for the same connected account SHALL be allowed to explicitly choose
-the same list, while suggestions and approval authority remain conversation-bound.
+the same list, while unsaved drafts, alternative candidates and approval authority remain conversation-bound.
 Saved lists SHALL have no assistant TTL. Closing or finishing the review SHALL
 clear transient state without deleting a list; explicit list deletion is separate.
 
@@ -79,19 +83,20 @@ clear transient state without deleting a list; explicit list deletion is separat
 - **THEN** native lists remain available and no prior submission approval is restored
 
 #### Scenario: A host retains a card after the Draft list is lost
-- **WHEN** an old card targets a deleted native list or retired local ID
+- **WHEN** an old card targets an expired unsaved draft, deleted native list or retired local ID
 - **THEN** it performs no mutation and shows selection recovery; an uncertain
   prior submission directs the user to inspect the actual basket
 
 ### Requirement: Persistent local review interaction
-Current supported cards SHALL target explicit native shopping-list IDs for saved
-mutations and SHALL render correlated current results. Delayed passive snapshots
-SHALL NOT overwrite a confirmed newer result. Remount SHALL read current provider
-state and SHALL NOT grant authority from cached snapshots. Retired bundles and
+Current supported cards SHALL distinguish an exact process-local draft target
+from a native shopping-list ID. They SHALL reuse the existing draft product UI
+for both states and SHALL render correlated current results. Delayed passive snapshots
+SHALL NOT overwrite a confirmed newer result. Remount SHALL resolve current transient state for a draft or read current
+provider state for a saved list; it SHALL NOT grant authority from cached snapshots. Retired bundles and
 local-ID actions SHALL fail closed without reinterpreting their target.
 
 #### Scenario: Local change returns a correlated result
-- **WHEN** a supported action returns a verified list snapshot
+- **WHEN** a supported action returns its current draft or verified native-list snapshot
 - **THEN** the mounted card renders it without an unnecessary second write or read
 
 #### Scenario: Delayed passive snapshot follows a local action
@@ -100,7 +105,8 @@ local-ID actions SHALL fail closed without reinterpreting their target.
 
 #### Scenario: A supported card is remounted
 - **WHEN** a current card remounts
-- **THEN** it resolves its native list and reads current contents without creating a list
+- **THEN** it resolves the correct draft/native target and shows current contents or
+  expiry without implicitly creating, saving or restoring a list
 
 #### Scenario: Confirm exact submission in the viewer
 - **WHEN** the user confirms an unchanged exact review
@@ -108,28 +114,31 @@ local-ID actions SHALL fail closed without reinterpreting their target.
   merely opening the review makes no basket write
 
 ### Requirement: To decide and Ready refinement
-To decide SHALL contain temporary suggestions. Ready SHALL mean accepted products
-in the one selected native shopping list, not another saved list. Explicitly
-reconsidering a saved item SHALL remove it from that list with readback and place
-it in temporary suggestions. Saved products SHALL remain independently submittable.
+To decide and Ready SHALL be temporary draft review hints, not persistence
+boundaries or native lists. Save SHALL persist the displayed draft product rows
+and quantities without persisting these flags or granting basket authority.
+Reopened native lists SHALL show their actual products in the reused draft UI.
+Merely reconsidering or opening alternatives for a saved item SHALL NOT remove it;
+only an explicit edit SHALL change saved contents. Submission SHALL review and
+authorize exact saved products independently of former draft review hints.
 
 #### Scenario: Select and accept in one action
-- **WHEN** the user accepts selected candidates
-- **THEN** exactly those products are saved and verified in the selected list;
-  merely selecting rows or opening details does not mutate provider state
+- **WHEN** the user accepts selected candidates in an unsaved draft
+- **THEN** their temporary draft review state changes; accepting, selecting rows or
+  opening details alone does not save the draft or mutate provider state
 
 #### Scenario: Reconsider a Ready product
 - **WHEN** the user explicitly reconsiders a saved item
-- **THEN** its verified removal invalidates submission approval and it becomes
-  temporary; alternatives are also available directly for saved items
+- **THEN** the existing item remains saved while alternatives are inspected; an
+  explicit replacement/removal invalidates approval and requires native readback
 
 #### Scenario: Remove all Ready products
-- **WHEN** the user confirms clearing the selected shopping list
-- **THEN** its exact targeted contents are removed and read back, temporary
-  suggestions remain, and the actual Nemlig basket is unchanged
+- **WHEN** the user confirms clearing draft Ready items or the selected shopping list
+- **THEN** the action changes only its target: draft state locally, or native contents
+  with readback; unrelated suggestions and the actual basket remain unchanged
 
 #### Scenario: Empty and completed workspace
-- **WHEN** the native list is empty or submission completes
+- **WHEN** the draft/native list is empty or submission completes
 - **THEN** the UI shows appropriate starting or success actions; uncertainty
   never offers automatic submission retry
 
@@ -140,13 +149,15 @@ it in temporary suggestions. Saved products SHALL remain independently submittab
 ### Requirement: Distinct Draft list and Nemlig basket names
 Shopper-facing UI, guidance and errors SHALL call native saved selections
 Shopping lists or Shopping list, using their actual list names where useful.
-Nemlig basket SHALL refer only to the actual basket. Review and To decide SHALL
-refer to temporary decisions, not another durable product store.
+Before saving, the UI SHALL say Unsaved draft and offer Save as shopping list.
+After saving, it SHALL use the native list name and distinguish Saved to Nemlig
+from adding to the Nemlig basket. Nemlig basket SHALL refer only to the actual
+basket. Draft, Review and To decide SHALL NOT promise durable storage.
 
 #### Scenario: User inspects local choices
-- **WHEN** the user opens saved choices
-- **THEN** the UI and agent describe the selected Shopping list and disclose
-  that its edits are saved to Nemlig
+- **WHEN** the user opens a draft or saved choices
+- **THEN** the UI and agent distinguish an Unsaved draft that can disappear from a
+  native Shopping list whose edits are saved to Nemlig
 
 #### Scenario: User inspects provider state
 - **WHEN** the user asks about the actual basket or a transfer is uncertain

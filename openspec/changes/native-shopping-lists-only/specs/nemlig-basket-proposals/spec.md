@@ -1,7 +1,9 @@
 ## ADDED Requirements
 
 ### Requirement: Native source submission and cleanup
-Submission SHALL bind the connected account, source list ID, exact approved
+Save as shopping list SHALL NOT grant basket authority. Unsaved drafts SHALL
+require explicit saving before submission preparation. Submission SHALL bind
+the connected account, source list ID, exact approved
 contents, current basket baseline and conversation authority. It SHALL perform
 at most one native transfer, with no per-product fallback. It SHALL reject changed
 source content before dispatch. Automatic cleanup SHALL delete only the eligible

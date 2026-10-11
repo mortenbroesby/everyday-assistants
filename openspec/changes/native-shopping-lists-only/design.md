@@ -1,7 +1,6 @@
 ## Context
 
-See proposal.md. Inspected main `70d2948` and the separately reviewed PR #294
-head `3272efc`. Current `client.ts` already has native create/read/update/delete,
+See proposal.md. Baseline refreshed to main `ea56ce3`, including merged PR #294. Current `client.ts` already has native create/read/update/delete,
 account identity and list-to-basket transfer. It has no account list enumeration.
 `product-review.ts` still routes saved content through `LocalBasketRepository`.
 `local-basket.ts` owns IDs, revisions, 24-hour expiry, eviction and submission
@@ -13,7 +12,7 @@ forwards container callbacks to that storage. These are removal targets.
 
 **Goals:** use native identity and native content, keep the current useful
 product controls, and preserve the smallest independent submission safeguard.
-**Non-goals:** generic storage interfaces, a new database, offline drafts,
+**Non-goals:** generic storage interfaces, a new database, durable/offline drafts,
 background synchronization, dual writes, or a permanent compatibility layer.
 
 ## Decisions
@@ -40,16 +39,66 @@ DO is needed for selection, identity, list names or list content. Multiple chats
 may explicitly choose the same account list; their review and approval state
 remain separate. A credential/account switch invalidates selection and authority.
 
-### Accepted products are saved; suggestions are temporary
+### Ideate first; explicitly save the draft
 
-Default product choice for review: one saved native list contains accepted
-products; To decide and alternative candidates are transient conversation state.
-Reopening recovers saved items only. Losing transient suggestions does not affect
-the list. The picker is titled Shopping lists; the selected view uses its native
-name. Details, left-swipe controls, delete, alternatives and compact quantity
-controls remain. Finish/close exits the view; only a clearly named Delete shopping
-list action deletes provider content. Reconsidering a saved item explicitly
-removes it from the native list before making it a temporary suggestion.
+Start with the existing draft UI backed by owner/conversation-scoped process
+memory. Label it Unsaved draft and offer Save as shopping list. Ideating a list,
+accepting products, changing quantities, removing rows, viewing details and
+choosing alternatives do not create a provider list. Product discovery can still
+read Nemlig; the draft is not an offline product catalogue.
+
+Save as shopping list stores the current displayed draft product rows and exact
+quantities, not just items marked Ready and not the separate alternatives search
+results. To decide/Ready are temporary review hints, not a second native list or
+an implied approval to buy. Resolve any non-product ideas into exact catalogue
+items before saving; never silently drop unresolved text or unavailable lines.
+Show the intended list name and saved contents. Saving does not authorize a
+basket transfer. Submission starts from a saved list and still requires the
+separate exact basket review; asking to submit an unsaved draft offers Save as
+shopping list first, without silently saving or transferring it.
+
+Serialize Save for the exact current draft revision. Create one native list,
+retain its returned ID during the operation, populate it and verify exact
+readback. Only then switch that draft's view to the native list and discard its
+editable local copy. Disable/reject duplicate in-flight Save actions; a repeated
+Save for an already saved live draft opens its known native list. Do not maintain
+a durable draft-to-list identity registry. If creation or population times out,
+keep the draft while its session exists, show partial/uncertain save status and
+inspect the known list ID or refresh the inventory. Never automatically create
+another list, replay uncertain writes, delete a partially created list, or claim
+saving was atomic. If the process loses the draft/returned ID, offer inventory
+inspection; do not infer identity from a duplicate name. A stale draft action
+cannot save a replacement draft after restart or expiry.
+
+Unsaved drafts have bounded, process-local memory only. They may disappear on
+restart, closing/ending the draft, eviction or inactivity. An implementation
+constant will define the idle interval; no exact duration is promised by this
+plan. Only explicit draft interaction renews activity, not passive renders,
+background refresh or heartbeat. Use clock-based expiry checks and existing
+bounded memory management, not Durable Object alarms or a durable draft store.
+An active bounded Save pins its draft until the operation settles; inactivity
+must not discard the products midway through that operation. On expiry, cached
+cards report Unsaved draft expired and never reconstruct or replay their data.
+
+### Reuse one product UI for drafts and saved lists
+
+Reuse the existing draft rows, details, swipe actions, trash, alternatives and
+compact quantity controls. The backing target determines whether an action edits
+transient draft state or a native list; do not duplicate the viewer or maintain a
+local editable mirror of a saved list. Keep distinct, validated action targets:
+an opaque process-local draft reference versus an account-scoped native list ID.
+The draft reference exists only to reject stale actions; it is not a saved basket
+identity. An expired draft reference must never resolve to a newer draft or list.
+
+Shopping lists opens all accessible provider lists, including those created in
+Nemlig itself. Selecting any list renders its contents in this same product UI
+using its native name and a Saved to Nemlig state. Edits there write/read back the
+native list. Save as shopping list is shown for unsaved drafts, not as a copy
+button for already saved lists. Navigating back to the picker does not save a
+draft or delete a saved list. Closing/finishing clears temporary state; only
+explicit Delete shopping list or eligible post-submission cleanup deletes native
+content. Saved lists have no inactivity expiry. Reconsidering or viewing
+alternatives for a saved item does not remove it until an explicit edit does so.
 
 ### Direct edits with fresh reads and truthful outcomes
 
@@ -134,13 +183,13 @@ All paths below are under `apps/nemlig-assistant/` unless qualified.
 
 | Surface | Planned result |
 | --- | --- |
-| `src/local-basket.ts`, `src/local-basket-storage.ts` and dedicated tests | Delete domain inventory, line persistence, TTL, alarms, heartbeat and eviction; move only meaningful safety tests to the new path. |
+| `src/local-basket.ts`, `src/local-basket-storage.ts` and dedicated tests | Delete durable domain inventory, line persistence, TTL, alarms, heartbeat and eviction; preserve bounded transient draft state; move only meaningful safety tests to the new path. |
 | `src/local-basket-callback.ts`, `src/local-basket-capability.ts` and tests | Remove inventory callback protocol; retain only proven authentication mechanics needed by narrow receipt transport. |
 | `src/cloudflare-worker.ts`, `wrangler.jsonc` | Remove `OwnerLocalBasketStorage`, its binding in both environments, capability inventory routing and associated config expectations; preserve Container/auth/kill switch. |
-| `src/mcp.ts`, HTTP context plumbing, `src/product-review.ts` | Remove `LocalBasketRepository`, durable/legacy branches and local inventory calls; direct native list operations plus transient review state. |
+| `src/mcp.ts`, HTTP context plumbing, `src/product-review.ts` | Remove `LocalBasketRepository`, durable/legacy branches and local inventory calls; explicit transient draft/save/native-list states, without a durable draft repository. |
 | `src/client.ts`, `src/proposals.ts` | Reuse endpoints and approval/readback logic; add validated enumeration and native-source preparation; retain #294 cleanup semantics where safe. |
-| `src/picker/`, Storybook, UI parsers and smoke fixtures | Use shopping-list identity/names, all-list picker and current swipe/details controls; update correlated-result and stale-card tests. |
-| `README.md`, `BACKLOG.md`, connector/tool guidance, plugin sources, acceptance scripts and OpenSpec | Rename user concepts, remove credential-free/offline/local TTL promises; align tool annotations and contract inventories. |
+| `src/picker/`, Storybook, UI parsers and smoke fixtures | Reuse the draft UI for both target types, with Unsaved/Save and native-list states plus all-list picker; update correlated-result and stale-card tests. |
+| `README.md`, `BACKLOG.md`, connector/tool guidance, plugin sources, acceptance scripts and OpenSpec | Distinguish unsaved drafts from native lists; remove durable/offline draft and native-list TTL promises; align tool annotations and contract inventories. |
 
 Search actual callers and exports before deletion. Historical migration tags,
 archived specs and test descriptions may name retired code; active runtime imports,
@@ -149,8 +198,11 @@ contracts unless a demonstrated caller requires a scoped change.
 
 ## Risks / Trade-offs
 
-- [Provider outage] → saved lists remain on Nemlig but edits are unavailable;
-  no local fallback or queued write that may later surprise the user.
+- [Provider outage] → saved lists remain on Nemlig but Save and native edits are
+  unavailable; the current transient draft remains while its session lives.
+  No local saved-list fallback or queued write runs later.
+- [Abandoned ideas] → show Unsaved draft and Save as shopping list clearly;
+  inactivity may discard only unsaved state, never native shopping lists.
 - [External edits during review/cleanup] → stale rejection, isolated exact
   submission where necessary, and conditional cleanup gate described above.
 - [Two chats choose the same list] → explicit selection is allowed, content is
@@ -163,10 +215,10 @@ contracts unless a demonstrated caller requires a scoped change.
 
 ## Migration Plan
 
-1. Land/reconcile #294 and capture native inventory, update, missing-list and
+1. Preserve merged #294 and capture native inventory, save/update, missing-list and
    concurrent-edit contracts using sanitized fixtures. No production writes
    are authorized by this plan.
-2. Add native list behavior and a restart-safe receipt behind internal test
+2. Add transient draft, explicit Save, native list behavior and a restart-safe receipt behind internal test
    construction, with no public dual-write mode; replace the consumers in one
    coherent implementation PR, using small checkpoint commits.
 3. Replace UI/MCP naming and identity, remove old runtime storage/callbacks,
@@ -187,7 +239,8 @@ contracts unless a demonstrated caller requires a scoped change.
    an inert, unbound class temporarily for that release and retire it in a
    separately reviewed migration; it has no content-authority or selection role.
 6. Run exact-head CI, controlled deployment and fresh ChatGPT acceptance including
-   list discovery, external deletion, account isolation, restart recovery and
+   unsaved expiry, explicit saving, native list discovery in the reused viewer,
+   external deletion, account isolation, restart recovery and
    an exact separately authorized 50+ product transfer. No version bump is
    needed for the normal SHA-based workflow.
 7. Remove any inert retirement scaffold after the explicit deletion gate; record

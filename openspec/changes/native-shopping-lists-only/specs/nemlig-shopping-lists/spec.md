@@ -5,6 +5,36 @@ product selections, with explicit selection, verified editing and clear recovery
 
 ## ADDED Requirements
 
+### Requirement: Explicit save separates drafts from shopping lists
+Ideation SHALL create only a temporary conversation draft. Accepting, editing or
+viewing its products SHALL NOT automatically create or populate a native list.
+Save as shopping list SHALL explicitly save the current displayed draft product
+rows and exact quantities, including To decide rows but excluding separate
+alternative candidates. Non-product ideas SHALL be resolved before saving rather
+than silently omitted. Saving SHALL NOT authorize an actual-basket transfer.
+Only exact verified readback SHALL promote the view to a native shopping list.
+
+#### Scenario: Ideate and abandon
+- **WHEN** a user ideates or edits products but does not save before the temporary
+  draft is lost or expires through inactivity
+- **THEN** those unsaved products are unavailable and no native list was created
+
+#### Scenario: Save and reopen
+- **WHEN** the user saves an exact draft and readback confirms completion
+- **THEN** one native list becomes selectable from Shopping lists after restart
+  and opens in the same product UI previously used for the draft
+
+#### Scenario: Save repeats or becomes uncertain
+- **WHEN** Save is clicked twice or provider creation/population has an ambiguous result
+- **THEN** the live draft serializes the save, records the returned native ID when
+  available, reports incomplete/uncertain saving truthfully and never automatically
+  creates a second list or replays uncertain writes
+
+#### Scenario: Inactivity during saving
+- **WHEN** an authorized bounded Save is in flight
+- **THEN** the draft remains available until that attempt settles and no delayed
+  Save or expiry event can retarget another draft or delete a native list
+
 ### Requirement: Native shopping-list identity and discovery
 The system SHALL identify a saved selection by its connected account and native
 shopping-list ID, without a local basket ID or content registry. It SHALL expose
@@ -50,7 +80,7 @@ access and freshness, and report success only after authoritative readback.
 Uncertain writes SHALL NOT be automatically replayed or compensated.
 
 #### Scenario: Edit succeeds and process restarts
-- **WHEN** an accepted item quantity is changed and verified, then the app restarts
+- **WHEN** a saved item quantity is changed and verified, then the app restarts
 - **THEN** reopening the same native list reads that quantity from Nemlig
 
 #### Scenario: Replacement partially succeeds

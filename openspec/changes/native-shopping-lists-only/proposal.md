@@ -15,10 +15,16 @@ created in Nemlig itself.
 - A conversation may remember a selected provider list ID as a disposable hint.
   Missing selection shows the list picker. A deleted list clears that reference;
   it never recreates a list or redirects the failed edit into another list.
-- Accepted products and quantities live only in Nemlig. Undecided suggestions
-  and alternatives remain temporary review state, not a second saved list.
-- **BREAKING:** retire local basket content, inventory, TTL/heartbeat, eviction,
-  callbacks, capability transport, storage binding and repository abstraction.
+- Ideation starts an **Unsaved draft** in temporary conversation memory.
+  Accepting or editing draft products does not save them. **Save as shopping
+  list** explicitly creates a native list with the current exact draft products
+  and quantities; only verified completion changes the view to a saved list.
+- Unsaved products may disappear after inactivity, session loss or restart. Saved
+  lists remain discoverable on Nemlig. Reuse the existing draft product UI for
+  both the unsaved draft and every selected native shopping list.
+- **BREAKING:** retire durable local basket content, inventory, TTL/heartbeat,
+  eviction, callbacks, capability transport, storage binding and repository
+  abstraction.
   Old local IDs become unavailable; there is no automatic provider migration.
 - Preserve exact approved, add-only basket submission and the post-success list
   cleanup from PR #294. Isolate the minimum durable anti-replay submission record
@@ -33,7 +39,7 @@ created in Nemlig itself.
 
 ### Modified Capabilities
 
-- `nemlig-product-review`: native saved selections, temporary suggestions and
+- `nemlig-product-review`: explicit draft-to-list saving, temporary ideation and
   shopper naming instead of a durable Local basket.
 - `nemlig-mcp`: provider-backed actions, explicit list targets and truthful
   mutation annotations.
@@ -51,31 +57,37 @@ and network access. ChatGPT host metadata is optional convenience, never authori
 ### Goal and non-goals
 
 The goal is one native shopping-list model from discovery through editing and
-submission, with no active local-basket persistence. This plan does not implement
-code, mutate provider data, deploy, merge PR #294, delete old user data, redesign
-swipe/details controls, add offline editing, or build background synchronization.
+submission, with no durable local-basket persistence. Temporary unsaved drafts
+remain. This plan does not implement code, mutate provider data, deploy, delete
+old user data, redesign swipe/details controls, add durable/offline drafts, or
+build background synchronization.
 
 ### Acceptance
 
 1. A fresh chat sees all account lists; selection survives only as a hint and is
    revalidated. Another account cannot use a guessed or stale list ID.
-2. Accepted edits persist in Nemlig, survive app restart and return exact readback.
-   External changes appear on refresh; uncertain writes are never blindly replayed.
+2. Ideation and draft edits make no provider writes. Explicit save persists the
+   reviewed draft contents once with exact readback. Saved edits persist in
+   Nemlig; unsaved drafts have no recovery promise. Uncertain saves or edits
+   are never blindly replayed.
 3. Confirmed deletion yields the picker; auth/network errors remain errors and
    cannot masquerade as an empty inventory or missing list.
 4. One exact authorized submission makes at most one native transfer, preserves
    existing basket items, and deletes only the eligible corresponding source
    list after verified success. Failure or uncertainty preserves recovery state.
-5. Local-basket runtime infrastructure is removed. Tests prove anti-replay after
-   process restart, cross-chat contention, and stale-card fail-closed behavior.
+5. Durable local-basket infrastructure is removed while the draft UI is reused.
+   Tests prove anti-replay after process restart, cross-chat contention, and
+   stale-card fail-closed behavior.
 6. Storybook, MCP smoke and an explicitly authorized live ChatGPT test cover the
-   new names, all-list picker, edits, missing lists and a 50+ product submission.
+   unsaved/save states, all-list picker, reopening through the draft UI, failed
+   saves, missing lists and a 50+ product submission.
 
 ### Delivery and existing work
 
 Planning branch: `codex/plan-native-shopping-lists`, one documentation PR.
 Implementation: one follow-up epic branch/PR with checkpoint commits; do not mix
-it into PR #294. Rebase on #294 when merged, or carry its reviewed behavior once.
+it into PR #294. PR #294 is merged in main at `ea56ce3`; preserve its reviewed
+cleanup behavior.
 This change supersedes the unimplemented sections 2–3 of
 `provider-shopping-list-core-workspace`: its two-list design and mandatory
 workspace registry are rejected. Its shipped list-only submission safeguard and
