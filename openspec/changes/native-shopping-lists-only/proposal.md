@@ -64,10 +64,13 @@ Save/Update recovery. The current draft branch also contains a saved-list
 submission path. The owner accepts the possible concurrent native edit between
 the final contents read and provider transfer when the path performs its exact
 contents and basket checks, one transfer, additive readback, and durable
-no-replay safeguards. Automatic source-list cleanup remains a separate pending
-decision. Local Basket storage retirement remains separately gated. Temporary
-unsaved drafts remain. This plan does not authorize provider data mutation,
-deployment, or deletion of old user data.
+no-replay safeguards. Issue #295 selects deletion of the complete source list
+after a confirmed completed submission, including known-unavailable products.
+The native transfer path in this checkpoint still retains that source, so
+cleanup implementation and recovery remain incomplete. Local Basket storage
+retirement remains separately gated. Temporary unsaved drafts remain. This
+plan does not authorize live provider mutation, deployment, or deletion of old
+user data.
 
 ### Acceptance
 
@@ -85,8 +88,10 @@ deployment, or deletion of old user data.
    baseline, makes one native transfer, verifies the additive basket readback,
    and retains a durable no-replay receipt. The owner accepts that a concurrent
    Nemlig-side edit after the final contents read may affect the provider
-   transfer. Automatic source-list deletion remains disabled pending a separate
-   user decision; uncertain transfer outcomes never authorize deletion or retry.
+   transfer. Issue #295 selects deletion of the complete source after confirmed
+   completion, including known-unavailable products. This checkpoint's native
+   path still retains it; uncertain outcomes and observed external edits do not
+   authorize deletion or retry.
 5. Local Basket mutations are inactive and stale cards fail closed. Durable
    Local Basket data, callbacks, bindings, and namespace remain pending an
    explicit migration and retirement disposition. Save/Update journal tests
@@ -103,13 +108,15 @@ Implementation is continuing on PR #296's `codex/plan-native-shopping-lists`
 branch. Its submission path re-reads the exact source contents and basket
 baseline, sends one native list transfer, verifies additive basket readback,
 and retains a durable no-replay receipt. It keeps the source list after
-success. The owner accepts the remaining race between the final client read and
-provider transfer when these safeguards are present. The separate decision on
-automatic source deletion is pending; until it is resolved, retain the source
-and report cleanup separately rather than deleting it. PR #294 is merged in
-main at `ea56ce3`; its cleanup behavior does not prove safe cleanup of a
-user-owned native shopping list. Keep Local Basket namespace deletion
-separately gated.
+success. Issue #295 selects consuming the entire source after confirmed
+completion, including known-unavailable products; this native path does not yet
+implement that cleanup. The owner accepts the remaining race between the final
+client read and provider transfer when the stated safeguards are present.
+Keep the source and report cleanup pending until the native path has a tested
+eligibility check, durable cleanup recovery and no-replay behavior. PR #294 is
+merged in main at `ea56ce3`; its temporary-list cleanup behavior does not prove
+safe cleanup of a user-owned native shopping list. Keep Local Basket namespace
+deletion separately gated.
 This change supersedes the unimplemented sections 2–3 of
 `provider-shopping-list-core-workspace`: its two-list design and mandatory
 workspace registry are rejected. Its shipped list-only submission safeguard and

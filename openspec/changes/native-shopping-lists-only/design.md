@@ -168,11 +168,11 @@ submission prevent source deletion.
 Carry PR #294's verified-success-before-cleanup and warning behavior forward,
 but its temporary-list assumptions must be revisited for user-created lists.
 The exact review must disclose that successful submission consumes/deletes this
-named list. Delete only the bound source ID after all approved additions are
-verified and the source is still eligible. If unavailable products are skipped,
-never discard their remaining source lines: retain the list, fence repeat
-submission and explain the residual items. Cleanup failure does not change a
-verified transfer into a failed transfer and never invites resubmission.
+named list. After confirmed completion, delete the bound source ID, including
+known-unavailable rows, and report those rows in the result. A verified
+transfer remains completed if cleanup fails; retain the source, report cleanup
+separately and never invite resubmission. Persist enough result information to
+recover the summary across restart before destructive cleanup.
 
 The inspected provider API has no demonstrated conditional transfer or delete.
 The owner accepts the possible concurrent Nemlig-side edit between the final
@@ -180,12 +180,16 @@ contents read and native transfer, provided the implementation revalidates the
 exact source and basket baseline, sends one transfer, verifies additive basket
 readback, and keeps the durable no-replay fence. A mismatch before dispatch
 rejects the action; an unexpected readback after dispatch remains uncertain and
-must never invite retry. Automatic source deletion is a separate pending user
-decision. A final read cannot make deletion atomic, so keep the source list
-unless a conditional delete or equivalent race protection is demonstrated and
-the user has approved cleanup. Do not create another account-visible list to
-claim isolation. Retaining the source with a clear warning is the default
-fallback; this is not a reason to keep Local basket content persistence.
+must never invite retry. Issue #295 selects source deletion after confirmed
+completion, including known-unavailable rows. Before deletion, recheck provider
+identity and the exact source; if an external edit is observed, retain the list
+and report cleanup as unsafe. This read is not atomic with deletion, and the
+owner's accepted transfer race does not authorize deleting observed newer
+content. The native transfer path in this checkpoint does not implement source
+cleanup; defer physical deletion until cleanup eligibility, durable recovery,
+and no-replay are implemented and tested. No live source-list deletion was
+performed for this checkpoint. Do not create another account-visible list to
+claim isolation or treat temporary-list cleanup as proof for user-owned lists.
 
 ## Removal and reuse map
 
