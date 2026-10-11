@@ -1559,6 +1559,68 @@ test("widget Local basket actions use top-level basket_id and never guess a sele
   }
 });
 
+test("MCP opens the Local basket picker when a session has no selection", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (input, init) => {
+    const url =
+      typeof input === "string"
+        ? input
+        : input instanceof URL
+          ? input.href
+          : input.url;
+    if (!url.startsWith("http://local-basket-state.internal/")) {
+      return originalFetch(input, init);
+    }
+    const command = JSON.parse(String(init?.body)) as { kind?: string };
+    if (command.kind === "selection") {
+      return Response.json(null);
+    }
+    if (command.kind === "list") {
+      return Response.json([]);
+    }
+    throw new Error(`unexpected local basket command: ${command.kind}`);
+  };
+  const context = {
+    principalKey: "p".repeat(32),
+    policyRevision: "policy-1",
+    localBasketCapability: "capability-for-this-request",
+  };
+  const requestMeta = { "openai/session": "fresh-session" };
+
+  try {
+    await withMcpClient(
+      createMcpServer(
+        fakeClient(),
+        async () => undefined,
+        undefined,
+        undefined,
+        context,
+      ),
+      async (mcp) => {
+        for (const [name, arguments_] of [
+          ["start_product_review", {}],
+          ["update_product_review_conversation", { action: { kind: "show" } }],
+        ] as const) {
+          const result = await mcp.callTool({
+            name,
+            _meta: requestMeta,
+            arguments: arguments_,
+          });
+          assert.equal(result.isError, undefined, toolText(result));
+          assert.deepEqual(result.structuredContent, {
+            baskets: [],
+            selectedBasketId: null,
+            selectionRequired: true,
+            unavailable: true,
+          });
+        }
+      },
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("only an actual missing basket opens the picker on repository failures", async () => {
   const basketId = "00000000-0000-4000-8000-000000000099";
   const originalFetch = globalThis.fetch;

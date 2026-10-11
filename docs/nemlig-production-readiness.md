@@ -56,7 +56,7 @@ its installed tool catalog or rendered the new interface. The release operator
 completes these steps before handing the release to the owner for testing:
 
 1. Verify the exact deployed SHA and automated service acceptance, including the
-   candidate's exact viewer HTML and resource CSP. Read the current versioned
+   candidate's exact viewer HTML and resource CSP. Read the current stable
    viewer URI from `start_product_review` metadata; do not infer it from an old
    runbook, card title, or app Version Id. Published identities older than the
    current viewer remain registered only as inert, read-only documents. The
@@ -69,7 +69,7 @@ completes these steps before handing the release to the owner for testing:
    `openai/outputTemplate` and `ui.resourceUri`, then read that exact advertised
    resource. Clicking Refresh or seeing an unchanged app Version Id is not
    evidence of completion.
-3. In the intended shopping conversation, open a local Draft list using exact IDs
+3. In the intended shopping conversation, open a Local basket using exact IDs
    from a read-only product result. A successful metadata Refresh does not prove
    that an already-open conversation replaced its installed widget HTML: verify
    the current advertised resource URI and rendered viewer in that conversation.
@@ -77,14 +77,16 @@ completes these steps before handing the release to the owner for testing:
    installed tool descriptor. If the rendered document is an inert retired card,
    capture the installed descriptor and the resource URI ChatGPT requested before
    retrying, redeploying, reconnecting, or bumping the viewer identity.
-4. Verify the rendered Draft list, images, inline details, local acceptance,
-   Ready containing only accepted products, and navigation back to To decide.
-   Test contextual alternatives with a bounded search. Do not prepare or submit
-   to Nemlig as part of this UI check.
+4. Follow flows 1–4 of the [native ChatGPT smoke test](nemlig-chatgpt-smoke-test.md):
+   verify the single Local basket, tap details, right-to-left swipe replacement,
+   inline controls, alternatives, quantities, long-list scrolling, and recovery
+   across remounts and conversations. These flows do not write to Nemlig. The
+   separately authorized flows 5–6 cover a real addition of more than 50 distinct
+   products and exact basket readback; they are not implied by UI acceptance.
 5. Reopen/remount a historical card: retired identities must be inert and expose
    no shopping controls. The user reopens the current Draft list conversationally;
    a historical card must not reactivate itself or replay a prior edit. Verify the
-   current versioned resource and every retired resource are registered, and that
+   current stable resource and every retired resource are registered, and that
    retired resources render an inert document; report a host-cached or
    host-selected retired document separately from application behavior.
    Run the loopback **Run regression smoke** for outages and process restart;

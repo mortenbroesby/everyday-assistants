@@ -198,7 +198,8 @@ export const handleLocalBasketStateRequest = async (
   }
   try {
     return Response.json(
-      await storage.mutate(ownerId, parsed.data as LocalBasketCommand),
+      (await storage.mutate(ownerId, parsed.data as LocalBasketCommand)) ??
+        null,
     );
   } catch (error) {
     return storageFailureResponse(error);
