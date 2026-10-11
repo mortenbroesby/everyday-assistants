@@ -10,7 +10,7 @@ importers:
     devDependencies:
       '@fission-ai/openspec':
         specifier: 1.11.0
-        version: 1.11.0(@types/node@24.13.0)
+        version: 1.11.0(@types/node@26.6.4)
       fallow:
         specifier: 3.32.0
         version: 3.32.0
@@ -31,7 +31,7 @@ importers:
         version: 0.3.7
       '@inquirer/password':
         specifier: ^5.2.0
-        version: 5.2.0(@types/node@24.13.0)
+        version: 5.2.0(@types/node@26.6.4)
       '@modelcontextprotocol/client':
         specifier: 2.0.0
         version: 2.0.0
@@ -95,13 +95,13 @@ importers:
         version: 2.0.3(@modelcontextprotocol/client@2.0.0)(@modelcontextprotocol/core@2.0.0)(@modelcontextprotocol/server@2.0.0)(react-dom@19.2.3(react@19.2.3))(react@19.2.3)(zod@4.5.4)
       '@storybook/react-vite':
         specifier: 10.6.1
-        version: 10.6.1(@types/react-dom@19.2.3(@types/react@19.2.7))(@types/react@19.2.7)(react-dom@19.2.3(react@19.2.3))(react@19.2.3)(rollup@4.64.0)(storybook@10.6.1(@types/react@19.2.7)(prettier@3.9.9)(react@19.2.3))(typescript@5.9.3)(vite@7.3.6(@types/node@24.13.0)(jiti@2.7.0)(lightningcss@1.33.0)(tsx@4.23.13)(yaml@2.9.1))
+        version: 10.6.1(@types/react-dom@19.2.3(@types/react@19.2.7))(@types/react@19.2.7)(react-dom@19.2.3(react@19.2.3))(react@19.2.3)(rollup@4.64.0)(storybook@10.6.1(@types/react@19.2.7)(prettier@3.9.9)(react@19.2.3))(typescript@5.9.3)(vite@7.3.6(@types/node@26.6.4)(jiti@2.7.0)(lightningcss@1.33.0)(tsx@4.23.13)(yaml@2.9.1))
       '@types/html-to-text':
         specifier: 9.0.4
         version: 9.0.4
       '@types/node':
-        specifier: 24.13.0
-        version: 24.13.0
+        specifier: 26.6.4
+        version: 26.6.4
       '@types/react':
         specifier: 19.2.7
         version: 19.2.7
@@ -113,7 +113,7 @@ importers:
         version: 7.8.0
       '@vitejs/plugin-react':
         specifier: 5.2.0
-        version: 5.2.0(vite@7.3.6(@types/node@24.13.0)(jiti@2.7.0)(lightningcss@1.33.0)(tsx@4.23.13)(yaml@2.9.1))
+        version: 5.2.0(vite@7.3.6(@types/node@26.6.4)(jiti@2.7.0)(lightningcss@1.33.0)(tsx@4.23.13)(yaml@2.9.1))
       oxlint:
         specifier: 1.87.0
         version: 1.87.0
@@ -143,7 +143,7 @@ importers:
         version: 5.9.3
       vite:
         specifier: 7.3.6
-        version: 7.3.6(@types/node@24.13.0)(jiti@2.7.0)(lightningcss@1.33.0)(tsx@4.23.13)(yaml@2.9.1)
+        version: 7.3.6(@types/node@26.6.4)(jiti@2.7.0)(lightningcss@1.33.0)(tsx@4.23.13)(yaml@2.9.1)
       wrangler:
         specifier: 4.127.1
         version: 4.127.1(@cloudflare/workers-types@5.20260831.1)
@@ -2117,8 +2117,8 @@ packages:
   '@types/html-to-text@9.0.4':
     resolution: {integrity: sha512-pUY3cKH/Nm2yYrEmDlPR1mR7yszjGx4DrwPjQ702C4/D5CwHuZTgZdIdwPkRbcuhs7BAh2L5rg3CL5cbRiGTCQ==}
 
-  '@types/node@24.13.0':
-    resolution: {integrity: sha512-5vtOqGQr4NJKeEzV441FcOi2MeG9UTWq9LqVLGneDdu4vlX17H8kQ2PA2UmNwCUGPVDj4oBjNhS7ReVEIWJJrg==}
+  '@types/node@26.6.4':
+    resolution: {integrity: sha512-ldVPDCzj7fsaGZrLB0NuHuTvJcsNasysBAqMolr/cgxrLd1xbqxIr3XJiPnHHJUCxj5sNF1vnRj9aWnrVh5Jcg==}
 
   '@types/parse-json@4.0.2':
     resolution: {integrity: sha512-dISoDXWWQwUquiKsyZ4Ng+HX2KsPL7LyHKHQwgGFEA3IaKac4Obd+h2a/a6waisAoepJlBcx9paWqjA8/HVjCw==}
@@ -2290,121 +2290,145 @@ packages:
     resolution: {integrity: sha512-C/0zV5IhgVdYhGJTwrY0v8dknxlhiKwtVJkMUaexu9/QvRmzlV4vfU3hZlUSgqc2BxQHntL1mCVbDq8j0FRFDw==}
     cpu: [arm64]
     os: [android]
+    deprecated: yuku-codegen is pure JavaScript since 0.14
 
   '@yuku-codegen/binding-darwin-arm64@0.8.7':
     resolution: {integrity: sha512-/u+REDMI4a0/lsJXTM4c53/w31OGZLOReZIyg62uhgLs0kc8NHsj/nOcxTdlQjq5gi0zhdkccD9LaLTXcdzPvw==}
     cpu: [arm64]
     os: [darwin]
+    deprecated: yuku-codegen is pure JavaScript since 0.14
 
   '@yuku-codegen/binding-darwin-x64@0.8.7':
     resolution: {integrity: sha512-sMMzFOwCo4WXR+/6zIBThOocSC50iIIZZdfiIDbaLvj0Ax/rWt/iavyfEAqajyvzydLyCqR/ZItdLWSRlu1umw==}
     cpu: [x64]
     os: [darwin]
+    deprecated: yuku-codegen is pure JavaScript since 0.14
 
   '@yuku-codegen/binding-freebsd-x64@0.8.7':
     resolution: {integrity: sha512-MpdpKXix9P+Y1rKgjvcNeNtGjXeL1CmttNhYINrWls8kRpm4xM/oBGTmn6w7to8lAlwj5jm8q03dQPl5mRv4Qw==}
     cpu: [x64]
     os: [freebsd]
+    deprecated: yuku-codegen is pure JavaScript since 0.14
 
   '@yuku-codegen/binding-linux-arm-gnu@0.8.7':
     resolution: {integrity: sha512-rr1srFLlPAmC1vtxfc9C1YLDe3iH09YjfSeeIidBqKhzx1MATjOAq4mjlRUOnhr/L27MotWIYOFKwVsd5JZFOg==}
     cpu: [arm]
     os: [linux]
+    deprecated: yuku-codegen is pure JavaScript since 0.14
 
   '@yuku-codegen/binding-linux-arm-musl@0.8.7':
     resolution: {integrity: sha512-eAufXh8qBRpiSO6ueaMDL+yyoXIGLhpUce72YbcACtZU2qhExwBIJyEtQf5kH2Ki0X2aqkSjSfog4OPtKXan3Q==}
     cpu: [arm]
     os: [linux]
+    deprecated: yuku-codegen is pure JavaScript since 0.14
 
   '@yuku-codegen/binding-linux-arm64-gnu@0.8.7':
     resolution: {integrity: sha512-gw4w6wPoHObBrdIC4duVWLmJOvpdE25j5D7yrM5mACNlK4klRz/lv8hK+ssQk9EJHBgZjSaqZIJVFgqNYbfv7A==}
     cpu: [arm64]
     os: [linux]
+    deprecated: yuku-codegen is pure JavaScript since 0.14
 
   '@yuku-codegen/binding-linux-arm64-musl@0.8.7':
     resolution: {integrity: sha512-L68N6Y4XkqcIaKo3Ra88JEvBEH4AHff44A4INcrxeVWZ8CZtu2tCpfVxe3hR8qQQMcvBSQlDn24KpkCKEhVvfA==}
     cpu: [arm64]
     os: [linux]
+    deprecated: yuku-codegen is pure JavaScript since 0.14
 
   '@yuku-codegen/binding-linux-x64-gnu@0.8.7':
     resolution: {integrity: sha512-dzyAbltJmf3Cqlb8HcFuYIf5Yn0fl1vTr3XJ9HiVNNvOlhqPSArOqtw9vI1p6/VTXTjrMLXlU+s+/kNHiIy/Cw==}
     cpu: [x64]
     os: [linux]
+    deprecated: yuku-codegen is pure JavaScript since 0.14
 
   '@yuku-codegen/binding-linux-x64-musl@0.8.7':
     resolution: {integrity: sha512-Otw4MH3404q0Bbvl+YTdW9aoUV5vXmUw8260bWvt1XlaoIX/ceSgI4ygheRDMfBPoHt6FDayQaO9OLVUZAgkFA==}
     cpu: [x64]
     os: [linux]
+    deprecated: yuku-codegen is pure JavaScript since 0.14
 
   '@yuku-codegen/binding-win32-arm64@0.8.7':
     resolution: {integrity: sha512-qo/jyrzryiBuKEsFiuWaBCBe3tRMynQ0qFWFgOEjcCMQeZfBm+wKiVEUEFXXLc7bh8YezguAWp0Mtnhq4ARNyA==}
     cpu: [arm64]
     os: [win32]
+    deprecated: yuku-codegen is pure JavaScript since 0.14
 
   '@yuku-codegen/binding-win32-x64@0.8.7':
     resolution: {integrity: sha512-D5lDsVDx6m00E6bWySlWdH72Ca4TPSaphDqB6QjU6MpuNLIJqoGoatYyq2rOmBE8Zv/kunot/o58KGL03P3eiA==}
     cpu: [x64]
     os: [win32]
+    deprecated: yuku-codegen is pure JavaScript since 0.14
 
   '@yuku-parser/binding-android-arm64@0.8.7':
     resolution: {integrity: sha512-eGKYiUDX7Y0V7tDTmg+JTVnXnjMqfXXsorZ+EDf5kxwchQ3Or1HS14MzI2fw+jFhHR85fCWt+mtX33Yao73hIQ==}
     cpu: [arm64]
     os: [android]
+    deprecated: yuku-parser runs on yuku-core since 0.14
 
   '@yuku-parser/binding-darwin-arm64@0.8.7':
     resolution: {integrity: sha512-Re0RHelKLnjEURulY2/KxW+Ngb8zuNA4BRZuMwgGQNzVumT6u4U2N2hc01oeYVNVof0i7GrXE4UCNBgbpRRnjQ==}
     cpu: [arm64]
     os: [darwin]
+    deprecated: yuku-parser runs on yuku-core since 0.14
 
   '@yuku-parser/binding-darwin-x64@0.8.7':
     resolution: {integrity: sha512-Hn8DROtQkjlA1ACbPgj4a7eP9IuVOI504oiTwpkWPbpaDWD9KdmnVYCqW+1LfenNK/g7O9NhWGpXEdaCNX7lIA==}
     cpu: [x64]
     os: [darwin]
+    deprecated: yuku-parser runs on yuku-core since 0.14
 
   '@yuku-parser/binding-freebsd-x64@0.8.7':
     resolution: {integrity: sha512-bAP2OV8wRuzplX/jYxv9+vvqQT8JxyNphI8fLfXGL054Xs+4/J5u33cIm3y4rxY8rdoLmmdiJs2Tq7r7lrDRfA==}
     cpu: [x64]
     os: [freebsd]
+    deprecated: yuku-parser runs on yuku-core since 0.14
 
   '@yuku-parser/binding-linux-arm-gnu@0.8.7':
     resolution: {integrity: sha512-kTYwJQQgmZeAWdDIWabiReIZMpmfLueIj1tCmjStUtFGhR1Z0qwxonKVfUC4N7h/VhGGzLZ//7O1kgt1QKqgCg==}
     cpu: [arm]
     os: [linux]
+    deprecated: yuku-parser runs on yuku-core since 0.14
 
   '@yuku-parser/binding-linux-arm-musl@0.8.7':
     resolution: {integrity: sha512-uL4jE8HPT2BLlxAXyD10LqgPuXa9eDa0BKpCdSANmzIJghq/2eZo3/gQNtaxPZMupWoxjYzSad9IXrwu7aYPXQ==}
     cpu: [arm]
     os: [linux]
+    deprecated: yuku-parser runs on yuku-core since 0.14
 
   '@yuku-parser/binding-linux-arm64-gnu@0.8.7':
     resolution: {integrity: sha512-3gVN4pWSKZmXiNX7cU164dR9MPvesCHnlH6nPfpK+yQsCuYphjKKplcb4SnZBrhiqmXbgb2HR0c2TS0IZUPhgA==}
     cpu: [arm64]
     os: [linux]
+    deprecated: yuku-parser runs on yuku-core since 0.14
 
   '@yuku-parser/binding-linux-arm64-musl@0.8.7':
     resolution: {integrity: sha512-S0mwfEjoLpxzXeZw802Wa4RaELsQiPtWqG6INcy8j4GtvNFtl4LCX3eGO1XLn9pyLAISLzTRyU3zUCBUPin8lg==}
     cpu: [arm64]
     os: [linux]
+    deprecated: yuku-parser runs on yuku-core since 0.14
 
   '@yuku-parser/binding-linux-x64-gnu@0.8.7':
     resolution: {integrity: sha512-lnbWdPmerE5D1uH1G4IEZKnPzCrWCStRGrtgpSIe1RibAo5bZIjDbbbPYXmMHCEh4F+x/JaJpElh26a3r+BPbg==}
     cpu: [x64]
     os: [linux]
+    deprecated: yuku-parser runs on yuku-core since 0.14
 
   '@yuku-parser/binding-linux-x64-musl@0.8.7':
     resolution: {integrity: sha512-769uwndMvMzUvATWbAcEvyLHKA+DzhHSCl/obBUrRdYfRo26yxui6S8y3z7uJ+Naup7UKrDxrpK7OnQkxkl9KQ==}
     cpu: [x64]
     os: [linux]
+    deprecated: yuku-parser runs on yuku-core since 0.14
 
   '@yuku-parser/binding-win32-arm64@0.8.7':
     resolution: {integrity: sha512-mEB/9PlaAkisJ6KWGz0zvywXoU6+80dTlR2LwS7s/jcXXoU6fm2+sitBZXtqu3+Q4DcDgPxM45uWMCzPs0TSRw==}
     cpu: [arm64]
     os: [win32]
+    deprecated: yuku-parser runs on yuku-core since 0.14
 
   '@yuku-parser/binding-win32-x64@0.8.7':
     resolution: {integrity: sha512-8vNB2DP0ou61nGb8tc/qfi41gfyDXz1MHr2zqL3nR+cJ6CEbiuWV/l/a/vv151gCgiZLLAyGkQGENpozdg716w==}
     cpu: [x64]
     os: [win32]
+    deprecated: yuku-parser runs on yuku-core since 0.14
 
   '@yuku-toolchain/types@0.8.7':
     resolution: {integrity: sha512-2Z53dNxAJL6UvFoIrDZvYf3zlO8s4VJK4O2hhaB4mXVwwpX/7ajtss3cmfqKvamlNLWyt9FSWs4eoYdlbxpnHA==}
@@ -3706,8 +3730,8 @@ packages:
   unconfig-core@7.5.0:
     resolution: {integrity: sha512-Su3FauozOGP44ZmKdHy2oE6LPjk51M/TRRjHv2HNCWiDvfvCoxC2lno6jevMA91MYAdCdwP05QnWdWpSbncX/w==}
 
-  undici-types@7.18.2:
-    resolution: {integrity: sha512-AsuCzffGHJybSaRrmr5eHr81mwJU3kjw6M+uprWvCXiNeN9SOGwQ3Jn8jb8m3Z6izVgknn1R0FTCEAP2QrLY/w==}
+  undici-types@8.9.0:
+    resolution: {integrity: sha512-KTDyRTYX8sWmKXAikPHHSyc63CRPETMctyjKFupcC6OBLXT3xsN0e9aF7m+mIXutFWpUXuedtowG7iLOzp0kQg==}
 
   undici@7.29.0:
     resolution: {integrity: sha512-IDxfleLmmbSskfWSUATiN1nfn2rDuvnMOqb5CWR92iIfojA0Ud+ulOAAEQ57LPr9rWmsreUyf5lwyao+7GNNVw==}
@@ -4349,10 +4373,10 @@ snapshots:
   '@fallow-cli/win32-x64-msvc@3.32.0':
     optional: true
 
-  '@fission-ai/openspec@1.11.0(@types/node@24.13.0)':
+  '@fission-ai/openspec@1.11.0(@types/node@26.6.4)':
     dependencies:
-      '@inquirer/core': 11.2.1(@types/node@24.13.0)
-      '@inquirer/prompts': 8.7.0(@types/node@24.13.0)
+      '@inquirer/core': 11.2.1(@types/node@26.6.4)
+      '@inquirer/prompts': 8.7.0(@types/node@26.6.4)
       chalk: 5.6.2
       commander: 14.0.3
       cross-spawn: 7.0.6
@@ -4476,140 +4500,140 @@ snapshots:
 
   '@inquirer/ansi@2.0.7': {}
 
-  '@inquirer/checkbox@5.2.3(@types/node@24.13.0)':
+  '@inquirer/checkbox@5.2.3(@types/node@26.6.4)':
     dependencies:
       '@inquirer/ansi': 2.0.7
-      '@inquirer/core': 12.0.1(@types/node@24.13.0)
+      '@inquirer/core': 12.0.1(@types/node@26.6.4)
       '@inquirer/figures': 2.0.8
-      '@inquirer/type': 4.1.0(@types/node@24.13.0)
+      '@inquirer/type': 4.1.0(@types/node@26.6.4)
     optionalDependencies:
-      '@types/node': 24.13.0
+      '@types/node': 26.6.4
 
-  '@inquirer/confirm@6.3.0(@types/node@24.13.0)':
+  '@inquirer/confirm@6.3.0(@types/node@26.6.4)':
     dependencies:
-      '@inquirer/core': 12.0.1(@types/node@24.13.0)
-      '@inquirer/type': 4.1.0(@types/node@24.13.0)
+      '@inquirer/core': 12.0.1(@types/node@26.6.4)
+      '@inquirer/type': 4.1.0(@types/node@26.6.4)
     optionalDependencies:
-      '@types/node': 24.13.0
+      '@types/node': 26.6.4
 
-  '@inquirer/core@11.2.1(@types/node@24.13.0)':
+  '@inquirer/core@11.2.1(@types/node@26.6.4)':
     dependencies:
       '@inquirer/ansi': 2.0.7
       '@inquirer/figures': 2.0.8
-      '@inquirer/type': 4.1.0(@types/node@24.13.0)
+      '@inquirer/type': 4.1.0(@types/node@26.6.4)
       cli-width: 4.1.0
       fast-wrap-ansi: 0.2.2
       mute-stream: 3.0.0
       signal-exit: 4.1.0
     optionalDependencies:
-      '@types/node': 24.13.0
+      '@types/node': 26.6.4
 
-  '@inquirer/core@12.0.1(@types/node@24.13.0)':
+  '@inquirer/core@12.0.1(@types/node@26.6.4)':
     dependencies:
       '@inquirer/ansi': 2.0.7
       '@inquirer/figures': 2.0.8
-      '@inquirer/type': 4.1.0(@types/node@24.13.0)
+      '@inquirer/type': 4.1.0(@types/node@26.6.4)
       cli-width: 4.1.0
       fast-wrap-ansi: 0.2.2
       mute-stream: 3.0.0
       signal-exit: 4.1.0
     optionalDependencies:
-      '@types/node': 24.13.0
+      '@types/node': 26.6.4
 
-  '@inquirer/editor@5.3.1(@types/node@24.13.0)':
+  '@inquirer/editor@5.3.1(@types/node@26.6.4)':
     dependencies:
-      '@inquirer/core': 12.0.1(@types/node@24.13.0)
-      '@inquirer/external-editor': 3.0.4(@types/node@24.13.0)
-      '@inquirer/type': 4.1.0(@types/node@24.13.0)
+      '@inquirer/core': 12.0.1(@types/node@26.6.4)
+      '@inquirer/external-editor': 3.0.4(@types/node@26.6.4)
+      '@inquirer/type': 4.1.0(@types/node@26.6.4)
     optionalDependencies:
-      '@types/node': 24.13.0
+      '@types/node': 26.6.4
 
-  '@inquirer/expand@5.1.3(@types/node@24.13.0)':
+  '@inquirer/expand@5.1.3(@types/node@26.6.4)':
     dependencies:
-      '@inquirer/core': 12.0.1(@types/node@24.13.0)
-      '@inquirer/type': 4.1.0(@types/node@24.13.0)
+      '@inquirer/core': 12.0.1(@types/node@26.6.4)
+      '@inquirer/type': 4.1.0(@types/node@26.6.4)
     optionalDependencies:
-      '@types/node': 24.13.0
+      '@types/node': 26.6.4
 
-  '@inquirer/external-editor@3.0.4(@types/node@24.13.0)':
+  '@inquirer/external-editor@3.0.4(@types/node@26.6.4)':
     dependencies:
       chardet: 2.2.0
       iconv-lite: 0.7.3
     optionalDependencies:
-      '@types/node': 24.13.0
+      '@types/node': 26.6.4
 
   '@inquirer/figures@2.0.8': {}
 
-  '@inquirer/input@5.1.4(@types/node@24.13.0)':
+  '@inquirer/input@5.1.4(@types/node@26.6.4)':
     dependencies:
-      '@inquirer/core': 12.0.1(@types/node@24.13.0)
-      '@inquirer/type': 4.1.0(@types/node@24.13.0)
+      '@inquirer/core': 12.0.1(@types/node@26.6.4)
+      '@inquirer/type': 4.1.0(@types/node@26.6.4)
     optionalDependencies:
-      '@types/node': 24.13.0
+      '@types/node': 26.6.4
 
-  '@inquirer/number@4.2.1(@types/node@24.13.0)':
+  '@inquirer/number@4.2.1(@types/node@26.6.4)':
     dependencies:
-      '@inquirer/core': 12.0.1(@types/node@24.13.0)
-      '@inquirer/type': 4.1.0(@types/node@24.13.0)
+      '@inquirer/core': 12.0.1(@types/node@26.6.4)
+      '@inquirer/type': 4.1.0(@types/node@26.6.4)
     optionalDependencies:
-      '@types/node': 24.13.0
+      '@types/node': 26.6.4
 
-  '@inquirer/password@5.2.0(@types/node@24.13.0)':
-    dependencies:
-      '@inquirer/ansi': 2.0.7
-      '@inquirer/core': 12.0.1(@types/node@24.13.0)
-      '@inquirer/type': 4.1.0(@types/node@24.13.0)
-    optionalDependencies:
-      '@types/node': 24.13.0
-
-  '@inquirer/prompts@8.7.0(@types/node@24.13.0)':
-    dependencies:
-      '@inquirer/checkbox': 5.2.3(@types/node@24.13.0)
-      '@inquirer/confirm': 6.3.0(@types/node@24.13.0)
-      '@inquirer/editor': 5.3.1(@types/node@24.13.0)
-      '@inquirer/expand': 5.1.3(@types/node@24.13.0)
-      '@inquirer/input': 5.1.4(@types/node@24.13.0)
-      '@inquirer/number': 4.2.1(@types/node@24.13.0)
-      '@inquirer/password': 5.2.0(@types/node@24.13.0)
-      '@inquirer/rawlist': 5.3.3(@types/node@24.13.0)
-      '@inquirer/search': 4.3.1(@types/node@24.13.0)
-      '@inquirer/select': 5.2.3(@types/node@24.13.0)
-    optionalDependencies:
-      '@types/node': 24.13.0
-
-  '@inquirer/rawlist@5.3.3(@types/node@24.13.0)':
-    dependencies:
-      '@inquirer/core': 12.0.1(@types/node@24.13.0)
-      '@inquirer/type': 4.1.0(@types/node@24.13.0)
-    optionalDependencies:
-      '@types/node': 24.13.0
-
-  '@inquirer/search@4.3.1(@types/node@24.13.0)':
-    dependencies:
-      '@inquirer/core': 12.0.1(@types/node@24.13.0)
-      '@inquirer/figures': 2.0.8
-      '@inquirer/type': 4.1.0(@types/node@24.13.0)
-    optionalDependencies:
-      '@types/node': 24.13.0
-
-  '@inquirer/select@5.2.3(@types/node@24.13.0)':
+  '@inquirer/password@5.2.0(@types/node@26.6.4)':
     dependencies:
       '@inquirer/ansi': 2.0.7
-      '@inquirer/core': 12.0.1(@types/node@24.13.0)
+      '@inquirer/core': 12.0.1(@types/node@26.6.4)
+      '@inquirer/type': 4.1.0(@types/node@26.6.4)
+    optionalDependencies:
+      '@types/node': 26.6.4
+
+  '@inquirer/prompts@8.7.0(@types/node@26.6.4)':
+    dependencies:
+      '@inquirer/checkbox': 5.2.3(@types/node@26.6.4)
+      '@inquirer/confirm': 6.3.0(@types/node@26.6.4)
+      '@inquirer/editor': 5.3.1(@types/node@26.6.4)
+      '@inquirer/expand': 5.1.3(@types/node@26.6.4)
+      '@inquirer/input': 5.1.4(@types/node@26.6.4)
+      '@inquirer/number': 4.2.1(@types/node@26.6.4)
+      '@inquirer/password': 5.2.0(@types/node@26.6.4)
+      '@inquirer/rawlist': 5.3.3(@types/node@26.6.4)
+      '@inquirer/search': 4.3.1(@types/node@26.6.4)
+      '@inquirer/select': 5.2.3(@types/node@26.6.4)
+    optionalDependencies:
+      '@types/node': 26.6.4
+
+  '@inquirer/rawlist@5.3.3(@types/node@26.6.4)':
+    dependencies:
+      '@inquirer/core': 12.0.1(@types/node@26.6.4)
+      '@inquirer/type': 4.1.0(@types/node@26.6.4)
+    optionalDependencies:
+      '@types/node': 26.6.4
+
+  '@inquirer/search@4.3.1(@types/node@26.6.4)':
+    dependencies:
+      '@inquirer/core': 12.0.1(@types/node@26.6.4)
       '@inquirer/figures': 2.0.8
-      '@inquirer/type': 4.1.0(@types/node@24.13.0)
+      '@inquirer/type': 4.1.0(@types/node@26.6.4)
     optionalDependencies:
-      '@types/node': 24.13.0
+      '@types/node': 26.6.4
 
-  '@inquirer/type@4.1.0(@types/node@24.13.0)':
+  '@inquirer/select@5.2.3(@types/node@26.6.4)':
+    dependencies:
+      '@inquirer/ansi': 2.0.7
+      '@inquirer/core': 12.0.1(@types/node@26.6.4)
+      '@inquirer/figures': 2.0.8
+      '@inquirer/type': 4.1.0(@types/node@26.6.4)
     optionalDependencies:
-      '@types/node': 24.13.0
+      '@types/node': 26.6.4
 
-  '@joshwooding/vite-plugin-react-docgen-typescript@0.7.0(typescript@5.9.3)(vite@7.3.6(@types/node@24.13.0)(jiti@2.7.0)(lightningcss@1.33.0)(tsx@4.23.13)(yaml@2.9.1))':
+  '@inquirer/type@4.1.0(@types/node@26.6.4)':
+    optionalDependencies:
+      '@types/node': 26.6.4
+
+  '@joshwooding/vite-plugin-react-docgen-typescript@0.7.0(typescript@5.9.3)(vite@7.3.6(@types/node@26.6.4)(jiti@2.7.0)(lightningcss@1.33.0)(tsx@4.23.13)(yaml@2.9.1))':
     dependencies:
       glob: 13.0.6
       react-docgen-typescript: 2.4.0(typescript@5.9.3)
-      vite: 7.3.6(@types/node@24.13.0)(jiti@2.7.0)(lightningcss@1.33.0)(tsx@4.23.13)(yaml@2.9.1)
+      vite: 7.3.6(@types/node@26.6.4)(jiti@2.7.0)(lightningcss@1.33.0)(tsx@4.23.13)(yaml@2.9.1)
     optionalDependencies:
       typescript: 5.9.3
 
@@ -5260,11 +5284,11 @@ snapshots:
 
   '@standard-schema/spec@1.1.0': {}
 
-  '@storybook/builder-vite@10.6.1(storybook@10.6.1(@types/react@19.2.7)(prettier@3.9.9)(react@19.2.3))(vite@7.3.6(@types/node@24.13.0)(jiti@2.7.0)(lightningcss@1.33.0)(tsx@4.23.13)(yaml@2.9.1))':
+  '@storybook/builder-vite@10.6.1(storybook@10.6.1(@types/react@19.2.7)(prettier@3.9.9)(react@19.2.3))(vite@7.3.6(@types/node@26.6.4)(jiti@2.7.0)(lightningcss@1.33.0)(tsx@4.23.13)(yaml@2.9.1))':
     dependencies:
       storybook: 10.6.1(@types/react@19.2.7)(prettier@3.9.9)(react@19.2.3)
       ts-dedent: 2.3.0
-      vite: 7.3.6(@types/node@24.13.0)(jiti@2.7.0)(lightningcss@1.33.0)(tsx@4.23.13)(yaml@2.9.1)
+      vite: 7.3.6(@types/node@26.6.4)(jiti@2.7.0)(lightningcss@1.33.0)(tsx@4.23.13)(yaml@2.9.1)
 
   '@storybook/global@5.0.0': {}
 
@@ -5281,11 +5305,11 @@ snapshots:
       '@types/react': 19.2.7
       '@types/react-dom': 19.2.3(@types/react@19.2.7)
 
-  '@storybook/react-vite@10.6.1(@types/react-dom@19.2.3(@types/react@19.2.7))(@types/react@19.2.7)(react-dom@19.2.3(react@19.2.3))(react@19.2.3)(rollup@4.64.0)(storybook@10.6.1(@types/react@19.2.7)(prettier@3.9.9)(react@19.2.3))(typescript@5.9.3)(vite@7.3.6(@types/node@24.13.0)(jiti@2.7.0)(lightningcss@1.33.0)(tsx@4.23.13)(yaml@2.9.1))':
+  '@storybook/react-vite@10.6.1(@types/react-dom@19.2.3(@types/react@19.2.7))(@types/react@19.2.7)(react-dom@19.2.3(react@19.2.3))(react@19.2.3)(rollup@4.64.0)(storybook@10.6.1(@types/react@19.2.7)(prettier@3.9.9)(react@19.2.3))(typescript@5.9.3)(vite@7.3.6(@types/node@26.6.4)(jiti@2.7.0)(lightningcss@1.33.0)(tsx@4.23.13)(yaml@2.9.1))':
     dependencies:
-      '@joshwooding/vite-plugin-react-docgen-typescript': 0.7.0(typescript@5.9.3)(vite@7.3.6(@types/node@24.13.0)(jiti@2.7.0)(lightningcss@1.33.0)(tsx@4.23.13)(yaml@2.9.1))
+      '@joshwooding/vite-plugin-react-docgen-typescript': 0.7.0(typescript@5.9.3)(vite@7.3.6(@types/node@26.6.4)(jiti@2.7.0)(lightningcss@1.33.0)(tsx@4.23.13)(yaml@2.9.1))
       '@rollup/pluginutils': 5.4.0(rollup@4.64.0)
-      '@storybook/builder-vite': 10.6.1(storybook@10.6.1(@types/react@19.2.7)(prettier@3.9.9)(react@19.2.3))(vite@7.3.6(@types/node@24.13.0)(jiti@2.7.0)(lightningcss@1.33.0)(tsx@4.23.13)(yaml@2.9.1))
+      '@storybook/builder-vite': 10.6.1(storybook@10.6.1(@types/react@19.2.7)(prettier@3.9.9)(react@19.2.3))(vite@7.3.6(@types/node@26.6.4)(jiti@2.7.0)(lightningcss@1.33.0)(tsx@4.23.13)(yaml@2.9.1))
       '@storybook/react': 10.6.1(@types/react-dom@19.2.3(@types/react@19.2.7))(@types/react@19.2.7)(react-dom@19.2.3(react@19.2.3))(react@19.2.3)(storybook@10.6.1(@types/react@19.2.7)(prettier@3.9.9)(react@19.2.3))(typescript@5.9.3)
       empathic: 2.0.1
       magic-string: 1.4.3
@@ -5295,7 +5319,7 @@ snapshots:
       resolve: 1.22.13
       storybook: 10.6.1(@types/react@19.2.7)(prettier@3.9.9)(react@19.2.3)
       tsconfig-paths: 4.2.0
-      vite: 7.3.6(@types/node@24.13.0)(jiti@2.7.0)(lightningcss@1.33.0)(tsx@4.23.13)(yaml@2.9.1)
+      vite: 7.3.6(@types/node@26.6.4)(jiti@2.7.0)(lightningcss@1.33.0)(tsx@4.23.13)(yaml@2.9.1)
     optionalDependencies:
       typescript: 5.9.3
     transitivePeerDependencies:
@@ -5411,9 +5435,9 @@ snapshots:
 
   '@types/html-to-text@9.0.4': {}
 
-  '@types/node@24.13.0':
+  '@types/node@26.6.4':
     dependencies:
-      undici-types: 7.18.2
+      undici-types: 8.9.0
 
   '@types/parse-json@4.0.2': {}
 
@@ -5496,7 +5520,7 @@ snapshots:
       '@use-gesture/core': 10.3.1
       react: 19.2.3
 
-  '@vitejs/plugin-react@5.2.0(vite@7.3.6(@types/node@24.13.0)(jiti@2.7.0)(lightningcss@1.33.0)(tsx@4.23.13)(yaml@2.9.1))':
+  '@vitejs/plugin-react@5.2.0(vite@7.3.6(@types/node@26.6.4)(jiti@2.7.0)(lightningcss@1.33.0)(tsx@4.23.13)(yaml@2.9.1))':
     dependencies:
       '@babel/core': 7.29.7
       '@babel/plugin-transform-react-jsx-self': 7.29.7(@babel/core@7.29.7)
@@ -5504,7 +5528,7 @@ snapshots:
       '@rolldown/pluginutils': 1.0.0-rc.3
       '@types/babel__core': 7.20.5
       react-refresh: 0.18.0
-      vite: 7.3.6(@types/node@24.13.0)(jiti@2.7.0)(lightningcss@1.33.0)(tsx@4.23.13)(yaml@2.9.1)
+      vite: 7.3.6(@types/node@26.6.4)(jiti@2.7.0)(lightningcss@1.33.0)(tsx@4.23.13)(yaml@2.9.1)
     transitivePeerDependencies:
       - supports-color
 
@@ -6999,7 +7023,7 @@ snapshots:
       '@quansync/fs': 1.0.0
       quansync: 1.0.0
 
-  undici-types@7.18.2: {}
+  undici-types@8.9.0: {}
 
   undici@7.29.0: {}
 
@@ -7038,7 +7062,7 @@ snapshots:
 
   verkit@0.3.2: {}
 
-  vite@7.3.6(@types/node@24.13.0)(jiti@2.7.0)(lightningcss@1.33.0)(tsx@4.23.13)(yaml@2.9.1):
+  vite@7.3.6(@types/node@26.6.4)(jiti@2.7.0)(lightningcss@1.33.0)(tsx@4.23.13)(yaml@2.9.1):
     dependencies:
       esbuild: 0.28.2
       fdir: 6.5.0(picomatch@4.0.7)
@@ -7047,7 +7071,7 @@ snapshots:
       rollup: 4.64.0
       tinyglobby: 0.2.17
     optionalDependencies:
-      '@types/node': 24.13.0
+      '@types/node': 26.6.4
       fsevents: 2.3.3
       jiti: 2.7.0
       lightningcss: 1.33.0
