@@ -270,7 +270,7 @@ document.getElementById('run').onclick = async () => {
 document.getElementById('flow').onclick = async () => {
  const run=document.getElementById('flow'); run.disabled=true;
  const doc=()=>frame.contentDocument, title=()=>doc()?.querySelector('#title')?.textContent;
- const text=()=>doc()?.querySelector('main')?.textContent||'';
+ const text=()=>doc()?.body?.textContent||'';
  const buttons=()=>[...doc().querySelectorAll('button')], button=label=>buttons().find(b=>b.textContent.trim()===label);
  const check=(ok,message)=>{if(!ok)throw new Error(message);};
  const wait=async predicate=>{const until=Date.now()+15000;while(!predicate()){if(Date.now()>until)throw new Error('Timed out: '+(doc()?.querySelector('main')?.innerText||'no viewer main'));await new Promise(r=>setTimeout(r,25));}};
@@ -292,8 +292,11 @@ document.getElementById('flow').onclick = async () => {
   await wait(()=>title()==='Local basket'&&doc().querySelectorAll('.product-list article').length===1);
   await wait(()=>button('Submit to Nemlig')&&!button('Submit to Nemlig').disabled);
   click('Submit to Nemlig'); await wait(()=>button('Add to Nemlig basket'));
-  click('Add to Nemlig basket'); await wait(()=>button('Add to Nemlig'));
-  await fetch('/uncertain-next',{method:'POST'}); click('Add to Nemlig'); await wait(()=>text().includes('We could not verify the addition'));
+  click('Add to Nemlig basket');
+  await wait(()=>button('Add to Nemlig'));
+  await fetch('/uncertain-next',{method:'POST'});
+  click('Add to Nemlig');
+  await wait(()=>button('Inspect Nemlig basket in conversation'));
   check(!button('Submit to Nemlig')&&!button('Add to Nemlig'),'Uncertain outcome allowed a retry');
   check((await fetch('/stats').then(r=>r.json())).basketWrites===0,'Synthetic uncertain path wrote the provider basket');
   status.textContent='PASS: unknown prices allow prepare, uncertain result blocks replay, provider basket writes 0';
