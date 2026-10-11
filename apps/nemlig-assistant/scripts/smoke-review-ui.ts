@@ -292,8 +292,11 @@ document.getElementById('flow').onclick = async () => {
   await wait(()=>title()==='Local basket'&&doc().querySelectorAll('.product-list article').length===1);
   await wait(()=>button('Submit to Nemlig')&&!button('Submit to Nemlig').disabled);
   click('Submit to Nemlig'); await wait(()=>button('Add to Nemlig basket'));
-  click('Add to Nemlig basket'); await wait(()=>button('Add to Nemlig'));
-  await fetch('/uncertain-next',{method:'POST'}); click('Add to Nemlig'); await wait(()=>text().includes('We could not verify the addition'));
+  click('Add to Nemlig basket');
+  await wait(()=>button('Add to Nemlig'));
+  await fetch('/uncertain-next',{method:'POST'});
+  click('Add to Nemlig');
+  await wait(()=>text().includes('We could not verify the addition'));
   check(!button('Submit to Nemlig')&&!button('Add to Nemlig'),'Uncertain outcome allowed a retry');
   check((await fetch('/stats').then(r=>r.json())).basketWrites===0,'Synthetic uncertain path wrote the provider basket');
   status.textContent='PASS: unknown prices allow prepare, uncertain result blocks replay, provider basket writes 0';
