@@ -902,6 +902,23 @@ export class ProductReviewService {
       destination: "ready",
       items: rows,
     };
+    if (
+      current?.accountIdentity === accountIdentity &&
+      current.snapshot.shoppingListId === list.id &&
+      (current.snapshot.shoppingListDirty || current.snapshot.updateStatus)
+    ) {
+      const fingerprint = shoppingListFingerprint(list);
+      if (fingerprint !== current.nativeFingerprint) {
+        current.snapshot.conflictItems = rows;
+        current.snapshot.updateStatus = "partial";
+        current.snapshot.actionNotice =
+          "Nemlig changed this list while edits were pending. Current rows are shown alongside your staged edits; review both before continuing.";
+      } else if (current.snapshot.updateStatus) {
+        current.snapshot.conflictItems = rows;
+      }
+      this.touch(owner, current);
+      return structuredClone(current.snapshot);
+    }
     this.drafts.set(owner, {
       busy: false,
       accountIdentity,
@@ -1231,7 +1248,7 @@ export class ProductReviewService {
     );
   }
 
-  // Provider edits are non-idempotent; keep their account and cancellation checks ordered.
+  // Stop after a failed write and reconcile the exact list before any deliberate retry.
   // fallow-ignore-next-line complexity
   private async writeNativeListDiff(
     owner: string,
@@ -1870,7 +1887,6 @@ export class ProductReviewService {
   ): Promise<ProductReviewSnapshot> {
     const stored = this.lock(owner, expectedDraftId);
     try {
-      const listId = stored.snapshot.shoppingListId;
       if (
         stored.snapshot.shoppingListDirty ||
         stored.snapshot.updateStatus !== undefined
@@ -1879,58 +1895,25 @@ export class ProductReviewService {
           "Update the saved Nemlig shopping list and confirm the readback before submitting.",
         );
       }
-      if (listId) {
-        throw new NemligError(nativeListTransferUnavailable);
-      }
-      const previous = stored.snapshot.submission;
-      if (previous && previous.status !== "prepared") {
-        throw new NemligError(
-          "Inspect the actual Nemlig basket before deliberately editing and reviewing a new submission.",
-        );
-      }
-      const items = stored.snapshot.items;
-      if (!items.length) {
-        throw new NemligError("The Local basket is empty.");
-      }
       if (
-        items.some((item) =>
-          item.view.status === "unavailable"
-            ? item.view.missing !== true
-            : item.view.product.available === undefined,
-        )
+        stored.snapshot.shoppingListId === undefined ||
+        stored.snapshot.saveStatus !== "saved"
       ) {
         throw new NemligError(
-          "The Local basket has unavailable or unresolved product details. Review them before submitting.",
+          "Save this draft as a Nemlig shopping list before reviewing basket additions.",
         );
       }
-      if (!this.canPrepareShoppingList()) {
-        throw new NemligError(
-          "Shopping-list submission is unavailable. No Nemlig basket write was sent.",
-        );
-      }
-      const proposal = await this.proposals!.prepareShoppingListAdditions!(
-        owner,
-        items.map(({ product_id, quantity }) => ({ product_id, quantity })),
-        "Nemlig Assistant Local basket",
-        { kind: "exact_review" },
-        { signal, freshProducts: true },
-      );
-      this.get(owner);
-      stored.proposalId = proposal.proposal_id;
-      stored.snapshot.submission = {
-        submission_id: randomUUID(),
-        status: "prepared",
-        expires_at: proposal.expires_at,
-        review: structuredClone(proposal.review),
-      };
-      delete stored.snapshot.actionNotice;
-      return structuredClone(stored.snapshot);
+      stored.snapshot.submission = undefined;
+      stored.proposalId = undefined;
+      stored.snapshot.actionNotice = nativeListTransferUnavailable;
+      this.touch(owner, stored);
+      throw new NemligError(nativeListTransferUnavailable);
     } finally {
       stored.busy = false;
     }
   }
 
-  /** Call only after explicit conversational or viewer approval of this exact submission. */
+  /** Native-list submission is blocked pending the transfer decision. */
   async submit(
     owner: string,
     submissionId: string,
@@ -1950,41 +1933,24 @@ export class ProductReviewService {
           "Update the saved Nemlig shopping list and confirm the readback before submitting.",
         );
       }
-      if (stored.snapshot.shoppingListId !== undefined) {
-        stored.snapshot.submission = undefined;
-        stored.proposalId = undefined;
-        stored.snapshot.actionNotice = nativeListTransferUnavailable;
-        this.touch(owner, stored);
-        throw new NemligError(nativeListTransferUnavailable);
+      if (
+        stored.snapshot.shoppingListId === undefined ||
+        stored.snapshot.saveStatus !== "saved"
+      ) {
+        throw new NemligError(
+          "Save this draft as a Nemlig shopping list before reviewing basket additions.",
+        );
       }
       if (stored.snapshot.shoppingListId !== expectedShoppingListId) {
         throw new NemligError(
           "Select the exact saved Nemlig shopping list before adding it to the basket.",
         );
       }
-      const { proposalId, submission } = requirePreparedSubmission(
-        stored.snapshot.submission,
-        submissionId,
-        stored.proposalId,
-        this.now(),
-      );
-      // Record uncertainty before crossing the provider boundary; never silently retry.
-      submission.status = "uncertain";
-      let result: ApplyResult;
-      try {
-        result = await this.proposals.apply(owner, proposalId, "additions");
-      } catch (error) {
-        if (error instanceof VerifiedPartialAdditionsError) {
-          submission.status = "partial";
-          submission.verified_additions = error.verifiedAdditions;
-        }
-        throw error;
-      }
-      submission.status = "submitted";
-      submission.skipped_products = result.skipped_products;
-      submission.verified_additions = result.verified_additions;
-      submission.cleanup_warning = result.cleanup_warning;
-      return { review: structuredClone(stored.snapshot), result };
+      stored.snapshot.submission = undefined;
+      stored.proposalId = undefined;
+      stored.snapshot.actionNotice = nativeListTransferUnavailable;
+      this.touch(owner, stored);
+      throw new NemligError(nativeListTransferUnavailable);
     } finally {
       stored.busy = false;
     }

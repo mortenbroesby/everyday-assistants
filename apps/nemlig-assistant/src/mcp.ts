@@ -855,6 +855,9 @@ In the hosted deployment, Local baskets are durable owner data; use the opaque b
     signal: AbortSignal,
   ) => {
     if (action.kind === "prepare_submission") {
+      if (reviews.active(owner)?.shoppingListId !== listId) {
+        throw new NemligError("Select this exact shopping list again.");
+      }
       return success({ review: await reviews.prepare(owner, signal) });
     }
     if (action.kind === "show") {

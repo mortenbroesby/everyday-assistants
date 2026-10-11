@@ -2320,6 +2320,15 @@ test("empty and unavailable results retain safe routes and unsaved drafts cannot
       assert.deepEqual(alternativesReview.alternatives?.views, []);
       assert.equal(alternativesReview.items[0]?.state, "ready");
       assert.equal(alternativesReview.submission, undefined);
+      const wrongTarget = await mcp.callTool({
+        name: "update_product_review_conversation",
+        arguments: {
+          action: { kind: "prepare_submission" },
+          shopping_list_id: 999,
+        },
+      });
+      assert.equal(wrongTarget.isError, true);
+      assert.match(toolText(wrongTarget), /Select this exact shopping list/u);
       const refused = await mcp.callTool({
         name: "update_product_review_conversation",
         arguments: {

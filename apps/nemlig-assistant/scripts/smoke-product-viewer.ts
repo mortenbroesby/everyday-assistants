@@ -48,6 +48,7 @@ declare global {
     cancelPendingTool: () => void;
     rejectDeferredGeneric: () => void;
     getReview: () => ProductReviewSnapshot & { basketId?: string };
+    changeDuringPreparation: boolean;
   }
 }
 
@@ -61,7 +62,7 @@ async function openBasket(
     .getByRole("button", { name: `Open basket ${basketId.slice(0, 8)}` })
     .click();
   await frame
-    .getByRole("heading", { name: "Local basket", exact: true })
+    .getByRole("heading", { name: "Shopping list", exact: true })
     .waitFor();
   assert.equal(
     await page.evaluate(() => window.calls.at(-1)?.args.basket_id),
@@ -159,7 +160,7 @@ const parentDocument = (
 ) => `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>synthetic MCP host</title>
 <style>body{margin:0}</style><iframe title="viewer" src="/resource" style="display:block;width:100%;height:100vh;border:0"></iframe>
 <script>
-window.calls=[]; window.messages=[]; window.providerWrites=0; window.hostErrors=[]; window.submissionAttempts=0; window.failNext=false; window.failGenericNext=false; window.deferGenericNext=false; window.heartbeatCalls=0;
+window.calls=[]; window.messages=[]; window.providerWrites=0; window.hostErrors=[]; window.submissionAttempts=0; window.failNext=false; window.failGenericNext=false; window.deferGenericNext=false; window.heartbeatCalls=0; window.changeDuringPreparation=false;
 const mode=${JSON.stringify(mode)}; const basketIds=${JSON.stringify(basketIds)}; let selectedBasketId;
 let review=JSON.parse(${JSON.stringify(reviewJson)}); if(mode==='restored') review={...review,basketId:basketIds[0],revision:1}; if(mode==='idless'){delete review.basketId;delete review.revision;delete review.submissionAttempted}
 let syntheticNow=Date.now(); Date.now=()=>syntheticNow; window.advanceSyntheticClock=(milliseconds)=>{syntheticNow+=milliseconds};
@@ -181,7 +182,7 @@ const apply=(action,args)=>{
  if(action.kind==='remove') review.items=review.items.filter(item=>!action.product_ids.includes(item.product_id));
  if(action.kind==='alternatives'){ review.destination='alternatives'; review.alternatives={product_id:action.product_id,query:action.query,views:[alternativeView]}; }
  if(action.kind==='replace'){ const target=review.items.find(item=>item.product_id===action.product_id); target.view=alternativeView; target.product_id=action.replacement_id; target.state='ready'; review.destination='ready'; review.alternatives=undefined; }
- if(action.kind==='prepare_submission') { const lines=review.items.map(item=>({product_id:item.product_id,quantity:item.quantity,name:item.view.product.name,item_price:item.view.product.price,line_total:item.quantity*item.view.product.price})); review.submission={status:'prepared',submission_id:'synthetic-submission',review:{lines,expected_products_price:lines.reduce((total,line)=>total+line.line_total,0)}}; }
+ if(action.kind==='prepare_submission') { if(window.changeDuringPreparation){window.changeDuringPreparation=false;review.items[0].quantity++;} const lines=review.items.map(item=>({product_id:item.product_id,quantity:item.quantity,name:item.view.product.name,item_price:item.view.product.price,line_total:item.quantity*item.view.product.price})); review.submission={status:'prepared',submission_id:'synthetic-submission',review:{lines,expected_products_price:lines.reduce((total,line)=>total+line.line_total,0)}}; }
  if(action.kind!=='prepare_submission' && action.kind!=='navigate' && action.kind!=='alternatives') delete review.submission;
  return result(review);
 };
@@ -339,14 +340,8 @@ try {
   });
   console.log("Synthetic viewer smoke: host page loaded");
   const frame = page.frameLocator('iframe[title="viewer"]');
-  const openPreparedSubmission = async () => {
-    await frame.getByRole("button", { name: "Submit to Nemlig" }).click();
-    await frame
-      .getByRole("heading", { name: "Ready to submit the Local basket" })
-      .waitFor();
-  };
   await frame
-    .getByRole("heading", { name: "Local basket", exact: true })
+    .getByRole("heading", { name: "Shopping list", exact: true })
     .waitFor();
   assert.equal(
     await page.evaluate(() => window.calls.length),
@@ -446,13 +441,26 @@ try {
 
   await basketFrame.getByRole("button", { name: "Submit to Nemlig" }).click();
   await basketFrame
-    .getByRole("heading", { name: "Ready to submit the Local basket" })
+    .getByRole("heading", { name: "Nemlig confirmed the addition" })
     .waitFor();
-  await basketFrame.locator(".basket-menu > button").click();
+  const callsBeforeBasketPicker = await basketPage.evaluate(
+    () => window.calls.length,
+  );
   await basketFrame
-    .getByRole("menuitem", { name: "Choose another basket" })
+    .getByRole("button", { name: "Choose another Local basket" })
     .click();
-  await basketFrame.locator("#title").waitFor();
+  await basketPage.waitForFunction(
+    (before) =>
+      window.calls
+        .slice(before)
+        .some(({ args }) => args.action?.kind === "list"),
+    callsBeforeBasketPicker,
+  );
+  await basketFrame
+    .getByRole("button", {
+      name: `Open basket ${basketIds[0].slice(0, 8)}`,
+    })
+    .waitFor();
   await openBasket(
     basketPage,
     basketFrame,
@@ -461,7 +469,7 @@ try {
   );
   assert.equal(
     await basketFrame
-      .getByRole("heading", { name: "Ready to submit the Local basket" })
+      .getByRole("heading", { name: "Nemlig confirmed the addition" })
       .count(),
     0,
     "basket switch preserved the previous submission confirmation",
@@ -514,7 +522,7 @@ try {
   await restoredPage.goto(`http://127.0.0.1:${address.port}/host-restored`);
   const restoredFrame = restoredPage.frameLocator('iframe[title="viewer"]');
   await restoredFrame
-    .getByRole("heading", { name: "Local basket", exact: true })
+    .getByRole("heading", { name: "Shopping list", exact: true })
     .waitFor();
   await setSyntheticClock(restoredFrame.locator(".viewer"));
   await restoredFrame.locator(".viewer").evaluate(() => {
@@ -538,7 +546,7 @@ try {
     'iframe[title="viewer"]',
   );
   await passivePickerFrame
-    .getByRole("heading", { name: "Local basket", exact: true })
+    .getByRole("heading", { name: "Shopping list", exact: true })
     .waitFor();
   await passivePickerFrame
     .locator(".product-action-row")
@@ -555,7 +563,7 @@ try {
   );
   await passivePickerPage.evaluate(() => window.sendPassivePicker());
   await passivePickerFrame
-    .getByRole("heading", { name: "Local basket", exact: true })
+    .getByRole("heading", { name: "Shopping list", exact: true })
     .waitFor();
   assert.equal(
     await passivePickerFrame
@@ -593,7 +601,7 @@ try {
     'iframe[title="viewer"]',
   );
   await pickerFlushFrame
-    .getByRole("heading", { name: "Local basket", exact: true })
+    .getByRole("heading", { name: "Shopping list", exact: true })
     .waitFor();
   await pickerFlushFrame
     .locator(".product-action-row")
@@ -650,7 +658,7 @@ try {
     'iframe[title="viewer"]',
   );
   await pickerFlushFailureFrame
-    .getByRole("heading", { name: "Local basket", exact: true })
+    .getByRole("heading", { name: "Shopping list", exact: true })
     .waitFor();
   await pickerFlushFailureFrame
     .locator(".product-action-row")
@@ -672,7 +680,7 @@ try {
     .waitFor();
   assert.equal(
     await pickerFlushFailureFrame
-      .getByRole("heading", { name: "Local basket", exact: true })
+      .getByRole("heading", { name: "Shopping list", exact: true })
       .count(),
     1,
     "failed quantity flush left the original basket",
@@ -707,7 +715,7 @@ try {
     'iframe[title="viewer"]',
   );
   await staleFailureFrame
-    .getByRole("heading", { name: "Local basket", exact: true })
+    .getByRole("heading", { name: "Shopping list", exact: true })
     .waitFor();
   await staleFailureFrame
     .locator(".product-action-row")
@@ -1006,7 +1014,7 @@ try {
   );
   await frame.getByRole("button", { name: "Back to Local basket" }).click();
   await frame
-    .getByRole("heading", { name: "Local basket", exact: true })
+    .getByRole("heading", { name: "Shopping list", exact: true })
     .waitFor();
   const callsBeforeMenu = await page.evaluate(() => window.calls.length);
   const box = await milkDisclosure.boundingBox();
@@ -1101,7 +1109,7 @@ try {
   const backCalls = await page.evaluate(() => window.calls.length);
   await frame.getByRole("button", { name: "Back to Local basket" }).click();
   await frame
-    .getByRole("heading", { name: "Local basket", exact: true })
+    .getByRole("heading", { name: "Shopping list", exact: true })
     .waitFor();
   assert.equal(
     await page.evaluate(() => window.calls.length),
@@ -1117,7 +1125,7 @@ try {
   await frame.locator(".product-inline-actions").press("Escape");
   await page.waitForFunction(() => window.getReview().items[0]?.quantity === 2);
   await frame
-    .getByRole("heading", { name: "Local basket", exact: true })
+    .getByRole("heading", { name: "Shopping list", exact: true })
     .waitFor();
   await page.evaluate(() => window.sendPassive());
   assert.equal(
@@ -1141,7 +1149,7 @@ try {
     .click();
   await frame.getByRole("button", { name: "Use selected alternative" }).click();
   await frame
-    .getByRole("heading", { name: "Local basket", exact: true })
+    .getByRole("heading", { name: "Shopping list", exact: true })
     .waitFor();
   const replacement = await page.evaluate(() =>
     window
@@ -1171,107 +1179,77 @@ try {
     });
   await increase.click();
   await frame.locator(".product-inline-actions").press("Escape");
+  await page.evaluate(() => {
+    window.changeDuringPreparation = true;
+  });
   const callsBeforeSubmit = await page.evaluate(() => window.calls.length);
-  await openPreparedSubmission();
-  const actions = await page.evaluate(
-    (before) =>
-      window.calls
-        .slice(before)
-        .map(
-          (call: { args: { action?: { kind?: string } } }) =>
-            call.args.action?.kind,
-        ),
-    callsBeforeSubmit,
-  );
-  assert.deepEqual(
-    actions,
-    ["quantity", "prepare_submission"],
-    "quantity did not flush before preparation",
-  );
-  assert.equal(
-    await frame
-      .locator('[data-viewer-component="outcome-surface"] p')
-      .filter({ hasText: "Synthetic alternative" })
-      .count(),
-    1,
-    "replacement missing from exact recap",
-  );
-  const prepared = await page.evaluate(() => window.getReview());
-  assert.ok(
-    prepared.submission,
-    "whole-list preparation did not produce a recap",
-  );
-  assert.equal(
-    (prepared.submission.review.lines as unknown[]).length,
-    2,
-    "preparation omitted a Local basket row",
-  );
-  await capture("confirmation");
-  await frame.getByRole("button", { name: "Add to Nemlig basket" }).click();
-  await frame.getByRole("button", { name: "Cancel" }).click();
-  assert.equal(
-    await frame.getByRole("button", { name: "Add to Nemlig basket" }).count(),
-    1,
-    "cancel removed the exact recap",
-  );
-  await frame.getByRole("button", { name: "Add to Nemlig basket" }).click();
-  const attemptsBeforeQuantityInvalidation = await page.evaluate(
-    () => window.submissionAttempts,
-  );
-  const replacementCard = frame
-    .locator(".product-card")
-    .filter({ hasText: "Synthetic alternative" });
-  await replacementCard
-    .locator('[data-viewer-component="product-summary"]')
-    .press("Shift+F10");
+  await frame.getByRole("button", { name: "Submit to Nemlig basket" }).click();
   await frame
-    .locator(".product-inline-actions")
-    .getByRole("button", { name: "Increase quantity of Synthetic alternative" })
-    .click();
-  await frame.locator(".product-inline-actions").press("Escape");
-  await frame.getByRole("button", { name: "Add to Nemlig" }).click();
-  await frame
-    .getByText("The prepared change changed while quantities were being saved.")
+    .getByText("The shopping list changed during submission preparation.")
     .waitFor();
   assert.equal(
     await page.evaluate(() => window.submissionAttempts),
-    attemptsBeforeQuantityInvalidation,
-    "quantity edit did not invalidate the prepared approval before submit",
+    0,
+    "a changed prepared payload was submitted without confirmation",
   );
-  const submitCalls = await page.evaluate(() => window.calls.length);
-  await openPreparedSubmission();
-
-  await frame.getByRole("button", { name: "Add to Nemlig basket" }).click();
-  await frame.getByRole("button", { name: "Add to Nemlig" }).click();
-  await frame.getByText("Nemlig confirmed the addition").waitFor();
-  const prepareCall = await page.evaluate(
-    (before) =>
-      window.calls
-        .slice(before)
-        .find(
-          (call: { args: { action?: { kind?: string } } }) =>
-            call.args.action?.kind === "prepare_submission",
-        ),
-    submitCalls,
+  await frame
+    .getByRole("heading", { name: "Ready to add to Nemlig basket" })
+    .waitFor();
+  const prepared = await page.evaluate(() => window.getReview());
+  assert.ok(prepared.submission, "changed prepare response omitted its recap");
+  assert.equal(
+    (prepared.submission.review.lines as unknown[]).length,
+    2,
+    "prepared recap omitted a Local basket row",
   );
-  assert.ok(prepareCall, "submission did not use exact preparation");
+  assert.equal(
+    await page.evaluate(
+      (before) =>
+        window.calls
+          .slice(before)
+          .filter(({ args }) => args.action?.kind === "prepare_submission")
+          .length,
+      callsBeforeSubmit,
+    ),
+    1,
+    "one-click submission prepared more than once",
+  );
+  await capture("confirmation");
+  await frame
+    .getByRole("button", { name: /Submit \d+ products? to Nemlig basket/ })
+    .click();
+  await frame
+    .getByRole("heading", { name: "Nemlig confirmed the addition" })
+    .waitFor();
+  assert.equal(
+    await page.evaluate(() => window.submissionAttempts),
+    1,
+    "exact prepared recap was not submitted exactly once",
+  );
+  const submitCall = await page.evaluate((before) => {
+    const call = window.calls
+      .slice(before)
+      .find(({ name }) => name === "submit_product_review");
+    return call?.args;
+  }, callsBeforeSubmit);
+  assert.deepEqual(
+    submitCall,
+    {
+      submission_id: "synthetic-submission",
+      basket_id: basketIds[0],
+    },
+    "submit was not bound to the exact prepared Local basket",
+  );
 
   const completedPage = await context.newPage();
   await completedPage.goto(`http://127.0.0.1:${address.port}/host`);
   const completedFrame = completedPage.frameLocator('iframe[title="viewer"]');
   await completedFrame
-    .getByRole("heading", { name: "Local basket", exact: true })
+    .getByRole("heading", { name: "Shopping list", exact: true })
     .waitFor();
   await completedFrame
     .getByRole("button", { name: "Submit to Nemlig" })
     .click();
-  await completedFrame
-    .getByRole("heading", { name: "Ready to submit the Local basket" })
-    .waitFor();
-  await completedFrame
-    .getByRole("button", { name: "Add to Nemlig basket" })
-    .click();
-  await completedFrame.getByRole("button", { name: "Add to Nemlig" }).click();
   await completedFrame
     .getByRole("heading", { name: "Nemlig confirmed the addition" })
     .waitFor();
@@ -1289,21 +1267,14 @@ try {
   });
   const uncertainFrame = uncertainPage.frameLocator('iframe[title="viewer"]');
   await uncertainFrame
-    .getByRole("heading", { name: "Local basket", exact: true })
+    .getByRole("heading", { name: "Shopping list", exact: true })
     .waitFor();
-  await uncertainFrame
-    .getByRole("button", { name: "Submit to Nemlig" })
-    .click();
-  await uncertainFrame
-    .getByRole("heading", { name: "Ready to submit the Local basket" })
-    .waitFor();
-  await uncertainFrame
-    .getByRole("button", { name: "Add to Nemlig basket" })
-    .click();
   await uncertainPage.evaluate(() => {
     window.failNext = true;
   });
-  await uncertainFrame.getByRole("button", { name: "Add to Nemlig" }).click();
+  await uncertainFrame
+    .getByRole("button", { name: "Submit to Nemlig" })
+    .click();
   await uncertainPage.waitForFunction(() => window.submissionAttempts === 1);
   await uncertainFrame
     .getByRole("heading", { name: "We could not verify the addition" })
@@ -1319,7 +1290,7 @@ try {
   await removePage.goto(`http://127.0.0.1:${address.port}/host`);
   const removeFrame = removePage.frameLocator('iframe[title="viewer"]');
   await removeFrame
-    .getByRole("heading", { name: "Local basket", exact: true })
+    .getByRole("heading", { name: "Shopping list", exact: true })
     .waitFor();
   const removeProduct = async (name: string, remaining: number) => {
     await removeFrame
@@ -1518,7 +1489,7 @@ try {
   await longPage.goto(`http://127.0.0.1:${address.port}/host-long`);
   const longFrame = longPage.frameLocator('iframe[title="viewer"]');
   await longFrame
-    .getByRole("heading", { name: "Local basket", exact: true })
+    .getByRole("heading", { name: "Shopping list", exact: true })
     .waitFor();
   await longFrame.locator(".product-action-row").first().waitFor();
   const longList = await longFrame.locator(".viewer").evaluate((viewer) => ({
