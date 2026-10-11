@@ -271,6 +271,7 @@ test("durable preparation builds and verifies one provider shopping list", async
           })),
         };
       },
+      deleteShoppingList: async () => undefined,
       addShoppingListToCart: async () => undefined,
     },
     {

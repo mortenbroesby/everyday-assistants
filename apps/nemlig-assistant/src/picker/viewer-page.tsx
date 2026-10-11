@@ -42,6 +42,7 @@ export type Review = {
     status: "prepared" | "submitted" | "uncertain" | "partial";
     verified_additions?: number;
     skipped_products?: Array<{ product_id: number; name: string }>;
+    cleanup_warning?: string;
     submission_id: string;
     review: {
       lines?: Array<{
@@ -1164,7 +1165,10 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
         review.submission?.status === "submitted" && (
           <OutcomeSurface
             tone={
-              review.submission.skipped_products?.length ? "warning" : "success"
+              review.submission.skipped_products?.length ||
+              review.submission.cleanup_warning
+                ? "warning"
+                : "success"
             }
             title={
               review.submission.verified_additions === 0
@@ -1177,6 +1181,9 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
                 ? `${review.submission.verified_additions === 0 ? "No approved products were added" : `${review.submission.verified_additions} approved product additions were verified`}. Unavailable products were skipped: ${review.submission.skipped_products.map(({ name }) => name).join(", ")}. Check the actual Nemlig basket before trying them again.`
                 : "Only the prepared products were added. Your real Nemlig basket was verified after the addition."}
             </p>
+            {review.submission.cleanup_warning && (
+              <p role="status">{review.submission.cleanup_warning}</p>
+            )}
             <Button
               color="secondary"
               disabled={busy}

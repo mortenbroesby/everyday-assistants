@@ -1531,6 +1531,11 @@ test("shopping-list transfer uses the native list endpoints and never the indivi
       },
       response: json({}),
     },
+    {
+      match: "/ShoppingList/RemoveShoppingList\\?listId=44$",
+      inspect: (_url, init) => assert.equal(init?.method, "POST"),
+      response: new Response(null, { status: 204 }),
+    },
   ];
   const client = new NemligClient(mockFetch(requests));
   await client.login("person@example.test", "secret");
@@ -1544,6 +1549,7 @@ test("shopping-list transfer uses the native list endpoints and never the indivi
     items: [{ productId: 7, quantity: 2 }],
   });
   await client.addShoppingListToCart(listId);
+  await client.deleteShoppingList(listId);
   assert.equal(requests.length, 0);
 });
 

@@ -264,6 +264,9 @@ test("discovery reaches an approved draft submission and verified Nemlig basket"
         ([productId, quantity]) => ({ productId, quantity }),
       ),
     }),
+    deleteShoppingList: async (listId) => {
+      shoppingLists.delete(listId);
+    },
     addShoppingListToCart: async (listId) => {
       writes += 1;
       const additions = [...(shoppingLists.get(listId) ?? [])].map(
@@ -434,6 +437,7 @@ test("an indeterminate draft submission is attempted once", async () => {
         ([productId, quantity]) => ({ productId, quantity }),
       ),
     }),
+    deleteShoppingList: async () => undefined,
     addShoppingListToCart: async () => {
       writes += 1;
       throw new Error("indeterminate write");

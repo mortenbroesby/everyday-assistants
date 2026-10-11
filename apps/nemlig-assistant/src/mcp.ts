@@ -121,6 +121,7 @@ const reviewSnapshotSchema = z.object({
       submission_id: z.string().uuid(),
       status: z.enum(["prepared", "submitted", "uncertain", "partial"]),
       verified_additions: z.number().int().nonnegative().optional(),
+      cleanup_warning: z.string().optional(),
       skipped_products: z
         .array(
           z.object({
@@ -249,6 +250,7 @@ const applyResultSchema = z.object({
   replayed: z.boolean(),
   basket: basketSchema,
   verified_additions: z.number().int().nonnegative().optional(),
+  cleanup_warning: z.string().optional(),
   skipped_products: z
     .array(
       z.object({ product_id: z.number().int().positive(), name: z.string() }),

@@ -12,7 +12,8 @@ the direct per-product real-basket write loop at the final submission boundary.
   prepared for submission.
 - Verify the temporary list before binding it to existing submission authority,
   then transfer it once through Nemlig's native list-to-basket operation.
-- Keep the current durable submission fence and final real-basket readback.
+- Keep the current durable submission fence and final real-basket readback,
+  then delete the exact temporary provider list after verified success.
 
 **Non-Goals:**
 
@@ -20,9 +21,9 @@ the direct per-product real-basket write loop at the final submission boundary.
   edits before preparation.
 - Deleting Local basket line storage, changing reconnect behavior, or migrating
   existing Local baskets. Those belong to a separate post-smoke cutover.
-- Treating provider-list cleanup as part of the real-basket outcome. A
-  preparation failure can leave an unused temporary list; it must never trigger
-  a real-basket fallback or retry.
+- Treating provider-list cleanup failure as a failed basket addition. A
+  preparation or uncertain-transfer failure can leave a temporary list; it
+  must never trigger a real-basket fallback or retry.
 
 ## Decisions
 
@@ -50,13 +51,15 @@ and exact additions arrived. A non-verifiable result retains the no-retry fence.
 The alternative—direct per-product writes—has a known 30+ item failure mode and
 is not used as a fallback.
 
-### No automatic temporary-list cleanup in the proof
+### Cleanup only after verified transfer
 
-The proof does not delete a temporary list after transfer or preparation
-failure. Cleanup needs durable provider-list mapping and lifecycle evidence;
-adding an unproven cleanup state would obscure the one question this release
-tests. An orphaned list is a known non-real-basket side effect, recorded for the
-follow-up cutover.
+After exact basket readback verifies the transfer, the service deletes only the
+app-created list ID bound to that proposal. It records completion before cleanup,
+so a failed or ambiguous delete produces a warning and cannot cause a basket
+retry. Preparation failures, preflight failures, and uncertain or mismatched
+transfer outcomes leave the provider list untouched. There is no cleanup retry
+or durable orphan-recovery subsystem; a crash between readback and deletion can
+still leave a temporary list.
 
 ## Risks / Trade-offs
 

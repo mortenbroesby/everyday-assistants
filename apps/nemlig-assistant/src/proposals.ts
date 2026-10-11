@@ -98,6 +98,7 @@ export interface ApplyResult extends Record<string, unknown> {
   basket: BasketPayload;
   skipped_products?: SkippedProduct[];
   verified_additions?: number;
+  cleanup_warning?: string;
 }
 
 /** A preflight stopped a batch after earlier additions had verified readback. */
@@ -280,6 +281,7 @@ export class BasketProposalService {
           | "getShoppingList"
           | "createShoppingList"
           | "updateShoppingListProduct"
+          | "deleteShoppingList"
           | "addShoppingListToCart"
         >
       >,
@@ -405,9 +407,18 @@ export class BasketProposalService {
     authorization: AdditionAuthorization,
     options: ProposalReadOptions & { freshProducts?: boolean } = {},
   ): Promise<ProposalView> {
-    const { createShoppingList, updateShoppingListProduct, getShoppingList } =
-      this.client;
-    if (!createShoppingList || !updateShoppingListProduct || !getShoppingList) {
+    const {
+      createShoppingList,
+      updateShoppingListProduct,
+      getShoppingList,
+      deleteShoppingList,
+    } = this.client;
+    if (
+      !createShoppingList ||
+      !updateShoppingListProduct ||
+      !getShoppingList ||
+      !deleteShoppingList
+    ) {
       throw new NemligError("Shopping-list submission is unavailable.");
     }
     // Fresh-review errors already have deliberate user-facing semantics.
@@ -786,6 +797,12 @@ export class BasketProposalService {
     proposal.state = "completed";
     proposal.result = completed;
     this.record("completed", proposal.operation.kind, "verified");
+    try {
+      await this.client.deleteShoppingList!(listId);
+    } catch {
+      completed.cleanup_warning =
+        "Nemlig additions were verified, but deletion of the temporary shopping list could not be confirmed. Do not resubmit this addition.";
+    }
     return completed;
   }
 
@@ -800,6 +817,7 @@ export class BasketProposalService {
       listId === undefined ||
       !fingerprint ||
       !getShoppingList ||
+      !this.client.deleteShoppingList ||
       !addShoppingListToCart
     ) {
       throw new NemligError("Shopping-list submission is unavailable.");
