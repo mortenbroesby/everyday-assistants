@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { VerifiedPartialAdditionsError } from "./proposals.js";
+import {
+  type BasketProposalService,
+  VerifiedPartialAdditionsError,
+} from "./proposals.js";
 import { NemligError, ProductNotFoundError, type Product } from "./client.js";
 import { MAX_DRAFT_PRODUCTS, ProductReviewService } from "./product-review.js";
 import {
@@ -35,12 +38,25 @@ const product = (id: number): Product => ({
 const client = {
   getProduct: async (id: number) => product(id),
   searchProducts: async () => [product(3)],
+  createShoppingList: async () => ({ id: 1, name: "fixture", items: [] }),
+  updateShoppingListProduct: async () => undefined,
+  getShoppingList: async () => ({ id: 1, name: "fixture", items: [] }),
 };
+
+const withShoppingList = <
+  T extends Pick<BasketProposalService, "prepareAdditions" | "apply">,
+>(
+  proposals: T,
+): T & Pick<BasketProposalService, "prepareShoppingListAdditions"> => ({
+  ...proposals,
+  prepareShoppingListAdditions: (owner, items, _name, authorization, options) =>
+    proposals.prepareAdditions(owner, items, authorization, options),
+});
 
 test("a shared Local basket prepares every item without an acceptance step", async () => {
   const prepared: Array<Array<{ product_id: number; quantity: number }>> = [];
   const service = new ProductReviewService(client, {
-    proposals: {
+    proposals: withShoppingList({
       prepareAdditions: async (_owner, items) => {
         prepared.push(items);
         return {
@@ -57,7 +73,7 @@ test("a shared Local basket prepares every item without an acceptance step", asy
       apply: async () => {
         throw new Error("not used");
       },
-    },
+    }),
   });
   const list = await service.start("owner", [
     { product_id: 1, quantity: 2 },
@@ -360,7 +376,9 @@ test("preparation includes the entire Local basket", async () => {
       throw new Error("No provider write expected");
     },
   };
-  const service = new ProductReviewService(client, { proposals });
+  const service = new ProductReviewService(client, {
+    proposals: withShoppingList(proposals!),
+  });
   await service.start("owner", [
     { product_id: 1, quantity: 2 },
     { product_id: 2, quantity: 3 },
@@ -487,7 +505,9 @@ test("submission hides provider references, invalidates edits, and retains verif
       };
     },
   };
-  const service = new ProductReviewService(client, { proposals });
+  const service = new ProductReviewService(client, {
+    proposals: withShoppingList(proposals),
+  });
   await service.start("owner", [{ product_id: 1, quantity: 1 }]);
   let draft = await service.prepare("owner");
   assert.equal(writes, 0);
@@ -563,7 +583,9 @@ test("a verified partial addition remains blocked with its confirmed count", asy
       );
     },
   };
-  const service = new ProductReviewService(client, { proposals });
+  const service = new ProductReviewService(client, {
+    proposals: withShoppingList(proposals),
+  });
   await service.start("owner", [{ product_id: 1, quantity: 1 }]);
   const draft = await service.prepare("owner");
 
@@ -600,7 +622,9 @@ test("local edits cannot erase an uncertain submission from another supported ca
       throw new Error("Readback failed after the addition attempt");
     },
   };
-  const service = new ProductReviewService(client, { proposals });
+  const service = new ProductReviewService(client, {
+    proposals: withShoppingList(proposals),
+  });
   await service.start("owner", [
     { product_id: 1, quantity: 1 },
     { product_id: 2, quantity: 1 },
@@ -653,7 +677,9 @@ test("any whole-list change invalidates a prepared submission", async () => {
       };
     },
   };
-  const service = new ProductReviewService(client, { proposals });
+  const service = new ProductReviewService(client, {
+    proposals: withShoppingList(proposals),
+  });
   await service.start("owner", [
     { product_id: 1, quantity: 2 },
     { product_id: 2, quantity: 1 },
@@ -721,7 +747,7 @@ test("an expired prepared submission cannot write the provider basket", async ()
     ConstructorParameters<typeof ProductReviewService>[1]
   >["proposals"];
   const service = new ProductReviewService(client, {
-    proposals,
+    proposals: withShoppingList(proposals!),
     now: () => now,
   });
   await service.start("owner", [{ product_id: 1, quantity: 1 }]);
@@ -779,7 +805,7 @@ test("failed hydration remains visible and blocks whole-list preparation", async
       },
     },
     {
-      proposals: {
+      proposals: withShoppingList({
         prepareAdditions: async () => {
           preparations++;
           throw new Error("Should not prepare unavailable products");
@@ -787,7 +813,7 @@ test("failed hydration remains visible and blocks whole-list preparation", async
         apply: async () => {
           throw new Error("Should not apply unavailable products");
         },
-      },
+      }),
     },
   );
   const draft = await service.start("owner", [{ product_id: 1, quantity: 1 }]);
@@ -810,7 +836,7 @@ test("a confirmed missing Local basket product can be reported and skipped at pr
       },
     },
     {
-      proposals: {
+      proposals: withShoppingList({
         prepareAdditions: async () => {
           preparations++;
           return {
@@ -830,7 +856,7 @@ test("a confirmed missing Local basket product can be reported and skipped at pr
         apply: async () => {
           throw new Error("No submission in this test");
         },
-      },
+      }),
     },
   );
   const draft = await service.start("owner", [
@@ -852,7 +878,7 @@ test("a confirmed missing Local basket product can be reported and skipped at pr
 
 test("a skipped product remains visible in the submitted Local basket outcome", async () => {
   const service = new ProductReviewService(client, {
-    proposals: {
+    proposals: withShoppingList({
       prepareAdditions: async () => ({
         applicable: true,
         proposal_id: "private",
@@ -877,7 +903,7 @@ test("a skipped product remains visible in the submitted Local basket outcome", 
         skipped_products: [{ product_id: 1, name: "Product 1" }],
         verified_additions: 0,
       }),
-    },
+    }),
   });
   await service.start("owner", [{ product_id: 1, quantity: 1 }]);
   const prepared = await service.prepare("owner");
