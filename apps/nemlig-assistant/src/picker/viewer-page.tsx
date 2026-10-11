@@ -8,7 +8,13 @@ import {
 import * as Dialog from "@radix-ui/react-dialog";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { useDrag } from "@use-gesture/react";
-import { Check, Layers3, ShoppingBasket, Trash2 } from "lucide-react";
+import {
+  ArrowLeft,
+  ChevronRight,
+  Layers3,
+  ShoppingBasket,
+  Trash2,
+} from "lucide-react";
 import type { ProductView } from "../product-presentation.js";
 import {
   ActionFooter,
@@ -169,7 +175,6 @@ function ProductCard({
   onQuantity,
   onRemove,
   onChoice,
-  choiceSelected = false,
   onOpenAlternatives,
   expandedFacts,
   onFactExpandedChange,
@@ -182,7 +187,6 @@ function ProductCard({
   onQuantity?: (quantity: number) => void;
   onRemove?: () => void;
   onChoice?: () => void;
-  choiceSelected?: boolean;
   onOpenAlternatives?: () => void;
   expandedFacts?: ReadonlySet<string>;
   onFactExpandedChange?: (factKey: string, expanded: boolean) => void;
@@ -382,25 +386,41 @@ function ProductCard({
           <div className="product-details">
             {comparison ? (
               onChoice ? (
-                <button
-                  type="button"
-                  className="product-comparison-summary alternative-choice"
-                  aria-pressed={choiceSelected}
-                  aria-label={
-                    choiceSelected
-                      ? `${productName(view)} selected as the alternative`
-                      : `Select ${productName(view)} as the alternative`
-                  }
-                  disabled={disabled || !isUsable(view)}
-                  onClick={onChoice}
+                <div className="product-comparison-summary alternative-choice">
+                  <ProductSummaryButton
+                    ref={summaryRef}
+                    color="secondary"
+                    variant="ghost"
+                    data-viewer-component="product-summary"
+                    aria-label={`Show details for ${productName(view)}`}
+                    disabled={disabled}
+                    onClick={() => setOverlayOpen(true)}
+                  >
+                    {summary}
+                  </ProductSummaryButton>
+                  <button
+                    type="button"
+                    className="alternative-select-action"
+                    aria-label={`Use ${productName(view)} as the alternative`}
+                    disabled={disabled || !isUsable(view)}
+                    onClick={onChoice}
+                  >
+                    <ChevronRight aria-hidden="true" size={24} />
+                  </button>
+                </div>
+              ) : (
+                <ProductSummaryButton
+                  ref={summaryRef}
+                  color="secondary"
+                  variant="ghost"
+                  className="product-comparison-summary"
+                  data-viewer-component="product-summary"
+                  aria-label={`Show details for ${productName(view)}`}
+                  disabled={disabled}
+                  onClick={() => setOverlayOpen(true)}
                 >
                   {summary}
-                  <span className="alternative-choice-state" aria-hidden="true">
-                    {choiceSelected ? "Selected" : "Select"}
-                  </span>
-                </button>
-              ) : (
-                <div className="product-comparison-summary">{summary}</div>
+                </ProductSummaryButton>
               )
             ) : (
               <ProductSummaryButton
@@ -433,11 +453,6 @@ function ProductCard({
                 {summary}
               </ProductSummaryButton>
             )}
-            {comparison && (
-              <div className="product-expanded product-comparison-details">
-                <ProductFacts view={view} />
-              </div>
-            )}
           </div>
         </article>
         {actionsOpen && (
@@ -461,41 +476,46 @@ function ProductCard({
             {actionControls}
           </div>
         )}
-        {!comparison && (
-          <Dialog.Portal>
-            <Dialog.Overlay className="product-overlay-backdrop" />
-            <Dialog.Content
-              className="product-detail-modal"
-              aria-describedby={undefined}
-              onCloseAutoFocus={(event) => {
-                event.preventDefault();
-                if (actionsOpen) {
-                  actionsRef.current?.focus({ preventScroll: true });
-                } else {
-                  summaryRef.current?.focus();
-                }
-              }}
-            >
-              <div className="product-overlay-header">
-                <Dialog.Title className="visually-hidden">
-                  {productName(view, item?.product_id)}
-                </Dialog.Title>
-                <Dialog.Close asChild>
-                  <button type="button" aria-label="Back to shopping list">
-                    ←
-                  </button>
-                </Dialog.Close>
+        <Dialog.Portal>
+          <Dialog.Overlay className="product-overlay-backdrop" />
+          <Dialog.Content
+            className="product-detail-modal"
+            aria-describedby={undefined}
+            onCloseAutoFocus={(event) => {
+              event.preventDefault();
+              if (actionsOpen) {
+                actionsRef.current?.focus({ preventScroll: true });
+              } else {
+                summaryRef.current?.focus();
+              }
+            }}
+          >
+            <div className="product-overlay-header">
+              <Dialog.Title className="visually-hidden">
+                {productName(view, item?.product_id)}
+              </Dialog.Title>
+              <Dialog.Close asChild>
+                <button
+                  type="button"
+                  aria-label={
+                    comparison
+                      ? "Back to alternatives"
+                      : "Back to shopping list"
+                  }
+                >
+                  <ArrowLeft aria-hidden="true" size={24} />
+                </button>
+              </Dialog.Close>
+            </div>
+            <div className="product-overlay-details">
+              <div className="product-overlay-scroll">
+                {detailSummary}
+                {details}
               </div>
-              <div className="product-overlay-details">
-                <div className="product-overlay-scroll">
-                  {detailSummary}
-                  {details}
-                </div>
-                {item && actionControls}
-              </div>
-            </Dialog.Content>
-          </Dialog.Portal>
-        )}
+              {item && actionControls}
+            </div>
+          </Dialog.Content>
+        </Dialog.Portal>
       </Dialog.Root>
     </div>
   );
@@ -582,9 +602,6 @@ function BasketList({
 // fallow-ignore-next-line complexity
 export function ViewerPage({ model, actions }: ViewerPageProps) {
   const [replacementPendingId, setReplacementPendingId] = useState<
-    number | undefined
-  >();
-  const [selectedAlternativeId, setSelectedAlternativeId] = useState<
     number | undefined
   >();
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | undefined>();
@@ -702,9 +719,6 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
       setReplacementPendingId(undefined);
     }
   }, [showingAlternatives]);
-  useEffect(() => {
-    setSelectedAlternativeId(undefined);
-  }, [review?.alternatives?.product_id, review?.alternatives?.query]);
   const productPayload =
     screen.kind === "products" ? screen.payload : undefined;
   const basket =
@@ -827,19 +841,14 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
     (view.status === "complete" && view.product.id !== undefined
       ? thumbnailsByProductId.get(view.product.id)
       : undefined);
-  const selectedAlternative = review?.alternatives?.views.find((view) =>
-    view.status === "complete"
-      ? view.product.id === selectedAlternativeId
-      : view.product_id === selectedAlternativeId,
-  );
-  const confirmAlternative = () => {
+  const replaceAlternative = (replacementId: number) => {
     const alternatives = review?.alternatives;
-    if (!alternatives || selectedAlternativeId === undefined) {
+    if (!alternatives) {
       return;
     }
-    setReplacementPendingId(selectedAlternativeId);
+    setReplacementPendingId(replacementId);
     void Promise.resolve(
-      actions.onReplace(alternatives.product_id, selectedAlternativeId),
+      actions.onReplace(alternatives.product_id, replacementId),
     )
       .catch(() => undefined)
       .finally(() => setReplacementPendingId(undefined));
@@ -1025,10 +1034,12 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
           <section className="alternatives" aria-label="Find an alternative">
             <div className="alternatives-scroll">
               <Button
+                className="alternatives-back"
                 color="secondary"
                 disabled={uncertainSubmission}
                 onClick={() => actions.onNavigate("ready")}
               >
+                <ArrowLeft aria-hidden="true" size={18} />
                 Back to shopping list
               </Button>
               <section
@@ -1112,11 +1123,10 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
                             editsBlocked || replacementPendingId !== undefined
                           }
                           comparison
-                          choiceSelected={selectedAlternativeId === id}
                           {...(id === undefined ? {} : disclosureProps(id))}
                           onChoice={() => {
                             if (id !== undefined) {
-                              setSelectedAlternativeId(id);
+                              replaceAlternative(id);
                             }
                           }}
                         />
@@ -1125,27 +1135,6 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
                   </div>
                 )}
               </section>
-              {selectedAlternative && (
-                <section
-                  className="alternative-selection-confirmation"
-                  aria-label="Confirm selected alternative"
-                >
-                  <p>
-                    <strong>{productName(selectedAlternative)}</strong> selected
-                  </p>
-                  <Button
-                    color="primary"
-                    block
-                    disabled={
-                      editsBlocked || replacementPendingId !== undefined
-                    }
-                    onClick={confirmAlternative}
-                  >
-                    <Check aria-hidden="true" size={18} />
-                    Use selected alternative
-                  </Button>
-                </section>
-              )}
             </div>
           </section>
         )}

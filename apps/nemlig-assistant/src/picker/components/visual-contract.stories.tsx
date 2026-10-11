@@ -29,6 +29,14 @@ const oatMilkCarton = new URL(
   "../fixtures/storybook-oat-milk.png",
   import.meta.url,
 ).href;
+const butterPackage = new URL(
+  "../fixtures/storybook-butter.svg",
+  import.meta.url,
+).href;
+const tomatoesCan = new URL(
+  "../fixtures/storybook-tomatoes.svg",
+  import.meta.url,
+).href;
 const unavailable: ProductView = {
   context: "review",
   status: "unavailable",
@@ -74,6 +82,9 @@ const pasta: ProductView = {
     unit_price: 47.9,
     unit: "kr/Kg.",
     currency: "DKK",
+    description: "Økologiske lasagneplader af durumhvede til ovnbagte retter.",
+    declaration: "Durumhvede, vand.",
+    details: [{ key: "Tilberedning", value: "Tilberedes efter anvisning" }],
     available: true,
     is_organic: true,
     is_frozen: false,
@@ -96,6 +107,9 @@ const oatMilk: ProductView = {
     unit_price: 19.95,
     unit: "kr/L",
     currency: "DKK",
+    description: "Økologisk havredrik med mild smag til kaffe og morgenmad.",
+    declaration: "Vand, havre, rapsolie, salt.",
+    details: [{ key: "Opbevaring", value: "Opbevares køligt efter åbning" }],
     available: true,
     is_organic: true,
     is_frozen: false,
@@ -106,11 +120,64 @@ const oatMilk: ProductView = {
   },
   review: { kind: "review", quantity: 1, line_total: 19.95, approved: false },
 };
+const butter: ProductView = {
+  context: "review",
+  status: "complete",
+  product: {
+    id: 4,
+    name: "Lurpak Smørbar",
+    brand: "Lurpak",
+    unit_size: "200 g",
+    price: 24.95,
+    unit_price: 124.75,
+    unit: "kr/Kg.",
+    currency: "DKK",
+    description: "Smørbar blanding til brød og madlavning.",
+    declaration: "SMØR, rapsolie, vand, salt.",
+    details: [{ key: "Opbevaring", value: "Opbevares køligt" }],
+    available: true,
+    is_organic: false,
+    is_frozen: false,
+    is_on_discount: false,
+    image_url: undefined,
+    labels: [],
+    tags: [],
+  },
+  review: { kind: "review", quantity: 1, line_total: 24.95, approved: false },
+};
+const tomatoes: ProductView = {
+  context: "review",
+  status: "complete",
+  product: {
+    id: 5,
+    name: "Hakkede tomater",
+    brand: "Mutti",
+    unit_size: "400 g",
+    price: 11.95,
+    unit_price: 29.88,
+    unit: "kr/Kg.",
+    currency: "DKK",
+    description: "Hakkede italienske tomater til sauce og supper.",
+    declaration: "Tomater, tomatjuice, salt.",
+    details: [{ key: "Oprindelsesland", value: "Italien" }],
+    available: true,
+    is_organic: false,
+    is_frozen: false,
+    is_on_discount: false,
+    image_url: undefined,
+    labels: [],
+    tags: [],
+  },
+  review: { kind: "review", quantity: 2, line_total: 23.9, approved: false },
+};
 const review: Review = {
   destination: "ready",
   items: [
     { product_id: 1, quantity: 2, state: "ready", view: milk },
     { product_id: 2, quantity: 1, state: "ready", view: pasta },
+    { product_id: 3, quantity: 1, state: "ready", view: oatMilk },
+    { product_id: 4, quantity: 1, state: "ready", view: butter },
+    { product_id: 5, quantity: 2, state: "ready", view: tomatoes },
   ],
   alternatives: { product_id: 1, query: "minimælk", views: [milk, pasta] },
 };
@@ -186,6 +253,8 @@ const baseProps = (
       [milk, dairyMilk],
       [pasta, lasagneSheets],
       [oatMilk, oatMilkCarton],
+      [butter, butterPackage],
+      [tomatoes, tomatoesCan],
     ]),
     message: "",
     busy: false,

@@ -1163,10 +1163,9 @@ try {
     .filter({ hasText: "Synthetic alternative" });
   await candidate
     .getByRole("button", {
-      name: "Select Synthetic alternative as the alternative",
+      name: "Use Synthetic alternative as the alternative",
     })
     .click();
-  await frame.getByRole("button", { name: "Use selected alternative" }).click();
   await frame
     .getByRole("heading", { name: "Shopping list", exact: true })
     .waitFor();
