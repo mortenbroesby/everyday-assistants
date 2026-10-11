@@ -145,9 +145,46 @@ export interface ProposalReadOptions {
   readonly signal?: AbortSignal;
 }
 
+type ShoppingListPreparationStage =
+  "fresh_review" | "create_list" | "populate_list" | "verify_list";
+
 const money = (value: number): number => Math.round(value * 100) / 100;
 const sameId = (left: number | string | undefined, right: number): boolean =>
   left !== undefined && String(left) === String(right);
+
+const shoppingListPreparationFailure = (
+  stage: ShoppingListPreparationStage,
+  error: unknown,
+): NemligError => {
+  if (error instanceof BasketPreflightError) {
+    return error;
+  }
+  const status = error instanceof NemligError ? error.status : undefined;
+  console.warn(
+    JSON.stringify({
+      schema_version: 1,
+      event: "shopping_list_preparation_failed",
+      stage,
+      error_class: error instanceof NemligError ? "provider" : "unknown",
+      ...(status === undefined ? {} : { provider_status: status }),
+    }),
+  );
+  return new NemligError(
+    `Shopping-list preparation failed at ${stage}; no Nemlig basket write was sent.`,
+    status,
+  );
+};
+
+const prepareShoppingListStage = async <Value>(
+  stage: ShoppingListPreparationStage,
+  action: () => Promise<Value>,
+): Promise<Value> => {
+  try {
+    return await action();
+  } catch (error) {
+    throw shoppingListPreparationFailure(stage, error);
+  }
+};
 
 export const basketPayload = (basket: Basket): BasketPayload => ({
   items: basket.items,
@@ -373,28 +410,38 @@ export class BasketProposalService {
     if (!createShoppingList || !updateShoppingListProduct || !getShoppingList) {
       throw new NemligError("Shopping-list submission is unavailable.");
     }
-    const proposal = await this.prepareAdditions(
-      connectionId,
-      items,
-      authorization,
-      { ...options, requireAllAvailable: false },
+    const proposal = await prepareShoppingListStage("fresh_review", () =>
+      this.prepareAdditions(connectionId, items, authorization, {
+        ...options,
+        requireAllAvailable: false,
+      }),
     );
     const stored = this.proposals.get(proposal.proposal_id);
     if (!stored || stored.operation.kind !== "additions") {
       throw new NemligError("Shopping-list submission is unavailable.");
     }
     try {
-      const list = await createShoppingList.call(this.client, shoppingListName);
+      const list = await prepareShoppingListStage("create_list", () =>
+        createShoppingList.call(this.client, shoppingListName),
+      );
       for (const line of stored.operation.lines) {
-        await updateShoppingListProduct.call(
-          this.client,
-          list.id,
-          line.product_id,
-          line.quantity,
+        await prepareShoppingListStage("populate_list", () =>
+          updateShoppingListProduct.call(
+            this.client,
+            list.id,
+            line.product_id,
+            line.quantity,
+          ),
         );
       }
-      const confirmed = await getShoppingList.call(this.client, list.id);
-      this.assertExactApprovedList(confirmed.items, stored.operation.lines);
+      const confirmed = await prepareShoppingListStage(
+        "verify_list",
+        async () => {
+          const current = await getShoppingList.call(this.client, list.id);
+          this.assertExactApprovedList(current.items, stored.operation.lines);
+          return current;
+        },
+      );
       stored.operation = {
         ...stored.operation,
         shoppingListId: confirmed.id,
