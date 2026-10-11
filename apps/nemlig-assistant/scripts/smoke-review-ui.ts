@@ -33,6 +33,11 @@ let basketReads = 0,
 let simulatedSubmissions = 0;
 let nextSubmissionStatus: "submitted" | "uncertain" = "submitted";
 let unknownPriceScenario = false;
+let nextShoppingListId = 1;
+const shoppingLists = new Map<
+  number,
+  { id: number; name: string; items: Map<number, number> }
+>();
 const denied = async (): Promise<never> => {
   writes++;
   throw new Error("Provider basket write forbidden in this smoke");
@@ -102,12 +107,49 @@ const catalogue = {
     };
   },
   addToCart: denied,
+  createShoppingList: async (name: string) => {
+    const id = nextShoppingListId++;
+    shoppingLists.set(id, { id, name, items: new Map() });
+    return { id, name, items: [] };
+  },
+  updateShoppingListProduct: async (
+    listId: number,
+    productId: number,
+    quantity: number,
+  ) => {
+    const list = shoppingLists.get(listId);
+    if (!list) {
+      throw new Error("Synthetic shopping list is missing");
+    }
+    if (quantity === 0) {
+      list.items.delete(productId);
+      return;
+    }
+    list.items.set(productId, quantity);
+  },
+  getShoppingList: async (listId: number) => {
+    const list = shoppingLists.get(listId);
+    if (!list) {
+      throw new Error("Synthetic shopping list is missing");
+    }
+    return {
+      id: list.id,
+      name: list.name,
+      items: [...list.items].map(([productId, quantity]) => ({
+        productId,
+        quantity,
+      })),
+    };
+  },
 } as unknown as ShoppingClient;
 const proposalService = new BasketProposalService(catalogue);
 const uncertainProposals = {
   prepareAdditions: (
     ...args: Parameters<BasketProposalService["prepareAdditions"]>
   ) => proposalService.prepareAdditions(...args),
+  prepareShoppingListAdditions: (
+    ...args: Parameters<BasketProposalService["prepareShoppingListAdditions"]>
+  ) => proposalService.prepareShoppingListAdditions(...args),
   apply: async () => {
     simulatedSubmissions++;
     if (nextSubmissionStatus === "uncertain") {
@@ -361,6 +403,8 @@ const server = createServer((req, res) => {
       simulatedSubmissions = 0;
       nextSubmissionStatus = "submitted";
       unknownPriceScenario = false;
+      nextShoppingListId = 1;
+      shoppingLists.clear();
       res.end("reset");
       return;
     }
