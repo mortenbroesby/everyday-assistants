@@ -6,7 +6,8 @@
 
 <p align="center">
   Search and compare in conversation, save native Nemlig shopping lists, and
-  inspect the actual basket. Shopping-list-to-basket transfer is currently gated.
+  inspect the actual basket. Explicit list-to-basket submission verifies the
+  basket addition before removing an unchanged source list.
 </p>
 
 <p align="center">
@@ -31,7 +32,7 @@ draft, and save or update shopping lists owned by Nemlig.
 
 Use it from a terminal or connect its MCP server to an AI client such as
 ChatGPT. The assistant can do useful read-only work immediately. Basket writes
-are unavailable until exact transfer and concurrent-edit guarantees are verified.
+require an explicit Submit action on a saved list.
 
 It has no recipe, order, payment, or checkout capability. It is not affiliated
 with or endorsed by nemlig.com or OpenAI.
@@ -51,8 +52,10 @@ Once connected, try prompts like:
 
 Product search and Nemlig basket reads are read-only. Draft changes stay
 temporary until you explicitly save a shopping list. Saved-list edits stay
-staged until you explicitly update that list. Adding a shopping list to the
-Nemlig basket is disabled in this version.
+staged until you explicitly update that list. Submit transfers one saved list,
+verifies the additive basket readback, and removes the source if its final
+contents check still matches. An edit can race that last check; observed
+changes or uncertain cleanup keep the list and show a warning.
 
 <a id="what-you-can-do"></a>
 
@@ -85,9 +88,13 @@ Nemlig basket is disabled in this version.
   verifies the saved list.
 - Stage changes to an existing list locally in the viewer. **Update shopping
   list** writes those changes and checks the provider readback.
-- Use the actual basket view to inspect Nemlig's basket. Shopping-list-to-basket
-  transfer is blocked until provider guarantees for concurrent edits and exact
-  transfer are established.
+- Explicitly **Submit** a clean saved list to add it to the actual basket. The
+  app rechecks the exact list and basket baseline, transfers once, verifies
+  additive basket readback, and keeps a durable no-replay fence. After the
+  readback, the app checks the source again and deletes it only if its identity
+  and contents still match. An edit can race the final check; observed changes
+  or uncertain cleanup keep the list with a warning.
+- Use the actual basket view to inspect Nemlig's basket.
 
 ### Use the interface that fits
 
@@ -133,8 +140,10 @@ it fills, the action fails closed and existing recovery evidence is retained.
 
 Old Local Basket cards route to native shopping-list discovery. Their saved data
 and storage namespace have not been deleted, but Local Basket mutations are no
-longer active. A shopping-list transfer to the actual Nemlig basket remains
-disabled pending proof of exact transfer and safe handling of concurrent edits.
+longer active. A shopping-list transfer uses one native request, additive
+basket readback, a durable no-replay receipt, and a final source-list check
+before cleanup. The provider has no conditional delete, so an edit can race
+that check.
 
 Run `pnpm nemlig:smoke:review-ui` and `pnpm nemlig:build:storybook` from the
 repository root for synthetic viewer coverage. These checks use fixtures and do
@@ -334,9 +343,10 @@ of the repository.
 3. Save the draft explicitly, inspect the native list readback, reopen that list,
    stage a change, and choose Update shopping list.
 4. Inspect the actual Nemlig basket and confirm that list saving and updating did
-   not change it. Shopping-list-to-basket transfer is gated in this version.
-5. Use fixtures for interrupted and uncertain write scenarios. Do not use live
-   account mutations to test basket transfer while the gate remains closed.
+   not change it. Submit only with explicit authorization; verify the basket
+   readback and source-list cleanup outcome.
+5. Use fixtures for interrupted and uncertain write scenarios. Live transfer
+   testing requires separate authorization for the exact basket addition.
 
 <a id="development"></a>
 
@@ -466,7 +476,7 @@ This README is the user-facing inventory of shipped feature sets:
 - owner-scoped durable recovery journal for interrupted Save and Update actions
 - shared product presentation with accessible details and alternatives
 - read-only actual Nemlig basket inspection
-- blocked shopping-list-to-basket transfer pending provider concurrency guarantees
+- explicit saved-list-to-basket Submit with additive readback and durable no-replay
 - CLI, MCP, Auth0, and bounded Cloudflare hosting
 - credential-free production-readiness gate
 - private package and guarded SemVer release policy

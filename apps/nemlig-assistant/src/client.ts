@@ -1016,7 +1016,10 @@ export class NemligClient {
     }
   }
 
-  async deleteShoppingList(listId: number): Promise<void> {
+  async deleteShoppingList(
+    listId: number,
+    signal?: AbortSignal,
+  ): Promise<void> {
     this.requireLogin("delete a shopping list");
     if (!Number.isSafeInteger(listId) || listId < 1) {
       throw new NemligError("Shopping list ID must be positive.");
@@ -1024,7 +1027,7 @@ export class NemligClient {
     const params = new URLSearchParams({ listId: String(listId) });
     await this.json(
       `${API_BASE_URL}/ShoppingList/RemoveShoppingList?${params}`,
-      { method: "POST" },
+      { method: "POST", signal },
       "Delete shopping list",
       false,
       false,

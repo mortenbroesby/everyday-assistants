@@ -183,15 +183,12 @@ rejects the action; an unexpected readback after dispatch remains uncertain and
 must never invite retry. Issue #295 selects source deletion after confirmed
 completion, including known-unavailable rows. Before deletion, recheck provider
 identity and the exact source; if an external edit is observed, retain the list
-and report cleanup as unsafe. This read is not atomic with deletion, and the
-owner's accepted transfer race does not authorize deleting observed newer
-content. Automatic source deletion remains disabled pending the owner's
-separate choice about the residual concurrent-edit deletion risk; the desired
-consumed-source lifecycle alone does not resolve that choice. The native
-transfer path in this checkpoint does not implement source cleanup. Defer
-physical deletion until that choice is made and cleanup eligibility, durable
-recovery, and no-replay are implemented and tested. No live source-list
-deletion was performed for this checkpoint. Do not create another
+and report cleanup as unsafe. This read is not atomic with deletion. The owner
+accepts the residual race between this final check and provider deletion; no
+observed newer content is deleted. Persist the verified transfer receipt
+before cleanup, then persist and verify the cleanup outcome. Cleanup failure
+does not change the completed transfer result or invite replay. No live
+source-list deletion was performed for this checkpoint. Do not create another
 account-visible list to claim isolation or treat temporary-list cleanup as
 proof for user-owned lists.
 

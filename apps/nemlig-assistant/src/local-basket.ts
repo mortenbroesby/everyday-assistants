@@ -554,6 +554,8 @@ export interface ReviewOperation {
   createAttempted?: boolean;
   dispatchAttempted?: boolean;
   completed?: boolean;
+  cleanupStatus?: "pending" | "deleted" | "retained" | "uncertain";
+  cleanupWarning?: string;
   listId?: number;
   items: Array<{ productId: number; quantity: number }>;
   baseline?: Array<{ productId: number; quantity: number }>;

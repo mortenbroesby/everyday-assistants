@@ -1434,6 +1434,8 @@ export function ProductViewer() {
     }
   };
   // Submit the exact saved list in one action; provider checks remain server-side.
+  // One user action flushes edits, binds the selected list, and fences duplicate calls.
+  // fallow-ignore-next-line complexity
   const submitCurrentBasket = async () => {
     const expected = selectionContext();
     const ok = await flushQuantities(expected);

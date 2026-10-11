@@ -818,6 +818,8 @@ export class BasketProposalService {
     beforeDispatch: () => Promise<void>,
     signal?: AbortSignal,
   ): Promise<ApplyResult> {
+    // The lock must cover exact-source, basket, and additive-readback checks together.
+    // fallow-ignore-next-line complexity
     return this.mutex.run(async () => {
       const { getShoppingList, addShoppingListToCart } = this.client;
       if (!getShoppingList || !addShoppingListToCart) {

@@ -66,13 +66,12 @@ the final contents read and provider transfer when the path performs its exact
 contents and basket checks, one transfer, additive readback, and durable
 no-replay safeguards. Issue #295 selects deletion of the complete source list
 after a confirmed completed submission, including known-unavailable products.
-The native transfer path in this checkpoint still retains that source.
-Automatic source deletion remains disabled pending the owner's separate choice
-about the residual concurrent-edit deletion risk; the desired consumed-source
-lifecycle alone does not resolve that choice. Cleanup implementation and
-recovery remain incomplete. Local Basket storage retirement remains separately
-gated. Temporary unsaved drafts remain. This plan does not authorize live
-provider mutation, deployment, or deletion of old user data.
+The owner accepts the residual race between the final exact-source check and
+provider deletion. The implementation rechecks account, list identity, name,
+and rows; observed changes or uncertain cleanup retain the source with a
+warning. Local Basket storage retirement remains separately gated. Temporary
+unsaved drafts remain. This plan does not authorize live provider mutation,
+deployment, or deletion of old user data.
 
 ### Acceptance
 
@@ -88,14 +87,11 @@ provider mutation, deployment, or deletion of old user data.
    cannot masquerade as an empty inventory or missing list.
 4. Explicit saved-list submission checks the final exact contents and basket
    baseline, makes one native transfer, verifies the additive basket readback,
-   and retains a durable no-replay receipt. The owner accepts that a concurrent
-   Nemlig-side edit after the final contents read may affect the provider
-   transfer. Issue #295 selects deletion of the complete source after confirmed
-   completion, including known-unavailable products. The owner has not made the
-   separate choice about residual concurrent-edit risk for deletion, so
-   automatic cleanup remains disabled and this checkpoint's native path retains
-   the source. Uncertain outcomes and observed external edits do not authorize
-   deletion or retry.
+   and persists a durable no-replay receipt before source cleanup. After a
+   final account/list/content check, it deletes the complete source, including
+   known-unavailable products. The owner accepts the residual race between
+   that check and deletion. Observed edits or uncertain cleanup retain the
+   source with a warning; no outcome authorizes transfer replay.
 5. Local Basket mutations are inactive and stale cards fail closed. Durable
    Local Basket data, callbacks, bindings, and namespace remain pending an
    explicit migration and retirement disposition. Save/Update journal tests
@@ -111,13 +107,10 @@ provider mutation, deployment, or deletion of old user data.
 Implementation is continuing on PR #296's `codex/plan-native-shopping-lists`
 branch. Its submission path re-reads the exact source contents and basket
 baseline, sends one native list transfer, verifies additive basket readback,
-and retains a durable no-replay receipt. It keeps the source list after
-success. Issue #295 selects consuming the entire source after confirmed
-completion, including known-unavailable products; this native path does not yet
-implement that cleanup. The owner accepts the remaining race between the final
-client read and provider transfer when the stated safeguards are present, but
-has not separately accepted the residual concurrent-edit deletion risk.
-Automatic source deletion remains disabled pending that choice. PR #294 is
+and persists a durable no-replay receipt before cleanup. It rechecks the account
+and exact source before deleting it; changed or uncertain sources are retained
+with a warning. The owner accepts the race between the final check and provider
+deletion. PR #294 is
 merged in main at `ea56ce3`; its temporary-list cleanup behavior does not prove
 safe cleanup of a user-owned native shopping list. Keep Local Basket namespace
 deletion separately gated.

@@ -108,6 +108,7 @@ test("MCP saves exact list rows and submits once with durable basket readback", 
     deliveryTime: "Tomorrow",
   };
   let providerWrites = 0;
+  let listUpdates = 0;
   const providerEvents: string[] = [];
   const shoppingLists = new Map<number, Map<number, number>>();
   const provider: ShoppingClient & ShoppingListClient = {
@@ -141,7 +142,12 @@ test("MCP saves exact list rows and submits once with durable basket readback", 
       return 1;
     },
     updateShoppingListProduct: async (listId, id, quantity) => {
-      shoppingLists.get(listId)?.set(id, quantity);
+      listUpdates++;
+      if (quantity === 0) {
+        shoppingLists.get(listId)?.delete(id);
+      } else {
+        shoppingLists.get(listId)?.set(id, quantity);
+      }
     },
     getShoppingList: async (listId) => ({
       id: listId,
@@ -257,6 +263,19 @@ test("MCP saves exact list rows and submits once with durable basket readback", 
           [7, 8],
         );
         assert.equal(providerWrites, 0, "search is read-only");
+        const tools = await mcp.listTools();
+        const productReviewTool = tools.tools.find(
+          ({ name }) => name === "start_product_review",
+        );
+        assert.ok(productReviewTool);
+        assert.doesNotMatch(
+          productReviewTool.description ?? "",
+          /submission .* disabled/u,
+        );
+        assert.match(
+          productReviewTool.description ?? "",
+          /saved list.*Submit|Submit.*saved list/u,
+        );
 
         const started = await mcp.callTool({
           name: "start_product_review",
@@ -303,6 +322,54 @@ test("MCP saves exact list rows and submits once with durable basket readback", 
           { productId: 7, quantity: 3 },
           { productId: 8, quantity: 2 },
         ]);
+        assert.equal(listUpdates, 2, "Save writes only the draft rows");
+        const reopened = await mcp.callTool({
+          name: "start_product_review",
+          arguments: { shopping_list_id: 1 },
+        });
+        assert.equal(reopened.isError, undefined);
+        assert.equal(
+          (
+            reopened.structuredContent as {
+              selectedShoppingListId: number;
+            }
+          ).selectedShoppingListId,
+          1,
+        );
+        const staged = await mcp.callTool({
+          name: "update_product_review_conversation",
+          arguments: {
+            action: { kind: "quantity", product_id: 7, quantity: 4 },
+            shopping_list_id: 1,
+          },
+        });
+        assert.equal(staged.isError, undefined);
+        assert.deepEqual((await provider.getShoppingList(1)).items, [
+          { productId: 7, quantity: 3 },
+          { productId: 8, quantity: 2 },
+        ]);
+        assert.equal(listUpdates, 2, "staging does not write the native list");
+        const updated = await mcp.callTool({
+          name: "update_product_review_conversation",
+          arguments: {
+            action: { kind: "update" },
+            shopping_list_id: 1,
+          },
+        });
+        assert.equal(
+          updated.isError,
+          undefined,
+          JSON.stringify(updated.content),
+        );
+        assert.deepEqual((await provider.getShoppingList(1)).items, [
+          { productId: 7, quantity: 4 },
+          { productId: 8, quantity: 2 },
+        ]);
+        assert.equal(
+          listUpdates,
+          3,
+          "Update writes the staged difference once",
+        );
         const submitted = await mcp.callTool({
           name: "submit_product_review_conversation",
           arguments: {
@@ -318,18 +385,24 @@ test("MCP saves exact list rows and submits once with durable basket readback", 
         assert.equal(
           providerWrites,
           1,
-          "the explicit submit transfers the exact native list once",
+          "the explicit submit transfers the updated native list once",
         );
         assert.deepEqual(providerEvents, [
           "basket-readback",
           "basket-readback",
           "transfer",
           "basket-readback",
+          "delete-list",
         ]);
-        assert.deepEqual((await provider.getShoppingList(1)).items, [
-          { productId: 7, quantity: 3 },
-          { productId: 8, quantity: 2 },
-        ]);
+        assert.deepEqual(await provider.listShoppingLists(), []);
+        assert.deepEqual(
+          basket.items.map(({ id, quantity }) => [id, quantity]),
+          [
+            [99, 2],
+            [7, 4],
+            [8, 2],
+          ],
+        );
         const replay = await mcp.callTool({
           name: "submit_product_review_conversation",
           arguments: {
@@ -342,6 +415,41 @@ test("MCP saves exact list rows and submits once with durable basket readback", 
           providerWrites,
           1,
           "a fresh ID cannot replay the same list snapshot",
+        );
+      },
+    );
+    await withMcpClient(
+      createMcpServer(
+        provider,
+        credentials,
+        undefined,
+        undefined,
+        requestContext,
+      ),
+      async (restarted) => {
+        const reopened = await restarted.callTool({
+          name: "start_product_review",
+          arguments: { shopping_list_id: 1 },
+        });
+        assert.equal(reopened.isError, undefined);
+        assert.equal(
+          (reopened.structuredContent as { selectedShoppingListId: null })
+            .selectedShoppingListId,
+          null,
+          "the deleted source returns to the list picker",
+        );
+        const replay = await restarted.callTool({
+          name: "submit_product_review_conversation",
+          arguments: {
+            shopping_list_id: 1,
+            submission_id: randomUUID(),
+          },
+        });
+        assert.equal(replay.isError, true);
+        assert.equal(
+          providerWrites,
+          1,
+          "a restarted service cannot replay the exact list snapshot",
         );
       },
     );

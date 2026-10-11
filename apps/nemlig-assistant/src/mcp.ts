@@ -614,6 +614,8 @@ When a stale card supplies basket_id without a draft_id or shopping_list_id, sho
       return undefined;
     }
     return {
+      // One transport boundary keeps command binding and storage failures fail-closed.
+      // fallow-ignore-next-line complexity
       async mutate(command: LocalBasketCommand): Promise<unknown> {
         let response: Response;
         try {
@@ -800,6 +802,8 @@ When a stale card supplies basket_id without a draft_id or shopping_list_id, sho
       signal,
       "Local baskets are no longer active. Select a native Nemlig shopping list; saved account data was not changed.",
     );
+  // Target routing keeps stale cards, account scope, and list identity checks together.
+  // fallow-ignore-next-line complexity
   const updateReviewTarget = async (
     owner: string,
     action: z.infer<typeof reviewActionSchema>,
@@ -1190,7 +1194,7 @@ When a stale card supplies basket_id without a draft_id or shopping_list_id, sho
     {
       title: "Show or start a shopping list",
       description:
-        "Open the visual review when the user asks to see products. With exact returned product IDs and quantities, start an unsaved process-local draft; nothing is written to Nemlig until explicit Save. Omit items to list native Nemlig shopping lists, or pass shopping_list_id to reopen one. Native-list edits remain staged until explicit action=update verifies the same list. Basket submission from native lists is disabled until Nemlig's exact-transfer and concurrency guarantees are verified. Cards carry the exact draft_id or shopping_list_id. Never infer a target from its name or replay an uncertain write.",
+        "Open the visual review when the user asks to see products. With exact returned product IDs and quantities, start an unsaved process-local draft; nothing is written to Nemlig until explicit Save. Omit items to list native Nemlig shopping lists, or pass shopping_list_id to reopen one. Native-list edits remain staged until explicit action=update verifies the same list. An explicit Submit rechecks the exact saved list and basket baseline, transfers once with the same shopping_list_id, verifies additive basket readback, then deletes the source only after a final exact-list check. A Nemlig-side edit can still race that final cleanup check. Changed or unconfirmed cleanup keeps the list with a warning; the durable receipt prevents replay. Cards carry the exact draft_id or shopping_list_id. Never infer a target from its name or replay an uncertain write.",
       inputSchema: z
         .object({
           items: z

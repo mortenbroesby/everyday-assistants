@@ -6,12 +6,15 @@ require explicit saving before submission preparation. Submission SHALL bind
 the connected account, source list ID, exact approved
 contents, current basket baseline and conversation authority. It SHALL perform
 at most one native transfer, with no per-product fallback. It SHALL reject changed
-source content before dispatch. Automatic cleanup SHALL delete only the eligible
-corresponding source after verified additions and SHALL NOT discard unsubmitted
-or concurrently added products. A transfer snapshot SHALL be used only with demonstrated isolation if
-provider concurrency semantics cannot otherwise protect the approved payload.
-Without either guarantee, dispatch SHALL fail closed; merely copying contents
-into another mutable list SHALL NOT count as isolation.
+source content before dispatch. After verified additions and a durable receipt,
+automatic cleanup SHALL recheck the connected account, source identity, name,
+and exact rows before deleting the corresponding source. If a changed source is
+observed, it SHALL be retained with a warning. The provider has no conditional
+delete, so an edit can race the final check; the owner accepts this residual
+data-loss risk. A transfer snapshot SHALL be used only with demonstrated
+isolation if provider concurrency semantics cannot otherwise protect the
+approved payload. Merely copying contents into another mutable list SHALL NOT
+count as isolation.
 Dirty, saving, partial, uncertain or conflicted saved-list edits SHALL block
 proposal creation and transfer until Update shopping list has exact verified
 readback. Preparation SHALL never implicitly save edits or create a second
@@ -26,11 +29,11 @@ shopping list to stage a transfer.
 - **WHEN** the selected list has unpersisted or uncertain edits
 - **THEN** no transfer proposal is created and no basket transfer is dispatched
 
-#### Scenario: Cleanup cannot safely complete
+#### Scenario: Cleanup cannot be confirmed
 - **WHEN** transfer is verified but source cleanup fails, source content changed,
-  products remain unsubmitted, or conditional deletion cannot be guaranteed
+  or cleanup readback is uncertain
 - **THEN** the result remains successful with a retained-list warning and a
-  durable no-replay record; no automatic resubmission or deletion follows
+  durable no-replay record; no transfer retry follows
 
 ### Requirement: Submission attempts survive process loss
 A durable attempt record SHALL be atomically persisted before basket dispatch

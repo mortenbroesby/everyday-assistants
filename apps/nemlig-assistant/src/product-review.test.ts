@@ -552,7 +552,7 @@ test("reopening a changed native list preserves staged edits and shows current r
   assert.equal(writes, 1);
 });
 
-test("saved native list submits once with a durable fence and retained source", async () => {
+test("saved native list verifies transfer before durable source cleanup and replay fence", async () => {
   const native = {
     id: 44,
     name: "Family",
@@ -569,15 +569,33 @@ test("saved native list submits once with a durable fence and retained source", 
     deliveryTime: undefined,
   };
   let basket = structuredClone(baseline);
+  let sourcePresent = true;
   let listCreates = 0;
   let listUpdates = 0;
-  const listDeletes = 0;
+  let listDeletes = 0;
   let transfers = 0;
+  const events: string[] = [];
+  let readOperation: (
+    operationId: string,
+  ) => Promise<ReviewOperation | undefined> = async () => undefined;
   const nativeClient = {
     ...client,
     providerIdentity: () => "account-1",
-    listShoppingLists: async () => [{ id: 44, name: "Family" }],
-    getShoppingList: async () => structuredClone(native),
+    listShoppingLists: async () =>
+      sourcePresent ? [{ id: 44, name: "Family" }] : [],
+    getShoppingList: async () => {
+      events.push("source-read");
+      return structuredClone(native);
+    },
+    deleteShoppingList: async (listId: number) => {
+      assert.equal(listId, 44);
+      const receipt = await readOperation("native-list-submit:44");
+      assert.equal(receipt?.completed, true);
+      assert.equal(receipt?.cleanupStatus, "pending");
+      events.push("delete-list");
+      listDeletes++;
+      sourcePresent = false;
+    },
     createShoppingList: async () => {
       listCreates++;
       return 45;
@@ -585,9 +603,13 @@ test("saved native list submits once with a durable fence and retained source", 
     updateShoppingListProduct: async () => {
       listUpdates++;
     },
-    getCart: async () => structuredClone(basket),
+    getCart: async () => {
+      events.push("basket-read");
+      return structuredClone(basket);
+    },
     addShoppingListToCart: async (listId: number) => {
       assert.equal(listId, 44);
+      events.push("transfer");
       transfers++;
       basket = {
         ...baseline,
@@ -603,7 +625,10 @@ test("saved native list submits once with a durable fence and retained source", 
   const proposals = new BasketProposalService({
     getProduct: async (id) => product(id),
     getFreshProduct: async (id) => product(id),
-    getCart: async () => structuredClone(basket),
+    getCart: async () => {
+      events.push("basket-read");
+      return structuredClone(basket);
+    },
     addToCart: async () => {
       throw new Error("Submit must use Nemlig's native list transfer.");
     },
@@ -614,7 +639,10 @@ test("saved native list submits once with a durable fence and retained source", 
   });
   const service = new ProductReviewService(nativeClient, { proposals });
   const { journal, read } = createDurableReviewJournal("owner");
+  readOperation = async (operationId) =>
+    (await read(operationId)) as ReviewOperation | undefined;
   await service.openShoppingList("owner", 44, undefined, journal);
+  events.length = 0;
 
   const submitted = await service.submit(
     "owner",
@@ -628,30 +656,229 @@ test("saved native list submits once with a durable fence and retained source", 
   assert.equal(submitted.result.basket.number_of_products, 4);
   assert.equal(basket.items[0]?.quantity, 3);
   assert.equal(basket.items[1]?.id, 99);
-  assert.equal(native.items[0]?.quantity, 1);
+  assert.equal(sourcePresent, false);
   assert.deepEqual(
     [transfers, listCreates, listUpdates, listDeletes],
-    [1, 0, 0, 0],
+    [1, 0, 0, 1],
   );
+  assert.ok(events.indexOf("transfer") < events.lastIndexOf("basket-read"));
+  assert.ok(events.lastIndexOf("basket-read") < events.indexOf("delete-list"));
   const receipt = (await read("native-list-submit:44")) as
     ReviewOperation | undefined;
   assert.equal(receipt?.kind, "submit");
   assert.equal(receipt?.dispatchAttempted, true);
   assert.equal(receipt?.completed, true);
+  assert.equal(receipt?.cleanupStatus, "deleted");
 
+  await assert.rejects(
+    service.submit("owner", "attempt-2", 44, undefined, journal),
+    /unavailable or was deleted/u,
+  );
+  assert.equal(transfers, 1);
   const restarted = new ProductReviewService(nativeClient, { proposals });
-  const reopened = await restarted.openShoppingList(
+  await assert.rejects(
+    restarted.openShoppingList("owner", 44, undefined, journal),
+    /unavailable or was deleted/u,
+  );
+  assert.equal(transfers, 1);
+});
+
+test("failed source cleanup keeps the list and never replays the verified transfer", async () => {
+  const native = {
+    id: 44,
+    name: "Family",
+    items: [{ productId: 1, quantity: 1 }],
+  };
+  const baseline = {
+    items: [{ id: 99, name: "Existing", quantity: 1, total: 6 }],
+    productsPrice: 6,
+    deliveryPrice: 0,
+    numberOfProducts: 1,
+    deliveryTime: undefined,
+  };
+  let basket = structuredClone(baseline);
+  let transfers = 0;
+  let deletes = 0;
+  const provider = {
+    ...client,
+    providerIdentity: () => "account-1",
+    listShoppingLists: async () => [{ id: 44, name: "Family" }],
+    getShoppingList: async () => structuredClone(native),
+    getFreshProduct: async (id: number) => product(id),
+    addToCart: async () => {
+      throw new Error("Submission must use the native list transfer.");
+    },
+    getCart: async () => structuredClone(basket),
+    deleteShoppingList: async () => {
+      deletes++;
+      throw new Error("Delete failed.");
+    },
+    addShoppingListToCart: async () => {
+      transfers++;
+      basket = {
+        ...baseline,
+        items: [
+          ...baseline.items,
+          { id: 1, name: "Product 1", quantity: 1, total: 5 },
+        ],
+        productsPrice: 11,
+        numberOfProducts: 2,
+      };
+    },
+  };
+  const proposals = new BasketProposalService(provider);
+  const { journal, read } = createDurableReviewJournal("owner");
+  const service = new ProductReviewService(provider, { proposals });
+  await service.openShoppingList("owner", 44, undefined, journal);
+  const submitted = await service.submit(
+    "owner",
+    "attempt-1",
+    44,
+    undefined,
+    journal,
+  );
+
+  assert.equal(submitted.review.submission?.status, "submitted");
+  assert.match(
+    submitted.review.submission?.cleanup_warning ?? "",
+    /deletion was not confirmed/u,
+  );
+  assert.equal(
+    submitted.result.cleanup_warning,
+    submitted.review.submission?.cleanup_warning,
+  );
+  assert.equal(
+    ((await read("native-list-submit:44")) as ReviewOperation | undefined)
+      ?.cleanupStatus,
+    "retained",
+  );
+  assert.deepEqual([transfers, deletes], [1, 1]);
+  const replay = await service.submit(
+    "owner",
+    "attempt-1",
+    44,
+    undefined,
+    journal,
+  );
+  assert.equal(replay.result.replayed, true);
+  assert.equal(replay.result.cleanup_warning, submitted.result.cleanup_warning);
+  assert.deepEqual([transfers, deletes], [1, 1]);
+
+  const restarted = new ProductReviewService(provider, { proposals });
+  await restarted.openShoppingList("owner", 44, undefined, journal);
+  await assert.rejects(
+    restarted.submit("owner", "attempt-2", 44, undefined, journal),
+    /already transferred/u,
+  );
+  assert.deepEqual([transfers, deletes], [1, 1]);
+});
+
+test("reopening a completed receipt resumes pending source cleanup without transfer", async () => {
+  const native = {
+    id: 44,
+    name: "Family",
+    items: [{ productId: 1, quantity: 1 }],
+  };
+  let sourcePresent = true;
+  let transfers = 0;
+  const provider = {
+    ...client,
+    providerIdentity: () => "account-1",
+    listShoppingLists: async () =>
+      sourcePresent ? [{ id: 44, name: "Family" }] : [],
+    getShoppingList: async () => structuredClone(native),
+    deleteShoppingList: async () => {
+      sourcePresent = false;
+    },
+    addShoppingListToCart: async () => {
+      transfers++;
+    },
+  };
+  const { journal, read } = createDurableReviewJournal("owner");
+  const operation: ReviewOperation = {
+    operationId: "native-list-submit:44",
+    generation: "attempt-1",
+    accountIdentity: "account-1",
+    kind: "submit",
+    cleanupStatus: "pending",
+    name: "Family",
+    listId: 44,
+    items: [{ productId: 1, quantity: 1 }],
+    baseline: [],
+  };
+  await journal.write(operation);
+  assert.equal(
+    await journal.claim(operation.operationId, operation.generation),
+    true,
+  );
+  await journal.complete(operation.operationId, operation.generation);
+
+  const service = new ProductReviewService(provider);
+  await assert.rejects(
+    service.openShoppingList("owner", 44, undefined, journal),
+    /unavailable or was deleted/u,
+  );
+  assert.equal(sourcePresent, false);
+  assert.equal(
+    ((await read(operation.operationId)) as ReviewOperation | undefined)
+      ?.cleanupStatus,
+    "deleted",
+  );
+  assert.equal(transfers, 0);
+});
+
+test("reopening retains a source changed after verified transfer", async () => {
+  const native = {
+    id: 44,
+    name: "Family",
+    items: [{ productId: 1, quantity: 2 }],
+  };
+  let deletes = 0;
+  const provider = {
+    ...client,
+    providerIdentity: () => "account-1",
+    listShoppingLists: async () => [{ id: 44, name: "Family" }],
+    getShoppingList: async () => structuredClone(native),
+    deleteShoppingList: async () => {
+      deletes++;
+    },
+  };
+  const { journal, read } = createDurableReviewJournal("owner");
+  const operation: ReviewOperation = {
+    operationId: "native-list-submit:44",
+    generation: "attempt-1",
+    accountIdentity: "account-1",
+    kind: "submit",
+    cleanupStatus: "pending",
+    name: "Family",
+    listId: 44,
+    items: [{ productId: 1, quantity: 1 }],
+    baseline: [],
+  };
+  await journal.write(operation);
+  assert.equal(
+    await journal.claim(operation.operationId, operation.generation),
+    true,
+  );
+  await journal.complete(operation.operationId, operation.generation);
+
+  const review = await new ProductReviewService(provider).openShoppingList(
     "owner",
     44,
     undefined,
     journal,
   );
-  assert.equal(reopened.submission?.status, "submitted");
-  await assert.rejects(
-    restarted.submit("owner", "attempt-2", 44, undefined, journal),
-    /exact shopping-list snapshot was already transferred/u,
+  assert.equal(review.submission?.status, "submitted");
+  assert.match(
+    review.submission?.cleanup_warning ?? "",
+    /source list changed/u,
   );
-  assert.equal(transfers, 1);
+  assert.equal(
+    ((await read(operation.operationId)) as ReviewOperation | undefined)
+      ?.cleanupStatus,
+    "retained",
+  );
+  assert.equal(deletes, 0);
 });
 
 test("dirty and in-flight native-list updates cannot prepare submission", async () => {

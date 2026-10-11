@@ -159,6 +159,11 @@ interface NativeListSubmissionPlan {
   baseline: Basket;
   operation: ReviewOperation;
 }
+type NativeSourceCleanupState = "exact" | "changed" | "uncertain";
+type NativeSourceCleanupResult = {
+  status: "deleted" | "retained" | "uncertain";
+  warning?: string;
+};
 export interface ReviewOperationJournal {
   read(operationId: string): Promise<ReviewOperation | undefined>;
   claim(operationId: string, generation: string): Promise<boolean>;
@@ -818,6 +823,8 @@ export class ProductReviewService {
     return this.client.listShoppingLists(signal);
   }
 
+  // Keep missing-list, journal, and owner checks in one fail-closed recovery path.
+  // fallow-ignore-next-line complexity
   async retireDeletedNativeListUpdate(
     owner: string,
     listId: number,
@@ -939,6 +946,17 @@ export class ProductReviewService {
     };
     const lists = await this.getShoppingLists(signal);
     if (!lists.some((list) => list.id === listId)) {
+      const submission = await journal?.read(submitOperationId(listId));
+      if (
+        submission?.kind === "submit" &&
+        submission.completed &&
+        submission.listId === listId &&
+        submission.accountIdentity === accountIdentity &&
+        (submission.cleanupStatus === "pending" ||
+          submission.cleanupStatus === "uncertain")
+      ) {
+        await this.cleanupNativeSubmissionSource(submission, journal!, signal);
+      }
       throw new NemligError(
         "Shopping list is unavailable or was deleted.",
         404,
@@ -1119,17 +1137,40 @@ export class ProductReviewService {
       submission?.kind === "submit" &&
       submission.completed &&
       submission.listId === listId &&
-      submission.accountIdentity === accountIdentity &&
-      sameShoppingListItems(submission.items, list.items)
+      submission.accountIdentity === accountIdentity
     ) {
+      let cleanup: NativeSourceCleanupResult | undefined;
+      if (
+        submission.cleanupStatus === "pending" ||
+        submission.cleanupStatus === "uncertain"
+      ) {
+        cleanup = await this.cleanupNativeSubmissionSource(
+          submission,
+          journal!,
+          signal,
+        );
+        if (cleanup.status === "deleted") {
+          throw new NemligError(
+            "Shopping list is unavailable or was deleted.",
+            404,
+          );
+        }
+      }
       snapshot.submission = {
         submission_id: submission.generation,
         status: "submitted",
+        ...((cleanup?.warning ?? submission.cleanupWarning)
+          ? {
+              cleanup_warning: cleanup?.warning ?? submission.cleanupWarning,
+            }
+          : {}),
         expires_at: new Date(this.now() + 15 * 60 * 1000).toISOString(),
         review: {},
       };
       snapshot.submissionAttempted = true;
       snapshot.actionNotice =
+        cleanup?.warning ??
+        submission.cleanupWarning ??
         "This exact shopping-list snapshot was already transferred. Update it before submitting another addition.";
     }
     if (
@@ -1478,6 +1519,8 @@ export class ProductReviewService {
     }
   }
 
+  // This write state machine must preserve each provider outcome in the same journal.
+  // fallow-ignore-next-line complexity
   private async persistNativeListUpdate(
     owner: string,
     stored: StoredReview,
@@ -1573,6 +1616,8 @@ export class ProductReviewService {
     );
   }
 
+  // Three-way row reconciliation must stay adjacent to its durable attempt fence.
+  // fallow-ignore-next-line complexity
   private async discardPendingNativeListUpdate(
     owner: string,
     stored: StoredReview,
@@ -2483,6 +2528,8 @@ export class ProductReviewService {
     );
   }
 
+  // Keep target, dirty-state, and uncertain-outcome gates ordered in one check.
+  // fallow-ignore-next-line complexity
   private requireSubmissionTarget(
     stored: StoredReview,
     expectedShoppingListId?: number,
@@ -2518,6 +2565,8 @@ export class ProductReviewService {
     return listId;
   }
 
+  // Replay returns the receipt and may finish cleanup; it never dispatches again.
+  // fallow-ignore-next-line complexity
   private async replayNativeSubmission(
     stored: StoredReview,
     operationId: string,
@@ -2542,19 +2591,30 @@ export class ProductReviewService {
       return undefined;
     }
     const basket = await this.client.getCart!(signal);
+    const cleanup =
+      previous.cleanupStatus === "pending" ||
+      previous.cleanupStatus === "uncertain"
+        ? await this.cleanupNativeSubmissionSource(previous, journal, signal)
+        : undefined;
+    const cleanupWarning = cleanup?.warning ?? previous.cleanupWarning;
     stored.snapshot.submission = {
       submission_id: submissionId,
       status: "submitted",
+      ...(cleanupWarning ? { cleanup_warning: cleanupWarning } : {}),
       expires_at: new Date(this.now() + 15 * 60 * 1000).toISOString(),
       review: {},
     };
     stored.snapshot.submissionAttempted = true;
+    stored.snapshot.actionNotice =
+      cleanupWarning ??
+      "Nemlig confirmed this basket addition earlier; it was not submitted again.";
     return {
       review: structuredClone(stored.snapshot),
       result: {
         status: "completed",
         operation: "additions",
         replayed: true,
+        ...(cleanupWarning ? { cleanup_warning: cleanupWarning } : {}),
         basket: {
           items: basket.items,
           products_price: basket.productsPrice,
@@ -2595,6 +2655,8 @@ export class ProductReviewService {
     return baseline;
   }
 
+  // Account, source fingerprint, basket baseline, and replay checks bind one approval.
+  // fallow-ignore-next-line complexity
   private async prepareNativeSubmission(
     stored: StoredReview,
     listId: number,
@@ -2661,6 +2723,7 @@ export class ProductReviewService {
         generation: submissionId,
         accountIdentity,
         kind: "submit",
+        cleanupStatus: "pending",
         name: list.name,
         listId,
         items: list.items.map(({ productId, quantity }) => ({
@@ -2706,6 +2769,103 @@ export class ProductReviewService {
     throw new NemligError(stored.snapshot.actionNotice);
   }
 
+  // The destructive cleanup decision depends on ordered readback and receipt checks.
+  // fallow-ignore-next-line complexity
+  private async cleanupNativeSubmissionSource(
+    operation: ReviewOperation,
+    journal: ReviewOperationJournal,
+    signal?: AbortSignal,
+  ): Promise<NativeSourceCleanupResult> {
+    let result: NativeSourceCleanupResult = {
+      status: "uncertain",
+      warning:
+        "Nemlig confirmed the basket addition, but source-list cleanup could not be confirmed. Do not resubmit this addition.",
+    };
+    try {
+      const inventory = await this.getShoppingLists(signal);
+      if (this.client.providerIdentity!() !== operation.accountIdentity) {
+        result = {
+          status: "uncertain",
+          warning:
+            "Nemlig confirmed the basket addition, but the connected account changed before source-list cleanup. Inspect the list; do not resubmit.",
+        };
+      } else if (!inventory.some(({ id }) => id === operation.listId)) {
+        result = { status: "deleted" };
+      } else {
+        const current = await this.client.getShoppingList!(
+          operation.listId!,
+          signal,
+        );
+        const state: NativeSourceCleanupState =
+          this.client.providerIdentity!() !== operation.accountIdentity
+            ? "uncertain"
+            : current.id !== operation.listId ||
+                current.name !== operation.name ||
+                !sameShoppingListItems(operation.items, current.items)
+              ? "changed"
+              : "exact";
+        if (state === "changed") {
+          result = {
+            status: "retained",
+            warning:
+              "Nemlig confirmed the basket addition, but the source list changed afterward. It was kept; review it before making changes.",
+          };
+        } else if (state === "exact" && this.client.deleteShoppingList) {
+          if (signal?.aborted) {
+            throw new NemligError(
+              "Source-list cleanup was cancelled before deletion. Do not resubmit the verified basket addition.",
+            );
+          }
+          try {
+            await this.client.deleteShoppingList(operation.listId!, signal);
+          } catch {
+            // Readback below distinguishes a lost response from a failed delete.
+          }
+          const after = await this.getShoppingLists(signal);
+          if (
+            this.client.providerIdentity!() === operation.accountIdentity &&
+            !after.some(({ id }) => id === operation.listId)
+          ) {
+            result = { status: "deleted" };
+          } else {
+            result = {
+              status: "retained",
+              warning:
+                "Nemlig confirmed the basket addition, but source-list deletion was not confirmed. The list was kept; do not resubmit.",
+            };
+          }
+        }
+      }
+    } catch {
+      // The transfer is already verified; cleanup uncertainty must not invite replay.
+    }
+    const updated: ReviewOperation = {
+      ...operation,
+      cleanupStatus: result.status,
+      cleanupWarning: result.warning,
+    };
+    try {
+      await journal.write(updated);
+      const saved = await journal.read(operation.operationId);
+      if (
+        saved?.generation !== operation.generation ||
+        saved.cleanupStatus !== result.status ||
+        saved.completed !== true
+      ) {
+        throw new Error("Cleanup receipt was not confirmed.");
+      }
+    } catch {
+      return {
+        status: "uncertain",
+        warning:
+          "Nemlig confirmed the basket addition, but source-list cleanup status could not be saved. Do not resubmit this addition.",
+      };
+    }
+    return result;
+  }
+
+  // Transfer completion, cleanup, and uncertain-failure handling share one fence.
+  // fallow-ignore-next-line complexity
   private async applyNativeSubmission(
     stored: StoredReview,
     plan: NativeListSubmissionPlan,
@@ -2741,16 +2901,24 @@ export class ProductReviewService {
       const completed = await journal.read(plan.operationId);
       const isSubmitted =
         completed?.generation === plan.submissionId && completed.completed;
+      const cleanup = isSubmitted
+        ? await this.cleanupNativeSubmissionSource(completed, journal, signal)
+        : undefined;
       stored.snapshot.submission = {
         submission_id: plan.submissionId,
         status: isSubmitted ? "submitted" : "uncertain",
+        ...(cleanup?.warning ? { cleanup_warning: cleanup.warning } : {}),
         expires_at: new Date(this.now() + 15 * 60 * 1000).toISOString(),
         review: {},
       };
       stored.snapshot.submissionAttempted = true;
       stored.snapshot.actionNotice = isSubmitted
-        ? "Nemlig confirmed the basket addition. The source shopping list was kept."
+        ? (cleanup?.warning ??
+          "Nemlig confirmed the basket addition and removed the source shopping list.")
         : "Nemlig confirmed the basket addition, but its recovery record could not be confirmed. Inspect the basket; do not submit again.";
+      if (cleanup?.warning) {
+        result.cleanup_warning = cleanup.warning;
+      }
       return { review: structuredClone(stored.snapshot), result };
     } catch (error) {
       return this.markNativeSubmissionFailure(
