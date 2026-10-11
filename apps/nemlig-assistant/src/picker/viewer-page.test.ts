@@ -3,6 +3,7 @@ import test from "node:test";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import type { ProductView } from "../product-presentation.js";
+import { ProductFacts } from "./components/product.js";
 import { ViewerPage } from "./viewer-page.js";
 import type { ViewerPageProps } from "./viewer-page.js";
 
@@ -115,13 +116,27 @@ test("basket picker shows only a compact prefix, activity date, and product coun
   assert.equal((markup.match(/<h[1-6]/gu) ?? []).length, 1);
 });
 
-test("an unavailable old card offers picker recovery without an implicit selection", () => {
+test("an empty picker offers the Local basket starter actions", () => {
   const pageProps = props();
   pageProps.model.screen = { kind: "picker", baskets: [] };
   const markup = renderToStaticMarkup(createElement(ViewerPage, pageProps));
-  assert.match(markup, /No active Local baskets/u);
-  assert.match(markup, /Start one in conversation/u);
+  assert.match(markup, /Start your Local basket/u);
+  assert.match(markup, /Plan groceries for the week/u);
+  assert.match(markup, /Find ingredients for dinner/u);
+  assert.match(markup, /Find a product/u);
+  assert.doesNotMatch(markup, /No active Local baskets/u);
   assert.doesNotMatch(markup, /Submit to Nemlig/u);
+
+  pageProps.model.screen = {
+    kind: "picker",
+    baskets: [],
+    selectedBasketId: "12345678-1234-4234-8234-123456789abc",
+  };
+  const expiredMarkup = renderToStaticMarkup(
+    createElement(ViewerPage, pageProps),
+  );
+  assert.match(expiredMarkup, /Local basket is unavailable or expired/u);
+  assert.match(expiredMarkup, /Start your Local basket/u);
 });
 
 test("a recovered submission fence explains the uncertainty without inventing an id", () => {
@@ -210,8 +225,52 @@ test("shared viewer page keeps thumbnails attached to their individual views", (
     markup,
     /aria-label="Select Alternative yoghurt as the alternative"/u,
   );
-  assert.match(markup, /Use selected alternative/u);
+  assert.match(markup, />Select</u);
+  assert.doesNotMatch(markup, /Use selected alternative/u);
   assert.match(markup, /Back to Local basket/u);
+  assert.doesNotMatch(markup, />Clear</u);
+});
+
+test("shared viewer page retains a supplied image for an equivalent fixture view", () => {
+  const equivalentProduct: ProductView = {
+    ...product,
+    product: { ...product.product },
+  };
+  const pageProps = props("/assets/yoghurt.svg");
+  if (pageProps.model.screen.kind !== "review") {
+    throw new Error("review fixture missing");
+  }
+  pageProps.model.screen.review = {
+    ...pageProps.model.screen.review,
+    items: [
+      {
+        ...pageProps.model.screen.review.items[0]!,
+        view: equivalentProduct,
+      },
+    ],
+  };
+  const markup = renderToStaticMarkup(createElement(ViewerPage, pageProps));
+  assert.match(markup, /src="\/assets\/yoghurt\.svg"/u);
+  assert.doesNotMatch(markup, /data-viewer-component="image-fallback"/u);
+});
+
+test("full-screen product facts use one visible Nemlig-style information tab", () => {
+  const detailedProduct: ProductView = {
+    ...product,
+    product: {
+      ...product.product,
+      description: "A creamy fixture yoghurt.",
+      declaration: "MILK.",
+      details: [{ key: "Origin", value: "Denmark" }],
+    },
+  };
+  const markup = renderToStaticMarkup(
+    createElement(ProductFacts, { view: detailedProduct, variant: "tabs" }),
+  );
+  assert.match(markup, /role="tablist"/u);
+  assert.match(markup, /aria-selected="true"/u);
+  assert.match(markup, /A creamy fixture yoghurt./u);
+  assert.doesNotMatch(markup, /<details/u);
 });
 
 test("empty and incomplete Local baskets cannot start submission", () => {
@@ -244,7 +303,7 @@ test("empty and incomplete Local baskets cannot start submission", () => {
     const markup = renderToStaticMarkup(createElement(ViewerPage, pageProps));
     assert.match(
       markup,
-      /<button[^>]*disabled=""[^>]*>Submit to Nemlig<\/button>/u,
+      /<button[^>]*disabled=""[^>]*>.*Submit to Nemlig<\/button>/u,
     );
     assert.match(markup, /Resolve products with missing details/u);
   }

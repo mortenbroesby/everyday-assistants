@@ -129,8 +129,9 @@ checkboxes, or acceptance step. Tap a product to open its full-screen details,
 or swipe from right to left to replace that row with inline controls: trash and
 a two-arrow **Find alternatives** icon on the left, and minus/quantity/plus on the
 right, all on one line.
-The full-screen product details also show the same controls beneath the product facts.
-The product name and a close button remain above the swipe controls. The controls follow
+Full-screen product details use a product-page layout: a back control, centered
+product image, name and package metadata, and the three familiar product-information
+sections. Local controls stay fixed beneath that information. The controls follow
 Nemlig’s familiar basket layout; the rest of the basket stays visible.
 Gesture tracking and tap filtering use `@use-gesture/react`.
 Left-to-right swipes, vertical scrolling, short drags, and canceled gestures do not
@@ -138,19 +139,21 @@ open actions. Keyboard users can press
 Shift+F10 on a product. The details view shows the same controls, so touch and
 screen-reader users can reach the same actions without swiping.
 Close the inline controls with × or Escape to restore the product row. Product
-details close with ×, Escape, or a tap outside.
+details close with the back control, Escape, or a tap outside.
 The inline controls open on release; swiping alone changes no basket state. ChatGPT mobile
 gesture handling still needs real-host acceptance. If swipe remains unreliable,
 [the tap-layout fallback](https://github.com/mortenbroesby/everyday-assistants/issues/283)
 tracks the alternative interaction.
-The viewer stays within a 620 px height and scrolls longer lists; large Local baskets
-render visible rows with TanStack Virtual while shorter lists stay fully rendered.
+The Local basket scrolls longer lists; large Local baskets render visible rows with
+TanStack Virtual while shorter lists stay fully rendered. Product details use the
+available app frame height rather than a nested fixed-height panel.
 Removing or replacing a row changes only the Local basket, never Nemlig. The
 alternative view has Back, the current product, search, selectable results,
-and an explicit **Use selected alternative** action. Back and search preserve
-the original row. Replacement preserves its quantity and stays Ready. Unavailable
-results cannot be selected. Longer product facts use the three collapsed sections
-**Varebeskrivelse**, **Varedeklaration**, and **Detaljer om varen**.
+and selection: tap a result, then choose **Use selected alternative** to start
+the authoritative local replacement. Back and search preserve the original row.
+Replacement preserves its quantity and stays Ready. Unavailable results cannot
+be selected. Full-screen details use the
+three tabs **Varebeskrivelse**, **Varedeklaration**, and **Detaljer om varen**.
 
 The MCP routing map separates catalogue discovery, the actual Nemlig basket,
 the Local basket, protected submission and recovery. Reopening uses `show`, not
