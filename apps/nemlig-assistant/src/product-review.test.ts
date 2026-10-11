@@ -41,6 +41,7 @@ const client = {
   createShoppingList: async () => ({ id: 1, name: "fixture", items: [] }),
   updateShoppingListProduct: async () => undefined,
   getShoppingList: async () => ({ id: 1, name: "fixture", items: [] }),
+  addShoppingListToCart: async () => undefined,
 };
 
 const withShoppingList = <

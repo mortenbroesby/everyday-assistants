@@ -9,8 +9,8 @@ additive transfer into the real basket.
 
 ## What Changes
 
-- Make one app-owned Nemlig shopping list the authoritative product and
-  quantity workspace for an active Local basket.
+- Make two app-owned Nemlig shopping lists—the To decide and Ready lists—the
+  authoritative product and quantity workspace for an active Local basket.
 - **BREAKING:** retire Durable Object persistence of Local-basket line content
   and its callback capability. Existing local baskets are unavailable after
   cutover; they are not silently migrated or submitted.

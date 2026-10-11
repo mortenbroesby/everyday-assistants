@@ -133,6 +133,7 @@ async function fixture() {
           name: "fixture",
           items: [],
         }),
+        addShoppingListToCart: async () => undefined,
       },
       {
         proposals: {
@@ -202,6 +203,17 @@ test("durable submission fails closed instead of falling back to individual bask
     {
       getProduct: async (id) => product(id),
       searchProducts: async () => [product(1)],
+      createShoppingList: async () => ({
+        id: 1,
+        name: "fixture",
+        items: [],
+      }),
+      updateShoppingListProduct: async () => undefined,
+      getShoppingList: async () => ({
+        id: 1,
+        name: "fixture",
+        items: [],
+      }),
     },
     {
       proposals: {
@@ -267,6 +279,7 @@ test("durable preparation builds and verifies one provider shopping list", async
           })),
         };
       },
+      addShoppingListToCart: async () => undefined,
     },
     {
       proposals: {

@@ -460,7 +460,8 @@ export class ProductReviewService {
       this.proposals?.prepareShoppingListAdditions &&
       this.client.createShoppingList &&
       this.client.updateShoppingListProduct &&
-      this.client.getShoppingList,
+      this.client.getShoppingList &&
+      this.client.addShoppingListToCart,
     );
   }
 

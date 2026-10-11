@@ -1750,6 +1750,7 @@ test("only an actual missing basket opens the picker on repository failures", as
           name: "fixture",
           items: [],
         }),
+        addShoppingListToCart: async () => undefined,
       },
     );
     await withMcpClient(
