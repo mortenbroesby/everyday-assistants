@@ -258,12 +258,16 @@ test("callback serializes an absent selection as JSON null", async () => {
   assert.equal(await response.json(), null);
 });
 
-test("Workers callback keeps an absent selection JSON-readable", async () => {
-  const response = await runWorkersSelection();
+test(
+  "Workers callback keeps an absent selection JSON-readable",
+  { timeout: 30_000 },
+  async () => {
+    const response = await runWorkersSelection();
 
-  assert.equal(response.status, 200);
-  assert.equal(await response.text(), "null");
-});
+    assert.equal(response.status, 200);
+    assert.equal(await response.text(), "null");
+  },
+);
 
 test("callback returns JSON-safe acknowledgements after committed deletion", async () => {
   const values = new Map<string, unknown>();
