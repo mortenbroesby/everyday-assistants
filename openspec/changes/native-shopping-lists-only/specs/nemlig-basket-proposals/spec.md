@@ -1,0 +1,44 @@
+## ADDED Requirements
+
+### Requirement: Native source submission and cleanup
+Submission SHALL bind the connected account, source list ID, exact approved
+contents, current basket baseline and conversation authority. It SHALL perform
+at most one native transfer, with no per-product fallback. It SHALL reject changed
+source content before dispatch. Automatic cleanup SHALL delete only the eligible
+corresponding source after verified additions and SHALL NOT discard unsubmitted
+or concurrently added products. A transfer snapshot SHALL be used only with demonstrated isolation if
+provider concurrency semantics cannot otherwise protect the approved payload.
+Without either guarantee, dispatch SHALL fail closed; merely copying contents
+into another mutable list SHALL NOT count as isolation.
+
+#### Scenario: Source list changes or disappears before transfer
+- **WHEN** preparation no longer matches the current source
+- **THEN** authorization is invalidated before dispatch and the current state or
+  missing-list picker is returned
+
+#### Scenario: Cleanup cannot safely complete
+- **WHEN** transfer is verified but source cleanup fails, source content changed,
+  products remain unsubmitted, or conditional deletion cannot be guaranteed
+- **THEN** the result remains successful with a retained-list warning and a
+  durable no-replay record; no automatic resubmission or deletion follows
+
+### Requirement: Submission attempts survive process loss
+A durable attempt record SHALL be atomically persisted before basket dispatch
+and consulted across conversations and process restarts. It SHALL NOT serve as
+shopping-list inventory or content storage. Unknown, attempted and uncertain
+outcomes SHALL prevent a new automatic transfer for the same source list.
+Missing or unavailable safety storage SHALL fail closed before dispatch.
+
+#### Scenario: Transfer response is lost and app restarts
+- **WHEN** a transfer may have succeeded before process loss
+- **THEN** selecting or re-preparing that native list cannot bypass the retained
+  attempt record and no second transfer is issued
+
+#### Scenario: Two conversations submit the same list
+- **WHEN** concurrent approved requests target one account/list
+- **THEN** only one obtains dispatch authority and the other observes the fence
+
+#### Scenario: Verified outcome precedes cleanup
+- **WHEN** basket readback verifies success
+- **THEN** the verified receipt is persisted before deletion, and retries return
+  the recorded outcome or require inspection without repeating the transfer
