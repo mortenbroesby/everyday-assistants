@@ -803,14 +803,8 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
     void Promise.resolve(
       actions.onReplace(alternatives.product_id, selectedAlternativeId),
     )
-      .then((replaced) => {
-        if (replaced === false) {
-          setReplacementPendingId(undefined);
-        }
-      })
-      .catch(() => {
-        setReplacementPendingId(undefined);
-      });
+      .catch(() => undefined)
+      .finally(() => setReplacementPendingId(undefined));
   };
   return (
     <ViewerShell

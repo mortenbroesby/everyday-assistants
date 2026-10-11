@@ -139,7 +139,7 @@ open actions. Keyboard users can press
 Shift+F10 on a product. The details view shows the same controls, so touch and
 screen-reader users can reach the same actions without swiping.
 Close the inline controls with × or Escape to restore the product row. Product
-details close with ×, Escape, or a tap outside.
+details close with the back control, Escape, or a tap outside.
 The inline controls open on release; swiping alone changes no basket state. ChatGPT mobile
 gesture handling still needs real-host acceptance. If swipe remains unreliable,
 [the tap-layout fallback](https://github.com/mortenbroesby/everyday-assistants/issues/283)
@@ -149,9 +149,10 @@ TanStack Virtual while shorter lists stay fully rendered. Product details use th
 available app frame height rather than a nested fixed-height panel.
 Removing or replacing a row changes only the Local basket, never Nemlig. The
 alternative view has Back, the current product, search, selectable results,
-and direct selection: tapping a result starts the authoritative local replacement.
-Back and search preserve the original row. Replacement preserves its quantity and
-stays Ready. Unavailable results cannot be selected. Full-screen details use the
+and selection: tap a result, then choose **Use selected alternative** to start
+the authoritative local replacement. Back and search preserve the original row.
+Replacement preserves its quantity and stays Ready. Unavailable results cannot
+be selected. Full-screen details use the
 three tabs **Varebeskrivelse**, **Varedeklaration**, and **Detaljer om varen**.
 
 The MCP routing map separates catalogue discovery, the actual Nemlig basket,
