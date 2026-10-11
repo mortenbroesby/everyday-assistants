@@ -112,7 +112,7 @@ const catalogue = {
   createShoppingList: async (name: string) => {
     const id = nextShoppingListId++;
     shoppingLists.set(id, { id, name, items: new Map() });
-    return { id, name, items: [] };
+    return id;
   },
   updateShoppingListProduct: async (
     listId: number,

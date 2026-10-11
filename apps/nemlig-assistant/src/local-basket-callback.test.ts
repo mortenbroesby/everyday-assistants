@@ -33,7 +33,10 @@ const workersRuntimeModules = () => {
   return { build, Miniflare, convertV4MiniflareOptions };
 };
 
-const runWorkersSelection = async (): Promise<Response> => {
+const runWorkersSelection = async (): Promise<{
+  status: number;
+  body: string;
+}> => {
   const { build, Miniflare, convertV4MiniflareOptions } =
     workersRuntimeModules();
   const result = await build({
@@ -72,7 +75,7 @@ const runWorkersSelection = async (): Promise<Response> => {
     }),
   );
   try {
-    return await runtime.dispatchFetch(
+    const response = await runtime.dispatchFetch(
       "http://local-basket-state.internal/inventory",
       {
         method: "POST",
@@ -83,6 +86,7 @@ const runWorkersSelection = async (): Promise<Response> => {
         body: JSON.stringify({ kind: "selection", selectionKey: "session" }),
       },
     );
+    return { status: response.status, body: await response.text() };
   } finally {
     await runtime.dispose();
   }
@@ -265,7 +269,7 @@ test(
     const response = await runWorkersSelection();
 
     assert.equal(response.status, 200);
-    assert.equal(await response.text(), "null");
+    assert.equal(response.body, "null");
   },
 );
 
