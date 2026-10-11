@@ -1517,7 +1517,7 @@ test("shopping-list transfer uses the native list endpoints and never the indivi
       response: json({
         Id: 44,
         Name: "Nemlig Assistant",
-        Products: [{ ProductId: 7, Quantity: 2 }],
+        Lines: [{ Id: "7", Quantity: 2 }],
       }),
     },
     {
