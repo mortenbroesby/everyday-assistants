@@ -472,26 +472,21 @@ export class ProductReviewService {
   ): Promise<{
     proposal: Awaited<ReturnType<BasketProposalService["prepareAdditions"]>>;
   }> {
-    const proposal = this.canPrepareShoppingList()
-      ? await this.proposals!.prepareShoppingListAdditions!(
-          owner,
-          basket.lines.map(({ productId, quantity }) => ({
-            product_id: productId,
-            quantity,
-          })),
-          `Nemlig Assistant ${basketId.slice(0, 8)}`,
-          { kind: "exact_review" },
-          { signal, freshProducts: true },
-        )
-      : await this.proposals!.prepareAdditions(
-          owner,
-          basket.lines.map(({ productId, quantity }) => ({
-            product_id: productId,
-            quantity,
-          })),
-          { kind: "exact_review" },
-          { signal, freshProducts: true },
-        );
+    if (!this.canPrepareShoppingList()) {
+      throw new NemligError(
+        "Shopping-list submission is unavailable. No Nemlig basket write was sent.",
+      );
+    }
+    const proposal = await this.proposals!.prepareShoppingListAdditions!(
+      owner,
+      basket.lines.map(({ productId, quantity }) => ({
+        product_id: productId,
+        quantity,
+      })),
+      `Nemlig Assistant ${basketId.slice(0, 8)}`,
+      { kind: "exact_review" },
+      { signal, freshProducts: true },
+    );
     return { proposal };
   }
 

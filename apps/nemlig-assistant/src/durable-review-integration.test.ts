@@ -122,10 +122,26 @@ async function fixture() {
           return product(id);
         },
         searchProducts: async () => [product(3)],
+        createShoppingList: async () => ({
+          id: 1,
+          name: "fixture",
+          items: [],
+        }),
+        updateShoppingListProduct: async () => undefined,
+        getShoppingList: async () => ({
+          id: 1,
+          name: "fixture",
+          items: [],
+        }),
       },
       {
         proposals: {
-          prepareAdditions: async () => ({
+          prepareAdditions: async () => {
+            throw new Error(
+              "Direct basket writes must not prepare a Local basket.",
+            );
+          },
+          prepareShoppingListAdditions: async () => ({
             applicable: true,
             proposal_id: "fixture-proposal",
             operation: "additions",
@@ -177,6 +193,32 @@ test("durable callback restores product display but never prepared authority", a
     ),
   );
   assert.equal(f.state.providerCalls, 0);
+});
+
+test("durable submission fails closed instead of falling back to individual basket additions", async () => {
+  const f = await fixture();
+  let directPreparationCalls = 0;
+  const service = new ProductReviewService(
+    {
+      getProduct: async (id) => product(id),
+      searchProducts: async () => [product(1)],
+    },
+    {
+      proposals: {
+        prepareAdditions: async () => {
+          directPreparationCalls += 1;
+          throw new Error("must not be called");
+        },
+        apply: async () => verified,
+      },
+    },
+  );
+
+  await assert.rejects(
+    service.prepareBasket("owner", f.basketId, f.repository),
+    /Shopping-list submission is unavailable/u,
+  );
+  assert.equal(directPreparationCalls, 0);
 });
 
 test("metadata heartbeat preserves a fresh exact prepared submission", async () => {

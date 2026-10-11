@@ -83,6 +83,9 @@ additions require exact approval, with final revalidation and verified readback.
   open a separate visual card.
 - Prepare exact additions from every row in the Local basket by building and
   verifying a temporary Nemlig shopping list before the protected transfer.
+- Transfer that verified list once through Nemlig's native list-to-basket
+  action. The hosted Local-basket flow never falls back to individual product
+  basket writes.
 - Preview the final quantity and price after adding the requested positive
   quantity to each existing line.
 
@@ -249,7 +252,9 @@ deadlines/retries. This does not enumerate the whole catalogue.
 
 Choose **Submit to Nemlig** to prepare current price estimates and exact quantities for
 every Local basket row, verify the same lines in a temporary Nemlig shopping
-list, and show the separate on-screen confirmation. Unavailable
+list, and show the separate on-screen confirmation. The confirmed submission
+uses one native list-to-basket transfer, never a sequence of individual basket
+updates. Unavailable
 products are named and excluded while available products can proceed; unresolved
 product details still require a fresh review. Inspect the full prepared list,
 then choose **Add to Nemlig basket** and

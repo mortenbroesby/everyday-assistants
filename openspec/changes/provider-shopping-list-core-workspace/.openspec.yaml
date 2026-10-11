@@ -1,0 +1,4 @@
+schema: spec-driven
+created: 2026-10-11
+goal: Move Local basket membership and quantities to provider shopping lists
+  while retaining exact add-only transfer verification.
