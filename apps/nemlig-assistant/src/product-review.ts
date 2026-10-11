@@ -1882,7 +1882,7 @@ export class ProductReviewService {
 
   async prepare(
     owner: string,
-    signal?: AbortSignal,
+    _signal?: AbortSignal,
     expectedDraftId?: string,
   ): Promise<ProductReviewSnapshot> {
     const stored = this.lock(owner, expectedDraftId);
@@ -1916,7 +1916,7 @@ export class ProductReviewService {
   /** Native-list submission is blocked pending the transfer decision. */
   async submit(
     owner: string,
-    submissionId: string,
+    _submissionId: string,
     expectedShoppingListId?: number,
     _signal?: AbortSignal,
   ): Promise<{ review: ProductReviewSnapshot; result: ApplyResult }> {
