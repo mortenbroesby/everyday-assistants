@@ -72,23 +72,41 @@ from conversation text, host state or a list ID.
 - **THEN** the selection is retained as an unverified hint and an error is shown,
   without claiming the list was deleted or inventory is empty
 
-### Requirement: Native edits are verified and bounded
-Saved additions, removals, quantity changes, replacements and explicit list
-deletion SHALL use the native shopping-list API and SHALL NOT modify the actual
-Nemlig basket. Every mutation SHALL name its original exact list, validate account
-access and freshness, and report success only after authoritative readback.
-Uncertain writes SHALL NOT be automatically replayed or compensated.
+### Requirement: Saved-list edits are staged until explicit Update
+Additions, removals, quantity changes, accept/replacement and alternative choices
+for a saved list SHALL change only a bounded transient edit buffer. They SHALL
+NOT write to Nemlig until the user explicitly chooses **Update shopping list**.
+Update SHALL bind the original account and native list ID, compare the provider
+fingerprint with the displayed baseline, apply the exact staged result and report
+success only after authoritative readback. The actual basket SHALL remain
+unchanged. Dirty, saving, partial, uncertain or conflicted edits SHALL block
+basket review and submission. Every edit SHALL invalidate prior approval.
 
-#### Scenario: Edit succeeds and process restarts
-- **WHEN** a saved item quantity is changed and verified, then the app restarts
-- **THEN** reopening the same native list reads that quantity from Nemlig
+#### Scenario: Edit without Update
+- **WHEN** the user changes a saved-list row or selects a replacement but does
+  not choose Update shopping list
+- **THEN** the edit remains transient, no provider list mutation is sent, and
+  basket review is unavailable until the pending edit is persisted
 
-#### Scenario: Replacement partially succeeds
-- **WHEN** one native update succeeds and another fails or times out
-- **THEN** the actual list is read and presented as partial or uncertain without
-  claiming atomic replacement or automatically repeating either write
+#### Scenario: Update succeeds
+- **WHEN** the user explicitly updates an unchanged exact native list
+- **THEN** the server validates account, list ID and baseline, applies the staged
+  contents once, verifies readback, clears the dirty state and enables a fresh
+  basket review
 
-#### Scenario: Stale card or external edit
-- **WHEN** a card targets an old list or its observed contents no longer match
-- **THEN** the edit is rejected and current state is shown; the action is never
-  redirected to another selected list
+#### Scenario: Nemlig changed before Update
+- **WHEN** provider contents differ from the displayed baseline
+- **THEN** the server sends no edit, loads current provider contents, preserves
+  the pending user changes, displays both for review and requires a later
+  explicit Update against the refreshed baseline
+
+#### Scenario: Update partially succeeds or becomes uncertain
+- **WHEN** a provider write or readback is interrupted after explicit Update
+- **THEN** a narrow operation journal binds the exact account/list, prior
+  fingerprint, intended change and progress; current Nemlig contents are
+  reconciled before resuming, and no write is blindly replayed
+
+#### Scenario: Stale card or foreign account
+- **WHEN** a card targets an old list or the connected account changes
+- **THEN** no provider edit is sent, pending intent remains bound to its original
+  target, and the action is never redirected to another list

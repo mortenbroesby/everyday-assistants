@@ -810,7 +810,17 @@ test("authenticated local-only basket requests keep capabilities request-scoped"
     observed.push({ capability, kind: command.kind });
     await new Promise((resolve) => setTimeout(resolve, 5));
     if (command.kind === "list") {
-      return Response.json([]);
+      return Response.json([
+        {
+          basketId,
+          createdAt: 1,
+          lastActivityAt: 2,
+          expiresAt: 86_400_002,
+          revision: 1,
+          productCount: 0,
+          submissionAttempted: false,
+        },
+      ]);
     }
     if (command.kind === "delete") {
       return Response.json({ deleted: true });
@@ -880,11 +890,11 @@ test("authenticated local-only basket requests keep capabilities request-scoped"
     const [firstList, secondList] = await Promise.all([
       first.callTool({
         name: "update_product_review",
-        arguments: { action: { kind: "list" } },
+        arguments: { action: { kind: "show" } },
       }),
       second.callTool({
         name: "update_product_review",
-        arguments: { action: { kind: "list" } },
+        arguments: { action: { kind: "show" } },
       }),
     ]);
     assert.equal(firstList.isError, undefined);
@@ -903,7 +913,11 @@ test("authenticated local-only basket requests keep capabilities request-scoped"
           action,
         },
       });
-      assert.equal(result.isError, undefined, JSON.stringify(action));
+      assert.equal(
+        result.isError,
+        undefined,
+        `${JSON.stringify(action)} ${JSON.stringify(result.content)}`,
+      );
     }
 
     for (const request of [

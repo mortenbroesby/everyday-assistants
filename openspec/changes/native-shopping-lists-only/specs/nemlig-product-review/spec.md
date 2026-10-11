@@ -4,8 +4,10 @@
 Conversation and touch SHALL share an unsaved draft scoped to the principal and
 conversation. Accepting or editing draft items SHALL remain temporary until
 explicit Save as shopping list. After saving, the same UI SHALL read/edit native
-list contents with verified readback, without a durable editable local mirror.
-Neither draft edits, saving nor saved-list edits SHALL change the actual basket.
+list contents through a transient edit buffer and explicit Update shopping list,
+without a durable editable local mirror. Native contents SHALL be written only
+after explicit Update and exact readback. Neither draft edits, saving nor staged
+saved-list edits SHALL change the actual basket.
 
 #### Scenario: Accept some products
 - **WHEN** exact candidate products are accepted in an unsaved draft
@@ -17,6 +19,11 @@ Neither draft edits, saving nor saved-list edits SHALL change the actual basket.
 - **THEN** authorized actions are serialized for their target and foreign or stale
   actions fail without mutation or retargeting
 
+#### Scenario: Saved-list edits remain pending
+- **WHEN** the user changes a native-list row or selects a replacement
+- **THEN** only the transient edit buffer changes; the UI marks it unsaved, shows
+  Update shopping list, and disables basket review until exact readback succeeds
+
 #### Scenario: Draft lifetime ends
 - **WHEN** an unsaved draft is lost after inactivity, finish, restart or memory eviction
 - **THEN** unsaved products disappear, saved shopping-list contents remain on
@@ -26,7 +33,8 @@ Neither draft edits, saving nor saved-list edits SHALL change the actual basket.
 The system SHALL offer alternatives for an identified candidate or saved item,
 preserve product details and cancellation, and allow returning without changes.
 Before Save, acceptance/replacement SHALL edit only the draft. After Save,
-explicit accepted edits SHALL write the selected native list. Temporary
+accepted edits SHALL remain staged until Update shopping list explicitly writes
+the selected native list and verifies the exact result. Temporary
 alternative results SHALL remain available during navigation while their target
 and observed list state are still current.
 
@@ -39,19 +47,33 @@ and observed list state are still current.
 - **THEN** the target and results remain available unless changed provider state
   requires refreshing them
 
+#### Scenario: Replacement is staged
+- **WHEN** the user selects a replacement for an item in a saved list
+- **THEN** the replacement remains pending locally until Update shopping list;
+  the provider list stays unchanged and basket review remains unavailable
+
 ### Requirement: Explicit protected submission
-Only exact explicitly approved saved-list products SHALL be submitted through the protected review,
-authorization, single-use native transfer and additive basket-readback flow.
-Any changed list contents SHALL invalidate prepared approval. Saving draft ideas
-SHALL NOT imply submission approval; temporary candidates SHALL never be implicitly
-submitted. An unsaved draft SHALL offer explicit Save before preparing submission. Successful submission SHALL
+Only the exact currently displayed saved-list products SHALL be submitted through
+the protected single-use native transfer and additive basket-readback flow after
+one explicit Submit action. Any changed list contents SHALL invalidate that
+action. Saving draft ideas SHALL NOT imply submission authorization; temporary
+candidates SHALL never be implicitly submitted. An unsaved draft SHALL offer
+explicit Save before Submit.
+Dirty, saving, partial, uncertain or conflicted native edits SHALL block basket
+review and submission. Successful submission SHALL
 consume the eligible corresponding list subject to safe cleanup; cleanup
 uncertainty SHALL not invalidate verified basket success.
 
+#### Scenario: Submit prepares and applies in one action
+- **WHEN** the user explicitly selects Submit for the exact displayed saved list
+- **THEN** preparation and validation happen internally and the protected
+  operation applies that snapshot without an intermediate review or a second
+  confirmation
+
 #### Scenario: Local selection is complete
 - **WHEN** submission is requested
-- **THEN** exact current lines, quantities, estimated prices and the intended
-  source-list deletion are reviewed before authorization
+- **THEN** exact current lines and quantities are validated internally before
+  the one explicit Submit action can apply them
 
 #### Scenario: Approved submission succeeds
 - **WHEN** the unchanged approved payload is transferred and verified
@@ -61,6 +83,12 @@ uncertainty SHALL not invalidate verified basket success.
 #### Scenario: Submission fails or becomes uncertain
 - **WHEN** transfer or readback becomes uncertain
 - **THEN** the list and durable attempt fence remain; no retry or silent cleanup occurs
+
+#### Scenario: User submits with pending edits
+- **WHEN** basket review or submission is requested while saved-list edits are
+  dirty, saving, partial, uncertain or conflicted
+- **THEN** no approval or transfer is created until Update shopping list has
+  verified the exact current provider contents
 
 ### Requirement: Active conversation selection
 Each conversation SHALL have an optional native shopping-list reference. Multiple
@@ -109,9 +137,10 @@ local-ID actions SHALL fail closed without reinterpreting their target.
   expiry without implicitly creating, saving or restoring a list
 
 #### Scenario: Confirm exact submission in the viewer
-- **WHEN** the user confirms an unchanged exact review
-- **THEN** the protected operation applies it at most once; cancellation or
-  merely opening the review makes no basket write
+- **WHEN** the user selects Submit for the unchanged displayed list
+- **THEN** preparation and validation happen behind that single action and the
+  protected operation applies it at most once; opening the review makes no
+  basket write and Save/Update alone does not authorize submission
 
 ### Requirement: To decide and Ready refinement
 To decide and Ready SHALL be temporary draft review hints, not persistence

@@ -67,9 +67,11 @@ build background synchronization.
 1. A fresh chat sees all account lists; selection survives only as a hint and is
    revalidated. Another account cannot use a guessed or stale list ID.
 2. Ideation and draft edits make no provider writes. Explicit save persists the
-   reviewed draft contents once with exact readback. Saved edits persist in
-   Nemlig; unsaved drafts have no recovery promise. Uncertain saves or edits
-   are never blindly replayed.
+   reviewed draft contents once with exact readback. Saved-list edits remain
+   transient until Update shopping list; external changes preserve pending
+   intent and show current provider contents before another explicit Update.
+   Unsaved drafts have no recovery promise. Uncertain saves or updates are
+   never blindly replayed.
 3. Confirmed deletion yields the picker; auth/network errors remain errors and
    cannot masquerade as an empty inventory or missing list.
 4. One exact authorized submission makes at most one native transfer, preserves
@@ -79,15 +81,17 @@ build background synchronization.
    Tests prove anti-replay after process restart, cross-chat contention, and
    stale-card fail-closed behavior.
 6. Storybook, MCP smoke and an explicitly authorized live ChatGPT test cover the
-   unsaved/save states, all-list picker, reopening through the draft UI, failed
-   saves, missing lists and a 50+ product submission.
+   unsaved/save states, all-list picker, reopening through the draft UI, staged
+   edits, explicit Update, external-edit conflicts, failed writes and missing
+   lists. A 50+ product submission remains blocked until the provider's
+   conditional-transfer or isolated-snapshot contract is proven.
 
 ### Delivery and existing work
 
-Planning branch: `codex/plan-native-shopping-lists`, one documentation PR.
-Implementation: one follow-up epic branch/PR with checkpoint commits; do not mix
-it into PR #294. PR #294 is merged in main at `ea56ce3`; preserve its reviewed
-cleanup behavior.
+Implementation is continuing on PR #296's `codex/plan-native-shopping-lists`
+branch with verified checkpoint commits. Keep the accepted local-basket removal
+in its separate stacked PR; do not mix it into PR #294. PR #294 is merged in
+main at `ea56ce3`; preserve its reviewed cleanup behavior.
 This change supersedes the unimplemented sections 2–3 of
 `provider-shopping-list-core-workspace`: its two-list design and mandatory
 workspace registry are rejected. Its shipped list-only submission safeguard and

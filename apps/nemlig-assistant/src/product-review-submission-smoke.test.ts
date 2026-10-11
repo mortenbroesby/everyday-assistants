@@ -17,15 +17,6 @@ import type {
 import { createMcpServer } from "./mcp.js";
 import type { ProductReviewSnapshot } from "./product-review.js";
 
-type ShoppingListTransferClient = Pick<
-  ShoppingListClient,
-  | "createShoppingList"
-  | "updateShoppingListProduct"
-  | "getShoppingList"
-  | "deleteShoppingList"
-  | "addShoppingListToCart"
->;
-
 const product = (id: number, name: string, price: number): Product => ({
   id,
   name,
@@ -95,7 +86,8 @@ const withMcpClient = async <T>(
   }
 };
 
-test("MCP submission smoke searches, prepares every Local basket line, and verifies explicit submission", async () => {
+// Proposal-level transfer, verified readback, cleanup and replay remain covered by proposals.test.ts.
+test("MCP submission smoke saves every exact line and blocks unsafe native-list transfer", async () => {
   const chosen = product(7, "Chosen oats", 4.25);
   const unresolved = product(8, "Unresolved tea", 6.5);
   const products = new Map([
@@ -112,7 +104,8 @@ test("MCP submission smoke searches, prepares every Local basket line, and verif
   let providerWrites = 0;
   const providerEvents: string[] = [];
   const shoppingLists = new Map<number, Map<number, number>>();
-  const provider: ShoppingClient & ShoppingListTransferClient = {
+  const provider: ShoppingClient & ShoppingListClient = {
+    providerIdentity: () => "account-1",
     isLoggedIn: () => true,
     login: async () => {},
     searchProducts: async (query) =>
@@ -131,6 +124,7 @@ test("MCP submission smoke searches, prepares every Local basket line, and verif
     addToCart: async () => {
       throw new Error("Direct basket writes must not be used.");
     },
+    listShoppingLists: async () => [],
     createShoppingList: async () => {
       shoppingLists.set(1, new Map());
       return 1;
@@ -205,25 +199,9 @@ test("MCP submission smoke searches, prepares every Local basket line, and verif
       },
     });
     assert.equal(started.isError, undefined);
-    let review = (
+    const review = (
       started.structuredContent as { review: ProductReviewSnapshot }
     ).review;
-    const update = async (action: Record<string, unknown>) => {
-      const response = await mcp.callTool({
-        name: "update_product_review_conversation",
-        arguments: {
-          action,
-        },
-      });
-      assert.equal(
-        response.isError,
-        undefined,
-        JSON.stringify(response.content),
-      );
-      review = (response.structuredContent as { review: ProductReviewSnapshot })
-        .review;
-      return review;
-    };
     assert.deepEqual(
       review.items.map(({ product_id, quantity, state }) => [
         product_id,
@@ -238,165 +216,38 @@ test("MCP submission smoke searches, prepares every Local basket line, and verif
     assert.equal(
       providerWrites,
       0,
-      "starting a Local basket does not mutate the provider basket",
+      "starting a draft does not mutate the provider basket",
     );
 
-    review = await update({ kind: "prepare_submission" });
+    const saved = await mcp.callTool({
+      name: "update_product_review_conversation",
+      arguments: {
+        action: { kind: "save", name: "Nemlig Assistant Local basket" },
+      },
+    });
+    assert.equal(saved.isError, undefined, JSON.stringify(saved.content));
+    const savedReview = (
+      saved.structuredContent as { review: ProductReviewSnapshot }
+    ).review;
+    assert.equal(savedReview.saveStatus, "saved");
+    assert.deepEqual((await provider.getShoppingList(1)).items, [
+      { productId: 7, quantity: 3 },
+      { productId: 8, quantity: 2 },
+    ]);
+    const prepared = await mcp.callTool({
+      name: "update_product_review_conversation",
+      arguments: { action: { kind: "prepare_submission" } },
+    });
+    assert.equal(prepared.isError, true);
+    assert.match(
+      JSON.stringify(prepared.content),
+      /cannot verify Nemlig will transfer the exact reviewed list unchanged/u,
+    );
     assert.equal(
       providerWrites,
       0,
-      "preparation does not mutate the provider basket",
+      "an unsafe native-list transfer does not mutate the provider basket",
     );
-    const prepared = review.submission;
-    assert.ok(prepared);
-    const preparedLines = prepared.review.lines as Array<{
-      product_id: number;
-      quantity: number;
-      item_price: number;
-      line_total: number;
-      name: string;
-      unit_size: string;
-    }>;
-    assert.deepEqual(
-      preparedLines.map(
-        ({
-          product_id,
-          quantity,
-          item_price,
-          line_total,
-          name,
-          unit_size,
-        }) => ({
-          product_id,
-          quantity,
-          item_price,
-          line_total,
-          name,
-          unit_size,
-        }),
-      ),
-      [
-        {
-          product_id: 7,
-          quantity: 3,
-          item_price: 4.25,
-          line_total: 12.75,
-          name: "Chosen oats",
-          unit_size: "1 stk",
-        },
-        {
-          product_id: 8,
-          quantity: 2,
-          item_price: 6.5,
-          line_total: 13,
-          name: "Unresolved tea",
-          unit_size: "1 stk",
-        },
-      ],
-    );
-    assert.equal(
-      JSON.stringify(prepared.review).includes("Unresolved tea"),
-      true,
-    );
-    assert.equal(
-      JSON.stringify(prepared.review).includes('"product_id":8'),
-      true,
-    );
-
-    const wrongReference = await mcp.callTool({
-      name: "submit_product_review_conversation",
-      arguments: {
-        submission_id: "00000000-0000-4000-8000-000000000000",
-      },
-    });
-    assert.equal(
-      wrongReference.isError,
-      true,
-      "only the exact prepared submission can be applied",
-    );
-    assert.equal(providerWrites, 0);
-    // Simulate the separate conversational approval turn for these exact lines.
-    // User approval is the model's responsibility, not a boolean invented by this test.
-    const submitted = await mcp.callTool({
-      name: "submit_product_review_conversation",
-      arguments: {
-        submission_id: prepared.submission_id,
-      },
-    });
-    assert.equal(
-      submitted.isError,
-      undefined,
-      JSON.stringify(submitted.content),
-    );
-    const submittedData = submitted.structuredContent as {
-      review: ProductReviewSnapshot;
-      result: {
-        status: string;
-        cleanup_warning?: string;
-        basket: {
-          items: Array<{ id: number; quantity: number }>;
-          products_price: number;
-          number_of_products: number;
-        };
-      };
-    };
-    assert.equal(submittedData.review.submission?.status, "submitted");
-    assert.equal(submittedData.result.status, "completed");
-    assert.match(
-      submittedData.review.submission?.cleanup_warning ?? "",
-      /could not be confirmed/u,
-    );
-    assert.equal(
-      submittedData.review.submission?.cleanup_warning,
-      submittedData.result.cleanup_warning,
-    );
-    assert.deepEqual(providerEvents.slice(-3), [
-      "transfer",
-      "basket-readback",
-      "delete-list",
-    ]);
-    assert.deepEqual(
-      submittedData.result.basket.items.map(({ id, quantity }) => [
-        id,
-        quantity,
-      ]),
-      [
-        [99, 2],
-        [7, 3],
-        [8, 2],
-      ],
-    );
-    assert.equal(submittedData.result.basket.products_price, 31.75);
-    assert.equal(submittedData.result.basket.number_of_products, 7);
-    assert.equal(providerWrites, 1);
-    assert.deepEqual(
-      (await provider.getCart()).items.map(({ id, quantity }) => [
-        id,
-        quantity,
-      ]),
-      [
-        [99, 2],
-        [7, 3],
-        [8, 2],
-      ],
-      "verified provider readback preserves unrelated lines",
-    );
-
-    const duplicate = await mcp.callTool({
-      name: "submit_product_review_conversation",
-      arguments: {
-        submission_id: prepared.submission_id,
-      },
-    });
-    assert.equal(
-      duplicate.isError,
-      true,
-      "the same approved submission cannot be applied twice",
-    );
-    assert.equal(
-      providerWrites,
-      1,
-      "rejected duplicate makes no additional provider write",
-    );
+    assert.deepEqual(providerEvents, []);
   });
 });

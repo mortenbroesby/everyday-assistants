@@ -101,6 +101,18 @@ const reviewSnapshotSchema = z.object({
   shoppingListId: z.number().int().positive().optional(),
   shoppingListName: z.string().optional(),
   saveStatus: z.enum(["saving", "saved", "partial", "uncertain"]).optional(),
+  shoppingListDirty: z.boolean().optional(),
+  updateStatus: z.enum(["saving", "partial", "uncertain"]).optional(),
+  conflictItems: z
+    .array(
+      z.object({
+        product_id: z.number().int().positive(),
+        quantity: z.number().int().positive(),
+        state: z.enum(["needs-review", "ready"]),
+        view: productViewSchema,
+      }),
+    )
+    .optional(),
   saveProgress: z
     .object({
       completed: z.number().int().nonnegative(),
@@ -175,6 +187,9 @@ const saveReviewActionSchema = z.object({
   kind: z.literal("save"),
   name: z.string().trim().min(1).max(30),
 });
+const updateShoppingListActionSchema = z.object({
+  kind: z.literal("update"),
+});
 const removeReviewActionSchema = z.object({
   kind: z.literal("remove"),
   product_ids: z
@@ -208,6 +223,7 @@ const modelReviewActionSchema = z.discriminatedUnion("kind", [
   ...localActionSchema.options,
   addReviewActionSchema,
   saveReviewActionSchema,
+  updateShoppingListActionSchema,
   prepareReviewActionSchema,
   removeReviewActionSchema,
   quantityReviewActionSchema,
@@ -222,6 +238,7 @@ const reviewActionSchema = z.discriminatedUnion("kind", [
   ...localActionSchema.options,
   addReviewActionSchema,
   saveReviewActionSchema,
+  updateShoppingListActionSchema,
   z.object({
     kind: z.literal("revisit"),
     product_ids: z
@@ -243,6 +260,49 @@ const reviewActionSchema = z.discriminatedUnion("kind", [
   alternativesReviewActionSchema,
   replaceReviewActionSchema,
 ]);
+const reviewTargetFields = {
+  basket_id: z
+    .string()
+    .uuid()
+    .optional()
+    .describe("Exact Local basket ID supplied by the current review card."),
+  draft_id: z
+    .string()
+    .uuid()
+    .optional()
+    .describe("Exact process-local unsaved draft ID from this card."),
+  shopping_list_id: z
+    .number()
+    .int()
+    .positive()
+    .optional()
+    .describe("Exact native Nemlig shopping-list ID from this card."),
+};
+const reviewInputSchema = <Action extends z.ZodTypeAny>(action: Action) =>
+  z
+    .object({ ...reviewTargetFields, action })
+    .strict()
+    .refine(
+      ({ basket_id, draft_id, shopping_list_id }) =>
+        [basket_id, draft_id, shopping_list_id].filter(
+          (target) => target !== undefined,
+        ).length <= 1,
+      { message: "Target exactly one draft or shopping list." },
+    );
+const submitReviewInputSchema = <Submission extends z.ZodTypeAny>(
+  submissionId: Submission,
+) =>
+  z
+    .object({
+      basket_id: reviewTargetFields.basket_id,
+      shopping_list_id: reviewTargetFields.shopping_list_id,
+      submission_id: submissionId,
+    })
+    .strict()
+    .refine(
+      ({ basket_id, shopping_list_id }) => !(basket_id && shopping_list_id),
+      { message: "Target one exact saved list or Local basket." },
+    );
 
 export type Candidate = z.infer<typeof candidateSchema>;
 
@@ -619,6 +679,17 @@ In the hosted deployment, Local baskets are durable owner data; use the opaque b
     result: applyResultSchema.optional(),
     baskets: z.array(basketSummarySchema).optional(),
     selectedBasketId: z.string().uuid().nullable().optional(),
+    shoppingLists: z
+      .array(
+        z.object({
+          id: z.number().int().positive(),
+          name: z.string(),
+          productCount: z.number().int().nonnegative().optional(),
+          totalAmount: z.number().finite().optional(),
+        }),
+      )
+      .optional(),
+    selectedShoppingListId: z.number().int().positive().nullable().optional(),
     selectionRequired: z.boolean().optional(),
     unavailable: z.literal(true).optional(),
     ended: z.literal(true).optional(),
@@ -714,6 +785,8 @@ In the hosted deployment, Local baskets are durable owner data; use the opaque b
           string | undefined)
       : undefined;
 
+  // Keep process-local draft actions separate from durable and native targets.
+  // fallow-ignore-next-line complexity
   const updateDraft = async (
     owner: string,
     action: z.infer<typeof reviewActionSchema>,
@@ -736,10 +809,16 @@ In the hosted deployment, Local baskets are durable owner data; use the opaque b
     ) {
       throw new NemligError("Durable Local basket storage is unavailable.");
     }
-    const review =
-      action.kind === "prepare_submission"
-        ? await reviews.prepare(owner, signal, draftId)
-        : await reviews.update(owner, action, signal, draftId);
+    if (action.kind === "prepare_submission") {
+      const review = reviews.active(owner, draftId);
+      if (!review?.shoppingListId) {
+        throw new NemligError(
+          "Save this draft as a Nemlig shopping list before reviewing basket additions.",
+        );
+      }
+      return { review: await reviews.prepare(owner, signal, draftId) };
+    }
+    const review = await reviews.update(owner, action, signal, draftId);
     return { review };
   };
   const updateUnsavedDraft = async (
@@ -754,6 +833,95 @@ In the hosted deployment, Local baskets are durable owner data; use the opaque b
       result,
       result.unavailable ? unavailableText : JSON.stringify(result),
     );
+  };
+  const listNativeShoppingLists = async (signal: AbortSignal) =>
+    success({
+      shoppingLists: await reviews.getShoppingLists(signal),
+      selectedShoppingListId: null,
+      selectionRequired: true,
+    });
+  const openNativeShoppingList = async (
+    owner: string,
+    listId: number,
+    signal: AbortSignal,
+  ) =>
+    success({ review: await reviews.openShoppingList(owner, listId, signal) });
+  // This dispatcher preserves the native list's read, edit, and no-delete boundaries.
+  // fallow-ignore-next-line complexity
+  const updateNativeShoppingList = async (
+    owner: string,
+    listId: number,
+    action: z.infer<typeof reviewActionSchema>,
+    signal: AbortSignal,
+  ) => {
+    if (action.kind === "prepare_submission") {
+      return success({ review: await reviews.prepare(owner, signal) });
+    }
+    if (action.kind === "show") {
+      const current = reviews.active(owner);
+      if (current?.shoppingListId === listId) {
+        return success({ review: current });
+      }
+      return openNativeShoppingList(owner, listId, signal);
+    }
+    if (action.kind === "select") {
+      return openNativeShoppingList(owner, listId, signal);
+    }
+    if (
+      action.kind === "list" ||
+      action.kind === "delete" ||
+      action.kind === "end" ||
+      action.kind === "heartbeat"
+    ) {
+      throw new NemligError(
+        "Native shopping lists cannot be deleted or cleared here.",
+      );
+    }
+    const review = await reviews.updateShoppingList(
+      owner,
+      listId,
+      action,
+      signal,
+    );
+    return success({ review });
+  };
+  const submitProcessReview = async (
+    owner: string,
+    submissionId: string,
+    shoppingListId: number | undefined,
+    signal: AbortSignal,
+  ) => {
+    await ensureLoggedIn(client, loadCredentials);
+    return success(
+      await reviews.submit(owner, submissionId, shoppingListId, signal),
+    );
+  };
+  const submitReview = async (
+    owner: string,
+    basketId: string | undefined,
+    shoppingListId: number | undefined,
+    submissionId: string,
+    repository: LocalBasketRepository | undefined,
+    selection: string | undefined,
+    missingBasket: "unavailable" | "if-empty",
+    signal: AbortSignal,
+  ) => {
+    if (shoppingListId) {
+      return submitProcessReview(owner, submissionId, shoppingListId, signal);
+    }
+    if (repository) {
+      const target =
+        basketId ??
+        (selection && (await selectedBasket(repository, selection)));
+      return submitDurableBasket(
+        owner,
+        target || undefined,
+        submissionId,
+        repository,
+        missingBasket,
+      );
+    }
+    return submitProcessReview(owner, submissionId, undefined, signal);
   };
 
   const runAuthenticatedRead = async <Result>(
@@ -966,24 +1134,36 @@ In the hosted deployment, Local baskets are durable owner data; use the opaque b
   registerTool(
     "start_product_review",
     {
-      title: "Show or start your Local basket",
+      title: "Show or start a shopping list",
       description:
-        "Open the native visual Local basket when the user asks to see products, even without naming this tool. With exact returned product IDs and quantities, create a new Local basket. Omit items to reopen the remembered basket or show the basket picker. Every basket has an opaque ID; cards send it with mutations. Local baskets are durable for up to 24 hours after explicit activity, with bounded owner storage. Local edits do not change the real Nemlig basket. Add new products through update_product_review_conversation add. Respect an explicit request not to create or edit a Local basket.",
-      inputSchema: z.object({
-        items: z
-          .array(
-            z.object({
-              product_id: z.number().int().positive(),
-              quantity: z.number().int().positive(),
-            }),
-          )
-          .min(1)
-          .max(MAX_DRAFT_PRODUCTS)
-          .optional()
-          .describe(
-            "Exact returned products and intended package quantities to create a Local basket. Omit to reopen the remembered basket or show the picker.",
-          ),
-      }),
+        "Open the visual review when the user asks to see products. With exact returned product IDs and quantities, start an unsaved process-local draft; nothing is written to Nemlig until explicit Save. Omit items to list native Nemlig shopping lists, or pass shopping_list_id to reopen one. Native-list edits remain staged until explicit action=update verifies the same list. A single explicit Submit action may prepare and add only the exact current saved list; Save or Update alone never authorizes basket additions. Cards carry the exact draft_id or shopping_list_id. Never infer a target from its name or replay an uncertain write.",
+      inputSchema: z
+        .object({
+          items: z
+            .array(
+              z.object({
+                product_id: z.number().int().positive(),
+                quantity: z.number().int().positive(),
+              }),
+            )
+            .min(1)
+            .max(MAX_DRAFT_PRODUCTS)
+            .optional()
+            .describe(
+              "Exact returned products and intended package quantities to start an unsaved draft. Omit to show native Nemlig shopping lists.",
+            ),
+          shopping_list_id: z
+            .number()
+            .int()
+            .positive()
+            .optional()
+            .describe("Exact native Nemlig shopping-list ID from this card."),
+        })
+        .strict()
+        .refine(
+          ({ items, shopping_list_id }) => !(items?.length && shopping_list_id),
+          { message: "Start a draft or open a shopping list, not both." },
+        ),
       outputSchema: durableReviewResultSchema,
       annotations: {
         readOnlyHint: false,
@@ -1000,49 +1180,34 @@ In the hosted deployment, Local baskets are durable owner data; use the opaque b
         },
       },
     },
-    ({ items }, ctx) => {
-      const repository = localBasketRepository(ctx.mcpReq.signal);
+    ({ items, shopping_list_id }, ctx) => {
       const perform = async () => {
         const owner = reviewOwner(ctx);
-        if (!repository) {
-          const review = await reviews.start(
+        if (shopping_list_id) {
+          const review = await reviews.openShoppingList(
             owner,
-            items ?? [],
+            shopping_list_id,
             ctx.mcpReq.signal,
-          );
-          return success({ review });
-        }
-        const key = selectionKey(ctx);
-        if (items?.length) {
-          const created = await reviews.createBasket(
-            owner,
-            items,
-            repository,
-            ctx.mcpReq.signal,
-            key,
           );
           return success({
-            review: created.review,
-            baskets: created.baskets,
-            selectedBasketId: created.review.basketId,
+            review,
+            shoppingLists: await reviews.getShoppingLists(ctx.mcpReq.signal),
+            selectedShoppingListId: shopping_list_id,
           });
         }
-        const chosen = await selectedBasket(repository, key);
-        const baskets = await reviews.listBaskets(repository, owner);
-        if (chosen && baskets.some((basket) => basket.basketId === chosen)) {
-          const review = await reviews.showBasket(owner, chosen, repository);
-          return success({ review, baskets, selectedBasketId: chosen });
+        if (!items?.length) {
+          return success({
+            shoppingLists: await reviews.getShoppingLists(ctx.mcpReq.signal),
+            selectedShoppingListId: null,
+            selectionRequired: true,
+          });
         }
+        const review = await reviews.start(owner, items, ctx.mcpReq.signal);
         return success({
-          baskets,
-          selectedBasketId: null,
-          selectionRequired: true,
-          ...(baskets.length ? {} : { unavailable: true as const }),
+          review,
         });
       };
-      return items?.length
-        ? runAuthenticatedRead("start_product_review", perform)
-        : runMcpOperation("start_product_review", perform);
+      return runAuthenticatedRead("start_product_review", perform);
     },
   );
 
@@ -1056,38 +1221,58 @@ In the hosted deployment, Local baskets are durable owner data; use the opaque b
   registerTool(
     "update_product_review_conversation",
     {
-      title: "Update your Local basket",
+      title: "Update your shopping list",
       description:
-        "List, show, select, heartbeat, delete, or edit a durable Local basket. Pass basket_id with every widget mutation; when omitted, a stable host conversation selection may identify the basket. Add, remove, change quantity, find alternatives for any item, replace, or prepare_submission. Another alternatives search replaces the candidate set. Local edits never write to Nemlig. Any ID or quantity change invalidates prepared authority. Preparation freshly validates every item and preserves unrelated real-basket lines. A clear command to add the exact unchanged Local basket authorizes its prepared payload without a redundant chat approval; otherwise require exact approval. If intent or scope is unclear or the list changed after the command, ask before applying. After errors show current state and never replay the action.",
-      inputSchema: z
-        .object({
-          basket_id: z
-            .string()
-            .uuid()
-            .optional()
-            .describe(
-              "Exact Local basket ID supplied by the current review card.",
-            ),
-          draft_id: z
-            .string()
-            .uuid()
-            .optional()
-            .describe("Exact process-local unsaved draft ID from this card."),
-          action: modelReviewActionSchema.describe(
-            "The Local basket change, navigation, refresh, or preparation requested by the user.",
-          ),
-        })
-        .strict(),
+        "List native Nemlig shopping lists with action=list, open one by passing shopping_list_id with action=select, and target every edit with its exact shopping_list_id. Native-list edits are staged locally and only action=update writes the exact selected list; an uncertain or partial Update blocks Submit. Unsaved drafts require explicit Save before basket submission. Save and Update never authorize basket additions; only the user's explicit Submit action does. Never infer a target from a matching name. After an error, refresh the exact list and never replay an uncertain write.",
+      inputSchema: reviewInputSchema(
+        modelReviewActionSchema.describe(
+          "The Local basket change, navigation, refresh, or preparation requested by the user.",
+        ),
+      ),
       outputSchema: draftActionOutputSchema,
       annotations: draftActionAnnotations,
       _meta: { ui: { visibility: ["model"] } },
     },
-    ({ action, basket_id, draft_id }, ctx) => {
+    ({ action, basket_id, draft_id, shopping_list_id }, ctx) => {
       const repository = localBasketRepository(ctx.mcpReq.signal);
       // Ordered branches preserve the distinction between conversation selection and an explicit card ID.
       // fallow-ignore-next-line complexity
       const perform = async () => {
         const owner = reviewOwner(ctx);
+        if (action.kind === "list") {
+          return listNativeShoppingLists(ctx.mcpReq.signal);
+        }
+        if (action.kind === "select") {
+          if (basket_id && repository) {
+            return refreshDurableBasket(
+              owner,
+              basket_id,
+              repository,
+              selectionKey(ctx),
+              "select",
+            );
+          }
+          return shopping_list_id
+            ? openNativeShoppingList(owner, shopping_list_id, ctx.mcpReq.signal)
+            : listNativeShoppingLists(ctx.mcpReq.signal);
+        }
+        if (shopping_list_id) {
+          return updateNativeShoppingList(
+            owner,
+            shopping_list_id,
+            action,
+            ctx.mcpReq.signal,
+          );
+        }
+        if (draft_id) {
+          return updateUnsavedDraft(
+            owner,
+            action,
+            ctx.mcpReq.signal,
+            draft_id,
+            "Unsaved draft expired or is unavailable. Start a new draft; old cards cannot restore it.",
+          );
+        }
         if (!repository) {
           return updateUnsavedDraft(
             owner,
@@ -1098,32 +1283,6 @@ In the hosted deployment, Local baskets are durable owner data; use the opaque b
           );
         }
         const key = selectionKey(ctx);
-        if (action.kind === "list") {
-          const baskets = await reviews.listBaskets(repository, owner);
-          const selected = await selectedBasket(repository, key);
-          return success({
-            baskets,
-            selectedBasketId: selected ?? null,
-            selectionRequired: true,
-            ...(baskets.length ? {} : { unavailable: true as const }),
-          });
-        }
-        if (action.kind === "select") {
-          if (!basket_id) {
-            return success({
-              baskets: await reviews.listBaskets(repository, owner),
-              selectedBasketId: null,
-              selectionRequired: true,
-            });
-          }
-          return refreshDurableBasket(
-            owner,
-            basket_id,
-            repository,
-            key,
-            "select",
-          );
-        }
         if (action.kind === "delete" || action.kind === "end") {
           const target = basket_id;
           if (!target) {
@@ -1206,10 +1365,15 @@ In the hosted deployment, Local baskets are durable owner data; use the opaque b
           ctx.mcpReq.signal,
         );
       };
+      if (action.kind === "select" && basket_id && repository) {
+        return runMcpOperation("update_product_review_conversation", perform);
+      }
       return action.kind === "add" ||
         action.kind === "alternatives" ||
         action.kind === "replace" ||
         action.kind === "save" ||
+        action.kind === "list" ||
+        action.kind === "select" ||
         action.kind === "prepare_submission"
         ? runAuthenticatedRead("update_product_review_conversation", perform)
         : runMcpOperation("update_product_review_conversation", perform);
@@ -1223,52 +1387,61 @@ In the hosted deployment, Local baskets are durable owner data; use the opaque b
       title: "Update the current Local basket",
       description:
         "Internal UI action for the exact durable Local basket. Send basket_id with every mutation; local list/show/select/delete/heartbeat do not require Nemlig credentials. A missing, expired, deleted, or evicted basket returns the picker and never redirects a mutation to another basket.",
-      inputSchema: z
-        .object({
-          basket_id: z
-            .string()
-            .uuid()
-            .optional()
-            .describe(
-              "Exact Local basket ID supplied by the current review card.",
-            ),
-          draft_id: z
-            .string()
-            .uuid()
-            .optional()
-            .describe("Exact process-local unsaved draft ID from this card."),
-          action: reviewActionSchema,
-        })
-        .strict(),
+      inputSchema: reviewInputSchema(reviewActionSchema),
       outputSchema: draftActionOutputSchema,
       annotations: draftActionAnnotations,
       _meta: { ui: { visibility: ["app"] }, "openai/widgetAccessible": true },
     },
     // Model may resolve a conversation target; widget mutations are tied to this card's exact list ID.
     // fallow-ignore-next-line code-duplication
-    ({ action, basket_id, draft_id }, ctx) => {
+    ({ action, basket_id, draft_id, shopping_list_id }, ctx) => {
       const repository = localBasketRepository(ctx.mcpReq.signal);
       // The widget adapter is a fail-closed state machine for stale and ID-less cards.
       // fallow-ignore-next-line complexity
       const perform = async () => {
         const owner = reviewOwner(ctx);
+        if (action.kind === "list") {
+          return listNativeShoppingLists(ctx.mcpReq.signal);
+        }
+        if (action.kind === "select") {
+          if (basket_id && repository) {
+            return refreshDurableBasket(
+              owner,
+              basket_id,
+              repository,
+              selectionKey(ctx),
+              "select",
+            );
+          }
+          return shopping_list_id
+            ? openNativeShoppingList(owner, shopping_list_id, ctx.mcpReq.signal)
+            : listNativeShoppingLists(ctx.mcpReq.signal);
+        }
+        if (shopping_list_id) {
+          return updateNativeShoppingList(
+            owner,
+            shopping_list_id,
+            action,
+            ctx.mcpReq.signal,
+          );
+        }
+        if (draft_id) {
+          return updateUnsavedDraft(
+            owner,
+            action,
+            ctx.mcpReq.signal,
+            draft_id,
+            "Unsaved draft expired or is unavailable. Start a new draft; old cards cannot restore it.",
+          );
+        }
         if (
           repository &&
           (action.kind === "show" ||
             action.kind === "delete" ||
             action.kind === "end" ||
-            action.kind === "select" ||
-            action.kind === "heartbeat" ||
-            action.kind === "list")
+            action.kind === "heartbeat")
         ) {
           const key = selectionKey(ctx);
-          if (action.kind === "list") {
-            return success({
-              baskets: await reviews.listBaskets(repository, owner),
-              selectedBasketId: (await selectedBasket(repository, key)) ?? null,
-              selectionRequired: true,
-            });
-          }
           const target = basket_id;
           if (!target) {
             return success({
@@ -1287,13 +1460,13 @@ In the hosted deployment, Local baskets are durable owner data; use the opaque b
               selectedBasketId: null,
             });
           }
-          if (action.kind === "select" || action.kind === "heartbeat") {
+          if (action.kind === "heartbeat") {
             return refreshDurableBasket(
               owner,
               target,
               repository,
               key,
-              action.kind,
+              "heartbeat",
             );
           }
           const review = await reviews.showBasket(owner, target, repository);
@@ -1332,11 +1505,16 @@ In the hosted deployment, Local baskets are durable owner data; use the opaque b
         const result = await updateDraft(owner, action, ctx.mcpReq.signal);
         return success(result);
       };
+      if (action.kind === "select" && basket_id && repository) {
+        return runMcpOperation("update_product_review", perform);
+      }
       return action.kind === "add" ||
         action.kind === "alternatives" ||
         action.kind === "replace" ||
         action.kind === "save" ||
-        action.kind === "prepare_submission"
+        action.kind === "prepare_submission" ||
+        action.kind === "list" ||
+        action.kind === "select"
         ? runAuthenticatedRead("update_product_review", perform)
         : runMcpOperation("update_product_review", perform);
     },
@@ -1348,23 +1526,14 @@ In the hosted deployment, Local baskets are durable owner data; use the opaque b
       title: "Submit the exact Local basket to Nemlig",
       description:
         "After a clear user command to add the exact unchanged Local basket, apply only its prepared whole-list product IDs and quantities; that command is sufficient conversational authorization. Otherwise apply only after exact approval. Inspection, local edits, and preparation are not authorization. If scope is ambiguous or any item changed after intent, ask which exact list to add. Fresh validation and verified readback are mandatory. Requires the exact prepared submission_id. Never retry automatically; after any error inspect the Local basket and actual basket first.",
-      inputSchema: z
-        .object({
-          basket_id: z
-            .string()
-            .uuid()
-            .optional()
-            .describe(
-              "Exact Local basket ID supplied by the current review card.",
-            ),
-          submission_id: z
-            .string()
-            .uuid()
-            .describe(
-              "The exact prepared submission reference bound to the user's clear add instruction or explicit approval.",
-            ),
-        })
-        .strict(),
+      inputSchema: submitReviewInputSchema(
+        z
+          .string()
+          .uuid()
+          .describe(
+            "The exact prepared submission reference bound to the user's clear add instruction or explicit approval.",
+          ),
+      ),
       outputSchema: durableReviewResultSchema,
       annotations: {
         readOnlyHint: false,
@@ -1373,23 +1542,19 @@ In the hosted deployment, Local baskets are durable owner data; use the opaque b
       },
       _meta: { ui: { visibility: ["model"] } },
     },
-    ({ basket_id, submission_id }, ctx) =>
+    ({ basket_id, shopping_list_id, submission_id }, ctx) =>
       runMcpOperation("submit_product_review_conversation", async () => {
         const repository = localBasketRepository(ctx.mcpReq.signal);
-        if (repository) {
-          const owner = reviewOwner(ctx);
-          const basketId =
-            basket_id ?? (await selectedBasket(repository, selectionKey(ctx)));
-          return submitDurableBasket(
-            owner,
-            basketId,
-            submission_id,
-            repository,
-            "if-empty",
-          );
-        }
-        await ensureLoggedIn(client, loadCredentials);
-        return success(await reviews.submit(reviewOwner(ctx), submission_id));
+        return submitReview(
+          reviewOwner(ctx),
+          basket_id,
+          shopping_list_id,
+          submission_id,
+          repository,
+          selectionKey(ctx),
+          "if-empty",
+          ctx.mcpReq.signal,
+        );
       }),
   );
 
@@ -1399,18 +1564,7 @@ In the hosted deployment, Local baskets are durable owner data; use the opaque b
       title: "Confirm the current Local basket addition",
       description:
         "Internal UI action for the current Local basket. Requires its exact prepared submission reference.",
-      inputSchema: z
-        .object({
-          basket_id: z
-            .string()
-            .uuid()
-            .optional()
-            .describe(
-              "Exact Local basket ID supplied by the current review card.",
-            ),
-          submission_id: z.string().uuid(),
-        })
-        .strict(),
+      inputSchema: submitReviewInputSchema(z.string().uuid()),
       outputSchema: durableReviewResultSchema,
       annotations: {
         readOnlyHint: false,
@@ -1419,21 +1573,19 @@ In the hosted deployment, Local baskets are durable owner data; use the opaque b
       },
       _meta: { ui: { visibility: ["app"] }, "openai/widgetAccessible": true },
     },
-    ({ basket_id, submission_id }, ctx) =>
+    ({ basket_id, shopping_list_id, submission_id }, ctx) =>
       runMcpOperation("submit_product_review", async () => {
-        const owner = reviewOwner(ctx);
         const repository = localBasketRepository(ctx.mcpReq.signal);
-        if (repository) {
-          return submitDurableBasket(
-            owner,
-            basket_id,
-            submission_id,
-            repository,
-            "unavailable",
-          );
-        }
-        await ensureLoggedIn(client, loadCredentials);
-        return success(await reviews.submit(owner, submission_id));
+        return submitReview(
+          reviewOwner(ctx),
+          basket_id,
+          shopping_list_id,
+          submission_id,
+          repository,
+          undefined,
+          "unavailable",
+          ctx.mcpReq.signal,
+        );
       }),
   );
 

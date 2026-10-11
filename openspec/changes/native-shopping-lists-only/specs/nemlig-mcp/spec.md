@@ -6,8 +6,10 @@ The model-visible set SHALL remain `check_nemlig_connection`, `find_groceries`,
 `update_product_review_conversation`, and `submit_product_review_conversation`.
 Existing review tool names SHALL support native shopping-list semantics without
 adding a parallel local-basket tool family. Start SHALL create an unsaved draft;
-update actions SHALL expose explicit Save as shopping list and distinguish
-process-local draft targets from native targets. Stale draft references SHALL
+update actions SHALL expose explicit Save shopping list for drafts and explicit
+Update shopping list for staged native-list edits. Native edit actions SHALL
+change only transient state; only the exact Update action may write those edits
+to Nemlig. Draft/native targets SHALL remain distinct. Stale draft references SHALL
 never resolve to another draft or an automatically created list. Widget saved-list actions SHALL require
 `shopping_list_id`; submission SHALL additionally require the exact
 `submission_id`. Native-list conversation actions SHALL use an explicit list ID or a revalidated
@@ -37,6 +39,17 @@ reflect their provider-writing actions even though unsaved draft edits are local
 - **WHEN** a conversation or widget requests Save as shopping list
 - **THEN** only the explicitly targeted current draft is saved and verified;
   no basket transfer or approval is created
+
+#### Scenario: Native edit is distinct from Update
+- **WHEN** a conversation or widget stages a native-list edit
+- **THEN** no provider list write or basket approval occurs until a separate
+  Update shopping list action supplies the same exact native list ID
+
+#### Scenario: Dirty native list is submitted
+- **WHEN** submission is requested while edits are dirty, saving, partial,
+  uncertain or conflicted
+- **THEN** server-side validation rejects preparation and submission without a
+  provider basket transfer
 
 #### Scenario: Retired tool is called
 - **WHEN** a retired tool name is invoked

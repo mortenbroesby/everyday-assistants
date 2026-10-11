@@ -8,6 +8,7 @@ import { NemligError } from "./nemlig-error.js";
 import {
   ProductNotFoundError,
   shoppingListFingerprint,
+  type ShoppingList,
   type ShoppingListOverview,
   type ShoppingListClient,
 } from "./client.js";
@@ -28,6 +29,20 @@ import type {
 export type ReviewDestination = "needs-review" | "ready" | "alternatives";
 /** Bounds transient draft payloads while allowing a full family shopping trip. */
 export const MAX_DRAFT_PRODUCTS = 500;
+const nativeListTransferUnavailable =
+  "We cannot verify Nemlig will transfer the exact reviewed list unchanged. Basket additions are disabled until that guarantee is verified. No basket write was sent.";
+const quantityMap = <Item>(
+  items: readonly Item[],
+  productId: (item: Item) => number,
+  quantity: (item: Item) => number,
+): Map<number, number> =>
+  new Map(items.map((item) => [productId(item), quantity(item)]));
+const reviewQuantities = (items: ReviewItem[]) =>
+  quantityMap(
+    items,
+    (item) => item.product_id,
+    (item) => item.quantity,
+  );
 export const DRAFT_IDLE_TIMEOUT_MS = 2 * 60 * 60 * 1000;
 const MAX_DURABLE_REVIEW_CACHE = 8;
 export interface ReviewItem {
@@ -42,6 +57,9 @@ export interface ProductReviewSnapshot {
   shoppingListId?: number;
   shoppingListName?: string;
   saveStatus?: "saving" | "saved" | "partial" | "uncertain";
+  shoppingListDirty?: boolean;
+  updateStatus?: "saving" | "partial" | "uncertain";
+  conflictItems?: ReviewItem[];
   saveProgress?: { completed: number; total: number };
   actionNotice?: string;
   basketId?: string;
@@ -67,6 +85,7 @@ export interface ProductReviewSnapshot {
 }
 export type ProductReviewAction =
   | { kind: "save"; name: string }
+  | { kind: "update" }
   | { kind: "accept" | "remove" | "revisit"; product_ids: number[] }
   | { kind: "add"; items: Array<{ product_id: number; quantity: number }> }
   | { kind: "quantity"; product_id: number; quantity: number }
@@ -78,6 +97,7 @@ interface StoredReview {
   lastActivityAt?: number;
   accountIdentity?: string;
   nativeFingerprint?: string;
+  nativeItems?: Array<{ productId: number; quantity: number }>;
   createAttempted?: boolean;
   completedDraftId?: string;
   snapshot: ProductReviewSnapshot;
@@ -886,9 +906,448 @@ export class ProductReviewService {
       busy: false,
       accountIdentity,
       nativeFingerprint: shoppingListFingerprint(list),
+      nativeItems: list.items.map((item) => ({ ...item })),
       snapshot,
     });
     return structuredClone(snapshot);
+  }
+
+  // Keep inventory, account, identity, and drift checks in their required order.
+  // fallow-ignore-next-line complexity
+  private async currentNativeList(
+    owner: string,
+    stored: StoredReview,
+    listId: number,
+    accountIdentity: string,
+    signal?: AbortSignal,
+  ): Promise<ShoppingList | undefined> {
+    const inventory = await this.client.listShoppingLists!(signal);
+    if (this.client.providerIdentity?.() !== accountIdentity) {
+      throw new NemligError(
+        "Nemlig account changed while refreshing this shopping list. Select it again.",
+      );
+    }
+    if (!inventory.some(({ id }) => id === listId)) {
+      throw new NemligError(
+        "Shopping list was deleted. Refresh the list.",
+        404,
+      );
+    }
+    const current = await this.client.getShoppingList!(listId, signal);
+    if (
+      this.client.providerIdentity?.() !== accountIdentity ||
+      current.id !== listId ||
+      current.name !== stored.snapshot.shoppingListName
+    ) {
+      throw new NemligError("Shopping-list identity changed. Select it again.");
+    }
+    if (shoppingListFingerprint(current) === stored.nativeFingerprint) {
+      return current;
+    }
+    const rows = await this.readItems(
+      current.items.map(({ productId, quantity }) => ({
+        product_id: productId,
+        quantity,
+      })),
+      signal,
+    );
+    if (this.client.providerIdentity?.() !== accountIdentity) {
+      throw new NemligError(
+        "Nemlig account changed while refreshing this shopping list. Select it again.",
+      );
+    }
+    if (stored.snapshot.shoppingListDirty) {
+      stored.snapshot.conflictItems = rows;
+      stored.snapshot.updateStatus = "partial";
+      stored.snapshot.actionNotice =
+        "Nemlig changed this list. Current rows are shown and your staged edits are preserved; reopen the list before updating.";
+    } else {
+      stored.snapshot.items = rows;
+      stored.nativeFingerprint = shoppingListFingerprint(current);
+      stored.nativeItems = current.items.map((item) => ({ ...item }));
+      stored.snapshot.actionNotice =
+        "This shopping list changed in Nemlig. Review the refreshed rows before changing it again.";
+      stored.snapshot.saveStatus = "saved";
+    }
+    this.touch(owner, stored);
+    return undefined;
+  }
+
+  private async stageNativeListEdit(
+    stored: StoredReview,
+    action: ProductReviewAction,
+    accountIdentity: string,
+    signal?: AbortSignal,
+  ): Promise<ProductReviewSnapshot> {
+    const next = structuredClone(stored.snapshot);
+    switch (action.kind) {
+      case "quantity":
+        this.stageNativeListQuantity(next, action);
+        break;
+      case "remove":
+        this.stageNativeListRemoval(next, action);
+        break;
+      case "add":
+        await this.stageNativeListAddition(
+          next,
+          action,
+          accountIdentity,
+          signal,
+        );
+        break;
+      case "replace":
+        this.stageNativeListReplacement(next, action);
+        break;
+      default:
+        return structuredClone(stored.snapshot);
+    }
+
+    const baseline = quantityMap(
+      stored.nativeItems ?? [],
+      (item) => item.productId,
+      (item) => item.quantity,
+    );
+    const desired = reviewQuantities(next.items);
+    stored.snapshot = next;
+    stored.snapshot.shoppingListDirty =
+      JSON.stringify([...baseline].sort()) !==
+      JSON.stringify([...desired].sort());
+    delete stored.snapshot.submission;
+    delete stored.proposalId;
+    delete stored.snapshot.actionNotice;
+    return structuredClone(stored.snapshot);
+  }
+
+  private nativeListItem(items: ReviewItem[], productId: number): ReviewItem {
+    const item = items.find((row) => row.product_id === productId);
+    if (!item) {
+      throw new NemligError("Exact product is not in this shopping list.");
+    }
+    return item;
+  }
+
+  private stageNativeListQuantity(
+    next: ProductReviewSnapshot,
+    action: Extract<ProductReviewAction, { kind: "quantity" }>,
+  ): void {
+    if (!validPositive(action.quantity)) {
+      throw new NemligError("Quantity must be a positive integer.");
+    }
+    this.nativeListItem(next.items, action.product_id).quantity =
+      action.quantity;
+  }
+
+  private stageNativeListRemoval(
+    next: ProductReviewSnapshot,
+    action: { product_ids: number[] },
+  ): void {
+    if (
+      !action.product_ids.length ||
+      new Set(action.product_ids).size !== action.product_ids.length
+    ) {
+      throw new NemligError("Select unique exact products.");
+    }
+    action.product_ids.forEach((id) => this.nativeListItem(next.items, id));
+    const removed = new Set(action.product_ids);
+    next.items = next.items.filter((item) => !removed.has(item.product_id));
+  }
+
+  private async stageNativeListAddition(
+    next: ProductReviewSnapshot,
+    action: Extract<ProductReviewAction, { kind: "add" }>,
+    accountIdentity: string,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    const ids = action.items.map(({ product_id }) => product_id);
+    if (
+      !ids.length ||
+      new Set(ids).size !== ids.length ||
+      ids.some((id) => !validPositive(id)) ||
+      action.items.some(({ quantity }) => !validPositive(quantity))
+    ) {
+      throw new NemligError(
+        "Add unique exact products with positive quantities.",
+      );
+    }
+    const rows = await this.readItems(action.items, signal);
+    if (this.client.providerIdentity?.() !== accountIdentity) {
+      throw new NemligError(
+        "Nemlig account changed while refreshing this shopping list. Select it again.",
+      );
+    }
+    for (const row of rows) {
+      const existing = next.items.find(
+        (item) => item.product_id === row.product_id,
+      );
+      if (existing) {
+        existing.quantity += row.quantity;
+        existing.view = row.view;
+      } else {
+        next.items.push({ ...row, quantity: row.quantity });
+      }
+    }
+  }
+
+  private stageNativeListReplacement(
+    next: ProductReviewSnapshot,
+    action: Extract<ProductReviewAction, { kind: "replace" }>,
+  ): void {
+    const target = this.nativeListItem(next.items, action.product_id);
+    const replacement = next.alternatives?.views.find(
+      (view) =>
+        view.status === "complete" &&
+        view.product.id === action.replacement_id &&
+        view.product.available === true,
+    );
+    if (
+      next.alternatives?.product_id !== target.product_id ||
+      !replacement ||
+      next.items.some((item) => item.product_id === action.replacement_id)
+    ) {
+      throw new NemligError("Choose an available exact returned alternative.");
+    }
+    target.product_id = action.replacement_id;
+    target.view = replacement;
+    delete next.alternatives;
+  }
+
+  // Keep the native-list action, ownership, lock, and refresh gates together.
+  // fallow-ignore-next-line complexity
+  async updateShoppingList(
+    owner: string,
+    listId: number,
+    action: ProductReviewAction,
+    signal?: AbortSignal,
+  ): Promise<ProductReviewSnapshot> {
+    if (
+      !validPositive(listId) ||
+      !this.client.providerIdentity ||
+      !this.client.listShoppingLists ||
+      !this.client.getShoppingList ||
+      !this.client.updateShoppingListProduct
+    ) {
+      throw new NemligError("Native shopping-list editing is unavailable.");
+    }
+    if (
+      ["accept", "revisit", "navigate", "alternatives"].includes(action.kind)
+    ) {
+      const stored = this.get(owner);
+      if (stored.snapshot.shoppingListId !== listId) {
+        throw new NemligError("Select this exact shopping list again.");
+      }
+      return this.update(owner, action, signal);
+    }
+
+    const stored = this.lock(owner);
+    try {
+      if (stored.snapshot.shoppingListId !== listId) {
+        throw new NemligError("Select this exact shopping list again.");
+      }
+      const accountIdentity = this.client.providerIdentity();
+      if (
+        stored.accountIdentity !== accountIdentity ||
+        !stored.nativeFingerprint ||
+        stored.snapshot.actionNotice
+      ) {
+        throw new NemligError(
+          "Refresh this shopping list before making another change.",
+        );
+      }
+      const current = await this.currentNativeList(
+        owner,
+        stored,
+        listId,
+        accountIdentity,
+        signal,
+      );
+      if (!current) {
+        return structuredClone(stored.snapshot);
+      }
+      if (action.kind !== "update") {
+        const staged = await this.stageNativeListEdit(
+          stored,
+          action,
+          accountIdentity,
+          signal,
+        );
+        this.touch(owner, stored);
+        return staged;
+      }
+      return await this.persistNativeListUpdate(
+        owner,
+        stored,
+        listId,
+        current,
+        accountIdentity,
+        signal,
+      );
+    } finally {
+      stored.busy = false;
+    }
+  }
+
+  private async persistNativeListUpdate(
+    owner: string,
+    stored: StoredReview,
+    listId: number,
+    current: ShoppingList,
+    accountIdentity: string,
+    signal?: AbortSignal,
+  ): Promise<ProductReviewSnapshot> {
+    if (!stored.snapshot.shoppingListDirty) {
+      throw new NemligError(
+        "There are no staged shopping-list changes to save.",
+      );
+    }
+    stored.snapshot.updateStatus = "saving";
+    const next = structuredClone(stored.snapshot);
+    const baseline = quantityMap(
+      current.items,
+      (item) => item.productId,
+      (item) => item.quantity,
+    );
+    const desired = reviewQuantities(next.items);
+    const writeStatus = await this.writeNativeListDiff(
+      owner,
+      stored,
+      listId,
+      accountIdentity,
+      baseline,
+      desired,
+      signal,
+    );
+    if (writeStatus === "uncertain") {
+      return structuredClone(stored.snapshot);
+    }
+    return this.confirmNativeListUpdate(
+      owner,
+      stored,
+      listId,
+      current,
+      accountIdentity,
+      next,
+      desired,
+      writeStatus === "partial",
+    );
+  }
+
+  // Provider edits are non-idempotent; keep their account and cancellation checks ordered.
+  // fallow-ignore-next-line complexity
+  private async writeNativeListDiff(
+    owner: string,
+    stored: StoredReview,
+    listId: number,
+    accountIdentity: string,
+    baseline: Map<number, number>,
+    desired: Map<number, number>,
+    signal?: AbortSignal,
+  ): Promise<"complete" | "partial" | "uncertain"> {
+    for (const productId of new Set([...baseline.keys(), ...desired.keys()])) {
+      if (signal?.aborted) {
+        return "partial";
+      }
+      if (this.client.providerIdentity?.() !== accountIdentity) {
+        this.uncertainNativeListUpdate(owner, stored, false);
+        return "uncertain";
+      }
+      const before = baseline.get(productId) ?? 0;
+      const after = desired.get(productId) ?? 0;
+      if (before === after) {
+        continue;
+      }
+      try {
+        await this.client.updateShoppingListProduct!(
+          listId,
+          productId,
+          after,
+          signal,
+        );
+      } catch {
+        return "partial";
+      }
+      if (this.client.providerIdentity?.() !== accountIdentity) {
+        this.uncertainNativeListUpdate(owner, stored, false);
+        return "uncertain";
+      }
+    }
+    return "complete";
+  }
+
+  private async confirmNativeListUpdate(
+    owner: string,
+    stored: StoredReview,
+    listId: number,
+    current: ShoppingList,
+    accountIdentity: string,
+    next: ProductReviewSnapshot,
+    desired: Map<number, number>,
+    writeWasPartial: boolean,
+  ): Promise<ProductReviewSnapshot> {
+    let saved: ShoppingList;
+    try {
+      saved = await this.client.getShoppingList!(listId);
+    } catch {
+      return this.uncertainNativeListUpdate(owner, stored, true);
+    }
+    if (
+      this.client.providerIdentity?.() !== accountIdentity ||
+      saved.id !== listId ||
+      saved.name !== current.name
+    ) {
+      return this.uncertainNativeListUpdate(owner, stored, true);
+    }
+    const expected = {
+      id: listId,
+      name: current.name,
+      items: [...desired].map(([productId, quantity]) => ({
+        productId,
+        quantity,
+      })),
+    };
+    if (shoppingListFingerprint(saved) !== shoppingListFingerprint(expected)) {
+      const rows = await this.readItems(
+        saved.items.map(({ productId, quantity }) => ({
+          product_id: productId,
+          quantity,
+        })),
+      ).catch(() => undefined);
+      if (!rows) {
+        return this.uncertainNativeListUpdate(owner, stored, true);
+      }
+      stored.snapshot.conflictItems = rows;
+      stored.nativeFingerprint = shoppingListFingerprint(saved);
+      stored.nativeItems = saved.items.map((item) => ({ ...item }));
+      stored.snapshot.saveStatus = "partial";
+      stored.snapshot.updateStatus = "partial";
+      stored.snapshot.actionNotice = writeWasPartial
+        ? "Nemlig saved only part of this change. The current list is refreshed; review it before continuing."
+        : "Nemlig returned different rows than requested. The current list is refreshed; review it before continuing.";
+      this.touch(owner, stored);
+      return structuredClone(stored.snapshot);
+    }
+    stored.snapshot = next;
+    stored.snapshot.saveStatus = "saved";
+    stored.nativeFingerprint = shoppingListFingerprint(saved);
+    stored.nativeItems = saved.items.map((item) => ({ ...item }));
+    stored.snapshot.shoppingListDirty = false;
+    delete stored.snapshot.updateStatus;
+    delete stored.snapshot.actionNotice;
+    this.touch(owner, stored);
+    return structuredClone(stored.snapshot);
+  }
+
+  private uncertainNativeListUpdate(
+    owner: string,
+    stored: StoredReview,
+    updateMayHaveReachedProvider: boolean,
+  ): ProductReviewSnapshot {
+    stored.snapshot.saveStatus = "uncertain";
+    stored.snapshot.updateStatus = "uncertain";
+    stored.snapshot.actionNotice = updateMayHaveReachedProvider
+      ? "Nemlig did not confirm this change. Refresh the same list before trying again."
+      : "Nemlig account changed during this change. Refresh this same list before continuing.";
+    this.touch(owner, stored);
+    return structuredClone(stored.snapshot);
   }
 
   private async resolveDraftShoppingList(
@@ -1051,6 +1510,7 @@ export class ProductReviewService {
     }
     stored.snapshot.saveStatus = "saved";
     stored.nativeFingerprint = shoppingListFingerprint(saved);
+    stored.nativeItems = saved.items.map((item) => ({ ...item }));
     stored.completedDraftId = stored.snapshot.draftId;
     delete stored.snapshot.draftId;
     delete stored.snapshot.draftExpiresAt;
@@ -1169,6 +1629,11 @@ export class ProductReviewService {
   ): Promise<ProductReviewSnapshot> {
     if (action.kind === "save") {
       return this.save(owner, action.name, expectedDraftId, signal);
+    }
+    if (action.kind === "update") {
+      throw new NemligError(
+        "Select a saved Nemlig shopping list to update it.",
+      );
     }
     const stored = this.lock(owner, expectedDraftId);
     // Commit only after all validation and reads succeed, so bulk actions are atomic.
@@ -1405,6 +1870,18 @@ export class ProductReviewService {
   ): Promise<ProductReviewSnapshot> {
     const stored = this.lock(owner, expectedDraftId);
     try {
+      const listId = stored.snapshot.shoppingListId;
+      if (
+        stored.snapshot.shoppingListDirty ||
+        stored.snapshot.updateStatus !== undefined
+      ) {
+        throw new NemligError(
+          "Update the saved Nemlig shopping list and confirm the readback before submitting.",
+        );
+      }
+      if (listId) {
+        throw new NemligError(nativeListTransferUnavailable);
+      }
       const previous = stored.snapshot.submission;
       if (previous && previous.status !== "prepared") {
         throw new NemligError(
@@ -1446,6 +1923,7 @@ export class ProductReviewService {
         expires_at: proposal.expires_at,
         review: structuredClone(proposal.review),
       };
+      delete stored.snapshot.actionNotice;
       return structuredClone(stored.snapshot);
     } finally {
       stored.busy = false;
@@ -1456,12 +1934,34 @@ export class ProductReviewService {
   async submit(
     owner: string,
     submissionId: string,
+    expectedShoppingListId?: number,
+    _signal?: AbortSignal,
   ): Promise<{ review: ProductReviewSnapshot; result: ApplyResult }> {
     if (!this.proposals) {
       throw new NemligError("Submission service unavailable.");
     }
     const stored = this.lock(owner);
     try {
+      if (
+        stored.snapshot.shoppingListDirty ||
+        stored.snapshot.updateStatus !== undefined
+      ) {
+        throw new NemligError(
+          "Update the saved Nemlig shopping list and confirm the readback before submitting.",
+        );
+      }
+      if (stored.snapshot.shoppingListId !== undefined) {
+        stored.snapshot.submission = undefined;
+        stored.proposalId = undefined;
+        stored.snapshot.actionNotice = nativeListTransferUnavailable;
+        this.touch(owner, stored);
+        throw new NemligError(nativeListTransferUnavailable);
+      }
+      if (stored.snapshot.shoppingListId !== expectedShoppingListId) {
+        throw new NemligError(
+          "Select the exact saved Nemlig shopping list before adding it to the basket.",
+        );
+      }
       const { proposalId, submission } = requirePreparedSubmission(
         stored.snapshot.submission,
         submissionId,

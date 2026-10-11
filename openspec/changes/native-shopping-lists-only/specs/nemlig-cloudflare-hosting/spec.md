@@ -3,16 +3,19 @@
 ### Requirement: No local shopping-content persistence
 The hosted assistant SHALL NOT maintain durable local basket line storage,
 inventory, identity mapping, expiry, eviction or heartbeat machinery. Bounded
-process-local unsaved drafts and their inactivity expiry SHALL be allowed,
-without persistent draft data, identity registries or Durable Object alarms. Native lists SHALL
-remain the saved-content authority. Unrelated hosting and authentication Durable
-Objects SHALL remain intact. Any retained durable submission metadata SHALL be
-limited to preventing duplicate or unauthorized basket transfers.
+process-local unsaved drafts and their inactivity expiry SHALL be allowed.
+Durable draft data SHALL be absent except for the exact payload needed by an
+explicitly initiated Save or Update operation journal, which SHALL be removed
+after verified completion or retained only as uncertain recovery evidence.
+Native lists SHALL remain the saved-content authority. Unrelated hosting and
+authentication Durable Objects SHALL remain intact. Any other durable metadata
+SHALL be limited to preventing duplicate or unauthorized basket transfers.
 
 #### Scenario: App restarts
 - **WHEN** hosted process memory is lost
-- **THEN** unsaved drafts are lost, saved content is read from Nemlig, uncertain
-  submission fences survive independently and selection can be made again
+- **THEN** ordinary unsaved drafts are lost, an initiated Save/Update can be
+  reconciled from its narrow journal, saved content is read from Nemlig, and
+  uncertain submission fences survive independently
 
 ### Requirement: Controlled local-storage retirement
 Retiring the old storage namespace SHALL preserve unresolved submission safety

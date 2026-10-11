@@ -357,24 +357,24 @@ const friendlyCatalog = [
   ["show_my_basket", "Show my Nemlig basket", true, false, []],
   [
     "start_product_review",
-    "Show or start your Local basket",
+    "Show or start a shopping list",
     false,
     false,
-    ["items"],
+    ["items", "shopping_list_id"],
   ],
   [
     "submit_product_review_conversation",
     "Submit the exact Local basket to Nemlig",
     false,
     false,
-    ["basket_id", "submission_id"],
+    ["basket_id", "shopping_list_id", "submission_id"],
   ],
   [
     "update_product_review_conversation",
-    "Update your Local basket",
+    "Update your shopping list",
     false,
     false,
-    ["action", "basket_id", "draft_id"],
+    ["action", "basket_id", "draft_id", "shopping_list_id"],
   ],
 ] as const;
 
@@ -1108,11 +1108,11 @@ test("MCP distinguishes the Local basket from the actual Nemlig basket", async (
       );
       assert.match(
         tools.get("start_product_review") ?? "",
-        /Omit items to reopen the remembered basket or show the basket picker/u,
+        /Omit items to list native Nemlig shopping lists/u,
       );
       assert.match(
         tools.get("update_product_review_conversation") ?? "",
-        /Local edits never write to Nemlig/u,
+        /Native-list edits are staged locally/u,
       );
       assert.match(
         tools.get("submit_product_review_conversation") ?? "",
@@ -1586,34 +1586,45 @@ test("MCP opens the Local basket picker when a session has no selection", async 
     localBasketCapability: "capability-for-this-request",
   };
   const requestMeta = { "openai/session": "fresh-session" };
+  const provider = Object.assign(fakeClient(), {
+    providerIdentity: () => "account-1",
+    listShoppingLists: async () => [],
+  });
 
   try {
     await withMcpClient(
       createMcpServer(
-        fakeClient(),
+        provider,
         async () => undefined,
         undefined,
         undefined,
         context,
       ),
       async (mcp) => {
-        for (const [name, arguments_] of [
-          ["start_product_review", {}],
-          ["update_product_review_conversation", { action: { kind: "show" } }],
-        ] as const) {
-          const result = await mcp.callTool({
-            name,
-            _meta: requestMeta,
-            arguments: arguments_,
-          });
-          assert.equal(result.isError, undefined, toolText(result));
-          assert.deepEqual(result.structuredContent, {
-            baskets: [],
-            selectedBasketId: null,
-            selectionRequired: true,
-            unavailable: true,
-          });
-        }
+        const nativeLists = await mcp.callTool({
+          name: "start_product_review",
+          _meta: requestMeta,
+          arguments: {},
+        });
+        assert.equal(nativeLists.isError, undefined, toolText(nativeLists));
+        assert.deepEqual(nativeLists.structuredContent, {
+          shoppingLists: [],
+          selectedShoppingListId: null,
+          selectionRequired: true,
+        });
+
+        const localBaskets = await mcp.callTool({
+          name: "update_product_review_conversation",
+          _meta: requestMeta,
+          arguments: { action: { kind: "show" } },
+        });
+        assert.equal(localBaskets.isError, undefined, toolText(localBaskets));
+        assert.deepEqual(localBaskets.structuredContent, {
+          baskets: [],
+          selectedBasketId: null,
+          selectionRequired: true,
+          unavailable: true,
+        });
       },
     );
   } finally {
@@ -1850,7 +1861,7 @@ test("legacy raw visual chooser is unavailable", async () => {
   );
 });
 
-test("a clear conversational add command authorizes only its exact prepared Local basket", async () => {
+test("a clear conversational add command cannot bypass the native-list transfer gate", async () => {
   let writes = 0;
   const shoppingLists = new Map<number, Map<number, number>>();
   let current: Basket = {
@@ -1868,6 +1879,8 @@ test("a clear conversational add command authorizes only its exact prepared Loca
       },
     }),
     {
+      providerIdentity: () => "account-1",
+      listShoppingLists: async () => [],
       createShoppingList: async () => {
         shoppingLists.set(1, new Map());
         return 1;
@@ -1941,58 +1954,23 @@ test("a clear conversational add command authorizes only its exact prepared Loca
         review = (result.structuredContent as { review: typeof review }).review;
       };
       assert.equal(review.items[0]?.state, "ready");
-      // This MCP tool sequence represents the user's explicit conversational command to add
-      // the current Local basket. The model must not ask for a second redundant approval.
-      await update({ kind: "prepare_submission" });
-      assert.equal(writes, 0);
-      assert.ok(review.submission);
-      assert.equal(JSON.stringify(review).includes("proposal_id"), false);
-      const tool = (await mcp.listTools()).tools.find(
-        (t) => t.name === "submit_product_review_conversation",
-      );
-      assert.ok(tool);
-      assert.ok(tool._meta?.ui);
-      assert.deepEqual((tool._meta.ui as { visibility: string[] }).visibility, [
-        "model",
-      ]);
-      assert.equal(tool._meta?.["openai/widgetAccessible"], undefined);
-      const args = {
-        submission_id: review.submission.submission_id,
-      };
-      const submitted = await mcp.callTool({
-        name: "submit_product_review_conversation",
-        arguments: args,
+      await update({ kind: "save", name: "Nemlig Assistant Local basket" });
+      const prepared = await mcp.callTool({
+        name: "update_product_review_conversation",
+        arguments: { action: { kind: "prepare_submission" } },
       });
-      assert.equal(submitted.isError, undefined, toolText(submitted));
-      const data = submitted.structuredContent as {
-        review: typeof review;
-        result: { basket: { items: Array<{ id: number; quantity: number }> } };
-      };
-      assert.equal(data.review.submission?.status, "submitted");
-      assert.equal(data.review.items[0]?.state, "ready");
-      assert.equal(data.review.items.length, 1);
-      assert.deepEqual(
-        data.result.basket.items.map((i) => [i.id, i.quantity]),
-        [
-          [99, 1],
-          [7, 2],
-        ],
+      assert.equal(prepared.isError, true);
+      assert.match(
+        toolText(prepared),
+        /cannot verify Nemlig will transfer the exact reviewed list unchanged/u,
       );
-      assert.equal(
-        (
-          await mcp.callTool({
-            name: "submit_product_review_conversation",
-            arguments: args,
-          })
-        ).isError,
-        true,
-      );
-      assert.equal(writes, 1);
+      assert.equal(writes, 0);
+      assert.equal(review.saveStatus, "saved", JSON.stringify(review));
     },
   );
 });
 
-test("supported Local basket cards share owner state and reject retired identifiers", async () => {
+test("supported draft cards share owner state and reject retired identifiers", async () => {
   let basketReads = 0;
   let basketWrites = 0;
   const provider = fakeClient({
@@ -2018,17 +1996,22 @@ test("supported Local basket cards share owner state and reject retired identifi
         first.structuredContent as { review: ProductReviewSnapshot }
       ).review;
       assert.equal("view_id" in (first.structuredContent as object), false);
-      const second = await call("start_product_review", {});
+      const second = await call("update_product_review_conversation", {
+        draft_id: firstReview.draftId,
+        action: { kind: "show" },
+      });
       const secondReview = (
         second.structuredContent as { review: ProductReviewSnapshot }
       ).review;
       assert.deepEqual(secondReview, firstReview);
 
       const firstCardEdit = await call("update_product_review", {
+        draft_id: firstReview.draftId,
         action: { kind: "quantity", product_id: 7, quantity: 2 },
       });
       assert.equal(firstCardEdit.isError, undefined, toolText(firstCardEdit));
       const current = await call("update_product_review_conversation", {
+        draft_id: firstReview.draftId,
         action: { kind: "show" },
       });
       const currentReview = (
@@ -2052,6 +2035,7 @@ test("supported Local basket cards share owner state and reject retired identifi
       });
       assert.equal(oldSubmit.isError, true);
       const stillReady = await call("update_product_review_conversation", {
+        draft_id: firstReview.draftId,
         action: { kind: "show" },
       });
       assert.equal(
@@ -2278,7 +2262,7 @@ test("MCP supports broad search and the complete headless Local basket workflow 
   ]);
 });
 
-test("empty and unavailable results retain safe routes without preparing or writing", async () => {
+test("empty and unavailable results retain safe routes and unsaved drafts cannot prepare a transfer", async () => {
   let writes = 0;
   const denied = async (): Promise<never> => {
     writes++;
@@ -2345,7 +2329,7 @@ test("empty and unavailable results retain safe routes without preparing or writ
       assert.equal(refused.isError, true);
       assert.match(
         toolText(refused),
-        /unavailable or unresolved product details/u,
+        /Save this draft as a Nemlig shopping list/u,
       );
       assert.match(
         mcp.getInstructions() ?? "",

@@ -249,7 +249,13 @@ test("provider shopping-list submission transfers a 38-item review once", async 
   }));
   let transfers = 0;
   const events: string[] = [];
-  let basket = emptyBasket();
+  let basket: Basket = {
+    items: [{ id: 99, name: "Unrelated item", quantity: 2, total: 6 }],
+    productsPrice: 6,
+    deliveryPrice: 0,
+    numberOfProducts: 2,
+    deliveryTime: undefined,
+  };
   const list = {
     id: 44,
     name: "Nemlig Assistant test",
@@ -275,15 +281,19 @@ test("provider shopping-list submission transfers a 38-item review once", async 
       events.push("transfer");
       transfers += 1;
       basket = {
-        items: products.map((item) => ({
-          id: item.id,
-          name: item.name,
-          quantity: 1,
-          total: item.price,
-        })),
-        productsPrice: products.length * (product.price ?? 0),
+        items: [
+          ...basket.items,
+          ...products.map((item) => ({
+            id: item.id,
+            name: item.name,
+            quantity: 1,
+            total: item.price,
+          })),
+        ],
+        productsPrice:
+          (basket.productsPrice ?? 0) + products.length * (product.price ?? 0),
         deliveryPrice: 0,
-        numberOfProducts: products.length,
+        numberOfProducts: (basket.numberOfProducts ?? 0) + products.length,
         deliveryTime: undefined,
       };
     },
@@ -320,7 +330,14 @@ test("provider shopping-list submission transfers a 38-item review once", async 
     events.filter((event) => event === "delete-list"),
     ["delete-list"],
   );
-  assert.equal(result.basket.number_of_products, 38);
+  assert.equal(result.basket.number_of_products, 40);
+  assert.deepEqual(result.basket.items[0], {
+    id: 99,
+    name: "Unrelated item",
+    quantity: 2,
+    total: 6,
+  });
+  assert.equal(result.basket.items.length, 39);
   assert.deepEqual(events.slice(-3), [
     "transfer",
     "basket-readback",

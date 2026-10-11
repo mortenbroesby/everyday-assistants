@@ -238,6 +238,51 @@ test("draft edits make no provider writes until Save verifies the exact rows", a
   ]);
 });
 
+test("saved drafts compare staged changes with the native list baseline", async () => {
+  const saved = {
+    id: 44,
+    name: "Weekend",
+    items: [] as Array<{ productId: number; quantity: number }>,
+  };
+  const service = new ProductReviewService({
+    ...client,
+    providerIdentity: () => "account-1",
+    listShoppingLists: async () => [
+      { id: 44, name: "Weekend", productCount: saved.items.length },
+    ],
+    createShoppingList: async () => 44,
+    updateShoppingListProduct: async (_listId, productId, quantity) => {
+      saved.items = saved.items.filter((item) => item.productId !== productId);
+      if (quantity > 0) {
+        saved.items.push({ productId, quantity });
+      }
+    },
+    getShoppingList: async () => structuredClone(saved),
+  });
+  const draft = await service.start("owner", [{ product_id: 1, quantity: 1 }]);
+  const list = await service.update(
+    "owner",
+    { kind: "save", name: "Weekend" },
+    undefined,
+    draft.draftId,
+  );
+  assert.equal(list.shoppingListId, 44);
+  assert.equal(list.shoppingListDirty, undefined);
+
+  const staged = await service.updateShoppingList("owner", 44, {
+    kind: "quantity",
+    product_id: 1,
+    quantity: 2,
+  });
+  assert.equal(staged.shoppingListDirty, true);
+  const reverted = await service.updateShoppingList("owner", 44, {
+    kind: "quantity",
+    product_id: 1,
+    quantity: 1,
+  });
+  assert.equal(reverted.shoppingListDirty, false);
+});
+
 test("an existing native shopping list reopens as the shared review without a local mirror write", async () => {
   const writes: string[] = [];
   const service = new ProductReviewService({
@@ -283,6 +328,337 @@ test("an existing native shopping list reopens as the shared review without a lo
   assert.equal(review.draftId, undefined);
   assert.deepEqual(service.active("conversation"), review);
   assert.deepEqual(writes, []);
+});
+
+test("native-list transfer preparation fails closed without verified exact-transfer semantics", async () => {
+  const native = {
+    id: 44,
+    name: "Family",
+    items: [{ productId: 1, quantity: 1 }],
+  };
+  let listCreates = 0;
+  let listUpdates = 0;
+  let proposalPrepares = 0;
+  let transfers = 0;
+  const service = new ProductReviewService(
+    {
+      ...client,
+      providerIdentity: () => "account-1",
+      listShoppingLists: async () => [
+        { id: 44, name: "Family", productCount: native.items.length },
+      ],
+      getShoppingList: async () => structuredClone(native),
+      createShoppingList: async () => {
+        listCreates++;
+        return 45;
+      },
+      updateShoppingListProduct: async () => {
+        listUpdates++;
+      },
+    },
+    {
+      proposals: withShoppingList({
+        prepareAdditions: async () => {
+          proposalPrepares++;
+          return {
+            applicable: true as const,
+            proposal_id: "private",
+            operation: "additions" as const,
+            connection_bound: true as const,
+            issued_at: new Date(0).toISOString(),
+            expires_at: new Date(Date.now() + 900_000).toISOString(),
+            basket_fingerprint: "private",
+            review: { lines: [{ product_id: 1, quantity: 1, item_price: 5 }] },
+          };
+        },
+        apply: async () => {
+          transfers++;
+          throw new Error("Changed source list must not be transferred.");
+        },
+      }),
+    },
+  );
+
+  await service.openShoppingList("owner", 44);
+  await assert.rejects(
+    service.prepare("owner"),
+    /cannot verify Nemlig will transfer the exact reviewed list unchanged.*No basket write was sent/u,
+  );
+  assert.equal(listCreates, 0);
+  assert.equal(listUpdates, 0);
+  assert.equal(proposalPrepares, 0);
+  assert.equal(transfers, 0);
+});
+
+test("dirty and in-flight native-list updates cannot prepare submission", async () => {
+  const native = {
+    id: 44,
+    name: "Family",
+    items: [{ productId: 1, quantity: 1 }],
+  };
+  let releaseUpdate!: () => void;
+  let updating = false;
+  const service = new ProductReviewService(
+    {
+      ...client,
+      providerIdentity: () => "account-1",
+      listShoppingLists: async () => [
+        { id: 44, name: "Family", productCount: native.items.length },
+      ],
+      getShoppingList: async () => structuredClone(native),
+      updateShoppingListProduct: async (_id, productId, quantity) => {
+        if (updating) {
+          await new Promise<void>((resolve) => {
+            releaseUpdate = resolve;
+          });
+        }
+        native.items = native.items.filter(
+          (item) => item.productId !== productId,
+        );
+        if (quantity > 0) {
+          native.items.push({ productId, quantity });
+        }
+      },
+    },
+    {
+      proposals: withShoppingList({
+        prepareAdditions: async () => {
+          throw new Error("must not prepare");
+        },
+        apply: async () => {
+          throw new Error("must not apply");
+        },
+      }),
+    },
+  );
+  await service.openShoppingList("owner", 44);
+  const staged = await service.updateShoppingList("owner", 44, {
+    kind: "quantity",
+    product_id: 1,
+    quantity: 2,
+  });
+  assert.equal(staged.shoppingListDirty, true);
+  await assert.rejects(
+    service.prepare("owner"),
+    /Update the saved Nemlig shopping list/u,
+  );
+  await assert.rejects(
+    service.submit("owner", "attempt"),
+    /Update the saved Nemlig shopping list/u,
+  );
+
+  updating = true;
+  const update = service.updateShoppingList("owner", 44, { kind: "update" });
+  await new Promise((resolve) => setImmediate(resolve));
+  await assert.rejects(service.prepare("owner"), /operation is in progress/u);
+  await assert.rejects(
+    service.submit("owner", "attempt"),
+    /operation is in progress/u,
+  );
+  releaseUpdate();
+  const saved = await update;
+  assert.equal(saved.shoppingListDirty, false);
+  await assert.rejects(
+    service.prepare("owner"),
+    /cannot verify Nemlig will transfer the exact reviewed list unchanged/u,
+  );
+});
+
+test("an unconfirmed native-list update stays dirty and blocks submission", async () => {
+  const native = {
+    id: 44,
+    name: "Family",
+    items: [{ productId: 1, quantity: 1 }],
+  };
+  const service = new ProductReviewService(
+    {
+      ...client,
+      providerIdentity: () => "account-1",
+      listShoppingLists: async () => [
+        { id: 44, name: "Family", productCount: native.items.length },
+      ],
+      getShoppingList: async () => structuredClone(native),
+      updateShoppingListProduct: async () => {
+        throw new Error("write outcome unknown");
+      },
+    },
+    {
+      proposals: withShoppingList({
+        prepareAdditions: async () => {
+          throw new Error("must not prepare");
+        },
+        apply: async () => {
+          throw new Error("must not apply");
+        },
+      }),
+    },
+  );
+  await service.openShoppingList("owner", 44);
+  await service.updateShoppingList("owner", 44, {
+    kind: "quantity",
+    product_id: 1,
+    quantity: 2,
+  });
+  const result = await service.updateShoppingList("owner", 44, {
+    kind: "update",
+  });
+  assert.equal(result.shoppingListDirty, true);
+  assert.equal(result.updateStatus, "partial");
+  await assert.rejects(
+    service.prepare("owner"),
+    /Update the saved Nemlig shopping list/u,
+  );
+  await assert.rejects(
+    service.submit("owner", "attempt"),
+    /Update the saved Nemlig shopping list/u,
+  );
+});
+
+test("native shopping-list edits stage locally until Update writes and reads back the same list", async () => {
+  const native = {
+    id: 44,
+    name: "Family",
+    items: [
+      { productId: 1, quantity: 2 },
+      { productId: 2, quantity: 1 },
+    ],
+  };
+  const writes: Array<[number, number, number]> = [];
+  const service = new ProductReviewService({
+    ...client,
+    providerIdentity: () => "account-1",
+    listShoppingLists: async () => [
+      { id: 44, name: "Family", productCount: 2 },
+    ],
+    getShoppingList: async () => structuredClone(native),
+    updateShoppingListProduct: async (
+      listId: number,
+      productId: number,
+      quantity: number,
+    ) => {
+      writes.push([listId, productId, quantity]);
+      native.items = native.items.filter(
+        (item) => item.productId !== productId,
+      );
+      if (quantity > 0) {
+        native.items.push({ productId, quantity });
+      }
+    },
+  });
+
+  await service.openShoppingList("owner", 44);
+  const staged = await service.updateShoppingList("owner", 44, {
+    kind: "remove",
+    product_ids: [1],
+  });
+
+  assert.deepEqual(writes, []);
+  assert.equal(staged.shoppingListDirty, true);
+  assert.deepEqual(native.items, [
+    { productId: 1, quantity: 2 },
+    { productId: 2, quantity: 1 },
+  ]);
+
+  const updated = await service.updateShoppingList("owner", 44, {
+    kind: "update",
+  });
+
+  assert.deepEqual(writes, [[44, 1, 0]]);
+  assert.equal(updated.shoppingListDirty, false);
+  assert.deepEqual(
+    updated.items.map(({ product_id }) => product_id),
+    [2],
+  );
+  assert.deepEqual(native.items, [{ productId: 2, quantity: 1 }]);
+});
+
+test("native list update never adopts readback from another account or list", async () => {
+  let readCount = 0;
+  let writes = 0;
+  const service = new ProductReviewService({
+    ...client,
+    providerIdentity: () => "account-1",
+    listShoppingLists: async () => [
+      { id: 44, name: "Family", productCount: 1 },
+    ],
+    getShoppingList: async () => {
+      readCount++;
+      if (readCount === 4) {
+        return {
+          id: 45,
+          name: "Different account list",
+          items: [{ productId: 3, quantity: 9 }],
+        };
+      }
+      return {
+        id: 44,
+        name: "Family",
+        items: [{ productId: 1, quantity: 1 }],
+      };
+    },
+    updateShoppingListProduct: async () => {
+      writes++;
+    },
+  });
+
+  const opened = await service.openShoppingList("owner", 44);
+  await service.updateShoppingList("owner", 44, {
+    kind: "quantity",
+    product_id: 1,
+    quantity: 2,
+  });
+  const result = await service.updateShoppingList("owner", 44, {
+    kind: "update",
+  });
+
+  assert.equal(result.saveStatus, "uncertain");
+  assert.equal(result.items[0]?.quantity, 2);
+  assert.deepEqual(
+    result.items,
+    opened.items.map((item) => ({ ...item, quantity: 2 })),
+  );
+  assert.equal(result.actionNotice?.includes("Refresh the same list"), true);
+  assert.equal(writes, 1);
+});
+
+test("native list update stops if the Nemlig account changes during refresh", async () => {
+  let account = "account-1";
+  let readCount = 0;
+  let writes = 0;
+  const service = new ProductReviewService({
+    ...client,
+    providerIdentity: () => account,
+    listShoppingLists: async () => [
+      { id: 44, name: "Family", productCount: 1 },
+    ],
+    getShoppingList: async () => {
+      readCount++;
+      if (readCount === 2) {
+        account = "account-2";
+      }
+      return {
+        id: 44,
+        name: "Family",
+        items: [{ productId: 1, quantity: 1 }],
+      };
+    },
+    updateShoppingListProduct: async () => {
+      writes++;
+    },
+  });
+
+  const opened = await service.openShoppingList("owner", 44);
+  await assert.rejects(
+    service.updateShoppingList("owner", 44, {
+      kind: "quantity",
+      product_id: 1,
+      quantity: 2,
+    }),
+    /identity changed/u,
+  );
+
+  assert.deepEqual(service.active("owner"), opened);
+  assert.equal(writes, 0);
 });
 
 test("partial draft saves reconcile and resume the same native list", async () => {

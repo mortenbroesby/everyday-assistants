@@ -92,29 +92,38 @@ identity. An expired draft reference must never resolve to a newer draft or list
 
 Shopping lists opens all accessible provider lists, including those created in
 Nemlig itself. Selecting any list renders its contents in this same product UI
-using its native name and a Saved to Nemlig state. Edits there write/read back the
-native list. Save as shopping list is shown for unsaved drafts, not as a copy
-button for already saved lists. Navigating back to the picker does not save a
-draft or delete a saved list. Closing/finishing clears temporary state; only
-explicit Delete shopping list or eligible post-submission cleanup deletes native
-content. Saved lists have no inactivity expiry. Reconsidering or viewing
-alternatives for a saved item does not remove it until an explicit edit does so.
+using its native name and a Saved to Nemlig state. Edits to a saved list change
+only a bounded, process-local buffer. Show the list as dirty and expose
+**Update shopping list**; do not write
+on quantity, add, remove, replacement, acceptance, alternatives or navigation.
+Update is the only operation that persists staged changes. It is distinct from
+**Save shopping list**, which creates a native list from an unsaved draft.
+Submission is unavailable while the buffer is dirty or an Update is saving,
+partial or uncertain. Any edit invalidates prior submission authority.
 
-### Direct edits with fresh reads and truthful outcomes
+Before Update, validate the exact connected account and list ID and compare the
+current provider fingerprint with the baseline shown when the edit buffer was
+opened. If it matches, apply the minimal requested changes and verify exact
+readback. A replacement may span two provider writes and is not atomic. Writes
+must not be retried blindly. After a failure, reconcile against the same list
+before resuming; never create another list or retarget the operation.
 
-Reuse `getShoppingList`, `updateShoppingListProduct` and `deleteShoppingList`.
-Resolve/validate the exact account and ID on every mutation. Serialize assistant
-operations for the same account/list, compare a content fingerprint with the
-last displayed state, apply only the requested edit and read back. A stale card
-cannot write to the current chat selection instead of its original target.
+If Nemlig changed the list since it was opened, do not write staged edits over
+that external change. Read and show the latest provider contents beside the
+still-pending user edits, keep the buffer dirty, and require the user to review
+that state before an explicit Update can retry against the new baseline. Do not
+silently merge or discard either side. Authentication or transport failures
+preserve the exact target and pending edits; confirmed not-found shows current
+inventory without recreating or retargeting a list.
 
-Replacement spans two native updates; it is not atomic. After a timeout or
-partial replacement, read current provider state, show it truthfully and stop.
-Never blindly retry, compensate or claim all-or-nothing replacement. Reads may
-use the client's existing bounded retry policy; writes do not gain retries.
-A confirmed not-found clears the selected hint and shows current inventory.
-Authentication and transport failures preserve the hint and show recovery;
-never treat every failure as deletion.
+The process-local edit buffer exists only while the user is editing. Persist a
+narrow operation journal only after explicit Save shopping list or Update
+shopping list begins. It binds operation ID, account/list identity, prior
+fingerprint, exact intended change and progress needed to reconcile an
+interrupted provider write. Save may retain its exact draft rows only for that
+active operation. The journal is removed after verified completion or kept in
+an uncertain state until explicit reconciliation; it is not an editable list
+store or a second saved-content authority.
 
 ### Submission safety is not basket storage
 
@@ -146,12 +155,15 @@ can be removed; current client evidence does not establish that capability.
 
 ### Bind submission and cleanup to the native source list
 
-Prepare against the selected native list; do not create another permanent Ready
-list or replay list contents into a new local basket. Preserve fresh product
-validation, exact quantities, current basket baseline, explicit approval and one
-native transfer. Re-read list content under the assistant mutation lock just
-before dispatch; changed content invalidates approval. Deleted lists cannot be
-submitted. External edits observed after submission prevent source deletion.
+On one explicit Submit action, prepare and apply the exact currently displayed
+saved-list snapshot internally; do not add a separate review stage or second
+confirmation. Do not create another permanent Ready list or replay list contents
+into a new local basket. Preserve fresh product validation, exact quantities,
+current basket baseline, user intent and one native transfer. Re-read list
+content under the assistant mutation lock just before dispatch; changed content
+invalidates the action and refreshes the view, requiring a fresh deliberate
+Submit. Deleted lists cannot be submitted. External edits observed after
+submission prevent source deletion.
 
 Carry PR #294's verified-success-before-cleanup and warning behavior forward,
 but its temporary-list assumptions must be revisited for user-created lists.

@@ -12,11 +12,19 @@ or concurrently added products. A transfer snapshot SHALL be used only with demo
 provider concurrency semantics cannot otherwise protect the approved payload.
 Without either guarantee, dispatch SHALL fail closed; merely copying contents
 into another mutable list SHALL NOT count as isolation.
+Dirty, saving, partial, uncertain or conflicted saved-list edits SHALL block
+proposal creation and transfer until Update shopping list has exact verified
+readback. Preparation SHALL never implicitly save edits or create a second
+shopping list to stage a transfer.
 
 #### Scenario: Source list changes or disappears before transfer
 - **WHEN** preparation no longer matches the current source
 - **THEN** authorization is invalidated before dispatch and the current state or
   missing-list picker is returned
+
+#### Scenario: Submission is requested with pending edits
+- **WHEN** the selected list has unpersisted or uncertain edits
+- **THEN** no transfer proposal is created and no basket transfer is dispatched
 
 #### Scenario: Cleanup cannot safely complete
 - **WHEN** transfer is verified but source cleanup fails, source content changed,

@@ -53,7 +53,6 @@ const props = (thumbnail?: string): ViewerPageProps => ({
     thumbnails: thumbnail ? new Map([[product, thumbnail]]) : new Map(),
     message: "",
     busy: false,
-    confirmSubmit: false,
     confirmEnd: false,
     continueSubmitted: false,
     submitBlocked: false,
@@ -73,9 +72,9 @@ const props = (thumbnail?: string): ViewerPageProps => ({
     onOpenAlternatives: noop,
     onSearchAlternatives: noop,
     onReplace: noop,
-    onPrepareSubmission: noop,
-    onRequestSubmitConfirmation: noop,
-    onCancelSubmit: noop,
+    onSaveDraft: noop,
+    onUpdateShoppingList: noop,
+    onSubmit: noop,
     onConfirmSubmit: noop,
     onContinueSubmitted: noop,
     onInspectBasket: noop,
@@ -155,7 +154,7 @@ test("a recovered submission fence explains the uncertainty without inventing an
   assert.match(markup, /A previous addition needs checking/u);
   assert.match(markup, /may have reached Nemlig/u);
   assert.doesNotMatch(markup, /synthetic-submission|fixture-submission/u);
-  assert.doesNotMatch(markup, />Submit to Nemlig<\/button>/u);
+  assert.doesNotMatch(markup, />Submit to Nemlig basket<\/button>/u);
 });
 
 test("shared viewer page uses its supplied fixture thumbnail and keeps unsafe input on the fallback", () => {
@@ -168,7 +167,7 @@ test("shared viewer page uses its supplied fixture thumbnail and keeps unsafe in
     new RegExp(`<img[^>]+src="${localThumbnail}"`, "u"),
   );
   assert.match(withFixture, /aria-labelledby="title"/u);
-  assert.match(withFixture, /<h1[^>]*id="title"[^>]*>Local basket<\/h1>/u);
+  assert.match(withFixture, /<h1[^>]*id="title"[^>]*>Shopping list<\/h1>/u);
   assert.match(withFixture, /Show details for Fixture yoghurt/u);
   assert.match(withFixture, /swipe from right to left for actions/u);
   assert.doesNotMatch(withFixture, /Actions for Fixture yoghurt/u);
@@ -286,7 +285,7 @@ test("empty and incomplete Local baskets cannot start submission", () => {
   };
   assert.doesNotMatch(
     renderToStaticMarkup(createElement(ViewerPage, pageProps)),
-    />Submit to Nemlig<\/button>/u,
+    />Submit to Nemlig basket<\/button>/u,
   );
 
   const unavailable = {
@@ -303,7 +302,7 @@ test("empty and incomplete Local baskets cannot start submission", () => {
     const markup = renderToStaticMarkup(createElement(ViewerPage, pageProps));
     assert.match(
       markup,
-      /<button[^>]*disabled=""[^>]*>.*Submit to Nemlig<\/button>/u,
+      /<button[^>]*disabled=""[^>]*>.*Submit to Nemlig basket<\/button>/u,
     );
     assert.match(markup, /Resolve products with missing details/u);
   }
@@ -325,7 +324,7 @@ test("empty and incomplete Local baskets cannot start submission", () => {
   };
   assert.match(
     renderToStaticMarkup(createElement(ViewerPage, pageProps)),
-    />Submit to Nemlig<\/button>/u,
+    />Submit to Nemlig basket<\/button>/u,
   );
   pageProps.model.screen = {
     kind: "review",
@@ -338,14 +337,40 @@ test("empty and incomplete Local baskets cannot start submission", () => {
   const missingMarkup = renderToStaticMarkup(
     createElement(ViewerPage, pageProps),
   );
-  assert.match(missingMarkup, />Submit to Nemlig<\/button>/u);
+  assert.match(missingMarkup, />Submit to Nemlig basket<\/button>/u);
   assert.match(
     missingMarkup,
     /Products Nemlig confirms are unavailable will be skipped/u,
   );
 });
 
-test("busy submission confirmation disables its cancel control", () => {
+test("dirty native shopping-list edits require Update before Submit", () => {
+  const pageProps = props();
+  if (pageProps.model.screen.kind !== "review") {
+    throw new Error("review fixture missing");
+  }
+  pageProps.model.screen = {
+    ...pageProps.model.screen,
+    review: {
+      ...pageProps.model.screen.review,
+      shoppingListId: 44,
+      shoppingListDirty: true,
+    },
+  };
+  const html = renderToStaticMarkup(createElement(ViewerPage, pageProps));
+  assert.match(html, />Update shopping list<\/button>/u);
+  assert.match(html, /Update the saved shopping list before submitting it/u);
+  assert.match(
+    html,
+    /Nemlig cannot guarantee this saved list stays unchanged/u,
+  );
+  assert.match(
+    html,
+    /<button[^>]*disabled=""[^>]*>.*Submit to Nemlig basket<\/button>/u,
+  );
+});
+
+test("busy prepared submission exposes one disabled submit action", () => {
   const pageProps = props();
   assert.equal(pageProps.model.screen.kind, "review");
   if (pageProps.model.screen.kind !== "review") {
@@ -369,14 +394,15 @@ test("busy submission confirmation disables its cancel control", () => {
   };
   pageProps.model.presentationDestination = "ready";
   pageProps.model.busy = true;
-  pageProps.model.confirmSubmit = true;
 
   const html = renderToStaticMarkup(createElement(ViewerPage, pageProps));
   assert.match(html, /Estimated product total:/u);
   assert.match(html, /Prices may change/u);
-  const cancelButton = html.match(/<button[^>]*>Cancel<\/button>/u)?.[0];
-  assert.ok(cancelButton, "submission confirmation did not render Cancel");
-  assert.match(cancelButton, /disabled=""/u);
+  const submitButton = html.match(
+    /<button[^>]*>Submit [^<]+Nemlig basket<\/button>/u,
+  )?.[0];
+  assert.ok(submitButton, "prepared submission did not render Submit");
+  assert.match(submitButton, /disabled=""/u);
 });
 
 test("shared viewer page distinguishes a verified partial addition from an uncertain one", () => {
