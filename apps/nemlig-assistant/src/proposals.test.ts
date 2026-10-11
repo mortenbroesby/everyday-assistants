@@ -346,6 +346,51 @@ test("provider shopping-list preparation rejects a changed list before reviewing
   assert.equal(productReads, 1);
 });
 
+test("provider shopping-list preparation logs a sanitized failing stage", async () => {
+  const diagnostics: string[] = [];
+  const originalWarn = console.warn;
+  console.warn = (message: string) => diagnostics.push(message);
+  try {
+    const service = new BasketProposalService({
+      getProduct: async () => product,
+      getFreshProduct: async () => product,
+      getCart: async () => emptyBasket(),
+      addToCart: async () => emptyBasket(),
+      createShoppingList: async () => {
+        throw new NemligError("private provider response", 400);
+      },
+      updateShoppingListProduct: async () => undefined,
+      getShoppingList: async () => ({
+        id: 44,
+        name: "Nemlig Assistant test",
+        items: [],
+      }),
+      addShoppingListToCart: async () => undefined,
+    });
+
+    await assert.rejects(
+      service.prepareShoppingListAdditions(
+        "connection",
+        [{ product_id: 1, quantity: 1 }],
+        "Nemlig Assistant test",
+        { kind: "exact_review" },
+      ),
+      /failed at create_list; no Nemlig basket write was sent/u,
+    );
+  } finally {
+    console.warn = originalWarn;
+  }
+  assert.deepEqual(diagnostics, [
+    JSON.stringify({
+      schema_version: 1,
+      event: "shopping_list_preparation_failed",
+      stage: "create_list",
+      error_class: "provider",
+      provider_status: 400,
+    }),
+  ]);
+});
+
 test("provider shopping-list transfer rejects an unexpected final basket line", async () => {
   let transfers = 0;
   let basket = emptyBasket();
