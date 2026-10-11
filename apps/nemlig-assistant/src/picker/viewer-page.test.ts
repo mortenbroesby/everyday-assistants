@@ -116,13 +116,27 @@ test("basket picker shows only a compact prefix, activity date, and product coun
   assert.equal((markup.match(/<h[1-6]/gu) ?? []).length, 1);
 });
 
-test("an unavailable old card offers picker recovery without an implicit selection", () => {
+test("an empty picker offers the Local basket starter actions", () => {
   const pageProps = props();
   pageProps.model.screen = { kind: "picker", baskets: [] };
   const markup = renderToStaticMarkup(createElement(ViewerPage, pageProps));
-  assert.match(markup, /No active Local baskets/u);
-  assert.match(markup, /Start one in conversation/u);
+  assert.match(markup, /Start your Local basket/u);
+  assert.match(markup, /Plan groceries for the week/u);
+  assert.match(markup, /Find ingredients for dinner/u);
+  assert.match(markup, /Find a product/u);
+  assert.doesNotMatch(markup, /No active Local baskets/u);
   assert.doesNotMatch(markup, /Submit to Nemlig/u);
+
+  pageProps.model.screen = {
+    kind: "picker",
+    baskets: [],
+    selectedBasketId: "12345678-1234-4234-8234-123456789abc",
+  };
+  const expiredMarkup = renderToStaticMarkup(
+    createElement(ViewerPage, pageProps),
+  );
+  assert.match(expiredMarkup, /Local basket is unavailable or expired/u);
+  assert.match(expiredMarkup, /Start your Local basket/u);
 });
 
 test("a recovered submission fence explains the uncertainty without inventing an id", () => {

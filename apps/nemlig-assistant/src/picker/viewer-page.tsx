@@ -732,6 +732,7 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
   const hasActiveProducts = Boolean(
     review && active && review.items.length > 0,
   );
+  const pickerIsEmpty = screen.kind === "picker" && baskets.length === 0;
   const title =
     review && active && terminalSubmission
       ? review.submission?.status === "submitted"
@@ -770,6 +771,7 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
   const outcomeOnly =
     terminalSubmission ||
     screen.kind === "empty" ||
+    pickerIsEmpty ||
     (review && active && review.items.length === 0);
   const disclosureProps = (productId: number) => ({
     expandedFacts: reviewDisclosures.get(productId),
@@ -817,15 +819,18 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
       maxWidth={maxWidth}
       headerActions={basketMenu}
     >
-      {screen.kind === "picker" && (
-        <section className="basket-picker" aria-label="Local baskets">
-          {baskets.length === 0 ? (
-            <p role="status">
-              {screen.selectedBasketId
-                ? "This Local basket is unavailable or expired. Start a new one in conversation."
-                : "No active Local baskets. Start one in conversation."}
-            </p>
-          ) : (
+      {screen.kind === "picker" &&
+        (pickerIsEmpty ? (
+          <DraftListStarters
+            message={
+              screen.selectedBasketId
+                ? "That Local basket is unavailable or expired. Start a new one in conversation."
+                : undefined
+            }
+            onChoose={actions.onSendFollowUp}
+          />
+        ) : (
+          <section className="basket-picker" aria-label="Local baskets">
             <ul>
               {baskets.map((basket) => (
                 <li key={basket.basketId}>
@@ -889,10 +894,9 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
                 </li>
               ))}
             </ul>
-          )}
-          {message && <p role="status">{message}</p>}
-        </section>
-      )}
+            {message && <p role="status">{message}</p>}
+          </section>
+        ))}
       {screen.kind === "loading" && (
         <p className="status" role="status">
           Loading your Nemlig selection…
