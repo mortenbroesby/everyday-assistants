@@ -47,6 +47,7 @@ import {
   ProductReviewService,
   type ProductReviewAction,
   type ProductReviewSnapshot,
+  type ReviewOperationJournal,
 } from "./product-review.js";
 import { candidateSchema, productViewSchema } from "./product-view-schema.js";
 import { resolveDetailedProductSearch } from "./product-discovery.js";
@@ -665,6 +666,41 @@ In the hosted deployment, Local baskets are durable owner data; use the opaque b
       },
     };
   };
+  const reviewOperationJournal = (
+    signal: AbortSignal,
+  ): ReviewOperationJournal | undefined => {
+    const repository = localBasketRepository(signal);
+    if (!repository) {
+      return undefined;
+    }
+    return {
+      async read(operationId) {
+        return (await repository.mutate({
+          kind: "review-operation-read",
+          operationId,
+        })) as Awaited<ReturnType<ReviewOperationJournal["read"]>>;
+      },
+      async claim(operationId) {
+        return (await repository.mutate({
+          kind: "review-operation-claim",
+          operationId,
+        })) as boolean;
+      },
+      async write(operation) {
+        await repository.mutate({
+          kind: "review-operation-write",
+          operation,
+        });
+      },
+      async complete(operationId, generation) {
+        await repository.mutate({
+          kind: "review-operation-complete",
+          operationId,
+          generation,
+        });
+      },
+    };
+  };
   const basketSummarySchema = z.object({
     basketId: z.string().uuid(),
     createdAt: z.number().int().nonnegative(),
@@ -818,7 +854,13 @@ In the hosted deployment, Local baskets are durable owner data; use the opaque b
       }
       return { review: await reviews.prepare(owner, signal, draftId) };
     }
-    const review = await reviews.update(owner, action, signal, draftId);
+    const review = await reviews.update(
+      owner,
+      action,
+      signal,
+      draftId,
+      reviewOperationJournal(signal),
+    );
     return { review };
   };
   const updateUnsavedDraft = async (
@@ -845,7 +887,14 @@ In the hosted deployment, Local baskets are durable owner data; use the opaque b
     listId: number,
     signal: AbortSignal,
   ) =>
-    success({ review: await reviews.openShoppingList(owner, listId, signal) });
+    success({
+      review: await reviews.openShoppingList(
+        owner,
+        listId,
+        signal,
+        reviewOperationJournal(signal),
+      ),
+    });
   // This dispatcher preserves the native list's read, edit, and no-delete boundaries.
   // fallow-ignore-next-line complexity
   const updateNativeShoppingList = async (
@@ -885,6 +934,7 @@ In the hosted deployment, Local baskets are durable owner data; use the opaque b
       listId,
       action,
       signal,
+      reviewOperationJournal(signal),
     );
     return success({ review });
   };

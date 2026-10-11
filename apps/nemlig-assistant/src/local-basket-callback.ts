@@ -64,7 +64,63 @@ const editSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("attempt-submission") }),
   z.object({ kind: z.literal("complete-submission") }),
 ]);
+const reviewOperationSchema = z
+  .object({
+    operationId: z.string().min(1).max(128),
+    generation: z.string().min(1).max(128),
+    accountIdentity: z.string().min(1).max(512),
+    kind: z.enum(["save", "update"]),
+    name: z.string().min(1).max(30),
+    createAttempted: z.boolean().optional(),
+    listId: z.number().int().positive().optional(),
+    items: z
+      .array(
+        z.object({
+          productId: z.number().int().positive(),
+          quantity: z.number().int().positive(),
+        }),
+      )
+      .max(500),
+    baseline: z
+      .array(
+        z.object({
+          productId: z.number().int().positive(),
+          quantity: z.number().int().positive(),
+        }),
+      )
+      .max(500)
+      .optional(),
+    progress: z
+      .object({
+        completed: z.number().int().nonnegative(),
+        total: z.number().int().positive().max(500),
+      })
+      .optional(),
+    completedUntil: z.number().int().nonnegative().optional(),
+  })
+  .superRefine((operation, context) => {
+    if (operation.kind === "save" && !operation.items.length) {
+      context.addIssue({ code: "custom", message: "Save intent is empty." });
+    }
+  });
 const callbackCommandSchema = z.discriminatedUnion("kind", [
+  z.object({
+    kind: z.literal("review-operation-read"),
+    operationId: z.string().min(1).max(128),
+  }),
+  z.object({
+    kind: z.literal("review-operation-claim"),
+    operationId: z.string().min(1).max(128),
+  }),
+  z.object({
+    kind: z.literal("review-operation-write"),
+    operation: reviewOperationSchema,
+  }),
+  z.object({
+    kind: z.literal("review-operation-complete"),
+    operationId: z.string().min(1).max(128),
+    generation: z.string().min(1).max(128),
+  }),
   z.object({ kind: z.literal("list") }),
   z.object({
     kind: z.literal("selection"),

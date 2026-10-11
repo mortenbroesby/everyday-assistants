@@ -488,6 +488,17 @@ const heartbeatLocalBasket = (
   selectLocalBasket(inventory, ownerId, basketId, options);
 
 export type LocalBasketCommand =
+  | { kind: "review-operation-read"; operationId: string }
+  | { kind: "review-operation-claim"; operationId: string }
+  | {
+      kind: "review-operation-write";
+      operation: ReviewOperation;
+    }
+  | {
+      kind: "review-operation-complete";
+      operationId: string;
+      generation: string;
+    }
   | { kind: "list" }
   | { kind: "selection"; selectionKey: string }
   | { kind: "read"; basketId: string }
@@ -505,6 +516,20 @@ export type LocalBasketCommand =
       expectedRevision?: number;
     };
 
+export interface ReviewOperation {
+  operationId: string;
+  generation: string;
+  accountIdentity: string;
+  kind: "save" | "update";
+  name: string;
+  createAttempted?: boolean;
+  listId?: number;
+  items: Array<{ productId: number; quantity: number }>;
+  baseline?: Array<{ productId: number; quantity: number }>;
+  progress?: { completed: number; total: number };
+  completedUntil?: number;
+}
+
 export const applyLocalBasketCommand = (
   inventory: OwnerLocalBasketInventory,
   ownerId: string,
@@ -512,6 +537,11 @@ export const applyLocalBasketCommand = (
   options: LocalBasketDomainOptions = {},
 ): LocalBasketMutation<LocalBasketCommandResult> => {
   switch (command.kind) {
+    case "review-operation-read":
+    case "review-operation-claim":
+    case "review-operation-write":
+    case "review-operation-complete":
+      throw new Error("Review operations require owner storage.");
     case "list": {
       const active = listLocalBaskets(inventory, ownerId, options);
       return {

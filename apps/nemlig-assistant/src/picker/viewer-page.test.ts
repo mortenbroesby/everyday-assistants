@@ -2,6 +2,11 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
+import {
+  ProductReviewService,
+  type ReviewOperationJournal,
+} from "../product-review.js";
+import type { ReviewOperation } from "../local-basket.js";
 import type { ProductView } from "../product-presentation.js";
 import { ProductFacts } from "./components/product.js";
 import { ViewerPage } from "./viewer-page.js";
@@ -368,6 +373,166 @@ test("dirty native shopping-list edits require Update before Submit", () => {
     html,
     /<button[^>]*disabled=""[^>]*>.*Submit to Nemlig basket<\/button>/u,
   );
+});
+
+test("a clean or reviewed partial native-list update can resume, but an uncertain one cannot", () => {
+  const pageProps = props();
+  if (pageProps.model.screen.kind !== "review") {
+    throw new Error("review fixture missing");
+  }
+  const review = pageProps.model.screen.review;
+  pageProps.model.screen = {
+    ...pageProps.model.screen,
+    review: {
+      ...review,
+      shoppingListId: 44,
+      shoppingListDirty: true,
+      updateStatus: "partial",
+      conflictItems: review.items,
+      actionNotice: "Pending change is preserved.",
+    },
+  };
+  const recoverable = renderToStaticMarkup(
+    createElement(ViewerPage, pageProps),
+  );
+  assert.match(recoverable, />Resume update<\/button>/u);
+  assert.doesNotMatch(
+    recoverable,
+    /<button[^>]*disabled=""[^>]*>Resume update<\/button>/u,
+  );
+
+  pageProps.model.screen = {
+    ...pageProps.model.screen,
+    review: {
+      ...review,
+      shoppingListId: 44,
+      shoppingListDirty: true,
+      updateStatus: "partial",
+    },
+  };
+  const cleanRecovery = renderToStaticMarkup(
+    createElement(ViewerPage, pageProps),
+  );
+  assert.match(cleanRecovery, />Resume update<\/button>/u);
+  assert.doesNotMatch(
+    cleanRecovery,
+    /<button[^>]*disabled=""[^>]*>Resume update<\/button>/u,
+  );
+
+  pageProps.model.screen = {
+    ...pageProps.model.screen,
+    review: {
+      ...pageProps.model.screen.review,
+      updateStatus: "uncertain",
+      conflictItems: undefined,
+    },
+  };
+  const uncertain = renderToStaticMarkup(createElement(ViewerPage, pageProps));
+  assert.match(
+    uncertain,
+    /<button[^>]*disabled=""[^>]*>Update shopping list<\/button>/u,
+  );
+});
+
+test("a recovered native-list review exposes and runs its Resume update action", async () => {
+  const pageProps = props();
+  const native = {
+    id: 44,
+    name: "Family",
+    items: [{ productId: 7, quantity: 1 }],
+  };
+  let operation: ReviewOperation = {
+    operationId: "native-list-update:44",
+    generation: "update-generation-1",
+    accountIdentity: "account-1",
+    kind: "update",
+    name: "Family",
+    listId: 44,
+    baseline: [{ productId: 7, quantity: 1 }],
+    items: [{ productId: 7, quantity: 2 }],
+  };
+  const journal: ReviewOperationJournal = {
+    read: async () => structuredClone(operation),
+    claim: async () => false,
+    write: async (next) => {
+      operation = structuredClone(next);
+    },
+    complete: async () => {
+      operation = { ...operation, completedUntil: Date.now() + 7_200_000 };
+    },
+  };
+  const service = new ProductReviewService({
+    getProduct: async (id) => ({
+      id,
+      name: "Fixture yoghurt",
+      price: 10,
+      unitPrice: 20,
+      unit: "kr/kg",
+      unitSize: "500 g",
+      brand: "Fixture",
+      category: "",
+      subcategory: "",
+      imageUrl: "",
+      available: true,
+      labels: [],
+      isOrganic: false,
+      isFrozen: false,
+      isRefrigerated: false,
+      isDairy: true,
+      isLactoseFree: false,
+      isGlutenFree: false,
+      isVegan: false,
+      isOnDiscount: false,
+    }),
+    searchProducts: async () => [],
+    providerIdentity: () => "account-1",
+    listShoppingLists: async () => [{ id: 44, name: "Family" }],
+    getShoppingList: async () => structuredClone(native),
+    updateShoppingListProduct: async (_id, productId, quantity) => {
+      native.items = native.items.filter(
+        (item) => item.productId !== productId,
+      );
+      if (quantity > 0) {
+        native.items.push({ productId, quantity });
+      }
+    },
+  });
+  const recovered = await service.openShoppingList(
+    "owner",
+    44,
+    undefined,
+    journal,
+  );
+  assert.equal(recovered.updateStatus, "partial");
+  assert.equal(recovered.conflictItems, undefined);
+  if (pageProps.model.screen.kind !== "review") {
+    throw new Error("review fixture missing");
+  }
+  pageProps.model.screen = {
+    ...pageProps.model.screen,
+    review: recovered,
+  };
+  let updateResult: ReturnType<typeof service.updateShoppingList> | undefined;
+  pageProps.actions.onUpdateShoppingList = () => {
+    updateResult = service.updateShoppingList(
+      "owner",
+      44,
+      { kind: "update" },
+      undefined,
+      journal,
+    );
+  };
+
+  const markup = renderToStaticMarkup(createElement(ViewerPage, pageProps));
+  assert.match(markup, />Resume update<\/button>/u);
+  assert.doesNotMatch(
+    markup,
+    /<button[^>]*disabled=""[^>]*>Resume update<\/button>/u,
+  );
+  pageProps.actions.onUpdateShoppingList();
+  assert.equal((await updateResult)?.saveStatus, "saved");
+  assert.deepEqual(native.items, [{ productId: 7, quantity: 2 }]);
+  assert.ok(operation.completedUntil);
 });
 
 test("busy prepared submission exposes one disabled submit action", () => {

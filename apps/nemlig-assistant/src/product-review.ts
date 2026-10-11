@@ -24,6 +24,7 @@ import type {
   LocalBasketCommand,
   LocalBasketEdit,
   LocalBasketSummary,
+  ReviewOperation,
 } from "./local-basket.js";
 
 export type ReviewDestination = "needs-review" | "ready" | "alternatives";
@@ -37,6 +38,17 @@ const quantityMap = <Item>(
   quantity: (item: Item) => number,
 ): Map<number, number> =>
   new Map(items.map((item) => [productId(item), quantity(item)]));
+const reviewItemInputs = (items: ShoppingList["items"]) =>
+  items.map(({ productId, quantity }) => ({
+    product_id: productId,
+    quantity,
+  }));
+const sameQuantities = (
+  left: Map<number, number>,
+  right: Map<number, number>,
+): boolean =>
+  left.size === right.size &&
+  [...left].every(([productId, quantity]) => right.get(productId) === quantity);
 const reviewQuantities = (items: ReviewItem[]) =>
   quantityMap(
     items,
@@ -45,7 +57,7 @@ const reviewQuantities = (items: ReviewItem[]) =>
   );
 export const DRAFT_IDLE_TIMEOUT_MS = 2 * 60 * 60 * 1000;
 const MAX_DURABLE_REVIEW_CACHE = 8;
-export interface ReviewItem {
+interface ReviewItem {
   product_id: number;
   quantity: number;
   state: "needs-review" | "ready";
@@ -99,6 +111,7 @@ interface StoredReview {
   nativeFingerprint?: string;
   nativeItems?: Array<{ productId: number; quantity: number }>;
   createAttempted?: boolean;
+  operationGeneration?: string;
   completedDraftId?: string;
   snapshot: ProductReviewSnapshot;
   proposalId?: string;
@@ -112,9 +125,21 @@ type ReviewClient = ProductDiscoveryClient & Partial<ShoppingListClient>;
 export interface LocalBasketRepository {
   mutate(command: LocalBasketCommand): Promise<unknown>;
 }
+export interface ReviewOperationJournal {
+  read(operationId: string): Promise<ReviewOperation | undefined>;
+  claim(operationId: string): Promise<boolean>;
+  write(operation: ReviewOperation): Promise<void>;
+  complete(operationId: string, generation: string): Promise<void>;
+}
+type DraftListCreationClaim =
+  | { kind: "claimed" }
+  | { kind: "existing"; listId: number }
+  | { kind: "blocked" };
 
 const reviewKey = (owner: string, basketId: string): string =>
   `${owner}\0${basketId}`;
+const updateOperationId = (listId: number): string =>
+  `native-list-update:${listId}`;
 const localBasketSnapshot = (basket: LocalBasket): ProductReviewSnapshot => ({
   basketId: basket.basketId,
   revision: basket.revision,
@@ -856,6 +881,7 @@ export class ProductReviewService {
     owner: string,
     listId: number,
     signal?: AbortSignal,
+    journal?: ReviewOperationJournal,
   ): Promise<ProductReviewSnapshot> {
     if (
       !validPositive(listId) ||
@@ -866,9 +892,30 @@ export class ProductReviewService {
     }
     const accountIdentity = this.client.providerIdentity();
     const current = this.drafts.get(owner);
+    const initialSnapshot = current?.snapshot;
     if (current?.busy) {
       throw new NemligError("A shopping-list operation is in progress.");
     }
+    const assertCurrentEntry = () => {
+      if (
+        this.drafts.get(owner) !== current ||
+        current?.busy ||
+        current?.snapshot !== initialSnapshot
+      ) {
+        throw new NemligError(
+          "The active shopping-list review changed. Refresh it before continuing.",
+        );
+      }
+      if (
+        current?.snapshot.draftId &&
+        this.now() - (current.lastActivityAt ?? 0) >= DRAFT_IDLE_TIMEOUT_MS
+      ) {
+        this.expireDraft(owner, current);
+        throw new NemligError(
+          "Unsaved draft expired. Start a new draft; its previous products cannot be restored.",
+        );
+      }
+    };
     const lists = await this.getShoppingLists(signal);
     if (!lists.some((list) => list.id === listId)) {
       throw new NemligError(
@@ -883,17 +930,90 @@ export class ProductReviewService {
     ) {
       throw new NemligError("Shopping list identity changed. Select it again.");
     }
-    const rows = await this.readItems(
-      list.items.map(({ productId, quantity }) => ({
-        product_id: productId,
-        quantity,
-      })),
-      signal,
-    );
+    const rows = await this.readItems(reviewItemInputs(list.items), signal);
     if (this.client.providerIdentity() !== accountIdentity) {
       throw new NemligError(
         "Connected Nemlig account changed. Select a list again.",
       );
+    }
+    assertCurrentEntry();
+    const operation = await journal?.read(updateOperationId(listId));
+    assertCurrentEntry();
+    if (operation?.kind === "update" && !operation.completedUntil) {
+      const consistentIdentity =
+        operation.listId === listId &&
+        operation.accountIdentity === accountIdentity &&
+        operation.name === list.name;
+      const baseline = new Map(
+        (operation.baseline ?? []).map(({ productId, quantity }) => [
+          productId,
+          quantity,
+        ]),
+      );
+      const desired = new Map(
+        operation.items.map(({ productId, quantity }) => [productId, quantity]),
+      );
+      const present = new Map(
+        list.items.map(({ productId, quantity }) => [productId, quantity]),
+      );
+      const ids = new Set([
+        ...baseline.keys(),
+        ...desired.keys(),
+        ...present.keys(),
+      ]);
+      const conflict =
+        !consistentIdentity ||
+        [...ids].some((id) => {
+          const quantity = present.get(id) ?? 0;
+          return (
+            quantity !== (baseline.get(id) ?? 0) &&
+            quantity !== (desired.get(id) ?? 0)
+          );
+        });
+      const intendedItems = await this.readItems(
+        reviewItemInputs(operation.items),
+        signal,
+      );
+      if (this.client.providerIdentity() !== accountIdentity) {
+        throw new NemligError(
+          "Connected Nemlig account changed. Select a list again.",
+        );
+      }
+      assertCurrentEntry();
+      const diffCount = [...ids].filter(
+        (id) => (baseline.get(id) ?? 0) !== (desired.get(id) ?? 0),
+      ).length;
+      const completed = [...ids].filter(
+        (id) =>
+          (baseline.get(id) ?? 0) !== (desired.get(id) ?? 0) &&
+          (present.get(id) ?? 0) === (desired.get(id) ?? 0),
+      ).length;
+      const recovered: ProductReviewSnapshot = {
+        shoppingListId: list.id,
+        shoppingListName: list.name,
+        saveStatus: "partial",
+        updateStatus: "partial",
+        shoppingListDirty: true,
+        saveProgress: { completed, total: diffCount },
+        destination: "ready",
+        items: intendedItems,
+        ...(conflict
+          ? {
+              conflictItems: rows,
+              actionNotice:
+                "Nemlig changed this list during an interrupted update. Your pending change is preserved; review the current list before continuing.",
+            }
+          : {}),
+      };
+      this.drafts.set(owner, {
+        busy: false,
+        accountIdentity,
+        nativeFingerprint: shoppingListFingerprint(list),
+        nativeItems: list.items.map((item) => ({ ...item })),
+        operationGeneration: operation.generation,
+        snapshot: recovered,
+      });
+      return structuredClone(recovered);
     }
     const snapshot: ProductReviewSnapshot = {
       shoppingListId: list.id,
@@ -908,13 +1028,27 @@ export class ProductReviewService {
       (current.snapshot.shoppingListDirty || current.snapshot.updateStatus)
     ) {
       const fingerprint = shoppingListFingerprint(list);
-      if (fingerprint !== current.nativeFingerprint) {
-        current.snapshot.conflictItems = rows;
+      const drifted = fingerprint !== current.nativeFingerprint;
+      current.nativeFingerprint = fingerprint;
+      current.nativeItems = list.items.map((item) => ({ ...item }));
+      current.snapshot.conflictItems = rows;
+      current.snapshot.saveStatus = "saved";
+      delete current.snapshot.updateStatus;
+      const baseline = quantityMap(
+        current.nativeItems,
+        (item) => item.productId,
+        (item) => item.quantity,
+      );
+      current.snapshot.shoppingListDirty = !sameQuantities(
+        baseline,
+        reviewQuantities(current.snapshot.items),
+      );
+      if (drifted) {
         current.snapshot.updateStatus = "partial";
         current.snapshot.actionNotice =
-          "Nemlig changed this list while edits were pending. Current rows are shown alongside your staged edits; review both before continuing.";
-      } else if (current.snapshot.updateStatus) {
-        current.snapshot.conflictItems = rows;
+          "Nemlig changed this list while edits were pending. Review the current rows alongside your staged edits, then choose Update shopping list to apply them.";
+      } else {
+        delete current.snapshot.actionNotice;
       }
       this.touch(owner, current);
       return structuredClone(current.snapshot);
@@ -1135,6 +1269,7 @@ export class ProductReviewService {
     listId: number,
     action: ProductReviewAction,
     signal?: AbortSignal,
+    journal?: ReviewOperationJournal,
   ): Promise<ProductReviewSnapshot> {
     if (
       !validPositive(listId) ||
@@ -1161,10 +1296,14 @@ export class ProductReviewService {
         throw new NemligError("Select this exact shopping list again.");
       }
       const accountIdentity = this.client.providerIdentity();
+      const explicitConflictUpdate =
+        action.kind === "update" &&
+        stored.snapshot.updateStatus === "partial" &&
+        stored.snapshot.conflictItems !== undefined;
       if (
         stored.accountIdentity !== accountIdentity ||
         !stored.nativeFingerprint ||
-        stored.snapshot.actionNotice
+        (stored.snapshot.actionNotice && !explicitConflictUpdate)
       ) {
         throw new NemligError(
           "Refresh this shopping list before making another change.",
@@ -1197,6 +1336,7 @@ export class ProductReviewService {
         current,
         accountIdentity,
         signal,
+        journal,
       );
     } finally {
       stored.busy = false;
@@ -1210,6 +1350,7 @@ export class ProductReviewService {
     current: ShoppingList,
     accountIdentity: string,
     signal?: AbortSignal,
+    journal?: ReviewOperationJournal,
   ): Promise<ProductReviewSnapshot> {
     if (!stored.snapshot.shoppingListDirty) {
       throw new NemligError(
@@ -1224,6 +1365,29 @@ export class ProductReviewService {
       (item) => item.quantity,
     );
     const desired = reviewQuantities(next.items);
+    if (journal) {
+      const operationId = updateOperationId(listId);
+      const pending = await journal.read(operationId);
+      const generation =
+        pending && !pending.completedUntil ? pending.generation : randomUUID();
+      stored.operationGeneration = generation;
+      await journal.write({
+        operationId,
+        generation,
+        accountIdentity,
+        kind: "update",
+        name: current.name,
+        listId,
+        baseline: [...baseline].map(([productId, quantity]) => ({
+          productId,
+          quantity,
+        })),
+        items: [...desired].map(([productId, quantity]) => ({
+          productId,
+          quantity,
+        })),
+      });
+    }
     const writeStatus = await this.writeNativeListDiff(
       owner,
       stored,
@@ -1245,6 +1409,7 @@ export class ProductReviewService {
       next,
       desired,
       writeStatus === "partial",
+      journal,
     );
   }
 
@@ -1299,6 +1464,7 @@ export class ProductReviewService {
     next: ProductReviewSnapshot,
     desired: Map<number, number>,
     writeWasPartial: boolean,
+    journal?: ReviewOperationJournal,
   ): Promise<ProductReviewSnapshot> {
     let saved: ShoppingList;
     try {
@@ -1342,6 +1508,24 @@ export class ProductReviewService {
       this.touch(owner, stored);
       return structuredClone(stored.snapshot);
     }
+    return this.confirmNativeListUpdateState(
+      owner,
+      stored,
+      listId,
+      saved,
+      next,
+      journal,
+    );
+  }
+
+  private async confirmNativeListUpdateState(
+    owner: string,
+    stored: StoredReview,
+    listId: number,
+    saved: ShoppingList,
+    next: ProductReviewSnapshot,
+    journal?: ReviewOperationJournal,
+  ): Promise<ProductReviewSnapshot> {
     stored.snapshot = next;
     stored.snapshot.saveStatus = "saved";
     stored.nativeFingerprint = shoppingListFingerprint(saved);
@@ -1350,6 +1534,11 @@ export class ProductReviewService {
     delete stored.snapshot.updateStatus;
     delete stored.snapshot.actionNotice;
     this.touch(owner, stored);
+    if (journal) {
+      await journal
+        .complete(updateOperationId(listId), stored.operationGeneration ?? "")
+        .catch(() => undefined);
+    }
     return structuredClone(stored.snapshot);
   }
 
@@ -1372,6 +1561,7 @@ export class ProductReviewService {
     name: string,
     accountIdentity: string,
     signal?: AbortSignal,
+    journal?: ReviewOperationJournal,
   ): Promise<number | undefined> {
     if (stored.snapshot.shoppingListId) {
       return stored.snapshot.shoppingListId;
@@ -1387,6 +1577,29 @@ export class ProductReviewService {
     }
     await this.client.listShoppingLists(signal);
     stored.accountIdentity = accountIdentity;
+    const claim = await this.claimDraftShoppingListCreation(stored, journal);
+    if (claim.kind === "existing") {
+      return claim.listId;
+    }
+    if (claim.kind === "blocked") {
+      return undefined;
+    }
+    return this.createDraftShoppingList(
+      stored,
+      name,
+      accountIdentity,
+      signal,
+      journal,
+    );
+  }
+
+  private async createDraftShoppingList(
+    stored: StoredReview,
+    name: string,
+    accountIdentity: string,
+    signal?: AbortSignal,
+    journal?: ReviewOperationJournal,
+  ): Promise<number | undefined> {
     stored.createAttempted = true;
     stored.snapshot.shoppingListName = name;
     stored.snapshot.saveProgress = {
@@ -1394,9 +1607,24 @@ export class ProductReviewService {
       total: stored.snapshot.items.length,
     };
     try {
-      const listId = await this.client.createShoppingList(name, signal);
+      const listId = await this.client.createShoppingList!(name, signal);
       stored.snapshot.shoppingListId = listId;
       stored.snapshot.saveStatus = "partial";
+      if (journal && stored.snapshot.draftId) {
+        await journal.write({
+          operationId: stored.snapshot.draftId,
+          generation: stored.snapshot.draftId,
+          accountIdentity,
+          kind: "save",
+          name,
+          listId,
+          items: stored.snapshot.items.map(({ product_id, quantity }) => ({
+            productId: product_id,
+            quantity,
+          })),
+          progress: { completed: 0, total: stored.snapshot.items.length },
+        });
+      }
       return listId;
     } catch (error) {
       stored.snapshot.saveStatus = "uncertain";
@@ -1409,6 +1637,26 @@ export class ProductReviewService {
     }
   }
 
+  private async claimDraftShoppingListCreation(
+    stored: StoredReview,
+    journal?: ReviewOperationJournal,
+  ): Promise<DraftListCreationClaim> {
+    const draftId = stored.snapshot.draftId;
+    if (!journal || !draftId || (await journal.claim(draftId))) {
+      return { kind: "claimed" };
+    }
+    const existing = await journal.read(draftId);
+    if (existing?.listId) {
+      stored.snapshot.shoppingListId = existing.listId;
+      stored.createAttempted = true;
+      return { kind: "existing", listId: existing.listId };
+    }
+    stored.snapshot.saveStatus = "uncertain";
+    stored.snapshot.actionNotice =
+      "This save may already be creating a list. Refresh your shopping lists before continuing.";
+    return { kind: "blocked" };
+  }
+
   // Keep reconciliation, missing-row writes, and exact readback in one recovery protocol.
   // fallow-ignore-next-line complexity
   private async populateDraftShoppingList(
@@ -1416,6 +1664,7 @@ export class ProductReviewService {
     stored: StoredReview,
     accountIdentity: string,
     signal?: AbortSignal,
+    journal?: ReviewOperationJournal,
   ): Promise<void> {
     const listId = stored.snapshot.shoppingListId;
     const listName = stored.snapshot.shoppingListName;
@@ -1427,12 +1676,27 @@ export class ProductReviewService {
     ) {
       throw new NemligError("Native shopping-list saving is unavailable.");
     }
-    const markPartial = (notice: string, completed: number) => {
+    const markPartial = async (notice: string, completed: number) => {
       stored.snapshot.saveStatus = "partial";
       stored.snapshot.saveProgress = {
         completed,
         total: stored.snapshot.items.length,
       };
+      if (journal && stored.snapshot.draftId) {
+        await journal.write({
+          operationId: stored.snapshot.draftId,
+          generation: stored.snapshot.draftId,
+          accountIdentity,
+          kind: "save",
+          name: listName,
+          listId,
+          items: stored.snapshot.items.map(({ product_id, quantity }) => ({
+            productId: product_id,
+            quantity,
+          })),
+          progress: { completed, total: stored.snapshot.items.length },
+        });
+      }
       stored.snapshot.actionNotice = notice;
       this.touch(owner, stored);
     };
@@ -1442,7 +1706,7 @@ export class ProductReviewService {
       current.id !== listId ||
       current.name !== listName
     ) {
-      markPartial(
+      await markPartial(
         "The connected account or shopping-list identity changed. No more products were written.",
         0,
       );
@@ -1462,7 +1726,7 @@ export class ProductReviewService {
         ([productId, quantity]) => expected.get(productId) !== quantity,
       )
     ) {
-      markPartial(
+      await markPartial(
         "This shopping list changed outside the interrupted save. Refresh it before continuing.",
         0,
       );
@@ -1490,7 +1754,7 @@ export class ProductReviewService {
           signal,
         );
       } catch (error) {
-        markPartial(
+        await markPartial(
           `Saved ${completed} of ${stored.snapshot.items.length} products. Refresh and continue saving to reconcile the same list.`,
           completed,
         );
@@ -1519,7 +1783,7 @@ export class ProductReviewService {
       this.client.providerIdentity?.() !== accountIdentity ||
       shoppingListFingerprint(saved) !== shoppingListFingerprint(expectedList)
     ) {
-      markPartial(
+      await markPartial(
         `Nemlig confirmed ${completed} of ${stored.snapshot.items.length} products. Refresh the list before continuing.`,
         Math.min(present.size, stored.snapshot.items.length),
       );
@@ -1529,6 +1793,11 @@ export class ProductReviewService {
     stored.nativeFingerprint = shoppingListFingerprint(saved);
     stored.nativeItems = saved.items.map((item) => ({ ...item }));
     stored.completedDraftId = stored.snapshot.draftId;
+    if (journal && stored.snapshot.draftId) {
+      await journal
+        .complete(stored.snapshot.draftId, stored.snapshot.draftId)
+        .catch(() => undefined);
+    }
     delete stored.snapshot.draftId;
     delete stored.snapshot.draftExpiresAt;
     delete stored.lastActivityAt;
@@ -1544,7 +1813,36 @@ export class ProductReviewService {
     name: string,
     expectedDraftId?: string,
     signal?: AbortSignal,
+    journal?: ReviewOperationJournal,
   ): Promise<ProductReviewSnapshot> {
+    if (!this.drafts.has(owner) && expectedDraftId && journal) {
+      const operation = await journal.read(expectedDraftId);
+      if (operation?.kind === "save") {
+        const items = await this.readItems(
+          operation.items.map(({ productId, quantity }) => ({
+            product_id: productId,
+            quantity,
+          })),
+          signal,
+        );
+        const lastActivityAt = this.now();
+        this.drafts.set(owner, {
+          busy: false,
+          lastActivityAt,
+          accountIdentity: operation.accountIdentity,
+          createAttempted: operation.createAttempted,
+          snapshot: {
+            draftId: operation.operationId,
+            draftExpiresAt: lastActivityAt + DRAFT_IDLE_TIMEOUT_MS,
+            destination: "ready",
+            items,
+            shoppingListName: operation.name,
+            ...(operation.listId ? { shoppingListId: operation.listId } : {}),
+            saveStatus: "partial",
+          },
+        });
+      }
+    }
     const previous = this.drafts.get(owner);
     if (
       expectedDraftId &&
@@ -1602,12 +1900,30 @@ export class ProductReviewService {
         stored.lastActivityAt + DRAFT_IDLE_TIMEOUT_MS;
       stored.snapshot.shoppingListName = listName;
       stored.snapshot.saveStatus = "saving";
+      if (journal) {
+        await journal.write({
+          operationId: stored.snapshot.draftId!,
+          generation: stored.snapshot.draftId!,
+          accountIdentity,
+          kind: "save",
+          name: listName,
+          createAttempted: stored.createAttempted,
+          ...(stored.snapshot.shoppingListId
+            ? { listId: stored.snapshot.shoppingListId }
+            : {}),
+          items: stored.snapshot.items.map(({ product_id, quantity }) => ({
+            productId: product_id,
+            quantity,
+          })),
+        });
+      }
       providerStarted = true;
       const listId = await this.resolveDraftShoppingList(
         stored,
         listName,
         accountIdentity,
         signal,
+        journal,
       );
       if (listId) {
         await this.populateDraftShoppingList(
@@ -1615,6 +1931,7 @@ export class ProductReviewService {
           stored,
           accountIdentity,
           signal,
+          journal,
         );
       }
       this.touch(owner, stored);
@@ -1643,9 +1960,10 @@ export class ProductReviewService {
     action: ProductReviewAction,
     signal?: AbortSignal,
     expectedDraftId?: string,
+    journal?: ReviewOperationJournal,
   ): Promise<ProductReviewSnapshot> {
     if (action.kind === "save") {
-      return this.save(owner, action.name, expectedDraftId, signal);
+      return this.save(owner, action.name, expectedDraftId, signal, journal);
     }
     if (action.kind === "update") {
       throw new NemligError(

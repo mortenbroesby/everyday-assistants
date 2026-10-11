@@ -5,9 +5,13 @@ import {
   type LocalBasketCommand,
   type LocalBasketLine,
   type OwnerLocalBasketInventory,
+  type ReviewOperation,
 } from "./local-basket.js";
 
 const INDEX_KEY = "owner-local-basket-index";
+const REVIEW_OPERATION_INDEX_KEY = "owner-review-operation-index";
+const MAX_REVIEW_OPERATIONS = 8;
+const REVIEW_OPERATION_RETENTION_MS = 2 * 60 * 60 * 1000;
 const MAX_DURABLE_VALUE_BYTES = 1024 * 1024;
 
 export interface LocalBasketStorageAccess {
@@ -30,6 +34,10 @@ interface OwnerBasketIndex {
   ownerId: string;
   baskets: StoredBasket[];
   selections?: Record<string, string>;
+}
+interface OwnerReviewOperations {
+  ownerId: string;
+  operations: ReviewOperation[];
 }
 
 const lineKey = (basketId: string, productId: number): string =>
@@ -286,6 +294,148 @@ export const mutateOwnerLocalBasketInventory = async (
   // Dispatch stays inside one transaction so cleanup and record edits cannot partially persist.
   // fallow-ignore-next-line complexity
   return storage.transaction(async (transaction) => {
+    if (
+      command.kind === "review-operation-read" ||
+      command.kind === "review-operation-claim" ||
+      command.kind === "review-operation-write" ||
+      command.kind === "review-operation-complete"
+    ) {
+      const index = await transaction.get<OwnerReviewOperations>(
+        REVIEW_OPERATION_INDEX_KEY,
+      );
+      if (index && index.ownerId !== ownerId) {
+        throw new Error("Review operation is unavailable.");
+      }
+      const operations = (index?.operations ?? []).filter(
+        ({ completedUntil }) =>
+          completedUntil === undefined || completedUntil > now,
+      );
+      if (index && operations.length !== index.operations.length) {
+        if (operations.length) {
+          await transaction.put(REVIEW_OPERATION_INDEX_KEY, {
+            ownerId,
+            operations,
+          });
+        } else {
+          await transaction.delete(REVIEW_OPERATION_INDEX_KEY);
+        }
+      }
+      if (command.kind === "review-operation-claim") {
+        const current = operations.find(
+          ({ operationId }) => operationId === command.operationId,
+        );
+        if (!current || current.createAttempted) {
+          return false;
+        }
+        const updated = operations.map((operation) =>
+          operation.operationId === command.operationId
+            ? { ...operation, createAttempted: true }
+            : operation,
+        );
+        await transaction.put(REVIEW_OPERATION_INDEX_KEY, {
+          ownerId,
+          operations: updated,
+        });
+        return true;
+      }
+      if (command.kind === "review-operation-read") {
+        return structuredClone(
+          operations.find(
+            ({ operationId }) => operationId === command.operationId,
+          ),
+        );
+      }
+      if (command.kind === "review-operation-complete") {
+        const current = operations.find(
+          ({ operationId }) => operationId === command.operationId,
+        );
+        if (current && current.generation !== command.generation) {
+          return false;
+        }
+        if (current) {
+          const completed = {
+            ...current,
+            completedUntil: now + REVIEW_OPERATION_RETENTION_MS,
+          };
+          const updated = operations.map((operation) =>
+            operation.operationId === command.operationId
+              ? completed
+              : operation,
+          );
+          await transaction.put(REVIEW_OPERATION_INDEX_KEY, {
+            ownerId,
+            operations: updated,
+          });
+        }
+        return Boolean(current);
+      }
+      const operation = command.operation;
+      const current = operations.find(
+        ({ operationId }) => operationId === operation.operationId,
+      );
+      if (!current && operations.length >= MAX_REVIEW_OPERATIONS) {
+        throw new Error("Too many unfinished shopping-list operations.");
+      }
+      const replaceCompleted =
+        current?.completedUntil !== undefined &&
+        operation.generation !== current.generation;
+      if (
+        current &&
+        !replaceCompleted &&
+        (current.accountIdentity !== operation.accountIdentity ||
+          current.generation !== operation.generation ||
+          current.kind !== operation.kind ||
+          current.name !== operation.name ||
+          JSON.stringify(current.items) !== JSON.stringify(operation.items) ||
+          (current.listId !== undefined &&
+            operation.listId !== undefined &&
+            current.listId !== operation.listId))
+      ) {
+        throw new Error(
+          "A different shopping-list operation is already pending.",
+        );
+      }
+      const merged = current
+        ? replaceCompleted
+          ? operation
+          : {
+              ...operation,
+              createAttempted:
+                current.createAttempted || operation.createAttempted,
+              ...(current.listId !== undefined
+                ? { listId: current.listId }
+                : {}),
+              ...(current.progress && operation.progress
+                ? {
+                    progress: {
+                      completed: Math.max(
+                        current.progress.completed,
+                        operation.progress.completed,
+                      ),
+                      total: operation.progress.total,
+                    },
+                  }
+                : current.progress && !operation.progress
+                  ? { progress: current.progress }
+                  : {}),
+              ...(current.completedUntil !== undefined
+                ? { completedUntil: current.completedUntil }
+                : {}),
+            }
+        : operation;
+      const updated = [
+        ...operations.filter(
+          ({ operationId }) => operationId !== operation.operationId,
+        ),
+        merged,
+      ];
+      enforceValueLimit({ ownerId, operations: updated });
+      await transaction.put(REVIEW_OPERATION_INDEX_KEY, {
+        ownerId,
+        operations: updated,
+      });
+      return undefined;
+    }
     let index = await readIndex(transaction, ownerId);
     index = await pruneExpired(transaction, index, now);
     if (command.kind === "selection") {

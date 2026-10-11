@@ -6,13 +6,20 @@ import {
   DRAFT_IDLE_TIMEOUT_MS,
   MAX_DRAFT_PRODUCTS,
   ProductReviewService,
+  type ReviewOperationJournal,
 } from "./product-review.js";
+import type { ReviewOperation } from "./local-basket.js";
 import {
   applyLocalBasketCommand,
   createOwnerLocalBasketInventory,
   type LocalBasketCommand,
   type OwnerLocalBasketInventory,
 } from "./local-basket.js";
+import {
+  mutateOwnerLocalBasketInventory,
+  type LocalBasketInventoryStorage,
+  type LocalBasketStorageAccess,
+} from "./local-basket-storage.js";
 
 const product = (id: number): Product => ({
   id,
@@ -56,6 +63,63 @@ const withShoppingList = <
   prepareShoppingListAdditions: (owner, items, _name, authorization, options) =>
     proposals.prepareAdditions(owner, items, authorization, options),
 });
+
+const createDurableReviewJournal = (ownerId: string) => {
+  const values = new Map<string, unknown>();
+  const storage: LocalBasketInventoryStorage = {
+    async get<T>(key: string) {
+      return values.get(key) as T | undefined;
+    },
+    async put<T>(key: string, value: T) {
+      values.set(key, structuredClone(value));
+    },
+    async delete(key: string) {
+      values.delete(key);
+    },
+    async setAlarm() {},
+    async deleteAlarm() {},
+    async transaction<T>(
+      action: (access: LocalBasketStorageAccess) => Promise<T>,
+    ) {
+      return action(storage);
+    },
+  };
+  return {
+    journal: {
+      async read(operationId: string) {
+        return (await mutateOwnerLocalBasketInventory(storage, ownerId, {
+          kind: "review-operation-read",
+          operationId,
+        })) as Awaited<ReturnType<ReviewOperationJournal["read"]>>;
+      },
+      async claim(operationId: string) {
+        return (await mutateOwnerLocalBasketInventory(storage, ownerId, {
+          kind: "review-operation-claim",
+          operationId,
+        })) as boolean;
+      },
+      async write(operation: ReviewOperation) {
+        await mutateOwnerLocalBasketInventory(storage, ownerId, {
+          kind: "review-operation-write",
+          operation,
+        });
+      },
+      async complete(operationId: string, generation: string) {
+        await mutateOwnerLocalBasketInventory(storage, ownerId, {
+          kind: "review-operation-complete",
+          operationId,
+          generation,
+        });
+      },
+    } satisfies ReviewOperationJournal,
+    read(operationId: string) {
+      return mutateOwnerLocalBasketInventory(storage, ownerId, {
+        kind: "review-operation-read",
+        operationId,
+      });
+    },
+  };
+};
 
 test("unsaved drafts cannot prepare or submit a basket addition", async () => {
   let prepares = 0;
@@ -329,6 +393,117 @@ test("an existing native shopping list reopens as the shared review without a lo
   assert.deepEqual(writes, []);
 });
 
+test("opening a native list cannot replace a draft edited during deferred reads", async () => {
+  let releaseList!: (list: {
+    id: number;
+    name: string;
+    items: Array<{ productId: number; quantity: number }>;
+  }) => void;
+  let markReadStarted!: () => void;
+  const readStarted = new Promise<void>((resolve) => {
+    markReadStarted = resolve;
+  });
+  const delayedList = new Promise<{
+    id: number;
+    name: string;
+    items: Array<{ productId: number; quantity: number }>;
+  }>((resolve) => {
+    releaseList = resolve;
+  });
+  const service = new ProductReviewService({
+    ...client,
+    providerIdentity: () => "account-1",
+    listShoppingLists: async () => [{ id: 44, name: "Family" }],
+    getShoppingList: async () => {
+      markReadStarted();
+      return delayedList;
+    },
+  });
+  await service.start("owner", [{ product_id: 1, quantity: 1 }]);
+  const opening = service.openShoppingList("owner", 44);
+  await readStarted;
+  const edited = await service.update("owner", {
+    kind: "quantity",
+    product_id: 1,
+    quantity: 2,
+  });
+  releaseList({
+    id: 44,
+    name: "Family",
+    items: [{ productId: 1, quantity: 1 }],
+  });
+
+  await assert.rejects(opening, /active shopping-list review changed/u);
+  assert.equal(service.active("owner")?.draftId, edited.draftId);
+  assert.equal(service.active("owner")?.items[0]?.quantity, 2);
+});
+
+test("a later deferred native-list open cannot replace an earlier open", async () => {
+  let releaseFirst!: (list: {
+    id: number;
+    name: string;
+    items: Array<{ productId: number; quantity: number }>;
+  }) => void;
+  let releaseSecond!: (list: {
+    id: number;
+    name: string;
+    items: Array<{ productId: number; quantity: number }>;
+  }) => void;
+  let readsStarted = 0;
+  let markBothReadsStarted!: () => void;
+  const bothReadsStarted = new Promise<void>((resolve) => {
+    markBothReadsStarted = resolve;
+  });
+  const gates = [
+    new Promise<{
+      id: number;
+      name: string;
+      items: Array<{ productId: number; quantity: number }>;
+    }>((resolve) => {
+      releaseFirst = resolve;
+    }),
+    new Promise<{
+      id: number;
+      name: string;
+      items: Array<{ productId: number; quantity: number }>;
+    }>((resolve) => {
+      releaseSecond = resolve;
+    }),
+  ];
+  const service = new ProductReviewService({
+    ...client,
+    providerIdentity: () => "account-1",
+    listShoppingLists: async () => [
+      { id: 44, name: "Family" },
+      { id: 45, name: "Work" },
+    ],
+    getShoppingList: async () => {
+      const gate = gates[readsStarted++];
+      if (readsStarted === 2) {
+        markBothReadsStarted();
+      }
+      return gate;
+    },
+  });
+  const first = service.openShoppingList("owner", 44);
+  const second = service.openShoppingList("owner", 45);
+  await bothReadsStarted;
+  releaseFirst({
+    id: 44,
+    name: "Family",
+    items: [{ productId: 1, quantity: 1 }],
+  });
+  await first;
+  releaseSecond({
+    id: 45,
+    name: "Work",
+    items: [{ productId: 2, quantity: 1 }],
+  });
+
+  await assert.rejects(second, /active shopping-list review changed/u);
+  assert.equal(service.active("owner")?.shoppingListId, 44);
+});
+
 test("reopening a changed native list preserves staged edits and shows current rows", async () => {
   const native = {
     id: 44,
@@ -343,8 +518,14 @@ test("reopening a changed native list preserves staged edits and shows current r
       { id: 44, name: "Family", productCount: native.items.length },
     ],
     getShoppingList: async () => structuredClone(native),
-    updateShoppingListProduct: async () => {
+    updateShoppingListProduct: async (_listId, productId, quantity) => {
       writes++;
+      native.items = native.items.filter(
+        (item) => item.productId !== productId,
+      );
+      if (quantity > 0) {
+        native.items.push({ productId, quantity });
+      }
     },
   });
 
@@ -361,11 +542,13 @@ test("reopening a changed native list preserves staged edits and shows current r
   assert.equal(reopened.shoppingListDirty, true);
   assert.equal(reopened.updateStatus, "partial");
   assert.equal(reopened.conflictItems?.[0]?.quantity, 3);
-  await assert.rejects(
-    service.updateShoppingList("owner", 44, { kind: "update" }),
-    /Refresh this shopping list before making another change/u,
-  );
-  assert.equal(writes, 0);
+  assert.match(reopened.actionNotice ?? "", /Review the current rows/u);
+  const updated = await service.updateShoppingList("owner", 44, {
+    kind: "update",
+  });
+  assert.equal(updated.saveStatus, "saved");
+  assert.equal(native.items[0]?.quantity, 2);
+  assert.equal(writes, 1);
 });
 
 test("native-list transfer preparation fails closed without verified exact-transfer semantics", async () => {
@@ -614,6 +797,245 @@ test("native shopping-list edits stage locally until Update writes and reads bac
   assert.deepEqual(native.items, [{ productId: 2, quantity: 1 }]);
 });
 
+test("completed native-list updates can be followed by edits using the durable journal", async () => {
+  const owner = "owner";
+  const native = {
+    id: 44,
+    name: "Family",
+    items: [{ productId: 1, quantity: 1 }],
+  };
+  const { journal, read } = createDurableReviewJournal(owner);
+  const service = new ProductReviewService({
+    ...client,
+    providerIdentity: () => "account-1",
+    listShoppingLists: async () => [{ id: 44, name: "Family" }],
+    getShoppingList: async () => structuredClone(native),
+    updateShoppingListProduct: async (_listId, productId, quantity) => {
+      native.items = native.items.filter(
+        (item) => item.productId !== productId,
+      );
+      if (quantity > 0) {
+        native.items.push({ productId, quantity });
+      }
+    },
+  });
+  const stage = (quantity: number) =>
+    service.updateShoppingList(owner, 44, {
+      kind: "quantity",
+      product_id: 1,
+      quantity,
+    });
+  const update = () =>
+    service.updateShoppingList(
+      owner,
+      44,
+      { kind: "update" },
+      undefined,
+      journal,
+    );
+  const operationId = "native-list-update:44";
+
+  await service.openShoppingList(owner, 44, undefined, journal);
+  await stage(2);
+  assert.equal((await update()).saveStatus, "saved");
+  const firstGeneration = ((await read(operationId)) as ReviewOperation)
+    .generation;
+
+  await stage(3);
+  assert.equal((await update()).saveStatus, "saved");
+  const secondGeneration = ((await read(operationId)) as ReviewOperation)
+    .generation;
+  assert.notEqual(secondGeneration, firstGeneration);
+
+  await service.openShoppingList(owner, 44, undefined, journal);
+  await stage(4);
+  assert.equal((await update()).saveStatus, "saved");
+  const thirdGeneration = ((await read(operationId)) as ReviewOperation)
+    .generation;
+  assert.notEqual(thirdGeneration, secondGeneration);
+  assert.deepEqual(native.items, [{ productId: 1, quantity: 4 }]);
+});
+
+test("interrupted native-list updates resume the intended diff after restart", async () => {
+  const native = {
+    id: 44,
+    name: "Family",
+    items: [
+      { productId: 1, quantity: 1 },
+      { productId: 2, quantity: 1 },
+    ],
+  };
+  const operations = new Map<string, ReviewOperation>();
+  const journal: ReviewOperationJournal = {
+    read: async (operationId) => structuredClone(operations.get(operationId)),
+    claim: async (operationId) => {
+      const operation = operations.get(operationId);
+      if (!operation || operation.createAttempted) {
+        return false;
+      }
+      operations.set(operationId, { ...operation, createAttempted: true });
+      return true;
+    },
+    write: async (operation) => {
+      operations.set(operation.operationId, structuredClone(operation));
+    },
+    complete: async (operationId, generation) => {
+      if (operations.get(operationId)?.generation === generation) {
+        operations.set(operationId, {
+          ...operations.get(operationId)!,
+          completedUntil: Date.now() + 2 * 60 * 60 * 1000,
+        });
+      }
+    },
+  };
+  let failSecondUpdate = true;
+  const newService = () =>
+    new ProductReviewService({
+      ...client,
+      providerIdentity: () => "account-1",
+      listShoppingLists: async () => [{ id: 44, name: "Family" }],
+      getShoppingList: async () => structuredClone(native),
+      updateShoppingListProduct: async (_listId, productId, quantity) => {
+        if (productId === 2 && failSecondUpdate) {
+          failSecondUpdate = false;
+          throw new Error("provider timed out");
+        }
+        native.items = native.items.filter(
+          (item) => item.productId !== productId,
+        );
+        if (quantity > 0) {
+          native.items.push({ productId, quantity });
+        }
+      },
+    });
+  const service = newService();
+  await service.openShoppingList("owner", 44);
+  await service.updateShoppingList("owner", 44, {
+    kind: "quantity",
+    product_id: 1,
+    quantity: 2,
+  });
+  await service.updateShoppingList("owner", 44, {
+    kind: "quantity",
+    product_id: 2,
+    quantity: 2,
+  });
+  const partial = await service.updateShoppingList(
+    "owner",
+    44,
+    { kind: "update" },
+    undefined,
+    journal,
+  );
+  assert.equal(partial.updateStatus, "partial");
+  assert.equal(
+    native.items.find(({ productId }) => productId === 1)?.quantity,
+    2,
+  );
+  assert.equal(
+    native.items.find(({ productId }) => productId === 2)?.quantity,
+    1,
+  );
+
+  const restarted = newService();
+  const recovered = await restarted.openShoppingList(
+    "owner",
+    44,
+    undefined,
+    journal,
+  );
+  assert.deepEqual(
+    recovered.items.map(({ product_id, quantity }) => [product_id, quantity]),
+    [
+      [1, 2],
+      [2, 2],
+    ],
+  );
+  assert.equal(recovered.actionNotice, undefined);
+  assert.equal(recovered.conflictItems, undefined);
+  const saved = await restarted.updateShoppingList(
+    "owner",
+    44,
+    { kind: "update" },
+    undefined,
+    journal,
+  );
+  assert.equal(saved.saveStatus, "saved");
+  assert.equal(saved.shoppingListDirty, false);
+  assert.deepEqual(native.items, [
+    { productId: 1, quantity: 2 },
+    { productId: 2, quantity: 2 },
+  ]);
+  assert.equal(operations.size, 1);
+  assert.ok(operations.get("native-list-update:44")?.completedUntil);
+});
+
+test("external edits during an interrupted update preserve intent until explicit Update", async () => {
+  let operation: ReviewOperation | undefined = {
+    operationId: "native-list-update:44",
+    generation: "update-attempt-1",
+    accountIdentity: "account-1",
+    kind: "update",
+    name: "Family",
+    listId: 44,
+    baseline: [{ productId: 1, quantity: 1 }],
+    items: [{ productId: 1, quantity: 2 }],
+  };
+  const journal: ReviewOperationJournal = {
+    read: async () => structuredClone(operation),
+    claim: async () => false,
+    write: async (next) => {
+      assert.equal(next.generation, operation?.generation);
+      assert.deepEqual(next.items, operation?.items);
+      operation = structuredClone(next);
+    },
+    complete: async (operationId, generation) => {
+      if (
+        operation?.operationId === operationId &&
+        operation.generation === generation
+      ) {
+        operation = { ...operation, completedUntil: Date.now() + 7200000 };
+      }
+    },
+  };
+  let writes = 0;
+  let native = [{ productId: 1, quantity: 3 }];
+  const service = new ProductReviewService({
+    ...client,
+    providerIdentity: () => "account-1",
+    listShoppingLists: async () => [{ id: 44, name: "Family" }],
+    getShoppingList: async () => ({ id: 44, name: "Family", items: native }),
+    updateShoppingListProduct: async (_listId, productId, quantity) => {
+      writes++;
+      native = native.filter((item) => item.productId !== productId);
+      if (quantity > 0) {
+        native.push({ productId, quantity });
+      }
+    },
+  });
+  const recovered = await service.openShoppingList(
+    "owner",
+    44,
+    undefined,
+    journal,
+  );
+  assert.equal(recovered.items[0]?.quantity, 2);
+  assert.equal(recovered.conflictItems?.[0]?.quantity, 3);
+  assert.match(recovered.actionNotice ?? "", /pending change is preserved/u);
+  assert.equal(writes, 0);
+  const updated = await service.updateShoppingList(
+    "owner",
+    44,
+    { kind: "update" },
+    undefined,
+    journal,
+  );
+  assert.equal(updated.saveStatus, "saved");
+  assert.equal(native[0]?.quantity, 2);
+  assert.ok(operation?.completedUntil);
+  assert.equal(writes, 1);
+});
+
 test("native list update never adopts readback from another account or list", async () => {
   let readCount = 0;
   let writes = 0;
@@ -811,7 +1233,82 @@ test("uncertain creation never adopts an unrelated list by matching name", async
   assert.deepEqual({ creates, writes }, { creates: 1, writes: 0 });
 });
 
-test("52-product save resumes after a mid-population provider failure", async () => {
+test("uncertain list creation is never repeated after service restart", async () => {
+  const operations = new Map<string, ReviewOperation>();
+  let failListIdWrite = true;
+  const journal: ReviewOperationJournal = {
+    read: async (operationId) => structuredClone(operations.get(operationId)),
+    claim: async (operationId) => {
+      const operation = operations.get(operationId);
+      if (!operation || operation.createAttempted) {
+        return false;
+      }
+      operations.set(operationId, { ...operation, createAttempted: true });
+      return true;
+    },
+    write: async (operation) => {
+      if (operation.listId && failListIdWrite) {
+        failListIdWrite = false;
+        throw new Error("journal write interrupted");
+      }
+      operations.set(operation.operationId, structuredClone(operation));
+    },
+    complete: async (operationId, generation) => {
+      if (operations.get(operationId)?.generation === generation) {
+        operations.set(operationId, {
+          ...operations.get(operationId)!,
+          completedUntil: Date.now() + 7200000,
+        });
+      }
+    },
+  };
+  let creates = 0;
+  const native = {
+    id: 55,
+    name: "Family",
+    items: [] as Array<{ productId: number; quantity: number }>,
+  };
+  const newService = () =>
+    new ProductReviewService({
+      ...client,
+      providerIdentity: () => "account-1",
+      listShoppingLists: async () =>
+        creates ? [{ id: native.id, name: native.name }] : [],
+      createShoppingList: async () => {
+        creates += 1;
+        return native.id;
+      },
+      updateShoppingListProduct: async (listId, productId, quantity) => {
+        assert.equal(listId, native.id);
+        native.items.push({ productId, quantity });
+      },
+      getShoppingList: async () => structuredClone(native),
+    });
+  const first = newService();
+  const draft = await first.start("owner", [{ product_id: 1, quantity: 1 }]);
+  const uncertain = await first.save(
+    "owner",
+    "Family",
+    draft.draftId,
+    undefined,
+    journal,
+  );
+  assert.equal(uncertain.saveStatus, "uncertain");
+  assert.equal(creates, 1);
+
+  const restarted = await newService().save(
+    "owner",
+    "Family",
+    draft.draftId,
+    undefined,
+    journal,
+  );
+  assert.equal(restarted.saveStatus, "uncertain");
+  assert.equal(restarted.shoppingListId, undefined);
+  assert.equal(creates, 1);
+});
+
+test("52-product save resumes after a service restart without recreating the list", async () => {
   let creates = 0;
   let updates = 0;
   let failAt31 = true;
@@ -820,52 +1317,129 @@ test("52-product save resumes after a mid-population provider failure", async ()
     name: "Meal plan",
     items: [] as Array<{ productId: number; quantity: number }>,
   };
-  const service = new ProductReviewService({
-    ...client,
-    providerIdentity: () => "account-1",
-    listShoppingLists: async () =>
-      creates ? [{ id: native.id, name: native.name }] : [],
-    createShoppingList: async (name: string) => {
-      creates += 1;
-      native = { ...native, name };
-      return native.id;
-    },
-    updateShoppingListProduct: async (
-      listId: number,
-      productId: number,
-      quantity: number,
-    ) => {
-      updates += 1;
-      if (updates === 31 && failAt31) {
-        failAt31 = false;
-        throw new Error("provider timed out");
+  const operations = new Map<string, ReviewOperation>();
+  const journal: ReviewOperationJournal = {
+    read: async (operationId) => structuredClone(operations.get(operationId)),
+    claim: async (operationId) => {
+      const operation = operations.get(operationId);
+      if (!operation || operation.createAttempted) {
+        return false;
       }
-      assert.equal(listId, native.id);
-      native.items.push({ productId, quantity });
+      operations.set(operationId, { ...operation, createAttempted: true });
+      return true;
     },
-    getShoppingList: async () => structuredClone(native),
-  });
+    write: async (operation) => {
+      operations.set(operation.operationId, structuredClone(operation));
+    },
+    complete: async (operationId, generation) => {
+      if (operations.get(operationId)?.generation === generation) {
+        operations.set(operationId, {
+          ...operations.get(operationId)!,
+          completedUntil: Date.now() + 7200000,
+        });
+      }
+    },
+  };
+  const newService = () =>
+    new ProductReviewService({
+      ...client,
+      providerIdentity: () => "account-1",
+      listShoppingLists: async () =>
+        creates ? [{ id: native.id, name: native.name }] : [],
+      createShoppingList: async (name: string) => {
+        creates += 1;
+        native = { ...native, name };
+        return native.id;
+      },
+      updateShoppingListProduct: async (
+        listId: number,
+        productId: number,
+        quantity: number,
+      ) => {
+        updates += 1;
+        if (updates === 31 && failAt31) {
+          failAt31 = false;
+          throw new Error("provider timed out");
+        }
+        assert.equal(listId, native.id);
+        native.items.push({ productId, quantity });
+      },
+      getShoppingList: async () => structuredClone(native),
+    });
   const items = Array.from({ length: 52 }, (_, index) => ({
     product_id: index + 1,
     quantity: 1,
   }));
+  const service = newService();
   const draft = await service.start("owner", items);
 
-  const partial = await service.save("owner", "Meal plan", draft.draftId);
+  const partial = await service.save(
+    "owner",
+    "Meal plan",
+    draft.draftId,
+    undefined,
+    journal,
+  );
   assert.equal(partial.saveStatus, "partial");
   assert.equal(partial.shoppingListId, 88);
   assert.deepEqual(partial.saveProgress, { completed: 30, total: 52 });
   assert.equal(native.items.length, 30);
 
-  const resumed = await service.save("owner", "Meal plan", draft.draftId);
+  const resumed = await newService().save(
+    "owner",
+    "Meal plan",
+    draft.draftId,
+    undefined,
+    journal,
+  );
   assert.equal(resumed.saveStatus, "saved");
   assert.equal(resumed.shoppingListId, 88);
   assert.equal(native.items.length, 52);
+  assert.deepEqual({ creates, updates }, { creates: 1, updates: 53 });
+  assert.equal(operations.size, 1);
+  assert.ok(operations.get(draft.draftId!)?.completedUntil);
+  const duplicate = await newService().save(
+    "owner",
+    "Meal plan",
+    draft.draftId,
+    undefined,
+    journal,
+  );
+  assert.equal(duplicate.saveStatus, "saved");
   assert.deepEqual({ creates, updates }, { creates: 1, updates: 53 });
 });
 
 test("52-product save reconciles caller cancellation before continuing", async () => {
   const controller = new AbortController();
+  const operations = new Map<string, ReviewOperation>();
+  const journal: ReviewOperationJournal = {
+    read: async (operationId) => structuredClone(operations.get(operationId)),
+    claim: async (operationId) => {
+      const operation = operations.get(operationId);
+      if (!operation || operation.createAttempted) {
+        return false;
+      }
+      operations.set(operationId, { ...operation, createAttempted: true });
+      return true;
+    },
+    write: async (operation) => {
+      const current = operations.get(operation.operationId);
+      operations.set(operation.operationId, {
+        ...operation,
+        createAttempted: current?.createAttempted || operation.createAttempted,
+        ...(current?.listId ? { listId: current.listId } : {}),
+      });
+    },
+    complete: async (operationId, generation) => {
+      const operation = operations.get(operationId);
+      if (operation?.generation === generation) {
+        operations.set(operationId, {
+          ...operation,
+          completedUntil: Date.now() + 7200000,
+        });
+      }
+    },
+  };
   let creates = 0;
   let updates = 0;
   let native = {
@@ -903,7 +1477,13 @@ test("52-product save reconciles caller cancellation before continuing", async (
   }));
   const draft = await service.start("owner", items);
   await assert.rejects(
-    service.save("owner", "Meal plan", draft.draftId, controller.signal),
+    service.save(
+      "owner",
+      "Meal plan",
+      draft.draftId,
+      controller.signal,
+      journal,
+    ),
     /caller cancelled/u,
   );
   assert.equal(native.items.length, 30);
@@ -912,10 +1492,17 @@ test("52-product save reconciles caller cancellation before continuing", async (
     total: 52,
   });
 
-  const resumed = await service.save("owner", "Meal plan", draft.draftId);
+  const resumed = await service.save(
+    "owner",
+    "Meal plan",
+    draft.draftId,
+    undefined,
+    journal,
+  );
   assert.equal(resumed.saveStatus, "saved");
   assert.equal(native.items.length, 52);
   assert.deepEqual({ creates, updates }, { creates: 1, updates: 52 });
+  assert.ok(operations.get(draft.draftId!)?.completedUntil);
 });
 
 test("durable snapshots use a bounded cache without evicting stored baskets", async () => {

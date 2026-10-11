@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { LOCAL_BASKET_TTL_MS, MAX_LOCAL_BASKETS } from "./local-basket.js";
+import {
+  LOCAL_BASKET_TTL_MS,
+  MAX_LOCAL_BASKETS,
+  type ReviewOperation,
+} from "./local-basket.js";
 import {
   expireOwnerLocalBasketInventory,
   mutateOwnerLocalBasketInventory,
@@ -91,6 +95,121 @@ class FakeStorage implements LocalBasketInventoryStorage {
     this.alarm = undefined;
   }
 }
+
+test("review operation journal is owner-scoped and stores only exact IDs and quantities", async () => {
+  const storage = new FakeStorage();
+  const operation: ReviewOperation = {
+    operationId: "draft-1",
+    generation: "draft-1",
+    accountIdentity: "account-1",
+    kind: "save",
+    name: "Meal plan",
+    createAttempted: true,
+    listId: 88,
+    items: [{ productId: 1, quantity: 2 }],
+    progress: { completed: 0, total: 1 },
+  };
+
+  await mutateOwnerLocalBasketInventory(storage, "owner-1", {
+    kind: "review-operation-write",
+    operation,
+  });
+  assert.deepEqual(
+    await mutateOwnerLocalBasketInventory(storage, "owner-1", {
+      kind: "review-operation-read",
+      operationId: "draft-1",
+    }),
+    operation,
+  );
+  assert.equal(JSON.stringify(storage.values).includes('"view"'), false);
+  await assert.rejects(
+    mutateOwnerLocalBasketInventory(storage, "owner-2", {
+      kind: "review-operation-read",
+      operationId: "draft-1",
+    }),
+    /Review operation is unavailable/u,
+  );
+});
+
+test("stale journal writes cannot release the create claim or erase a native ID", async () => {
+  const storage = new FakeStorage();
+  const initial: ReviewOperation = {
+    operationId: "draft-2",
+    generation: "attempt-2",
+    accountIdentity: "account-1",
+    kind: "save",
+    name: "Meal plan",
+    items: [{ productId: 1, quantity: 2 }],
+  };
+  const write = (operation: ReviewOperation) =>
+    mutateOwnerLocalBasketInventory(storage, "owner-1", {
+      kind: "review-operation-write",
+      operation,
+    });
+  const claim = () =>
+    mutateOwnerLocalBasketInventory(storage, "owner-1", {
+      kind: "review-operation-claim",
+      operationId: initial.operationId,
+    });
+  const read = () =>
+    mutateOwnerLocalBasketInventory(storage, "owner-1", {
+      kind: "review-operation-read",
+      operationId: initial.operationId,
+    }) as Promise<ReviewOperation | undefined>;
+
+  await write(initial);
+  assert.equal(await claim(), true);
+  await write(initial);
+  assert.equal((await read())?.createAttempted, true);
+  assert.equal(await claim(), false);
+
+  await write({ ...initial, createAttempted: true, listId: 88 });
+  await write(initial);
+  assert.equal((await read())?.listId, 88);
+  assert.equal(
+    await mutateOwnerLocalBasketInventory(storage, "owner-1", {
+      kind: "review-operation-complete",
+      operationId: initial.operationId,
+      generation: "stale-attempt",
+    }),
+    false,
+  );
+  assert.equal((await read())?.generation, initial.generation);
+  assert.equal((await read())?.completedUntil, undefined);
+  await assert.rejects(
+    write({
+      ...initial,
+      generation: "new-attempt",
+      items: [{ productId: 1, quantity: 3 }],
+    }),
+    /different shopping-list operation/u,
+  );
+  assert.deepEqual((await read())?.items, initial.items);
+  assert.equal(
+    await mutateOwnerLocalBasketInventory(storage, "owner-1", {
+      kind: "review-operation-complete",
+      operationId: initial.operationId,
+      generation: initial.generation,
+    }),
+    true,
+  );
+  const next = {
+    ...initial,
+    generation: "new-attempt",
+    items: [{ productId: 1, quantity: 3 }],
+  };
+  await write(next);
+  assert.equal(
+    await mutateOwnerLocalBasketInventory(storage, "owner-1", {
+      kind: "review-operation-complete",
+      operationId: initial.operationId,
+      generation: initial.generation,
+    }),
+    false,
+  );
+  assert.equal((await read())?.generation, next.generation);
+  assert.deepEqual((await read())?.items, next.items);
+});
 
 test("500 product snapshots stay below the Durable Object per-value limit", async () => {
   const storage = new FakeStorage();

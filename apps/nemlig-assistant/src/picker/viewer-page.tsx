@@ -718,6 +718,9 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
     partialSubmission ||
     (confirmedSubmission && !continueSubmitted);
   const nativeTransferBlocked = review?.shoppingListId !== undefined;
+  const resumableNativeUpdate =
+    review?.updateStatus === "partial" &&
+    (review.conflictItems !== undefined || review.actionNotice === undefined);
   const basketMenu = review && (
     <div className="basket-menu">
       <button
@@ -1348,12 +1351,18 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
                 <Button
                   color="secondary"
                   block
-                  disabled={busy || review.updateStatus !== undefined}
+                  disabled={
+                    busy ||
+                    (review.updateStatus !== undefined &&
+                      !resumableNativeUpdate)
+                  }
                   onClick={actions.onUpdateShoppingList}
                 >
                   {review.updateStatus === "saving"
                     ? "Updating shopping list…"
-                    : "Update shopping list"}
+                    : resumableNativeUpdate
+                      ? "Resume update"
+                      : "Update shopping list"}
                 </Button>
               )}
             <ActionFooter>
