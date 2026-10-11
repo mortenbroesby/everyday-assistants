@@ -41,6 +41,7 @@ export interface ProductReviewSnapshot {
     status: "prepared" | "submitted" | "uncertain" | "partial";
     verified_additions?: number;
     skipped_products?: Array<{ product_id: number; name: string }>;
+    cleanup_warning?: string;
     expires_at: string;
     review: Record<string, unknown>;
   };
@@ -633,6 +634,7 @@ export class ProductReviewService {
         submission.status = "submitted";
         submission.skipped_products = result.skipped_products;
         submission.verified_additions = result.verified_additions;
+        submission.cleanup_warning = result.cleanup_warning;
         stored.snapshot = { ...stored.snapshot, submission };
         await repository.mutate({
           kind: "edit",
@@ -1023,6 +1025,7 @@ export class ProductReviewService {
       submission.status = "submitted";
       submission.skipped_products = result.skipped_products;
       submission.verified_additions = result.verified_additions;
+      submission.cleanup_warning = result.cleanup_warning;
       return { review: structuredClone(stored.snapshot), result };
     } finally {
       stored.busy = false;

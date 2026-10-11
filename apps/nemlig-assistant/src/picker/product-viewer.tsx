@@ -90,6 +90,8 @@ function isReview(value: unknown): value is Review {
         (typeof value.submission.verified_additions !== "number" ||
           !Number.isSafeInteger(value.submission.verified_additions) ||
           value.submission.verified_additions < 0)) ||
+      (value.submission.cleanup_warning !== undefined &&
+        typeof value.submission.cleanup_warning !== "string") ||
       (value.submission.skipped_products !== undefined &&
         (!Array.isArray(value.submission.skipped_products) ||
           !value.submission.skipped_products.every(

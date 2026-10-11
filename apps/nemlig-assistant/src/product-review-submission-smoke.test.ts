@@ -22,6 +22,7 @@ type ShoppingListTransferClient = Pick<
   | "createShoppingList"
   | "updateShoppingListProduct"
   | "getShoppingList"
+  | "deleteShoppingList"
   | "addShoppingListToCart"
 >;
 
@@ -109,6 +110,7 @@ test("MCP submission smoke searches, prepares every Local basket line, and verif
     deliveryTime: "Tomorrow",
   };
   let providerWrites = 0;
+  const providerEvents: string[] = [];
   const shoppingLists = new Map<number, Map<number, number>>();
   const provider: ShoppingClient & ShoppingListTransferClient = {
     isLoggedIn: () => true,
@@ -122,7 +124,10 @@ test("MCP submission smoke searches, prepares every Local basket line, and verif
     listFavorites: async () => [],
     listDepartments: async () => [],
     browseDepartment: async () => ({ products: [], page: 1, hasNext: false }),
-    getCart: async () => structuredClone(basket),
+    getCart: async () => {
+      providerEvents.push("basket-readback");
+      return structuredClone(basket);
+    },
     addToCart: async () => {
       throw new Error("Direct basket writes must not be used.");
     },
@@ -140,7 +145,13 @@ test("MCP submission smoke searches, prepares every Local basket line, and verif
         ([productId, quantity]) => ({ productId, quantity }),
       ),
     }),
+    deleteShoppingList: async (listId) => {
+      providerEvents.push("delete-list");
+      shoppingLists.delete(listId);
+      throw new Error("Cleanup was not confirmed.");
+    },
     addShoppingListToCart: async (listId) => {
+      providerEvents.push("transfer");
       providerWrites++;
       const additions = [...(shoppingLists.get(listId) ?? [])].map(
         ([id, quantity]) => {
@@ -321,6 +332,7 @@ test("MCP submission smoke searches, prepares every Local basket line, and verif
       review: ProductReviewSnapshot;
       result: {
         status: string;
+        cleanup_warning?: string;
         basket: {
           items: Array<{ id: number; quantity: number }>;
           products_price: number;
@@ -330,6 +342,19 @@ test("MCP submission smoke searches, prepares every Local basket line, and verif
     };
     assert.equal(submittedData.review.submission?.status, "submitted");
     assert.equal(submittedData.result.status, "completed");
+    assert.match(
+      submittedData.review.submission?.cleanup_warning ?? "",
+      /could not be confirmed/u,
+    );
+    assert.equal(
+      submittedData.review.submission?.cleanup_warning,
+      submittedData.result.cleanup_warning,
+    );
+    assert.deepEqual(providerEvents.slice(-3), [
+      "transfer",
+      "basket-readback",
+      "delete-list",
+    ]);
     assert.deepEqual(
       submittedData.result.basket.items.map(({ id, quantity }) => [
         id,

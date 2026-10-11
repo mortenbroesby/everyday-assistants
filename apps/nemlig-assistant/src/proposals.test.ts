@@ -248,6 +248,7 @@ test("provider shopping-list submission transfers a 38-item review once", async 
     name: `Product ${index + 1}`,
   }));
   let transfers = 0;
+  const events: string[] = [];
   let basket = emptyBasket();
   const list = {
     id: 44,
@@ -258,7 +259,10 @@ test("provider shopping-list submission transfers a 38-item review once", async 
     getProduct: async (id: number) => products.find((item) => item.id === id)!,
     getFreshProduct: async (id: number) =>
       products.find((item) => item.id === id)!,
-    getCart: async () => structuredClone(basket),
+    getCart: async () => {
+      events.push("basket-readback");
+      return structuredClone(basket);
+    },
     addToCart: async () => {
       throw new Error(
         "Direct basket writes must not be used for a list transfer.",
@@ -268,6 +272,7 @@ test("provider shopping-list submission transfers a 38-item review once", async 
     updateShoppingListProduct: async () => undefined,
     getShoppingList: async () => structuredClone(list),
     addShoppingListToCart: async () => {
+      events.push("transfer");
       transfers += 1;
       basket = {
         items: products.map((item) => ({
@@ -281,6 +286,10 @@ test("provider shopping-list submission transfers a 38-item review once", async 
         numberOfProducts: products.length,
         deliveryTime: undefined,
       };
+    },
+    deleteShoppingList: async (listId: number) => {
+      assert.equal(listId, list.id);
+      events.push("delete-list");
     },
   };
   const service = new BasketProposalService(client);
@@ -299,9 +308,115 @@ test("provider shopping-list submission transfers a 38-item review once", async 
     prepared.proposal_id,
     "additions",
   );
+  const replayed = await service.apply(
+    "connection",
+    prepared.proposal_id,
+    "additions",
+  );
 
   assert.equal(transfers, 1);
+  assert.equal(replayed.replayed, true);
+  assert.deepEqual(
+    events.filter((event) => event === "delete-list"),
+    ["delete-list"],
+  );
   assert.equal(result.basket.number_of_products, 38);
+  assert.deepEqual(events.slice(-3), [
+    "transfer",
+    "basket-readback",
+    "delete-list",
+  ]);
+});
+
+test("provider-list preparation requires cleanup capability before provider calls", async () => {
+  const calls: string[] = [];
+  const service = new BasketProposalService({
+    getProduct: async () => {
+      calls.push("product");
+      return product;
+    },
+    getFreshProduct: async () => product,
+    getCart: async () => {
+      calls.push("basket");
+      return emptyBasket();
+    },
+    addToCart: async () => emptyBasket(),
+    createShoppingList: async () => {
+      calls.push("create");
+      return 44;
+    },
+    updateShoppingListProduct: async () => {
+      calls.push("update");
+    },
+    getShoppingList: async () => ({
+      id: 44,
+      name: "Nemlig Assistant test",
+      items: [{ productId: 7, quantity: 1 }],
+    }),
+  });
+
+  await assert.rejects(
+    service.prepareShoppingListAdditions(
+      "connection",
+      [{ product_id: 7, quantity: 1 }],
+      "Nemlig Assistant test",
+      { kind: "exact_review" },
+    ),
+    /Shopping-list submission is unavailable/u,
+  );
+  assert.deepEqual(calls, []);
+});
+
+test("verified transfer keeps success when list cleanup fails and never repeats on replay", async () => {
+  let transfers = 0;
+  let deletions = 0;
+  let basket = emptyBasket();
+  const list = {
+    id: 44,
+    name: "Nemlig Assistant test",
+    items: [{ productId: 7, quantity: 1 }],
+  };
+  const service = new BasketProposalService({
+    getProduct: async () => product,
+    getFreshProduct: async () => product,
+    getCart: async () => structuredClone(basket),
+    addToCart: async () => emptyBasket(),
+    createShoppingList: async () => list.id,
+    updateShoppingListProduct: async () => undefined,
+    getShoppingList: async () => structuredClone(list),
+    addShoppingListToCart: async () => {
+      transfers += 1;
+      basket = bananaBasket();
+    },
+    deleteShoppingList: async () => {
+      deletions += 1;
+      throw new NemligError("private provider response", 503);
+    },
+  });
+  const prepared = await service.prepareShoppingListAdditions(
+    "connection",
+    [{ product_id: 7, quantity: 1 }],
+    list.name,
+    { kind: "exact_review" },
+  );
+
+  const applied = await service.apply(
+    "connection",
+    prepared.proposal_id,
+    "additions",
+  );
+  const replayed = await service.apply(
+    "connection",
+    prepared.proposal_id,
+    "additions",
+  );
+
+  assert.equal(applied.status, "completed");
+  assert.match(applied.cleanup_warning ?? "", /could not be confirmed/u);
+  assert.equal(applied.basket.number_of_products, 1);
+  assert.equal(replayed.replayed, true);
+  assert.equal(replayed.cleanup_warning, applied.cleanup_warning);
+  assert.deepEqual({ transfers, deletions }, { transfers: 1, deletions: 1 });
 });
 
 test("provider shopping-list preparation rejects a changed list before reviewing it", async () => {
@@ -327,6 +442,7 @@ test("provider shopping-list preparation rejects a changed list before reviewing
         { productId: 2, quantity: 1 },
       ],
     }),
+    deleteShoppingList: async () => undefined,
     addShoppingListToCart: async () => undefined,
   });
 
@@ -369,6 +485,7 @@ test("provider shopping-list preparation logs a sanitized failing stage", async 
         reads += 1;
         return { id: 44, name: "Nemlig Assistant test", items: [] };
       },
+      deleteShoppingList: async () => undefined,
       addShoppingListToCart: async () => {
         transfers += 1;
       },
@@ -435,6 +552,7 @@ test("provider-list readback failure stops preparation without a basket write", 
         reads += 1;
         throw new NemligError("private provider response", 400);
       },
+      deleteShoppingList: async () => undefined,
       addShoppingListToCart: async () => {
         transfers += 1;
       },
@@ -475,6 +593,7 @@ test("provider-list readback failure stops preparation without a basket write", 
 
 test("provider shopping-list transfer rejects an unexpected final basket line", async () => {
   let transfers = 0;
+  let deletions = 0;
   let basket = emptyBasket();
   const list = {
     id: 44,
@@ -504,6 +623,9 @@ test("provider shopping-list transfer rejects an unexpected final basket line", 
         numberOfProducts: 1,
       };
     },
+    deleteShoppingList: async () => {
+      deletions += 1;
+    },
   });
   const prepared = await service.prepareShoppingListAdditions(
     "connection",
@@ -517,6 +639,43 @@ test("provider shopping-list transfer rejects an unexpected final basket line", 
     /Basket may have changed/u,
   );
   assert.equal(transfers, 1);
+  assert.equal(deletions, 0);
+});
+
+test("provider shopping-list transfer failure leaves its temporary list untouched", async () => {
+  let deletions = 0;
+  const list = {
+    id: 44,
+    name: "Nemlig Assistant test",
+    items: [{ productId: 7, quantity: 1 }],
+  };
+  const service = new BasketProposalService({
+    getProduct: async () => product,
+    getFreshProduct: async () => product,
+    getCart: async () => emptyBasket(),
+    addToCart: async () => emptyBasket(),
+    createShoppingList: async () => list.id,
+    updateShoppingListProduct: async () => undefined,
+    getShoppingList: async () => structuredClone(list),
+    addShoppingListToCart: async () => {
+      throw new NemligError("private provider response", 503);
+    },
+    deleteShoppingList: async () => {
+      deletions += 1;
+    },
+  });
+  const prepared = await service.prepareShoppingListAdditions(
+    "connection",
+    [{ product_id: 7, quantity: 1 }],
+    list.name,
+    { kind: "exact_review" },
+  );
+
+  await assert.rejects(
+    service.apply("connection", prepared.proposal_id, "additions"),
+    /Basket may have changed/u,
+  );
+  assert.equal(deletions, 0);
 });
 
 test("provider shopping-list preparation skips unavailable products before list creation", async () => {
@@ -538,6 +697,7 @@ test("provider shopping-list preparation skips unavailable products before list 
         quantity,
       })),
     }),
+    deleteShoppingList: async () => undefined,
     addShoppingListToCart: async () => undefined,
   });
 

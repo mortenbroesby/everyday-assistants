@@ -85,7 +85,9 @@ additions require exact approval, with final revalidation and verified readback.
   verifying a temporary Nemlig shopping list before the protected transfer.
 - Transfer that verified list once through Nemlig's native list-to-basket
   action. The hosted Local-basket flow never falls back to individual product
-  basket writes.
+  basket writes. After exact basket readback verifies the addition, the app
+  deletes that temporary provider list; an unconfirmed cleanup is shown as a
+  warning and does not retry the basket transfer.
 - Preview the final quantity and price after adding the requested positive
   quantity to each existing line.
 
