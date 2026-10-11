@@ -66,11 +66,13 @@ the final contents read and provider transfer when the path performs its exact
 contents and basket checks, one transfer, additive readback, and durable
 no-replay safeguards. Issue #295 selects deletion of the complete source list
 after a confirmed completed submission, including known-unavailable products.
-The native transfer path in this checkpoint still retains that source, so
-cleanup implementation and recovery remain incomplete. Local Basket storage
-retirement remains separately gated. Temporary unsaved drafts remain. This
-plan does not authorize live provider mutation, deployment, or deletion of old
-user data.
+The native transfer path in this checkpoint still retains that source.
+Automatic source deletion remains disabled pending the owner's separate choice
+about the residual concurrent-edit deletion risk; the desired consumed-source
+lifecycle alone does not resolve that choice. Cleanup implementation and
+recovery remain incomplete. Local Basket storage retirement remains separately
+gated. Temporary unsaved drafts remain. This plan does not authorize live
+provider mutation, deployment, or deletion of old user data.
 
 ### Acceptance
 
@@ -89,9 +91,11 @@ user data.
    and retains a durable no-replay receipt. The owner accepts that a concurrent
    Nemlig-side edit after the final contents read may affect the provider
    transfer. Issue #295 selects deletion of the complete source after confirmed
-   completion, including known-unavailable products. This checkpoint's native
-   path still retains it; uncertain outcomes and observed external edits do not
-   authorize deletion or retry.
+   completion, including known-unavailable products. The owner has not made the
+   separate choice about residual concurrent-edit risk for deletion, so
+   automatic cleanup remains disabled and this checkpoint's native path retains
+   the source. Uncertain outcomes and observed external edits do not authorize
+   deletion or retry.
 5. Local Basket mutations are inactive and stale cards fail closed. Durable
    Local Basket data, callbacks, bindings, and namespace remain pending an
    explicit migration and retirement disposition. Save/Update journal tests
@@ -111,9 +115,9 @@ and retains a durable no-replay receipt. It keeps the source list after
 success. Issue #295 selects consuming the entire source after confirmed
 completion, including known-unavailable products; this native path does not yet
 implement that cleanup. The owner accepts the remaining race between the final
-client read and provider transfer when the stated safeguards are present.
-Keep the source and report cleanup pending until the native path has a tested
-eligibility check, durable cleanup recovery and no-replay behavior. PR #294 is
+client read and provider transfer when the stated safeguards are present, but
+has not separately accepted the residual concurrent-edit deletion risk.
+Automatic source deletion remains disabled pending that choice. PR #294 is
 merged in main at `ea56ce3`; its temporary-list cleanup behavior does not prove
 safe cleanup of a user-owned native shopping list. Keep Local Basket namespace
 deletion separately gated.

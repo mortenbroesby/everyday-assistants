@@ -185,11 +185,15 @@ completion, including known-unavailable rows. Before deletion, recheck provider
 identity and the exact source; if an external edit is observed, retain the list
 and report cleanup as unsafe. This read is not atomic with deletion, and the
 owner's accepted transfer race does not authorize deleting observed newer
-content. The native transfer path in this checkpoint does not implement source
-cleanup; defer physical deletion until cleanup eligibility, durable recovery,
-and no-replay are implemented and tested. No live source-list deletion was
-performed for this checkpoint. Do not create another account-visible list to
-claim isolation or treat temporary-list cleanup as proof for user-owned lists.
+content. Automatic source deletion remains disabled pending the owner's
+separate choice about the residual concurrent-edit deletion risk; the desired
+consumed-source lifecycle alone does not resolve that choice. The native
+transfer path in this checkpoint does not implement source cleanup. Defer
+physical deletion until that choice is made and cleanup eligibility, durable
+recovery, and no-replay are implemented and tested. No live source-list
+deletion was performed for this checkpoint. Do not create another
+account-visible list to claim isolation or treat temporary-list cleanup as
+proof for user-owned lists.
 
 ## Removal and reuse map
 
