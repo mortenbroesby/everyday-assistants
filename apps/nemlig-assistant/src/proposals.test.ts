@@ -241,6 +241,63 @@ test("real client applies multiple reviewed lines sequentially and preserves unr
   assert.equal(result.basket.number_of_products, 6);
 });
 
+test("provider shopping-list submission transfers a 38-item review once", async () => {
+  const products = Array.from({ length: 38 }, (_, index) => ({
+    ...product,
+    id: index + 1,
+    name: `Product ${index + 1}`,
+  }));
+  let transfers = 0;
+  let basket = emptyBasket();
+  const list = {
+    id: 44,
+    name: "Nemlig Assistant test",
+    items: products.map((item) => ({ productId: item.id!, quantity: 1 })),
+  };
+  const client = {
+    getProduct: async (id: number) => products.find((item) => item.id === id)!,
+    getFreshProduct: async (id: number) =>
+      products.find((item) => item.id === id)!,
+    getCart: async () => structuredClone(basket),
+    addToCart: async () => {
+      throw new Error(
+        "Direct basket writes must not be used for a list transfer.",
+      );
+    },
+    getShoppingList: async () => structuredClone(list),
+    addShoppingListToCart: async () => {
+      transfers += 1;
+      basket = {
+        items: products.map((item) => ({
+          id: item.id,
+          name: item.name,
+          quantity: 1,
+          total: item.price,
+        })),
+        productsPrice: products.length * (product.price ?? 0),
+        deliveryPrice: 0,
+        numberOfProducts: products.length,
+        deliveryTime: undefined,
+      };
+    },
+  };
+  const service = new BasketProposalService(client);
+  const prepared = await service.prepareShoppingListAdditions(
+    "connection",
+    list.id,
+    { kind: "exact_review" },
+  );
+
+  const result = await service.apply(
+    "connection",
+    prepared.proposal_id,
+    "additions",
+  );
+
+  assert.equal(transfers, 1);
+  assert.equal(result.basket.number_of_products, 38);
+});
+
 test("real client continues when only an existing basket price changes before a write", async () => {
   const fixture = httpProposalFixture(basketWithExistingProducts(), {
     onBasketRead: (read, basket) => {

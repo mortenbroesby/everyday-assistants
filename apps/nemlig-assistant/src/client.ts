@@ -127,6 +127,13 @@ export interface Basket {
   deliveryTime: string | undefined;
 }
 
+/** Provider-owned contents used as the durable backing for a Local basket. */
+export interface ShoppingList {
+  id: number;
+  name: string;
+  items: Array<{ productId: number; quantity: number }>;
+}
+
 /** Stable basket identity for additive writes; prices are estimates, not approval limits. */
 export const basketFingerprint = (basket: Basket): string => {
   const stable = {
@@ -142,6 +149,17 @@ export const basketFingerprint = (basket: Basket): string => {
   };
   return createHash("sha256").update(JSON.stringify(stable)).digest("hex");
 };
+
+export const shoppingListFingerprint = (list: ShoppingList): string =>
+  createHash("sha256")
+    .update(
+      JSON.stringify(
+        list.items
+          .map(({ productId, quantity }) => ({ productId, quantity }))
+          .sort((left, right) => left.productId - right.productId),
+      ),
+    )
+    .digest("hex");
 
 const asRecord = (value: unknown): Record<string, unknown> => {
   const parsed = recordSchema.safeParse(value);
@@ -224,6 +242,39 @@ export function normalizeBasket(value: unknown): Basket {
     numberOfProducts: asNumber(cart.NumberOfProducts),
     deliveryTime: asString(cart.FormattedDeliveryTime),
   };
+}
+
+const shoppingListItem = (
+  value: Record<string, unknown>,
+): { productId: number; quantity: number } | undefined => {
+  const productId = asId(value.ProductId) ?? asId(value.Id);
+  const quantity = asNumber(value.Quantity) ?? asNumber(value.Amount);
+  return productId !== undefined &&
+    quantity !== undefined &&
+    Number.isSafeInteger(quantity) &&
+    quantity > 0
+    ? { productId, quantity }
+    : undefined;
+};
+
+function normalizeShoppingList(value: unknown): ShoppingList {
+  const list = asRecord(value);
+  const id = asId(list.Id) ?? asId(list.ListId);
+  const name = asString(list.Name) ?? asString(list.ListName);
+  const rawItems = list.Products ?? list.Items ?? list.ShoppingListProducts;
+  const items = asRecords(rawItems).flatMap((item) => {
+    const normalized = shoppingListItem(item);
+    return normalized ? [normalized] : [];
+  });
+  if (
+    id === undefined ||
+    !name ||
+    items.length !== asRecords(rawItems).length ||
+    new Set(items.map((item) => item.productId)).size !== items.length
+  ) {
+    throw new NemligError("Shopping list response is incomplete.");
+  }
+  return { id, name, items };
 }
 
 export function normalizeProducts(value: unknown, limit?: number): Product[] {
@@ -712,6 +763,125 @@ export class NemligClient {
     );
   }
 
+  providerIdentity(): string {
+    this.requireLogin("identify the connected Nemlig account");
+    if (!this.userId) {
+      throw new NemligError(
+        "Connected Nemlig account identity is unavailable.",
+      );
+    }
+    return this.userId;
+  }
+
+  async getShoppingList(
+    listId: number,
+    signal?: AbortSignal,
+  ): Promise<ShoppingList> {
+    this.requireLogin("view a shopping list");
+    if (!Number.isSafeInteger(listId) || listId < 1) {
+      throw new NemligError("Shopping list ID must be positive.");
+    }
+    const params = new URLSearchParams({ listId: String(listId) });
+    return normalizeShoppingList(
+      await this.json(
+        `${API_BASE_URL}/ShoppingList/getShoppingList?${params}`,
+        { signal },
+        "Get shopping list",
+      ),
+    );
+  }
+
+  async createShoppingList(name: string): Promise<ShoppingList> {
+    this.requireLogin("create a shopping list");
+    const normalized = name.trim();
+    if (!normalized || normalized.length > 30) {
+      throw new NemligError("Shopping list name must contain 1–30 characters.");
+    }
+    const params = new URLSearchParams({ name: normalized });
+    const value = await this.json(
+      `${API_BASE_URL}/ShoppingList/CreateShoppingList?${params}`,
+      { method: "POST" },
+      "Create shopping list",
+      false,
+    );
+    const record = asRecord(value);
+    const id = asId(record.Id) ?? asId(record.ListId) ?? asId(value);
+    if (id === undefined) {
+      throw new NemligError(
+        "Create shopping list failed: invalid response data.",
+      );
+    }
+    return this.getShoppingList(id);
+  }
+
+  async updateShoppingListProduct(
+    listId: number,
+    productId: number,
+    quantity: number,
+  ): Promise<void> {
+    this.requireLogin("update a shopping list");
+    if (
+      !Number.isSafeInteger(listId) ||
+      listId < 1 ||
+      !Number.isSafeInteger(productId) ||
+      productId < 1 ||
+      !Number.isSafeInteger(quantity) ||
+      quantity < 0
+    ) {
+      throw new NemligError("Shopping list product update is invalid.");
+    }
+    const params = new URLSearchParams({
+      listId: String(listId),
+      productId: String(productId),
+      amount: String(quantity),
+    });
+    await this.json(
+      `${API_BASE_URL}/ShoppingList/UpdateProductInShoppingList?${params}`,
+      { method: "POST" },
+      "Update shopping list product",
+      false,
+      false,
+      true,
+      true,
+    );
+  }
+
+  async deleteShoppingList(listId: number): Promise<void> {
+    this.requireLogin("delete a shopping list");
+    if (!Number.isSafeInteger(listId) || listId < 1) {
+      throw new NemligError("Shopping list ID must be positive.");
+    }
+    const params = new URLSearchParams({ listId: String(listId) });
+    await this.json(
+      `${API_BASE_URL}/ShoppingList/RemoveShoppingList?${params}`,
+      { method: "POST" },
+      "Delete shopping list",
+      false,
+      false,
+      true,
+      true,
+    );
+  }
+
+  async addShoppingListToCart(listId: number): Promise<void> {
+    this.requireLogin("add a shopping list to the basket");
+    if (!Number.isSafeInteger(listId) || listId < 1) {
+      throw new NemligError("Shopping list ID must be positive.");
+    }
+    await this.json(
+      `${API_BASE_URL}/basket/addShoppingListToBasket`,
+      {
+        method: "POST",
+        body: JSON.stringify({ ListId: listId, ConfirmMissingProducts: false }),
+      },
+      "Add shopping list to basket",
+      false,
+      false,
+      true,
+      true,
+    );
+  }
+
   /** Add a positive quantity delta; the provider adapter translates it to its absolute-quantity endpoint. */
   async addToCart(
     productId: number,
@@ -1103,6 +1273,7 @@ export class NemligClient {
     retry = true,
     gateway = false,
     includeSession = true,
+    allowEmpty = false,
   ): Promise<unknown> {
     throwIfAborted(init.signal);
     const target = new URL(url);
@@ -1204,6 +1375,9 @@ export class NemligClient {
         try {
           return await response.json();
         } catch {
+          if (allowEmpty && response.status >= 200 && response.status < 300) {
+            return undefined;
+          }
           if (init.signal?.aborted) {
             throw abortReason(init.signal);
           }
@@ -1254,4 +1428,14 @@ export type ShoppingClient = Pick<
   | "browseDepartment"
   | "getCart"
   | "addToCart"
+>;
+
+export type ShoppingListClient = Pick<
+  NemligClient,
+  | "providerIdentity"
+  | "getShoppingList"
+  | "createShoppingList"
+  | "updateShoppingListProduct"
+  | "deleteShoppingList"
+  | "addShoppingListToCart"
 >;

@@ -8,6 +8,8 @@ import {
   type Basket,
   type Product,
   type ShoppingClient,
+  type ShoppingListClient,
+  shoppingListFingerprint,
 } from "./client.js";
 export { basketFingerprint } from "./client.js";
 import { runReadPool } from "./read-coordination.js";
@@ -61,6 +63,8 @@ export interface ProposalLine {
 interface AddOperation {
   kind: "additions";
   lines: ProposalLine[];
+  shoppingListId?: number;
+  shoppingListFingerprint?: string;
 }
 type Operation = AddOperation;
 interface SkippedProduct {
@@ -232,7 +236,10 @@ export class BasketProposalService {
     private readonly client: Pick<
       ShoppingClient,
       "getProduct" | "getFreshProduct" | "getCart" | "addToCart"
-    >,
+    > &
+      Partial<
+        Pick<ShoppingListClient, "getShoppingList" | "addShoppingListToCart">
+      >,
     options: ProposalServiceOptions = {},
   ) {
     this.now = options.now ?? (() => new Date());
@@ -341,6 +348,44 @@ export class BasketProposalService {
       authorization.kind,
       skippedProducts,
     );
+  }
+
+  /** Prepare one exact native provider-list transfer; the list remains mutable until apply revalidates it. */
+  async prepareShoppingListAdditions(
+    connectionId: string,
+    shoppingListId: number,
+    authorization: AdditionAuthorization,
+    options: ProposalReadOptions & { freshProducts?: boolean } = {},
+  ): Promise<ProposalView> {
+    if (!this.client.getShoppingList) {
+      throw new NemligError("Shopping-list submission is unavailable.");
+    }
+    const list = await this.client.getShoppingList(
+      shoppingListId,
+      options.signal,
+    );
+    if (!list.items.length) {
+      throw new NemligError("The Local basket is empty.");
+    }
+    const proposal = await this.prepareAdditions(
+      connectionId,
+      list.items.map(({ productId, quantity }) => ({
+        product_id: productId,
+        quantity,
+      })),
+      authorization,
+      options,
+    );
+    const stored = this.proposals.get(proposal.proposal_id);
+    if (!stored || stored.operation.kind !== "additions") {
+      throw new NemligError("Shopping-list submission is unavailable.");
+    }
+    stored.operation = {
+      ...stored.operation,
+      shoppingListId: list.id,
+      shoppingListFingerprint: shoppingListFingerprint(list),
+    };
+    return proposal;
   }
 
   private validateAdditionItems(
@@ -508,6 +553,14 @@ export class BasketProposalService {
       proposal.state = "applying";
       this.record("applying", proposal.operation.kind, "started");
       try {
+        if (proposal.operation.shoppingListId !== undefined) {
+          return await this.applyShoppingList(
+            proposal,
+            basket,
+            activeLines,
+            skippedProducts,
+          );
+        }
         let result: Basket;
         result = basket;
         let expectedProducts = basket.numberOfProducts!;
@@ -612,6 +665,151 @@ export class BasketProposalService {
         );
       }
     });
+  }
+
+  private async applyShoppingList(
+    proposal: StoredProposal,
+    baseline: Basket,
+    activeLines: readonly ProposalLine[],
+    skippedProducts: readonly SkippedProduct[],
+  ): Promise<ApplyResult> {
+    const { listId, fingerprint, client } = this.shoppingListTransferClient(
+      proposal.operation,
+    );
+    this.assertEntireListIsApproved(proposal.operation, activeLines);
+    const currentList = await client.getShoppingList(listId);
+    const currentBasket = await this.client.getCart();
+    if (
+      shoppingListFingerprint(currentList) !== fingerprint ||
+      basketFingerprint(currentBasket) !== proposal.basketFingerprint
+    ) {
+      throw new BasketSnapshotChangedError();
+    }
+    await client.addShoppingListToCart(listId);
+    const result = await this.client.getCart();
+    this.assertShoppingListTransferReadback(baseline, result, activeLines);
+    const completed: ApplyResult = {
+      status: "completed",
+      operation: proposal.operation.kind,
+      replayed: false,
+      basket: basketPayload(result),
+      ...(skippedProducts.length
+        ? { skipped_products: [...skippedProducts] }
+        : {}),
+      ...(skippedProducts.length
+        ? { verified_additions: activeLines.length }
+        : {}),
+    };
+    proposal.state = "completed";
+    proposal.result = completed;
+    this.record("completed", proposal.operation.kind, "verified");
+    return completed;
+  }
+
+  private shoppingListTransferClient(operation: AddOperation): {
+    listId: number;
+    fingerprint: string;
+    client: Pick<
+      ShoppingListClient,
+      "getShoppingList" | "addShoppingListToCart"
+    >;
+  } {
+    const { shoppingListId: listId, shoppingListFingerprint: fingerprint } =
+      operation;
+    const { getShoppingList, addShoppingListToCart } = this.client;
+    if (
+      listId === undefined ||
+      !fingerprint ||
+      !getShoppingList ||
+      !addShoppingListToCart
+    ) {
+      throw new NemligError("Shopping-list submission is unavailable.");
+    }
+    return {
+      listId,
+      fingerprint,
+      client: { getShoppingList, addShoppingListToCart },
+    };
+  }
+
+  private assertEntireListIsApproved(
+    operation: AddOperation,
+    activeLines: readonly ProposalLine[],
+  ): void {
+    if (activeLines.length !== operation.lines.length) {
+      throw new BasketPreflightError(
+        "A reviewed provider-list product is no longer available.",
+      );
+    }
+  }
+
+  private assertShoppingListTransferReadback(
+    baseline: Basket,
+    result: Basket,
+    activeLines: readonly ProposalLine[],
+  ): void {
+    const additions = new Map(
+      activeLines.map((line) => [line.product_id, line.quantity]),
+    );
+    this.assertBaselineLinesPreserved(baseline, result, additions);
+    this.assertNewLinesAdded(result, additions);
+    this.assertExpectedProductCount(baseline, result, activeLines);
+  }
+
+  private assertBaselineLinesPreserved(
+    baseline: Basket,
+    result: Basket,
+    additions: Map<number, number>,
+  ): void {
+    for (const previous of baseline.items) {
+      if (
+        previous.id === undefined ||
+        previous.quantity === undefined ||
+        !Number.isSafeInteger(previous.quantity)
+      ) {
+        throw new NemligError(
+          "Basket readback could not be verified; inspect the basket and do not retry.",
+        );
+      }
+      const previousId = previous.id;
+      const actual = result.items.find((item) => sameId(item.id, previousId));
+      const expected = previous.quantity + (additions.get(previousId) ?? 0);
+      if (actual?.quantity !== expected) {
+        throw new NemligError(
+          "Basket readback did not preserve the exact approved additions; inspect the basket and do not retry.",
+        );
+      }
+      additions.delete(previousId);
+    }
+  }
+
+  private assertNewLinesAdded(
+    result: Basket,
+    additions: ReadonlyMap<number, number>,
+  ): void {
+    for (const [productId, quantity] of additions) {
+      const actual = result.items.find((item) => sameId(item.id, productId));
+      if (actual?.quantity !== quantity) {
+        throw new NemligError(
+          "Basket readback did not confirm the exact approved additions; inspect the basket and do not retry.",
+        );
+      }
+    }
+  }
+
+  private assertExpectedProductCount(
+    baseline: Basket,
+    result: Basket,
+    activeLines: readonly ProposalLine[],
+  ): void {
+    const expectedCount =
+      (baseline.numberOfProducts ?? 0) +
+      activeLines.reduce((count, line) => count + line.quantity, 0);
+    if (result.numberOfProducts !== expectedCount) {
+      throw new NemligError(
+        "Basket product count could not be verified; inspect the basket and do not retry.",
+      );
+    }
   }
 
   private invalidate(proposal: StoredProposal): void {

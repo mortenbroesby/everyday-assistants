@@ -12,6 +12,14 @@ export interface LocalBasketLine {
   view: ProductView;
 }
 
+/** Durable reference only: Ready contents live in the provider shopping list. */
+export interface ProviderShoppingListBinding {
+  listId: number;
+  accountId: string;
+  fingerprint: string;
+  productCount: number;
+}
+
 export interface LocalBasket {
   basketId: string;
   createdAt: number;
@@ -19,6 +27,8 @@ export interface LocalBasket {
   expiresAt: number;
   revision: number;
   submissionAttempted?: true;
+  cleanupPending?: true;
+  providerList?: ProviderShoppingListBinding;
   lines: LocalBasketLine[];
 }
 
@@ -267,7 +277,9 @@ export const createLocalBasket = (
   inventory: OwnerLocalBasketInventory,
   ownerId: string,
   lines: readonly LocalBasketLine[],
-  options: LocalBasketDomainOptions = {},
+  options: LocalBasketDomainOptions & {
+    providerList?: ProviderShoppingListBinding;
+  } = {},
 ): LocalBasketMutation<CreatedLocalBasket> => {
   assertOwner(inventory, ownerId);
   const now = nowFrom(options);
@@ -358,6 +370,7 @@ export type LocalBasketEdit =
   | { kind: "quantity"; productId: number; quantity: number }
   | { kind: "replace"; productId: number; line: LocalBasketLine }
   | { kind: "remove"; productIds: number[] }
+  | { kind: "provider-synchronized"; binding: ProviderShoppingListBinding }
   | { kind: "attempt-submission" }
   | { kind: "complete-submission" };
 
@@ -413,6 +426,10 @@ const applyBasketEdit = (
       updated.lines = updated.lines.filter(
         (line) => !edit.productIds.includes(line.productId),
       );
+      break;
+    case "provider-synchronized":
+      updated.providerList = structuredClone(edit.binding);
+      updated.lines = [];
       break;
     case "attempt-submission":
       updated.submissionAttempted = true;
@@ -491,7 +508,12 @@ export type LocalBasketCommand =
   | { kind: "list" }
   | { kind: "selection"; selectionKey: string }
   | { kind: "read"; basketId: string }
-  | { kind: "create"; lines: LocalBasketLine[]; selectionKey?: string }
+  | {
+      kind: "create";
+      lines: LocalBasketLine[];
+      providerList?: ProviderShoppingListBinding;
+      selectionKey?: string;
+    }
   | { kind: "select" | "heartbeat"; basketId: string; selectionKey?: string }
   | { kind: "delete"; basketId: string }
   | {
