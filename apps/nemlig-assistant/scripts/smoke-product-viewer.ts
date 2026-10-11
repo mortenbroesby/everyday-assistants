@@ -449,7 +449,9 @@ try {
     .getByRole("heading", { name: "Ready to submit the Local basket" })
     .waitFor();
   await basketFrame.locator(".basket-menu > button").click();
-  await basketFrame.getByRole("button", { name: "Choose basket" }).click();
+  await basketFrame
+    .getByRole("menuitem", { name: "Choose another basket" })
+    .click();
   await basketFrame.locator("#title").waitFor();
   await openBasket(
     basketPage,
@@ -466,7 +468,9 @@ try {
   );
 
   await basketFrame.locator(".basket-menu > button").click();
-  await basketFrame.getByRole("button", { name: "Choose basket" }).click();
+  await basketFrame
+    .getByRole("menuitem", { name: "Choose another basket" })
+    .click();
   await basketFrame.locator("#title").waitFor();
   const deleteTarget = basketFrame.locator(".basket-picker li").first();
   await deleteTarget
@@ -600,7 +604,9 @@ try {
     .getByRole("button", { name: "Increase quantity of Synthetic milk" })
     .click();
   await pickerFlushFrame.locator(".basket-menu > button").click();
-  await pickerFlushFrame.getByRole("button", { name: "Choose basket" }).click();
+  await pickerFlushFrame
+    .getByRole("menuitem", { name: "Choose another basket" })
+    .click();
   await pickerFlushFrame
     .getByRole("heading", { name: "Local baskets", exact: true })
     .waitFor();
@@ -659,7 +665,7 @@ try {
     .click();
   await pickerFlushFailureFrame.locator(".basket-menu > button").click();
   await pickerFlushFailureFrame
-    .getByRole("button", { name: "Choose basket" })
+    .getByRole("menuitem", { name: "Choose another basket" })
     .click();
   await pickerFlushFailureFrame
     .getByText(/Could not save the pending quantity/u)
@@ -863,7 +869,7 @@ try {
     .getByRole("button", { name: "Decrease quantity of Synthetic milk" })
     .click();
   await page.waitForFunction(() => window.getReview().items[0]?.quantity === 1);
-  await details.getByRole("button", { name: "Close product overlay" }).click();
+  await details.getByRole("button", { name: "Back to Local basket" }).click();
   await milkDisclosure.press("Shift+F10");
   const actionSheet = frame.getByRole("group", {
     name: "Actions for Synthetic milk",
@@ -1012,7 +1018,7 @@ try {
   await frame.getByRole("dialog", { name: "Synthetic milk" }).waitFor();
   await frame
     .getByRole("dialog", { name: "Synthetic milk" })
-    .getByRole("button", { name: "Close product overlay" })
+    .getByRole("button", { name: "Back to Local basket" })
     .click();
   const swipeSummary = async (from: number, to: number, dy = 0) => {
     const box = await milkDisclosure.boundingBox();
@@ -1632,7 +1638,7 @@ try {
       });
       await touchDetails.waitFor();
       await touchDetails
-        .getByRole("button", { name: "Close product overlay" })
+        .getByRole("button", { name: "Back to Local basket" })
         .click();
       await touchDetails.waitFor({ state: "detached" });
     }

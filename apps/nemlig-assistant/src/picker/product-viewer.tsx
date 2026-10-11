@@ -1398,7 +1398,7 @@ export function ProductViewer() {
         onSearchAlternatives: (product_id, query) =>
           void update({ kind: "alternatives", product_id, query }),
         onReplace: (product_id, replacement_id) =>
-          void update({ kind: "replace", product_id, replacement_id }),
+          update({ kind: "replace", product_id, replacement_id }),
         onPrepareSubmission: () => afterFlush({ kind: "prepare_submission" }),
         onRequestSubmitConfirmation: () => setConfirmSubmit(true),
         onCancelSubmit: () => setConfirmSubmit(false),

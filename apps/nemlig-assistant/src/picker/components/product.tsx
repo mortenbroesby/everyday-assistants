@@ -1,42 +1,78 @@
 import styled from "@emotion/styled";
-import { useState } from "react";
+import { type KeyboardEvent, type ReactNode, useState } from "react";
 import type { ProductView } from "../../product-presentation.js";
 import { safeNemligImageUrl } from "../../product-presentation.js";
 import { ViewerButton } from "./button.js";
 import { isUsable, money, productName } from "./format.js";
 
-const SummaryContent = styled.span({
+type SummaryLayout = "row" | "detail";
+type CompleteProductView = Extract<ProductView, { status: "complete" }>;
+type CompleteProduct = CompleteProductView["product"];
+
+const SummaryContent = styled.span<{
+  $fillImageToRow: boolean;
+  $layout: SummaryLayout;
+}>(({ $fillImageToRow, $layout }) => ({
   display: "grid",
   width: "100%",
   minWidth: 0,
-  gridTemplateColumns: "58px minmax(0, 1fr)",
-  alignItems: "start",
-  gap: 9,
-  "@media (max-width: 360px)": { gridTemplateColumns: "52px minmax(0, 1fr)" },
-});
-const ProductImage = styled.img({
+  gridTemplateColumns:
+    $layout === "detail"
+      ? "minmax(0, 1fr)"
+      : $fillImageToRow
+        ? "80px minmax(0, 1fr)"
+        : "58px minmax(0, 1fr)",
+  alignItems:
+    $layout === "detail" ? "start" : $fillImageToRow ? "stretch" : "start",
+  gap: $layout === "detail" ? 16 : 12,
+  "@media (max-width: 360px)": {
+    gridTemplateColumns:
+      $layout === "detail"
+        ? "minmax(0, 1fr)"
+        : $fillImageToRow
+          ? "70px minmax(0, 1fr)"
+          : "52px minmax(0, 1fr)",
+  },
+}));
+const ProductVisual = styled.span<{
+  $fillImageToRow: boolean;
+  $layout: SummaryLayout;
+}>(({ $fillImageToRow, $layout }) => ({
   display: "grid",
-  width: 58,
-  height: 58,
-  placeItems: "center",
-  border: 0,
-  borderRadius: 14,
+  position: "relative",
+  minHeight: 58,
+  minWidth: 0,
+  width: $layout === "detail" ? "min(100%, 240px)" : undefined,
+  aspectRatio: $layout === "detail" ? "1" : undefined,
+  justifySelf: $layout === "detail" ? "center" : undefined,
+  alignSelf:
+    $layout === "detail" ? "start" : $fillImageToRow ? "stretch" : "start",
   background: "var(--soft)",
-  objectFit: "contain",
+  overflow: "hidden",
+  "@media (max-width: 360px)": {
+    minHeight: 52,
+  },
+}));
+const ProductImage = styled.img({
+  position: "absolute",
+  inset: 0,
+  display: "block",
+  width: "100%",
+  height: "100%",
+  border: 0,
+  objectFit: "cover",
   fontSize: ".65rem",
-  "@media (max-width: 360px)": { width: 52, height: 52, borderRadius: 13 },
 });
 const ImageFallback = styled.span({
+  position: "absolute",
+  inset: 0,
   display: "grid",
-  width: 58,
-  height: 58,
+  width: "100%",
+  height: "100%",
   placeItems: "center",
-  borderRadius: 14,
-  background: "var(--soft)",
   color: "var(--muted)",
   textAlign: "center",
   fontSize: ".65rem",
-  "@media (max-width: 360px)": { width: 52, height: 52, borderRadius: 13 },
 });
 const ProductCopy = styled.span({ display: "grid", minWidth: 0, gap: 3 });
 const ProductHeading = styled.span({
@@ -47,7 +83,7 @@ const ProductHeading = styled.span({
     overflow: "hidden",
     WebkitBoxOrient: "vertical",
     WebkitLineClamp: 2,
-    fontSize: ".92rem",
+    fontSize: ".9rem",
     lineHeight: 1.35,
     fontWeight: 650,
   },
@@ -167,7 +203,7 @@ const StatusChipVisual = styled.span({
   borderRadius: 999,
   color: "var(--accent)",
   background: "var(--soft)",
-  fontSize: ".68rem",
+  fontSize: ".7rem",
   fontWeight: 650,
   lineHeight: 1,
 });
@@ -193,36 +229,25 @@ function ProductStatusChips({ view }: { view: ProductView }) {
   ) : null;
 }
 
-export function ProductSummary({
-  view,
-  quantity,
-  thumbnailSrc,
+function ProductVisualImage({
+  image,
+  alt,
+  fillImageToRow,
+  layout,
 }: {
-  view: ProductView;
-  quantity?: number;
-  thumbnailSrc?: string;
+  image?: string;
+  alt: string;
+  fillImageToRow: boolean;
+  layout: SummaryLayout;
 }) {
   const [imageFailed, setImageFailed] = useState(false);
-  if (view.status !== "complete") {
-    return (
-      <span>Product {view.product_id ?? "details"} details unavailable.</span>
-    );
-  }
-
-  const product = view.product;
-  const image = thumbnailSrc ?? safeNemligImageUrl(product.image_url);
-  const quantityTotal =
-    quantity !== undefined && typeof product.price === "number"
-      ? quantity * product.price
-      : product.price;
-
   return (
-    <SummaryContent>
+    <ProductVisual $fillImageToRow={fillImageToRow} $layout={layout}>
       {image && !imageFailed ? (
         <ProductImage
           src={image}
           draggable={false}
-          alt={product.name ?? "Product"}
+          alt={alt}
           onError={() => setImageFailed(true)}
         />
       ) : (
@@ -233,22 +258,62 @@ export function ProductSummary({
           No image
         </ImageFallback>
       )}
+    </ProductVisual>
+  );
+}
+
+function lineTotal(price: number | undefined, quantity: number | undefined) {
+  return quantity !== undefined && typeof price === "number"
+    ? quantity * price
+    : price;
+}
+
+function productPackage(product: CompleteProduct) {
+  return (
+    [product.brand, product.unit_size].filter(Boolean).join(" · ") ||
+    "Package details unavailable"
+  );
+}
+
+function productUnitPrice(product: CompleteProduct) {
+  if (product.unit_price === undefined) {
+    return product.unit ?? "Unit price unavailable";
+  }
+  return `${money(product.unit_price)}${product.unit ? ` · ${product.unit}` : ""}`;
+}
+
+function CompleteProductSummary({
+  view,
+  quantity,
+  thumbnailSrc,
+  fillImageToRow,
+  layout,
+}: {
+  view: CompleteProductView;
+  quantity?: number;
+  thumbnailSrc?: string;
+  fillImageToRow: boolean;
+  layout: SummaryLayout;
+}) {
+  const product = view.product;
+
+  return (
+    <SummaryContent $fillImageToRow={fillImageToRow} $layout={layout}>
+      <ProductVisualImage
+        image={thumbnailSrc ?? safeNemligImageUrl(product.image_url)}
+        alt={product.name ?? "Product"}
+        fillImageToRow={fillImageToRow}
+        layout={layout}
+      />
       <ProductCopy>
         <ProductHeading>
           <strong>{productName(view)}</strong>
         </ProductHeading>
         <ProductPrice data-viewer-component="product-price">
-          {money(quantityTotal)}
+          {money(lineTotal(product.price, quantity))}
         </ProductPrice>
-        <ProductMeta>
-          {[product.brand, product.unit_size].filter(Boolean).join(" · ") ||
-            "Package details unavailable"}
-        </ProductMeta>
-        <ProductMeta>
-          {product.unit_price === undefined
-            ? (product.unit ?? "Unit price unavailable")
-            : `${money(product.unit_price)}${product.unit ? ` · ${product.unit}` : ""}`}
-        </ProductMeta>
+        <ProductMeta>{productPackage(product)}</ProductMeta>
+        <ProductMeta>{productUnitPrice(product)}</ProductMeta>
         {quantity !== undefined && (
           <ProductQuantity data-viewer-component="product-quantity">
             {quantity} ×
@@ -257,6 +322,35 @@ export function ProductSummary({
         <ProductStatusChips view={view} />
       </ProductCopy>
     </SummaryContent>
+  );
+}
+
+export function ProductSummary({
+  view,
+  quantity,
+  thumbnailSrc,
+  fillImageToRow = false,
+  layout = "row",
+}: {
+  view: ProductView;
+  quantity?: number;
+  thumbnailSrc?: string;
+  fillImageToRow?: boolean;
+  layout?: SummaryLayout;
+}) {
+  if (view.status !== "complete") {
+    return (
+      <span>Product {view.product_id ?? "details"} details unavailable.</span>
+    );
+  }
+  return (
+    <CompleteProductSummary
+      view={view}
+      quantity={quantity}
+      thumbnailSrc={thumbnailSrc}
+      fillImageToRow={fillImageToRow}
+      layout={layout}
+    />
   );
 }
 
@@ -302,86 +396,163 @@ export function QuantityControl({
   );
 }
 
+type ProductFact = { key: string; content: ReactNode };
+
+function productFacts(product: CompleteProduct): ProductFact[] {
+  const suppliedDetails =
+    product.details?.filter((fact) => fact.key.trim() && fact.value.trim()) ??
+    [];
+  const facts: ProductFact[] = [];
+  if (product.description) {
+    facts.push({
+      key: "Varebeskrivelse",
+      content: <FactBody>{product.description}</FactBody>,
+    });
+  }
+  if (product.declaration) {
+    facts.push({
+      key: "Varedeklaration",
+      content: <FactBody>{product.declaration}</FactBody>,
+    });
+  }
+  if (suppliedDetails.length > 0) {
+    facts.push({
+      key: "Detaljer om varen",
+      content: (
+        <FactList>
+          {suppliedDetails.map(({ key, value }) => (
+            <FactListItem key={`${key}:${value}`}>
+              <dt>{key}</dt>
+              <dd>{value}</dd>
+            </FactListItem>
+          ))}
+        </FactList>
+      ),
+    });
+  }
+  return facts;
+}
+
+function selectAdjacentFact(
+  event: KeyboardEvent<HTMLButtonElement>,
+  index: number,
+  facts: ProductFact[],
+  setActiveFact: (key: string) => void,
+) {
+  const direction =
+    event.key === "ArrowRight" ? 1 : event.key === "ArrowLeft" ? -1 : 0;
+  if (direction === 0) {
+    return;
+  }
+  event.preventDefault();
+  const nextIndex = (index + direction + facts.length) % facts.length;
+  setActiveFact(facts[nextIndex]!.key);
+  document.getElementById(`product-fact-tab-${nextIndex}`)?.focus();
+}
+
+function ProductFactTabs({ facts }: { facts: ProductFact[] }) {
+  const [activeFact, setActiveFact] = useState<string>();
+  const selectedFact =
+    facts.find((fact) => fact.key === activeFact) ?? facts[0];
+  if (!selectedFact) {
+    return null;
+  }
+  const selectedIndex = facts.indexOf(selectedFact);
+  return (
+    <section className="product-fact-tabs" aria-label="Product information">
+      <div
+        className="product-fact-tablist"
+        role="tablist"
+        aria-label="Product information sections"
+      >
+        {facts.map((fact, index) => {
+          const selected = fact.key === selectedFact.key;
+          return (
+            <button
+              key={fact.key}
+              className="product-fact-tab"
+              id={`product-fact-tab-${index}`}
+              type="button"
+              role="tab"
+              aria-selected={selected}
+              aria-controls="product-fact-panel"
+              tabIndex={selected ? 0 : -1}
+              onClick={() => setActiveFact(fact.key)}
+              onKeyDown={(event) =>
+                selectAdjacentFact(event, index, facts, setActiveFact)
+              }
+            >
+              {fact.key}
+            </button>
+          );
+        })}
+      </div>
+      <div
+        id="product-fact-panel"
+        className="product-fact-panel"
+        role="tabpanel"
+        aria-labelledby={`product-fact-tab-${selectedIndex}`}
+      >
+        {selectedFact.content}
+      </div>
+    </section>
+  );
+}
+
+function ProductFactDisclosures({
+  facts,
+  expandedFacts,
+  onFactExpandedChange,
+}: {
+  facts: ProductFact[];
+  expandedFacts?: ReadonlySet<string>;
+  onFactExpandedChange?: (factKey: string, expanded: boolean) => void;
+}) {
+  return (
+    <>
+      {facts.map((fact) => (
+        <Fact
+          key={fact.key}
+          data-viewer-component="product-fact"
+          open={expandedFacts?.has(fact.key)}
+          onToggle={
+            onFactExpandedChange
+              ? (event) =>
+                  onFactExpandedChange(fact.key, event.currentTarget.open)
+              : undefined
+          }
+        >
+          <FactSummary>{fact.key}</FactSummary>
+          {fact.content}
+        </Fact>
+      ))}
+    </>
+  );
+}
+
 export function ProductFacts({
   view,
   expandedFacts,
   onFactExpandedChange,
+  variant = "disclosures",
 }: {
   view: ProductView;
   expandedFacts?: ReadonlySet<string>;
   onFactExpandedChange?: (factKey: string, expanded: boolean) => void;
+  variant?: "disclosures" | "tabs";
 }) {
   if (view.status !== "complete") {
     return null;
   }
-  const product = view.product;
-  const suppliedDetails =
-    product.details?.filter((fact) => fact.key.trim() && fact.value.trim()) ??
-    [];
-  return (
-    <>
-      {product.description && (
-        <Fact
-          data-viewer-component="product-fact"
-          open={expandedFacts?.has("Varebeskrivelse")}
-          onToggle={
-            onFactExpandedChange
-              ? (event) =>
-                  onFactExpandedChange(
-                    "Varebeskrivelse",
-                    event.currentTarget.open,
-                  )
-              : undefined
-          }
-        >
-          <FactSummary>Varebeskrivelse</FactSummary>
-          <FactBody>{product.description}</FactBody>
-        </Fact>
-      )}
-      {product.declaration && (
-        <Fact
-          data-viewer-component="product-fact"
-          open={expandedFacts?.has("Varedeklaration")}
-          onToggle={
-            onFactExpandedChange
-              ? (event) =>
-                  onFactExpandedChange(
-                    "Varedeklaration",
-                    event.currentTarget.open,
-                  )
-              : undefined
-          }
-        >
-          <FactSummary>Varedeklaration</FactSummary>
-          <FactBody>{product.declaration}</FactBody>
-        </Fact>
-      )}
-      {suppliedDetails.length > 0 && (
-        <Fact
-          data-viewer-component="product-fact"
-          open={expandedFacts?.has("Detaljer om varen")}
-          onToggle={
-            onFactExpandedChange
-              ? (event) =>
-                  onFactExpandedChange(
-                    "Detaljer om varen",
-                    event.currentTarget.open,
-                  )
-              : undefined
-          }
-        >
-          <FactSummary>Detaljer om varen</FactSummary>
-          <FactList>
-            {suppliedDetails.map(({ key, value }) => (
-              <FactListItem key={`${key}:${value}`}>
-                <dt>{key}</dt>
-                <dd>{value}</dd>
-              </FactListItem>
-            ))}
-          </FactList>
-        </Fact>
-      )}
-    </>
+  const facts = productFacts(view.product);
+  return variant === "tabs" ? (
+    <ProductFactTabs facts={facts} />
+  ) : (
+    <ProductFactDisclosures
+      facts={facts}
+      expandedFacts={expandedFacts}
+      onFactExpandedChange={onFactExpandedChange}
+    />
   );
 }
 
